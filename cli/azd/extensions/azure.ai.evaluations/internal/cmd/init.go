@@ -171,6 +171,9 @@ func newInitCommand() *cobra.Command {
 			if source == initSourceTraces {
 				fmt.Fprint(out, messages.UsingTraceSource())
 			}
+			if names := plan.evaluatorNames(); len(names) > 0 {
+				fmt.Fprint(out, messages.GradingWith(names))
+			}
 			if judgeModel != "" {
 				fmt.Fprint(out, messages.JudgeModelDeployment(judgeModel))
 			}

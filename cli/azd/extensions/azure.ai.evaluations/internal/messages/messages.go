@@ -838,6 +838,25 @@ func FromFileMustBeJSONL(path string) error {
 		filepath.ToSlash(path))
 }
 
+// FromFileDirectoryHasNoJSONL reports a directory with nothing to upload.
+func FromFileDirectoryHasNoJSONL(dir string) error {
+	return fmt.Errorf("no .jsonl file in %q; --from-file needs one to upload", filepath.ToSlash(dir))
+}
+
+// FromFileDirectoryIsAmbiguous refuses to guess which dataset was meant.
+func FromFileDirectoryIsAmbiguous(dir string, names []string) error {
+	return fmt.Errorf(
+		"%q holds %d .jsonl files (%s); name the one to upload with --from-file",
+		filepath.ToSlash(dir), len(names), strings.Join(names, ", "))
+}
+
+// InvalidDatasetName reports a name the service will not accept.
+func InvalidDatasetName(name string) error {
+	return fmt.Errorf(
+		"dataset name %q is invalid: use letters, digits, dashes and underscores, "+
+			"up to 255 characters", name)
+}
+
 // RegisteringDataset reports the service refusing to publish the dataset.
 func RegisteringDataset(dataset string, err error) error {
 	return fmt.Errorf("registering dataset %q: %w", dataset, err)
@@ -1520,6 +1539,14 @@ func UsingTraceSource() string {
 // JudgeModelDeployment reports the deployment the graders will judge with.
 func JudgeModelDeployment(model string) string {
 	return fmt.Sprintf("%s Judge model deployment: %s\n", DoneMark, model)
+}
+
+// GradingWith reports the evaluators the scaffold settled on.
+//
+// Omitting --evaluator picks them, so without this the one thing `init` decided
+// on the reader's behalf is the one thing it does not mention.
+func GradingWith(evaluators []string) string {
+	return fmt.Sprintf("%s Grading with: %s\n", DoneMark, strings.Join(evaluators, ", "))
 }
 
 // CreatedHeading opens the list of what a scaffold wrote.

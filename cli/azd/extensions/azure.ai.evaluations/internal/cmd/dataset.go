@@ -66,11 +66,14 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidDatasetName(name)
+			}
 			if fromFile == "" {
 				return requireFlag("from-file")
 			}
 
-			localDir, err := datasetUploadDir(fromFile)
+			localSource, err := datasetUploadSource(fromFile)
 			if err != nil {
 				return err
 			}
@@ -102,7 +105,7 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 			}
 
 			ds, err := ec.datasetClient.UploadNextVersion(
-				ctx, name, version, localDir, ProjectEndpointAPIVersion,
+				ctx, name, version, localSource, ProjectEndpointAPIVersion,
 			)
 			if err != nil {
 				return messages.RegisteringDataset(name, err)
@@ -134,19 +137,46 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 	return cmd
 }
 
-// datasetUploadDir resolves what was named into the directory the upload scans.
-func datasetUploadDir(path string) (string, error) {
+// datasetUploadSource resolves what was named into the path the upload reads.
+//
+// A named file is returned as itself. Returning its directory would upload
+// whichever .jsonl sorts first, so pointing --from-file at one dataset in a
+// folder holding several would register a different one under that name — and
+// the fingerprint would describe the file that was named, so the two would
+// agree forever afterwards.
+//
+// A directory is resolved to the single .jsonl inside it, which is what the
+// flag offers. Several is not that, and picking one would be a guess.
+func datasetUploadSource(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", messages.ReadingFromFile(path, err)
 	}
-	if info.IsDir() {
+	if !info.IsDir() {
+		if !strings.EqualFold(filepath.Ext(path), ".jsonl") {
+			return "", messages.FromFileMustBeJSONL(path)
+		}
 		return path, nil
 	}
-	if !strings.EqualFold(filepath.Ext(path), ".jsonl") {
-		return "", messages.FromFileMustBeJSONL(path)
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return "", messages.ReadingFromFile(path, err)
 	}
-	return filepath.Dir(path), nil
+	var found []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".jsonl") {
+			found = append(found, e.Name())
+		}
+	}
+	switch len(found) {
+	case 0:
+		return "", messages.FromFileDirectoryHasNoJSONL(path)
+	case 1:
+		return filepath.Join(path, found[0]), nil
+	default:
+		return "", messages.FromFileDirectoryIsAmbiguous(path, found)
+	}
 }
 
 func newDatasetListCommand() *cobra.Command {
@@ -196,6 +226,9 @@ func newDatasetVersionsListCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidDatasetName(name)
+			}
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -253,6 +286,9 @@ func newDatasetShowCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidDatasetName(name)
+			}
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -318,6 +354,9 @@ func newDatasetDeleteCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidDatasetName(name)
+			}
 			if version == "" {
 				return requireFlag("version")
 			}

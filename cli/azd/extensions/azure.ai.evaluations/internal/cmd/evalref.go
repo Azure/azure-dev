@@ -5,8 +5,10 @@ package cmd
 
 import (
 	"context"
+	"sort"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 )
 
@@ -96,16 +98,38 @@ func (ec *evalContext) evalIDNamed(ctx context.Context, name string) string {
 
 // evalIDsNamed finds every eval the service lists under this name, newest
 // first, so a caller that must not guess can see the ambiguity.
+//
+// The order is established here rather than taken from the service, which does
+// not promise one. timestampString normalises both shapes the service uses for
+// created_at to RFC3339 UTC, and those sort chronologically as text. An eval
+// whose timestamp is missing or unparseable sorts last rather than winning by
+// accident.
 func (ec *evalContext) evalIDsNamed(ctx context.Context, name string) []string {
 	list, err := ec.evalClient.ListOpenAIEvals(ctx, 0)
 	if err != nil || list == nil {
 		return nil
 	}
-	var ids []string
+	return idsNamedIn(list, name)
+}
+
+// idsNamedIn picks the evals carrying this name, newest first.
+//
+// timestampString normalises both shapes the service uses for created_at to
+// RFC3339 UTC, and those sort chronologically as text. An eval whose timestamp
+// is missing or unparseable sorts last rather than winning by accident.
+func idsNamedIn(list *eval_api.OpenAIEvalList, name string) []string {
+	var matches []eval_api.OpenAIEval
 	for _, e := range list.Data {
 		if e.Name == name {
-			ids = append(ids, e.ID)
+			matches = append(matches, e)
 		}
+	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		return timestampString(matches[i].CreatedAt) > timestampString(matches[j].CreatedAt)
+	})
+	ids := make([]string, 0, len(matches))
+	for _, m := range matches {
+		ids = append(ids, m.ID)
 	}
 	return ids
 }

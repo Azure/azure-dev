@@ -117,6 +117,20 @@ func newInitCommand() *cobra.Command {
 				cfg.RemoveEval(evalName)
 			}
 
+			// Asked, not detected: an eval grades on a set, so there is no
+			// "the only one" to settle on, and which criteria define quality
+			// is the substantive decision in the configuration.
+			evaluatorsWereChosen := len(evaluators) > 0
+			if len(evaluators) == 0 {
+				var asked bool
+				evaluators, asked, err = resolveEvaluators(
+					cmd, cfg, target+"-quality", source == initSourceTraces)
+				if err != nil {
+					return err
+				}
+				evaluatorsWereChosen = asked
+			}
+
 			if err := os.MkdirAll(filepath.Join(path, project.DefaultDatasetsDir), 0o750); err != nil {
 				return messages.CreatingDatasetsDir(err)
 			}
@@ -171,7 +185,9 @@ func newInitCommand() *cobra.Command {
 			if source == initSourceTraces {
 				fmt.Fprint(out, messages.UsingTraceSource())
 			}
-			if names := plan.evaluatorNames(); len(names) > 0 {
+			// Only what was settled without asking: a reader who just picked
+			// from a list does not need it read back to them.
+			if names := plan.evaluatorNames(); len(names) > 0 && !evaluatorsWereChosen {
 				fmt.Fprint(out, messages.GradingWith(names))
 			}
 			if judgeModel != "" {
@@ -352,6 +368,13 @@ func planScaffold(in scaffoldInput) scaffold {
 				Name:   e,
 				Source: fmt.Sprintf("./%s/%s.json", project.DefaultEvaluatorsDir, e),
 			})
+			// Chosen, not defaulted, but it is still the rubric init offers to
+			// write, so it still has to be generated. Without this the config
+			// declares a file that nothing produces and `create` fails looking
+			// for it.
+			if e == in.rubricName {
+				out.generateRubric = true
+			}
 		}
 	}
 	eval.Evaluators = refs

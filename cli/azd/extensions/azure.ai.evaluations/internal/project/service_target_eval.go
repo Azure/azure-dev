@@ -16,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -247,16 +248,23 @@ func EvalConfigFromService(svc *azdext.ServiceConfig, projectRoot string) (*Eval
 		values = resolved
 	}
 
-	raw, err := json.Marshal(values)
+	// `$ref` is a directive, not configuration: ResolveFileRefs has already
+	// replaced it with the file's content. It only survives when resolution was
+	// skipped, and that config cannot deploy anyway.
+	delete(values, "$ref")
+
+	// Decoded by the same strict reader the on-disk path uses, so `azd up` and
+	// `azd ai eval run` name a mistyped key identically instead of one
+	// explaining it and the other ignoring it.
+	raw, err := yaml.Marshal(values)
 	if err != nil {
 		return nil, messages.ReadingServiceConfig(err)
 	}
-
-	var cfg EvalConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return nil, messages.ParsingServiceConfig(err)
+	cfg, err := DecodeEvalConfig(raw, svc.GetName())
+	if err != nil {
+		return nil, err
 	}
-	return &cfg, nil
+	return cfg, nil
 }
 
 // serviceProps prefers the inline properties, falling back to the nested

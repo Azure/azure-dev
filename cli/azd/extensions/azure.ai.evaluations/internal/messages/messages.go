@@ -101,6 +101,23 @@ func NothingToGenerateFrom() error {
 			"which selects traces to read and does not seed generation")
 }
 
+// SelectEvaluatorsPrompt asks which references the eval grades on.
+func SelectEvaluatorsPrompt() string {
+	return "Select evaluators to grade with:"
+}
+
+// SelectingEvaluators reports a failed evaluator prompt.
+func SelectingEvaluators(err error) error {
+	return fmt.Errorf("selecting evaluators: %w", err)
+}
+
+// NoEvaluatorsChosen reports an eval that would grade on nothing.
+func NoEvaluatorsChosen() error {
+	return errors.New(
+		"an eval has to grade on at least one evaluator: select one, or pass " +
+			"--evaluator")
+}
+
 // GateNeedsTheWait refuses a gate on a run the command will not wait for.
 //
 // The two flags together read as "start it and tell me if it regressed", but

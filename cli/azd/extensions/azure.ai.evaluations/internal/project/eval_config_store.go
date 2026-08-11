@@ -101,7 +101,17 @@ func LoadEvalConfig(path string) (*EvalConfig, error) {
 	if err != nil {
 		return nil, messages.ReadingEvalConfig(path, err)
 	}
+	return DecodeEvalConfig(data, path)
+}
 
+// DecodeEvalConfig is the one strict decoder, so every route into a
+// configuration reports a mistyped key the same way.
+//
+// `azd up` reads the configuration through the service entry rather than off
+// disk, and that route used json.Unmarshal, which drops unknown keys in
+// silence. The same typo was therefore named by `azd ai eval run` and ignored
+// by `azd up`. The name is what the diagnostic points at.
+func DecodeEvalConfig(data []byte, name string) (*EvalConfig, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 
@@ -112,7 +122,7 @@ func LoadEvalConfig(path string) (*EvalConfig, error) {
 		if errors.Is(err, io.EOF) {
 			return &cfg, nil
 		}
-		return nil, messages.ParsingEvalConfig(path, explainUnknownKeys(err))
+		return nil, messages.ParsingEvalConfig(name, explainUnknownKeys(err))
 	}
 	return &cfg, nil
 }

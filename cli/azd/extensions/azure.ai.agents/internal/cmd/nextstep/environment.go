@@ -140,7 +140,10 @@ func loadLegacyAgentEnvironment(
 			name,
 		)
 		if err != nil {
-			return nil, false, nil
+			return nil, false, fmt.Errorf(
+				"resolve legacy agent file path: %w",
+				err,
+			)
 		}
 
 		data, err := os.ReadFile(definitionPath) //nolint:gosec

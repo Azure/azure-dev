@@ -208,6 +208,21 @@ func TestLoadEffectiveAgentEnvironment_InvalidConfiguration(t *testing.T) {
 		assert.ErrorContains(t, err, "parse legacy agent file")
 	})
 
+	t.Run("invalid legacy service path", func(t *testing.T) {
+		t.Parallel()
+		svc := &azdext.ServiceConfig{
+			Name:         "echo",
+			Host:         agentHost,
+			RelativePath: "../outside",
+		}
+
+		_, err := loadEffectiveAgentEnvironment(svc, t.TempDir())
+
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "resolve legacy agent file path")
+		assert.ErrorContains(t, err, "must not contain '..'")
+	})
+
 	t.Run("non-scalar service env", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()

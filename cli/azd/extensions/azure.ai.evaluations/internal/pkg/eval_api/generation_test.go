@@ -23,14 +23,18 @@ func kindsOf(sources []GenerationSource) []string {
 
 // Naming a source is a request to send that one, not a hint. Everything the
 // plan could otherwise have offered stays out of the request.
+//
+// Demonstrated with prompt because it stands alone. Agent and traces are both
+// refused by the service unless a prompt or an agent accompanies them, so each
+// carries one; that carve-out is pinned in their own tests.
 func TestBuildGenerationSources_SendsOnlyWhatFromNamed(t *testing.T) {
 	sources, unbuildable := BuildGenerationSources(
-		[]string{"traces"},
+		[]string{"prompt"},
 		"support-agent", "3", "answer support questions",
 		&TraceOptions{Days: 7},
 	)
 
-	assert.Equal(t, []string{"traces"}, kindsOf(sources))
+	assert.Equal(t, []string{"prompt"}, kindsOf(sources))
 	assert.Empty(t, unbuildable)
 }
 
@@ -61,13 +65,32 @@ func TestBuildGenerationSources_InstructionsDoNotSubstituteForTheAgent(t *testin
 
 // The agent name travels with the traces source: it is what scopes the query
 // to this agent's conversations rather than the whole project's.
+//
+// The agent and its instructions are also sent as sources of their own, because
+// the service refuses a request carrying neither a prompt nor an agent.
+// Verified against it: traces alone is a 400 naming that requirement, traces
+// plus agent is accepted. The prompt is what the agent-seeding retry falls back
+// to, so without it a traces run has no way through that failure.
 func TestBuildGenerationSources_TracesCarryTheAgent(t *testing.T) {
 	sources, _ := BuildGenerationSources(
-		[]string{"traces"}, "support-agent", "", "", &TraceOptions{Days: 7},
+		[]string{"traces"}, "support-agent", "", "answer support questions",
+		&TraceOptions{Days: 7},
 	)
 
-	require.Len(t, sources, 1)
-	assert.Equal(t, "support-agent", sources[0].AgentName)
+	assert.Equal(t, []string{"prompt", "agent", "traces"}, kindsOf(sources))
+	assert.True(t, HasPromptSource(WithoutAgentSource(sources)),
+		"dropping the agent must leave something the service still accepts")
+}
+
+// Without an agent the traces source names nothing to read, and nothing the
+// service accepts can accompany it, so it is refused here rather than sent.
+func TestBuildGenerationSources_TracesNeedAnAgent(t *testing.T) {
+	sources, unbuildable := BuildGenerationSources(
+		[]string{"traces"}, "", "", "", nil,
+	)
+
+	assert.Empty(t, sources)
+	assert.Equal(t, []string{"traces"}, unbuildable)
 }
 
 // A day window narrows the trace query; it is not what authorizes it. The
@@ -78,9 +101,9 @@ func TestBuildGenerationSources_TracesWithoutAWindowAreUnbounded(t *testing.T) {
 		[]string{"traces"}, "support-agent", "", "", nil,
 	)
 
-	require.Len(t, sources, 1)
-	assert.Equal(t, "traces", sources[0].Type)
-	assert.Zero(t, sources[0].StartTime,
+	require.Len(t, sources, 2)
+	assert.Equal(t, "traces", sources[1].Type)
+	assert.Zero(t, sources[1].StartTime,
 		"an absent window must leave start_time off the wire, not pin it to now")
 	assert.Empty(t, unbuildable)
 }
@@ -90,9 +113,9 @@ func TestBuildGenerationSources_TraceWindowBecomesAStartTime(t *testing.T) {
 		[]string{"traces"}, "support-agent", "", "", &TraceOptions{Days: 7},
 	)
 
-	require.Len(t, sources, 1)
+	require.Len(t, sources, 2)
 	want := time.Now().AddDate(0, 0, -7).Unix()
-	assert.InDelta(t, want, sources[0].StartTime, 60)
+	assert.InDelta(t, want, sources[1].StartTime, 60)
 }
 
 // No --from is no preference, so the plan sends everything it happens to have.

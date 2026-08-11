@@ -72,10 +72,17 @@ func BuildGenerationSources(
 	// which is what decides whether an empty-handed source is an error.
 	asked := func(kind string) bool { return want[kind] }
 
+	// A traces source names the agent whose traces to read, but the service
+	// still requires a prompt or an agent beside it, so traces on their own are
+	// refused for every agent. The agent travels with them for the same reason
+	// it travels with a prompt below. Verified against the service: traces alone
+	// is a 400, traces plus agent is accepted.
+	tracesNeedTheAgent := asked("traces") && agentName != ""
+
 	// The agent is settled first because whether it was built decides whether
 	// its instructions have anything to be the instructions of.
 	var agentSource *GenerationSource
-	if selected("agent") {
+	if selected("agent") || tracesNeedTheAgent {
 		switch {
 		case agentName != "":
 			agentSource = &GenerationSource{Type: "agent", AgentName: agentName}
@@ -91,8 +98,9 @@ func BuildGenerationSources(
 	// travel with it as a prompt. That is also the only shape the service
 	// currently honours: the agent source alone fails for every agent, and the
 	// prompt is what the retry in generateDataset falls back to. Without this,
-	// `--from agent` would be a request that always fails.
-	promptCarriesTheAgent := agentSource != nil && asked("agent")
+	// `--from agent` would be a request that always fails, and `--from traces`
+	// would have nothing to fall back to when agent seeding fails.
+	promptCarriesTheAgent := agentSource != nil && (asked("agent") || tracesNeedTheAgent)
 	if selected("prompt") || promptCarriesTheAgent {
 		switch {
 		case instruction != "":
@@ -113,6 +121,10 @@ func BuildGenerationSources(
 		// A window narrows the request; it does not authorize it. Asking for
 		// traces without one means every trace the agent has.
 		switch {
+		case agentName == "" && asked("traces"):
+			// Without an agent the source names nothing to read and carries
+			// nothing the service accepts beside it.
+			unbuildable = append(unbuildable, "traces")
 		case traces != nil && traces.Days > 0:
 			sources = append(sources, GenerationSource{
 				Type:      "traces",

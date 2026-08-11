@@ -16,9 +16,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// firstDatasetVersion is the version the service assigns to a dataset's first
-// publish, and so the one that exists for every dataset that exists at all.
-const firstDatasetVersion = "1"
+// firstDatasetVersions are the versions a dataset's first publish can carry,
+// probed when the version listing has not caught up yet.
+//
+// The service assigns nothing; the client picks. This CLI's first publish is
+// NextVersion(""), so probing a hardcoded "1" never found a dataset this CLI
+// had just created -- which is the one case the probe exists for. "1" is still
+// probed because a generation job, the SDK or the portal can register one.
+var firstDatasetVersions = []string{dataset_api.NextVersion(""), "1"}
 
 // newDatasetCreateCommand builds `dataset create <name>`, which registers a
 // dataset that does not exist yet.
@@ -75,12 +80,15 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 			if !exists {
 				// The version listing lags a publish, so a `create` followed by
 				// an `update` was told the dataset it had just made does not
-				// exist. A direct read of the first version settles it: point
-				// reads go consistent immediately.
-				if _, err := ec.datasetClient.GetDataset(
-					ctx, name, firstDatasetVersion, ProjectEndpointAPIVersion,
-				); err == nil {
-					exists = true
+				// exist. A direct read settles it: point reads go consistent
+				// immediately.
+				for _, v := range firstDatasetVersions {
+					if _, err := ec.datasetClient.GetDataset(
+						ctx, name, v, ProjectEndpointAPIVersion,
+					); err == nil {
+						exists = true
+						break
+					}
 				}
 			}
 			if err := checkAssetExistence(verb, "dataset", name, exists); err != nil {

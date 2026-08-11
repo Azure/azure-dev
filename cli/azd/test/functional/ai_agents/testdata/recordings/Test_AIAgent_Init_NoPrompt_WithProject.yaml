@@ -3362,6 +3362,21 @@ interactions:
         status: 200 OK
         code: 200
         duration: 1.4071139s
+    - id: 47
+      request:
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/projects/test-proj0?api-version=2025-06-01
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding: []
+        trailer: {}
+        content_length: 988
+        uncompressed: false
+        body: '{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/projects/test-proj0","name":"test-ai-account-000/test-proj0","type":"Microsoft.CognitiveServices/accounts/projects","etag":"\"3f01e98b-0000-0a00-0000-6a38cf830000\"","location":"canadacentral","kind":"AIServices","properties":{"endpoints":{"AI Foundry API":"https://test-ai-account-000.services.ai.azure.com/api/projects/test-proj0"},"isDefault":true,"internalId":"e764be7a68dc4a3bb1bc75bde375f40d","provisioningState":"Succeeded"},"identity":{"principalId":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","tenantId":"11111111-1111-1111-1111-111111111111","type":"SystemAssigned"},"systemData":{"createdBy":"test-user@email.com","createdByType":"User","createdAt":"2026-06-22T06:00:28.8975386Z","lastModifiedBy":"test-user@email.com","lastModifiedByType":"User","lastModifiedAt":"2026-06-22T06:00:28.8975386Z"}}'
+        status: 200 OK
+        code: 200
 ---
 model_deployment: gpt-4o
 project_id: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/projects/test-proj0

@@ -1,6 +1,6 @@
 # Release History
 
-## 1.0.0-beta.1 (Unreleased)
+## 1.0.2-beta (Unreleased)
 
 ### Features Added
 
@@ -25,3 +25,21 @@
   `context`, `instruction_id_list` — work by binding them to dataset columns.
   A required column the dataset does not carry is reported before the request
   is sent, naming the column.
+
+### Bugs Fixed
+
+- `init`, and the errors that name a deploy command, now name the one this
+  project can actually run. Eval assets are data-plane only, so `azd up`
+  fails compiling a missing `infra/main.bicep` in a project that ships no
+  infrastructure; `azd deploy` is reported there, and `azd up` where the
+  project does provision.
+- A failed eval listing is no longer reported as an eval that was never
+  deployed. The two were indistinguishable, so a token or service failure
+  told the reader to run `azd up` and publish a second copy of an eval that
+  already existed.
+- Listings follow their continuation cursors, so an eval, run, dataset or
+  evaluator past the first page is no longer invisible. A truncated built-in
+  evaluator listing was also silently disabling local validation of an
+  evaluator's required initialization parameters.
+- A run whose result carries no verdict is no longer counted as a failure.
+- Flags and values that were accepted and then ignored are now refused.

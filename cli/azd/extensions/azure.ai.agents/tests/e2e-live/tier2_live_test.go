@@ -128,7 +128,10 @@ func newRunner(t *testing.T, mode string) *runner {
 	setupConfigDir(t, configDir)
 
 	env := withoutGitHubTokenEnv(os.Environ())
-	env = append(env, "AZD_CONFIG_DIR="+configDir)
+	env = append(env,
+		"AZD_CONFIG_DIR="+configDir,
+		"AZD_NON_INTERACTIVE=false",
+	)
 	if tenant := os.Getenv("E2E_TENANT"); tenant != "" {
 		env = append(env, "AZURE_TENANT_ID="+tenant)
 	}

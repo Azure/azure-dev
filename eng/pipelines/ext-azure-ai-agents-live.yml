@@ -129,8 +129,9 @@ extends:
               # missing extensions, so both must be installed before provisioning.
               # The config is generated FROM extension.yaml via yq so manifest
               # fields (capabilities, namespace, usage, ...) cannot drift from a
-              # hand-maintained copy here; only test-specific fields (path, source,
-              # sentinel version) are injected.
+              # hand-maintained copy here; only test-specific fields (path and source)
+              # are injected. Version is preserved so generated project constraints
+              # validate the local build.
               - bash: |
                   set -euo pipefail
                   # Map the agent architecture to azd's expected binary suffix so
@@ -171,7 +172,7 @@ extends:
                           "providers": $agents.providers,
                           "displayName": $agents.displayName,
                           "description": $agents.description,
-                          "version": "0.0.0-test",
+                          "version": $agents.version,
                           "usage": $agents.usage,
                           "path": "extensions/azure.ai.agents/" + env(AGENTS_BIN_NAME),
                           "source": "azd"
@@ -183,7 +184,7 @@ extends:
                           "providers": $projects.providers,
                           "displayName": $projects.displayName,
                           "description": $projects.description,
-                          "version": "0.0.0-test",
+                          "version": $projects.version,
                           "usage": $projects.usage,
                           "path": "extensions/azure.ai.projects/" + env(PROJECTS_BIN_NAME),
                           "source": "azd"

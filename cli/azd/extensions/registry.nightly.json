@@ -8,7 +8,8 @@
       "description": "This extension provides examples of the azd extension framework.",
       "versions": [
         {
-          "version": "0.7.2-nightly.6687599",
+          "version": "0.8.0-nightly.6693654",
+          "requiredAzdVersion": ">=1.31.0",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -67,13 +68,18 @@
               "name": "copilot",
               "description": "Interactive Copilot chat loop demonstrating CopilotService gRPC API.",
               "usage": "azd demo copilot [--model <model>] [--resume]"
+            },
+            {
+              "name": "telemetry",
+              "description": "Report a sample usage event through the telemetry service.",
+              "usage": "azd demo telemetry"
             }
           ],
           "artifacts": {
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "02cbef0fd6121851be4144cb86b2e589931391ff44def5cff9cbfc6e5c13107d"
+                "value": "78364a6be07e8c3f1d95cf34b3b6a9ebea76a674a6354ad76de907b1c3d612e3"
               },
               "entryPoint": "microsoft-azd-demo-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-darwin-amd64.zip"
@@ -81,7 +87,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "47d07351c393855718912e779593a6c4e7eb7ec3c6fd877d827818a99cc40160"
+                "value": "5c6e790d50725ff8d8a4e0e72de7f3244222f989460533bd8dcb04fd7af7f76e"
               },
               "entryPoint": "microsoft-azd-demo-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-darwin-arm64.zip"
@@ -89,7 +95,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "2ed1b825b9a77719dc34ac837cc14669b178c0fc1a39ee560233fc997b011c59"
+                "value": "b2a0dcc686022c8a7105353cd5e0c0eeff42cfb0df0668ead4f3889d70cb3ba4"
               },
               "entryPoint": "microsoft-azd-demo-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-linux-amd64.tar.gz"
@@ -97,7 +103,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "bbd57486f23b8cbbc352789e112ee4d37f36ca3d56081b9481daab473a38f555"
+                "value": "621b8dbc5b3d0b6593220be2ad4b684b87e5d9bf6c082a099ab994830ae3bf3a"
               },
               "entryPoint": "microsoft-azd-demo-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-linux-arm64.tar.gz"
@@ -105,7 +111,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "a17615099352af84cee91e4dc688d839c012f83d1fed91ccbbe500f57443e857"
+                "value": "cfbc39d248cfdbe587af150c85a067d95c8c7e66b97af08c4f66fa7f33f26c81"
               },
               "entryPoint": "microsoft-azd-demo-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-windows-amd64.zip"
@@ -113,7 +119,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "0176f4b0265ed0edae074be6dd4d05e556576685add801931bc6a98cf94f243b"
+                "value": "4c47c322a8c2fda188e7d8b678bed6cdbada9f9e731a3ca99b3d00ed93675842"
               },
               "entryPoint": "microsoft-azd-demo-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-windows-arm64.zip"

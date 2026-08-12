@@ -489,7 +489,8 @@ source succeeds but records nothing, as does any report past the limit of 100
 spans per `azd` invocation. This is a configuration-based admission check, not
 a cryptographic provenance guarantee.
 
-Source categories are classified from the configured source type and location, not the user-defined source name. Raw source names, URLs, paths, and hosts are not emitted.
+Source-category fields are classified from the configured source type and location, not the user-defined source name.
+Raw source names, URLs, paths, and hosts are not emitted in those fields.
 </details>
 
 <details>

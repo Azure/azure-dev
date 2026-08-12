@@ -17,7 +17,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -700,18 +699,4 @@ func looksLikeLocalDataset(v string) bool {
 		return true
 	}
 	return strings.EqualFold(filepath.Ext(v), ".jsonl")
-}
-
-func writeYAML(path string, v any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return messages.Creating(filepath.Dir(path), err)
-	}
-	data, err := yaml.Marshal(v)
-	if err != nil {
-		return messages.Serializing(path, err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return messages.Writing(path, err)
-	}
-	return nil
 }

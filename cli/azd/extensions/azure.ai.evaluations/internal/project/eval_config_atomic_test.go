@@ -41,9 +41,7 @@ func TestSaveEvalConfigNeverExposesAHalfWrittenFile(t *testing.T) {
 	var truncated int
 	var replacements int64
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		deadline := time.Now().Add(500 * time.Millisecond)
 		for time.Now().Before(deadline) {
 			cfg, err := LoadEvalConfig(path)
@@ -60,11 +58,9 @@ func TestSaveEvalConfigNeverExposesAHalfWrittenFile(t *testing.T) {
 			}
 		}
 		close(stop)
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			select {
 			case <-stop:
@@ -75,7 +71,7 @@ func TestSaveEvalConfigNeverExposesAHalfWrittenFile(t *testing.T) {
 				}
 			}
 		}
-	}()
+	})
 	wg.Wait()
 
 	require.NotZero(t, atomic.LoadInt64(&replacements),
@@ -98,9 +94,7 @@ func TestOpenEvalConfigNeverSeesTheFileVanish(t *testing.T) {
 	stop := make(chan struct{})
 	var vanished, replacements int64
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// Wall clock, not an iteration count. Three hundred os.Stat calls take
 		// microseconds, which is not long enough for the writer to be scheduled
 		// even once -- the test passed against the unlinking version it was
@@ -112,10 +106,8 @@ func TestOpenEvalConfigNeverSeesTheFileVanish(t *testing.T) {
 			}
 		}
 		close(stop)
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		for {
 			select {
 			case <-stop:
@@ -126,7 +118,7 @@ func TestOpenEvalConfigNeverSeesTheFileVanish(t *testing.T) {
 				}
 			}
 		}
-	}()
+	})
 	wg.Wait()
 
 	require.NotZero(t, atomic.LoadInt64(&replacements),

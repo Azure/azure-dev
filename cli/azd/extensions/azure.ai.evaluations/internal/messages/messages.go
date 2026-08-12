@@ -1904,10 +1904,10 @@ func ConfigLockUnavailable(evalDir string, err error) error {
 	if err == nil {
 		return fmt.Errorf(
 			"another process is still updating %s, so this update is not "+
-				"serialised against it", filepath.ToSlash(evalDir))
+				"serialized against it", filepath.ToSlash(evalDir))
 	}
 	return fmt.Errorf(
-		"could not lock %s, so this update is not serialised against other "+
+		"could not lock %s, so this update is not serialized against other "+
 			"processes: %w", filepath.ToSlash(evalDir), err)
 }
 
@@ -2176,7 +2176,7 @@ func RequestFailed(err error) error {
 	return fmt.Errorf("HTTP request failed: %w", err)
 }
 
-// ServiceRefused turns an unauthorised answer into one that says what to do.
+// ServiceRefused turns an unauthorized answer into one that says what to do.
 // Every other status is left as the service reported it.
 func ServiceRefused(status int, err error) error {
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {

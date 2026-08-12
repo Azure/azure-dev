@@ -122,7 +122,7 @@ var errNoAzdEnvironment = messages.ErrNoAzdEnvironment
 //
 // Running outside a project is ordinary -- the atomic commands are meant to
 // work standalone against the data plane -- so having nowhere to write is not
-// worth a word. Anything else is: these keys are how a later deploy recognises
+// worth a word. Anything else is: these keys are how a later deploy recognizes
 // what it already published, and losing one silently means the next `azd up`
 // creates a second immutable version of something it had already created.
 //

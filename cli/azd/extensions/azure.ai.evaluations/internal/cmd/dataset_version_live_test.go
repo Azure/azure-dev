@@ -75,7 +75,7 @@ func TestLiveDatasetVersionIsNeverOverwritten(t *testing.T) {
 	require.Error(t, err,
 		"publishing over an existing dataset version must be refused, not accepted")
 	assert.True(t, dataset_api.IsVersionConflict(err),
-		"the refusal must be a conflict the reconciler can recognise; got: %v", err)
+		"the refusal must be a conflict the reconciler can recognize; got: %v", err)
 }
 
 // TestLiveDatasetUpdateAddsAVersion is the other half: the ordinary path must

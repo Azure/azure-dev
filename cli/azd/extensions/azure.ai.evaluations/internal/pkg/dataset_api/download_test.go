@@ -39,7 +39,7 @@ func TestPickDatasetBlobPrefersJSONL(t *testing.T) {
 		pickDatasetBlob([]string{"data.JSONL"}), "the extension match is case-insensitive")
 }
 
-// With nothing recognisable, any real file beats returning nothing.
+// With nothing recognizable, any real file beats returning nothing.
 func TestPickDatasetBlobFallsBackToAnyFile(t *testing.T) {
 	require.Equal(t, "data.csv", pickDatasetBlob([]string{"data.csv"}))
 	require.Empty(t, pickDatasetBlob([]string{"folder/"}))

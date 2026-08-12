@@ -25,7 +25,7 @@ func TestSaveEvalConfigReplacesAReadOnlyFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "azure.eval.yaml")
 	first := &EvalConfig{Evals: []Eval{{Name: "first", EvaluationLevel: "turn"}}}
 	require.NoError(t, SaveEvalConfigTo(path, first))
-	require.NoError(t, os.Chmod(path, 0o444))
+	require.NoError(t, os.Chmod(path, 0o400))
 
 	second := &EvalConfig{Evals: []Eval{{Name: "second", EvaluationLevel: "turn"}}}
 	require.NoError(t, SaveEvalConfigTo(path, second),

@@ -253,7 +253,7 @@ func (c *DatasetClient) StartPendingUpload(
 // Bounded: these bypass the SDK pipeline, so nothing else stops a hung storage
 // endpoint from holding the command open until someone kills it. Generous, so
 // a large dataset over a slow link still finishes. One client, so connections
-// are reused across upload, finalise, list and download.
+// are reused across upload, finalize, list and download.
 var blobHTTPClient = &http.Client{Timeout: 10 * time.Minute}
 
 // UploadBlob uploads data to a container SAS URI as a block blob.
@@ -453,7 +453,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 	// carries none of the risk that following a body-supplied link would.
 	var names []string
 	marker := ""
-	for pages := 0; pages < maxPages; pages++ {
+	for range maxPages {
 		page := *u
 		q := page.Query()
 		q.Set("restype", "container") // cspell:ignore restype — Azure Storage API query parameter
@@ -487,6 +487,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 
 // readBlobPage performs one container listing request.
 func (c *DatasetClient) readBlobPage(req *http.Request) ([]string, string, error) {
+	//nolint:gosec // the URI is the SAS the dataset service issued for this dataset, not caller input
 	resp, err := blobHTTPClient.Do(req)
 	if err != nil {
 		return nil, "", messages.ListingContainerBlobs(err)

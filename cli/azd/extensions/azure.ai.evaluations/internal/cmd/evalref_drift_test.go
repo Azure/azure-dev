@@ -104,7 +104,7 @@ func writeEvalYAML(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
 	evals := filepath.Join(dir, "evals")
-	require.NoError(t, os.MkdirAll(evals, 0o755))
+	require.NoError(t, os.MkdirAll(evals, 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(evals, "eval.yaml"), []byte(body), 0o600))
 	return evals
 }

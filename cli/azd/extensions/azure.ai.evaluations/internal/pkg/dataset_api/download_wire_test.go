@@ -39,10 +39,10 @@ type storageServer struct {
 
 	// credential is the sasUri handed back for a download, relative to the
 	// server's own address.
-	credentialPath string
+	uriPath string
 	// blobs maps a container-relative blob name to its content.
 	blobs map[string]string
-	// directBlobStatus is the status a direct GET of credentialPath answers.
+	// directBlobStatus is the status a direct GET of uriPath answers.
 	directBlobStatus int
 
 	gotListQuery url.Values
@@ -66,7 +66,7 @@ func (s *storageServer) start(t *testing.T) (*DatasetClient, *httptest.Server) {
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 				"blobReferenceForConsumption": map[string]any{
-					"credential": map[string]any{"sasUri": srv.URL + s.credentialPath + "?sig=secret"},
+					"credential": map[string]any{"sasUri": srv.URL + s.uriPath + "?sig=secret"},
 				},
 			}))
 
@@ -80,7 +80,7 @@ func (s *storageServer) start(t *testing.T) (*DatasetClient, *httptest.Server) {
 			_, _ = w.Write([]byte(blobListing(names...)))
 
 		// A direct read of the credential URI itself, keyed under "".
-		case r.URL.Path == s.credentialPath:
+		case r.URL.Path == s.uriPath:
 			s.gotBlobPaths = append(s.gotBlobPaths, r.URL.Path)
 			if s.directBlobStatus != 0 {
 				w.WriteHeader(s.directBlobStatus)
@@ -90,7 +90,7 @@ func (s *storageServer) start(t *testing.T) (*DatasetClient, *httptest.Server) {
 
 		default:
 			s.gotBlobPaths = append(s.gotBlobPaths, r.URL.Path)
-			body, ok := s.blobs[strings.TrimPrefix(r.URL.Path, s.credentialPath+"/")]
+			body, ok := s.blobs[strings.TrimPrefix(r.URL.Path, s.uriPath+"/")]
 			if !ok {
 				w.WriteHeader(http.StatusNotFound)
 				return
@@ -109,8 +109,8 @@ func (s *storageServer) start(t *testing.T) (*DatasetClient, *httptest.Server) {
 // the container must never be listed.
 func TestDownloadDatasetContentReadsABlobURIDirectly(t *testing.T) {
 	server := &storageServer{
-		credentialPath: "/c/rows.jsonl",
-		blobs:          map[string]string{"": `{"query":"direct"}`},
+		uriPath: "/c/rows.jsonl",
+		blobs:   map[string]string{"": `{"query":"direct"}`},
 	}
 	client, _ := server.start(t)
 
@@ -125,7 +125,7 @@ func TestDownloadDatasetContentReadsABlobURIDirectly(t *testing.T) {
 // directly returns a 409, so the blob inside has to be found first.
 func TestDownloadDatasetContentListsAContainerURI(t *testing.T) {
 	server := &storageServer{
-		credentialPath: "/generated-container",
+		uriPath: "/generated-container",
 		blobs: map[string]string{
 			"_meta.json": `{"ignored":true}`,
 			"data.jsonl": `{"query":"from the container"}`,
@@ -148,7 +148,7 @@ func TestDownloadDatasetContentListsAContainerURI(t *testing.T) {
 // download succeeds rather than surfacing the first status.
 func TestDownloadDatasetContentFallsBackWhenTheBlobReadFails(t *testing.T) {
 	server := &storageServer{
-		credentialPath:   "/c/looks.jsonl",
+		uriPath:          "/c/looks.jsonl",
 		directBlobStatus: http.StatusConflict,
 		blobs:            map[string]string{"real.jsonl": `{"query":"found by listing"}`},
 	}
@@ -163,7 +163,7 @@ func TestDownloadDatasetContentFallsBackWhenTheBlobReadFails(t *testing.T) {
 // An empty container is a dataset with nothing to read, and saying so beats
 // returning empty content that looks like a dataset with no rows.
 func TestDownloadDatasetContentReportsAnEmptyContainer(t *testing.T) {
-	server := &storageServer{credentialPath: "/empty", blobs: map[string]string{}}
+	server := &storageServer{uriPath: "/empty", blobs: map[string]string{}}
 	client, _ := server.start(t)
 
 	_, err := client.DownloadDatasetContent(context.Background(), "ds", "1.0", testAPIVersion)

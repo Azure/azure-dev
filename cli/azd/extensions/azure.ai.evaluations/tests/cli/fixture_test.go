@@ -271,7 +271,7 @@ func buildFixture(logf func(string, ...any)) (*evalFixture, error) {
 	}
 	logf("started runs %s and %s", first, second)
 
-	// Polled together: they are independent, and serialising them doubles the
+	// Polled together: they are independent, and serializing them doubles the
 	// slowest part of the suite for nothing.
 	errs := make(chan error, 2)
 	for _, runID := range []string{first, second} {

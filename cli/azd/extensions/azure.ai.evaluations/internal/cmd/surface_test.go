@@ -367,7 +367,7 @@ func TestTaggedSuitesNameFlagsThatExist(t *testing.T) {
 		if d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return nil
 		}
-		body, err := os.ReadFile(path)
+		body, err := os.ReadFile(path) //nolint:gosec // walking this package's own source
 		if err != nil {
 			return err
 		}
@@ -403,7 +403,7 @@ func TestSuggestedFlagsExist(t *testing.T) {
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		body, err := os.ReadFile(path)
+		body, err := os.ReadFile(path) //nolint:gosec // walking this package's own source
 		if err != nil {
 			return err
 		}
@@ -592,7 +592,7 @@ func TestSuggestedCommandsCarryNoPlaceholders(t *testing.T) {
 			return nil
 		}
 
-		body, err := os.ReadFile(path)
+		body, err := os.ReadFile(path) //nolint:gosec // walking this package's own source
 		if err != nil {
 			return err
 		}

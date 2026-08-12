@@ -107,7 +107,7 @@ func TestWriteResultsJSONL_EachLineParsesAlone(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, writeResultsJSONL(&buf, twoCriteriaRun()))
 
-	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
 		var row map[string]any
 		assert.NoErrorf(t, json.Unmarshal([]byte(line), &row), "line is not self-contained: %s", line)
 	}

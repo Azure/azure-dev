@@ -463,7 +463,7 @@ func (r *evalReconciler) EnsureEval(
 	if cached == "" && !recreate {
 		// Nothing recorded under this name, but the substance may already be
 		// deployed under the name it had before. The environment records the id
-		// against the digest as well, which is what recognises a rename rather
+		// against the digest as well, which is what recognizes a rename rather
 		// than reading it as a delete plus an add.
 		if adopted := r.adoptRenamed(ctx, group, digest); adopted != "" {
 			cached = adopted

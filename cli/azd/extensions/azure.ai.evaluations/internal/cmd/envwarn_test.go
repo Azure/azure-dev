@@ -14,7 +14,7 @@ import (
 // The atomic commands are meant to work standalone against the data plane, so
 // running outside a project is ordinary. Warning about nowhere to persist would
 // be noise on every standalone invocation.
-func TestNoAzdEnvironmentIsRecognisable(t *testing.T) {
+func TestNoAzdEnvironmentIsRecognizable(t *testing.T) {
 	err := fmt.Errorf("%w to write %s into", errNoAzdEnvironment, "EVAL_RUN_ID")
 
 	require.ErrorIs(t, err, errNoAzdEnvironment,

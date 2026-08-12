@@ -22,7 +22,7 @@ import (
 func writeDataset(t *testing.T, rows string) string {
 	t.Helper()
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "datasets"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "datasets"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "datasets", "d.jsonl"), []byte(rows), 0o600))
 	configPath := filepath.Join(dir, "eval.yaml")
 	config := "datasets:\n  - name: d\n    source: ./datasets/d.jsonl\n"

@@ -277,62 +277,6 @@ func buildRunCommand(use, short string) *cobra.Command {
 	return cmd
 }
 
-// resolveEvalIDFromConfig finds the eval to run against, creating it when it
-// has never been deployed. Resolution order: an id pinned on the group, then
-// the azd environment, then create.
-func (ec *evalContext) resolveEvalIDFromConfig(
-	ctx context.Context,
-	group *project.Eval,
-	configPath string,
-	level string,
-	out interface{ Write([]byte) (int, error) },
-	jsonMode bool,
-) (string, error) {
-	if group.ID != "" {
-		return group.ID, nil
-	}
-
-	for _, key := range evalIDKeys(group.Name, filepath.Dir(configPath)) {
-		cached := ec.getEnvValue(ctx, key)
-		if cached == "" {
-			continue
-		}
-		// Confirm it still exists; a deleted group should fall through to create.
-		if _, err := ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
-			return cached, nil
-		}
-	}
-
-	if !jsonMode {
-		fmt.Fprint(out, messages.CreatingEval(group.Name))
-	}
-
-	// The level from the flag wins over the eval's own declaration, so it has
-	// to reach the criteria that accept evaluation_level.
-	effective := *group
-	if level != "" {
-		effective.EvaluationLevel = level
-	}
-
-	req, err := buildEvalRequest(
-		&effective,
-		ec.evaluatorSchemas(ctx),
-		datasetColumns(configPath, group),
-	)
-	if err != nil {
-		return "", err
-	}
-	created, err := ec.evalClient.CreateOpenAIEval(ctx, req)
-	if err != nil {
-		return "", messages.CreatingEvalFailed(group.Name, err)
-	}
-	if err := ec.setEnvValue(ctx, idKey("eval", group.Name), created.ID); err != nil {
-		fmt.Fprint(out, messages.Warning(err))
-	}
-	ec.remember(ctx, envKeyEvalID, created.ID)
-	return created.ID, nil
-}
-
 // evalIDKeys lists the env entries that may hold this eval's id, most
 // specific first.
 //
@@ -567,17 +511,6 @@ func (ec *evalContext) readRegisteredDataset(
 	return items, nil
 }
 
-// datasetColumns reports the columns a group's dataset provides, so criteria
-// bind only to fields that exist and a missing required field is caught
-// locally rather than as a service rejection.
-//
-// A nil result means the columns are unknown, which is the case for a dataset
-// already registered in the project. The builder then assumes every field an
-// evaluator accepts is present.
-func datasetColumns(configPath string, group *project.Eval) map[string]bool {
-	return datasetColumnsFromPath(localDatasetPath(configPath, group))
-}
-
 // datasetColumnsFromPath reads one row to learn the dataset's shape. An empty
 // path, or an unreadable file, yields nil.
 func datasetColumnsFromPath(localPath string) map[string]bool {
@@ -803,7 +736,7 @@ func timestampString(value any) string {
 	case nil:
 		return ""
 	case string:
-		// Normalised, not passed through: the service returns sub-second
+		// Normalized, not passed through: the service returns sub-second
 		// precision and an offset here and epoch seconds elsewhere, so two
 		// listings would otherwise spell the same instant differently.
 		if parsed, err := time.Parse(time.RFC3339, t); err == nil {

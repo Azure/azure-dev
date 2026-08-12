@@ -21,7 +21,7 @@ import (
 func TestDeclaredInstructions_ResolvesRelativeToTheSpec(t *testing.T) {
 	dir := t.TempDir()
 	specDir := filepath.Join(dir, "evals")
-	require.NoError(t, os.MkdirAll(filepath.Join(specDir, "agent"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(specDir, "agent"), 0o750))
 
 	body := "Answer only from the product catalog."
 	require.NoError(t, os.WriteFile(

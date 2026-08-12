@@ -170,11 +170,11 @@ func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 	defer os.Remove(tmpName)
 
 	if _, err := tmp.Write(body); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return messages.WritingEvalConfig(path, err)
 	}
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return messages.WritingEvalConfig(path, err)
 	}
 	if err := tmp.Close(); err != nil {

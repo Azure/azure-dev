@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -338,12 +339,7 @@ func itemColumn(binding string) (string, bool) {
 }
 
 func contains(values []string, want string) bool {
-	for _, v := range values {
-		if v == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }
 
 // buildEvalRequest converts an eval declaration into the create

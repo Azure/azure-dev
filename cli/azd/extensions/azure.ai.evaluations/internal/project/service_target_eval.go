@@ -54,7 +54,6 @@ type EvalServiceTargetProvider struct {
 	newReconciler func(ctx context.Context) (Reconciler, error)
 
 	serviceConfig *azdext.ServiceConfig
-	envName       string
 }
 
 // NewEvalServiceTargetProvider builds the provider. The reconciler is supplied

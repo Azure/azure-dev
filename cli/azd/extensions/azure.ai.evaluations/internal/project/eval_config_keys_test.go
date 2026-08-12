@@ -67,7 +67,7 @@ func TestExplainUnknownKeys_AnotherToolsFile(t *testing.T) {
 		"suggesting a fix per key sends the reader down the wrong path entirely")
 }
 
-// One stray key beside recognised ones is still a typo, so the suggestion stands.
+// One stray key beside recognized ones is still a typo, so the suggestion stands.
 func TestExplainUnknownKeys_OneStrayTopLevelKey(t *testing.T) {
 	got := explainUnknownKeys(errors.New(
 		"yaml: unmarshal errors:\n  line 1: field datsets not found in type project.EvalConfig")).Error()

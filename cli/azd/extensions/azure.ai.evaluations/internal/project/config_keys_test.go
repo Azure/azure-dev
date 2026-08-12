@@ -25,13 +25,13 @@ import (
 func yamlKeys(t *testing.T, v any) []string {
 	t.Helper()
 	typ := reflect.TypeOf(v)
-	for typ.Kind() == reflect.Ptr {
+	for typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
 
 	var keys []string
-	for i := range typ.NumField() {
-		tag := typ.Field(i).Tag.Get("yaml")
+	for field := range typ.Fields() {
+		tag := field.Tag.Get("yaml")
 		if tag == "" || tag == "-" {
 			continue
 		}

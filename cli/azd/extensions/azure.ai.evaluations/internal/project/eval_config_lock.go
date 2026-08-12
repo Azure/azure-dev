@@ -33,7 +33,7 @@ const configLockTimeout = 30 * time.Second
 // temp is answered by ignoreLockFile.
 const evalConfigLockName = ".azure.eval.lock"
 
-// LockEvalConfig serialises read-modify-write on the configuration across
+// LockEvalConfig serializes read-modify-write on the configuration across
 // processes, returning the release function.
 //
 // Updating the configuration means reading the file, adding an entry and

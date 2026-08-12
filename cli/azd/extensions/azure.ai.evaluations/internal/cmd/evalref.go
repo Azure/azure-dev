@@ -147,7 +147,7 @@ func (ec *evalContext) evalIDNamed(ctx context.Context, name string) string {
 // first, so a caller that must not guess can see the ambiguity.
 //
 // The order is established here rather than taken from the service, which does
-// not promise one. timestampString normalises both shapes the service uses for
+// not promise one. timestampString normalizes both shapes the service uses for
 // created_at to RFC3339 UTC, and those sort chronologically as text. An eval
 // whose timestamp is missing or unparseable sorts last rather than winning by
 // accident.
@@ -164,7 +164,7 @@ func (ec *evalContext) evalIDsNamed(ctx context.Context, name string) ([]string,
 
 // idsNamedIn picks the evals carrying this name, newest first.
 //
-// timestampString normalises both shapes the service uses for created_at to
+// timestampString normalizes both shapes the service uses for created_at to
 // RFC3339 UTC, and those sort chronologically as text. An eval whose timestamp
 // is missing or unparseable sorts last rather than winning by accident.
 func idsNamedIn(list *eval_api.OpenAIEvalList, name string) []string {

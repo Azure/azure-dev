@@ -180,21 +180,3 @@ func refuseExistingArtifact(path string, force bool) error {
 	}
 	return nil
 }
-
-// reportGenerated closes out either command.
-//
-// With --no-wait nothing was downloaded and there is no ref, which is success:
-// the submission message has already said how to reattach.
-func reportGenerated(cmd *cobra.Command, ref *project.ArtifactRef, noWait bool) error {
-	out := cmd.OutOrStdout()
-	if ref == nil {
-		if !noWait {
-			fmt.Fprint(out, messages.NothingGenerated())
-		}
-		return nil
-	}
-	if isJSON(cmd) {
-		return emitJSON(out, ref)
-	}
-	return nil
-}

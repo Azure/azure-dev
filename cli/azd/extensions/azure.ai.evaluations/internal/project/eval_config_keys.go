@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// goTypeInField matches what yaml.KnownFields reports for an unrecognised key:
+// goTypeInField matches what yaml.KnownFields reports for an unrecognized key:
 // `line 7: field evaulators not found in type project.Eval`. The Go type is an
 // implementation detail, and the reader is editing a YAML file by hand, which
 // is the documented way to use one.
@@ -25,16 +25,16 @@ func explainUnknownKeys(err error) error {
 		return err
 	}
 
-	// Nothing at the top level was recognised, so this is another tool's file
+	// Nothing at the top level was recognized, so this is another tool's file
 	// rather than a typo in one of ours. `azd ai agent eval` writes an eval.yaml
 	// of its own, and suggesting a near-miss for each of its keys in turn would
 	// walk the reader into rewriting it a line at a time.
 	if topLevelKeysAllUnknown(text) {
-		return errUnrecognisedEvalConfig
+		return errUnrecognizedEvalConfig
 	}
 
 	lines := make([]string, 0, 4)
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		m := goTypeInField.FindStringSubmatch(line)
 		if m == nil {
 			continue
@@ -56,7 +56,7 @@ func explainUnknownKeys(err error) error {
 	return fmt.Errorf("%s", strings.Join(lines, "\n"))
 }
 
-var errUnrecognisedEvalConfig = errors.New(
+var errUnrecognizedEvalConfig = errors.New(
 	"none of this file's top-level keys are ones an eval configuration declares, " +
 		"so this is not one. `azd ai agent eval` writes an eval.yaml of its own with " +
 		"a different shape, and runs it with `azd ai agent eval run`")
@@ -67,11 +67,11 @@ var errUnrecognisedEvalConfig = errors.New(
 // another tool's file can still have a key named like one of ours, and the
 // mismatch inside it then reports against the nested type rather than the
 // config. The threshold is the number of keys a configuration declares, so one
-// stray key beside recognised ones stays a typo.
+// stray key beside recognized ones stays a typo.
 func topLevelKeysAllUnknown(text string) bool {
 	known := keysOfType("project.EvalConfig")
 	rejected := 0
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		m := goTypeInField.FindStringSubmatch(line)
 		if m == nil || m[2] != "project.EvalConfig" {
 			continue
@@ -103,8 +103,8 @@ func keysOfType(goType string) []string {
 
 	t := reflect.TypeOf(v)
 	keys := make([]string, 0, t.NumField())
-	for i := 0; i < t.NumField(); i++ {
-		tag, _, _ := strings.Cut(t.Field(i).Tag.Get("yaml"), ",")
+	for field := range t.Fields() {
+		tag, _, _ := strings.Cut(field.Tag.Get("yaml"), ",")
 		if tag != "" && tag != "-" {
 			keys = append(keys, tag)
 		}

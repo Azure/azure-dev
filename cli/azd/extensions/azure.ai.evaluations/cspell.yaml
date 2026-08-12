@@ -3,25 +3,32 @@ words:
   # Go module and package names
   - azureaieval
   - evalcore
+  - exterrors
   - httptest
+  - projectctx
   - creack
   # Service identifiers and API fields
   - evalrun
   - lookback
   - AOAI
+  - ARMID
   # Built-in evaluator names
   - ifeval
   - groundedness
   # Repository names
   - foundrysdk
+  # Deliberate misspelling: the fixture the unknown-key tests are about
+  - evaulators
   # Terms
   - inlines
   - negotiables
   - parseable
+  - preselection
   - retargeted
   - subsetting
   - undeployed
   - undoable
+  - unbuildable
   - unpassed
   - unscored
   - Unparseable

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -17,12 +18,13 @@ import (
 )
 
 func blobPage(marker string, names ...string) string {
-	body := `<?xml version="1.0" encoding="utf-8"?><EnumerationResults><Blobs>`
+	var body strings.Builder
+	body.WriteString(`<?xml version="1.0" encoding="utf-8"?><EnumerationResults><Blobs>`)
 	for _, n := range names {
-		body += fmt.Sprintf(`<Blob><Name>%s</Name></Blob>`, n)
+		body.WriteString(fmt.Sprintf(`<Blob><Name>%s</Name></Blob>`, n))
 	}
-	body += `</Blobs><NextMarker>` + marker + `</NextMarker></EnumerationResults>`
-	return body
+	body.WriteString(`</Blobs><NextMarker>` + marker + `</NextMarker></EnumerationResults>`)
+	return body.String()
 }
 
 // DownloadDatasetContent falls back to listing the container and taking the

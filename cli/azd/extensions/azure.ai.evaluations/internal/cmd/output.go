@@ -22,15 +22,6 @@ import (
 
 const outputJSON = "json"
 
-// Progress markers from the azd style guide, so the extension's lines sit
-// alongside core's without a second vocabulary. The wording lives in messages
-// with everything else the CLI says.
-const (
-	doneMark    = messages.DoneMark
-	skippedMark = messages.SkippedMark
-	failedMark  = messages.FailedMark
-)
-
 // writePortalLink closes a detail view with the asset's portal URL.
 //
 // Last line and cyan, matching the sibling extensions, and silent when there is
@@ -180,7 +171,7 @@ func writeFileAtomic(path string, body []byte) error {
 	defer os.Remove(tmpName)
 
 	if _, err := tmp.Write(body); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return messages.Creating(path, err)
 	}
 	if err := tmp.Chmod(0o600); err != nil {

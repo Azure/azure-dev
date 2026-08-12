@@ -344,6 +344,16 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	require.Contains(t, upAttrs, fields.CmdArgsCount.Key)
 	require.Equal(t, float64(0), upAttrs[fields.CmdArgsCount.Key])
 
+	// The synthetic phase spans mirror the argument-less stand-alone
+	// sub-commands, so they carry cmd.args.count=0 like the real command spans
+	// (keeping the command entry-point schema complete). cmd.deploy is not
+	// emitted in this failing-provision scenario, so it is exercised elsewhere.
+	for _, name := range []string{"cmd.package", "cmd.provision"} {
+		attrs := attributesMap(cmdSpans[name].Attributes)
+		require.Contains(t, attrs, fields.CmdArgsCount.Key, "%s must carry cmd.args.count", name)
+		require.Equal(t, float64(0), attrs[fields.CmdArgsCount.Key], "%s cmd.args.count must be 0", name)
+	}
+
 	// infra.provider is scoped to the provisioning lifecycle. The minimal project has no explicit
 	// provider, so it resolves to the default ("bicep"). It is recorded as a slice of the resolved
 	// providers and must be present with that value on cmd.provision and the parent cmd.up span,

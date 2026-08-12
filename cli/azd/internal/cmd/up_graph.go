@@ -156,15 +156,21 @@ func (u *UpGraphAction) Run(
 	// approximate (package and provision phases overlap in the unified
 	// graph), but preserves the cmd.up → cmd.package + cmd.provision
 	// parent/child relationship and required attribute set
-	// (SubscriptionIdKey, EnvNameKey, CmdEntry, CmdFlags). Span ordering
-	// in the trace file is not guaranteed (BatchSpanProcessor batches
-	// asynchronously); consumers should look up spans by name.
+	// (SubscriptionIdKey, EnvNameKey, CmdEntry, CmdFlags, CmdArgsCount).
+	// Span ordering in the trace file is not guaranteed (BatchSpanProcessor
+	// batches asynchronously); consumers should look up spans by name.
 	parentChangedFlags := changedFlagNames(parentFlags)
 	packageFlags := append([]string{"all"}, parentChangedFlags...)
 	_, packageSpan := tracing.Start(ctx, "cmd.package")
 	packageSpan.SetAttributes(fields.CmdFlags.StringSlice(packageFlags))
+	// The synthetic phase spans mirror the argument-less stand-alone
+	// `azd package`/`provision`/`deploy` sub-commands, so stamp the same
+	// cmd.args.count=0 the cobra middleware records on real command spans,
+	// keeping the command entry-point schema complete for dashboards.
+	packageSpan.SetAttributes(fields.CmdArgsCount.Int(0))
 	provisionSpanCtx, provisionSpan := tracing.Start(ctx, "cmd.provision")
 	provisionSpan.SetAttributes(fields.CmdFlags.StringSlice(parentChangedFlags))
+	provisionSpan.SetAttributes(fields.CmdArgsCount.Int(0))
 	// Attach infra.provider directly to the synthetic cmd.provision span (mirroring the stand-alone
 	// `azd provision` span). It is deliberately not copied onto cmd.package, and it is set on the
 	// span directly rather than via the process-global usage bag so it does not leak across spans.
@@ -1210,6 +1216,9 @@ func emitDeploySpan(
 	deployFlags := append([]string{"all"}, changedFlags...)
 	_, deploySpan := tracing.Start(ctx, "cmd.deploy", trace.WithTimestamp(start))
 	deploySpan.SetAttributes(fields.CmdFlags.StringSlice(deployFlags))
+	// Match the argument-less stand-alone `azd deploy` (and the sibling
+	// synthetic cmd.package/cmd.provision spans) with cmd.args.count=0.
+	deploySpan.SetAttributes(fields.CmdArgsCount.Int(0))
 	deploySpan.SetAttributes(usageAttrs...)
 	if err := deployOutcomeError(result, upstreamFailed); err != nil {
 		MapError(err, deploySpan)

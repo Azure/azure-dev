@@ -674,9 +674,15 @@ window below — before that fix no synthetic `cmd.deploy` span was recorded und
   `cmd.deploy` span is emitted under `up` at all**, so the `cmd.deploy` success
   rate is **deflated** (it misses the high-success under-`up` deploy population).
 - **From the #9054 fix onward:** each synthetic span carries the **real**
-  per-phase outcome — on failure it gets the same status + ResultCode a
-  stand-alone `azd provision` / `azd package` / `azd deploy` would report (via
-  `cmd.MapError`). `cmd.deploy` is emitted **only when the deploy phase actually
+  per-phase outcome — on failure it gets the status + ResultCode `cmd.MapError`
+  produces for that phase's error. For most failures this matches what the
+  stand-alone `azd provision` / `azd package` / `azd deploy` command reports. One
+  deliberate exception: when a provision error is wrapped with a user-facing
+  suggestion (`ErrorWithSuggestion`), stand-alone `azd provision` reports
+  `error.suggestion`, whereas the synthetic `cmd.provision` span maps the
+  underlying graph-step error so the specific ARM/Bicep ResultCode (e.g.
+  `tool.bicep.failed`, `service.arm.deployment.failed`) is preserved for
+  dashboards. `cmd.deploy` is emitted **only when the deploy phase actually
   ran**; when provision/package fails first (FailFast skips deploy) no
   `cmd.deploy` span is emitted, matching legacy `azd up` where the deploy
   sub-command never ran.

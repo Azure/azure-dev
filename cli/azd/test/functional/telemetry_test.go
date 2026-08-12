@@ -366,18 +366,14 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	require.Equal(t, "Error", cmdSpans["cmd.provision"].Status.Code,
 		"cmd.provision must report Error when provisioning fails under azd up")
 	// Assert the *exact* ResultCode, not merely that one is present: a bare
-	// non-empty check would also pass for the degraded classifications #9054
-	// guards against (the error.suggestion collapse or the internal.unclassified
-	// fallback). Removing infra/main.bicep makes provisioning fail early in
-	// AnalyzeLayerDependencies, where reading the missing file yields an
-	// *fs.PathError wrapping a syscall.Errno; cmd.MapError records that deepest
-	// type as "internal.syscall_Errno" — the same code a stand-alone
-	// `azd provision` reports. A live typed Bicep/ARM code (e.g. tool.bicep.failed)
-	// is deliberately not exercised here: it would drive provisioning past
-	// auth/subscription selection into a real bicep build, defeating this test's
-	// fast, offline design.
-	require.Equal(t, "internal.syscall_Errno", cmdSpans["cmd.provision"].Status.Description,
-		"cmd.provision must carry the real failure ResultCode, not a degraded or empty one")
+	// non-empty check would also pass for a degraded classification (e.g. the
+	// internal.unclassified fallback), silently weakening this guard. With
+	// infra/main.bicep absent, the provision step fails when `bicep build` cannot
+	// find the template, surfacing as an *exec.ExitError that cmd.MapError maps to
+	// the typed "tool.bicep.failed" ResultCode — the same code a stand-alone
+	// `azd provision` reports for this failure.
+	require.Equal(t, "tool.bicep.failed", cmdSpans["cmd.provision"].Status.Description,
+		"cmd.provision must carry the real Bicep failure ResultCode")
 
 	// The minimal project has no services, so packaging has nothing to fail on;
 	// cmd.package must not be misreported as an error.

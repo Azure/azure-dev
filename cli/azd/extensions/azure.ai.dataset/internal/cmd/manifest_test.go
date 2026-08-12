@@ -26,7 +26,7 @@ func TestManifestVersionMatchesVersionFile(t *testing.T) {
 	require.NoError(t, err, "reading extension.yaml")
 
 	var declared string
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		if rest, ok := strings.CutPrefix(strings.TrimRight(line, "\r"), "version:"); ok {
 			declared = strings.TrimSpace(rest)
 			break

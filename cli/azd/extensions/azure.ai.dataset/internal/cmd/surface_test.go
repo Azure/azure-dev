@@ -138,7 +138,7 @@ func TestSuggestedCommandsExist(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		for _, line := range strings.Split(string(body), "\n") {
+		for line := range strings.SplitSeq(string(body), "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "//") {
 				continue
 			}
@@ -199,7 +199,7 @@ func TestSuggestedFlagsExist(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		for _, line := range strings.Split(string(body), "\n") {
+		for line := range strings.SplitSeq(string(body), "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "//") {
 				continue
 			}

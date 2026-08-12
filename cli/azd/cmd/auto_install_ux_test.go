@@ -355,10 +355,19 @@ func TestAutoInstallExtensionRequirementsNoPrompt(t *testing.T) {
 	)
 	require.Len(t, console.SpinnerOps(), 4)
 	assert.Equal(t, input.StepDone, console.SpinnerOps()[1].Format)
-	assert.Contains(t, console.SpinnerOps()[1].Message, "(1.2.3)")
-	assert.Contains(t, console.SpinnerOps()[1].Message, " from 'azd'")
+	assert.Equal(
+		t,
+		"Installing "+output.WithHighLightFormat("demo")+
+			output.WithGrayFormat(" (1.2.3)")+" from azd",
+		console.SpinnerOps()[1].Message,
+	)
 	assert.Equal(t, input.StepDone, console.SpinnerOps()[3].Format)
-	assert.Contains(t, console.SpinnerOps()[3].Message, " from 'local'")
+	assert.Equal(
+		t,
+		"Installing "+output.WithHighLightFormat("storage")+
+			output.WithGrayFormat(" (1.2.3)")+" from local",
+		console.SpinnerOps()[3].Message,
+	)
 	require.NotEmpty(t, console.Output())
 	assert.Empty(t, console.Output()[len(console.Output())-1])
 }
@@ -388,7 +397,7 @@ func TestAutoInstallExtensionRequirementsInstallFailure(t *testing.T) {
 	assert.Equal(t, input.StepFailed, console.SpinnerOps()[1].Format)
 	assert.Equal(
 		t,
-		"Installing "+output.WithHighLightFormat("demo")+" extension",
+		"Installing "+output.WithHighLightFormat("demo"),
 		console.SpinnerOps()[1].Message,
 	)
 }
@@ -562,7 +571,7 @@ func TestAutoInstallExtensionRequirementsOmitsSourceWhenSelectionUsesOneSource(t
 	require.Len(t, console.SpinnerOps(), 2)
 	assert.Equal(
 		t,
-		"Installing "+output.WithHighLightFormat("demo")+" extension"+
+		"Installing "+output.WithHighLightFormat("demo")+
 			output.WithGrayFormat(" (1.2.3)"),
 		console.SpinnerOps()[1].Message,
 	)

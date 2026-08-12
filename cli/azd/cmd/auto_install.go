@@ -429,10 +429,7 @@ func tryAutoInstallExtensionVersion(
 		preInstalledIds[id] = struct{}{}
 	}
 
-	stepMessage := fmt.Sprintf(
-		"Installing %s extension",
-		output.WithHighLightFormat(extension.Id),
-	)
+	stepMessage := extensionTaskMessage("Installing", extension.Id)
 	console.ShowSpinner(ctx, stepMessage, input.Step)
 	installedVersion, err := extensionManager.Install(ctx, &extension, versionPreference)
 	if err != nil {
@@ -442,7 +439,7 @@ func tryAutoInstallExtensionVersion(
 
 	stepMessage += output.WithGrayFormat(" (%s)", installedVersion.Version)
 	if displaySource {
-		stepMessage += fmt.Sprintf(" from '%s'", extension.Source)
+		stepMessage += fmt.Sprintf(" from %s", extension.Source)
 	}
 	console.StopSpinner(ctx, stepMessage, input.StepDone)
 	if len(installedVersion.Dependencies) > 0 {

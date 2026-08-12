@@ -658,8 +658,11 @@ OperationId: 28ce1f2898a4fec84522107e36c22038
 Since **v1.25.0** the unified `azd up` graph runs provision, package, publish, and
 deploy in-process as `exegraph.step`s rather than as child `azd provision` /
 `azd package` / `azd deploy` commands. To preserve the historical nested-span
-shape, `up` emits **synthetic** `cmd.provision`, `cmd.package`, and `cmd.deploy`
-spans as children of `cmd.up`.
+shape, `up` emits **synthetic** phase spans as children of `cmd.up`. The
+`cmd.provision` and `cmd.package` spans have been emitted since **v1.25.0**;
+`cmd.deploy` is emitted only **from the issue #9054 fix onward** (see the version
+window below — before that fix no synthetic `cmd.deploy` span was recorded under
+`up`).
 
 **Success/ResultCode behavior differs by version — mind the window when reading dashboards:**
 

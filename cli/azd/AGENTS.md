@@ -36,14 +36,22 @@ cli/azd/
 
 ## Agency and MCP Tools
 
-This repository includes an [`agency.toml`](../../agency.toml) configuration for [Agency](https://aka.ms/agency), Microsoft's internal AI engineering environment.
+For Microsoft contributors, this repository's [`agency.toml`](../../agency.toml) preconfigures [Agency](https://aka.ms/agency) with Azure DevOps MCP access for the `azure-sdk` organization and Kusto MCP access to the `DevCli` database. Prefer these tools for ADO operations and authorized telemetry investigations. Do not expose customer-identifying data in issues, pull requests, logs, or generated artifacts.
 
-It preconfigures:
+### Checking Azure DevOps Pipelines
 
-- **Azure DevOps MCP** for the `azure-sdk` organization.
-- **Kusto MCP** for the `DevCli` database on the shared telemetry cluster.
+All repository-owned azd pipelines are in the Azure DevOps `internal` project:
 
-Use the Azure DevOps MCP for ADO operations and the Kusto MCP for authorized telemetry investigations. Handle telemetry according to the repository's privacy and data-classification guidance, and do not expose customer-identifying data in issues, pull requests, logs, or generated artifacts.
+- [Core and repository pipelines](https://dev.azure.com/azure-sdk/internal/_build?definitionScope=%5Cazure-dev) are under `\azure-dev`.
+- [Extension pipelines](https://dev.azure.com/azure-sdk/internal/_build?definitionScope=%5Cazure-dev%5Cextensions) are under `\azure-dev\extensions`.
+
+When investigating a pipeline:
+
+- Start from the GitHub pull request check link when available. It identifies the exact Azure DevOps build and often the specific job.
+- Otherwise, locate the relevant pipeline in the folders above.
+- Correlate runs using the pull request number, commit SHA, and source branch.
+- Inspect the failed or running job logs first. Distinguish the root failure from secondary warnings, infrastructure noise, or downstream failures.
+- For releases, distinguish publishing from validation using the source branch and template parameters. For the core CLI pipeline, `DoPublish=true` identifies a publishing release run.
 
 ## Development
 

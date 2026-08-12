@@ -1216,7 +1216,8 @@ func classifyActivityBotError(err error, msaAppID string) error {
 			exterrors.CodeMsaAppIDAlreadyInUse,
 			fmt.Sprintf("Azure Bot MsaAppID %q is already in use", msaAppID),
 			"botservice",
-			"set a unique Bot name or remove the existing Azure Bot bound to this MsaAppID, then retry",
+			"configure the Activity Bot name to use the existing Azure Bot bound to this MsaAppID, "+
+				"or remove that Bot, then retry",
 		)
 	}
 	return exterrors.ServiceFromAzure(err, exterrors.OpEnsureActivityBot)

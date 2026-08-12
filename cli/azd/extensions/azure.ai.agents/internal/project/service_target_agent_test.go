@@ -144,6 +144,12 @@ func TestClassifyActivityBotErrorUsesMsaAppIDConflictCode(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "ensure_activity_bot.msa_app_id_already_in_use", serviceErr.ErrorCode)
 	require.Equal(t, "botservice", serviceErr.ServiceName)
+	require.Equal(
+		t,
+		"configure the Activity Bot name to use the existing Azure Bot bound to this MsaAppID, "+
+			"or remove that Bot, then retry",
+		serviceErr.Suggestion,
+	)
 }
 
 func TestIsMultipleBotsForMsaAppIDError(t *testing.T) {

@@ -238,23 +238,33 @@ func (ec *evalContext) getEnvValue(ctx context.Context, key string) string {
 // ships none fails compiling a missing infra/main.bicep and never reaches
 // them -- naming `azd up` there hands the reader a failure instead of a fix.
 func (ec *evalContext) deployCommand(ctx context.Context) string {
-	if ec.deployCmd == "" {
-		ec.deployCmd = deployCommandName(ec.azdProject(ctx))
+	if ec.deployCmd != "" {
+		return ec.deployCmd
 	}
-	return ec.deployCmd
+
+	proj, err := ec.azdProject(ctx)
+	name := deployCommandName(proj)
+	if err != nil {
+		// A project we could not read is not a project without infrastructure.
+		// Answer for this call, but do not cache what a transport failure said:
+		// one hiccup would otherwise downgrade the advice for the whole process.
+		return name
+	}
+	ec.deployCmd = name
+	return name
 }
 
-// azdProject reads the project azd is running against, or nil when there is
-// none to read.
-func (ec *evalContext) azdProject(ctx context.Context) *azdext.ProjectConfig {
+// azdProject reads the project azd is running against. A nil project with no
+// error means azd answered and there is none; an error means it did not answer.
+func (ec *evalContext) azdProject(ctx context.Context) (*azdext.ProjectConfig, error) {
 	if ec.azdClient == nil {
-		return nil
+		return nil, nil
 	}
 	resp, err := ec.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return resp.GetProject()
+	return resp.GetProject(), nil
 }
 
 // deployCommandName is projectCanProvision phrased as the command to run.

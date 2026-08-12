@@ -2157,15 +2157,24 @@ func SettingRequestBody(err error) error {
 // RequestFailed reports a request that never reached an answer.
 //
 // A credential that cannot mint a token fails here rather than as a 401, and
-// the SDK's own text for it names neither azd nor the way out. Matched on the
-// credential type's name because that is what the SDK puts in the message;
-// anything else is passed through unchanged.
+// the SDK's own text for it names neither azd nor the way out. isCredentialFailure
+// decides which is which; see it for how.
 //
 // The hint is in the message as well as the suggestion because the suggestion
 // is not rendered on every surface, and it offers a retry first: this call
 // shells out to `azd auth token`, which has been seen to fail transiently
-// against a login that was perfectly valid.
+// against a login that was perfectly valid -- measured once at over 70 seconds,
+// long enough to lose to a deadline.
 func RequestFailed(err error) error {
+	if isCredentialUnavailable(err) {
+		// Not an expired login, and `azd auth login` cannot be run to fix it.
+		return exterrors.Auth(
+			exterrors.CodeAuthFailed,
+			fmt.Sprintf(
+				"could not get a token for the Foundry project because azd itself "+
+					"could not be run: %v", err),
+			"check that `azd` is installed and on PATH")
+	}
 	if isCredentialFailure(err) {
 		return exterrors.Auth(
 			exterrors.CodeLoginExpired,
@@ -2175,6 +2184,22 @@ func RequestFailed(err error) error {
 			"try the command again, then `azd auth login` if it keeps failing")
 	}
 	return fmt.Errorf("HTTP request failed: %w", err)
+}
+
+// isCredentialUnavailable reports the credential never having run at all, as
+// opposed to running and being refused.
+//
+// azidentity's credentialUnavailableError is unexported, so this matches the
+// two messages it carries for that case. Worth separating because the answer
+// to both is not `azd auth login` -- you cannot log in with a tool that is not
+// on PATH.
+func isCredentialUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "executable not found on path") ||
+		strings.Contains(text, "is not recognized")
 }
 
 // ServiceRefused turns an unauthorized answer into one that says what to do.

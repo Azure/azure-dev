@@ -235,8 +235,7 @@ func newInitCommand() *cobra.Command {
 			// Only what was actually scheduled is offered. Suggesting
 			// `dataset generate` for a dataset the caller supplied sends them
 			// to submit a billed job for an artifact they already have.
-			proj, _ := readAzdProject(cmd.Context())
-			next := plan.nextSteps(deployCommandName(proj))
+			next := plan.nextSteps(deployCommandName(azdProject))
 			fmt.Fprint(out, messages.FirstNextStep(next[0]))
 			for _, step := range next[1:] {
 				fmt.Fprint(out, messages.FurtherNextStep(step))
@@ -532,11 +531,18 @@ const azdDefaultInfraDir = "infra"
 
 // projectCanProvision reports whether `azd provision` has anything to compile.
 //
-// This mirrors azd's own detection, which infers the provider from the files in
-// the infra directory and leaves it unspecified when that directory is missing.
-// Unspecified then falls back to Bicep, which fails on the absent
-// infra/main.bicep -- verified against azd 1.30.0, where `azd up` on an
-// eval-only project exits 1 and `azd deploy` succeeds.
+// This mirrors the provider sniff in azd's detectProviderFromFiles: the
+// provider is inferred from the files in the infra directory, and a missing
+// directory leaves it unspecified, which falls back to Bicep and fails on the
+// absent infra/main.bicep -- verified against azd 1.30.0, where `azd up` on an
+// eval-only project exits 1 and `azd deploy` does not run either.
+//
+// It is deliberately only that sniff. azd's real decision, ProjectInfrastructure,
+// is also satisfied by infra layers, a .NET Aspire AppHost, and a `resources:`
+// block in azure.yaml, none of which look at this directory. Each makes this
+// answer false where `azd up` would have worked, so the cost of being wrong is
+// naming our own command in a project that could also have provisioned -- which
+// still publishes the eval.
 func projectCanProvision(proj *azdext.ProjectConfig) bool {
 	if proj == nil {
 		return false

@@ -65,6 +65,28 @@ func TestRequestFailedOnlyClaimsAuthForRealCredentialFailures(t *testing.T) {
 	})
 }
 
+// A credential that never ran is a different problem from one that ran and was
+// refused, and `azd auth login` is not the answer to it -- you cannot log in
+// with a tool that is not on PATH.
+func TestRequestFailedSeparatesAnUnrunnableCredentialFromAnExpiredLogin(t *testing.T) {
+	for _, text := range []string{
+		"AzureDeveloperCLICredential: executable not found on path",
+		"AzureDeveloperCLICredential: 'azd' is not recognized as an internal or external command",
+	} {
+		err := RequestFailed(errors.New(text))
+
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "azd auth login",
+			"cannot log in with a tool that will not run: %s", text)
+		assert.Contains(t, err.Error(), "could not be run")
+	}
+
+	// The expired-login case must still say what fixes it.
+	err := RequestFailed(errors.New("AzureDeveloperCLICredential: exit status 1"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "azd auth login")
+}
+
 // A 401 or 403 is the service refusing a token it did read, which is a
 // different fix from a token that was never minted.
 func TestServiceRefusedOnlyRewritesUnauthorized(t *testing.T) {

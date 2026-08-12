@@ -593,8 +593,16 @@ type OutputResult struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// Failed reports whether any evaluator failed this row.
+// Failed reports whether this row is one to look at: any evaluator failed it,
+// or it produced no verdict at all.
+//
+// A row that errored badly enough to carry no results used to answer false, so
+// --failed-only hid it -- and that filter is exactly where someone looks to
+// find out what went wrong.
 func (o OutputItem) Failed() bool {
+	if len(o.Results) == 0 {
+		return true
+	}
 	for _, r := range o.Results {
 		if !r.Passed {
 			return true

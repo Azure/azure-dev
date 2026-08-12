@@ -1911,6 +1911,16 @@ func ConfigLockUnavailable(evalDir string, err error) error {
 			"processes: %w", filepath.ToSlash(evalDir), err)
 }
 
+// PageLinkLeftTheService reports a paging link pointing somewhere else.
+//
+// The link arrives in a response body and this client sends an Authorization
+// header, so following one to another host would send the token there.
+func PageLinkLeftTheService(expected, got string) error {
+	return fmt.Errorf(
+		"the service returned a paging link for %q while this client is "+
+			"talking to %q, so it was not followed", got, expected)
+}
+
 // SampleSizeOutOfRange reports a row count the generation service would reject.
 func SampleSizeOutOfRange(min, max, got int) error {
 	return fmt.Errorf("sample size must be between %d and %d, got %d", min, max, got)

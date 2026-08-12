@@ -21,7 +21,11 @@ type DatasetList struct {
 
 // ListDatasets returns the datasets registered on the project.
 func (c *DatasetClient) ListDatasets(ctx context.Context, apiVersion string) (*DatasetList, error) {
-	return doRequestTyped[DatasetList](c, ctx, http.MethodGet, pathDatasets, nil, nil, apiVersion)
+	first, err := doRequestTyped[DatasetList](c, ctx, http.MethodGet, pathDatasets, nil, nil, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+	return c.walkDatasetPages(ctx, first)
 }
 
 // ListDatasetVersions returns every version of a single dataset.
@@ -31,7 +35,11 @@ func (c *DatasetClient) ListDatasetVersions(
 	apiVersion string,
 ) (*DatasetList, error) {
 	path := fmt.Sprintf("%s/%s/versions", pathDatasets, url.PathEscape(name))
-	return doRequestTyped[DatasetList](c, ctx, http.MethodGet, path, nil, nil, apiVersion)
+	first, err := doRequestTyped[DatasetList](c, ctx, http.MethodGet, path, nil, nil, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+	return c.walkDatasetPages(ctx, first)
 }
 
 // DeleteDatasetVersion removes a single dataset version.

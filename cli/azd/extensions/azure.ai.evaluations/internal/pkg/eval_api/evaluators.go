@@ -146,9 +146,15 @@ func (c *EvalClient) ListEvaluators(
 	if evaluatorType != "" {
 		query = map[string]string{"type": evaluatorType}
 	}
-	return doRequestTyped[EvaluatorListResponse](
+	first, err := doRequestTyped[EvaluatorListResponse](
 		c, ctx, http.MethodGet, pathEvaluators, query, nil, apiVersion,
 	)
+	if err != nil {
+		return nil, err
+	}
+	return walkNextLinks(ctx, c, first,
+		func(l *EvaluatorListResponse) string { return l.NextLink },
+		func(into, page *EvaluatorListResponse) { into.Value = append(into.Value, page.Value...) })
 }
 
 // ListEvaluatorVersions returns every version of one evaluator.
@@ -158,9 +164,15 @@ func (c *EvalClient) ListEvaluatorVersions(
 	apiVersion string,
 ) (*EvaluatorListResponse, error) {
 	path := pathEvaluators + "/" + url.PathEscape(name) + "/versions"
-	return doRequestTyped[EvaluatorListResponse](
+	first, err := doRequestTyped[EvaluatorListResponse](
 		c, ctx, http.MethodGet, path, nil, nil, apiVersion,
 	)
+	if err != nil {
+		return nil, err
+	}
+	return walkNextLinks(ctx, c, first,
+		func(l *EvaluatorListResponse) string { return l.NextLink },
+		func(into, page *EvaluatorListResponse) { into.Value = append(into.Value, page.Value...) })
 }
 
 // LatestEvaluatorVersionNumber reports the newest registered version as an

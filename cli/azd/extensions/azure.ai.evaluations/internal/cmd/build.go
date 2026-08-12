@@ -258,12 +258,71 @@ func planCriterion(
 	return plan, nil
 }
 
+// checkEvaluatorRequirements refuses a declaration the evaluators cannot
+// satisfy, before anything is published.
+//
+// The same checks happen while building the request, but that runs after the
+// datasets and evaluators have been pushed -- so a missing judge deployment
+// cost an immutable dataset version per attempt, and the version numbers climb
+// whether or not the eval was ever created. Only what the published contract
+// alone can settle is checked here: the data mapping needs the dataset's
+// columns, which is a separate question.
+func checkEvaluatorRequirements(
+	eval *project.Eval,
+	schemas map[string]*eval_api.EvaluatorSummary,
+) error {
+	level := resolveLevel(eval)
+	for _, ref := range eval.Evaluators {
+		schema := schemas[ref.Evaluator]
+		if schema == nil {
+			// Nothing published to check against. The service still gets the
+			// last word, which is what happened before this existed.
+			continue
+		}
+		if !schema.SupportsLevel(level) {
+			return messages.EvaluatorLevelUnsupported(
+				ref.Evaluator, level, schema.SupportedEvaluationLevels)
+		}
+
+		initSchema := schema.InitSchema()
+		if initSchema == nil {
+			continue
+		}
+		var missing []string
+		for _, name := range initSchema.Required {
+			if declaredInitParam(ref, name) {
+				continue
+			}
+			if name == "evaluation_level" && level != "" {
+				continue
+			}
+			missing = append(missing, name)
+		}
+		if len(missing) > 0 {
+			return messages.EvaluatorNeedsInitParams(ref.Evaluator, missing)
+		}
+	}
+	return nil
+}
+
+// declaredInitParam reports whether the reference supplies a parameter under
+// either spelling of the judge deployment.
+func declaredInitParam(ref evalcore.EvaluatorRef, name string) bool {
+	if _, ok := ref.InitializationParameters[name]; ok {
+		return true
+	}
+	if alias, ok := judgeModelAliases[name]; ok {
+		_, declared := ref.InitializationParameters[alias]
+		return declared
+	}
+	return false
+}
+
 // judgeModelAliases maps the two spellings of the judge deployment onto each
 // other, so one declaration works whichever the evaluator publishes.
 var judgeModelAliases = map[string]string{
 	"deployment_name": "model",
-	"model":           "deployment_name",
-}
+	"model":           "deployment_name"}
 
 // itemColumn reads the dataset column out of an `{{item.<name>}}` binding.
 func itemColumn(binding string) (string, bool) {

@@ -72,6 +72,13 @@ func newEvalCreateCommand() *cobra.Command {
 
 			reconciler := &evalReconciler{ec: ec}
 			out := cmd.OutOrStdout()
+
+			// Before anything is pushed. Publishing is not free -- a dataset
+			// version is immutable and the number climbs on every attempt -- so
+			// a declaration the evaluators cannot satisfy is refused first.
+			if err := checkEvaluatorRequirements(eval, ec.evaluatorSchemas(ctx)); err != nil {
+				return err
+			}
 			// Reported per artifact, because "publishes nothing when nothing
 			// changed" is the contract a reader is checking here and a single
 			// closing line cannot show it. Silent under -o json.

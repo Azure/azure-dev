@@ -1466,16 +1466,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 				}
 			}
 			if err != nil {
-				return nil, exterrors.Service(
-					exterrors.OpEnsureActivityBot,
-					exterrors.CodeMsaAppIDAlreadyInUse,
-					fmt.Sprintf("Azure Bot MsaAppID %q is already in use and no existing Bot could be reused", identity.ClientID),
-					"botservice",
-					"set a unique Bot name or remove the existing Azure Bot bound to this MsaAppID, then retry",
-				)
+				return nil, classifyActivityBotError(err, identity.ClientID)
 			}
-		} else {
-			return nil, classifyActivityBotError(err, identity.ClientID)
 		}
 	}
 

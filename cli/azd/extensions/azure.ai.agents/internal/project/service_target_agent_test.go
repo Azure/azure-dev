@@ -166,6 +166,17 @@ func TestClassifyActivityBotErrorSeparatesTeamsChannelFailures(t *testing.T) {
 	require.Equal(t, "ensure_teams_channel.AuthorizationFailed", serviceErr.ErrorCode)
 }
 
+func TestClassifyActivityBotErrorPreservesBotServiceFailures(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{ErrorCode: "InvalidBotConfiguration", StatusCode: 400}
+	err := classifyActivityBotError(responseErr, "client-id-1")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "ensure_activity_bot.InvalidBotConfiguration", serviceErr.ErrorCode)
+}
+
 func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
 	t.Parallel()
 

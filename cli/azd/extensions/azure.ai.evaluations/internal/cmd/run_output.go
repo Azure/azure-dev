@@ -400,7 +400,7 @@ func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 		if len(results) == 1 && (results[0].Metric == "" || results[0].Metric == name) {
 			r := results[0]
 			fmt.Fprint(w, messages.OutputItemVerdict(
-				name, formatScore(r.Score), verdictWord(r.Passed)))
+				name, formatScore(r.Score), verdictWord(r)))
 			if r.Reason != "" {
 				fmt.Fprint(w, messages.OutputItemReason(r.Reason))
 			}
@@ -414,7 +414,7 @@ func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 				label = r.Name
 			}
 			fmt.Fprint(w, messages.OutputItemMetric(
-				label, formatScore(r.Score), verdictWord(r.Passed)))
+				label, formatScore(r.Score), verdictWord(r)))
 			if r.Reason != "" {
 				fmt.Fprint(w, messages.OutputItemReason(r.Reason))
 			}
@@ -424,8 +424,13 @@ func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 }
 
 // verdictWord spells a boolean the way the rest of the output does.
-func verdictWord(passed bool) string {
-	if passed {
+func verdictWord(r eval_api.OutputResult) string {
+	if !r.Judged() {
+		// The evaluator returned no verdict, which is not the same as returning
+		// a failing one -- it says nothing about the sample.
+		return "no verdict"
+	}
+	if r.DidPass() {
 		return "pass"
 	}
 	return "fail"
@@ -485,7 +490,7 @@ func renderResults(
 			var failed []string
 			reason := ""
 			for _, r := range it.Results {
-				if r.Passed {
+				if r.DidPass() {
 					continue
 				}
 				failed = append(failed, r.Name)

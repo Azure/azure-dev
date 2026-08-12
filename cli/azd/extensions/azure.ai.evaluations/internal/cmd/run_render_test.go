@@ -14,21 +14,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// verdict is the recorded answer. A result whose Passed is nil was never
+// judged, which is a different thing from one that failed.
+func verdict(b bool) *bool { return &b }
+
 // scoredRun is a run the way the service returns one, with rows attached.
 func scoredRows() []eval_api.OutputItem {
 	return []eval_api.OutputItem{
 		{
 			ID: "oi_1",
 			Results: []eval_api.OutputResult{
-				{Name: "relevance", Passed: true, Score: 5},
-				{Name: "coherence", Passed: true, Score: 4},
+				{Name: "relevance", Passed: verdict(true), Score: 5},
+				{Name: "coherence", Passed: verdict(true), Score: 4},
 			},
 		},
 		{
 			ID: "oi_2",
 			Results: []eval_api.OutputResult{
-				{Name: "relevance", Passed: false, Score: 1, Reason: "Answered a different question."},
-				{Name: "coherence", Passed: false, Score: 2, Reason: "Rambled."},
+				{Name: "relevance", Passed: verdict(false), Score: 1, Reason: "Answered a different question."},
+				{Name: "coherence", Passed: verdict(false), Score: 2, Reason: "Rambled."},
 			},
 		},
 	}
@@ -80,7 +84,7 @@ func TestCriteriaMeans(t *testing.T) {
 // number no evaluator produced.
 func TestCriteriaMeansIgnoresUnscoredRows(t *testing.T) {
 	rows := []eval_api.OutputItem{
-		{Results: []eval_api.OutputResult{{Name: "relevance", Score: 4, Passed: true}}},
+		{Results: []eval_api.OutputResult{{Name: "relevance", Score: 4, Passed: verdict(true)}}},
 		{Results: []eval_api.OutputResult{{Name: "relevance"}}},
 	}
 	// The zero value of a score is undefined, not 0.0.
@@ -155,7 +159,7 @@ func TestRenderOutputItemIsNotJSON(t *testing.T) {
 		Results: []eval_api.OutputResult{{
 			Name:   "builtin.task_adherence",
 			Score:  0.35,
-			Passed: false,
+			Passed: verdict(false),
 			Reason: "Task abandoned after the first clarifying question.",
 		}},
 	}))
@@ -181,7 +185,7 @@ func TestRenderOutputItemKeepsTheWholeReason(t *testing.T) {
 	require.NoError(t, renderOutputItem(&out, &eval_api.OutputItem{
 		ID:      "oi_1",
 		Status:  "fail",
-		Results: []eval_api.OutputResult{{Name: "relevance", Passed: false, Reason: reason}},
+		Results: []eval_api.OutputResult{{Name: "relevance", Passed: verdict(false), Reason: reason}},
 	}))
 
 	assert.Contains(t, out.String(), reason)
@@ -195,9 +199,9 @@ func TestRenderOutputItemGroupsARubricsDimensions(t *testing.T) {
 		ID:     "oi_1",
 		Status: "fail",
 		Results: []eval_api.OutputResult{
-			{Name: "support-agent-quality", Metric: "resolves_issue", Score: 1, Passed: false},
-			{Name: "support-agent-quality", Metric: "cites_policy", Score: 5, Passed: true},
-			{Name: "builtin.task_adherence", Score: 0.35, Passed: false},
+			{Name: "support-agent-quality", Metric: "resolves_issue", Score: 1, Passed: verdict(false)},
+			{Name: "support-agent-quality", Metric: "cites_policy", Score: 5, Passed: verdict(true)},
+			{Name: "builtin.task_adherence", Score: 0.35, Passed: verdict(false)},
 		},
 	}))
 
@@ -218,7 +222,7 @@ func TestRenderOutputItemDoesNotNestASelfNamedMetric(t *testing.T) {
 		ID:     "oi_1",
 		Status: "completed",
 		Results: []eval_api.OutputResult{
-			{Name: "task_adherence", Metric: "task_adherence", Score: 1, Passed: true},
+			{Name: "task_adherence", Metric: "task_adherence", Score: 1, Passed: verdict(true)},
 		},
 	}))
 

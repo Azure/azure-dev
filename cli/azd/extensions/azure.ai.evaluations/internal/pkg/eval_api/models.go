@@ -587,28 +587,45 @@ type OutputResult struct {
 	Metric string       `json:"metric,omitempty"`
 	Score  LenientFloat `json:"score"`
 	Label  string       `json:"label,omitempty"`
-	Passed bool         `json:"passed"`
+	// Passed is a pointer because an absent verdict and a failing one are
+	// different claims. As a plain bool a result the service sent without one --
+	// an evaluator that errored on this row -- read as a definite "fail", which
+	// names the evaluator as the thing that judged badly rather than the thing
+	// that did not run.
+	Passed *bool `json:"passed"`
 	// Reason is the judge's explanation, which is the part a failing row is
 	// actually looked at for.
 	Reason string `json:"reason,omitempty"`
 }
 
 // Failed reports whether this row is one to look at: any evaluator failed it,
-// or it produced no verdict at all.
+// did not judge it, or it produced no verdict at all.
 //
 // A row that errored badly enough to carry no results used to answer false, so
 // --failed-only hid it -- and that filter is exactly where someone looks to
-// find out what went wrong.
+// find out what went wrong. A result carrying no verdict is the same absence
+// one level down.
 func (o OutputItem) Failed() bool {
 	if len(o.Results) == 0 {
 		return true
 	}
 	for _, r := range o.Results {
-		if !r.Passed {
+		if !r.DidPass() {
 			return true
 		}
 	}
 	return false
+}
+
+// DidPass reports whether this result is a recorded pass. An absent verdict is
+// not one.
+func (r OutputResult) DidPass() bool {
+	return r.Passed != nil && *r.Passed
+}
+
+// Judged reports whether the evaluator returned a verdict at all.
+func (r OutputResult) Judged() bool {
+	return r.Passed != nil
 }
 
 // Input renders the row's own columns for display, leaving out the

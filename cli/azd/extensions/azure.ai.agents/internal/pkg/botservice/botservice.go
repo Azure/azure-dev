@@ -198,6 +198,28 @@ type BotReference struct {
 	Name          string
 }
 
+// MultipleBotsForMsaAppIDError indicates that an agent identity cannot be
+// resolved to a unique Azure Bot.
+type MultipleBotsForMsaAppIDError struct{}
+
+func (e *MultipleBotsForMsaAppIDError) Error() string {
+	return "botservice: multiple Azure Bots are bound to the same MsaAppID"
+}
+
+// TeamsChannelError marks a failure while enabling or updating the Teams
+// channel, so callers can preserve that operation boundary in telemetry.
+type TeamsChannelError struct {
+	Err error
+}
+
+func (e *TeamsChannelError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *TeamsChannelError) Unwrap() error {
+	return e.Err
+}
+
 // GetBot returns the Bot at the exact resource group and name, or nil when it does not exist.
 func (c *Client) GetBot(ctx context.Context, resourceGroup, name string) (*armbotservice.Bot, error) {
 	response, err := c.bots.Get(ctx, resourceGroup, name, nil)
@@ -255,7 +277,7 @@ func (c *Client) FindByMsaAppID(ctx context.Context, msaAppID string) (*BotRefer
 		return nil, nil
 	}
 	if len(matches) > 1 {
-		return nil, fmt.Errorf("botservice: multiple Azure Bots are bound to MsaAppID %q", msaAppID)
+		return nil, &MultipleBotsForMsaAppIDError{}
 	}
 	return &matches[0], nil
 }
@@ -314,7 +336,9 @@ func (c *Client) ensureTeamsChannel(ctx context.Context, resourceGroup, botName 
 	if _, err := c.channels.Create(
 		ctx, resourceGroup, botName, armbotservice.ChannelNameMsTeamsChannel, channel, nil,
 	); err != nil {
-		return fmt.Errorf("botservice: enabling Microsoft Teams channel on bot %q: %w", botName, err)
+		return &TeamsChannelError{
+			Err: fmt.Errorf("botservice: enabling Microsoft Teams channel on bot %q: %w", botName, err),
+		}
 	}
 	return nil
 }

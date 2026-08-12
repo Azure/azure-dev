@@ -21,6 +21,7 @@ import (
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/envkey"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -132,6 +133,65 @@ func TestAgentDeploymentFailedErrorUsesFallbackCode(t *testing.T) {
 		"run `azd ai agent show` to inspect the latest deployment status",
 		serviceErr.Suggestion,
 	)
+}
+
+func TestClassifyActivityBotErrorUsesMsaAppIDConflictCode(t *testing.T) {
+	t.Parallel()
+
+	err := classifyActivityBotError(errors.New("MsaAppId is already in use"), "client-id-1")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "ensure_activity_bot.msa_app_id_already_in_use", serviceErr.ErrorCode)
+	require.Equal(t, "botservice", serviceErr.ServiceName)
+	require.Equal(
+		t,
+		"configure the Activity Bot name to use the existing Azure Bot bound to this MsaAppID, "+
+			"or remove that Bot, then retry",
+		serviceErr.Suggestion,
+	)
+}
+
+func TestResolveActivityBotNameReturnsMultipleBotClassification(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	_, _, err := p.resolveActivityBotName(
+		t.Context(),
+		fakeActivityBotFinder{err: &botservice.MultipleBotsForMsaAppIDError{}},
+		"my-svc",
+		"agent-a",
+		"client-id-1",
+		"fallback-rg",
+		map[string]string{envkey.AgentBotName("my-svc"): "env-bot"},
+	)
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "get_activity_bot.multiple_bots_for_msa_app_id", serviceErr.ErrorCode)
+	require.Empty(t, serviceErr.ServiceName)
+}
+
+func TestClassifyActivityBotErrorSeparatesTeamsChannelFailures(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{ErrorCode: "AuthorizationFailed", StatusCode: 403}
+	err := classifyActivityBotError(&botservice.TeamsChannelError{Err: responseErr}, "client-id-1")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "ensure_teams_channel.AuthorizationFailed", serviceErr.ErrorCode)
+}
+
+func TestClassifyActivityBotErrorPreservesBotServiceFailures(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{ErrorCode: "InvalidBotConfiguration", StatusCode: 400}
+	err := classifyActivityBotError(responseErr, "client-id-1")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "ensure_activity_bot.InvalidBotConfiguration", serviceErr.ErrorCode)
 }
 
 func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {

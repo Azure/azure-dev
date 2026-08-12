@@ -231,3 +231,28 @@ func TestFindByMsaAppID(t *testing.T) {
 		t.Fatalf("FindByMsaAppID = %+v, want published-bot in m365-rg", got)
 	}
 }
+
+func TestFindByMsaAppIDReturnsTypedErrorForMultipleMatches(t *testing.T) {
+	t.Parallel()
+
+	matchingBot := func(name string) *armbotservice.Bot {
+		return &armbotservice.Bot{
+			ID:   new("/subscriptions/sub/resourceGroups/m365-rg/providers/Microsoft.BotService/botServices/" + name),
+			Name: new(name),
+			Properties: &armbotservice.BotProperties{
+				MsaAppID: new("client-id-123"),
+			},
+		}
+	}
+	c := &Client{
+		listBots: func(context.Context) ([]*armbotservice.Bot, error) {
+			return []*armbotservice.Bot{matchingBot("bot-one"), matchingBot("bot-two")}, nil
+		},
+	}
+
+	_, err := c.FindByMsaAppID(t.Context(), "client-id-123")
+	_, ok := errors.AsType[*MultipleBotsForMsaAppIDError](err)
+	if !ok {
+		t.Fatalf("FindByMsaAppID error = %T, want *MultipleBotsForMsaAppIDError", err)
+	}
+}

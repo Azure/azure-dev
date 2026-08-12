@@ -191,10 +191,11 @@ func (u *UpGraphAction) Run(
 		// Reflect the real package-phase outcome. Before this, the synthetic
 		// span always closed with an Unset status (=> Success in the AppInsights
 		// exporter), masking package failures under `azd up` (issue #9054).
-		// MapError stamps the same status + ResultCode a stand-alone
-		// `azd package` would report.
+		// phaseOutcomeError surfaces a genuine package failure, or a user
+		// cancellation when the whole run was aborted while packaging; MapError
+		// stamps the same status + ResultCode a stand-alone `azd package` would.
 		packageSpan.SetAttributes(usageAttrs...)
-		if err := firstPhaseError(graphResult, "package", genuinePhaseFailure); err != nil {
+		if err := phaseOutcomeError(graphResult, "package"); err != nil {
 			MapError(err, packageSpan)
 		}
 		packageSpan.End()
@@ -208,23 +209,22 @@ func (u *UpGraphAction) Run(
 		provisionSpan.SetAttributes(usageAttrs...)
 		// Prefer a pre-graph provision failure (layer analysis / validation),
 		// which runs before graphResult is populated; otherwise fall back to the
-		// executed provision steps.
+		// executed provision steps (genuine failure or user cancellation).
 		provisionErr := provisionSetupErr
 		if provisionErr == nil {
-			provisionErr = firstPhaseError(graphResult, "provision", genuinePhaseFailure)
+			provisionErr = phaseOutcomeError(graphResult, "provision")
 		}
 		if provisionErr != nil {
 			MapError(provisionErr, provisionSpan)
 		}
 		provisionSpan.End()
 
-		// Emit a synthetic cmd.deploy span carrying the aggregated
-		// deploy/publish outcome, but only when the deploy phase actually ran.
-		// Under FailFast a provision/package failure skips every deploy step,
-		// and legacy `azd up` likewise never launched the deploy sub-command in
-		// that case — so emitting nothing keeps the cmd.deploy population (and
-		// its success rate) faithful rather than inflating it with a no-op
-		// Success span.
+		// Emit a synthetic cmd.deploy span carrying the deploy/publish outcome,
+		// but only when the deploy phase meaningfully ran. Under FailFast a
+		// provision/package failure tears down the deploy phase, and legacy
+		// `azd up` likewise never launched the deploy sub-command in that case —
+		// so emitting nothing keeps the cmd.deploy population (and its success
+		// rate) faithful rather than inflating it with a no-op Success span.
 		emitDeploySpan(ctx, graphResult, parentChangedFlags, usageAttrs)
 	}()
 
@@ -1038,8 +1038,7 @@ func stepStarted(st exegraph.StepTiming) bool {
 
 // genuinePhaseFailure returns a step's error only when the step itself failed
 // (StepFailed). In-flight cancellations are ignored so an upstream failure
-// tearing down an unrelated, overlapping phase step never blames this phase —
-// used for the provision and package phases.
+// tearing down an unrelated, overlapping phase step never blames this phase.
 func genuinePhaseFailure(st exegraph.StepTiming) error {
 	if st.Status == exegraph.StepFailed {
 		return st.Err
@@ -1047,20 +1046,65 @@ func genuinePhaseFailure(st exegraph.StepTiming) error {
 	return nil
 }
 
-// deployPhaseFailure additionally surfaces a cancellation as a deploy failure.
-// The deploy phase runs last — after provision and package have succeeded — so a
-// deploy step canceled after starting is a user cancellation or a sibling-deploy
-// failure, both of which stand-alone `azd deploy` reports on cmd.deploy.
-// Provision/package deliberately use genuinePhaseFailure instead, so a FailFast
-// teardown of one does not falsely fail the other.
-func deployPhaseFailure(st exegraph.StepTiming) error {
-	if err := genuinePhaseFailure(st); err != nil {
-		return err
-	}
+// startedCancellation returns the cancellation error of a step that had begun
+// executing but was recorded StepSkipped carrying a context error (a Ctrl+C or
+// deadline that interrupted it mid-flight), or nil otherwise. A never-started
+// dependency skip (a *StepSkippedError) returns nil. Callers must gate this on
+// the absence of a genuine failure so FailFast teardown of a sibling failure is
+// never mistaken for a user cancellation.
+func startedCancellation(st exegraph.StepTiming) error {
 	if st.Status == exegraph.StepSkipped && stepStarted(st) {
 		return st.Err
 	}
 	return nil
+}
+
+// runHadGenuineFailure reports whether any step in the run failed outright
+// (StepFailed). Under FailFast the scheduler only cancels in-flight steps after
+// a genuine failure, so when no step failed every recorded cancellation must
+// have come from the parent context — a real user Ctrl+C or deadline — rather
+// than collateral teardown. This lets each phase finalizer tell the two apart.
+func runHadGenuineFailure(result *exegraph.RunResult) bool {
+	if result == nil {
+		return false
+	}
+	for _, st := range result.Steps {
+		if st.Status == exegraph.StepFailed {
+			return true
+		}
+	}
+	return false
+}
+
+// phaseOutcomeError selects the error to stamp on the synthetic cmd.provision /
+// cmd.package span: the phase's own genuine failure if one occurred, otherwise a
+// user cancellation if the whole run was aborted by the parent context while a
+// step in this phase was running. When some other step genuinely failed, this
+// phase's cancellations are FailFast teardown of that failure and are left
+// unattributed — the failing phase reports the root cause on its own span.
+func phaseOutcomeError(result *exegraph.RunResult, phase string) error {
+	if err := firstPhaseError(result, phase, genuinePhaseFailure); err != nil {
+		return err
+	}
+	if runHadGenuineFailure(result) {
+		return nil
+	}
+	return firstPhaseError(result, phase, startedCancellation)
+}
+
+// deployOutcomeError selects the error for the synthetic cmd.deploy span: a
+// genuine deploy failure, or — when no upstream provision/package failure tore
+// the phase down — an in-flight cancellation (a user Ctrl+C during deploy, or a
+// sibling-deploy failure). An upstream failure yields nil so a deploy lifecycle
+// step canceled as teardown of that failure is never blamed on the deploy phase.
+func deployOutcomeError(result *exegraph.RunResult, upstreamFailed bool) error {
+	if err := firstPhaseError(result, "deploy", genuinePhaseFailure); err != nil {
+		return err
+	}
+	if upstreamFailed {
+		return nil
+	}
+	return firstPhaseError(result, "deploy", startedCancellation)
 }
 
 // firstPhaseError returns the error selected by pick for the first step in the
@@ -1095,20 +1139,37 @@ func firstPhaseError(
 // The envelope spans the earliest start / latest end of every deploy-phase step
 // that started, including the pre/post-deploy hook and event nodes.
 //
-// "Ran" is true when a deploy/publish *service* step executed, or when any
-// deploy-phase step failed or was canceled after starting (a failing
-// pre/post-deploy hook, or a user Ctrl+C). A pre/post-deploy lifecycle hook that
-// merely *succeeded* does NOT by itself count: the predeploy hook is gated only
-// on provisioning, so it can run before packaging finishes, and a later package
-// failure must not leave behind a spurious successful cmd.deploy (issue #9054).
-// Never-started dependency skips are excluded entirely.
-func deployPhaseSpanTiming(steps []exegraph.StepTiming) (start, end time.Time, ran bool) {
+// "Ran" is true when, for a started deploy-phase step, any of these hold:
+//   - a deploy/publish *service* step executed;
+//   - a pre/post-deploy hook or event failed outright (a genuine deploy outcome);
+//   - a step was canceled in-flight and no upstream provision/package failure
+//     caused it (upstreamFailed == false) — i.e. a user Ctrl+C during deploy;
+//   - the terminal deploy node (cmdhook-postdeploy) completed, which means the
+//     whole pipeline finished, so an infra-only project with no services still
+//     records a deploy phase (matching legacy `azd deploy --all`).
+//
+// A lone *successful* pre/post-deploy lifecycle hook does NOT by itself count:
+// the predeploy hook is gated only on provisioning, so it can finish before a
+// later package step fails, and that must not leave a spurious cmd.deploy
+// (issue #9054). When upstreamFailed is true, a deploy step canceled as FailFast
+// teardown of that failure is likewise excluded. Never-started dependency skips
+// are excluded entirely.
+func deployPhaseSpanTiming(
+	steps []exegraph.StepTiming, upstreamFailed bool,
+) (start, end time.Time, ran bool) {
 	for _, st := range steps {
 		if stepUpPhase(st) != "deploy" || !stepStarted(st) {
 			continue
 		}
 		isService := slices.Contains(st.Tags, "deploy") || slices.Contains(st.Tags, "publish")
-		if isService || st.Status != exegraph.StepDone {
+		switch {
+		case isService:
+			ran = true
+		case st.Status == exegraph.StepFailed:
+			ran = true
+		case st.Status == exegraph.StepSkipped && !upstreamFailed:
+			ran = true
+		case st.Name == postDeployHookStep && st.Status == exegraph.StepDone:
 			ran = true
 		}
 		if start.IsZero() || st.Start.Before(start) {
@@ -1123,12 +1184,11 @@ func deployPhaseSpanTiming(steps []exegraph.StepTiming) (start, end time.Time, r
 
 // emitDeploySpan emits the synthetic cmd.deploy span for `azd up`, mirroring
 // the stand-alone `azd deploy --all` span the legacy workflow runner produced.
-// It is a no-op unless the deploy phase meaningfully ran (a deploy/publish
-// service step executed, or a deploy-phase step failed or was canceled — see
-// deployPhaseSpanTiming), so a run whose deploy phase was skipped by an earlier
-// provision/package failure contributes no cmd.deploy row. The span is
-// time-boxed to the real deploy phase and, on failure, carries the same status
-// + ResultCode a stand-alone `azd deploy` would via MapError.
+// It is a no-op unless the deploy phase meaningfully ran (see
+// deployPhaseSpanTiming), so a run whose deploy phase was torn down by an
+// earlier provision/package failure contributes no cmd.deploy row. The span is
+// time-boxed to the real deploy phase and, on failure or cancellation, carries
+// the same status + ResultCode a stand-alone `azd deploy` would via MapError.
 func emitDeploySpan(
 	ctx context.Context,
 	result *exegraph.RunResult,
@@ -1138,7 +1198,11 @@ func emitDeploySpan(
 	if result == nil {
 		return
 	}
-	start, end, ran := deployPhaseSpanTiming(result.Steps)
+	// A genuine provision/package failure tears down any overlapping deploy
+	// lifecycle step; such teardown must not surface as a deploy outcome.
+	upstreamFailed := firstPhaseError(result, "provision", genuinePhaseFailure) != nil ||
+		firstPhaseError(result, "package", genuinePhaseFailure) != nil
+	start, end, ran := deployPhaseSpanTiming(result.Steps, upstreamFailed)
 	if !ran {
 		return
 	}
@@ -1147,7 +1211,7 @@ func emitDeploySpan(
 	_, deploySpan := tracing.Start(ctx, "cmd.deploy", trace.WithTimestamp(start))
 	deploySpan.SetAttributes(fields.CmdFlags.StringSlice(deployFlags))
 	deploySpan.SetAttributes(usageAttrs...)
-	if err := firstPhaseError(result, "deploy", deployPhaseFailure); err != nil {
+	if err := deployOutcomeError(result, upstreamFailed); err != nil {
 		MapError(err, deploySpan)
 	}
 	deploySpan.End(trace.WithTimestamp(end))

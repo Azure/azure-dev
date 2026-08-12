@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,9 +21,10 @@ import (
 
 // Regression coverage for issue #9054: the synthetic cmd.package / cmd.provision
 // / cmd.deploy spans under `azd up` must reflect the real per-phase outcome
-// rather than always reporting success. stepUpPhase, stepStarted, firstPhaseError
-// and deployPhaseSpanTiming are the pure building blocks the deferred span
-// finalizer relies on, so they are asserted directly here.
+// rather than always reporting success. stepUpPhase, stepStarted, firstPhaseError,
+// phaseOutcomeError, deployOutcomeError and deployPhaseSpanTiming are the pure
+// building blocks the deferred span finalizer relies on, so they are asserted
+// directly here.
 
 func TestStepUpPhase(t *testing.T) {
 	t.Parallel()
@@ -92,10 +94,11 @@ func TestStepStarted(t *testing.T) {
 	}
 }
 
-// TestFirstPhaseError asserts the phase root-cause selection, including the
-// deliberate asymmetry between the pick functions: provision/package use
-// genuinePhaseFailure (StepFailed only), while deploy uses deployPhaseFailure,
-// which also treats an in-flight cancellation as a deploy failure.
+// TestFirstPhaseError asserts the generic phase root-cause selection over the
+// two pick functions the phase span finalizer composes: genuinePhaseFailure
+// (StepFailed only) and startedCancellation (an in-flight Ctrl+C/deadline). The
+// higher-level phaseOutcomeError / deployOutcomeError wrappers are covered
+// separately.
 func TestFirstPhaseError(t *testing.T) {
 	t.Parallel()
 
@@ -184,7 +187,7 @@ func TestFirstPhaseError(t *testing.T) {
 				{Name: "publish-web", Status: exegraph.StepFailed, Tags: []string{"publish"}, Err: publishErr},
 			}},
 			phase: "deploy",
-			pick:  deployPhaseFailure,
+			pick:  genuinePhaseFailure,
 			want:  publishErr,
 		},
 		{
@@ -193,7 +196,7 @@ func TestFirstPhaseError(t *testing.T) {
 				{Name: "deploy-web", Status: exegraph.StepSkipped, Tags: []string{"deploy"}, Err: context.Canceled},
 			}},
 			phase: "deploy",
-			pick:  deployPhaseFailure,
+			pick:  startedCancellation,
 			want:  context.Canceled,
 		},
 		{
@@ -202,7 +205,7 @@ func TestFirstPhaseError(t *testing.T) {
 				{Name: "deploy-web", Status: exegraph.StepSkipped, Tags: []string{"deploy"}, Err: skipErr},
 			}},
 			phase: "deploy",
-			pick:  deployPhaseFailure,
+			pick:  startedCancellation,
 			want:  nil,
 		},
 		{
@@ -212,7 +215,7 @@ func TestFirstPhaseError(t *testing.T) {
 				{Name: "deploy-api", Status: exegraph.StepSkipped, Tags: []string{"deploy"}, Err: context.Canceled},
 			}},
 			phase: "deploy",
-			pick:  deployPhaseFailure,
+			pick:  genuinePhaseFailure,
 			want:  deployErr,
 		},
 	}
@@ -226,17 +229,173 @@ func TestFirstPhaseError(t *testing.T) {
 	}
 }
 
+// TestRunHadGenuineFailure asserts the run-level predicate the phase span
+// finalizer uses to tell a real user cancellation apart from FailFast teardown:
+// it is true only when some step failed outright (StepFailed), since the
+// scheduler cancels in-flight steps only after a genuine failure.
+func TestRunHadGenuineFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		result *exegraph.RunResult
+		want   bool
+	}{
+		{"nil result", nil, false},
+		{"empty run", &exegraph.RunResult{}, false},
+		{
+			name: "all done or skipped is not a genuine failure",
+			result: &exegraph.RunResult{Steps: []exegraph.StepTiming{
+				{Name: "provision-db", Status: exegraph.StepDone, Tags: []string{"provision"}},
+				{Name: "deploy-web", Status: exegraph.StepSkipped, Tags: []string{"deploy"}, Err: context.Canceled},
+			}},
+			want: false,
+		},
+		{
+			name: "a StepFailed anywhere is a genuine failure",
+			result: &exegraph.RunResult{Steps: []exegraph.StepTiming{
+				{Name: "package-web", Status: exegraph.StepFailed, Tags: []string{"package"}, Err: errors.New("boom")},
+			}},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, runHadGenuineFailure(tt.result))
+		})
+	}
+}
+
+// TestPhaseOutcomeError covers the provision/package span attribution: a genuine
+// phase failure is always surfaced; an in-flight cancellation is surfaced only
+// when the run was aborted by the user (no other step genuinely failed), and is
+// treated as FailFast teardown (nil) when some other phase actually failed.
+func TestPhaseOutcomeError(t *testing.T) {
+	t.Parallel()
+
+	packageErr := errors.New("docker build failed")
+	provisionErr := errors.New("bicep failed")
+
+	tests := []struct {
+		name   string
+		result *exegraph.RunResult
+		phase  string
+		want   error
+	}{
+		{"nil result", nil, "package", nil},
+		{
+			name: "genuine package failure is surfaced",
+			result: &exegraph.RunResult{Steps: []exegraph.StepTiming{
+				{Name: "package-web", Status: exegraph.StepFailed, Tags: []string{"package"}, Err: packageErr},
+			}},
+			phase: "package",
+			want:  packageErr,
+		},
+		{
+			name: "user Ctrl+C while packaging is surfaced as the cancellation",
+			result: &exegraph.RunResult{Steps: []exegraph.StepTiming{
+				{Name: "package-web", Status: exegraph.StepSkipped, Tags: []string{"package"}, Err: context.Canceled},
+			}},
+			phase: "package",
+			want:  context.Canceled,
+		},
+		{
+			// A genuine provision failure tears down the in-flight package step;
+			// that teardown must not be blamed on the package span.
+			name: "package teardown by an upstream provision failure is not surfaced",
+			result: &exegraph.RunResult{Steps: []exegraph.StepTiming{
+				{Name: "provision-db", Status: exegraph.StepFailed, Tags: []string{"provision"}, Err: provisionErr},
+				{Name: "package-web", Status: exegraph.StepSkipped, Tags: []string{"package"}, Err: context.Canceled},
+			}},
+			phase: "package",
+			want:  nil,
+		},
+		{
+			name: "never-started package skip is not surfaced",
+			result: &exegraph.RunResult{Steps: []exegraph.StepTiming{
+				{
+					Name: "package-web", Status: exegraph.StepSkipped, Tags: []string{"package"},
+					Err: &exegraph.StepSkippedError{StepName: "package-web"},
+				},
+			}},
+			phase: "package",
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.ErrorIs(t, phaseOutcomeError(tt.result, tt.phase), tt.want)
+		})
+	}
+}
+
+// TestDeployOutcomeError covers the cmd.deploy span attribution: a genuine
+// deploy failure always wins; otherwise an in-flight cancellation is surfaced
+// only when no upstream provision/package failure tore the phase down.
+func TestDeployOutcomeError(t *testing.T) {
+	t.Parallel()
+
+	deployErr := errors.New("zip deploy failed")
+
+	tests := []struct {
+		name           string
+		result         *exegraph.RunResult
+		upstreamFailed bool
+		want           error
+	}{
+		{"nil result", nil, false, nil},
+		{
+			name: "genuine deploy failure is surfaced even when upstream also failed",
+			result: &exegraph.RunResult{Steps: []exegraph.StepTiming{
+				{Name: "deploy-web", Status: exegraph.StepFailed, Tags: []string{"deploy"}, Err: deployErr},
+			}},
+			upstreamFailed: true,
+			want:           deployErr,
+		},
+		{
+			name: "user Ctrl+C during deploy is surfaced when nothing upstream failed",
+			result: &exegraph.RunResult{Steps: []exegraph.StepTiming{
+				{Name: "deploy-web", Status: exegraph.StepSkipped, Tags: []string{"deploy"}, Err: context.Canceled},
+			}},
+			upstreamFailed: false,
+			want:           context.Canceled,
+		},
+		{
+			// FailFast teardown of the deploy phase after a provision/package
+			// failure must leave cmd.deploy unblamed (that failure owns its span).
+			name: "deploy teardown after an upstream failure is not surfaced",
+			result: &exegraph.RunResult{Steps: []exegraph.StepTiming{
+				{Name: "deploy-web", Status: exegraph.StepSkipped, Tags: []string{"deploy"}, Err: context.Canceled},
+			}},
+			upstreamFailed: true,
+			want:           nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.ErrorIs(t, deployOutcomeError(tt.result, tt.upstreamFailed), tt.want)
+		})
+	}
+}
+
 func TestDeployPhaseSpanTiming(t *testing.T) {
 	t.Parallel()
 
 	base := time.Now()
 
 	tests := []struct {
-		name      string
-		steps     []exegraph.StepTiming
-		wantRan   bool
-		wantStart time.Time
-		wantEnd   time.Time
+		name           string
+		steps          []exegraph.StepTiming
+		upstreamFailed bool
+		wantRan        bool
+		wantStart      time.Time
+		wantEnd        time.Time
 	}{
 		{
 			name:    "no deploy or publish steps",
@@ -297,6 +456,38 @@ func TestDeployPhaseSpanTiming(t *testing.T) {
 			wantEnd:   base.Add(50 * time.Second),
 		},
 		{
+			// A deploy lifecycle step canceled in-flight because the *user*
+			// pressed Ctrl+C (no upstream provision/package failure) is a real
+			// deploy-phase outcome and counts as ran.
+			name: "in-flight-canceled deploy hook counts as ran when no upstream failure",
+			steps: []exegraph.StepTiming{
+				{
+					Name: preDeployHookStep, Status: exegraph.StepSkipped, Err: context.Canceled,
+					Start: base.Add(20 * time.Second), End: base.Add(35 * time.Second),
+				},
+			},
+			upstreamFailed: false,
+			wantRan:        true,
+			wantStart:      base.Add(20 * time.Second),
+			wantEnd:        base.Add(35 * time.Second),
+		},
+		{
+			// #9054 flip side: when a package/provision step genuinely failed,
+			// FailFast tears down an overlapping predeploy hook (StepSkipped +
+			// context.Canceled). That teardown must NOT count as a deploy run, or
+			// `up` would emit a spurious FAILED cmd.deploy blamed on the deploy
+			// phase for a failure that belongs to package/provision.
+			name: "in-flight-canceled deploy hook does not count when upstream failed",
+			steps: []exegraph.StepTiming{
+				{
+					Name: preDeployHookStep, Status: exegraph.StepSkipped, Err: context.Canceled,
+					Start: base.Add(20 * time.Second), End: base.Add(35 * time.Second),
+				},
+			},
+			upstreamFailed: true,
+			wantRan:        false,
+		},
+		{
 			// #9054 regression guard: the predeploy hook is gated only on
 			// provisioning, so it can finish before a *failing* package step. A
 			// lone successful lifecycle hook must therefore NOT mark the deploy
@@ -344,12 +535,33 @@ func TestDeployPhaseSpanTiming(t *testing.T) {
 			wantStart: base.Add(5 * time.Second),
 			wantEnd:   base.Add(60 * time.Second),
 		},
+		{
+			// Infra-only project (no services): every deploy lifecycle node runs
+			// to completion but none is a service step. The terminal deploy node
+			// (cmdhook-postdeploy) completing means the whole pipeline finished,
+			// so `up` still records a cmd.deploy — matching legacy `azd up`, which
+			// always invoked `azd deploy --all` even with nothing to deploy.
+			name: "infra-only run with terminal post-deploy hook counts as ran",
+			steps: []exegraph.StepTiming{
+				{
+					Name: preDeployHookStep, Status: exegraph.StepDone,
+					Start: base.Add(5 * time.Second), End: base.Add(10 * time.Second),
+				},
+				{
+					Name: postDeployHookStep, Status: exegraph.StepDone,
+					Start: base.Add(11 * time.Second), End: base.Add(14 * time.Second),
+				},
+			},
+			wantRan:   true,
+			wantStart: base.Add(5 * time.Second),
+			wantEnd:   base.Add(14 * time.Second),
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			start, end, ran := deployPhaseSpanTiming(tt.steps)
+			start, end, ran := deployPhaseSpanTiming(tt.steps, tt.upstreamFailed)
 			assert.Equal(t, tt.wantRan, ran)
 			if tt.wantRan {
 				assert.True(t, tt.wantStart.Equal(start), "start = %s, want %s", start, tt.wantStart)
@@ -369,18 +581,40 @@ func findSpan(spans []tracesdk.ReadOnlySpan, name string) tracesdk.ReadOnlySpan 
 	return nil
 }
 
+// The azd tracing package caches its Tracer at package-init from the global
+// OpenTelemetry provider, and that global only honors the first
+// SetTracerProvider call for the life of the process. Every span test in this
+// package must therefore share a single recorder rather than install its own.
+var (
+	deploySpanRecorderOnce sync.Once
+	deploySpanRecorder     *tracetest.SpanRecorder
+)
+
+// recordDeploySpans installs the shared in-memory span recorder on first use and
+// returns a snapshot function that yields only the spans ended after this call,
+// so a test observes just the spans it emitted. Callers must not run in parallel
+// (the baseline slice is not synchronized).
+func recordDeploySpans(t *testing.T) func() []tracesdk.ReadOnlySpan {
+	t.Helper()
+	deploySpanRecorderOnce.Do(func() {
+		deploySpanRecorder = tracetest.NewSpanRecorder()
+		tp := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(deploySpanRecorder))
+		otel.SetTracerProvider(tp)
+	})
+	baseline := len(deploySpanRecorder.Ended())
+	return func() []tracesdk.ReadOnlySpan {
+		return deploySpanRecorder.Ended()[baseline:]
+	}
+}
+
 // TestEmitDeploySpan_ErrorPath is the end-to-end assertion issue #9054 was
 // missing: when the deploy phase fails under `azd up`, a cmd.deploy span must
 // actually be emitted, carry an Error status with a non-empty ResultCode, and be
 // time-boxed to the real deploy phase. It installs an in-memory tracer provider
 // to capture the span emitted through tracing.Start.
 func TestEmitDeploySpan_ErrorPath(t *testing.T) {
-	// Not parallel: mutates the global OpenTelemetry tracer provider.
-	sr := tracetest.NewSpanRecorder()
-	tp := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(sr))
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	// Not parallel: shares one process-wide tracer provider (see recordDeploySpans).
+	newSpans := recordDeploySpans(t)
 
 	base := time.Now()
 	start := base.Add(30 * time.Second)
@@ -394,9 +628,9 @@ func TestEmitDeploySpan_ErrorPath(t *testing.T) {
 		},
 	}}
 
-	emitDeploySpan(context.Background(), result, nil, nil)
+	emitDeploySpan(t.Context(), result, nil, nil)
 
-	span := findSpan(sr.Ended(), "cmd.deploy")
+	span := findSpan(newSpans(), "cmd.deploy")
 	require.NotNil(t, span, "cmd.deploy span must be emitted when the deploy phase fails")
 	assert.Equal(t, codes.Error, span.Status().Code)
 	assert.NotEmpty(t, span.Status().Description, "failure must carry a ResultCode")
@@ -409,12 +643,8 @@ func TestEmitDeploySpan_ErrorPath(t *testing.T) {
 // it starts, no cmd.deploy span is emitted — matching legacy `azd up`, where the
 // deploy sub-command never ran.
 func TestEmitDeploySpan_OmittedWhenDeployDidNotRun(t *testing.T) {
-	// Not parallel: mutates the global OpenTelemetry tracer provider.
-	sr := tracetest.NewSpanRecorder()
-	tp := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(sr))
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	// Not parallel: shares one process-wide tracer provider (see recordDeploySpans).
+	newSpans := recordDeploySpans(t)
 
 	result := &exegraph.RunResult{Steps: []exegraph.StepTiming{
 		{
@@ -429,9 +659,9 @@ func TestEmitDeploySpan_OmittedWhenDeployDidNotRun(t *testing.T) {
 		},
 	}}
 
-	emitDeploySpan(context.Background(), result, nil, nil)
+	emitDeploySpan(t.Context(), result, nil, nil)
 
-	assert.Nil(t, findSpan(sr.Ended(), "cmd.deploy"), "no cmd.deploy span when the deploy phase never ran")
+	assert.Nil(t, findSpan(newSpans(), "cmd.deploy"), "no cmd.deploy span when the deploy phase never ran")
 }
 
 // TestEmitDeploySpan_OmittedWhenOnlyDeployHookSucceeded is the direct #9054
@@ -440,12 +670,8 @@ func TestEmitDeploySpan_OmittedWhenDeployDidNotRun(t *testing.T) {
 // lone successful lifecycle hook must not cause a Success cmd.deploy to be
 // emitted for a run whose services were never deployed.
 func TestEmitDeploySpan_OmittedWhenOnlyDeployHookSucceeded(t *testing.T) {
-	// Not parallel: mutates the global OpenTelemetry tracer provider.
-	sr := tracetest.NewSpanRecorder()
-	tp := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(sr))
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	// Not parallel: shares one process-wide tracer provider (see recordDeploySpans).
+	newSpans := recordDeploySpans(t)
 
 	result := &exegraph.RunResult{Steps: []exegraph.StepTiming{
 		{Name: preDeployHookStep, Status: exegraph.StepDone},
@@ -461,10 +687,70 @@ func TestEmitDeploySpan_OmittedWhenOnlyDeployHookSucceeded(t *testing.T) {
 		},
 	}}
 
-	emitDeploySpan(context.Background(), result, nil, nil)
+	emitDeploySpan(t.Context(), result, nil, nil)
 
 	assert.Nil(
-		t, findSpan(sr.Ended(), "cmd.deploy"),
+		t, findSpan(newSpans(), "cmd.deploy"),
 		"a successful predeploy hook alone must not emit cmd.deploy when services never deployed",
 	)
+}
+
+// TestEmitDeploySpan_OmittedWhenDeployHookCanceledByUpstreamFailure is the flip
+// side of the #9054 fix: when a package step genuinely fails while the predeploy
+// hook is in-flight, FailFast tears the hook down (StepSkipped + context.Canceled).
+// That teardown must not surface as a spurious FAILED cmd.deploy — the failure
+// belongs to the package phase, which reports it on cmd.package.
+func TestEmitDeploySpan_OmittedWhenDeployHookCanceledByUpstreamFailure(t *testing.T) {
+	// Not parallel: shares one process-wide tracer provider (see recordDeploySpans).
+	newSpans := recordDeploySpans(t)
+
+	result := &exegraph.RunResult{Steps: []exegraph.StepTiming{
+		{
+			Name: "package-web", Status: exegraph.StepFailed,
+			Tags: []string{"package"}, Err: errors.New("docker build failed"),
+		},
+		{Name: preDeployHookStep, Status: exegraph.StepSkipped, Err: context.Canceled},
+		{
+			Name:   "deploy-web",
+			Status: exegraph.StepSkipped,
+			Tags:   []string{"deploy"},
+			Err:    &exegraph.StepSkippedError{StepName: "deploy-web"},
+		},
+	}}
+
+	emitDeploySpan(t.Context(), result, nil, nil)
+
+	assert.Nil(
+		t, findSpan(newSpans(), "cmd.deploy"),
+		"deploy teardown from an upstream package failure must not emit a cmd.deploy span",
+	)
+}
+
+// TestEmitDeploySpan_InfraOnlyProjectEmitsSuccess covers an infra-only `azd up`
+// (no services): the deploy phase has no service steps, but the whole pipeline
+// completes through the terminal post-deploy hook. Legacy `azd up` always ran
+// `azd deploy --all` even then, so a Success cmd.deploy must still be recorded.
+func TestEmitDeploySpan_InfraOnlyProjectEmitsSuccess(t *testing.T) {
+	// Not parallel: shares one process-wide tracer provider (see recordDeploySpans).
+	newSpans := recordDeploySpans(t)
+
+	base := time.Now()
+	result := &exegraph.RunResult{Steps: []exegraph.StepTiming{
+		{
+			Name: preDeployHookStep, Status: exegraph.StepDone,
+			Start: base.Add(5 * time.Second), End: base.Add(10 * time.Second),
+		},
+		{
+			Name: postDeployHookStep, Status: exegraph.StepDone,
+			Start: base.Add(11 * time.Second), End: base.Add(14 * time.Second),
+		},
+	}}
+
+	emitDeploySpan(t.Context(), result, nil, nil)
+
+	span := findSpan(newSpans(), "cmd.deploy")
+	require.NotNil(t, span, "infra-only `azd up` must still record a cmd.deploy span")
+	assert.NotEqual(t, codes.Error, span.Status().Code, "a clean infra-only run must not be an error")
+	assert.True(t, base.Add(5*time.Second).Equal(span.StartTime()))
+	assert.True(t, base.Add(14*time.Second).Equal(span.EndTime()))
 }

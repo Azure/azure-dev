@@ -32,6 +32,7 @@ import (
 	"azureaieval/internal/exterrors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -2191,17 +2192,34 @@ func ServiceRefused(status int, err error) error {
 	return err
 }
 
+// isCredentialFailure reports whether the request failed because no token could
+// be minted, rather than for any of the other reasons a request fails.
+//
+// Decided on the SDK's own error types. This used to also match the phrase
+// "failed to acquire a token" anywhere in the text, which any error is free to
+// contain -- a service that could not acquire a token bucket lease was told its
+// login had expired and to run `azd auth login`.
+//
+// The credential names stay as a fallback because credentialUnavailableError is
+// unexported: a credential that never ran can only be recognised by the name it
+// puts in its own message.
 func isCredentialFailure(err error) bool {
 	if err == nil {
 		return false
 	}
+
+	var authFailed *azidentity.AuthenticationFailedError
+	var authRequired *azidentity.AuthenticationRequiredError
+	if errors.As(err, &authFailed) || errors.As(err, &authRequired) {
+		return true
+	}
+
 	text := err.Error()
-	for _, marker := range []string{
+	for _, credential := range []string{
 		"AzureDeveloperCLICredential",
 		"DefaultAzureCredential",
-		"failed to acquire a token",
 	} {
-		if strings.Contains(text, marker) {
+		if strings.Contains(text, credential) {
 			return true
 		}
 	}

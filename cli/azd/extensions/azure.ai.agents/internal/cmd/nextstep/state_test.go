@@ -935,6 +935,15 @@ environment_variables:
 			wantRefs: nil,
 		},
 		{
+			name: "escaped literal keeps the ref out of missing-var hints",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: LITERAL
+    value: $${FOUNDRY_PROJECT_ENDPOINT}
+`,
+			wantRefs: nil,
+		},
+		{
 			name: "bare ref alongside defaulted ref returns only the bare one",
 			manifest: `kind: hostedAgent
 environment_variables:

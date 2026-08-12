@@ -10,13 +10,13 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
@@ -62,19 +62,6 @@ const (
 	azureSubscriptionIdVar = "AZURE_SUBSCRIPTION_ID"
 	azureLocationVar       = "AZURE_LOCATION"
 )
-
-// envVarRefPattern captures ${VAR} references inside YAML string values.
-// Group 1 is the variable name. Group 2 captures the optional default
-// tail `:-fallback`; when group 2 is non-empty the agent
-// configuration author explicitly opted into a fallback. The
-// variable is therefore not required at deploy time (the runtime
-// expander `drone/envsubst` honors `:-` semantics).
-// `extractEnvironmentRefs` skips refs with a non-empty group 2 so
-// they never surface in the missing-vars hints; the variable is
-// reported as missing only when authored as bare `${VAR}`.
-// Variable names follow the standard shell convention: leading letter or
-// underscore, then alphanumeric or underscore.
-var envVarRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
 
 // placeholderPattern aliases agent_yaml.PlaceholderPattern. nextstep
 // surfaces the same placeholders that agent_yaml's
@@ -728,15 +715,15 @@ func extractEnvironmentRefs(values []string) (refs, placeholders []string) {
 	seenRef := make(map[string]struct{})
 	seenPh := make(map[string]struct{})
 	for _, value := range values {
-		for _, m := range envVarRefPattern.FindAllStringSubmatch(value, -1) {
-			if m[2] != "" {
-				// Variable carries an explicit `:-fallback` default; the
-				// deploy-time resolver honors it, so the user does not need
-				// to set the var. Skipping here keeps the next-step hint
-				// honest: only bare-form refs become missing-var prompts.
+		for _, ref := range synthesis.FindEnvReferences(value) {
+			if ref.HasDefault {
+				// The deploy-time expander supplies a fallback, so the
+				// environment variable is not required and must not become a
+				// missing-var hint. This matches the azd resolver semantics
+				// shared by the extension's other env-ref consumers.
 				continue
 			}
-			name := m[1]
+			name := ref.Name
 			if _, ok := seenRef[name]; ok {
 				continue
 			}

@@ -236,12 +236,8 @@ func newInitCommand() *cobra.Command {
 			// Only what was actually scheduled is offered. Suggesting
 			// `dataset generate` for a dataset the caller supplied sends them
 			// to submit a billed job for an artifact they already have.
-			//
-			// A project that cannot be read counts as having no infrastructure:
-			// `azd deploy` publishes the eval either way, while `azd up` only
-			// works when there is something to provision.
 			proj, _ := readAzdProject(cmd.Context())
-			next := plan.nextSteps(projectCanProvision(proj))
+			next := plan.nextSteps(deployCommandName(proj))
 			fmt.Fprint(out, messages.FirstNextStep(next[0]))
 			for _, step := range next[1:] {
 				fmt.Fprint(out, messages.FurtherNextStep(step))
@@ -456,7 +452,7 @@ func (s scaffold) evaluatorNames() []string {
 // A caller who supplied both a dataset and their evaluators has nothing left to
 // generate, and pointing them at a generation command would submit a billed job
 // for an artifact they already have.
-func (s scaffold) nextSteps(canProvision bool) []string {
+func (s scaffold) nextSteps(deployCmd string) []string {
 	var steps []string
 	switch {
 	case s.generateDataset && s.generateRubric:
@@ -470,15 +466,7 @@ func (s scaffold) nextSteps(canProvision bool) []string {
 			"azd ai eval generate --evaluator --evaluator-name "+s.rubricName)
 	}
 	if len(steps) == 0 {
-		// Eval assets are data-plane only. `azd up` provisions before it
-		// deploys, so in a project that ships no infrastructure it fails
-		// compiling a missing infra/main.bicep without ever reaching this
-		// service. `azd deploy` is what actually publishes the eval.
-		deploy := "azd deploy"
-		if canProvision {
-			deploy = "azd up"
-		}
-		steps = append(steps, deploy, "azd ai eval run start")
+		steps = append(steps, deployCmd, "azd ai eval run start")
 	}
 	return steps
 }

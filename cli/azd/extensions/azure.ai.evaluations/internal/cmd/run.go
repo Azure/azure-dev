@@ -392,7 +392,7 @@ func (ec *evalContext) checkDatasetRegistered(
 		return nil
 	}
 
-	return messages.DatasetHasUnregisteredEdits(decl.Name)
+	return messages.DatasetHasUnregisteredEdits(decl.Name, ec.deployCommand(ctx))
 }
 
 // reuseDataSourceFromLastRun rebuilds a run's data source from the group's most

@@ -56,7 +56,7 @@ func newRunListCommand() *cobra.Command {
 			list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, limit)
 			if err != nil {
 				if eval_api.IsNotFound(err) {
-					return messages.EvalNotDeployed(evalID)
+					return messages.EvalNotDeployed(evalID, ec.deployCommand(ctx))
 				}
 				return messages.ListingRuns(evalID, err)
 			}

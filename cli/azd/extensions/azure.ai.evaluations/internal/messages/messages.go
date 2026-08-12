@@ -131,12 +131,12 @@ func GateNeedsTheWait() error {
 }
 
 // DatasetHasUnregisteredEdits reports local rows no deployed version holds.
-func DatasetHasUnregisteredEdits(dataset string) error {
+func DatasetHasUnregisteredEdits(dataset, deployCmd string) error {
 	return fmt.Errorf(
 		"dataset %q has local edits that are not registered.\n"+
-			"  Run `azd up` to register them, or `--eval <id>` to run against "+
+			"  Run `%s` to register them, or `--eval <id>` to run against "+
 			"an existing eval",
-		dataset)
+		dataset, deployCmd)
 }
 
 // CreatingEval reports an eval being created because it has never been deployed.
@@ -240,10 +240,10 @@ func ReportLink(url string) string {
 }
 
 // EvalNotDeployed reports an eval id the project does not hold.
-func EvalNotDeployed(evalID string) error {
+func EvalNotDeployed(evalID, deployCmd string) error {
 	return fmt.Errorf(
 		"no eval %q in this project; "+
-			"`azd up` creates the ones your config declares", evalID)
+			"`%s` creates the ones your config declares", evalID, deployCmd)
 }
 
 // NoEnvironmentToRememberEval reports an eval whose id had nowhere to be kept.
@@ -261,10 +261,10 @@ func NoEnvironmentToRememberEval(eval string) error {
 }
 
 // EvalNotDeployedYet reports a declared eval that no deploy has created.
-func EvalNotDeployedYet(eval string) error {
+func EvalNotDeployedYet(eval, deployCmd string) error {
 	return fmt.Errorf(
 		"eval %q is declared but has not been deployed to this environment yet; "+
-			"run `azd up` first", eval)
+			"run `%s` first", eval, deployCmd)
 }
 
 // NoEvalNamedOrDeclared reports a command with no eval to act on.

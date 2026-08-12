@@ -98,7 +98,8 @@ func (ec *evalContext) resolveEvalRef(
 				// asking when it is. Now that there is a name, ask properly
 				// before reporting a deployed eval as missing.
 				if id = ec.recordedEvalID(ctx, eval.Name); id == "" {
-					return evalRef{}, messages.EvalNotDeployedYet(eval.Name)
+					return evalRef{}, messages.EvalNotDeployedYet(
+						eval.Name, ec.deployCommand(ctx))
 				}
 			}
 			return evalRef{ID: id, Eval: eval, Config: cfg, ConfigPath: configPath}, nil

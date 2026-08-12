@@ -38,6 +38,10 @@ type evalContext struct {
 
 	// Held only once both listings succeed; a partial read is not reusable.
 	schemas map[string]*eval_api.EvaluatorSummary
+
+	// Resolved on first use. Which command deploys cannot change while one
+	// command runs, and asking azd costs a round trip.
+	deployCmd string
 }
 
 // newEvalContext resolves the project endpoint and builds the data-plane
@@ -225,6 +229,44 @@ func (ec *evalContext) getEnvValue(ctx context.Context, key string) string {
 		return ""
 	}
 	return val.Value
+}
+
+// deployCommand names the command that publishes this project's evals.
+//
+// `azd up` provisions before it deploys, so it only works where there is
+// infrastructure to provision. Evals are data-plane only, so a project that
+// ships none fails compiling a missing infra/main.bicep and never reaches
+// them -- naming `azd up` there hands the reader a failure instead of a fix.
+func (ec *evalContext) deployCommand(ctx context.Context) string {
+	if ec.deployCmd == "" {
+		ec.deployCmd = deployCommandName(ec.azdProject(ctx))
+	}
+	return ec.deployCmd
+}
+
+// azdProject reads the project azd is running against, or nil when there is
+// none to read.
+func (ec *evalContext) azdProject(ctx context.Context) *azdext.ProjectConfig {
+	if ec.azdClient == nil {
+		return nil
+	}
+	resp, err := ec.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return nil
+	}
+	return resp.GetProject()
+}
+
+// deployCommandName is projectCanProvision phrased as the command to run.
+//
+// A project that cannot be read counts as having no infrastructure: `azd
+// deploy` publishes the eval either way, while `azd up` only works when there
+// is something to provision.
+func deployCommandName(proj *azdext.ProjectConfig) string {
+	if projectCanProvision(proj) {
+		return "azd up"
+	}
+	return "azd deploy"
 }
 
 // appInsightsEnvKey is where a connected Application Insights resource lands in

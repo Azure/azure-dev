@@ -349,7 +349,7 @@ func (ec *evalContext) latestOrNamedRun(
 	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)
 	if err != nil {
 		if eval_api.IsNotFound(err) {
-			return nil, messages.EvalNotDeployed(evalID)
+			return nil, messages.EvalNotDeployed(evalID, ec.deployCommand(ctx))
 		}
 		return nil, messages.ListingRuns(evalID, err)
 	}

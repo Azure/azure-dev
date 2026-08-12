@@ -176,8 +176,8 @@ evals:
 }
 
 // A declared eval that was never deployed has no id to address, and the
-// service would answer 404 for a name it never saw. Naming `azd up` is the
-// difference between a dead end and a next step.
+// service would answer 404 for a name it never saw. Naming the command that
+// deploys is the difference between a dead end and a next step.
 func TestResolveEvalRefFailsFastOnAnUndeployedDeclaration(t *testing.T) {
 	dir := writeEvalYAML(t, `
 datasets:
@@ -198,7 +198,10 @@ evals:
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "support-quality")
-	assert.Contains(t, err.Error(), "azd up", "the error has to say what would fix it")
+	// No azd project stands behind this context, so there is no infrastructure
+	// to provision and `azd up` would fail compiling a missing template before
+	// it deployed anything.
+	assert.Contains(t, err.Error(), "azd deploy", "the error has to say what would fix it")
 }
 
 // The id lives in the azd environment, so `--project-endpoint` against a

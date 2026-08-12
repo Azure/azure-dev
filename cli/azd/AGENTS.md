@@ -1,6 +1,6 @@
 # Azure Developer CLI (azd) - Agent Instructions
 
-<!-- cspell:ignore Errorf Chdir azapi gofmt golangci stdlib strconv Readdirnames -->
+<!-- cspell:ignore Errorf Chdir azapi gofmt golangci stdlib strconv Readdirnames preconfigures -->
 
 Instructions for AI coding agents working with the Azure Developer CLI.
 

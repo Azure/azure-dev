@@ -1,5 +1,4 @@
 # aka.ms/agency/config
-# cspell:ignore mcps
 
 [mcps.builtins.ado]
 type = "ado"

@@ -135,16 +135,16 @@ func IsOfficialMainRegistrySource(config *SourceConfig) bool {
 		return false
 	}
 
-	expected, err := normalizeSourceLocation(extensionRegistryUrl)
+	expected, err := normalizeOfficialSourceLocation(extensionRegistryUrl)
 	if err != nil {
 		return false
 	}
 
-	actual, err := normalizeSourceLocation(config.Location)
+	actual, err := normalizeOfficialSourceLocation(config.Location)
 	return err == nil && actual == expected
 }
 
-func normalizeSourceLocation(location string) (string, error) {
+func normalizeOfficialSourceLocation(location string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(location))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "", errors.New("invalid source location")

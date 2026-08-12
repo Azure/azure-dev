@@ -16,6 +16,20 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
+	// AgentKindPromptVoice is the authoring (agent.yaml) kind for a declarative
+	// voice (speech-to-speech) agent. It is intentionally distinct from the
+	// data-plane service kind "voice": the map layer translates prompt-voice ->
+	// voice when building the create request. Reserving "prompt-voice" keeps a
+	// clean boundary against a future hosted (code) voice agent.
+	AgentKindPromptVoice AgentKind = "prompt-voice"
+)
+
+// VoiceModelType selects the model-inference mode for a voice agent.
+type VoiceModelType string
+
+const (
+	VoiceModelTypeManaged      VoiceModelType = "managed"
+	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
 )
 
 // IsValidAgentKind checks if the provided AgentKind is valid
@@ -28,6 +42,7 @@ func ValidAgentKinds() []AgentKind {
 	return []AgentKind{
 		AgentKindHosted,
 		AgentKindWorkflow,
+		AgentKindPromptVoice,
 	}
 }
 
@@ -174,6 +189,34 @@ type AgentDefinition struct {
 type Workflow struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
 	Trigger         *map[string]any `json:"trigger,omitempty" yaml:"trigger,omitempty"`
+}
+
+// VoiceAgent is a declarative (managed) voice speech-to-speech agent authored in
+// agent.yaml with kind "prompt-voice". Unlike a ContainerAgent it has no image,
+// Dockerfile, or code — Foundry's Voice Live service hosts the model and audio
+// pipeline. The map layer translates this into a data-plane VoiceAgentDefinition
+// whose service kind is "voice".
+//
+// v1 keeps authoring lightweight: only the model and (optionally) a voice name,
+// instructions, model type, and store flag are author-facing. ModelType defaults
+// to "managed" when omitted; BYOM uses "self_deployed". The audio pipeline (PCM16 @
+// 24 kHz, server VAD turn detection, input transcription) is defaulted by the
+// map layer so authors don't have to specify it.
+type VoiceAgent struct {
+	AgentDefinition `json:",inline" yaml:",inline"`
+	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.
+	ModelType VoiceModelType `json:"modelType,omitempty" yaml:"model_type,omitempty"`
+	// Model names the speech-to-speech model (e.g. "gpt-realtime"). Reuses the
+	// shared Model struct; only Id is required for voice.
+	Model *Model `json:"model,omitempty" yaml:"model,omitempty"`
+	// Instructions is the system prompt for the voice assistant.
+	Instructions *string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+	// Voice is the output voice name (e.g. "en-US-Ava:DragonHDLatestNeural" for
+	// an Azure Neural voice, or "alloy" for an OpenAI realtime voice).
+	Voice *string `json:"voice,omitempty" yaml:"voice,omitempty"`
+	// Store toggles server-side logging (transcript + per-turn audio). Optional;
+	// the service defaults to false when omitted.
+	Store *bool `json:"store,omitempty" yaml:"store,omitempty"`
 }
 
 // ContainerResources represents the resource allocation for a containerized agent.

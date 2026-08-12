@@ -6708,7 +6708,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--capabilities'],
-							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider,framework-service-provider,metadata,provisioning-provider).',
+							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider,framework-service-provider,metadata,provisioning-provider,validation-provider).',
 							isRepeatable: true,
 							args: [
 								{
@@ -6741,7 +6741,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--language'],
-							description: 'The programming language for the extension (go, dotnet, javascript, python).',
+							description: 'The programming language for the extension (go (recommended), dotnet, javascript, python).',
 							args: [
 								{
 									name: 'language',

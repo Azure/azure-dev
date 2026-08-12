@@ -821,6 +821,7 @@ func TestCleanupBundleInstall_RepointsInstalledToBundle(t *testing.T) {
 	installed, err := action.extensionManager.GetInstalled(extensions.FilterOptions{Id: "test.ext"})
 	require.NoError(t, err)
 	require.Equal(t, extensions.BundleSourceName, installed.Source)
+	require.Equal(t, extensions.SourceCategoryBundle, installed.SourceCategory)
 }
 
 func TestExtensionList_SurfacesBundleInstalledExtension(t *testing.T) {

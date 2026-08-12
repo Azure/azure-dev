@@ -35,6 +35,18 @@ import (
 // Test_Server_Start validates the start and stop flows of the gRPC server,
 // and confirms the expected behavior for authenticated and unauthenticated requests.
 func Test_Server_Start(t *testing.T) {
+	// The reporting extension is installed and resolvable, which is how the
+	// host stamps identity onto the span the extension can never supply.
+	reportingExtension := &extensions.Extension{
+		Id:      "azd.internal.telemetry",
+		Version: "1.0.0",
+		Source:  extensions.MainRegistryName,
+		Capabilities: []extensions.CapabilityType{
+			extensions.CustomCommandCapability,
+		},
+		Namespace: "test",
+	}
+
 	server := NewServer(
 		azdext.UnimplementedProjectServiceServer{},
 		azdext.UnimplementedEnvironmentServiceServer{},
@@ -53,6 +65,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
+		newTelemetryService(stubExtensionLookup{extension: reportingExtension}),
 	)
 
 	serverInfo, err := server.Start()
@@ -119,6 +132,69 @@ func Test_Server_Start(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, codes.Unauthenticated, st.Code())
 	})
+
+	t.Run("TelemetryAccepted", func(t *testing.T) {
+		accessToken, err := GenerateExtensionToken(reportingExtension, serverInfo)
+		require.NoError(t, err)
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		resp, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+			EventName:  "deploy.completed",
+			Attributes: map[string]string{"deploy.mode": "code"},
+		})
+		require.NoError(t, err)
+		require.True(t, resp.Accepted)
+	})
+
+	t.Run("TelemetryRejectsMissingEventName", func(t *testing.T) {
+		accessToken, err := GenerateExtensionToken(reportingExtension, serverInfo)
+		require.NoError(t, err)
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		_, err = client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+			Attributes: map[string]string{"deploy.mode": "code"},
+		})
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("TelemetryRejectsUninstalledExtension", func(t *testing.T) {
+		// The base extension is not the record the lookup resolves, so the
+		// host has no identity to stamp and must refuse.
+		accessToken, err := GenerateExtensionToken(extension, serverInfo)
+		require.NoError(t, err)
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		_, err = client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+			EventName: "deploy.completed",
+		})
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.PermissionDenied, st.Code())
+	})
+
+	t.Run("TelemetryMissingToken", func(t *testing.T) {
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		_, err = client.Telemetry().ReportUsage(
+			t.Context(),
+			&azdext.ReportUsageRequest{EventName: "deploy.completed"},
+		)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.Unauthenticated, st.Code())
+	})
 }
 
 // Test_Server_StreamInterceptor validates that the streaming RPC interceptor
@@ -142,6 +218,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		azdext.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
+		azdext.UnimplementedTelemetryServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -398,11 +475,11 @@ func requireAuthErrorInfo(t *testing.T, st *status.Status) *errdetails.ErrorInfo
 	return nil
 }
 
-func TestAuthenticatedStream_Context(t *testing.T) {
+func TestContextStream_Context(t *testing.T) {
 	t.Parallel()
 	ctx := context.WithValue(t.Context(), struct{ key string }{key: "test"}, "value")
 
-	stream := &authenticatedStream{
+	stream := &contextStream{
 		ctx: ctx,
 	}
 
@@ -618,7 +695,7 @@ func TestValidateAuthToken_InvalidToken(t *testing.T) {
 
 func TestNewServer(t *testing.T) {
 	t.Parallel()
-	s := NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NotNil(t, s)
 	assert.Nil(t, s.grpcServer, "grpcServer should be nil before Start")
 }

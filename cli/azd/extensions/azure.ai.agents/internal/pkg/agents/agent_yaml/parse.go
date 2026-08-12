@@ -117,6 +117,14 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 		agent.AgentDefinition = agentDef
 		return agent, nil
+	case AgentKindPromptVoice:
+		var agent VoiceAgent
+		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal to VoiceAgent: %w", err)
+		}
+
+		agent.AgentDefinition = agentDef
+		return agent, nil
 	}
 
 	return nil, fmt.Errorf("unrecognized agent kind: %s", agentDef.Kind)
@@ -418,6 +426,22 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					// Workflow doesn't have models, so no model validation needed
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to Workflow: %v", err))
+				}
+			case AgentKindPromptVoice:
+				var agent VoiceAgent
+				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
+						errors = append(errors, "template.model.id is required for a prompt-voice agent")
+					}
+					if agent.ModelType != "" &&
+						agent.ModelType != VoiceModelTypeManaged &&
+						agent.ModelType != VoiceModelTypeSelfDeployed {
+						errors = append(errors, fmt.Sprintf(
+							"template.model_type '%s' is not supported; use '%s' or '%s'",
+							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
+					}
+				} else {
+					errors = append(errors, fmt.Sprintf("failed to unmarshal to VoiceAgent: %v", err))
 				}
 			}
 		}

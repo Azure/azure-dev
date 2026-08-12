@@ -10,7 +10,56 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 )
+
+func TestActivityBotTeardownTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                   string
+		persistedBotName       string
+		persistedResourceGroup string
+		persistedOwned         string
+		wantBotName            string
+		wantResourceGroup      string
+		wantTracked            bool
+	}{
+		{
+			name:                   "uses persisted deployment target",
+			persistedBotName:       "adopted-bot",
+			persistedResourceGroup: "adopted-rg",
+		},
+		{
+			name:                   "uses azd-owned deployment target",
+			persistedBotName:       "owned-bot",
+			persistedResourceGroup: "owned-rg",
+			persistedOwned:         "true",
+			wantBotName:            "owned-bot",
+			wantResourceGroup:      "owned-rg",
+			wantTracked:            true,
+		},
+		{
+			name: "does not delete bot without ownership marker",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			botName, resourceGroup, tracked := activityBotTeardownTarget(
+				test.persistedBotName,
+				test.persistedResourceGroup,
+				test.persistedOwned,
+			)
+
+			require.Equal(t, test.wantBotName, botName)
+			require.Equal(t, test.wantResourceGroup, resourceGroup)
+			require.Equal(t, test.wantTracked, tracked)
+		})
+	}
+}
 
 func TestTeamsSetupGuideContent(t *testing.T) {
 	const msaAppID = "11111111-2222-3333-4444-555555555555"

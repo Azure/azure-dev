@@ -58,6 +58,101 @@ func TestSourceManager_Add(t *testing.T) {
 	})
 }
 
+func TestSourceManager_ProtectsMainRegistry(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	ctx := t.Context()
+
+	configManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, configManager, mockContext.HttpClient)
+	unofficial := &SourceConfig{
+		Name:     MainRegistryName,
+		Type:     SourceKindUrl,
+		Location: "https://example.com/registry",
+	}
+
+	err := sourceManager.Add(ctx, MainRegistryName, unofficial)
+	require.ErrorIs(t, err, ErrSourceReserved)
+
+	err = sourceManager.Remove(ctx, MainRegistryName)
+	require.ErrorIs(t, err, ErrSourceReserved)
+
+	_, err = sourceManager.CreateSource(ctx, unofficial)
+	require.ErrorIs(t, err, ErrSourceReserved)
+}
+
+func TestIsOfficialMainRegistrySource(t *testing.T) {
+	tests := []struct {
+		name   string
+		source *SourceConfig
+		want   bool
+	}{
+		{
+			name: "official",
+			source: &SourceConfig{
+				Name:     MainRegistryName,
+				Type:     SourceKindUrl,
+				Location: "https://aka.ms/azd/extensions/registry",
+			},
+			want: true,
+		},
+		{
+			name: "trailing slash",
+			source: &SourceConfig{
+				Name:     MainRegistryName,
+				Type:     SourceKindUrl,
+				Location: "https://AKA.MS/azd/extensions/registry/",
+			},
+			want: true,
+		},
+		{
+			name: "wrong location",
+			source: &SourceConfig{
+				Name:     MainRegistryName,
+				Type:     SourceKindUrl,
+				Location: "https://example.com/registry",
+			},
+		},
+		{
+			name: "extra trailing slash",
+			source: &SourceConfig{
+				Name:     MainRegistryName,
+				Type:     SourceKindUrl,
+				Location: extensionRegistryUrl + "//",
+			},
+		},
+		{
+			name: "query string",
+			source: &SourceConfig{
+				Name:     MainRegistryName,
+				Type:     SourceKindUrl,
+				Location: extensionRegistryUrl + "?source=official",
+			},
+		},
+		{
+			name: "wrong type",
+			source: &SourceConfig{
+				Name:     MainRegistryName,
+				Type:     SourceKindFile,
+				Location: extensionRegistryUrl,
+			},
+		},
+		{
+			name: "wrong name",
+			source: &SourceConfig{
+				Name:     "custom",
+				Type:     SourceKindUrl,
+				Location: extensionRegistryUrl,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, IsOfficialMainRegistrySource(test.source))
+		})
+	}
+}
+
 func TestSourceManager_Get(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	ctx := t.Context()

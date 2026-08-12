@@ -74,6 +74,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 | `ext.install` | Extension installation |
 | `ext.update` | Extension update attempt |
 | `ext.promote` | Registry promotion (e.g., dev → main) |
+| `ext.usage` | Usage event reported by an extension through the telemetry service (official-registry extensions only) |
 
 ### Agent & Copilot Events
 
@@ -457,17 +458,39 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 |-----------|------|-------------|
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
+| `extension.event` | string | Extension-chosen event name on an `ext.usage` span |
+| `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
+| `extension.installed.source.category` | string[] | Installed extension source categories (`id@category`) |
 | `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |
 | `extension.version.to` | string | Version after an update or promotion (`ext.update`, `ext.promote`) |
-| `extension.source` | string | Registry source used for an update (`ext.update`) |
+| `extension.source` | string | Registry source used for an update and admission check for `ext.usage` |
+| `extension.source.category` | string | Fixed source category: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, or `unknown` (`ext.install`, `ext.update`, `azd extension source add`) |
 | `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `update`) |
-| `extension.source.from` | string | Registry source before a promotion (`ext.promote`) |
-| `extension.source.to` | string | Registry source after a promotion (`ext.promote`) |
+| `extension.source.category.from` | string | Fixed source category before a promotion (`ext.promote`) |
+| `extension.source.category.to` | string | Fixed source category after a promotion (`ext.promote`) |
 | `extension.update.duration_ms` | measurement | Duration (ms) of a single update (`ext.update`) |
 | `extension.update.outcome` | string | Update result status (`ext.update`) |
 | `extension.dependency_of` | string | Parent extension ID when an extension is updated as a dependency (`ext.update`) |
 | `extension.dependency_update_count` | measurement | Number of dependency extensions updated recursively (`ext.update`) |
+
+Each `ext.usage` span contains `extension.id`, `extension.version`,
+`extension.source`, `extension.event`, and any number of dynamic `ext.*`
+fields. The host writes the identity fields and applies the `ext.` prefix; the
+extension chooses the event name, the key suffixes, and the values. The whole
+class is classified as `SystemMetadata` for `FeatureInsight`. Extension authors
+are responsible for keeping values low cardinality and free of customer
+content, and for having them privacy reviewed with their extension.
+
+Only extensions whose configured `azd` source matches the verified official
+registry name, type, and normalized URL produce these spans, which is what ties
+the recorded values to that privacy review. A report from any other install
+source succeeds but records nothing, as does any report past the limit of 100
+spans per `azd` invocation. This is a configuration-based admission check, not
+a cryptographic provenance guarantee.
+
+Source-category fields are classified from the configured source type and location, not the user-defined source name.
+Raw source names, URLs, paths, and hosts are not emitted in those fields.
 </details>
 
 <details>
@@ -708,7 +731,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `ext.install`, `ext.update` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |
+| **Extensions** | `ext.run`, `ext.install`, `ext.update`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.event`, dynamic `ext.*` fields | Extension adoption, errors, usage events |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |

@@ -87,31 +87,11 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 				return fmt.Errorf("--internal cannot be used with --registry")
 			}
 
-			// Validate required parameters when in headless mode
-			if flags.noPrompt {
-				var missingParams []string
-				if flags.id == "" {
-					missingParams = append(missingParams, "--id")
-				}
-				if flags.name == "" {
-					missingParams = append(missingParams, "--name")
-				}
-				if len(flags.capabilities) == 0 {
-					missingParams = append(missingParams, "--capabilities")
-				}
-				if flags.language == "" && !flags.internalScaffold {
-					missingParams = append(missingParams, "--language")
-				}
-				if flags.internalScaffold && len(flags.codeowners) == 0 {
-					missingParams = append(missingParams, "--codeowners")
-				}
-
-				if len(missingParams) > 0 {
-					return fmt.Errorf(
-						"when using --no-prompt, the following parameters are required: %s",
-						strings.Join(missingParams, ", "),
-					)
-				}
+			if missingParams := missingInitParameters(flags); len(missingParams) > 0 {
+				return fmt.Errorf(
+					"when using --no-prompt, the following parameters are required: %s",
+					strings.Join(missingParams, ", "),
+				)
 			}
 
 			err := runInitAction(cmd.Context(), flags)
@@ -119,7 +99,11 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 				return err
 			}
 
-			internal.WriteCommandSuccess("Extension initialized successfully!")
+			if flags.createRegistry {
+				internal.WriteCommandSuccess("Local extension source is ready!")
+			} else {
+				internal.WriteCommandSuccess("Extension initialized successfully!")
+			}
 			return nil
 		},
 	}
@@ -160,7 +144,7 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 	initCmd.Flags().StringVar(
 		&flags.language,
 		"language", "",
-		"The programming language for the extension (go, dotnet, javascript, python).",
+		"The programming language for the extension (go (recommended), dotnet, javascript, python).",
 	)
 
 	initCmd.Flags().StringVar(
@@ -189,6 +173,19 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 }
 
 func runInitAction(ctx context.Context, flags *initFlags) (err error) {
+	return runInitActionWithRegistry(ctx, flags, internal.HasLocalRegistry, internal.CreateLocalRegistry)
+}
+
+func runInitActionWithRegistry(
+	ctx context.Context,
+	flags *initFlags,
+	hasLocalRegistry func() (bool, error),
+	createLocalRegistry func() error,
+) (err error) {
+	if flags.createRegistry {
+		return runCreateRegistryTask(hasLocalRegistry, createLocalRegistry)
+	}
+
 	// Create a new context that includes the azd access token
 	ctx = azdext.WithAccessToken(ctx)
 
@@ -220,7 +217,7 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		if err != nil {
 			return err
 		}
-	} else if !flags.createRegistry {
+	} else {
 		// Interactive mode - collect metadata through prompts
 		extensionMetadata, err = collectExtensionMetadata(ctx, azdClient, flags.internalScaffold)
 		if err != nil {
@@ -328,18 +325,7 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 	}
 
 	createLocalExtensionSourceAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-		if has, err := internal.HasLocalRegistry(); err == nil && has {
-			return ux.Skipped, nil
-		}
-
-		if err := internal.CreateLocalRegistry(); err != nil {
-			return ux.Error, common.NewDetailedError(
-				"Registry creation failed",
-				fmt.Errorf("failed to create local registry: %w", err),
-			)
-		}
-
-		return ux.Success, nil
+		return ensureLocalRegistry(internal.HasLocalRegistry, internal.CreateLocalRegistry)
 	}
 
 	createExtensionDirectoryAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
@@ -420,77 +406,136 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 	}
 
 	taskList := ux.NewTaskList(nil)
-
-	if flags.createRegistry {
-		taskList.AddTask(ux.TaskOptions{
+	taskList.
+		AddTask(ux.TaskOptions{
+			Title:  "Validate extension metadata",
+			Action: validateExtensionAction,
+		}).
+		AddTask(ux.TaskOptions{
 			Title:  "Create local azd extension source",
 			Action: createLocalExtensionSourceAction,
+		}).
+		AddTask(ux.TaskOptions{
+			Title:  fmt.Sprintf("Creating extension directory %s", output.WithHighLightFormat(extensionMetadata.Id)),
+			Action: createExtensionDirectoryAction,
+		}).
+		AddTask(ux.TaskOptions{
+			Title:  "Build extension",
+			Action: buildExtensionAction,
+		}).
+		AddTask(ux.TaskOptions{
+			Title:  "Package extension",
+			Action: packageExtensionAction,
+		}).
+		AddTask(ux.TaskOptions{
+			Title:  "Publish extension to local extension source",
+			Action: publishExtensionAction,
+		}).
+		AddTask(ux.TaskOptions{
+			Title:  "Install extension",
+			Action: installExtensionAction,
 		})
-	} else {
-		taskList.
-			AddTask(ux.TaskOptions{
-				Title:  "Validate extension metadata",
-				Action: validateExtensionAction,
-			}).
-			AddTask(ux.TaskOptions{
-				Title:  "Create local azd extension source",
-				Action: createLocalExtensionSourceAction,
-			}).
-			AddTask(ux.TaskOptions{
-				Title:  fmt.Sprintf("Creating extension directory %s", output.WithHighLightFormat(extensionMetadata.Id)),
-				Action: createExtensionDirectoryAction,
-			}).
-			AddTask(ux.TaskOptions{
-				Title:  "Build extension",
-				Action: buildExtensionAction,
-			}).
-			AddTask(ux.TaskOptions{
-				Title:  "Package extension",
-				Action: packageExtensionAction,
-			}).
-			AddTask(ux.TaskOptions{
-				Title:  "Publish extension to local extension source",
-				Action: publishExtensionAction,
-			}).
-			AddTask(ux.TaskOptions{
-				Title:  "Install extension",
-				Action: installExtensionAction,
-			})
-	}
 
 	if runErr := taskList.Run(); runErr != nil {
 		err = fmt.Errorf("failed running init tasks: %w", runErr)
 		return err
 	}
 
-	if !flags.createRegistry {
-		fmt.Println(output.WithBold("Try out the extension"))
-		fmt.Printf(
-			"- Run %s to try your extension now.\n",
-			output.WithHighLightFormat("azd %s -h", namespaceCommandPath(extensionMetadata.Namespace)),
-		)
-		fmt.Println()
-		fmt.Println(output.WithBold("Next Steps"))
-		fmt.Printf(
-			"- Navigate to the %s directory and start building your extension.\n",
-			output.WithHighLightFormat(extensionMetadata.Id),
-		)
-		fmt.Println()
-		fmt.Println(output.WithBold("Iterate on the extension"))
-		fmt.Printf(
-			"- Run %s to watch for code changes and auto re-build the extension\n",
-			output.WithHighLightFormat("azd x watch"),
-		)
-		fmt.Printf("- Run %s to rebuild the extension\n", output.WithHighLightFormat("azd x build"))
-		fmt.Println()
-		fmt.Println(output.WithBold("Package, release and publish the extension"))
-		fmt.Printf("- Run %s to package the extension\n", output.WithHighLightFormat("azd x pack"))
-		fmt.Printf("- Run %s to create a GitHub release for your extension\n", output.WithHighLightFormat("azd x release"))
-		fmt.Printf("- Run %s to publish the extension\n", output.WithHighLightFormat("azd x publish"))
-		fmt.Println()
+	fmt.Println(output.WithBold("Try out the extension"))
+	fmt.Printf(
+		"- Run %s to try your extension now.\n",
+		output.WithHighLightFormat("azd %s -h", namespaceCommandPath(extensionMetadata.Namespace)),
+	)
+	fmt.Println()
+	fmt.Println(output.WithBold("Next Steps"))
+	fmt.Printf(
+		"- Navigate to the %s directory and start building your extension.\n",
+		output.WithHighLightFormat(extensionMetadata.Id),
+	)
+	fmt.Println()
+	fmt.Println(output.WithBold("Iterate on the extension"))
+	fmt.Printf(
+		"- Run %s to watch for code changes and auto re-build the extension\n",
+		output.WithHighLightFormat("azd x watch"),
+	)
+	fmt.Printf("- Run %s to rebuild the extension\n", output.WithHighLightFormat("azd x build"))
+	fmt.Println()
+	fmt.Println(output.WithBold("Package, release and publish the extension"))
+	fmt.Printf("- Run %s to package the extension\n", output.WithHighLightFormat("azd x pack"))
+	fmt.Printf("- Run %s to create a GitHub release for your extension\n", output.WithHighLightFormat("azd x release"))
+	fmt.Printf("- Run %s to publish the extension\n", output.WithHighLightFormat("azd x publish"))
+	fmt.Println()
+
+	return nil
+}
+
+func missingInitParameters(flags *initFlags) []string {
+	if !flags.noPrompt || flags.createRegistry {
+		return nil
+	}
+
+	var missingParams []string
+	if flags.id == "" {
+		missingParams = append(missingParams, "--id")
+	}
+	if flags.name == "" {
+		missingParams = append(missingParams, "--name")
+	}
+	if len(flags.capabilities) == 0 {
+		missingParams = append(missingParams, "--capabilities")
+	}
+	if flags.language == "" && !flags.internalScaffold {
+		missingParams = append(missingParams, "--language")
+	}
+	if flags.internalScaffold && len(flags.codeowners) == 0 {
+		missingParams = append(missingParams, "--codeowners")
+	}
+
+	return missingParams
+}
+
+func runCreateRegistryTask(
+	hasLocalRegistry func() (bool, error),
+	createLocalRegistry func() error,
+) error {
+	taskList := ux.NewTaskList(nil)
+	taskList.AddTask(ux.TaskOptions{
+		Title: "Create local azd extension source",
+		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+			return ensureLocalRegistry(hasLocalRegistry, createLocalRegistry)
+		},
+	})
+
+	if err := taskList.Run(); err != nil {
+		return fmt.Errorf("failed running init tasks: %w", err)
 	}
 
 	return nil
+}
+
+func ensureLocalRegistry(
+	hasLocalRegistry func() (bool, error),
+	createLocalRegistry func() error,
+) (ux.TaskState, error) {
+	has, err := hasLocalRegistry()
+	if err != nil {
+		return ux.Error, common.NewDetailedError(
+			"Registry check failed",
+			fmt.Errorf("failed to check for local extension source: %w", err),
+		)
+	}
+	if has {
+		return ux.Skipped, nil
+	}
+
+	if err := createLocalRegistry(); err != nil {
+		return ux.Error, common.NewDetailedError(
+			"Registry creation failed",
+			fmt.Errorf("failed to create local registry: %w", err),
+		)
+	}
+
+	return ux.Success, nil
 }
 
 // collectExtensionMetadataFromFlags creates extension metadata from command-line flags
@@ -675,7 +720,7 @@ func collectExtensionMetadata(
 	} else {
 		languageChoices := []*azdext.SelectChoice{
 			{
-				Label: "Go",
+				Label: "Go (recommended)",
 				Value: "go",
 			},
 			{
@@ -696,10 +741,11 @@ func collectExtensionMetadata(
 			Options: &azdext.SelectOptions{
 				Message:         "Select a programming language for your extension",
 				Choices:         languageChoices,
+				SelectedIndex:   new(int32(0)),
 				EnableFiltering: new(false),
 				DisplayNumbers:  new(false),
 				HelpMessage: "Programming language is used to define the language in which your extension is written. " +
-					"You can select one programming language.",
+					"Go is recommended: it has the most complete and actively maintained extension template.",
 			},
 		})
 		if err != nil {
@@ -948,8 +994,10 @@ func createExtensionDirectory(
 	// Create project from template.
 	namespaceParts := strings.Split(extensionMetadata.Namespace, ".")
 	templateMetadata := &ExtensionTemplate{
-		Metadata:      extensionMetadata,
-		LeafNamespace: namespaceParts[len(namespaceParts)-1],
+		Metadata:           extensionMetadata,
+		LeafNamespace:      namespaceParts[len(namespaceParts)-1],
+		HasCustomCommands:  slices.Contains(extensionMetadata.Capabilities, extensions.CustomCommandCapability),
+		HasLifecycleEvents: slices.Contains(extensionMetadata.Capabilities, extensions.LifecycleEventsCapability),
 		DotNet: &DotNetTemplate{
 			Namespace: internal.ToPascalCase(extensionMetadata.Id),
 			ExeName:   extensionMetadata.SafeDashId(),
@@ -998,9 +1046,11 @@ func createInternalExtensionScaffold(
 
 	sanitizedId := strings.ReplaceAll(extensionMetadata.Id, ".", "-")
 	templateData := &ExtensionTemplate{
-		Metadata:      extensionMetadata,
-		SanitizedId:   sanitizedId,
-		LeafNamespace: path.Base(strings.ReplaceAll(extensionMetadata.Namespace, ".", "/")),
+		Metadata:           extensionMetadata,
+		SanitizedId:        sanitizedId,
+		LeafNamespace:      path.Base(strings.ReplaceAll(extensionMetadata.Namespace, ".", "/")),
+		HasCustomCommands:  slices.Contains(extensionMetadata.Capabilities, extensions.CustomCommandCapability),
+		HasLifecycleEvents: slices.Contains(extensionMetadata.Capabilities, extensions.LifecycleEventsCapability),
 		DotNet: &DotNetTemplate{
 			Namespace: internal.ToPascalCase(extensionMetadata.Id),
 			ExeName:   extensionMetadata.SafeDashId(),
@@ -1318,6 +1368,10 @@ type ExtensionTemplate struct {
 	Metadata *models.ExtensionSchema
 	// SanitizedId is the extension ID with dots replaced by dashes for CI file names.
 	SanitizedId string
+	// HasCustomCommands controls documentation for commands exposed through azd.
+	HasCustomCommands bool
+	// HasLifecycleEvents controls documentation for the hidden lifecycle event host.
+	HasLifecycleEvents bool
 	// LeafNamespace is the final dot-separated segment of Metadata.Namespace, used as the
 	// cobra Use/Name for the extension's root command. For nested namespaces like
 	// "ai.agents", users invoke the extension via "azd ai agents" (azd splits on '.'),

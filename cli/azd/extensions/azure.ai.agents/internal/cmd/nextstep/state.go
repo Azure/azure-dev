@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/synthesis"
@@ -33,6 +34,12 @@ const (
 	// agentVersionVarFormat is the env-var name that signals a deployed
 	// agent service. Filled with the upper-cased service key.
 	agentVersionVarFormat = "AGENT_%s_VERSION"
+
+	// agentEndpointVarFormat is the base endpoint env-var written for every
+	// deployed agent. Voice agents (kind: prompt-voice) are created
+	// synchronously with no agent-version object, so this base endpoint is the
+	// only deployment marker they set — isDeployed falls back to it.
+	agentEndpointVarFormat = "AGENT_%s_ENDPOINT"
 
 	// projectEndpointVar is the env-var that carries the Foundry project
 	// endpoint URL produced by `azd ai agent init`.
@@ -470,7 +477,7 @@ func collectServices(
 			RelativePath:      svc.RelativePath,
 			Protocol:          protocol,
 			MultiProtocol:     multiProtocol,
-			IsDeployed:        isDeployed(ctx, src, envName, svc.Name, errs),
+			IsDeployed:        isDeployed(ctx, src, envName, svc.Name, isVoiceService(project.Path, svc), errs),
 			EnvironmentValues: sortedEnvironmentValues(environment),
 		})
 	}
@@ -537,6 +544,17 @@ func structHasKind(s *structpb.Struct) bool {
 	}
 	v, ok := s.GetFields()["kind"]
 	return ok && strings.TrimSpace(v.GetStringValue()) != ""
+}
+
+// isVoiceService reports whether the service declares kind: prompt-voice. It
+// delegates to the shared agentkind lookup so the next-step reader classifies a
+// service identically to the deploy path and Endpoints, including honoring an
+// explicit AGENT_DEFINITION_PATH override (which deploy follows). Kind
+// resolution is best-effort for next-step hints, so any error is treated as
+// not-voice.
+func isVoiceService(projectPath string, svc *azdext.ServiceConfig) bool {
+	isVoice, err := agentkind.IsPromptVoice(svc, projectPath, os.Getenv("AGENT_DEFINITION_PATH"))
+	return err == nil && isVoice
 }
 
 func loadServiceProtocolFromFile(projectPath, relativePath string) (string, bool) {
@@ -749,6 +767,7 @@ func isDeployed(
 	ctx context.Context,
 	src Source,
 	envName, serviceName string,
+	isVoice bool,
 	errs *[]error,
 ) bool {
 	if envName == "" || serviceName == "" {
@@ -760,7 +779,30 @@ func isDeployed(
 		*errs = append(*errs, fmt.Errorf("read %s: %w", key, err))
 		return false
 	}
-	return value != ""
+	if value != "" {
+		return true
+	}
+
+	// Voice agents (kind: prompt-voice) deploy without an agent-version object,
+	// so they never set AGENT_<KEY>_VERSION. Fall back to the base endpoint
+	// marker, which every voice deploy writes, so a successfully created voice
+	// agent is not reported as undeployed. Gate this on the service's actual
+	// declared kind: a hosted agent whose deploy partially failed can also
+	// present an empty VERSION with a lingering ENDPOINT, and must stay reported
+	// as not-deployed. This mirrors the kind gate in
+	// AgentServiceTargetProvider.Endpoints (project package); the two live in
+	// separate packages because project imports nextstep, so a literally shared
+	// helper would create an import cycle.
+	if !isVoice {
+		return false
+	}
+	endpointKey := fmt.Sprintf(agentEndpointVarFormat, serviceKey(serviceName))
+	endpointValue, err := src.EnvValue(ctx, envName, endpointKey)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("read %s: %w", endpointKey, err))
+		return false
+	}
+	return endpointValue != ""
 }
 
 // serviceKey converts a service name into the env-var key fragment used by

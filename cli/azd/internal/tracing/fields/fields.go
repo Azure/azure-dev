@@ -38,6 +38,21 @@ const (
 	PerformanceAndHealth Purpose = "PerformanceAndHealth"
 )
 
+// ExtensionAttributePrefix namespaces every extension-supplied telemetry
+// attribute so it can never overwrite a host-owned field on the span.
+const ExtensionAttributePrefix = "ext."
+
+// ExtensionUsageAttribute namespaces an extension-supplied usage attribute
+// key. Callers must bound the key and value before use; the extension owns
+// what the value means, so it is never customer content by contract.
+func ExtensionUsageAttribute(key string) AttributeKey {
+	return AttributeKey{
+		Key:            attribute.Key(ExtensionAttributePrefix + key),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+}
+
 // Application-level fields. Guaranteed to be set and available for all events.
 var (
 	// Application name. Value is always "azd".
@@ -1167,9 +1182,23 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// ExtensionEvent is the event name an extension chose for a usage
+	// event. Extensions own this value; it exists so queries can filter
+	// an extension's events without parsing its attributes.
+	ExtensionEvent = AttributeKey{
+		Key:            attribute.Key("extension.event"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// The list of installed extensions, each formatted as "id@version".
 	ExtensionsInstalled = AttributeKey{
 		Key:            attribute.Key("extension.installed"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionsInstalledSourceCategories records installed extensions as "id@category".
+	ExtensionsInstalledSourceCategories = AttributeKey{
+		Key:            attribute.Key("extension.installed.source.category"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
@@ -1185,9 +1214,16 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionSource is the registry source used for the update.
+	// ExtensionSource is the registry source used by extension updates
+	// and ext.usage reports.
 	ExtensionSource = AttributeKey{
 		Key:            attribute.Key("extension.source"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSourceCategory is the fixed category of the source used for an operation.
+	ExtensionSourceCategory = AttributeKey{
+		Key:            attribute.Key("extension.source.category"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
@@ -1197,15 +1233,15 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionSourceFrom is the registry source before a promotion.
-	ExtensionSourceFrom = AttributeKey{
-		Key:            attribute.Key("extension.source.from"),
+	// ExtensionSourceCategoryFrom is the source category before a promotion.
+	ExtensionSourceCategoryFrom = AttributeKey{
+		Key:            attribute.Key("extension.source.category.from"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionSourceTo is the registry source after a promotion.
-	ExtensionSourceTo = AttributeKey{
-		Key:            attribute.Key("extension.source.to"),
+	// ExtensionSourceCategoryTo is the source category after a promotion.
+	ExtensionSourceCategoryTo = AttributeKey{
+		Key:            attribute.Key("extension.source.category.to"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}

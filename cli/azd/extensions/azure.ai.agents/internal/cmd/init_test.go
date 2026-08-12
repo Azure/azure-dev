@@ -301,6 +301,7 @@ func TestSkipACR(t *testing.T) {
 		name         string
 		isCodeDeploy bool
 		image        string
+		isVoiceAgent bool
 		want         bool
 	}{
 		{
@@ -322,6 +323,13 @@ func TestSkipACR(t *testing.T) {
 			want:         true,
 		},
 		{
+			name:         "voice agent skips ACR",
+			isCodeDeploy: false,
+			image:        "",
+			isVoiceAgent: true,
+			want:         true,
+		},
+		{
 			name:         "neither set does not skip ACR",
 			isCodeDeploy: false,
 			image:        "",
@@ -335,10 +343,45 @@ func TestSkipACR(t *testing.T) {
 
 			action := &InitAction{
 				isCodeDeploy: tt.isCodeDeploy,
+				isVoiceAgent: tt.isVoiceAgent,
 				flags:        &initFlags{image: tt.image},
 			}
 
 			require.Equal(t, tt.want, action.skipACR())
+		})
+	}
+}
+
+// TestIsHostedAgent verifies that isHostedAgent is decoupled from skipACR: a
+// voice agent skips ACR but is not a hosted agent, so it must not be treated as
+// hosted for region filtering.
+func TestIsHostedAgent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		isCodeDeploy bool
+		image        string
+		isVoiceAgent bool
+		want         bool
+	}{
+		{name: "code deploy is hosted", isCodeDeploy: true, want: true},
+		{name: "image is hosted", image: "myacr.azurecr.io/agent:v1", want: true},
+		{name: "voice is not hosted", isVoiceAgent: true, want: false},
+		{name: "plain container is not hosted", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			action := &InitAction{
+				isCodeDeploy: tt.isCodeDeploy,
+				isVoiceAgent: tt.isVoiceAgent,
+				flags:        &initFlags{image: tt.image},
+			}
+
+			require.Equal(t, tt.want, action.isHostedAgent())
 		})
 	}
 }
@@ -3829,5 +3872,54 @@ func TestRemoveContainerFiles(t *testing.T) {
 			_, err := os.Stat(filepath.Join(dir, f))
 			require.NoError(t, err, "%s should still exist", f)
 		}
+	})
+}
+
+// TestSynthesizeVoiceManifestFile verifies the --kind prompt-voice scaffold path
+// writes a valid managed voice manifest that round-trips through the real parser,
+// covering the default model, the explicit model/voice overrides, and that no
+// voice key is emitted when none is supplied.
+func TestSynthesizeVoiceManifestFile(t *testing.T) {
+	t.Parallel()
+
+	parse := func(t *testing.T, path string) agent_yaml.VoiceAgent {
+		t.Helper()
+		data, err := os.ReadFile(path) //nolint:gosec // path is produced by the function under test
+		require.NoError(t, err)
+		def, err := agent_yaml.ExtractAgentDefinition(data)
+		require.NoError(t, err)
+		va, ok := def.(agent_yaml.VoiceAgent)
+		require.True(t, ok, "expected VoiceAgent, got %T", def)
+		return va
+	}
+
+	t.Run("defaults model when empty and omits voice", func(t *testing.T) {
+		t.Parallel()
+		path, cleanup, err := synthesizeVoiceManifestFile("my-voice", "", "")
+		require.NoError(t, err)
+		defer cleanup()
+
+		va := parse(t, path)
+		require.Equal(t, agent_yaml.AgentKindPromptVoice, va.Kind)
+		require.Equal(t, agent_yaml.VoiceModelTypeManaged, va.ModelType)
+		require.NotNil(t, va.Model)
+		require.Equal(t, defaultVoiceModel, va.Model.Id)
+		require.Nil(t, va.Voice, "no voice key should be emitted when none is supplied")
+	})
+
+	t.Run("honors explicit model and voice", func(t *testing.T) {
+		t.Parallel()
+		path, cleanup, err := synthesizeVoiceManifestFile(
+			"my-voice", "gpt-realtime-preview", "en-US-Ava:DragonHDLatestNeural",
+		)
+		require.NoError(t, err)
+		defer cleanup()
+
+		va := parse(t, path)
+		require.Equal(t, agent_yaml.VoiceModelTypeManaged, va.ModelType)
+		require.NotNil(t, va.Model)
+		require.Equal(t, "gpt-realtime-preview", va.Model.Id)
+		require.NotNil(t, va.Voice)
+		require.Equal(t, "en-US-Ava:DragonHDLatestNeural", *va.Voice)
 	})
 }

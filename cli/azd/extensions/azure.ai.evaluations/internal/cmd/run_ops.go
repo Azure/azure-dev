@@ -88,6 +88,9 @@ func newRunListCommand() *cobra.Command {
 		},
 	}
 	addEvalFlag(cmd, &groupName)
+	// Registered wherever a declared name is resolved, so a configuration
+	// outside ./evals can be addressed by every command, not just un start.
+	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().IntVar(&limit, "limit", 0,
 		"Return at most this many runs. Omit for the service default.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
@@ -184,6 +187,9 @@ func newRunShowCommand() *cobra.Command {
 		"Block until the run reaches a terminal state before reporting.")
 	addFailOnFlag(cmd, &failOn)
 	addEvalFlag(cmd, &groupName)
+	// Registered wherever a declared name is resolved, so a configuration
+	// outside ./evals can be addressed by every command, not just un start.
+	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -247,6 +253,9 @@ func newRunCancelCommand() *cobra.Command {
 		},
 	}
 	addEvalFlag(cmd, &groupName)
+	// Registered wherever a declared name is resolved, so a configuration
+	// outside ./evals can be addressed by every command, not just un start.
+	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -298,6 +307,9 @@ func newRunDeleteCommand() *cobra.Command {
 		},
 	}
 	addEvalFlag(cmd, &groupName)
+	// Registered wherever a declared name is resolved, so a configuration
+	// outside ./evals can be addressed by every command, not just un start.
+	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

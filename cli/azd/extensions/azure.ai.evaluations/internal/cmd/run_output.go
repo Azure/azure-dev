@@ -104,6 +104,9 @@ func newRunOutputListCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&failedOnly, "failed-only", false, "Show only the rows that failed.")
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write JSON results to this path.")
 	addEvalFlag(cmd, &groupName)
+	// Registered wherever a declared name is resolved, so a configuration
+	// outside ./evals can be addressed by every command, not just un start.
+	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -159,6 +162,9 @@ func newRunOutputShowCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&runID, "run", "", "Run the item belongs to. Defaults to the most recent run.")
 	addEvalFlag(cmd, &groupName)
+	// Registered wherever a declared name is resolved, so a configuration
+	// outside ./evals can be addressed by every command, not just un start.
+	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -233,6 +239,9 @@ func newRunOutputExportCommand() *cobra.Command {
 		fmt.Sprintf("Output format: %s, %s or %s.", formatCSV, formatJSON, formatJSONL))
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write to this path instead of stdout.")
 	addEvalFlag(cmd, &groupName)
+	// Registered wherever a declared name is resolved, so a configuration
+	// outside ./evals can be addressed by every command, not just un start.
+	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -255,7 +264,8 @@ func resolveEvalID(
 	}
 
 	if groupName != "" {
-		ref, err := ec.resolveEvalRef(cmd.Context(), ec.evalDir(cmd.Context(), ""), groupName)
+		ref, err := ec.resolveEvalRef(
+			cmd.Context(), ec.evalDir(cmd.Context(), evalPathFlag(cmd)), groupName)
 		if err != nil {
 			return "", err
 		}
@@ -284,6 +294,21 @@ func addEvalFlag(cmd *cobra.Command, target *string) {
 func addEvalPathFlag(cmd *cobra.Command, target *string) {
 	cmd.Flags().StringVar(target, "path", "",
 		"Directory holding azure.eval.yaml. Defaults to the path `init` used, then ./evals.")
+}
+
+// evalPathFlag reads --path from whichever command is resolving a declared
+// name, so every one of them can be told where the configuration is.
+//
+// Read off the command rather than threaded through seven call sites. Without
+// it only `run start` offered the flag, so a configuration outside ./evals
+// could be run and then not listed, shown or cancelled -- the fallback that
+// covers the difference is a path recorded in the azd environment, which a
+// --project-endpoint caller does not have.
+func evalPathFlag(cmd *cobra.Command) string {
+	if f := cmd.Flags().Lookup("path"); f != nil {
+		return f.Value.String()
+	}
+	return ""
 }
 
 // latestOrNamedRun returns the named run, or the most recent one for the eval.

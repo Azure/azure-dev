@@ -415,12 +415,59 @@ func (c *EvalClient) CreateOpenAIEval(
 
 // ListOpenAIEvals lists OpenAI eval definitions.
 func (c *EvalClient) ListOpenAIEvals(ctx context.Context, limit int) (*OpenAIEvalList, error) {
-	query := map[string]string{}
-	if limit > 0 {
-		query["limit"] = strconv.Itoa(limit)
+	all := &OpenAIEvalList{}
+	err := collectPages(limit, func(query map[string]string) (int, bool, string, error) {
+		page, err := doRequestTyped[OpenAIEvalList](
+			c, ctx, http.MethodGet, pathOpenAIEvals, query, nil, "")
+		if err != nil {
+			return 0, false, "", err
+		}
+		all.Data = append(all.Data, page.Data...)
+		return len(page.Data), page.HasMore, page.LastID, nil
+	})
+	if err != nil {
+		return nil, err
 	}
+	return all, nil
+}
 
-	return doRequestTyped[OpenAIEvalList](c, ctx, http.MethodGet, pathOpenAIEvals, query, nil, "")
+// collectPages walks an OpenAI-shaped listing until the service stops offering
+// a cursor, or until limit rows have been gathered.
+//
+// A listing that stops at the first page is a silent wrong answer rather than a
+// short one: "is this name ambiguous?" and "which run is newest?" are both
+// decided from these rows, so a second page nobody asked for turns a refusal
+// into a wrong choice. fetch reports how many rows it added and the cursor it
+// was given, so the two listings share this loop instead of a third copy.
+func collectPages(
+	limit int,
+	fetch func(query map[string]string) (added int, hasMore bool, lastID string, err error),
+) error {
+	gathered := 0
+	after := ""
+	for {
+		query := map[string]string{}
+		if limit > 0 {
+			query["limit"] = strconv.Itoa(limit - gathered)
+		}
+		if after != "" {
+			query["after"] = after
+		}
+
+		added, hasMore, lastID, err := fetch(query)
+		if err != nil {
+			return err
+		}
+		gathered += added
+
+		if !hasMore || lastID == "" || added == 0 {
+			return nil
+		}
+		if limit > 0 && gathered >= limit {
+			return nil
+		}
+		after = lastID
+	}
 }
 
 // GetOpenAIEval gets an OpenAI eval definition.
@@ -468,13 +515,21 @@ func (c *EvalClient) ListOpenAIEvalRuns(
 	evalID string,
 	limit int,
 ) (*OpenAIEvalRunList, error) {
-	query := map[string]string{}
-	if limit > 0 {
-		query["limit"] = strconv.Itoa(limit)
-	}
-
 	path := fmt.Sprintf("%s/%s/runs", pathOpenAIEvals, url.PathEscape(evalID))
-	return doRequestTyped[OpenAIEvalRunList](c, ctx, http.MethodGet, path, query, nil, "")
+	all := &OpenAIEvalRunList{}
+	err := collectPages(limit, func(query map[string]string) (int, bool, string, error) {
+		page, err := doRequestTyped[OpenAIEvalRunList](
+			c, ctx, http.MethodGet, path, query, nil, "")
+		if err != nil {
+			return 0, false, "", err
+		}
+		all.Data = append(all.Data, page.Data...)
+		return len(page.Data), page.HasMore, page.LastID, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return all, nil
 }
 
 // GetOpenAIEvalRun gets a run for an OpenAI eval definition.

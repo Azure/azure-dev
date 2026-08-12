@@ -190,6 +190,24 @@ func TestInitTakesNoProjectEndpoint(t *testing.T) {
 
 // Every command that does reach the service accepts it, because the shared
 // Foundry resolver is how a project is named without an azd environment.
+// --eval takes "the name of the eval declared in the configuration", which
+// means the command has to be able to find that configuration. The only other
+// way it can is a path `init` recorded in the azd environment, which a
+// --project-endpoint caller does not have -- so a configuration outside ./evals
+// could be started and then not listed, shown or cancelled.
+func TestEveryCommandTakingAnEvalNameCanBeToldWhereTheConfigIs(t *testing.T) {
+	var checked int
+	walk(t, NewRootCommand(), nil, func(path string, cmd *cobra.Command) {
+		if cmd.Flags().Lookup("eval") == nil {
+			return
+		}
+		checked++
+		assert.NotNilf(t, cmd.Flags().Lookup("path"),
+			"%s resolves a declared eval name, so it must accept --path", path)
+	})
+	assert.NotZero(t, checked, "no command took --eval, so this checked nothing")
+}
+
 func TestServiceCommandsTakeProjectEndpoint(t *testing.T) {
 	groups := map[string]bool{
 		"dataset": true, "evaluator": true, "run": true,

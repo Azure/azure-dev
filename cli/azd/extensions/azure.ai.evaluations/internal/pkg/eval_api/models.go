@@ -283,6 +283,11 @@ type OpenAIEval struct {
 // OpenAIEvalList is the response for listing OpenAI eval definitions.
 type OpenAIEvalList struct {
 	Data []OpenAIEval `json:"data"`
+	// HasMore and LastID are the OpenAI list envelope's cursor, read the same
+	// way OutputItemList reads them: only when present, so a service that sends
+	// neither still yields one page.
+	HasMore bool   `json:"has_more"`
+	LastID  string `json:"last_id"`
 }
 
 // ---------------------------------------------------------------------------
@@ -551,6 +556,9 @@ type EvalRunCriteriaResult struct {
 // OpenAIEvalRunList is the response for listing OpenAI eval runs.
 type OpenAIEvalRunList struct {
 	Data []OpenAIEvalRun `json:"data"`
+	// HasMore and LastID are the OpenAI list envelope's cursor.
+	HasMore bool   `json:"has_more"`
+	LastID  string `json:"last_id"`
 }
 
 // OutputItemList is a page of a run's per-sample results.

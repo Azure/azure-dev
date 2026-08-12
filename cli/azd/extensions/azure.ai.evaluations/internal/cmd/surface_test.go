@@ -486,7 +486,7 @@ func TestSuggestedCommandsExist(t *testing.T) {
 			return nil
 		}
 
-		body, err := os.ReadFile(path)
+		body, err := os.ReadFile(path) //nolint:gosec // walking this package's own source
 		if err != nil {
 			return err
 		}

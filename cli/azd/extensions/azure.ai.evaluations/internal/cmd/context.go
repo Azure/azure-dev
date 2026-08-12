@@ -259,14 +259,17 @@ func (ec *evalContext) azdProject(ctx context.Context) *azdext.ProjectConfig {
 
 // deployCommandName is projectCanProvision phrased as the command to run.
 //
-// A project that cannot be read counts as having no infrastructure: `azd
-// deploy` publishes the eval either way, while `azd up` only works when there
-// is something to provision.
+// Without infrastructure the answer is this extension's own command rather than
+// `azd deploy`. Deploy refuses with "infrastructure has not been provisioned"
+// in an environment that has never provisioned one, which is exactly the
+// scratch project `azd init --minimal` produces and an eval gets scaffolded
+// into. `azd ai eval create` reconciles the same configuration needing nothing
+// but an endpoint.
 func deployCommandName(proj *azdext.ProjectConfig) string {
 	if projectCanProvision(proj) {
 		return "azd up"
 	}
-	return "azd deploy"
+	return "azd ai eval create"
 }
 
 // appInsightsEnvKey is where a connected Application Insights resource lands in

@@ -175,7 +175,7 @@ func writeFileAtomic(path string, body []byte) error {
 		return messages.Creating(path, err)
 	}
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return messages.Creating(path, err)
 	}
 	if err := tmp.Close(); err != nil {

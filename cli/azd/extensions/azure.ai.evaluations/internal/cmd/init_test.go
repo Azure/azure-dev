@@ -210,7 +210,7 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 			evalName: "support-agent-smoke", target: "support-agent", judgeModel: "m",
 		})
 		// One command produces both, so there is one step, not two.
-		require.Equal(t, []string{"azd ai eval generate"}, plan.nextSteps("azd deploy"))
+		require.Equal(t, []string{"azd ai eval generate"}, plan.nextSteps("azd ai eval create"))
 	})
 
 	t.Run("dataset supplied", func(t *testing.T) {
@@ -219,7 +219,7 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 		})
 		require.Equal(t,
 			[]string{"azd ai eval generate --evaluator --evaluator-name support-agent-quality"},
-			plan.nextSteps("azd deploy"))
+			plan.nextSteps("azd ai eval create"))
 	})
 
 	t.Run("everything supplied", func(t *testing.T) {
@@ -230,11 +230,12 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 			evaluators: []string{"builtin.task_adherence"},
 			judgeModel: "m",
 		})
-		// Verified against azd 1.30.0: `azd up` on a project with no infra/
-		// exits 1 compiling a missing infra/main.bicep, while `azd deploy`
-		// publishes the eval and exits 0.
-		require.Equal(t, []string{"azd deploy", "azd ai eval run start"},
-			plan.nextSteps("azd deploy"),
+		// Verified against azd 1.30.0. `azd up` on a project with no infra/
+		// exits 1 compiling a missing infra/main.bicep, and `azd deploy` exits
+		// 1 with "infrastructure has not been provisioned" in an environment
+		// that never provisioned one. `azd ai eval create` needs neither.
+		require.Equal(t, []string{"azd ai eval create", "azd ai eval run start"},
+			plan.nextSteps("azd ai eval create"),
 			"the deploy step is the one the project can actually run")
 		require.Equal(t, []string{"azd up", "azd ai eval run start"},
 			plan.nextSteps("azd up"),
@@ -246,15 +247,15 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 // one agrees. The detection itself is covered by TestProjectCanProvision.
 func TestDeployCommandName(t *testing.T) {
 	root := t.TempDir()
-	require.Equal(t, "azd deploy", deployCommandName(&azdext.ProjectConfig{Path: root}),
-		"no infra to compile, so provisioning would fail before deploying")
+	require.Equal(t, "azd ai eval create", deployCommandName(&azdext.ProjectConfig{Path: root}),
+		"nothing to provision, so neither `azd up` nor `azd deploy` would run here")
 
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra"), 0o750))
 	require.NoError(t,
 		os.WriteFile(filepath.Join(root, "infra", "main.bicep"), []byte("// x"), 0o600))
 	require.Equal(t, "azd up", deployCommandName(&azdext.ProjectConfig{Path: root}))
 
-	require.Equal(t, "azd deploy", deployCommandName(nil),
+	require.Equal(t, "azd ai eval create", deployCommandName(nil),
 		"a project we cannot read is not one we can claim provisions")
 }
 
@@ -266,11 +267,14 @@ func TestScaffold_NextStepsNameCommandsThatExist(t *testing.T) {
 	inputs := []scaffoldInput{
 		{evalName: "smoke", target: "support-agent", judgeModel: "m"},
 		{evalName: "smoke", target: "support-agent", dataset: "prod-golden", judgeModel: "m"},
+		// Reaches the deploy branch, so the command it names is resolved too.
+		{evalName: "smoke", target: "support-agent", dataset: "prod-golden",
+			evaluators: []string{"builtin.task_adherence"}, judgeModel: "m"},
 	}
 
 	for _, in := range inputs {
 		plan, _ := scaffoldFor(t, in)
-		for _, step := range plan.nextSteps("azd deploy") {
+		for _, step := range plan.nextSteps("azd ai eval create") {
 			// Steps that drive azd itself -- `azd up`, `azd deploy` -- are not
 			// this extension's commands and resolve against a different tree.
 			if !strings.HasPrefix(step, "azd ai eval ") {

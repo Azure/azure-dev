@@ -199,9 +199,9 @@ evals:
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "support-quality")
 	// No azd project stands behind this context, so there is no infrastructure
-	// to provision and `azd up` would fail compiling a missing template before
-	// it deployed anything.
-	assert.Contains(t, err.Error(), "azd deploy", "the error has to say what would fix it")
+	// to provision and neither `azd up` nor `azd deploy` would run here.
+	assert.Contains(t, err.Error(), "azd ai eval create",
+		"the error has to say what would fix it")
 }
 
 // The id lives in the azd environment, so `--project-endpoint` against a

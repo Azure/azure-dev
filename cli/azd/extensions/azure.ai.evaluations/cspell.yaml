@@ -17,6 +17,12 @@ words:
   - groundedness
   # Repository names
   - foundrysdk
+  # Version-control systems a read-only checkout can come from
+  - TFVC
+  # GitHub metadata files named in the README checklist
+  - CODEOWNERS
+  # Possessive of an acronym cspell does not inflect on its own
+  - CLI's
   # Deliberate misspelling: the fixture the unknown-key tests are about
   - evaulators
   # Terms

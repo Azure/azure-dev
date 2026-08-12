@@ -58,12 +58,8 @@ func newGenerateCommand() *cobra.Command {
 			// costs nothing to find out about. Changed() rather than the value,
 			// so a zero the caller actually typed is still caught and an
 			// untouched default is not.
-			if !dataset {
-				for _, flag := range []string{"from", "max-samples"} {
-					if cmd.Flags().Changed(flag) {
-						return messages.DatasetOnlyFlag(flag)
-					}
-				}
+			if err := refuseInapplicableFlags(cmd, dataset, evaluator); err != nil {
+				return err
 			}
 			if traceDays < 0 {
 				return messages.NegativeTraceDays(traceDays)
@@ -163,6 +159,35 @@ type generateRequest struct {
 	maxSamples    int
 	from          []string
 	traceDays     int
+}
+
+// artifactScopedFlags are the flags buildGeneratePlans reads only while
+// building one kind of artifact. Given for the other kind they were accepted
+// and dropped, so `--dataset --trace-days 7` produced a dataset and said
+// nothing about the seven days.
+var artifactScopedFlags = []struct {
+	name     string
+	forEval  bool // read under req.evaluator rather than req.dataset
+	otherFor string
+}{
+	{name: "from", otherFor: "--evaluator"},
+	{name: "max-samples", otherFor: "--evaluator"},
+	{name: "dataset-name", otherFor: "--evaluator"},
+	{name: "trace-days", forEval: true, otherFor: "--dataset"},
+	{name: "evaluator-name", forEval: true, otherFor: "--dataset"},
+}
+
+func refuseInapplicableFlags(cmd *cobra.Command, dataset, evaluator bool) error {
+	for _, f := range artifactScopedFlags {
+		applies := dataset
+		if f.forEval {
+			applies = evaluator
+		}
+		if !applies && cmd.Flags().Changed(f.name) {
+			return messages.FlagDoesNotApply(f.name, f.otherFor)
+		}
+	}
+	return nil
 }
 
 // buildGeneratePlans settles everything that does not need the network, for

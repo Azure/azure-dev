@@ -82,7 +82,7 @@ func updateCatalog(
 	// Held across the read and the write: two generates adding different
 	// entries would otherwise both read the same state, and the second write
 	// would drop the first one's entry while reporting success.
-	unlock, _, err := project.LockEvalConfig(cmd.Context(), evalDir)
+	unlock, err := project.LockEvalConfig(cmd.Context(), evalDir)
 	if err != nil {
 		return err
 	}

@@ -22,32 +22,64 @@ func runGenerate(t *testing.T, args ...string) error {
 	return root.ExecuteContext(context.Background())
 }
 
-// --from and --max-samples are documented "Dataset only", and --evaluator
-// generates no dataset. They were accepted and ignored, so the run produced a
-// rubric and said nothing about the sample count that was asked for.
-func TestDatasetOnlyFlagsAreRefusedForEvaluatorOnlyGeneration(t *testing.T) {
-	for flag, args := range map[string][]string{
-		"--from":        {"--evaluator", "--evaluator-name", "ev", "--from", "prompt"},
-		"--max-samples": {"--evaluator", "--evaluator-name", "ev", "--max-samples", "50"},
-	} {
-		err := runGenerate(t, args...)
+// Each of these is read while building one kind of artifact and ignored while
+// building the other, so given for the wrong one they were accepted and
+// dropped -- `--evaluator --max-samples 50` produced a rubric and said nothing
+// about the 50, and `--dataset --trace-days 7` a dataset and nothing about the
+// seven days.
+func TestFlagsThatCannotApplyAreRefused(t *testing.T) {
+	cases := []struct {
+		flag     string
+		narrowed string
+		args     []string
+	}{
+		{"--from", "--evaluator",
+			[]string{"--evaluator", "--evaluator-name", "ev", "--from", "prompt"}},
+		{"--max-samples", "--evaluator",
+			[]string{"--evaluator", "--evaluator-name", "ev", "--max-samples", "50"}},
+		{"--dataset-name", "--evaluator",
+			[]string{"--evaluator", "--evaluator-name", "ev", "--dataset-name", "ds"}},
+		{"--trace-days", "--dataset",
+			[]string{"--dataset", "--dataset-name", "ds", "--trace-days", "7"}},
+		{"--evaluator-name", "--dataset",
+			[]string{"--dataset", "--dataset-name", "ds", "--evaluator-name", "ev"}},
+	}
 
-		require.Errorf(t, err, "%s cannot apply to an evaluator-only generation", flag)
-		assert.Contains(t, err.Error(), flag)
-		assert.Contains(t, err.Error(), "--evaluator",
-			"the refusal has to name the flag that made it inapplicable")
+	for _, c := range cases {
+		err := runGenerate(t, c.args...)
+
+		require.Errorf(t, err, "%s cannot apply under %s", c.flag, c.narrowed)
+		assert.Contains(t, err.Error(), c.flag)
+		assert.Containsf(t, err.Error(), c.narrowed,
+			"the refusal has to name the flag that made %s inapplicable", c.flag)
 	}
 }
 
-// The same flags with a dataset selected are the ordinary case, so the refusal
-// above has to be about the combination rather than about the flags.
-func TestDatasetOnlyFlagsAreStillAcceptedForADataset(t *testing.T) {
+// Generating both is the default, and every one of those flags applies then.
+// Without this the guard above could be satisfied by refusing them always.
+func TestNoFlagIsRefusedWhenBothArtifactsAreGenerated(t *testing.T) {
 	err := runGenerate(t,
-		"--dataset", "--dataset-name", "ds", "--from", "prompt", "--max-samples", "50")
+		"--dataset-name", "ds", "--evaluator-name", "ev",
+		"--from", "prompt", "--max-samples", "50", "--trace-days", "7")
 
 	if err != nil {
-		assert.NotContains(t, err.Error(), "only affects the dataset",
-			"a dataset generation must not be refused its own flags")
+		assert.NotContains(t, err.Error(), "has no effect on what",
+			"generating both artifacts makes every one of these flags applicable")
+	}
+}
+
+// And each flag is still accepted for the artifact it does affect.
+func TestEachFlagIsAcceptedForItsOwnArtifact(t *testing.T) {
+	forDataset := runGenerate(t,
+		"--dataset", "--dataset-name", "ds", "--from", "prompt", "--max-samples", "50")
+	if forDataset != nil {
+		assert.NotContains(t, forDataset.Error(), "has no effect on what")
+	}
+
+	forEvaluator := runGenerate(t,
+		"--evaluator", "--evaluator-name", "ev", "--trace-days", "7")
+	if forEvaluator != nil {
+		assert.NotContains(t, forEvaluator.Error(), "has no effect on what")
 	}
 }
 

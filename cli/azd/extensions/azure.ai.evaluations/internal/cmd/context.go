@@ -6,7 +6,9 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"azureaieval/internal/foundry/projectctx"
@@ -119,11 +121,18 @@ var errNoAzdEnvironment = messages.ErrNoAzdEnvironment
 // worth a word. Anything else is: these keys are how a later deploy recognises
 // what it already published, and losing one silently means the next `azd up`
 // creates a second immutable version of something it had already created.
+//
+// Written to stderr, not through log: the standard logger is pointed at
+// io.Discard unless --debug, so logging this would be the same silence with a
+// more reassuring name. stderr keeps `-o json` on stdout parseable. azd does
+// not surface an extension's stderr, so under `azd up` this reaches the debug
+// log and no further -- direct invocations are where it shows.
 func (ec *evalContext) remember(ctx context.Context, key, value string) {
 	err := ec.setEnvValue(ctx, key, value)
 	if err == nil || errors.Is(err, errNoAzdEnvironment) {
 		return
 	}
+	fmt.Fprint(os.Stderr, messages.Warning(err))
 	log.Printf("[env] could not record %s: %v", key, err)
 }
 

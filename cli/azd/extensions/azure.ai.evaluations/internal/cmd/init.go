@@ -140,7 +140,7 @@ func newInitCommand() *cobra.Command {
 			// a person. The configuration is read again because the copy above
 			// was taken before the prompt, and a `generate` may well have
 			// finished writing to it since.
-			unlockConfig, _, err := project.LockEvalConfig(cmd.Context(), path)
+			unlockConfig, err := project.LockEvalConfig(cmd.Context(), path)
 			if err != nil {
 				return err
 			}

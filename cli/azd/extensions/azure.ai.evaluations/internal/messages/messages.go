@@ -740,7 +740,6 @@ func JobSubmitted(jobID string) string {
 }
 
 // ReattachToJob says how to come back to a job started with --no-wait.
-// ReattachToJob says how to come back to a job started with --no-wait.
 //
 // The selector is part of the line because `job` requires it: the two
 // collections share an id shape, so an id alone does not say which to call.
@@ -1897,8 +1896,22 @@ func FromNotASource(from string, sources []string) error {
 		from, strings.Join(sources, ", "))
 }
 
+// ConfigLockUnavailable reports a config lock that could not be taken.
+//
+// Not fatal, and said out loud for that reason: the work goes ahead unlocked,
+// so a lost update afterwards has no other explanation on record.
+func ConfigLockUnavailable(evalDir string, err error) error {
+	if err == nil {
+		return fmt.Errorf(
+			"another process is still updating %s, so this update is not "+
+				"serialised against it", filepath.ToSlash(evalDir))
+	}
+	return fmt.Errorf(
+		"could not lock %s, so this update is not serialised against other "+
+			"processes: %w", filepath.ToSlash(evalDir), err)
+}
+
 // SampleSizeOutOfRange reports a row count the generation service would reject.
-// SampleSizeOutOfRange reports a generation sample count the service will not take.
 func SampleSizeOutOfRange(min, max, got int) error {
 	return fmt.Errorf("sample size must be between %d and %d, got %d", min, max, got)
 }
@@ -1922,16 +1935,17 @@ func NegativeMaxSamplesFlag(got int) error {
 			"Omit it to send every row, or give the number of rows to send", got)
 }
 
-// DatasetOnlyFlag reports a dataset flag given to a run that generates no
-// dataset.
+// FlagDoesNotApply reports a flag given to a generate that produces nothing it
+// could affect.
 //
-// The flag is documented "Dataset only" and was accepted and ignored, so
-// `--evaluator --max-samples 50` produced a rubric and said nothing about the
-// number the caller asked for.
-func DatasetOnlyFlag(flag string) error {
+// Each of these is read while building one kind of artifact and ignored while
+// building the other, so given for the wrong one they were accepted and
+// dropped: `--evaluator --max-samples 50` produced a rubric and said nothing
+// about the 50.
+func FlagDoesNotApply(flag, narrowedBy string) error {
 	return fmt.Errorf(
-		"--%s only affects the dataset, and --evaluator generates no dataset. "+
-			"Drop --%s, or drop --evaluator to generate both", flag, flag)
+		"--%s has no effect on what %s generates. "+
+			"Drop --%s, or drop %s to generate both", flag, narrowedBy, flag, narrowedBy)
 }
 
 // NegativeTraceDays reports a trace window below zero.

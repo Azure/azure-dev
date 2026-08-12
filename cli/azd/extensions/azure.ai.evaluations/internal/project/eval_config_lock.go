@@ -6,7 +6,7 @@ package project
 import (
 	"context"
 	"errors"
-	"log"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -34,7 +34,7 @@ const configLockTimeout = 30 * time.Second
 const evalConfigLockName = ".azure.eval.lock"
 
 // LockEvalConfig serialises read-modify-write on the configuration across
-// processes, returning the release function and whether the lock was taken.
+// processes, returning the release function.
 //
 // Updating the configuration means reading the file, adding an entry and
 // writing it back. Two processes doing that at once can both read the same
@@ -42,36 +42,35 @@ const evalConfigLockName = ".azure.eval.lock"
 // that reports success on both sides. The atomic write stops a reader seeing a
 // half-written file; it cannot stop this.
 //
-// Advisory and best-effort: a lock that could not be taken is logged and the
+// Advisory and best-effort: a lock that could not be taken is reported and the
 // work goes ahead, because failing a scaffold over a lock file would be worse
-// than the lost update it guards against. The boolean is what lets a caller
-// tell the difference.
-func LockEvalConfig(ctx context.Context, evalDir string) (func(), bool, error) {
+// than the lost update it guards against. Reported on stderr rather than
+// through log, which is pointed at io.Discard unless --debug -- an earlier
+// version logged it and was therefore exactly as silent as saying nothing.
+func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
 	if ctx == nil {
 		// cobra hands a nil context to a command that was not run through
 		// Execute, and waiting on nil panics.
 		ctx = context.Background()
 	}
 	if err := os.MkdirAll(evalDir, 0o750); err != nil {
-		return nil, false, messages.Creating(evalDir, err)
+		return nil, messages.Creating(evalDir, err)
 	}
 
 	lock := flock.New(filepath.Join(evalDir, evalConfigLockName))
-	ignoreLockFile(evalDir)
 	waitCtx, cancel := context.WithTimeout(ctx, configLockTimeout)
 	defer cancel()
 
 	locked, err := lock.TryLockContext(waitCtx, 50*time.Millisecond)
 	if err != nil || !locked {
-		// Said out loud rather than swallowed. A lost update that happened
-		// because the lock was never held is otherwise unexplainable after the
-		// fact, and the previous version returned a nil error on every path,
-		// which made the callers' error handling dead code.
-		log.Printf("[lock] proceeding without the config lock for %s (locked=%t): %v",
-			evalDir, locked, err)
-		return func() {}, false, nil
+		fmt.Fprint(os.Stderr, messages.Warning(messages.ConfigLockUnavailable(evalDir, err)))
+		return func() {}, nil
 	}
-	return func() { _ = lock.Unlock() }, true, nil
+	// Only once the file is ours: a lock that was never taken has no artifact
+	// to hide, and writing into a directory the user commits is not something
+	// to do on the way past.
+	ignoreLockFile(evalDir)
+	return func() { _ = lock.Unlock() }, nil
 }
 
 // ignoreLockFile keeps the lock out of `git status`, which is the one thing the

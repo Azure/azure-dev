@@ -5,7 +5,9 @@ package extensions
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -122,4 +124,35 @@ func (s *registrySource) GetExtension(ctx context.Context, id string) (*Extensio
 	}
 
 	return allTemplates[matchingIndex], nil
+}
+
+// IsOfficialMainRegistrySource reports whether config identifies the
+// immutable official registry source.
+func IsOfficialMainRegistrySource(config *SourceConfig) bool {
+	if config == nil ||
+		NormalizeSourceKey(config.Name) != MainRegistryName ||
+		config.Type != SourceKindUrl {
+		return false
+	}
+
+	expected, err := normalizeOfficialSourceLocation(extensionRegistryUrl)
+	if err != nil {
+		return false
+	}
+
+	actual, err := normalizeOfficialSourceLocation(config.Location)
+	return err == nil && actual == expected
+}
+
+func normalizeOfficialSourceLocation(location string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(location))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("invalid source location")
+	}
+
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Path = strings.TrimSuffix(parsed.Path, "/")
+
+	return parsed.String(), nil
 }

@@ -180,6 +180,10 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "extension.source.kind", string(kv.Key))
 		require.Equal(t, "location", kv.Value.AsString())
 
+		kv = fields.ExtensionEvent.String("deploy.completed")
+		require.Equal(t, "extension.event", string(kv.Key))
+		require.Equal(t, "deploy.completed", kv.Value.AsString())
+
 		category := fields.ExtensionSourceCategory.String("local")
 		require.Equal(t, "extension.source.category", string(category.Key))
 

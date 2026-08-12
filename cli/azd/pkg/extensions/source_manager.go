@@ -93,8 +93,32 @@ func (sm *SourceManager) Get(ctx context.Context, name string) (*SourceConfig, e
 
 // Add adds a new extension source.
 func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceConfig) error {
+	if strings.EqualFold(name, BundleSourceName) {
+		return fmt.Errorf(
+			"'%s' is reserved for extensions installed from a self-contained bundle, %w",
+			BundleSourceName, ErrSourceReserved,
+		)
+	}
+
 	if err := ValidateSourceName(name); err != nil {
 		return err
+	}
+
+	if source == nil {
+		return errors.New("extension source configuration is required")
+	}
+
+	if source.Name == "" {
+		source.Name = name
+	}
+
+	source.Name = name
+
+	if strings.EqualFold(name, MainRegistryName) &&
+		!IsOfficialMainRegistrySource(source) {
+		return fmt.Errorf(
+			"'%s' is reserved for the official azd registry, %w",
+			MainRegistryName, ErrSourceReserved)
 	}
 
 	existing, err := sm.Get(ctx, name)
@@ -105,13 +129,18 @@ func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceCon
 		return fmt.Errorf("checking extension source '%s': %w", name, err)
 	}
 
-	source.Name = name
-
 	return sm.addInternal(source)
 }
 
 // Remove removes an extension source.
 func (sm *SourceManager) Remove(ctx context.Context, name string) error {
+	name = NormalizeSourceKey(name)
+
+	if strings.EqualFold(name, MainRegistryName) {
+		return fmt.Errorf(
+			"'%s' is reserved and cannot be removed, %w",
+			MainRegistryName, ErrSourceReserved)
+	}
 	config, err := sm.configManager.Load()
 	if err != nil {
 		return fmt.Errorf("unable to load user configuration: %w", err)
@@ -179,7 +208,7 @@ func (sm *SourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 		}
 	} else {
 		defaultSource := &SourceConfig{
-			Name:     "azd",
+			Name:     MainRegistryName,
 			Type:     SourceKindUrl,
 			Location: extensionRegistryUrl,
 		}
@@ -203,12 +232,23 @@ func (sm *SourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	var source Source
 	var err error
 
+	if config == nil {
+		return nil, errors.New("extension source configuration is required")
+	}
+
 	if config.Name == "" {
 		return nil, errors.New("extension source name is required")
 	}
 
 	if config.Location == "" {
 		return nil, errors.New("extension source location is required")
+	}
+
+	if strings.EqualFold(NormalizeSourceKey(config.Name), MainRegistryName) &&
+		!IsOfficialMainRegistrySource(config) {
+		return nil, fmt.Errorf(
+			"'%s' is reserved for the official azd registry, %w",
+			MainRegistryName, ErrSourceReserved)
 	}
 
 	switch config.Type {
@@ -412,4 +452,12 @@ func deleteSourcePath(sourceMap map[string]any, path []string) bool {
 		delete(sourceMap, path[0])
 	}
 	return len(sourceMap) == 0
+}
+
+// NormalizeSourceKey normalizes an extension source name for use in configuration keys.
+func NormalizeSourceKey(key string) string {
+	key = strings.ToLower(key)
+	key = strings.ReplaceAll(key, " ", "-")
+
+	return key
 }

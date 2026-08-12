@@ -300,6 +300,46 @@ func Test_ReloadUserConfig_PicksUpOutOfBandChanges(t *testing.T) {
 	require.True(t, ok)
 }
 
+func TestManager_IsOfficialRegistrySource(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(
+		mockContext.Container,
+		userConfigManager,
+		mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(
+		userConfigManager,
+		sourceManager,
+		lazyRunner,
+		mockContext.HttpClient)
+	require.NoError(t, err)
+
+	ctx := t.Context()
+
+	official, err := manager.IsOfficialRegistrySource(ctx, MainRegistryName)
+	require.NoError(t, err)
+	require.True(t, official)
+
+	official, err = manager.IsOfficialRegistrySource(ctx, " ")
+	require.NoError(t, err)
+	require.False(t, official)
+
+	official, err = manager.IsOfficialRegistrySource(ctx, "missing")
+	require.NoError(t, err)
+	require.False(t, official)
+
+	require.NoError(t, sourceManager.Add(ctx, "custom", &SourceConfig{
+		Type:     SourceKindUrl,
+		Location: "https://example.com/registry",
+	}))
+	official, err = manager.IsOfficialRegistrySource(ctx, "custom")
+	require.NoError(t, err)
+	require.False(t, official)
+}
+
 func Test_Install_With_SemverConstraints(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 

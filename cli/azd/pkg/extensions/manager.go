@@ -476,6 +476,24 @@ func (m *Manager) GetInstalled(options FilterOptions) (*Extension, error) {
 	return nil, ErrInstalledExtensionNotFound
 }
 
+// IsOfficialRegistrySource verifies the configured source used by an
+// installed extension before allowing it to report telemetry.
+func (m *Manager) IsOfficialRegistrySource(ctx context.Context, name string) (bool, error) {
+	if strings.TrimSpace(name) == "" {
+		return false, nil
+	}
+
+	source, err := m.sourceManager.Get(ctx, name)
+	if err != nil {
+		if errors.Is(err, ErrSourceNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return IsOfficialMainRegistrySource(source), nil
+}
+
 // UpdateInstalled updates an installed extension's metadata in the config
 func (m *Manager) UpdateInstalled(extension *Extension) error {
 	extensions, err := m.ListInstalled()

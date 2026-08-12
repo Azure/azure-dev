@@ -334,7 +334,7 @@ func startAndWaitExtension(
 	serverInfo *grpcserver.ServerInfo,
 	opts extensionStartOptions,
 ) error {
-	jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
+	jwtToken, err := grpcserver.GenerateExtensionTokenWithContext(ctx, ext, serverInfo)
 	if err != nil {
 		err = fmt.Errorf("generating extension token for '%s': %w", ext.Id, err)
 		ext.Fail(err)

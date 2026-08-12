@@ -152,13 +152,24 @@ func TestClassifyActivityBotErrorUsesMsaAppIDConflictCode(t *testing.T) {
 	)
 }
 
-func TestIsMultipleBotsForMsaAppIDError(t *testing.T) {
+func TestResolveActivityBotNameReturnsMultipleBotClassification(t *testing.T) {
 	t.Parallel()
 
-	require.True(t, isMultipleBotsForMsaAppIDError(
-		errors.New("botservice: multiple Azure Bots are bound to MsaAppID \"client-id-1\""),
-	))
-	require.False(t, isMultipleBotsForMsaAppIDError(errors.New("botservice: listing bots failed")))
+	p := &AgentServiceTargetProvider{}
+	_, _, err := p.resolveActivityBotName(
+		t.Context(),
+		fakeActivityBotFinder{err: &botservice.MultipleBotsForMsaAppIDError{}},
+		"my-svc",
+		"agent-a",
+		"client-id-1",
+		"fallback-rg",
+		map[string]string{envkey.AgentBotName("my-svc"): "env-bot"},
+	)
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "get_activity_bot.multiple_bots_for_msa_app_id", serviceErr.ErrorCode)
+	require.Empty(t, serviceErr.ServiceName)
 }
 
 func TestClassifyActivityBotErrorSeparatesTeamsChannelFailures(t *testing.T) {

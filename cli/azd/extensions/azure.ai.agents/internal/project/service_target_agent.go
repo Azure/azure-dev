@@ -1137,6 +1137,9 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 	if botFinder != nil && strings.TrimSpace(agentIdentityClientID) != "" {
 		boundBot, err := botFinder.FindByMsaAppID(ctx, agentIdentityClientID)
 		if err != nil {
+			if _, ok := errors.AsType[*botservice.MultipleBotsForMsaAppIDError](err); ok {
+				return "", "", classifyActivityBotLookupError(err)
+			}
 			fmt.Fprintf(
 				os.Stderr,
 				"Unable to search for an Azure Bot already bound to the deployed agent identity: %v\n",
@@ -1199,10 +1202,6 @@ func isMsaAppIDAlreadyInUseError(err error) bool {
 		strings.Contains(msg, "msaapp id is already in use")
 }
 
-func isMultipleBotsForMsaAppIDError(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "multiple azure bots are bound to msaappid")
-}
-
 func classifyActivityBotError(err error, msaAppID string) error {
 	if err == nil {
 		return nil
@@ -1221,6 +1220,19 @@ func classifyActivityBotError(err error, msaAppID string) error {
 		)
 	}
 	return exterrors.ServiceFromAzure(err, exterrors.OpEnsureActivityBot)
+}
+
+func classifyActivityBotLookupError(err error) error {
+	if _, ok := errors.AsType[*botservice.MultipleBotsForMsaAppIDError](err); ok {
+		return exterrors.Service(
+			exterrors.OpGetActivityBot,
+			exterrors.CodeMultipleBotsForMsaAppID,
+			err.Error(),
+			"",
+			"keep only one Azure Bot bound to this MsaAppID, then retry",
+		)
+	}
+	return exterrors.ServiceFromAzure(err, exterrors.OpGetActivityBot)
 }
 
 // Deploy performs the deployment operation for the agent service
@@ -1421,16 +1433,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 			if isMsaAppIDAlreadyInUseError(err) {
 				boundBot, findErr := client.FindByMsaAppID(ctx, identity.ClientID)
 				if findErr != nil {
-					if isMultipleBotsForMsaAppIDError(findErr) {
-						return nil, exterrors.Service(
-							exterrors.OpGetActivityBot,
-							exterrors.CodeMultipleBotsForMsaAppID,
-							findErr.Error(),
-							"botservice",
-							"keep only one Azure Bot bound to this MsaAppID, then retry",
-						)
-					}
-					return nil, exterrors.ServiceFromAzure(findErr, exterrors.OpGetActivityBot)
+					return nil, classifyActivityBotLookupError(findErr)
 				}
 				if boundBot != nil && strings.TrimSpace(boundBot.Name) != "" {
 					activityBotName = strings.TrimSpace(boundBot.Name)

@@ -198,6 +198,14 @@ type BotReference struct {
 	Name          string
 }
 
+// MultipleBotsForMsaAppIDError indicates that an agent identity cannot be
+// resolved to a unique Azure Bot.
+type MultipleBotsForMsaAppIDError struct{}
+
+func (e *MultipleBotsForMsaAppIDError) Error() string {
+	return "botservice: multiple Azure Bots are bound to the same MsaAppID"
+}
+
 // TeamsChannelError marks a failure while enabling or updating the Teams
 // channel, so callers can preserve that operation boundary in telemetry.
 type TeamsChannelError struct {
@@ -269,7 +277,7 @@ func (c *Client) FindByMsaAppID(ctx context.Context, msaAppID string) (*BotRefer
 		return nil, nil
 	}
 	if len(matches) > 1 {
-		return nil, fmt.Errorf("botservice: multiple Azure Bots are bound to MsaAppID %q", msaAppID)
+		return nil, &MultipleBotsForMsaAppIDError{}
 	}
 	return &matches[0], nil
 }

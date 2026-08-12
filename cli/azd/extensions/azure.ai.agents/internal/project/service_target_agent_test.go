@@ -30,6 +30,44 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
+	instructions := "Route callers to the right team."
+	voice := "alloy"
+	store := true
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPromptVoice,
+			Name: "voice-agent",
+		},
+		ModelType:    agent_yaml.VoiceModelTypeSelfDeployed,
+		Model:        &agent_yaml.Model{Id: "my-realtime-deployment"},
+		Instructions: &instructions,
+		Voice:        &voice,
+		Store:        &store,
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.AgentKindPromptVoice, got.Kind)
+	require.Equal(t, "voice-agent", got.Name)
+	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
+	require.NotNil(t, got.Model)
+	require.Equal(t, "my-realtime-deployment", got.Model.Id)
+	require.NotNil(t, got.Instructions)
+	require.Equal(t, instructions, *got.Instructions)
+	require.NotNil(t, got.Voice)
+	require.Equal(t, voice, *got.Voice)
+	require.NotNil(t, got.Store)
+	require.Equal(t, store, *got.Store)
+}
+
 func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -2616,4 +2654,154 @@ func TestValidatePythonBundledDeps_ErrorCodeCorrect(t *testing.T) {
 	var localErr *azdext.LocalError
 	require.True(t, errors.As(err, &localErr))
 	require.Equal(t, exterrors.CodeBundledDepsNotFound, localErr.Code)
+}
+
+// endpointsTestEnvServer serves GetCurrent/GetValues for Endpoints() tests.
+type endpointsTestEnvServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	values map[string]string
+}
+
+func (s *endpointsTestEnvServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "test-env"}}, nil
+}
+
+func (s *endpointsTestEnvServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	kvs := make([]*azdext.KeyValue, 0, len(s.values))
+	for k, v := range s.values {
+		kvs = append(kvs, &azdext.KeyValue{Key: k, Value: v})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: kvs}, nil
+}
+
+func newEndpointsTestClient(
+	t *testing.T, projectRoot string, envValues map[string]string,
+) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(srv, &stubProjectServer{
+		project: &azdext.ProjectConfig{Path: projectRoot},
+	})
+	azdext.RegisterEnvironmentServiceServer(srv, &endpointsTestEnvServer{values: envValues})
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	return client
+}
+
+// TestEndpoints_VoiceManifestOnDisk_ResolvesProjectRoot covers the fresh-process
+// case where Endpoints runs without ensureDeployContext having populated
+// p.projectPath. A legacy-shape prompt-voice service (kind only on disk, no
+// inline kind) records NAME+ENDPOINT but no VERSION; Endpoints must resolve the
+// project root itself so agentkind classifies it as voice and returns the base
+// endpoint instead of the missing-VERSION error.
+func TestEndpoints_VoiceManifestOnDisk_ResolvesProjectRoot(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "src", "voice")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: prompt-voice\nname: my-voice\n"),
+		0o600,
+	))
+
+	const endpoint = "https://proj.services.ai.azure.com/voice/my-voice"
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
+		"AGENT_VOICE_NAME":         "my-voice",
+		"AGENT_VOICE_ENDPOINT":     endpoint,
+		// deliberately no AGENT_VOICE_VERSION: voice agents have no version.
+	})
+
+	// Fresh process: projectPath/agentDefinitionPath are empty, exactly as they
+	// are before any ensureDeployContext call.
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	got, err := provider.Endpoints(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "voice", RelativePath: "src/voice"},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{endpoint}, got)
+}
+
+// TestEndpoints_VoiceAgentDefinitionPathOverride covers the fresh-process case
+// where a voice manifest is supplied via the AGENT_DEFINITION_PATH override.
+// Deploy follows the override and writes NAME+ENDPOINT but no VERSION; Endpoints
+// runs without ensureDeployContext (so p.agentDefinitionPath is empty) and must
+// read the process override to classify the service as voice, rather than
+// classifying the (kind-less) service entry and returning missing-VERSION.
+func TestEndpoints_VoiceAgentDefinitionPathOverride(t *testing.T) {
+	projectRoot := t.TempDir()
+	overridePath := filepath.Join(projectRoot, "custom-voice.yaml")
+	require.NoError(t, os.WriteFile(
+		overridePath,
+		[]byte("kind: prompt-voice\nname: my-voice\n"),
+		0o600,
+	))
+	t.Setenv("AGENT_DEFINITION_PATH", overridePath)
+
+	const endpoint = "https://proj.services.ai.azure.com/voice/my-voice"
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
+		"AGENT_VOICE_NAME":         "my-voice",
+		"AGENT_VOICE_ENDPOINT":     endpoint,
+		// no AGENT_VOICE_VERSION: voice agents have no version.
+	})
+
+	// Fresh process: the service entry carries no kind; only the override does.
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	got, err := provider.Endpoints(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "voice", RelativePath: "src/voice"},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{endpoint}, got)
+}
+
+// resolution added for voice does not change hosted behavior: a hosted service
+// (no voice manifest) with a lingering ENDPOINT but no VERSION must still
+// surface the actionable missing-env-vars error.
+func TestEndpoints_HostedMissingVersion_StillErrors(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "src", "hosted"), 0o750))
+
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
+		"AGENT_HOSTED_ENDPOINT":    "https://proj.services.ai.azure.com/agents/hosted",
+		// no VERSION and no voice manifest -> must error, not fall through.
+	})
+
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	_, err := provider.Endpoints(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "hosted", RelativePath: "src/hosted"},
+		nil,
+	)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
 }

@@ -334,10 +334,13 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 		a.credential = newCred
 
+		skipACR := deployMode == "code"
+		filterHostedRegions := true // code and container deploy modes both create hosted agents.
 		proj, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
-			deployMode == "code",
+			skipACR,
+			filterHostedRegions,
 			true, // bicepless
 		)
 		if err != nil {
@@ -405,7 +408,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
 				deployMode == "code",
-				true, // bicepless
+				deployMode == "code", // filterHostedRegions: code deploy targets hosted agents
+				true,                 // bicepless
 			)
 			if err != nil {
 				return nil, err

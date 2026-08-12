@@ -163,6 +163,82 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 	return &agent, nil
 }
 
+// voiceAgentsPreviewFeature is the opt-in token required in the Foundry-Features
+// header while voice agents remain a preview capability.
+const voiceAgentsPreviewFeature = "VoiceAgents=V1Preview"
+
+// CreateVoiceAgent creates a new declarative (managed) voice agent.
+//
+// Voice agents live in a separate data-plane collection (/voice_agents), distinct
+// from the /agents collection used by hosted/workflow agents. The request
+// Definition must be a *VoiceAgentDefinition (service kind "voice").
+//
+// overriddenHost, when non-empty, is sent as the x-ms-overridden-host header.
+// This routes the request directly to the regional Hyena data-plane host,
+// bypassing the public Foundry APIM (whose voice route may not yet be rolled
+// out). Pass "" to use the default endpoint routing.
+//
+// Redeploy semantics: the voice data-plane exposes create-only POST /voice_agents
+// with no version/upsert model (unlike hosted agents, which mint a new
+// agent-version per deploy). A second `azd deploy` of the same voice service
+// therefore re-POSTs with the same name and the service rejects it with a
+// non-success status, which this method surfaces as a deploy error rather than
+// silently overwriting the existing agent. Idempotent redeploy/update is tracked
+// as a follow-up (see the PR "Follow-ups" section); until the service adds an
+// update route, redeploy requires deleting the existing voice agent first.
+func (c *AgentClient) CreateVoiceAgent(
+	ctx context.Context,
+	request *CreateAgentRequest,
+	apiVersion string,
+	overriddenHost string,
+) (*AgentObject, error) {
+	url := fmt.Sprintf("%s/voice_agents?api-version=%s", c.endpoint, apiVersion)
+
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Voice agents are a preview feature; the service rejects the request with
+	// 403 preview_feature_required unless this opt-in header is present.
+	req.Raw().Header.Set("Foundry-Features", voiceAgentsPreviewFeature)
+
+	if overriddenHost != "" {
+		req.Raw().Header.Set("x-ms-overridden-host", overriddenHost)
+	}
+
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var agent AgentObject
+	if err := json.Unmarshal(body, &agent); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &agent, nil
+}
+
 // UpdateAgent updates an existing agent
 func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request *UpdateAgentRequest, apiVersion string) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)

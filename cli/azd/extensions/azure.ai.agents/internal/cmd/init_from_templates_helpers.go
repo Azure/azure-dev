@@ -26,6 +26,13 @@ import (
 
 const agentTemplatesURL = "https://aka.ms/foundry-agents-samples"
 
+const promptVoicePreviewEnvVar = "AZD_AI_AGENT_ENABLE_PROMPT_VOICE"
+
+func promptVoicePreviewEnabled() bool {
+	value := strings.TrimSpace(os.Getenv(promptVoicePreviewEnvVar))
+	return strings.EqualFold(value, "1") || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
+}
+
 // Template type constants
 const (
 	// TemplateTypeAgent is a template that points to an agent.yaml manifest file.
@@ -96,28 +103,60 @@ func (t *AgentTemplate) EffectiveType() string {
 const (
 	initModeFromCode = "from_code"
 	initModeTemplate = "template"
+	// initModeVoice is chosen when the user wants to create a declarative
+	// (managed) voice agent. It maps to the same synthesized-manifest fast path
+	// as `azd ai agent init --kind prompt-voice`.
+	initModeVoice = "prompt_voice"
 )
 
-// promptInitMode asks the user whether to use existing code or start from a template.
-// If the current directory is empty, automatically returns initModeTemplate.
-// In no-prompt mode with existing local files, defaults to using the current directory.
-// Returns initModeFromCode or initModeTemplate.
+// voiceInitChoice is the interactive menu entry for creating a prompt voice agent.
+// It is appended to the init-mode choices only when prompt voice private preview
+// is explicitly enabled.
+var voiceInitChoice = &azdext.SelectChoice{
+	Label: "Create a prompt voice agent",
+	Value: initModeVoice,
+}
+
+// promptInitMode asks the user whether to use existing code, start from a
+// template, or create a prompt voice agent.
+// If the current directory is empty, the "use existing code" option is omitted
+// (there is no code to use). The voice option is private preview and only shown
+// when promptVoicePreviewEnabled returns true.
+// In no-prompt mode the directory contents decide: empty -> template, otherwise
+// use the current directory. Voice is only selectable interactively (or via
+// --kind prompt-voice in no-prompt mode).
+// Returns initModeFromCode, initModeTemplate, or initModeVoice.
 func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool) (string, error) {
 	empty, err := dirIsEmpty(".")
 	if err != nil {
 		return "", fmt.Errorf("checking current directory: %w", err)
 	}
 
-	if empty {
-		return initModeTemplate, nil
-	}
 	if noPrompt {
+		if empty {
+			return initModeTemplate, nil
+		}
 		return initModeFromCode, nil
 	}
+	voicePreviewEnabled := promptVoicePreviewEnabled()
+	if empty && !voicePreviewEnabled {
+		return initModeTemplate, nil
+	}
 
-	choices := []*azdext.SelectChoice{
-		{Label: "Use the code in the current directory", Value: initModeFromCode},
-		{Label: "Start new from a template", Value: initModeTemplate},
+	var choices []*azdext.SelectChoice
+	if empty {
+		// No local code to adopt; offer template + voice.
+		choices = []*azdext.SelectChoice{
+			{Label: "Start new from a template", Value: initModeTemplate},
+		}
+	} else {
+		choices = []*azdext.SelectChoice{
+			{Label: "Use the code in the current directory", Value: initModeFromCode},
+			{Label: "Start new from a template", Value: initModeTemplate},
+		}
+	}
+	if voicePreviewEnabled {
+		choices = append(choices, voiceInitChoice)
 	}
 
 	defaultIndex := int32(0)

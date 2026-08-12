@@ -250,6 +250,38 @@ func TestPromptInitMode_NoPromptEmptyDirUsesTemplate(t *testing.T) {
 	require.Equal(t, initModeTemplate, mode)
 }
 
+func TestPromptInitMode_HidesVoiceChoiceByDefault(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv(promptVoicePreviewEnvVar, "")
+
+	prompts := &helpersPromptServer{selectIndex: 0}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+
+	mode, err := promptInitMode(t.Context(), azdClient, false)
+
+	require.NoError(t, err)
+	require.Equal(t, initModeTemplate, mode)
+	require.Nil(t, prompts.lastSelect)
+}
+
+func TestPromptInitMode_ShowsVoiceChoiceWhenPreviewEnabled(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv(promptVoicePreviewEnvVar, "true")
+
+	prompts := &helpersPromptServer{selectIndex: 1}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+
+	mode, err := promptInitMode(t.Context(), azdClient, false)
+
+	require.NoError(t, err)
+	require.Equal(t, initModeVoice, mode)
+	require.NotNil(t, prompts.lastSelect)
+	require.Len(t, prompts.lastSelect.Options.Choices, 2)
+	require.Equal(t, "Create a prompt voice agent", prompts.lastSelect.Options.Choices[1].Label)
+}
+
 func TestFindRecommendedIndex(t *testing.T) {
 	t.Parallel()
 

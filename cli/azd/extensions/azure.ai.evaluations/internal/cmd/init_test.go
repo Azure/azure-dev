@@ -11,9 +11,74 @@ import (
 
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
+
+// projectCanProvision decides which deploy command `init` names, so it has to
+// agree with what azd actually does rather than with what the layout suggests.
+// azd infers the provider from the files in the infra directory; an empty or
+// missing directory leaves it unspecified, falls back to Bicep, and fails on
+// the absent infra/main.bicep.
+func TestProjectCanProvision(t *testing.T) {
+	write := func(t *testing.T, dir string, names ...string) string {
+		t.Helper()
+		root := t.TempDir()
+		if dir != "" {
+			require.NoError(t, os.MkdirAll(filepath.Join(root, dir), 0o750))
+		}
+		for _, n := range names {
+			require.NoError(t,
+				os.WriteFile(filepath.Join(root, dir, n), []byte("// x"), 0o600))
+		}
+		return root
+	}
+
+	t.Run("no infra directory", func(t *testing.T) {
+		root := write(t, "")
+		require.False(t, projectCanProvision(&azdext.ProjectConfig{Path: root}),
+			"this is the eval-only project, where `azd up` exits 1")
+	})
+
+	t.Run("infra directory with bicep", func(t *testing.T) {
+		root := write(t, "infra", "main.bicep")
+		require.True(t, projectCanProvision(&azdext.ProjectConfig{Path: root}))
+	})
+
+	t.Run("infra directory with terraform", func(t *testing.T) {
+		root := write(t, "infra", "main.tf")
+		require.True(t, projectCanProvision(&azdext.ProjectConfig{Path: root}))
+	})
+
+	// An empty directory is the case a plain os.Stat would get wrong: the
+	// directory exists, and azd still has nothing to compile.
+	t.Run("empty infra directory", func(t *testing.T) {
+		root := write(t, "infra")
+		require.False(t, projectCanProvision(&azdext.ProjectConfig{Path: root}))
+	})
+
+	// Nothing recurses: azd reads one directory and skips subdirectories.
+	t.Run("bicep only in a subdirectory", func(t *testing.T) {
+		root := write(t, filepath.Join("infra", "modules"), "db.bicep")
+		require.False(t, projectCanProvision(&azdext.ProjectConfig{Path: root}))
+	})
+
+	t.Run("project names its own infra directory", func(t *testing.T) {
+		root := write(t, "deploy", "main.bicep")
+		require.True(t, projectCanProvision(&azdext.ProjectConfig{
+			Path:  root,
+			Infra: &azdext.InfraOptions{Path: "deploy"},
+		}), "the declared path is read, not the default one")
+		require.False(t, projectCanProvision(&azdext.ProjectConfig{Path: root}),
+			"and the default is empty here")
+	})
+
+	t.Run("no project", func(t *testing.T) {
+		require.False(t, projectCanProvision(nil),
+			"an unreadable project cannot be claimed to provision")
+	})
+}
 
 // scaffoldFor runs planScaffold against a fresh configuration, which is what
 // `init` does on a project that has never been initialized.
@@ -145,7 +210,7 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 			evalName: "support-agent-smoke", target: "support-agent", judgeModel: "m",
 		})
 		// One command produces both, so there is one step, not two.
-		require.Equal(t, []string{"azd ai eval generate"}, plan.nextSteps())
+		require.Equal(t, []string{"azd ai eval generate"}, plan.nextSteps(false))
 	})
 
 	t.Run("dataset supplied", func(t *testing.T) {
@@ -154,7 +219,7 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 		})
 		require.Equal(t,
 			[]string{"azd ai eval generate --evaluator --evaluator-name support-agent-quality"},
-			plan.nextSteps())
+			plan.nextSteps(false))
 	})
 
 	t.Run("everything supplied", func(t *testing.T) {
@@ -165,8 +230,15 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 			evaluators: []string{"builtin.task_adherence"},
 			judgeModel: "m",
 		})
-		require.Equal(t, []string{"azd up", "azd ai eval run start"}, plan.nextSteps(),
-			"with every artifact in place the next step is to deploy")
+		// Verified against azd 1.30.0: `azd up` on a project with no infra/
+		// exits 1 compiling a missing infra/main.bicep, while `azd deploy`
+		// publishes the eval and exits 0.
+		require.Equal(t, []string{"azd deploy", "azd ai eval run start"},
+			plan.nextSteps(false),
+			"an eval ships no infrastructure, so provisioning has nothing to compile")
+		require.Equal(t, []string{"azd up", "azd ai eval run start"},
+			plan.nextSteps(true),
+			"where the project does provision, one command covers both")
 	})
 }
 
@@ -182,9 +254,14 @@ func TestScaffold_NextStepsNameCommandsThatExist(t *testing.T) {
 
 	for _, in := range inputs {
 		plan, _ := scaffoldFor(t, in)
-		for _, step := range plan.nextSteps() {
+		for _, step := range plan.nextSteps(false) {
+			// Steps that drive azd itself -- `azd up`, `azd deploy` -- are not
+			// this extension's commands and resolve against a different tree.
+			if !strings.HasPrefix(step, "azd ai eval ") {
+				continue
+			}
 			words := strings.Fields(strings.TrimPrefix(step, "azd ai eval "))
-			if len(words) == 0 || strings.HasPrefix(step, "azd up") {
+			if len(words) == 0 {
 				continue
 			}
 			// Stop at the first flag: what follows is arguments, not commands.

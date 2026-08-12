@@ -236,7 +236,12 @@ func newInitCommand() *cobra.Command {
 			// Only what was actually scheduled is offered. Suggesting
 			// `dataset generate` for a dataset the caller supplied sends them
 			// to submit a billed job for an artifact they already have.
-			next := plan.nextSteps()
+			//
+			// A project that cannot be read counts as having no infrastructure:
+			// `azd deploy` publishes the eval either way, while `azd up` only
+			// works when there is something to provision.
+			proj, _ := readAzdProject(cmd.Context())
+			next := plan.nextSteps(projectCanProvision(proj))
 			fmt.Fprint(out, messages.FirstNextStep(next[0]))
 			for _, step := range next[1:] {
 				fmt.Fprint(out, messages.FurtherNextStep(step))
@@ -451,7 +456,7 @@ func (s scaffold) evaluatorNames() []string {
 // A caller who supplied both a dataset and their evaluators has nothing left to
 // generate, and pointing them at a generation command would submit a billed job
 // for an artifact they already have.
-func (s scaffold) nextSteps() []string {
+func (s scaffold) nextSteps(canProvision bool) []string {
 	var steps []string
 	switch {
 	case s.generateDataset && s.generateRubric:
@@ -465,9 +470,15 @@ func (s scaffold) nextSteps() []string {
 			"azd ai eval generate --evaluator --evaluator-name "+s.rubricName)
 	}
 	if len(steps) == 0 {
-		// TODO: suggest `azd deploy`, not `azd up`. Eval resources are data-plane
-		// only, so a project with no infra/ fails provision before reaching us.
-		steps = append(steps, "azd up", "azd ai eval run start")
+		// Eval assets are data-plane only. `azd up` provisions before it
+		// deploys, so in a project that ships no infrastructure it fails
+		// compiling a missing infra/main.bicep without ever reaching this
+		// service. `azd deploy` is what actually publishes the eval.
+		deploy := "azd deploy"
+		if canProvision {
+			deploy = "azd up"
+		}
+		steps = append(steps, deploy, "azd ai eval run start")
 	}
 	return steps
 }
@@ -526,6 +537,46 @@ func readAzdProject(ctx context.Context) (*azdext.ProjectConfig, error) {
 		return nil, messages.NoAzdProject()
 	}
 	return resp.GetProject(), nil
+}
+
+// azdDefaultInfraDir is where azd looks for infrastructure when the project
+// does not name a directory itself.
+const azdDefaultInfraDir = "infra"
+
+// projectCanProvision reports whether `azd provision` has anything to compile.
+//
+// This mirrors azd's own detection, which infers the provider from the files in
+// the infra directory and leaves it unspecified when that directory is missing.
+// Unspecified then falls back to Bicep, which fails on the absent
+// infra/main.bicep -- verified against azd 1.30.0, where `azd up` on an
+// eval-only project exits 1 and `azd deploy` succeeds.
+func projectCanProvision(proj *azdext.ProjectConfig) bool {
+	if proj == nil {
+		return false
+	}
+
+	dir := proj.GetInfra().GetPath()
+	if dir == "" {
+		dir = azdDefaultInfraDir
+	}
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(proj.GetPath(), dir)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		switch filepath.Ext(e.Name()) {
+		case ".bicep", ".bicepparam", ".tf", ".tfvars":
+			return true
+		}
+	}
+	return false
 }
 
 // aiModelHost is the model-deployment service the sibling Foundry extensions

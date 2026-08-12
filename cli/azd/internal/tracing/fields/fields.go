@@ -1196,6 +1196,12 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// ExtensionsInstalledSourceCategories records installed extensions as "id@category".
+	ExtensionsInstalledSourceCategories = AttributeKey{
+		Key:            attribute.Key("extension.installed.source.category"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// ExtensionVersionFrom is the installed version before an update.
 	ExtensionVersionFrom = AttributeKey{
 		Key:            attribute.Key("extension.version.from"),
@@ -1215,21 +1221,27 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// ExtensionSourceCategory is the fixed category of the source used for an operation.
+	ExtensionSourceCategory = AttributeKey{
+		Key:            attribute.Key("extension.source.category"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// ExtensionSourceKind is the kind of --source argument: none, registered, or location.
 	ExtensionSourceKind = AttributeKey{
 		Key:            attribute.Key("extension.source.kind"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionSourceFrom is the registry source before a promotion.
-	ExtensionSourceFrom = AttributeKey{
-		Key:            attribute.Key("extension.source.from"),
+	// ExtensionSourceCategoryFrom is the source category before a promotion.
+	ExtensionSourceCategoryFrom = AttributeKey{
+		Key:            attribute.Key("extension.source.category.from"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionSourceTo is the registry source after a promotion.
-	ExtensionSourceTo = AttributeKey{
-		Key:            attribute.Key("extension.source.to"),
+	// ExtensionSourceCategoryTo is the source category after a promotion.
+	ExtensionSourceCategoryTo = AttributeKey{
+		Key:            attribute.Key("extension.source.category.to"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}

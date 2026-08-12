@@ -17,6 +17,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -54,6 +55,12 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	// Prompt for Activity bot names at the start of preprovision so the input
+	// appears before longer setup/update steps in this handler.
+	if err := provisionActivityBotNames(ctx, azdClient, args); err != nil {
+		return err
+	}
+
 	if err := updateLegacyProjectDeployments(
 		ctx,
 		azdClient,
@@ -391,46 +398,30 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		return nil
 	}
 
-	// Whether this service is an activity agent decides how the shared inputs below
-	// are treated: an activity agent requires the Teams bot connector, so a missing
-	// input must fail the deploy; every other agent only feeds best-effort
-	// optimization reporting, which is safe to skip.
-	isActivity := false
-	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil && isHosted {
-		isActivity = project.ResolveActivityProfile(ca).IsActivity
-	}
+	// Read the inputs used by best-effort optimization reporting.
+	// Activity bot provisioning is performed in the service target deploy path
+	// (single source of truth), so postdeploy no longer performs a second bot
+	// configuration pass that can conflict with the deploy-time bot name.
+	envName, endpoint, _, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
 
-	// Read the inputs both steps draw from once. Gathering does not decide
-	// skip-vs-fail; each step below applies its own policy to inputErr, so the
-	// required Teams bot never inherits optimization reporting's "log and skip"
-	// preconditions and vice versa.
-	envName, endpoint, tenant, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
-
-	// Step 1 — activity bot: a required connector, provisioned and validated on its
-	// own terms. A missing prerequisite fails the deploy rather than being skipped,
-	// consistent with the EnsureBot failure handled just below. No-op for other agents.
-	if isActivity {
-		if inputErr != nil {
-			return fmt.Errorf(
-				"agent %q deployed successfully, but its required Microsoft Teams bot could not be "+
-					"configured: %w\n"+
-					"  Ensure the agent is provisioned in this environment, then re-run 'azd deploy'.",
-				svc.Name, inputErr,
-			)
-		}
-		if err := ensureActivityBot(
-			ctx, azdClient, cred, envName, svc, args.Project, endpoint, tenant,
-		); err != nil {
-			return fmt.Errorf(
-				"agent %q deployed successfully, but configuring its Microsoft Teams bot failed: %w\n"+
-					"  The agent version is active — only the Teams channel binding is missing "+
-					"(commonly Azure Bot permissions or quota). Resolve the cause and re-run 'azd deploy'.",
-				svc.Name, err,
+	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil &&
+		isHosted && project.ResolveActivityProfile(ca).IsActivity {
+		serviceKey := toServiceKey(svc.Name)
+		agentName, nameErr := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
+		botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
+		msaAppID, idErr := readEnvValue(ctx, azdClient, envName, envkey.AgentInstanceIdentityClientID(svc.Name))
+		if nameErr == nil && botErr == nil && idErr == nil {
+			guidePath := writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID)
+			printTeamsNextSteps(botName, msaAppID, guidePath)
+		} else {
+			log.Printf(
+				"postdeploy: skipping Teams setup guide for %s: agent name: %v, bot name: %v, instance identity: %v",
+				svc.Name, nameErr, botErr, idErr,
 			)
 		}
 	}
 
-	// Step 2 — optimization reporting: best-effort, skipped on its own terms. A
+	// Optimization reporting is best-effort and skipped on missing inputs. A
 	// missing input only logs and skips; it never fails an otherwise-successful
 	// deploy (the client-side agent-identity RBAC assignment was removed).
 	if inputErr != nil {

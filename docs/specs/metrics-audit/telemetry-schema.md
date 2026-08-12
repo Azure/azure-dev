@@ -212,15 +212,16 @@ not emitted by azd spans.
 | Extension ID | `extension.id` | SystemMetadata | FeatureInsight | |
 | Extension version | `extension.version` | SystemMetadata | FeatureInsight | |
 | Extension installed | `extension.installed` | SystemMetadata | FeatureInsight | List of installed extensions, each formatted `id@version` |
-| Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an upgrade |
-| Extension version to | `extension.version.to` | SystemMetadata | FeatureInsight | Target version after an upgrade |
-| Extension source | `extension.source` | SystemMetadata | FeatureInsight | Registry source used for the upgrade |
+| Installed extension source category | `extension.installed.source.category` | SystemMetadata | FeatureInsight | List formatted `id@category`; categories: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
+| Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an update |
+| Extension version to | `extension.version.to` | SystemMetadata | FeatureInsight | Target version after an update |
+| Extension source category | `extension.source.category` | SystemMetadata | FeatureInsight | Allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Extension source kind | `extension.source.kind` | SystemMetadata | FeatureInsight | Allowed values: `none`, `registered`, `location` |
-| Extension source from | `extension.source.from` | SystemMetadata | FeatureInsight | Registry source before a promotion |
-| Extension source to | `extension.source.to` | SystemMetadata | FeatureInsight | Registry source after a promotion |
+| Extension source category from | `extension.source.category.from` | SystemMetadata | FeatureInsight | Category before a promotion; allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
+| Extension source category to | `extension.source.category.to` | SystemMetadata | FeatureInsight | Category after a promotion; allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Update duration | `extension.update.duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — time in ms for one update |
 | Update outcome | `extension.update.outcome` | SystemMetadata | FeatureInsight | Update result status |
-| Dependency of | `extension.dependency_of` | SystemMetadata | FeatureInsight | Parent extension for a dependency upgrade |
+| Dependency of | `extension.dependency_of` | SystemMetadata | FeatureInsight | Parent extension for a dependency update |
 | Dependency update count | `extension.dependency_update_count` | SystemMetadata | FeatureInsight | Recursive dependency update count |
 
 #### Extension-contributed usage attributes

@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package exterrors provides structured error helpers for the azure.ai.toolboxes
-// extension.
+// Package exterrors provides structured error helpers for the
+// azure.ai.evaluations extension.
 //
 // Use plain Go errors until the current code can confidently choose a final
 // category, code, and suggestion. At that point, create a structured error with

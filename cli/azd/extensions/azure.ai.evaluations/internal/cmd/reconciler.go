@@ -71,7 +71,7 @@ func (r *evalReconciler) EnsureDataset(
 		// Recorded so a run reads the version reconciliation settled on. Without
 		// this a pin is honoured at deploy and then ignored at run time, which
 		// scores different rows than the ones the author asked for.
-		_ = r.ec.setEnvValue(ctx, versionKey("dataset", decl.Name), version)
+		r.ec.remember(ctx, versionKey("dataset", decl.Name), version)
 		return version, false, nil
 	}
 
@@ -129,8 +129,8 @@ func (r *evalReconciler) EnsureDataset(
 			}
 			return "", false, err
 		}
-		_ = r.ec.setEnvValue(ctx, key, digest)
-		_ = r.ec.setEnvValue(ctx, versionKey("dataset", decl.Name), ds.Version)
+		r.ec.remember(ctx, key, digest)
+		r.ec.remember(ctx, versionKey("dataset", decl.Name), ds.Version)
 		return ds.Version, true, nil
 	}
 
@@ -143,21 +143,13 @@ func (r *evalReconciler) EnsureDataset(
 		return "", false, err
 	}
 
-	_ = r.ec.setEnvValue(ctx, key, digest)
-	_ = r.ec.setEnvValue(ctx, versionKey("dataset", decl.Name), ds.Version)
-	_ = r.ec.setEnvValue(ctx, envKeyDatasetVersion, ds.Version)
+	r.ec.remember(ctx, key, digest)
+	r.ec.remember(ctx, versionKey("dataset", decl.Name), ds.Version)
+	r.ec.remember(ctx, envKeyDatasetVersion, ds.Version)
 
 	return ds.Version, true, nil
 }
 
-// checkDatasetDrift fails when the service holds a newer version than the one
-// recorded at the last deploy.
-//
-// Local content being unchanged is not enough to reuse the recorded version:
-// someone may have published a newer one outside the repo, and silently
-// pinning the eval to the older version would quietly evaluate against
-// stale data. Publishing is not destructive — versions are immutable — so the
-// remedy is to sync, not to overwrite.
 // validateJSONL checks that every row is a JSON object before the file is
 // published.
 //
@@ -288,9 +280,9 @@ func (r *evalReconciler) EnsureEvaluator(
 			// it is what a later deploy compares against to notice that
 			// someone moved the evaluator on from here.
 			if remote != "" {
-				_ = r.ec.setEnvValue(ctx, versionKey("evaluator", decl.Name), remote)
+				r.ec.remember(ctx, versionKey("evaluator", decl.Name), remote)
 			}
-			_ = r.ec.setEnvValue(ctx, digestKey, digest)
+			r.ec.remember(ctx, digestKey, digest)
 			return versionFromRaw(existing, decl.Version), false, nil
 		}
 
@@ -317,8 +309,8 @@ func (r *evalReconciler) EnsureEvaluator(
 		return "", false, err
 	}
 	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
-	_ = r.ec.setEnvValue(ctx, versionKey("evaluator", decl.Name), created.Version)
-	_ = r.ec.setEnvValue(ctx, digestKey, digest)
+	r.ec.remember(ctx, versionKey("evaluator", decl.Name), created.Version)
+	r.ec.remember(ctx, digestKey, digest)
 	return created.Version, true, nil
 }
 
@@ -488,10 +480,10 @@ func (r *evalReconciler) EnsureEval(
 			// Record the digest on reuse as well, otherwise an eval deployed
 			// before fingerprinting existed never establishes a baseline and
 			// later edits go undetected.
-			_ = r.ec.setEnvValue(ctx, key, digest)
-			_ = r.ec.setEnvValue(ctx, idKey("eval", group.Name), cached)
-			_ = r.ec.setEnvValue(ctx, digestIDKey(digest), cached)
-			_ = r.ec.setEnvValue(ctx, envKeyEvalID, cached)
+			r.ec.remember(ctx, key, digest)
+			r.ec.remember(ctx, idKey("eval", group.Name), cached)
+			r.ec.remember(ctx, digestIDKey(digest), cached)
+			r.ec.remember(ctx, envKeyEvalID, cached)
 			return cached, nil
 		}
 	}
@@ -500,12 +492,12 @@ func (r *evalReconciler) EnsureEval(
 	if err != nil {
 		return "", err
 	}
-	_ = r.ec.setEnvValue(ctx, key, digest)
-	_ = r.ec.setEnvValue(ctx, idKey("eval", group.Name), created.ID)
-	_ = r.ec.setEnvValue(ctx, digestIDKey(digest), created.ID)
+	r.ec.remember(ctx, key, digest)
+	r.ec.remember(ctx, idKey("eval", group.Name), created.ID)
+	r.ec.remember(ctx, digestIDKey(digest), created.ID)
 	// EVAL_ID stays the last-deployed eval, which is what the commands
 	// fall back to when a config names only one.
-	_ = r.ec.setEnvValue(ctx, envKeyEvalID, created.ID)
+	r.ec.remember(ctx, envKeyEvalID, created.ID)
 	return created.ID, nil
 }
 
@@ -661,9 +653,9 @@ func (ec *evalContext) recordDeployedDataset(
 	if err != nil {
 		return
 	}
-	_ = ec.setEnvValue(ctx, project.FingerprintKey("dataset", name), digest)
+	ec.remember(ctx, project.FingerprintKey("dataset", name), digest)
 	if version != "" {
-		_ = ec.setEnvValue(ctx, versionKey("dataset", name), version)
+		ec.remember(ctx, versionKey("dataset", name), version)
 	}
 }
 

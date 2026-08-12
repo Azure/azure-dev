@@ -5,7 +5,6 @@ package project
 
 import (
 	"bytes"
-	"os"
 )
 
 // utf8BOM is what Windows editors and PowerShell's Set-Content write ahead of
@@ -19,7 +18,7 @@ var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 // character rather than the cause: "invalid character 'ï' looking for beginning
 // of value" is not something a developer can act on.
 func ReadFileNoBOM(path string) ([]byte, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // a path the caller named
+	data, err := readFileOverContention(path)
 	if err != nil {
 		return nil, err
 	}

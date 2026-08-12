@@ -216,6 +216,13 @@ func (c *DatasetClient) UploadVersion(
 	}
 
 	// Step 2: Upload the JSONL file to blob storage.
+	// One blob per dataset, which is what the container-listing fallback in
+	// DownloadDatasetContent expects to find. Naming it for the content instead
+	// would stop two racing publishes of one version overwriting each other --
+	// but it leaves several .jsonl beside each other, and that fallback picks
+	// the first by name, so a download could return rows no version points at.
+	// The overwrite is the narrower harm and stays until the version can be
+	// allocated by the service rather than guessed from a lagging listing.
 	blobName := name + ".jsonl"
 	if err := c.UploadBlob(ctx, uploadURI, blobName, []byte(content)); err != nil {
 		return nil, messages.UploadingBlob(err)

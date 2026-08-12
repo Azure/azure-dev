@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,14 +39,21 @@ func TestSaveEvalConfigNeverExposesAHalfWrittenFile(t *testing.T) {
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
 	var truncated int
+	var replacements int64
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 300; i++ {
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for time.Now().Before(deadline) {
 			cfg, err := LoadEvalConfig(path)
 			if err != nil {
-				continue // a read that fails is honest; a silent empty one is not
+				// NOT skipped: "the file does not exist" is exactly what a
+				// remove-then-rename exposes, and OpenEvalConfig turns it into
+				// "there is no configuration yet" -- the same loss this guards
+				// against, by another route.
+				truncated++
+				continue
 			}
 			if len(cfg.Evals) != 2 {
 				truncated++
@@ -61,14 +70,68 @@ func TestSaveEvalConfigNeverExposesAHalfWrittenFile(t *testing.T) {
 			case <-stop:
 				return
 			default:
-				_ = SaveEvalConfigTo(path, full)
+				if SaveEvalConfigTo(path, full) == nil {
+					atomic.AddInt64(&replacements, 1)
+				}
 			}
 		}
 	}()
 	wg.Wait()
 
+	require.NotZero(t, atomic.LoadInt64(&replacements),
+		"the writer has to have replaced the file, or nothing was under test")
 	assert.Zerof(t, truncated,
-		"a concurrent reader saw a config with its evals missing %d times", truncated)
+		"a concurrent reader failed to see the whole config %d times", truncated)
+}
+
+// OpenEvalConfig maps a missing file to "no configuration yet", which callers
+// answer by writing a fresh one. So a replacement that momentarily unlinks the
+// destination is as destructive as one that truncates it, and this pins the
+// window closed from that side too.
+func TestOpenEvalConfigNeverSeesTheFileVanish(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "azure.eval.yaml")
+	full := &EvalConfig{Evals: []Eval{{Name: "first", EvaluationLevel: "turn"}}}
+	require.NoError(t, SaveEvalConfigTo(path, full))
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	var vanished, replacements int64
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Wall clock, not an iteration count. Three hundred os.Stat calls take
+		// microseconds, which is not long enough for the writer to be scheduled
+		// even once -- the test passed against the unlinking version it was
+		// written to catch.
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				atomic.AddInt64(&vanished, 1)
+			}
+		}
+		close(stop)
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				if SaveEvalConfigTo(path, full) == nil {
+					atomic.AddInt64(&replacements, 1)
+				}
+			}
+		}
+	}()
+	wg.Wait()
+
+	require.NotZero(t, atomic.LoadInt64(&replacements),
+		"the writer has to have replaced the file, or nothing was under test")
+	assert.Zerof(t, vanished, "the config was absent %d times during replacement", vanished)
 }
 
 // The replacement must leave the file complete and parseable.

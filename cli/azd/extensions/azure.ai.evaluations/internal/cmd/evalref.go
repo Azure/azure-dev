@@ -57,7 +57,41 @@ func (ec *evalContext) resolveEvalRef(
 		case err == nil:
 			id := ec.recordedEvalID(ctx, eval.Name)
 			if id == "" {
-				return evalRef{}, messages.EvalNotDeployedYet(eval.Name)
+				// Nothing recorded is not the same as nothing published. The
+				// id is kept in the azd environment, so a run against
+				// --project-endpoint with no project, or a `create` that ran
+				// before the environment existed, leaves a published eval
+				// with no note of it. The service lists evals by name, so
+				// ask it before deciding this was never deployed.
+				//
+				// Refused rather than guessed when a name carries several, as
+				// `eval delete` already does. Newest-wins is fine for showing
+				// something, but this id also reaches `run start`, and grading
+				// against the wrong definition produces results that look
+				// right and answer a different question.
+				ids := ec.evalIDsNamed(ctx, eval.Name)
+				if len(ids) > 1 {
+					return evalRef{}, messages.AmbiguousEvalName(eval.Name, ids)
+				}
+				if len(ids) == 1 {
+					id = ids[0]
+				}
+			}
+			if id == "" {
+				// With no environment there was nowhere an id could have been
+				// recorded, so telling the reader to deploy again would not
+				// help. Only said when azd confirmed there is none.
+				if ec.confirmedNoAzdEnvironment(ctx) {
+					return evalRef{}, messages.NoEnvironmentToRememberEval(eval.Name)
+				}
+				// That call recovers the environment name when the first
+				// lookup missed it -- a transient failure in newEvalContext
+				// leaves it empty, and recordedEvalID answers "" without
+				// asking when it is. Now that there is a name, ask properly
+				// before reporting a deployed eval as missing.
+				if id = ec.recordedEvalID(ctx, eval.Name); id == "" {
+					return evalRef{}, messages.EvalNotDeployedYet(eval.Name)
+				}
 			}
 			return evalRef{ID: id, Eval: eval, Config: cfg, ConfigPath: configPath}, nil
 		case nameOrID == "":

@@ -64,9 +64,10 @@ func newEvalCreateCommand() *cobra.Command {
 
 			// Local sources resolve against the file, not the working directory,
 			// so the columns are read from where the declaration points.
+			baseDir := filepath.Dir(path)
 			datasetPath := ""
-			if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok && decl.Source != "" {
-				datasetPath = filepath.Join(filepath.Dir(path), decl.Source)
+			if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
+				datasetPath = project.ResolveSource(baseDir, decl.Source)
 			}
 
 			reconciler := &evalReconciler{ec: ec}
@@ -90,7 +91,6 @@ func newEvalCreateCommand() *cobra.Command {
 			// first. `azd up` reconciles the whole file; this reconciles only what
 			// this eval refers to, which is also what makes a rubric edit reach
 			// the service without a full deploy.
-			baseDir := filepath.Dir(path)
 			if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
 				version, changed, err := reconciler.EnsureDataset(ctx, *decl, datasetPath)
 				if err != nil {
@@ -104,10 +104,7 @@ func newEvalCreateCommand() *cobra.Command {
 				if !ok || decl.Source == "" {
 					continue
 				}
-				local := decl.Source
-				if !filepath.IsAbs(local) {
-					local = filepath.Join(baseDir, local)
-				}
+				local := project.ResolveSource(baseDir, decl.Source)
 				version, changed, err := reconciler.EnsureEvaluator(ctx, *decl, local)
 				if err != nil {
 					return messages.EvaluatorProblem(decl.Name, err)

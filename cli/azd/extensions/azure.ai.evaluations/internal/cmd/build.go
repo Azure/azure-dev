@@ -15,10 +15,6 @@ import (
 	"azureaieval/internal/project"
 )
 
-// evaluatorSchemas indexes the published evaluator contracts by name.
-//
-// A failure is deliberately not fatal: without schemas the builder falls back
-// to the agent-target shape, which is what it always used to send.
 // evaluatorSchemas indexes the published contract of every evaluator a group
 // can reference.
 //
@@ -27,6 +23,9 @@ import (
 // a schema and falling back to legacyInputs — which happens to match
 // query/response and so looks right for the common evaluators while quietly
 // dropping the fields anything else needs.
+//
+// A failure is deliberately not fatal: without schemas the builder falls back
+// to the agent-target shape, which is what it always used to send.
 func (ec *evalContext) evaluatorSchemas(ctx context.Context) map[string]*eval_api.EvaluatorSummary {
 	if ec.schemas != nil {
 		return ec.schemas
@@ -63,11 +62,12 @@ var sampleBindings = map[string]string{
 	"tool_definitions": "{{sample.tool_definitions}}",
 }
 
-// modelSampleBindings are what a model target produces. A model answers as
-// plain text and calls no tools, so binding an agent's richer output would
-// leave the evaluator waiting on fields the run never produces.
 // sampleBindingsFor returns the run-time bindings a target of this kind can
 // satisfy. An empty target kind means nothing is invoked, so nothing is bound.
+//
+// A model target gets none: a model answers as plain text and calls no tools,
+// so binding an agent's richer output would leave the evaluator waiting on
+// fields the run never produces.
 func sampleBindingsFor(targetType string) map[string]string {
 	if targetType == project.TargetTypeAgent {
 		return sampleBindings

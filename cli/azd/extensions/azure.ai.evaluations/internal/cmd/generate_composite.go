@@ -54,6 +54,24 @@ func newGenerateCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dataset, evaluator := selectedArtifacts(wantDataset, wantEvaluator)
 
+			// Checked before any network work, so a flag that cannot apply
+			// costs nothing to find out about. Changed() rather than the value,
+			// so a zero the caller actually typed is still caught and an
+			// untouched default is not.
+			if !dataset {
+				for _, flag := range []string{"from", "max-samples"} {
+					if cmd.Flags().Changed(flag) {
+						return messages.DatasetOnlyFlag(flag)
+					}
+				}
+			}
+			if traceDays < 0 {
+				return messages.NegativeTraceDays(traceDays)
+			}
+			if flags.noWait && cmd.Flags().Changed("output-dir") {
+				return messages.OutputDirNeedsTheWait()
+			}
+
 			if dataset {
 				for _, src := range from {
 					if err := project.ValidateGenerateSource(src); err != nil {

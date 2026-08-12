@@ -157,7 +157,7 @@ func (p *EvalServiceTargetProvider) Deploy(
 	datasetPaths := map[string]string{}
 	for _, decl := range cfg.Datasets {
 		report(progress, messages.ReconcilingDataset(decl.Name))
-		localPath := resolveSource(baseDir, decl.Source)
+		localPath := ResolveSource(baseDir, decl.Source)
 		datasetPaths[decl.Name] = localPath
 		version, changed, err := reconciler.EnsureDataset(ctx, decl, localPath)
 		if err != nil {
@@ -170,7 +170,7 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// ones need no publish.
 	for _, decl := range cfg.CustomEvaluators() {
 		report(progress, messages.ReconcilingEvaluator(decl.Name))
-		localPath := resolveSource(baseDir, decl.Source)
+		localPath := ResolveSource(baseDir, decl.Source)
 		version, changed, err := reconciler.EnsureEvaluator(ctx, decl, localPath)
 		if err != nil {
 			return nil, messages.EvaluatorProblem(decl.Name, err)
@@ -300,9 +300,14 @@ func serviceRelativeDir(svc *azdext.ServiceConfig) string {
 	return "."
 }
 
-// resolveSource joins a declared source against the service directory, leaving
-// absolute paths and empty values alone.
-func resolveSource(baseDir, source string) string {
+// ResolveSource joins a declared source against the directory holding the
+// configuration, leaving absolute paths and empty values alone.
+//
+// Exported because `eval create` resolves the same declarations as `azd up`
+// and had grown its own copy that joined unconditionally, so an absolute
+// source came out as evals/C:/data/rows.jsonl there while `azd up` handled it.
+// One resolver is what stops the two drifting again.
+func ResolveSource(baseDir, source string) string {
 	if source == "" {
 		return ""
 	}

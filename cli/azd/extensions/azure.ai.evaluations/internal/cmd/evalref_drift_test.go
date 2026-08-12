@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"azureaieval/internal/pkg/dataset_api"
+	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -108,6 +109,25 @@ func writeEvalYAML(t *testing.T, body string) string {
 	return evals
 }
 
+// evalContextListingEvals builds a context whose service lists exactly these
+// evals. resolveEvalRef asks the service by name when no id was recorded, so a
+// context without a client cannot exercise it.
+func evalContextListingEvals(t *testing.T, envName, body string) *evalContext {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
+		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
+	return &evalContext{
+		envName:    envName,
+		evalClient: eval_api.NewEvalClientFromPipeline(srv.URL, pipeline),
+	}
+}
+
 // A declared eval that was never deployed has no id to address, and the
 // service would answer 404 for a name it never saw. Naming `azd up` is the
 // difference between a dead end and a next step.
@@ -121,13 +141,66 @@ evals:
     evaluators:
       - evaluator: builtin.relevance
 `)
-	ec := &evalContext{}
+	// An environment exists; the id was simply never recorded in it. Without
+	// this the case under test is "nowhere to record", which is a different
+	// answer. The service lists nothing, which is what never deployed looks
+	// like from the outside.
+	ec := evalContextListingEvals(t, "dev", `{"data":[]}`)
 
 	_, err := ec.resolveEvalRef(context.Background(), dir, "support-quality")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "support-quality")
 	assert.Contains(t, err.Error(), "azd up", "the error has to say what would fix it")
+}
+
+// The id lives in the azd environment, so `--project-endpoint` against a
+// directory that never had one has a published eval and no note of it. Failing
+// there would make the declaration unusable outside a project, though the
+// service can be asked for the same name.
+func TestResolveEvalRefFindsAPublishedEvalByName(t *testing.T) {
+	dir := writeEvalYAML(t, `
+datasets:
+  - name: golden
+evals:
+  - name: support-quality
+    dataset: golden
+    evaluators:
+      - evaluator: builtin.relevance
+`)
+	ec := evalContextListingEvals(t, "",
+		`{"data":[{"id":"eval_published","name":"support-quality"}]}`)
+
+	ref, err := ec.resolveEvalRef(context.Background(), dir, "support-quality")
+
+	require.NoError(t, err)
+	assert.Equal(t, "eval_published", ref.ID,
+		"the service knows the id this environment never recorded")
+	assert.True(t, ref.Declared(), "and it is still the declaration that was matched")
+}
+
+// With no azd environment at all there is nowhere the id could have been
+// recorded, so `create` may well have published this eval and had nowhere to
+// note it. Sending the reader to `azd up` lands them in the same place.
+func TestResolveEvalRefNamesTheMissingEnvironment(t *testing.T) {
+	dir := writeEvalYAML(t, `
+datasets:
+  - name: golden
+evals:
+  - name: support-quality
+    dataset: golden
+    evaluators:
+      - evaluator: builtin.relevance
+`)
+	ec := evalContextListingEvals(t, "", `{"data":[]}`)
+
+	_, err := ec.resolveEvalRef(context.Background(), dir, "support-quality")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "azd env new",
+		"the fix is an environment, not another deploy")
+	assert.NotContains(t, err.Error(), "azd up",
+		"deploying again would record the id in the same nowhere")
 }
 
 // An eval made by `azd ai eval create` has no evals: entry, so anything that

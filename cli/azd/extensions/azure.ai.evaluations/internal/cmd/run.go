@@ -102,6 +102,11 @@ func buildRunCommand(use, short string) *cobra.Command {
 			if !wait && threshold.set {
 				return messages.GateNeedsTheWait()
 			}
+			// resolveMaxSamples reads anything not above zero as "no cap", so a
+			// negative one sent the whole dataset to a billed run.
+			if maxSamples < 0 {
+				return messages.NegativeMaxSamplesFlag(maxSamples)
+			}
 
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {
@@ -193,7 +198,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 			// Remembered per group as well as globally: a single shared key
 			// belongs to whichever group ran last, so another group asking for
 			// "the last run" would be handed one that is not its own.
-			_ = ec.setEnvValue(ctx, idKey("evalrun", evalID), run.ID)
+			ec.remember(ctx, idKey("evalrun", evalID), run.ID)
 			if err := ec.setEnvValue(ctx, envKeyEvalRunID, run.ID); err != nil {
 				// Persisting the run id is a convenience for later commands.
 				// Reported on stdout because azd does not surface an
@@ -324,7 +329,7 @@ func (ec *evalContext) resolveEvalIDFromConfig(
 	if err := ec.setEnvValue(ctx, idKey("eval", group.Name), created.ID); err != nil {
 		fmt.Fprint(out, messages.Warning(err))
 	}
-	_ = ec.setEnvValue(ctx, envKeyEvalID, created.ID)
+	ec.remember(ctx, envKeyEvalID, created.ID)
 	return created.ID, nil
 }
 

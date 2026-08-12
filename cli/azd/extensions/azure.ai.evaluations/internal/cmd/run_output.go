@@ -291,6 +291,13 @@ func addEvalPathFlag(cmd *cobra.Command, target *string) {
 // explicit says whether the caller named the run rather than leaving it to
 // default. A remembered run that no longer resolves is worth falling through
 // on; one that was asked for by name is not.
+//
+// The remembered id is preferred over the service's listing, and deliberately.
+// Listing looks like the fix for two concurrent starts leaving this key holding
+// whichever wrote last, but ListOpenAIEvalRuns sends no order parameter, so
+// "the first row" is not promised to be the newest; and `run cancel` defaults
+// through here, so guessing would cancel a run this environment never started.
+// The remembered id is at least scoped to the environment that made it.
 func (ec *evalContext) latestOrNamedRun(
 	cmd *cobra.Command,
 	evalID, runID string,

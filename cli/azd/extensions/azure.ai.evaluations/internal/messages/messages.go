@@ -246,6 +246,20 @@ func EvalNotDeployed(evalID string) error {
 			"`azd up` creates the ones your config declares", evalID)
 }
 
+// NoEnvironmentToRememberEval reports an eval whose id had nowhere to be kept.
+//
+// `create` publishes the eval and records its id in the azd environment. With
+// no environment there is nowhere to record it, so create reports success and
+// the next command cannot find what it made. Saying "not deployed" there sends
+// the reader to deploy it again, which lands in the same place.
+func NoEnvironmentToRememberEval(eval string) error {
+	return fmt.Errorf(
+		"eval %q may exist in the project, but this directory has no azd "+
+			"environment to have recorded its id in. Create one with "+
+			"`azd env new <name>` and run `azd ai eval create` again, or name "+
+			"the eval's id with --eval", eval)
+}
+
 // EvalNotDeployedYet reports a declared eval that no deploy has created.
 func EvalNotDeployedYet(eval string) error {
 	return fmt.Errorf(
@@ -518,12 +532,6 @@ func GenerationFailed(kind string, err error) error {
 	return fmt.Errorf("generating the %s: %w", kind, err)
 }
 
-// SomeGenerationsFailed reports a composite generate where at least one job
-// did not finish. The others may well have.
-//
-// Two structured failures of the same category stay structured, so an expired
-// login still arrives as an auth error carrying its suggestion rather than as
-// a flat string.
 // multiError presents several failures as one line while keeping every cause
 // reachable through errors.Is and errors.As.
 //
@@ -537,6 +545,12 @@ type multiError struct {
 func (m *multiError) Error() string   { return m.msg }
 func (m *multiError) Unwrap() []error { return m.causes }
 
+// SomeGenerationsFailed reports a composite generate where at least one job
+// did not finish. The others may well have.
+//
+// Two structured failures of the same category stay structured, so an expired
+// login still arrives as an auth error carrying its suggestion rather than as
+// a flat string.
 func SomeGenerationsFailed(failures []error) error {
 	if len(failures) == 1 {
 		return failures[0]
@@ -1884,8 +1898,64 @@ func FromNotASource(from string, sources []string) error {
 }
 
 // SampleSizeOutOfRange reports a row count the generation service would reject.
+// SampleSizeOutOfRange reports a generation sample count the service will not take.
 func SampleSizeOutOfRange(min, max, got int) error {
 	return fmt.Errorf("sample size must be between %d and %d, got %d", min, max, got)
+}
+
+// NegativeMaxSamples reports a declared row cap below zero.
+//
+// Anything not above zero reads as "no cap", so this used to send the whole
+// dataset to a run that is billed per row -- the opposite of what a cap asks
+// for, and silent.
+func NegativeMaxSamples(index int, name string, got int) error {
+	return fmt.Errorf(
+		"evals[%d] %q: max_samples cannot be negative, got %d. "+
+			"Remove it to send every row, or set the number of rows to send",
+		index, name, got)
+}
+
+// NegativeMaxSamplesFlag reports the same thing given on the command line.
+func NegativeMaxSamplesFlag(got int) error {
+	return fmt.Errorf(
+		"--max-samples cannot be negative, got %d. "+
+			"Omit it to send every row, or give the number of rows to send", got)
+}
+
+// DatasetOnlyFlag reports a dataset flag given to a run that generates no
+// dataset.
+//
+// The flag is documented "Dataset only" and was accepted and ignored, so
+// `--evaluator --max-samples 50` produced a rubric and said nothing about the
+// number the caller asked for.
+func DatasetOnlyFlag(flag string) error {
+	return fmt.Errorf(
+		"--%s only affects the dataset, and --evaluator generates no dataset. "+
+			"Drop --%s, or drop --evaluator to generate both", flag, flag)
+}
+
+// NegativeTraceDays reports a trace window below zero.
+//
+// Zero already means "do not read traces", so a negative value has nothing
+// left to mean; it used to be accepted and treated as zero, which silently
+// produced a rubric with none of the trace seeding that was asked for.
+func NegativeTraceDays(got int) error {
+	return fmt.Errorf(
+		"--trace-days cannot be negative, got %d. "+
+			"Use 0 to seed the rubric from no traces, or the number of days to read", got)
+}
+
+// OutputDirNeedsTheWait reports an output directory that nothing will be
+// written to.
+//
+// --no-wait returns as soon as the job is submitted, so there is no artifact
+// to place. Accepting both left the caller waiting for a file that was never
+// coming.
+func OutputDirNeedsTheWait() error {
+	return errors.New(
+		"--output-dir has nothing to write to with --no-wait, which returns " +
+			"before the artifact exists. Drop --no-wait, or collect the " +
+			"artifact later with `azd ai eval job show`")
 }
 
 // EndpointEmpty reports a project endpoint given as blank.

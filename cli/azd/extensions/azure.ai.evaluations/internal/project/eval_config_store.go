@@ -10,6 +10,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
+	"time"
 
 	"azureaieval/internal/messages"
 
@@ -177,12 +180,96 @@ func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 	if err := tmp.Close(); err != nil {
 		return messages.WritingEvalConfig(path, err)
 	}
-	// Windows will not rename onto an existing file.
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return messages.WritingEvalConfig(path, err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return messages.WritingEvalConfig(path, err)
+	// Straight over the destination, and never by unlinking it first. Windows
+	// refuses a rename while a reader holds the destination open, so the
+	// obvious fallback -- remove, then rename -- turns a collision into a
+	// window where the config does not exist, and OpenEvalConfig reports a
+	// missing file as "no configuration yet", which callers answer by writing a
+	// fresh one. That is the same data loss this function exists to prevent.
+	// Contention is measured in microseconds, so it is waited out instead.
+	if err := renameOverContention(tmpName, path); err != nil {
+		// The unlink this replaced was doing something else worth keeping:
+		// os.Remove clears a read-only attribute and retries, so a config marked
+		// read-only (a Perforce or TFVC checkout, `attrib +R`, some archive
+		// extractions) could still be replaced. Windows fails a rename onto a
+		// read-only destination with the same errno as one a reader holds open,
+		// so the two cannot be told apart before the wait.
+		if !clearReadOnly(path) {
+			return messages.WritingEvalConfig(path, err)
+		}
+		if err := os.Rename(tmpName, path); err != nil {
+			return messages.WritingEvalConfig(path, err)
+		}
 	}
 	return nil
+}
+
+// clearReadOnly drops a read-only attribute, reporting whether it had one to
+// drop. os.Chmod is what carries FILE_ATTRIBUTE_READONLY on Windows.
+func clearReadOnly(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm()&0o200 != 0 {
+		return false
+	}
+	return os.Chmod(path, info.Mode().Perm()|0o200) == nil
+}
+
+// The budgets are deliberately different. A replacement window is measured in
+// microseconds, so neither needs to be generous -- and every millisecond here
+// is also charged to a file that is genuinely unreadable, because Windows
+// reports "someone has this open" and "you may not have this" as one errno.
+const (
+	renameRetryBudget = 500 * time.Millisecond
+	readRetryBudget   = 250 * time.Millisecond
+)
+
+func renameOverContention(from, to string) error {
+	deadline := time.Now().Add(renameRetryBudget)
+	delay := time.Millisecond
+	for {
+		err := os.Rename(from, to)
+		if err == nil || !isSharingContention(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(delay)
+		if delay < 16*time.Millisecond {
+			delay *= 2
+		}
+	}
+}
+
+// isSharingContention reports the errors Windows raises while another handle is
+// open. It cannot be precise: renaming onto a destination a reader holds open
+// and renaming onto one the caller may not touch both report ERROR_ACCESS_DENIED,
+// so a genuine permission failure is waited on before it is reported. The
+// budget is what keeps that wait short enough to be worth the trade.
+func isSharingContention(err error) bool {
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	var errno syscall.Errno
+	if !errors.As(err, &errno) {
+		return false
+	}
+	// ERROR_ACCESS_DENIED and ERROR_SHARING_VIOLATION.
+	return errno == 5 || errno == 32
+}
+
+// readFileOverContention reads a file that another process may be replacing.
+func readFileOverContention(path string) ([]byte, error) {
+	deadline := time.Now().Add(readRetryBudget)
+	delay := time.Millisecond
+	for {
+		body, err := os.ReadFile(path)
+		if err == nil || !isSharingContention(err) || time.Now().After(deadline) {
+			return body, err
+		}
+		time.Sleep(delay)
+		if delay < 16*time.Millisecond {
+			delay *= 2
+		}
+	}
 }

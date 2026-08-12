@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strings"
 
@@ -110,6 +111,22 @@ func lookupEndpointFromAzd(ctx context.Context, azdClient *azdext.AzdClient) (en
 // A write that fails for any other reason still is.
 var errNoAzdEnvironment = messages.ErrNoAzdEnvironment
 
+// remember persists a value that the extension can recover without, so a
+// failure to store it must not fail the work that produced it.
+//
+// Running outside a project is ordinary -- the atomic commands are meant to
+// work standalone against the data plane -- so having nowhere to write is not
+// worth a word. Anything else is: these keys are how a later deploy recognises
+// what it already published, and losing one silently means the next `azd up`
+// creates a second immutable version of something it had already created.
+func (ec *evalContext) remember(ctx context.Context, key, value string) {
+	err := ec.setEnvValue(ctx, key, value)
+	if err == nil || errors.Is(err, errNoAzdEnvironment) {
+		return
+	}
+	log.Printf("[env] could not record %s: %v", key, err)
+}
+
 // setEnvValue persists a value into the active azd environment. azd itself
 // writes none of these keys — the extension owns them.
 func (ec *evalContext) setEnvValue(ctx context.Context, key, value string) error {
@@ -131,10 +148,64 @@ func (ec *evalContext) setEnvValue(ctx context.Context, key, value string) error
 	return nil
 }
 
+// azdNoDefaultEnvironment is what azd's environment service answers with when
+// the project has no environment selected. It arrives over gRPC as a status
+// whose message carries the text, so the text is what there is to match on.
+//
+// azd returns this as an ERROR rather than an empty answer, which is the whole
+// difficulty: "there is no environment" and "azd could not be reached" are both
+// non-nil errors, and only the first is something to tell the user about.
+const azdNoDefaultEnvironment = "default environment not found"
+
+// confirmedNoAzdEnvironment reports that azd answered, and the answer was that
+// there is no current environment.
+//
+// ec.envName being empty is not that answer. It is left empty by any failure to
+// reach azd as well as by there being no environment, so reading it as "there
+// is none" turns a transient gRPC hiccup into advice to create an environment
+// the user already has.
+//
+// The environment name is recovered here when there turns out to be one, so a
+// caller whose earlier lookup came up empty because of a hiccup can retry it.
+func (ec *evalContext) confirmedNoAzdEnvironment(ctx context.Context) bool {
+	if ec.envName != "" {
+		return false
+	}
+	if ec.azdClient == nil {
+		// No azd to ask: running standalone against the data plane, where
+		// there is genuinely nowhere to have recorded an id.
+		return true
+	}
+	envResp, err := ec.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return isNoDefaultEnvironmentError(err)
+	}
+	if envResp == nil || envResp.Environment == nil || envResp.Environment.Name == "" {
+		return true
+	}
+	ec.envName = envResp.Environment.Name
+	return false
+}
+
+// isNoDefaultEnvironmentError picks azd's "there is no environment" out of
+// every other reason the call could have failed.
+//
+// The distinction is the whole point: a transport failure must not be reported
+// as a missing environment, or a gRPC hiccup tells the user to create one they
+// already have. Matching on text because that is what survives the trip -- the
+// sentinel is wrapped in a gRPC status on the way out of azd, so errors.Is has
+// nothing to compare against on this side.
+func isNoDefaultEnvironmentError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), azdNoDefaultEnvironment)
+}
+
 // getEnvValue reads a value from the active azd environment, returning empty
 // when it is unset.
 func (ec *evalContext) getEnvValue(ctx context.Context, key string) string {
-	if ec.envName == "" {
+	if ec.envName == "" || ec.azdClient == nil {
 		return ""
 	}
 	val, err := ec.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{

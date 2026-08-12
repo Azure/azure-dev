@@ -109,17 +109,22 @@ func newInitCommand() *cobra.Command {
 			if cfg == nil {
 				cfg = &project.EvalConfig{}
 			}
-			if cfg.HasEval(evalName) {
-				if !force {
-					return messages.EvalAlreadyDeclared(
-						evalName, filepath.ToSlash(configPath))
-				}
-				cfg.RemoveEval(evalName)
+			// Checked before the prompt as well as after it, so a name that is
+			// already taken is reported without asking a question first.
+			if cfg.HasEval(evalName) && !force {
+				return messages.EvalAlreadyDeclared(
+					evalName, filepath.ToSlash(configPath))
 			}
 
 			// Asked, not detected: an eval grades on a set, so there is no
 			// "the only one" to settle on, and which criteria define quality
 			// is the substantive decision in the configuration.
+			//
+			// Deliberately outside the lock below. This is an unbounded human
+			// pause, and a lock held across it would either block a concurrent
+			// `generate` for as long as someone leaves the terminal, or -- once
+			// that side gave up waiting -- protect nothing at all. The listing
+			// it offers is only a menu; the authoritative read is taken after.
 			evaluatorsWereChosen := len(evaluators) > 0
 			if len(evaluators) == 0 {
 				var asked bool
@@ -129,6 +134,31 @@ func newInitCommand() *cobra.Command {
 					return err
 				}
 				evaluatorsWereChosen = asked
+			}
+
+			// The read-modify-write starts here, and nothing inside it waits on
+			// a person. The configuration is read again because the copy above
+			// was taken before the prompt, and a `generate` may well have
+			// finished writing to it since.
+			unlockConfig, _, err := project.LockEvalConfig(cmd.Context(), path)
+			if err != nil {
+				return err
+			}
+			defer unlockConfig()
+
+			cfg, err = project.OpenEvalConfig(path)
+			if err != nil {
+				return err
+			}
+			if cfg == nil {
+				cfg = &project.EvalConfig{}
+			}
+			if cfg.HasEval(evalName) {
+				if !force {
+					return messages.EvalAlreadyDeclared(
+						evalName, filepath.ToSlash(configPath))
+				}
+				cfg.RemoveEval(evalName)
 			}
 
 			if err := os.MkdirAll(filepath.Join(path, project.DefaultDatasetsDir), 0o750); err != nil {

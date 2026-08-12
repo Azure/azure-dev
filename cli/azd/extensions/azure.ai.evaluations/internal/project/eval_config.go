@@ -285,6 +285,11 @@ func (c *EvalConfig) validateEval(i int, eval Eval) error {
 	if eval.Dataset != "" && eval.Source != nil {
 		return messages.DatasetAndSourceBothDeclared(i, eval.Name)
 	}
+	// A negative cap read as "no cap", so the whole dataset went to a billed
+	// run when the config asked for fewer rows than that.
+	if eval.MaxSamples < 0 {
+		return messages.NegativeMaxSamples(i, eval.Name, eval.MaxSamples)
+	}
 	if eval.Dataset != "" {
 		if _, ok := c.DatasetDeclaration(eval.Dataset); !ok {
 			return messages.DatasetNotInDatasetsCatalog(i, eval.Name, eval.Dataset)

@@ -26,6 +26,7 @@ gofrs
 haoozhang
 hemarina
 huimiu
+hyoshis
 imatiach
 isatty
 joho
@@ -45,6 +46,7 @@ otiai10
 pamelafox
 pauldotyu
 pbnj
+qinezh
 rajeshkamal
 richardpark-msft
 rguptar

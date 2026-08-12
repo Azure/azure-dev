@@ -34,6 +34,16 @@ cli/azd/
 
 **Tip**: Service registration in `cmd/container.go` shows all major components. To find where a feature is implemented, start with the command in `cmd/`, follow to the action, then trace service dependencies.
 
+## Agency and MCP Tools
+
+This repository includes an [`agency.toml`](../../agency.toml) configuration for [Agency](https://aka.ms/agency), Microsoft's internal AI engineering environment.
+
+It preconfigures:
+
+- **Azure DevOps MCP** for the `azure-sdk` organization.
+- **Kusto MCP** for the `DevCli` database on the shared telemetry cluster.
+
+Use the Azure DevOps MCP for ADO operations and the Kusto MCP for authorized telemetry investigations. Handle telemetry according to the repository's privacy and data-classification guidance, and do not expose customer-identifying data in issues, pull requests, logs, or generated artifacts.
 
 ## Development
 

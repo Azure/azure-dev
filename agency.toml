@@ -1,0 +1,12 @@
+# aka.ms/agency/config
+# cspell:ignore mcps
+
+[mcps.builtins.ado]
+type = "ado"
+organization = "azure-sdk"
+toolsets = ["core", "repositories", "pipelines", "search"]
+
+[mcps.builtins.kusto]
+type = "kusto"
+service_uri = "https://ddazureclients.kusto.windows.net"
+database = "DevCli"

@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/project"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -161,9 +162,8 @@ func requireFlag(name string) error {
 // Every error names the path the caller passed. The temporary file is this
 // function's business and appears nowhere the caller asked for.
 func writeFileAtomic(path string, body []byte) error {
-	// The rename below needs the destination gone on Windows, so refuse
-	// anything that is not a regular file rather than removing it: pointed at a
-	// directory, this would otherwise delete it.
+	// Refuse anything that is not a regular file: pointed at a directory, the
+	// replacement below would report a confusing rename failure instead.
 	switch info, err := os.Stat(path); {
 	case err == nil && !info.Mode().IsRegular():
 		return messages.NotARegularFile(path)
@@ -190,10 +190,7 @@ func writeFileAtomic(path string, body []byte) error {
 	if err := tmp.Close(); err != nil {
 		return messages.Creating(path, err)
 	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return messages.Creating(path, err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := project.ReplaceFile(tmpName, path); err != nil {
 		return messages.Creating(path, err)
 	}
 	return nil

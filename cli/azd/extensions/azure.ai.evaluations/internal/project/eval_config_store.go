@@ -187,21 +187,35 @@ func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 	// missing file as "no configuration yet", which callers answer by writing a
 	// fresh one. That is the same data loss this function exists to prevent.
 	// Contention is measured in microseconds, so it is waited out instead.
-	if err := renameOverContention(tmpName, path); err != nil {
-		// The unlink this replaced was doing something else worth keeping:
-		// os.Remove clears a read-only attribute and retries, so a config marked
-		// read-only (a Perforce or TFVC checkout, `attrib +R`, some archive
-		// extractions) could still be replaced. Windows fails a rename onto a
-		// read-only destination with the same errno as one a reader holds open,
-		// so the two cannot be told apart before the wait.
-		if !clearReadOnly(path) {
-			return messages.WritingEvalConfig(path, err)
-		}
-		if err := os.Rename(tmpName, path); err != nil {
-			return messages.WritingEvalConfig(path, err)
-		}
+	if err := ReplaceFile(tmpName, path); err != nil {
+		return messages.WritingEvalConfig(path, err)
 	}
 	return nil
+}
+
+// ReplaceFile moves a freshly written temporary file over a destination.
+//
+// Never by unlinking the destination first, which is the obvious shape and is
+// wrong twice over. Windows refuses a rename while a reader holds the
+// destination open, so remove-then-rename turns a collision into a window where
+// the file does not exist -- and a config that momentarily does not exist reads
+// as "no configuration yet", which callers answer by writing a fresh empty one.
+// Contention is measured in microseconds, so it is waited out instead.
+//
+// The unlink was doing one thing worth keeping: os.Remove clears a read-only
+// attribute and retries, so a file marked read-only (a Perforce or TFVC
+// checkout, `attrib +R`, some archive extractions) could still be replaced.
+// Windows reports a rename onto a read-only destination with the same errno as
+// one a reader holds open, so the two cannot be told apart before the wait.
+func ReplaceFile(from, to string) error {
+	err := renameOverContention(from, to)
+	if err == nil {
+		return nil
+	}
+	if !clearReadOnly(to) {
+		return err
+	}
+	return os.Rename(from, to)
 }
 
 // clearReadOnly drops a read-only attribute, reporting whether it had one to

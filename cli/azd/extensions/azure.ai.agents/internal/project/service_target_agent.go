@@ -1920,21 +1920,22 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 
 	fmt.Fprintf(os.Stderr, "Voice agent '%s' created successfully!\n", agentObject.Name)
 
-	// Persist the agent name/endpoint so `azd ai agent run`/`list` can find it.
+	// Persist NAME first and ENDPOINT last. ENDPOINT is used as the voice deploy
+	// completion marker by other commands, so avoid writing it before NAME.
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	baseEndpoint := fmt.Sprintf(
 		"%s/voice_agents/%s", strings.TrimRight(projectEndpoint, "/"), agentObject.Name,
 	)
-	for key, value := range map[string]string{
-		fmt.Sprintf("AGENT_%s_NAME", serviceKey):     agentObject.Name,
-		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey): baseEndpoint,
+	for _, envVar := range []struct{ key, value string }{
+		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
+		{fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey), baseEndpoint},
 	} {
 		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: p.env.Name,
-			Key:     key,
-			Value:   value,
+			Key:     envVar.key,
+			Value:   envVar.value,
 		}); setErr != nil {
-			return nil, fmt.Errorf("registering voice agent environment variable %s: %w", key, setErr)
+			return nil, fmt.Errorf("registering voice agent environment variable %s: %w", envVar.key, setErr)
 		}
 	}
 

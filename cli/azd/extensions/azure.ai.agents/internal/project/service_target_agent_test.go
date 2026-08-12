@@ -21,6 +21,7 @@ import (
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/envkey"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -132,6 +133,37 @@ func TestAgentDeploymentFailedErrorUsesFallbackCode(t *testing.T) {
 		"run `azd ai agent show` to inspect the latest deployment status",
 		serviceErr.Suggestion,
 	)
+}
+
+func TestClassifyActivityBotErrorUsesMsaAppIDConflictCode(t *testing.T) {
+	t.Parallel()
+
+	err := classifyActivityBotError(errors.New("MsaAppId is already in use"), "client-id-1")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "ensure_activity_bot.msa_app_id_already_in_use", serviceErr.ErrorCode)
+	require.Equal(t, "botservice", serviceErr.ServiceName)
+}
+
+func TestIsMultipleBotsForMsaAppIDError(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, isMultipleBotsForMsaAppIDError(
+		errors.New("botservice: multiple Azure Bots are bound to MsaAppID \"client-id-1\""),
+	))
+	require.False(t, isMultipleBotsForMsaAppIDError(errors.New("botservice: listing bots failed")))
+}
+
+func TestClassifyActivityBotErrorSeparatesTeamsChannelFailures(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{ErrorCode: "AuthorizationFailed", StatusCode: 403}
+	err := classifyActivityBotError(&botservice.TeamsChannelError{Err: responseErr}, "client-id-1")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "ensure_teams_channel.AuthorizationFailed", serviceErr.ErrorCode)
 }
 
 func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {

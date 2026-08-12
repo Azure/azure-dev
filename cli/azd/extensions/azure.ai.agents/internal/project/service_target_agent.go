@@ -1199,6 +1199,29 @@ func isMsaAppIDAlreadyInUseError(err error) bool {
 		strings.Contains(msg, "msaapp id is already in use")
 }
 
+func isMultipleBotsForMsaAppIDError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "multiple azure bots are bound to msaappid")
+}
+
+func classifyActivityBotError(err error, msaAppID string) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := errors.AsType[*botservice.TeamsChannelError](err); ok {
+		return exterrors.ServiceFromAzure(err, exterrors.OpEnsureTeamsChannel)
+	}
+	if isMsaAppIDAlreadyInUseError(err) {
+		return exterrors.Service(
+			exterrors.OpEnsureActivityBot,
+			exterrors.CodeMsaAppIDAlreadyInUse,
+			fmt.Sprintf("Azure Bot MsaAppID %q is already in use", msaAppID),
+			"botservice",
+			"set a unique Bot name or remove the existing Azure Bot bound to this MsaAppID, then retry",
+		)
+	}
+	return exterrors.ServiceFromAzure(err, exterrors.OpEnsureActivityBot)
+}
+
 // Deploy performs the deployment operation for the agent service
 func (p *AgentServiceTargetProvider) Deploy(
 	ctx context.Context,
@@ -1370,7 +1393,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		activityBotResourceGroup = botResourceGroup
 		existingBot, err := client.GetBot(ctx, botResourceGroup, activityBotName)
 		if err != nil {
-			return nil, err
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetActivityBot)
 		}
 		var existingTags map[string]*string
 		if existingBot != nil {
@@ -1395,8 +1418,20 @@ func (p *AgentServiceTargetProvider) Deploy(
 			// Recovery path: BotService enforces MsaAppID uniqueness. If a different
 			// bot name is already bound to this identity, switch to that bot and retry.
 			if isMsaAppIDAlreadyInUseError(err) {
-				if boundBot, findErr := client.FindByMsaAppID(ctx, identity.ClientID); findErr == nil &&
-					boundBot != nil && strings.TrimSpace(boundBot.Name) != "" {
+				boundBot, findErr := client.FindByMsaAppID(ctx, identity.ClientID)
+				if findErr != nil {
+					if isMultipleBotsForMsaAppIDError(findErr) {
+						return nil, exterrors.Service(
+							exterrors.OpGetActivityBot,
+							exterrors.CodeMultipleBotsForMsaAppID,
+							findErr.Error(),
+							"botservice",
+							"keep only one Azure Bot bound to this MsaAppID, then retry",
+						)
+					}
+					return nil, exterrors.ServiceFromAzure(findErr, exterrors.OpGetActivityBot)
+				}
+				if boundBot != nil && strings.TrimSpace(boundBot.Name) != "" {
 					activityBotName = strings.TrimSpace(boundBot.Name)
 					if strings.TrimSpace(boundBot.ResourceGroup) != "" {
 						botResourceGroup = strings.TrimSpace(boundBot.ResourceGroup)
@@ -1413,7 +1448,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 					ensureCfg.ResourceGroup = botResourceGroup
 					existingBot, getErr := client.GetBot(ctx, botResourceGroup, activityBotName)
 					if getErr != nil {
-						return nil, getErr
+						return nil, exterrors.ServiceFromAzure(getErr, exterrors.OpGetActivityBot)
 					}
 					var existingTags map[string]*string
 					if existingBot != nil {
@@ -1426,13 +1461,21 @@ func (p *AgentServiceTargetProvider) Deploy(
 					if retryErr := client.EnsureBot(ctx, ensureCfg); retryErr == nil {
 						err = nil
 					} else {
-						return nil, retryErr
+						return nil, classifyActivityBotError(retryErr, identity.ClientID)
 					}
 				}
 			}
 			if err != nil {
-				return nil, err
+				return nil, exterrors.Service(
+					exterrors.OpEnsureActivityBot,
+					exterrors.CodeMsaAppIDAlreadyInUse,
+					fmt.Sprintf("Azure Bot MsaAppID %q is already in use and no existing Bot could be reused", identity.ClientID),
+					"botservice",
+					"set a unique Bot name or remove the existing Azure Bot bound to this MsaAppID, then retry",
+				)
 			}
+		} else {
+			return nil, classifyActivityBotError(err, identity.ClientID)
 		}
 	}
 
@@ -1904,7 +1947,7 @@ func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
 
 	_, err := agentClient.PatchAgent(ctx, agentName, patchRequest, agent_api.AgentEndpointAPIVersion)
 	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateAgent)
 	}
 
 	fmt.Fprintf(os.Stderr, "Agent endpoint/card updated.\n")

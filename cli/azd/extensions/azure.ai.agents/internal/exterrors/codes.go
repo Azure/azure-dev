@@ -175,6 +175,8 @@ const (
 	CodeContainerStartFailed          = "container_start_failed"
 	CodeContainerStartTimeout         = "container_start_timeout"
 	CodeAgentCreateFailed             = "agent_create_failed"
+	CodeMsaAppIDAlreadyInUse          = "msa_app_id_already_in_use"
+	CodeMultipleBotsForMsaAppID       = "multiple_bots_for_msa_app_id"
 )
 
 // Operation names for [ServiceFromAzure] errors.
@@ -185,6 +187,10 @@ const (
 	OpContainerPackage      = "container_package"
 	OpContainerPublish      = "container_publish"
 	OpCreateAgent           = "create_agent"
+	OpUpdateAgent           = "update_agent"
+	OpGetActivityBot        = "get_activity_bot"
+	OpEnsureActivityBot     = "ensure_activity_bot"
+	OpEnsureTeamsChannel    = "ensure_teams_channel"
 	OpDeleteAgent           = "delete_agent"
 	OpStartContainer        = "start_container"
 	OpGetContainerOperation = "get_container_operation"

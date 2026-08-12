@@ -257,6 +257,7 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 	// or pass "." to use the current directory (preserving existing behavior).
 	createdProjectDir := ""
 	originalWd := wd
+	cleanupProjectDir := false
 
 	if isTemplateInit {
 		targetDir, err := i.resolveTargetDirectory(wd)
@@ -308,7 +309,7 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 			// Only remove the directory if we created it — don't delete
 			// pre-existing directories the user pointed at.
 			defer func() {
-				if retErr != nil {
+				if retErr != nil || cleanupProjectDir {
 					_ = os.Chdir(originalWd)
 					if !dirExistedBefore {
 						_ = os.RemoveAll(createdProjectDir)
@@ -424,6 +425,10 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
 		template, err := i.initializeTemplate(ctx, azdCtx)
 		if err != nil {
+			if errors.Is(err, repository.ErrArchivedTemplateDeclined) {
+				cleanupProjectDir = true
+				return initCancelledResult(), nil
+			}
 			return nil, err
 		}
 

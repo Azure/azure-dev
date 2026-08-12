@@ -35,6 +35,16 @@ Override the path to external tools that azd invokes:
 | `AZD_GH_TOOL_PATH` | Path to the GitHub CLI binary |
 | `AZD_PACK_TOOL_PATH` | Path to the Cloud Native Buildpacks (`pack`) binary |
 
+## GitHub Repository Access
+
+Used by `azd init --template` when checking GitHub repository metadata before cloning:
+
+| Variable | Description |
+|---|---|
+| `GH_TOKEN` / `GITHUB_TOKEN` | Authenticate repository metadata requests to `github.com` |
+| `GH_HOST` / `GITHUB_SERVER_URL` | Identify a GitHub Enterprise host for repository metadata checks |
+| `GH_ENTERPRISE_TOKEN` / `GITHUB_ENTERPRISE_TOKEN` | Authenticate repository metadata requests to the recognized GitHub Enterprise host |
+
 ## Build Configuration
 
 | Variable | Description |

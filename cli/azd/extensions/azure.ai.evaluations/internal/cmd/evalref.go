@@ -69,7 +69,15 @@ func (ec *evalContext) resolveEvalRef(
 				// something, but this id also reaches `run start`, and grading
 				// against the wrong definition produces results that look
 				// right and answer a different question.
-				ids := ec.evalIDsNamed(ctx, eval.Name)
+				ids, err := ec.evalIDsNamed(ctx, eval.Name)
+				if err != nil {
+					// A listing that failed is not a listing that came
+					// back empty. Falling through to "not deployed"
+					// sends the reader to republish an eval that
+					// already exists -- which is what a listing failing
+					// under concurrent `run start` actually produced.
+					return evalRef{}, err
+				}
 				if len(ids) > 1 {
 					return evalRef{}, messages.AmbiguousEvalName(eval.Name, ids)
 				}
@@ -122,9 +130,13 @@ func (ec *evalContext) recordedEvalID(ctx context.Context, evalName string) stri
 // The newest match wins when a name is carried by several. An eval is
 // immutable, so editing a declaration creates another one under the same name,
 // and the newest is the one the configuration currently describes.
+//
+// A listing that failed answers empty here, unlike in resolveEvalRef: both
+// callers reach this only after the service already returned 404 for the id
+// they were given, and that refusal is what they report.
 func (ec *evalContext) evalIDNamed(ctx context.Context, name string) string {
-	ids := ec.evalIDsNamed(ctx, name)
-	if len(ids) == 0 {
+	ids, err := ec.evalIDsNamed(ctx, name)
+	if err != nil || len(ids) == 0 {
 		return ""
 	}
 	return ids[0]
@@ -138,12 +150,15 @@ func (ec *evalContext) evalIDNamed(ctx context.Context, name string) string {
 // created_at to RFC3339 UTC, and those sort chronologically as text. An eval
 // whose timestamp is missing or unparseable sorts last rather than winning by
 // accident.
-func (ec *evalContext) evalIDsNamed(ctx context.Context, name string) []string {
+func (ec *evalContext) evalIDsNamed(ctx context.Context, name string) ([]string, error) {
 	list, err := ec.evalClient.ListOpenAIEvals(ctx, 0)
-	if err != nil || list == nil {
-		return nil
+	if err != nil {
+		return nil, messages.ListingEvals(err)
 	}
-	return idsNamedIn(list, name)
+	if list == nil {
+		return nil, nil
+	}
+	return idsNamedIn(list, name), nil
 }
 
 // idsNamedIn picks the evals carrying this name, newest first.

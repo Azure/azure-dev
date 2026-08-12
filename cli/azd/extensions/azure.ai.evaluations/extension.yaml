@@ -5,7 +5,7 @@ displayName: Foundry evaluations (Beta)
 description: Define and run Foundry evaluations from your terminal. (Beta)
 usage: azd ai eval <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 1.0.0-beta.16
+version: 1.0.0-beta.17
 requiredAzdVersion: ">=1.27.1"
 language: go
 capabilities:

@@ -265,7 +265,13 @@ func newEvalDeleteCommand() *cobra.Command {
 				// An eval is immutable, though, so editing a declaration leaves
 				// another under the same name, and this deletes the runs under
 				// whichever it picks: with more than one it asks rather than guesses.
-				switch ids := ec.evalIDsNamed(ctx, evalID); len(ids) {
+				ids, listErr := ec.evalIDsNamed(ctx, evalID)
+				if listErr != nil {
+					// Reporting the eval gone on a listing we could not
+					// read would be a delete silently doing nothing.
+					return listErr
+				}
+				switch len(ids) {
 				case 0:
 				case 1:
 					evalID = ids[0]

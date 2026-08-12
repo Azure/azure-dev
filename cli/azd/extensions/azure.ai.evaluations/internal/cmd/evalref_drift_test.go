@@ -128,6 +128,53 @@ func evalContextListingEvals(t *testing.T, envName, body string) *evalContext {
 	}
 }
 
+// evalContextRefusingToListEvals builds a context whose service will not answer
+// the listing at all, which is a different thing from listing nothing.
+func evalContextRefusingToListEvals(t *testing.T, envName string, status int) *evalContext {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"error":{"code":"TooManyRequests"}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
+		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
+	return &evalContext{
+		envName:    envName,
+		evalClient: eval_api.NewEvalClientFromPipeline(srv.URL, pipeline),
+	}
+}
+
+// A listing that failed is not a listing that came back empty. Both leave no
+// id, and only one of them means the eval was never deployed.
+//
+// This is not hypothetical: four concurrent `run start` calls against a live
+// project produced exactly one of these, and the reader was told a deployed
+// eval did not exist and to run `azd up` -- which would publish a second copy
+// of something already there.
+func TestResolveEvalRefReportsARefusedListingRatherThanCallingItUndeployed(t *testing.T) {
+	dir := writeEvalYAML(t, `
+datasets:
+  - name: golden
+evals:
+  - name: support-quality
+    dataset: golden
+    evaluators:
+      - evaluator: builtin.relevance
+`)
+	ec := evalContextRefusingToListEvals(t, "dev", http.StatusTooManyRequests)
+
+	_, err := ec.resolveEvalRef(context.Background(), dir, "support-quality")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "listing evals",
+		"the failure that actually happened is the one reported")
+	assert.NotContains(t, err.Error(), "azd up",
+		"deploying again does not fix a listing the service refused")
+}
+
 // A declared eval that was never deployed has no id to address, and the
 // service would answer 404 for a name it never saw. Naming `azd up` is the
 // difference between a dead end and a next step.

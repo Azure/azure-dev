@@ -309,9 +309,10 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
+	// The template is archived, so accept the warning before providing the environment name.
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"TESTENV\n",
+		"y\nTESTENV\n",
 		"init",
 		"--template",
 		"cosmos-dotnet-core-todo-app",

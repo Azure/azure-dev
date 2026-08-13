@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/urlsafe"
 	"azureaieval/internal/version"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -94,8 +95,8 @@ func (c *DatasetClient) CreateDataset(
 // almost always mean "the version after whatever is registered", which is what
 // this does.
 //
-// The version listing is eventually consistent — it returns nothing for a
-// second or two after a version is created — so an empty listing cannot be
+// The version listing is eventually consistent â€” it returns nothing for a
+// second or two after a version is created â€” so an empty listing cannot be
 // trusted to mean the dataset is new. A conflict is therefore treated as a
 // stale read: the listing is re-read, and when it is still behind, the version
 // just refused is taken as proof that it exists and the next one is tried.
@@ -172,7 +173,7 @@ func IsVersionConflict(err error) bool {
 // UploadNewVersion reads the first JSONL file from localDir, computes the next
 // version from currentVersion, and uploads it as a new dataset version using
 // the 3-step pending upload flow:
-//  1. startPendingUpload → get SAS URI
+//  1. startPendingUpload â†’ get SAS URI
 //  2. Upload blob to SAS URI
 //  3. Finalize dataset version with dataUri
 func (c *DatasetClient) UploadNewVersion(
@@ -276,7 +277,7 @@ func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobNam
 	httpClient := blobHTTPClient
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return messages.UploadingBlobFailed(err)
+		return messages.UploadingBlobFailed(urlsafe.Error(err))
 	}
 	defer resp.Body.Close()
 
@@ -415,13 +416,13 @@ func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string)
 		return nil, messages.CreatingDownloadRequest(err)
 	}
 
-	// Use a plain HTTP client for blob downloads — the SAS token in the URL provides
+	// Use a plain HTTP client for blob downloads â€” the SAS token in the URL provides
 	// authentication, and Azure SDK pipeline policies (bearer token, correlation ID)
 	// should not be sent to Azure Blob Storage endpoints.
 	httpClient := blobHTTPClient
 	resp, err := httpClient.Do(req.Raw())
 	if err != nil {
-		return nil, messages.DownloadingDatasetBlob(err)
+		return nil, messages.DownloadingDatasetBlob(urlsafe.Error(err))
 	}
 	defer resp.Body.Close()
 
@@ -456,14 +457,14 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 	for range maxPages {
 		page := *u
 		q := page.Query()
-		q.Set("restype", "container") // cspell:ignore restype — Azure Storage API query parameter
+		q.Set("restype", "container") // cspell:ignore restype â€” Azure Storage API query parameter
 		q.Set("comp", "list")
 		if marker != "" {
 			q.Set("marker", marker)
 		}
 		page.RawQuery = q.Encode()
 
-		log.Printf("[dataset_api] listing blobs: %s", page.Redacted())
+		log.Printf("[dataset_api] listing blobs: %s", urlsafe.URL(&page))
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, page.String(), nil)
 		if err != nil {
@@ -490,7 +491,7 @@ func (c *DatasetClient) readBlobPage(req *http.Request) ([]string, string, error
 	//nolint:gosec // the URI is the SAS the dataset service issued for this dataset, not caller input
 	resp, err := blobHTTPClient.Do(req)
 	if err != nil {
-		return nil, "", messages.ListingContainerBlobs(err)
+		return nil, "", messages.ListingContainerBlobs(urlsafe.Error(err))
 	}
 	defer resp.Body.Close()
 
@@ -525,7 +526,7 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 	httpClient := blobHTTPClient
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, messages.DownloadingBlob(err)
+		return nil, messages.DownloadingBlob(urlsafe.Error(err))
 	}
 	defer resp.Body.Close()
 
@@ -615,7 +616,7 @@ func (c *DatasetClient) doRequest(
 		return nil, messages.CreatingRequest(err)
 	}
 
-	log.Printf("[dataset_api] %s %s", method, u.Redacted())
+	log.Printf("[dataset_api] %s %s", method, urlsafe.URL(u))
 
 	if body != nil {
 		payload, err := json.Marshal(body)

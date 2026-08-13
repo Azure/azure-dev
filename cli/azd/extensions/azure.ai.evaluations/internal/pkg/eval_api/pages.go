@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/urlsafe"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
@@ -48,7 +49,7 @@ func (c *EvalClient) followNextLink(ctx context.Context, nextLink string) ([]byt
 	if err != nil {
 		return nil, messages.CreatingRequest(err)
 	}
-	log.Printf("[eval_api] GET %s", next.Redacted())
+	log.Printf("[eval_api] GET %s", urlsafe.URL(next))
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/urlsafe"
 	"azureaieval/internal/version"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -264,9 +265,9 @@ func (p publishedVersion) writtenAt() time.Time {
 //
 // For a few seconds after a publish the service can answer the next one with
 // the version it just assigned, writing over that version's contents instead
-// of adding one. It is a race rather than a fixed window — a second publish
+// of adding one. It is a race rather than a fixed window â€” a second publish
 // has been seen both colliding a quarter of a second later and succeeding
-// immediately — and nothing observable marks its end.
+// immediately â€” and nothing observable marks its end.
 //
 // That matters because versions are the unit an eval binds to. `evaluator
 // create` followed by `evaluator update`, which is what a first authoring
@@ -484,7 +485,7 @@ func (c *EvalClient) DeleteOpenAIEval(ctx context.Context, evalID string) error 
 }
 
 // UpdateOpenAIEval edits an eval in place. The route is a POST on the eval
-// itself, matching how this surface spells run cancel — there is no PATCH verb
+// itself, matching how this surface spells run cancel â€” there is no PATCH verb
 // here.
 //
 // Only what UpdateEvalParametersBody reaches is editable: name, metadata and
@@ -596,7 +597,7 @@ func (c *EvalClient) doRequestWithHeaders(
 		req.Raw().Header.Set(k, v)
 	}
 
-	log.Printf("[eval_api] %s %s", method, u.Redacted())
+	log.Printf("[eval_api] %s %s", method, urlsafe.URL(u))
 
 	if body != nil {
 		payload, err := json.Marshal(body)

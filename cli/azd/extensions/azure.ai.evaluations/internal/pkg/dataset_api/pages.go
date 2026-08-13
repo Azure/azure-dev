@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/urlsafe"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
@@ -44,7 +45,7 @@ func (c *DatasetClient) followNextLink(ctx context.Context, nextLink string) ([]
 	if err != nil {
 		return nil, messages.CreatingRequest(err)
 	}
-	log.Printf("[dataset_api] GET %s", next.Redacted())
+	log.Printf("[dataset_api] GET %s", urlsafe.URL(next))
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

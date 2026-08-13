@@ -5,9 +5,14 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -426,6 +431,8 @@ type recordingProjectServer struct {
 	// simulate a service that already carries an env section (raw,
 	// on-disk templates).
 	rawEnv                map[string]map[string]any
+	delegatedRequestPaths []string
+	delegatedRequests     []map[string]any
 	unsetPaths            []string
 	setEnvironmentErr     error
 	unsetServiceConfigErr error
@@ -454,6 +461,169 @@ func (s *recordingProjectServer) AddService(
 	defer s.mu.Unlock()
 	s.added = append(s.added, req.Service)
 	return &azdext.EmptyResponse{}, nil
+}
+
+type recordingProjectWorkflowServer struct {
+	azdext.UnimplementedWorkflowServiceServer
+	project *recordingProjectServer
+}
+
+func (s *recordingProjectWorkflowServer) Run(
+	_ context.Context,
+	req *azdext.RunWorkflowRequest,
+) (*azdext.EmptyResponse, error) {
+	workflow := req.GetWorkflow()
+	if workflow == nil || len(workflow.GetSteps()) != 1 ||
+		workflow.GetSteps()[0].GetCommand() == nil {
+		return nil, fmt.Errorf("delegated workflow request is invalid")
+	}
+	args := workflow.GetSteps()[0].GetCommand().GetArgs()
+	requestIndex := slices.Index(args, "--request-file")
+	if requestIndex < 0 || requestIndex+1 >= len(args) {
+		return nil, fmt.Errorf("delegated request file is missing")
+	}
+	requestPath := args[requestIndex+1]
+	data, err := os.ReadFile(requestPath)
+	if err != nil {
+		return nil, fmt.Errorf("read delegated request: %w", err)
+	}
+	var request struct {
+		Project struct {
+			Endpoint   string `json:"endpoint"`
+			Name       string `json:"name"`
+			ResourceID string `json:"resourceId"`
+		} `json:"project"`
+		ReplaceDeployments bool `json:"replaceDeployments"`
+		Model              struct {
+			Name           string `json:"name"`
+			DeploymentName string `json:"deploymentName"`
+			Format         string `json:"format"`
+			Version        string `json:"version"`
+			SKU            string `json:"sku"`
+			Capacity       int    `json:"capacity"`
+		} `json:"model"`
+	}
+	if err := json.Unmarshal(data, &request); err != nil {
+		return nil, fmt.Errorf("decode delegated request: %w", err)
+	}
+	var rawRequest map[string]any
+	if err := json.Unmarshal(data, &rawRequest); err != nil {
+		return nil, fmt.Errorf("decode raw delegated request: %w", err)
+	}
+
+	s.project.mu.Lock()
+	defer s.project.mu.Unlock()
+	s.project.delegatedRequestPaths = append(
+		s.project.delegatedRequestPaths, requestPath,
+	)
+	s.project.delegatedRequests = append(
+		s.project.delegatedRequests, rawRequest,
+	)
+	if len(args) >= 4 && args[0] == "ai" && args[1] == "project" &&
+		args[2] == "init" {
+		name := delegatedProjectServiceNameForTest(
+			request.Project.Name, s.project.existing,
+		)
+		body := map[string]any{}
+		if request.Project.Endpoint != "" {
+			body["endpoint"] = request.Project.Endpoint
+		}
+		if request.ReplaceDeployments {
+			deployments := rawRequest["deployments"]
+			if deployments == nil {
+				deployments = []any{}
+			}
+			body["deployments"] = deployments
+		}
+		properties, err := structpb.NewStruct(body)
+		if err != nil {
+			return nil, err
+		}
+		if s.project.existing == nil {
+			s.project.existing = map[string]*azdext.ServiceConfig{}
+		}
+		s.project.existing[name] = &azdext.ServiceConfig{
+			Name:                 name,
+			Host:                 AiProjectHost,
+			AdditionalProperties: properties,
+		}
+		return &azdext.EmptyResponse{}, nil
+	}
+
+	if len(args) >= 5 && args[0] == "ai" && args[1] == "project" &&
+		args[2] == "deployment" && args[3] == "add" {
+		var projectName string
+		for name, service := range s.project.existing {
+			if service.GetHost() == AiProjectHost {
+				projectName = name
+				break
+			}
+		}
+		if projectName == "" {
+			return nil, fmt.Errorf("delegated project service is missing")
+		}
+		service := s.project.existing[projectName]
+		body := service.GetAdditionalProperties().AsMap()
+		deployments, _ := body["deployments"].([]any)
+		modelName := request.Model.Name
+		if slash := strings.IndexByte(modelName, '/'); slash >= 0 {
+			modelName = modelName[slash+1:]
+		}
+		deployments = append(deployments, map[string]any{
+			"name": firstNonEmptyTest(request.Model.DeploymentName, modelName),
+			"model": map[string]any{
+				"name":    modelName,
+				"format":  request.Model.Format,
+				"version": request.Model.Version,
+			},
+			"sku": map[string]any{
+				"name":     request.Model.SKU,
+				"capacity": request.Model.Capacity,
+			},
+		})
+		body["deployments"] = deployments
+		service.AdditionalProperties, err = structpb.NewStruct(body)
+		if err != nil {
+			return nil, err
+		}
+		return &azdext.EmptyResponse{}, nil
+	}
+	return nil, fmt.Errorf("unexpected delegated command %q", args)
+}
+
+func delegatedProjectServiceNameForTest(
+	projectName string,
+	services map[string]*azdext.ServiceConfig,
+) string {
+	for name, service := range services {
+		if service.GetHost() == AiProjectHost {
+			return name
+		}
+	}
+	base := strings.ToLower(strings.TrimSpace(projectName))
+	base = strings.NewReplacer(" ", "-", "_", "-", "/", "-").Replace(base)
+	base = strings.Trim(base, "-")
+	if base == "" {
+		base = aiProjectServiceName
+	}
+	if _, exists := services[base]; !exists {
+		return base
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if _, exists := services[candidate]; !exists {
+			return candidate
+		}
+	}
+}
+
+func firstNonEmptyTest(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s *recordingProjectServer) GetServiceConfigValue(
@@ -545,10 +715,24 @@ func newProjectRecorderClient(
 	t *testing.T,
 	server azdext.ProjectServiceServer,
 ) *azdext.AzdClient {
+	client, _ := newProjectRecorderClientWithAddress(t, server)
+	return client
+}
+
+func newProjectRecorderClientWithAddress(
+	t *testing.T,
+	server azdext.ProjectServiceServer,
+) (*azdext.AzdClient, string) {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, server)
+	if projectServer, ok := server.(*recordingProjectServer); ok {
+		azdext.RegisterWorkflowServiceServer(
+			grpcServer,
+			&recordingProjectWorkflowServer{project: projectServer},
+		)
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -574,29 +758,196 @@ func newProjectRecorderClient(
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 
-	return client
+	return client, listener.Addr().String()
 }
 
-// TestEmitResourceServices_AlwaysEmitsProjectService verifies the ai-project
-// service is written even when the agent has no deployments, connections, or
-// toolboxes, and that the agent's uses: is wired to it. The project service is
-// emitted unconditionally as the stable provisioning-order anchor every agent
-// references rather than being gated on a Foundry resource being present.
+func TestDelegateFoundryProjectResourcesUsesResourceID(t *testing.T) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	name, err := delegateFoundryProjectResources(
+		t.Context(),
+		client,
+		"my project",
+		"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+		"https://account.services.ai.azure.com/api/projects/project",
+		nil,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "my-project", name)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.delegatedRequests, 1)
+	projectBody := server.delegatedRequests[0]["project"].(map[string]any)
+	assert.Equal(t,
+		"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+		projectBody["resourceId"],
+	)
+	assert.NotContains(t, projectBody, "endpoint")
+	require.Len(t, server.delegatedRequestPaths, 1)
+	_, err = os.Stat(server.delegatedRequestPaths[0])
+	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestDelegateFoundryProjectInitUsesEndpoint(t *testing.T) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	name, err := delegateFoundryProjectInit(
+		t.Context(),
+		client,
+		"my project",
+		"",
+		"https://account.services.ai.azure.com/api/projects/project",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "my-project", name)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.delegatedRequests, 1)
+	projectBody := server.delegatedRequests[0]["project"].(map[string]any)
+	assert.Equal(t,
+		"https://account.services.ai.azure.com/api/projects/project",
+		projectBody["endpoint"],
+	)
+	assert.NotContains(t, projectBody, "resourceId")
+}
+
+func TestDelegateFoundryProjectDeploymentsReplacesDeclarations(
+	t *testing.T,
+) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	deployments := []project.Deployment{{
+		Name: "chat",
+		Model: project.DeploymentModel{
+			Format:  "OpenAI",
+			Name:    "gpt-4.1",
+			Version: "2025-04-14",
+		},
+		Sku: project.DeploymentSku{
+			Name:     "GlobalStandard",
+			Capacity: 10,
+		},
+	}}
+
+	require.NoError(t, delegateFoundryProjectDeployments(
+		t.Context(), client, "my project", "", "", deployments,
+	))
+	require.NoError(t, delegateFoundryProjectDeployments(
+		t.Context(), client, "my project", "", "", nil,
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.delegatedRequests, 2)
+	assert.True(t, server.delegatedRequests[0]["replaceDeployments"].(bool))
+	declarations := server.delegatedRequests[0]["deployments"].([]any)
+	require.Len(t, declarations, 1)
+	declaration := declarations[0].(map[string]any)
+	assert.Equal(t, "chat", declaration["name"])
+	assert.Empty(t, server.delegatedRequests[1]["deployments"])
+	for _, path := range server.delegatedRequestPaths {
+		_, err := os.Stat(path)
+		assert.ErrorIs(t, err, os.ErrNotExist)
+	}
+}
+
+func TestDelegateFoundryProjectResourcesPreservesDeploymentTuple(
+	t *testing.T,
+) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	deployments := []project.Deployment{{
+		Name: "chat",
+		Model: project.DeploymentModel{
+			Format:  "OpenAI",
+			Name:    "gpt-4.1",
+			Version: "2025-04-14",
+		},
+		Sku: project.DeploymentSku{
+			Name:     "GlobalStandard",
+			Capacity: 10,
+		},
+	}}
+
+	_, err := delegateFoundryProjectResources(
+		t.Context(), client, "my project", "", "", deployments,
+	)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.delegatedRequests, 2)
+	model := server.delegatedRequests[1]["model"].(map[string]any)
+	assert.Equal(t, "OpenAI/gpt-4.1", model["name"])
+	assert.Equal(t, "chat", model["deploymentName"])
+	assert.Equal(t, "OpenAI", model["format"])
+	assert.Equal(t, "2025-04-14", model["version"])
+	assert.Equal(t, "GlobalStandard", model["sku"])
+	assert.Equal(t, float64(10), model["capacity"])
+	for _, path := range server.delegatedRequestPaths {
+		_, err := os.Stat(path)
+		assert.ErrorIs(t, err, os.ErrNotExist)
+	}
+}
+
+func TestDelegateFoundryProjectResourcesForwardsConstraints(t *testing.T) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	deployments := []project.Deployment{{
+		Name:  "chat",
+		Model: project.DeploymentModel{Name: "gpt-4.1"},
+	}}
+	constraints := delegatedProjectConstraints{
+		Requirements: delegatedProjectRequirements{
+			AllowedLocations: []string{"eastus"},
+		},
+		RequiredCapabilities: []string{"agentsV2"},
+		AllowedLocations:     []string{"eastus"},
+		ExcludedModelNames:   []string{"gpt-4o"},
+	}
+
+	_, err := delegateFoundryProjectResources(
+		t.Context(), client, "my project", "", "", deployments, constraints,
+	)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.delegatedRequests, 2)
+	require.Equal(t, []any{"eastus"},
+		server.delegatedRequests[0]["requirements"].(map[string]any)["allowedLocations"])
+	model := server.delegatedRequests[1]["model"].(map[string]any)
+	assert.Equal(t, []any{"eastus"}, model["allowedLocations"])
+	assert.Equal(t, []any{"agentsV2"}, model["requiredCapabilities"])
+	assert.Equal(t, []any{"gpt-4o"}, model["excludedModelNames"])
+}
+
+// TestEmitResourceServices_AlwaysEmitsProjectService verifies delegation
+// occurs even when the agent has no deployments, connections, or toolboxes.
+// The project service remains the stable provisioning-order anchor every
+// agent references rather than being gated on a Foundry resource.
 func TestEmitResourceServices_AlwaysEmitsProjectService(t *testing.T) {
 	t.Parallel()
 
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
 
-	err := emitResourceServices(t.Context(), client, "myagent", "", "", nil, nil, nil)
+	err := emitResourceServices(
+		t.Context(), client, "myagent", "", "", "", nil, nil, nil,
+	)
 	require.NoError(t, err)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
 
-	require.Len(t, server.added, 1)
-	assert.Equal(t, aiProjectServiceName, server.added[0].Name)
-	assert.Equal(t, AiProjectHost, server.added[0].Host)
+	require.Empty(t, server.added)
+	projectSvc, ok := server.existing[aiProjectServiceName]
+	require.True(t, ok)
+	assert.Equal(t, AiProjectHost, projectSvc.Host)
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myagent"])
 }
 
@@ -610,17 +961,20 @@ func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 	client := newProjectRecorderClient(t, server)
 
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey"}}
-	err := emitResourceServices(t.Context(), client, "myagent", "", "", nil, conns, nil)
+	err := emitResourceServices(
+		t.Context(), client, "myagent", "", "", "", nil, conns, nil,
+	)
 	require.NoError(t, err)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
 
-	require.Len(t, server.added, 2)
-	assert.Equal(t, aiProjectServiceName, server.added[0].Name)
-	assert.Equal(t, AiProjectHost, server.added[0].Host)
-	assert.Equal(t, "myconn", server.added[1].Name)
-	assert.Equal(t, AiConnectionHost, server.added[1].Host)
+	require.Len(t, server.added, 1)
+	assert.Equal(t, "myconn", server.added[0].Name)
+	assert.Equal(t, AiConnectionHost, server.added[0].Host)
+	projectSvc, ok := server.existing[aiProjectServiceName]
+	require.True(t, ok)
+	assert.Equal(t, AiProjectHost, projectSvc.Host)
 
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myconn"])
 	assert.Equal(t, []string{aiProjectServiceName, "myconn"}, server.uses["myagent"])
@@ -643,12 +997,15 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 		Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
 	}}
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey", Target: "https://example", AuthType: "ApiKey"}}
-	require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", "", deployments, conns, nil))
+	require.NoError(t, emitResourceServices(
+		t.Context(), client, "myagent", "", "", "", deployments, conns, nil,
+	))
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
 
 	services := map[string]*azdext.ServiceConfig{}
+	maps.Copy(services, server.existing)
 	for _, svc := range server.added {
 		// Resource keys must travel at the service level, not under config:.
 		assert.Nil(t, svc.Config, "service %q must not nest keys under config:", svc.Name)
@@ -686,13 +1043,16 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", endpoint, nil, nil, nil))
+		require.NoError(t, emitResourceServices(
+			t.Context(), client, "myagent", "", "", endpoint, nil, nil, nil,
+		))
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
 
-		require.Len(t, server.added, 1)
-		projSvc := server.added[0]
+		require.Empty(t, server.added)
+		projSvc, ok := server.existing[aiProjectServiceName]
+		require.True(t, ok)
 		require.Equal(t, aiProjectServiceName, projSvc.Name)
 		require.NotNil(t, projSvc.AdditionalProperties)
 		assert.Equal(t, endpoint, projSvc.AdditionalProperties.Fields["endpoint"].GetStringValue())
@@ -702,13 +1062,16 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", "", nil, nil, nil))
+		require.NoError(t, emitResourceServices(
+			t.Context(), client, "myagent", "", "", "", nil, nil, nil,
+		))
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
 
-		require.Len(t, server.added, 1)
-		projSvc := server.added[0]
+		require.Empty(t, server.added)
+		projSvc, ok := server.existing[aiProjectServiceName]
+		require.True(t, ok)
 		if projSvc.AdditionalProperties != nil {
 			_, ok := projSvc.AdditionalProperties.Fields["endpoint"]
 			assert.False(t, ok, "endpoint must be omitted for a new project")
@@ -727,12 +1090,13 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 		client := newProjectRecorderClient(t, server)
 
 		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "my-foundry-proj", "", nil, nil, nil))
+			t.Context(), client, "myagent", "my-foundry-proj", "", "", nil, nil, nil))
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		assert.Equal(t, "my-foundry-proj", server.added[0].Name)
+		require.Empty(t, server.added)
+		_, ok := server.existing["my-foundry-proj"]
+		assert.True(t, ok)
 		assert.Equal(t, []string{"my-foundry-proj"}, server.uses["myagent"])
 	})
 
@@ -747,12 +1111,13 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 		// A different project name is supplied, but the existing key wins so a
 		// repeated init does not create a second project service.
 		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "a-new-name", "", nil, nil, nil))
+			t.Context(), client, "myagent", "a-new-name", "", "", nil, nil, nil))
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		assert.Equal(t, "old-project-key", server.added[0].Name)
+		require.Empty(t, server.added)
+		_, ok := server.existing["old-project-key"]
+		assert.True(t, ok)
 	})
 
 	t.Run("falls back when project name collides with agent", func(t *testing.T) {
@@ -760,13 +1125,13 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 		client := newProjectRecorderClient(t, server)
 
 		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "my agent", "", nil, nil, nil))
+			t.Context(), client, "myagent", "my agent", "", "", nil, nil, nil))
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		// "my agent" sanitizes to "myagent" == agent key, so it falls back.
-		assert.Equal(t, aiProjectServiceName, server.added[0].Name)
+		require.Empty(t, server.added)
+		_, ok := server.existing["my-agent"]
+		assert.True(t, ok)
 	})
 
 	t.Run("falls back when project name unknown", func(t *testing.T) {
@@ -774,12 +1139,13 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 		client := newProjectRecorderClient(t, server)
 
 		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "", "", nil, nil, nil))
+			t.Context(), client, "myagent", "", "", "", nil, nil, nil))
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		assert.Equal(t, aiProjectServiceName, server.added[0].Name)
+		require.Empty(t, server.added)
+		_, ok := server.existing[aiProjectServiceName]
+		assert.True(t, ok)
 	})
 }
 

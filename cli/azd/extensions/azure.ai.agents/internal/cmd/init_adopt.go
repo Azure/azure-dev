@@ -157,7 +157,7 @@ func foundryProjectName(content []byte) string {
 }
 
 // foundryDeploymentEntry holds a parsed deployment along with the service key
-// it was declared in, so the azure.yaml can be updated after verification.
+// it was declared in, so Projects can update it after verification.
 type foundryDeploymentEntry struct {
 	ServiceName string
 	Deployment  project.Deployment
@@ -672,48 +672,6 @@ func promptAlternativeDeployment(
 	}, true, nil
 }
 
-// updateAzureYamlDeployments writes the filtered deployment list back to the
-// azure.yaml project service. Deployments the user chose to "use existing" or
-// "skip" are excluded, leaving only those that need provisioning.
-func updateAzureYamlDeployments(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	serviceName string,
-	deployments []project.Deployment,
-) error {
-	// Convert deployments to a structpb-compatible value.
-	depSlice := make([]any, 0, len(deployments))
-	for _, d := range deployments {
-		depSlice = append(depSlice, map[string]any{
-			"name": d.Name,
-			"model": map[string]any{
-				"format":  d.Model.Format,
-				"name":    d.Model.Name,
-				"version": d.Model.Version,
-			},
-			"sku": map[string]any{
-				"name":     d.Sku.Name,
-				"capacity": d.Sku.Capacity,
-			},
-		})
-	}
-
-	val, err := structpb.NewValue(depSlice)
-	if err != nil {
-		return fmt.Errorf("encoding deployments for service %q: %w", serviceName, err)
-	}
-
-	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-		ServiceName: serviceName,
-		Path:        "deployments",
-		Value:       val,
-	}); err != nil {
-		return fmt.Errorf("updating deployments in azure.yaml for service %q: %w", serviceName, err)
-	}
-
-	return nil
-}
-
 type adoptedAgentNameResolver func(context.Context, string) (string, error)
 
 func adoptedAgentNameConflictSuggestion() string {
@@ -987,11 +945,17 @@ func runInitFromAzureYaml(
 		return err
 	}
 
-	// When an existing project was selected, stamp its endpoint onto the
-	// azure.ai.project service so the provisioning provider recognizes the
-	// brownfield signal and reuses the project instead of creating a new one.
+	// Let azure.ai.projects reconcile the selected project
+	// and its endpoint.
+	// Agents must not mutate the project-owned service directly.
 	if result.FoundryProject != nil {
-		if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
+		if _, err := delegateFoundryProjectInit(
+			ctx,
+			azdClient,
+			result.FoundryProject.ProjectName,
+			result.FoundryProject.ResourceId,
+			result.FoundryProject.Endpoint(),
+		); err != nil {
 			return err
 		}
 		if err := confirmAdoptedAgentNameConflicts(
@@ -1024,22 +988,24 @@ func runInitFromAzureYaml(
 
 		// Update the azure.yaml if deployments were modified.
 		if deploymentsModified {
-			// Group kept deployments by their originating service name.
-			byService := make(map[string][]project.Deployment)
-			for _, entry := range deploymentEntries {
-				// Initialize to empty — ensures services with all removed get an empty list.
-				if _, ok := byService[entry.ServiceName]; !ok {
-					byService[entry.ServiceName] = nil
-				}
+			if result.FoundryProject == nil {
+				return fmt.Errorf(
+					"cannot delegate deployment declarations without a Foundry project",
+				)
 			}
-			for _, kept := range keptEntries {
-				byService[kept.ServiceName] = append(byService[kept.ServiceName], kept.Deployment)
+			keptDeployments := make([]project.Deployment, len(keptEntries))
+			for i, kept := range keptEntries {
+				keptDeployments[i] = kept.Deployment
 			}
-
-			for svcName, deps := range byService {
-				if err := updateAzureYamlDeployments(ctx, azdClient, svcName, deps); err != nil {
-					return err
-				}
+			if err := delegateFoundryProjectDeployments(
+				ctx,
+				azdClient,
+				result.FoundryProject.ProjectName,
+				projectResourceIDHint(result.FoundryProject),
+				result.FoundryProject.Endpoint(),
+				keptDeployments,
+			); err != nil {
+				return err
 			}
 		}
 

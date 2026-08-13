@@ -254,6 +254,12 @@ guarantees about the whole class:
 | Trust | `extension.id` and `extension.version` are derived from host-signed claims; `extension.source` and eligibility are checked against the installed record and verified source config, never from the request |
 | Review | Extension telemetry is reviewed when the extension is admitted to the official registry, under the same documentation, classification, and privacy rules as core fields. The eligibility rule above is what ties recording to that review |
 
+Reviewed first-party event contracts:
+
+| Extension | `extension.event` | Trigger | Extension attributes |
+|-----------|-------------------|---------|----------------------|
+| `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; this precedes client availability, agent startup, and client launch | `ext.route`: fixed enum `inspector`, `playground`, or `suppressed`; suppression takes precedence |
+
 Because `ext.usage` spans share the command's trace, they join the originating
 command in Kusto on `operation_Id`. See
 [ADR-001](../../architecture/adr-001-extension-telemetry-events.md) for

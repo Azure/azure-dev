@@ -39,6 +39,11 @@ const (
 	agentInspectorExtensionID     = "azure.ai.inspector"
 	agentInspectorReadyPollPeriod = 250 * time.Millisecond
 	windowsControlCExitCode       = 0xC000013A
+	localClientRouteSelectedEvent = "local_client.route.selected"
+	localClientRouteAttribute     = "route"
+	localClientRouteInspector     = "inspector"
+	localClientRoutePlayground    = "playground"
+	localClientRouteSuppressed    = "suppressed"
 	// defaultInspectorUIPort mirrors the default UI port of the
 	// azure.ai.inspector extension. The inspector extension remains the source
 	// of truth for the actual default: when --inspector-port is unset we do not
@@ -153,6 +158,8 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// validation can fail without starting a process, and such a failure must
 	// not clear a session belonging to an already-running agent.
 	activityProfile := resolveActivityRunProfile(runCtx.Definition)
+	suppressClient := flags.noInspector || flags.noClient
+	reportLocalClientRouteSelected(ctx, azdClient.Telemetry(), activityProfile, suppressClient)
 	if err := validateInspectorPortForProfile(flags, activityProfile.IsActivity); err != nil {
 		return err
 	}
@@ -172,7 +179,6 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// Resolve local-client availability before the agent starts so advisory
 	// port warnings can account for whether an inspector will actually launch.
 	// Reuse the result after proc.Start rather than issuing a second RPC.
-	suppressClient := flags.noInspector || flags.noClient
 	inspectorInstalled := false
 	var inspectorInstallErr error
 	if !activityProfile.IsActivity && !suppressClient {
@@ -395,6 +401,29 @@ func isAgentProcessCanceled(err error) bool {
 	}
 
 	return uint32(exitErr.ExitCode()) == windowsControlCExitCode //nolint:gosec // preserve the Windows exit code bit pattern
+}
+
+func reportLocalClientRouteSelected(
+	ctx context.Context,
+	telemetry azdext.TelemetryServiceClient,
+	activityProfile activityRunProfile,
+	suppressClient bool,
+) {
+	route := localClientRouteInspector
+	if suppressClient {
+		route = localClientRouteSuppressed
+	} else if activityProfile.IsActivity {
+		route = localClientRoutePlayground
+	}
+
+	if _, err := telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{
+		EventName: localClientRouteSelectedEvent,
+		Attributes: map[string]string{
+			localClientRouteAttribute: route,
+		},
+	}); err != nil {
+		log.Printf("run: failed to report local client route selection: %v", err)
+	}
 }
 
 func handleInspectorAutoLaunch(

@@ -56,6 +56,7 @@ type initFlags struct {
 	model             string
 	manifestPointer   string
 	agentName         string
+	agentNameExplicit bool
 	src               string
 	env               string
 	protocols         []string
@@ -1282,6 +1283,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
+			flags.agentNameExplicit = cmd.Flags().Changed("agent-name")
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -1715,21 +1717,26 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							)
 						}
 
-						// Resolve the agent name BEFORE creating the project
-						// folder so the folder and agent identity use the same
-						// name. Use the azure.yaml project name as the default,
-						// falling back to the template title.
+						// Resolve --agent-name only when the user explicitly
+						// provided it. Unified azure.yaml adoption can contain
+						// multiple agent services, so an interactive/default
+						// single name must not be treated as an override.
 						defaultName := foundryProjectName(content)
 						if defaultName == "" {
 							defaultName = folderNameStrippingParenSuffix(selectedTemplate.Title)
 						}
 
-						resolvedName, err := resolveInitAgentName(ctx, azdClient, flags, defaultName)
-						if err != nil {
-							if exterrors.IsCancellation(err) {
-								return exterrors.Cancelled("initialization was cancelled")
+						resolvedName := defaultName
+						if flags.agentNameExplicit {
+							var err error
+							resolvedName, err = resolveInitAgentName(ctx, azdClient, flags, defaultName)
+							if err != nil {
+								if exterrors.IsCancellation(err) {
+									return exterrors.Cancelled("initialization was cancelled")
+								}
+								return err
 							}
-							return err
+							flags.agentName = resolvedName
 						}
 
 						if flags.src == "" && resolvedName != "" {

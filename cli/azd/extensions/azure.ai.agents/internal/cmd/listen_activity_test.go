@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,12 +64,15 @@ func TestActivityBotTeardownTarget(t *testing.T) {
 
 func TestTeamsSetupGuideContent(t *testing.T) {
 	const msaAppID = "11111111-2222-3333-4444-555555555555"
-	content := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID)
+
+	// Fallback (no generated package): the guide must give the manual packaging
+	// steps and carry the bot id verbatim into the sample manifest.
+	manual := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, "")
 
 	// The bot id is the one value the user must not get wrong: it has to be
 	// carried verbatim into the Teams manifest bots[].botId.
-	if !strings.Contains(content, `"botId": "`+msaAppID+`"`) {
-		t.Fatalf("guide must set bots[].botId to the msaAppId; got:\n%s", content)
+	if !strings.Contains(manual, `"botId": "`+msaAppID+`"`) {
+		t.Fatalf("guide must set bots[].botId to the msaAppId; got:\n%s", manual)
 	}
 
 	// The guide must point at the official Microsoft Learn docs, not any
@@ -78,16 +82,33 @@ func TestTeamsSetupGuideContent(t *testing.T) {
 		"learn.microsoft.com/microsoftteams/platform/concepts/deploy-and-publish/apps-upload",
 		"dev.teams.microsoft.com/apps",
 	} {
-		if !strings.Contains(content, link) {
+		if !strings.Contains(manual, link) {
 			t.Errorf("guide missing official doc link %q", link)
 		}
 	}
 	// The guide must give the concrete sideload step, not just link out.
-	if !strings.Contains(content, "Upload a custom app") {
+	if !strings.Contains(manual, "Upload a custom app") {
 		t.Errorf("guide missing the concrete sideload step")
 	}
-	if strings.Contains(content, "package-teams-app.ps1") {
+	if strings.Contains(manual, "package-teams-app.ps1") {
 		t.Errorf("guide must not reference sample-specific scripts")
+	}
+
+	// Generated-package path: the guide must lead with sideloading the generated
+	// package (by name) and must NOT ask the user to build a manifest by hand.
+	const pkg = "appPackage.zip"
+	generated := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, pkg)
+	if !strings.Contains(generated, pkg) {
+		t.Errorf("generated-package guide must reference %q", pkg)
+	}
+	if !strings.Contains(generated, "Upload a custom app") {
+		t.Errorf("generated-package guide missing the concrete sideload step")
+	}
+	if !strings.Contains(generated, "--scope Personal") {
+		t.Errorf("generated-package guide missing the atk sideload command")
+	}
+	if strings.Contains(generated, "REPLACE-WITH-A-NEW-GUID") {
+		t.Errorf("generated-package guide must not include the manual manifest template")
 	}
 }
 
@@ -99,7 +120,7 @@ func TestWriteTeamsSetupGuide(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path := writeTeamsSetupGuide(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
+	path := writeTeamsSetupGuide(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id", "")
 	want := filepath.Join(root, "src", teamsSetupGuideFile)
 	if path != want {
 		t.Fatalf("guide path = %q, want %q", path, want)
@@ -110,5 +131,386 @@ func TestWriteTeamsSetupGuide(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "app-id") {
 		t.Errorf("written guide missing bot id")
+	}
+}
+
+func TestWriteTeamsSetupGuide_SkipsSharedAgentSourceDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	svc := &azdext.ServiceConfig{Name: "agent-a", Host: AiAgentHost, RelativePath: "src"}
+	proj := &azdext.ProjectConfig{
+		Path: root,
+		Services: map[string]*azdext.ServiceConfig{
+			"agent-a": svc,
+			"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: "src"},
+		},
+	}
+
+	path := writeTeamsSetupGuide(proj, svc, "agent-a", "bot-a", "app-id", "")
+
+	if path != "" {
+		t.Errorf("guide path = %q, want empty for shared source directory", path)
+	}
+	if _, err := os.Stat(filepath.Join(root, "src", teamsSetupGuideFile)); !os.IsNotExist(err) {
+		t.Errorf("setup guide must not be written for a shared source directory")
+	}
+}
+
+func TestWriteTeamsAppPackage_SkipsSharedAgentSourceDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	svc := &azdext.ServiceConfig{Name: "agent-a", Host: AiAgentHost, RelativePath: "src"}
+	proj := &azdext.ProjectConfig{
+		Path: root,
+		Services: map[string]*azdext.ServiceConfig{
+			"agent-a": svc,
+			"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: "src"},
+		},
+	}
+
+	path := writeTeamsAppPackage(t.Context(), nil, proj, svc, "agent-a", "sub", "rg", "bot-a")
+
+	if path != "" {
+		t.Errorf("package path = %q, want empty for shared source directory", path)
+	}
+	if _, err := os.Stat(filepath.Join(root, "src", teamsAppPackageFile)); !os.IsNotExist(err) {
+		t.Errorf("Teams app package must not be written for a shared source directory")
+	}
+}
+
+func TestHasSharedTeamsArtifactDestination(t *testing.T) {
+	sharedSvc := &azdext.ServiceConfig{Name: "agent-a", Host: AiAgentHost, RelativePath: "."}
+	proj := &azdext.ProjectConfig{
+		Services: map[string]*azdext.ServiceConfig{
+			"agent-a": sharedSvc,
+			"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: ""},
+			"web":     {Name: "web", Host: "containerapp", RelativePath: "."},
+		},
+	}
+
+	if !hasSharedTeamsArtifactDestination(proj, sharedSvc) {
+		t.Fatal("expected shared artifact destination for agent services with the same source directory")
+	}
+
+	uniqueSvc := &azdext.ServiceConfig{Name: "agent-c", Host: AiAgentHost, RelativePath: "src"}
+	proj.Services["agent-c"] = uniqueSvc
+	if hasSharedTeamsArtifactDestination(proj, uniqueSvc) {
+		t.Fatal("unique agent source directory must not be treated as shared")
+	}
+}
+
+func TestCommitTeamsAppPackage_PreservesUnownedFile(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("USER-OWNED"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := commitTeamsAppPackage(pkg, marker, []byte("AZD-GENERATED"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "" {
+		t.Errorf("expected empty path when leaving an unowned file, got %q", got)
+	}
+	data, _ := os.ReadFile(pkg)
+	if string(data) != "USER-OWNED" {
+		t.Errorf("user file was clobbered; content = %q", string(data))
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("marker must not be created for an unowned file")
+	}
+}
+
+func TestCommitTeamsAppPackage_WritesWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+
+	got, err := commitTeamsAppPackage(pkg, marker, []byte("AZD-GENERATED"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != pkg {
+		t.Errorf("path = %q, want %q", got, pkg)
+	}
+	data, _ := os.ReadFile(pkg)
+	if string(data) != "AZD-GENERATED" {
+		t.Errorf("package content = %q", string(data))
+	}
+	if !teamsAppPackageIsOwned(pkg, marker) {
+		t.Errorf("ownership marker must be written")
+	}
+}
+
+func TestCommitTeamsAppPackage_RollsBackNewPackageWhenMarkerWriteFails(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, "missing", teamsAppPackageMarkerFile)
+
+	got, err := commitTeamsAppPackage(pkg, marker, []byte("AZD-GENERATED"))
+	if err == nil {
+		t.Fatal("expected marker write error")
+	}
+	if got != "" {
+		t.Errorf("path = %q, want empty path on failure", got)
+	}
+	if _, err := os.Stat(pkg); !os.IsNotExist(err) {
+		t.Errorf("new package must be rolled back when marker write fails")
+	}
+}
+
+func TestCommitTeamsAppPackage_RestoresOwnedPackageWhenMarkerWriteFails(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("OLD"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte(teamsAppPackageMarkerContent([]byte("OLD"))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldWriteMarker := writeTeamsAppMarkerAtomically
+	writeTeamsAppMarkerAtomically = func(string, []byte) error {
+		return errors.New("marker write failed")
+	}
+	t.Cleanup(func() {
+		writeTeamsAppMarkerAtomically = oldWriteMarker
+	})
+
+	got, err := commitTeamsAppPackage(pkg, marker, []byte("NEW"))
+	if err == nil {
+		t.Fatal("expected marker write error")
+	}
+	if got != "" {
+		t.Errorf("path = %q, want empty path on failure", got)
+	}
+	data, _ := os.ReadFile(pkg)
+	if string(data) != "OLD" {
+		t.Errorf("owned package must be restored after marker write fails; content = %q", string(data))
+	}
+	if !teamsAppPackageIsOwned(pkg, marker) {
+		t.Errorf("restored package must still match the ownership marker")
+	}
+}
+
+func TestCommitTeamsAppPackage_DoesNotUseFixedTempPath(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	fixedTemp := pkg + ".tmp"
+	if err := os.WriteFile(fixedTemp, []byte("DO-NOT-CLOBBER"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := commitTeamsAppPackage(pkg, marker, []byte("AZD-GENERATED"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != pkg {
+		t.Errorf("path = %q, want %q", got, pkg)
+	}
+	data, _ := os.ReadFile(pkg)
+	if string(data) != "AZD-GENERATED" {
+		t.Errorf("package content = %q", string(data))
+	}
+	tempData, _ := os.ReadFile(fixedTemp)
+	if string(tempData) != "DO-NOT-CLOBBER" {
+		t.Errorf("fixed temp path was clobbered; content = %q", string(tempData))
+	}
+}
+
+func TestCommitTeamsAppPackage_DoesNotUseFixedMarkerTempPath(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	fixedTemp := marker + ".tmp"
+	if err := os.WriteFile(fixedTemp, []byte("DO-NOT-CLOBBER"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := commitTeamsAppPackage(pkg, marker, []byte("AZD-GENERATED"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tempData, _ := os.ReadFile(fixedTemp)
+	if string(tempData) != "DO-NOT-CLOBBER" {
+		t.Errorf("fixed marker temp path was clobbered; content = %q", string(tempData))
+	}
+}
+
+func TestTeamsAppPackageIsOwned_RejectsSymlinkMarker(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(target, []byte("not an azd marker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, marker); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	if teamsAppPackageIsOwned(filepath.Join(dir, teamsAppPackageFile), marker) {
+		t.Fatal("symlink marker must not mark a package as azd-owned")
+	}
+}
+
+func TestTeamsAppPackageIsOwned_RejectsLegacyMarkerWithoutDigest(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("AZD-GENERATED"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte("generated by azd\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if teamsAppPackageIsOwned(pkg, marker) {
+		t.Fatal("legacy marker without digest must not mark a package as azd-owned")
+	}
+}
+
+func TestCommitTeamsAppPackage_PreservesCustomizedGeneratedPackage(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("AZD-GENERATED-CUSTOMIZED"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte(teamsAppPackageMarkerContent([]byte("AZD-GENERATED"))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := commitTeamsAppPackage(pkg, marker, []byte("NEW"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "" {
+		t.Errorf("expected empty path when leaving a customized package, got %q", got)
+	}
+	data, _ := os.ReadFile(pkg)
+	if string(data) != "AZD-GENERATED-CUSTOMIZED" {
+		t.Errorf("customized package was clobbered; content = %q", string(data))
+	}
+}
+
+func TestCommitTeamsAppPackage_OverwritesOwned(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("OLD"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte(teamsAppPackageMarkerContent([]byte("OLD"))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := commitTeamsAppPackage(pkg, marker, []byte("NEW"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != pkg {
+		t.Errorf("path = %q, want %q", got, pkg)
+	}
+	data, _ := os.ReadFile(pkg)
+	if string(data) != "NEW" {
+		t.Errorf("owned package should be overwritten; content = %q", string(data))
+	}
+	if !teamsAppPackageIsOwned(pkg, marker) {
+		t.Errorf("marker must be updated to the new package digest")
+	}
+}
+
+func TestRemoveOwnedTeamsAppPackage_PreservesUnowned(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("USER-OWNED"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	removeOwnedTeamsAppPackage(pkg, marker)
+
+	if _, err := os.Stat(pkg); err != nil {
+		t.Errorf("unowned package must be preserved: %v", err)
+	}
+}
+
+func TestRemoveOwnedTeamsAppPackage_RemovesOwned(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("AZD-GENERATED"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte(teamsAppPackageMarkerContent([]byte("AZD-GENERATED"))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	removeOwnedTeamsAppPackage(pkg, marker)
+
+	if _, err := os.Stat(pkg); !os.IsNotExist(err) {
+		t.Errorf("owned package must be removed")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("marker must be removed")
+	}
+}
+
+func TestRemoveOwnedTeamsAppPackage_KeepsMarkerWhenPackageRemoveFails(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("AZD-GENERATED"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte(teamsAppPackageMarkerContent([]byte("AZD-GENERATED"))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldRemove := removeTeamsAppFile
+	removeTeamsAppFile = func(path string) error {
+		if path == pkg {
+			return errors.New("package remove failed")
+		}
+		return oldRemove(path)
+	}
+	t.Cleanup(func() {
+		removeTeamsAppFile = oldRemove
+	})
+
+	removeOwnedTeamsAppPackage(pkg, marker)
+
+	if _, err := os.Stat(pkg); err != nil {
+		t.Errorf("package must remain when removal fails: %v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("marker must remain when package removal fails: %v", err)
+	}
+}
+
+func TestRemoveOwnedTeamsAppPackage_PreservesCustomizedGeneratedPackage(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("AZD-GENERATED-CUSTOMIZED"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte(teamsAppPackageMarkerContent([]byte("AZD-GENERATED"))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	removeOwnedTeamsAppPackage(pkg, marker)
+
+	if _, err := os.Stat(pkg); err != nil {
+		t.Errorf("customized package must be preserved: %v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("marker for customized package must be preserved: %v", err)
 	}
 }

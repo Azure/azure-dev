@@ -135,10 +135,11 @@ func newCheckToolboxes(deps Dependencies) Check {
 
 			// Keep the old seam for callers constructing partial states. Production
 			// assembly always sets ToolboxEndpointsChecked and never reads again.
-			if deps.lookupToolboxEnv != nil {
-				return classifyToolboxEndpoints(ctx, state.Toolboxes, deps.lookupToolboxEnv)
+			lookup := deps.lookupToolboxEnv
+			if lookup == nil {
+				lookup = makeRealToolboxEnvLookup(deps.AzdClient)
 			}
-			return classifyToolboxState(state.Toolboxes, state.MissingToolboxEndpoints)
+			return classifyToolboxEndpoints(ctx, state.Toolboxes, lookup)
 		},
 	}
 }

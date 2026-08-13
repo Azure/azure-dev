@@ -185,7 +185,7 @@ func sameOrigin(a, b *url.URL) bool {
 // origin: the pipeline attaches the caller's token, so a link pointing
 // elsewhere would hand that token to another host.
 func (c *DatasetClient) doRequestGetURL(ctx context.Context, rawURL string) ([]byte, error) {
-	u, err := url.Parse(rawURL)
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, messages.InvalidNextLink(rawURL, err)
 	}
@@ -193,6 +193,11 @@ func (c *DatasetClient) doRequestGetURL(ctx context.Context, rawURL string) ([]b
 	if err != nil {
 		return nil, messages.InvalidEndpointURL(err)
 	}
+
+	// A nextLink is allowed to be relative. Resolving it against the endpoint
+	// first keeps the origin check meaningful instead of rejecting a legitimate
+	// relative link for having no scheme or host of its own.
+	u := base.ResolveReference(parsed)
 	if !sameOrigin(u, base) {
 		return nil, messages.NextLinkOffOrigin(u.Scheme + "://" + u.Host)
 	}
@@ -512,7 +517,7 @@ func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string)
 	httpClient := blobHTTPClient()
 	resp, err := httpClient.Do(req.Raw())
 	if err != nil {
-		return nil, messages.DownloadingDatasetBlob(err)
+		return nil, messages.DownloadingDatasetBlob(redactURLError(err))
 	}
 	defer resp.Body.Close()
 

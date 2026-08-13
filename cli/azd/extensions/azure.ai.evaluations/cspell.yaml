@@ -6,6 +6,7 @@ words:
   - exterrors
   - httptest
   - projectctx
+  - urlsafe
   - creack
   # Service identifiers and API fields
   - evalrun

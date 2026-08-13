@@ -89,6 +89,6 @@ func TestFailOnSitsOnTheWaitingCommands(t *testing.T) {
 	for _, form := range []string{"any-failure", "pass-rate"} {
 		assert.Containsf(t, usage, form, "--fail-on accepts %q, so its help has to say so", form)
 	}
-	assert.Contains(t, strings.ToLower(usage), "2",
-		"the help has to name the exit code, which is the only reason to use the flag")
+	assert.Contains(t, strings.ToLower(usage), "1",
+		"the help has to name the exit code a caller observes, which is the only reason to use the flag")
 }

@@ -4,7 +4,7 @@ A Foundry project service can be provisioned as a **network-secured (VNet-bound)
 
 Do **not** place `network:` on `host: azure.ai.agent`. Agent services describe deployable agents and depend on the project through `uses:`; the project service owns account-level provisioning inputs such as `endpoint:`, `deployments:`, and `network:`.
 
-The `azure.ai.projects` extension owns the project service and the `microsoft.foundry` provider. `azd ai agent init` continues to author the block and eject its IaC during the staged ownership migration.
+The `azure.ai.projects` extension owns the project service and the `microsoft.foundry` provider. `azd ai agent init` delegates project setup to that extension; use `azd ai project init --infra` to eject its IaC.
 
 When `network:` is present, azd always provisions an **account private endpoint** and disables public data-plane access. Dependent stores (Cosmos DB, AI Search, Storage) stay platform-managed.
 
@@ -93,7 +93,7 @@ azd env set AZURE_DNS_SUBSCRIPTION_ID "<subscription-id>"
 - **BYO container image required.** Secured agents should use a pre-built image. The image belongs to the `azure.ai.agent` service; the VNet configuration belongs to the `azure.ai.project` service. The developer owns the registry's SKU, private endpoint, DNS, and firewall.
 - **Brownfield (`endpoint:`) ignores `network:`.** When `endpoint:` is set on the project service, the account's network posture is fixed by whoever created it; azd warns and does not reconcile `network:`.
 - **One default-DNS account per VNet.** Without a `dns:` block azd links the three `privatelink.*` AI zones to your VNet, and a VNet may hold only one link per namespace. A second account (or a brownfield hub that pre-links the zones) must use `dns:` reference mode to bind the private endpoint without re-linking.
-- **Terraform IaC is not supported for private networking (v1).** Bicep-only today; `azd ai agent init --infra=terraform` is refused when `network:` is declared. Eject Bicep instead.
+- **Terraform IaC is not supported for private networking (v1).** Bicep-only today; `azd ai project init --infra=terraform` is refused when `network:` is declared. Eject Bicep instead.
 
 ## Scenario 1 — Managed egress: private account, agent on Microsoft's network
 
@@ -178,7 +178,7 @@ The synthesized template covers the common private-networking shapes. When you n
 
 ```bash
 # Scaffold first, declare network: on the azure.ai.project service, then eject:
-azd ai agent init --infra
+azd ai project init --infra
 ```
 
 Eject reads `network:` from the `host: azure.ai.project` service and writes the full Bicep tree. For a Foundry-only project, it writes `infra/main.bicep`, `infra/modules/{resources,network,subnet,private-endpoint-dns,acr}.bicep`, and `infra/main.parameters.json`. If the project already has infrastructure, azd preserves it and adds a separate `infra/foundry` layer with the same file layout and its own `AZURE_FOUNDRY_RESOURCE_GROUP`. `${VAR}` placeholders are preserved in the generated parameters file and resolved from the azd environment at provision time.

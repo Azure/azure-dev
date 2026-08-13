@@ -90,7 +90,7 @@ func VersionGreater(a, b string) bool {
 // last entry when none of the versions can be ordered.
 func LatestVersion(datasets []Dataset) string {
 	best := ""
-	bestOrder := -2.0
+	bestOrder := -1.0
 	for _, d := range datasets {
 		if o := VersionOrder(d.Version); o > bestOrder {
 			bestOrder, best = o, d.Version

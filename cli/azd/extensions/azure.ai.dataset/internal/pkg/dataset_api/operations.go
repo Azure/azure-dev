@@ -110,7 +110,11 @@ func (c *DatasetClient) UploadNextVersion(
 	apiVersion string,
 ) (*Dataset, error) {
 	if currentVersion == "" {
-		currentVersion = c.latestRegisteredVersion(ctx, name, apiVersion)
+		latest, err := c.latestRegisteredVersion(ctx, name, apiVersion)
+		if err != nil {
+			return nil, err
+		}
+		currentVersion = latest
 	}
 
 	var err error
@@ -126,7 +130,11 @@ func (c *DatasetClient) UploadNextVersion(
 		// and moved further ahead; otherwise step past what was just refused.
 		refused := NextVersion(currentVersion)
 		currentVersion = refused
-		if latest := c.latestRegisteredVersion(ctx, name, apiVersion); versionAtLeast(latest, refused) {
+		// A listing failure is not fatal here: the refused version is already a
+		// correct next step, so only a listing that has moved further ahead
+		// changes the outcome.
+		latest, listErr := c.latestRegisteredVersion(ctx, name, apiVersion)
+		if listErr == nil && versionAtLeast(latest, refused) {
 			currentVersion = latest
 		}
 	}
@@ -145,18 +153,26 @@ func versionAtLeast(a, b string) bool {
 	return LatestVersion([]Dataset{{Version: a}, {Version: b}}) == a
 }
 
-// latestRegisteredVersion returns the newest registered version, or empty when
-// the dataset is unknown or the listing has not caught up yet.
+// latestRegisteredVersion returns the newest registered version. A dataset the
+// service does not know, and a listing that has not caught up, both report an
+// empty version and no error. Every other failure is returned: treating a 403
+// or a timeout as "no versions" would restart an existing dataset at 1.0.
 func (c *DatasetClient) latestRegisteredVersion(
 	ctx context.Context,
 	name string,
 	apiVersion string,
-) string {
+) (string, error) {
 	list, err := c.ListDatasetVersions(ctx, name, apiVersion)
-	if err != nil || list == nil || len(list.Value) == 0 {
-		return ""
+	if err != nil {
+		if IsNotFound(err) {
+			return "", nil
+		}
+		return "", err
 	}
-	return LatestVersion(list.Value)
+	if list == nil || len(list.Value) == 0 {
+		return "", nil
+	}
+	return LatestVersion(list.Value), nil
 }
 
 // logSafeURL renders a URL for logging with its query and fragment removed.
@@ -188,8 +204,8 @@ func redactURLError(err error) error {
 // isVersionConflict reports whether the service refused the upload because the
 // target version already exists.
 func IsVersionConflict(err error) bool {
-	var respErr *azcore.ResponseError
-	if !errors.As(err, &respErr) {
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok {
 		return false
 	}
 	return respErr.StatusCode == http.StatusConflict
@@ -197,8 +213,8 @@ func IsVersionConflict(err error) bool {
 
 // IsNotFound reports whether the service answered 404.
 func IsNotFound(err error) bool {
-	var respErr *azcore.ResponseError
-	if !errors.As(err, &respErr) {
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok {
 		return false
 	}
 	return respErr.StatusCode == http.StatusNotFound

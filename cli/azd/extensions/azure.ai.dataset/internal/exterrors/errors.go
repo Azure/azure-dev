@@ -90,8 +90,7 @@ func Cancelled(message string) error {
 // with operation context. If the error is not an azcore.ResponseError, it
 // returns a generic internal [azdext.LocalError].
 func ServiceFromAzure(err error, operation string) error {
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		serviceName := ""
 		if respErr.RawResponse != nil && respErr.RawResponse.Request != nil {
 			serviceName = respErr.RawResponse.Request.Host

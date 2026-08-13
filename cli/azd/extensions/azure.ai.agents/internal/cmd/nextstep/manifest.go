@@ -126,10 +126,11 @@ func populateManifestResources(projectPath string, state *State) {
 	state.HasConnections = len(state.Connections) > 0
 }
 
-// populateSplitToolboxes adds standalone azure.ai.toolbox services to state.
-// A split service's service name is both its toolbox name and owner name.
-// No properties are decoded: the service name is the authoritative toolbox
-// identity, so local $ref files cannot affect discovery.
+// populateSplitToolboxes adds standalone azure.ai.toolbox services to
+// state. A split service uses its service name as both the toolbox
+// and owner name. It ignores service properties because the service
+// name defines the toolbox identity, so local $ref files do not
+// affect discovery.
 func populateSplitToolboxes(
 	projectCfg *azdext.ProjectConfig,
 	state *State,
@@ -163,8 +164,8 @@ func populateSplitToolboxes(
 		return
 	}
 
-	// A split service is authoritative for a canonical endpoint key. Keep
-	// unrelated legacy manifest keys for compatibility.
+	// A split service takes precedence for its canonical endpoint key.
+	// Keep unrelated legacy manifest keys for compatibility.
 	merged := make([]ResourceRef, 0, len(state.Toolboxes)+len(split))
 	for _, ref := range state.Toolboxes {
 		if _, replaced := split[envkey.ToolboxMCPEndpoint(ref.Name)]; !replaced {

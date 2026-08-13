@@ -339,8 +339,9 @@ func detectMissingAzureContextVars(ctx context.Context, src Source, envName stri
 	return missing
 }
 
-// probeToolboxEndpoints reads each canonical toolbox endpoint once. Endpoint
-// values are produced by azd, so this probe is independent of agent env refs.
+// probeToolboxEndpoints reads each canonical toolbox endpoint once.
+// azd produces these values, so the probe does not depend on agent
+// environment references.
 func probeToolboxEndpoints(
 	ctx context.Context,
 	src Source,

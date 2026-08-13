@@ -43,25 +43,21 @@ type Dependencies struct {
 	AzdClientErr     error
 	ExtensionVersion string
 
-	// AgentAPIVersion is the Foundry Agents api-version the remote
-	// probes target. The doctor command's Cobra wiring populates this
-	// with the package-level DefaultAgentAPIVersion constant so the
-	// design's "single source of truth" requirement is honored — both
-	// the runtime invoke flow (init, invoke, listen, monitor,
-	// session, show) and the doctor probe pin against the same
-	// constant. Tests can override per-call to assert URL composition
-	// without coupling to the production value.
+	// AgentAPIVersion is the Foundry Agents API version used by remote
+	// probes. Cobra wiring sets it from DefaultAgentAPIVersion, so the
+	// runtime commands (init, invoke, listen, monitor, session, and
+	// show) and Doctor use the same value. Tests can override it when
+	// checking URL construction without using the production value.
 	AgentAPIVersion string
 
-	// assembleState is a test seam: when non-nil it replaces the
-	// production `nextstep.AssembleState` call, letting unit tests inject
-	// a pre-computed State without standing up a temp project on disk.
-	// Lowercase so external packages cannot reach it. Production code
-	// (NewLocalChecks via the Cobra wiring) leaves it nil.
+	// assembleState is a test seam. When set, it replaces the production
+	// nextstep.AssembleState call so tests can inject a precomputed
+	// State without creating a temporary project. It is unexported, and
+	// production wiring leaves it nil.
 	assembleState func(ctx context.Context, client *azdext.AzdClient) (*nextstep.State, []error)
 
-	// StateCache shares one assembled state across Doctor checks and
-	// trailing guidance during a single invocation.
+	// StateCache reuses one assembled state for all Doctor checks and
+	// final guidance during an invocation.
 	StateCache *StateCache
 
 	// probeAuth is a test seam: when non-nil it replaces the

@@ -26,8 +26,8 @@ import (
 type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err error)
 
 // newCheckToolboxes produces Check `local.toolboxes` (P5.1 C14).
-// For each toolbox collected during next-step state assembly, the
-// check verifies that the canonical
+// The check examines each toolbox collected during next-step state
+// assembly and verifies that its canonical
 // `TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT` env var is set to a
 // non-empty value in the active azd environment.
 //
@@ -43,7 +43,7 @@ type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err
 //     skips in this state, so the toolbox check would falsely Pass.
 //   - `local.azure-yaml` / `local.agent-service-detected` failed →
 //     no services to walk; walker output is unreliable.
-//   - state.HasToolboxes == false → no toolbox declarations;
+//   - state.HasToolboxes == false: there are no toolbox declarations;
 //     the check has nothing to verify.
 //
 // # Why this check is not gated on `remote.auth` /
@@ -133,8 +133,9 @@ func newCheckToolboxes(deps Dependencies) Check {
 				return classifyToolboxState(state.Toolboxes, state.MissingToolboxEndpoints)
 			}
 
-			// Keep the old seam for callers constructing partial states. Production
-			// assembly always sets ToolboxEndpointsChecked and never reads again.
+			// Keep this fallback for callers that build partial states.
+			// Normal assembly sets ToolboxEndpointsChecked, so production
+			// code does not use this lookup.
 			lookup := deps.lookupToolboxEnv
 			if lookup == nil {
 				lookup = makeRealToolboxEnvLookup(deps.AzdClient)

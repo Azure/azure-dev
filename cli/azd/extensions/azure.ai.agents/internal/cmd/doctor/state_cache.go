@@ -12,7 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// StateCache stores one assembled state snapshot for a Doctor run.
+// StateCache stores the assembled state for one Doctor run.
 type StateCache struct {
 	once  sync.Once
 	state *nextstep.State
@@ -24,7 +24,7 @@ func NewStateCache() *StateCache {
 	return &StateCache{}
 }
 
-// AssembleAgentState returns the cached state or assembles it once.
+// AssembleAgentState returns cached state, assembling it only once.
 func (deps Dependencies) AssembleAgentState(ctx context.Context) (*nextstep.State, []error) {
 	cache := deps.StateCache
 	if cache == nil {

@@ -268,8 +268,8 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 				priority++
 			}
 		}
-		// A split toolbox deploys the whole project, so wait until
-		// required agent values are set.
+		// A split toolbox deploys the whole project, so add this step
+		// after the required agent values are set.
 		if hasSplitToolboxEndpoints {
 			out = append(out, Suggestion{
 				Command:     "azd deploy",

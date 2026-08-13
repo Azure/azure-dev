@@ -428,9 +428,9 @@ func (r *evalReconciler) EnsureEval(
 	ctx context.Context,
 	group project.Eval,
 	datasetPath string,
-) (string, error) {
+) (string, bool, error) {
 	if group.ID != "" {
-		return group.ID, nil
+		return group.ID, false, nil
 	}
 
 	// Evals are immutable, so a change to the eval's own substance — evaluators,
@@ -439,7 +439,7 @@ func (r *evalReconciler) EnsureEval(
 	recreate := false
 	digest, err := project.FingerprintGroup(group)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	key := project.FingerprintKey("eval", group.Name)
 	if prior := r.ec.getEnvValue(ctx, key); prior != "" && prior != digest {
@@ -456,7 +456,7 @@ func (r *evalReconciler) EnsureEval(
 		datasetColumnsFromPath(datasetPath),
 	)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	cached := r.ec.getEnvValue(ctx, idKey("eval", group.Name))
@@ -484,13 +484,13 @@ func (r *evalReconciler) EnsureEval(
 			r.ec.remember(ctx, idKey("eval", group.Name), cached)
 			r.ec.remember(ctx, digestIDKey(digest), cached)
 			r.ec.remember(ctx, envKeyEvalID, cached)
-			return cached, nil
+			return cached, false, nil
 		}
 	}
 
 	created, err := r.ec.evalClient.CreateOpenAIEval(ctx, req)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	r.ec.remember(ctx, key, digest)
 	r.ec.remember(ctx, idKey("eval", group.Name), created.ID)
@@ -498,7 +498,7 @@ func (r *evalReconciler) EnsureEval(
 	// EVAL_ID stays the last-deployed eval, which is what the commands
 	// fall back to when a config names only one.
 	r.ec.remember(ctx, envKeyEvalID, created.ID)
-	return created.ID, nil
+	return created.ID, true, nil
 }
 
 // adoptRenamed reclaims the eval this declaration used to be called, so a

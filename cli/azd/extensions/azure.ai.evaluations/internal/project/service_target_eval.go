@@ -43,7 +43,7 @@ type Reconciler interface {
 	// evaluators or options changed, returning its id. datasetPath is the local
 	// dataset backing the group, or empty when it is already registered; it lets
 	// the reconciler bind criteria to the columns that actually exist.
-	EnsureEval(ctx context.Context, group Eval, datasetPath string) (id string, err error)
+	EnsureEval(ctx context.Context, group Eval, datasetPath string) (id string, created bool, err error)
 }
 
 // EvalServiceTargetProvider deploys eval resources during `azd up`. azd owns
@@ -185,11 +185,11 @@ func (p *EvalServiceTargetProvider) Deploy(
 	for i := range cfg.Evals {
 		eval := cfg.Evals[i]
 		report(progress, messages.ReconcilingEval(eval.Name))
-		id, err := reconciler.EnsureEval(ctx, eval, datasetPaths[eval.Dataset])
+		id, created, err := reconciler.EnsureEval(ctx, eval, datasetPaths[eval.Dataset])
 		if err != nil {
 			return nil, messages.EvalProblem(eval.Name, err)
 		}
-		report(progress, messages.EvalIs(eval.Name, id))
+		report(progress, describeEval(eval.Name, id, created))
 	}
 
 	return &azdext.ServiceDeployResult{}, nil
@@ -215,6 +215,16 @@ func describeResult(kind, name, version string, changed bool) string {
 		return messages.PublishedVersion(kind, name, version)
 	}
 	return messages.UnchangedAtVersion(kind, name, version)
+}
+
+// describeEval keeps a deploy's eval line saying the same thing the direct
+// command says. Reporting the id either way left a deploy unable to answer
+// whether it published anything.
+func describeEval(name, id string, created bool) string {
+	if created {
+		return messages.EvalCreatedProgress(name, id)
+	}
+	return messages.EvalUnchangedProgress(name, id)
 }
 
 func report(progress azdext.ProgressReporter, message string) {

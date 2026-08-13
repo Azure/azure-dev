@@ -119,10 +119,7 @@ func newEvalCreateCommand() *cobra.Command {
 				say("evaluator", decl.Name, version, changed)
 			}
 
-			// Read before the call so a reused eval is not announced as a new one.
-			// An eval is immutable, so the same id back means nothing was created.
-			existing := ec.recordedEvalID(ctx, eval.Name)
-			id, err := reconciler.EnsureEval(ctx, *eval, datasetPath)
+			id, created, err := reconciler.EnsureEval(ctx, *eval, datasetPath)
 			if err != nil {
 				return err
 			}
@@ -132,10 +129,10 @@ func newEvalCreateCommand() *cobra.Command {
 					"id": id, "name": eval.Name,
 				})
 			}
-			if id == existing {
-				fmt.Fprint(out, messages.EvalUnchanged(eval.Name, id))
-			} else {
+			if created {
 				fmt.Fprint(out, messages.EvalCreated(eval.Name, id))
+			} else {
+				fmt.Fprint(out, messages.EvalUnchanged(eval.Name, id))
 			}
 			return nil
 		},

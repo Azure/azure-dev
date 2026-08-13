@@ -1373,6 +1373,16 @@ func EvalIs(eval, id string) string {
 	return fmt.Sprintf("Eval %s is %s", eval, id)
 }
 
+// EvalCreatedProgress and EvalUnchangedProgress are the deploy-time equivalents
+// of EvalCreated and EvalUnchanged, without the status marks azd adds itself.
+func EvalCreatedProgress(eval, id string) string {
+	return fmt.Sprintf("Created eval %s (%s)", eval, id)
+}
+
+func EvalUnchangedProgress(eval, id string) string {
+	return fmt.Sprintf("Eval %s is unchanged (%s)", eval, id)
+}
+
 // EvalCreated confirms a single eval created outside a full deploy.
 func EvalCreated(eval, id string) string {
 	return fmt.Sprintf("%s Created eval: %s (%s)\n", DoneMark, eval, id)

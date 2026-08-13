@@ -263,6 +263,66 @@ func TestDeploymentLocationsUsesProjectLocationByDefault(t *testing.T) {
 	assert.Equal(t, []string{"westus"}, locations)
 }
 
+func TestRequiresExistingProjectID(t *testing.T) {
+	existingEndpointService := &projectServiceInfo{
+		Resolved: map[string]any{
+			"endpoint": "https://account.services.ai.azure.com/api/projects/p",
+		},
+	}
+	tests := []struct {
+		name    string
+		values  map[string]string
+		service *projectServiceInfo
+		want    bool
+	}{
+		{
+			name:   "greenfield",
+			values: map[string]string{"USE_EXISTING_AI_PROJECT": "false"},
+		},
+		{
+			name:   "existing endpoint marker",
+			values: map[string]string{"USE_EXISTING_AI_PROJECT": "true"},
+			want:   true,
+		},
+		{
+			name:    "existing endpoint service",
+			service: existingEndpointService,
+			want:    true,
+		},
+		{
+			name:   "existing project ID",
+			values: map[string]string{"AZURE_AI_PROJECT_ID": "project-id"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(
+				t,
+				test.want,
+				requiresExistingProjectID(test.values, test.service),
+			)
+		})
+	}
+}
+
+func TestValidateAllowedProjectLocationUsesFallback(t *testing.T) {
+	require.Error(t, validateAllowedProjectLocation(
+		&resolvedProject{},
+		[]string{"eastus"},
+		"westus",
+	))
+	require.NoError(t, validateAllowedProjectLocation(
+		&resolvedProject{},
+		[]string{"eastus"},
+		"eastus",
+	))
+	require.NoError(t, validateAllowedProjectLocation(
+		&resolvedProject{Location: "eastus"},
+		[]string{"eastus"},
+		"westus",
+	))
+}
+
 func TestDeploymentNoMatchErrorsAreRecoverable(t *testing.T) {
 	detail := &errdetails.ErrorInfo{
 		Domain: azdext.AiErrorDomain,

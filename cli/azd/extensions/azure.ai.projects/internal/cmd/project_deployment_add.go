@@ -147,11 +147,13 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if values["AZURE_AI_PROJECT_ID"] == "" {
+	if requiresExistingProjectID(values, service) {
 		return exterrors.Validation(
 			"project_deployment_requires_id",
-			"managed model deployments require an existing Foundry project resource ID",
-			"rerun `azd ai project init --project-id <resource-id>` after the project is provisioned",
+			"managed model deployments for an existing Foundry project "+
+				"require a resource ID",
+			"rerun `azd ai project init --project-id <resource-id>` "+
+				"before adding managed deployments",
 		)
 	}
 	azureContext := &azdext.AzureContext{
@@ -264,6 +266,22 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		fmt.Printf("Managed deployment %q %s.\n", selected.Deployment.Name, mutation)
 	}
 	return nil
+}
+
+func requiresExistingProjectID(
+	values map[string]string,
+	service *projectServiceInfo,
+) bool {
+	if strings.TrimSpace(values["AZURE_AI_PROJECT_ID"]) != "" {
+		return false
+	}
+	if strings.EqualFold(
+		strings.TrimSpace(values["USE_EXISTING_AI_PROJECT"]),
+		"true",
+	) {
+		return true
+	}
+	return service != nil && serviceEndpoint(service.Resolved) != ""
 }
 
 func (a *ProjectDeploymentAddAction) loadRequest() (*deploymentAddRequest, error) {

@@ -182,7 +182,11 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 	); err != nil {
 		return err
 	}
-	if err := validateAllowedProjectLocation(target, allowedLocations(request)); err != nil {
+	if err := validateAllowedProjectLocation(
+		target,
+		allowedLocations(request),
+		oldValues["AZURE_LOCATION"],
+	); err != nil {
 		return err
 	}
 	if target.Mode == projectModeExistingEndpoint {
@@ -653,18 +657,29 @@ func explicitProjectTarget(
 		strings.TrimSpace(flags.projectEndpoint) != ""
 }
 
-func validateAllowedProjectLocation(project *resolvedProject, allowed []string) error {
-	if project == nil || len(allowed) == 0 || project.Location == "" {
+func validateAllowedProjectLocation(
+	project *resolvedProject,
+	allowed []string,
+	fallbackLocation string,
+) error {
+	if project == nil || len(allowed) == 0 {
 		return nil
 	}
-	for _, location := range allowed {
-		if strings.EqualFold(strings.TrimSpace(location), project.Location) {
+	location := strings.TrimSpace(project.Location)
+	if location == "" {
+		location = strings.TrimSpace(fallbackLocation)
+	}
+	if location == "" {
+		return nil
+	}
+	for _, allowedLocation := range allowed {
+		if strings.EqualFold(strings.TrimSpace(allowedLocation), location) {
 			return nil
 		}
 	}
 	return exterrors.Validation(
 		"project_location_not_allowed",
-		fmt.Sprintf("project location %q is outside the allowed locations", project.Location),
+		fmt.Sprintf("project location %q is outside the allowed locations", location),
 		"choose a project in one of the allowed locations",
 	)
 }
@@ -957,19 +972,98 @@ func writeFoundryProvider(
 		project.GetInfra().GetProvider() != "" {
 		return nil
 	}
-	value, err := structpb.NewValue(provisioning.FoundryProviderName)
+	oldProvider, oldPath := projectInfraConfig(project)
+	if err := setProjectConfigString(
+		ctx,
+		client,
+		"infra.provider",
+		provisioning.FoundryProviderName,
+	); err != nil {
+		return fmt.Errorf("set Foundry infrastructure provider: %w", err)
+	}
+	if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
+		operationErr := fmt.Errorf("remove starter infrastructure path: %w", err)
+		if restoreErr := restoreProjectInfraConfig(
+			ctx,
+			client,
+			oldProvider,
+			oldPath,
+		); restoreErr != nil {
+			return errors.Join(
+				operationErr,
+				fmt.Errorf("restore project infrastructure config: %w", restoreErr),
+			)
+		}
+		return operationErr
+	}
+	return nil
+}
+
+func projectInfraConfig(project *azdext.ProjectConfig) (provider, path string) {
+	if project == nil || project.GetInfra() == nil {
+		return "", ""
+	}
+	return project.GetInfra().GetProvider(), project.GetInfra().GetPath()
+}
+
+func setProjectConfigString(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	path, value string,
+) error {
+	structValue, err := structpb.NewValue(value)
 	if err != nil {
 		return err
 	}
-	if _, err := client.Project().SetConfigValue(ctx,
-		&azdext.SetProjectConfigValueRequest{Path: "infra.provider", Value: value}); err != nil {
-		return fmt.Errorf("set Foundry infrastructure provider: %w", err)
+	_, err = client.Project().SetConfigValue(ctx,
+		&azdext.SetProjectConfigValueRequest{
+			Path:  path,
+			Value: structValue,
+		})
+	return err
+}
+
+func unsetProjectConfigValue(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	path string,
+) error {
+	_, err := client.Project().UnsetConfig(ctx,
+		&azdext.UnsetProjectConfigRequest{Path: path})
+	return err
+}
+
+func restoreProjectInfraConfig(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	provider, path string,
+) error {
+	var restoreErrs []error
+	if provider == "" {
+		if err := unsetProjectConfigValue(ctx, client, "infra.provider"); err != nil {
+			restoreErrs = append(restoreErrs, err)
+		}
+	} else if err := setProjectConfigString(
+		ctx,
+		client,
+		"infra.provider",
+		provider,
+	); err != nil {
+		restoreErrs = append(restoreErrs, err)
 	}
-	if _, err := client.Project().UnsetConfig(ctx,
-		&azdext.UnsetProjectConfigRequest{Path: "infra.path"}); err != nil {
-		return fmt.Errorf("remove starter infrastructure path: %w", err)
+	if path == "" {
+		if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
+			restoreErrs = append(restoreErrs, err)
+		}
+	} else if err := setProjectConfigString(
+		ctx,
+		client,
+		"infra.path",
+		path,
+	); err != nil {
+		restoreErrs = append(restoreErrs, err)
 	}
-	return nil
+	return errors.Join(restoreErrs...)
 }
 
 func validateFoundryProvider(project *azdext.ProjectConfig) error {
@@ -1050,6 +1144,7 @@ func ejectProjectInfra(
 			"remove --infra or change the project to microsoft.foundry explicitly",
 		)
 	}
+	oldProvider, oldPath := projectInfraConfig(projectResponse.GetProject())
 	projectFile, err := projectFilePath(projectRoot)
 	if err != nil {
 		return err
@@ -1087,42 +1182,62 @@ func ejectProjectInfra(
 	if err := os.MkdirAll(infraDir, 0755); err != nil {
 		return fmt.Errorf("create infra directory: %w", err)
 	}
+	cleanup := func(operationErr error) error {
+		if cleanupErr := os.RemoveAll(infraDir); cleanupErr != nil {
+			return errors.Join(
+				operationErr,
+				fmt.Errorf("remove generated infrastructure: %w", cleanupErr),
+			)
+		}
+		return operationErr
+	}
+	rollback := func(operationErr error) error {
+		operationErr = cleanup(operationErr)
+		if restoreErr := restoreProjectInfraConfig(
+			ctx,
+			client,
+			oldProvider,
+			oldPath,
+		); restoreErr != nil {
+			return errors.Join(
+				operationErr,
+				fmt.Errorf("restore project infrastructure config: %w", restoreErr),
+			)
+		}
+		return operationErr
+	}
 	if provider == provisioning.TerraformProviderName {
 		if result.NetworkMode != synthesis.NetworkModeNone {
-			_ = os.RemoveAll(infraDir)
-			return exterrors.Validation(
+			return cleanup(exterrors.Validation(
 				"infra_eject_network_unsupported",
 				"Terraform ejection does not support the project's network block",
 				"eject Bicep instead",
-			)
+			))
 		}
 		if err := writeTerraformEjectedInfra(infraDir, result.Parameters); err != nil {
-			_ = os.RemoveAll(infraDir)
-			return err
+			return cleanup(err)
 		}
-		value, _ := structpb.NewValue(provisioning.TerraformProviderName)
-		if _, err := client.Project().SetConfigValue(ctx,
-			&azdext.SetProjectConfigValueRequest{Path: "infra.provider", Value: value}); err != nil {
-			_ = os.RemoveAll(infraDir)
-			return fmt.Errorf("stamp Terraform provider: %w", err)
+		if err := setProjectConfigString(
+			ctx,
+			client,
+			"infra.provider",
+			provisioning.TerraformProviderName,
+		); err != nil {
+			return rollback(fmt.Errorf("stamp Terraform provider: %w", err))
 		}
-		if _, err := client.Project().UnsetConfig(ctx,
-			&azdext.UnsetProjectConfigRequest{Path: "infra.path"}); err != nil {
-			_ = os.RemoveAll(infraDir)
-			return fmt.Errorf("remove infra.path: %w", err)
+		if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
+			return rollback(fmt.Errorf("remove infra.path: %w", err))
 		}
 	} else {
 		if err := copyEmbeddedBicep(infraDir); err != nil {
-			_ = os.RemoveAll(infraDir)
-			return err
+			return cleanup(err)
 		}
 		parameters := map[string]any{"parameters": map[string]any{}}
 		for key, value := range result.Parameters {
 			parameters["parameters"].(map[string]any)[key] = map[string]any{"value": value}
 		}
 		if err := writeJSONFile(filepath.Join(infraDir, "main.parameters.json"), parameters); err != nil {
-			_ = os.RemoveAll(infraDir)
-			return err
+			return cleanup(err)
 		}
 	}
 	return nil

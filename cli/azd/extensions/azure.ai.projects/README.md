@@ -27,6 +27,36 @@ services:
 
 When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
 
+## Project authoring
+
+Initialize a new Foundry project in the current azd workspace:
+
+```sh
+azd ai project init
+```
+
+For a new project, managed deployment declarations can be added before the
+first provision:
+
+```sh
+azd ai project init
+azd ai project deployment add --model <model-name>
+azd provision
+```
+
+To use an existing project in automation, initialize it with its full ARM
+resource ID. This stores the project identity in the active azd environment
+and allows managed deployment declarations to be reconciled:
+
+```sh
+azd ai project init --project-id "<project-resource-id>"
+azd ai project deployment add --model <model-name>
+```
+
+An endpoint-only project is suitable for configuration that does not manage
+resources on the existing project. Use the full project resource ID before
+adding managed deployments.
+
 To reconcile deployments, connections, or a pending container registry on an existing project, set the project's full ARM resource ID in the active azd environment:
 
 ```sh

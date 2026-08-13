@@ -167,6 +167,35 @@ func TestCheckManualEnvVars_AllVarsSet_Passes(t *testing.T) {
 	require.Nil(t, got.Details)
 }
 
+func TestCheckManualEnvVars_EnvironmentLoadError_Fails(t *testing.T) {
+	t.Parallel()
+
+	client := newTestAzdClient(t, &fakeProjectServer{}, &fakeEnvironmentServer{})
+	check := newCheckManualEnvVars(Dependencies{
+		AzdClient: client,
+		assembleState: fakeAssembler(&nextstep.State{
+			HasProjectEndpoint: true,
+			EnvironmentLoadErrors: []string{
+				`service "echo" agent environment: load azure.yaml: env must be a mapping`,
+			},
+		}),
+	})
+
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusFail, got.Status)
+	require.Contains(t, got.Message, "agent environment configuration")
+	require.Contains(t, got.Message, "service \"echo\"")
+	require.Contains(t, got.Suggestion, "Fix azure.yaml")
+	require.Equal(
+		t,
+		[]string{
+			`service "echo" agent environment: load azure.yaml: env must be a mapping`,
+		},
+		got.Details["environmentLoadErrors"],
+	)
+}
+
 func TestCheckManualEnvVars_OneMissing_Fails(t *testing.T) {
 	t.Parallel()
 
@@ -184,6 +213,8 @@ func TestCheckManualEnvVars_OneMissing_Fails(t *testing.T) {
 	require.Equal(t, StatusFail, got.Status)
 	require.Contains(t, got.Message, "1 manual env var(s)")
 	require.Contains(t, got.Message, "MY_API_KEY")
+	require.Contains(t, got.Message, "agent configuration")
+	require.NotContains(t, got.Message, "agent.yaml")
 	// Single-var case: bare command, no "repeat" clause — adding it
 	// would imply the user missed something they didn't.
 	require.Equal(t, "Run `azd env set MY_API_KEY <value>`.", got.Suggestion)

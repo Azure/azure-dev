@@ -10,9 +10,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -956,7 +959,7 @@ func TestAssembleState_MarksInlineMultiProtocolService(t *testing.T) {
 	assert.True(t, state.Services[0].MultiProtocol)
 }
 
-func TestExtractAgentYamlEnvRefs(t *testing.T) {
+func TestExtractEnvironmentRefs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -980,6 +983,15 @@ environment_variables:
 environment_variables:
   - name: MODEL
     value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
+`,
+			wantRefs: nil,
+		},
+		{
+			name: "escaped literal keeps the ref out of missing-var hints",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: LITERAL
+    value: $${FOUNDRY_PROJECT_ENDPOINT}
 `,
 			wantRefs: nil,
 		},
@@ -1102,6 +1114,16 @@ environment_variables:
 			wantPlaceholders: []string{"my.component.id"},
 		},
 		{
+			name: "Foundry expressions are not placeholders",
+			manifest: `kind: hostedAgent
+ environment_variables:
+   - name: PROJECT_ENDPOINT
+     value: '${{project.endpoint}}'
+   - name: PROJECT_NAME
+     value: '$${{project.name}}'
+ `,
+		},
+		{
 			// Empty placeholder body must not be flagged — it cannot
 			// correspond to a manifest parameter and is more likely
 			// stray literal text.
@@ -1129,71 +1151,36 @@ environment_variables:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			projectRoot := t.TempDir()
-			svcDir := filepath.Join(projectRoot, "echo")
-			require.NoError(t, os.MkdirAll(svcDir, 0o750))
-			require.NoError(t, os.WriteFile(
-				filepath.Join(svcDir, "agent.yaml"),
-				[]byte(tt.manifest),
-				0o600,
-			))
-			gotRefs, gotPlaceholders := extractAgentYamlEnvRefs(projectRoot, "echo")
+			gotRefs, gotPlaceholders := extractEnvironmentRefs(
+				environmentValuesFromManifest(t, tt.manifest),
+			)
 			assert.Equal(t, tt.wantRefs, gotRefs, "refs")
 			assert.Equal(t, tt.wantPlaceholders, gotPlaceholders, "placeholders")
 		})
 	}
 }
 
-func TestExtractAgentYamlEnvRefs_MissingFileOrArgs(t *testing.T) {
-	t.Parallel()
-
-	for _, args := range [][2]string{
-		{"", "echo"},
-		{t.TempDir(), ""},
-		{t.TempDir(), "missing"},
-	} {
-		refs, placeholders := extractAgentYamlEnvRefs(args[0], args[1])
-		assert.Nil(t, refs)
-		assert.Nil(t, placeholders)
+func environmentValuesFromManifest(t *testing.T, data string) []string {
+	var hosted agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal([]byte(data), &hosted); err != nil {
+		return nil
 	}
+	if hosted.EnvironmentVariables == nil {
+		return nil
+	}
+	values := make([]string, 0, len(*hosted.EnvironmentVariables))
+	for _, value := range *hosted.EnvironmentVariables {
+		values = append(values, value.Value)
+	}
+	return values
 }
 
-func TestExtractAgentYamlEnvRefs_RejectsTraversal(t *testing.T) {
+func TestExtractEnvironmentRefs_EmptyValues(t *testing.T) {
 	t.Parallel()
 
-	parent := t.TempDir()
-	projectRoot := filepath.Join(parent, "project")
-	outside := filepath.Join(parent, "outside")
-	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
-	require.NoError(t, os.MkdirAll(outside, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(outside, "agent.yaml"),
-		[]byte("kind: hostedAgent\nenvironment_variables:\n  - name: SECRET\n    value: ${OUTSIDE_SECRET}\n"),
-		0o600,
-	))
-
-	refs, placeholders := extractAgentYamlEnvRefs(projectRoot, "../outside")
-
+	refs, placeholders := extractEnvironmentRefs(nil)
 	assert.Nil(t, refs)
 	assert.Nil(t, placeholders)
-}
-
-func TestExtractAgentYamlEnvRefs_RootRelativePath(t *testing.T) {
-	t.Parallel()
-
-	projectRoot := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "agent.yaml"),
-		[]byte("kind: hostedAgent\nenvironment_variables:\n  - name: SECRET\n    value: ${ROOT_SECRET}\n"),
-		0o600,
-	))
-
-	for _, rel := range []string{"", "."} {
-		refs, placeholders := extractAgentYamlEnvRefs(projectRoot, rel)
-
-		assert.Equal(t, []string{"ROOT_SECRET"}, refs)
-		assert.Nil(t, placeholders)
-	}
 }
 
 func TestAssembleState_PopulatesMissingVars(t *testing.T) {
@@ -1246,6 +1233,151 @@ output AZURE_AI_MODEL_DEPLOYMENT_NAME string = ''
 	require.Empty(t, errs)
 	assert.Equal(t, []string{"FOUNDRY_PROJECT_ENDPOINT"}, state.MissingInfraVars)
 	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
+}
+
+func TestAssembleState_UsesUnifiedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAzureYAML(t, projectRoot, `
+services:
+  echo:
+    host: azure.ai.agent
+    env:
+      SHARED: set
+`)
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "infra", "main.bicep"),
+		[]byte("output INFRA_VALUE string = ''\n"),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": newAgentService(t, map[string]any{
+					"kind": "hostedAgent",
+					"environmentVariables": []any{
+						map[string]any{
+							"name":  "INFRA",
+							"value": "${INFRA_VALUE}",
+						},
+						map[string]any{
+							"name":  "MANUAL",
+							"value": "${MANUAL_VALUE}",
+						},
+						map[string]any{
+							"name":  "DEFAULT",
+							"value": "${DEFAULT_VALUE:-fallback}",
+						},
+						map[string]any{
+							"name":  "FOUNDRY",
+							"value": "${{project.endpoint}}",
+						},
+						map[string]any{
+							"name":  "PLACEHOLDER",
+							"value": "{{PLACEHOLDER}}",
+						},
+						map[string]any{
+							"name":  "SHARED",
+							"value": "${SHOULD_NOT_BE_READ}",
+						},
+					},
+				}),
+			},
+		},
+		values: map[string]string{
+			"dev/MANUAL_VALUE": "set",
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+
+	require.Empty(t, errs)
+	assert.Equal(t, []string{"INFRA_VALUE"}, state.MissingInfraVars)
+	assert.Empty(t, state.MissingManualVars)
+	assert.Equal(t, []string{"PLACEHOLDER"}, state.UnresolvedPlaceholders)
+	assert.Empty(t, state.EnvironmentLoadErrors)
+}
+
+func TestAssembleState_UsesReferencedUnifiedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAzureYAML(t, projectRoot, `
+services:
+  echo:
+    host: azure.ai.agent
+    $ref: ./service.yaml
+`)
+	writeProjectFile(t, projectRoot, "service.yaml", `
+kind: hostedAgent
+environmentVariables:
+  - name: REF_VALUE
+    value: ${REF_VALUE}
+`)
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {
+					Name:                 "echo",
+					Host:                 agentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./service.yaml"}),
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+
+	require.Empty(t, errs)
+	assert.Equal(t, []string{"REF_VALUE"}, state.MissingManualVars)
+	assert.Empty(t, state.MissingInfraVars)
+	assert.Equal(t, []string{"${REF_VALUE}"}, state.Services[0].EnvironmentValues)
+}
+
+func TestAssembleState_EnvironmentLoadErrorIsRecorded(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAzureYAML(t, projectRoot, `
+services:
+  echo:
+    host: azure.ai.agent
+    env:
+      INVALID:
+        - value
+`)
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": newAgentService(t, map[string]any{
+					"kind": "hostedAgent",
+				}),
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+
+	require.NotEmpty(t, errs)
+	require.NotNil(t, state)
+	require.Len(t, state.EnvironmentLoadErrors, 1)
+	assert.Contains(
+		t,
+		state.EnvironmentLoadErrors[0],
+		`service "echo" agent environment`,
+	)
+	assert.Empty(t, state.MissingManualVars)
 }
 
 func TestAssembleState_MissingVarsDedupedAcrossServices(t *testing.T) {

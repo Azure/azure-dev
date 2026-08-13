@@ -228,14 +228,6 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		// toolbox); ResolveAfterInit is offline by contract and must
 		// not initiate Foundry API calls.
 		if hasToolboxEndpoints {
-			if hasSplitToolboxEndpoints {
-				out = append(out, Suggestion{
-					Command:     "azd deploy",
-					Description: "deploy split toolbox services",
-					Priority:    priority,
-				})
-				priority++
-			}
 			if hasLegacyToolboxEndpoints {
 				out = append(out, Suggestion{
 					Command:     "azd provision",
@@ -275,6 +267,16 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 				})
 				priority++
 			}
+		}
+		// A split toolbox deploys the whole project, so wait until
+		// required agent values are set.
+		if hasSplitToolboxEndpoints {
+			out = append(out, Suggestion{
+				Command:     "azd deploy",
+				Description: "deploy split toolbox services",
+				Priority:    priority,
+			})
+			priority++
 		}
 		// Follow-up: once the user finishes the steps above (provision
 		// for toolboxes, env-set for manual vars), the next productive

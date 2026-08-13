@@ -556,6 +556,34 @@ func TestResolveAfterInit_SplitToolboxUsesDeployOnce(t *testing.T) {
 	assert.Equal(t, 1, deployCount)
 }
 
+func TestResolveAfterInit_SplitToolboxDeployFollowsManualVars(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{{
+			Name:          "split-tools",
+			ServiceName:   "split-tools",
+			ToolboxSource: ToolboxSourceSplit,
+		}},
+		MissingManualVars: []string{"MY_API_KEY"},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
+	rendered := buf.String()
+
+	manualIndex := strings.Index(
+		rendered, "azd env set MY_API_KEY <value>")
+	deployIndex := strings.Index(rendered, "azd deploy")
+	runIndex := strings.Index(rendered, "azd ai agent run")
+	require.NotEqual(t, -1, manualIndex)
+	require.NotEqual(t, -1, deployIndex)
+	require.NotEqual(t, -1, runIndex)
+	assert.Less(t, manualIndex, deployIndex)
+	assert.Less(t, deployIndex, runIndex)
+}
+
 func TestResolveAfterInit_SplitToolboxDoesNotSkipProvision(t *testing.T) {
 	t.Parallel()
 

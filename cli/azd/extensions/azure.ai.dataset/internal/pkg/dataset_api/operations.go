@@ -159,6 +159,32 @@ func (c *DatasetClient) latestRegisteredVersion(
 	return LatestVersion(list.Value)
 }
 
+// logSafeURL renders a URL for logging with its query and fragment removed.
+// Storage SAS URIs carry their credential in the query string as `sig`, and
+// url.URL.Redacted only masks a userinfo password, so logging it directly would
+// write a live credential to the debug log.
+func logSafeURL(u *url.URL) string {
+	safe := *u
+	safe.RawQuery = ""
+	safe.Fragment = ""
+	return safe.Redacted()
+}
+
+// redactURLError rebuilds a *url.Error without the request URL. http.Client.Do
+// embeds the full URL in its error text, which for a SAS-backed request means
+// the credential would surface in a user-facing message.
+func redactURLError(err error) error {
+	uerr, ok := errors.AsType[*url.Error](err)
+	if !ok {
+		return err
+	}
+	safe := "<redacted>"
+	if u, parseErr := url.Parse(uerr.URL); parseErr == nil {
+		safe = logSafeURL(u)
+	}
+	return &url.Error{Op: uerr.Op, URL: safe, Err: uerr.Err}
+}
+
 // isVersionConflict reports whether the service refused the upload because the
 // target version already exists.
 func IsVersionConflict(err error) bool {
@@ -279,7 +305,7 @@ func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobNam
 	httpClient := blobHTTPClient()
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return messages.UploadingBlobFailed(err)
+		return messages.UploadingBlobFailed(redactURLError(err))
 	}
 	defer resp.Body.Close()
 
@@ -456,7 +482,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 	q.Set("comp", "list")
 	u.RawQuery = q.Encode()
 
-	log.Printf("[dataset_api] listing blobs: %s", u.Redacted())
+	log.Printf("[dataset_api] listing blobs: %s", logSafeURL(u))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -466,7 +492,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 	httpClient := blobHTTPClient()
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, messages.ListingContainerBlobs(err)
+		return nil, messages.ListingContainerBlobs(redactURLError(err))
 	}
 	defer resp.Body.Close()
 
@@ -504,7 +530,7 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 	httpClient := blobHTTPClient()
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, messages.DownloadingBlob(err)
+		return nil, messages.DownloadingBlob(redactURLError(err))
 	}
 	defer resp.Body.Close()
 
@@ -586,7 +612,7 @@ func (c *DatasetClient) doRequest(
 		return nil, messages.CreatingRequest(err)
 	}
 
-	log.Printf("[dataset_api] %s %s", method, u.Redacted())
+	log.Printf("[dataset_api] %s %s", method, logSafeURL(u))
 
 	if body != nil {
 		payload, err := json.Marshal(body)

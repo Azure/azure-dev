@@ -9,7 +9,10 @@ import (
 	"slices"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // manifestFileNames are the candidate manifest filenames the walker
@@ -94,8 +97,9 @@ func populateManifestResources(projectPath string, state *State) {
 					continue
 				}
 				toolboxes[k] = ResourceRef{
-					Name:        r.Name,
-					ServiceName: svc.Name,
+					Name:          r.Name,
+					ServiceName:   svc.Name,
+					ToolboxSource: ToolboxSourceLegacyManifest,
 				}
 			case agent_yaml.ConnectionResource:
 				if r.Name == "" {
@@ -120,6 +124,64 @@ func populateManifestResources(projectPath string, state *State) {
 	state.HasModels = len(state.ModelRefs) > 0
 	state.HasToolboxes = len(state.Toolboxes) > 0
 	state.HasConnections = len(state.Connections) > 0
+}
+
+// populateSplitToolboxes adds standalone azure.ai.toolbox services to state.
+// A split service's service name is both its toolbox name and owner name.
+// No properties are decoded: the service name is the authoritative toolbox
+// identity, so local $ref files cannot affect discovery.
+func populateSplitToolboxes(
+	projectCfg *azdext.ProjectConfig,
+	state *State,
+) {
+	if projectCfg == nil || state == nil {
+		return
+	}
+
+	split := make(map[string]ResourceRef)
+	for serviceName, svc := range projectCfg.Services {
+		if svc == nil || svc.GetHost() != "azure.ai.toolbox" {
+			continue
+		}
+		if svc.GetName() != "" {
+			serviceName = svc.GetName()
+		}
+		if serviceName == "" {
+			continue
+		}
+		ref := ResourceRef{
+			Name:          serviceName,
+			ServiceName:   serviceName,
+			ToolboxSource: ToolboxSourceSplit,
+		}
+		key := envkey.ToolboxMCPEndpoint(ref.Name)
+		if prior, ok := split[key]; !ok || ref.ServiceName < prior.ServiceName {
+			split[key] = ref
+		}
+	}
+	if len(split) == 0 {
+		return
+	}
+
+	// A split service is authoritative for a canonical endpoint key. Keep
+	// unrelated legacy manifest keys for compatibility.
+	merged := make([]ResourceRef, 0, len(state.Toolboxes)+len(split))
+	for _, ref := range state.Toolboxes {
+		if _, replaced := split[envkey.ToolboxMCPEndpoint(ref.Name)]; !replaced {
+			merged = append(merged, ref)
+		}
+	}
+	for _, ref := range split {
+		merged = append(merged, ref)
+	}
+	slices.SortFunc(merged, func(a, b ResourceRef) int {
+		if c := cmp.Compare(a.Name, b.Name); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ServiceName, b.ServiceName)
+	})
+	state.Toolboxes = merged
+	state.HasToolboxes = len(merged) > 0
 }
 
 // readManifestBytes returns the first manifest file's contents under

@@ -179,6 +179,11 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 
 	hasToolboxEndpoints := len(state.MissingToolboxEndpoints) > 0
 	hasManualVars := len(state.MissingManualVars) > 0
+	hasToolboxEndpointErrors := len(state.ToolboxEndpointErrors) > 0
+	hasSplitToolboxEndpoints := hasMissingToolboxSource(
+		state.MissingToolboxEndpoints, ToolboxSourceSplit)
+	hasLegacyToolboxEndpoints := hasMissingLegacyToolbox(
+		state.MissingToolboxEndpoints)
 
 	needsProvision := len(state.PendingProvisionReasons) > 0 ||
 		!state.HasProjectEndpoint ||
@@ -199,7 +204,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 			Description: "set up your Foundry project, models, and connections",
 			Priority:    priority,
 		})
-	case hasToolboxEndpoints || hasManualVars:
+	case hasToolboxEndpoints || hasToolboxEndpointErrors || hasManualVars:
 		// Combined branch for the two "things the user has to fix before
 		// running locally" categories. They are intentionally additive
 		// (not mutually exclusive) so a manifest that declares a
@@ -223,15 +228,33 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		// toolbox); ResolveAfterInit is offline by contract and must
 		// not initiate Foundry API calls.
 		if hasToolboxEndpoints {
-			out = append(out, Suggestion{
-				Command:     "azd provision",
-				Description: "create your toolbox(es) in Foundry",
-				Priority:    priority,
-			})
-			priority++
+			if hasSplitToolboxEndpoints {
+				out = append(out, Suggestion{
+					Command:     "azd deploy",
+					Description: "deploy split toolbox services",
+					Priority:    priority,
+				})
+				priority++
+			}
+			if hasLegacyToolboxEndpoints {
+				out = append(out, Suggestion{
+					Command:     "azd provision",
+					Description: "create your toolbox(es) in Foundry",
+					Priority:    priority,
+				})
+				priority++
+				out = append(out, Suggestion{
+					Command:     "azd ai agent doctor",
+					Description: "(optional) check whether your toolbox(es) already exist in Foundry",
+					Priority:    priority,
+				})
+				priority++
+			}
+		}
+		if hasToolboxEndpointErrors {
 			out = append(out, Suggestion{
 				Command:     "azd ai agent doctor",
-				Description: "(optional) check whether your toolbox(es) already exist in Foundry",
+				Description: "check toolbox endpoint access before running locally",
 				Priority:    priority,
 			})
 			priority++
@@ -260,11 +283,17 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		// literal `{{NAME}}` values in the agent configuration still
 		// break the local agent — the user must finish the placeholder
 		// fix-ups first; the trailing `azd deploy` reminder still applies.
-		if !hasPlaceholders {
+		if !hasPlaceholders && !hasToolboxEndpointErrors {
 			out = append(out, Suggestion{
-				Command:     "azd ai agent run",
-				Description: runFollowUpDescription(hasToolboxEndpoints, hasManualVars),
-				Priority:    priority,
+				Command: "azd ai agent run",
+				Description: runFollowUpDescription(
+					hasToolboxEndpoints,
+					hasManualVars,
+					hasSplitToolboxEndpoints,
+					hasLegacyToolboxEndpoints,
+					hasToolboxEndpointErrors,
+				),
+				Priority: priority,
 			})
 			priority++
 			out, _ = appendInvokeLocalSecondary(out, state, readmeExists, priority)
@@ -288,12 +317,16 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		out, _ = appendInvokeLocalSecondary(out, state, readmeExists, priority)
 	}
 
-	out = append(out, Suggestion{
-		Command:     "azd deploy",
-		Description: "when ready to deploy to Azure",
-		Priority:    90,
-		Trailing:    true,
-	})
+	if !slices.ContainsFunc(out, func(s Suggestion) bool {
+		return strings.TrimSpace(s.Command) == "azd deploy"
+	}) {
+		out = append(out, Suggestion{
+			Command:     "azd deploy",
+			Description: "when ready to deploy to Azure",
+			Priority:    90,
+			Trailing:    true,
+		})
+	}
 
 	if state.EnvironmentName != "" {
 		for i := range out {
@@ -302,6 +335,24 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 	}
 
 	return out
+}
+
+func hasMissingToolboxSource(toolboxes []ResourceRef, source ToolboxSource) bool {
+	for _, toolbox := range toolboxes {
+		if toolbox.ToolboxSource == source {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMissingLegacyToolbox(toolboxes []ResourceRef) bool {
+	for _, toolbox := range toolboxes {
+		if toolbox.ToolboxSource != ToolboxSourceSplit {
+			return true
+		}
+	}
+	return false
 }
 
 // qualifyCommandEnvironment targets an azd command at an explicitly selected
@@ -318,10 +369,23 @@ func qualifyCommandEnvironment(command, environmentName string) string {
 // `azd ai agent run` follow-up emitted after the toolbox / manual-vars
 // branch, so the suffix reflects which categories of work the user
 // still has to complete first.
-func runFollowUpDescription(hasToolboxEndpoints, hasManualVars bool) string {
+func runFollowUpDescription(
+	hasToolboxEndpoints, hasManualVars, hasSplitToolboxEndpoints,
+	hasLegacyToolboxEndpoints, hasToolboxEndpointErrors bool,
+) string {
 	switch {
+	case hasToolboxEndpointErrors:
+		return "start the agent locally once toolbox endpoint checks pass"
+	case hasToolboxEndpoints &&
+		hasSplitToolboxEndpoints &&
+		hasLegacyToolboxEndpoints:
+		return "start the agent locally once the steps above are complete"
+	case hasSplitToolboxEndpoints && hasToolboxEndpoints && hasManualVars:
+		return "start the agent locally once deployment and env values are ready"
 	case hasToolboxEndpoints && hasManualVars:
 		return "start the agent locally once the steps above are complete"
+	case hasSplitToolboxEndpoints && hasToolboxEndpoints:
+		return "start the agent locally once deployment completes"
 	case hasToolboxEndpoints:
 		return "start the agent locally once provision completes"
 	case hasManualVars:

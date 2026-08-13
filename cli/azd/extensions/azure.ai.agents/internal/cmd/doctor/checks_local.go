@@ -54,12 +54,15 @@ type Dependencies struct {
 	AgentAPIVersion string
 
 	// assembleState is a test seam: when non-nil it replaces the
-	// production `nextstep.AssembleState` call inside the
-	// `local.manual-env-vars` check, letting unit tests inject a
-	// pre-computed State without standing up a temp project on disk.
+	// production `nextstep.AssembleState` call, letting unit tests inject
+	// a pre-computed State without standing up a temp project on disk.
 	// Lowercase so external packages cannot reach it. Production code
 	// (NewLocalChecks via the Cobra wiring) leaves it nil.
 	assembleState func(ctx context.Context, client *azdext.AzdClient) (*nextstep.State, []error)
+
+	// StateCache shares one assembled state across Doctor checks and
+	// trailing guidance during a single invocation.
+	StateCache *StateCache
 
 	// probeAuth is a test seam: when non-nil it replaces the
 	// production `realProbeAuth` call inside the `remote.auth` check,
@@ -174,6 +177,9 @@ type Dependencies struct {
 // endpoint env vars; it is local because it does not call ARM /
 // Foundry (only the active azd environment).
 func NewLocalChecks(deps Dependencies) []Check {
+	if deps.StateCache == nil {
+		deps.StateCache = NewStateCache()
+	}
 	return []Check{
 		newCheckGRPCAndVersion(deps),
 		newCheckProjectConfig(deps),

@@ -21,12 +21,14 @@ import (
 
 // fakeSource is a hand-rolled Source for table-driven tests.
 type fakeSource struct {
-	envName    string
-	envNameErr error
-	project    *azdext.ProjectConfig
-	projectErr error
-	values     map[string]string
-	valueErr   error
+	envName     string
+	envNameErr  error
+	project     *azdext.ProjectConfig
+	projectErr  error
+	values      map[string]string
+	valueErr    error
+	valueErrors map[string]error
+	calls       map[string]int
 }
 
 func (f *fakeSource) CurrentEnvName(_ context.Context) (string, error) {
@@ -38,10 +40,129 @@ func (f *fakeSource) Project(_ context.Context) (*azdext.ProjectConfig, error) {
 }
 
 func (f *fakeSource) EnvValue(_ context.Context, envName, key string) (string, error) {
+	if f.calls != nil {
+		f.calls[envName+"/"+key]++
+	}
 	if f.valueErr != nil {
 		return "", f.valueErr
 	}
+	if err := f.valueErrors[envName+"/"+key]; err != nil {
+		return "", err
+	}
+
 	return f.values[envName+"/"+key], nil
+}
+
+func TestAssembleState_SplitToolboxesProbeCanonicalEndpoints(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		values: map[string]string{
+			"dev/TOOLBOX_ALPHA_MCP_ENDPOINT":      "https://alpha.example/mcp",
+			"dev/TOOLBOX_ALPHA_COPY_MCP_ENDPOINT": "https://alpha-copy.example/mcp",
+		},
+		calls: make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"alpha": {
+					Name: "alpha", Host: "azure.ai.toolbox",
+				},
+				"alpha-copy": {
+					Name: "alpha-copy", Host: "azure.ai.toolbox",
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.True(t, state.ToolboxEndpointsChecked)
+	require.Len(t, state.Toolboxes, 2)
+	require.Equal(t, ToolboxSourceSplit, state.Toolboxes[0].ToolboxSource)
+	require.Equal(t, "alpha", state.Toolboxes[0].Name)
+	require.Empty(t, state.MissingToolboxEndpoints)
+	require.Equal(t, 1, src.calls["dev/TOOLBOX_ALPHA_MCP_ENDPOINT"])
+	require.Equal(t, 1, src.calls["dev/TOOLBOX_ALPHA_COPY_MCP_ENDPOINT"])
+}
+
+func TestAssembleState_SplitToolboxMissingEndpointIsNotManual(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		values: map[string]string{
+			"dev/TOOLBOX_OTHER_MCP_ENDPOINT": "https://other.example/mcp",
+		},
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"missing": {
+					Name: "missing", Host: "azure.ai.toolbox",
+				},
+				"other": {
+					Name: "other", Host: "azure.ai.toolbox",
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Empty(t, state.MissingManualVars)
+	require.Len(t, state.MissingToolboxEndpoints, 1)
+	require.Equal(t, "missing", state.MissingToolboxEndpoints[0].Name)
+}
+
+func TestAssembleState_SplitToolboxEndpointErrorIsSurfaced(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("grpc: connection refused")
+	src := &fakeSource{
+		envName: "dev",
+		valueErrors: map[string]error{
+			"dev/TOOLBOX_MISSING_MCP_ENDPOINT": wantErr,
+		},
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"missing": {
+					Name: "missing", Host: "azure.ai.toolbox",
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.True(t, state.ToolboxEndpointsChecked)
+	require.Empty(t, state.MissingToolboxEndpoints)
+	require.Equal(t,
+		[]string{"read toolbox endpoint TOOLBOX_MISSING_MCP_ENDPOINT: grpc: connection refused"},
+		state.ToolboxEndpointErrors,
+	)
+	require.Len(t, errs, 1)
+	require.ErrorContains(t, errs[0], "grpc: connection refused")
+}
+
+func TestPopulateSplitToolboxes_PrefersSplitCanonicalKey(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		Toolboxes: []ResourceRef{
+			{Name: "my+tool", ServiceName: "agent", ToolboxSource: ToolboxSourceLegacyManifest},
+			{Name: "legacy", ServiceName: "agent", ToolboxSource: ToolboxSourceLegacyManifest},
+		},
+	}
+	project := &azdext.ProjectConfig{
+		Services: map[string]*azdext.ServiceConfig{
+			"my-tool": {Name: "my-tool", Host: "azure.ai.toolbox"},
+		},
+	}
+
+	populateSplitToolboxes(project, state)
+	require.Len(t, state.Toolboxes, 2)
+	require.Equal(t, "legacy", state.Toolboxes[0].Name)
+	require.Equal(t, ToolboxSourceLegacyManifest, state.Toolboxes[0].ToolboxSource)
+	require.Equal(t, "my-tool", state.Toolboxes[1].Name)
+	require.Equal(t, ToolboxSourceSplit, state.Toolboxes[1].ToolboxSource)
 }
 
 func TestAssembleState(t *testing.T) {

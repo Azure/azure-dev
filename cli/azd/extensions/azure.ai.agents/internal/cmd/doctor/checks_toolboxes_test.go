@@ -117,7 +117,7 @@ func TestCheckToolboxes_SkipsWhenNoToolboxesDeclared(t *testing.T) {
 	}
 	res := runToolboxesCheck(t, deps, nil)
 	require.Equal(t, StatusSkip, res.Status)
-	require.Contains(t, res.Message, "no toolbox resources")
+	require.Contains(t, res.Message, "no configured toolbox resources")
 }
 
 func TestCheckToolboxes_FailsWhenAssemblerReturnsNilState(t *testing.T) {
@@ -235,10 +235,76 @@ func TestCheckToolboxes_FailsOnEnvLookupTransportError(t *testing.T) {
 			return "", wantErr
 		},
 	}
+
 	res := runToolboxesCheck(t, deps, nil)
 	require.Equal(t, StatusFail, res.Status, "transport errors must Fail (not Skip) so the user has an actionable signal")
 	require.Contains(t, res.Message, "connection refused")
 	require.Contains(t, res.Suggestion, "azd env")
+}
+
+func TestCheckToolboxes_UsesAssembledStateWithoutLookup(t *testing.T) {
+	t.Parallel()
+
+	state := stateWithToolboxes(nextstep.ResourceRef{
+		Name:          "split-tools",
+		ServiceName:   "split-tools",
+		ToolboxSource: nextstep.ToolboxSourceSplit,
+	})
+	state.ToolboxEndpointsChecked = true
+	state.MissingToolboxEndpoints = []nextstep.ResourceRef{state.Toolboxes[0]}
+	deps := Dependencies{
+		AzdClient:     &azdext.AzdClient{},
+		assembleState: fixedAssembler(state),
+		lookupToolboxEnv: func(context.Context, string) (string, error) {
+			t.Fatal("assembled endpoint state must not be probed again")
+			return "", nil
+		},
+	}
+
+	res := runToolboxesCheck(t, deps, nil)
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Suggestion, "azd deploy")
+}
+
+func TestCheckToolboxes_AssembledEndpointErrorFails(t *testing.T) {
+	t.Parallel()
+
+	state := stateWithToolboxes(nextstep.ResourceRef{Name: "split-tools"})
+	state.ToolboxEndpointsChecked = true
+	state.ToolboxEndpointErrors = []string{"read toolbox endpoint: connection refused"}
+	res := runToolboxesCheck(t, Dependencies{
+		AzdClient:     &azdext.AzdClient{},
+		assembleState: fixedAssembler(state),
+	}, nil)
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "connection refused")
+}
+
+func TestCheckToolboxes_MixedSourcesShowBothRemediations(t *testing.T) {
+	t.Parallel()
+
+	state := stateWithToolboxes(
+		nextstep.ResourceRef{
+			Name:          "split-tools",
+			ServiceName:   "split-tools",
+			ToolboxSource: nextstep.ToolboxSourceSplit,
+		},
+		nextstep.ResourceRef{
+			Name:          "legacy-tools",
+			ServiceName:   "agent",
+			ToolboxSource: nextstep.ToolboxSourceLegacyManifest,
+		},
+	)
+	state.ToolboxEndpointsChecked = true
+	state.MissingToolboxEndpoints = state.Toolboxes
+
+	res := runToolboxesCheck(t, Dependencies{
+		AzdClient:     &azdext.AzdClient{},
+		assembleState: fixedAssembler(state),
+	}, nil)
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Suggestion, "azd deploy")
+	require.Contains(t, res.Suggestion, "azd provision")
 }
 
 // ---- Dedup on canonical env key ----

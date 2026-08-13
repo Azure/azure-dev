@@ -1,5 +1,24 @@
 # Release History
 
+## 1.0.0-beta.10 (2026-08-13)
+
+### Features Added
+
+- [[#9332]](https://github.com/Azure/azure-dev/pull/9332) Add `azd ai agent pack` and `azd ai agent publish` commands for packaging and publishing Teams activity agents. Thanks @v1212 for the contribution!
+- [[#9457]](https://github.com/Azure/azure-dev/pull/9457) Allow `azd ai agent init --infra` to add isolated Foundry infrastructure alongside existing project infrastructure by using layers.
+
+### Bugs Fixed
+
+- [[#9517]](https://github.com/Azure/azure-dev/pull/9517) Fix `azd ai agent monitor <agent-name>` outside an azd project while preserving project-aware resolution when available.
+- [[#9531]](https://github.com/Azure/azure-dev/pull/9531) Fix inconsistent Doctor and next-step environment diagnostics across inline `azure.yaml`, deprecated `config:`, and legacy agent manifests.
+- [[#9543]](https://github.com/Azure/azure-dev/pull/9543) Preserve specific Activity Agent deployment failures for endpoint, Azure Bot, and Teams channel operations. Thanks @jayzhang for the contribution!
+- [[#9497]](https://github.com/Azure/azure-dev/pull/9497) Fix Activity Agent deployments to reuse the Azure Bot already bound to the agent identity and persist the resolved bot name. Thanks @jayzhang for the contribution!
+- [[#9491]](https://github.com/Azure/azure-dev/pull/9491) Preserve actionable hosted-agent deployment errors and remediation guidance.
+
+### Other Changes
+
+- [[#9370]](https://github.com/Azure/azure-dev/pull/9370) Update agent guidance to use the renamed `azd extension update` command. Thanks @hyoshis for the contribution!
+
 ## 1.0.0-beta.9 (2026-08-06)
 
 ### Features Added

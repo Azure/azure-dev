@@ -73,10 +73,11 @@ group is not removed.
 
 ## Layer dependencies
 
-The Foundry layer is independent by default. Dependency analysis currently
-skips custom providers such as `microsoft.foundry`, so add `dependsOn` when the
-generated Foundry parameters consume outputs or hook-written values from
-another layer:
+The Foundry layer is independent by default. Azd analyzes generated parameter
+references such as `${AZURE_VNET_ID}` and orders the Foundry layer after a
+Bicep layer that produces the matching output. Add `dependsOn` when a
+dependency cannot be inferred from parameter references, such as a value
+written by another layer's hook:
 
 ```yaml
 infra:
@@ -91,8 +92,9 @@ infra:
         - network
 ```
 
-Without this edge, independent layers may provision concurrently and the
-Foundry layer can read an empty or stale environment value.
+Without an inferred or explicit edge, independent layers provision
+concurrently and the Foundry layer can read an empty or stale environment
+value.
 
 ## Limitations
 

@@ -6,7 +6,9 @@ package azure
 
 import (
 	"fmt"
+	"net/http"
 
+	"azure.ai.projects/internal/pkg/recordproxy"
 	"azure.ai.projects/internal/version"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -20,7 +22,7 @@ func NewArmClientOptions() *arm.ClientOptions {
 		"azd-ext-azure-ai-projects/%s",
 		version.Version,
 	)
-	return &arm.ClientOptions{
+	options := &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Logging: policy.LogOptions{
 				AllowedHeaders: []string{
@@ -33,4 +35,12 @@ func NewArmClientOptions() *arm.ClientOptions {
 			},
 		},
 	}
+
+	if recordproxy.Transport != nil {
+		options.ClientOptions.Transport = &http.Client{
+			Transport: recordproxy.Transport,
+		}
+	}
+
+	return options
 }

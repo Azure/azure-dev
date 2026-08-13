@@ -125,7 +125,7 @@ jobs:
       - name: Build & install projects dependency from source
         working-directory: cli/azd/extensions/azure.ai.projects
         run: |
-          pwsh -File ci-build.ps1 -OutputFileName azure-ai-projects-linux-amd64 -Version "$(cat version.txt | tr -d '\r\n')"
+          pwsh -File ci-build.ps1 -BuildRecordMode -OutputFileName azure-ai-projects-linux-amd64 -Version "$(cat version.txt | tr -d '\r\n')"
           mkdir -p bin
           mv azure-ai-projects-linux-amd64 bin/
           azd x pack
@@ -164,10 +164,12 @@ jobs:
 
       - name: Swap extension to record binary for Tier 1
         run: |
-          # Overwrite the installed production binary with the record-tagged
-          # binary so Tier 1 tests can intercept/replay HTTP traffic.
+          # Replace installed production binaries with record-tagged binaries
+          # so Tier 1 tests can intercept and replay HTTP traffic.
           cp "${{ github.workspace }}/cli/azd/extensions/azure.ai.agents/azure-ai-agents-linux-amd64-record" \
             ~/.azd/extensions/azure.ai.agents/azure-ai-agents-linux-amd64
+          cp "${{ github.workspace }}/cli/azd/extensions/azure.ai.projects/azure-ai-projects-linux-amd64-record" \
+            ~/.azd/extensions/azure.ai.projects/azure-ai-projects-linux-amd64
 
       - name: Run Tier 1 tests (playback, record extension)
         working-directory: cli/azd

@@ -2226,7 +2226,7 @@ func ServiceRefused(status int, err error) error {
 // login had expired and to run `azd auth login`.
 //
 // The credential names stay as a fallback because credentialUnavailableError is
-// unexported: a credential that never ran can only be recognised by the name it
+// unexported: a credential that never ran can only be recognized by the name it
 // puts in its own message.
 func isCredentialFailure(err error) bool {
 	if err == nil {

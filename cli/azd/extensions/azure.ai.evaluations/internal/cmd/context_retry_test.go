@@ -32,6 +32,17 @@ func (c *countingCred) GetToken(
 	return azcore.AccessToken{Token: "token"}, nil
 }
 
+// The tests below construct azdTokenRetry directly, so they all pass even if
+// nothing wires it in. This one guards the wiring: an earlier version assigned
+// the wrapper to the context and built both clients from the raw credential,
+// which made the retry dead code.
+func TestNewAzdTokenCredentialReturnsTheRetryingCredential(t *testing.T) {
+	cred, err := newAzdTokenCredential()
+	require.NoError(t, err)
+	_, wrapped := cred.(azdTokenRetry)
+	assert.True(t, wrapped, "clients must be built from the retrying credential, not the raw one")
+}
+
 // The failure this retries carries no cause: azidentity kills the azd
 // subprocess at a fixed 10s and discards its stderr. Retrying is the only way
 // to tell a slow token from a broken login.

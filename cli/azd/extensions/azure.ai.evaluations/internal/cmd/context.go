@@ -79,19 +79,31 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 	ec.endpoint = strings.TrimSuffix(resolved.Endpoint, "/")
 	log.Printf("[endpoint] resolved from %s", resolved.Source)
 
+	cred, err := newAzdTokenCredential()
+	if err != nil {
+		ec.Close()
+		return nil, err
+	}
+	ec.cred = cred
+
+	ec.evalClient = eval_api.NewEvalClient(ec.endpoint, ec.cred)
+	ec.datasetClient = dataset_api.NewDatasetClient(ec.endpoint, ec.cred)
+
+	return ec, nil
+}
+
+// newAzdTokenCredential returns the azd credential already wrapped in its
+// retry. Handing back the wrapper rather than the raw credential is what keeps
+// the retry wired: an earlier version assigned the wrapper to the context and
+// then built both clients from the unwrapped one, so nothing retried.
+func newAzdTokenCredential() (azcore.TokenCredential, error) {
 	cred, err := azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{},
 	)
 	if err != nil {
-		ec.Close()
 		return nil, messages.CreatingCredential(err)
 	}
-	ec.cred = azdTokenRetry{inner: cred}
-
-	ec.evalClient = eval_api.NewEvalClient(ec.endpoint, cred)
-	ec.datasetClient = dataset_api.NewDatasetClient(ec.endpoint, cred)
-
-	return ec, nil
+	return azdTokenRetry{inner: cred}, nil
 }
 
 // azdTokenRetry retries a failed token request once. azidentity gives the azd
@@ -160,7 +172,7 @@ func (ec *evalContext) remember(ctx context.Context, key, value string) {
 }
 
 // setEnvValue persists a value into the active azd environment. azd itself
-// writes none of these keys — the extension owns them.
+// writes none of these keys â€” the extension owns them.
 func (ec *evalContext) setEnvValue(ctx context.Context, key, value string) error {
 	if ec.envName == "" {
 		envResp, err := ec.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})

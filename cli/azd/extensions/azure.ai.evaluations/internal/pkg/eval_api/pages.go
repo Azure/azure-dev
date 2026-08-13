@@ -33,7 +33,7 @@ const maxPages = 100
 // before it is used: this client sends an Authorization header, and following
 // a body-supplied link to another host would send the token there.
 func (c *EvalClient) followNextLink(ctx context.Context, nextLink string) ([]byte, error) {
-	next, err := url.Parse(nextLink)
+	parsed, err := url.Parse(nextLink)
 	if err != nil {
 		return nil, messages.InvalidEndpointURL(err)
 	}
@@ -41,6 +41,11 @@ func (c *EvalClient) followNextLink(ctx context.Context, nextLink string) ([]byt
 	if err != nil {
 		return nil, messages.InvalidEndpointURL(err)
 	}
+
+	// A nextLink is allowed to be relative, and a relative one carries no host
+	// or scheme of its own. Resolving it against the endpoint first keeps the
+	// origin check meaningful instead of refusing a legitimate link.
+	next := base.ResolveReference(parsed)
 	if !sameService(base, next) {
 		return nil, messages.PageLinkLeftTheService(base.Host, next.Host)
 	}
@@ -87,8 +92,17 @@ func walkNextLinks[T any](
 	nextLinkOf func(*T) string,
 	merge func(into, page *T),
 ) (*T, error) {
+	seen := map[string]bool{}
 	link := nextLinkOf(first)
-	for pages := 0; link != "" && pages < maxPages; pages++ {
+	for link != "" {
+		// A repeated link, not just a self-referencing one, ends the walk: a
+		// two-page cycle would otherwise run to maxPages for no benefit.
+		if seen[link] || len(seen) >= maxPages {
+			log.Printf("[eval_api] stopped paging after %d pages; the listing may be incomplete", len(seen))
+			break
+		}
+		seen[link] = true
+
 		body, err := c.followNextLink(ctx, link)
 		if err != nil {
 			return nil, err
@@ -100,14 +114,7 @@ func walkNextLinks[T any](
 			}
 		}
 		merge(first, &page)
-
-		nextLink := nextLinkOf(&page)
-		if nextLink == link {
-			// A link that points at the page it came from is the one shape that
-			// would otherwise spin until maxPages for no benefit.
-			break
-		}
-		link = nextLink
+		link = nextLinkOf(&page)
 	}
 	return first, nil
 }

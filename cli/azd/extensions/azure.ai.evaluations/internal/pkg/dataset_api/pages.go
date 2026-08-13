@@ -29,7 +29,7 @@ const maxPages = 100
 // header, so a link to another host would send the token there. Checked
 // against the endpoint before it is used.
 func (c *DatasetClient) followNextLink(ctx context.Context, nextLink string) ([]byte, error) {
-	next, err := url.Parse(nextLink)
+	parsed, err := url.Parse(nextLink)
 	if err != nil {
 		return nil, messages.InvalidEndpointURL(err)
 	}
@@ -37,6 +37,11 @@ func (c *DatasetClient) followNextLink(ctx context.Context, nextLink string) ([]
 	if err != nil {
 		return nil, messages.InvalidEndpointURL(err)
 	}
+
+	// A nextLink is allowed to be relative, and a relative one carries no host
+	// or scheme of its own. Resolving it against the endpoint first keeps the
+	// origin check meaningful instead of refusing a legitimate link.
+	next := base.ResolveReference(parsed)
 	if !strings.EqualFold(base.Host, next.Host) || !strings.EqualFold(base.Scheme, next.Scheme) {
 		return nil, messages.PageLinkLeftTheService(base.Host, next.Host)
 	}
@@ -70,8 +75,15 @@ func (c *DatasetClient) followNextLink(ctx context.Context, nextLink string) ([]
 // and dropped. UploadVersion picks the next version from this listing, so a
 // version on page two meant reusing one that already exists.
 func (c *DatasetClient) walkDatasetPages(ctx context.Context, first *DatasetList) (*DatasetList, error) {
+	seen := map[string]bool{}
 	link := first.NextLink
-	for pages := 0; link != "" && pages < maxPages; pages++ {
+	for link != "" {
+		if seen[link] || len(seen) >= maxPages {
+			log.Printf("[dataset_api] stopped paging after %d pages; the listing may be incomplete", len(seen))
+			break
+		}
+		seen[link] = true
+
 		body, err := c.followNextLink(ctx, link)
 		if err != nil {
 			return nil, err
@@ -83,9 +95,6 @@ func (c *DatasetClient) walkDatasetPages(ctx context.Context, first *DatasetList
 			}
 		}
 		first.Value = append(first.Value, page.Value...)
-		if page.NextLink == link {
-			break
-		}
 		link = page.NextLink
 	}
 	return first, nil

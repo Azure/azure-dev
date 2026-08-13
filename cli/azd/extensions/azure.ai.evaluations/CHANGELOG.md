@@ -1,5 +1,17 @@
 # Release History
 
+## 1.0.4-beta (Unreleased)
+
+### Bugs Fixed
+
+- With more than one eval declared, `create` reported "choose one with
+  `--eval`", a flag it does not have; the name is a positional argument. The
+  message now names the form each command actually takes.
+- A slow `azd` token no longer fails the command. azidentity gives the azd
+  subprocess a fixed 10 second timeout and discards its stderr, so an overrun
+  surfaced as `exit status 1` with no cause; the token request is now retried
+  once, which is what the standing "try again" advice amounted to.
+
 ## 1.0.3-beta (Unreleased)
 
 ### Features Added

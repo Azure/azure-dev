@@ -134,7 +134,7 @@ func TestSuggestedCommandsExist(t *testing.T) {
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		body, err := os.ReadFile(path)
+		body, err := os.ReadFile(path) //nolint:gosec // walking this package's own source
 		if err != nil {
 			return err
 		}
@@ -195,7 +195,7 @@ func TestSuggestedFlagsExist(t *testing.T) {
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		body, err := os.ReadFile(path)
+		body, err := os.ReadFile(path) //nolint:gosec // walking this package's own source
 		if err != nil {
 			return err
 		}
@@ -259,7 +259,7 @@ func TestNoStaleEvalDatasetSuggestions(t *testing.T) {
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		body, err := os.ReadFile(path)
+		body, err := os.ReadFile(path) //nolint:gosec // walking this package's own source
 		if err != nil {
 			return err
 		}
@@ -282,13 +282,4 @@ func TestNoStaleEvalDatasetSuggestions(t *testing.T) {
 // siblingNamespaces are the other Foundry extensions this one points users at.
 var siblingNamespaces = map[string]bool{
 	"project": true, // `azd ai project set` owns the shared endpoint context
-}
-
-func find(t *testing.T, path string) *cobra.Command {
-	t.Helper()
-	cmd, _, err := NewRootCommand().Find(strings.Fields(path))
-	require.NoError(t, err, "no such command: %s", path)
-	require.Equal(t, strings.Fields(path)[len(strings.Fields(path))-1],
-		strings.Fields(cmd.Use)[0], "resolved the wrong command for %s", path)
-	return cmd
 }

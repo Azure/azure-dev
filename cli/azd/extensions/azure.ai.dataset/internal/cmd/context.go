@@ -120,22 +120,6 @@ func (dc *datasetContext) setEnvValue(ctx context.Context, key, value string) er
 	return nil
 }
 
-// getEnvValue reads a value from the active azd environment, returning empty
-// when it is unset.
-func (dc *datasetContext) getEnvValue(ctx context.Context, key string) string {
-	if dc.envName == "" {
-		return ""
-	}
-	val, err := dc.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: dc.envName,
-		Key:     key,
-	})
-	if err != nil || val == nil {
-		return ""
-	}
-	return val.Value
-}
-
 func (dc *datasetContext) Close() {
 	if dc.azdClient != nil {
 		dc.azdClient.Close()

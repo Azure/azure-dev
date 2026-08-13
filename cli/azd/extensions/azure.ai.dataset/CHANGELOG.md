@@ -13,7 +13,7 @@
 ### Bugs Fixed
 
 - `create --from-file` uploads the file that was named rather than a
-  neighbouring one, and no longer sends the byte order mark Windows writes.
+  neighboring one, and no longer sends the byte order mark Windows writes.
 - A malformed row, an empty dataset, a name the service will not take, and a
   folder that could mean more than one dataset are each refused locally,
   before a request is sent.

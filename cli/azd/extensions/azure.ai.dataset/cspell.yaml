@@ -1,10 +1,16 @@
 import: ../../.vscode/cspell.yaml
 words:
   # Go module and package names
+  - azureaidataset
   - azureaieval
   - evalcore
+  - exterrors
   - httptest
+  - projectctx
   - creack
+  # Possessives cspell does not inflect on its own
+  - projectctx's
+  - CLI's
   # Service identifiers and API fields
   - evalrun
   - lookback

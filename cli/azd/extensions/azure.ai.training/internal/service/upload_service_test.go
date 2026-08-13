@@ -18,9 +18,10 @@ import (
 // --- Fakes ---
 
 type fakeUploadClient struct {
-	getResp  *models.DatasetVersion
-	getErr   error
-	getCalls int
+	getResp          *models.DatasetVersion
+	getRespByVersion map[string]*models.DatasetVersion
+	getErr           error
+	getCalls         int
 
 	deleteErr   error
 	deleteCalls int
@@ -37,9 +38,12 @@ type fakeUploadClient struct {
 }
 
 func (f *fakeUploadClient) GetDatasetVersion(
-	_ context.Context, _, _ string,
+	_ context.Context, _, version string,
 ) (*models.DatasetVersion, error) {
 	f.getCalls++
+	if f.getRespByVersion != nil {
+		return f.getRespByVersion[version], f.getErr
+	}
 	return f.getResp, f.getErr
 }
 
@@ -127,6 +131,38 @@ func TestUploadDirectory_DedupHit_SkipsUpload(t *testing.T) {
 	assert.Equal(t, 0, client.startCalls, "must not start a new upload when dedup hits")
 	assert.Equal(t, 0, runner.calls)
 	assert.Equal(t, 0, client.createCalls)
+}
+
+func TestUploadDirectory_StorageConnectionDoesNotReuseDefaultStorageVersion(t *testing.T) {
+	dir := makeTempDir(t)
+	fullHash, err := ComputeDirectoryHash(dir)
+	require.NoError(t, err)
+	defaultVersion := TruncateHashVersion(fullHash)
+
+	client := &fakeUploadClient{
+		getRespByVersion: map[string]*models.DatasetVersion{
+			defaultVersion: {
+				ID:   "/datasets/x/versions/" + defaultVersion,
+				Tags: map[string]string{"contentHash": fullHash},
+			},
+		},
+		startResp:  validPendingUploadResponse(),
+		createResp: &models.DatasetVersion{ID: "/datasets/x/versions/byos"},
+	}
+	runner := &fakeUploadRunner{}
+	svc := &UploadService{
+		client:                client,
+		azcopyRunner:          runner,
+		storageConnectionName: "project-storage",
+	}
+
+	result, err := svc.UploadDirectory(t.Context(), dir, "x", "desc")
+	require.NoError(t, err)
+
+	assert.False(t, result.Skipped)
+	assert.NotEqual(t, defaultVersion, result.DatasetVersion)
+	assert.Equal(t, 1, client.startCalls)
+	assert.Equal(t, "project-storage", client.startConnectionName)
 }
 
 func TestUploadDirectory_ZombieRecovery_DeletesAndReuploads(t *testing.T) {

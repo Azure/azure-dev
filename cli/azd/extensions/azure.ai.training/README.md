@@ -21,6 +21,10 @@ The command-line option takes precedence over the YAML value. Registered
 Foundry dataset IDs using the `azureai://` scheme can be used directly as input
 paths and are not uploaded again.
 
+The effective storage connection is included in local-upload deduplication.
+Without this distinction, content previously uploaded through default storage
+could be reused when a later submission requested a different connection.
+
 To register named output assets, use `asset_name` and optionally
 `asset_version`:
 

@@ -16,6 +16,7 @@ type UploadClient struct {
 	mock.Mock
 }
 
+// GetDatasetVersion mocks retrieval of a Foundry dataset version.
 func (m *UploadClient) GetDatasetVersion(
 	ctx context.Context,
 	datasetName string,
@@ -29,6 +30,7 @@ func (m *UploadClient) GetDatasetVersion(
 	return result, args.Error(1)
 }
 
+// DeleteDatasetVersion mocks deletion of a Foundry dataset version.
 func (m *UploadClient) DeleteDatasetVersion(
 	ctx context.Context,
 	datasetName string,
@@ -37,6 +39,7 @@ func (m *UploadClient) DeleteDatasetVersion(
 	return m.Called(ctx, datasetName, version).Error(0)
 }
 
+// StartPendingUpload mocks creation of a pending Foundry dataset upload.
 func (m *UploadClient) StartPendingUpload(
 	ctx context.Context,
 	datasetName string,
@@ -51,6 +54,7 @@ func (m *UploadClient) StartPendingUpload(
 	return result, args.Error(1)
 }
 
+// CreateOrUpdateDatasetVersion mocks confirmation of a Foundry dataset upload.
 func (m *UploadClient) CreateOrUpdateDatasetVersion(
 	ctx context.Context,
 	datasetName string,

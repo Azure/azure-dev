@@ -1,6 +1,6 @@
 # Preflight Checks Reference
 
-The `mage preflight` command runs these 9 checks in order. Each check, its
+The `mage preflight` command runs these 10 checks in order. Each check, its
 purpose, and the automated fix strategy are listed below.
 
 ## 1. Formatting (`gofmt`)
@@ -33,7 +33,17 @@ issues include:
 - `unused` — remove dead code
 - `staticcheck` — fix static analysis warnings
 
-## 5. Go Spell Check (`cspell`)
+## 5. Telemetry Documentation (`telemetrylint`)
+
+**Command**: `go run ./tools/telemetrylint` (from `cli/azd/`)
+
+**Passes when**: Every core event and field appears in both telemetry
+reference documents, and static extension usage items appear in extension
+Markdown documentation.
+
+**Auto-fix**: Add the missing event or field to the relevant documentation.
+
+## 6. Go Spell Check (`cspell`)
 
 **Command**: `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress` (from `cli/azd/`)
 **Passes when**: No unknown words found.
@@ -41,7 +51,7 @@ issues include:
 using file-scoped `overrides` entries (not the global `words` list). For actual
 typos, fix the spelling in source code.
 
-## 6. Misc/Docs Spell Check (`cspell-misc`)
+## 7. Misc/Docs Spell Check (`cspell-misc`)
 
 **Command**: `cspell lint "**/*" --relative --config ./.vscode/cspell.misc.yaml --no-progress`
 (from the repository root)
@@ -49,7 +59,7 @@ typos, fix the spelling in source code.
 **Auto-fix**: Fix typos. Add legitimate terms to file-scoped `overrides` entries in
 `.vscode/cspell.misc.yaml`.
 
-## 7. Build (`go build`)
+## 8. Build (`go build`)
 
 **Command**: `go build ./...` (from `cli/azd/`)
 **Passes when**: Compilation succeeds with zero errors.
@@ -59,14 +69,14 @@ typos, fix the spelling in source code.
 - Undefined symbols
 - Syntax errors
 
-## 8. Unit Tests (`go test -short`)
+## 9. Unit Tests (`go test -short`)
 
 **Command**: `go test ./... -short -cover -count=1` (from `cli/azd/`)
 **Passes when**: All tests pass.
 **Auto-fix**: Analyze test failures and fix the root cause in source code or
 tests. Do NOT skip or delete failing tests — fix them.
 
-## 9. Playback Tests (Functional)
+## 10. Playback Tests (Functional)
 
 **Command**: Discovers test recordings in `test/functional/testdata/recordings/`
 and runs matching functional tests with `AZURE_RECORD_MODE=playback`.

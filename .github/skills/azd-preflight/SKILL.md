@@ -24,7 +24,7 @@ Runs the full azd preflight suite and auto-fixes failures.
 
 ## Overview
 
-The azd preflight suite (`mage preflight`) validates code quality across 9 checks before
+The azd preflight suite (`mage preflight`) validates code quality across 10 checks before
 changes are submitted. This skill runs the suite, parses failures, applies automated fixes,
 and re-runs until all checks pass — or escalates to the user when a fix requires human judgment.
 
@@ -36,7 +36,7 @@ and re-runs until all checks pass — or escalates to the user when a fix requir
 
 ## Exit Criteria
 
-- All 9 preflight checks pass (or user explicitly chose to skip specific checks)
+- All 10 preflight checks pass (or user explicitly chose to skip specific checks)
 - Every changed `CHANGELOG.md` passes its targeted spell check
 - All auto-applied fixes are saved to disk (not staged or committed — the user decides when to commit)
 - A clear summary of what passed, what was fixed, and what was skipped is displayed

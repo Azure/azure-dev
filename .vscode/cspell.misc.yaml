@@ -47,6 +47,7 @@ overrides:
           - exegraph
           - pseudonymizing
           - pulumi
+          - telemetrylint
     - filename: ./README.md
       words:
           - VSIX

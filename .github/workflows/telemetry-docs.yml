@@ -1,0 +1,25 @@
+name: telemetry-docs
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/**"
+      - "docs/reference/telemetry-data.md"
+      - "docs/specs/metrics-audit/telemetry-schema.md"
+      - ".github/workflows/telemetry-docs.yml"
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/azd/go.mod
+      - name: Check telemetry documentation
+        working-directory: cli/azd
+        run: go run ./tools/telemetrylint

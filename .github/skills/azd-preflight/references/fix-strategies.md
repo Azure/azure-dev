@@ -1,7 +1,7 @@
 # Fix Strategies
 
 Detailed fix procedures for each preflight check failure. Process checks in
-their original order (1-9) because earlier fixes can resolve later failures.
+their original order (1-10) because earlier fixes can resolve later failures.
 
 ## Formatting (`gofmt`) — Auto-fix
 
@@ -44,6 +44,18 @@ For each finding:
    error handling patterns, and modern Go idioms.
 
 If a lint finding is ambiguous or the fix would change behavior, ask the user via `ask_user`.
+
+## Telemetry Documentation (`telemetrylint`) — Analyze and Fix
+
+Run the checker to get the source location and missing document:
+
+```bash
+cd cli/azd && go run ./tools/telemetrylint 2>&1
+```
+
+Add each missing core event or field to both telemetry reference documents.
+Add each missing extension event or field to Markdown in that extension's
+directory. Re-run the checker after updating the documentation.
 
 ## Go Spell Check (`cspell`) — Analyze and Fix
 

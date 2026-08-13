@@ -214,10 +214,28 @@ func classifyToolboxResults(
 			len(missing), strings.Join(names, ", ")),
 		Suggestion: suggestion,
 		Details: map[string]any{
-			"missingToolboxes": missing,
+			"missingToolboxes": toolboxLookupDetails(missing),
 			"matchedCount":     matched,
 		},
 	}
+}
+
+type toolboxLookup struct {
+	Name        string `json:"name"`
+	ServiceName string `json:"service"`
+	EnvVar      string `json:"envVar"`
+}
+
+func toolboxLookupDetails(toolboxes []nextstep.ResourceRef) []toolboxLookup {
+	details := make([]toolboxLookup, 0, len(toolboxes))
+	for _, toolbox := range toolboxes {
+		details = append(details, toolboxLookup{
+			Name:        toolbox.Name,
+			ServiceName: toolbox.ServiceName,
+			EnvVar:      envkey.ToolboxMCPEndpoint(toolbox.Name),
+		})
+	}
+	return details
 }
 
 // normalizeToolboxName / toolboxEndpointKey have been replaced by the
@@ -239,12 +257,6 @@ func classifyToolboxEndpoints(
 	toolboxes []nextstep.ResourceRef,
 	lookup toolboxEnvLookupFn,
 ) Result {
-	type toolboxLookup struct {
-		Name        string `json:"name"`
-		ServiceName string `json:"service"`
-		EnvVar      string `json:"envVar"`
-	}
-
 	seen := make(map[string]struct{}, len(toolboxes))
 	var missing []toolboxLookup
 	matched := 0

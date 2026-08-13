@@ -101,6 +101,10 @@ func newInitCommand() *cobra.Command {
 			}
 
 			configPath := project.ResolveEvalConfigPath(path)
+			// Captured before the write: init merges into an existing config, so
+			// reporting it as created would claim a file it only added to.
+			_, configExistedErr := os.Stat(configPath)
+			configExisted := configExistedErr == nil
 			cfg, err := project.OpenEvalConfig(path)
 			if err != nil {
 				return err
@@ -223,8 +227,8 @@ func newInitCommand() *cobra.Command {
 				fmt.Fprint(out, messages.JudgeModelDeployment(judgeModel))
 			}
 
-			fmt.Fprint(out, messages.CreatedHeading())
-			fmt.Fprint(out, messages.CreatedConfigLine(filepath.ToSlash(configPath)))
+			fmt.Fprint(out, messages.ScaffoldHeading(configExisted))
+			fmt.Fprint(out, messages.ScaffoldConfigLine(filepath.ToSlash(configPath), configExisted))
 			switch rootWiring {
 			case wiringAdded:
 				fmt.Fprint(out, messages.AddedServiceLine(rootConfigName, serviceName))

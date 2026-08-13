@@ -441,6 +441,19 @@ func formatScore(score eval_api.LenientFloat) string {
 	return strconv.FormatFloat(float64(score), 'f', 2, 64)
 }
 
+// meanScoreOf averages a sample's scores so the list can tell a bare pass from
+// a strong one. Pass/fail alone sent anyone asking "how well?" to the portal.
+func meanScoreOf(results []eval_api.OutputResult) string {
+	if len(results) == 0 {
+		return "-"
+	}
+	total := 0.0
+	for _, r := range results {
+		total += float64(r.Score)
+	}
+	return strconv.FormatFloat(total/float64(len(results)), 'f', 2, 64)
+}
+
 func renderResults(
 	w io.Writer,
 	run *eval_api.OpenAIEvalRun,
@@ -508,6 +521,7 @@ func renderResults(
 			rows = append(rows, []string{
 				it.ID,
 				strconv.Itoa(i + 1),
+				meanScoreOf(it.Results),
 				truncate(verdicts, 40),
 				truncate(reason, 44),
 			})
@@ -515,7 +529,7 @@ func renderResults(
 		// Only the first failure's reason fits a cell; `run output show` has
 		// the rest.
 		if err := emitTable(w,
-			[]string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON"},
+			[]string{"ITEM", "SAMPLE", "SCORE", "FAILED EVALUATORS", "REASON"},
 			rows); err != nil {
 			return err
 		}

@@ -13,8 +13,9 @@ import (
 )
 
 type extensionManifest struct {
-	Capabilities []string `yaml:"capabilities"`
-	Dependencies []struct {
+	Capabilities       []string `yaml:"capabilities"`
+	RequiredAzdVersion string   `yaml:"requiredAzdVersion"`
+	Dependencies       []struct {
 		ID      string `yaml:"id"`
 		Version string `yaml:"version"`
 	} `yaml:"dependencies"`
@@ -36,6 +37,7 @@ func TestProvisioningOwnershipMetadata(t *testing.T) {
 	assert.Contains(t, projects.Capabilities, "lifecycle-events")
 	assert.Contains(t, projects.Capabilities, "provisioning-provider")
 	assert.Contains(t, projects.Capabilities, "validation-provider")
+	assert.Equal(t, ">=1.31.1", projects.RequiredAzdVersion)
 	assert.True(t, manifestHasProvider(
 		projects,
 		"microsoft.foundry",
@@ -44,6 +46,7 @@ func TestProvisioningOwnershipMetadata(t *testing.T) {
 
 	assert.NotContains(t, agents.Capabilities, "provisioning-provider")
 	assert.NotContains(t, agents.Capabilities, "validation-provider")
+	assert.Equal(t, ">=1.31.1", agents.RequiredAzdVersion)
 	assert.False(t, manifestHasProvider(
 		agents,
 		"microsoft.foundry",

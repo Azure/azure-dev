@@ -11,7 +11,7 @@ dependencies:
   - id: azure.ai.inspector
     version: "~1.0.0-beta.1"
   - id: azure.ai.projects
-    version: "~1.0.0-beta.3"
+    version: "~1.0.0-beta.6"
 language: go
 capabilities:
   - custom-commands

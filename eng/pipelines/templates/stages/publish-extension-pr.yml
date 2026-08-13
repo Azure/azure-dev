@@ -163,7 +163,7 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-extension-storage.yml
                   parameters:
-                    PublishUploadLocations: pr/$(PRNumber)/${{ parameters.SanitizedExtensionId }}
+                    PublishUploadLocations: pr/$(PRNumber)
 
       - job: Comment_On_PR
         dependsOn: Publish_For_PR
@@ -188,23 +188,22 @@ stages:
 
           - pwsh: |
               $bundleUrl = "$(publish-storage-static-host)/azd/extensions/pr/$(PRNumber)/" +
-                "${{ parameters.SanitizedExtensionId }}/${{ parameters.SanitizedExtensionId }}.zip"
+                "${{ parameters.SanitizedExtensionId }}.zip"
               $content = @"
               <!-- #comment-ext-pr-${{ parameters.SanitizedExtensionId }} -->
-              ### Test ``${{ parameters.AzdExtensionId }}`` PR build
+              ### ${{ parameters.AzdExtensionId }} PR build
 
               > [!NOTE]
-              > This is an unsigned development build, not an official release. Install it only if you trust this PR.
-              > The artifact is temporary, and this URL may later point to a newer successful build from this PR.
+              > This is an unsigned development build. Install it only if you trust this PR.
 
-              Install the extension:
+              **Install the extension:**
 
               ``````sh
               azd ext install "$bundleUrl"
               ``````
 
               - **Version:** ``$(EXT_VERSION)``
-              - **Merge commit:** ``$(Build.SourceVersion)``
+              - **Merge commit:** $(Build.SourceVersion)
               "@
 
               $file = New-TemporaryFile

@@ -1,14 +1,10 @@
 # Release History
 
-## 1.32.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.31.1 (2026-08-13)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#9535]](https://github.com/Azure/azure-dev/pull/9535) Fix custom provisioning layers consuming empty or stale Bicep outputs by inferring dependencies from `.bicepparam` and `.parameters.json` parameter references.
 
 ## 1.31.0 (2026-08-12)
 

@@ -162,8 +162,15 @@ func resolveMonitorAgentInfo(
 	if err == nil {
 		return info, nil
 	}
-	if name != "" && isMissingAzdProjectError(err) {
-		return &AgentServiceInfo{AgentName: name}, nil
+	if isMissingAzdProjectError(err) {
+		if name != "" {
+			return &AgentServiceInfo{AgentName: name}, nil
+		}
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentName,
+			"agent name is required outside an azd project",
+			"pass <agent-name> as the positional argument, or run from an azd project",
+		)
 	}
 	return nil, err
 }

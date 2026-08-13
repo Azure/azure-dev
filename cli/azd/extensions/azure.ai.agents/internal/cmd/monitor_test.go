@@ -196,7 +196,12 @@ func TestResolveMonitorAgentInfo_RequiresNameWithoutProject(t *testing.T) {
 
 	_, err := resolveMonitorAgentInfo(t.Context(), azdClient, "", true)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "failed to get project config")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidAgentName, localErr.Code)
+	assert.Equal(t, "agent name is required outside an azd project", localErr.Message)
+	assert.Contains(t, localErr.Suggestion, "<agent-name>")
+	assert.Contains(t, localErr.Suggestion, "run from an azd project")
 }
 
 func TestResolveMonitorAgentInfo_DoesNotHideProjectTransportFailure(t *testing.T) {

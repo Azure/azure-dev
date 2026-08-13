@@ -1659,9 +1659,13 @@ func NoEvalsDeclared() error {
 }
 
 // SeveralEvalsDeclared reports an unnamed eval where guessing would be wrong.
+// The two commands that hit this name their eval differently, so neither form
+// can be recommended on its own: `create` takes it as an argument, the run
+// commands take --eval.
 func SeveralEvalsDeclared(count int, names []string) error {
 	return fmt.Errorf(
-		"this configuration declares %d evals (%s); choose one with --eval",
+		"this configuration declares %d evals (%s); name the one you mean, "+
+			"as an argument to `create` or with --eval on the run commands",
 		count, strings.Join(names, ", "))
 }
 

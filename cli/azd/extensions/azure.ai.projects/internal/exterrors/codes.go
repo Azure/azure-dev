@@ -5,6 +5,11 @@ package exterrors
 
 const CodeCancelled = "cancelled"
 
+const (
+	CodeInfraEjectWriteFailed   = "infra_eject_write_failed"
+	CodeInfraEjectMarkerInvalid = "infra_eject_marker_invalid"
+)
+
 // Error codes commonly used for validation errors.
 //
 // These are paired with [Validation] when user input or configuration values

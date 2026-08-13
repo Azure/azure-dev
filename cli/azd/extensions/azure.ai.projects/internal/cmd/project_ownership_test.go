@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -36,7 +38,7 @@ func TestDelegatedProjectInitRequestValidation(t *testing.T) {
 	request.Project.Endpoint = "https://account.services.ai.azure.com/api/projects/p"
 	require.Error(t, request.validate())
 	request.Project.Endpoint = ""
-	request.SchemaVersion = 2
+	request.SchemaVersion = 3
 	err := request.validate()
 	require.Error(t, err)
 	var localErr *azdext.LocalError
@@ -44,11 +46,27 @@ func TestDelegatedProjectInitRequestValidation(t *testing.T) {
 	assert.Equal(t, azdext.LocalErrorCategoryCompatibility, localErr.Category)
 }
 
+func TestDelegatedProjectInitDeploymentReplacement(t *testing.T) {
+	request := &projectInitRequest{
+		SchemaVersion:      delegatedSchemaVersion,
+		Source:             projectInitSourceAgents,
+		SourceVersion:      "1.0.0-beta.9",
+		ReplaceDeployments: true,
+		Deployments: []delegatedDeployment{{
+			Name: "chat",
+		}},
+	}
+	require.NoError(t, request.validate())
+
+	request.Deployments = []delegatedDeployment{{Name: "Chat"}, {Name: "chat"}}
+	require.Error(t, request.validate())
+}
+
 func TestDelegatedRequestRejectsUnknownFields(t *testing.T) {
 	dir := t.TempDir()
 	requestPath := filepath.Join(dir, "request.json")
 	require.NoError(t, os.WriteFile(requestPath, []byte(`{
-		"schemaVersion": 1,
+		"schemaVersion": 2,
 		"source": "azure.ai.agents/init",
 		"sourceVersion": "1.0.0",
 		"unknown": true
@@ -157,6 +175,12 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 			outputs, err := os.ReadFile(filepath.Join(infraDir, "outputs.tf"))
 			require.NoError(t, err)
 			assert.Contains(t, string(outputs), "AZURE_AI_PROJECT_ID")
+			// #nosec G304
+			marker, err := os.ReadFile(
+				filepath.Join(infraDir, projectTerraformMarker),
+			)
+			require.NoError(t, err)
+			assert.Equal(t, projectTerraformMarkerV1, string(marker))
 			if test.includeAcr {
 				assert.Contains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_ENDPOINT")
 				_, err := os.Stat(filepath.Join(infraDir, "acr.tf"))
@@ -194,6 +218,38 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 	}
 }
 
+func TestProjectInfraEjectUsesLayerModule(t *testing.T) {
+	projectRoot := t.TempDir()
+	raw := []byte(`infra:
+  layers:
+    - name: platform
+      path: infra/platform
+      provider: bicep
+    - name: foundry
+      path: infra/foundry
+      provider: microsoft.foundry
+      module: project
+`)
+
+	plan, err := planProjectInfraEject(projectRoot, raw, "bicep")
+	require.NoError(t, err)
+	assert.Equal(t, "project", plan.module)
+	assert.Equal(
+		t,
+		filepath.Join(projectRoot, "infra", "foundry"),
+		plan.targetDir,
+	)
+}
+
+func TestCopyEmbeddedBicepUsesModuleName(t *testing.T) {
+	infraDir := filepath.Join(t.TempDir(), "infra")
+	require.NoError(t, os.MkdirAll(infraDir, 0750))
+
+	require.NoError(t, copyEmbeddedBicep(infraDir, "project"))
+	assert.FileExists(t, filepath.Join(infraDir, "project.bicep"))
+	assert.NoFileExists(t, filepath.Join(infraDir, "main.bicep"))
+}
+
 func TestProjectServiceNameDeterministic(t *testing.T) {
 	services := map[string]*azdext.ServiceConfig{
 		"chat-app":     {Host: "azure.ai.agent"},
@@ -204,7 +260,7 @@ func TestProjectServiceNameDeterministic(t *testing.T) {
 	assert.Equal(t, "ai-project-3", projectServiceName("", services))
 }
 
-func TestLegacyProjectServiceBodyPreservesConfiguration(t *testing.T) {
+func TestLegacyProjectServiceBodyPreservesProjectConfiguration(t *testing.T) {
 	body, err := legacyProjectServiceBody(map[string]any{
 		"host":        "azure.ai.agents",
 		"endpoint":    "https://old.services.ai.azure.com/api/projects/old",
@@ -218,9 +274,9 @@ func TestLegacyProjectServiceBodyPreservesConfiguration(t *testing.T) {
 	assert.NotContains(t, body, "host")
 	assert.Equal(t, "https://new.services.ai.azure.com/api/projects/new", body["endpoint"])
 	assert.Contains(t, body, "deployments")
-	assert.Contains(t, body, "hooks")
-	assert.Contains(t, body, "uses")
-	assert.Equal(t, "preserve-me", body["customField"])
+	assert.NotContains(t, body, "hooks")
+	assert.NotContains(t, body, "uses")
+	assert.NotContains(t, body, "customField")
 }
 
 func TestLegacyProjectServiceBodyRemovesEndpointForNewProject(t *testing.T) {
@@ -233,7 +289,7 @@ func TestLegacyProjectServiceBodyRemovesEndpointForNewProject(t *testing.T) {
 
 	assert.NotContains(t, body, "host")
 	assert.NotContains(t, body, "endpoint")
-	assert.Contains(t, body, "hooks")
+	assert.NotContains(t, body, "hooks")
 }
 
 func TestDeploymentLocationsExplicitSelectionWins(t *testing.T) {
@@ -392,7 +448,7 @@ func TestProjectServiceEndpointUsesExactKeyTombstone(t *testing.T) {
 	assert.Equal(t, "", projectServer.request.Value.GetStringValue())
 }
 
-func TestAddServicePersistsCompleteBodyThroughConfigSection(t *testing.T) {
+func TestAddServicePersistsCompleteBodyAtomically(t *testing.T) {
 	server := grpc.NewServer()
 	projectServer := &recordingProjectServiceServer{}
 	azdext.RegisterProjectServiceServer(server, projectServer)
@@ -431,12 +487,10 @@ func TestAddServicePersistsCompleteBodyThroughConfigSection(t *testing.T) {
 	))
 
 	require.NotNil(t, projectServer.addRequest)
-	assert.Nil(t, projectServer.addRequest.Service.AdditionalProperties)
-	require.NotNil(t, projectServer.sectionRequest)
-	assert.Equal(t, "foundry", projectServer.sectionRequest.ServiceName)
-	assert.Empty(t, projectServer.sectionRequest.Path)
-	section := projectServer.sectionRequest.Section.AsMap()
-	assert.Equal(t, "azure.ai.project", section["host"])
+	require.NotNil(t, projectServer.addRequest.Service.AdditionalProperties)
+	assert.Nil(t, projectServer.sectionRequest)
+	section := projectServer.addRequest.Service.AdditionalProperties.AsMap()
+	assert.Equal(t, "https://account.services.ai.azure.com/api/projects/p", section["endpoint"])
 	assert.Contains(t, section, "deployments")
 	assert.Contains(t, section, "hooks")
 	assert.Contains(t, section, "uses")
@@ -511,4 +565,308 @@ func synthesisDeploymentForTest() synthesis.Deployment {
 		},
 		Sku: synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
 	}
+}
+
+func TestPlanProjectInfraEjectMergesExistingFoundryDirectory(t *testing.T) {
+	projectRoot := t.TempDir()
+	raw := []byte(`name: test
+infra:
+  provider: bicep
+services:
+  foundry:
+    host: azure.ai.project
+`)
+	require.NoError(t, os.MkdirAll(
+		filepath.Join(projectRoot, "infra", "foundry"), 0750,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "infra", "main.bicep"),
+		[]byte("// existing infrastructure\n"), 0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "infra", "foundry", "README.md"),
+		[]byte("user-owned notes\n"), 0600,
+	))
+
+	plan, err := planProjectInfraEject(projectRoot, raw, "bicep")
+	require.NoError(t, err)
+	assert.True(t, plan.layer)
+	assert.True(t, plan.mergeExisting)
+	assert.Equal(
+		t,
+		filepath.Join(projectRoot, "infra", "foundry"),
+		plan.targetDir,
+	)
+	assert.Contains(t, string(plan.updatedYAML), "name: foundry")
+}
+
+func TestPlanProjectInfraEjectCreatesExplicitProviderTarget(t *testing.T) {
+	for _, targetState := range []string{"missing", "empty"} {
+		t.Run(targetState, func(t *testing.T) {
+			projectRoot := t.TempDir()
+			raw := []byte(`name: test
+infra:
+  provider: bicep
+services:
+  foundry:
+    host: azure.ai.project
+`)
+			if targetState == "empty" {
+				require.NoError(t, os.MkdirAll(
+					filepath.Join(projectRoot, "infra"), 0750,
+				))
+			}
+
+			plan, err := planProjectInfraEject(
+				projectRoot, raw, provisioning.BicepProviderName,
+			)
+			require.NoError(t, err)
+			assert.False(t, plan.layer)
+			assert.Equal(
+				t,
+				filepath.Join(projectRoot, "infra"),
+				plan.targetDir,
+			)
+			assert.Contains(t, string(plan.updatedYAML), "microsoft.foundry")
+		})
+	}
+}
+
+func TestInstallProjectInfraStageMergesAndRollsBack(t *testing.T) {
+	projectRoot := t.TempDir()
+	targetDir := filepath.Join(projectRoot, "infra", "foundry")
+	stageDir := filepath.Join(projectRoot, ".stage")
+	require.NoError(t, os.MkdirAll(targetDir, 0750))
+	require.NoError(t, os.MkdirAll(
+		filepath.Join(targetDir, "modules"), 0750,
+	))
+	require.NoError(t, os.MkdirAll(
+		filepath.Join(stageDir, "modules"), 0750,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(targetDir, "README.md"),
+		[]byte("keep me\n"), 0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(stageDir, "main.bicep"),
+		[]byte("generated\n"), 0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(stageDir, "modules", "generated.bicep"),
+		[]byte("generated module\n"), 0600,
+	))
+
+	rollback, err := installProjectInfraStage(stageDir, &projectInfraEjectPlan{
+		targetDir:     targetDir,
+		targetPath:    "infra/foundry",
+		mergeExisting: true,
+	})
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(targetDir, "README.md"))
+	assert.FileExists(t, filepath.Join(targetDir, "main.bicep"))
+	assert.FileExists(t, filepath.Join(
+		targetDir, "modules", "generated.bicep",
+	))
+
+	rollback()
+	assert.FileExists(t, filepath.Join(targetDir, "README.md"))
+	assert.NoFileExists(t, filepath.Join(targetDir, "main.bicep"))
+	assert.DirExists(t, filepath.Join(targetDir, "modules"))
+	assert.NoFileExists(t, filepath.Join(
+		targetDir, "modules", "generated.bicep",
+	))
+}
+
+func TestInstallProjectInfraStageRejectsConflictsBeforeWriting(t *testing.T) {
+	projectRoot := t.TempDir()
+	targetDir := filepath.Join(projectRoot, "infra", "foundry")
+	stageDir := filepath.Join(projectRoot, ".stage")
+	require.NoError(t, os.MkdirAll(targetDir, 0750))
+	require.NoError(t, os.MkdirAll(stageDir, 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(targetDir, "main.bicep"),
+		[]byte("original\n"), 0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(stageDir, "main.bicep"),
+		[]byte("replacement\n"), 0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(stageDir, "new.bicep"),
+		[]byte("new\n"), 0600,
+	))
+
+	_, err := installProjectInfraStage(stageDir, &projectInfraEjectPlan{
+		targetDir:     targetDir,
+		targetPath:    "infra/foundry",
+		mergeExisting: true,
+	})
+	require.Error(t, err)
+	// #nosec G304
+	content, err := os.ReadFile(filepath.Join(targetDir, "main.bicep"))
+	require.NoError(t, err)
+	assert.Equal(t, "original\n", string(content))
+	assert.NoFileExists(t, filepath.Join(targetDir, "new.bicep"))
+}
+
+func TestInstallProjectInfraStageRollbackRestoresEmptyTarget(t *testing.T) {
+	projectRoot := t.TempDir()
+	targetDir := filepath.Join(projectRoot, "infra", "foundry")
+	stageDir := filepath.Join(projectRoot, ".stage")
+	require.NoError(t, os.MkdirAll(stageDir, 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(stageDir, "main.bicep"),
+		[]byte("generated\n"), 0600,
+	))
+
+	rollback, err := installProjectInfraStage(stageDir, &projectInfraEjectPlan{
+		targetDir:  targetDir,
+		targetPath: "infra/foundry",
+	})
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(targetDir, "main.bicep"))
+
+	rollback()
+	empty, err := projectInfraDirectoryEmpty(targetDir)
+	require.NoError(t, err)
+	assert.True(t, empty)
+}
+
+func TestProjectInfraTerraformOwnershipDetection(t *testing.T) {
+	dir := t.TempDir()
+	markerPath := filepath.Join(dir, projectTerraformMarker)
+	require.NoError(t, os.WriteFile(
+		markerPath, []byte(projectTerraformMarkerV1), 0600,
+	))
+
+	owned, err := projectInfraHasEntrypoint(
+		dir, provisioning.TerraformProviderName, "main",
+	)
+	require.NoError(t, err)
+	assert.True(t, owned)
+
+	require.NoError(t, os.WriteFile(
+		markerPath, []byte("edited\n"), 0600,
+	))
+	owned, err = projectInfraHasEntrypoint(
+		dir, provisioning.TerraformProviderName, "main",
+	)
+	require.Error(t, err)
+	assert.False(t, owned)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeInfraEjectMarkerInvalid, localErr.Code)
+
+	require.NoError(t, os.Remove(markerPath))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "main.tfvars.json"), []byte("{}\n"), 0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "main.tf"),
+		[]byte("resource \"azurerm_resource_group\" \"app\" {}\n"), 0600,
+	))
+	owned, err = projectInfraHasEntrypoint(
+		dir, provisioning.TerraformProviderName, "main",
+	)
+	require.NoError(t, err)
+	assert.False(t, owned)
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "main.tf"),
+		[]byte(`resource "azapi_resource" "foundry_account" {}
+resource "azapi_resource" "project" {}
+Microsoft.CognitiveServices/accounts
+Microsoft.CognitiveServices/accounts/projects
+`), 0600,
+	))
+	owned, err = projectInfraHasEntrypoint(
+		dir, provisioning.TerraformProviderName, "main",
+	)
+	require.NoError(t, err)
+	assert.True(t, owned)
+}
+
+func TestPlanProjectInfraEjectMigratesExistingTerraform(t *testing.T) {
+	projectRoot := t.TempDir()
+	raw := []byte(`name: test
+infra:
+  provider: terraform
+services:
+  foundry:
+    host: azure.ai.project
+`)
+	infraDir := filepath.Join(projectRoot, "infra")
+	require.NoError(t, os.MkdirAll(infraDir, 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(infraDir, "main.tf"),
+		[]byte("resource \"azurerm_resource_group\" \"app\" {}\n"),
+		0600,
+	))
+
+	plan, err := planProjectInfraEject(
+		projectRoot, raw, provisioning.TerraformProviderName,
+	)
+	require.NoError(t, err)
+	assert.True(t, plan.layer)
+	assert.False(t, plan.mergeExisting)
+	assert.Equal(
+		t,
+		filepath.Join(projectRoot, "infra", "foundry"),
+		plan.targetDir,
+	)
+	assert.Contains(t, string(plan.updatedYAML), "name: foundry")
+}
+
+func TestPlanProjectInfraEjectRejectsUnsafePaths(t *testing.T) {
+	projectRoot := t.TempDir()
+	outside := t.TempDir()
+	absolute := filepath.ToSlash(outside)
+	traversal, err := filepath.Rel(projectRoot, outside)
+	require.NoError(t, err)
+
+	for _, path := range []string{".", traversal, absolute} {
+		t.Run(path, func(t *testing.T) {
+			raw := fmt.Appendf(nil, `name: test
+infra:
+  layers:
+    - name: foundry
+      path: %s
+      provider: microsoft.foundry
+services:
+  foundry:
+    host: azure.ai.project
+`, path)
+			_, err := planProjectInfraEject(projectRoot, raw, "bicep")
+			require.Error(t, err)
+			assert.NoFileExists(t, filepath.Join(outside, "main.bicep"))
+		})
+	}
+}
+
+func TestPlanProjectInfraEjectRejectsSymlinkedTarget(t *testing.T) {
+	projectRoot := t.TempDir()
+	outside := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0750))
+	if err := os.Symlink(
+		outside, filepath.Join(projectRoot, "infra", "foundry"),
+	); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+	raw := []byte(`name: test
+infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+    - name: foundry
+      path: infra/foundry
+      provider: microsoft.foundry
+services:
+  foundry:
+    host: azure.ai.project
+`)
+
+	_, err := planProjectInfraEject(projectRoot, raw, "bicep")
+	require.Error(t, err)
+	assert.NoFileExists(t, filepath.Join(outside, "main.bicep"))
 }

@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const delegatedSchemaVersion = 1
+const delegatedSchemaVersion = 2
 
 const (
 	projectInitSourceAgents = "azure.ai.agents/init"
@@ -27,6 +27,7 @@ const (
 type delegatedProject struct {
 	ResourceID string `json:"resourceId,omitempty"`
 	Endpoint   string `json:"endpoint,omitempty"`
+	Name       string `json:"name,omitempty"`
 }
 
 type delegatedInfra struct {
@@ -35,6 +36,23 @@ type delegatedInfra struct {
 
 type delegatedRequirements struct {
 	AllowedLocations []string `json:"allowedLocations,omitempty"`
+}
+
+type delegatedDeployment struct {
+	Name  string                   `json:"name"`
+	Model delegatedDeploymentModel `json:"model"`
+	SKU   delegatedDeploymentSKU   `json:"sku"`
+}
+
+type delegatedDeploymentModel struct {
+	Format  string `json:"format"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+type delegatedDeploymentSKU struct {
+	Name     string `json:"name"`
+	Capacity int    `json:"capacity"`
 }
 
 // projectInitRequest is the versioned IPC contract for agents.
@@ -47,11 +65,17 @@ type projectInitRequest struct {
 	Requirements        delegatedRequirements `json:"requirements"`
 	ResolveAzureContext bool                  `json:"resolveAzureContext"`
 	Force               bool                  `json:"force"`
+	ReplaceDeployments  bool                  `json:"replaceDeployments,omitempty"`
+	Deployments         []delegatedDeployment `json:"deployments,omitempty"`
 }
 
 type delegatedModel struct {
 	Name                 string   `json:"name"`
 	DeploymentName       string   `json:"deploymentName,omitempty"`
+	Format               string   `json:"format,omitempty"`
+	Version              string   `json:"version,omitempty"`
+	SKU                  string   `json:"sku,omitempty"`
+	Capacity             int32    `json:"capacity,omitempty"`
 	RequiredCapabilities []string `json:"requiredCapabilities,omitempty"`
 	AllowedLocations     []string `json:"allowedLocations,omitempty"`
 	ExcludedModelNames   []string `json:"excludedModelNames,omitempty"`
@@ -129,6 +153,29 @@ func (r *projectInitRequest) validate() error {
 		return contractValidationError("requirements.allowedLocations must contain a location")
 	}
 	r.Requirements.AllowedLocations = locations
+	if len(r.Deployments) > 0 && !r.ReplaceDeployments {
+		return contractValidationError(
+			"deployments requires replaceDeployments",
+		)
+	}
+	if r.ReplaceDeployments {
+		seen := make(map[string]struct{}, len(r.Deployments))
+		for _, deployment := range r.Deployments {
+			name := strings.TrimSpace(deployment.Name)
+			if name == "" {
+				return contractValidationError(
+					"deployment names cannot be empty",
+				)
+			}
+			key := strings.ToLower(name)
+			if _, exists := seen[key]; exists {
+				return contractValidationError(
+					fmt.Sprintf("deployment %q is duplicated", name),
+				)
+			}
+			seen[key] = struct{}{}
+		}
+	}
 	return nil
 }
 

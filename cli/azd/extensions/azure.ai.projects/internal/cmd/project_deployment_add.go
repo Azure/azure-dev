@@ -147,7 +147,8 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if values["AZURE_AI_PROJECT_ID"] == "" {
+	if values["AZURE_AI_PROJECT_ID"] == "" &&
+		serviceEndpoint(service.Resolved) != "" {
 		return exterrors.Validation(
 			"project_deployment_requires_id",
 			"managed model deployments require an existing Foundry project resource ID",

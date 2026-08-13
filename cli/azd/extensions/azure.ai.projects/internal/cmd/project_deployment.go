@@ -73,8 +73,20 @@ func selectModelDeployment(
 	noPrompt bool,
 ) (*selectedDeployment, error) {
 	modelFormat, modelName := splitModelReference(model.Name)
+	if model.Format != "" {
+		modelFormat = model.Format
+	}
 	if modelName == "" {
 		return nil, contractValidationError("model.name is required")
+	}
+	if model.Version != "" {
+		selection.Version = model.Version
+	}
+	if model.SKU != "" {
+		selection.SKU = model.SKU
+	}
+	if model.Capacity > 0 {
+		selection.Capacity = model.Capacity
 	}
 
 	locations, err := deploymentLocations(
@@ -183,7 +195,7 @@ func selectModelDeployment(
 	if location == "" && len(locations) == 1 {
 		location = locations[0]
 	}
-	return &selectedDeployment{
+	selected := &selectedDeployment{
 		Deployment: synthesis.Deployment{
 			Name: chooseDeploymentName(model.DeploymentName, candidate.GetModelName()),
 			Model: synthesis.DeploymentModel{
@@ -197,7 +209,50 @@ func selectModelDeployment(
 			},
 		},
 		Location: location,
-	}, nil
+	}
+	if model.Format != "" &&
+		!strings.EqualFold(selected.Deployment.Model.Format, model.Format) {
+		return nil, exterrors.Validation(
+			"model_deployment_unavailable",
+			fmt.Sprintf(
+				"model %q does not have the requested format %q",
+				modelName, model.Format,
+			),
+			"specify a deployment format supported by the selected model",
+		)
+	}
+	if model.Version != "" && selected.Deployment.Model.Version != model.Version {
+		return nil, exterrors.Validation(
+			"model_deployment_unavailable",
+			fmt.Sprintf(
+				"model %q does not have the requested version %q",
+				modelName, model.Version,
+			),
+			"specify a deployment version supported by the selected model",
+		)
+	}
+	if model.SKU != "" &&
+		!strings.EqualFold(selected.Deployment.Sku.Name, model.SKU) {
+		return nil, exterrors.Validation(
+			"model_deployment_unavailable",
+			fmt.Sprintf(
+				"model %q does not have the requested SKU %q",
+				modelName, model.SKU,
+			),
+			"specify a deployment SKU supported by the selected model",
+		)
+	}
+	if model.Capacity > 0 && selected.Deployment.Sku.Capacity != int(model.Capacity) {
+		return nil, exterrors.Validation(
+			"model_deployment_unavailable",
+			fmt.Sprintf(
+				"model %q does not have the requested capacity %d",
+				modelName, model.Capacity,
+			),
+			"specify a deployment capacity supported by the selected model",
+		)
+	}
+	return selected, nil
 }
 
 func deploymentLocations(

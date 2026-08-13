@@ -42,7 +42,29 @@ func TestJobSubmit_OffersStorageConnectionOverride(t *testing.T) {
 	assert.Equal(t, "", flag.DefValue)
 }
 
-func TestResolveStorageConnectionName_FlagOverridesYaml(t *testing.T) {
-	assert.Equal(t, "flag-storage", resolveStorageConnectionName(" flag-storage ", "yaml-storage"))
-	assert.Equal(t, "yaml-storage", resolveStorageConnectionName("", " yaml-storage "))
+func TestResolveStorageConnectionName(t *testing.T) {
+	tests := []struct {
+		name      string
+		flagValue string
+		yamlValue string
+		expected  string
+	}{
+		{
+			name:      "flag overrides YAML",
+			flagValue: " flag-storage ",
+			yamlValue: "yaml-storage",
+			expected:  "flag-storage",
+		},
+		{
+			name:      "YAML is used when flag is omitted",
+			yamlValue: " yaml-storage ",
+			expected:  "yaml-storage",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, resolveStorageConnectionName(test.flagValue, test.yamlValue))
+		})
+	}
 }

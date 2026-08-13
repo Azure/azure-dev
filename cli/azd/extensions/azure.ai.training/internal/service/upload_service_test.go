@@ -11,25 +11,25 @@ import (
 	"testing"
 
 	"azure.ai.training/pkg/models"
+	trainingmocks "azure.ai.training/test/mocks"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 // --- Fakes ---
 
 type fakeUploadClient struct {
-	getResp          *models.DatasetVersion
-	getRespByVersion map[string]*models.DatasetVersion
-	getErr           error
-	getCalls         int
+	getResp  *models.DatasetVersion
+	getErr   error
+	getCalls int
 
 	deleteErr   error
 	deleteCalls int
 
-	startResp           *models.PendingUploadResponse
-	startErr            error
-	startCalls          int
-	startConnectionName string
+	startResp  *models.PendingUploadResponse
+	startErr   error
+	startCalls int
 
 	createResp  *models.DatasetVersion
 	createErr   error
@@ -38,12 +38,9 @@ type fakeUploadClient struct {
 }
 
 func (f *fakeUploadClient) GetDatasetVersion(
-	_ context.Context, _, version string,
+	_ context.Context, _, _ string,
 ) (*models.DatasetVersion, error) {
 	f.getCalls++
-	if f.getRespByVersion != nil {
-		return f.getRespByVersion[version], f.getErr
-	}
 	return f.getResp, f.getErr
 }
 
@@ -53,10 +50,9 @@ func (f *fakeUploadClient) DeleteDatasetVersion(_ context.Context, _, _ string) 
 }
 
 func (f *fakeUploadClient) StartPendingUpload(
-	_ context.Context, _, _, connectionName string,
+	_ context.Context, _, _, _ string,
 ) (*models.PendingUploadResponse, error) {
 	f.startCalls++
-	f.startConnectionName = connectionName
 	return f.startResp, f.startErr
 }
 
@@ -139,16 +135,29 @@ func TestUploadDirectory_StorageConnectionDoesNotReuseDefaultStorageVersion(t *t
 	require.NoError(t, err)
 	defaultVersion := TruncateHashVersion(fullHash)
 
-	client := &fakeUploadClient{
-		getRespByVersion: map[string]*models.DatasetVersion{
-			defaultVersion: {
-				ID:   "/datasets/x/versions/" + defaultVersion,
-				Tags: map[string]string{"contentHash": fullHash},
-			},
-		},
-		startResp:  validPendingUploadResponse(),
-		createResp: &models.DatasetVersion{ID: "/datasets/x/versions/byos"},
-	}
+	client := &trainingmocks.UploadClient{}
+	client.On(
+		"GetDatasetVersion",
+		mock.Anything,
+		"x",
+		mock.MatchedBy(func(version string) bool {
+			return version != defaultVersion
+		}),
+	).Return((*models.DatasetVersion)(nil), nil).Once()
+	client.On(
+		"StartPendingUpload",
+		mock.Anything,
+		"x",
+		mock.Anything,
+		"project-storage",
+	).Return(validPendingUploadResponse(), nil).Once()
+	client.On(
+		"CreateOrUpdateDatasetVersion",
+		mock.Anything,
+		"x",
+		mock.Anything,
+		mock.AnythingOfType("*models.DatasetVersion"),
+	).Return(&models.DatasetVersion{ID: "/datasets/x/versions/byos"}, nil).Once()
 	runner := &fakeUploadRunner{}
 	svc := &UploadService{
 		client:                client,
@@ -161,8 +170,7 @@ func TestUploadDirectory_StorageConnectionDoesNotReuseDefaultStorageVersion(t *t
 
 	assert.False(t, result.Skipped)
 	assert.NotEqual(t, defaultVersion, result.DatasetVersion)
-	assert.Equal(t, 1, client.startCalls)
-	assert.Equal(t, "project-storage", client.startConnectionName)
+	client.AssertExpectations(t)
 }
 
 func TestUploadDirectory_ZombieRecovery_DeletesAndReuploads(t *testing.T) {
@@ -250,25 +258,6 @@ func TestUploadDirectory_NoExistingVersion_FullUploadWithSentinel(t *testing.T) 
 	require.NotNil(t, client.lastCreate)
 	assert.Equal(t, fullHash, client.lastCreate.Tags["contentHash"])
 	assert.Equal(t, "uri_folder", client.lastCreate.DataType)
-}
-
-func TestUploadDirectory_UsesConfiguredStorageConnection(t *testing.T) {
-	dir := makeTempDir(t)
-	client := &fakeUploadClient{
-		startResp:  validPendingUploadResponse(),
-		createResp: &models.DatasetVersion{ID: "/datasets/x/versions/v1"},
-	}
-	runner := &fakeUploadRunner{}
-
-	svc := &UploadService{
-		client:                client,
-		azcopyRunner:          runner,
-		storageConnectionName: "project-storage",
-	}
-	_, err := svc.UploadDirectory(t.Context(), dir, "x", "desc")
-	require.NoError(t, err)
-
-	assert.Equal(t, "project-storage", client.startConnectionName)
 }
 
 func TestUploadDirectory_MissingSASURI_ReturnsError(t *testing.T) {

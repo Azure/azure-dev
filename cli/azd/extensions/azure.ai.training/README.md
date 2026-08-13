@@ -17,6 +17,14 @@ or override it for one submission:
 azd ai training job submit --file job.yaml --storage-connection-name project-storage
 ```
 
+Expected output:
+
+```text
+Submitting command job: <job-name>
+
+✓ Job '<job-name>' submitted successfully
+```
+
 The command-line option takes precedence over the YAML value. Registered
 Foundry dataset IDs using the `azureai://` scheme can be used directly as input
 paths and are not uploaded again.

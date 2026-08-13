@@ -376,6 +376,17 @@ func InvalidRequestPath(path string, err error) error {
 	return fmt.Errorf("invalid request path %q: %w", path, err)
 }
 
+// InvalidNextLink reports a pagination link the service sent that will not parse.
+func InvalidNextLink(link string, err error) error {
+	return fmt.Errorf("invalid nextLink %q: %w", link, err)
+}
+
+// NextLinkOffOrigin reports a pagination link pointing somewhere other than the
+// project endpoint. Following it would send the caller's token to that host.
+func NextLinkOffOrigin(origin string) error {
+	return fmt.Errorf("refusing to follow nextLink to %s: it is not the project endpoint", origin)
+}
+
 // CreatingRequest reports a request that could not be built.
 func CreatingRequest(err error) error {
 	return fmt.Errorf("failed to create request: %w", err)

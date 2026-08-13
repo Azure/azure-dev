@@ -175,6 +175,52 @@ func (c *DatasetClient) latestRegisteredVersion(
 	return LatestVersion(list.Value), nil
 }
 
+// sameOrigin reports whether two URLs share a scheme and host.
+func sameOrigin(a, b *url.URL) bool {
+	return strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
+}
+
+// doRequestGetURL issues a GET against an absolute URL the service supplied,
+// such as a nextLink. The URL is refused unless it shares the endpoint's
+// origin: the pipeline attaches the caller's token, so a link pointing
+// elsewhere would hand that token to another host.
+func (c *DatasetClient) doRequestGetURL(ctx context.Context, rawURL string) ([]byte, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, messages.InvalidNextLink(rawURL, err)
+	}
+	base, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, messages.InvalidEndpointURL(err)
+	}
+	if !sameOrigin(u, base) {
+		return nil, messages.NextLinkOffOrigin(u.Scheme + "://" + u.Host)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
+	if err != nil {
+		return nil, messages.CreatingRequest(err)
+	}
+
+	log.Printf("[dataset_api] GET %s", logSafeURL(u))
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, messages.RequestFailed(err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, messages.ReadingResponseBody(err)
+	}
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+		return nil, messages.ServiceRefused(resp.StatusCode, runtime.NewResponseError(resp))
+	}
+	return respBody, nil
+}
+
 // logSafeURL renders a URL for logging with its query and fragment removed.
 // Storage SAS URIs carry their credential in the query string as `sig`, and
 // url.URL.Redacted only masks a userinfo password, so logging it directly would

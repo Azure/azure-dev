@@ -5,11 +5,14 @@ package dataset_api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"azureaidataset/internal/messages"
 )
 
 // DatasetList is the paged response returned when listing datasets or the
@@ -21,7 +24,11 @@ type DatasetList struct {
 
 // ListDatasets returns the datasets registered on the project.
 func (c *DatasetClient) ListDatasets(ctx context.Context, apiVersion string) (*DatasetList, error) {
-	return doRequestTyped[DatasetList](c, ctx, http.MethodGet, pathDatasets, nil, nil, apiVersion)
+	first, err := doRequestTyped[DatasetList](c, ctx, http.MethodGet, pathDatasets, nil, nil, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+	return c.followPages(ctx, first)
 }
 
 // ListDatasetVersions returns every version of a single dataset.
@@ -31,7 +38,46 @@ func (c *DatasetClient) ListDatasetVersions(
 	apiVersion string,
 ) (*DatasetList, error) {
 	path := fmt.Sprintf("%s/%s/versions", pathDatasets, url.PathEscape(name))
-	return doRequestTyped[DatasetList](c, ctx, http.MethodGet, path, nil, nil, apiVersion)
+	first, err := doRequestTyped[DatasetList](c, ctx, http.MethodGet, path, nil, nil, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+	return c.followPages(ctx, first)
+}
+
+// maxListPages bounds page following so a service that keeps handing back a
+// nextLink cannot spin forever.
+const maxListPages = 100
+
+// followPages walks nextLink until the service stops sending one, returning a
+// single list holding every page. Without this, a project with more than one
+// page lists incompletely and a latest-version check can decide from a stale
+// first page.
+func (c *DatasetClient) followPages(ctx context.Context, first *DatasetList) (*DatasetList, error) {
+	if first == nil {
+		return nil, nil
+	}
+
+	out := &DatasetList{Value: first.Value}
+	seen := map[string]bool{}
+	for next := first.NextLink; next != ""; {
+		if seen[next] || len(seen) >= maxListPages {
+			break // a repeated or endless link is the service misbehaving, not a reason to fail the command
+		}
+		seen[next] = true
+
+		body, err := c.doRequestGetURL(ctx, next)
+		if err != nil {
+			return nil, err
+		}
+		var page DatasetList
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, messages.ParsingResponse(err)
+		}
+		out.Value = append(out.Value, page.Value...)
+		next = page.NextLink
+	}
+	return out, nil
 }
 
 // DeleteDatasetVersion removes a single dataset version.

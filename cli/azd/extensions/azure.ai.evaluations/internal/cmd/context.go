@@ -18,6 +18,7 @@ import (
 	"azureaieval/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -85,12 +86,30 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 		ec.Close()
 		return nil, messages.CreatingCredential(err)
 	}
-	ec.cred = cred
+	ec.cred = azdTokenRetry{inner: cred}
 
 	ec.evalClient = eval_api.NewEvalClient(ec.endpoint, cred)
 	ec.datasetClient = dataset_api.NewDatasetClient(ec.endpoint, cred)
 
 	return ec, nil
+}
+
+// azdTokenRetry retries a failed token request once. azidentity gives the azd
+// subprocess a fixed 10 second timeout and discards its stderr, so an azd that
+// overruns surfaces as "exit status 1" with no cause; the next call usually
+// finds a warm token. Without this a slow token turns into a failed command.
+type azdTokenRetry struct{ inner azcore.TokenCredential }
+
+func (c azdTokenRetry) GetToken(
+	ctx context.Context,
+	opts policy.TokenRequestOptions,
+) (azcore.AccessToken, error) {
+	tok, err := c.inner.GetToken(ctx, opts)
+	if err == nil || ctx.Err() != nil {
+		return tok, err
+	}
+	log.Printf("[auth] token request failed (%v); retrying once", err)
+	return c.inner.GetToken(ctx, opts)
 }
 
 // lookupEndpointFromAzd reads the endpoint from the active azd environment,

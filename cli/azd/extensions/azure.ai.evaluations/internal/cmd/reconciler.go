@@ -195,7 +195,12 @@ func (r *evalReconciler) checkDatasetDrift(
 	ctx context.Context,
 	name, recorded string,
 ) error {
-	latest := r.latestDatasetVersion(ctx, name)
+	latest, err := r.latestDatasetVersion(ctx, name)
+	if err != nil {
+		// The whole point of this check is to catch a version published behind
+		// our back. A listing we could not read is not evidence there was none.
+		return err
+	}
 	if latest == "" || latest == recorded {
 		return nil
 	}
@@ -205,14 +210,21 @@ func (r *evalReconciler) checkDatasetDrift(
 	return messages.DatasetDrifted(name, latest, recorded)
 }
 
-// latestDatasetVersion reports the newest registered version, or empty when the
-// dataset is unknown or the listing has not caught up.
-func (r *evalReconciler) latestDatasetVersion(ctx context.Context, name string) string {
+// latestDatasetVersion reports the newest registered version. A dataset the
+// service does not know, and a listing that has not caught up, both report an
+// empty version and no error; anything else is returned.
+func (r *evalReconciler) latestDatasetVersion(ctx context.Context, name string) (string, error) {
 	list, err := r.ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
-	if err != nil || list == nil || len(list.Value) == 0 {
-		return ""
+	if err != nil {
+		if dataset_api.IsNotFound(err) {
+			return "", nil
+		}
+		return "", err
 	}
-	return dataset_api.LatestVersion(list.Value)
+	if list == nil || len(list.Value) == 0 {
+		return "", nil
+	}
+	return dataset_api.LatestVersion(list.Value), nil
 }
 
 // EnsureEvaluator publishes a new version when the local definition differs

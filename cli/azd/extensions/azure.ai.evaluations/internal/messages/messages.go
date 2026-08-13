@@ -1620,9 +1620,27 @@ func CreatedHeading() string {
 	return "\nCreated\n"
 }
 
+// ScaffoldHeading opens the list of what a scaffold wrote. `init` appends to an
+// existing configuration rather than replacing it, and a reader who sees
+// "Created" over a file they already had reasonably fears it was overwritten.
+func ScaffoldHeading(existed bool) string {
+	if existed {
+		return "\nUpdated\n"
+	}
+	return CreatedHeading()
+}
+
 // CreatedConfigLine names the configuration a scaffold wrote.
 func CreatedConfigLine(configPath string) string {
 	return fmt.Sprintf("  %-33s evaluation configuration\n", configPath)
+}
+
+// ScaffoldConfigLine names the configuration a scaffold wrote or added to.
+func ScaffoldConfigLine(configPath string, existed bool) string {
+	if existed {
+		return fmt.Sprintf("  %-33s evaluation configuration (eval added)\n", configPath)
+	}
+	return CreatedConfigLine(configPath)
 }
 
 // AddedServiceLine reports the eval service being added to the root config.

@@ -71,7 +71,9 @@ func TestCheckDatasetDriftAcceptsAMatch(t *testing.T) {
 func TestCheckDatasetDriftIgnoresAnEmptyListing(t *testing.T) {
 	r := reconcilerListingVersions(t)
 	require.NoError(t, r.checkDatasetDrift(context.Background(), "golden", "2.0"))
-	assert.Empty(t, r.latestDatasetVersion(context.Background(), "golden"))
+	latest, err := r.latestDatasetVersion(context.Background(), "golden")
+	require.NoError(t, err)
+	assert.Empty(t, latest)
 }
 
 // Only a newer version is someone else's work. An older one means this repo is
@@ -82,8 +84,10 @@ func TestCheckDatasetDriftIgnoresAnOlderVersion(t *testing.T) {
 		"a project behind this repo is not drift")
 }
 
-// An unreachable project must not fail the deploy on drift it could not check.
-func TestLatestDatasetVersionToleratesAFailedListing(t *testing.T) {
+// A listing that failed is not evidence there was no newer version. The drift
+// check exists to catch someone else's publish, so it fails closed: tolerating
+// the error let a 403 or a timeout skip the guard silently.
+func TestLatestDatasetVersionSurfacesAFailedListing(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -95,8 +99,10 @@ func TestLatestDatasetVersionToleratesAFailedListing(t *testing.T) {
 		datasetClient: dataset_api.NewDatasetClientFromPipeline(srv.URL, pipeline),
 	}}
 
-	assert.Empty(t, r.latestDatasetVersion(context.Background(), "golden"))
-	require.NoError(t, r.checkDatasetDrift(context.Background(), "golden", "2.0"))
+	_, err := r.latestDatasetVersion(context.Background(), "golden")
+	require.Error(t, err, "a listing we could not read is not proof there was no newer version")
+	require.Error(t, r.checkDatasetDrift(context.Background(), "golden", "2.0"),
+		"the drift guard fails closed rather than skipping silently")
 }
 
 // writeEvalYAML puts a configuration in a temp dir and returns the dir.

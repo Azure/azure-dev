@@ -414,7 +414,7 @@ func RequestFailed(err error) error {
 	return fmt.Errorf("HTTP request failed: %w", err)
 }
 
-// ServiceRefused turns an unauthorised answer into one that says what to do.
+// ServiceRefused turns an unauthorized answer into one that says what to do.
 // Every other status is left as the service reported it.
 func ServiceRefused(status int, err error) error {
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {

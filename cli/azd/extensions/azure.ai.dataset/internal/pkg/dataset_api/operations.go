@@ -174,15 +174,15 @@ func logSafeURL(u *url.URL) string {
 // embeds the full URL in its error text, which for a SAS-backed request means
 // the credential would surface in a user-facing message.
 func redactURLError(err error) error {
-	uerr, ok := errors.AsType[*url.Error](err)
+	urlError, ok := errors.AsType[*url.Error](err)
 	if !ok {
 		return err
 	}
 	safe := "<redacted>"
-	if u, parseErr := url.Parse(uerr.URL); parseErr == nil {
+	if u, parseErr := url.Parse(urlError.URL); parseErr == nil {
 		safe = logSafeURL(u)
 	}
-	return &url.Error{Op: uerr.Op, URL: safe, Err: uerr.Err}
+	return &url.Error{Op: urlError.Op, URL: safe, Err: urlError.Err}
 }
 
 // isVersionConflict reports whether the service refused the upload because the

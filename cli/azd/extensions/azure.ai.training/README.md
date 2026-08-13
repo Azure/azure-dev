@@ -17,12 +17,21 @@ or override it for one submission:
 azd ai training job submit --file job.yaml --storage-connection-name project-storage
 ```
 
-Expected output:
+Initial status output, followed by the submitted job as JSON:
 
 ```text
 Submitting command job: <job-name>
 
 ✓ Job '<job-name>' submitted successfully
+
+{
+  "id": "<job-resource-id>",
+  "name": "<job-name>",
+  "properties": {
+    "jobType": "Command",
+    "status": "<job-status>"
+  }
+}
 ```
 
 The command-line option takes precedence over the YAML value. Registered

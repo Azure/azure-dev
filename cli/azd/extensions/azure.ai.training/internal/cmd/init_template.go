@@ -73,7 +73,6 @@ description: Sample job created by 'azd ai training init'
 command: echo "hello world"
 environment: <user to add>
 compute: <user to add>
-# storage_connection_name: <optional Foundry storage connection for local uploads>
 resources:
   instance_count: 1
   instance_type: <user to add>

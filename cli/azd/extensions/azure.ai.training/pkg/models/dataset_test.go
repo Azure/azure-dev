@@ -86,3 +86,22 @@ func TestDatasetVersionWireFormat(t *testing.T) {
 		require.NotContains(t, wire, "tags")
 	})
 }
+
+func TestPendingUploadRequestWireFormat(t *testing.T) {
+	raw, err := json.Marshal(PendingUploadRequest{
+		PendingUploadType: "BlobReference",
+		ConnectionName:    "project-storage",
+	})
+	require.NoError(t, err)
+
+	var wire map[string]any
+	require.NoError(t, json.Unmarshal(raw, &wire))
+	require.Equal(t, "BlobReference", wire["pendingUploadType"])
+	require.Equal(t, "project-storage", wire["connectionName"])
+
+	raw, err = json.Marshal(PendingUploadRequest{PendingUploadType: "BlobReference"})
+	require.NoError(t, err)
+	wire = nil
+	require.NoError(t, json.Unmarshal(raw, &wire))
+	require.NotContains(t, wire, "connectionName")
+}

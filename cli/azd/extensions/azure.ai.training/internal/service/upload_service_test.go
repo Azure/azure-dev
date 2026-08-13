@@ -25,9 +25,10 @@ type fakeUploadClient struct {
 	deleteErr   error
 	deleteCalls int
 
-	startResp  *models.PendingUploadResponse
-	startErr   error
-	startCalls int
+	startResp           *models.PendingUploadResponse
+	startErr            error
+	startCalls          int
+	startConnectionName string
 
 	createResp  *models.DatasetVersion
 	createErr   error
@@ -48,9 +49,10 @@ func (f *fakeUploadClient) DeleteDatasetVersion(_ context.Context, _, _ string) 
 }
 
 func (f *fakeUploadClient) StartPendingUpload(
-	_ context.Context, _, _ string,
+	_ context.Context, _, _, connectionName string,
 ) (*models.PendingUploadResponse, error) {
 	f.startCalls++
+	f.startConnectionName = connectionName
 	return f.startResp, f.startErr
 }
 
@@ -212,6 +214,25 @@ func TestUploadDirectory_NoExistingVersion_FullUploadWithSentinel(t *testing.T) 
 	require.NotNil(t, client.lastCreate)
 	assert.Equal(t, fullHash, client.lastCreate.Tags["contentHash"])
 	assert.Equal(t, "uri_folder", client.lastCreate.DataType)
+}
+
+func TestUploadDirectory_UsesConfiguredStorageConnection(t *testing.T) {
+	dir := makeTempDir(t)
+	client := &fakeUploadClient{
+		startResp:  validPendingUploadResponse(),
+		createResp: &models.DatasetVersion{ID: "/datasets/x/versions/v1"},
+	}
+	runner := &fakeUploadRunner{}
+
+	svc := &UploadService{
+		client:                client,
+		azcopyRunner:          runner,
+		storageConnectionName: "project-storage",
+	}
+	_, err := svc.UploadDirectory(t.Context(), dir, "x", "desc")
+	require.NoError(t, err)
+
+	assert.Equal(t, "project-storage", client.startConnectionName)
 }
 
 func TestUploadDirectory_MissingSASURI_ReturnsError(t *testing.T) {

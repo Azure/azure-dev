@@ -19,7 +19,9 @@ import (
 type uploadClient interface {
 	GetDatasetVersion(ctx context.Context, datasetName, version string) (*models.DatasetVersion, error)
 	DeleteDatasetVersion(ctx context.Context, datasetName, version string) error
-	StartPendingUpload(ctx context.Context, datasetName, version string) (*models.PendingUploadResponse, error)
+	StartPendingUpload(
+		ctx context.Context, datasetName, version, connectionName string,
+	) (*models.PendingUploadResponse, error)
 	CreateOrUpdateDatasetVersion(
 		ctx context.Context, datasetName, version string, dataset *models.DatasetVersion,
 	) (*models.DatasetVersion, error)
@@ -32,15 +34,21 @@ type uploadRunner interface {
 
 // UploadService handles uploading local directories as datasets via the dataset API + azcopy.
 type UploadService struct {
-	client       uploadClient
-	azcopyRunner uploadRunner
+	client                uploadClient
+	azcopyRunner          uploadRunner
+	storageConnectionName string
 }
 
 // NewUploadService creates a new upload service.
-func NewUploadService(apiClient *client.Client, azcopyRunner *azcopy.Runner) *UploadService {
+func NewUploadService(
+	apiClient *client.Client,
+	azcopyRunner *azcopy.Runner,
+	storageConnectionName string,
+) *UploadService {
 	return &UploadService{
-		client:       apiClient,
-		azcopyRunner: azcopyRunner,
+		client:                apiClient,
+		azcopyRunner:          azcopyRunner,
+		storageConnectionName: storageConnectionName,
 	}
 }
 
@@ -156,7 +164,9 @@ func (s *UploadService) doUpload(
 	description string,
 	tags map[string]string,
 ) (*UploadResult, error) {
-	uploadResp, err := s.client.StartPendingUpload(ctx, datasetName, version)
+	uploadResp, err := s.client.StartPendingUpload(
+		ctx, datasetName, version, s.storageConnectionName,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start pending upload: %w", err)
 	}

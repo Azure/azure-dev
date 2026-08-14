@@ -3,16 +3,16 @@
     {
       "module": "extensions/azure.ai.agents",
       "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azcore",
-      "version": "v1.21.0",
+      "version": "v1.22.0",
       "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
       "issue": "https://github.com/Azure/azure-dev/issues/9297"
     },
     {
       "module": "extensions/azure.ai.agents",
       "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azidentity",
-      "version": "v1.14.0-beta.3",
-      "reason": "The extension temporarily requires the prerelease credential error-reporting behavior.",
-      "issue": "https://github.com/Azure/azure-dev/issues/7732"
+      "version": "v1.14.0",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
     },
     {
       "module": "extensions/azure.ai.agents",
@@ -109,13 +109,6 @@
       "module": "extensions/azure.appservice",
       "dependency": "github.com/spf13/cobra",
       "version": "v1.10.2",
-      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
-      "issue": "https://github.com/Azure/azure-dev/issues/9297"
-    },
-    {
-      "module": "extensions/azure.coding-agent",
-      "dependency": "google.golang.org/grpc",
-      "version": "v1.79.3",
       "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
       "issue": "https://github.com/Azure/azure-dev/issues/9297"
     },

@@ -757,6 +757,8 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 		"",
 		"",
 		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -820,6 +822,8 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 		"",
 		"",
 		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -845,6 +849,8 @@ func TestRegisterAgentEnvironmentVariables_PersistsActivityBotName(t *testing.T)
 		"published-bot",
 		"bot-rg",
 		true,
+		ActivityProfile{},
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, "published-bot", envStub.values[envkey.AgentBotName("my-svc")])
@@ -877,6 +883,8 @@ func TestRegisterAgentEnvironmentVariables_PersistsInstanceIdentity(t *testing.T
 		"",
 		"",
 		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(
@@ -1036,6 +1044,8 @@ func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
 		"",
 		"",
 		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent name is empty")
@@ -1061,9 +1071,49 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 		"",
 		"",
 		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent version is empty")
+}
+
+func TestRegisterAgentEnvironmentVariables_PersistsDigitalWorkerBlueprintClientID(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newEnvTestClient(t, envStub),
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+	publish := &DigitalWorkerPublishConfig{
+		PublishAsAutopilot: true,
+		PublishScope:       "tenant",
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		&azdext.ServiceConfig{Name: "my-svc"},
+		&agent_api.AgentVersionObject{
+			Name:    "my-agent",
+			Version: "1.0.0",
+			Blueprint: &agent_api.BlueprintInfo{
+				ClientID: "blueprint-client-id",
+			},
+		},
+		nil,
+		"",
+		"",
+		false,
+		ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
+		&ActivitySettings{UseCase: ActivityUseCaseDigitalWorker, Publish: publish},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "blueprint-client-id", envStub.values[envkey.AgentBlueprintClientID("my-svc")])
+	require.Empty(t, envStub.values[envkey.AgentBotName("my-svc")])
+	require.Empty(t, envStub.values[envkey.AgentBotResourceGroup("my-svc")])
+	require.Empty(t, envStub.values[envkey.AgentBotOwned("my-svc")])
 }
 
 func TestDisplayableProtocolFor(t *testing.T) {

@@ -53,6 +53,38 @@ type ServiceTargetAgentConfig struct {
 	Connections     []Connection       `json:"connections,omitempty"`
 	MemoryStores    []MemoryStore      `json:"memoryStores,omitempty"`
 	StartupCommand  string             `json:"startupCommand,omitempty"`
+	Activity        *ActivitySettings  `json:"activity,omitempty"`
+}
+
+// ActivitySettings configures the Teams hosting model for an Activity-protocol agent.
+type ActivitySettings struct {
+	UseCase ActivityUseCase             `json:"useCase,omitempty"`
+	Publish *DigitalWorkerPublishConfig `json:"publish,omitempty"`
+}
+
+// DigitalWorkerPublishConfig carries the V3 Microsoft 365 publish inputs that
+// deploy persists for a later publish command. Deploy does not publish the app.
+type DigitalWorkerPublishConfig struct {
+	PublishAsAutopilot       bool                       `json:"publishAsAutopilot,omitempty"`
+	PublishScope             string                     `json:"publishScope,omitempty"`
+	CanRespondWithoutMention *bool                      `json:"canRespondWithoutMention,omitempty"`
+	AppVersion               string                     `json:"appVersion,omitempty"`
+	AgentDisplayName         string                     `json:"agentDisplayName,omitempty"`
+	ShortDescription         string                     `json:"shortDescription,omitempty"`
+	FullDescription          string                     `json:"fullDescription,omitempty"`
+	DeveloperName            string                     `json:"developerName,omitempty"`
+	DeveloperWebsiteURL      string                     `json:"developerWebsiteUrl,omitempty"`
+	PrivacyURL               string                     `json:"privacyUrl,omitempty"`
+	TermsOfUseURL            string                     `json:"termsOfUseUrl,omitempty"`
+	AgenticUserTemplate      *AgenticUserTemplateConfig `json:"agenticUserTemplate,omitempty"`
+}
+
+// AgenticUserTemplateConfig identifies the template embedded in a Digital Worker Teams package.
+type AgenticUserTemplateConfig struct {
+	ID                    string `json:"id,omitempty"`
+	File                  string `json:"file,omitempty"`
+	SchemaVersion         string `json:"schemaVersion,omitempty"`
+	CommunicationProtocol string `json:"communicationProtocol,omitempty"`
 }
 
 // ContainerSettings provides container configuration for the Azure AI Service target

@@ -4,6 +4,7 @@
 package project
 
 import (
+	"fmt"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -19,8 +20,7 @@ const (
 	// ActivityUseCaseSimple is the default single-tenant Teams bot model whose
 	// msaAppId is the agent instance identity client id.
 	ActivityUseCaseSimple ActivityUseCase = "simple"
-	// ActivityUseCaseDigitalWorker is the blueprint + federated-identity model
-	// (Phase 2). Not yet resolved by ResolveActivityProfile.
+	// ActivityUseCaseDigitalWorker is the blueprint + federated-identity model.
 	ActivityUseCaseDigitalWorker ActivityUseCase = "digital_worker"
 )
 
@@ -55,14 +55,48 @@ func IsActivityProtocol(ca agent_yaml.ContainerAgent) bool {
 	return false
 }
 
-// ResolveActivityProfile derives the ActivityProfile for a hosted agent
-// definition. Phase 1 always resolves the simple use case for activity agents;
-// digital-worker detection is a Phase 2 addition.
+// ResolveActivityProfile preserves the simple default for callers that do not
+// have service-level Activity settings.
 func ResolveActivityProfile(ca agent_yaml.ContainerAgent) ActivityProfile {
 	if !IsActivityProtocol(ca) {
 		return ActivityProfile{}
 	}
 	return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
+}
+
+// ResolveActivityProfileWithSettings derives and validates the Activity use
+// case configured on the azd service. A missing setting preserves the existing
+// simple Activity behavior.
+func ResolveActivityProfileWithSettings(
+	ca agent_yaml.ContainerAgent,
+	settings *ActivitySettings,
+) (ActivityProfile, error) {
+	profile := ResolveActivityProfile(ca)
+	if settings == nil || strings.TrimSpace(string(settings.UseCase)) == "" {
+		return profile, nil
+	}
+
+	if !profile.IsActivity {
+		return ActivityProfile{}, fmt.Errorf("activity.useCase requires an Activity-protocol hosted agent")
+	}
+
+	switch settings.UseCase {
+	case ActivityUseCaseSimple:
+		return profile, nil
+	case ActivityUseCaseDigitalWorker:
+		if settings.Publish == nil {
+			return ActivityProfile{}, fmt.Errorf("activity.publish is required for digital_worker")
+		}
+		if !settings.Publish.PublishAsAutopilot {
+			return ActivityProfile{}, fmt.Errorf("activity.publish.publishAsAutopilot must be true for digital_worker")
+		}
+		if strings.TrimSpace(settings.Publish.PublishScope) == "" {
+			return ActivityProfile{}, fmt.Errorf("activity.publish.publishScope is required for digital_worker")
+		}
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}, nil
+	default:
+		return ActivityProfile{}, fmt.Errorf("activity.useCase must be %q or %q", ActivityUseCaseSimple, ActivityUseCaseDigitalWorker)
+	}
 }
 
 // ComposeActivityAgentEndpoint folds the Activity endpoint requirements into an

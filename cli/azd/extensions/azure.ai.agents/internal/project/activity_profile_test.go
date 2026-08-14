@@ -105,6 +105,44 @@ func TestResolveActivityProfile(t *testing.T) {
 	})
 }
 
+func TestResolveActivityProfileWithSettings(t *testing.T) {
+	activityAgent := agent_yaml.ContainerAgent{
+		Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}},
+	}
+
+	t.Run("digital worker resolves", func(t *testing.T) {
+		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			UseCase: ActivityUseCaseDigitalWorker,
+			Publish: &DigitalWorkerPublishConfig{
+				PublishAsAutopilot: true,
+				PublishScope:       "tenant",
+			},
+		})
+		require.NoError(t, err)
+		require.True(t, profile.IsActivity)
+		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
+	})
+
+	t.Run("digital worker requires autopilot publish", func(t *testing.T) {
+		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			UseCase: ActivityUseCaseDigitalWorker,
+			Publish: &DigitalWorkerPublishConfig{PublishScope: "tenant"},
+		})
+		require.ErrorContains(t, err, "publishAsAutopilot")
+	})
+
+	t.Run("digital worker requires activity protocol", func(t *testing.T) {
+		_, err := ResolveActivityProfileWithSettings(agent_yaml.ContainerAgent{}, &ActivitySettings{
+			UseCase: ActivityUseCaseDigitalWorker,
+			Publish: &DigitalWorkerPublishConfig{
+				PublishAsAutopilot: true,
+				PublishScope:       "tenant",
+			},
+		})
+		require.ErrorContains(t, err, "Activity-protocol")
+	})
+}
+
 // TestActivityDeclarationSurvivesInitRoundTrip locks the behavior that
 // `azd ai agent init` preserves the activity-protocol declaration (container
 // protocols + agent_endpoint) when it moves an agent definition into azure.yaml

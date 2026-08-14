@@ -49,13 +49,13 @@ type RunHistoryUser struct {
 
 // RunHistoryCompute represents compute details from run history.
 type RunHistoryCompute struct {
-	Target        string `json:"target,omitempty"`
-	TargetType    string `json:"targetType,omitempty"`
-	VMSize        string `json:"vmSize,omitempty"`
-	InstanceType  string `json:"instanceType,omitempty"`
-	InstanceCount int    `json:"instanceCount,omitempty"`
-	GPUCount      int    `json:"gpuCount,omitempty"`
-	Priority      string `json:"priority,omitempty"`
+	Target            string `json:"target,omitempty"`
+	TargetType        string `json:"targetType,omitempty"`
+	VMSize            string `json:"vmSize,omitempty"`
+	InstanceType      string `json:"instanceType,omitempty"`
+	InstanceCount     int    `json:"instanceCount,omitempty"`
+	GPUCount          int    `json:"gpuCount,omitempty"`
+	Priority          string `json:"priority,omitempty"`
 }
 
 // RunHistoryAsset represents an input or output asset reference in run history.

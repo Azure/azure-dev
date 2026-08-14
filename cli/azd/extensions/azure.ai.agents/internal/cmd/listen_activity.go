@@ -9,41 +9,27 @@ import (
 	_ "embed"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"text/template"
 
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // teamsSetupGuideFile is the name of the generated Teams onboarding guide.
 const teamsSetupGuideFile = "TEAMS_APP_SETUP.md"
 
-// writeTeamsSetupGuide writes a generic, simplified Teams onboarding guide next
-// to the agent source so the user can package and sideload their Teams app after
-// deploy. It returns the written path, or "" on any failure (best-effort: never
-// blocks or fails the deploy). The guide is deploy-agnostic and links to the
-// official Microsoft Learn docs rather than any sample-specific scripts.
+// writeTeamsSetupGuide is intentionally disabled for Digital Worker deployments.
+// The Teams onboarding guide is not created automatically after deploy.
 func writeTeamsSetupGuide(
 	proj *azdext.ProjectConfig, svc *azdext.ServiceConfig, agentName, botName, msaAppID string,
 ) string {
-	guidePath, err := paths.JoinAllowRoot(proj.GetPath(), svc.GetRelativePath(), teamsSetupGuideFile)
-	if err != nil {
-		log.Printf("postdeploy: skipping Teams setup guide: %v", err)
-		return ""
-	}
-	if err := os.WriteFile(guidePath, []byte(teamsSetupGuideContent(agentName, botName, msaAppID)), 0o600); err != nil {
-		log.Printf("postdeploy: failed to write Teams setup guide %q: %v", guidePath, err)
-		return ""
-	}
-	return guidePath
+	log.Printf("postdeploy: skipping Teams setup guide generation for agent %q; TEAMS_APP_SETUP.md is intentionally disabled", agentName)
+	return ""
 }
 
 //go:embed assets/teams_app_setup_guide.md
@@ -74,23 +60,9 @@ func teamsSetupGuideContent(agentName, botName, msaAppID string) string {
 	return buf.String()
 }
 
-// printTeamsNextSteps prints a short pointer to the generated setup guide. The
-// full instructions live in the guide file because the azd progress UI does not
-// reliably surface postdeploy stdout.
+// printTeamsNextSteps is intentionally disabled for Digital Worker deployments.
 func printTeamsNextSteps(botName, msaAppID, guidePath string) {
-	fmt.Println(output.WithHighLightFormat("\nTeams bot ready."))
-	fmt.Printf("  Azure Bot:  %s (Microsoft Teams channel enabled)\n", botName)
-	fmt.Printf("  Bot ID:     %s\n", msaAppID)
-	if guidePath != "" {
-		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
-			"  Next steps (package + sideload the Teams app): see %s", guidePath,
-		)))
-	} else {
-		fmt.Println(output.WithGrayFormat(
-			"  Next steps: package the Teams app (bots[].botId = the Bot ID above) and " +
-				"upload it in Teams -> Apps -> Manage your apps -> Upload a custom app.",
-		))
-	}
+	return
 }
 
 // readEnvValue reads a required environment value, returning a descriptive error

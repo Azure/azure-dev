@@ -91,7 +91,7 @@ func TestTeamsSetupGuideContent(t *testing.T) {
 	}
 }
 
-func TestWriteTeamsSetupGuide(t *testing.T) {
+func TestNoTeamsSetupGuideCreated(t *testing.T) {
 	root := t.TempDir()
 	proj := &azdext.ProjectConfig{Path: root}
 	svc := &azdext.ServiceConfig{Name: "echo-agent", RelativePath: "src"}
@@ -100,15 +100,12 @@ func TestWriteTeamsSetupGuide(t *testing.T) {
 	}
 
 	path := writeTeamsSetupGuide(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
-	want := filepath.Join(root, "src", teamsSetupGuideFile)
-	if path != want {
-		t.Fatalf("guide path = %q, want %q", path, want)
+	if path != "" {
+		t.Fatalf("expected no guide path, got %q", path)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("guide not written: %v", err)
-	}
-	if !strings.Contains(string(data), "app-id") {
-		t.Errorf("written guide missing bot id")
+
+	guidePath := filepath.Join(root, "src", teamsSetupGuideFile)
+	if _, err := os.Stat(guidePath); !os.IsNotExist(err) {
+		t.Fatalf("guide should not be created at %q: err=%v", guidePath, err)
 	}
 }

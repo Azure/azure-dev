@@ -411,8 +411,8 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
 		msaAppID, idErr := readEnvValue(ctx, azdClient, envName, envkey.AgentInstanceIdentityClientID(svc.Name))
 		if nameErr == nil && botErr == nil && idErr == nil {
-			guidePath := writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID)
-			printTeamsNextSteps(botName, msaAppID, guidePath)
+			_ = writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID)
+			printTeamsNextSteps(botName, msaAppID, "")
 		} else {
 			log.Printf(
 				"postdeploy: skipping Teams setup guide for %s: agent name: %v, bot name: %v, instance identity: %v",

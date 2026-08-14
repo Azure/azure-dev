@@ -255,8 +255,47 @@ func (ch *ContainerHelper) LocalImageTag(
 	return configuredImage.Local(), nil
 }
 
-func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+func resolveImagePassthrough(
+	serviceConfig *ServiceConfig,
+	env *environment.Environment,
+) (string, error) {
+	if !serviceConfig.Docker.ImagePassthrough {
+		return "", nil
+	}
 	if serviceConfig.Docker.RemoteBuild {
+		return "", fmt.Errorf("docker.imagePassthrough cannot be combined with docker.remoteBuild")
+	}
+
+	image, err := serviceConfig.Image.Envsubst(env.Getenv)
+	if err != nil {
+		return "", fmt.Errorf("substituting environment variables in passthrough image: %w", err)
+	}
+	if strings.TrimSpace(image) == "" {
+		return "", fmt.Errorf("docker.imagePassthrough requires the service image property")
+	}
+
+	parsed, err := docker.ParseContainerImage(image)
+	if err != nil {
+		return "", fmt.Errorf("parsing passthrough image: %w", err)
+	}
+	return parsed.Remote(), nil
+}
+
+func imagePassthroughArtifact(image string) *Artifact {
+	return &Artifact{
+		Kind:         ArtifactKindContainer,
+		Location:     image,
+		LocationKind: LocationKindRemote,
+		Metadata: map[string]string{
+			"imagePassthrough": "true",
+			"remoteImage":      image,
+			"sourceImage":      image,
+		},
+	}
+}
+
+func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+	if serviceConfig.Docker.ImagePassthrough || serviceConfig.Docker.RemoteBuild {
 		return []tools.ExternalTool{}
 	}
 
@@ -354,6 +393,12 @@ func (ch *ContainerHelper) Build(
 	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
+	if serviceConfig.Docker.ImagePassthrough {
+		if _, err := resolveImagePassthrough(serviceConfig, env); err != nil {
+			return nil, err
+		}
+		return &ServiceBuildResult{}, nil
+	}
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServiceBuildResult{}, nil
 	}
@@ -542,6 +587,15 @@ func (ch *ContainerHelper) Package(
 	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
+	if serviceConfig.Docker.ImagePassthrough {
+		image, err := resolveImagePassthrough(serviceConfig, env)
+		if err != nil {
+			return nil, err
+		}
+		return &ServicePackageResult{
+			Artifacts: ArtifactCollection{imagePassthroughArtifact(image)},
+		}, nil
+	}
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServicePackageResult{}, nil
 	}
@@ -636,7 +690,12 @@ func (ch *ContainerHelper) Publish(
 		return nil, err
 	}
 
-	if serviceConfig.Docker.RemoteBuild {
+	if serviceConfig.Docker.ImagePassthrough {
+		if imageOverride != nil {
+			return nil, fmt.Errorf("docker.imagePassthrough cannot be combined with a publish image override")
+		}
+		remoteImage, err = resolveImagePassthrough(serviceConfig, env)
+	} else if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
 		if err != nil {
 			// Check if a local container runtime (Docker/Podman) is available before falling back
@@ -664,13 +723,15 @@ func (ch *ContainerHelper) Publish(
 	}
 
 	// Create publish artifact with remote image reference
+	metadata := map[string]string{"remoteImage": remoteImage}
+	if serviceConfig.Docker.ImagePassthrough {
+		metadata["imagePassthrough"] = "true"
+	}
 	publishArtifact := &Artifact{
 		Kind:         ArtifactKindContainer,
 		Location:     remoteImage,
 		LocationKind: LocationKindRemote, // Remote after publish
-		Metadata: map[string]string{
-			"remoteImage": remoteImage,
-		},
+		Metadata:     metadata,
 	}
 
 	return &ServicePublishResult{

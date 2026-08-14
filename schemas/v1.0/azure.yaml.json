@@ -636,6 +636,30 @@
                                 "remoteBuild": false
                             }
                         }
+                    },
+                    {
+                        "comment": "imagePassthrough requires a service image and cannot be combined with docker.remoteBuild",
+                        "if": {
+                            "required": ["docker"],
+                            "properties": {
+                                "docker": {
+                                    "required": ["imagePassthrough"],
+                                    "properties": {
+                                        "imagePassthrough": { "const": true }
+                                    }
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": ["image"],
+                            "properties": {
+                                "docker": {
+                                    "properties": {
+                                        "remoteBuild": { "const": false }
+                                    }
+                                }
+                            }
+                        }
                     }
                 ]
             }
@@ -1270,6 +1294,11 @@
                     "type": "boolean",
                     "title": "Optional. Whether to build the image remotely",
                     "description": "If set to true, the image will be built remotely using the Azure Container Registry remote build feature. If the remote build fails, azd automatically falls back to building locally using Docker or Podman if available. If set to false, the image will be built locally."
+                },
+                "imagePassthrough": {
+                    "type": "boolean",
+                    "title": "Optional. Whether to use the service image as the final remote artifact",
+                    "description": "If set to true, azd passes the service image to the target unchanged without building, pulling, tagging, copying, or publishing it. Requires the service image property and cannot be combined with docker.remoteBuild."
                 }
             }
         },

@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
@@ -384,6 +385,44 @@ func Test_appServiceTarget_Publish(t *testing.T) {
 		envManager.AssertCalled(t, "Save", mock.Anything, mock.Anything)
 		assert.Equal(t, "myregistry.azurecr.io/myapp:abc123",
 			env.GetServiceProperty("web", "IMAGE_NAME"))
+	})
+
+	t.Run("ContainerDeploy_ImagePassthrough", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		env := environment.New("test")
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+		image := "private.example.com/team/agent:v1"
+		serviceConfig := &ServiceConfig{
+			Name:     "web",
+			Language: ServiceLanguageDocker,
+			Image:    osutil.NewExpandableString(image),
+			Docker:   DockerProjectOptions{ImagePassthrough: true},
+		}
+		serviceContext := NewServiceContext()
+		require.NoError(t, serviceContext.Package.Add(imagePassthroughArtifact(image)))
+		targetResource := environment.NewTargetResource(
+			"SUB_ID", "RG_ID", "WEB_APP_NAME", string(azapi.AzureResourceTypeWebSite),
+		)
+		target := &appServiceTarget{
+			env:             env,
+			envManager:      envManager,
+			containerHelper: &ContainerHelper{},
+		}
+
+		result, err := target.Publish(
+			*mockContext.Context,
+			serviceConfig,
+			serviceContext,
+			targetResource,
+			async.NewNoopProgress[ServiceProgress](),
+			&PublishOptions{},
+		)
+		require.NoError(t, err)
+		require.Len(t, result.Artifacts, 1)
+		require.Equal(t, image, result.Artifacts[0].Location)
+		require.Equal(t, "true", result.Artifacts[0].Metadata["imagePassthrough"])
+		require.Equal(t, image, env.GetServiceProperty("web", "IMAGE_NAME"))
 	})
 }
 

@@ -204,11 +204,11 @@ func (t *aksTarget) Publish(
 		}
 	}
 
-	// Only publish the container image if a package output has been defined
-	// Empty package details is a valid scenario for any AKS deployment that does not build any containers
-	// Ex) Helm charts, or other manifests that reference external images
-	if serviceConfig.Docker.RemoteBuild || hasPackage {
-		// Login, tag & push container image to ACR
+	// Only handle a container image when remote build, image passthrough, or a package output is configured.
+	// Empty package details is a valid scenario for an AKS deployment that does not build any containers,
+	// such as Helm charts or other manifests that reference external images.
+	if serviceConfig.Docker.RemoteBuild || serviceConfig.Docker.ImagePassthrough || hasPackage {
+		// Build and publish the image, or pass through the final remote image reference.
 		publishResult, err := t.containerHelper.Publish(
 			ctx, serviceConfig, serviceContext, targetResource, t.env, progress, publishOptions)
 		if err != nil {

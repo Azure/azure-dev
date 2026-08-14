@@ -1280,6 +1280,65 @@ func (m *mockContainerRegistryService) FindContainerRegistryResourceGroup(
 	args := m.Called(ctx, subscriptionId, registryName)
 	return args.String(0), args.Error(1)
 }
+func TestResolveImagePassthrough(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		image       string
+		docker      DockerProjectOptions
+		env         map[string]string
+		want        string
+		wantErr     bool
+		errContains string
+	}{
+		{name: "disabled"},
+		{
+			name:   "expands service image",
+			image:  "${PRIVATE_REGISTRY}/team/agent:v1",
+			docker: DockerProjectOptions{ImagePassthrough: true},
+			env:    map[string]string{"PRIVATE_REGISTRY": "private.example.com"},
+			want:   "private.example.com/team/agent:v1",
+		},
+		{
+			name:        "requires service image",
+			docker:      DockerProjectOptions{ImagePassthrough: true},
+			wantErr:     true,
+			errContains: "requires the service image property",
+		},
+		{
+			name:  "conflicts with remote build",
+			image: "private.example.com/team/agent:v1",
+			docker: DockerProjectOptions{
+				ImagePassthrough: true,
+				RemoteBuild:      true,
+			},
+			wantErr:     true,
+			errContains: "cannot be combined",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			serviceConfig := &ServiceConfig{
+				Image:  osutil.NewExpandableString(tt.image),
+				Docker: tt.docker,
+			}
+			got, err := resolveImagePassthrough(
+				serviceConfig,
+				environment.NewWithValues("test", tt.env),
+			)
+			if tt.wantErr {
+				require.ErrorContains(t, err, tt.errContains)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func Test_ContainerHelper_Publish(t *testing.T) {
 	tests := []struct {
 		name                    string
@@ -1292,6 +1351,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		targetImage             string
 		publishOptions          *PublishOptions
 		expectedRemoteImage     string
+		imagePassthrough        bool
 		expectDockerLoginCalled bool
 		expectDockerPullCalled  bool
 		expectDockerTagCalled   bool
@@ -1358,6 +1418,30 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectDockerPushCalled:  false,
 			expectedRemoteImage:     "nginx",
 			expectError:             false,
+		},
+		{
+			name:                    "Image passthrough with configured destination registry",
+			image:                   "private.example.com/team/agent:v1",
+			registry:                osutil.NewExpandableString("contoso.azurecr.io"),
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage:     "private.example.com/team/agent:v1",
+			expectError:             false,
+		},
+		{
+			name:                    "Image passthrough rejects publish image override",
+			image:                   "private.example.com/team/agent:v1",
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{Image: "other.example.com/team/agent:v2"},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectError:             true,
 		},
 		{
 			name:                    "With publish options overwrite",
@@ -1460,6 +1544,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 			serviceConfig.RelativePath = tt.project
 			serviceConfig.Docker.Registry = tt.registry
+			serviceConfig.Docker.ImagePassthrough = tt.imagePassthrough
 
 			packageOutput := &ServicePackageResult{
 				Artifacts: ArtifactCollection{
@@ -1522,7 +1607,12 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 				require.Len(t, publishResult.Artifacts, 1)
 				artifact := publishResult.Artifacts[0]
 				require.Equal(t, ArtifactKindContainer, artifact.Kind)
+				require.Equal(t, LocationKindRemote, artifact.LocationKind)
+				require.Equal(t, tt.expectedRemoteImage, artifact.Location)
 				require.Equal(t, tt.expectedRemoteImage, artifact.Metadata["remoteImage"])
+				if tt.imagePassthrough {
+					require.Equal(t, "true", artifact.Metadata["imagePassthrough"])
+				}
 			}
 		})
 	}

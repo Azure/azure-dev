@@ -58,6 +58,35 @@ services:
 | `uses` | list | Service dependencies |
 | `remoteBuild` | boolean | Enable remote build for code-based Azure Functions |
 
+### Docker Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `path` | string | Path to the Dockerfile |
+| `context` | string | Docker build context path |
+| `platform` | string | Container platform target |
+| `target` | string | Dockerfile build target |
+| `registry` | string | Destination container registry |
+| `image` | string | Name applied to a built container image |
+| `tag` | string | Tag applied to a built container image |
+| `buildArgs` | list | Arguments passed to the container build |
+| `network` | string | Networking mode for Dockerfile `RUN` instructions |
+| `remoteBuild` | boolean | Build and push with Azure Container Registry remote build instead of building locally |
+| `imagePassthrough` | boolean | Use the service `image` unchanged without building, pulling, tagging, copying, or publishing it |
+
+`docker.imagePassthrough` requires the service-level `image` property and cannot be combined with
+`docker.remoteBuild`. When omitted or `false`, an external service image can still be pulled and copied into the
+configured destination registry. For example:
+
+```yaml
+services:
+  api:
+    host: containerapp
+    image: registry.example.com/apps/api:1.0
+    docker:
+      imagePassthrough: true
+```
+
 ## Hooks
 
 Hooks run user-defined scripts at lifecycle points:

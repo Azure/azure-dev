@@ -29,6 +29,7 @@ huimiu
 hyoshis
 imatiach
 isatty
+jayzhang
 joho
 karolz
 kitsiosk

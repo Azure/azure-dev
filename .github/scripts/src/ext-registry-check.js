@@ -47,6 +47,19 @@ const ALLOWED_EXTENSION_METADATA_CHANGES = new Set(['displayName', 'description'
 const MERGE_PREVIEW_ATTEMPTS = 3;
 const MERGE_PREVIEW_RETRY_DELAY_MS = 2_000;
 
+/**
+ * Raised when GitHub can't give us a merge preview that matches the head being evaluated.
+ * Usually the pull request has merge conflicts, so the failure is reported to the contributor
+ * directly instead of being labelled an internal script error.
+ */
+class MergePreviewUnavailableError extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'MergePreviewUnavailableError';
+  }
+}
+
 // GitHub action types
 
 /**
@@ -169,6 +182,13 @@ async function run({ github: octokit, context, core, coreTeam, registryCompariso
       `2. After approval, re-run this build step so it'll re-evaluate the PR - no commits or pushes needed.`
     );
   } catch (err) {
+    // A missing or stale merge preview is normally the contributor's PR to fix (most often a
+    // merge conflict), so it's reported as-is rather than as a script bug.
+    if (err instanceof MergePreviewUnavailableError) {
+      core.setFailed(err.message);
+      return;
+    }
+
     core.setFailed(`Internal failure in script: ${err instanceof Error ? err.message : err}`);
   }
 }
@@ -362,7 +382,7 @@ async function getRegistryComparisonRefs({ octokit, context }) {
     }
   }
 
-  throw new Error(
+  throw new MergePreviewUnavailableError(
     `Unable to load a current GitHub merge preview for this PR after ${MERGE_PREVIEW_ATTEMPTS} attempts. ` +
     `Resolve any merge conflicts or re-run the check after GitHub computes the preview: ${lastError?.message}`,
   );

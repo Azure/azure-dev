@@ -1128,6 +1128,7 @@ describe('run', () => {
     expect(core.setFailed).toHaveBeenCalledWith(
       expect.stringContaining(`GitHub's merge preview is stale for the current PR head`),
     );
+    expect(core.setFailed).not.toHaveBeenCalledWith(expect.stringContaining('Internal failure in script'));
     expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
   });
 
@@ -1168,6 +1169,7 @@ describe('run', () => {
     expect(core.setFailed).toHaveBeenCalledWith(
       expect.stringContaining('Resolve any merge conflicts or re-run the check'),
     );
+    expect(core.setFailed).not.toHaveBeenCalledWith(expect.stringContaining('Internal failure in script'));
     expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
   });
 

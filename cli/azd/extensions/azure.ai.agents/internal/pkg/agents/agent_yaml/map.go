@@ -497,6 +497,10 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 	if imageURL == "" {
 		return nil, fmt.Errorf("image URL is required for hosted agents - use WithImageURL build option or specify in container.image")
 	}
+	registryConnectionID := strings.TrimSpace(hostedAgent.RegistryConnectionID)
+	if hostedAgent.RegistryConnectionID != "" && registryConnectionID == "" {
+		return nil, fmt.Errorf("registryConnectionId cannot be empty or whitespace")
+	}
 
 	imageDef := agent_api.HostedAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
@@ -508,7 +512,8 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		Memory:               memory,
 		EnvironmentVariables: envVars,
 		ContainerConfiguration: &agent_api.ContainerConfigurationAPI{
-			Image: imageURL,
+			Image:                imageURL,
+			RegistryConnectionID: registryConnectionID,
 		},
 		SessionConfiguration: sessionConfig,
 	}

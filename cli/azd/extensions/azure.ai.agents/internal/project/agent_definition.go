@@ -128,6 +128,7 @@ func orphanedConfigEnvNames(svc *azdext.ServiceConfig) []string {
 type AgentDefinitionInline struct {
 	agent_yaml.AgentDefinition `json:",inline"`
 	Protocols                  []agent_yaml.ProtocolVersionRecord `json:"protocols,omitempty"`
+	RegistryConnectionID       string                             `json:"registryConnectionId,omitempty"`
 	// EnvironmentVariables reads the deprecated inline shape.
 	EnvironmentVariables *[]agent_yaml.EnvironmentVariable `json:"environmentVariables,omitempty"`
 	AgentEndpoint        *agent_yaml.AgentEndpoint         `json:"agentEndpoint,omitempty"`
@@ -182,6 +183,7 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 		AgentCard:            ca.AgentCard,
 		CodeConfiguration:    ca.CodeConfiguration,
 		Policies:             ca.Policies,
+		RegistryConnectionID: ca.RegistryConnectionID,
 		SessionConfiguration: ca.SessionConfiguration,
 	}
 
@@ -218,6 +220,7 @@ func (d AgentDefinitionInline) toContainerAgent(
 	ca := agent_yaml.ContainerAgent{
 		AgentDefinition:      d.AgentDefinition,
 		Image:                image,
+		RegistryConnectionID: d.RegistryConnectionID,
 		Protocols:            d.Protocols,
 		EnvironmentVariables: environmentVariables,
 		AgentEndpoint:        d.AgentEndpoint,

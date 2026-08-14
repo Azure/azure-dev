@@ -28,6 +28,7 @@ func sampleContainerAgent() agent_yaml.ContainerAgent {
 		Protocols: []agent_yaml.ProtocolVersionRecord{
 			{Protocol: "responses", Version: "2.0.0"},
 		},
+		RegistryConnectionID: "private-registry",
 		EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
 			{Name: "FOUNDRY_MODEL_DEPLOYMENT_NAME", Value: "gpt-4.1-mini"},
 		},
@@ -55,6 +56,7 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	_, hasInlineEnvironment := props.GetFields()["environmentVariables"]
 	require.False(t, hasInlineEnvironment)
+	require.Equal(t, "private-registry", props.GetFields()["registryConnectionId"].GetStringValue())
 
 	svc := &azdext.ServiceConfig{
 		Name:                 "basic-agent",
@@ -74,6 +76,7 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.NotNil(t, got.Description)
 	require.Equal(t, "A basic agent hosted by Foundry.", *got.Description)
 	require.Equal(t, ca.Protocols, got.Protocols)
+	require.Equal(t, ca.RegistryConnectionID, got.RegistryConnectionID)
 	require.NotNil(t, got.EnvironmentVariables)
 	require.Equal(t, *ca.EnvironmentVariables, *got.EnvironmentVariables)
 	// CPU/memory round-trips through the `container` config.
@@ -539,7 +542,8 @@ func TestLoadAgentDefinition_ToolboxServiceReference(t *testing.T) {
 // fallback used during the migration window.
 func TestLoadAgentDefinition_DiskFallback(t *testing.T) {
 	dir := t.TempDir()
-	yaml := "kind: hosted\nname: disk-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0.0\"\n"
+	yaml := "kind: hosted\nname: disk-agent\nregistryConnectionId: private-registry\n" +
+		"protocols:\n  - protocol: responses\n    version: \"1.0.0\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0o600))
 
 	svc := &azdext.ServiceConfig{Name: "disk-agent", Host: "azure.ai.agent", RelativePath: "."}
@@ -549,6 +553,7 @@ func TestLoadAgentDefinition_DiskFallback(t *testing.T) {
 	require.Equal(t, AgentDefinitionSourceDisk, source)
 	require.True(t, source.IsLegacy())
 	require.Equal(t, "disk-agent", got.Name)
+	require.Equal(t, "private-registry", got.RegistryConnectionID)
 }
 
 func TestLoadAgentDefinition_FileRef(t *testing.T) {

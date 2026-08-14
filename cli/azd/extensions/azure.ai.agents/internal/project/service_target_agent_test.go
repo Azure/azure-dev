@@ -1612,6 +1612,7 @@ func TestPrepareDeployIncludesServiceEnvironment(t *testing.T) {
 	t.Parallel()
 
 	agentDef := sampleContainerAgent()
+	agentDef.RegistryConnectionID = "private-registry"
 	*agentDef.EnvironmentVariables = append(
 		*agentDef.EnvironmentVariables,
 		agent_yaml.EnvironmentVariable{
@@ -1651,6 +1652,10 @@ func TestPrepareDeployIncludesServiceEnvironment(t *testing.T) {
 	)
 	require.Equal(t, "service", prep.resolvedEnvVars["SHARED"])
 	require.Equal(t, "legacy", prep.resolvedEnvVars["LEGACY_ONLY"])
+	hostedDefinition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.NotNil(t, hostedDefinition.ContainerConfiguration)
+	require.Equal(t, "private-registry", hostedDefinition.ContainerConfiguration.RegistryConnectionID)
 }
 
 func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testing.T) {
@@ -1780,6 +1785,52 @@ func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
 	require.Equal(t, DefaultMemory, definition.Memory)
 }
 
+func TestValidateRegistryConnectionDefinition(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		agent       agent_yaml.ContainerAgent
+		wantContain string
+	}{
+		{name: "unset"},
+		{
+			name: "valid",
+			agent: agent_yaml.ContainerAgent{
+				Image: "registry.example.com/agent:v1", RegistryConnectionID: "private-registry",
+			},
+		},
+		{
+			name: "missing image", agent: agent_yaml.ContainerAgent{RegistryConnectionID: "private-registry"},
+			wantContain: "requires a pre-built container image",
+		},
+		{
+			name: "code deploy",
+			agent: agent_yaml.ContainerAgent{
+				Image: "registry.example.com/agent:v1", RegistryConnectionID: "private-registry",
+				CodeConfiguration: &agent_yaml.CodeConfiguration{},
+			},
+			wantContain: "codeConfiguration",
+		},
+		{
+			name: "whitespace", agent: agent_yaml.ContainerAgent{RegistryConnectionID: "  "},
+			wantContain: "empty or whitespace",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateRegistryConnectionDefinition(test.agent)
+			if test.wantContain == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, test.wantContain)
+		})
+	}
+}
+
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	t.Parallel()
 
@@ -1788,6 +1839,30 @@ func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{})
 	require.NoError(t, err)
 	require.False(t, result, "should default to build when no image is configured")
+}
+
+func TestShouldUsePreBuiltImage_RegistryConnectionForcesPreBuilt(t *testing.T) {
+	t.Parallel()
+
+	promptStub := &stubPromptServer{selectedIndex: 0}
+	provider := &AgentServiceTargetProvider{azdClient: newPromptTestClient(t, promptStub)}
+	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+		Image:                "registry.example.com/agent:v1",
+		RegistryConnectionID: "private-registry",
+	})
+	require.NoError(t, err)
+	require.True(t, result)
+	require.Equal(t, int32(0), promptStub.selectCalls.Load(), "registry-backed images must not prompt to build")
+}
+
+func TestShouldUsePreBuiltImage_RegistryConnectionRequiresImage(t *testing.T) {
+	t.Parallel()
+
+	provider := &AgentServiceTargetProvider{}
+	_, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+		RegistryConnectionID: "private-registry",
+	})
+	require.ErrorContains(t, err, "requires a pre-built container image")
 }
 
 func TestShouldUsePreBuiltImage_SelectsPreBuiltImage(t *testing.T) {

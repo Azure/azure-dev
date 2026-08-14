@@ -45,6 +45,44 @@ func TestFoundryProjectInfo_Endpoint(t *testing.T) {
 	}
 }
 
+func TestVerifyFoundryProjectConnection(t *testing.T) {
+	t.Parallel()
+
+	project := FoundryProjectInfo{AccountName: "account", ProjectName: "project"}
+	connections := []azure.Connection{
+		{Name: "private-registry", ID: "/connections/private-registry", Type: azure.ConnectionTypeCustomKeys},
+	}
+	loader := func(
+		_ context.Context,
+		_ azcore.TokenCredential,
+		accountName string,
+		projectName string,
+	) ([]azure.Connection, error) {
+		require.Equal(t, "account", accountName)
+		require.Equal(t, "project", projectName)
+		return connections, nil
+	}
+
+	require.NoError(t, verifyFoundryProjectConnection(
+		t.Context(), nil, project, "private-registry", loader,
+	))
+	require.NoError(t, verifyFoundryProjectConnection(
+		t.Context(), nil, project, "/connections/private-registry", loader,
+	))
+
+	err := verifyFoundryProjectConnection(t.Context(), nil, project, "missing", loader)
+	require.ErrorContains(t, err, "was not found")
+
+	loadErr := errors.New("service unavailable")
+	err = verifyFoundryProjectConnection(
+		t.Context(), nil, project, "private-registry",
+		func(context.Context, azcore.TokenCredential, string, string) ([]azure.Connection, error) {
+			return nil, loadErr
+		},
+	)
+	require.ErrorIs(t, err, loadErr)
+}
+
 func TestExtractProjectDetails(t *testing.T) {
 	t.Parallel()
 

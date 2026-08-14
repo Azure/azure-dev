@@ -9,11 +9,11 @@ import (
 	"strings"
 )
 
-// processNamePatterns maps exact process executable names to agent types.
-// Names are matched case-insensitively after removing a Windows executable extension.
+// processNamePatterns maps process executable names to agent types.
 var processNamePatterns = []struct {
-	patterns  []string // lowercase executable names to match
-	agentType AgentType
+	patterns   []string // lowercase executable names to match
+	agentType  AgentType
+	exactMatch bool
 }{
 	// Claude Code (Anthropic) - installed via npm, homebrew, or direct download
 	{
@@ -22,8 +22,10 @@ var processNamePatterns = []struct {
 	},
 	// GitHub Copilot CLI - installed via npm (@github/copilot) or as gh extension
 	{
-		patterns:  []string{"copilot", "copilot-cli", "gh-copilot", "github-copilot", "github-copilot-cli"},
-		agentType: AgentTypeGitHubCopilotCLI,
+		patterns:   []string{"copilot", "copilot-cli", "gh-copilot", "github-copilot", "github-copilot-cli"},
+		agentType:  AgentTypeGitHubCopilotCLI,
+		// Avoid classifying host applications and installation paths containing the generic "copilot" term.
+		exactMatch: true,
 	},
 	// Google Gemini CLI
 	{
@@ -90,7 +92,7 @@ func matchProcessToAgent(info parentProcessInfo) AgentInfo {
 
 	for _, entry := range processNamePatterns {
 		for _, pattern := range entry.patterns {
-			if nameLower == pattern {
+			if processNameMatches(nameLower, info.Executable, pattern, entry.exactMatch) {
 				return AgentInfo{
 					Type:     entry.agentType,
 					Name:     entry.agentType.DisplayName(),
@@ -100,7 +102,7 @@ func matchProcessToAgent(info parentProcessInfo) AgentInfo {
 				}
 			}
 
-			if execBaseLower == pattern {
+			if processNameMatches(execBaseLower, info.Executable, pattern, entry.exactMatch) {
 				return AgentInfo{
 					Type:     entry.agentType,
 					Name:     entry.agentType.DisplayName(),
@@ -113,6 +115,15 @@ func matchProcessToAgent(info parentProcessInfo) AgentInfo {
 	}
 
 	return NoAgent()
+}
+
+func processNameMatches(processName string, executable string, pattern string, exactMatch bool) bool {
+	if processName == pattern {
+		return true
+	}
+
+	return !exactMatch &&
+		(strings.Contains(processName, pattern) || strings.Contains(strings.ToLower(executable), pattern))
 }
 
 func normalizeProcessName(processPath string) string {

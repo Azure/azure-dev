@@ -327,7 +327,7 @@ func TestMatchProcessToAgent(t *testing.T) {
 			expectedAgent: AgentTypeUnknown,
 		},
 		{
-			name: "Agent name in host path does not match",
+			name: "Copilot name in host path does not match",
 			processInfo: parentProcessInfo{
 				Name:       "pwsh.exe",
 				Executable: `C:\Users\example\copilot-workspace\pwsh.exe`,
@@ -335,11 +335,33 @@ func TestMatchProcessToAgent(t *testing.T) {
 			expectedAgent: AgentTypeUnknown,
 		},
 		{
-			name: "Agent name substring does not match",
+			name: "Copilot name substring does not match",
+			processInfo: parentProcessInfo{
+				Name: "my-copilot-wrapper",
+			},
+			expectedAgent: AgentTypeUnknown,
+		},
+		{
+			name: "Claude wrapper remains supported",
 			processInfo: parentProcessInfo{
 				Name: "my-claude-wrapper",
 			},
-			expectedAgent: AgentTypeUnknown,
+			expectedAgent: AgentTypeClaudeCode,
+		},
+		{
+			name: "Gemini installation path remains supported",
+			processInfo: parentProcessInfo{
+				Name:       "node",
+				Executable: "/usr/local/lib/google-gemini/bin/node",
+			},
+			expectedAgent: AgentTypeGemini,
+		},
+		{
+			name: "OpenCode versioned executable remains supported",
+			processInfo: parentProcessInfo{
+				Name: "opencode-v1.2.3",
+			},
+			expectedAgent: AgentTypeOpenCode,
 		},
 	}
 

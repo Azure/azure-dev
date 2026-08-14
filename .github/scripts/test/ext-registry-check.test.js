@@ -45,6 +45,12 @@ const DEV_REGISTRY_PATH = 'cli/azd/extensions/registry.dev.json';
 const FIG_SPEC_SNAPSHOT_PATH = 'cli/azd/cmd/testdata/TestFigSpec.ts';
 const REGISTRY_PATH_LIST = `${PROD_REGISTRY_PATH}, ${DEV_REGISTRY_PATH}`;
 
+// The three commits the fixtures model: the PR head from the event payload, the base branch
+// tip the merge preview was built from, and GitHub's synthetic merge commit.
+const HEAD_SHA = 'abc123';
+const MERGE_BASE_SHA = 'current-base';
+const MERGE_RESULT_SHA = 'merge-result';
+
 /**
  * @param {object} [opts]
  * @param {string[]} [opts.capabilities]
@@ -517,7 +523,7 @@ describe('diffRegistry', () => {
 });
 
 describe('isAllowedRegistryJsonUpdate', () => {
-  it('loads main and PR registry.json and applies the registry policy', async () => {
+  it('loads the base and proposed registry.json and applies the registry policy', async () => {
     const base = registry([extension({ id: 'ext.one' })]);
     const pr = registry([{ ...extension({ id: 'ext.one' }), namespace: 'other' }]);
     const octokit = createRegistryOctokit({ base, pr });
@@ -527,7 +533,10 @@ describe('isAllowedRegistryJsonUpdate', () => {
       octokit,
       context,
       registryPath: PROD_REGISTRY_PATH,
-      registryBaseRef: 'main',
+      registryComparisonRefs: {
+        baseRef: 'main',
+        proposedRef: MERGE_RESULT_SHA,
+      },
     })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       owner: 'Azure',
@@ -535,10 +544,93 @@ describe('isAllowedRegistryJsonUpdate', () => {
       ref: 'main',
     }));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
-      owner: 'fork-owner',
-      repo: 'azure-dev-fork',
-      ref: 'abc123',
+      owner: 'Azure',
+      repo: 'azure-dev',
+      ref: MERGE_RESULT_SHA,
     }));
+  });
+
+  it('approves a release update when the base has an unrelated concurrently merged release', async () => {
+    const base = registry([
+      extension({
+        id: 'ext.one',
+        versions: [version({ version: '1.0.0' })],
+      }),
+      extension({
+        id: 'ext.concurrent',
+        versions: [version({ version: '2.0.0' })],
+      }),
+    ]);
+    const merged = registry([
+      extension({
+        id: 'ext.one',
+        versions: [
+          version({ version: '1.0.0' }),
+          version({ version: '1.1.0' }),
+        ],
+      }),
+      extension({
+        id: 'ext.concurrent',
+        versions: [version({ version: '2.0.0' })],
+      }),
+    ]);
+    const staleHead = registry([
+      extension({
+        id: 'ext.one',
+        versions: [
+          version({ version: '1.0.0' }),
+          version({ version: '1.1.0' }),
+        ],
+      }),
+    ]);
+    const octokit = createRegistryOctokit({ base, pr: merged, head: staleHead });
+
+    await expect(isAllowedRegistryJsonUpdate({
+      octokit,
+      context: createRegistryContext(),
+      registryPath: PROD_REGISTRY_PATH,
+      registryComparisonRefs: {
+        baseRef: MERGE_BASE_SHA,
+        proposedRef: MERGE_RESULT_SHA,
+      },
+    })).resolves.toEqual([]);
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      ref: MERGE_BASE_SHA,
+    }));
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      ref: MERGE_RESULT_SHA,
+    }));
+  });
+
+  it('requires review when the synthetic merge result removes a published release', async () => {
+    const base = registry([
+      extension({
+        id: 'ext.one',
+        versions: [
+          version({ version: '1.0.0' }),
+          version({ version: '1.1.0' }),
+        ],
+      }),
+    ]);
+    const merged = registry([
+      extension({
+        id: 'ext.one',
+        versions: [version({ version: '1.0.0' })],
+      }),
+    ]);
+    const octokit = createRegistryOctokit({ base, pr: merged });
+
+    await expect(isAllowedRegistryJsonUpdate({
+      octokit,
+      context: createRegistryContext(),
+      registryPath: PROD_REGISTRY_PATH,
+      registryComparisonRefs: {
+        baseRef: 'main',
+        proposedRef: MERGE_RESULT_SHA,
+      },
+    })).resolves.toContainEqual(
+      expect.stringContaining("release '1.1.0' was removed; published releases are immutable"),
+    );
   });
 
   it('can load the base registry from a supplied commit-ish', async () => {
@@ -551,7 +643,10 @@ describe('isAllowedRegistryJsonUpdate', () => {
       octokit,
       context,
       registryPath: PROD_REGISTRY_PATH,
-      registryBaseRef: 'base-before-pr',
+      registryComparisonRefs: {
+        baseRef: 'base-before-pr',
+        proposedRef: MERGE_RESULT_SHA,
+      },
     })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       owner: 'Azure',
@@ -569,7 +664,10 @@ describe('isAllowedRegistryJsonUpdate', () => {
       octokit,
       context: createRegistryContext(),
       registryPath: DEV_REGISTRY_PATH,
-      registryBaseRef: 'main',
+      registryComparisonRefs: {
+        baseRef: 'main',
+        proposedRef: MERGE_RESULT_SHA,
+      },
     })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       path: 'cli/azd/extensions/registry.dev.json',
@@ -585,7 +683,10 @@ describe('isAllowedRegistryJsonUpdate', () => {
       octokit,
       context: createRegistryContext(),
       registryPath: PROD_REGISTRY_PATH,
-      registryBaseRef: 'main',
+      registryComparisonRefs: {
+        baseRef: 'main',
+        proposedRef: MERGE_RESULT_SHA,
+      },
     });
 
     expect(reasons).toContainEqual(expect.stringContaining('changes capabilities'));
@@ -984,7 +1085,7 @@ describe('run', () => {
     expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
   });
 
-  it('uses the pull request base sha as the registry comparison base by default', async () => {
+  it('uses the merge preview base as the registry comparison base by default', async () => {
     const core = createNoopCore();
     const octokit = createRegistryOctokit({ base: registry([extension()]), pr: registry([extension()]) });
     const context = createRegistryContext();
@@ -1000,8 +1101,74 @@ describe('run', () => {
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       owner: 'Azure',
       repo: 'azure-dev',
-      ref: 'base-before-pr',
+      ref: MERGE_BASE_SHA,
     }));
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      owner: 'Azure',
+      repo: 'azure-dev',
+      ref: MERGE_RESULT_SHA,
+    }));
+  });
+
+  it('fails closed when GitHub returns a merge preview for an older PR head', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      mergeHeadShas: ['older-head'],
+    });
+
+    await runWithoutRetryDelay({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`GitHub's merge preview is stale for the current PR head`),
+    );
+    expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
+  });
+
+  it('retries until GitHub returns a merge preview for the current PR head', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      mergeHeadShas: ['older-head', HEAD_SHA],
+    });
+
+    await runWithoutRetryDelay({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(octokit.rest.repos.getCommit).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports how to recover when GitHub has no merge preview', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      mergeError: new Error('Not Found'),
+    });
+
+    await runWithoutRetryDelay({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining('Resolve any merge conflicts or re-run the check'),
+    );
+    expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
   });
 
   it('requires review when the PR changes files outside the extension registries', async () => {
@@ -1174,19 +1341,36 @@ describe('REGISTRY_JSON_PATHS', () => {
  * @param {{
  *   base?: RegistryJson,
  *   pr?: RegistryJson,
+ *   head?: RegistryJson,
  *   registries?: Object<string, { base: RegistryJson, pr: RegistryJson }>,
  *   files?: { filename: string, previous_filename?: string, status?: string }[],
  *   reviews?: { user: { login: string }, state: string, commit_id: string }[],
+ *   mergeHeadShas?: string[],
+ *   mergeError?: Error,
  * }} args
  * @returns {Octokit}
  */
-function createRegistryOctokit({ base, pr, registries, files = [{ filename: PROD_REGISTRY_PATH }], reviews = [] }) {
+function createRegistryOctokit({
+  base,
+  pr,
+  head = pr,
+  registries,
+  files = [{ filename: PROD_REGISTRY_PATH }],
+  reviews = [],
+  mergeHeadShas = [HEAD_SHA],
+  mergeError,
+}) {
+  let mergeAttempt = 0;
   // Per-path fixtures let a test drive each registry independently. When they're not
   // supplied, every registry path shares the same base/pr content.
-  /** @type {Record<string, { base?: RegistryJson | undefined, pr?: RegistryJson | undefined }>} */
+  /** @type {Record<string, {
+   *   base?: RegistryJson | undefined,
+   *   pr?: RegistryJson | undefined,
+   *   head?: RegistryJson | undefined,
+   * }>} */
   const registriesByPath = registries ?? {
-    [PROD_REGISTRY_PATH]: { base, pr },
-    [DEV_REGISTRY_PATH]: { base, pr },
+    [PROD_REGISTRY_PATH]: { base, pr, head },
+    [DEV_REGISTRY_PATH]: { base, pr, head },
   };
 
   const octokit = {
@@ -1196,14 +1380,38 @@ function createRegistryOctokit({ base, pr, registries, files = [{ filename: PROD
         listFiles: vi.fn(),
       },
       repos: {
+        getCommit: vi.fn(() => {
+          if (mergeError) {
+            return Promise.reject(mergeError);
+          }
+
+          // Each call walks one step further into `mergeHeadShas`, sticking on the last
+          // entry, so a test can model a merge preview that refreshes between attempts.
+          const headParentSha = mergeHeadShas[Math.min(mergeAttempt++, mergeHeadShas.length - 1)];
+
+          return Promise.resolve({
+            data: {
+              sha: MERGE_RESULT_SHA,
+              parents: [{ sha: MERGE_BASE_SHA }, { sha: headParentSha }],
+            },
+          });
+        }),
         getContent: vi.fn(({ path, ref }) => {
           const fixture = registriesByPath[path];
           if (fixture == null) {
             throw new Error(`No registry fixture configured for ${path}`);
           }
 
+          // Three distinct states: the base branch tip, the (possibly stale) PR head, and
+          // the merge result the check is supposed to evaluate.
+          const registryForRef = ref === MERGE_RESULT_SHA
+            ? fixture.pr
+            : ref === HEAD_SHA
+              ? fixture.head
+              : fixture.base;
+
           return Promise.resolve({
-            data: JSON.stringify(ref === 'abc123' ? fixture.pr : fixture.base),
+            data: JSON.stringify(registryForRef),
           });
         }),
       },
@@ -1237,7 +1445,7 @@ function createRegistryContext({ author = 'contributor' } = {}) {
         number: 1,
         base: { sha: 'base-before-pr' },
         head: {
-          sha: 'abc123',
+          sha: HEAD_SHA,
           repo: {
             name: 'azure-dev-fork',
             owner: { login: 'fork-owner' },
@@ -1247,6 +1455,23 @@ function createRegistryContext({ author = 'contributor' } = {}) {
       },
     },
   }));
+}
+
+/**
+ * Runs the check under fake timers so the merge-preview retry backoff resolves immediately.
+ *
+ * @param {Parameters<typeof run>[0]} args
+ */
+async function runWithoutRetryDelay(args) {
+  vi.useFakeTimers();
+
+  try {
+    const runPromise = run(args);
+    await vi.runAllTimersAsync();
+    await runPromise;
+  } finally {
+    vi.useRealTimers();
+  }
 }
 
 const LIVE_TEST_OWNER = 'Azure';
@@ -1330,15 +1555,18 @@ async function createLiveContext(octokit, prNumber, { owner = LIVE_TEST_OWNER, r
 // to try against the real deal, with a real octokit instance.
 liveDescribe('[live] registry diff PR scenarios', () => {
   /**
-   * Returns the base-branch commit to compare against for the live PR sample.
-    * Live samples are intentionally limited to closed-unmerged PRs and
-    * squash-merged PRs.
+   * Returns the registry comparison refs for the live PR sample.
+   * Live samples are intentionally limited to closed-unmerged PRs and
+   * squash-merged PRs.
    *
    * @param {Octokit} octokit
    * @param {number} prNumber
-   * @returns {Promise<string>}
+   * @returns {Promise<{
+   *   baseRef: string,
+   *   proposedRef: string,
+   * }>}
    */
-  async function getLiveRegistryBaseRef(octokit, prNumber) {
+  async function getLiveRegistryComparisonRefs(octokit, prNumber) {
     const { data: pr } = await octokit.rest.pulls.get({
       owner: LIVE_TEST_OWNER,
       repo: LIVE_TEST_REPO,
@@ -1350,11 +1578,14 @@ liveDescribe('[live] registry diff PR scenarios', () => {
     }
 
     if (pr.merged_at == null) {
-      if (!pr.base.sha) {
-        throw new Error(`Unable to determine the base commit for PR ${prNumber}`);
+      if (!pr.base.sha || !pr.head.sha) {
+        throw new Error(`Unable to determine the comparison refs for PR ${prNumber}`);
       }
 
-      return pr.base.sha;
+      return {
+        baseRef: pr.base.sha,
+        proposedRef: pr.head.sha,
+      };
     }
 
     if (!pr.merge_commit_sha) {
@@ -1376,7 +1607,10 @@ liveDescribe('[live] registry diff PR scenarios', () => {
       throw new Error(`Unable to determine the base commit before PR ${prNumber}`);
     }
 
-    return parent.sha;
+    return {
+      baseRef: parent.sha,
+      proposedRef: pr.merge_commit_sha,
+    };
   }
 
 
@@ -1386,13 +1620,13 @@ liveDescribe('[live] registry diff PR scenarios', () => {
   async function runTestAgainstLivePr(sample) {
     const octokit = await createLiveOctokit();
     const context = await createLiveContext(octokit, sample.number);
-    const registryBaseRef = await getLiveRegistryBaseRef(octokit, sample.number);
+    const registryComparisonRefs = await getLiveRegistryComparisonRefs(octokit, sample.number);
     const core = createNoopCore();
 
     if (sample.coreTeam) {
-      await run({ github: octokit, context, core, coreTeam: sample.coreTeam, registryBaseRef });
+      await run({ github: octokit, context, core, coreTeam: sample.coreTeam, registryComparisonRefs });
     } else {
-      await run({ github: octokit, context, core, registryBaseRef });
+      await run({ github: octokit, context, core, registryComparisonRefs });
     }
 
     if (sample.noReviewRequired) {
@@ -1427,8 +1661,8 @@ liveDescribe('[live] registry diff PR scenarios', () => {
   }, 90_000);
 
   // https://github.com/Azure/azure-dev/pull/8972
-  it('[live] PR 8972 => core review required because the PR changes another file', async () => {
-    await runTestAgainstLivePr({ number: 8972, noReviewRequired: false });
+  it('[live] PR 8972 => no review required for an allowed TestFigSpec snapshot update', async () => {
+    await runTestAgainstLivePr({ number: 8972, noReviewRequired: true });
   }, 90_000);
 });
 

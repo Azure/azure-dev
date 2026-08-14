@@ -22,8 +22,8 @@ var processNamePatterns = []struct {
 	},
 	// GitHub Copilot CLI - installed via npm (@github/copilot) or as gh extension
 	{
-		patterns:   []string{"copilot", "copilot-cli", "gh-copilot", "github-copilot", "github-copilot-cli"},
-		agentType:  AgentTypeGitHubCopilotCLI,
+		patterns:  []string{"copilot", "copilot-cli", "gh-copilot", "github-copilot", "github-copilot-cli"},
+		agentType: AgentTypeGitHubCopilotCLI,
 		// Avoid classifying host applications and installation paths containing the generic "copilot" term.
 		exactMatch: true,
 	},
@@ -92,7 +92,7 @@ func matchProcessToAgent(info parentProcessInfo) AgentInfo {
 
 	for _, entry := range processNamePatterns {
 		for _, pattern := range entry.patterns {
-			if processNameMatches(nameLower, info.Executable, pattern, entry.exactMatch) {
+			if processNameMatches(nameLower, pattern, entry.exactMatch) {
 				return AgentInfo{
 					Type:     entry.agentType,
 					Name:     entry.agentType.DisplayName(),
@@ -102,7 +102,8 @@ func matchProcessToAgent(info parentProcessInfo) AgentInfo {
 				}
 			}
 
-			if processNameMatches(execBaseLower, info.Executable, pattern, entry.exactMatch) {
+			if processNameMatches(execBaseLower, pattern, entry.exactMatch) ||
+				(!entry.exactMatch && strings.Contains(strings.ToLower(info.Executable), pattern)) {
 				return AgentInfo{
 					Type:     entry.agentType,
 					Name:     entry.agentType.DisplayName(),
@@ -117,13 +118,12 @@ func matchProcessToAgent(info parentProcessInfo) AgentInfo {
 	return NoAgent()
 }
 
-func processNameMatches(processName string, executable string, pattern string, exactMatch bool) bool {
-	if processName == pattern {
-		return true
+func processNameMatches(processName string, pattern string, exactMatch bool) bool {
+	if exactMatch {
+		return processName == pattern
 	}
 
-	return !exactMatch &&
-		(strings.Contains(processName, pattern) || strings.Contains(strings.ToLower(executable), pattern))
+	return strings.Contains(processName, pattern)
 }
 
 func normalizeProcessName(processPath string) string {

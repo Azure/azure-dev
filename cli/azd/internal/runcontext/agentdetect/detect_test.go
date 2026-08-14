@@ -252,9 +252,10 @@ func TestDetectFromUserAgent(t *testing.T) {
 
 func TestMatchProcessToAgent(t *testing.T) {
 	tests := []struct {
-		name          string
-		processInfo   parentProcessInfo
-		expectedAgent AgentType
+		name            string
+		processInfo     parentProcessInfo
+		expectedAgent   AgentType
+		expectedDetails string
 	}{
 		{
 			name:          "Empty process info",
@@ -354,7 +355,8 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Name:       "node",
 				Executable: "/usr/local/lib/google-gemini/bin/node",
 			},
-			expectedAgent: AgentTypeGemini,
+			expectedAgent:   AgentTypeGemini,
+			expectedDetails: "/usr/local/lib/google-gemini/bin/node",
 		},
 		{
 			name: "OpenCode versioned executable remains supported",
@@ -374,6 +376,9 @@ func TestMatchProcessToAgent(t *testing.T) {
 
 			if result.Detected {
 				assert.Equal(t, DetectionSourceParentProcess, result.Source)
+				if tt.expectedDetails != "" {
+					assert.Equal(t, tt.expectedDetails, result.Details)
+				}
 			}
 		})
 	}

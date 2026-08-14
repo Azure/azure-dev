@@ -1130,7 +1130,7 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 	i.console.Message(ctx, "\nInstalling required extensions...")
 
 	for extensionId, versionConstraint := range projectConfig.RequiredVersions.Extensions {
-		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
+		stepMessage := extensionTaskMessage("Installing", extensionId)
 		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		installed, isInstalled := installedExtensions[extensionId]

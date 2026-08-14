@@ -23,6 +23,7 @@ import (
 func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	var filePath string
+	var storageConnectionName string
 
 	cmd := &cobra.Command{
 		Use:   "submit",
@@ -107,7 +108,11 @@ func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				return fmt.Errorf("failed to initialize azcopy: %w", err)
 			}
 
-			uploadSvc := service.NewUploadService(apiClient, azRunner)
+			effectiveStorageConnectionName := resolveStorageConnectionName(
+				storageConnectionName,
+				jobDef.StorageConnectionName,
+			)
+			uploadSvc := service.NewUploadService(apiClient, azRunner, effectiveStorageConnectionName)
 
 			// Resolve references (compute name → ARM ID, local paths → datastore URIs)
 			resolver := service.NewJobResolver(
@@ -140,6 +145,12 @@ func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to YAML job definition file (required)")
+	cmd.Flags().StringVar(
+		&storageConnectionName,
+		"storage-connection-name",
+		"",
+		"Foundry storage connection used to upload local code and input folders",
+	)
 
 	// Configure the SDK-managed --output flag: default to "json" for this
 	// subcommand and constrain to the formats we support.
@@ -150,6 +161,13 @@ func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	})
 
 	return cmd
+}
+
+func resolveStorageConnectionName(flagValue, yamlValue string) string {
+	if value := strings.TrimSpace(flagValue); value != "" {
+		return value
+	}
+	return strings.TrimSpace(yamlValue)
 }
 
 // buildJobResource converts a parsed YAML JobDefinition into the REST API payload.
@@ -198,6 +216,8 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 				JobOutputType: output.Type,
 				Mode:          mapOutputMode(output.Mode),
 				URI:           output.Path,
+				AssetName:     output.AssetName,
+				AssetVersion:  output.AssetVersion,
 			}
 		}
 	}

@@ -859,6 +859,7 @@ func TestCreateHostedAgentAPIRequest_FullConfig(t *testing.T) {
 			{Protocol: "responses", Version: "2.0.0"},
 			{Protocol: "invocations", Version: "1.0.0"},
 		},
+		RegistryConnectionID: "private-registry",
 	}
 
 	buildConfig := &AgentBuildConfig{
@@ -888,6 +889,10 @@ func TestCreateHostedAgentAPIRequest_FullConfig(t *testing.T) {
 	}
 	if imgDef.ContainerConfiguration == nil || imgDef.ContainerConfiguration.Image != "myregistry.azurecr.io/agent:v1" {
 		t.Errorf("ContainerConfiguration.Image = %v", imgDef.ContainerConfiguration)
+	}
+	if imgDef.ContainerConfiguration.RegistryConnectionID != "private-registry" {
+		t.Errorf("ContainerConfiguration.RegistryConnectionID = %q",
+			imgDef.ContainerConfiguration.RegistryConnectionID)
 	}
 	if imgDef.CPU != "4" {
 		t.Errorf("CPU = %q", imgDef.CPU)
@@ -983,6 +988,38 @@ func TestCreateHostedAgentAPIRequest_UsesAgentImage(t *testing.T) {
 	}
 }
 
+func TestCreateHostedAgentAPIRequest_ImagesWithoutRegistryConnectionRemainUnchanged(t *testing.T) {
+	t.Parallel()
+
+	for _, image := range []string{
+		"docker.io/example/public-agent:v1",
+		"example.azurecr.io/private-agent:v1",
+	} {
+		t.Run(image, func(t *testing.T) {
+			t.Parallel()
+			agent := ContainerAgent{
+				AgentDefinition: AgentDefinition{Kind: AgentKindHosted, Name: "agent"},
+				Image:           image,
+			}
+			req, err := CreateHostedAgentAPIRequest(agent, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			definition := req.Definition.(agent_api.HostedAgentDefinition)
+			if definition.ContainerConfiguration.RegistryConnectionID != "" {
+				t.Errorf("unexpected registry connection for %q", image)
+			}
+			serialized, err := json.Marshal(req)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if strings.Contains(string(serialized), "registry_connection_id") {
+				t.Errorf("unexpected registry connection field: %s", serialized)
+			}
+		})
+	}
+}
+
 func TestCreateHostedAgentAPIRequest_BuildConfigImageOverridesAgentImage(t *testing.T) {
 	t.Parallel()
 	agent := ContainerAgent{
@@ -1022,6 +1059,21 @@ func TestCreateHostedAgentAPIRequest_MissingImageURL(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "image URL") {
 		t.Errorf("error should mention image URL, got: %s", err.Error())
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_WhitespaceRegistryConnectionRejected(t *testing.T) {
+	t.Parallel()
+
+	agent := ContainerAgent{
+		AgentDefinition:      AgentDefinition{Kind: AgentKindHosted, Name: "agent"},
+		Image:                "registry.example.com/agent:v1",
+		RegistryConnectionID: "   ",
+	}
+
+	_, err := CreateHostedAgentAPIRequest(agent, nil)
+	if err == nil || !strings.Contains(err.Error(), "registryConnectionId") {
+		t.Fatalf("expected registry connection validation error, got %v", err)
 	}
 }
 
@@ -1362,6 +1414,7 @@ func TestCreateAgentAPIRequest_CodeDeploy_DotnetRuntime(t *testing.T) {
 		Protocols: []ProtocolVersionRecord{
 			{Protocol: "responses", Version: "1.0.0"},
 		},
+		RegistryConnectionID: "must-not-be-emitted",
 		CodeConfiguration: &CodeConfiguration{
 			Runtime:              "dotnet_9",
 			EntryPoint:           "MyAgent.dll",
@@ -1377,6 +1430,16 @@ func TestCreateAgentAPIRequest_CodeDeploy_DotnetRuntime(t *testing.T) {
 	codeDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
 	if !ok {
 		t.Fatalf("expected CodeBasedHostedAgentDefinition, got %T", req.Definition)
+	}
+	if codeDef.ContainerConfiguration != nil {
+		t.Fatalf("code deploy unexpectedly emitted container configuration: %+v", codeDef.ContainerConfiguration)
+	}
+	serialized, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal code deploy request: %v", err)
+	}
+	if strings.Contains(string(serialized), "registry_connection_id") {
+		t.Errorf("code deploy unexpectedly emitted registry connection: %s", serialized)
 	}
 
 	// Verify entry_point is ["dotnet", "MyAgent.dll"]

@@ -677,8 +677,19 @@ func (p *AgentServiceTargetProvider) Package(
 		return nil, err
 	}
 	serviceConfig = p.serviceConfig
-	// Code deploy: ZIP the source directory
-	if p.isCodeDeployAgent() {
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
+		return &azdext.ServicePackageResult{}, nil
+	}
+	if err := validateRegistryConnectionDefinition(agentDef); err != nil {
+		return nil, err
+	}
+
+	// Code deploy: ZIP the source directory.
+	if agentDef.CodeConfiguration != nil {
 		progress("Packaging code")
 		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
 		if err != nil {
@@ -698,14 +709,6 @@ func (p *AgentServiceTargetProvider) Package(
 				},
 			},
 		}, nil
-	}
-
-	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
-	if err != nil {
-		return nil, err
-	}
-	if !isContainerAgent {
-		return &azdext.ServicePackageResult{}, nil
 	}
 
 	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
@@ -1314,6 +1317,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 		); err != nil {
 			return nil, err
 		}
+		if err := validateRegistryConnectionDefinition(agentDef); err != nil {
+			return nil, err
+		}
 	}
 
 	// Ensure Foundry project is loaded
@@ -1360,6 +1366,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	progress("Validating service dependencies")
+	if err := validateRegistryConnectionDependency(
+		ctx, serviceConfig, agentDef.RegistryConnectionID, p.projectServices, p.dependencyEnabled,
+	); err != nil {
+		return nil, err
+	}
 	if err := validateFoundryDependencies(
 		ctx, serviceConfig, serviceTargetConfig, p.projectServices, azdEnv, p.dependencyEnabled,
 	); err != nil {
@@ -1756,9 +1767,40 @@ func memoryStoreOptionsEmpty(options *MemoryStoreOptions) bool {
 		options.UserProfileDetails == ""
 }
 
+func validateRegistryConnectionDefinition(agentDef agent_yaml.ContainerAgent) error {
+	rawConnectionRef := agentDef.RegistryConnectionID
+	connectionRef := strings.TrimSpace(rawConnectionRef)
+	if rawConnectionRef == "" {
+		return nil
+	}
+	if connectionRef == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId cannot be empty or whitespace",
+			"set registryConnectionId to a Foundry project connection name or ID, or remove it",
+		)
+	}
+	if agentDef.CodeConfiguration != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId cannot be used with codeConfiguration",
+			"use registryConnectionId with a pre-built image or remove it for code deploy",
+		)
+	}
+	if strings.TrimSpace(agentDef.Image) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId requires a pre-built container image",
+			"set image on the azure.ai.agent service or remove registryConnectionId",
+		)
+	}
+	return nil
+}
+
 // shouldUsePreBuiltImage determines whether to use a pre-built image.
 //
 // Behavior:
+//   - A registry connection requires an image and always selects that pre-built image.
 //   - If no image is configured in the loaded agent definition, always build from Dockerfile.
 //     The image usually comes from the azure.yaml service image field, but can come from
 //     a legacy agent.yaml fallback.
@@ -1771,7 +1813,14 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	ctx context.Context,
 	agentDef agent_yaml.ContainerAgent,
 ) (bool, error) {
-	imageURL := agentDef.Image
+	imageURL := strings.TrimSpace(agentDef.Image)
+	if agentDef.RegistryConnectionID != "" {
+		if err := validateRegistryConnectionDefinition(agentDef); err != nil {
+			return false, err
+		}
+		log.Printf("registryConnectionId is configured: using pre-built image from agent definition")
+		return true, nil
+	}
 	if imageURL == "" {
 		return false, nil
 	}

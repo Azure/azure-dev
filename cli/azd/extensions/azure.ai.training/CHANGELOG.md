@@ -1,5 +1,11 @@
 # Release History
 
+## 0.0.3-preview (2026-08-14)
+
+### Features Added
+
+- [[#9568]](https://github.com/Azure/azure-dev/pull/9568) Support Foundry storage connections for local uploads, preserve named output asset metadata, and pass through `azureai` dataset references.
+
 ## 0.0.2-preview (2026-06-25)
 
 ### Features

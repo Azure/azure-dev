@@ -294,7 +294,7 @@ const InvocationsProtocol = "invocations"
 // SseTextSelector locates the moderatable text inside a single server-sent event frame.
 type SseTextSelector struct {
 	// EventType is the SSE event name this selector applies to. Required.
-	EventType string `json:"eventType,omitempty" yaml:"event_type,omitempty"`
+	EventType string `json:"eventType" yaml:"event_type"`
 	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
 	TextField string `json:"textField,omitempty" yaml:"text_field,omitempty"`
 }

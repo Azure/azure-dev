@@ -1192,7 +1192,12 @@ func TestValidateAgentDefinition_InvocationsModeration(t *testing.T) {
 
 	// invocationsAgent wraps a moderation block in an otherwise-valid hosted agent that
 	// exposes the invocations protocol, so each case isolates the moderation rule under test.
+	// The caller's fragment must end with a newline; the guard below keeps a missing one from
+	// silently nesting `protocols` under the moderation block and skewing every assertion.
 	invocationsAgent := func(moderation string) string {
+		if !strings.HasSuffix(moderation, "\n") {
+			t.Fatalf("moderation fragment must end with a newline, got %q", moderation)
+		}
 		return `kind: hosted
 name: rai-agent
 policies:
@@ -1206,9 +1211,14 @@ policies:
 	}
 
 	tests := []struct {
-		name         string
-		yaml         string
+		name string
+		yaml string
+		// wantErrSubst is the substring the validation error must contain, or "" when the
+		// definition is expected to validate cleanly.
 		wantErrSubst string
+		// notWantErrSubst, when set, must NOT appear in the error. It locks in the
+		// deliberate suppression of cascading follow-on errors.
+		notWantErrSubst string
 	}{
 		{
 			name: "valid non_streaming json",
@@ -1263,6 +1273,9 @@ policies:
       output_paths: ["$.output"]
 `),
 			wantErrSubst: "policies[0] invocationsModeration.inputContentType must be 'json' or 'text'",
+			// An unusable content type must not also demand inputPaths: the corrected value
+			// decides whether paths are needed at all.
+			notWantErrSubst: "inputPaths is required",
 		},
 		{
 			name: "output_content_type must be json or text",
@@ -1321,6 +1334,82 @@ protocols:
 `,
 			wantErrSubst: "policies[0] invocationsModeration is only supported for agents that expose " +
 				"the 'invocations' protocol",
+			// The rest of the block is irrelevant on a non-invocations agent, so the protocol
+			// error must be reported alone rather than buried under field-level noise.
+			notWantErrSubst: "responseMode",
+		},
+		{
+			name: "both requires stream_selectors as well as output_paths",
+			yaml: invocationsAgent(`      response_mode: both
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors is required when responseMode " +
+				"includes streaming",
+		},
+		{
+			name: "both requires output_paths as well as stream_selectors",
+			yaml: invocationsAgent(`      response_mode: both
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+`),
+			wantErrSubst: "policies[0] invocationsModeration.outputPaths is required when responseMode " +
+				"includes non-streaming",
+		},
+		{
+			name: "text output needs neither output_paths nor stream_selectors",
+			yaml: invocationsAgent(`      response_mode: both
+      output_content_type: text
+      input_paths: ["$.input"]
+`),
+		},
+		{
+			name: "text input needs no input_paths but json output still needs its own",
+			yaml: invocationsAgent(`      response_mode: non_streaming
+      input_content_type: text
+      output_paths: ["$.output"]
+`),
+		},
+		{
+			name: "explicit json content types behave like the defaults",
+			yaml: invocationsAgent(`      response_mode: non_streaming
+      input_content_type: json
+      output_content_type: json
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+`),
+		},
+		{
+			name: "stream selector event_type may not be whitespace only",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: "   "
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType is required",
+		},
+		{
+			name: "each policy is validated under its own index",
+			yaml: `kind: hosted
+name: rai-agent
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/first
+    invocations_moderation:
+      response_mode: non_streaming
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/second
+    invocations_moderation:
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+protocols:
+  - protocol: invocations
+    version: "1.0.0"
+`,
+			wantErrSubst: "policies[1] invocationsModeration.responseMode is required",
 		},
 		{
 			name: "invocations_ws alone does not satisfy the protocol requirement",
@@ -1369,6 +1458,9 @@ protocols:
 			}
 			if !strings.Contains(err.Error(), tc.wantErrSubst) {
 				t.Fatalf("expected error containing %q, got %q", tc.wantErrSubst, err.Error())
+			}
+			if tc.notWantErrSubst != "" && strings.Contains(err.Error(), tc.notWantErrSubst) {
+				t.Fatalf("expected error NOT to contain %q, got %q", tc.notWantErrSubst, err.Error())
 			}
 		})
 	}

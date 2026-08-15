@@ -496,11 +496,13 @@ func validateInvocationsModeration(
 	prefix := fmt.Sprintf("policies[%d] invocationsModeration", index)
 	var errors []string
 
+	// The rest of the block is meaningless on an agent that never serves the invocations
+	// path, so report only the root cause rather than cascading field-level errors.
 	if !exposesInvocationsProtocol(protocols) {
-		errors = append(errors, fmt.Sprintf(
+		return []string{fmt.Sprintf(
 			"%s is only supported for agents that expose the '%s' protocol; "+
 				"add it to 'protocols' or remove the moderation block",
-			prefix, InvocationsProtocol))
+			prefix, InvocationsProtocol)}
 	}
 
 	inputContentType, err := resolveInvocationContentType(moderation.InputContentType)
@@ -552,7 +554,9 @@ func validateInvocationsModeration(
 
 // resolveInvocationContentType normalizes an optional content type, defaulting to JSON.
 // An unrecognized value yields an empty type alongside the error so callers naturally skip
-// the downstream rules that depend on it instead of reporting cascading failures.
+// the downstream rules that depend on it instead of reporting cascading failures. Suppressing
+// those rules is deliberate: the corrected value determines whether paths are required at all,
+// so guessing one here would risk demanding paths a 'text' agent never needs.
 func resolveInvocationContentType(value string) (string, error) {
 	switch value {
 	case "":

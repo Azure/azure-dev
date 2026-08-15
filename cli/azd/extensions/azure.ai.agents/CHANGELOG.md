@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- Add `invocationsModeration` to `rai_policy` policies so hosted agents on the `invocations` protocol can tell the content-safety proxy where the moderatable text lives in their request and response bodies. Supports buffered and server-sent-event responses via `responseMode`, `inputPaths`, `outputPaths`, and `streamSelectors`, and is validated locally before deploy.
+- Add `invocationsModeration` to `rai_policy` policies so hosted agents on the `invocations` protocol can tell the content-safety proxy where the moderatable text lives in their request and response bodies. Supports buffered and server-sent-event responses via `responseMode`, `inputPaths`, `outputPaths`, and `streamSelectors`, and is validated locally before deploy. Declaring `invocationsModeration` on an agent that does not expose the `invocations` protocol is now a validation error, since the block would otherwise be silently ignored.
 
 ## 1.0.0-beta.10 (2026-08-13)
 

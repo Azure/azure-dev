@@ -208,28 +208,69 @@
         },
         "inputPaths": {
           "type": "array",
-          "description": "JSONPath expressions selecting request text. Required when inputContentType is 'json'.",
+          "description": "JSONPath expressions selecting request text. Required when inputContentType is 'json' or omitted.",
+          "minItems": 1,
           "items": { "type": "string" }
         },
         "outputPaths": {
           "type": "array",
-          "description": "JSONPath expressions selecting buffered response text. Required when responseMode includes non-streaming and outputContentType is 'json'.",
+          "description": "JSONPath expressions selecting buffered response text. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
+          "minItems": 1,
           "items": { "type": "string" }
         },
         "streamSelectors": {
           "type": "array",
-          "description": "Locates text within server-sent event frames. Required when responseMode includes streaming and outputContentType is 'json'.",
+          "description": "Locates text within server-sent event frames. Required when responseMode includes streaming and outputContentType is 'json' or omitted.",
+          "minItems": 1,
           "items": { "$ref": "#/definitions/SseTextSelector" }
         }
       },
       "required": ["responseMode"],
+      "allOf": [
+        {
+          "if": { "$ref": "#/definitions/InvocationsInputIsJson" },
+          "then": { "required": ["inputPaths"] }
+        },
+        {
+          "if": {
+            "allOf": [
+              { "properties": { "responseMode": { "enum": ["non_streaming", "both"] } }, "required": ["responseMode"] },
+              { "$ref": "#/definitions/InvocationsOutputIsJson" }
+            ]
+          },
+          "then": { "required": ["outputPaths"] }
+        },
+        {
+          "if": {
+            "allOf": [
+              { "properties": { "responseMode": { "enum": ["streaming", "both"] } }, "required": ["responseMode"] },
+              { "$ref": "#/definitions/InvocationsOutputIsJson" }
+            ]
+          },
+          "then": { "required": ["streamSelectors"] }
+        }
+      ],
       "additionalProperties": false
+    },
+    "InvocationsInputIsJson": {
+      "description": "Matches when inputContentType resolves to 'json', i.e. it is set to 'json' or omitted entirely (the default).",
+      "anyOf": [
+        { "properties": { "inputContentType": { "const": "json" } }, "required": ["inputContentType"] },
+        { "not": { "required": ["inputContentType"] } }
+      ]
+    },
+    "InvocationsOutputIsJson": {
+      "description": "Matches when outputContentType resolves to 'json', i.e. it is set to 'json' or omitted entirely (the default).",
+      "anyOf": [
+        { "properties": { "outputContentType": { "const": "json" } }, "required": ["outputContentType"] },
+        { "not": { "required": ["outputContentType"] } }
+      ]
     },
     "SseTextSelector": {
       "type": "object",
       "description": "Locates the moderatable text inside a single server-sent event frame.",
       "properties": {
-        "eventType": { "type": "string", "description": "SSE event name this selector applies to." },
+        "eventType": { "type": "string", "pattern": "\\S", "description": "SSE event name this selector applies to." },
         "textField": { "type": "string", "description": "JSONPath expression, relative to the frame payload, holding the text." }
       },
       "required": ["eventType"],

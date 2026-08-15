@@ -129,7 +129,7 @@ type SseTextSelector struct {
 type InvocationsModeration struct {
 	InputContentType  RaiInvocationContentType `json:"input_content_type,omitempty"`
 	OutputContentType RaiInvocationContentType `json:"output_content_type,omitempty"`
-	ResponseMode      RaiInvocationMode        `json:"response_mode,omitempty"`
+	ResponseMode      RaiInvocationMode        `json:"response_mode"`
 	InputPaths        []string                 `json:"input_paths,omitempty"`
 	OutputPaths       []string                 `json:"output_paths,omitempty"`
 	StreamSelectors   []SseTextSelector        `json:"stream_selectors,omitempty"`

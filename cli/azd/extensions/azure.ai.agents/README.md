@@ -174,7 +174,7 @@ Fields:
 | `responseMode` | yes | `non_streaming`, `streaming`, or `both`. |
 | `inputContentType` | no | `json` (default) or `text`. |
 | `outputContentType` | no | `json` (default) or `text`. |
-| `inputPaths` | when `inputContentType` is `json` | JSONPath expressions selecting the request text. |
+| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
 | `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` | JSONPath expressions selecting the buffered response text. |
 | `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` | `eventType` (required) and `textField` per server-sent event frame. |
 

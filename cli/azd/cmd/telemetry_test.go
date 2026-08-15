@@ -438,15 +438,30 @@ func scanGoFileForRawAttributes(fset *token.FileSet, file *ast.File, rel string)
 		return ok && isAttrKeyType(call.Fun)
 	}
 
-	// rawKeyIdents collects identifiers whose type is the raw attribute.Key (never
-	// the classified fields.AttributeKey, which is a distinct named struct type).
-	// A KeyValue-producing method call on one of these — e.g. a parameter
-	// `k attribute.Key` used as `k.String(v)` — emits an unregistered key just
-	// like a direct constructor call. This is lightweight declaration tracking,
-	// not full type inference: it covers explicitly typed function parameters /
-	// results / receivers, var / const declarations, and `k := attribute.Key(...)`
-	// short declarations — the realistically reachable forms.
-	rawKeyIdents := map[string]struct{}{}
+	// rawKeyObjs records the *ast.Object identity — not merely the name — of every
+	// value declared with the raw attribute.Key type. A KeyValue-producing method
+	// call on one of these (e.g. a parameter `k attribute.Key` used as
+	// `k.String(v)`) emits an unregistered key just like a direct constructor
+	// call. Tracking object identity (resolved by the parser's scope resolver, so
+	// each declaration is distinct) keeps the guard sound across scopes: a
+	// shadowing classified `k` in another function resolves to a different object
+	// and is not misreported. Both explicitly typed declarations and inferred ones
+	// (`var k = attribute.Key("raw.key")`, `k := attribute.Key(...)`) are covered.
+	//
+	// ast.Object is deprecated (SA1019) because Ident/Object relationships cannot
+	// be resolved without type information in the general case (e.g. composite
+	// literal keys). That ambiguity does not apply here: this guard only records
+	// objects whose declaration type/initializer is attribute.Key and only
+	// consults Obj for identifiers in method-receiver (value) position, where the
+	// parser's per-file scope resolution is exact. A full go/types pass would add
+	// package loading and build dependencies for no additional soundness here.
+	//nolint:staticcheck // ast.Object scope resolution is exact for this per-file guard
+	rawKeyObjs := map[*ast.Object]struct{}{}
+	record := func(id *ast.Ident) {
+		if id != nil && id.Obj != nil {
+			rawKeyObjs[id.Obj] = struct{}{}
+		}
+	}
 	addFieldNames := func(fl *ast.FieldList) {
 		if fl == nil {
 			return
@@ -454,7 +469,7 @@ func scanGoFileForRawAttributes(fset *token.FileSet, file *ast.File, rel string)
 		for _, f := range fl.List {
 			if isAttrKeyType(f.Type) {
 				for _, name := range f.Names {
-					rawKeyIdents[name.Name] = struct{}{}
+					record(name)
 				}
 			}
 		}
@@ -473,19 +488,30 @@ func scanGoFileForRawAttributes(fset *token.FileSet, file *ast.File, rel string)
 				addFieldNames(node.Type.Results)
 			}
 		case *ast.ValueSpec:
-			if node.Type != nil && isAttrKeyType(node.Type) {
-				for _, name := range node.Names {
-					rawKeyIdents[name.Name] = struct{}{}
+			// Explicitly typed: var k attribute.Key
+			if node.Type != nil {
+				if isAttrKeyType(node.Type) {
+					for _, name := range node.Names {
+						record(name)
+					}
+				}
+				break
+			}
+			// Inferred: var k = attribute.Key("raw.key")
+			for i, name := range node.Names {
+				if i < len(node.Values) && isAttrKeyCall(node.Values[i]) {
+					record(name)
 				}
 			}
 		case *ast.AssignStmt:
+			// Short declaration: k := attribute.Key("raw.key")
 			if node.Tok == token.DEFINE {
 				for i, lhs := range node.Lhs {
 					if i >= len(node.Rhs) {
 						break
 					}
 					if id, ok := lhs.(*ast.Ident); ok && isAttrKeyCall(node.Rhs[i]) {
-						rawKeyIdents[id.Name] = struct{}{}
+						record(id)
 					}
 				}
 			}
@@ -527,9 +553,11 @@ func scanGoFileForRawAttributes(fset *token.FileSet, file *ast.File, rel string)
 		// (a parameter, var/const, or `k := attribute.Key(...)`). This emits an
 		// unregistered key. It is distinct from the sanctioned
 		// fields.SomeKey.String(v) promoted-method call, whose receiver is the
-		// classified fields.AttributeKey struct type, not attribute.Key.
-		if base, ok := sel.X.(*ast.Ident); ok {
-			if _, isRawKey := rawKeyIdents[base.Name]; isRawKey {
+		// classified fields.AttributeKey struct type, not attribute.Key. The
+		// receiver is matched by object identity so a shadowing classified `k`
+		// elsewhere is not misreported.
+		if base, ok := sel.X.(*ast.Ident); ok && base.Obj != nil {
+			if _, isRawKey := rawKeyObjs[base.Obj]; isRawKey {
 				violations = append(violations, fmt.Sprintf(
 					"  %s:%d: %s.%s(...) on a raw attribute.Key value", rel, pos.Line, base.Name, sel.Sel.Name))
 				return true
@@ -623,6 +651,12 @@ func TestRawTelemetryAttributeScanner(t *testing.T) {
 			wantViolation: true,
 		},
 		{
+			name:          "method on inferred key declaration",
+			imports:       stdImport,
+			body:          `var k = attribute.Key("raw.key"); var _ = k.String("v")`,
+			wantViolation: true,
+		},
+		{
 			name:          "bare key builder without value",
 			imports:       stdImport,
 			body:          `var _ = attribute.Key("raw.key")`,
@@ -632,6 +666,12 @@ func TestRawTelemetryAttributeScanner(t *testing.T) {
 			name:          "promoted method on classified field",
 			imports:       stdImport,
 			body:          `var _ = fields.SomeKey.String("v")`,
+			wantViolation: false,
+		},
+		{
+			name:          "shadowed classified key across scopes",
+			imports:       stdImport,
+			body:          `func a(k attribute.Key) { _ = k }; func b(k fields.AttributeKey) { _ = k.Bool(true) }`,
 			wantViolation: false,
 		},
 		{
@@ -649,7 +689,6 @@ func TestRawTelemetryAttributeScanner(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			src := "package p\n" + tc.imports + "\n" + tc.body + "\n"

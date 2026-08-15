@@ -6,13 +6,13 @@ package cmd
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"os"
+	"go/types"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 
 	"github.com/stretchr/testify/require"
 
@@ -291,18 +291,27 @@ func TestTelemetryFieldConstants(t *testing.T) {
 }
 
 // TestNoRawTelemetryAttributes enforces that product code never emits telemetry
-// via raw attribute.String(key, ...) / attribute.Bool(key, ...) — or the chained
-// attribute.Key(key).String(...) form — whether the key is a string literal or a
-// named constant, and whether the package is imported under its default name or
-// an alias. Every telemetry attribute must be
+// via a raw attribute constructor — attribute.String(key, ...), attribute.Bool,
+// the chained attribute.Key(key).String(...) form, or a KeyValue-producing method
+// called on any value of type attribute.Key. Every telemetry attribute must be
 // declared as a fields.AttributeKey (with a Classification and Purpose) and
 // emitted through it, e.g. fields.SomeKey.String(value). This keeps the telemetry
 // schema discoverable and classifiable for the GDPR metadata pipeline (azure-dev
 // issue #1803).
 //
+// The scan is type-aware (go/types via go/packages) rather than purely
+// syntactic. Type information is required for soundness: the sanctioned
+// fields.SomeKey.String(v) is a promoted method whose receiver is the classified
+// fields.AttributeKey struct, which is AST-indistinguishable from a bare
+// attribute.Key value's method call. Only the resolved types tell the two named
+// types apart, and they also let the guard follow keys reached through import
+// aliases, dot imports, struct fields, or function results.
+//
 // Legitimately excluded from the scan:
-//   - *_test.go files (test fixtures build raw attributes on purpose).
-//   - extensions/... — independent extension modules with their own schema.
+//   - *_test.go files (test fixtures build raw attributes on purpose): Tests is
+//     false, so go/packages does not load them.
+//   - Nested modules (extensions/*, test/evals, test data samples) have their own
+//     go.mod and are not matched by the "./..." pattern.
 func TestNoRawTelemetryAttributes(t *testing.T) {
 	t.Parallel()
 
@@ -311,41 +320,41 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 	azdRoot, err := filepath.Abs("..")
 	require.NoError(t, err)
 
-	var violations []string
-
-	err = filepath.Walk(azdRoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			switch filepath.Base(path) {
-			case "vendor", "extensions", "testdata", "node_modules", ".git":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-
-		rel, relErr := filepath.Rel(azdRoot, path)
-		if relErr != nil {
-			rel = path
-		}
-		rel = filepath.ToSlash(rel)
-
-		fset := token.NewFileSet()
-		file, parseErr := parser.ParseFile(fset, path, nil, 0)
-		if parseErr != nil {
-			return nil // skip unparseable files
-		}
-
-		violations = append(violations, scanGoFileForRawAttributes(fset, file, rel)...)
-		return nil
-	})
+	cfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
+			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+		Dir:   azdRoot,
+		Tests: false,
+	}
+	pkgs, err := packages.Load(cfg, "./...")
 	require.NoError(t, err)
+	require.NotEmpty(t, pkgs, "no packages loaded from the cli/azd module")
+
+	var (
+		violations []string
+		loadErrors []string
+	)
+	for _, pkg := range pkgs {
+		for _, e := range pkg.Errors {
+			loadErrors = append(loadErrors, fmt.Sprintf("  %s: %s", pkg.PkgPath, e.Error()))
+		}
+		if pkg.TypesInfo == nil {
+			continue
+		}
+		for _, file := range pkg.Syntax {
+			filename := pkg.Fset.Position(file.Pos()).Filename
+			rel, relErr := filepath.Rel(azdRoot, filename)
+			if relErr != nil {
+				rel = filename
+			}
+			rel = filepath.ToSlash(rel)
+			violations = append(violations, scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, rel)...)
+		}
+	}
+
+	// A package that failed to type-check would silently hide violations, so a
+	// load error is a failure rather than a false pass.
+	require.Empty(t, loadErrors, "packages failed to load/type-check:\n%s", strings.Join(loadErrors, "\n"))
 
 	if len(violations) > 0 {
 		t.Errorf(
@@ -360,164 +369,92 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 	}
 }
 
-// scanGoFileForRawAttributes returns the raw-telemetry-attribute violations in a
-// single parsed Go file. rel is the display path used in messages. It is shared
-// by TestNoRawTelemetryAttributes (which walks the module tree) and the fixture
-// test TestRawTelemetryAttributeScanner, so the guard's contract is itself tested.
-func scanGoFileForRawAttributes(fset *token.FileSet, file *ast.File, rel string) []string {
+// rawAttributePkgPath is the import path of the OpenTelemetry attribute package
+// whose constructors and Key methods bypass the fields.AttributeKey registry.
+const rawAttributePkgPath = "go.opentelemetry.io/otel/attribute"
+
+// isRawAttributeKeyType reports whether t is exactly the
+// go.opentelemetry.io/otel/attribute.Key named type. A struct that merely embeds
+// it — such as the sanctioned fields.AttributeKey — is a different named type and
+// returns false, which is what keeps the guard from flagging fields.SomeKey.String.
+func isRawAttributeKeyType(t types.Type) bool {
+	named, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	return obj != nil && obj.Pkg() != nil &&
+		obj.Pkg().Path() == rawAttributePkgPath && obj.Name() == "Key"
+}
+
+// scanFileForRawAttributes returns the raw-telemetry-attribute violations in a
+// single type-checked Go file. info must be the go/types information for the
+// file's package; rel is the display path used in messages. Classifying calls by
+// the resolved type of the callee and receiver — rather than by syntactic shape —
+// makes the guard sound across import aliases, dot imports, and keys reached
+// through parameters, struct fields, or function results. It is shared by
+// TestNoRawTelemetryAttributes (which walks the module) and the fixture test
+// TestRawTelemetryAttributeScanner, so the guard's contract is itself tested.
+func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.Info, rel string) []string {
 	// rawAttributeConstructors are the go.opentelemetry.io/otel/attribute helpers
 	// (and the identically named attribute.Key methods) that build a KeyValue from
-	// a key and value. Using them directly in product code bypasses the
+	// a key and a value. Using them directly in product code bypasses the
 	// fields.AttributeKey registry, so the GDPR metadata exporter (which discovers
 	// only exported AttributeKey vars) can never classify the resulting property.
 	// See docs/specs/metrics-audit/telemetry-schema.md.
 	rawAttributeConstructors := map[string]struct{}{
-		"String":       {},
-		"Bool":         {},
-		"Int":          {},
-		"IntSlice":     {},
-		"Int64":        {},
-		"Float64":      {},
-		"Stringer":     {},
-		"StringSlice":  {},
-		"BoolSlice":    {},
-		"Int64Slice":   {},
-		"Float64Slice": {},
-	}
-
-	// Resolve the local name bound to go.opentelemetry.io/otel/attribute in this
-	// file. Matching the selector base literally against "attribute" would miss an
-	// aliased import (e.g. otelattr "...otel/attribute") and could also misfire on
-	// an unrelated local identifier named "attribute". If the file does not import
-	// the package, it cannot construct a raw attribute, so there is nothing to scan.
-	attrPkgName := ""
-	for _, imp := range file.Imports {
-		importPath, uErr := strconv.Unquote(imp.Path.Value)
-		if uErr != nil || importPath != "go.opentelemetry.io/otel/attribute" {
-			continue
-		}
-		if imp.Name != nil {
-			attrPkgName = imp.Name.Name // explicit alias
-		} else {
-			attrPkgName = "attribute" // default package name
-		}
-		break
-	}
-	// A blank ("_") or dot (".") import cannot produce a "pkg.Constructor"
-	// selector, so there is nothing this AST check can match on.
-	if attrPkgName == "" || attrPkgName == "_" || attrPkgName == "." {
-		return nil
+		"String": {}, "Bool": {}, "Int": {}, "IntSlice": {}, "Int64": {},
+		"Float64": {}, "Stringer": {}, "StringSlice": {}, "BoolSlice": {},
+		"Int64Slice": {}, "Float64Slice": {},
 	}
 
 	// literalKey renders the first string-literal argument of a call for a
-	// friendlier message, or "..." for a non-literal (e.g. const) key.
+	// friendlier message, or "..." for a non-literal (e.g. a named constant).
 	literalKey := func(c *ast.CallExpr) string {
-		if len(c.Args) == 0 {
-			return "..."
-		}
-		if lit, ok := c.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-			return lit.Value
+		if len(c.Args) > 0 {
+			if lit, ok := c.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				return lit.Value
+			}
 		}
 		return "..."
 	}
 
-	// isAttrKeyType reports whether an expression is the raw attribute.Key type
-	// reference (e.g. `attribute.Key`), respecting the resolved package alias.
-	isAttrKeyType := func(expr ast.Expr) bool {
+	// isRawAttributeConstructorFunc reports whether obj is a package-level function
+	// of the attribute package that builds a KeyValue from a key and value (e.g.
+	// attribute.String). Resolving via the types object makes this independent of
+	// how the package was imported: default name, alias, or dot import.
+	isRawAttributeConstructorFunc := func(obj types.Object) bool {
+		fn, ok := obj.(*types.Func)
+		if !ok || fn.Pkg() == nil || fn.Pkg().Path() != rawAttributePkgPath {
+			return false
+		}
+		sig, ok := fn.Type().(*types.Signature)
+		if !ok || sig.Recv() != nil {
+			return false
+		}
+		_, isCtor := rawAttributeConstructors[fn.Name()]
+		return isCtor
+	}
+
+	// isReemittedKeyValueKey reports whether expr is `<kv>.Key` where <kv> has type
+	// attribute.KeyValue — i.e. a method call like kv.Key.String(v) merely re-emits
+	// the key of a KeyValue that was already built (and, at its build site, already
+	// subject to this guard). The telemetry baggage plumbing in
+	// internal/tracing legitimately rebuilds caller-supplied KeyValues with merged
+	// values this way; it introduces no new key literal, so it is not a violation.
+	isReemittedKeyValueKey := func(expr ast.Expr) bool {
 		sel, ok := expr.(*ast.SelectorExpr)
 		if !ok || sel.Sel.Name != "Key" {
 			return false
 		}
-		base, ok := sel.X.(*ast.Ident)
-		return ok && base.Name == attrPkgName
-	}
-	// isAttrKeyCall reports whether an expression is an attribute.Key(...) call,
-	// which yields a raw attribute.Key value.
-	isAttrKeyCall := func(expr ast.Expr) bool {
-		call, ok := expr.(*ast.CallExpr)
-		return ok && isAttrKeyType(call.Fun)
-	}
-
-	// rawKeyObjs records the *ast.Object identity — not merely the name — of every
-	// value declared with the raw attribute.Key type. A KeyValue-producing method
-	// call on one of these (e.g. a parameter `k attribute.Key` used as
-	// `k.String(v)`) emits an unregistered key just like a direct constructor
-	// call. Tracking object identity (resolved by the parser's scope resolver, so
-	// each declaration is distinct) keeps the guard sound across scopes: a
-	// shadowing classified `k` in another function resolves to a different object
-	// and is not misreported. Both explicitly typed declarations and inferred ones
-	// (`var k = attribute.Key("raw.key")`, `k := attribute.Key(...)`) are covered.
-	//
-	// ast.Object is deprecated (SA1019) because Ident/Object relationships cannot
-	// be resolved without type information in the general case (e.g. composite
-	// literal keys). That ambiguity does not apply here: this guard only records
-	// objects whose declaration type/initializer is attribute.Key and only
-	// consults Obj for identifiers in method-receiver (value) position, where the
-	// parser's per-file scope resolution is exact. A full go/types pass would add
-	// package loading and build dependencies for no additional soundness here.
-	//nolint:staticcheck // ast.Object scope resolution is exact for this per-file guard
-	rawKeyObjs := map[*ast.Object]struct{}{}
-	record := func(id *ast.Ident) {
-		if id != nil && id.Obj != nil {
-			rawKeyObjs[id.Obj] = struct{}{}
+		named, ok := info.TypeOf(sel.X).(*types.Named)
+		if !ok {
+			return false
 		}
+		obj := named.Obj()
+		return obj != nil && obj.Pkg() != nil &&
+			obj.Pkg().Path() == rawAttributePkgPath && obj.Name() == "KeyValue"
 	}
-	addFieldNames := func(fl *ast.FieldList) {
-		if fl == nil {
-			return
-		}
-		for _, f := range fl.List {
-			if isAttrKeyType(f.Type) {
-				for _, name := range f.Names {
-					record(name)
-				}
-			}
-		}
-	}
-	ast.Inspect(file, func(n ast.Node) bool {
-		switch node := n.(type) {
-		case *ast.FuncDecl:
-			addFieldNames(node.Recv)
-			if node.Type != nil {
-				addFieldNames(node.Type.Params)
-				addFieldNames(node.Type.Results)
-			}
-		case *ast.FuncLit:
-			if node.Type != nil {
-				addFieldNames(node.Type.Params)
-				addFieldNames(node.Type.Results)
-			}
-		case *ast.ValueSpec:
-			// Explicitly typed: var k attribute.Key
-			if node.Type != nil {
-				if isAttrKeyType(node.Type) {
-					for _, name := range node.Names {
-						record(name)
-					}
-				}
-				break
-			}
-			// Inferred: var k = attribute.Key("raw.key")
-			for i, name := range node.Names {
-				if i < len(node.Values) && isAttrKeyCall(node.Values[i]) {
-					record(name)
-				}
-			}
-		case *ast.AssignStmt:
-			// Short declaration: k := attribute.Key("raw.key")
-			if node.Tok == token.DEFINE {
-				for i, lhs := range node.Lhs {
-					if i >= len(node.Rhs) {
-						break
-					}
-					if id, ok := lhs.(*ast.Ident); ok && isAttrKeyCall(node.Rhs[i]) {
-						record(id)
-					}
-				}
-			}
-		}
-		return true
-	})
 
 	var violations []string
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -525,184 +462,270 @@ func scanGoFileForRawAttributes(fset *token.FileSet, file *ast.File, rel string)
 		if !ok {
 			return true
 		}
-
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-
-		// Only the KeyValue-producing constructor / key-method names are of
-		// interest (String, Bool, Int, ... — see rawAttributeConstructors).
-		if _, isConstructor := rawAttributeConstructors[sel.Sel.Name]; !isConstructor {
-			return true
-		}
-
 		pos := fset.Position(call.Pos())
 
-		// Form A: attribute.String("key", v) / attribute.Bool(k, v) — the selector
-		// base is the imported package identifier. This bypasses the
-		// fields.AttributeKey registry, so the GDPR classifier can never see it,
-		// whether the key is a string literal or a named constant.
-		if base, ok := sel.X.(*ast.Ident); ok && base.Name == attrPkgName {
-			violations = append(violations, fmt.Sprintf(
-				"  %s:%d: %s.%s(%s, ...)", rel, pos.Line, attrPkgName, sel.Sel.Name, literalKey(call)))
-			return true
-		}
-
-		// Form C: k.String(v) where k is a value of the raw attribute.Key type
-		// (a parameter, var/const, or `k := attribute.Key(...)`). This emits an
-		// unregistered key. It is distinct from the sanctioned
-		// fields.SomeKey.String(v) promoted-method call, whose receiver is the
-		// classified fields.AttributeKey struct type, not attribute.Key. The
-		// receiver is matched by object identity so a shadowing classified `k`
-		// elsewhere is not misreported.
-		if base, ok := sel.X.(*ast.Ident); ok && base.Obj != nil {
-			if _, isRawKey := rawKeyObjs[base.Obj]; isRawKey {
-				violations = append(violations, fmt.Sprintf(
-					"  %s:%d: %s.%s(...) on a raw attribute.Key value", rel, pos.Line, base.Name, sel.Sel.Name))
+		switch fun := call.Fun.(type) {
+		case *ast.SelectorExpr:
+			// A method-value selection (x.String(v)) — including a method promoted
+			// through embedding — carries the resolved receiver type. It is a raw
+			// attribute only when that receiver is exactly attribute.Key. The
+			// sanctioned fields.SomeKey.String(v) has receiver type
+			// fields.AttributeKey (a distinct named struct that embeds
+			// attribute.Key) and is correctly left alone. This single check covers
+			// keys held in parameters, locals, struct fields, and function
+			// results, as well as the chained attribute.Key("k").String(v) form.
+			// Re-emitting an existing KeyValue's key (kv.Key.String(v)) is excluded
+			// because the key was already checked where the KeyValue was built.
+			if sel := info.Selections[fun]; sel != nil && sel.Kind() == types.MethodVal {
+				if m, ok := sel.Obj().(*types.Func); ok {
+					if _, isCtor := rawAttributeConstructors[m.Name()]; isCtor &&
+						isRawAttributeKeyType(sel.Recv()) && !isReemittedKeyValueKey(fun.X) {
+						violations = append(violations, fmt.Sprintf(
+							"  %s:%d: .%s(...) on a raw attribute.Key value", rel, pos.Line, m.Name()))
+					}
+				}
 				return true
 			}
-		}
-
-		// Form B: attribute.Key("key").String(v) — the selector base is an inline
-		// attribute.Key(...) constructor call. This produces a KeyValue that
-		// likewise bypasses the fields.AttributeKey registry.
-		if inner, ok := sel.X.(*ast.CallExpr); ok {
-			if innerSel, ok := inner.Fun.(*ast.SelectorExpr); ok {
-				if innerBase, ok := innerSel.X.(*ast.Ident); ok &&
-					innerBase.Name == attrPkgName && innerSel.Sel.Name == "Key" {
-					violations = append(violations, fmt.Sprintf(
-						"  %s:%d: %s.Key(%s).%s(...)", rel, pos.Line, attrPkgName, literalKey(inner), sel.Sel.Name))
-					return true
-				}
+			// Otherwise the selector is a qualified identifier for a package-level
+			// constructor, e.g. attribute.String("k", v) (possibly via an alias).
+			if isRawAttributeConstructorFunc(info.Uses[fun.Sel]) {
+				violations = append(violations, fmt.Sprintf(
+					"  %s:%d: attribute.%s(%s, ...)", rel, pos.Line, fun.Sel.Name, literalKey(call)))
+			}
+		case *ast.Ident:
+			// A bare identifier call resolves to a package-level constructor only
+			// when the attribute package is dot-imported, e.g. String("k", v).
+			if isRawAttributeConstructorFunc(info.Uses[fun]) {
+				violations = append(violations, fmt.Sprintf(
+					"  %s:%d: %s(%s, ...) (dot-imported attribute constructor)",
+					rel, pos.Line, fun.Name, literalKey(call)))
 			}
 		}
-
 		return true
 	})
 
 	return violations
 }
 
-// TestRawTelemetryAttributeScanner is a fixture test for the AST guard used by
-// TestNoRawTelemetryAttributes. It pins the contract: raw attribute constructors,
-// aliased imports, constant keys, the chained attribute.Key(k).String(v) form,
-// and KeyValue-producing method calls on a raw attribute.Key value are all
-// flagged, while the sanctioned fields.AttributeKey promoted-method pattern, a
-// bare attribute.Key(k) (which does not build a KeyValue), and non-KeyValue uses
-// of a key (e.g. a map lookup) are not.
+// TestRawTelemetryAttributeScanner is a fixture test for the type-aware guard
+// used by TestNoRawTelemetryAttributes. It pins the contract: raw attribute
+// constructors (default, aliased, and dot-imported), constant keys, the chained
+// attribute.Key(k).String(v) form, and KeyValue-producing method calls on a raw
+// attribute.Key value reached through a parameter, a local, a struct field, or a
+// function result are all flagged; while the sanctioned promoted-method call on a
+// struct that embeds attribute.Key, a bare attribute.Key(k) conversion (which
+// does not build a KeyValue), and non-KeyValue uses of a key (e.g. a map lookup)
+// are not. Fixtures are type-checked against the real attribute package via
+// go/packages, so the guard runs with the same type information it uses on the
+// module.
 func TestRawTelemetryAttributeScanner(t *testing.T) {
 	t.Parallel()
 
-	// Each fixture is composed as "package p" + an import line + a body so the
-	// individual source strings stay within the line-length limit.
-	const (
-		stdImport   = `import "go.opentelemetry.io/otel/attribute"`
-		aliasImport = `import otelattr "go.opentelemetry.io/otel/attribute"`
-		noImport    = ``
-	)
+	root, err := filepath.Abs("..")
+	require.NoError(t, err)
 
 	cases := []struct {
 		name          string
-		imports       string
-		body          string
+		src           string
 		wantViolation bool
 	}{
 		{
-			name:          "literal key",
-			imports:       stdImport,
-			body:          `var _ = attribute.String("raw.key", "v")`,
+			name: "literal key",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var _ = attribute.String("raw.key", "v")
+`,
 			wantViolation: true,
 		},
 		{
-			name:          "constant key",
-			imports:       stdImport,
-			body:          `const k = "raw.key"; var _ = attribute.String(k, "v")`,
+			name: "constant key",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+const k = "raw.key"
+var _ = attribute.String(k, "v")
+`,
 			wantViolation: true,
 		},
 		{
-			name:          "aliased import",
-			imports:       aliasImport,
-			body:          `var _ = otelattr.Bool("raw.key", true)`,
+			name: "aliased import",
+			src: `package p
+import otelattr "go.opentelemetry.io/otel/attribute"
+var _ = otelattr.Bool("raw.key", true)
+`,
 			wantViolation: true,
 		},
 		{
-			name:          "int slice constructor",
-			imports:       stdImport,
-			body:          `var _ = attribute.IntSlice("raw.key", []int{1})`,
+			name: "dot-imported constructor",
+			src: `package p
+import . "go.opentelemetry.io/otel/attribute"
+var _ = String("raw.key", "v")
+`,
 			wantViolation: true,
 		},
 		{
-			name:          "chained key method",
-			imports:       stdImport,
-			body:          `var _ = attribute.Key("raw.key").String("v")`,
+			name: "int slice constructor",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var _ = attribute.IntSlice("raw.key", []int{1})
+`,
 			wantViolation: true,
 		},
 		{
-			name:          "method on key-typed parameter",
-			imports:       stdImport,
-			body:          `func f(k attribute.Key) { _ = k.String("v") }`,
+			name: "chained key method",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var _ = attribute.Key("raw.key").String("v")
+`,
 			wantViolation: true,
 		},
 		{
-			name:          "method on locally built key value",
-			imports:       stdImport,
-			body:          `func f() { k := attribute.Key("raw.key"); _ = k.String("v") }`,
+			name: "method on key-typed parameter",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+func f(k attribute.Key) { _ = k.String("v") }
+`,
 			wantViolation: true,
 		},
 		{
-			name:          "method on inferred key declaration",
-			imports:       stdImport,
-			body:          `var k = attribute.Key("raw.key"); var _ = k.String("v")`,
+			name: "method on locally built key value",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+func f() { k := attribute.Key("raw.key"); _ = k.String("v") }
+`,
 			wantViolation: true,
 		},
 		{
-			name:          "bare key builder without value",
-			imports:       stdImport,
-			body:          `var _ = attribute.Key("raw.key")`,
+			name: "method on inferred key declaration",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var k = attribute.Key("raw.key")
+var _ = k.String("v")
+`,
+			wantViolation: true,
+		},
+		{
+			name: "method on struct-field key",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+type holder struct{ key attribute.Key }
+func f(h holder) { _ = h.key.String("v") }
+`,
+			wantViolation: true,
+		},
+		{
+			name: "method on function-result key",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+func mk() attribute.Key { return attribute.Key("raw.key") }
+func f() { _ = mk().String("v") }
+`,
+			wantViolation: true,
+		},
+		{
+			name: "method via embedded Key field of a struct",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+type classified struct{ attribute.Key }
+func f(c classified) { _ = c.Key.Bool(true) }
+`,
+			wantViolation: true,
+		},
+		{
+			name: "reemit method on KeyValue key field",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+func f(kv attribute.KeyValue) { _ = kv.Key.String("v") }
+`,
 			wantViolation: false,
 		},
 		{
-			name:          "promoted method on classified field",
-			imports:       stdImport,
-			body:          `var _ = fields.SomeKey.String("v")`,
+			name: "bare key conversion without value",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var _ = attribute.Key("raw.key")
+`,
 			wantViolation: false,
 		},
 		{
-			name:          "shadowed classified key across scopes",
-			imports:       stdImport,
-			body:          `func a(k attribute.Key) { _ = k }; func b(k fields.AttributeKey) { _ = k.Bool(true) }`,
+			name: "promoted method on embedding struct",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+type classified struct{ attribute.Key }
+var c classified
+var _ = c.String("v")
+`,
 			wantViolation: false,
 		},
 		{
-			name:          "map lookup on key-typed parameter",
-			imports:       stdImport,
-			body:          `func f(m map[attribute.Key]int, k attribute.Key) int { return m[k] }`,
+			name: "shadowed classified key across scopes",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+type classified struct{ attribute.Key }
+func a(k attribute.Key) { _ = k }
+func b(k classified) { _ = k.Bool(true) }
+`,
 			wantViolation: false,
 		},
 		{
-			name:          "file without the attribute import",
-			imports:       noImport,
-			body:          `var _ = 1`,
+			name: "map lookup on key-typed parameter",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+func f(m map[attribute.Key]int, k attribute.Key) int { return m[k] }
+`,
+			wantViolation: false,
+		},
+		{
+			name: "file without the attribute import",
+			src: `package p
+var _ = 1
+`,
 			wantViolation: false,
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			src := "package p\n" + tc.imports + "\n" + tc.body + "\n"
-			fset := token.NewFileSet()
-			file, err := parser.ParseFile(fset, tc.name+".go", src, 0)
-			require.NoError(t, err)
+	// Type-check every fixture against the real attribute package via an in-memory
+	// overlay. The virtual files live under a directory that does not exist on
+	// disk, so they neither collide with the module walk nor require cleanup.
+	overlay := make(map[string][]byte, len(cases))
+	patterns := make([]string, 0, len(cases))
+	pathToCase := make(map[string]int, len(cases))
+	for i, tc := range cases {
+		p := filepath.Join(root, "cmd", fmt.Sprintf("zz_rawscan_fixture_%02d", i), "fixture.go")
+		overlay[p] = []byte(tc.src)
+		patterns = append(patterns, "file="+p)
+		pathToCase[filepath.ToSlash(p)] = i
+	}
 
-			got := scanGoFileForRawAttributes(fset, file, tc.name+".go")
-			if tc.wantViolation {
-				require.NotEmpty(t, got, "expected a violation for %q", tc.name)
-			} else {
-				require.Empty(t, got, "expected no violation for %q, got %v", tc.name, got)
+	cfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
+			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+		Dir:     root,
+		Overlay: overlay,
+	}
+	pkgs, err := packages.Load(cfg, patterns...)
+	require.NoError(t, err)
+
+	got := make([]bool, len(cases))
+	checked := make([]bool, len(cases))
+	for _, pkg := range pkgs {
+		require.Empty(t, pkg.Errors, "fixture package %s failed to type-check", pkg.PkgPath)
+		if pkg.TypesInfo == nil {
+			continue
+		}
+		for _, file := range pkg.Syntax {
+			fname := filepath.ToSlash(pkg.Fset.Position(file.Pos()).Filename)
+			idx, ok := pathToCase[fname]
+			if !ok {
+				continue
 			}
-		})
+			got[idx] = len(scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, cases[idx].name)) > 0
+			checked[idx] = true
+		}
+	}
+
+	for i, tc := range cases {
+		require.True(t, checked[i], "fixture %q was not loaded/type-checked", tc.name)
+		require.Equal(t, tc.wantViolation, got[i], "fixture %q: unexpected violation result", tc.name)
 	}
 }
 

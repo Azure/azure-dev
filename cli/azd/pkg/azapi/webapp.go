@@ -189,7 +189,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 	}
 
 	isLinux := isLinuxWebApp(app)
-	span.SetAttributes(fields.DeployLinuxKey.Key.Bool(isLinux))
+	span.SetAttributes(fields.DeployLinuxKey.Bool(isLinux))
 
 	// Deployment Status API only support linux web app for now
 	if isLinux && !skipStatusCheck && !isAppStopped(app) {
@@ -200,7 +200,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 		// entire zip deploy when the build fails, giving the SCM time to stabilize.
 		const maxBuildRetries = 2
 		for attempt := range maxBuildRetries + 1 {
-			span.SetAttributes(fields.DeployAttemptKey.Key.Int(attempt + 1))
+			span.SetAttributes(fields.DeployAttemptKey.Int(attempt + 1))
 
 			if attempt > 0 {
 				// Exponential backoff: 5s, 10s between retries to avoid hammering

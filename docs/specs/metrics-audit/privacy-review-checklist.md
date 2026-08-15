@@ -201,7 +201,7 @@ When adding a new telemetry field:
    - OTel key name
    - Classification
    - Purpose
-   - EndpointIdType (only when the value is a known endpoint identifier; otherwise `N/A`)
+   - EndpointIdType (only when the value is a known endpoint identifier)
    - Whether it is hashed
    - Whether it is a measurement
    - Allowed values (if enum)
@@ -227,7 +227,7 @@ Copy this checklist into your PR description when making telemetry changes.
 ### New Events
 - [ ] Event constant defined in `events/events.go`
 - [ ] Event constant is an exported string `const` whose Go identifier contains `Event` (end it with
-      `Prefix` for a prefix-match group) so the GDPR `--events` scan discovers it
+      `Prefix` for a prefix-match group) so the GDPR classifier discovers it
 - [ ] Event documented in `docs/specs/metrics-audit/telemetry-schema.md`
 - [ ] Event follows naming convention (`prefix.noun.verb`)
 

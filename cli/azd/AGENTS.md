@@ -285,12 +285,12 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
   host-domain table). Every field MUST set a `Classification` (e.g. `SystemMetadata`,
   `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`; never emit
   `CustomerContent`) and a `Purpose` (`FeatureInsight` / `BusinessInsight` /
-  `PerformanceAndHealth`); the `--fields` scan also reads the optional `Endpoint` (→ `EndpointIdType`)
-  and `IsMeasurement` (→ `$.Measurements` vs `$.Properties`) members.
+  `PerformanceAndHealth`); the classifier also reads the optional `Endpoint` and `IsMeasurement`
+  members.
 - **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
   `prefix.noun.verb` value convention. It must be an exported string `const` whose Go identifier
-  contains `Event` (end it with `Prefix` for a prefix-match group) so the classifier's `--events`
-  scan discovers it.
+  contains `Event` (end it with `Prefix` for a prefix-match group) so the classifier
+  discovers it.
 - **Emit** at the call site via `tracing.Start` (spans/events) plus `tracing.SetUsageAttributes`
   or `span.SetAttributes` (attributes). Always pass a `fields.AttributeKey` method
   (e.g. `fields.MyKey.String(v)` / `.Bool(v)` / `.Int(v)`) — never a raw

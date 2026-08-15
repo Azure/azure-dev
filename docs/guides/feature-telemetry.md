@@ -63,9 +63,9 @@ Every field must have:
 1. **A key name** — descriptive, dot-separated, lowercase
 2. **A classification** — what kind of data is this (see [Data Classifications](#data-classifications))
 3. **A purpose** — why are we collecting it (see [Purposes](#purposes))
-4. **`IsMeasurement: true`** if the value is numeric (routes to `$.Measurements`, not `$.Properties`)
-5. **`Endpoint`** (optional) — an identifier-type tag (e.g. `AzureSubscriptionId`) when the value is a
-   known endpoint identifier; leave unset otherwise (defaults to `N/A`)
+4. **`IsMeasurement: true`** if the value is numeric (goes to the `Measurements` column, not `Properties`)
+5. **`Endpoint`** (optional) — an identifier-type tag to set when the value is a known endpoint
+   identifier; leave unset otherwise
 
 ```go
 // In fields.go — add your field keys

@@ -495,7 +495,7 @@ Fields that are hashed:
 ## GDPR Data-Catalog Classification
 
 Runtime emission (above) is separate from **classification**. The GDPR data catalog is kept in
-sync by an external tool (in the `azd-queries` repo, run on a schedule pipeline against the `main` branch). A raw `attribute.String("my.key", v)` at a call site is not in scanned location, so its catalog row stays **Unclassified / `Complete=false`**. This is enforced in-repo by `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`).
+sync by an external metadata tool that **statically scans the telemetry source** — it does not read this document or observe live telemetry, so it can only classify a property that is declared where the scan looks: an exported `fields.AttributeKey`. A raw `attribute.String("my.key", v)` at a call site is invisible to the scan, so its catalog row stays **Unclassified / `Complete=false`**. This is enforced in-repo by `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`).
 
 ### Field (attribute) discovery contract
 
@@ -504,15 +504,15 @@ For a field to be discovered and classified it must be:
 - an **exported**, **package-level** `var` (not a `const`, not function-local, not unexported), and
 - typed exactly **`AttributeKey`** (the struct declared in `fields.go`).
 
-The scanner reads these `AttributeKey` members and maps each into the catalog row:
+The scanner reads these `AttributeKey` members:
 
-| `AttributeKey` member | Catalog field | Notes |
-|-----------------------|---------------|-------|
-| `Key` | `PropertyName` | The dotted OTel key. May be a string literal, `attribute.Key("…")`, or a string const. If it cannot be resolved, the trailing `// …` line comment on the `var` is used as a fallback name. |
-| `Classification` | `DataClassification` | One of the six [Data Classifications](#data-classifications). Any other value silently defaults to `SystemMetadata`. |
-| `Purpose` | `BusinessJustification` | The field's [Purpose](#purposes): `FeatureInsight`→`FeatureUsage`, `BusinessInsight`→`BI`, `PerformanceAndHealth`→`PerformanceAndHealth`. Any other value silently defaults to `FeatureUsage`. |
-| `Endpoint` | `EndpointIdType` | Optional identifier-type tag (e.g. `MacAddressHash`, `SQMUserId`, `AzureSubscriptionId`). Defaults to `N/A` when unset. |
-| `IsMeasurement` | `PropertyPath` | `true` → `$.Measurements`; `false` (default) → `$.Properties`. |
+| `AttributeKey` member | What the classifier reads |
+|-----------------------|---------------------------|
+| `Key` | The dotted OTel key (a string literal, `attribute.Key("…")`, or a string const). |
+| `Classification` | One of the six [Data Classifications](#data-classifications). |
+| `Purpose` | One or more [Purposes](#purposes). |
+| `Endpoint` | Optional identifier-type tag; set only when the value is a known endpoint identifier. |
+| `IsMeasurement` | `true` for numeric values (routed to the Measurements column); `false` (default) for Properties. |
 
 `Classification` and `Purpose` must be written as **bare identifiers from the `fields` package**
 (e.g. `Classification: SystemMetadata`) — the scanner reads the identifier name, so a qualified

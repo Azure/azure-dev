@@ -190,13 +190,13 @@ not emitted by azd spans.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Remote build count | `container.remoteBuild.count` | SystemMetadata | FeatureInsight | **Measurement** |
-| Publish remote build | `container.remotebuild` | SystemMetadata | FeatureInsight | Bool — whether the image was built remotely (ACR) rather than locally. |
+| Publish remote build | `container.remotebuild` | SystemMetadata | FeatureInsight | Bool — whether the image was built remotely (ACR) rather than locally. Not hashed; not a measurement. |
 
 ### AKS
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Skip reason | `skip.reason` | SystemMetadata | FeatureInsight | Bounded enum (`cluster_not_provisioned`); never raw error text. Emitted on `aks.postprovision.skip`. |
+| Skip reason | `skip.reason` | SystemMetadata | FeatureInsight | Bounded enum (`cluster_not_provisioned`); never raw error text. Emitted on `aks.postprovision.skip`. Not hashed; not a measurement. |
 
 ### JSON-RPC
 
@@ -324,7 +324,7 @@ The following fields are defined in `fields.go`.
 | Field | OTel Key | Classification | Purpose | Values |
 |-------|----------|----------------|---------|--------|
 | Auth method | `auth.method` | SystemMetadata | FeatureInsight | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
-| Auth cache-clear failed | `auth.cache_clear_failed` | SystemMetadata | PerformanceAndHealth | Fixed enum (`auth`, `subscriptions`) identifying which cache failed to clear during the pre-login cleanup. Emitted on the `auth login` usage event. |
+| Auth cache-clear failed | `auth.cache_clear_failed` | SystemMetadata | PerformanceAndHealth | Fixed enum (`auth`, `subscriptions`) identifying which cache failed to clear during the pre-login cleanup. Emitted on the `auth login` usage event. Not hashed; not a measurement. |
 | Env count | `env.count` | SystemMetadata | FeatureInsight | **Measurement** — number of environments |
 | Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Built-in hook name (raw) or SHA-256 hash for extension/custom hooks. Known values: `prebuild`, `postbuild`, `predeploy`, `postdeploy`, `predown`, `postdown`, `prepackage`, `postpackage`, `preprovision`, `postprovision`, `prepublish`, `postpublish`, `prerestore`, `postrestore`, `preup`, `postup` |
 | Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service`, `layer` |

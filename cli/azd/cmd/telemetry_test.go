@@ -291,9 +291,10 @@ func TestTelemetryFieldConstants(t *testing.T) {
 }
 
 // TestNoRawTelemetryAttributes enforces that product code never emits telemetry
-// via raw attribute.String(key, ...) / attribute.Bool(key, ...) etc. — whether
-// the key is a string literal or a named constant, and whether the package is
-// imported under its default name or an alias. Every telemetry attribute must be
+// via raw attribute.String(key, ...) / attribute.Bool(key, ...) — or the chained
+// attribute.Key(key).String(...) form — whether the key is a string literal or a
+// named constant, and whether the package is imported under its default name or
+// an alias. Every telemetry attribute must be
 // declared as a fields.AttributeKey (with a Classification and Purpose) and
 // emitted through it, e.g. fields.SomeKey.String(value). This keeps the telemetry
 // schema discoverable and classifiable for the GDPR metadata pipeline (azure-dev
@@ -304,25 +305,6 @@ func TestTelemetryFieldConstants(t *testing.T) {
 //   - extensions/... — independent extension modules with their own schema.
 func TestNoRawTelemetryAttributes(t *testing.T) {
 	t.Parallel()
-
-	// rawAttributeConstructors are the go.opentelemetry.io/otel/attribute helpers
-	// that build a KeyValue from a key and value. Using them directly in product
-	// code bypasses the fields.AttributeKey registry, so the GDPR metadata
-	// exporter (which discovers only exported AttributeKey vars) can never classify
-	// the resulting property. See docs/specs/metrics-audit/telemetry-schema.md.
-	rawAttributeConstructors := map[string]struct{}{
-		"String":       {},
-		"Bool":         {},
-		"Int":          {},
-		"IntSlice":     {},
-		"Int64":        {},
-		"Float64":      {},
-		"Stringer":     {},
-		"StringSlice":  {},
-		"BoolSlice":    {},
-		"Int64Slice":   {},
-		"Float64Slice": {},
-	}
 
 	// The test runs with its package directory (cli/azd/cmd) as the working
 	// directory, so the module root is one level up.
@@ -360,67 +342,7 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 			return nil // skip unparseable files
 		}
 
-		// Resolve the local name bound to go.opentelemetry.io/otel/attribute in
-		// this file. Matching the selector base literally against "attribute"
-		// would miss an aliased import (e.g. otelattr "...otel/attribute") and
-		// could also misfire on an unrelated local identifier named "attribute".
-		// If the file does not import the package, it cannot construct a raw
-		// attribute, so there is nothing to scan.
-		attrPkgName := ""
-		for _, imp := range file.Imports {
-			importPath, uErr := strconv.Unquote(imp.Path.Value)
-			if uErr != nil || importPath != "go.opentelemetry.io/otel/attribute" {
-				continue
-			}
-			if imp.Name != nil {
-				attrPkgName = imp.Name.Name // explicit alias
-			} else {
-				attrPkgName = "attribute" // default package name
-			}
-			break
-		}
-		// A blank ("_") or dot (".") import cannot produce a "pkg.Constructor"
-		// selector, so there is nothing this AST check can match on.
-		if attrPkgName == "" || attrPkgName == "_" || attrPkgName == "." {
-			return nil
-		}
-
-		ast.Inspect(file, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) == 0 {
-				return true
-			}
-
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-
-			pkgIdent, ok := sel.X.(*ast.Ident)
-			if !ok || pkgIdent.Name != attrPkgName {
-				return true
-			}
-
-			if _, isConstructor := rawAttributeConstructors[sel.Sel.Name]; !isConstructor {
-				return true
-			}
-
-			// Every direct attribute constructor call in product code bypasses
-			// the fields.AttributeKey registry, so the GDPR classifier can never
-			// see it — whether the key is a string literal or a named constant.
-			// Both are violations; surface the literal key when present for a
-			// friendlier message.
-			keyDesc := "..."
-			if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-				keyDesc = lit.Value
-			}
-
-			pos := fset.Position(call.Pos())
-			violations = append(violations, fmt.Sprintf(
-				"  %s:%d: %s.%s(%s, ...)", rel, pos.Line, attrPkgName, sel.Sel.Name, keyDesc))
-			return true
-		})
-
+		violations = append(violations, scanGoFileForRawAttributes(fset, file, rel)...)
 		return nil
 	})
 	require.NoError(t, err)
@@ -438,7 +360,192 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 	}
 }
 
-// TestCommandTelemetryCoverage ensures every user-facing command is explicitly categorized
+// scanGoFileForRawAttributes returns the raw-telemetry-attribute violations in a
+// single parsed Go file. rel is the display path used in messages. It is shared
+// by TestNoRawTelemetryAttributes (which walks the module tree) and the fixture
+// test TestRawTelemetryAttributeScanner, so the guard's contract is itself tested.
+func scanGoFileForRawAttributes(fset *token.FileSet, file *ast.File, rel string) []string {
+	// rawAttributeConstructors are the go.opentelemetry.io/otel/attribute helpers
+	// (and the identically named attribute.Key methods) that build a KeyValue from
+	// a key and value. Using them directly in product code bypasses the
+	// fields.AttributeKey registry, so the GDPR metadata exporter (which discovers
+	// only exported AttributeKey vars) can never classify the resulting property.
+	// See docs/specs/metrics-audit/telemetry-schema.md.
+	rawAttributeConstructors := map[string]struct{}{
+		"String":       {},
+		"Bool":         {},
+		"Int":          {},
+		"IntSlice":     {},
+		"Int64":        {},
+		"Float64":      {},
+		"Stringer":     {},
+		"StringSlice":  {},
+		"BoolSlice":    {},
+		"Int64Slice":   {},
+		"Float64Slice": {},
+	}
+
+	// Resolve the local name bound to go.opentelemetry.io/otel/attribute in this
+	// file. Matching the selector base literally against "attribute" would miss an
+	// aliased import (e.g. otelattr "...otel/attribute") and could also misfire on
+	// an unrelated local identifier named "attribute". If the file does not import
+	// the package, it cannot construct a raw attribute, so there is nothing to scan.
+	attrPkgName := ""
+	for _, imp := range file.Imports {
+		importPath, uErr := strconv.Unquote(imp.Path.Value)
+		if uErr != nil || importPath != "go.opentelemetry.io/otel/attribute" {
+			continue
+		}
+		if imp.Name != nil {
+			attrPkgName = imp.Name.Name // explicit alias
+		} else {
+			attrPkgName = "attribute" // default package name
+		}
+		break
+	}
+	// A blank ("_") or dot (".") import cannot produce a "pkg.Constructor"
+	// selector, so there is nothing this AST check can match on.
+	if attrPkgName == "" || attrPkgName == "_" || attrPkgName == "." {
+		return nil
+	}
+
+	// literalKey renders the first string-literal argument of a call for a
+	// friendlier message, or "..." for a non-literal (e.g. const) key.
+	literalKey := func(c *ast.CallExpr) string {
+		if len(c.Args) == 0 {
+			return "..."
+		}
+		if lit, ok := c.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			return lit.Value
+		}
+		return "..."
+	}
+
+	var violations []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+
+		// Only the KeyValue-producing constructor / key-method names are of
+		// interest (String, Bool, Int, ... — see rawAttributeConstructors).
+		if _, isConstructor := rawAttributeConstructors[sel.Sel.Name]; !isConstructor {
+			return true
+		}
+
+		pos := fset.Position(call.Pos())
+
+		// Form A: attribute.String("key", v) / attribute.Bool(k, v) — the selector
+		// base is the imported package identifier. This bypasses the
+		// fields.AttributeKey registry, so the GDPR classifier can never see it,
+		// whether the key is a string literal or a named constant.
+		if base, ok := sel.X.(*ast.Ident); ok && base.Name == attrPkgName {
+			violations = append(violations, fmt.Sprintf(
+				"  %s:%d: %s.%s(%s, ...)", rel, pos.Line, attrPkgName, sel.Sel.Name, literalKey(call)))
+			return true
+		}
+
+		// Form B: attribute.Key("key").String(v) — the selector base is an inline
+		// attribute.Key(...) constructor call. This produces a KeyValue that
+		// likewise bypasses the fields.AttributeKey registry. (A method call on a
+		// Key-typed *variable* is indistinguishable at the AST level from the
+		// sanctioned fields.SomeKey.String(v) promoted-method call, so only the
+		// inline form is enforceable here.)
+		if inner, ok := sel.X.(*ast.CallExpr); ok {
+			if innerSel, ok := inner.Fun.(*ast.SelectorExpr); ok {
+				if innerBase, ok := innerSel.X.(*ast.Ident); ok &&
+					innerBase.Name == attrPkgName && innerSel.Sel.Name == "Key" {
+					violations = append(violations, fmt.Sprintf(
+						"  %s:%d: %s.Key(%s).%s(...)", rel, pos.Line, attrPkgName, literalKey(inner), sel.Sel.Name))
+					return true
+				}
+			}
+		}
+
+		return true
+	})
+
+	return violations
+}
+
+// TestRawTelemetryAttributeScanner is a fixture test for the AST guard used by
+// TestNoRawTelemetryAttributes. It pins the contract: raw attribute constructors,
+// aliased imports, constant keys, and the chained attribute.Key(k).String(v) form
+// are all flagged, while the sanctioned promoted-method pattern and a bare
+// attribute.Key(k) (which does not build a KeyValue) are not.
+func TestRawTelemetryAttributeScanner(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		src           string
+		wantViolation bool
+	}{
+		{
+			name:          "literal key",
+			src:           `package p; import "go.opentelemetry.io/otel/attribute"; var _ = attribute.String("raw.key", "v")`,
+			wantViolation: true,
+		},
+		{
+			name:          "constant key",
+			src:           `package p; import "go.opentelemetry.io/otel/attribute"; const k = "raw.key"; var _ = attribute.String(k, "v")`,
+			wantViolation: true,
+		},
+		{
+			name:          "aliased import",
+			src:           `package p; import otelattr "go.opentelemetry.io/otel/attribute"; var _ = otelattr.Bool("raw.key", true)`,
+			wantViolation: true,
+		},
+		{
+			name:          "int slice constructor",
+			src:           `package p; import "go.opentelemetry.io/otel/attribute"; var _ = attribute.IntSlice("raw.key", []int{1})`,
+			wantViolation: true,
+		},
+		{
+			name:          "chained key method",
+			src:           `package p; import "go.opentelemetry.io/otel/attribute"; var _ = attribute.Key("raw.key").String("v")`,
+			wantViolation: true,
+		},
+		{
+			name:          "bare key builder without value",
+			src:           `package p; import "go.opentelemetry.io/otel/attribute"; var _ = attribute.Key("raw.key")`,
+			wantViolation: false,
+		},
+		{
+			name:          "promoted method on key-typed value",
+			src:           `package p; import "go.opentelemetry.io/otel/attribute"; func f(k attribute.Key) { _ = k.String("v") }`,
+			wantViolation: false,
+		},
+		{
+			name:          "file without the attribute import",
+			src:           `package p; var _ = 1`,
+			wantViolation: false,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, tc.name+".go", tc.src, 0)
+			require.NoError(t, err)
+
+			got := scanGoFileForRawAttributes(fset, file, tc.name+".go")
+			if tc.wantViolation {
+				require.NotEmpty(t, got, "expected a violation for %q", tc.name)
+			} else {
+				require.Empty(t, got, "expected no violation for %q, got %v", tc.name, got)
+			}
+		})
+	}
+}
 // for telemetry coverage. When a new command is added to the CLI, it must be added to one
 // of the lists below. This forces developers to consciously decide whether the command needs
 // command-specific telemetry attributes or whether global middleware telemetry is sufficient.

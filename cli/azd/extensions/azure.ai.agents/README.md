@@ -175,13 +175,13 @@ Fields:
 | `inputContentType` | no | `json` (default) or `text`. |
 | `outputContentType` | no | `json` (default) or `text`. |
 | `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
-| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` | JSONPath expressions selecting the buffered response text. |
-| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` | `eventType` (required) and `textField` per server-sent event frame. |
+| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the buffered response text. |
+| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. |
 
-`invocationsModeration` is only valid on agents whose `protocols` list includes
-`invocations`. Declaring it elsewhere — including on an `invocations_ws`-only
-agent, which does not go through the content-safety HTTP proxy — fails validation
-rather than silently deploying a policy that never runs.
+`invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
+includes `invocations`. Declaring it elsewhere — on another agent kind, or on an
+`invocations_ws`-only agent, which does not go through the content-safety HTTP
+proxy — fails validation rather than silently deploying a policy that never runs.
 
 > **Understanding `responseMode`:** it declares which response *shapes* the
 > container can produce, **not** "input and output". Input is always moderated.

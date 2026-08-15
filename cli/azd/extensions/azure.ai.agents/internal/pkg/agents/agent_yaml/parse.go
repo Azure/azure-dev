@@ -389,6 +389,13 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				errors = append(errors, fmt.Sprintf("template.name not in valid format: %v", err))
 			}
 
+			// Only hosted agents carry policies to the service, so a moderation block on any
+			// other kind would be dropped silently instead of enforced.
+			if agentDef.Kind != AgentKindHosted {
+				errors = append(errors,
+					validateInvocationsModerationKind(templateBytes, agentDef.Kind)...)
+			}
+
 			switch AgentKind(agentDef.Kind) {
 			case AgentKindHosted:
 				var agent ContainerAgent
@@ -476,6 +483,30 @@ func ValidateAgentName(name string) error {
 	}
 
 	return nil
+}
+
+// validateInvocationsModerationKind reports invocationsModeration blocks declared on a
+// non-hosted agent. Only ContainerAgent carries policies through to the service, so such a
+// block would be dropped silently rather than enforced. It reads a minimal envelope because
+// the kind-specific structs for the other kinds have no policies field at all.
+func validateInvocationsModerationKind(templateBytes []byte, kind AgentKind) []string {
+	var envelope struct {
+		Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
+	}
+	if err := yaml.Unmarshal(templateBytes, &envelope); err != nil {
+		// A malformed document is reported by the kind-specific parse instead.
+		return nil
+	}
+
+	var errors []string
+	for i, policy := range envelope.Policies {
+		if policy.InvocationsModeration != nil {
+			errors = append(errors, fmt.Sprintf(
+				"policies[%d] invocationsModeration is only supported for '%s' agents, got kind '%s'",
+				i, AgentKindHosted, kind))
+		}
+	}
+	return errors
 }
 
 // validateInvocationsModeration checks a policy's invocations-moderation block against the

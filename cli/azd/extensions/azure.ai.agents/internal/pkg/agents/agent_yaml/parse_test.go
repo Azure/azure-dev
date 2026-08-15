@@ -1465,3 +1465,93 @@ protocols:
 		})
 	}
 }
+
+// TestValidateAgentDefinition_InvocationsModerationRequiresHostedKind covers the kinds that
+// have no policies field of their own. Without an explicit check they would parse cleanly and
+// the moderation block would be dropped on the way to the service rather than enforced.
+func TestValidateAgentDefinition_InvocationsModerationRequiresHostedKind(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		yaml         string
+		wantErrSubst string
+	}{
+		{
+			name: "prompt-voice agent",
+			yaml: `kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-4o-realtime-preview
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/p
+    invocations_moderation:
+      response_mode: non_streaming
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+`,
+			wantErrSubst: "policies[0] invocationsModeration is only supported for 'hosted' agents, " +
+				"got kind 'prompt-voice'",
+		},
+		{
+			name: "workflow agent",
+			yaml: `kind: workflow
+name: workflow-agent
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/p
+    invocations_moderation:
+      response_mode: non_streaming
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+`,
+			wantErrSubst: "policies[0] invocationsModeration is only supported for 'hosted' agents, " +
+				"got kind 'workflow'",
+		},
+		{
+			name: "reported under the offending policy index",
+			yaml: `kind: workflow
+name: workflow-agent
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/first
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/second
+    invocations_moderation:
+      response_mode: non_streaming
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+`,
+			wantErrSubst: "policies[1] invocationsModeration is only supported for 'hosted' agents",
+		},
+		{
+			name: "a non-hosted agent without the block stays valid",
+			yaml: `kind: workflow
+name: workflow-agent
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/p
+`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateAgentDefinition([]byte(tc.yaml))
+			if tc.wantErrSubst == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tc.wantErrSubst)
+			}
+			if !strings.Contains(err.Error(), tc.wantErrSubst) {
+				t.Fatalf("expected error containing %q, got %q", tc.wantErrSubst, err.Error())
+			}
+		})
+	}
+}

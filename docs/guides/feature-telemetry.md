@@ -43,16 +43,29 @@ const (
 > `events.GetCommandEventName(...)`. You only need to define explicit event constants for
 > non-command operations (sub-spans, background work, etc.).
 
+> [!IMPORTANT]
+> The GDPR classifier discovers events by statically scanning the `events` package for **exported
+> string constants whose Go identifier contains `Event`** (e.g. `MyFeatureEvent`). A constant that
+> omits `Event` from its identifier is silently skipped and never classified, even if it is emitted.
+> End the identifier with `Prefix` (e.g. `MyFeatureEventPrefix`) to register a prefix group that
+> classifies every event name starting with that prefix. See
+> [Telemetry Schema → Event discovery contract](../specs/metrics-audit/telemetry-schema.md#event-discovery-contract).
+
 ## Step 2: Define Your Fields
 
 **File:** `cli/azd/internal/tracing/fields/fields.go`
 
-Add `AttributeKey` variables for any new properties your feature emits. Every field must have:
+Add **exported, package-level** `AttributeKey` variables for any new properties your feature emits
+(the GDPR classifier only discovers exported `AttributeKey` vars declared in the `fields` package —
+see [Field discovery contract](../specs/metrics-audit/telemetry-schema.md#field-attribute-discovery-contract)).
+Every field must have:
 
 1. **A key name** — descriptive, dot-separated, lowercase
 2. **A classification** — what kind of data is this (see [Data Classifications](#data-classifications))
 3. **A purpose** — why are we collecting it (see [Purposes](#purposes))
-4. **`IsMeasurement: true`** if the value is numeric (goes to `Measurements` column, not `Properties`)
+4. **`IsMeasurement: true`** if the value is numeric (routes to `$.Measurements`, not `$.Properties`)
+5. **`Endpoint`** (optional) — an identifier-type tag (e.g. `AzureSubscriptionId`) when the value is a
+   known endpoint identifier; leave unset otherwise (defaults to `N/A`)
 
 ```go
 // In fields.go — add your field keys
@@ -105,6 +118,16 @@ tracing.SetUsageAttributes(
 ```
 
 ## Step 3: Instrument Your Code
+
+> [!IMPORTANT]
+> **Always emit through a `fields.AttributeKey` method — never a raw `attribute.*` call with a literal key.**
+> Use `fields.MyFeatureStrategyKey.String(v)`, not `attribute.String("myfeature.strategy", v)`.
+> The GDPR classification tool discovers fields by statically scanning `fields.go` for exported
+> `AttributeKey` variables and reading their `Classification`/`Purpose`. A raw `attribute.*` call
+> with a literal key is invisible to that scan, so the property still flows to App Insights but its
+> data-catalog row stays **Unclassified / `Complete=false`**. The `TestNoRawTelemetryAttributes` guard
+> (`cli/azd/cmd/telemetry_test.go`) fails the build on raw string-literal keys in
+> product code. Dynamic, non-fixed keys (e.g. the `ext.*` extension path) are the only exception.
 
 ### For Command Actions
 

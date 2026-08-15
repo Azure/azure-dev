@@ -306,6 +306,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 | Field Key | Type | Values |
 |-----------|------|--------|
 | `auth.method` | string | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
+| `auth.cache_clear_failed` | string | `auth`, `subscriptions` — which cache failed to clear during the pre-login cleanup. Emitted on `auth login`. |
 </details>
 
 <details>
@@ -426,6 +427,15 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `container.remoteBuild.count` | measurement | Number of remote container builds performed |
+| `container.publish.remotebuild` | bool | Whether the image was built remotely (ACR) rather than locally. Emitted on `container.publish`. Distinct from the `container.remotebuild` event. |
+</details>
+
+<details>
+<summary><strong>AKS</strong></summary>
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `skip.reason` | string | Why AKS postprovision Kubernetes context setup was skipped. Bounded enum: `cluster_not_provisioned`. Emitted on `aks.postprovision.skip`. |
 </details>
 
 <details>

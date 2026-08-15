@@ -171,8 +171,11 @@ A new field **must** be hashed if any of the following are true:
 
 A new field should **not** be hashed if:
 
-- The value is from a fixed enum (e.g., `auth.method` = `"browser"`, or
-  `aspire.apphost.language` = `"typescript"` / `"python"` / `"go"` / `"java"` / `"rust"`).
+- The value is from a fixed enum (e.g., `auth.method` = `"browser"`,
+  `aspire.apphost.language` = `"typescript"` / `"python"` / `"go"` / `"java"` / `"rust"`,
+  `auth.cache_clear_failed` = `"auth"` / `"subscriptions"`, or
+  `skip.reason` = `"cluster_not_provisioned"`), or a boolean
+  (e.g., `container.publish.remotebuild`).
 - The value is a count or duration (measurements).
 - The value is system-generated metadata (e.g., OS type).
 - The value is a hardcoded literal in source code (e.g., `exegraph.step.tags`, which
@@ -198,6 +201,7 @@ When adding a new telemetry field:
    - OTel key name
    - Classification
    - Purpose
+   - EndpointIdType (only when the value is a known endpoint identifier; otherwise `N/A`)
    - Whether it is hashed
    - Whether it is a measurement
    - Allowed values (if enum)
@@ -222,6 +226,8 @@ Copy this checklist into your PR description when making telemetry changes.
 
 ### New Events
 - [ ] Event constant defined in `events/events.go`
+- [ ] Event constant is an exported string `const` whose Go identifier contains `Event` (end it with
+      `Prefix` for a prefix-match group) so the GDPR `--events` scan discovers it
 - [ ] Event documented in `docs/specs/metrics-audit/telemetry-schema.md`
 - [ ] Event follows naming convention (`prefix.noun.verb`)
 

@@ -267,14 +267,73 @@ const (
 	PolicyTypeRai PolicyType = "rai_policy"
 )
 
+// Invocation content types describe how a request or response body is encoded, which
+// determines how the content-safety proxy extracts the text it moderates. Both default to
+// InvocationContentTypeJSON when omitted.
+//
+// Keys in these structures follow the extension's dual-casing convention: camelCase in
+// azure.yaml, snake_case in the deprecated on-disk agent.yaml. The values below are wire
+// values and stay snake_case in both.
+const (
+	InvocationContentTypeJSON = "json"
+	InvocationContentTypeText = "text"
+)
+
+// Invocation response modes declare which response shapes the agent container can produce.
+const (
+	InvocationResponseModeNonStreaming = "non_streaming"
+	InvocationResponseModeStreaming    = "streaming"
+	InvocationResponseModeBoth         = "both"
+)
+
+// InvocationsProtocol is the protocol name an agent must expose for invocations moderation
+// to have any effect. The WebSocket variant ("invocations_ws") does not go through the
+// content-safety HTTP proxy and is therefore not covered.
+const InvocationsProtocol = "invocations"
+
+// SseTextSelector locates the moderatable text inside a single server-sent event frame.
+type SseTextSelector struct {
+	// EventType is the SSE event name this selector applies to. Required.
+	EventType string `json:"eventType,omitempty" yaml:"event_type,omitempty"`
+	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
+	TextField string `json:"textField,omitempty" yaml:"text_field,omitempty"`
+}
+
+// InvocationsModeration configures how the content-safety proxy extracts the text it submits
+// to the RAI policy for agents that expose the invocations protocol. A RAI policy without it
+// has nothing to moderate on the invocations path.
+//
+// ResponseMode declares the response shapes the container can produce; it is not an
+// "input and output" switch. At runtime the proxy picks exactly one output gate from the
+// actual response Content-Type.
+type InvocationsModeration struct {
+	// InputContentType is "json" or "text". Defaults to "json" when omitted.
+	InputContentType string `json:"inputContentType,omitempty" yaml:"input_content_type,omitempty"`
+	// OutputContentType is "json" or "text". Defaults to "json" when omitted.
+	OutputContentType string `json:"outputContentType,omitempty" yaml:"output_content_type,omitempty"`
+	// ResponseMode is "non_streaming", "streaming" or "both". Required.
+	ResponseMode string `json:"responseMode,omitempty" yaml:"response_mode,omitempty"`
+	// InputPaths are JSONPath expressions selecting request text. Required when the input
+	// content type resolves to "json".
+	InputPaths []string `json:"inputPaths,omitempty" yaml:"input_paths,omitempty"`
+	// OutputPaths are JSONPath expressions selecting buffered response text. Required when
+	// ResponseMode includes non-streaming and the output content type resolves to "json".
+	OutputPaths []string `json:"outputPaths,omitempty" yaml:"output_paths,omitempty"`
+	// StreamSelectors locate text within SSE frames. Required when ResponseMode includes
+	// streaming and the output content type resolves to "json".
+	StreamSelectors []SseTextSelector `json:"streamSelectors,omitempty" yaml:"stream_selectors,omitempty"`
+}
+
 // Policy represents a single safety or governance policy attached to a hosted agent.
 // Type discriminates the policy kind; the remaining fields are interpreted based on Type.
 //
 // For Type "rai_policy", RaiPolicyName is the full ARM resource ID of the RAI policy, for example
 // "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>/raiPolicies/<policyName>".
+// InvocationsModeration is optional and only valid for agents exposing the invocations protocol.
 type Policy struct {
-	Type          PolicyType `json:"type" yaml:"type"`
-	RaiPolicyName string     `json:"raiPolicyName,omitempty" yaml:"rai_policy_name,omitempty"`
+	Type                  PolicyType             `json:"type" yaml:"type"`
+	RaiPolicyName         string                 `json:"raiPolicyName,omitempty" yaml:"rai_policy_name,omitempty"`
+	InvocationsModeration *InvocationsModeration `json:"invocationsModeration,omitempty" yaml:"invocations_moderation,omitempty"`
 }
 
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.

@@ -181,9 +181,58 @@
       "description": "A safety or governance policy attached to the agent.",
       "properties": {
         "type": { "type": "string", "description": "Policy type (e.g., 'rai_policy')." },
-        "raiPolicyName": { "type": "string", "description": "ARM resource ID of the RAI policy (for type 'rai_policy')." }
+        "raiPolicyName": { "type": "string", "description": "ARM resource ID of the RAI policy (for type 'rai_policy')." },
+        "invocationsModeration": { "$ref": "#/definitions/InvocationsModeration" }
       },
       "required": ["type"],
+      "additionalProperties": false
+    },
+    "InvocationsModeration": {
+      "type": "object",
+      "description": "Configures how the content-safety proxy extracts the text it submits to the RAI policy. Only supported for agents that expose the 'invocations' protocol; without it an attached RAI policy has nothing to moderate on that path.",
+      "properties": {
+        "inputContentType": {
+          "type": "string",
+          "enum": ["json", "text"],
+          "description": "How the request body is encoded. Defaults to 'json'."
+        },
+        "outputContentType": {
+          "type": "string",
+          "enum": ["json", "text"],
+          "description": "How the response body is encoded. Defaults to 'json'."
+        },
+        "responseMode": {
+          "type": "string",
+          "enum": ["non_streaming", "streaming", "both"],
+          "description": "Response shapes the agent container can produce. This declares a capability, not an input/output switch: the proxy runs exactly one output gate per response, chosen from the actual response Content-Type."
+        },
+        "inputPaths": {
+          "type": "array",
+          "description": "JSONPath expressions selecting request text. Required when inputContentType is 'json'.",
+          "items": { "type": "string" }
+        },
+        "outputPaths": {
+          "type": "array",
+          "description": "JSONPath expressions selecting buffered response text. Required when responseMode includes non-streaming and outputContentType is 'json'.",
+          "items": { "type": "string" }
+        },
+        "streamSelectors": {
+          "type": "array",
+          "description": "Locates text within server-sent event frames. Required when responseMode includes streaming and outputContentType is 'json'.",
+          "items": { "$ref": "#/definitions/SseTextSelector" }
+        }
+      },
+      "required": ["responseMode"],
+      "additionalProperties": false
+    },
+    "SseTextSelector": {
+      "type": "object",
+      "description": "Locates the moderatable text inside a single server-sent event frame.",
+      "properties": {
+        "eventType": { "type": "string", "description": "SSE event name this selector applies to." },
+        "textField": { "type": "string", "description": "JSONPath expression, relative to the frame payload, holding the text." }
+      },
+      "required": ["eventType"],
       "additionalProperties": false
     },
     "ContainerSettings": {

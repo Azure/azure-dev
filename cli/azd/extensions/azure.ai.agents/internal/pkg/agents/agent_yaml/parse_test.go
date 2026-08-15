@@ -1186,3 +1186,190 @@ protocols:
 		})
 	}
 }
+
+func TestValidateAgentDefinition_InvocationsModeration(t *testing.T) {
+	t.Parallel()
+
+	// invocationsAgent wraps a moderation block in an otherwise-valid hosted agent that
+	// exposes the invocations protocol, so each case isolates the moderation rule under test.
+	invocationsAgent := func(moderation string) string {
+		return `kind: hosted
+name: rai-agent
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/p
+    invocations_moderation:
+` + moderation + `protocols:
+  - protocol: invocations
+    version: "1.0.0"
+`
+	}
+
+	tests := []struct {
+		name         string
+		yaml         string
+		wantErrSubst string
+	}{
+		{
+			name: "valid non_streaming json",
+			yaml: invocationsAgent(`      response_mode: non_streaming
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+`),
+		},
+		{
+			name: "valid streaming json",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: $.delta
+`),
+		},
+		{
+			name: "valid both requires output_paths and stream_selectors",
+			yaml: invocationsAgent(`      response_mode: both
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: $.delta
+`),
+		},
+		{
+			name: "valid text content types need no paths",
+			yaml: invocationsAgent(`      response_mode: both
+      input_content_type: text
+      output_content_type: text
+`),
+		},
+		{
+			name: "response_mode is required",
+			yaml: invocationsAgent(`      input_paths: ["$.input"]
+`),
+			wantErrSubst: "policies[0] invocationsModeration.responseMode is required",
+		},
+		{
+			name: "response_mode must be a known value",
+			yaml: invocationsAgent(`      response_mode: sometimes
+      input_paths: ["$.input"]
+`),
+			wantErrSubst: "policies[0] invocationsModeration.responseMode must be one of",
+		},
+		{
+			name: "input_content_type must be json or text",
+			yaml: invocationsAgent(`      response_mode: non_streaming
+      input_content_type: xml
+      output_paths: ["$.output"]
+`),
+			wantErrSubst: "policies[0] invocationsModeration.inputContentType must be 'json' or 'text'",
+		},
+		{
+			name: "output_content_type must be json or text",
+			yaml: invocationsAgent(`      response_mode: non_streaming
+      input_paths: ["$.input"]
+      output_content_type: xml
+`),
+			wantErrSubst: "policies[0] invocationsModeration.outputContentType must be 'json' or 'text'",
+		},
+		{
+			name: "input_paths required when input content type defaults to json",
+			yaml: invocationsAgent(`      response_mode: non_streaming
+      output_paths: ["$.output"]
+`),
+			wantErrSubst: "policies[0] invocationsModeration.inputPaths is required when inputContentType is 'json'",
+		},
+		{
+			name: "output_paths required for non-streaming json",
+			yaml: invocationsAgent(`      response_mode: non_streaming
+      input_paths: ["$.input"]
+`),
+			wantErrSubst: "policies[0] invocationsModeration.outputPaths is required when responseMode " +
+				"includes non-streaming",
+		},
+		{
+			name: "stream_selectors required for streaming json",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors is required when responseMode " +
+				"includes streaming",
+		},
+		{
+			name: "stream selector event_type must be non-empty",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - text_field: $.delta
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType is required",
+		},
+		{
+			name: "rejected on an agent that does not expose the invocations protocol",
+			yaml: `kind: hosted
+name: rai-agent
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/p
+    invocations_moderation:
+      response_mode: non_streaming
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+protocols:
+  - protocol: responses
+    version: "1.0.0"
+`,
+			wantErrSubst: "policies[0] invocationsModeration is only supported for agents that expose " +
+				"the 'invocations' protocol",
+		},
+		{
+			name: "invocations_ws alone does not satisfy the protocol requirement",
+			yaml: `kind: hosted
+name: rai-agent
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/p
+    invocations_moderation:
+      response_mode: non_streaming
+      input_paths: ["$.input"]
+      output_paths: ["$.output"]
+protocols:
+  - protocol: invocations_ws
+    version: "1.0.0"
+`,
+			wantErrSubst: "policies[0] invocationsModeration is only supported for agents that expose " +
+				"the 'invocations' protocol",
+		},
+		{
+			name: "omitting the block leaves an invocations agent valid",
+			yaml: `kind: hosted
+name: rai-agent
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/p
+protocols:
+  - protocol: invocations
+    version: "1.0.0"
+`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateAgentDefinition([]byte(tc.yaml))
+			if tc.wantErrSubst == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tc.wantErrSubst)
+			}
+			if !strings.Contains(err.Error(), tc.wantErrSubst) {
+				t.Fatalf("expected error containing %q, got %q", tc.wantErrSubst, err.Error())
+			}
+		})
+	}
+}

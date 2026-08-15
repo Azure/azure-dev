@@ -4,6 +4,13 @@
 package cmd
 
 import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -26,7 +33,8 @@ func TestTelemetryEventConstants(t *testing.T) {
 // NOTE: This test validates field definitions, not command-level instrumentation.
 // Command-level coverage is enforced via the documented allowlist in
 // TestCommandTelemetryCoverageAllowlist (below) and the feature-telemetry-matrix.md.
-// Full AST-based scanning of SetUsageAttributes calls is a future enhancement.
+// Raw attribute.* string-literal keys in telemetry sinks are additionally
+// rejected by TestNoRawTelemetryAttributes (below).
 func TestTelemetryFieldConstants(t *testing.T) {
 	t.Parallel()
 	// Auth command telemetry fields
@@ -45,6 +53,15 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		}
 		for _, method := range authMethods {
 			kv := fields.AuthMethodKey.String(method)
+			require.NotEmpty(t, kv.Value.AsString())
+		}
+
+		// Cache-clear failure indicator (fixed enum, emitted on `auth login`).
+		kvCache := fields.AuthCacheClearFailedKey.String("auth")
+		require.Equal(t, "auth.cache_clear_failed", string(kvCache.Key))
+		require.Equal(t, "auth", kvCache.Value.AsString())
+		for _, which := range []string{"auth", "subscriptions"} {
+			kv := fields.AuthCacheClearFailedKey.String(which)
 			require.NotEmpty(t, kv.Value.AsString())
 		}
 	})
@@ -254,6 +271,147 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			require.NotEmpty(t, kv.Value.AsString())
 		}
 	})
+
+	// Container publish telemetry fields
+	t.Run("ContainerFields", func(t *testing.T) {
+		t.Parallel()
+		kv := fields.ContainerPublishRemoteBuildKey.Bool(true)
+		require.Equal(t, "container.publish.remotebuild", string(kv.Key))
+		require.Equal(t, true, kv.Value.AsBool())
+	})
+
+	// AKS service target telemetry fields
+	t.Run("AksFields", func(t *testing.T) {
+		t.Parallel()
+		kv := fields.AksSkipReasonKey.String("cluster_not_provisioned")
+		require.Equal(t, "skip.reason", string(kv.Key))
+		require.Equal(t, "cluster_not_provisioned", kv.Value.AsString())
+	})
+}
+
+// TestNoRawTelemetryAttributes enforces that product code never emits telemetry
+// via raw attribute.String("literal", ...) / attribute.Bool("literal", ...) etc.
+// Every telemetry attribute must be declared as a fields.AttributeKey (with a
+// Classification and Purpose) and emitted through it, e.g.
+// fields.SomeKey.String(value). This keeps the telemetry schema discoverable and
+// classifiable for the GDPR metadata pipeline (azure-dev issue #1803).
+//
+// Legitimately excluded from the scan:
+//   - *_test.go files (test fixtures build raw attributes on purpose).
+//   - internal/tracing/... — the tracing/baggage plumbing that the
+//     fields.AttributeKey abstraction is itself built on top of.
+//   - extensions/... — independent extension modules with their own schema.
+func TestNoRawTelemetryAttributes(t *testing.T) {
+	t.Parallel()
+
+	// rawAttributeConstructors are the go.opentelemetry.io/otel/attribute helpers
+	// that build a KeyValue from a string-literal key. Using them directly in
+	// product code bypasses the fields.AttributeKey registry, so the GDPR metadata
+	// exporter (which discovers only exported AttributeKey vars) can never classify
+	// the resulting property. See docs/specs/metrics-audit/telemetry-schema.md.
+	rawAttributeConstructors := map[string]struct{}{
+		"String":       {},
+		"Bool":         {},
+		"Int":          {},
+		"Int64":        {},
+		"Float64":      {},
+		"Stringer":     {},
+		"StringSlice":  {},
+		"BoolSlice":    {},
+		"Int64Slice":   {},
+		"Float64Slice": {},
+	}
+
+	// The test runs with its package directory (cli/azd/cmd) as the working
+	// directory, so the module root is one level up.
+	azdRoot, err := filepath.Abs("..")
+	require.NoError(t, err)
+
+	var violations []string
+
+	err = filepath.Walk(azdRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			switch filepath.Base(path) {
+			case "vendor", "extensions", "testdata", "node_modules", ".git":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		rel, relErr := filepath.Rel(azdRoot, path)
+		if relErr != nil {
+			rel = path
+		}
+		rel = filepath.ToSlash(rel)
+
+		// The tracing/baggage plumbing is the sanctioned home for raw attribute
+		// construction; the fields.AttributeKey abstraction is built on it.
+		if strings.HasPrefix(rel, "internal/tracing/") {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		file, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			return nil // skip unparseable files
+		}
+
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) == 0 {
+				return true
+			}
+
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+
+			pkgIdent, ok := sel.X.(*ast.Ident)
+			if !ok || pkgIdent.Name != "attribute" {
+				return true
+			}
+
+			if _, isConstructor := rawAttributeConstructors[sel.Sel.Name]; !isConstructor {
+				return true
+			}
+
+			// Only flag string-literal keys. A non-literal key (e.g. a dynamic
+			// extension field) is a separate, intentional pattern.
+			lit, ok := call.Args[0].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+
+			pos := fset.Position(call.Pos())
+			violations = append(violations, fmt.Sprintf(
+				"  %s:%d: attribute.%s(%s, ...)", rel, pos.Line, sel.Sel.Name, lit.Value))
+			return true
+		})
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	if len(violations) > 0 {
+		t.Errorf(
+			"Found %d raw telemetry attribute(s) using a string-literal key.\n"+
+				"Declare an exported fields.AttributeKey (with Classification and Purpose) in\n"+
+				"internal/tracing/fields/fields.go and emit via it, e.g. fields.MyKey.String(v),\n"+
+				"so the property is discoverable and classifiable by the GDPR metadata pipeline.\n\n"+
+				"Raw attributes:\n%s",
+			len(violations),
+			strings.Join(violations, "\n"),
+		)
+	}
 }
 
 // TestCommandTelemetryCoverage ensures every user-facing command is explicitly categorized

@@ -41,7 +41,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/benbjohnson/clock"
 	"github.com/sethvargo/go-retry"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -625,7 +624,7 @@ func (ch *ContainerHelper) Publish(
 	ctx, span := tracing.Start(ctx, events.ContainerPublishEvent)
 	defer func() { span.EndWithStatus(err) }()
 	span.SetAttributes(
-		attribute.Bool("container.remotebuild", serviceConfig.Docker.RemoteBuild),
+		fields.ContainerPublishRemoteBuildKey.Bool(serviceConfig.Docker.RemoteBuild),
 	)
 
 	var remoteImage string

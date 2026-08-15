@@ -360,6 +360,17 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+
+	// AuthCacheClearFailedKey records which cache failed to clear during the
+	// re-login cleanup that runs before a fresh login. It is a fixed enum
+	// (not user-derived), so it is emitted raw (not hashed). Emitted on the
+	// `auth login` usage event.
+	// Values: "auth" (credential cache), "subscriptions" (subscription cache).
+	AuthCacheClearFailedKey = AttributeKey{
+		Key:            attribute.Key("auth.cache_clear_failed"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 )
 
 // Environment command related fields
@@ -1053,6 +1064,19 @@ var (
 	}
 )
 
+// AKS service target related fields
+var (
+	// AksSkipReasonKey records why AKS postprovision Kubernetes context setup
+	// was skipped, as a bounded, low-cardinality code (never raw error text).
+	// Emitted on the `aks.postprovision.skip` event.
+	// Values: "cluster_not_provisioned".
+	AksSkipReasonKey = AttributeKey{
+		Key:            attribute.Key("skip.reason"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
 // Mcp related fields
 var (
 	// The name of the MCP client.
@@ -1128,6 +1152,17 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
+	}
+
+	// ContainerPublishRemoteBuildKey records whether the container image was
+	// built remotely (ACR build) rather than locally for a container publish.
+	// It is a boolean (fixed cardinality), so it is emitted raw (not hashed).
+	// Emitted on the `container.publish` event. This is distinct from the
+	// `container.remotebuild` event, which marks the Azure-side remote build.
+	ContainerPublishRemoteBuildKey = AttributeKey{
+		Key:            attribute.Key("container.publish.remotebuild"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
 	}
 )
 

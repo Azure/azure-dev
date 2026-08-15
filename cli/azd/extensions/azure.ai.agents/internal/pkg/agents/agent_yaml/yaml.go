@@ -291,7 +291,7 @@ const (
 // content-safety HTTP proxy and is therefore not covered.
 const InvocationsProtocol = "invocations"
 
-// SseTextSelector locates the moderatable text inside a single server-sent event frame.
+// SseTextSelector locates the text to moderate inside a single server-sent event frame.
 type SseTextSelector struct {
 	// EventType is the SSE event name this selector applies to. Required.
 	EventType string `json:"eventType" yaml:"event_type"`

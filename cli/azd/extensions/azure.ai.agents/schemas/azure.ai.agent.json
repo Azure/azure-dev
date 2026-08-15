@@ -268,7 +268,7 @@
     },
     "SseTextSelector": {
       "type": "object",
-      "description": "Locates the moderatable text inside a single server-sent event frame.",
+      "description": "Locates the text to moderate inside a single server-sent event frame.",
       "properties": {
         "eventType": { "type": "string", "pattern": "\\S", "description": "SSE event name this selector applies to." },
         "textField": { "type": "string", "description": "JSONPath expression, relative to the frame payload, holding the text." }

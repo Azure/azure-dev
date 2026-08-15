@@ -115,7 +115,7 @@ const (
 	RaiInvocationModeBoth RaiInvocationMode = "both"
 )
 
-// SseTextSelector locates the moderatable text inside a single server-sent event frame.
+// SseTextSelector locates the text to moderate inside a single server-sent event frame.
 type SseTextSelector struct {
 	// EventType is the SSE event name the selector applies to.
 	EventType string `json:"event_type"`

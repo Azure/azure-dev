@@ -201,7 +201,7 @@ When adding a new telemetry field:
    - OTel key name
    - Classification
    - Purpose
-   - EndpointIdType (only when the value is a known endpoint identifier)
+   - Endpoint (only when the value is a known endpoint identifier)
    - Whether it is hashed
    - Whether it is a measurement
    - Allowed values (if enum)

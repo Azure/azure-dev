@@ -421,6 +421,78 @@ func scanGoFileForRawAttributes(fset *token.FileSet, file *ast.File, rel string)
 		return "..."
 	}
 
+	// isAttrKeyType reports whether an expression is the raw attribute.Key type
+	// reference (e.g. `attribute.Key`), respecting the resolved package alias.
+	isAttrKeyType := func(expr ast.Expr) bool {
+		sel, ok := expr.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Key" {
+			return false
+		}
+		base, ok := sel.X.(*ast.Ident)
+		return ok && base.Name == attrPkgName
+	}
+	// isAttrKeyCall reports whether an expression is an attribute.Key(...) call,
+	// which yields a raw attribute.Key value.
+	isAttrKeyCall := func(expr ast.Expr) bool {
+		call, ok := expr.(*ast.CallExpr)
+		return ok && isAttrKeyType(call.Fun)
+	}
+
+	// rawKeyIdents collects identifiers whose type is the raw attribute.Key (never
+	// the classified fields.AttributeKey, which is a distinct named struct type).
+	// A KeyValue-producing method call on one of these — e.g. a parameter
+	// `k attribute.Key` used as `k.String(v)` — emits an unregistered key just
+	// like a direct constructor call. This is lightweight declaration tracking,
+	// not full type inference: it covers explicitly typed function parameters /
+	// results / receivers, var / const declarations, and `k := attribute.Key(...)`
+	// short declarations — the realistically reachable forms.
+	rawKeyIdents := map[string]struct{}{}
+	addFieldNames := func(fl *ast.FieldList) {
+		if fl == nil {
+			return
+		}
+		for _, f := range fl.List {
+			if isAttrKeyType(f.Type) {
+				for _, name := range f.Names {
+					rawKeyIdents[name.Name] = struct{}{}
+				}
+			}
+		}
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.FuncDecl:
+			addFieldNames(node.Recv)
+			if node.Type != nil {
+				addFieldNames(node.Type.Params)
+				addFieldNames(node.Type.Results)
+			}
+		case *ast.FuncLit:
+			if node.Type != nil {
+				addFieldNames(node.Type.Params)
+				addFieldNames(node.Type.Results)
+			}
+		case *ast.ValueSpec:
+			if node.Type != nil && isAttrKeyType(node.Type) {
+				for _, name := range node.Names {
+					rawKeyIdents[name.Name] = struct{}{}
+				}
+			}
+		case *ast.AssignStmt:
+			if node.Tok == token.DEFINE {
+				for i, lhs := range node.Lhs {
+					if i >= len(node.Rhs) {
+						break
+					}
+					if id, ok := lhs.(*ast.Ident); ok && isAttrKeyCall(node.Rhs[i]) {
+						rawKeyIdents[id.Name] = struct{}{}
+					}
+				}
+			}
+		}
+		return true
+	})
+
 	var violations []string
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -451,12 +523,22 @@ func scanGoFileForRawAttributes(fset *token.FileSet, file *ast.File, rel string)
 			return true
 		}
 
+		// Form C: k.String(v) where k is a value of the raw attribute.Key type
+		// (a parameter, var/const, or `k := attribute.Key(...)`). This emits an
+		// unregistered key. It is distinct from the sanctioned
+		// fields.SomeKey.String(v) promoted-method call, whose receiver is the
+		// classified fields.AttributeKey struct type, not attribute.Key.
+		if base, ok := sel.X.(*ast.Ident); ok {
+			if _, isRawKey := rawKeyIdents[base.Name]; isRawKey {
+				violations = append(violations, fmt.Sprintf(
+					"  %s:%d: %s.%s(...) on a raw attribute.Key value", rel, pos.Line, base.Name, sel.Sel.Name))
+				return true
+			}
+		}
+
 		// Form B: attribute.Key("key").String(v) — the selector base is an inline
 		// attribute.Key(...) constructor call. This produces a KeyValue that
-		// likewise bypasses the fields.AttributeKey registry. (A method call on a
-		// Key-typed *variable* is indistinguishable at the AST level from the
-		// sanctioned fields.SomeKey.String(v) promoted-method call, so only the
-		// inline form is enforceable here.)
+		// likewise bypasses the fields.AttributeKey registry.
 		if inner, ok := sel.X.(*ast.CallExpr); ok {
 			if innerSel, ok := inner.Fun.(*ast.SelectorExpr); ok {
 				if innerBase, ok := innerSel.X.(*ast.Ident); ok &&
@@ -476,55 +558,92 @@ func scanGoFileForRawAttributes(fset *token.FileSet, file *ast.File, rel string)
 
 // TestRawTelemetryAttributeScanner is a fixture test for the AST guard used by
 // TestNoRawTelemetryAttributes. It pins the contract: raw attribute constructors,
-// aliased imports, constant keys, and the chained attribute.Key(k).String(v) form
-// are all flagged, while the sanctioned promoted-method pattern and a bare
-// attribute.Key(k) (which does not build a KeyValue) are not.
+// aliased imports, constant keys, the chained attribute.Key(k).String(v) form,
+// and KeyValue-producing method calls on a raw attribute.Key value are all
+// flagged, while the sanctioned fields.AttributeKey promoted-method pattern, a
+// bare attribute.Key(k) (which does not build a KeyValue), and non-KeyValue uses
+// of a key (e.g. a map lookup) are not.
 func TestRawTelemetryAttributeScanner(t *testing.T) {
 	t.Parallel()
 
+	// Each fixture is composed as "package p" + an import line + a body so the
+	// individual source strings stay within the line-length limit.
+	const (
+		stdImport   = `import "go.opentelemetry.io/otel/attribute"`
+		aliasImport = `import otelattr "go.opentelemetry.io/otel/attribute"`
+		noImport    = ``
+	)
+
 	cases := []struct {
 		name          string
-		src           string
+		imports       string
+		body          string
 		wantViolation bool
 	}{
 		{
 			name:          "literal key",
-			src:           `package p; import "go.opentelemetry.io/otel/attribute"; var _ = attribute.String("raw.key", "v")`,
+			imports:       stdImport,
+			body:          `var _ = attribute.String("raw.key", "v")`,
 			wantViolation: true,
 		},
 		{
 			name:          "constant key",
-			src:           `package p; import "go.opentelemetry.io/otel/attribute"; const k = "raw.key"; var _ = attribute.String(k, "v")`,
+			imports:       stdImport,
+			body:          `const k = "raw.key"; var _ = attribute.String(k, "v")`,
 			wantViolation: true,
 		},
 		{
 			name:          "aliased import",
-			src:           `package p; import otelattr "go.opentelemetry.io/otel/attribute"; var _ = otelattr.Bool("raw.key", true)`,
+			imports:       aliasImport,
+			body:          `var _ = otelattr.Bool("raw.key", true)`,
 			wantViolation: true,
 		},
 		{
 			name:          "int slice constructor",
-			src:           `package p; import "go.opentelemetry.io/otel/attribute"; var _ = attribute.IntSlice("raw.key", []int{1})`,
+			imports:       stdImport,
+			body:          `var _ = attribute.IntSlice("raw.key", []int{1})`,
 			wantViolation: true,
 		},
 		{
 			name:          "chained key method",
-			src:           `package p; import "go.opentelemetry.io/otel/attribute"; var _ = attribute.Key("raw.key").String("v")`,
+			imports:       stdImport,
+			body:          `var _ = attribute.Key("raw.key").String("v")`,
+			wantViolation: true,
+		},
+		{
+			name:          "method on key-typed parameter",
+			imports:       stdImport,
+			body:          `func f(k attribute.Key) { _ = k.String("v") }`,
+			wantViolation: true,
+		},
+		{
+			name:          "method on locally built key value",
+			imports:       stdImport,
+			body:          `func f() { k := attribute.Key("raw.key"); _ = k.String("v") }`,
 			wantViolation: true,
 		},
 		{
 			name:          "bare key builder without value",
-			src:           `package p; import "go.opentelemetry.io/otel/attribute"; var _ = attribute.Key("raw.key")`,
+			imports:       stdImport,
+			body:          `var _ = attribute.Key("raw.key")`,
 			wantViolation: false,
 		},
 		{
-			name:          "promoted method on key-typed value",
-			src:           `package p; import "go.opentelemetry.io/otel/attribute"; func f(k attribute.Key) { _ = k.String("v") }`,
+			name:          "promoted method on classified field",
+			imports:       stdImport,
+			body:          `var _ = fields.SomeKey.String("v")`,
+			wantViolation: false,
+		},
+		{
+			name:          "map lookup on key-typed parameter",
+			imports:       stdImport,
+			body:          `func f(m map[attribute.Key]int, k attribute.Key) int { return m[k] }`,
 			wantViolation: false,
 		},
 		{
 			name:          "file without the attribute import",
-			src:           `package p; var _ = 1`,
+			imports:       noImport,
+			body:          `var _ = 1`,
 			wantViolation: false,
 		},
 	}
@@ -533,8 +652,9 @@ func TestRawTelemetryAttributeScanner(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			src := "package p\n" + tc.imports + "\n" + tc.body + "\n"
 			fset := token.NewFileSet()
-			file, err := parser.ParseFile(fset, tc.name+".go", tc.src, 0)
+			file, err := parser.ParseFile(fset, tc.name+".go", src, 0)
 			require.NoError(t, err)
 
 			got := scanGoFileForRawAttributes(fset, file, tc.name+".go")
@@ -546,6 +666,8 @@ func TestRawTelemetryAttributeScanner(t *testing.T) {
 		})
 	}
 }
+
+// TestCommandTelemetryCoverage ensures every user-facing command is explicitly categorized
 // for telemetry coverage. When a new command is added to the CLI, it must be added to one
 // of the lists below. This forces developers to consciously decide whether the command needs
 // command-specific telemetry attributes or whether global middleware telemetry is sufficient.

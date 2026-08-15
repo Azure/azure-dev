@@ -43,7 +43,7 @@ These commands emit attributes or events beyond the global middleware span.
 | Command | Subcommands | Global Span | Command-Specific Attrs | Feature Events | Notes |
 |---------|-------------|:-----------:|:----------------------:|:--------------:|-------|
 | **Auth** | | | | | |
-| `auth login` | — | ✅ | ✅ | ❌ | `auth.method` (browser, device-code, service-principal-secret, etc.) |
+| `auth login` | — | ✅ | ✅ | ❌ | `auth.method` (browser, device-code, service-principal-secret, etc.); `auth.cache_clear_failed` (which credential cache failed to clear during pre-login cleanup) |
 | `auth logout` | — | ✅ | ❌ | ❌ | Global telemetry sufficient — no command-specific attributes emitted |
 | `auth status` | — | ✅ | ❌ | ❌ | Global telemetry sufficient — simple pass/fail check |
 | `auth token` | — | ✅ | ❌ | ❌ | Global telemetry sufficient |
@@ -116,6 +116,7 @@ command-specific telemetry fields provide analytical value beyond the command na
 | Field | OTel Key | Commands | Justification |
 |-------|----------|----------|---------------|
 | Auth method | `auth.method` | `auth login`, `auth logout` | Distinguishes authentication flow type (browser, device-code, SP, federated, etc.) |
+| Auth cache-clear failed | `auth.cache_clear_failed` | `auth login` | Identifies which credential cache failed to clear during the pre-login cleanup (`auth` / `subscriptions`) |
 | Env count | `env.count` | `env list` | Measurement — number of environments is a quantitative metric |
 | Hooks name | `hooks.name` | `hooks run` | Identifies which hook script ran (hashed — user-defined name) |
 | Hooks type | `hooks.type` | `hooks run` | Distinguishes project / service / **layer** hooks |

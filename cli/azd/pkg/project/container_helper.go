@@ -624,7 +624,7 @@ func (ch *ContainerHelper) Publish(
 	ctx, span := tracing.Start(ctx, events.ContainerPublishEvent)
 	defer func() { span.EndWithStatus(err) }()
 	span.SetAttributes(
-		fields.ContainerPublishRemoteBuildKey.Bool(serviceConfig.Docker.RemoteBuild),
+		fields.ContainerRemoteBuildKey.Bool(serviceConfig.Docker.RemoteBuild),
 	)
 
 	var remoteImage string

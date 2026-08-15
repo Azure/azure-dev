@@ -1154,13 +1154,11 @@ var (
 		IsMeasurement:  true,
 	}
 
-	// ContainerPublishRemoteBuildKey records whether the container image was
+	// ContainerRemoteBuildKey records whether the container image was
 	// built remotely (ACR build) rather than locally for a container publish.
 	// It is a boolean (fixed cardinality), so it is emitted raw (not hashed).
-	// Emitted on the `container.publish` event. This is distinct from the
-	// `container.remotebuild` event, which marks the Azure-side remote build.
-	ContainerPublishRemoteBuildKey = AttributeKey{
-		Key:            attribute.Key("container.publish.remotebuild"),
+	ContainerRemoteBuildKey = AttributeKey{
+		Key:            attribute.Key("container.remotebuild"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}

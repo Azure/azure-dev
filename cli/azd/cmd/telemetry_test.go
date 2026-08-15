@@ -10,6 +10,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -275,8 +276,8 @@ func TestTelemetryFieldConstants(t *testing.T) {
 	// Container publish telemetry fields
 	t.Run("ContainerFields", func(t *testing.T) {
 		t.Parallel()
-		kv := fields.ContainerPublishRemoteBuildKey.Bool(true)
-		require.Equal(t, "container.publish.remotebuild", string(kv.Key))
+		kv := fields.ContainerRemoteBuildKey.Bool(true)
+		require.Equal(t, "container.remotebuild", string(kv.Key))
 		require.Equal(t, true, kv.Value.AsBool())
 	})
 
@@ -290,11 +291,13 @@ func TestTelemetryFieldConstants(t *testing.T) {
 }
 
 // TestNoRawTelemetryAttributes enforces that product code never emits telemetry
-// via raw attribute.String("literal", ...) / attribute.Bool("literal", ...) etc.
-// Every telemetry attribute must be declared as a fields.AttributeKey (with a
-// Classification and Purpose) and emitted through it, e.g.
-// fields.SomeKey.String(value). This keeps the telemetry schema discoverable and
-// classifiable for the GDPR metadata pipeline (azure-dev issue #1803).
+// via raw attribute.String(key, ...) / attribute.Bool(key, ...) etc. — whether
+// the key is a string literal or a named constant, and whether the package is
+// imported under its default name or an alias. Every telemetry attribute must be
+// declared as a fields.AttributeKey (with a Classification and Purpose) and
+// emitted through it, e.g. fields.SomeKey.String(value). This keeps the telemetry
+// schema discoverable and classifiable for the GDPR metadata pipeline (azure-dev
+// issue #1803).
 //
 // Legitimately excluded from the scan:
 //   - *_test.go files (test fixtures build raw attributes on purpose).
@@ -305,14 +308,15 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 	t.Parallel()
 
 	// rawAttributeConstructors are the go.opentelemetry.io/otel/attribute helpers
-	// that build a KeyValue from a string-literal key. Using them directly in
-	// product code bypasses the fields.AttributeKey registry, so the GDPR metadata
+	// that build a KeyValue from a key and value. Using them directly in product
+	// code bypasses the fields.AttributeKey registry, so the GDPR metadata
 	// exporter (which discovers only exported AttributeKey vars) can never classify
 	// the resulting property. See docs/specs/metrics-audit/telemetry-schema.md.
 	rawAttributeConstructors := map[string]struct{}{
 		"String":       {},
 		"Bool":         {},
 		"Int":          {},
+		"IntSlice":     {},
 		"Int64":        {},
 		"Float64":      {},
 		"Stringer":     {},
@@ -364,6 +368,31 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 			return nil // skip unparseable files
 		}
 
+		// Resolve the local name bound to go.opentelemetry.io/otel/attribute in
+		// this file. Matching the selector base literally against "attribute"
+		// would miss an aliased import (e.g. otelattr "...otel/attribute") and
+		// could also misfire on an unrelated local identifier named "attribute".
+		// If the file does not import the package, it cannot construct a raw
+		// attribute, so there is nothing to scan.
+		attrPkgName := ""
+		for _, imp := range file.Imports {
+			importPath, uErr := strconv.Unquote(imp.Path.Value)
+			if uErr != nil || importPath != "go.opentelemetry.io/otel/attribute" {
+				continue
+			}
+			if imp.Name != nil {
+				attrPkgName = imp.Name.Name // explicit alias
+			} else {
+				attrPkgName = "attribute" // default package name
+			}
+			break
+		}
+		// A blank ("_") or dot (".") import cannot produce a "pkg.Constructor"
+		// selector, so there is nothing this AST check can match on.
+		if attrPkgName == "" || attrPkgName == "_" || attrPkgName == "." {
+			return nil
+		}
+
 		ast.Inspect(file, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok || len(call.Args) == 0 {
@@ -376,7 +405,7 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 			}
 
 			pkgIdent, ok := sel.X.(*ast.Ident)
-			if !ok || pkgIdent.Name != "attribute" {
+			if !ok || pkgIdent.Name != attrPkgName {
 				return true
 			}
 
@@ -384,16 +413,19 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 				return true
 			}
 
-			// Only flag string-literal keys. A non-literal key (e.g. a dynamic
-			// extension field) is a separate, intentional pattern.
-			lit, ok := call.Args[0].(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				return true
+			// Every direct attribute constructor call in product code bypasses
+			// the fields.AttributeKey registry, so the GDPR classifier can never
+			// see it — whether the key is a string literal or a named constant.
+			// Both are violations; surface the literal key when present for a
+			// friendlier message.
+			keyDesc := "..."
+			if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				keyDesc = lit.Value
 			}
 
 			pos := fset.Position(call.Pos())
 			violations = append(violations, fmt.Sprintf(
-				"  %s:%d: attribute.%s(%s, ...)", rel, pos.Line, sel.Sel.Name, lit.Value))
+				"  %s:%d: %s.%s(%s, ...)", rel, pos.Line, attrPkgName, sel.Sel.Name, keyDesc))
 			return true
 		})
 
@@ -403,7 +435,7 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 
 	if len(violations) > 0 {
 		t.Errorf(
-			"Found %d raw telemetry attribute(s) using a string-literal key.\n"+
+			"Found %d raw telemetry attribute(s) constructed directly.\n"+
 				"Declare an exported fields.AttributeKey (with Classification and Purpose) in\n"+
 				"internal/tracing/fields/fields.go and emit via it, e.g. fields.MyKey.String(v),\n"+
 				"so the property is discoverable and classifiable by the GDPR metadata pipeline.\n\n"+

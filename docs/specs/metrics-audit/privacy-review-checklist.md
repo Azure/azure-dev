@@ -175,7 +175,7 @@ A new field should **not** be hashed if:
   `aspire.apphost.language` = `"typescript"` / `"python"` / `"go"` / `"java"` / `"rust"`,
   `auth.cache_clear_failed` = `"auth"` / `"subscriptions"`, or
   `skip.reason` = `"cluster_not_provisioned"`), or a boolean
-  (e.g., `container.publish.remotebuild`).
+  (e.g., `container.remotebuild`).
 - The value is a count or duration (measurements).
 - The value is system-generated metadata (e.g., OS type).
 - The value is a hardcoded literal in source code (e.g., `exegraph.step.tags`, which

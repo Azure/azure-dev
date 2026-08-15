@@ -190,7 +190,7 @@ not emitted by azd spans.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Remote build count | `container.remoteBuild.count` | SystemMetadata | FeatureInsight | **Measurement** |
-| Publish remote build | `container.publish.remotebuild` | SystemMetadata | FeatureInsight | Bool — whether the image was built remotely (ACR) rather than locally. Emitted on `container.publish`. Distinct from the `container.remotebuild` event. |
+| Publish remote build | `container.remotebuild` | SystemMetadata | FeatureInsight | Bool — whether the image was built remotely (ACR) rather than locally. |
 
 ### AKS
 

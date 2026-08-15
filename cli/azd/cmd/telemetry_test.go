@@ -301,8 +301,6 @@ func TestTelemetryFieldConstants(t *testing.T) {
 //
 // Legitimately excluded from the scan:
 //   - *_test.go files (test fixtures build raw attributes on purpose).
-//   - internal/tracing/... — the tracing/baggage plumbing that the
-//     fields.AttributeKey abstraction is itself built on top of.
 //   - extensions/... — independent extension modules with their own schema.
 func TestNoRawTelemetryAttributes(t *testing.T) {
 	t.Parallel()
@@ -355,12 +353,6 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 			rel = path
 		}
 		rel = filepath.ToSlash(rel)
-
-		// The tracing/baggage plumbing is the sanctioned home for raw attribute
-		// construction; the fields.AttributeKey abstraction is built on it.
-		if strings.HasPrefix(rel, "internal/tracing/") {
-			return nil
-		}
 
 		fset := token.NewFileSet()
 		file, parseErr := parser.ParseFile(fset, path, nil, 0)

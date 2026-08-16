@@ -96,7 +96,9 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 			if readErr != nil && !eval_api.IsNotFound(readErr) {
 				return messages.CheckingEvaluatorExists(name, readErr)
 			}
-			if err := checkAssetExistence(verb, "evaluator", name, readErr == nil); err != nil {
+			// A non-404 already returned above, so reaching here means the read
+			// either found the evaluator or the service said it is unknown.
+			if err := checkAssetExistence(verb, "evaluator", name, readErr == nil, true); err != nil {
 				return err
 			}
 
@@ -128,11 +130,18 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 }
 
 // checkAssetExistence enforces the one difference between create and update.
-func checkAssetExistence(verb, kind, name string, exists bool) error {
+//
+// absenceCertain separates "the service says this name is unknown" from "nothing
+// came back", and only the former refuses an update. A caller reading an
+// eventually consistent version listing cannot prove absence, so an update
+// issued moments after a create would otherwise be refused for a dataset that
+// plainly exists -- and sent to `create`, which fails in turn once the listing
+// catches up. Callers that read a point endpoint can prove it and pass true.
+func checkAssetExistence(verb, kind, name string, exists, absenceCertain bool) error {
 	switch {
 	case verb == "create" && exists:
 		return messages.AssetAlreadyExists(kind, name)
-	case verb == "update" && !exists:
+	case verb == "update" && !exists && absenceCertain:
 		return messages.AssetDoesNotExist(kind, name)
 	}
 	return nil

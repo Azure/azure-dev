@@ -22,3 +22,15 @@ func TestFirstDatasetVersionsCoverWhatThisCLIPublishes(t *testing.T) {
 	assert.Contains(t, firstDatasetVersions, "1",
 		"a generation job, the SDK or the portal can register a plain 1")
 }
+
+// The probe still cannot prove absence -- it only ever proves existence, and a
+// dataset whose early versions were deleted has none of them left to find. So
+// an absence the service never confirmed has to publish rather than refuse,
+// otherwise the caller is sent to `create`, which fails in turn once the
+// listing catches up and reports the name already taken.
+func TestCheckAssetExistenceLetsAnUnprovableAbsenceThrough(t *testing.T) {
+	assert.NoError(t, checkAssetExistence("update", "dataset", "x", false, false))
+
+	err := checkAssetExistence("update", "dataset", "x", false, true)
+	assert.Error(t, err, "a 404 is the service saying the name is unknown, which still refuses")
+}

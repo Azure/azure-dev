@@ -206,7 +206,7 @@ func ReadFirstJSONLFile(path string) (string, error) {
 	if info, err := os.Stat(path); err == nil && !info.IsDir() {
 		data, err := os.ReadFile(path) //nolint:gosec // local artifact path
 		if err != nil {
-			return "", messages.ReadingPath(filepath.Base(path), err)
+			return "", messages.ReadingPath(path, err)
 		}
 		return jsonlContent(filepath.Base(path), data)
 	}

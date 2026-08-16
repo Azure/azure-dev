@@ -49,7 +49,7 @@ func (ec *evalContext) resolveEvalRef(
 	}
 
 	if cfg != nil {
-		if err := cfg.Validate(); err != nil {
+		if err := cfg.ValidateForLookup(); err != nil {
 			return evalRef{}, err
 		}
 		eval, err := cfg.Eval(nameOrID)

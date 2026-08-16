@@ -207,6 +207,22 @@ func (c *EvalConfig) LocalDatasets() []DatasetDecl {
 // Validate checks the invariants the provider relies on before it calls the
 // service, so failures surface as config errors rather than opaque 4xx.
 func (c *EvalConfig) Validate() error {
+	return c.validate(true)
+}
+
+// ValidateForLookup checks only what resolving a declaration by name depends
+// on.
+//
+// Two evals that differ only in substance still resolve unambiguously by name,
+// and that clash only matters to something about to deploy. Enforcing it on the
+// way to a lookup stranded commands that had already been told which eval they
+// meant -- `run list --eval <name>` refused to list anything, and the way out
+// was to hand-edit the config, which the error did not say.
+func (c *EvalConfig) ValidateForLookup() error {
+	return c.validate(false)
+}
+
+func (c *EvalConfig) validate(deploying bool) error {
 	if err := c.validateCatalogs(); err != nil {
 		return err
 	}
@@ -227,6 +243,10 @@ func (c *EvalConfig) Validate() error {
 
 		if err := c.validateEval(i, eval); err != nil {
 			return err
+		}
+
+		if !deploying {
+			continue
 		}
 
 		// Two evals that differ only by name are indistinguishable once

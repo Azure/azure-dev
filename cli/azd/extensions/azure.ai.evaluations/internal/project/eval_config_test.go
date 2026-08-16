@@ -320,6 +320,31 @@ func TestValidate_Rejects(t *testing.T) {
 	}
 }
 
+// Two evals that differ only in substance still resolve unambiguously by name,
+// and the clash only matters to something about to deploy. Enforcing it on the
+// way to a lookup stranded `run list --eval <name>`, which had already been
+// told which eval it meant, behind an error whose only escape was hand-editing
+// the config.
+func TestValidateForLookupAllowsWhatOnlyDeployingCannotTellApart(t *testing.T) {
+	body := "evals:\n  - name: a\n    evaluators:\n      - evaluator: builtin.relevance\n" +
+		"  - name: b\n    evaluators:\n      - evaluator: builtin.relevance\n"
+	cfg := loadFromString(t, body)
+
+	require.NoError(t, cfg.ValidateForLookup())
+	require.Error(t, cfg.Validate(), "deploying still cannot tell the two apart")
+}
+
+// Lookup still depends on names being unique, so that check stays.
+func TestValidateForLookupStillRefusesADuplicateName(t *testing.T) {
+	body := "evals:\n  - name: a\n    evaluators:\n      - evaluator: builtin.relevance\n" +
+		"  - name: a\n    evaluators:\n      - evaluator: builtin.coherence\n"
+
+	err := loadFromString(t, body).ValidateForLookup()
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate")
+}
+
 // outputDir accepts a directory or an explicit file path.
 func TestArtifactPath(t *testing.T) {
 	cases := []struct {

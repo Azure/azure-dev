@@ -85,17 +85,20 @@ func newRunOutputListCommand() *cobra.Command {
 				rows = kept
 			}
 
-			payload := map[string]any{"run": run, "output_items": rows}
+			// A bare array, as every other list emits. Wrapping the rows beside
+			// the run made `-o json` the one listing a script could not iterate,
+			// and it failed silently: the loop walked the two keys instead. The
+			// run itself is what `run show` answers.
 			if outFile != "" {
 				f, err := os.Create(outFile)
 				if err != nil {
 					return messages.Creating(outFile, err)
 				}
 				defer f.Close()
-				return emitJSON(f, payload)
+				return emitJSON(f, rows)
 			}
 			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), payload)
+				return emitJSON(cmd.OutOrStdout(), rows)
 			}
 			return renderResults(cmd.OutOrStdout(), run, rows, failedOnly)
 		},

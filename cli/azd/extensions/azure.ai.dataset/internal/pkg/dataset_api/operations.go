@@ -348,9 +348,7 @@ func (c *DatasetClient) StartPendingUpload(
 // Bounded: these bypass the SDK pipeline, so nothing else stops a hung storage
 // endpoint from holding the command open until someone kills it. Generous, so
 // a large dataset over a slow link still finishes.
-func blobHTTPClient() *http.Client {
-	return &http.Client{Timeout: 10 * time.Minute}
-}
+var blobHTTPClient = &http.Client{Timeout: 10 * time.Minute}
 
 // UploadBlob uploads data to a container SAS URI as a block blob.
 func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobName string, data []byte) error {
@@ -369,8 +367,7 @@ func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobNam
 	req.Header.Set("x-ms-blob-type", "BlockBlob")
 	req.Header.Set("Content-Type", "application/octet-stream")
 
-	httpClient := blobHTTPClient()
-	resp, err := httpClient.Do(req)
+	resp, err := blobHTTPClient.Do(req)
 	if err != nil {
 		return messages.UploadingBlobFailed(redactURLError(err))
 	}
@@ -514,8 +511,7 @@ func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string)
 	// Use a plain HTTP client for blob downloads — the SAS token in the URL provides
 	// authentication, and Azure SDK pipeline policies (bearer token, correlation ID)
 	// should not be sent to Azure Blob Storage endpoints.
-	httpClient := blobHTTPClient()
-	resp, err := httpClient.Do(req.Raw())
+	resp, err := blobHTTPClient.Do(req.Raw())
 	if err != nil {
 		return nil, messages.DownloadingDatasetBlob(redactURLError(err))
 	}
@@ -544,38 +540,61 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 		return nil, messages.InvalidContainerURI(err)
 	}
 
-	q := u.Query()
-	q.Set("restype", "container") // cspell:ignore restype — Azure Storage API query parameter
-	q.Set("comp", "list")
-	u.RawQuery = q.Encode()
+	// The Blob service answers one page and a NextMarker. Only the marker value
+	// comes from the service -- the URL is the one built here -- so this walk
+	// carries none of the risk that following a body-supplied link would.
+	var names []string
+	marker := ""
+	for range maxListPages {
+		page := *u
+		q := page.Query()
+		q.Set("restype", "container") // cspell:ignore restype — Azure Storage API query parameter
+		q.Set("comp", "list")
+		if marker != "" {
+			q.Set("marker", marker)
+		}
+		page.RawQuery = q.Encode()
 
-	log.Printf("[dataset_api] listing blobs: %s", logSafeURL(u))
+		log.Printf("[dataset_api] listing blobs: %s", logSafeURL(&page))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, messages.CreatingListRequest(err)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, page.String(), nil)
+		if err != nil {
+			return nil, messages.CreatingListRequest(err)
+		}
+
+		pageNames, next, err := c.readBlobPage(req)
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, pageNames...)
+		if next == "" || next == marker {
+			break
+		}
+		marker = next
 	}
 
-	httpClient := blobHTTPClient()
-	resp, err := httpClient.Do(req)
+	log.Printf("[dataset_api] found %d blobs in container", len(names))
+	return names, nil
+}
+
+// readBlobPage performs one container listing request.
+func (c *DatasetClient) readBlobPage(req *http.Request) ([]string, string, error) {
+	resp, err := blobHTTPClient.Do(req)
 	if err != nil {
-		return nil, messages.ListingContainerBlobs(redactURLError(err))
+		return nil, "", messages.ListingContainerBlobs(redactURLError(err))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, messages.ContainerListStatus(resp.StatusCode)
+		return nil, "", messages.ContainerListStatus(resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, messages.ReadingListResponse(err)
+		return nil, "", messages.ReadingListResponse(err)
 	}
-
-	// Parse XML blob listing to extract blob names.
-	names := parseBlobNames(string(body))
-	log.Printf("[dataset_api] found %d blobs in container", len(names))
-	return names, nil
+	names, next := parseBlobPage(string(body))
+	return names, next, nil
 }
 
 // DownloadBlob downloads a single blob from a container using the container SAS URI
@@ -594,8 +613,7 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 		return nil, messages.CreatingBlobDownloadRequest(err)
 	}
 
-	httpClient := blobHTTPClient()
-	resp, err := httpClient.Do(req)
+	resp, err := blobHTTPClient.Do(req)
 	if err != nil {
 		return nil, messages.DownloadingBlob(redactURLError(err))
 	}
@@ -617,6 +635,13 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 // parseBlobNames extracts blob names from the Azure Blob Storage XML list response
 // using proper XML parsing against the EnumerationResults schema.
 func parseBlobNames(xmlBody string) []string {
+	names, _ := parseBlobPage(xmlBody)
+	return names
+}
+
+// parseBlobPage extracts one page of blob names and the marker that continues
+// the listing. An empty marker means this was the last page.
+func parseBlobPage(xmlBody string) ([]string, string) {
 	type blob struct {
 		Name string `xml:"Name"`
 	}
@@ -624,12 +649,13 @@ func parseBlobNames(xmlBody string) []string {
 		Blob []blob `xml:"Blob"`
 	}
 	type enumerationResults struct {
-		Blobs blobs `xml:"Blobs"`
+		Blobs      blobs  `xml:"Blobs"`
+		NextMarker string `xml:"NextMarker"`
 	}
 
 	var result enumerationResults
 	if err := xml.Unmarshal([]byte(xmlBody), &result); err != nil {
-		return nil
+		return nil, ""
 	}
 
 	names := make([]string, 0, len(result.Blobs.Blob))
@@ -638,7 +664,7 @@ func parseBlobNames(xmlBody string) []string {
 			names = append(names, b.Name)
 		}
 	}
-	return names
+	return names, result.NextMarker
 }
 
 // doRequest performs an HTTP request against the dataset API and returns the raw response body.

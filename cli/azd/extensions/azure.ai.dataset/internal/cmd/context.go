@@ -13,6 +13,7 @@ import (
 	"azureaidataset/internal/pkg/dataset_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -63,18 +64,49 @@ func newDatasetContext(ctx context.Context, endpointFlag string) (*datasetContex
 	dc.endpoint = strings.TrimSuffix(resolved.Endpoint, "/")
 	log.Printf("[endpoint] resolved from %s", resolved.Source)
 
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{},
-	)
+	cred, err := newAzdTokenCredential()
 	if err != nil {
 		dc.Close()
-		return nil, messages.CreatingCredential(err)
+		return nil, err
 	}
 	dc.cred = cred
 
 	dc.datasetClient = dataset_api.NewDatasetClient(dc.endpoint, cred)
 
 	return dc, nil
+}
+
+// newAzdTokenCredential returns the azd credential already wrapped in its
+// retry. Handing back the wrapper rather than the raw credential is what keeps
+// the retry wired: in the sibling extension an earlier version assigned the
+// wrapper to the context and then built its clients from the unwrapped one, so
+// nothing retried and four tests still passed.
+func newAzdTokenCredential() (azcore.TokenCredential, error) {
+	cred, err := azidentity.NewAzureDeveloperCLICredential(
+		&azidentity.AzureDeveloperCLICredentialOptions{},
+	)
+	if err != nil {
+		return nil, messages.CreatingCredential(err)
+	}
+	return azdTokenRetry{inner: cred}, nil
+}
+
+// azdTokenRetry retries a failed token request once. azidentity gives the azd
+// subprocess a fixed 10 second timeout and discards its stderr, so an azd that
+// overruns surfaces as "exit status 1" with no cause; the next call usually
+// finds a warm token. Without this a slow token turns into a failed command.
+type azdTokenRetry struct{ inner azcore.TokenCredential }
+
+func (c azdTokenRetry) GetToken(
+	ctx context.Context,
+	opts policy.TokenRequestOptions,
+) (azcore.AccessToken, error) {
+	tok, err := c.inner.GetToken(ctx, opts)
+	if err == nil || ctx.Err() != nil {
+		return tok, err
+	}
+	log.Printf("[auth] token request failed (%v); retrying once", err)
+	return c.inner.GetToken(ctx, opts)
 }
 
 // lookupEndpointFromAzd reads the endpoint from the active azd environment,

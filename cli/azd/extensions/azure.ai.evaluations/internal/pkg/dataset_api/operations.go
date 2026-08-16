@@ -179,8 +179,8 @@ func (c *DatasetClient) latestRegisteredVersion(
 // isVersionConflict reports whether the service refused the upload because the
 // target version already exists.
 func IsVersionConflict(err error) bool {
-	var respErr *azcore.ResponseError
-	if !errors.As(err, &respErr) {
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok {
 		return false
 	}
 	return respErr.StatusCode == http.StatusConflict
@@ -189,8 +189,8 @@ func IsVersionConflict(err error) bool {
 // IsNotFound reports whether the service answered 404, which is how it says a
 // dataset does not exist yet.
 func IsNotFound(err error) bool {
-	var respErr *azcore.ResponseError
-	if !errors.As(err, &respErr) {
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok {
 		return false
 	}
 	return respErr.StatusCode == http.StatusNotFound

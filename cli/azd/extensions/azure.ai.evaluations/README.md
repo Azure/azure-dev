@@ -112,8 +112,16 @@ anything.
 The project endpoint is resolved in this order:
 
 1. `--project-endpoint`
-2. `FOUNDRY_PROJECT_ENDPOINT` in the active azd environment
-3. the host environment variable of the same name
+2. `FOUNDRY_PROJECT_ENDPOINT` in the active azd environment, then
+   `AZURE_AI_PROJECT_ENDPOINT` there
+3. `extensions.ai-agents.project.context.endpoint` in azd's global config,
+   which `azure.ai.agents` writes and this extension only reads
+4. `FOUNDRY_PROJECT_ENDPOINT` in the host environment, then
+   `AZURE_AI_PROJECT_ENDPOINT`
+
+Level 3 is worth knowing about: it is machine-wide rather than per-project, so
+a project context left behind by `azd ai agent` somewhere else takes precedence
+over the variable exported in this shell. `--debug` prints which level answered.
 
 ## Local development
 

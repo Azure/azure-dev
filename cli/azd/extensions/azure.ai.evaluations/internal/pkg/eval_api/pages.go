@@ -35,7 +35,7 @@ const maxPages = 100
 func (c *EvalClient) followNextLink(ctx context.Context, nextLink string) ([]byte, error) {
 	parsed, err := url.Parse(nextLink)
 	if err != nil {
-		return nil, messages.InvalidEndpointURL(err)
+		return nil, messages.InvalidNextLink(nextLink, err)
 	}
 	base, err := url.Parse(c.endpoint)
 	if err != nil {

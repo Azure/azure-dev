@@ -69,6 +69,23 @@ func TestListEvaluatorVersionsRefusesALinkResolvingToAnotherHost(t *testing.T) {
 		"the token must never be sent to the other host")
 }
 
+// A nextLink comes from the service, so a link that will not parse is the
+// service's fault, not the caller's. Reporting it as an invalid endpoint sent
+// the reader to check configuration that was never wrong.
+func TestListEvaluatorVersionsBlamesTheLinkNotTheEndpoint(t *testing.T) {
+	c, _ := clientAndServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"value":[{"name":"one"}],"nextLink":"https://host\u007f/x"}`)
+	})
+
+	_, err := c.ListEvaluatorVersions(t.Context(), "e", "v1")
+
+	require.Error(t, err, "a nextLink the parser refuses has to fail")
+	assert.Contains(t, err.Error(), "nextLink",
+		"the reader has to know the service sent a bad link")
+	assert.NotContains(t, err.Error(), "invalid endpoint URL",
+		"their endpoint is fine and sending them to it wastes the investigation")
+}
+
 // A cycle longer than one hop used to run to maxPages, because only a link
 // pointing at the page it came from ended the walk.
 func TestListEvaluatorVersionsStopsOnATwoPageCycle(t *testing.T) {

@@ -4,11 +4,13 @@
 package cmd
 
 import (
+	"bytes"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Scenario 3 answers "did my change help?" by reading two rows of `run list`,
@@ -55,4 +57,29 @@ func TestRunListTimestampsAreRFC3339UTC(t *testing.T) {
 	assert.Equal(t, "2026-08-01T09:15:22Z", timestampString(int64(1785575722)))
 	assert.Equal(t, "2026-08-01T09:15:22Z", timestampString("2026-08-01T09:15:22Z"))
 	assert.Empty(t, timestampString(nil))
+}
+
+// The table shows one rate per run because a column per evaluator stops being
+// readable as soon as two runs score different evaluators. That makes `-o json`
+// the only place a per-evaluator breakdown can be read, and the service does
+// return it on the list route, so the runs go out unprojected.
+//
+// This pins the field name and that it survives marshalling. It does not catch
+// someone replacing the emitted type with a projection, which is the way this
+// would actually be lost -- that needs the command harness the reconciler tests
+// now have.
+func TestRunListJSONCarriesThePerEvaluatorBreakdown(t *testing.T) {
+	var buf bytes.Buffer
+	runs := []eval_api.OpenAIEvalRun{{
+		ID: "evalrun_1",
+		PerTestingCriteria: []eval_api.EvalRunCriteriaResult{
+			{TestingCriteria: "task_adherence", Passed: 14, Failed: 1},
+		},
+	}}
+
+	require.NoError(t, emitJSONList(&buf, runs))
+
+	assert.Contains(t, buf.String(), `"per_testing_criteria_results"`,
+		"the only place a script can read a per-evaluator result")
+	assert.Contains(t, buf.String(), "task_adherence")
 }

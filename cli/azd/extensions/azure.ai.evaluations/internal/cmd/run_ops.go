@@ -39,7 +39,12 @@ func newRunListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List runs for an eval.",
-		Args:  cobra.NoArgs,
+		Long: "List runs for an eval.\n\n" +
+			"The table carries one pass rate per run. A per-evaluator breakdown " +
+			"cannot fit a column each and stay readable when runs score different " +
+			"evaluators, so `-o json` carries it instead, under " +
+			"`per_testing_criteria_results` on every run.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -61,6 +66,10 @@ func newRunListCommand() *cobra.Command {
 				return messages.ListingRuns(evalID, err)
 			}
 			if isJSON(cmd) {
+				// Emitted whole, unlike `run start`, which hands back a small
+				// handoff. The table cannot show a per-evaluator breakdown, so
+				// this is the only place a script can read one; narrowing these
+				// to the table's columns would drop it silently.
 				var runs []eval_api.OpenAIEvalRun
 				if list != nil {
 					runs = list.Data

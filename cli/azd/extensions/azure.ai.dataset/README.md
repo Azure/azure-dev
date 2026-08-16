@@ -24,8 +24,8 @@ than inside `azure.ai.evaluations`.
 
 ## Generating a dataset
 
-Generation is `azd ai eval dataset generate`, in `azure.ai.evaluations`, and
-stays there: it writes the `datasets:` entry in `evals/eval.yaml`, which is that
+Generation is `azd ai eval generate`, in `azure.ai.evaluations`, and stays
+there: it writes the `datasets:` entry in `evals/azure.eval.yaml`, which is that
 extension's file. Splitting the two would leave a generated dataset registered
 with the service but absent from the configuration, so `azd up` would not
 reconcile it and no eval could name it.

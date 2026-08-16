@@ -191,7 +191,7 @@ func DatasetHasNoVersions(dataset string) error {
 func DatasetVersionNotFoundWithHint(dataset, version string) error {
 	return fmt.Errorf(
 		"no dataset %q at version %q in this project; "+
-			"`azd ai dataset list` shows the ones there are", dataset, version)
+			"`azd ai dataset versions list %s` shows the ones there are", dataset, version, dataset)
 }
 
 // ReadingDatasetVersion reports one version of a dataset failing to read.

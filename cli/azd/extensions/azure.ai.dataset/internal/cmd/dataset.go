@@ -127,8 +127,14 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 
 	cmd.Flags().StringVar(&fromFile, "from-file", "",
 		"Path to a .jsonl file, or a directory containing one.")
-	cmd.Flags().StringVar(&version, "version", "",
-		"Current version to increment from. Omit to increment from the latest registered version.")
+	// Only on update. create publishes a first version, and the upload derives
+	// the next version from whatever this holds, so `create --version 4.0`
+	// would publish 5.0 -- and leave the existence probe, which looks for the
+	// versions a first publish can carry, unable to find what it wrote.
+	if verb == "update" {
+		cmd.Flags().StringVar(&version, "version", "",
+			"Current version to increment from. Omit to increment from the latest registered version.")
+	}
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

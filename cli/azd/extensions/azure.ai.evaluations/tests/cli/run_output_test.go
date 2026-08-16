@@ -192,7 +192,7 @@ func TestCLIResultsExport(t *testing.T) {
 		require.NoError(t, err, "--format csv must emit parseable CSV:\n%s", r.Stdout)
 		require.Len(t, rows, 2, "a header and one row per criterion")
 		require.Equal(t,
-			[]string{"run_id", "status", "criterion", "passed", "failed"}, rows[0])
+			[]string{"run_id", "status", "testing_criteria", "passed", "failed"}, rows[0])
 		require.Equal(t, f.FirstRunID, rows[1][0])
 		require.Equal(t, "completed", rows[1][1])
 		require.Equal(t, f.EvaluatorName, rows[1][2])

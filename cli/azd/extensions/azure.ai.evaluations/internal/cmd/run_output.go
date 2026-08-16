@@ -564,7 +564,9 @@ func writeResultsCSV(w io.Writer, run *eval_api.OpenAIEvalRun) error {
 	cw := csv.NewWriter(w)
 	defer cw.Flush()
 
-	if err := cw.Write([]string{"run_id", "status", "criterion", "passed", "failed"}); err != nil {
+	// Named as the service names it, and as the jsonl export already did, so a
+	// pipeline reading both formats needs one spelling rather than two.
+	if err := cw.Write([]string{"run_id", "status", "testing_criteria", "passed", "failed"}); err != nil {
 		return err
 	}
 	if len(run.PerTestingCriteria) == 0 {

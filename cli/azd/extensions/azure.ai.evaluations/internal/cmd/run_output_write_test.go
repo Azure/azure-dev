@@ -38,7 +38,7 @@ func TestWriteResultsCSV(t *testing.T) {
 	rows, err := csv.NewReader(&buf).ReadAll()
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"run_id", "status", "criterion", "passed", "failed"}, rows[0])
+	assert.Equal(t, []string{"run_id", "status", "testing_criteria", "passed", "failed"}, rows[0])
 	assert.Equal(t, []string{"evalrun_abc", "completed", "task_adherence", "8", "2"}, rows[1])
 	assert.Equal(t, []string{"evalrun_abc", "completed", "coherence", "10", "0"}, rows[2])
 	assert.Len(t, rows, 3, "one header and one row per criterion")
@@ -57,7 +57,7 @@ func TestWriteResultsCSV_RunWithNoCriteria(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, rows, 2)
-	assert.Equal(t, []string{"run_id", "status", "criterion", "passed", "failed"}, rows[0])
+	assert.Equal(t, []string{"run_id", "status", "testing_criteria", "passed", "failed"}, rows[0])
 	assert.Equal(t, []string{"evalrun_empty", "failed", "", "", ""}, rows[1])
 }
 

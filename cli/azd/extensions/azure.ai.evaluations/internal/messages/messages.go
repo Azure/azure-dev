@@ -958,7 +958,7 @@ func DatasetNotFound(dataset string) error {
 func DatasetVersionNotFoundWithHint(dataset, version string) error {
 	return fmt.Errorf(
 		"no dataset %q at version %q in this project; "+
-			"`azd ai eval dataset list` shows the ones there are", dataset, version)
+			"`azd ai eval dataset versions list %s` shows the ones there are", dataset, version, dataset)
 }
 
 // DatasetVersionNotFound reports a dataset version there is nothing to delete at.

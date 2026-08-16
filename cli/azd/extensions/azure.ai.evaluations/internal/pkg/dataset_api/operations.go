@@ -287,7 +287,7 @@ var blobHTTPClient = &http.Client{Timeout: 10 * time.Minute}
 func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobName string, data []byte) error {
 	u, err := url.Parse(containerSASUri)
 	if err != nil {
-		return messages.InvalidContainerURI(err)
+		return messages.InvalidContainerURI(urlsafe.Error(err))
 	}
 
 	// Append blob name to the container path.
@@ -295,7 +295,7 @@ func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobNam
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewReader(data))
 	if err != nil {
-		return messages.CreatingUploadRequest(err)
+		return messages.CreatingUploadRequest(urlsafe.Error(err))
 	}
 	req.Header.Set("x-ms-blob-type", "BlockBlob")
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -439,7 +439,7 @@ func pickDatasetBlob(names []string) string {
 func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string) ([]byte, error) {
 	req, err := runtime.NewRequest(ctx, http.MethodGet, downloadURL)
 	if err != nil {
-		return nil, messages.CreatingDownloadRequest(err)
+		return nil, messages.CreatingDownloadRequest(urlsafe.Error(err))
 	}
 
 	// Use a plain HTTP client for blob downloads â€” the SAS token in the URL provides
@@ -472,7 +472,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 	// Parse the container URI and append list query parameters.
 	u, err := url.Parse(containerSASUri)
 	if err != nil {
-		return nil, messages.InvalidContainerURI(err)
+		return nil, messages.InvalidContainerURI(urlsafe.Error(err))
 	}
 
 	// The Blob service answers one page and a NextMarker. Only the marker value
@@ -494,7 +494,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, page.String(), nil)
 		if err != nil {
-			return nil, messages.CreatingListRequest(err)
+			return nil, messages.CreatingListRequest(urlsafe.Error(err))
 		}
 
 		pageNames, next, err := c.readBlobPage(req)
@@ -538,7 +538,7 @@ func (c *DatasetClient) readBlobPage(req *http.Request) ([]string, string, error
 func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobName string) ([]byte, error) {
 	u, err := url.Parse(containerSASUri)
 	if err != nil {
-		return nil, messages.InvalidContainerURI(err)
+		return nil, messages.InvalidContainerURI(urlsafe.Error(err))
 	}
 
 	// Append blob name to the container path.
@@ -546,7 +546,7 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, messages.CreatingBlobDownloadRequest(err)
+		return nil, messages.CreatingBlobDownloadRequest(urlsafe.Error(err))
 	}
 
 	httpClient := blobHTTPClient

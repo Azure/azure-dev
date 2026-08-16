@@ -65,6 +65,24 @@ func TestPassRateCountsErroredAndSkippedAgainstTheThreshold(t *testing.T) {
 	assert.Empty(t, g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 3}))
 }
 
+// any-failure is the same concern as the rate above asked as a yes or no, and
+// it was the untested half: the gate counts everything that is not a pass, so
+// replacing that with the Failed count alone let a run whose rows errored
+// report success, and no test noticed.
+func TestAnyFailureCountsErroredAndSkippedAsUnpassed(t *testing.T) {
+	g, err := parseGate("any-failure")
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 2, Errored: 1}),
+		"a row that errored did not pass")
+	assert.NotEmpty(t, g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 2, Skipped: 1}),
+		"a row that was skipped did not pass either")
+	assert.NotEmpty(t, g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 2, Failed: 1}))
+
+	assert.Empty(t, g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 3}),
+		"every row passed, so there is nothing to report")
+}
+
 // A run that scored nothing breaches every threshold rather than dividing by
 // zero. "No rows passed" is the honest reading of an empty result.
 func TestEmptyRunBreachesEveryThreshold(t *testing.T) {

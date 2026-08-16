@@ -102,6 +102,16 @@ func (r *evalReconciler) EnsureDataset(
 		// it settles the question and the check does not apply.
 		if version := r.ec.getEnvValue(ctx, versionKey("dataset", decl.Name)); version != "" {
 			if decl.Version != "" {
+				// A pin settles which version to use, not whether it is still
+				// there. Skipping the service entirely let a deleted version
+				// report as unchanged while the eval pointed at nothing. Only a
+				// confirmed 404 refuses: anything else leaves the pin alone
+				// rather than failing a deploy on a transient read.
+				if _, err := r.ec.datasetClient.GetDataset(
+					ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
+				); err != nil && dataset_api.IsNotFound(err) {
+					return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
+				}
 				return decl.Version, false, nil
 			}
 			if err := r.checkDatasetDrift(ctx, decl.Name, version); err != nil {

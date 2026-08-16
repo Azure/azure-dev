@@ -219,7 +219,7 @@ func ReadFirstJSONLFile(path string) (string, error) {
 		if e.IsDir() {
 			continue
 		}
-		if filepath.Ext(e.Name()) == ".jsonl" {
+		if strings.EqualFold(filepath.Ext(e.Name()), ".jsonl") {
 			data, err := os.ReadFile(filepath.Join(dir, e.Name())) //nolint:gosec // local artifact path
 			if err != nil {
 				return "", messages.ReadingPath(e.Name(), err)

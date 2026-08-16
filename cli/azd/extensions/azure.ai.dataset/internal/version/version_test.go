@@ -28,7 +28,7 @@ func TestBuildScriptsStampThisModule(t *testing.T) {
 	require.NoError(t, err)
 
 	var module string
-	for _, line := range strings.Split(string(goMod), "\n") {
+	for line := range strings.SplitSeq(string(goMod), "\n") {
 		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
 			module = strings.TrimSpace(rest)
 			break

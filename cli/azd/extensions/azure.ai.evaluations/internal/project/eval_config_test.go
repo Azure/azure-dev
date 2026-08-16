@@ -250,9 +250,11 @@ func TestValidate_Rejects(t *testing.T) {
 			wantErr: "cannot be set with `source`",
 		},
 		{
-			name:    "no evals",
-			body:    "datasets:\n  - name: d\n",
-			wantErr: "at least one eval is required",
+			name: "no evals",
+			body: "datasets:\n  - name: d\n",
+			// A catalog with no eval is what `generate` leaves behind, so the
+			// error has to name the command that declares one.
+			wantErr: "azd ai eval init",
 		},
 		{
 			name:    "duplicate eval",

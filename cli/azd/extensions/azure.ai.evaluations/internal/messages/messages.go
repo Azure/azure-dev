@@ -1705,8 +1705,14 @@ func EvalNotDeclared(eval string, names []string) error {
 }
 
 // AtLeastOneEvalRequired reports a configuration that declares no eval.
+//
+// `generate` writes the dataset and evaluator it made into the catalog but
+// declares no eval, so a `create` run straight afterwards lands here with
+// nothing to act on.
 func AtLeastOneEvalRequired() error {
-	return errors.New("at least one eval is required")
+	return errors.New(
+		"no eval is declared; `azd ai eval init` declares one. " +
+			"`generate` only adds the dataset and evaluator it made")
 }
 
 // EvalNameRequired reports an eval entry with no name.

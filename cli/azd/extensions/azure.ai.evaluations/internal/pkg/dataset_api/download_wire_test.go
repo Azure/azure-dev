@@ -64,7 +64,10 @@ func (s *storageServer) start(t *testing.T) (*DatasetClient, *httptest.Server) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/credentials"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			// assert, not require: this runs on the server's goroutine, and
+			// FailNow there aborts mid-response and fails whichever test is
+			// running instead.
+			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 				"blobReferenceForConsumption": map[string]any{
 					"credential": map[string]any{"sasUri": srv.URL + s.uriPath + "?sig=secret"},
 				},

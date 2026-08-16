@@ -37,15 +37,17 @@ func reconcilerHoldingEval(
 	seen := &recordedUpdate{}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// assert, not require: this runs on the server's goroutine, and FailNow
+		// there aborts mid-response and fails whichever test is running instead.
 		if r.Method == http.MethodPost {
 			raw, err := io.ReadAll(r.Body)
-			require.NoError(t, err)
+			assert.NoError(t, err)
 			var body eval_api.UpdateOpenAIEvalRequest
-			require.NoError(t, json.Unmarshal(raw, &body))
+			assert.NoError(t, json.Unmarshal(raw, &body))
 			seen.body = &body
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(held))
+		assert.NoError(t, json.NewEncoder(w).Encode(held))
 	}))
 	t.Cleanup(srv.Close)
 

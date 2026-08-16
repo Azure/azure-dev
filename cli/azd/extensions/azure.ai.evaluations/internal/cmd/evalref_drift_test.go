@@ -32,7 +32,9 @@ func reconcilerListingVersions(t *testing.T, versions ...string) *evalReconciler
 			values = append(values, map[string]any{"name": "golden", "version": v})
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"value": values}))
+		// assert, not require: this runs on the server's goroutine, and FailNow
+		// there aborts mid-response and fails whichever test is running instead.
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"value": values}))
 	}))
 	t.Cleanup(srv.Close)
 

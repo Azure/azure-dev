@@ -5,15 +5,11 @@ package dataset_api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-
-	"azureaidataset/internal/messages"
 )
 
 // DatasetList is the paged response returned when listing datasets or the
@@ -44,50 +40,6 @@ func (c *DatasetClient) ListDatasetVersions(
 		return nil, err
 	}
 	return c.followPages(ctx, first)
-}
-
-// maxListPages bounds page following so a service that keeps handing back a
-// nextLink cannot spin forever.
-const maxListPages = 100
-
-// followPages walks nextLink until the service stops sending one, returning a
-// single list holding every page. Without this, a project with more than one
-// page lists incompletely and a latest-version check can decide from a stale
-// first page.
-func (c *DatasetClient) followPages(ctx context.Context, first *DatasetList) (*DatasetList, error) {
-	if first == nil {
-		return nil, nil
-	}
-
-	// Copied rather than aliased: appending to first.Value could write into the
-	// caller's backing array when it has spare capacity.
-	out := &DatasetList{Value: append([]Dataset(nil), first.Value...)}
-	seen := map[string]bool{}
-	for next := first.NextLink; next != ""; {
-		if seen[next] || len(seen) >= maxListPages {
-			// A repeated or endless link is the service misbehaving, not a reason
-			// to fail the command, but the list is short and nobody would know.
-			log.Printf("[dataset_api] stopped paging after %d pages; the listing may be incomplete", len(seen))
-			break
-		}
-		seen[next] = true
-
-		body, err := c.doRequestGetURL(ctx, next)
-		if err != nil {
-			return nil, err
-		}
-		var page DatasetList
-		// A page that answers 200 with no body ends the walk; unmarshaling it
-		// would throw away every page already collected.
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &page); err != nil {
-				return nil, messages.ParsingResponse(err)
-			}
-		}
-		out.Value = append(out.Value, page.Value...)
-		next = page.NextLink
-	}
-	return out, nil
 }
 
 // DeleteDatasetVersion removes a single dataset version.

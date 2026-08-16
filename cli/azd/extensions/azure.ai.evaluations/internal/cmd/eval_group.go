@@ -227,7 +227,10 @@ func newEvalShowCommand() *cobra.Command {
 			return emitDetail(cmd.OutOrStdout(), []field{
 				{"Id", group.ID},
 				{"Name", group.Name},
-				{"Created", fmt.Sprint(group.CreatedAt)},
+				// CreatedAt is `any` because the service sends epoch seconds here
+				// and RFC3339 elsewhere; fmt.Sprint on the former prints a float
+				// in scientific notation.
+				{"Created", timestampString(group.CreatedAt)},
 				{"Created By", group.CreatedBy},
 			})
 		},

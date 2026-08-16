@@ -7,7 +7,7 @@
 #
 # The live integration tests are excluded: they carry the `live` build tag, so
 # an untagged run does not compile them, and they additionally require
-# AZURE_AI_EVAL_E2E_LIVE and a project endpoint. They are still type-checked
+# AZURE_AI_DATASET_E2E_LIVE and a project endpoint. They are still type-checked
 # below, so a change that breaks them cannot reach main unnoticed.
 #
 # TODO before the first release: PR CI runs this script on windows, linux and

@@ -33,7 +33,7 @@ else
     )
 fi
 
-VERSION_PATH="azureaieval/internal/version"
+VERSION_PATH="azureaidataset/internal/version"
 
 # Loop through platforms and build
 for PLATFORM in "${PLATFORMS[@]}"; do

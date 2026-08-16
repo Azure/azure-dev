@@ -41,7 +41,7 @@ else {
     )
 }
 
-$VERSION_PATH = "azureaieval/internal/version"
+$VERSION_PATH = "azureaidataset/internal/version"
 
 # Loop through platforms and build
 foreach ($PLATFORM in $PLATFORMS) {

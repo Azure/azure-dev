@@ -39,10 +39,12 @@ if ($CodeCoverageEnabled) {
 $tagsFlag = "-tags=cfi,cfg,osusergo"
 
 # -s: omit the symbol table, -w: omit DWARF, -X: set a variable at link time.
+# The path has to match this module, azureaidataset: the linker discards -X for
+# a symbol that does not exist, so a stale one leaves the binary reporting dev.
 $ldFlag = "-ldflags=-s -w " +
-    "-X 'azureaieval/internal/version.Version=$Version' " +
-    "-X 'azureaieval/internal/version.Commit=$SourceVersion' " +
-    "-X 'azureaieval/internal/version.BuildDate=$(Get-Date -Format o)' "
+    "-X 'azureaidataset/internal/version.Version=$Version' " +
+    "-X 'azureaidataset/internal/version.Commit=$SourceVersion' " +
+    "-X 'azureaidataset/internal/version.BuildDate=$(Get-Date -Format o)' "
 
 if ($IsWindows) {
     Write-Host "Building for Windows"

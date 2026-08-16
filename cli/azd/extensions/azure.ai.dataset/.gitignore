@@ -2,4 +2,4 @@
 junitTestReport.xml
 
 # Debug log written when --debug or AZD_EXT_DEBUG is set.
-azd-ai-eval-*.log
+azd-ai-dataset-*.log

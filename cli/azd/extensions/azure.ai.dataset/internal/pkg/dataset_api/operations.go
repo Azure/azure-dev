@@ -579,6 +579,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 
 // readBlobPage performs one container listing request.
 func (c *DatasetClient) readBlobPage(req *http.Request) ([]string, string, error) {
+	//nolint:gosec // the URI is the SAS the dataset service issued for this dataset, not caller input
 	resp, err := blobHTTPClient.Do(req)
 	if err != nil {
 		return nil, "", messages.ListingContainerBlobs(redactURLError(err))

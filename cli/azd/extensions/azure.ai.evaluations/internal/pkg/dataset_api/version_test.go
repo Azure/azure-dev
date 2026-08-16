@@ -66,3 +66,16 @@ func TestLatestVersionOrdersNumerically(t *testing.T) {
 		t.Fatal("LatestVersion(nil) should be empty")
 	}
 }
+
+// LatestVersion documents a fallback to the last entry when nothing can be
+// ordered. That fallback only runs if an unorderable version never becomes the
+// running best, which a sentinel below -1 quietly prevented.
+func TestLatestVersionFallsBackToTheLastEntryWhenNoneAreOrderable(t *testing.T) {
+	got := LatestVersion([]Dataset{{Version: "alpha"}, {Version: "beta"}, {Version: "gamma"}})
+	require.Equal(t, "gamma", got, "with nothing orderable the service's last entry wins")
+}
+
+func TestLatestVersionPrefersAnOrderableVersionOverAnUnorderableOne(t *testing.T) {
+	require.Equal(t, "2.0", LatestVersion([]Dataset{{Version: "alpha"}, {Version: "2.0"}}))
+	require.Equal(t, "2.0", LatestVersion([]Dataset{{Version: "2.0"}, {Version: "alpha"}}))
+}

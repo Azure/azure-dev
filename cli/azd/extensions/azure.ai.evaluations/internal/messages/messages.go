@@ -1950,6 +1950,17 @@ func ConfigLockUnavailable(evalDir string, err error) error {
 			"processes: %w", filepath.ToSlash(evalDir), err)
 }
 
+// InvalidNextLink reports a pagination link the service sent that will not parse.
+func InvalidNextLink(link string, err error) error {
+	return fmt.Errorf("invalid nextLink %q: %w", link, err)
+}
+
+// NextLinkOffOrigin reports a pagination link pointing somewhere other than the
+// project endpoint. Following it would send the caller's token to that host.
+func NextLinkOffOrigin(origin string) error {
+	return fmt.Errorf("refusing to follow nextLink to %s: it is not the project endpoint", origin)
+}
+
 // PageLinkLeftTheService reports a paging link pointing somewhere else.
 //
 // The link arrives in a response body and this client sends an Authorization

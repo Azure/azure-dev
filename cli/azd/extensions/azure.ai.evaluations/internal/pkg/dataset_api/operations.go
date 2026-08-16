@@ -480,7 +480,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 	// carries none of the risk that following a body-supplied link would.
 	var names []string
 	marker := ""
-	for range maxPages {
+	for range maxListPages {
 		page := *u
 		q := page.Query()
 		q.Set("restype", "container") // cspell:ignore restype â€” Azure Storage API query parameter

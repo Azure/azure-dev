@@ -25,7 +25,7 @@ func (c *DatasetClient) ListDatasets(ctx context.Context, apiVersion string) (*D
 	if err != nil {
 		return nil, err
 	}
-	return c.walkDatasetPages(ctx, first)
+	return c.followPages(ctx, first)
 }
 
 // ListDatasetVersions returns every version of a single dataset.
@@ -39,7 +39,7 @@ func (c *DatasetClient) ListDatasetVersions(
 	if err != nil {
 		return nil, err
 	}
-	return c.walkDatasetPages(ctx, first)
+	return c.followPages(ctx, first)
 }
 
 // DeleteDatasetVersion removes a single dataset version.

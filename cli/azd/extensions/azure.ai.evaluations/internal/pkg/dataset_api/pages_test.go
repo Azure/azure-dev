@@ -67,7 +67,10 @@ func TestNextLinkToAnotherHostIsRefused(t *testing.T) {
 	_, err := c.ListDatasets(context.Background(), "v1")
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not followed")
+	assert.Contains(t, err.Error(), "refusing to follow",
+		"the refusal has to say the link was not followed")
+	assert.Contains(t, err.Error(), elsewhere.URL,
+		"and name the host it refused, so the reader can see what was in the body")
 }
 
 // A link pointing at the page it came from is the one shape that would

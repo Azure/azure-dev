@@ -19,38 +19,83 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
-// maxPages bounds a walk the service controls, so a nextLink that points at
-// itself cannot hold the command open indefinitely.
-const maxPages = 100
+// maxListPages bounds page following so a service that keeps handing back a
+// nextLink cannot spin forever.
+const maxListPages = 100
 
-// followNextLink fetches one service-supplied page URL.
-//
-// The URL arrives in a response body and this client sends an Authorization
-// header, so a link to another host would send the token there. Checked
-// against the endpoint before it is used.
-func (c *DatasetClient) followNextLink(ctx context.Context, nextLink string) ([]byte, error) {
-	parsed, err := url.Parse(nextLink)
+// followPages walks nextLink until the service stops sending one, returning a
+// single list holding every page. Without this, a project with more than one
+// page lists incompletely and a latest-version check can decide from a stale
+// first page.
+func (c *DatasetClient) followPages(ctx context.Context, first *DatasetList) (*DatasetList, error) {
+	if first == nil {
+		return nil, nil
+	}
+
+	// Copied rather than aliased: appending to first.Value could write into the
+	// caller's backing array when it has spare capacity.
+	out := &DatasetList{Value: append([]Dataset(nil), first.Value...)}
+	seen := map[string]bool{}
+	for next := first.NextLink; next != ""; {
+		if seen[next] || len(seen) >= maxListPages {
+			// A repeated or endless link is the service misbehaving, not a reason
+			// to fail the command, but the list is short and nobody would know.
+			log.Printf("[dataset_api] stopped paging after %d pages; the listing may be incomplete", len(seen))
+			break
+		}
+		seen[next] = true
+
+		body, err := c.doRequestGetURL(ctx, next)
+		if err != nil {
+			return nil, err
+		}
+		var page DatasetList
+		// A page that answers 200 with no body ends the walk; unmarshaling it
+		// would throw away every page already collected.
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &page); err != nil {
+				return nil, messages.ParsingResponse(err)
+			}
+		}
+		out.Value = append(out.Value, page.Value...)
+		next = page.NextLink
+	}
+	return out, nil
+}
+
+// sameOrigin reports whether two URLs share a scheme and host.
+func sameOrigin(a, b *url.URL) bool {
+	return strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
+}
+
+// doRequestGetURL issues a GET against an absolute URL the service supplied,
+// such as a nextLink. The URL is refused unless it shares the endpoint's
+// origin: the pipeline attaches the caller's token, so a link pointing
+// elsewhere would hand that token to another host.
+func (c *DatasetClient) doRequestGetURL(ctx context.Context, rawURL string) ([]byte, error) {
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, messages.InvalidEndpointURL(err)
+		return nil, messages.InvalidNextLink(rawURL, err)
 	}
 	base, err := url.Parse(c.endpoint)
 	if err != nil {
 		return nil, messages.InvalidEndpointURL(err)
 	}
 
-	// A nextLink is allowed to be relative, and a relative one carries no host
-	// or scheme of its own. Resolving it against the endpoint first keeps the
-	// origin check meaningful instead of refusing a legitimate link.
-	next := base.ResolveReference(parsed)
-	if !strings.EqualFold(base.Host, next.Host) || !strings.EqualFold(base.Scheme, next.Scheme) {
-		return nil, messages.PageLinkLeftTheService(base.Host, next.Host)
+	// A nextLink is allowed to be relative. Resolving it against the endpoint
+	// first keeps the origin check meaningful instead of rejecting a legitimate
+	// relative link for having no scheme or host of its own.
+	u := base.ResolveReference(parsed)
+	if !sameOrigin(u, base) {
+		return nil, messages.NextLinkOffOrigin(u.Scheme + "://" + u.Host)
 	}
 
-	req, err := runtime.NewRequest(ctx, http.MethodGet, next.String())
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
 	if err != nil {
 		return nil, messages.CreatingRequest(err)
 	}
-	log.Printf("[dataset_api] GET %s", urlsafe.URL(next))
+
+	log.Printf("[dataset_api] GET %s", urlsafe.URL(u))
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -67,35 +112,4 @@ func (c *DatasetClient) followNextLink(ctx context.Context, nextLink string) ([]
 		return nil, messages.ServiceRefused(resp.StatusCode, runtime.NewResponseError(resp))
 	}
 	return respBody, nil
-}
-
-// walkDatasetPages gathers every page of a dataset listing.
-//
-// The listing answered with one page and a nextLink, and the link was decoded
-// and dropped. UploadVersion picks the next version from this listing, so a
-// version on page two meant reusing one that already exists.
-func (c *DatasetClient) walkDatasetPages(ctx context.Context, first *DatasetList) (*DatasetList, error) {
-	seen := map[string]bool{}
-	link := first.NextLink
-	for link != "" {
-		if seen[link] || len(seen) >= maxPages {
-			log.Printf("[dataset_api] stopped paging after %d pages; the listing may be incomplete", len(seen))
-			break
-		}
-		seen[link] = true
-
-		body, err := c.followNextLink(ctx, link)
-		if err != nil {
-			return nil, err
-		}
-		var page DatasetList
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &page); err != nil {
-				return nil, messages.ParsingResponse(err)
-			}
-		}
-		first.Value = append(first.Value, page.Value...)
-		link = page.NextLink
-	}
-	return first, nil
 }

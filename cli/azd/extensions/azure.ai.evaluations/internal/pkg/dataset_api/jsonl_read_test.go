@@ -65,3 +65,29 @@ func TestReadFirstJSONLFile_RefusesAnEmptyFile(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no rows")
 }
+
+// The reconciler validates rows before it publishes, but `dataset create` and
+// `dataset update` do not go through it. Upload does not parse rows either, so
+// without this a malformed line registers a version that looks healthy and only
+// fails in the run that reads it.
+func TestReadFirstJSONLFileRefusesAMalformedRow(t *testing.T) {
+	dir := t.TempDir()
+	named := filepath.Join(dir, "rows.jsonl")
+	body := "{\"query\":\"ok\"}\n{not json}\n"
+	require.NoError(t, os.WriteFile(named, []byte(body), 0o600))
+
+	_, err := ReadFirstJSONLFile(named)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "2", "the error has to name the line that is wrong")
+}
+
+func TestReadFirstJSONLFileRefusesAnEmptyRow(t *testing.T) {
+	dir := t.TempDir()
+	named := filepath.Join(dir, "rows.jsonl")
+	require.NoError(t, os.WriteFile(named, []byte("{\"query\":\"ok\"}\n{}\n"), 0o600))
+
+	_, err := ReadFirstJSONLFile(named)
+
+	require.Error(t, err)
+}

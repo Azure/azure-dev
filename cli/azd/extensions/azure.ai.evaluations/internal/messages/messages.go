@@ -131,6 +131,20 @@ func GateNeedsTheWait() error {
 			"<run> --wait --fail-on <gate>`")
 }
 
+// GateOutlivedTheWait reports a gate that never got a verdict because the run
+// outlived the wait.
+//
+// Without a gate this is not a failure and exits 0, which is why the run was
+// reported and the reattach line printed. With one, exiting 0 tells a pipeline
+// the gate passed when nothing was ever judged -- the same silent drop
+// GateNeedsTheWait refuses up front, arrived at by running long instead.
+func GateOutlivedTheWait(runID string, budget time.Duration) error {
+	return fmt.Errorf(
+		"run %s outlived the %s wait, so --fail-on never got a result to judge. "+
+			"The run is still going: reattach with `azd ai eval run show %s "+
+			"--wait --fail-on <gate>`", runID, budget, runID)
+}
+
 // DatasetHasUnregisteredEdits reports local rows no deployed version holds.
 func DatasetHasUnregisteredEdits(dataset, deployCmd string) error {
 	return fmt.Errorf(

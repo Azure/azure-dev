@@ -219,6 +219,12 @@ func buildRunCommand(use, short string) *cobra.Command {
 
 			final, err := ec.pollRun(ctx, evalID, run.ID, out, isJSON(cmd))
 			if errors.Is(err, errWaitBudgetSpent) {
+				// A gate asked for a verdict that never arrived. Exiting 0 here
+				// would tell a pipeline the gate passed, which is the silent
+				// drop --no-wait is refused for, reached by running long.
+				if threshold.set {
+					return messages.GateOutlivedTheWait(run.ID, waitBudget)
+				}
 				// The run did not fail, the wait ran out. Same contract as
 				// --no-wait: exit 0 and say how to pick it back up.
 				if isJSON(cmd) {

@@ -28,7 +28,7 @@ func TestListOutputItemsFollowsTheCursor(t *testing.T) {
 
 		switch n {
 		case 1:
-			require.Empty(t, after, "the first page is not asked for by cursor")
+			assert.Empty(t, after, "the first page is not asked for by cursor")
 			writeJSON(t, w, map[string]any{
 				"data": []map[string]any{
 					{"id": "a", "status": "completed"},
@@ -38,13 +38,14 @@ func TestListOutputItemsFollowsTheCursor(t *testing.T) {
 				"last_id":  "b",
 			})
 		case 2:
-			require.Equal(t, "b", after, "the next page is asked for from the last id")
+			assert.Equal(t, "b", after, "the next page is asked for from the last id")
 			writeJSON(t, w, map[string]any{
 				"data":     []map[string]any{{"id": "c", "status": "completed"}},
 				"has_more": false,
 			})
 		default:
-			t.Fatalf("asked for a page after the service said there were none")
+			t.Errorf("asked for a page after the service said there were none")
+			http.Error(w, "unexpected page request", http.StatusInternalServerError)
 		}
 	})
 
@@ -104,7 +105,7 @@ func TestListOutputItemsStopsOnAnEmptyPage(t *testing.T) {
 
 	client := newRecordingClient(t, func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
-		require.Less(t, requests.Load(), int32(5), "the client is looping")
+		assert.Less(t, requests.Load(), int32(5), "the client is looping")
 		writeJSON(t, w, map[string]any{
 			"data":     []map[string]any{},
 			"has_more": true,
@@ -119,10 +120,13 @@ func TestListOutputItemsStopsOnAnEmptyPage(t *testing.T) {
 	assert.EqualValues(t, 1, requests.Load())
 }
 
+// writeJSON is called from the server's goroutine, so it asserts rather than
+// requires: FailNow off the test's own goroutine aborts mid-response and the
+// failure lands on whichever test happens to be running.
 func writeJSON(t *testing.T, w http.ResponseWriter, body any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
-	require.NoError(t, json.NewEncoder(w).Encode(body))
+	assert.NoError(t, json.NewEncoder(w).Encode(body))
 }
 
 func ids(items []OutputItem) []string {

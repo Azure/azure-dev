@@ -73,15 +73,15 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 			}
 			defer ec.Close()
 
-			existing, err := ec.datasetClient.ListDatasetVersions(
+			existing, listErr := ec.datasetClient.ListDatasetVersions(
 				ctx, name, ProjectEndpointAPIVersion,
 			)
-			exists := err == nil && existing != nil && len(existing.Value) > 0
+			exists := listErr == nil && existing != nil && len(existing.Value) > 0
 			if !exists {
 				// The version listing lags a publish, so a `create` followed by
 				// an `update` was told the dataset it had just made does not
-				// exist. A direct read settles it: point reads go consistent
-				// immediately.
+				// exist. A direct read usually settles it, catching up sooner
+				// than the listing does.
 				for _, v := range firstDatasetVersions {
 					if _, err := ec.datasetClient.GetDataset(
 						ctx, name, v, ProjectEndpointAPIVersion,
@@ -91,7 +91,12 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 					}
 				}
 			}
-			if err := checkAssetExistence(verb, "dataset", name, exists); err != nil {
+			// Only an outright 404 proves the name is unknown. An empty 200 does
+			// not: latestRegisteredVersion documents that an unknown dataset and
+			// a listing that has not caught up are indistinguishable.
+			if err := checkAssetExistence(
+				verb, "dataset", name, exists, dataset_api.IsNotFound(listErr),
+			); err != nil {
 				return err
 			}
 

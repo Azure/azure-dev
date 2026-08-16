@@ -15,16 +15,24 @@ import (
 // The one difference between create and update, and the only thing stopping a
 // create from silently publishing version 2 of someone else's dataset.
 func TestCheckAssetExistence(t *testing.T) {
-	assert.NoError(t, checkAssetExistence("create", "dataset", "x", false))
-	assert.NoError(t, checkAssetExistence("update", "dataset", "x", true))
+	assert.NoError(t, checkAssetExistence("create", "dataset", "x", false, true))
+	assert.NoError(t, checkAssetExistence("update", "dataset", "x", true, false))
 
-	err := checkAssetExistence("create", "dataset", "x", true)
+	err := checkAssetExistence("create", "dataset", "x", true, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "update", "the error has to name the verb that works")
 
-	err = checkAssetExistence("update", "dataset", "x", false)
+	err = checkAssetExistence("update", "dataset", "x", false, true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create")
+}
+
+// The deadlock this gate used to create: an update issued moments after a
+// create reads an empty listing, and refusing there sends the caller to
+// `create`, which fails in turn once the listing catches up. An absence the
+// service never confirmed has to publish instead.
+func TestCheckAssetExistenceLetsAnUnprovableAbsenceThrough(t *testing.T) {
+	assert.NoError(t, checkAssetExistence("update", "dataset", "x", false, false))
 }
 
 // A mistyped --from-file is the common way to get here, and the syscall that

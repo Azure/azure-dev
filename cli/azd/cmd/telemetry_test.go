@@ -311,7 +311,11 @@ func TestTelemetryFieldConstants(t *testing.T) {
 //   - *_test.go files (test fixtures build raw attributes on purpose): Tests is
 //     false, so go/packages does not load them.
 //   - Nested modules (extensions/*, test/evals, test data samples) have their own
-//     go.mod and are not matched by the "./..." pattern.
+//     go.mod and are not matched by the "./..." pattern. Extension telemetry is
+//     out of scope by design, not merely by mechanics: extensions are separate
+//     modules whose attributes (the "ext.*" namespace) are reviewed together with
+//     the extension that reports them, per docs/specs/metrics-audit/
+//     privacy-review-checklist.md, rather than against the core fields catalog.
 func TestNoRawTelemetryAttributes(t *testing.T) {
 	t.Parallel()
 
@@ -385,6 +389,41 @@ func isRawAttributeKeyType(t types.Type) bool {
 	obj := named.Obj()
 	return obj != nil && obj.Pkg() != nil &&
 		obj.Pkg().Path() == rawAttributePkgPath && obj.Name() == "Key"
+}
+
+// fieldsPkgPath is the import path of the package that defines the sanctioned
+// classified attribute wrapper, fields.AttributeKey.
+const fieldsPkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+
+// isFieldsAttributeKeyType reports whether t is exactly the sanctioned
+// fields.AttributeKey named type. That wrapper is the only type the metadata
+// classifier discovers and reads Classification/Purpose/Endpoint from, so it is
+// the only receiver on which a KeyValue-producing attribute.Key method is
+// allowed. A bare attribute.Key, or any other struct that merely embeds
+// attribute.Key, produces a key the classifier cannot see and is a violation.
+func isFieldsAttributeKeyType(t types.Type) bool {
+	named, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	return obj != nil && obj.Pkg() != nil &&
+		obj.Pkg().Path() == fieldsPkgPath && obj.Name() == "AttributeKey"
+}
+
+// isAttributeKeyBuilderMethod reports whether m is a method defined on
+// attribute.Key. The check is on the method's defining receiver type, so it
+// matches whether the method is invoked directly on an attribute.Key value or
+// promoted through an embedding struct, and it never matches an unrelated
+// String()/Stringer() method on some other type. Callers additionally restrict
+// to the KeyValue-producing names (rawAttributeConstructors) so attribute.Key's
+// non-builder methods (e.g. Defined) are not flagged.
+func isAttributeKeyBuilderMethod(m *types.Func) bool {
+	sig, ok := m.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return false
+	}
+	return isRawAttributeKeyType(sig.Recv().Type())
 }
 
 // scanFileForRawAttributes returns the raw-telemetry-attribute violations in a
@@ -467,21 +506,25 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 		switch fun := call.Fun.(type) {
 		case *ast.SelectorExpr:
 			// A method-value selection (x.String(v)) — including a method promoted
-			// through embedding — carries the resolved receiver type. It is a raw
-			// attribute only when that receiver is exactly attribute.Key. The
-			// sanctioned fields.SomeKey.String(v) has receiver type
-			// fields.AttributeKey (a distinct named struct that embeds
-			// attribute.Key) and is correctly left alone. This single check covers
-			// keys held in parameters, locals, struct fields, and function
-			// results, as well as the chained attribute.Key("k").String(v) form.
-			// Re-emitting an existing KeyValue's key (kv.Key.String(v)) is excluded
-			// because the key was already checked where the KeyValue was built.
+			// through embedding — resolves both the method's defining type and the
+			// receiver expression's type. A KeyValue-producing attribute.Key method
+			// is sanctioned only when the receiver is the classified
+			// fields.AttributeKey wrapper (the sole type the metadata classifier
+			// discovers). Called on a bare attribute.Key, or on any other struct
+			// that merely embeds attribute.Key, it produces an unclassified key and
+			// is a violation. This single check covers keys held in parameters,
+			// locals, struct fields, and function results, as well as the chained
+			// attribute.Key("k").String(v) form. Re-emitting an existing KeyValue's
+			// key (kv.Key.String(v)) is excluded because the key was already checked
+			// where the KeyValue was built.
 			if sel := info.Selections[fun]; sel != nil && sel.Kind() == types.MethodVal {
 				if m, ok := sel.Obj().(*types.Func); ok {
 					if _, isCtor := rawAttributeConstructors[m.Name()]; isCtor &&
-						isRawAttributeKeyType(sel.Recv()) && !isReemittedKeyValueKey(fun.X) {
+						isAttributeKeyBuilderMethod(m) &&
+						!isFieldsAttributeKeyType(sel.Recv()) && !isReemittedKeyValueKey(fun.X) {
 						violations = append(violations, fmt.Sprintf(
-							"  %s:%d: .%s(...) on a raw attribute.Key value", rel, pos.Line, m.Name()))
+							"  %s:%d: .%s(...) produces an unclassified key "+
+								"(receiver is not fields.AttributeKey)", rel, pos.Line, m.Name()))
 					}
 				}
 				return true
@@ -625,8 +668,8 @@ func f() { _ = mk().String("v") }
 			name: "method via embedded Key field of a struct",
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
-type classified struct{ attribute.Key }
-func f(c classified) { _ = c.Key.Bool(true) }
+type wrapper struct{ attribute.Key }
+func f(c wrapper) { _ = c.Key.Bool(true) }
 `,
 			wantViolation: true,
 		},
@@ -647,12 +690,28 @@ var _ = attribute.Key("raw.key")
 			wantViolation: false,
 		},
 		{
-			name: "promoted method on embedding struct",
+			name: "promoted method on non-fields embedding struct",
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
-type classified struct{ attribute.Key }
-var c classified
+type wrapper struct{ attribute.Key }
+var c wrapper
 var _ = c.String("v")
+`,
+			wantViolation: true,
+		},
+		{
+			name: "promoted method on classified fields.AttributeKey",
+			src: `package p
+import "github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+var _ = fields.ServiceNameKey.String("v")
+`,
+			wantViolation: false,
+		},
+		{
+			name: "dynamic sanctioned extension usage attribute",
+			src: `package p
+import "github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+var _ = fields.ExtensionUsageAttribute("foo").String("v")
 `,
 			wantViolation: false,
 		},
@@ -660,9 +719,9 @@ var _ = c.String("v")
 			name: "shadowed classified key across scopes",
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
-type classified struct{ attribute.Key }
+import "github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 func a(k attribute.Key) { _ = k }
-func b(k classified) { _ = k.Bool(true) }
+func b(k fields.AttributeKey) { _ = k.Bool(true) }
 `,
 			wantViolation: false,
 		},

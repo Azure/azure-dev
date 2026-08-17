@@ -2,7 +2,6 @@ param(
     [string] $ExtensionDirectory,
     # Defaults to the pipeline-provided values so the script is unit-testable.
     [string] $BuildReason = $env:BUILD_REASON,
-    [string] $BuildReasonOverride = $env:BUILDREASONOVERRIDE,
     [string] $BuildId = $env:BUILD_BUILDID,
     [string] $PullRequestNumber = $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER,
     [string] $PullRequestNumberOverride = $env:PRNUMBEROVERRIDE,
@@ -10,19 +9,12 @@ param(
 )
 
 $extVersion = (Get-Content "$ExtensionDirectory/version.txt").Trim()
-$effectiveBuildReason = if ([string]::IsNullOrWhiteSpace($BuildReasonOverride)) {
-    $BuildReason
-}
-else {
-    $BuildReasonOverride
-}
 
 # On nightly (scheduled or manually selected) runs, append a semver-valid prerelease suffix so each
 # nightly sorts above the previous one (numeric build id) while still sorting
 # below the matching stable release for non-prerelease base versions. The build
 # id keeps all matrix jobs in a single run on the same version even if the run
-# crosses midnight, and guarantees a re-run produces a distinct version. Nightly
-# selection takes precedence over build-reason overrides.
+# crosses midnight, and guarantees a re-run produces a distinct version.
 if ($BuildReason -eq 'Schedule' -or $PublishToRegistry -eq 'nightly') {
     if ([string]::IsNullOrWhiteSpace($BuildId)) {
         throw "BuildId is required for nightly versioning but was empty (expected Build.BuildId)."
@@ -37,7 +29,7 @@ if ($BuildReason -eq 'Schedule' -or $PublishToRegistry -eq 'nightly') {
         $extVersion = "$extVersion-nightly.$BuildId"
     }
 }
-elseif ($effectiveBuildReason -eq 'PullRequest') {
+elseif ($BuildReason -eq 'PullRequest') {
     $effectivePullRequestNumber = if ([string]::IsNullOrWhiteSpace($PullRequestNumberOverride)) {
         $PullRequestNumber
     }

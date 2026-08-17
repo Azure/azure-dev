@@ -11,7 +11,6 @@ Describe 'Set-ExtensionVersionVariable' {
         function Invoke-VersionScript {
             param(
                 [string] $BuildReason = 'Manual',
-                [string] $BuildReasonOverride = '',
                 [string] $BuildId = '1234',
                 [string] $PullRequestNumber = '',
                 [string] $PullRequestNumberOverride = '',
@@ -21,7 +20,6 @@ Describe 'Set-ExtensionVersionVariable' {
             & $scriptPath `
                 -ExtensionDirectory $extensionDirectory `
                 -BuildReason $BuildReason `
-                -BuildReasonOverride $BuildReasonOverride `
                 -BuildId $BuildId `
                 -PullRequestNumber $PullRequestNumber `
                 -PullRequestNumberOverride $PullRequestNumberOverride `
@@ -51,12 +49,11 @@ Describe 'Set-ExtensionVersionVariable' {
         $output | Should -Contain 'Extension Version: 1.2.3-preview.pr.9409.1234'
     }
 
-    It 'uses the build reason and PR number overrides' {
+    It 'uses the PR number override' {
         Set-TestVersion '1.2.3'
 
         $output = Invoke-VersionScript `
-            -BuildReason Manual `
-            -BuildReasonOverride PullRequest `
+            -BuildReason PullRequest `
             -PullRequestNumber 100 `
             -PullRequestNumberOverride 9409
 
@@ -90,7 +87,6 @@ Describe 'Set-ExtensionVersionVariable' {
 
         $output = Invoke-VersionScript `
             -BuildReason Schedule `
-            -BuildReasonOverride PullRequest `
             -PullRequestNumber 9409
 
         $output | Should -Contain 'Extension Version: 1.2.3-preview.nightly.1234'
@@ -101,7 +97,6 @@ Describe 'Set-ExtensionVersionVariable' {
 
         $output = Invoke-VersionScript `
             -BuildReason Manual `
-            -BuildReasonOverride PullRequest `
             -PullRequestNumber 9409 `
             -PublishToRegistry nightly
 

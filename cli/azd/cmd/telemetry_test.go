@@ -409,6 +409,11 @@ func isRawAttributeKeyValueType(t types.Type) bool {
 // classified attribute wrapper, fields.AttributeKey.
 const fieldsPkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 
+// baggagePkgPath is the import path of the telemetry baggage package, which
+// legitimately rebuilds caller-supplied attribute.KeyValue structs (re-emitting
+// keys that were already subject to this guard at their original build site).
+const baggagePkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
+
 // isFieldsAttributeKeyType reports whether t is exactly the sanctioned
 // fields.AttributeKey named type. That wrapper is the only type the metadata
 // classifier discovers and reads Classification/Purpose/Endpoint from, so it is
@@ -443,13 +448,14 @@ func isAttributeKeyBuilderMethod(m *types.Func) bool {
 // scanFileForRawAttributes returns the raw-telemetry-attribute violations in a
 // single type-checked Go file. info must be the go/types information for the
 // file's package; pkgPath is that package's import path (used to exempt the
-// fields package from the construction rule below); rel is the display path used
-// in messages. Classifying calls by the resolved type of the callee and receiver
-// — rather than by syntactic shape — makes the guard sound across import aliases,
-// dot imports, and keys reached through parameters, struct fields, or function
-// results. It is shared by TestNoRawTelemetryAttributes (which walks the module)
-// and the fixture test TestRawTelemetryAttributeScanner, so the guard's contract
-// is itself tested.
+// fields package's registry/factory from the fields.AttributeKey construction
+// rule, and the fields/baggage plumbing from the attribute.KeyValue construction
+// rule); rel is the display path used in messages. Classifying calls by the
+// resolved type of the callee and receiver — rather than by syntactic shape —
+// makes the guard sound across import aliases, dot imports, and keys reached
+// through parameters, struct fields, or function results. It is shared by
+// TestNoRawTelemetryAttributes (which walks the module) and the fixture test
+// TestRawTelemetryAttributeScanner, so the guard's contract is itself tested.
 func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.Info, pkgPath, rel string) []string {
 	// rawAttributeConstructors are the go.opentelemetry.io/otel/attribute helpers
 	// (and the identically named attribute.Key methods) that build a KeyValue from
@@ -461,16 +467,6 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 		"String": {}, "Bool": {}, "Int": {}, "IntSlice": {}, "Int64": {},
 		"Float64": {}, "Stringer": {}, "StringSlice": {}, "BoolSlice": {},
 		"Int64Slice": {}, "Float64Slice": {},
-	}
-
-	// literalKeyExpr renders a constant key expression for a friendlier message,
-	// preferring its resolved constant string value (covers both "k" and
-	// attribute.Key("k") forms), and falling back to "...".
-	literalKeyExpr := func(expr ast.Expr) string {
-		if tv, ok := info.Types[expr]; ok && tv.Value != nil {
-			return tv.Value.String()
-		}
-		return "..."
 	}
 
 	// isRawAttributeConstructorFunc reports whether obj is a package-level function
@@ -510,62 +506,6 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 			obj.Pkg().Path() == rawAttributePkgPath && obj.Name() == "KeyValue"
 	}
 
-	// constantKey reports whether expr evaluates to a compile-time constant. A
-	// KeyValue whose Key is a constant introduces a fixed key literal, whereas a
-	// non-constant Key (a variable, a k.Key field access, a function result)
-	// merely forwards an existing key. This is what distinguishes a new raw key
-	// from the fields/baggage plumbing that only re-emits caller-supplied keys.
-	constantKey := func(expr ast.Expr) bool {
-		tv, ok := info.Types[expr]
-		return ok && tv.Value != nil
-	}
-
-	// fabricatesRawKey reports whether the Key expression of an attribute.KeyValue
-	// literal mints a new key rather than forwarding an existing one. A
-	// compile-time constant (a "literal" or attribute.Key("literal")) is a fixed
-	// key literal. An explicit attribute.Key(x) conversion also fabricates a key —
-	// even when x is only known at run time — because it turns an arbitrary string
-	// into a key the classifier never sees; the sole sanctioned way to build a
-	// dynamic key is fields.ExtensionUsageAttribute. Forwarding forms (a bare
-	// attribute.Key variable, or a k.Key field access) are neither constant nor a
-	// conversion, so the fields/baggage plumbing that re-emits caller-supplied keys
-	// is left alone.
-	fabricatesRawKey := func(expr ast.Expr) bool {
-		if constantKey(expr) {
-			return true
-		}
-		call, ok := expr.(*ast.CallExpr)
-		if !ok {
-			return false
-		}
-		tv, ok := info.Types[call.Fun]
-		return ok && tv.IsType() && isRawAttributeKeyType(tv.Type)
-	}
-
-	// keyValueLiteralKey returns the expression assigned to the Key field of an
-	// attribute.KeyValue composite literal, handling both keyed
-	// (KeyValue{Key: ...}) and positional (KeyValue{k, v}) forms. It returns nil
-	// when no key element is present (the zero value).
-	keyValueLiteralKey := func(cl *ast.CompositeLit) ast.Expr {
-		if len(cl.Elts) == 0 {
-			return nil
-		}
-		if _, keyed := cl.Elts[0].(*ast.KeyValueExpr); keyed {
-			for _, elt := range cl.Elts {
-				kv, ok := elt.(*ast.KeyValueExpr)
-				if !ok {
-					continue
-				}
-				if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "Key" {
-					return kv.Value
-				}
-			}
-			return nil
-		}
-		// Positional: Key is the first field of attribute.KeyValue.
-		return cl.Elts[0]
-	}
-
 	// rawAttributeBuilderSelection reports whether sel selects a KeyValue-producing
 	// builder (String/Bool/…) defined on the raw attribute.Key type, on a receiver
 	// that is NOT the classified fields.AttributeKey. It matches both a method
@@ -599,47 +539,96 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 		return true
 	}
 
+	// sanctionedFieldsKeyLit collects the fields.AttributeKey composite literals in
+	// this file that are legitimate inside the fields package: the exported
+	// package-level var initializers that make up the registry the GDPR classifier
+	// scans, and the literal returned by the ExtensionUsageAttribute factory (the
+	// one sanctioned source of a dynamic key). It is only populated for the fields
+	// package; a function-local or unexported fields.AttributeKey built anywhere
+	// else in that package would carry a key the classifier never discovers while
+	// its sanctioned receiver type would let the method branch accept emissions
+	// through it, so those are flagged.
+	sanctionedFieldsKeyLit := map[ast.Node]bool{}
+	if pkgPath == fieldsPkgPath {
+		for _, decl := range file.Decls {
+			switch d := decl.(type) {
+			case *ast.GenDecl:
+				if d.Tok != token.VAR {
+					continue
+				}
+				for _, spec := range d.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for i, name := range vs.Names {
+						if name.IsExported() && i < len(vs.Values) {
+							sanctionedFieldsKeyLit[vs.Values[i]] = true
+						}
+					}
+				}
+			case *ast.FuncDecl:
+				if d.Name.Name == "ExtensionUsageAttribute" && d.Body != nil {
+					ast.Inspect(d.Body, func(n ast.Node) bool {
+						if cl, ok := n.(*ast.CompositeLit); ok {
+							sanctionedFieldsKeyLit[cl] = true
+						}
+						return true
+					})
+				}
+			}
+		}
+	}
+
+	// isKeyValuePlumbingPkgPath reports whether p is one of the sanctioned
+	// telemetry-plumbing packages allowed to build attribute.KeyValue structs
+	// directly: fields (StringHashed forwards a classified key's .Key) and baggage
+	// (re-emits caller-supplied keys ranged from an existing KeyValue set). Every
+	// other package must emit through a fields.AttributeKey method instead.
+	isKeyValuePlumbingPkgPath := func(p string) bool {
+		return p == fieldsPkgPath || p == baggagePkgPath
+	}
+
 	var violations []string
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch node := n.(type) {
 		case *ast.CompositeLit:
 			pos := fset.Position(node.Pos())
 			clType := info.TypeOf(node)
-			// Constructing a fields.AttributeKey outside the fields package
-			// fabricates a key the classifier never sees. The GDPR scanner discovers
-			// only the exported package-level AttributeKey vars declared in the
-			// fields package, so a locally built one — e.g.
-			// fields.AttributeKey{Key: attribute.Key("x")} — carries an uncatalogued
-			// key even though its type is fields.AttributeKey, and the method branch
-			// below would (correctly, to keep registered keys passed through
-			// parameters valid) treat that receiver type as sanctioned. The only
-			// sanctioned ways to obtain an AttributeKey in product code are to
-			// reference a registered fields.* var or to call
-			// fields.ExtensionUsageAttribute; both live in the fields package, which
-			// is why that package is exempt here.
-			if pkgPath != fieldsPkgPath && isFieldsAttributeKeyType(clType) {
-				violations = append(violations, fmt.Sprintf(
-					"  %s:%d: fields.AttributeKey{...} constructed outside the fields "+
-						"package (its key is not in the classifier catalog; reference a "+
-						"registered fields.* key or fields.ExtensionUsageAttribute)", rel, pos.Line))
+			// fields.AttributeKey{...} wrapper construction. Outside the fields
+			// package this always fabricates a key the classifier never sees (it
+			// discovers only the exported package-level AttributeKey vars declared in
+			// the fields package). Inside the fields package it is allowed only for
+			// the registry itself — an exported package-level var initializer — or the
+			// sanctioned dynamic factory ExtensionUsageAttribute; anything else builds
+			// an uncatalogued key whose fields.AttributeKey type would nonetheless let
+			// the method branch below accept emissions through it.
+			if isFieldsAttributeKeyType(clType) {
+				if pkgPath != fieldsPkgPath {
+					violations = append(violations, fmt.Sprintf(
+						"  %s:%d: fields.AttributeKey{...} constructed outside the fields "+
+							"package (its key is not in the classifier catalog; reference a "+
+							"registered fields.* key or fields.ExtensionUsageAttribute)", rel, pos.Line))
+				} else if !sanctionedFieldsKeyLit[node] {
+					violations = append(violations, fmt.Sprintf(
+						"  %s:%d: fields.AttributeKey{...} built in the fields package outside an "+
+							"exported package-level var or ExtensionUsageAttribute (the classifier "+
+							"discovers only exported package-level keys)", rel, pos.Line))
+				}
 				return true
 			}
-			// A raw attribute.KeyValue struct literal whose Key is fabricated
-			// introduces an unclassified key directly (e.g.
-			// attribute.KeyValue{Key: attribute.Key("raw.key"), Value: ...}, or the
-			// same with a run-time attribute.Key(x) conversion), which
-			// span.SetAttributes would emit without ever passing through a
-			// fields.AttributeKey. The plumbing that legitimately builds KeyValues
-			// (fields.StringHashed and baggage re-emission) sets Key from an existing
-			// key expression (k.Key, a ranged variable), which is neither a constant
-			// nor a conversion and is therefore left alone.
-			if isRawAttributeKeyValueType(clType) {
-				if keyExpr := keyValueLiteralKey(node); keyExpr != nil && fabricatesRawKey(keyExpr) {
-					violations = append(violations, fmt.Sprintf(
-						"  %s:%d: attribute.KeyValue{Key: %s, ...} introduces an unclassified "+
-							"key literal (build it from a fields.AttributeKey instead)",
-						rel, pos.Line, literalKeyExpr(keyExpr)))
-				}
+			// attribute.KeyValue{...} raw struct construction. Building the struct
+			// directly bypasses the fields.AttributeKey methods entirely and lets any
+			// key expression through — including a variable initialized from
+			// attribute.Key("raw.key"), which no key-shape check can catch. It is
+			// allowed only in the sanctioned plumbing packages that re-emit
+			// caller-supplied keys (fields.StringHashed and baggage), identified by
+			// package path; everywhere else it is a violation regardless of how the
+			// key is spelled.
+			if isRawAttributeKeyValueType(clType) && !isKeyValuePlumbingPkgPath(pkgPath) {
+				violations = append(violations, fmt.Sprintf(
+					"  %s:%d: attribute.KeyValue{...} constructed outside the telemetry "+
+						"plumbing (build it from a fields.AttributeKey instead)", rel, pos.Line))
 			}
 			return true
 		case *ast.SelectorExpr:
@@ -680,16 +669,19 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 // value), constant keys, the chained attribute.Key(k).String(v) form, KeyValue-
 // producing attribute.Key builders reached as a method value (through a
 // parameter, local, struct field, or function result) or as a method expression
-// (attribute.Key.String, including when captured as a function value), a locally
-// constructed fields.AttributeKey, and a raw attribute.KeyValue literal whose Key
-// is fabricated (a constant, or a run-time attribute.Key(x) conversion) are all
-// flagged; while the sanctioned promoted-method call on the classified
-// fields.AttributeKey, fields.ExtensionUsageAttribute, an attribute.KeyValue that
-// only re-emits an existing (forwarded) key, a bare attribute.Key(k)
-// conversion (which does not build a KeyValue), and non-KeyValue uses of a key
-// (e.g. a map lookup) are not. Fixtures are type-checked against the real
-// attribute and fields packages via go/packages, so the guard runs with the same
-// type information it uses on the module.
+// (attribute.Key.String, including when captured as a function value), a
+// fields.AttributeKey constructed outside the fields package, and any raw
+// attribute.KeyValue struct built outside the sanctioned plumbing packages
+// (whatever its key — a literal, a run-time attribute.Key(x) conversion, or a
+// variable forwarding one) are all flagged; while the sanctioned promoted-method
+// call on the classified fields.AttributeKey, fields.ExtensionUsageAttribute, a
+// bare attribute.Key(k) conversion (which does not build a KeyValue), and
+// non-KeyValue uses of a key (e.g. a map lookup) are not. The in-package
+// exemptions — the fields registry vars, ExtensionUsageAttribute, and the
+// fields/baggage KeyValue plumbing — are keyed on package path and so are
+// exercised by the module walk rather than these package-p fixtures. Fixtures are
+// type-checked against the real attribute and fields packages via go/packages, so
+// the guard runs with the same type information it uses on the module.
 func TestRawTelemetryAttributeScanner(t *testing.T) {
 	t.Parallel()
 
@@ -786,14 +778,23 @@ func f(runtimeKey string) attribute.KeyValue {
 			wantViolation: true,
 		},
 		{
-			name: "attribute.KeyValue re-emitting an existing key",
+			name: "attribute.KeyValue re-emitting a key outside the plumbing packages",
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
 func f(k attribute.Key, v attribute.Value) attribute.KeyValue {
 	return attribute.KeyValue{Key: k, Value: v}
 }
 `,
-			wantViolation: false,
+			wantViolation: true,
+		},
+		{
+			name: "attribute.KeyValue with a key from a converted variable",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var rawKey = attribute.Key("raw.key")
+var _ = attribute.KeyValue{Key: rawKey, Value: attribute.StringValue("v")}
+`,
+			wantViolation: true,
 		},
 		{
 			name: "attribute.Key builder method expression call",

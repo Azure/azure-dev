@@ -3428,6 +3428,11 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 				strings.HasPrefix(ca.CodeConfiguration.Runtime, "dotnet_") {
 				serviceConfig.Language = "csharp"
 			}
+		} else if preBuiltImage != "" {
+			// Keep pre-built images in their source registry. This applies to both public
+			// BYO images and private images pulled through a Foundry registry connection.
+			serviceConfig.Docker = &azdext.DockerProjectOptions{}
+			project.EnableDockerImagePassthrough(serviceConfig.Docker)
 		} else {
 			// Disable remote build when the Foundry account is VNET-injected; remote
 			// build runs on worker IPs that can't reach a registry in the VNET.

@@ -688,6 +688,17 @@ func (p *AgentServiceTargetProvider) Package(
 		return nil, err
 	}
 
+	// Core image passthrough owns the artifact lifecycle for all pre-built images,
+	// whether the source registry is public or accessed through a Foundry connection.
+	if DockerImagePassthrough(serviceConfig.GetDocker()) {
+		progress("Packaging pre-built container image")
+		artifacts, err := p.packageContainer(ctx, serviceConfig, serviceContext)
+		if err != nil {
+			return nil, err
+		}
+		return &azdext.ServicePackageResult{Artifacts: artifacts}, nil
+	}
+
 	// Code deploy: ZIP the source directory.
 	if agentDef.CodeConfiguration != nil {
 		progress("Packaging code")
@@ -756,23 +767,33 @@ func (p *AgentServiceTargetProvider) Package(
 			serviceContext.Build = append(serviceContext.Build, buildResponse.Result.Artifacts...)
 		}
 
-		packageRequest := &azdext.ContainerPackageRequest{
-			ServiceName:    serviceConfig.Name,
-			ServiceContext: serviceContext,
-		}
-		packageResponse, err := p.azdClient.
-			Container().
-			Package(ctx, packageRequest)
+		artifacts, err := p.packageContainer(ctx, serviceConfig, serviceContext)
 		if err != nil {
-			return nil, exterrors.FromHost(err, exterrors.OpContainerPackage, "container package failed")
+			return nil, err
 		}
 
-		newArtifacts = append(newArtifacts, packageResponse.Result.Artifacts...)
+		newArtifacts = append(newArtifacts, artifacts...)
 	}
 
 	return &azdext.ServicePackageResult{
 		Artifacts: newArtifacts,
 	}, nil
+}
+
+func (p *AgentServiceTargetProvider) packageContainer(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	serviceContext *azdext.ServiceContext,
+) ([]*azdext.Artifact, error) {
+	packageResponse, err := p.azdClient.Container().Package(ctx, &azdext.ContainerPackageRequest{
+		ServiceName:    serviceConfig.Name,
+		ServiceContext: serviceContext,
+	})
+	if err != nil {
+		return nil, exterrors.FromHost(err, exterrors.OpContainerPackage, "container package failed")
+	}
+
+	return packageResponse.Result.Artifacts, nil
 }
 
 // Publish performs the publish operation for the agent service

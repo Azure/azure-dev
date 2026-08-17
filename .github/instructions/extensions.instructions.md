@@ -16,3 +16,13 @@ applyTo:
 - Follow extension guidelines in: cli/azd/docs/extensions/extensions-style-guide.md. If the work
   violates any of these principles, include a link to the guide so the user can read it and get
   ahead of some of the problems.
+
+- When an extension deploys a resource whose runtime name may differ from the azure.yaml service
+  key (e.g., Foundry agents persist the deployed name in `AGENT_<SERVICE>_NAME`), every lifecycle
+  command that references that resource — teardown, pack, publish, listen — must resolve the same
+  runtime-stored env var instead of recomputing from `svc.Name`. Using the static service key in
+  teardown when deploy wrote a different name to the environment leaves custom/runtime-named
+  resources behind on `azd down` and can delete wrong resources when the service key differs from
+  the deployed name. Fall back to `svc.Name` only when the env var is absent (older environments).
+
+  _Source: [#9332](https://github.com/Azure/azure-dev/pull/9332), [#9497](https://github.com/Azure/azure-dev/pull/9497)_

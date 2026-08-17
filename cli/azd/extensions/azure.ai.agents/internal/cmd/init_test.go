@@ -613,73 +613,90 @@ func TestSynthesizeImageManifestFile_AcceptsActivityProtocol(t *testing.T) {
 	}, containerAgent.Protocols)
 }
 
-func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
+func TestAddToProjectPreBuiltImageEnablesPassthrough(t *testing.T) {
 	const image = "registry.example.com/agents/my-agent:v1"
-	const registryConnection = "production-registry"
-	server := &recordingProjectServer{}
-	client := newProjectRecorderClient(t, server)
-	action := &InitAction{
-		azdClient:   client,
-		environment: &azdext.Environment{Name: "test-env"},
-		flags: &initFlags{
-			image:              image,
-			registryConnection: registryConnection,
-			noPrompt:           true,
-		},
-		serviceNameOverride: "my-agent",
-	}
-	description := "Hosted container agent using a pre-built image"
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind:        agent_yaml.AgentKindHosted,
-				Name:        "my-agent",
-				Description: &description,
-			},
-			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "2.0.0"},
-			},
-			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-				{Name: "LOG_LEVEL", Value: "info"},
-			},
-		},
+	tests := []struct {
+		name               string
+		flagImage          string
+		manifestImage      string
+		registryConnection string
+	}{
+		{name: "BYO image flag", flagImage: image},
+		{name: "manifest BYO image", manifestImage: image},
+		{name: "private registry image", flagImage: image, registryConnection: "production-registry"},
 	}
 
-	output, err := captureStdout(t, func() error {
-		return action.addToProject(t.Context(), "src/my-agent", manifest)
-	})
-	require.NoError(t, err)
-	require.Contains(t, output, "\nAdded agent 'my-agent' to azure.yaml.\n")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+			action := &InitAction{
+				azdClient:   client,
+				environment: &azdext.Environment{Name: "test-env"},
+				flags: &initFlags{
+					image:              test.flagImage,
+					registryConnection: test.registryConnection,
+					noPrompt:           true,
+				},
+				serviceNameOverride: "my-agent",
+			}
+			description := "Hosted container agent using a pre-built image"
+			manifest := &agent_yaml.AgentManifest{
+				Template: agent_yaml.ContainerAgent{
+					AgentDefinition: agent_yaml.AgentDefinition{
+						Kind:        agent_yaml.AgentKindHosted,
+						Name:        "my-agent",
+						Description: &description,
+					},
+					Image: test.manifestImage,
+					Protocols: []agent_yaml.ProtocolVersionRecord{
+						{Protocol: "responses", Version: "2.0.0"},
+					},
+					EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+						{Name: "LOG_LEVEL", Value: "info"},
+					},
+				},
+			}
 
-	server.mu.Lock()
-	defer server.mu.Unlock()
+			output, err := captureStdout(t, func() error {
+				return action.addToProject(t.Context(), "src/my-agent", manifest)
+			})
+			require.NoError(t, err)
+			require.Contains(t, output, "\nAdded agent 'my-agent' to azure.yaml.\n")
 
-	var agentService *azdext.ServiceConfig
-	for _, service := range server.added {
-		if service.GetName() == "my-agent" {
-			agentService = service
-			break
-		}
+			server.mu.Lock()
+			defer server.mu.Unlock()
+
+			var agentService *azdext.ServiceConfig
+			for _, service := range server.added {
+				if service.GetName() == "my-agent" {
+					agentService = service
+					break
+				}
+			}
+			require.NotNil(t, agentService)
+			require.Equal(t, image, agentService.GetImage())
+			require.Equal(t, "docker", agentService.GetLanguage())
+			require.True(t, project.DockerImagePassthrough(agentService.GetDocker()))
+			require.False(t, agentService.GetDocker().GetRemoteBuild())
+			require.NotNil(t, agentService.GetAdditionalProperties())
+			require.Empty(t, agentService.GetEnvironment())
+			require.Equal(t, map[string]any{"LOG_LEVEL": "info"}, server.env["my-agent"])
+
+			properties := agentService.GetAdditionalProperties().GetFields()
+			_, hasInlineImage := properties["image"]
+			require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
+			if test.registryConnection == "" {
+				require.NotContains(t, properties, "registryConnectionId")
+			} else {
+				require.Equal(t, test.registryConnection, properties["registryConnectionId"].GetStringValue())
+				require.NotContains(t, agentService.GetUses(), test.registryConnection,
+					"an external connection must not be added to uses")
+			}
+			_, hasInlineEnvironment := properties["environmentVariables"]
+			require.False(t, hasInlineEnvironment)
+		})
 	}
-	require.NotNil(t, agentService)
-	require.Equal(t, image, agentService.GetImage())
-	require.Equal(t, "docker", agentService.GetLanguage())
-	require.NotNil(t, agentService.GetDocker())
-	require.NotNil(t, agentService.GetAdditionalProperties())
-	require.Empty(t, agentService.GetEnvironment())
-	require.Equal(t, map[string]any{
-		"LOG_LEVEL": "info",
-	}, server.env["my-agent"])
-
-	_, hasInlineImage := agentService.GetAdditionalProperties().GetFields()["image"]
-	require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
-	require.Equal(t, registryConnection,
-		agentService.GetAdditionalProperties().GetFields()["registryConnectionId"].GetStringValue())
-	require.NotContains(t, agentService.GetUses(), registryConnection,
-		"an external connection must not be added to uses")
-	_, hasInlineEnvironment := agentService.GetAdditionalProperties().
-		GetFields()["environmentVariables"]
-	require.False(t, hasInlineEnvironment)
 }
 
 func TestValidateInitAgentName(t *testing.T) {

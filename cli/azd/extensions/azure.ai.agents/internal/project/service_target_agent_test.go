@@ -288,6 +288,8 @@ type stubContainerServer struct {
 	buildRequest *azdext.ContainerBuildRequest
 	packRequest  *azdext.ContainerPackageRequest
 	pubRequest   *azdext.ContainerPublishRequest
+	packageImage string
+	publishImage string
 	publishErr   error
 }
 
@@ -313,11 +315,16 @@ func (s *stubContainerServer) Package(
 ) (*azdext.ContainerPackageResponse, error) {
 	s.packageCalls.Add(1)
 	s.packRequest = request
+	image := s.packageImage
+	if image == "" {
+		image = "myregistry.azurecr.io/test-image:latest"
+	}
 	return &azdext.ContainerPackageResponse{
 		Result: &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{{
-				Kind:     azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
-				Location: "myregistry.azurecr.io/test-image:latest",
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+				Location:     image,
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 			}},
 		},
 	}, nil
@@ -333,11 +340,15 @@ func (s *stubContainerServer) Publish(
 		return nil, s.publishErr
 	}
 
+	image := s.publishImage
+	if image == "" {
+		image = "myregistry.azurecr.io/test-image:latest"
+	}
 	return &azdext.ContainerPublishResponse{
 		Result: &azdext.ServicePublishResult{
 			Artifacts: []*azdext.Artifact{{
 				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
-				Location:     "myregistry.azurecr.io/test-image:latest",
+				Location:     image,
 				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 			}},
 		},
@@ -1953,6 +1964,54 @@ func TestShouldUsePreBuiltImage_PromptErrorCanRetry(t *testing.T) {
 	require.Equal(t, int32(2), promptStub.selectCalls.Load())
 }
 
+func TestPackage_DelegatesImagePassthroughToCore(t *testing.T) {
+	const image = "registry.example.com/agents/my-agent:v1"
+	tests := []struct {
+		name               string
+		registryConnection string
+	}{
+		{name: "BYO image"},
+		{name: "private registry image", registryConnection: "production-registry"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			agentPath := filepath.Join(dir, "agent.yaml")
+			content := fmt.Sprintf("kind: hosted\nname: test-agent\nimage: %s\n", image)
+			if test.registryConnection != "" {
+				content += fmt.Sprintf("registryConnectionId: %s\n", test.registryConnection)
+			}
+			require.NoError(t, os.WriteFile(agentPath, []byte(content), 0o600))
+
+			containerStub := &stubContainerServer{packageImage: image}
+			promptStub := &stubPromptServer{selectedIndex: 0}
+			dockerOptions := &azdext.DockerProjectOptions{}
+			EnableDockerImagePassthrough(dockerOptions)
+			provider := &AgentServiceTargetProvider{
+				azdClient:           newServiceTargetTestClient(t, containerStub, promptStub),
+				agentDefinitionPath: agentPath,
+				env:                 &azdext.Environment{Name: "test-env"},
+			}
+
+			result, err := provider.Package(
+				t.Context(),
+				&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+				&azdext.ServiceContext{},
+				func(string) {},
+			)
+
+			require.NoError(t, err)
+			require.Len(t, result.Artifacts, 1)
+			require.Equal(t, image, result.Artifacts[0].Location)
+			require.Equal(t, azdext.LocationKind_LOCATION_KIND_REMOTE, result.Artifacts[0].LocationKind)
+			require.Equal(t, int32(0), containerStub.buildCalls.Load())
+			require.Equal(t, int32(1), containerStub.packageCalls.Load())
+			require.Equal(t, int32(0), promptStub.selectCalls.Load())
+		})
+	}
+}
+
 func TestPackage_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 	t.Parallel()
 
@@ -2014,6 +2073,41 @@ func TestPackage_BuildsWhenUserChoseDockerfile(t *testing.T) {
 	require.Equal(t, int32(1), promptStub.selectCalls.Load())
 	require.Equal(t, int32(1), containerStub.buildCalls.Load())
 	require.Equal(t, int32(1), containerStub.packageCalls.Load())
+}
+
+func TestPublish_DelegatesImagePassthroughToCore(t *testing.T) {
+	t.Parallel()
+
+	const image = "registry.example.com/agents/my-agent:v1"
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, image)
+	containerStub := &stubContainerServer{publishImage: image}
+	dockerOptions := &azdext.DockerProjectOptions{}
+	EnableDockerImagePassthrough(dockerOptions)
+	provider := &AgentServiceTargetProvider{
+		azdClient:           newContainerTestClient(t, containerStub),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+
+	result, err := provider.Publish(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+		&azdext.ServiceContext{Package: []*azdext.Artifact{{
+			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+			Location:     image,
+			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+			Metadata:     map[string]string{"imagePassthrough": "true"},
+		}}},
+		&azdext.TargetResource{},
+		&azdext.PublishOptions{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, image, result.Artifacts[0].Location)
+	require.Equal(t, int32(1), containerStub.publishCalls.Load())
 }
 
 func TestPublish_SkipsWhenPreBuiltImageChosen(t *testing.T) {

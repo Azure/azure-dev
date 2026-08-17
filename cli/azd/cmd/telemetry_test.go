@@ -391,6 +391,20 @@ func isRawAttributeKeyType(t types.Type) bool {
 		obj.Pkg().Path() == rawAttributePkgPath && obj.Name() == "Key"
 }
 
+// isRawAttributeKeyValueType reports whether t is exactly the
+// go.opentelemetry.io/otel/attribute.KeyValue named struct. Constructing one
+// directly with a key literal bypasses both the attribute constructors and the
+// fields registry, so the guard inspects these composite literals too.
+func isRawAttributeKeyValueType(t types.Type) bool {
+	named, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	return obj != nil && obj.Pkg() != nil &&
+		obj.Pkg().Path() == rawAttributePkgPath && obj.Name() == "KeyValue"
+}
+
 // fieldsPkgPath is the import path of the package that defines the sanctioned
 // classified attribute wrapper, fields.AttributeKey.
 const fieldsPkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -460,6 +474,16 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 		return "..."
 	}
 
+	// literalKeyExpr renders a constant key expression for a friendlier message,
+	// preferring its resolved constant string value (covers both "k" and
+	// attribute.Key("k") forms), and falling back to "...".
+	literalKeyExpr := func(expr ast.Expr) string {
+		if tv, ok := info.Types[expr]; ok && tv.Value != nil {
+			return tv.Value.String()
+		}
+		return "..."
+	}
+
 	// isRawAttributeConstructorFunc reports whether obj is a package-level function
 	// of the attribute package that builds a KeyValue from a key and value (e.g.
 	// attribute.String). Resolving via the types object makes this independent of
@@ -497,74 +521,145 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 			obj.Pkg().Path() == rawAttributePkgPath && obj.Name() == "KeyValue"
 	}
 
+	// constantKey reports whether expr evaluates to a compile-time constant. A
+	// KeyValue whose Key is a constant introduces a fixed key literal, whereas a
+	// non-constant Key (a variable, a k.Key field access, a function result)
+	// merely forwards an existing key. This is what distinguishes a new raw key
+	// from the fields/baggage plumbing that only re-emits caller-supplied keys.
+	constantKey := func(expr ast.Expr) bool {
+		tv, ok := info.Types[expr]
+		return ok && tv.Value != nil
+	}
+
+	// keyValueLiteralKey returns the expression assigned to the Key field of an
+	// attribute.KeyValue composite literal, handling both keyed
+	// (KeyValue{Key: ...}) and positional (KeyValue{k, v}) forms. It returns nil
+	// when no key element is present (the zero value).
+	keyValueLiteralKey := func(cl *ast.CompositeLit) ast.Expr {
+		if len(cl.Elts) == 0 {
+			return nil
+		}
+		if _, keyed := cl.Elts[0].(*ast.KeyValueExpr); keyed {
+			for _, elt := range cl.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "Key" {
+					return kv.Value
+				}
+			}
+			return nil
+		}
+		// Positional: Key is the first field of attribute.KeyValue.
+		return cl.Elts[0]
+	}
+
+	// rawAttributeBuilderSelection reports whether sel selects a KeyValue-producing
+	// builder (String/Bool/…) defined on the raw attribute.Key type, on a receiver
+	// that is NOT the classified fields.AttributeKey. It matches both a method
+	// value (recvExpr.String) and a method expression (attribute.Key.String) so the
+	// guard also covers a call written in method-expression form and a builder
+	// captured as a function value (builder := attribute.Key.String). A method
+	// value that only re-emits an existing KeyValue's key (kv.Key.String) is not a
+	// new key and returns false.
+	rawAttributeBuilderSelection := func(sel *ast.SelectorExpr) bool {
+		selection := info.Selections[sel]
+		if selection == nil {
+			return false
+		}
+		kind := selection.Kind()
+		if kind != types.MethodVal && kind != types.MethodExpr {
+			return false
+		}
+		m, ok := selection.Obj().(*types.Func)
+		if !ok {
+			return false
+		}
+		if _, isCtor := rawAttributeConstructors[m.Name()]; !isCtor || !isAttributeKeyBuilderMethod(m) {
+			return false
+		}
+		if isFieldsAttributeKeyType(selection.Recv()) {
+			return false
+		}
+		if kind == types.MethodVal && isReemittedKeyValueKey(sel.X) {
+			return false
+		}
+		return true
+	}
+
 	var violations []string
 	ast.Inspect(file, func(n ast.Node) bool {
-		// Constructing a fields.AttributeKey outside the fields package fabricates a
-		// key the classifier never sees. The GDPR scanner discovers only the
-		// exported package-level AttributeKey vars declared in the fields package,
-		// so a locally built one — e.g. fields.AttributeKey{Key: attribute.Key("x")}
-		// — carries an uncatalogued key even though its type is fields.AttributeKey,
-		// and the emission branch below would (correctly, to keep registered keys
-		// passed through parameters valid) treat that receiver type as sanctioned.
-		// The only sanctioned ways to obtain an AttributeKey in product code are to
-		// reference a registered fields.* var or to call fields.ExtensionUsageAttribute;
-		// both live in the fields package, which is why that package is exempt here.
-		if cl, ok := n.(*ast.CompositeLit); ok {
-			if pkgPath != fieldsPkgPath && isFieldsAttributeKeyType(info.TypeOf(cl)) {
-				pos := fset.Position(cl.Pos())
+		switch node := n.(type) {
+		case *ast.CompositeLit:
+			pos := fset.Position(node.Pos())
+			clType := info.TypeOf(node)
+			// Constructing a fields.AttributeKey outside the fields package
+			// fabricates a key the classifier never sees. The GDPR scanner discovers
+			// only the exported package-level AttributeKey vars declared in the
+			// fields package, so a locally built one — e.g.
+			// fields.AttributeKey{Key: attribute.Key("x")} — carries an uncatalogued
+			// key even though its type is fields.AttributeKey, and the method branch
+			// below would (correctly, to keep registered keys passed through
+			// parameters valid) treat that receiver type as sanctioned. The only
+			// sanctioned ways to obtain an AttributeKey in product code are to
+			// reference a registered fields.* var or to call
+			// fields.ExtensionUsageAttribute; both live in the fields package, which
+			// is why that package is exempt here.
+			if pkgPath != fieldsPkgPath && isFieldsAttributeKeyType(clType) {
 				violations = append(violations, fmt.Sprintf(
 					"  %s:%d: fields.AttributeKey{...} constructed outside the fields "+
 						"package (its key is not in the classifier catalog; reference a "+
 						"registered fields.* key or fields.ExtensionUsageAttribute)", rel, pos.Line))
-			}
-			return true
-		}
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		pos := fset.Position(call.Pos())
-
-		switch fun := call.Fun.(type) {
-		case *ast.SelectorExpr:
-			// A method-value selection (x.String(v)) — including a method promoted
-			// through embedding — resolves both the method's defining type and the
-			// receiver expression's type. A KeyValue-producing attribute.Key method
-			// is sanctioned only when the receiver is the classified
-			// fields.AttributeKey wrapper (the sole type the metadata classifier
-			// discovers). Called on a bare attribute.Key, or on any other struct
-			// that merely embeds attribute.Key, it produces an unclassified key and
-			// is a violation. This single check covers keys held in parameters,
-			// locals, struct fields, and function results, as well as the chained
-			// attribute.Key("k").String(v) form. Re-emitting an existing KeyValue's
-			// key (kv.Key.String(v)) is excluded because the key was already checked
-			// where the KeyValue was built.
-			if sel := info.Selections[fun]; sel != nil && sel.Kind() == types.MethodVal {
-				if m, ok := sel.Obj().(*types.Func); ok {
-					if _, isCtor := rawAttributeConstructors[m.Name()]; isCtor &&
-						isAttributeKeyBuilderMethod(m) &&
-						!isFieldsAttributeKeyType(sel.Recv()) && !isReemittedKeyValueKey(fun.X) {
-						violations = append(violations, fmt.Sprintf(
-							"  %s:%d: .%s(...) produces an unclassified key "+
-								"(receiver is not fields.AttributeKey)", rel, pos.Line, m.Name()))
-					}
-				}
 				return true
 			}
-			// Otherwise the selector is a qualified identifier for a package-level
-			// constructor, e.g. attribute.String("k", v) (possibly via an alias).
-			if isRawAttributeConstructorFunc(info.Uses[fun.Sel]) {
-				violations = append(violations, fmt.Sprintf(
-					"  %s:%d: attribute.%s(%s, ...)", rel, pos.Line, fun.Sel.Name, literalKey(call)))
+			// A raw attribute.KeyValue struct literal that sets Key to a constant
+			// introduces an unclassified key literal directly (e.g.
+			// attribute.KeyValue{Key: attribute.Key("raw.key"), Value: ...}), which
+			// span.SetAttributes would emit without ever passing through a
+			// fields.AttributeKey. The plumbing that legitimately builds KeyValues
+			// (fields.StringHashed and baggage re-emission) sets Key from an existing
+			// key expression (k.Key, a ranged variable), which is not constant and is
+			// therefore left alone.
+			if isRawAttributeKeyValueType(clType) {
+				if keyExpr := keyValueLiteralKey(node); keyExpr != nil && constantKey(keyExpr) {
+					violations = append(violations, fmt.Sprintf(
+						"  %s:%d: attribute.KeyValue{Key: %s, ...} introduces an unclassified "+
+							"key literal (build it from a fields.AttributeKey instead)",
+						rel, pos.Line, literalKeyExpr(keyExpr)))
+				}
 			}
-		case *ast.Ident:
-			// A bare identifier call resolves to a package-level constructor only
-			// when the attribute package is dot-imported, e.g. String("k", v).
-			if isRawAttributeConstructorFunc(info.Uses[fun]) {
+			return true
+		case *ast.SelectorExpr:
+			if rawAttributeBuilderSelection(node) {
+				pos := fset.Position(node.Pos())
 				violations = append(violations, fmt.Sprintf(
-					"  %s:%d: %s(%s, ...) (dot-imported attribute constructor)",
-					rel, pos.Line, fun.Name, literalKey(call)))
+					"  %s:%d: attribute.Key builder .%s used on a non-fields.AttributeKey "+
+						"receiver (produces an unclassified key)", rel, pos.Line, node.Sel.Name))
 			}
+			return true
+		case *ast.CallExpr:
+			pos := fset.Position(node.Pos())
+			switch fun := node.Fun.(type) {
+			case *ast.SelectorExpr:
+				// A package-qualified constructor call, e.g. attribute.String("k", v)
+				// (possibly via an alias). Method selections on a value/type are
+				// handled by the *ast.SelectorExpr case above, so this only fires for
+				// package functions (info.Uses resolves the aliased import too).
+				if isRawAttributeConstructorFunc(info.Uses[fun.Sel]) {
+					violations = append(violations, fmt.Sprintf(
+						"  %s:%d: attribute.%s(%s, ...)", rel, pos.Line, fun.Sel.Name, literalKey(node)))
+				}
+			case *ast.Ident:
+				// A bare identifier call resolves to a package-level constructor only
+				// when the attribute package is dot-imported, e.g. String("k", v).
+				if isRawAttributeConstructorFunc(info.Uses[fun]) {
+					violations = append(violations, fmt.Sprintf(
+						"  %s:%d: %s(%s, ...) (dot-imported attribute constructor)",
+						rel, pos.Line, fun.Name, literalKey(node)))
+				}
+			}
+			return true
 		}
 		return true
 	})
@@ -575,14 +670,18 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 // TestRawTelemetryAttributeScanner is a fixture test for the type-aware guard
 // used by TestNoRawTelemetryAttributes. It pins the contract: raw attribute
 // constructors (default, aliased, and dot-imported), constant keys, the chained
-// attribute.Key(k).String(v) form, and KeyValue-producing method calls on a raw
-// attribute.Key value reached through a parameter, a local, a struct field, or a
-// function result are all flagged; while the sanctioned promoted-method call on a
-// struct that embeds attribute.Key, a bare attribute.Key(k) conversion (which
-// does not build a KeyValue), and non-KeyValue uses of a key (e.g. a map lookup)
-// are not. Fixtures are type-checked against the real attribute package via
-// go/packages, so the guard runs with the same type information it uses on the
-// module.
+// attribute.Key(k).String(v) form, KeyValue-producing attribute.Key builders
+// reached as a method value (through a parameter, local, struct field, or
+// function result) or as a method expression (attribute.Key.String, including
+// when captured as a function value), a locally constructed fields.AttributeKey,
+// and a raw attribute.KeyValue literal that introduces a constant key are all
+// flagged; while the sanctioned promoted-method call on the classified
+// fields.AttributeKey, fields.ExtensionUsageAttribute, an attribute.KeyValue that
+// only re-emits an existing (non-constant) key, a bare attribute.Key(k)
+// conversion (which does not build a KeyValue), and non-KeyValue uses of a key
+// (e.g. a map lookup) are not. Fixtures are type-checked against the real
+// attribute and fields packages via go/packages, so the guard runs with the same
+// type information it uses on the module.
 func TestRawTelemetryAttributeScanner(t *testing.T) {
 	t.Parallel()
 
@@ -640,6 +739,49 @@ var _ = attribute.IntSlice("raw.key", []int{1})
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
 var _ = attribute.Key("raw.key").String("v")
+`,
+			wantViolation: true,
+		},
+		{
+			name: "raw attribute.KeyValue struct literal",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var _ = attribute.KeyValue{Key: attribute.Key("raw.key"), Value: attribute.StringValue("v")}
+`,
+			wantViolation: true,
+		},
+		{
+			name: "raw attribute.KeyValue positional literal",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var _ = attribute.KeyValue{attribute.Key("raw.key"), attribute.StringValue("v")}
+`,
+			wantViolation: true,
+		},
+		{
+			name: "attribute.KeyValue re-emitting an existing key",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+func f(k attribute.Key, v attribute.Value) attribute.KeyValue {
+	return attribute.KeyValue{Key: k, Value: v}
+}
+`,
+			wantViolation: false,
+		},
+		{
+			name: "attribute.Key builder method expression call",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var _ = attribute.Key.String(attribute.Key("raw.key"), "v")
+`,
+			wantViolation: true,
+		},
+		{
+			name: "attribute.Key builder captured as function value",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var builder = attribute.Key.String
+var _ = builder(attribute.Key("raw.key"), "v")
 `,
 			wantViolation: true,
 		},

@@ -352,7 +352,7 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 				rel = filename
 			}
 			rel = filepath.ToSlash(rel)
-			violations = append(violations, scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, rel)...)
+			violations = append(violations, scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, pkg.PkgPath, rel)...)
 		}
 	}
 
@@ -428,13 +428,15 @@ func isAttributeKeyBuilderMethod(m *types.Func) bool {
 
 // scanFileForRawAttributes returns the raw-telemetry-attribute violations in a
 // single type-checked Go file. info must be the go/types information for the
-// file's package; rel is the display path used in messages. Classifying calls by
-// the resolved type of the callee and receiver — rather than by syntactic shape —
-// makes the guard sound across import aliases, dot imports, and keys reached
-// through parameters, struct fields, or function results. It is shared by
-// TestNoRawTelemetryAttributes (which walks the module) and the fixture test
-// TestRawTelemetryAttributeScanner, so the guard's contract is itself tested.
-func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.Info, rel string) []string {
+// file's package; pkgPath is that package's import path (used to exempt the
+// fields package from the construction rule below); rel is the display path used
+// in messages. Classifying calls by the resolved type of the callee and receiver
+// — rather than by syntactic shape — makes the guard sound across import aliases,
+// dot imports, and keys reached through parameters, struct fields, or function
+// results. It is shared by TestNoRawTelemetryAttributes (which walks the module)
+// and the fixture test TestRawTelemetryAttributeScanner, so the guard's contract
+// is itself tested.
+func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.Info, pkgPath, rel string) []string {
 	// rawAttributeConstructors are the go.opentelemetry.io/otel/attribute helpers
 	// (and the identically named attribute.Key methods) that build a KeyValue from
 	// a key and a value. Using them directly in product code bypasses the
@@ -497,6 +499,26 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 
 	var violations []string
 	ast.Inspect(file, func(n ast.Node) bool {
+		// Constructing a fields.AttributeKey outside the fields package fabricates a
+		// key the classifier never sees. The GDPR scanner discovers only the
+		// exported package-level AttributeKey vars declared in the fields package,
+		// so a locally built one — e.g. fields.AttributeKey{Key: attribute.Key("x")}
+		// — carries an uncatalogued key even though its type is fields.AttributeKey,
+		// and the emission branch below would (correctly, to keep registered keys
+		// passed through parameters valid) treat that receiver type as sanctioned.
+		// The only sanctioned ways to obtain an AttributeKey in product code are to
+		// reference a registered fields.* var or to call fields.ExtensionUsageAttribute;
+		// both live in the fields package, which is why that package is exempt here.
+		if cl, ok := n.(*ast.CompositeLit); ok {
+			if pkgPath != fieldsPkgPath && isFieldsAttributeKeyType(info.TypeOf(cl)) {
+				pos := fset.Position(cl.Pos())
+				violations = append(violations, fmt.Sprintf(
+					"  %s:%d: fields.AttributeKey{...} constructed outside the fields "+
+						"package (its key is not in the classifier catalog; reference a "+
+						"registered fields.* key or fields.ExtensionUsageAttribute)", rel, pos.Line))
+			}
+			return true
+		}
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
@@ -716,6 +738,27 @@ var _ = fields.ExtensionUsageAttribute("foo").String("v")
 			wantViolation: false,
 		},
 		{
+			name: "locally constructed unregistered fields.AttributeKey emitted inline",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+import "github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+var _ = fields.AttributeKey{Key: attribute.Key("raw.key")}.String("v")
+`,
+			wantViolation: true,
+		},
+		{
+			name: "unregistered fields.AttributeKey via local variable",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+import "github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+func f() {
+	k := fields.AttributeKey{Key: attribute.Key("raw.key")}
+	_ = k.Bool(true)
+}
+`,
+			wantViolation: true,
+		},
+		{
 			name: "shadowed classified key across scopes",
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
@@ -777,7 +820,7 @@ var _ = 1
 			if !ok {
 				continue
 			}
-			got[idx] = len(scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, cases[idx].name)) > 0
+			got[idx] = len(scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, pkg.PkgPath, cases[idx].name)) > 0
 			checked[idx] = true
 		}
 	}

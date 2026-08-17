@@ -67,6 +67,14 @@ func newInitCommand() *cobra.Command {
 			if maxTraces < 0 {
 				return messages.MaxTracesMustBePositive()
 			}
+			// Checked with the other flag-only rules, before anything is asked
+			// or read: a reference that cannot name an evaluator is otherwise
+			// written by a command that exits 0, and only fails two commands
+			// later. Answering two prompts first to be told a flag was wrong is
+			// the same defect one step removed.
+			if err := validateEvaluatorRefs(evaluators); err != nil {
+				return err
+			}
 			if source == "" {
 				source = initSourceDataset
 			}
@@ -259,9 +267,9 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().IntVar(&maxTraces, "max-traces", project.DefaultScaffoldMaxTraces,
 		"Cap on traces read by a --source traces eval. Delete max_traces from the "+
 			"file to take the service default instead.")
-	cmd.Flags().StringArrayVar(&evaluators, "evaluator", nil,
-		"Evaluator reference, repeatable. Use builtin.<name> for a built-in. "+
-			"Passing this replaces the defaults, so it also opts out of rubric generation.")
+	cmd.Flags().StringSliceVar(&evaluators, "evaluator", nil,
+		"Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a "+
+			"built-in. Passing this replaces the defaults, so it also opts out of rubric generation.")
 	cmd.Flags().StringVar(&judgeModel, "judge-model", "",
 		"Model deployment the graders judge with. Detected from the project when omitted.")
 	cmd.Flags().StringVar(&path, "path", project.DefaultEvalDir,
@@ -299,6 +307,8 @@ type scaffold struct {
 	eval            *project.Eval
 	datasetName     string
 	rubricName      string
+	target          string
+	judgeModel      string
 	generateDataset bool
 	generateRubric  bool
 }
@@ -312,7 +322,7 @@ type scaffold struct {
 // rubric generation.
 func planScaffold(in scaffoldInput) scaffold {
 	cfg := in.cfg
-	out := scaffold{rubricName: in.rubricName}
+	out := scaffold{rubricName: in.rubricName, target: in.target, judgeModel: in.judgeModel}
 
 	eval := project.Eval{
 		Name:            in.evalName,
@@ -454,23 +464,40 @@ func (s scaffold) evaluatorNames() []string {
 // A caller who supplied both a dataset and their evaluators has nothing left to
 // generate, and pointing them at a generation command would submit a billed job
 // for an artifact they already have.
+//
+// Every generate step carries --target and --generation-model, which `generate`
+// requires and does not detect. Omitting them printed a next step that failed
+// twice before it ran, each failure naming one more flag.
 func (s scaffold) nextSteps(deployCmd string) []string {
 	var steps []string
 	switch {
 	case s.generateDataset && s.generateRubric:
 		// One command produces both, which is the whole point of the composite.
-		steps = append(steps, "azd ai eval generate")
+		steps = append(steps, s.generateCommand(""))
 	case s.generateDataset:
-		steps = append(steps,
-			"azd ai eval generate --dataset --dataset-name "+s.datasetName)
+		steps = append(steps, s.generateCommand("--dataset --dataset-name "+s.datasetName))
 	case s.generateRubric:
-		steps = append(steps,
-			"azd ai eval generate --evaluator --evaluator-name "+s.rubricName)
+		steps = append(steps, s.generateCommand("--evaluator --evaluator-name "+s.rubricName))
 	}
 	if len(steps) == 0 {
 		steps = append(steps, deployCmd, "azd ai eval run start")
 	}
 	return steps
+}
+
+// generateCommand builds a `generate` invocation that runs as printed.
+func (s scaffold) generateCommand(what string) string {
+	cmd := "azd ai eval generate"
+	if what != "" {
+		cmd += " " + what
+	}
+	if s.target != "" {
+		cmd += " --target " + s.target
+	}
+	if s.judgeModel != "" {
+		cmd += " --generation-model " + s.judgeModel
+	}
+	return cmd
 }
 
 // relativeToConfig rewrites a path given relative to the working directory so

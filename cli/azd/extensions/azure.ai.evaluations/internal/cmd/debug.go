@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -28,7 +29,19 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 		return func() {}
 	}
 
-	logFileName := fmt.Sprintf("azd-ai-eval-%s.log", time.Now().Format("2006-01-02"))
+	// Written outside the working directory: that is the user's repository, the
+	// scaffolded .gitignore does not cover this name, and a routine `git add -A`
+	// committed one. The private subdirectory matters because the temp directory
+	// is shared on Linux -- at a predictable path another user could leave a
+	// symlink and have the HTTP trace appended to a file of their choosing.
+	logDir := filepath.Join(os.TempDir(), "azd-ai-eval")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		logDir = os.TempDir()
+	}
+	logFileName := filepath.Join(
+		logDir,
+		fmt.Sprintf("azd-ai-eval-%s.log", time.Now().Format("2006-01-02")),
+	)
 
 	//nolint:gosec // the name is generated locally from the date, not user input
 	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
@@ -41,6 +54,9 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 	} else {
 		w = logFile
 		closeFile = func() { logFile.Close() } //nolint:gosec // best-effort cleanup
+		// A log nobody can find is not a log. Debugging was asked for
+		// explicitly, so naming the file costs nothing.
+		fmt.Fprintf(os.Stderr, "Debug log: %s\n", filepath.ToSlash(logFileName))
 	}
 
 	log.SetOutput(w)

@@ -6,6 +6,7 @@ package messages
 import (
 	"errors"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -39,7 +40,8 @@ func TestAgentWarningsAnswerA404InOneLine(t *testing.T) {
 // syscall name and says nothing about what to run.
 func TestDatasetNotGeneratedYet(t *testing.T) {
 	err := DatasetProblem("support-agent-eval",
-		DatasetNotGeneratedYet("support-agent-eval", `evals\datasets\support-agent-eval.jsonl`))
+		DatasetNotGeneratedYet("support-agent-eval",
+			filepath.Join("evals", "datasets", "support-agent-eval.jsonl")))
 
 	got := err.Error()
 	assert.Contains(t, got, "evals/datasets/support-agent-eval.jsonl")

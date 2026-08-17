@@ -51,7 +51,7 @@ func newEvalCreateCommand() *cobra.Command {
 				return err
 			}
 
-			eval, err := cfg.Eval(firstArg(args))
+			eval, err := cfg.Eval(chooseEval(cmd, cfg, firstArg(args)))
 			if err != nil {
 				return err
 			}

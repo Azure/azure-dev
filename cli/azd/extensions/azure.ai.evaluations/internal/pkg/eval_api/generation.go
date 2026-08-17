@@ -205,7 +205,10 @@ func IsBuiltinEvaluator(name string) bool {
 // built-in lists.
 func SplitEvaluators(evaluators evalcore.EvaluatorList) (generated, builtin evalcore.EvaluatorList) {
 	for _, e := range evaluators {
-		if IsBuiltinEvaluator(e.Name) {
+		// Name labels the criterion in results and is empty for a plain
+		// `- evaluator: builtin.coherence`, so testing it classified every
+		// built-in as generated. Evaluator is the reference IsBuiltin reads.
+		if e.IsBuiltin() {
 			builtin = append(builtin, e)
 		} else {
 			generated = append(generated, e)

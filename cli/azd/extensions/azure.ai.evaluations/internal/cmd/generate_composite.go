@@ -271,6 +271,12 @@ func nameIsAPathComponent(name string) bool {
 	if name == "" || name == "." || name == ".." {
 		return false
 	}
+	// A leading dash writes a file whose name reads as a flag to whatever the
+	// caller pipes the path into, which is the filesystem's objection rather
+	// than the service's.
+	if strings.HasPrefix(name, "-") {
+		return false
+	}
 	if strings.ContainsAny(name, `/\:`) || filepath.IsAbs(name) {
 		return false
 	}

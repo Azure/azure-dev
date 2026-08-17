@@ -6,6 +6,7 @@ package eval_api
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -266,7 +267,11 @@ func (c *EvalClient) ListOutputItems(
 	// them would be a sample of the run rather than the run.
 	all := &OutputItemList{}
 	after := ""
-	for {
+	// A cursor that repeats while still returning rows would spin forever and
+	// grow all.Data until the process dies, so the walk is bounded the same way
+	// the next-link walker in pages.go is.
+	seen := map[string]bool{}
+	for page := 0; page < maxPages; page++ {
 		query := map[string]string{}
 		if limit > 0 {
 			query["limit"] = strconv.Itoa(limit - len(all.Data))
@@ -287,8 +292,15 @@ func (c *EvalClient) ListOutputItems(
 		if limit > 0 && len(all.Data) >= limit {
 			return all, nil
 		}
+		if seen[page.LastID] {
+			log.Printf("[eval_api] cursor %q repeated; the listing may be incomplete", page.LastID)
+			return all, nil
+		}
+		seen[page.LastID] = true
 		after = page.LastID
 	}
+	log.Printf("[eval_api] stopped after %d pages; the listing may be incomplete", maxPages)
+	return all, nil
 }
 
 // GetOutputItem reads a single evaluated row.

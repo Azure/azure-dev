@@ -210,7 +210,9 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 			evalName: "support-agent-smoke", target: "support-agent", judgeModel: "m",
 		})
 		// One command produces both, so there is one step, not two.
-		require.Equal(t, []string{"azd ai eval generate"}, plan.nextSteps("azd ai eval create"))
+		require.Equal(t,
+			[]string{"azd ai eval generate --target support-agent --generation-model m"},
+			plan.nextSteps("azd ai eval create"))
 	})
 
 	t.Run("dataset supplied", func(t *testing.T) {
@@ -218,7 +220,8 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 			evalName: "smoke", target: "support-agent", dataset: "prod-golden", judgeModel: "m",
 		})
 		require.Equal(t,
-			[]string{"azd ai eval generate --evaluator --evaluator-name support-agent-quality"},
+			[]string{"azd ai eval generate --evaluator --evaluator-name support-agent-quality " +
+				"--target support-agent --generation-model m"},
 			plan.nextSteps("azd ai eval create"))
 	})
 
@@ -299,6 +302,32 @@ func TestScaffold_NextStepsNameCommandsThatExist(t *testing.T) {
 			require.Equalf(t, path[len(path)-1], strings.Fields(cmd.Use)[0],
 				"%q resolved to %q, not the command it names", step, cmd.Use)
 		}
+	}
+}
+
+// The Next: line is what a new user runs immediately after init, and it used to
+// fail twice before it worked: `generate` requires --target and
+// --generation-model, detects neither, and reports them one per invocation.
+// Both values were on screen when init printed the hint.
+func TestScaffold_NextStepsCarryWhatGenerateRequires(t *testing.T) {
+	for _, in := range []scaffoldInput{
+		{evalName: "smoke", target: "support-agent", judgeModel: "gpt-4o-mini"},
+		{evalName: "smoke", target: "support-agent", dataset: "prod-golden", judgeModel: "gpt-4o-mini"},
+	} {
+		plan, _ := scaffoldFor(t, in)
+		seen := 0
+		for _, step := range plan.nextSteps("azd ai eval create") {
+			if !strings.HasPrefix(step, "azd ai eval generate") {
+				continue
+			}
+			seen++
+			require.Containsf(t, step, "--target support-agent",
+				"%q omits the target init had just detected", step)
+			require.Containsf(t, step, "--generation-model gpt-4o-mini",
+				"%q omits the model init had just resolved", step)
+		}
+		require.NotZerof(t, seen,
+			"no generate step was produced, so this asserted nothing: %+v", in)
 	}
 }
 

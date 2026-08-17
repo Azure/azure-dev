@@ -113,17 +113,21 @@ func TestIsBuiltinEvaluator(t *testing.T) {
 }
 
 func TestSplitEvaluators(t *testing.T) {
+	// `- evaluator: builtin.coherence` fills Evaluator and leaves Name empty.
+	// Name is the criterion label in results, so a fixture that put the
+	// reference there agreed with the bug rather than with any real config.
 	generated, builtin := SplitEvaluators(evalcore.EvaluatorList{
-		{Name: "builtin.coherence"},
-		{Name: "support-quality"},
-		{Name: "builtin.task_adherence"},
+		{Evaluator: "builtin.coherence"},
+		{Evaluator: "support-quality"},
+		{Evaluator: "builtin.task_adherence", Name: "adherence"},
 	})
 
 	require.Len(t, generated, 1)
-	assert.Equal(t, "support-quality", generated[0].Name)
+	assert.Equal(t, "support-quality", generated[0].Evaluator)
 	require.Len(t, builtin, 2)
-	assert.Equal(t, "builtin.coherence", builtin[0].Name)
-	assert.Equal(t, "builtin.task_adherence", builtin[1].Name)
+	assert.Equal(t, "builtin.coherence", builtin[0].Evaluator)
+	assert.Equal(t, "builtin.task_adherence", builtin[1].Evaluator,
+		"a criterion label does not stop a built-in being a built-in")
 }
 
 // Both halves come back nil rather than empty for an empty input, so a caller

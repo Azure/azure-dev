@@ -63,7 +63,7 @@ func promptAgentTarget(cmd *cobra.Command, agents []string) (string, error) {
 		choices = append(choices, &azdext.SelectChoice{Label: agents[i], Value: agents[i]})
 	}
 
-	resp, err := azdClient.Prompt().Select(cmd.Context(), &azdext.SelectRequest{
+	resp, err := azdClient.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: messages.SelectAgentPrompt(),
 			Choices: choices,
@@ -71,6 +71,11 @@ func promptAgentTarget(cmd *cobra.Command, agents []string) (string, error) {
 	})
 	if err != nil {
 		return "", messages.SelectingAgent(err)
+	}
+	// Value is optional on the wire, so an unset one arrives as 0 from
+	// GetValue and would read as the first agent rather than as no answer.
+	if resp == nil || resp.Value == nil {
+		return "", messages.AmbiguousAgentTarget(agents)
 	}
 	index := int(resp.GetValue())
 	if index < 0 || index >= len(agents) {

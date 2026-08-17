@@ -87,8 +87,13 @@ type jobSelector struct {
 }
 
 func (s *jobSelector) bind(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&s.dataset, "dataset", false, "Act on dataset generation jobs.")
-	cmd.Flags().BoolVar(&s.evaluator, "evaluator", false, "Act on evaluator generation jobs.")
+	// "Required." leads, because the same two flag names are optional filters
+	// one command over on `generate`, and the help is the only thing that says
+	// which meaning applies here.
+	cmd.Flags().BoolVar(&s.dataset, "dataset", false,
+		"Required (or --evaluator). Act on dataset generation jobs.")
+	cmd.Flags().BoolVar(&s.evaluator, "evaluator", false,
+		"Required (or --dataset). Act on evaluator generation jobs.")
 	cmd.MarkFlagsMutuallyExclusive("dataset", "evaluator")
 	cmd.MarkFlagsOneRequired("dataset", "evaluator")
 }

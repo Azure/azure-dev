@@ -34,15 +34,27 @@ func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 	}
 	defer azdClient.Close()
 
-	if envResp, err := azdClient.Environment().GetCurrent(
-		ctx, &azdext.EmptyRequest{},
-	); err == nil && envResp.GetEnvironment() != nil {
+	envResp, envErr := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if envErr != nil && !hostedSourceAbsent(envErr) {
+		// The daemon answered, but not with "there is no current environment".
+		// Reading that as absence falls through to global config or the host
+		// variable, which can point at a different project -- and the command
+		// would then land there without anything having said so.
+		return out, envErr
+	}
+	if envErr == nil && envResp.GetEnvironment() != nil {
 		for _, key := range []string{foundryEnvKey, azureAiEnvKey} {
 			envVal, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 				EnvName: envResp.Environment.Name,
 				Key:     key,
 			})
-			if valErr == nil && envVal.GetValue() != "" {
+			if valErr != nil {
+				if !hostedSourceAbsent(valErr) {
+					return out, valErr
+				}
+				continue
+			}
+			if envVal.GetValue() != "" {
 				out.EnvValue = envVal.Value
 				out.EnvName = envResp.Environment.Name
 				break
@@ -64,6 +76,27 @@ func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 	}
 
 	return out, nil
+}
+
+// hostedSourceAbsent reports whether an error from the azd daemon leaves the
+// cascade free to carry on to the next level.
+//
+// azd answers the ordinary "nothing here" cases -- no default environment, no
+// such key -- with plain Go errors, which its interceptor passes through
+// untouched and grpc then encodes as Unknown. Unknown therefore has to read as
+// absence: treating it as a failure would stop a project that simply has no
+// environment selected from ever reaching the global config or the host
+// variable, which is the whole point of the levels below.
+//
+// What must not read as absence is a daemon that refused to answer, or a read
+// that never finished. An expired login is mapped to Unauthenticated, and a
+// Ctrl-C arrives as Canceled; falling through on either would resolve quietly
+// to some other project's endpoint.
+func hostedSourceAbsent(err error) bool {
+	return !containsGRPCCode(err, codes.Unauthenticated) &&
+		!containsGRPCCode(err, codes.PermissionDenied) &&
+		!containsGRPCCode(err, codes.Canceled) &&
+		!containsGRPCCode(err, codes.DeadlineExceeded)
 }
 
 // containsGRPCCode walks the error chain looking for a gRPC status with the

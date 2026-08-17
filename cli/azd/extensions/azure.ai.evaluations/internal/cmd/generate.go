@@ -352,6 +352,12 @@ func (ec *evalContext) generateDataset(
 			if err != nil {
 				return nil, messages.SubmittingDataJob(err)
 			}
+			// The retry is a second billed job, so the id the caller reports
+			// has to move with it. Leaving it on the abandoned first job points
+			// every resume and every `job show` at the wrong one.
+			if jobID != nil {
+				*jobID = job.ID
+			}
 			completed, err = ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
 				ec.evalClient.GetDataGenerationJob)
 		}

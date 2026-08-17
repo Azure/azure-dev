@@ -103,7 +103,7 @@ func promptEvaluators(cmd *cobra.Command, choices, preselected []string) ([]stri
 		})
 	}
 
-	resp, err := azdClient.Prompt().MultiSelect(cmd.Context(), &azdext.MultiSelectRequest{
+	resp, err := azdClient.Prompt().MultiSelect(commandContext(cmd), &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
 			Message: messages.SelectEvaluatorsPrompt(),
 			Choices: opts,
@@ -115,6 +115,11 @@ func promptEvaluators(cmd *cobra.Command, choices, preselected []string) ([]stri
 
 	chosen := make([]string, 0, len(resp.GetValues()))
 	for _, v := range resp.GetValues() {
+		// A blank choice would otherwise be written to the config as an
+		// evaluator named "", and looked up as one two commands later.
+		if v.GetValue() == "" {
+			continue
+		}
 		chosen = append(chosen, v.GetValue())
 	}
 	if len(chosen) == 0 {

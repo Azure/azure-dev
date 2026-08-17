@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log"
 	"maps"
 	"os"
 	"reflect"
@@ -487,12 +488,24 @@ func (r *evalReconciler) EnsureEval(
 		// deployed under the name it had before. The environment records the id
 		// against the digest as well, which is what recognizes a rename rather
 		// than reading it as a delete plus an add.
-		if adopted := r.adoptRenamed(ctx, group, digest); adopted != "" {
+		adopted, err := r.adoptRenamed(ctx, group, digest)
+		if err != nil {
+			return "", false, err
+		}
+		if adopted != "" {
 			cached = adopted
 		}
 	}
 	if cached != "" && !recreate {
-		if remote, err := r.ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
+		remote, err := r.ec.evalClient.GetOpenAIEval(ctx, cached)
+		if err != nil && !eval_api.IsNotFound(err) {
+			// A read that failed is not an eval that is gone. Falling through
+			// on a 429, a 503 or an expired token would create a second eval
+			// and overwrite the recorded id, forking for good the run history
+			// this lookup exists to keep.
+			return "", false, err
+		}
+		if err == nil {
 			// Reusing the eval is not the same as leaving it alone: name and
 			// description are excluded from the digest because they must not
 			// split a history, which makes this the only place an edit to
@@ -532,17 +545,22 @@ func (r *evalReconciler) adoptRenamed(
 	ctx context.Context,
 	group project.Eval,
 	digest string,
-) string {
+) (string, error) {
 	id := r.ec.getEnvValue(ctx, digestIDKey(digest))
 	if id == "" {
-		return ""
+		return "", nil
 	}
 	remote, err := r.ec.evalClient.GetOpenAIEval(ctx, id)
 	if err != nil {
-		return ""
+		if eval_api.IsNotFound(err) {
+			// The eval it used to be called is genuinely gone, so there is
+			// nothing to adopt and the caller creates one.
+			return "", nil
+		}
+		return "", err
 	}
 	r.pushMutable(ctx, id, group, remote)
-	return id
+	return id, nil
 }
 
 // pushMutable sends the half of a declaration the service treats as mutable.
@@ -569,10 +587,15 @@ func (r *evalReconciler) pushMutable(
 	if remote.Name == group.Name && maps.Equal(remote.Metadata, desired) {
 		return
 	}
-	_, _ = r.ec.evalClient.UpdateOpenAIEval(ctx, id, &eval_api.UpdateOpenAIEvalRequest{
+	if _, err := r.ec.evalClient.UpdateOpenAIEval(ctx, id, &eval_api.UpdateOpenAIEvalRequest{
 		Name:     group.Name,
 		Metadata: desired,
-	})
+	}); err != nil {
+		// Deliberately not fatal: a name or description that did not travel
+		// leaves the eval usable, and failing the deploy over it would be
+		// worse. It still has to be findable, so --debug can see it.
+		log.Printf("[reconcile] updating eval %s name/description: %v", id, err)
+	}
 }
 
 // withDescription applies the declaration's description to the metadata the

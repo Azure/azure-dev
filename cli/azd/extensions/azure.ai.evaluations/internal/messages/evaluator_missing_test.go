@@ -4,6 +4,7 @@
 package messages
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,7 +15,8 @@ import (
 // callers wrap it with EvaluatorProblem, so the evaluator is named once.
 func TestEvaluatorNotGeneratedYet(t *testing.T) {
 	err := EvaluatorProblem("support-agent-quality",
-		EvaluatorNotGeneratedYet("support-agent-quality", `evals\evaluators\support-agent-quality.json`))
+		EvaluatorNotGeneratedYet("support-agent-quality",
+			filepath.Join("evals", "evaluators", "support-agent-quality.json")))
 
 	got := err.Error()
 	assert.Equal(t, 1, countOccurrences(got, `"support-agent-quality"`),

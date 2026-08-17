@@ -265,9 +265,9 @@ func (p publishedVersion) writtenAt() time.Time {
 //
 // For a few seconds after a publish the service can answer the next one with
 // the version it just assigned, writing over that version's contents instead
-// of adding one. It is a race rather than a fixed window â€” a second publish
+// of adding one. It is a race rather than a fixed window -- a second publish
 // has been seen both colliding a quarter of a second later and succeeding
-// immediately â€” and nothing observable marks its end.
+// immediately -- and nothing observable marks its end.
 //
 // That matters because versions are the unit an eval binds to. `evaluator
 // create` followed by `evaluator update`, which is what a first authoring
@@ -446,7 +446,12 @@ func collectPages(
 ) error {
 	gathered := 0
 	after := ""
-	for {
+	// A cursor that keeps returning rows while pointing back at itself would
+	// spin forever, holding the command open and growing the slice until the
+	// process dies. The next-link walker in pages.go bounds itself the same
+	// way; the cursor listings simply never did.
+	seen := map[string]bool{}
+	for page := 0; page < maxPages; page++ {
 		query := map[string]string{}
 		if limit > 0 {
 			query["limit"] = strconv.Itoa(limit - gathered)
@@ -467,8 +472,15 @@ func collectPages(
 		if limit > 0 && gathered >= limit {
 			return nil
 		}
+		if seen[lastID] {
+			log.Printf("[eval_api] cursor %q repeated; the listing may be incomplete", lastID)
+			return nil
+		}
+		seen[lastID] = true
 		after = lastID
 	}
+	log.Printf("[eval_api] stopped after %d pages; the listing may be incomplete", maxPages)
+	return nil
 }
 
 // GetOpenAIEval gets an OpenAI eval definition.
@@ -485,7 +497,7 @@ func (c *EvalClient) DeleteOpenAIEval(ctx context.Context, evalID string) error 
 }
 
 // UpdateOpenAIEval edits an eval in place. The route is a POST on the eval
-// itself, matching how this surface spells run cancel â€” there is no PATCH verb
+// itself, matching how this surface spells run cancel -- there is no PATCH verb
 // here.
 //
 // Only what UpdateEvalParametersBody reaches is editable: name, metadata and

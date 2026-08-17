@@ -172,7 +172,7 @@ func (ec *evalContext) remember(ctx context.Context, key, value string) {
 }
 
 // setEnvValue persists a value into the active azd environment. azd itself
-// writes none of these keys â€” the extension owns them.
+// writes none of these keys -- the extension owns them.
 func (ec *evalContext) setEnvValue(ctx context.Context, key, value string) error {
 	if ec.envName == "" {
 		envResp, err := ec.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})

@@ -418,10 +418,12 @@ func SamplesFailedAtLeastOne(samples int) string {
 }
 
 // GeneratedNameNotAFileName reports a generated artifact name that would not
-// stay inside the output directory.
+// stay inside the output directory, or that would produce a file whose name is
+// read as a flag by whatever the path is handed to next.
 func GeneratedNameNotAFileName(kind, name string) error {
 	return fmt.Errorf(
-		"%s name %q cannot be used as a file name: remove any of / \\ : and do not use . or ..",
+		"%s name %q cannot be used as a file name: remove any of / \\ : , "+
+			"do not start with -, and do not use . or ..",
 		kind, name)
 }
 
@@ -1591,7 +1593,21 @@ func SelectingAgent(err error) error {
 func JudgeModelRequired() error {
 	return errors.New(
 		"a model deployment is required to judge with: pass --judge-model. " +
-			"This project declares no deployments: to read one from")
+			"This project declares no deployments, and the azd environment sets no " +
+			"AZURE_AI_MODEL_DEPLOYMENT_NAME")
+}
+
+// EvaluatorRefEmpty reports an --evaluator that carries no name, which is what
+// a stray comma leaves behind.
+func EvaluatorRefEmpty() error {
+	return errors.New("--evaluator was given an empty reference: name an evaluator, " +
+		"or use builtin.<name> for a built-in")
+}
+
+// EvaluatorRefMalformed reports a reference no evaluator can be found under.
+func EvaluatorRefMalformed(ref string) error {
+	return fmt.Errorf("%q is not an evaluator reference: repeat --evaluator, or separate "+
+		"them with commas, and use builtin.<name> for a built-in", ref)
 }
 
 // AmbiguousJudgeModel reports several deployments where only one can be used.
@@ -1604,6 +1620,11 @@ func AmbiguousJudgeModel(models []string) error {
 // SelectJudgeModelPrompt asks which deployment the graders judge with.
 func SelectJudgeModelPrompt() string {
 	return "Select the model deployment the graders judge with:"
+}
+
+// SelectEvalPrompt asks which of the declared evals a command means.
+func SelectEvalPrompt() string {
+	return "Select the eval to use:"
 }
 
 // SelectingJudgeModel reports a failed judge model prompt.

@@ -94,8 +94,16 @@ func newRunOutputListCommand() *cobra.Command {
 				if err != nil {
 					return messages.Creating(outFile, err)
 				}
-				defer f.Close()
-				return emitJSON(f, rows)
+				if err := emitJSON(f, rows); err != nil {
+					_ = f.Close()
+					return err
+				}
+				// The last write is flushed by Close, so discarding its error
+				// reports success over a file that stops mid-row.
+				if err := f.Close(); err != nil {
+					return messages.Writing(outFile, err)
+				}
+				return nil
 			}
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), rows)
@@ -172,6 +180,25 @@ func newRunOutputShowCommand() *cobra.Command {
 	return cmd
 }
 
+// writeExport renders a run in the requested export format.
+//
+// Separate from the command so the file path can close explicitly and report
+// the failure. A deferred Close cannot reach an unnamed return, so discarding
+// it exits 0 over an export that stops mid-row.
+func writeExport(w io.Writer, format string, run *eval_api.OpenAIEvalRun) error {
+	switch format {
+	case formatCSV:
+		return writeResultsCSV(w, run)
+	case formatJSON:
+		return emitJSON(w, run)
+	case formatJSONL:
+		return writeResultsJSONL(w, run)
+	default:
+		return messages.ExportFormatUnsupported(
+			format, formatCSV, formatJSON, formatJSONL)
+	}
+}
+
 func newRunOutputExportCommand() *cobra.Command {
 	var (
 		format      string
@@ -214,27 +241,25 @@ func newRunOutputExportCommand() *cobra.Command {
 				return err
 			}
 
-			var w io.Writer = cmd.OutOrStdout()
-			if outFile != "" {
-				f, err := os.Create(outFile)
-				if err != nil {
-					return messages.Creating(outFile, err)
-				}
-				defer f.Close()
-				w = f
+			if outFile == "" {
+				return writeExport(cmd.OutOrStdout(), format, run)
 			}
 
-			switch format {
-			case formatCSV:
-				return writeResultsCSV(w, run)
-			case formatJSON:
-				return emitJSON(w, run)
-			case formatJSONL:
-				return writeResultsJSONL(w, run)
-			default:
-				return messages.ExportFormatUnsupported(
-					format, formatCSV, formatJSON, formatJSONL)
+			f, createErr := os.Create(outFile)
+			if createErr != nil {
+				return messages.Creating(outFile, createErr)
 			}
+			writeErr := writeExport(f, format, run)
+			// The last write is flushed by Close, so discarding its error
+			// reports success over a file that stops mid-row.
+			closeErr := f.Close()
+			if writeErr != nil {
+				return writeErr
+			}
+			if closeErr != nil {
+				return messages.Writing(outFile, closeErr)
+			}
+			return nil
 		},
 	}
 

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,6 +62,16 @@ func noPrompt(cmd *cobra.Command) bool {
 	}
 	value, err := cmd.Flags().GetBool("no-prompt")
 	return err == nil && value
+}
+
+// commandContext is cmd.Context() with cobra's pre-Execute nil made safe.
+// gRPC dereferences the context it is handed, so a nil one is a panic rather
+// than a failed call.
+func commandContext(cmd *cobra.Command) context.Context {
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }
 
 // emitJSON writes v as indented JSON.

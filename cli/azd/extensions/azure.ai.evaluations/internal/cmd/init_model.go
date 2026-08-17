@@ -4,13 +4,19 @@
 package cmd
 
 import (
+	"context"
 	"sort"
+	"strings"
 
 	"azureaieval/internal/messages"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
+
+// judgeModelEnvKey is the key `azd ai agent init` writes the bound deployment
+// to, and the only place it appears when the project was created beforehand.
+const judgeModelEnvKey = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
 
 // modelDeployments names every model deployment the project declares, sorted so
 // a prompt and an error list the same way twice.
@@ -73,6 +79,13 @@ func resolveJudgeModel(cmd *cobra.Command, proj *azdext.ProjectConfig) (string, 
 	deployments := modelDeployments(proj)
 	switch len(deployments) {
 	case 0:
+		// Binding to an existing Foundry project writes `deployments: []` into
+		// azure.yaml, so the deployment `azd ai agent init` chose survives only
+		// in the azd environment. Reading it there is the difference between a
+		// configured project working and erroring.
+		if model := modelDeploymentFromAzdEnv(commandContext(cmd)); model != "" {
+			return model, nil
+		}
 		return "", messages.JudgeModelRequired()
 	case 1:
 		return deployments[0], nil
@@ -82,6 +95,47 @@ func resolveJudgeModel(cmd *cobra.Command, proj *azdext.ProjectConfig) (string, 
 		return "", messages.AmbiguousJudgeModel(deployments)
 	}
 	return promptJudgeModel(cmd, deployments)
+}
+
+// modelDeploymentFromAzdEnv reads the deployment `azd ai agent init` recorded
+// in the active azd environment. Absence is ordinary: `init` runs outside an
+// azd project too, and the caller falls back to naming --judge-model.
+func modelDeploymentFromAzdEnv(ctx context.Context) string {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return ""
+	}
+	defer azdClient.Close()
+
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || envResp.GetEnvironment() == nil {
+		return ""
+	}
+	val, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envResp.Environment.Name,
+		Key:     judgeModelEnvKey,
+	})
+	if err != nil {
+		return ""
+	}
+	return val.GetValue()
+}
+
+// validateEvaluatorRefs rejects references that cannot name an evaluator.
+//
+// This needs no service call, so it keeps `init`'s promise to make none. The
+// alternative is a config that scaffolds cleanly and fails at `create`, naming
+// a value the user passed to a different command.
+func validateEvaluatorRefs(refs []string) error {
+	for _, ref := range refs {
+		if strings.TrimSpace(ref) == "" {
+			return messages.EvaluatorRefEmpty()
+		}
+		if strings.ContainsAny(ref, " \t") {
+			return messages.EvaluatorRefMalformed(ref)
+		}
+	}
+	return nil
 }
 
 // promptJudgeModel asks which of the project's deployments to judge with.
@@ -99,7 +153,7 @@ func promptJudgeModel(cmd *cobra.Command, deployments []string) (string, error) 
 		})
 	}
 
-	resp, err := azdClient.Prompt().Select(cmd.Context(), &azdext.SelectRequest{
+	resp, err := azdClient.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: messages.SelectJudgeModelPrompt(),
 			Choices: choices,
@@ -107,6 +161,11 @@ func promptJudgeModel(cmd *cobra.Command, deployments []string) (string, error) 
 	})
 	if err != nil {
 		return "", messages.SelectingJudgeModel(err)
+	}
+	// Value is optional on the wire, so an unset one arrives as 0 from
+	// GetValue and would read as the first deployment rather than as no answer.
+	if resp == nil || resp.Value == nil {
+		return "", messages.AmbiguousJudgeModel(deployments)
 	}
 	index := int(resp.GetValue())
 	if index < 0 || index >= len(deployments) {

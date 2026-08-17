@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
@@ -231,6 +232,22 @@ func TestDeployGraphState_ResultsSnapshot(t *testing.T) {
 	// Mutating the snapshot must not affect the state.
 	delete(snap, "api")
 	require.Equal(t, r1, state.GetResult("api"), "deleting from snapshot must not affect state")
+}
+
+func TestDisplayDeployWarnings(t *testing.T) {
+	services := []*project.ServiceConfig{{Name: "api"}, {Name: "web"}}
+	state := newDeployGraphState(services)
+	state.StoreResult("api", &project.ServiceDeployResult{
+		Warnings: []string{"deployment status did not change"},
+	})
+	state.StoreResult("web", &project.ServiceDeployResult{})
+	console := mockinput.NewMockConsole()
+
+	displayDeployWarnings(t.Context(), console, services, state)
+
+	require.Len(t, console.Output(), 1)
+	require.Contains(t, console.Output()[0], "WARNING:")
+	require.Contains(t, console.Output()[0], "Service 'api': deployment status did not change")
 }
 
 func TestDeployGraphState_StoreLoadContext(t *testing.T) {

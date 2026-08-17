@@ -463,17 +463,6 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 		"Int64Slice": {}, "Float64Slice": {},
 	}
 
-	// literalKey renders the first string-literal argument of a call for a
-	// friendlier message, or "..." for a non-literal (e.g. a named constant).
-	literalKey := func(c *ast.CallExpr) string {
-		if len(c.Args) > 0 {
-			if lit, ok := c.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-				return lit.Value
-			}
-		}
-		return "..."
-	}
-
 	// literalKeyExpr renders a constant key expression for a friendlier message,
 	// preferring its resolved constant string value (covers both "k" and
 	// attribute.Key("k") forms), and falling back to "...".
@@ -529,6 +518,28 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 	constantKey := func(expr ast.Expr) bool {
 		tv, ok := info.Types[expr]
 		return ok && tv.Value != nil
+	}
+
+	// fabricatesRawKey reports whether the Key expression of an attribute.KeyValue
+	// literal mints a new key rather than forwarding an existing one. A
+	// compile-time constant (a "literal" or attribute.Key("literal")) is a fixed
+	// key literal. An explicit attribute.Key(x) conversion also fabricates a key —
+	// even when x is only known at run time — because it turns an arbitrary string
+	// into a key the classifier never sees; the sole sanctioned way to build a
+	// dynamic key is fields.ExtensionUsageAttribute. Forwarding forms (a bare
+	// attribute.Key variable, or a k.Key field access) are neither constant nor a
+	// conversion, so the fields/baggage plumbing that re-emits caller-supplied keys
+	// is left alone.
+	fabricatesRawKey := func(expr ast.Expr) bool {
+		if constantKey(expr) {
+			return true
+		}
+		call, ok := expr.(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+		tv, ok := info.Types[call.Fun]
+		return ok && tv.IsType() && isRawAttributeKeyType(tv.Type)
 	}
 
 	// keyValueLiteralKey returns the expression assigned to the Key field of an
@@ -613,16 +624,17 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 						"registered fields.* key or fields.ExtensionUsageAttribute)", rel, pos.Line))
 				return true
 			}
-			// A raw attribute.KeyValue struct literal that sets Key to a constant
-			// introduces an unclassified key literal directly (e.g.
-			// attribute.KeyValue{Key: attribute.Key("raw.key"), Value: ...}), which
+			// A raw attribute.KeyValue struct literal whose Key is fabricated
+			// introduces an unclassified key directly (e.g.
+			// attribute.KeyValue{Key: attribute.Key("raw.key"), Value: ...}, or the
+			// same with a run-time attribute.Key(x) conversion), which
 			// span.SetAttributes would emit without ever passing through a
 			// fields.AttributeKey. The plumbing that legitimately builds KeyValues
 			// (fields.StringHashed and baggage re-emission) sets Key from an existing
-			// key expression (k.Key, a ranged variable), which is not constant and is
-			// therefore left alone.
+			// key expression (k.Key, a ranged variable), which is neither a constant
+			// nor a conversion and is therefore left alone.
 			if isRawAttributeKeyValueType(clType) {
-				if keyExpr := keyValueLiteralKey(node); keyExpr != nil && constantKey(keyExpr) {
+				if keyExpr := keyValueLiteralKey(node); keyExpr != nil && fabricatesRawKey(keyExpr) {
 					violations = append(violations, fmt.Sprintf(
 						"  %s:%d: attribute.KeyValue{Key: %s, ...} introduces an unclassified "+
 							"key literal (build it from a fields.AttributeKey instead)",
@@ -638,26 +650,21 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 						"receiver (produces an unclassified key)", rel, pos.Line, node.Sel.Name))
 			}
 			return true
-		case *ast.CallExpr:
-			pos := fset.Position(node.Pos())
-			switch fun := node.Fun.(type) {
-			case *ast.SelectorExpr:
-				// A package-qualified constructor call, e.g. attribute.String("k", v)
-				// (possibly via an alias). Method selections on a value/type are
-				// handled by the *ast.SelectorExpr case above, so this only fires for
-				// package functions (info.Uses resolves the aliased import too).
-				if isRawAttributeConstructorFunc(info.Uses[fun.Sel]) {
-					violations = append(violations, fmt.Sprintf(
-						"  %s:%d: attribute.%s(%s, ...)", rel, pos.Line, fun.Sel.Name, literalKey(node)))
-				}
-			case *ast.Ident:
-				// A bare identifier call resolves to a package-level constructor only
-				// when the attribute package is dot-imported, e.g. String("k", v).
-				if isRawAttributeConstructorFunc(info.Uses[fun]) {
-					violations = append(violations, fmt.Sprintf(
-						"  %s:%d: %s(%s, ...) (dot-imported attribute constructor)",
-						rel, pos.Line, fun.Name, literalKey(node)))
-				}
+		case *ast.Ident:
+			// A reference to a package-level attribute constructor — attribute.String,
+			// an aliased import of it, or a dot-imported String — bypasses the
+			// fields.AttributeKey registry. Resolving the identifier's object flags
+			// every form: the selector's Sel in attribute.String(...), a bare
+			// dot-imported String(...), and, crucially, the constructor captured as a
+			// function value (builder := attribute.String; builder("raw.key", v)),
+			// which a call-position-only check would miss. attribute.Key's methods are
+			// handled by the *ast.SelectorExpr case above and are excluded here because
+			// isRawAttributeConstructorFunc rejects any func with a receiver.
+			if isRawAttributeConstructorFunc(info.Uses[node]) {
+				pos := fset.Position(node.Pos())
+				violations = append(violations, fmt.Sprintf(
+					"  %s:%d: %s is a raw attribute constructor (build telemetry from a "+
+						"fields.AttributeKey instead)", rel, pos.Line, node.Name))
 			}
 			return true
 		}
@@ -669,15 +676,16 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 
 // TestRawTelemetryAttributeScanner is a fixture test for the type-aware guard
 // used by TestNoRawTelemetryAttributes. It pins the contract: raw attribute
-// constructors (default, aliased, and dot-imported), constant keys, the chained
-// attribute.Key(k).String(v) form, KeyValue-producing attribute.Key builders
-// reached as a method value (through a parameter, local, struct field, or
-// function result) or as a method expression (attribute.Key.String, including
-// when captured as a function value), a locally constructed fields.AttributeKey,
-// and a raw attribute.KeyValue literal that introduces a constant key are all
+// constructors (default, aliased, dot-imported, and captured as a function
+// value), constant keys, the chained attribute.Key(k).String(v) form, KeyValue-
+// producing attribute.Key builders reached as a method value (through a
+// parameter, local, struct field, or function result) or as a method expression
+// (attribute.Key.String, including when captured as a function value), a locally
+// constructed fields.AttributeKey, and a raw attribute.KeyValue literal whose Key
+// is fabricated (a constant, or a run-time attribute.Key(x) conversion) are all
 // flagged; while the sanctioned promoted-method call on the classified
 // fields.AttributeKey, fields.ExtensionUsageAttribute, an attribute.KeyValue that
-// only re-emits an existing (non-constant) key, a bare attribute.Key(k)
+// only re-emits an existing (forwarded) key, a bare attribute.Key(k)
 // conversion (which does not build a KeyValue), and non-KeyValue uses of a key
 // (e.g. a map lookup) are not. Fixtures are type-checked against the real
 // attribute and fields packages via go/packages, so the guard runs with the same
@@ -727,6 +735,15 @@ var _ = String("raw.key", "v")
 			wantViolation: true,
 		},
 		{
+			name: "constructor captured as function value",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+var builder = attribute.String
+var _ = builder("raw.key", "v")
+`,
+			wantViolation: true,
+		},
+		{
 			name: "int slice constructor",
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
@@ -755,6 +772,16 @@ var _ = attribute.KeyValue{Key: attribute.Key("raw.key"), Value: attribute.Strin
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
 var _ = attribute.KeyValue{attribute.Key("raw.key"), attribute.StringValue("v")}
+`,
+			wantViolation: true,
+		},
+		{
+			name: "attribute.KeyValue with run-time key conversion",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+func f(runtimeKey string) attribute.KeyValue {
+	return attribute.KeyValue{Key: attribute.Key(runtimeKey), Value: attribute.StringValue("v")}
+}
 `,
 			wantViolation: true,
 		},

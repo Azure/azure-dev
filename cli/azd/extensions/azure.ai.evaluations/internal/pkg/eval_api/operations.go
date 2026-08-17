@@ -451,7 +451,7 @@ func collectPages(
 	// process dies. The next-link walker in pages.go bounds itself the same
 	// way; the cursor listings simply never did.
 	seen := map[string]bool{}
-	for page := 0; page < maxPages; page++ {
+	for range maxPages {
 		query := map[string]string{}
 		if limit > 0 {
 			query["limit"] = strconv.Itoa(limit - gathered)

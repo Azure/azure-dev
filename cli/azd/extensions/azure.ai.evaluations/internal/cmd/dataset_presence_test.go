@@ -61,7 +61,10 @@ func newPresenceClient(
 			version := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 			if found[version] {
 				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"name":"ds","version":"` + version + `"}`))
+				// A fixed body: datasetPresence reads only whether the point
+				// read succeeded, and echoing the request path back would make
+				// this a taint sink for no benefit.
+				_, _ = w.Write([]byte(`{"name":"ds"}`))
 				return
 			}
 			http.Error(w, `{"error":{"code":"NotFound"}}`, http.StatusNotFound)

@@ -271,7 +271,7 @@ func (c *EvalClient) ListOutputItems(
 	// grow all.Data until the process dies, so the walk is bounded the same way
 	// the next-link walker in pages.go is.
 	seen := map[string]bool{}
-	for page := 0; page < maxPages; page++ {
+	for range maxPages {
 		query := map[string]string{}
 		if limit > 0 {
 			query["limit"] = strconv.Itoa(limit - len(all.Data))

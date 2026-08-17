@@ -81,22 +81,22 @@ func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 // hostedSourceAbsent reports whether an error from the azd daemon leaves the
 // cascade free to carry on to the next level.
 //
-// azd answers the ordinary "nothing here" cases -- no default environment, no
-// such key -- with plain Go errors, which its interceptor passes through
-// untouched and grpc then encodes as Unknown. Unknown therefore has to read as
-// absence: treating it as a failure would stop a project that simply has no
-// environment selected from ever reaching the global config or the host
-// variable, which is the whole point of the levels below.
+// Three codes mean "nothing here". Unavailable is no daemon at all. NotFound is
+// a daemon with nothing under that name. Unknown is the one that is not
+// obvious: azd answers the ordinary absences -- no default environment, no such
+// key -- with plain Go errors, its interceptor passes those through untouched,
+// and grpc encodes an error carrying no status as Unknown. Without it, a
+// project that simply has no environment selected could never reach the global
+// config or the host variable.
 //
-// What must not read as absence is a daemon that refused to answer, or a read
-// that never finished. An expired login is mapped to Unauthenticated, and a
-// Ctrl-C arrives as Canceled; falling through on either would resolve quietly
-// to some other project's endpoint.
+// Everything else is a failure to answer rather than an answer of "nothing":
+// an expired login, a denial, a cancellation, or a server fault. Falling
+// through on any of those would resolve quietly to a lower-priority endpoint
+// that can belong to a different project.
 func hostedSourceAbsent(err error) bool {
-	return !containsGRPCCode(err, codes.Unauthenticated) &&
-		!containsGRPCCode(err, codes.PermissionDenied) &&
-		!containsGRPCCode(err, codes.Canceled) &&
-		!containsGRPCCode(err, codes.DeadlineExceeded)
+	return containsGRPCCode(err, codes.Unavailable) ||
+		containsGRPCCode(err, codes.NotFound) ||
+		containsGRPCCode(err, codes.Unknown)
 }
 
 // containsGRPCCode walks the error chain looking for a gRPC status with the

@@ -364,11 +364,12 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 
 	err = proc.Wait()
 	close(done)
+	wasCanceled := ctx.Err() != nil
 	cancel()
 	<-nextDone
 
 	// Suppress the noisy "signal: interrupt" error on Ctrl+C
-	if ctx.Err() != nil {
+	if wasCanceled {
 		fmt.Println("Agent stopped.")
 		return nil
 	}

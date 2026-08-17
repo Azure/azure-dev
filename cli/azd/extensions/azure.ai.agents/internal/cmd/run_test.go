@@ -529,6 +529,72 @@ func TestRunRun_PortCollisionDoesNotClearStoredSession(t *testing.T) {
 	}
 }
 
+func TestRunRun_ReturnsAgentProcessExitError(t *testing.T) {
+	projectDir := t.TempDir()
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Name: "test-project",
+			Path: projectDir,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": {
+					Name:         "agent",
+					Host:         AiAgentHost,
+					RelativePath: ".",
+				},
+			},
+		},
+	}
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	azdext.RegisterUserConfigServiceServer(grpcServer, newInvokeUserConfigServer())
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	t.Setenv("AZD_AGENT_RUN_TEST_EXIT_CODE", "17")
+
+	agentListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve agent port: %v", err)
+	}
+	agentPort := agentListener.Addr().(*net.TCPAddr).Port
+	if err := agentListener.Close(); err != nil {
+		t.Fatalf("release agent port: %v", err)
+	}
+
+	startCommand := fmt.Sprintf(`"%s" -test.run=^TestRunRunHelperProcess$`, os.Args[0])
+	err = runRun(t.Context(), &runFlags{
+		name:         "agent",
+		port:         agentPort,
+		startCommand: startCommand,
+		noClient:     true,
+	}, true)
+	if err == nil || !strings.Contains(err.Error(), "agent exited: exit status 17") {
+		t.Fatalf("runRun() error = %v, want agent exit status 17", err)
+	}
+}
+
+func TestRunRunHelperProcess(t *testing.T) {
+	exitCodeValue := os.Getenv("AZD_AGENT_RUN_TEST_EXIT_CODE")
+	if exitCodeValue == "" {
+		return
+	}
+
+	exitCode, err := strconv.Atoi(exitCodeValue)
+	if err != nil {
+		t.Fatalf("parse helper exit code: %v", err)
+	}
+	os.Exit(exitCode)
+}
+
 func TestWarnInspectorPortIssues(t *testing.T) {
 	t.Parallel()
 

@@ -98,6 +98,9 @@ func VersionGreater(a, b string) bool {
 // last entry when none of the versions can be ordered.
 func LatestVersion(datasets []Dataset) string {
 	best := ""
+	// VersionOrder returns -1 for anything it cannot order, so the sentinel has
+	// to be -1 rather than lower: below it, the first unorderable version becomes
+	// the running best and the fallback below never runs.
 	bestOrder := -1.0
 	for _, d := range datasets {
 		if o := VersionOrder(d.Version); o > bestOrder {

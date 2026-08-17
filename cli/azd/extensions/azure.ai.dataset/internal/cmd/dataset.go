@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -29,6 +30,35 @@ var firstDatasetVersions = []string{dataset_api.NextVersion(""), "1"}
 // dataset that does not exist yet.
 func newDatasetCreateCommand() *cobra.Command {
 	return newDatasetWriteCommand("create", "Register a dataset, publishing its first version.")
+}
+
+// datasetPresence answers whether the dataset is already registered, and
+// whether a "no" can be trusted.
+//
+// The version listing lags a publish, so a create followed straight by an
+// update was told the dataset it had just made does not exist. A point read of
+// the versions a first publish can carry usually settles that, catching up
+// sooner than the listing.
+//
+// Absence is only certain when the listing itself answered 404. An empty 200
+// does not prove it: latestRegisteredVersion documents that an unknown dataset
+// and a listing that has not caught up are indistinguishable.
+func datasetPresence(
+	ctx context.Context,
+	client *dataset_api.DatasetClient,
+	name string,
+) (exists, absenceCertain bool) {
+	existing, listErr := client.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+	if listErr == nil && existing != nil && len(existing.Value) > 0 {
+		return true, false
+	}
+
+	for _, v := range firstDatasetVersions {
+		if _, err := client.GetDataset(ctx, name, v, ProjectEndpointAPIVersion); err == nil {
+			return true, false
+		}
+	}
+	return false, dataset_api.IsNotFound(listErr)
 }
 
 // newDatasetUpdateCommand builds `dataset update <name>`, which publishes a
@@ -73,29 +103,9 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 			}
 			defer ec.Close()
 
-			existing, listErr := ec.datasetClient.ListDatasetVersions(
-				ctx, name, ProjectEndpointAPIVersion,
-			)
-			exists := listErr == nil && existing != nil && len(existing.Value) > 0
-			if !exists {
-				// The version listing lags a publish, so a `create` followed by
-				// an `update` was told the dataset it had just made does not
-				// exist. A direct read usually settles it, catching up sooner
-				// than the listing does.
-				for _, v := range firstDatasetVersions {
-					if _, err := ec.datasetClient.GetDataset(
-						ctx, name, v, ProjectEndpointAPIVersion,
-					); err == nil {
-						exists = true
-						break
-					}
-				}
-			}
-			// Only an outright 404 proves the name is unknown. An empty 200 does
-			// not: latestRegisteredVersion documents that an unknown dataset and
-			// a listing that has not caught up are indistinguishable.
+			exists, absenceCertain := datasetPresence(ctx, ec.datasetClient, name)
 			if err := checkAssetExistence(
-				verb, "dataset", name, exists, dataset_api.IsNotFound(listErr),
+				verb, "dataset", name, exists, absenceCertain,
 			); err != nil {
 				return err
 			}

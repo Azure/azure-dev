@@ -6,19 +6,21 @@ package copilot
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
-	"os/exec"
 	"testing"
 	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
-// TestCopilotSDK_E2E validates the Copilot SDK client lifecycle end-to-end:
-// client start → session create → send message → receive response → cleanup.
+// TestCopilotSDK_E2E validates azd's managed Copilot CLI and SDK client lifecycle end-to-end:
+// CLI download → client start → session create → send message → receive response → cleanup.
 //
-// Requires: copilot CLI in PATH (v0.0.419+), GitHub Copilot subscription.
+// Requires: network access, GitHub Copilot authentication, GitHub Copilot subscription.
 // Skip with: go test -short
 func TestCopilotSDK_E2E(t *testing.T) {
 	if testing.Short() {
@@ -29,41 +31,38 @@ func TestCopilotSDK_E2E(t *testing.T) {
 		t.Skip("SKIP_COPILOT_E2E is set")
 	}
 
-	// Skip if copilot CLI is not available (CI environments without copilot installed)
-	if _, err := exec.LookPath("copilot"); err != nil {
-		if os.Getenv("COPILOT_CLI_PATH") == "" && os.Getenv("AZD_COPILOT_CLI_PATH") == "" {
-			t.Skip("copilot CLI not found in PATH and no override set — skipping e2e test")
-		}
-	}
-
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
-	// 1. Create and start client (uses embedded bundled CLI)
-	client := copilot.NewClient(&copilot.ClientOptions{
-		LogLevel: "error",
-	})
+	// Isolate the managed CLI cache so the download path is exercised on every run.
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv("AZD_COPILOT_CLI_PATH", "")
 
-	err := client.Start(ctx)
-	require.NoError(t, err, "client.Start failed — is copilot CLI installed and authenticated?")
+	// 1. Download the pinned CLI and start it through azd's client manager.
+	cli := NewCopilotCLI(mockinput.NewMockConsole(), nil, http.DefaultClient)
+	clientManager := NewCopilotClientManager(&CopilotClientOptions{
+		LogLevel: "error",
+	}, cli)
+
+	err := clientManager.Start(ctx)
+	require.NoError(t, err, "client manager failed to download or start the Copilot CLI")
 	defer func() {
-		stopErr := client.Stop()
+		stopErr := clientManager.Stop()
 		if stopErr != nil {
-			t.Logf("client.Stop error: %v", stopErr)
+			t.Logf("client manager stop error: %v", stopErr)
 		}
 	}()
-
-	t.Logf("Client started, state: %s", client.State())
-	require.Equal(t, copilot.StateConnected, client.State())
+	client := clientManager.Client()
+	require.NotNil(t, client)
 
 	// 2. Check auth
-	auth, err := client.GetAuthStatus(ctx)
+	auth, err := clientManager.GetAuthStatus(ctx)
 	require.NoError(t, err)
 	t.Logf("Auth: authenticated=%v, login=%v", auth.IsAuthenticated, auth.Login)
 	require.True(t, auth.IsAuthenticated, "not authenticated with GitHub Copilot")
 
 	// 3. List models
-	models, err := client.ListModels(ctx)
+	models, err := clientManager.ListModels(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, models, "no models available")
 	t.Logf("Available models: %d", len(models))
@@ -93,7 +92,7 @@ func TestCopilotSDK_E2E(t *testing.T) {
 	var events []copilot.SessionEvent
 	unsubscribe := session.On(func(event copilot.SessionEvent) {
 		events = append(events, event)
-		t.Logf("Event: type=%s", event.Type)
+		t.Logf("Event: type=%s", event.Type())
 	})
 	defer unsubscribe()
 
@@ -116,7 +115,7 @@ func TestCopilotSDK_E2E(t *testing.T) {
 		// If SendAndWait returned nil, check events for assistant message
 		var found bool
 		for _, e := range events {
-			if e.Type == copilot.SessionEventTypeAssistantMessage {
+			if e.Type() == copilot.SessionEventTypeAssistantMessage {
 				if data, ok := e.Data.(*copilot.AssistantMessageData); ok {
 					t.Logf("Found assistant message in events: %s", data.Content)
 					found = true
@@ -131,7 +130,7 @@ func TestCopilotSDK_E2E(t *testing.T) {
 				if data, ok := e.Data.(*copilot.AssistantMessageData); ok {
 					detail = fmt.Sprintf(" content=%s", truncateForLog(data.Content, 100))
 				}
-				t.Logf("  event: type=%s%s", e.Type, detail)
+				t.Logf("  event: type=%s%s", e.Type(), detail)
 			}
 			t.Fatal("no assistant message received")
 		}

@@ -320,8 +320,10 @@ func addEvalFlag(cmd *cobra.Command, target *string) {
 // distinguishable from "given the default", which is what lets the path `init`
 // recorded take effect in between.
 func addEvalPathFlag(cmd *cobra.Command, target *string) {
+	// No backticks: pflag reads a backquoted word as the value placeholder, so
+	// `init` rendered the flag as "--path init" instead of "--path string".
 	cmd.Flags().StringVar(target, "path", "",
-		"Directory holding azure.eval.yaml. Defaults to the path `init` used, then ./evals.")
+		"Directory holding azure.eval.yaml. Defaults to the path init used, then ./evals.")
 }
 
 // evalPathFlag reads --path from whichever command is resolving a declared

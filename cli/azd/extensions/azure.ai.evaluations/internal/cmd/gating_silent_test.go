@@ -6,6 +6,7 @@ package cmd
 import (
 	"testing"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/stretchr/testify/assert"
@@ -71,4 +72,26 @@ func TestGatesStillJudgeRunsThatScoredSomething(t *testing.T) {
 
 	// Counts the service never sent are not a pass.
 	assert.NotEmpty(t, rate.breach(nil))
+}
+
+// The spec puts --fail-on on the commands that wait. A run still in progress
+// has partial counts, so gating it can fail a run that would have passed --
+// and silently skipping the gate would leave a pipeline believing it is
+// protected when it is not.
+func TestOnlyATerminalRunCanBeGated(t *testing.T) {
+	for _, status := range []string{"completed", "failed", "canceled", "cancelled", ""} {
+		assert.Truef(t, runIsTerminal(&eval_api.OpenAIEvalRun{Status: status}),
+			"%q has stopped moving, so its counts are final", status)
+	}
+
+	for _, status := range []string{"in_progress", "queued", "running"} {
+		assert.Falsef(t, runIsTerminal(&eval_api.OpenAIEvalRun{Status: status}),
+			"%q is still moving, so its counts are partial", status)
+	}
+
+	assert.False(t, runIsTerminal(nil), "no run is not a finished run")
+
+	err := messages.GateNeedsATerminalRun("evalrun_1", "in_progress")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--wait", "the way out has to be named")
 }

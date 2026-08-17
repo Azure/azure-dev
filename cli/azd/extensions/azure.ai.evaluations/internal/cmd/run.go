@@ -54,6 +54,22 @@ func runCompleted(run *eval_api.OpenAIEvalRun) error {
 	return messages.RunFinishedWithStatus(run.ID, run.Status)
 }
 
+// runIsTerminal reports whether the run has stopped moving.
+//
+// A gate read from a run still in progress is read from partial counts: it can
+// fail a run that would have passed, and it can pass one that has not finished
+// failing.
+func runIsTerminal(run *eval_api.OpenAIEvalRun) bool {
+	if run == nil {
+		return false
+	}
+	switch strings.ToLower(run.Status) {
+	case "completed", "failed", "canceled", "cancelled", "":
+		return true
+	}
+	return false
+}
+
 // newRunCommand builds the run group.
 //
 // `run` is a group, not an executable verb: once `run output` exists, a bare

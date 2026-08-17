@@ -159,6 +159,13 @@ func newRunShowCommand() *cobra.Command {
 				}
 			}
 
+			// The spec puts --fail-on on the commands that wait. Gating a run
+			// that is still moving would read partial counts; ignoring the flag
+			// would leave a pipeline believing it is gated when it is not.
+			if threshold.set && !runIsTerminal(run) {
+				return messages.GateNeedsATerminalRun(run.ID, run.Status)
+			}
+
 			if isJSON(cmd) {
 				if err := emitJSON(cmd.OutOrStdout(), run); err != nil {
 					return err

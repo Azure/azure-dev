@@ -1610,6 +1610,18 @@ func EvaluatorRefMalformed(ref string) error {
 		"them with commas, and use builtin.<name> for a built-in", ref)
 }
 
+// GateNeedsATerminalRun refuses to gate a run that is still moving.
+//
+// The counts are partial until the run stops, so a threshold read from them
+// can fail a run that would have passed. Ignoring the flag instead would leave
+// a pipeline believing it is gated when it is not.
+func GateNeedsATerminalRun(runID, status string) error {
+	return fmt.Errorf(
+		"run %s is %s, so --fail-on has only partial results to judge: "+
+			"add --wait to gate once it finishes",
+		runID, status)
+}
+
 // AmbiguousJudgeModel reports several deployments where only one can be used.
 func AmbiguousJudgeModel(models []string) error {
 	return fmt.Errorf(

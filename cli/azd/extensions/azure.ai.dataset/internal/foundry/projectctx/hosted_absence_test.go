@@ -39,7 +39,7 @@ func TestUnansweredHostedSourcesLetTheCascadeCarryOn(t *testing.T) {
 // and nothing would have said so.
 func TestARefusedReadIsReportedRatherThanSkipped(t *testing.T) {
 	for name, err := range map[string]error{
-		"expired login":       status.Error(codes.Unauthenticated, "reauthentication required"),
+		"expired login":       status.Error(codes.Unauthenticated, "the login has expired"),
 		"not allowed":         status.Error(codes.PermissionDenied, "forbidden"),
 		"the user hit ctrl-c": status.Error(codes.Canceled, "context canceled"),
 		"the read timed out":  status.Error(codes.DeadlineExceeded, "deadline exceeded"),

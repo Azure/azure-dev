@@ -33,7 +33,7 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 	// scaffolded .gitignore does not cover this name, and a routine `git add -A`
 	// committed one. The private subdirectory matters because the temp directory
 	// is shared on Linux -- at a predictable path another user could leave a
-	// symlink and have the HTTP trace appended to a file of their choosing.
+	// symbolic link and have the HTTP trace appended to a file of their choosing.
 	logDir := filepath.Join(os.TempDir(), "azd-ai-dataset")
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		logDir = os.TempDir()

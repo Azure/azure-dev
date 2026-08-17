@@ -138,7 +138,8 @@ func (st *appServiceTarget) Publish(
 	// is handled by ContainerHelper.Publish so validation and artifact metadata stay consistent.
 	if !serviceConfig.Docker.ImagePassthrough {
 		if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
-			if parsedImage, parseErr := docker.ParseContainerImage(artifact.Location); parseErr == nil && parsedImage.Registry != "" {
+			if parsedImage, parseErr := docker.ParseContainerImage(artifact.Location); parseErr == nil &&
+				parsedImage.Registry != "" {
 				publishResult = &ServicePublishResult{
 					Artifacts: ArtifactCollection{
 						{

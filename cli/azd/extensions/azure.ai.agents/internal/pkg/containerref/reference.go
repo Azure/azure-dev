@@ -13,7 +13,7 @@ var fullyQualifiedReference = regexp.MustCompile(
 		`localhost(?::[0-9]+)?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:[0-9]+)/` +
 		`[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*` +
 		`(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*` +
-		`(?::[\w][\w.-]{0,127}|@sha256:[0-9a-fA-F]{64})?$`,
+		`(?::[\w][\w.-]{0,127})?(?:@sha256:[0-9a-fA-F]{64})?$`,
 )
 
 // IsFullyQualified reports whether image contains an explicit registry host and repository.

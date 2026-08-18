@@ -730,6 +730,13 @@ func (p *AgentServiceTargetProvider) Package(
 	// Core image passthrough owns the artifact lifecycle for all pre-built images,
 	// whether the source registry is public or accessed through a Foundry connection.
 	if DockerImagePassthrough(serviceConfig.GetDocker()) {
+		// The core Docker framework packages before this target and adds its artifact
+		// to the shared context. Do not return it again from the target.
+		if findImagePassthroughArtifact(serviceContext.Package) != nil {
+			return &azdext.ServicePackageResult{}, nil
+		}
+
+		// Keep direct extension callers compatible when core has not packaged first.
 		progress("Packaging pre-built container image")
 		artifacts, err := p.packageContainer(ctx, serviceConfig, serviceContext)
 		if err != nil {
@@ -1130,6 +1137,19 @@ func findPreBuiltImageArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
 			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE &&
 			artifact.Location != "" &&
 			artifact.Metadata[preBuiltImageArtifactSourceKey] == preBuiltImageArtifactSource {
+			return artifact
+		}
+	}
+
+	return nil
+}
+
+func findImagePassthroughArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
+	for _, artifact := range artifacts {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE &&
+			artifact.Location != "" &&
+			artifact.Metadata["imagePassthrough"] == "true" {
 			return artifact
 		}
 	}

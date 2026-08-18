@@ -50,13 +50,85 @@ func TestBuildRunDataSource_Traces(t *testing.T) {
 	ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.NoError(t, err)
-	assert.Equal(t, eval_api.EvalRunDataSourceTypeTraces, ds.Type)
-	assert.Equal(t, "support-agent", ds.AgentName)
-	assert.Equal(t, 24, ds.LookbackHours)
-	assert.Equal(t, 500, ds.MaxTraces)
+	// The legacy azure_ai_traces shape discarded agent_version and start_time
+	// without saying so, and re-imposed its own lookback.
+	assert.Equal(t, eval_api.EvalRunDataSourceTypeTracePreview, ds.Type)
+	require.NotNil(t, ds.TraceSource)
+	assert.Equal(t, "agent_filter", ds.TraceSource.Type)
+	assert.Equal(t, "support-agent", ds.TraceSource.AgentName)
+	assert.Equal(t, 500, ds.TraceSource.MaxTraces)
+	// lookback_hours is still honoured, as the window's start bound.
+	assert.NotZero(t, ds.TraceSource.StartTime)
+	assert.Zero(t, ds.TraceSource.EndTime, "an open end means up to now")
 	// Nothing is invoked and nothing local is sent.
 	assert.Nil(t, ds.Target)
 	assert.Nil(t, ds.Source)
+}
+
+// Pinning the version is the whole reason the preview shape is used: without
+// it a redeployed agent is graded on whichever version the service picked.
+func TestBuildRunDataSource_TracesPinsTheAgentVersion(t *testing.T) {
+	ec := &evalContext{}
+	group := &project.Eval{
+		Name: "trace-eval",
+		Source: &project.SourceDecl{
+			Type:         project.SourceTypeTraces,
+			AgentName:    "support-agent",
+			AgentVersion: "2",
+		},
+	}
+
+	ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+
+	require.NoError(t, err)
+	require.NotNil(t, ds.TraceSource)
+	assert.Equal(t, "2", ds.TraceSource.AgentVersion)
+}
+
+// An explicit window travels intact, and wins over lookback_hours, which says
+// the same thing but drifts every time the command runs.
+func TestBuildRunDataSource_TracesCarriesAnExplicitWindow(t *testing.T) {
+	ec := &evalContext{}
+	group := &project.Eval{
+		Name: "trace-eval",
+		Source: &project.SourceDecl{
+			Type:          project.SourceTypeTraces,
+			AgentName:     "support-agent",
+			LookbackHours: 999,
+			StartTime:     "2026-08-01T00:00:00Z",
+			EndTime:       "2026-08-02T00:00:00Z",
+		},
+	}
+
+	ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(1785542400), ds.TraceSource.StartTime)
+	assert.Equal(t, int64(1785628800), ds.TraceSource.EndTime)
+}
+
+// A window nobody can read, or one that holds nothing, is refused here rather
+// than by a service that answers with no rows and no reason.
+func TestBuildRunDataSource_TracesRefusesAnUnusableWindow(t *testing.T) {
+	ec := &evalContext{}
+	build := func(source *project.SourceDecl) error {
+		_, err := ec.buildRunDataSource(context.Background(),
+			&project.Eval{Name: "trace-eval", Source: source}, "", 0)
+		return err
+	}
+
+	err := build(&project.SourceDecl{
+		Type: project.SourceTypeTraces, AgentName: "a", StartTime: "yesterday",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "start_time")
+
+	err = build(&project.SourceDecl{
+		Type: project.SourceTypeTraces, AgentName: "a",
+		StartTime: "2026-08-02T00:00:00Z", EndTime: "2026-08-01T00:00:00Z",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "holds no traces")
 }
 
 // agent_name under source: is a filter, but an eval that names a target and
@@ -72,7 +144,8 @@ func TestBuildRunDataSource_TracesFallsBackToTargetName(t *testing.T) {
 	ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.NoError(t, err)
-	assert.Equal(t, "support-agent", ds.AgentName)
+	require.NotNil(t, ds.TraceSource)
+	assert.Equal(t, "support-agent", ds.TraceSource.AgentName)
 }
 
 // With neither, the run cannot say whose conversations to read, and saying so

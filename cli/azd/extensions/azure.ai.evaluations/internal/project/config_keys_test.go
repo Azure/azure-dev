@@ -73,7 +73,10 @@ func TestEvaluatorRefKeys(t *testing.T) {
 // source: says where rows come from when they are not a dataset.
 func TestSourceDeclKeys(t *testing.T) {
 	assert.ElementsMatch(t,
-		[]string{"type", "lookback_hours", "max_traces", "agent_name", "response_ids", "max_turns"},
+		[]string{
+			"type", "lookback_hours", "max_traces", "agent_name", "response_ids", "max_turns",
+			"agent_version", "start_time", "end_time",
+		},
 		yamlKeys(t, SourceDecl{}))
 }
 

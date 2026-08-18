@@ -475,12 +475,45 @@ func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) 
 	if agent == "" {
 		return nil, messages.TracesNeedAgentName(group.Name)
 	}
-	return eval_api.NewTracesDataSource(
+
+	start, end, err := traceWindow(group.Source)
+	if err != nil {
+		return nil, err
+	}
+	return eval_api.NewTracePreviewDataSource(
 		agent,
-		group.Source.LookbackHours,
-		time.Time{},
+		group.Source.AgentVersion,
+		start,
+		end,
 		group.Source.MaxTraces,
 	), nil
+}
+
+// traceWindow resolves the bounds of the span a trace run reads.
+//
+// lookback_hours predates start_time and stays supported, read as a start bound
+// relative to now. An explicit start_time wins, because it says the same thing
+// without drifting every time the command runs.
+func traceWindow(source *project.SourceDecl) (start, end time.Time, err error) {
+	if source.StartTime != "" {
+		start, err = time.Parse(time.RFC3339, source.StartTime)
+		if err != nil {
+			return time.Time{}, time.Time{}, messages.TraceWindowNotATime("start_time", source.StartTime)
+		}
+	} else if source.LookbackHours > 0 {
+		start = time.Now().Add(-time.Duration(source.LookbackHours) * time.Hour)
+	}
+
+	if source.EndTime != "" {
+		end, err = time.Parse(time.RFC3339, source.EndTime)
+		if err != nil {
+			return time.Time{}, time.Time{}, messages.TraceWindowNotATime("end_time", source.EndTime)
+		}
+	}
+	if !start.IsZero() && !end.IsZero() && !end.After(start) {
+		return time.Time{}, time.Time{}, messages.TraceWindowEndsBeforeItStarts(source.StartTime, source.EndTime)
+	}
+	return start, end, nil
 }
 
 // responsesDataSource evaluates responses the project already stored.

@@ -316,7 +316,15 @@ const (
 	// EvalRunDataSourceTypeTraces evaluates an agent's recorded traces instead of
 	// a dataset. The service reads them from Application Insights, so the agent
 	// must be emitting gen_ai.input.messages / gen_ai.output.messages.
+	//
+	// Deprecated in favour of EvalRunDataSourceTypeTracePreview, which is the
+	// only shape that carries an agent version. This one silently discards
+	// agent_version and start_time and re-imposes its own lookback.
 	EvalRunDataSourceTypeTraces EvalRunDataSourceType = "azure_ai_traces"
+
+	// EvalRunDataSourceTypeTracePreview is the shape that honours what the
+	// caller asks for: a pinned agent version, and a window with both bounds.
+	EvalRunDataSourceTypeTracePreview EvalRunDataSourceType = "azure_ai_trace_data_source_preview"
 
 	// EvalRunDataSourceTypeResponses evaluates responses the project already
 	// stored, addressed by id.
@@ -348,6 +356,10 @@ type EvalRunDataSource struct {
 	LookbackHours int    `json:"lookback_hours,omitempty"`
 	EndTime       int64  `json:"end_time,omitempty"`
 	MaxTraces     int    `json:"max_traces,omitempty"`
+
+	// Trace preview only. Everything it carries is nested in the filter, which
+	// is where the service reads it.
+	TraceSource *TraceSourceFilter `json:"trace_source,omitempty"`
 
 	// Responses only.
 	ItemGenerationParams *ItemGenerationParams `json:"item_generation_params,omitempty"`
@@ -433,6 +445,48 @@ func NewTracesDataSource(agentName string, lookbackHours int, end time.Time, max
 		ds.EndTime = end.Unix()
 	}
 	return ds
+}
+
+// TraceSourceFilter selects which spans a trace run reads.
+//
+// The window and the cap live here, not beside the data source type: verified
+// against the service, which echoes them back only from inside this object and
+// silently ignores them at the top level.
+type TraceSourceFilter struct {
+	Type         string `json:"type"`
+	AgentName    string `json:"agent_name,omitempty"`
+	AgentVersion string `json:"agent_version,omitempty"`
+	StartTime    int64  `json:"start_time,omitempty"`
+	EndTime      int64  `json:"end_time,omitempty"`
+	MaxTraces    int    `json:"max_traces,omitempty"`
+}
+
+// NewTracePreviewDataSource builds the shape that keeps what the caller sent.
+//
+// The legacy azure_ai_traces source drops agent_version and start_time without
+// saying so and re-applies its own lookback, so a redeployed agent was
+// evaluated against whichever version the service picked.
+func NewTracePreviewDataSource(
+	agentName, agentVersion string,
+	start, end time.Time,
+	maxTraces int,
+) *EvalRunDataSource {
+	filter := &TraceSourceFilter{
+		Type:         "agent_filter",
+		AgentName:    agentName,
+		AgentVersion: agentVersion,
+		MaxTraces:    maxTraces,
+	}
+	if !start.IsZero() {
+		filter.StartTime = start.Unix()
+	}
+	if !end.IsZero() {
+		filter.EndTime = end.Unix()
+	}
+	return &EvalRunDataSource{
+		Type:        EvalRunDataSourceTypeTracePreview,
+		TraceSource: filter,
+	}
 }
 
 // NewDatasetOnlyDataSource scores the dataset as it stands, invoking nothing.

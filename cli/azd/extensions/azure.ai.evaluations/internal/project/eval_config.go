@@ -70,6 +70,14 @@ type SourceDecl struct {
 	AgentName     string   `yaml:"agent_name,omitempty"      json:"agent_name,omitempty"`
 	ResponseIDs   []string `yaml:"response_ids,omitempty"    json:"response_ids,omitempty"`
 	MaxTurns      int      `yaml:"max_turns,omitempty"       json:"max_turns,omitempty"`
+	// AgentVersion pins which deployment's spans are read. Without it the
+	// service chooses, and a redeployed agent is evaluated against whichever
+	// version it picked.
+	AgentVersion string `yaml:"agent_version,omitempty"   json:"agent_version,omitempty"`
+	// StartTime and EndTime bound the window explicitly. LookbackHours stays
+	// supported and is read as a start bound relative to now.
+	StartTime string `yaml:"start_time,omitempty"      json:"start_time,omitempty"`
+	EndTime   string `yaml:"end_time,omitempty"        json:"end_time,omitempty"`
 }
 
 // Source types an eval can read rows from.

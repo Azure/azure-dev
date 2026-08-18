@@ -1629,6 +1629,20 @@ func GateNeedsATerminalRun(runID, status string) error {
 		runID, status)
 }
 
+// TraceWindowNotATime reports a window bound that is not a timestamp.
+func TraceWindowNotATime(field, value string) error {
+	return fmt.Errorf(
+		"source.%s is %q, which is not a time: use RFC 3339, for example 2026-08-18T09:00:00Z",
+		field, value)
+}
+
+// TraceWindowEndsBeforeItStarts reports a window that can hold no traces.
+func TraceWindowEndsBeforeItStarts(start, end string) error {
+	return fmt.Errorf(
+		"source.end_time %q is not after source.start_time %q, so the window holds no traces",
+		end, start)
+}
+
 // AmbiguousJudgeModel reports several deployments where only one can be used.
 func AmbiguousJudgeModel(models []string) error {
 	return fmt.Errorf(

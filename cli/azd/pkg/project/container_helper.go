@@ -676,6 +676,19 @@ func validatePublishOptions(serviceConfig *ServiceConfig, options *PublishOption
 	return nil
 }
 
+func validateImagePassthroughPackage(serviceConfig *ServiceConfig, serviceContext *ServiceContext) error {
+	if !serviceConfig.Docker.ImagePassthrough || serviceContext == nil {
+		return nil
+	}
+
+	artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer))
+	if found && artifact.Location != "" && artifact.Metadata["imagePassthrough"] != "true" {
+		return fmt.Errorf("docker.imagePassthrough cannot be combined with a package image override")
+	}
+
+	return nil
+}
+
 // Publish pushes an image to a remote server and returns the fully qualified remote image name.
 func (ch *ContainerHelper) Publish(
 	ctx context.Context,
@@ -695,6 +708,9 @@ func (ch *ContainerHelper) Publish(
 	var remoteImage string
 
 	if err := validatePublishOptions(serviceConfig, options); err != nil {
+		return nil, err
+	}
+	if err := validateImagePassthroughPackage(serviceConfig, serviceContext); err != nil {
 		return nil, err
 	}
 

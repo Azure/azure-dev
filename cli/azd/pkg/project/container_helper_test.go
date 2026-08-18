@@ -1453,6 +1453,18 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectError:             true,
 		},
 		{
+			name:                    "Image passthrough rejects package image override",
+			image:                   "private.example.com/team/agent:v1",
+			packagePath:             "other.example.com/team/agent:v2",
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectError:             true,
+		},
+		{
 			name:                    "With publish options overwrite",
 			project:                 "./src/api",
 			registry:                osutil.NewExpandableString("contoso.azurecr.io"),

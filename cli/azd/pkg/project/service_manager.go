@@ -509,6 +509,9 @@ func (sm *serviceManager) Publish(
 	if serviceContext == nil {
 		serviceContext = NewServiceContext()
 	}
+	if err := validateImagePassthroughPackage(serviceConfig, serviceContext); err != nil {
+		return nil, err
+	}
 
 	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventPublish)
 	if ok && cachedResult != nil {

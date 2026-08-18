@@ -3,6 +3,8 @@
 
 package cmd
 
+// cSpell:ignore containerref
+
 import (
 	"context"
 	"crypto/rand"
@@ -29,6 +31,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azdignore"
+	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
@@ -135,6 +138,7 @@ type InitAction struct {
 	// addToProject can disable remote build for VNET-injected accounts
 	// without issuing a second account read.
 	selectedFoundryProject *FoundryProjectInfo
+	usesPreBuiltImage      bool
 
 	// userProvidedManifest is true when the init flow is driven by a manifest —
 	// either explicitly via the -m flag/positional argument, or when the user
@@ -146,11 +150,12 @@ type InitAction struct {
 // skipACR returns true when ACR provisioning and configuration should be skipped.
 // This happens when:
 // - Code deploy mode is selected (ZIP upload, no container build)
-// - Pre-built image is provided via --image flag (user manages their own registry)
+// - Pre-built image is provided via a flag or manifest (user manages their own registry)
 // - A registry connection is provided for a pre-built image
 // - The manifest is a prompt-voice agent (managed, no container image)
 func (a *InitAction) skipACR() bool {
-	return a.isCodeDeploy || a.flags.image != "" || a.flags.registryConnection != "" || a.isVoiceAgent
+	return a.isCodeDeploy || a.usesPreBuiltImage || a.flags.image != "" ||
+		a.flags.registryConnection != "" || a.isVoiceAgent
 }
 
 // isHostedAgent reports whether the agent is deployed as an azd hosted agent
@@ -160,7 +165,7 @@ func (a *InitAction) skipACR() bool {
 // prompt-voice agent also skips ACR, but is managed rather than hosted and must
 // not be constrained to hosted-agent regions.
 func (a *InitAction) isHostedAgent() bool {
-	return a.isCodeDeploy || a.flags.image != "" || a.flags.registryConnection != ""
+	return a.isCodeDeploy || a.usesPreBuiltImage || a.flags.image != "" || a.flags.registryConnection != ""
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -2083,6 +2088,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		if err := a.applyAndValidateRegistryConnection(agentManifest); err != nil {
 			return err
 		}
+		a.usesPreBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image) != ""
 
 		// Model configuration: prompt user for "use existing" vs "deploy new"
 		agentManifest, err = a.configureModelChoice(ctx, agentManifest)
@@ -3439,16 +3445,11 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 				strings.HasPrefix(ca.CodeConfiguration.Runtime, "dotnet_") {
 				serviceConfig.Language = "csharp"
 			}
-		} else if preBuiltImage != "" {
-			// Keep pre-built images in their source registry. This applies to both public
-			// BYO images and private images pulled through a Foundry registry connection.
-			serviceConfig.Docker = &azdext.DockerProjectOptions{}
-			project.EnableDockerImagePassthrough(serviceConfig.Docker)
 		} else {
-			// Disable remote build when the Foundry account is VNET-injected; remote
-			// build runs on worker IPs that can't reach a registry in the VNET.
+			// Pre-built images stay in their source registry. Source builds use ACR Tasks
+			// unless the Foundry account is VNET-injected.
 			networkInjected := a.selectedFoundryProject != nil && a.selectedFoundryProject.NetworkInjected
-			serviceConfig.Docker = &azdext.DockerProjectOptions{RemoteBuild: !networkInjected}
+			serviceConfig.Docker = dockerProjectOptionsForHostedContainer(preBuiltImage, networkInjected)
 		}
 	}
 
@@ -4580,14 +4581,6 @@ func (a *InitAction) validateCodeDeployFlags() error {
 		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
 }
 
-var initImageRefRe = regexp.MustCompile(
-	`^(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?::[0-9]+)?|` +
-		`localhost(?::[0-9]+)?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:[0-9]+)/` +
-		`[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*` +
-		`(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*` +
-		`(?::[\w][\w.-]{0,127}|@sha256:[0-9a-fA-F]{64})?$`,
-)
-
 // validateImageFlag checks that --image is valid when provided.
 // Returns an error if:
 // - --image is used with --deploy-mode code (incompatible)
@@ -4609,7 +4602,7 @@ func validateImageFlag(image, deployMode string) error {
 	// Require a fully-qualified image reference with an explicit registry host,
 	// e.g. "myacr.azurecr.io/agent", "docker.io/myorg/agent:v1", or
 	// "localhost:5000/agent@sha256:<digest>".
-	if !initImageRefRe.MatchString(image) {
+	if !containerref.IsFullyQualified(image) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("invalid image URL %q: must be in format registry/image[:tag]", image),

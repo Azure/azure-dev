@@ -158,7 +158,7 @@ specific version of the tool installed on the machine.
 | `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
-| `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd agent init` for code-deploy scenarios (where no container image is built). |
+| `AZD_AGENT_SKIP_ACR` | If `true`, signals legacy agent Bicep templates to skip Azure Container Registry creation during provisioning. Automatically set by `azd ai agent init` for code deploy and pre-built-image scenarios. It does not select the container build or deployment mode for new configurations; the agents extension recognizes it only as a compatibility marker for pre-image-passthrough projects. |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |

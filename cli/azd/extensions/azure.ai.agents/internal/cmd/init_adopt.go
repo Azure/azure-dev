@@ -1049,15 +1049,14 @@ func runInitFromAzureYaml(
 	// resolved deploy mode: a container agent on an existing project
 	// needs AZURE_CONTAINER_REGISTRY_ENDPOINT set here, while a code
 	// agent (or a user-supplied --image) does not.
-	usesContainer, err := applyDeployModeToAdoptedProject(ctx, flags, azdClient)
+	needsACR, err := applyDeployModeToAdoptedProject(ctx, flags, azdClient)
 	if err != nil {
 		return err
 	}
 
-	// skipACR is false only for a container deploy whose registry azd
-	// manages. Code deploy and --image (bring your own registry) both
-	// skip ACR.
-	skipACR := !usesContainer || flags.image != ""
+	// Only source-container deploys require an ACR. Code deploy and pre-built
+	// images skip it.
+	skipACR := !needsACR
 	// The adopt path only supports hosted agents today. Hosted-region filtering
 	// is independent from ACR setup; prompt-voice has its own region/onboarding
 	// constraints and does not flow through this path.
@@ -1540,10 +1539,8 @@ func printAdoptionNextSteps(ctx context.Context, azdClient *azdext.AzdClient, fo
 // explicit flag is passed and the service already has a codeConfiguration or
 // docker property, the service is left unchanged (the sample is pre-configured).
 //
-// It reports whether any agent service resolved to a container
-// (Docker) deploy so the caller can decide whether an Azure
-// Container Registry must be wired (existing project) or created
-// on provision.
+// It reports whether any agent service requires an Azure Container Registry
+// for a source-container build.
 func applyDeployModeToAdoptedProject(
 	ctx context.Context,
 	flags *initFlags,
@@ -1575,11 +1572,11 @@ func applyDeployModeToAdoptedProject(
 		return false, nil
 	}
 
-	// Apply configuration to each agent service, tracking whether any
-	// resolves to a container deploy so the caller can wire an ACR.
-	usesContainer := false
+	// Apply configuration to each agent service, tracking whether any source
+	// container requires an ACR.
+	needsACR := false
 	for _, agent := range agentServices {
-		container, err := applyDeployModeToService(
+		requiresACR, err := applyDeployModeToService(
 			ctx,
 			flags,
 			azdClient,
@@ -1590,19 +1587,16 @@ func applyDeployModeToAdoptedProject(
 		if err != nil {
 			return false, err
 		}
-		if container {
-			usesContainer = true
+		if requiresACR {
+			needsACR = true
 		}
 	}
-	return usesContainer, nil
+	return needsACR, nil
 }
 
 // applyDeployModeToService applies deploy-mode configuration to a
-// single agent service and reports whether the resolved mode is a
-// container (Docker) deploy. A container deploy that azd builds
-// requires an Azure Container Registry; a code (ZIP) deploy does
-// not. A user-provided --image is a container deploy but uses the
-// caller's own registry, so callers treat --image as skip-ACR.
+// single agent service and reports whether the resolved mode requires an ACR.
+// Source-container builds require one; code deploy and pre-built images do not.
 func applyDeployModeToService(
 	ctx context.Context,
 	flags *initFlags,
@@ -1626,11 +1620,20 @@ func applyDeployModeToService(
 		}
 		log.Printf("Applied --image %q to agent service %q", flags.image, serviceName)
 
-		// --image implies container deploy; apply container config and return.
-		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc); err != nil {
+		// --image implies container deploy; apply image passthrough and return.
+		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, flags.image); err != nil {
 			return false, err
 		}
-		return true, nil
+		return false, nil
+	}
+
+	// An adopted service that already declares an image also uses passthrough,
+	// even when --image was not supplied during this init.
+	if strings.TrimSpace(svc.GetImage()) != "" {
+		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, svc.GetImage()); err != nil {
+			return false, err
+		}
+		return false, nil
 	}
 
 	// Check whether the service already specifies its deploy mode.
@@ -1671,7 +1674,7 @@ func applyDeployModeToService(
 			ctx, flags, azdClient, serviceName, serviceDir, svc,
 		)
 	}
-	if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc); err != nil {
+	if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, ""); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -1800,9 +1803,9 @@ func applyContainerDeployToService(
 	azdClient *azdext.AzdClient,
 	serviceName string,
 	svc *azdext.ServiceConfig,
+	image string,
 ) error {
-	// Set docker property with remote build enabled.
-	dockerMap := map[string]any{"remoteBuild": true}
+	dockerMap := dockerProjectMapForHostedContainer(image, false)
 	dockerValue, err := structpb.NewValue(dockerMap)
 	if err != nil {
 		return fmt.Errorf("encoding docker configuration: %w", err)

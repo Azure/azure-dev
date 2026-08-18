@@ -517,6 +517,38 @@ func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *az
 	return newServiceTargetTestClient(t, nil, promptSrv)
 }
 
+type legacyPreBuiltEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func (s *legacyPreBuiltEnvironmentServer) GetValue(
+	_ context.Context,
+	_ *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	return &azdext.KeyValueResponse{Value: "true"}, nil
+}
+
+func newLegacyPreBuiltTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterPromptServiceServer(srv, promptSrv)
+	azdext.RegisterEnvironmentServiceServer(srv, &legacyPreBuiltEnvironmentServer{})
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	return client
+}
+
 func TestInitializeIsCheapAndSideEffectFree(t *testing.T) {
 	// azd-core calls ServiceTargetProvider.Initialize for every service on
 	// every action (provision, deploy, env refresh, show, ...). Initialize
@@ -1816,6 +1848,20 @@ func TestValidateRegistryConnectionDefinition(t *testing.T) {
 			wantContain: "requires a pre-built container image",
 		},
 		{
+			name: "unqualified image",
+			agent: agent_yaml.ContainerAgent{
+				Image: "agent:v1", RegistryConnectionID: "private-registry",
+			},
+			wantContain: "explicit registry host and repository",
+		},
+		{
+			name: "image URL scheme",
+			agent: agent_yaml.ContainerAgent{
+				Image: "https://registry.example.com/agent:v1", RegistryConnectionID: "private-registry",
+			},
+			wantContain: "explicit registry host and repository",
+		},
+		{
 			name: "code deploy",
 			agent: agent_yaml.ContainerAgent{
 				Image: "registry.example.com/agent:v1", RegistryConnectionID: "private-registry",
@@ -1850,6 +1896,44 @@ func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{})
 	require.NoError(t, err)
 	require.False(t, result, "should default to build when no image is configured")
+}
+
+func TestShouldUsePreBuiltImage_LegacyInitImageUsesCompatibilityMarker(t *testing.T) {
+	t.Parallel()
+
+	promptStub := &stubPromptServer{selectedIndex: 0}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newLegacyPreBuiltTestClient(t, promptStub),
+		env:       &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{
+			Docker: &azdext.DockerProjectOptions{RemoteBuild: true},
+		},
+	}
+
+	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+		Image: "registry.example.com/agent:v1",
+	})
+	require.NoError(t, err)
+	require.True(t, result)
+	require.Equal(t, int32(0), promptStub.selectCalls.Load())
+}
+
+func TestShouldUsePreBuiltImage_SkipACRDoesNotSelectHandAuthoredImage(t *testing.T) {
+	t.Parallel()
+
+	promptStub := &stubPromptServer{selectedIndex: 0}
+	provider := &AgentServiceTargetProvider{
+		azdClient:     newLegacyPreBuiltTestClient(t, promptStub),
+		env:           &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{},
+	}
+
+	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+		Image: "registry.example.com/agent:v1",
+	})
+	require.NoError(t, err)
+	require.False(t, result)
+	require.Equal(t, int32(1), promptStub.selectCalls.Load())
 }
 
 func TestShouldUsePreBuiltImage_RegistryConnectionForcesPreBuilt(t *testing.T) {

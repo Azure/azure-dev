@@ -6,6 +6,8 @@ package cmd
 import (
 	"fmt"
 
+	"azureaidataset/internal/foundry/projectctx"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -13,7 +15,7 @@ import (
 
 // NewRootCommand builds the `azd ai dataset` command tree.
 func NewRootCommand() *cobra.Command {
-	rootCmd, _ := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name: "dataset",
 		Use:  "dataset <command> [options]",
 		Short: fmt.Sprintf(
@@ -36,6 +38,14 @@ func NewRootCommand() *cobra.Command {
 				return err
 			}
 		}
+		// -e/--environment is parsed by the SDK into extCtx and then has to be
+		// acted on. Discarding extCtx left the flag accepted and ignored:
+		// `azd ai dataset create -e staging` read the endpoint out of the
+		// default environment and wrote its version back there, and even a name
+		// azd itself rejects was accepted in silence. Set here rather than at
+		// each reader, so there is one answer to which environment this
+		// invocation is about.
+		cmd.SetContext(projectctx.WithSelectedEnvironment(cmd.Context(), extCtx.Environment))
 		setupDebugLogging(cmd.Flags())
 		return nil
 	}

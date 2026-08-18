@@ -76,21 +76,29 @@ type envSource interface {
 // the daemon failed to answer, which the caller must not read as absence --
 // falling through would resolve to a lower-priority endpoint that can belong to
 // a different project.
+//
+// The environment is the one -e/--environment named, when it named one. Asking
+// azd for the current environment instead is how `azd -e staging` came to read
+// the endpoint out of the default environment and write its ids back there.
 func readEnvHostedSource(ctx context.Context, env envSource) (value, name string, err error) {
-	envResp, envErr := env.GetCurrent(ctx, &azdext.EmptyRequest{})
-	if envErr != nil {
-		if !hostedSourceAbsent(envErr) {
-			return "", "", envErr
+	name = SelectedEnvironment(ctx)
+	if name == "" {
+		envResp, envErr := env.GetCurrent(ctx, &azdext.EmptyRequest{})
+		if envErr != nil {
+			if !hostedSourceAbsent(envErr) {
+				return "", "", envErr
+			}
+			return "", "", nil
 		}
-		return "", "", nil
-	}
-	if envResp.GetEnvironment() == nil {
-		return "", "", nil
+		if envResp.GetEnvironment() == nil {
+			return "", "", nil
+		}
+		name = envResp.Environment.Name
 	}
 
 	for _, key := range []string{foundryEnvKey, azureAiEnvKey} {
 		envVal, valErr := env.GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envResp.Environment.Name,
+			EnvName: name,
 			Key:     key,
 		})
 		if valErr != nil {
@@ -100,10 +108,36 @@ func readEnvHostedSource(ctx context.Context, env envSource) (value, name string
 			continue
 		}
 		if envVal.GetValue() != "" {
-			return envVal.Value, envResp.Environment.Name, nil
+			return envVal.Value, name, nil
 		}
 	}
+	// The name is reported only alongside a value: it says where the endpoint
+	// came from, and there is no endpoint here.
 	return "", "", nil
+}
+
+// selectedEnvKey carries the environment -e/--environment named.
+type selectedEnvKey struct{}
+
+// WithSelectedEnvironment records the environment the caller named, so every
+// azd read and write in this invocation acts on that one rather than on azd's
+// default.
+//
+// It travels on the context because the answer is fixed for the whole
+// invocation and is needed several layers below the flag -- including here, in
+// the cascade both extensions share, which has no cobra command to ask.
+func WithSelectedEnvironment(ctx context.Context, name string) context.Context {
+	if name == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, selectedEnvKey{}, name)
+}
+
+// SelectedEnvironment is the name -e/--environment gave, or empty when it gave
+// none and azd's default is what to act on.
+func SelectedEnvironment(ctx context.Context) string {
+	name, _ := ctx.Value(selectedEnvKey{}).(string)
+	return name
 }
 
 // azd's absence sentinels, as they reach us.

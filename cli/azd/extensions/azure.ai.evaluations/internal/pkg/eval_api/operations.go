@@ -119,9 +119,16 @@ func (c *EvalClient) GetEvaluatorGenerationJob(
 }
 
 // GenerationJobList is the listing envelope both job types answer with. It is
-// `data`, not the `value` the dataset and evaluator routes use.
+// `data`, not the `value` the dataset and evaluator routes use, and it carries
+// the same has_more/last_id cursor as the OpenAI listings.
+//
+// The cursor fields were missing, so both listings read one page and stopped:
+// a project with more than a page of jobs answered `job list` with the first
+// twenty and no sign there were more.
 type GenerationJobList struct {
-	Data []GenerationJob `json:"data"`
+	Data    []GenerationJob `json:"data"`
+	HasMore bool            `json:"has_more"`
+	LastID  string          `json:"last_id"`
 }
 
 // ListDataGenerationJobs returns the project's dataset generation jobs.
@@ -129,8 +136,7 @@ func (c *EvalClient) ListDataGenerationJobs(
 	ctx context.Context,
 	apiVersion string,
 ) (*GenerationJobList, error) {
-	return doRequestTyped[GenerationJobList](
-		c, ctx, http.MethodGet, pathDataGenerationJobs, nil, nil, apiVersion)
+	return c.listGenerationJobs(ctx, pathDataGenerationJobs, apiVersion)
 }
 
 // ListEvaluatorGenerationJobs returns the project's evaluator generation jobs.
@@ -138,8 +144,29 @@ func (c *EvalClient) ListEvaluatorGenerationJobs(
 	ctx context.Context,
 	apiVersion string,
 ) (*GenerationJobList, error) {
-	return doRequestTyped[GenerationJobList](
-		c, ctx, http.MethodGet, pathEvaluatorGenerationJobs, nil, nil, apiVersion)
+	return c.listGenerationJobs(ctx, pathEvaluatorGenerationJobs, apiVersion)
+}
+
+// listGenerationJobs is the walk both job listings share.
+func (c *EvalClient) listGenerationJobs(
+	ctx context.Context,
+	path string,
+	apiVersion string,
+) (*GenerationJobList, error) {
+	all := &GenerationJobList{}
+	err := collectPages(0, func(query map[string]string) (int, bool, string, error) {
+		page, err := doRequestTyped[GenerationJobList](
+			c, ctx, http.MethodGet, path, query, nil, apiVersion)
+		if err != nil {
+			return 0, false, "", err
+		}
+		all.Data = append(all.Data, page.Data...)
+		return len(page.Data), page.HasMore, page.LastID, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return all, nil
 }
 
 // CancelDataGenerationJob stops a dataset generation job.

@@ -218,6 +218,39 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 // only when a deploy-time entrypoint needs it.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	p.adoptServiceConfig(serviceConfig)
+	return validateRegistryConnectionServiceConfig(serviceConfig)
+}
+
+func validateRegistryConnectionServiceConfig(serviceConfig *azdext.ServiceConfig) error {
+	props := ServiceConfigProps(serviceConfig)
+	if props == nil || props.GetFields()["registryConnectionId"] == nil {
+		return nil
+	}
+
+	dockerOptions := serviceConfig.GetDocker()
+	if !DockerImagePassthrough(dockerOptions) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId requires docker.imagePassthrough: true",
+			"enable docker.imagePassthrough for the private pre-built image",
+		)
+	}
+	if dockerOptions.GetRemoteBuild() {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId cannot be combined with docker.remoteBuild",
+			"remove docker.remoteBuild and use image passthrough",
+		)
+	}
+
+	agentDef, _, found, _, err := AgentDefinitionFromService(serviceConfig)
+	if err != nil {
+		return err
+	}
+	if found {
+		return validateRegistryConnectionDefinition(agentDef)
+	}
+
 	return nil
 }
 

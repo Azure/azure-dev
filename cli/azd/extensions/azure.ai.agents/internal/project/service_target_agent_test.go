@@ -574,6 +574,81 @@ func TestInitializeIsCheapAndSideEffectFree(t *testing.T) {
 	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
 }
 
+func TestInitializeValidatesRegistryConnectionLifecycle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		registry     bool
+		docker       bool
+		passthrough  bool
+		remoteBuild  bool
+		wantContains string
+	}{
+		{name: "registry with passthrough", registry: true, passthrough: true},
+		{
+			name:         "registry without docker",
+			registry:     true,
+			wantContains: "requires docker.imagePassthrough: true",
+		},
+		{
+			name:         "registry with zero-value docker",
+			registry:     true,
+			docker:       true,
+			wantContains: "requires docker.imagePassthrough: true",
+		},
+		{
+			name:         "registry with remote build",
+			registry:     true,
+			passthrough:  true,
+			remoteBuild:  true,
+			wantContains: "cannot be combined with docker.remoteBuild",
+		},
+		{name: "legacy image without docker"},
+		{name: "legacy image with remote build", docker: true, remoteBuild: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			agentDef := sampleContainerAgent()
+			agentDef.Image = "registry.example.com/agents/my-agent:v1"
+			agentDef.RegistryConnectionID = ""
+			if test.registry {
+				agentDef.RegistryConnectionID = "private-registry"
+			}
+			props, err := AgentDefinitionToServiceProperties(agentDef, nil)
+			require.NoError(t, err)
+
+			var dockerOptions *azdext.DockerProjectOptions
+			if test.docker || test.passthrough || test.remoteBuild {
+				dockerOptions = &azdext.DockerProjectOptions{RemoteBuild: test.remoteBuild}
+				if test.passthrough {
+					EnableDockerImagePassthrough(dockerOptions)
+				}
+			}
+			provider := &AgentServiceTargetProvider{}
+			err = provider.Initialize(t.Context(), &azdext.ServiceConfig{
+				Name:                 "my-agent",
+				Host:                 "azure.ai.agent",
+				Image:                agentDef.Image,
+				Docker:               dockerOptions,
+				AdditionalProperties: props,
+			})
+
+			if test.wantContains != "" {
+				require.ErrorContains(t, err, test.wantContains)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Empty(t, provider.agentDefinitionPath)
+			require.Nil(t, provider.credential)
+			require.Empty(t, provider.tenantId)
+		})
+	}
+}
+
 func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 

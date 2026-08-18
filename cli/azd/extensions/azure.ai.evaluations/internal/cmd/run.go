@@ -849,10 +849,9 @@ func renderRun(
 		}
 	}
 
-	if run.ReportURL != "" {
-		fmt.Fprint(out, messages.ReportLink(run.ReportURL))
+	if url := runLink(run.ReportURL, run.PortalURL); url != "" {
+		fmt.Fprint(out, messages.ReportLink(url))
 	}
-	writePortalLink(out, run.PortalURL)
 	return nil
 }
 

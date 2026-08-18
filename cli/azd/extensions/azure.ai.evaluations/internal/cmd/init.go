@@ -76,7 +76,15 @@ func newInitCommand() *cobra.Command {
 				return err
 			}
 			if source == "" {
-				source = initSourceDataset
+				// The same signal `generate --from` defaults on, read from the azd
+				// environment rather than the service, so init still makes no
+				// service calls. Traces are real conversations; a project wired to
+				// collect them should not have to ask for them by flag.
+				if tracesConnected(commandContext(cmd)) {
+					source = initSourceTraces
+				} else {
+					source = initSourceDataset
+				}
 			}
 			if path == "" {
 				path = project.DefaultEvalDir
@@ -224,7 +232,9 @@ func newInitCommand() *cobra.Command {
 
 			fmt.Fprint(out, messages.DetectedTarget(target))
 			if source == initSourceTraces {
-				fmt.Fprint(out, messages.UsingTraceSource())
+				// Claiming the connection is only honest when it was found. init
+				// makes no service calls, so it cannot verify one it did not see.
+				fmt.Fprint(out, messages.UsingTraceSource(tracesConnected(commandContext(cmd))))
 			}
 			// Only what was settled without asking: a reader who just picked
 			// from a list does not need it read back to them.
@@ -261,7 +271,8 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().StringVar(&target, "target", "",
 		"Name of the agent to evaluate. Detected when the project has one agent; prompts when it has several.")
 	cmd.Flags().StringVar(&source, "source", "",
-		"Where rows come from: dataset or traces. Defaults to dataset.")
+		"Where rows come from: dataset or traces. Defaults to traces when the azd "+
+			"environment records an Application Insights connection, otherwise dataset.")
 	cmd.Flags().StringVar(&dataset, "dataset", "",
 		"Path to a local .jsonl, or the name of a registered dataset.")
 	cmd.Flags().IntVar(&maxTraces, "max-traces", project.DefaultScaffoldMaxTraces,

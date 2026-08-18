@@ -568,8 +568,8 @@ func renderResults(
 		}
 	}
 
-	if run.ReportURL != "" {
-		fmt.Fprint(w, messages.ReportLinkAfterRows(run.ReportURL))
+	if url := runLink(run.ReportURL, run.PortalURL); url != "" {
+		fmt.Fprint(w, messages.ReportLinkAfterRows(url))
 	}
 	return nil
 }

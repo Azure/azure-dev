@@ -81,7 +81,10 @@ func TestPortalRunURLShape(t *testing.T) {
 
 // The report line and the portal line are different things: one is the
 // service's own link, the other is built here. A run carrying both prints both.
-func TestRenderRunPrintsReportAndPortalSeparately(t *testing.T) {
+// A run has one destination. The service's report_url and the portal URL the
+// extension builds resolve to the same page, and printing both put two labels
+// on it with no rule a reader could infer.
+func TestRenderRunPrintsOneLink(t *testing.T) {
 	run := &eval_api.OpenAIEvalRun{
 		ID:        "evalrun_1",
 		Status:    "completed",
@@ -93,8 +96,34 @@ func TestRenderRunPrintsReportAndPortalSeparately(t *testing.T) {
 	require.NoError(t, renderRun(&buf, run, nil))
 
 	out := buf.String()
-	assert.Contains(t, out, "Report: https://service.example/report/1")
-	assert.Contains(t, out, "Portal: ")
-	assert.Less(t, strings.Index(out, "Report:"), strings.Index(out, "Portal:"),
-		"the portal link closes the view")
+	assert.Contains(t, out, "Report: https://service.example/report/1",
+		"the service's url wins where it sent one")
+	assert.NotContains(t, out, "Portal: ",
+		"the second label named the same destination")
+	assert.NotContains(t, out, run.PortalURL)
+}
+
+// Ours is the fallback, so a service that sends no report_url does not leave
+// the reader with no way to open the run.
+func TestRenderRunFallsBackToTheBuiltLink(t *testing.T) {
+	run := &eval_api.OpenAIEvalRun{
+		ID:        "evalrun_1",
+		Status:    "completed",
+		PortalURL: "https://ai.azure.com/nextgen/r/x,y,,z,p/build/evaluations/e/run/r",
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, renderRun(&buf, run, nil))
+
+	assert.Contains(t, buf.String(), "Report: "+run.PortalURL)
+}
+
+// A run with neither prints no link rather than an empty label.
+func TestRenderRunOmitsAnAbsentLink(t *testing.T) {
+	var buf bytes.Buffer
+	require.NoError(t, renderRun(&buf, &eval_api.OpenAIEvalRun{
+		ID: "evalrun_1", Status: "completed",
+	}, nil))
+
+	assert.NotContains(t, buf.String(), "Report:")
 }

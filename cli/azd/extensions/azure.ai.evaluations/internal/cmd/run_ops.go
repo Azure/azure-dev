@@ -186,10 +186,9 @@ func newRunShowCommand() *cobra.Command {
 			if counts := summarizeCounts(run.ResultCounts); counts != "" {
 				fmt.Fprint(out, messages.RunResultsLine(counts))
 			}
-			if run.ReportURL != "" {
-				fmt.Fprint(out, messages.RunReportLine(run.ReportURL))
+			if url := runLink(run.ReportURL, run.PortalURL); url != "" {
+				fmt.Fprint(out, messages.RunReportLine(url))
 			}
-			writePortalLink(out, run.PortalURL)
 			if gateOnStatus {
 				if err := runCompleted(run); err != nil {
 					return err

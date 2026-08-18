@@ -1652,8 +1652,18 @@ func SelectingJudgeModel(err error) error {
 }
 
 // UsingTraceSource reports a scaffold that reads production traces.
-func UsingTraceSource() string {
-	return fmt.Sprintf("%s Using data source: traces (Application Insights)\n", DoneMark)
+//
+// Naming Application Insights is a claim about the project, so it is only made
+// when a connection was actually found. `init` makes no service calls and
+// cannot verify one it did not see.
+func UsingTraceSource(connected bool) string {
+	if connected {
+		return fmt.Sprintf("%s Using data source: traces (Application Insights)\n", DoneMark)
+	}
+	return fmt.Sprintf(
+		"%s Using data source: traces. No Application Insights connection is recorded "+
+			"in this environment, so the run finds rows only if the project has one\n",
+		DoneMark)
 }
 
 // JudgeModelDeployment reports the deployment the graders will judge with.

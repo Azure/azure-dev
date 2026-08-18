@@ -97,10 +97,25 @@ func resolveJudgeModel(cmd *cobra.Command, proj *azdext.ProjectConfig) (string, 
 	return promptJudgeModel(cmd, deployments)
 }
 
+// tracesConnected reports whether the azd environment records an Application
+// Insights connection, which is what `generate --from` already defaults on.
+//
+// A local read, so `init` keeps its promise to make no service calls. Absence
+// is ordinary: init runs outside an azd project too.
+func tracesConnected(ctx context.Context) bool {
+	return azdEnvValue(ctx, appInsightsEnvKey) != ""
+}
+
 // modelDeploymentFromAzdEnv reads the deployment `azd ai agent init` recorded
 // in the active azd environment. Absence is ordinary: `init` runs outside an
 // azd project too, and the caller falls back to naming --judge-model.
 func modelDeploymentFromAzdEnv(ctx context.Context) string {
+	return azdEnvValue(ctx, judgeModelEnvKey)
+}
+
+// azdEnvValue reads one key from the active azd environment, answering empty
+// whenever there is no daemon, no environment, or no such key.
+func azdEnvValue(ctx context.Context, key string) string {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return ""
@@ -113,7 +128,7 @@ func modelDeploymentFromAzdEnv(ctx context.Context) string {
 	}
 	val, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envResp.Environment.Name,
-		Key:     judgeModelEnvKey,
+		Key:     key,
 	})
 	if err != nil {
 		return ""

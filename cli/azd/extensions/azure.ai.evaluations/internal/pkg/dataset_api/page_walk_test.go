@@ -19,7 +19,11 @@ import (
 // proved the dataset exists. Reading the second as the first answered "no
 // versions, no error", which restarts an existing dataset at 1.0.
 func TestALaterPageFailingIsNotAbsence(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// The nextLink is built from the server's own URL rather than echoed back
+	// from the request: reflecting r.Host into a response body is a taint sink,
+	// and gosec is right to refuse it even in a test.
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("page") == "2" {
 			http.Error(w, `{"error":{"code":"NotFound"}}`, http.StatusNotFound)
 			return
@@ -27,7 +31,7 @@ func TestALaterPageFailingIsNotAbsence(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(
 			`{"value":[{"name":"ds","version":"3.0"}],"nextLink":"` +
-				"http://" + r.Host + `/datasets/ds/versions?page=2"}`))
+				srv.URL + `/datasets/ds/versions?page=2"}`))
 	}))
 	t.Cleanup(srv.Close)
 

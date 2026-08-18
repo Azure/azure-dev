@@ -130,38 +130,52 @@ The connection reference survives unified `azure.yaml` and legacy agent-manifest
 
 ## Existing-project workflow
 
-Imperative connection creation requires an existing Foundry project. `azd ai connection create` creates a connection on a selected project; it does not provision the project, configure the registry vendor, establish vendor-side OIDC trust, or create the Entra audience application.
+This workflow requires an existing Foundry project connection. Before running `azd ai agent init`, create the connection through the Foundry portal or the Azure CLI. The project, private image, registry-side OIDC trust and identity binding, and Entra audience application must also already exist. azd references the connection but does not bootstrap these prerequisites.
 
-Install the connection extension, create the generic Foundry connection on the existing project, and then initialize the agent against that project:
+The following Azure CLI example creates the connection through its ARM resource. The JFrog-shaped values illustrate the generic service contract and are not an azd vendor dependency:
 
 ```bash
-# Prerequisite: an existing Foundry project, vendor OIDC setup,
-# identity binding, Entra audience application, and private image.
-azd extension install azure.ai.connections
-
 PROJECT_ID="<foundry-project-resource-id>"
-PROJECT_ENDPOINT="https://<account>.services.ai.azure.com/api/projects/<project>"
+CONNECTION_NAME="private-registry"
+CONNECTION_ID="$PROJECT_ID/connections/$CONNECTION_NAME"
 
-# Create only the Foundry project connection.
-# These JFrog-shaped values are an example, not an azd vendor contract.
-azd ai connection create private-registry \
-  --project-endpoint "$PROJECT_ENDPOINT" \
-  --kind custom-keys \
-  --target "https://<private-registry-host>" \
-  --auth-type custom-keys \
-  --custom-key "audience=<entra-audience-app-id>" \
-  --custom-key "tokenEndpoint=/access/api/v1/oidc/token" \
-  --custom-key "body.provider_name=<oidc-provider-name>" \
-  --metadata "type=registry_connection" \
-  --metadata "mode=oauth_token_exchange"
+cat > connection.json <<'JSON'
+{
+  "properties": {
+    "category": "CustomKeys",
+    "target": "https://<private-registry-host>",
+    "authType": "CustomKeys",
+    "credentials": {
+      "keys": {
+        "audience": "<entra-audience-app-id>",
+        "tokenEndpoint": "/access/api/v1/oidc/token",
+        "body.provider_name": "<oidc-provider-name>"
+      }
+    },
+    "metadata": {
+      "type": "registry_connection",
+      "mode": "oauth_token_exchange"
+    }
+  }
+}
+JSON
 
-# Init verifies the named connection on the selected existing project
-# and writes the agent service with imagePassthrough enabled.
+az rest \
+  --method put \
+  --url "https://management.azure.com${CONNECTION_ID}?api-version=2025-04-01-preview" \
+  --body @connection.json
+```
+
+After the portal or Azure CLI creates the connection, initialize the agent against the existing project:
+
+```bash
+# Init verifies the pre-created connection and writes the agent service with
+# imagePassthrough enabled.
 azd ai agent init --no-prompt \
   --agent-name private-registry-agent \
   --image <private-registry-host>/<repository>/agent:<tag> \
   --project-id "$PROJECT_ID" \
-  --registry-connection private-registry
+  --registry-connection "$CONNECTION_NAME"
 
 # Do not run azd provision after this init workflow.
 # The project and connection already exist.
@@ -295,7 +309,7 @@ The non-interactive private-registry flow does not prompt for an image source, t
 
 ### Provision
 
-The imperative existing-project workflow does not run provision after init. The Foundry project and connection are prerequisites, and the generated environment records the existing project context.
+The pre-created-connection workflow does not run provision after init. The Foundry project and connection are prerequisites, and the generated environment records the existing project context.
 
 The declarative sibling workflow runs provision to create or update the `azure.ai.connection` service. Provision passes generic credentials and metadata to the Foundry connection resource without interpreting registry-specific fields.
 
@@ -402,13 +416,13 @@ No registry credential is placed in the hosted-agent REST payload. The payload c
 
 Production behavior treats the connection as an opaque Foundry project connection reference. The implementation does not branch on image hostname, connection metadata, registry vendor, token endpoint, or credential key names.
 
-The generic connection provider continues to pass arbitrary credential keys through unchanged. A new registry vendor supported by the same Foundry service contract can therefore be configured through `azure.yaml` or `azd ai connection create` without an azd production-code change.
+The generic connection provider continues to pass arbitrary credential keys through unchanged. A new registry vendor supported by the same Foundry service contract can therefore be configured through a pre-created external connection or declarative `azure.yaml` without an azd production-code change.
 
 JFrog-specific names and setup instructions belong only in examples, test fixtures, and validation documentation. They must not be introduced into schemas, command validation, REST mapping, dependency logic, or core image-passthrough handling.
 
 ## Documentation and telemetry
 
-User documentation should distinguish the two workflows: imperative connection creation on an existing Foundry project, with no provision after init, and declarative sibling connection provisioning, which requires provision before deploy.
+User documentation should distinguish the two workflows: a pre-created external connection on an existing Foundry project, with no provision after init, and declarative sibling connection provisioning, which requires provision before deploy.
 
 Documentation must state that azd does not configure vendor OIDC trust or create the Entra audience application. Vendor setup documentation may be linked as a prerequisite but must not be presented as azd-managed infrastructure.
 

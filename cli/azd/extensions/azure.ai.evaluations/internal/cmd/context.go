@@ -302,10 +302,15 @@ func (ec *evalContext) azdProject(ctx context.Context) (*azdext.ProjectConfig, e
 // but an endpoint.
 func deployCommandName(proj *azdext.ProjectConfig) string {
 	if projectCanProvision(proj) {
-		return "azd up"
+		return azdUpCommand
 	}
 	return "azd ai eval create"
 }
+
+// azdUpCommand provisions before it deploys. It is named rather than repeated
+// because callers have to be able to tell it apart from this extension's own
+// commands -- it takes none of their flags.
+const azdUpCommand = "azd up"
 
 // appInsightsEnvKey is where a connected Application Insights resource lands in
 // the azd environment. azd's own provisioning writes it, and the agents
@@ -397,12 +402,59 @@ const (
 // later command. Without it, `init --path ./quality` wrote a configuration that
 // `run` then looked for under ./evals and reported as missing -- while
 // azure.yaml's $ref pointed at it correctly the whole time.
-func (ec *evalContext) evalDir(ctx context.Context, flagValue string) string {
+//
+// This is the whole rule, and every command that reads the configuration goes
+// through it. Stating it here and applying it on only some paths is how
+// `create` came to report the configuration missing and `generate` came to
+// write a second one under ./evals, both in a project where init had recorded
+// where it put the first.
+func evalDirCascade(flagValue string, recorded func() string) string {
 	if flagValue != "" {
 		return flagValue
 	}
-	if recorded := ec.getEnvValue(ctx, envKeyEvalPath); recorded != "" {
-		return recorded
+	if path := recorded(); path != "" {
+		return path
 	}
 	return project.DefaultEvalDir
+}
+
+// evalDir is the cascade for a command that already holds an azd connection.
+func (ec *evalContext) evalDir(ctx context.Context, flagValue string) string {
+	return evalDirCascade(flagValue, func() string {
+		return ec.getEnvValue(ctx, envKeyEvalPath)
+	})
+}
+
+// resolveEvalDir is the cascade for a command that has not built an
+// evalContext yet.
+//
+// `create`, `generate` and `init` all have to find the configuration before
+// they resolve a Foundry endpoint, so that a project with no configuration is
+// told to run `init` rather than told to set an endpoint. The extra azd
+// connection is local and short-lived, and is what buys that ordering.
+func resolveEvalDir(ctx context.Context, flagValue string) string {
+	return evalDirCascade(flagValue, func() string { return recordedEvalPath(ctx) })
+}
+
+// recordedEvalPath reads back what recordEvalPath wrote, or empty when there is
+// no azd environment to read it from.
+func recordedEvalPath(ctx context.Context) string {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return ""
+	}
+	defer azdClient.Close()
+
+	env, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || env.GetEnvironment() == nil {
+		return ""
+	}
+	val, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: env.GetEnvironment().GetName(),
+		Key:     envKeyEvalPath,
+	})
+	if err != nil || val == nil {
+		return ""
+	}
+	return val.Value
 }

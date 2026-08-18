@@ -93,9 +93,12 @@ func newInitCommand() *cobra.Command {
 					source = initSourceDataset
 				}
 			}
-			if path == "" {
-				path = project.DefaultEvalDir
-			}
+			// The same cascade every other command reads the configuration
+			// through. init merges into the configuration it finds, so a second
+			// `init` in a project scaffolded at ./quality has to find that one --
+			// otherwise it writes a second configuration under ./evals and
+			// declares a second service pointing at it.
+			path = resolveEvalDir(cmd.Context(), path)
 
 			// Asked before anything is written: the project is the one thing
 			// init cannot supply for itself, and failing after creating
@@ -290,8 +293,9 @@ func newInitCommand() *cobra.Command {
 			"built-in. Passing this replaces the defaults, so it also opts out of rubric generation.")
 	cmd.Flags().StringVar(&judgeModel, "judge-model", "",
 		"Model deployment the graders judge with. Detected from the project when omitted.")
-	cmd.Flags().StringVar(&path, "path", project.DefaultEvalDir,
-		"Directory to write the configuration into. Used verbatim, never re-rooted.")
+	cmd.Flags().StringVar(&path, "path", "",
+		"Directory to write the configuration into. Used verbatim, never re-rooted. "+
+			"Defaults to the directory an earlier `init` scaffolded, otherwise ./evals.")
 	cmd.Flags().BoolVar(&force, "force", false,
 		"Replace an eval of the same name instead of failing.")
 	return cmd
@@ -322,11 +326,14 @@ type scaffoldInput struct {
 
 // scaffold is what `init` added, and what it should suggest doing next.
 type scaffold struct {
-	eval            *project.Eval
-	datasetName     string
-	rubricName      string
-	target          string
-	judgeModel      string
+	eval        *project.Eval
+	datasetName string
+	rubricName  string
+	target      string
+	judgeModel  string
+	// evalDir is where the configuration was written, so the next steps can
+	// name it when it is not the default.
+	evalDir         string
 	generateDataset bool
 	generateRubric  bool
 }
@@ -340,7 +347,12 @@ type scaffold struct {
 // rubric generation.
 func planScaffold(in scaffoldInput) scaffold {
 	cfg := in.cfg
-	out := scaffold{rubricName: in.rubricName, target: in.target, judgeModel: in.judgeModel}
+	out := scaffold{
+		rubricName: in.rubricName,
+		target:     in.target,
+		judgeModel: in.judgeModel,
+		evalDir:    in.evalDir,
+	}
 
 	eval := project.Eval{
 		Name:            in.evalName,
@@ -498,9 +510,28 @@ func (s scaffold) nextSteps(deployCmd string) []string {
 		steps = append(steps, s.generateCommand("--evaluator --evaluator-name "+s.rubricName))
 	}
 	if len(steps) == 0 {
-		steps = append(steps, deployCmd, "azd ai eval run start")
+		// `azd up` reads azure.yaml, which already $refs the configuration
+		// wherever it was written, so it is the one step --path must not join.
+		deploy := deployCmd
+		if deploy != azdUpCommand {
+			deploy = s.withPath(deploy)
+		}
+		steps = append(steps, deploy, s.withPath("azd ai eval run start"))
 	}
 	return steps
+}
+
+// withPath appends --path to a step that needs it to run where init wrote.
+//
+// The recorded EVAL_CONFIG_PATH would usually supply this on its own, but
+// recording it is best effort -- it needs an azd environment, and `init` works
+// without one. Naming the directory makes the printed step run as printed
+// either way, which is the claim these lines make.
+func (s scaffold) withPath(step string) string {
+	if s.evalDir == "" || s.evalDir == project.DefaultEvalDir {
+		return step
+	}
+	return step + " --path " + s.evalDir
 }
 
 // generateCommand builds a `generate` invocation that runs as printed.
@@ -515,7 +546,7 @@ func (s scaffold) generateCommand(what string) string {
 	if s.judgeModel != "" {
 		cmd += " --generation-model " + s.judgeModel
 	}
-	return cmd
+	return s.withPath(cmd)
 }
 
 // relativeToConfig rewrites a path given relative to the working directory so

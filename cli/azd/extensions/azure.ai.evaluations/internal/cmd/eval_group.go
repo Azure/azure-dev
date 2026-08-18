@@ -42,7 +42,7 @@ func newEvalCreateCommand() *cobra.Command {
 
 			path := fromFile
 			if path == "" {
-				path = project.ResolveEvalConfigPath(evalDir)
+				path = project.ResolveEvalConfigPath(resolveEvalDir(ctx, evalDir))
 			}
 			cfg, err := project.LoadEvalConfig(path)
 			if err != nil {
@@ -141,8 +141,9 @@ func newEvalCreateCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&fromFile, "from-file", "",
 		"Read the configuration from this path instead of the eval directory.")
-	cmd.Flags().StringVar(&evalDir, "path", project.DefaultEvalDir,
-		"Directory holding the evaluation configuration.")
+	cmd.Flags().StringVar(&evalDir, "path", "",
+		"Directory holding the evaluation configuration. Defaults to the directory "+
+			"`init` scaffolded, otherwise ./evals.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

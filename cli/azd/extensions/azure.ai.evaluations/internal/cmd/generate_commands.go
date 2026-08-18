@@ -42,8 +42,9 @@ type generateFlags struct {
 }
 
 func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
-	cmd.Flags().StringVar(&f.path, "path", project.DefaultEvalDir,
-		"Directory holding the evaluation configuration.")
+	cmd.Flags().StringVar(&f.path, "path", "",
+		"Directory holding the evaluation configuration. Defaults to the directory "+
+			"`init` scaffolded, otherwise ./evals.")
 	cmd.Flags().StringVar(&f.target, "target", "", "Agent whose context seeds generation.")
 	cmd.Flags().StringVar(&f.instruction, "agent-instruction", "",
 		"What the agent does and what to test.")

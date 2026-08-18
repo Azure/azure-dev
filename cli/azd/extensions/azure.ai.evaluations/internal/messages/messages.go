@@ -488,7 +488,7 @@ func GatePassRateBelow(actual, required float64) string {
 // GateBreached is the block a breached gate leaves in a pipeline's log.
 func GateBreached(reason string) string {
 	return fmt.Sprintf("%s Evaluation gate: %s\n\nERROR: evaluation quality gate not met.\n",
-		FailedMark, reason)
+		failedMark, reason)
 }
 
 // ---------------------------------------------------------------------------
@@ -735,7 +735,7 @@ func ReattachToJob(selector, jobID string) string {
 
 // WroteArtifact reports where a generated artifact landed.
 func WroteArtifact(path string) string {
-	return fmt.Sprintf("%s Downloaded %s\n", DoneMark, filepath.ToSlash(path))
+	return fmt.Sprintf("%s Downloaded %s\n", doneMark, filepath.ToSlash(path))
 }
 
 // ArtifactExists reports a generation that would overwrite a checked-in file.
@@ -1357,7 +1357,7 @@ func EvalUnchangedProgress(eval, id string) string {
 
 // EvalCreated confirms a single eval created outside a full deploy.
 func EvalCreated(eval, id string) string {
-	return fmt.Sprintf("%s Created eval: %s (%s)\n", DoneMark, eval, id)
+	return fmt.Sprintf("%s Created eval: %s (%s)\n", doneMark, eval, id)
 }
 
 // EvalUnchanged reports an eval a create found already in place.
@@ -1367,7 +1367,7 @@ func EvalCreated(eval, id string) string {
 // hides the one thing worth checking: that the id, and so the run history
 // hanging off it, survived.
 func EvalUnchanged(eval, id string) string {
-	return fmt.Sprintf("%s Eval %s is unchanged (%s)\n", SkippedMark, eval, id)
+	return fmt.Sprintf("%s Eval %s is unchanged (%s)\n", skippedMark, eval, id)
 }
 
 // ListingEvals reports a failure to list the project's evals.
@@ -1513,7 +1513,7 @@ func CreatingEvaluatorsDir(err error) error {
 
 // DetectedTarget reports the agent the scaffolded eval will evaluate.
 func DetectedTarget(target string) string {
-	return fmt.Sprintf("%s Detected agent target: %s\n", DoneMark, target)
+	return fmt.Sprintf("%s Detected agent target: %s\n", doneMark, target)
 }
 
 // NoAgentToEvaluate reports a project declaring no agent service.
@@ -1716,17 +1716,17 @@ func SelectingJudgeModel(err error) error {
 // cannot verify one it did not see.
 func UsingTraceSource(connected bool) string {
 	if connected {
-		return fmt.Sprintf("%s Using data source: traces (Application Insights)\n", DoneMark)
+		return fmt.Sprintf("%s Using data source: traces (Application Insights)\n", doneMark)
 	}
 	return fmt.Sprintf(
 		"%s Using data source: traces. No Application Insights connection is recorded "+
 			"in this environment, so the run finds rows only if the project has one\n",
-		DoneMark)
+		doneMark)
 }
 
 // JudgeModelDeployment reports the deployment the graders will judge with.
 func JudgeModelDeployment(model string) string {
-	return fmt.Sprintf("%s Judge model deployment: %s\n", DoneMark, model)
+	return fmt.Sprintf("%s Judge model deployment: %s\n", doneMark, model)
 }
 
 // GradingWith reports the evaluators the scaffold settled on.
@@ -1734,7 +1734,7 @@ func JudgeModelDeployment(model string) string {
 // Omitting --evaluator picks them, so without this the one thing `init` decided
 // on the reader's behalf is the one thing it does not mention.
 func GradingWith(evaluators []string) string {
-	return fmt.Sprintf("%s Grading with: %s\n", DoneMark, strings.Join(evaluators, ", "))
+	return fmt.Sprintf("%s Grading with: %s\n", doneMark, strings.Join(evaluators, ", "))
 }
 
 // createdHeading opens the list of what a scaffold wrote.
@@ -1787,12 +1787,12 @@ func FurtherNextStep(step string) string {
 
 // CreatedCatalogFile reports a configuration created to hold a catalog entry.
 func CreatedCatalogFile(configPath string) string {
-	return fmt.Sprintf("%s Created %s with the catalog entry\n", DoneMark, filepath.ToSlash(configPath))
+	return fmt.Sprintf("%s Created %s with the catalog entry\n", doneMark, filepath.ToSlash(configPath))
 }
 
 // AddedToCatalog reports a generated artifact recorded in the configuration.
 func AddedToCatalog(kind, artifact, configPath string) string {
-	return fmt.Sprintf("%s Added %s %s to %s\n", DoneMark, kind, artifact, filepath.ToSlash(configPath))
+	return fmt.Sprintf("%s Added %s %s to %s\n", doneMark, kind, artifact, filepath.ToSlash(configPath))
 }
 
 // ArtifactDescription names a catalogued artifact, with its version when there is one.
@@ -1804,8 +1804,15 @@ func ArtifactDescription(name, version string) string {
 }
 
 // NoEvalsDeclared reports a configuration with nothing to act on.
+//
+// The same sentence wherever it is reached. `generate` writes the dataset and
+// evaluator it made into the catalog but declares no eval, so a `create` or a
+// run straight afterwards lands here, and both need to be told the same way
+// out.
 func NoEvalsDeclared() error {
-	return errors.New("no evals are declared")
+	return errors.New(
+		"no eval is declared; `azd ai eval init` declares one. " +
+			"`generate` only adds the dataset and evaluator it made")
 }
 
 // SeveralEvalsDeclared reports an unnamed eval where guessing would be wrong.
@@ -1821,20 +1828,22 @@ func SeveralEvalsDeclared(count int, names []string) error {
 
 // EvalNotDeclared reports a name the configuration does not carry.
 func EvalNotDeclared(eval string, names []string) error {
+	// "this configuration has" with nothing after it is a sentence that stops
+	// mid-clause, which is what an empty list produces.
+	if len(names) == 0 {
+		return fmt.Errorf("eval %q is not declared, and this configuration declares none", eval)
+	}
 	return fmt.Errorf(
 		"eval %q is not declared; this configuration has %s",
 		eval, strings.Join(names, ", "))
 }
 
-// AtLeastOneEvalRequired reports a configuration that declares no eval.
+// AtLeastOneEvalRequired reports it on the way to deploying.
 //
-// `generate` writes the dataset and evaluator it made into the catalog but
-// declares no eval, so a `create` run straight afterwards lands here with
-// nothing to act on.
+// One sentence for one fact: the deploy door and the run door reach this from
+// different directions and both need the same way out.
 func AtLeastOneEvalRequired() error {
-	return errors.New(
-		"no eval is declared; `azd ai eval init` declares one. " +
-			"`generate` only adds the dataset and evaluator it made")
+	return NoEvalsDeclared()
 }
 
 // EvalNameRequired reports an eval entry with no name.
@@ -2241,9 +2250,9 @@ func ProjectContextRead(err error) error {
 // Progress markers from the azd style guide, so the extension's lines sit
 // alongside core's without a second vocabulary.
 const (
-	DoneMark    = "(✓) Done:"    // finished successfully
-	SkippedMark = "(-) Skipped:" // intentionally not done, not a failure
-	FailedMark  = "(x) Failed:"  // the step did not complete
+	doneMark    = "(✓) Done:"    // finished successfully
+	skippedMark = "(-) Skipped:" // intentionally not done, not a failure
+	failedMark  = "(x) Failed:"  // the step did not complete
 )
 
 // Warning reports a problem that is not worth failing the command over.

@@ -56,7 +56,7 @@ func newRunOutputListCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, nil, groupName)
+			evalID, err := resolveEvalID(cmd, ec, groupName)
 			if err != nil {
 				return err
 			}
@@ -117,7 +117,7 @@ func newRunOutputListCommand() *cobra.Command {
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write JSON results to this path.")
 	addEvalFlag(cmd, &groupName)
 	// Registered wherever a declared name is resolved, so a configuration
-	// outside ./evals can be addressed by every command, not just un start.
+	// outside ./evals can be addressed by every command, not just `run start`.
 	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
@@ -148,7 +148,7 @@ func newRunOutputShowCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, nil, groupName)
+			evalID, err := resolveEvalID(cmd, ec, groupName)
 			if err != nil {
 				return err
 			}
@@ -175,7 +175,7 @@ func newRunOutputShowCommand() *cobra.Command {
 	cmd.Flags().StringVar(&runID, "run", "", "Run the item belongs to. Defaults to the most recent run.")
 	addEvalFlag(cmd, &groupName)
 	// Registered wherever a declared name is resolved, so a configuration
-	// outside ./evals can be addressed by every command, not just un start.
+	// outside ./evals can be addressed by every command, not just `run start`.
 	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
@@ -231,7 +231,7 @@ func newRunOutputExportCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, nil, groupName)
+			evalID, err := resolveEvalID(cmd, ec, groupName)
 			if err != nil {
 				return err
 			}
@@ -269,36 +269,36 @@ func newRunOutputExportCommand() *cobra.Command {
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write to this path instead of stdout.")
 	addEvalFlag(cmd, &groupName)
 	// Registered wherever a declared name is resolved, so a configuration
-	// outside ./evals can be addressed by every command, not just un start.
+	// outside ./evals can be addressed by every command, not just `run start`.
 	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
-// resolveEvalID takes the eval id from the argument, from --eval, or from the
-// id cached in the azd environment.
+// resolveEvalID resolves the eval a run command is about, from --eval or from
+// the declaration the configuration holds.
 //
 // --eval accepts a name or a raw id on the one flag: an eval created outside a
 // project has no declaration to name, and the environment records one id per
 // name, so editing a declaration leaves every run of the previous eval
 // reachable only by id.
-func resolveEvalID(
-	cmd *cobra.Command,
-	ec *evalContext,
-	args []string,
-	groupName string,
-) (string, error) {
-	if len(args) > 0 && args[0] != "" {
-		return args[0], nil
-	}
-
-	// With no name given, the eval is the one the configuration declares,
-	// which is how `run start` decides it. Reading EVAL_ID here instead made
-	// the two disagree: every deploy writes that key, so a file whose one entry
-	// had been replaced sent `run cancel` at the eval it used to be -- a
-	// destructive verb on the wrong resource, chosen silently.
-	ref, err := ec.resolveEvalRef(
-		cmd.Context(), ec.evalDir(cmd.Context(), evalPathFlag(cmd)), groupName)
+//
+// It takes no positional argument, deliberately. The positional on `run show`,
+// `run cancel` and `run output *` is a *run* id, and a signature that accepted
+// either would let one be resolved as the other -- a destructive verb aimed at
+// a resource picked by accident.
+//
+// It reads no EVAL_ID either. Every deploy writes that key, so nothing tells a
+// value meant for this declaration from one left behind by the eval it
+// replaced; `run cancel` used to cancel a run of an eval the file no longer
+// described. The declaration is asked instead, which is how `run start`
+// decides it, so the two doors cannot pick different evals.
+func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (string, error) {
+	evalDir := ec.evalDir(cmd.Context(), evalPathFlag(cmd))
+	// The same prompt `run start` gets. Without it a project declaring two
+	// evals could start a run by answering a question, and then not list,
+	// show or cancel it without repeating the answer as a flag.
+	ref, err := ec.resolveEvalRef(cmd.Context(), evalDir, chooseEvalIn(cmd, evalDir, groupName))
 	if err != nil {
 		return "", err
 	}

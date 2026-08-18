@@ -199,6 +199,15 @@ func ReadingDatasetVersion(dataset, version string, err error) error {
 	return fmt.Errorf("reading dataset %q version %q: %w", dataset, version, err)
 }
 
+// CheckingDataset reports the read that decides whether a name is already
+// taken. It is worth its own message because that read is what separates
+// `create` from `update`, and a failure answered as "not there" turns a create
+// into a silent update.
+func CheckingDataset(dataset string, err error) error {
+	return fmt.Errorf(
+		"checking whether dataset %q already exists: %w", dataset, err)
+}
+
 // DatasetVersionNotFound reports a dataset version there is nothing to delete at.
 func DatasetVersionNotFound(dataset, version string) error {
 	return fmt.Errorf("no dataset %q at version %q in this project", dataset, version)

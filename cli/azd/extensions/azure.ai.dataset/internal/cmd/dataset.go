@@ -43,22 +43,34 @@ func newDatasetCreateCommand() *cobra.Command {
 // Absence is only certain when the listing itself answered 404. An empty 200
 // does not prove it: latestRegisteredVersion documents that an unknown dataset
 // and a listing that has not caught up are indistinguishable.
+//
+// A read that failed for any other reason proves nothing at all, and is
+// returned. Treating a 403 or a timeout as "not there" let `create` go on to
+// publish a further version of a dataset that already existed -- the one thing
+// separating create from update, decided by an error nobody looked at.
 func datasetPresence(
 	ctx context.Context,
 	client *dataset_api.DatasetClient,
 	name string,
-) (exists, absenceCertain bool) {
+) (exists, absenceCertain bool, err error) {
 	existing, listErr := client.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+	if listErr != nil && !dataset_api.IsNotFound(listErr) {
+		return false, false, messages.CheckingDataset(name, listErr)
+	}
 	if listErr == nil && existing != nil && len(existing.Value) > 0 {
-		return true, false
+		return true, false, nil
 	}
 
 	for _, v := range firstDatasetVersions {
-		if _, err := client.GetDataset(ctx, name, v, ProjectEndpointAPIVersion); err == nil {
-			return true, false
+		_, getErr := client.GetDataset(ctx, name, v, ProjectEndpointAPIVersion)
+		if getErr == nil {
+			return true, false, nil
+		}
+		if !dataset_api.IsNotFound(getErr) {
+			return false, false, messages.CheckingDataset(name, getErr)
 		}
 	}
-	return false, dataset_api.IsNotFound(listErr)
+	return false, dataset_api.IsNotFound(listErr), nil
 }
 
 // newDatasetUpdateCommand builds `dataset update <name>`, which publishes a
@@ -103,7 +115,10 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 			}
 			defer ec.Close()
 
-			exists, absenceCertain := datasetPresence(ctx, ec.datasetClient, name)
+			exists, absenceCertain, err := datasetPresence(ctx, ec.datasetClient, name)
+			if err != nil {
+				return err
+			}
 			if err := checkAssetExistence(
 				verb, "dataset", name, exists, absenceCertain,
 			); err != nil {

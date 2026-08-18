@@ -23,6 +23,20 @@ import (
 // nextLink cannot spin forever.
 const maxListPages = 100
 
+// pageWalkError marks a failure that happened after the first page.
+//
+// It deliberately does not unwrap. The first page answered, so the dataset
+// exists; a 404 on a later page is the continuation failing, not the dataset
+// being unknown. Left unwrapped, IsNotFound saw that 404 and
+// latestRegisteredVersion answered "no versions, no error" -- which restarts an
+// existing dataset at 1.0, the exact outcome its own comment says it exists to
+// prevent.
+type pageWalkError struct{ cause error }
+
+func (e pageWalkError) Error() string {
+	return "reading a later page of the listing: " + e.cause.Error()
+}
+
 // followPages walks nextLink until the service stops sending one, returning a
 // single list holding every page. Without this, a project with more than one
 // page lists incompletely and a latest-version check can decide from a stale
@@ -47,7 +61,7 @@ func (c *DatasetClient) followPages(ctx context.Context, first *DatasetList) (*D
 
 		body, err := c.doRequestGetURL(ctx, next)
 		if err != nil {
-			return nil, err
+			return nil, pageWalkError{cause: err}
 		}
 		var page DatasetList
 		// A page that answers 200 with no body ends the walk; unmarshaling it

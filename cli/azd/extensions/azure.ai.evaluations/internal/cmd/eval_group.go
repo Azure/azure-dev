@@ -42,7 +42,11 @@ func newEvalCreateCommand() *cobra.Command {
 
 			path := fromFile
 			if path == "" {
-				path = project.ResolveEvalConfigPath(resolveEvalDir(ctx, evalDir))
+				dir, err := resolveEvalDir(ctx, evalDir)
+				if err != nil {
+					return err
+				}
+				path = project.ResolveEvalConfigPath(dir)
 			}
 			cfg, err := project.LoadEvalConfig(path)
 			if err != nil {

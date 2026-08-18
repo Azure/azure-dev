@@ -294,7 +294,10 @@ func newRunOutputExportCommand() *cobra.Command {
 // described. The declaration is asked instead, which is how `run start`
 // decides it, so the two doors cannot pick different evals.
 func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (string, error) {
-	evalDir := ec.evalDir(cmd.Context(), evalPathFlag(cmd))
+	evalDir, err := ec.evalDir(cmd.Context(), evalPathFlag(cmd))
+	if err != nil {
+		return "", err
+	}
 	// The same prompt `run start` gets. Without it a project declaring two
 	// evals could start a run by answering a question, and then not list,
 	// show or cancel it without repeating the answer as a flag.

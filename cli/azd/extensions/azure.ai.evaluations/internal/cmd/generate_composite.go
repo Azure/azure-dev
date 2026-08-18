@@ -82,7 +82,11 @@ func newGenerateCommand() *cobra.Command {
 			// Settled before anything reads or writes the configuration, so the
 			// catalog entry lands next to the eval `init` scaffolded rather than
 			// in a second configuration under ./evals that nothing else reads.
-			flags.path = resolveEvalDir(cmd.Context(), flags.path)
+			resolvedPath, err := resolveEvalDir(cmd.Context(), flags.path)
+			if err != nil {
+				return err
+			}
+			flags.path = resolvedPath
 
 			target := firstNonEmpty(flags.target, declaredTarget(flags.path))
 			plans, err := buildGeneratePlans(generateRequest{

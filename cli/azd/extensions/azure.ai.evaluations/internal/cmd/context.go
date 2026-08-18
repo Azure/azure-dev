@@ -392,7 +392,7 @@ const (
 	envKeyEvalPath = "EVAL_CONFIG_PATH"
 )
 
-// evalDir resolves where the configuration lives:
+// evalDirCascade is the one rule for where the configuration lives:
 //
 //  1. --path
 //  2. the path `init` recorded in the azd environment
@@ -408,20 +408,33 @@ const (
 // `create` came to report the configuration missing and `generate` came to
 // write a second one under ./evals, both in a project where init had recorded
 // where it put the first.
-func evalDirCascade(flagValue string, recorded func() string) string {
+//
+// recorded tells absence apart from failure, and the two get different
+// answers. A project with no azd environment has genuinely recorded nothing,
+// so ./evals is right. An azd that could not be asked has said nothing at all,
+// and defaulting on that would write the second configuration all over again --
+// this time for a reason nobody could reproduce.
+func evalDirCascade(flagValue string, recorded func() (string, error)) (string, error) {
 	if flagValue != "" {
-		return flagValue
+		return flagValue, nil
 	}
-	if path := recorded(); path != "" {
-		return path
+	path, err := recorded()
+	if err != nil {
+		return "", err
 	}
-	return project.DefaultEvalDir
+	if path != "" {
+		return path, nil
+	}
+	return project.DefaultEvalDir, nil
 }
 
 // evalDir is the cascade for a command that already holds an azd connection.
-func (ec *evalContext) evalDir(ctx context.Context, flagValue string) string {
-	return evalDirCascade(flagValue, func() string {
-		return ec.getEnvValue(ctx, envKeyEvalPath)
+func (ec *evalContext) evalDir(ctx context.Context, flagValue string) (string, error) {
+	return evalDirCascade(flagValue, func() (string, error) {
+		if ec.envName == "" || ec.azdClient == nil {
+			return "", nil
+		}
+		return readRecordedEvalPath(ctx, ec.azdClient, ec.envName)
 	})
 }
 
@@ -432,29 +445,54 @@ func (ec *evalContext) evalDir(ctx context.Context, flagValue string) string {
 // they resolve a Foundry endpoint, so that a project with no configuration is
 // told to run `init` rather than told to set an endpoint. The extra azd
 // connection is local and short-lived, and is what buys that ordering.
-func resolveEvalDir(ctx context.Context, flagValue string) string {
-	return evalDirCascade(flagValue, func() string { return recordedEvalPath(ctx) })
+func resolveEvalDir(ctx context.Context, flagValue string) (string, error) {
+	return evalDirCascade(flagValue, func() (string, error) {
+		azdClient, err := azdext.NewAzdClient()
+		if err != nil {
+			// Nothing to ask. This extension is spawned by azd, so the case
+			// that reaches here is a test or a direct invocation, neither of
+			// which has an environment holding a recorded path.
+			return "", nil
+		}
+		defer azdClient.Close()
+
+		env, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			// The same rule the endpoint cascade uses: azd saying "there is no
+			// project or environment" is an answer, and anything else is not.
+			if isNoDefaultEnvironmentError(err) {
+				return "", nil
+			}
+			return "", err
+		}
+		if env.GetEnvironment() == nil {
+			return "", nil
+		}
+		return readRecordedEvalPath(ctx, azdClient, env.GetEnvironment().GetName())
+	})
 }
 
-// recordedEvalPath reads back what recordEvalPath wrote, or empty when there is
-// no azd environment to read it from.
-func recordedEvalPath(ctx context.Context) string {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return ""
-	}
-	defer azdClient.Close()
-
-	env, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || env.GetEnvironment() == nil {
-		return ""
-	}
-	val, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: env.GetEnvironment().GetName(),
+// readRecordedEvalPath reads back what recordEvalPath wrote, distinguishing a
+// key that was never set from a read that failed.
+func readRecordedEvalPath(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	envName string,
+) (string, error) {
+	val, err := client.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
 		Key:     envKeyEvalPath,
 	})
-	if err != nil || val == nil {
-		return ""
+	if err != nil {
+		// An unset key is an answer; init records the path best effort and
+		// succeeds without an azd environment to record it in.
+		if isNoDefaultEnvironmentError(err) {
+			return "", nil
+		}
+		return "", err
 	}
-	return val.Value
+	if val == nil {
+		return "", nil
+	}
+	return val.Value, nil
 }

@@ -134,7 +134,10 @@ func buildRunCommand(use, short string) *cobra.Command {
 			// One flag takes a name or an id. A declared name also brings the
 			// declaration, which is what says where rows come from; a bare id
 			// has none, so the pairing comes from the eval's previous run.
-			evalDir := ec.evalDir(ctx, evalPath)
+			evalDir, err := ec.evalDir(ctx, evalPath)
+			if err != nil {
+				return err
+			}
 			ref, err := ec.resolveEvalRef(ctx, evalDir, chooseEvalIn(cmd, evalDir, groupName))
 			if err != nil {
 				return err

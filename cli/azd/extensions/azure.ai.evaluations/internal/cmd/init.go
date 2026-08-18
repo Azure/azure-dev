@@ -98,7 +98,10 @@ func newInitCommand() *cobra.Command {
 			// `init` in a project scaffolded at ./quality has to find that one --
 			// otherwise it writes a second configuration under ./evals and
 			// declares a second service pointing at it.
-			path = resolveEvalDir(cmd.Context(), path)
+			path, err := resolveEvalDir(cmd.Context(), path)
+			if err != nil {
+				return err
+			}
 
 			// Asked before anything is written: the project is the one thing
 			// init cannot supply for itself, and failing after creating
@@ -531,7 +534,28 @@ func (s scaffold) withPath(step string) string {
 	if s.evalDir == "" || s.evalDir == project.DefaultEvalDir {
 		return step
 	}
-	return step + " --path " + s.evalDir
+	return step + " --path " + quoteForShell(s.evalDir)
+}
+
+// quoteForShell wraps a value a shell would otherwise read as more than one
+// argument.
+//
+// `--path "./team evals"` is the difference between a printed step that runs
+// and one that resolves ./team and reports the configuration missing. Double
+// quotes are what cmd, PowerShell, bash and zsh all read the same way, and
+// these lines are printed without knowing which is reading them.
+//
+// Backslashes are left alone: C:\Users\Me\My Evals has to come back out as
+// itself, and doubling them would be right for bash and wrong for the two
+// shells most likely to be reading a path that looks like that.
+func quoteForShell(v string) string {
+	if v == "" {
+		return `""`
+	}
+	if !strings.ContainsAny(v, " \t\n\"'`$&|;<>()*?[]#~!") {
+		return v
+	}
+	return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"`
 }
 
 // generateCommand builds a `generate` invocation that runs as printed.

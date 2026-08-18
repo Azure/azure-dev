@@ -121,6 +121,27 @@ func TestCheckToolboxes_SkipsWhenNoToolboxesDeclared(t *testing.T) {
 	require.Contains(t, res.Message, "no configured toolbox resources")
 }
 
+func TestCheckToolboxes_FailsOnToolboxDependencyError(t *testing.T) {
+	t.Parallel()
+
+	state := &nextstep.State{
+		ToolboxDependencyErrors: []string{
+			`toolbox service "disabled" used by agent service(s) "agent" is disabled`,
+		},
+	}
+	res := runToolboxesCheck(t, Dependencies{
+		AzdClient:     &azdext.AzdClient{},
+		assembleState: fixedAssembler(state),
+	}, nil)
+
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "disabled")
+	require.Contains(t, res.Suggestion, "azure.yaml")
+	require.NotContains(t, res.Suggestion, "azd deploy")
+	require.Equal(t, state.ToolboxDependencyErrors,
+		res.Details["toolboxDependencyErrors"])
+}
+
 func TestCheckToolboxes_FailsWhenAssemblerReturnsNilState(t *testing.T) {
 	t.Parallel()
 	deps := Dependencies{

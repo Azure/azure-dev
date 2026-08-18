@@ -5,8 +5,12 @@ package nextstep
 
 import (
 	"cmp"
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"slices"
+	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
@@ -14,6 +18,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
+
+const toolboxHost = "azure.ai.toolbox"
 
 // manifestFileNames are the candidate manifest filenames the walker
 // probes, in the same precedence order init / deploy paths use:
@@ -126,51 +132,88 @@ func populateManifestResources(projectPath string, state *State) {
 	state.HasConnections = len(state.Connections) > 0
 }
 
-// populateSplitToolboxes adds standalone azure.ai.toolbox services to
-// state. A split service uses its service name as both the toolbox
-// and owner name. It ignores service properties because the service
-// name defines the toolbox identity, so local $ref files do not
-// affect discovery.
+// populateSplitToolboxes adds active toolbox dependencies to state.
 func populateSplitToolboxes(
+	ctx context.Context,
+	src Source,
+	envName string,
 	projectCfg *azdext.ProjectConfig,
 	state *State,
+	errs *[]error,
 ) {
 	if projectCfg == nil || state == nil {
 		return
 	}
 
-	split := make(map[string]ResourceRef)
-	for serviceName, svc := range projectCfg.Services {
-		if svc == nil || svc.GetHost() != "azure.ai.toolbox" {
-			continue
-		}
-		if svc.GetName() != "" {
-			serviceName = svc.GetName()
-		}
-		if serviceName == "" {
-			continue
-		}
-		ref := ResourceRef{
-			Name:          serviceName,
-			ServiceName:   serviceName,
-			ToolboxSource: ToolboxSourceSplit,
-		}
-		key := envkey.ToolboxMCPEndpoint(ref.Name)
-		if prior, ok := split[key]; !ok || ref.ServiceName < prior.ServiceName {
-			split[key] = ref
-		}
-	}
-	if len(split) == 0 {
+	candidates := splitToolboxDependencies(projectCfg)
+	if len(candidates) == 0 {
 		return
 	}
 
-	// A split service takes precedence for its canonical endpoint key.
-	// Keep unrelated legacy manifest keys for compatibility.
+	split := make(map[string]ResourceRef)
+	reserved := make(map[string]struct{}, len(candidates))
+	keys := make([]string, 0, len(candidates))
+	for key := range candidates {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+
+	for _, key := range keys {
+		candidate := candidates[key]
+		reserved[key] = struct{}{}
+		enabled, err := isServiceEnabled(
+			ctx,
+			src,
+			envName,
+			candidate.configName,
+		)
+		if err != nil {
+			issue := fmt.Sprintf(
+				"toolbox service %q used by agent service(s) %s has an invalid deployment condition: %v",
+				candidate.ref.ServiceName,
+				strings.Join(candidate.agents, ", "),
+				err,
+			)
+			state.ToolboxDependencyErrors = append(
+				state.ToolboxDependencyErrors,
+				issue,
+			)
+			*errs = append(
+				*errs,
+				fmt.Errorf(
+					"toolbox service %q deployment condition: %w",
+					candidate.ref.ServiceName,
+					err,
+				),
+			)
+			continue
+		}
+		if !enabled {
+			issue := fmt.Sprintf(
+				"toolbox service %q used by agent service(s) %s is disabled by its deployment condition",
+				candidate.ref.ServiceName,
+				strings.Join(candidate.agents, ", "),
+			)
+			state.ToolboxDependencyErrors = append(
+				state.ToolboxDependencyErrors,
+				issue,
+			)
+			*errs = append(
+				*errs,
+				errors.New(issue),
+			)
+			continue
+		}
+
+		split[key] = candidate.ref
+	}
+
 	merged := make([]ResourceRef, 0, len(state.Toolboxes)+len(split))
 	for _, ref := range state.Toolboxes {
-		if _, replaced := split[envkey.ToolboxMCPEndpoint(ref.Name)]; !replaced {
-			merged = append(merged, ref)
+		if _, replaced := reserved[envkey.ToolboxMCPEndpoint(ref.Name)]; replaced {
+			continue
 		}
+		merged = append(merged, ref)
 	}
 	for _, ref := range split {
 		merged = append(merged, ref)
@@ -183,6 +226,86 @@ func populateSplitToolboxes(
 	})
 	state.Toolboxes = merged
 	state.HasToolboxes = len(merged) > 0
+	slices.Sort(state.ToolboxDependencyErrors)
+}
+
+type splitToolboxCandidate struct {
+	ref        ResourceRef
+	configName string
+	agents     []string
+}
+
+type splitToolboxService struct {
+	ref        ResourceRef
+	configName string
+}
+
+func splitToolboxDependencies(
+	projectCfg *azdext.ProjectConfig,
+) map[string]splitToolboxCandidate {
+	services := make(map[string]splitToolboxService)
+	for serviceName, svc := range projectCfg.Services {
+		if svc == nil || svc.GetHost() != toolboxHost {
+			continue
+		}
+		name := svc.GetName()
+		if name == "" {
+			name = serviceName
+		}
+		if name == "" {
+			continue
+		}
+		ref := ResourceRef{
+			Name:          name,
+			ServiceName:   name,
+			ToolboxSource: ToolboxSourceSplit,
+		}
+		service := splitToolboxService{
+			ref:        ref,
+			configName: serviceName,
+		}
+		services[serviceName] = service
+		services[name] = service
+	}
+
+	candidates := make(map[string]splitToolboxCandidate)
+	for serviceName, svc := range projectCfg.Services {
+		if svc == nil || svc.GetHost() != agentHost {
+			continue
+		}
+		agentName := svc.GetName()
+		if agentName == "" {
+			agentName = serviceName
+		}
+		for _, dependencyName := range svc.GetUses() {
+			service, ok := services[dependencyName]
+			if !ok {
+				continue
+			}
+			key := envkey.ToolboxMCPEndpoint(service.ref.Name)
+			candidate := candidates[key]
+			if candidate.ref.Name == "" ||
+				service.ref.ServiceName < candidate.ref.ServiceName {
+				candidate.ref = service.ref
+				candidate.configName = service.configName
+			}
+			candidate.agents = appendUnique(candidate.agents, agentName)
+			candidates[key] = candidate
+		}
+	}
+
+	for key, candidate := range candidates {
+		slices.Sort(candidate.agents)
+		candidates[key] = candidate
+	}
+	return candidates
+}
+
+func appendUnique(values []string, value string) []string {
+	if slices.Contains(values, value) {
+		return values
+	}
+	return append(values, value)
 }
 
 // readManifestBytes returns the first manifest file's contents under

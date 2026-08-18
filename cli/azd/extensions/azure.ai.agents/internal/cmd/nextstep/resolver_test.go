@@ -617,6 +617,26 @@ func TestResolveAfterInit_ToolboxEndpointErrorBlocksLocalRun(t *testing.T) {
 	assert.NotContains(t, rendered, "azd ai agent invoke --local")
 }
 
+func TestResolveAfterInit_ToolboxDependencyErrorBlocksRemediation(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		ToolboxDependencyErrors: []string{
+			`toolbox service "disabled" is disabled by its deployment condition`,
+		},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
+	rendered := buf.String()
+	assert.Contains(t, rendered, "edit azure.yaml")
+	assert.Contains(t, rendered, "disabled")
+	assert.NotContains(t, rendered, "azd deploy")
+	assert.NotContains(t, rendered, "azd ai agent run")
+	assert.NotContains(t, rendered, "azd ai agent invoke --local")
+}
+
 // TestResolveAfterInit_ToolboxAndManualVarsCoexist locks the bug both
 // reviewers caught: when MissingToolboxEndpoints AND MissingManualVars
 // are populated, the previously-exclusive switch hid the manual

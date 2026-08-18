@@ -94,6 +94,12 @@ type Source interface {
 	// string with a nil error means the key is unset; transport errors are
 	// surfaced verbatim.
 	EnvValue(ctx context.Context, envName, key string) (string, error)
+	// ServiceConfigValue returns a raw service configuration value.
+	ServiceConfigValue(
+		ctx context.Context,
+		serviceName string,
+		path string,
+	) (*structpb.Value, bool, error)
 }
 
 // NewSource adapts an *azdext.AzdClient to the Source interface. The
@@ -141,6 +147,27 @@ func (s *clientSource) EnvValue(ctx context.Context, envName, key string) (strin
 		return "", nil
 	}
 	return resp.Value, nil
+}
+
+func (s *clientSource) ServiceConfigValue(
+	ctx context.Context,
+	serviceName string,
+	path string,
+) (*structpb.Value, bool, error) {
+	resp, err := s.client.Project().GetServiceConfigValue(
+		ctx,
+		&azdext.GetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        path,
+		},
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	if resp == nil {
+		return nil, false, nil
+	}
+	return resp.Value, resp.Found, nil
 }
 
 // Option configures AssembleState.
@@ -303,7 +330,7 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		if len(state.Services) > 0 {
 			populateManifestResources(project.Path, state)
 		}
-		populateSplitToolboxes(project, state)
+		populateSplitToolboxes(ctx, src, envName, project, state, &errs)
 	}
 
 	if project != nil && envName != "" {

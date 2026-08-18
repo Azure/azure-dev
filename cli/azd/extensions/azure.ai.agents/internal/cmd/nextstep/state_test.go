@@ -21,14 +21,16 @@ import (
 
 // fakeSource is a hand-rolled Source for table-driven tests.
 type fakeSource struct {
-	envName     string
-	envNameErr  error
-	project     *azdext.ProjectConfig
-	projectErr  error
-	values      map[string]string
-	valueErr    error
-	valueErrors map[string]error
-	calls       map[string]int
+	envName      string
+	envNameErr   error
+	project      *azdext.ProjectConfig
+	projectErr   error
+	values       map[string]string
+	valueErr     error
+	valueErrors  map[string]error
+	configValues map[string]*structpb.Value
+	configErrors map[string]error
+	calls        map[string]int
 }
 
 func (f *fakeSource) CurrentEnvName(_ context.Context) (string, error) {
@@ -53,6 +55,19 @@ func (f *fakeSource) EnvValue(_ context.Context, envName, key string) (string, e
 	return f.values[envName+"/"+key], nil
 }
 
+func (f *fakeSource) ServiceConfigValue(
+	_ context.Context,
+	serviceName string,
+	path string,
+) (*structpb.Value, bool, error) {
+	key := serviceName + "/" + path
+	if err := f.configErrors[key]; err != nil {
+		return nil, false, err
+	}
+	value, found := f.configValues[key]
+	return value, found, nil
+}
+
 func TestAssembleState_SplitToolboxesProbeCanonicalEndpoints(t *testing.T) {
 	t.Parallel()
 
@@ -70,6 +85,10 @@ func TestAssembleState_SplitToolboxesProbeCanonicalEndpoints(t *testing.T) {
 				},
 				"alpha-copy": {
 					Name: "alpha-copy", Host: "azure.ai.toolbox",
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"alpha", "alpha-copy"},
 				},
 			},
 		},
@@ -94,6 +113,9 @@ func TestAssembleState_SplitToolboxMissingEndpointIsNotManual(t *testing.T) {
 		values: map[string]string{
 			"dev/TOOLBOX_OTHER_MCP_ENDPOINT": "https://other.example/mcp",
 		},
+		configErrors: map[string]error{
+			"missing/condition": errors.New("unreferenced condition must not be read"),
+		},
 		project: &azdext.ProjectConfig{
 			Services: map[string]*azdext.ServiceConfig{
 				"missing": {
@@ -102,6 +124,10 @@ func TestAssembleState_SplitToolboxMissingEndpointIsNotManual(t *testing.T) {
 				"other": {
 					Name: "other", Host: "azure.ai.toolbox",
 				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"other"},
+				},
 			},
 		},
 	}
@@ -109,8 +135,10 @@ func TestAssembleState_SplitToolboxMissingEndpointIsNotManual(t *testing.T) {
 	state, errs := assembleState(t.Context(), src)
 	require.Empty(t, errs)
 	require.Empty(t, state.MissingManualVars)
-	require.Len(t, state.MissingToolboxEndpoints, 1)
-	require.Equal(t, "missing", state.MissingToolboxEndpoints[0].Name)
+	require.Empty(t, state.MissingToolboxEndpoints)
+	require.Len(t, state.Toolboxes, 1)
+	require.Equal(t, "other", state.Toolboxes[0].Name)
+	require.Equal(t, 0, src.calls["dev/TOOLBOX_MISSING_MCP_ENDPOINT"])
 }
 
 func TestAssembleState_SplitToolboxEndpointErrorIsSurfaced(t *testing.T) {
@@ -126,6 +154,10 @@ func TestAssembleState_SplitToolboxEndpointErrorIsSurfaced(t *testing.T) {
 			Services: map[string]*azdext.ServiceConfig{
 				"missing": {
 					Name: "missing", Host: "azure.ai.toolbox",
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"missing"},
 				},
 			},
 		},
@@ -154,15 +186,120 @@ func TestPopulateSplitToolboxes_PrefersSplitCanonicalKey(t *testing.T) {
 	project := &azdext.ProjectConfig{
 		Services: map[string]*azdext.ServiceConfig{
 			"my-tool": {Name: "my-tool", Host: "azure.ai.toolbox"},
+			"agent": {
+				Name: "agent", Host: agentHost,
+				Uses: []string{"my-tool"},
+			},
 		},
 	}
 
-	populateSplitToolboxes(project, state)
+	var errs []error
+	populateSplitToolboxes(
+		t.Context(),
+		&fakeSource{},
+		"",
+		project,
+		state,
+		&errs,
+	)
+	require.Empty(t, errs)
 	require.Len(t, state.Toolboxes, 2)
 	require.Equal(t, "legacy", state.Toolboxes[0].Name)
 	require.Equal(t, ToolboxSourceLegacyManifest, state.Toolboxes[0].ToolboxSource)
 	require.Equal(t, "my-tool", state.Toolboxes[1].Name)
 	require.Equal(t, ToolboxSourceSplit, state.Toolboxes[1].ToolboxSource)
+}
+
+func TestAssembleState_SplitToolboxConditionDisabled(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		configValues: map[string]*structpb.Value{
+			"disabled/condition": structpb.NewBoolValue(false),
+		},
+		calls: make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"disabled": {
+					Name: "disabled", Host: toolboxHost,
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"disabled"},
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Len(t, errs, 1)
+	require.False(t, state.HasToolboxes)
+	require.Empty(t, state.MissingToolboxEndpoints)
+	require.Len(t, state.ToolboxDependencyErrors, 1)
+	require.Contains(t, state.ToolboxDependencyErrors[0], "disabled")
+	require.Equal(t, 0, src.calls["dev/TOOLBOX_DISABLED_MCP_ENDPOINT"])
+}
+
+func TestAssembleState_SplitToolboxConditionUsesEnvironment(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		values: map[string]string{
+			"dev/ENABLE_TOOLBOX": "false",
+		},
+		configValues: map[string]*structpb.Value{
+			"conditional/condition": structpb.NewStringValue("${ENABLE_TOOLBOX}"),
+		},
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"conditional": {
+					Name: "conditional", Host: toolboxHost,
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"conditional"},
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Len(t, errs, 1)
+	require.Empty(t, state.Toolboxes)
+	require.Len(t, state.ToolboxDependencyErrors, 1)
+	require.Contains(t, state.ToolboxDependencyErrors[0], "conditional")
+}
+
+func TestAssembleState_SplitToolboxConditionErrorIsSurfaced(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		configValues: map[string]*structpb.Value{
+			"malformed/condition": structpb.NewStringValue("${"),
+		},
+		calls: make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"malformed": {
+					Name: "malformed", Host: toolboxHost,
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"malformed"},
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Len(t, errs, 1)
+	require.Empty(t, state.Toolboxes)
+	require.Len(t, state.ToolboxDependencyErrors, 1)
+	require.Contains(t, state.ToolboxDependencyErrors[0], "invalid deployment condition")
+	require.Equal(t, 0, src.calls["dev/TOOLBOX_MALFORMED_MCP_ENDPOINT"])
 }
 
 func TestAssembleState(t *testing.T) {

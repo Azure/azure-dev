@@ -109,6 +109,35 @@ func newCheckToolboxes(deps Dependencies) Check {
 					Suggestion: "Re-run `azd ai agent doctor`; the state assembly returned nil unexpectedly.",
 				}
 			}
+			if len(state.ToolboxDependencyErrors) > 0 {
+				issues := slices.Clone(state.ToolboxDependencyErrors)
+				slices.Sort(issues)
+				return Result{
+					Status: StatusFail,
+					Message: fmt.Sprintf(
+						"configured toolbox dependencies are invalid: %s",
+						strings.Join(issues, "; ")),
+					Suggestion: "Update azure.yaml so each agent uses an enabled " +
+						"toolbox service, then re-run `azd ai agent doctor`.",
+					Details: map[string]any{
+						"toolboxDependencyErrors": issues,
+					},
+				}
+			}
+			if state.ToolboxEndpointsChecked &&
+				len(state.ToolboxEndpointErrors) > 0 {
+				return Result{
+					Status: StatusFail,
+					Message: fmt.Sprintf(
+						"could not read toolbox endpoint values: %s",
+						strings.Join(state.ToolboxEndpointErrors, "; ")),
+					Suggestion: "Verify the active azd environment is accessible, then re-run " +
+						"`azd ai agent doctor`.",
+					Details: map[string]any{
+						"toolboxEndpointErrors": state.ToolboxEndpointErrors,
+					},
+				}
+			}
 			if !state.HasToolboxes {
 				return Result{
 					Status:  StatusSkip,
@@ -117,19 +146,6 @@ func newCheckToolboxes(deps Dependencies) Check {
 			}
 
 			if state.ToolboxEndpointsChecked {
-				if len(state.ToolboxEndpointErrors) > 0 {
-					return Result{
-						Status: StatusFail,
-						Message: fmt.Sprintf(
-							"could not read toolbox endpoint values: %s",
-							strings.Join(state.ToolboxEndpointErrors, "; ")),
-						Suggestion: "Verify the active azd environment is accessible, then re-run " +
-							"`azd ai agent doctor`.",
-						Details: map[string]any{
-							"toolboxEndpointErrors": state.ToolboxEndpointErrors,
-						},
-					}
-				}
 				return classifyToolboxState(state.Toolboxes, state.MissingToolboxEndpoints)
 			}
 

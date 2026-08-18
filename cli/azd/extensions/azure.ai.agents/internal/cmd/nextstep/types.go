@@ -110,9 +110,12 @@ type State struct {
 	// assembly. Doctor reports these errors without probing again.
 	ToolboxEndpointErrors []string
 
+	// ToolboxDependencyErrors contains invalid active-agent toolbox
+	// dependency conditions.
+	ToolboxDependencyErrors []string
+
 	// ToolboxEndpointsChecked is true after assembly probes every
-	// collected endpoint, including endpoints not referenced by agent
-	// config.
+	// active toolbox endpoint.
 	ToolboxEndpointsChecked bool
 
 	// UnresolvedPlaceholders names {{NAME}} Mustache-style placeholders

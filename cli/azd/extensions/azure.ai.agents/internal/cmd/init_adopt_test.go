@@ -32,8 +32,13 @@ func TestInspectAzureYaml(t *testing.T) {
 services:
   ai-project:
     host: azure.ai.project
+  summarize:
+    host: azure.ai.skill
+    instructions: Summarize the user's input.
   assistant:
     host: azure.ai.agent
+    uses:
+      - summarize
     kind: hosted
 `,
 			wantServices:     true,

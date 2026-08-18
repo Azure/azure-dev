@@ -24,8 +24,9 @@ words:
   - CODEOWNERS
   # Possessive of an acronym cspell does not inflect on its own
   - CLI's
-  # Deliberate misspelling: the fixture the unknown-key tests are about
+  # Deliberate misspellings: the fixtures the unknown-key tests are about
   - evaulators
+  - verison
   # Terms
   - inlines
   - negotiables
@@ -38,5 +39,6 @@ words:
   - unbuildable
   - unorderable
   - unpassed
+  - unjudged
   - unscored
   - Unparseable

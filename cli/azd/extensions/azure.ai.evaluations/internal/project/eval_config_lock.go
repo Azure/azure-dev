@@ -64,7 +64,7 @@ func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
 	locked, err := lock.TryLockContext(waitCtx, 50*time.Millisecond)
 	if err != nil || !locked {
 		// Being cancelled is not the same as the lock being busy. The advisory
-		// behaviour below exists so a held lock cannot fail a scaffold; carrying
+		// behavior below exists so a held lock cannot fail a scaffold; carrying
 		// it into Ctrl-C would go on to rewrite the configuration the user just
 		// asked to stop.
 		if ctxErr := ctx.Err(); ctxErr != nil {

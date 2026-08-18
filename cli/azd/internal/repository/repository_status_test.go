@@ -19,6 +19,8 @@ import (
 
 func TestGitHubRepositoryStatusChecker(t *testing.T) {
 	t.Run("ArchivedGitHubRepository", func(t *testing.T) {
+		t.Setenv("GH_TOKEN", "")
+		t.Setenv("GITHUB_TOKEN", "")
 		mockTransport := mockhttp.NewMockHttpUtil()
 		mockTransport.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet &&
@@ -40,11 +42,14 @@ func TestGitHubRepositoryStatusChecker(t *testing.T) {
 		require.True(t, status.Archived)
 	})
 
-	t.Run("GitHubEnterpriseRepository", func(t *testing.T) {
+	t.Run("GitHubEnterpriseServerRepository", func(t *testing.T) {
 		t.Setenv("GH_HOST", "github.contoso.com")
+		t.Setenv("GH_TOKEN", "cloud-token")
+		t.Setenv("GH_ENTERPRISE_TOKEN", "server-token")
 		mockTransport := mockhttp.NewMockHttpUtil()
 		mockTransport.When(func(req *http.Request) bool {
-			return req.URL.String() == "https://github.contoso.com/api/v3/repos/contoso/template"
+			return req.URL.String() == "https://github.contoso.com/api/v3/repos/contoso/template" &&
+				req.Header.Get("Authorization") == "Bearer server-token"
 		}).RespondFn(func(req *http.Request) (*http.Response, error) {
 			return mocks.CreateHttpResponseWithBody(req, http.StatusOK, map[string]any{
 				"archived": false,
@@ -57,6 +62,28 @@ func TestGitHubRepositoryStatusChecker(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, status)
 		require.False(t, status.Archived)
+	})
+
+	t.Run("GitHubEnterpriseCloudRepository", func(t *testing.T) {
+		t.Setenv("GH_HOST", "octocorp.ghe.com")
+		t.Setenv("GH_TOKEN", "cloud-token")
+		t.Setenv("GH_ENTERPRISE_TOKEN", "server-token")
+		mockTransport := mockhttp.NewMockHttpUtil()
+		mockTransport.When(func(req *http.Request) bool {
+			return req.URL.String() == "https://api.octocorp.ghe.com/repos/contoso/template" &&
+				req.Header.Get("Authorization") == "Bearer cloud-token"
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK, map[string]any{
+				"archived": true,
+			})
+		})
+
+		checker := NewGitHubRepositoryStatusChecker(mockTransport)
+		status, err := checker.Check(t.Context(), "https://octocorp.ghe.com/contoso/template")
+
+		require.NoError(t, err)
+		require.NotNil(t, status)
+		require.True(t, status.Archived)
 	})
 
 	t.Run("UnsupportedRepositoryHost", func(t *testing.T) {

@@ -35,8 +35,13 @@ type RepositoryStatusChecker interface {
 
 type githubRepositoryStatusChecker struct {
 	transport      policy.Transporter
-	hosts          map[string]string
+	hosts          map[string]githubHostConfig
 	requestTimeout time.Duration
+}
+
+type githubHostConfig struct {
+	apiBaseURL string
+	token      string
 }
 
 // NewGitHubRepositoryStatusChecker creates a checker for GitHub-hosted repositories.
@@ -45,17 +50,21 @@ func NewGitHubRepositoryStatusChecker(transport policy.Transporter) RepositorySt
 		transport = http.DefaultClient
 	}
 
-	hosts := map[string]string{
-		"github.com": firstSetEnvironmentVariable("GH_TOKEN", "GITHUB_TOKEN"),
+	cloudToken := firstSetEnvironmentVariable("GH_TOKEN", "GITHUB_TOKEN")
+	enterpriseServerToken := firstSetEnvironmentVariable("GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN")
+	hosts := map[string]githubHostConfig{
+		"github.com": {
+			apiBaseURL: "https://api.github.com",
+			token:      cloudToken,
+		},
 	}
-	enterpriseToken := firstSetEnvironmentVariable("GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN")
 	if host := normalizeGitHubHost(os.Getenv("GH_HOST")); host != "" && host != "github.com" {
-		hosts[host] = enterpriseToken
+		hosts[host] = githubHostConfiguration(host, cloudToken, enterpriseServerToken)
 	}
 	if serverURL := os.Getenv("GITHUB_SERVER_URL"); serverURL != "" {
 		if parsed, err := url.Parse(serverURL); err == nil {
 			if host := normalizeGitHubHost(parsed.Hostname()); host != "" && host != "github.com" {
-				hosts[host] = enterpriseToken
+				hosts[host] = githubHostConfiguration(host, cloudToken, enterpriseServerToken)
 			}
 		}
 	}
@@ -76,10 +85,8 @@ func (c *githubRepositoryStatusChecker) Check(
 		return nil, nil
 	}
 
-	apiURL := fmt.Sprintf("https://%s/api/v3/repos/%s", host, slug)
-	if host == "github.com" {
-		apiURL = fmt.Sprintf("https://api.github.com/repos/%s", slug)
-	}
+	hostConfig := c.hosts[host]
+	apiURL := fmt.Sprintf("%s/repos/%s", hostConfig.apiBaseURL, slug)
 
 	requestCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
@@ -91,7 +98,7 @@ func (c *githubRepositoryStatusChecker) Check(
 
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "azd")
-	if token := c.hosts[host]; token != "" {
+	if token := hostConfig.token; token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -117,7 +124,7 @@ func (c *githubRepositoryStatusChecker) Check(
 
 func parseGitHubRepositoryURL(
 	repositoryURL string,
-	knownHosts map[string]string,
+	knownHosts map[string]githubHostConfig,
 ) (host string, slug string, ok bool) {
 	var path string
 
@@ -161,6 +168,24 @@ func parseGitHubRepositoryURL(
 func normalizeGitHubHost(host string) string {
 	host = strings.ToLower(strings.TrimSpace(host))
 	return strings.TrimPrefix(host, "www.")
+}
+
+func githubHostConfiguration(host, cloudToken, enterpriseServerToken string) githubHostConfig {
+	// GitHub Enterprise Cloud data-residency hosts use the same GH_TOKEN/GITHUB_TOKEN
+	// variables as github.com and expose their REST API at api.<tenant>.ghe.com.
+	if strings.HasSuffix(host, ".ghe.com") {
+		return githubHostConfig{
+			apiBaseURL: "https://api." + host,
+			token:      cloudToken,
+		}
+	}
+
+	// Custom GitHub Enterprise Server hosts use GH_ENTERPRISE_TOKEN/GITHUB_ENTERPRISE_TOKEN
+	// and serve the REST API below /api/v3 on the configured host.
+	return githubHostConfig{
+		apiBaseURL: "https://" + host + "/api/v3",
+		token:      enterpriseServerToken,
+	}
 }
 
 func firstSetEnvironmentVariable(names ...string) string {

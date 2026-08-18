@@ -117,9 +117,11 @@ func (r *projectInitRequest) validate() error {
 		return contractValidationError("project.resourceId and project.endpoint are mutually exclusive")
 	}
 	if r.Infra.EjectProvider != "" {
-		if _, err := parseInfraProvider(r.Infra.EjectProvider); err != nil {
+		provider, err := parseInfraProvider(r.Infra.EjectProvider)
+		if err != nil {
 			return err
 		}
+		r.Infra.EjectProvider = provider
 	}
 	locations, err := normalizeLocations(r.Requirements.AllowedLocations)
 	if err != nil {

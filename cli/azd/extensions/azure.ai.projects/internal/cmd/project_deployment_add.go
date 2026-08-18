@@ -127,8 +127,20 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	}
 
 	projectRoot := projectRootPath()
-	reconciler := &projectServiceReconciler{client: client, projectRoot: projectRoot}
-	service, project, err := reconciler.discoverProjectService(ctx)
+	envName, err := resolveProjectEnvironmentName(ctx, client, a.environmentName(), projectRoot)
+	if err != nil {
+		return err
+	}
+	values, err := currentProjectEnvironment(ctx, client, envName)
+	if err != nil {
+		return err
+	}
+	reconciler := &projectServiceReconciler{
+		client:            client,
+		projectRoot:       projectRoot,
+		environmentValues: values,
+	}
+	service, _, err := reconciler.discoverProjectService(ctx)
 	if err != nil {
 		return err
 	}
@@ -138,14 +150,6 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			"no azure.ai.project service was found in the azd project",
 			"run `azd ai project init` before adding a deployment",
 		)
-	}
-	envName, err := resolveProjectEnvironmentName(ctx, client, a.environmentName(), project.GetPath())
-	if err != nil {
-		return err
-	}
-	values, err := currentProjectEnvironment(ctx, client, envName)
-	if err != nil {
-		return err
 	}
 	if requiresExistingProjectID(values, service) {
 		return exterrors.Validation(
@@ -197,7 +201,10 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		return err
 	}
 	if model.DeploymentName != "" {
-		selected.Deployment.Name = model.DeploymentName
+		selected.Deployment.Name = chooseDeploymentName(
+			model.DeploymentName,
+			selected.Deployment.Name,
+		)
 	}
 	if selected.Deployment.Model.Format == "" ||
 		selected.Deployment.Model.Name == "" ||

@@ -54,8 +54,9 @@ azd ai project deployment add --model <model-name>
 ```
 
 An endpoint-only project is suitable for configuration that does not manage
-resources on the existing project. Use the full project resource ID before
-adding managed deployments.
+resources on the existing project. If managed deployments are already
+declared, endpoint-only initialization stops before clearing the project ID.
+Use the full project resource ID before adding managed deployments.
 
 To reconcile deployments, connections, or a pending container registry on an existing project, set the project's full ARM resource ID in the active azd environment:
 

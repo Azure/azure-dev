@@ -13,6 +13,7 @@ import (
 
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/provisioning"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -37,8 +38,9 @@ type projectServiceInfo struct {
 }
 
 type projectServiceReconciler struct {
-	client      *azdext.AzdClient
-	projectRoot string
+	client            *azdext.AzdClient
+	projectRoot       string
+	environmentValues map[string]string
 }
 
 // discoverProjectService loads persisted and expanded views.
@@ -120,6 +122,21 @@ func (r *projectServiceReconciler) discoverProjectService(
 		if err != nil {
 			return nil, project, fmt.Errorf("resolve project service %q $ref includes: %w", name, err)
 		}
+	}
+	expanded, err := expandProjectServiceValues(resolved, r.environmentValues)
+	if err != nil {
+		return nil, project, fmt.Errorf(
+			"expand project service %q environment references: %w",
+			name,
+			err,
+		)
+	}
+	resolved, ok := expanded.(map[string]any)
+	if !ok {
+		return nil, project, fmt.Errorf(
+			"expand project service %q produced an invalid configuration",
+			name,
+		)
 	}
 	var serviceRef string
 	if ref, ok := raw["$ref"].(string); ok {
@@ -309,6 +326,20 @@ func hasManagedProjectFields(value map[string]any) bool {
 	return false
 }
 
+func hasManagedDeployments(value map[string]any) bool {
+	if value == nil {
+		return false
+	}
+	deployments, exists := value["deployments"]
+	if !exists || deployments == nil {
+		return false
+	}
+	if items, ok := deployments.([]any); ok {
+		return len(items) > 0
+	}
+	return true
+}
+
 func hasServiceRef(value any) bool {
 	body, ok := value.(map[string]any)
 	if !ok {
@@ -426,4 +457,36 @@ func cloneMap(value map[string]any) (map[string]any, error) {
 		return nil, fmt.Errorf("deserialize map: %w", err)
 	}
 	return result, nil
+}
+
+func expandProjectServiceValues(
+	value any,
+	environment map[string]string,
+) (any, error) {
+	switch typed := value.(type) {
+	case map[string]any:
+		expanded := make(map[string]any, len(typed))
+		for key, item := range typed {
+			resolved, err := expandProjectServiceValues(item, environment)
+			if err != nil {
+				return nil, err
+			}
+			expanded[key] = resolved
+		}
+		return expanded, nil
+	case []any:
+		expanded := make([]any, len(typed))
+		for index, item := range typed {
+			resolved, err := expandProjectServiceValues(item, environment)
+			if err != nil {
+				return nil, err
+			}
+			expanded[index] = resolved
+		}
+		return expanded, nil
+	case string:
+		return synthesis.ResolveEnvironmentValue(typed, environment)
+	default:
+		return value, nil
+	}
 }

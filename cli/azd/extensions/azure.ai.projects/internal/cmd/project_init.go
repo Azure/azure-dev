@@ -27,6 +27,7 @@ import (
 	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -150,16 +151,20 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 	if projectRoot == "" {
 		projectRoot = projectRootPath()
 	}
-	reconciler := &projectServiceReconciler{client: client, projectRoot: projectRoot}
-	service, projectConfig, err := reconciler.discoverProjectService(ctx)
-	if err != nil {
-		return err
-	}
 	envName, err := resolveProjectEnvironmentName(ctx, client, a.environmentName(), projectRoot)
 	if err != nil {
 		return err
 	}
 	oldValues, err := currentProjectEnvironment(ctx, client, envName)
+	if err != nil {
+		return err
+	}
+	reconciler := &projectServiceReconciler{
+		client:            client,
+		projectRoot:       projectRoot,
+		environmentValues: oldValues,
+	}
+	service, projectConfig, err := reconciler.discoverProjectService(ctx)
 	if err != nil {
 		return err
 	}
@@ -190,21 +195,12 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 		return err
 	}
 	if target.Mode == projectModeExistingEndpoint {
-		if infra := infraFromRequest(request, a.flags); infra != "" {
-			return exterrors.Dependency(
-				"managed_deployment_requires_project_id",
-				"infrastructure ejection requires a verified Foundry project resource ID",
-				"rerun `azd ai project init --project-id <resource-id> --infra",
-			)
-		}
-		if service != nil &&
-			!equalProjectEndpoint(serviceEndpoint(service.Resolved), target.Endpoint) &&
-			hasManagedProjectFields(service.Raw) {
-			return exterrors.Dependency(
-				"project_reconciliation_requires_project_id",
-				"changing the project endpoint would move managed project configuration",
-				"rerun `azd ai project init --project-id <resource-id>` before changing project identity",
-			)
+		if err := validateExistingEndpointMode(
+			service,
+			target.Endpoint,
+			infraFromRequest(request, a.flags),
+		); err != nil {
+			return err
 		}
 	} else if err := validateFoundryProvider(projectConfig); err != nil {
 		return err
@@ -288,6 +284,13 @@ func (a *ProjectInitAction) loadRequest() (*projectInitRequest, error) {
 	}
 	if err := validateProjectInitRequest(*request); err != nil {
 		return nil, err
+	}
+	if request.Infra.EjectProvider != "" {
+		provider, err := parseInfraProvider(request.Infra.EjectProvider)
+		if err != nil {
+			return nil, err
+		}
+		request.Infra.EjectProvider = provider
 	}
 	a.flags.projectID = request.Project.ResourceID
 	a.flags.projectEndpoint = request.Project.Endpoint
@@ -968,8 +971,15 @@ func writeFoundryProvider(
 	if err := validateFoundryProvider(project); err != nil {
 		return err
 	}
+	infraDeclaration, err := readProjectInfraDeclaration(project)
+	if err != nil {
+		return err
+	}
 	if project != nil && project.GetInfra() != nil &&
 		project.GetInfra().GetProvider() != "" {
+		return nil
+	}
+	if infraDeclaration.layerCount > 0 {
 		return nil
 	}
 	oldProvider, oldPath := projectInfraConfig(project)
@@ -1067,6 +1077,34 @@ func restoreProjectInfraConfig(
 }
 
 func validateFoundryProvider(project *azdext.ProjectConfig) error {
+	infraDeclaration, err := readProjectInfraDeclaration(project)
+	if err != nil {
+		return err
+	}
+	if infraDeclaration.layerCount > 0 {
+		switch {
+		case infraDeclaration.rootProvider == provisioning.FoundryProviderName:
+			return exterrors.Validation(
+				"infra_provider_conflict",
+				fmt.Sprintf(
+					"infra.provider is %q while infra.layers is also declared; the root Foundry provider "+
+						"cannot be combined with named layers",
+					provisioning.FoundryProviderName,
+				),
+				"keep one named Foundry layer with provider microsoft.foundry "+
+					"instead of setting the root provider",
+			)
+		case infraDeclaration.rootProvider == "" &&
+			infraDeclaration.foundryLayerCount != 1:
+			return exterrors.Validation(
+				"infra_provider_conflict",
+				"azure.yaml declares named infrastructure layers without exactly one "+
+					"microsoft.foundry layer",
+				"configure exactly one layer with provider microsoft.foundry "+
+					"before initializing a Foundry project",
+			)
+		}
+	}
 	if project != nil && project.GetInfra() != nil &&
 		project.GetInfra().GetProvider() != "" &&
 		project.GetInfra().GetProvider() != provisioning.FoundryProviderName {
@@ -1083,6 +1121,7 @@ func validateFoundryProvider(project *azdext.ProjectConfig) error {
 		project.GetInfra().GetProvider() != "" {
 		return nil
 	}
+
 	if project != nil && project.GetInfra() != nil &&
 		project.GetInfra().GetPath() != "" &&
 		project.GetInfra().GetPath() != "." &&
@@ -1103,6 +1142,97 @@ func validateFoundryProvider(project *azdext.ProjectConfig) error {
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("check project infrastructure: %w", err)
 		}
+	}
+	return nil
+}
+
+type projectInfraDeclaration struct {
+	rootProvider      string
+	layerCount        int
+	foundryLayerCount int
+}
+
+func readProjectInfraDeclaration(
+	project *azdext.ProjectConfig,
+) (projectInfraDeclaration, error) {
+	if project == nil || project.GetPath() == "" {
+		return projectInfraDeclaration{}, nil
+	}
+	projectFile, err := projectFilePath(project.GetPath())
+	if err != nil {
+		return projectInfraDeclaration{}, err
+	}
+	// #nosec G304
+	raw, err := os.ReadFile(projectFile)
+	if err != nil {
+		return projectInfraDeclaration{}, fmt.Errorf(
+			"read %s for infrastructure configuration: %w",
+			projectFile,
+			err,
+		)
+	}
+	var document struct {
+		Infra struct {
+			Provider string `yaml:"provider"`
+			Layers   []struct {
+				Provider string `yaml:"provider"`
+			} `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	if err := yaml.Unmarshal(raw, &document); err != nil {
+		return projectInfraDeclaration{}, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("parse %s infrastructure configuration: %s", projectFile, err),
+			"verify azure.yaml is valid YAML",
+		)
+	}
+	declaration := projectInfraDeclaration{
+		rootProvider: strings.TrimSpace(document.Infra.Provider),
+		layerCount:   len(document.Infra.Layers),
+	}
+	for _, layer := range document.Infra.Layers {
+		provider := strings.TrimSpace(layer.Provider)
+		if provider == "" {
+			provider = declaration.rootProvider
+		}
+		if provider == provisioning.FoundryProviderName {
+			declaration.foundryLayerCount++
+		}
+	}
+	return declaration, nil
+}
+
+func validateExistingEndpointMode(
+	service *projectServiceInfo,
+	endpoint string,
+	infra string,
+) error {
+	if infra != "" {
+		return exterrors.Dependency(
+			"managed_deployment_requires_project_id",
+			"infrastructure ejection requires a verified Foundry project resource ID",
+			"rerun `azd ai project init --project-id <resource-id> --infra",
+		)
+	}
+	if service == nil {
+		return nil
+	}
+	if hasManagedDeployments(service.Resolved) ||
+		hasManagedDeployments(service.Raw) {
+		return exterrors.Dependency(
+			"project_reconciliation_requires_project_id",
+			"endpoint-only initialization cannot retain managed model deployments",
+			"rerun `azd ai project init --project-id <resource-id>` "+
+				"before managing deployments",
+		)
+	}
+	if !equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint) &&
+		hasManagedProjectFields(service.Raw) {
+		return exterrors.Dependency(
+			"project_reconciliation_requires_project_id",
+			"changing the project endpoint would move managed project configuration",
+			"rerun `azd ai project init --project-id <resource-id>` before changing project identity",
+		)
 	}
 	return nil
 }
@@ -1238,6 +1368,9 @@ func ejectProjectInfra(
 		}
 		if err := writeJSONFile(filepath.Join(infraDir, "main.parameters.json"), parameters); err != nil {
 			return cleanup(err)
+		}
+		if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
+			return rollback(fmt.Errorf("remove infra.path: %w", err))
 		}
 	}
 	return nil

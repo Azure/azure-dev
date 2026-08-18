@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestDelegatedProjectInitRequestValidation(t *testing.T) {
@@ -421,6 +422,236 @@ func TestProjectEnvironmentClearsOnlyNonEmptyValues(t *testing.T) {
 	assert.NotContains(t, plan.Unsets, "AZURE_RESOURCE_GROUP")
 }
 
+func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	service := &projectServiceInfo{
+		Raw: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+		Resolved: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+	}
+
+	err := validateExistingEndpointMode(service, endpoint, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot retain managed model deployments")
+}
+
+func TestExistingEndpointModeAllowsNetworkOnlyService(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	service := &projectServiceInfo{
+		Raw: map[string]any{
+			"endpoint": endpoint,
+			"network":  map[string]any{"mode": "managed"},
+		},
+		Resolved: map[string]any{
+			"endpoint": endpoint,
+			"network":  map[string]any{"mode": "managed"},
+		},
+	}
+
+	require.NoError(t, validateExistingEndpointMode(service, endpoint, ""))
+}
+
+func TestValidateFoundryProviderRejectsRootProviderWithLayers(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`infra:
+  provider: microsoft.foundry
+  layers:
+    - name: app
+      provider: bicep
+`),
+		0600,
+	))
+
+	err := validateFoundryProvider(&azdext.ProjectConfig{
+		Path:  root,
+		Infra: &azdext.InfraOptions{Provider: "microsoft.foundry"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be combined with named layers")
+}
+
+func TestValidateFoundryProviderAllowsSingleFoundryLayer(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`infra:
+  layers:
+    - name: foundry
+      provider: microsoft.foundry
+`),
+		0600,
+	))
+
+	require.NoError(t, validateFoundryProvider(&azdext.ProjectConfig{
+		Path:  root,
+		Infra: &azdext.InfraOptions{},
+	}))
+}
+
+func TestEjectBicepClearsCustomInfraPath(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`name: test
+services:
+  project:
+    host: azure.ai.project
+    deployments:
+      - name: chat
+        model: {format: OpenAI, name: gpt-4.1, version: "2025-04-14"}
+        sku: {name: GlobalStandard, capacity: 10}
+`),
+		0600,
+	))
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Path: root,
+			Infra: &azdext.InfraOptions{
+				Provider: "microsoft.foundry",
+				Path:     "custom-infra",
+			},
+		},
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	require.NoError(t, ejectProjectInfra(
+		t.Context(), client, root, "project", "bicep",
+	))
+	_, err = os.Stat(filepath.Join(root, "infra", "main.bicep"))
+	require.NoError(t, err)
+	assert.Contains(t, projectServer.unsetPaths, "infra.path")
+}
+
+func TestLoadDelegatedProjectInitNormalizesInfraProvider(t *testing.T) {
+	requestPath := filepath.Join(t.TempDir(), "request.json")
+	require.NoError(t, os.WriteFile(
+		requestPath,
+		[]byte(`{
+  "schemaVersion": 1,
+  "source": "azure.ai.agents/init",
+  "sourceVersion": "1.0.0",
+  "project": {"resourceId": "/subscriptions/sub"},
+  "infra": {"ejectProvider": " TERRAFORM "}
+}`),
+		0600,
+	))
+
+	action := &ProjectInitAction{
+		flags: &projectInitFlags{requestFile: requestPath},
+	}
+	request, err := action.loadRequest()
+	require.NoError(t, err)
+	require.NotNil(t, request)
+	assert.Equal(t, "terraform", request.Infra.EjectProvider)
+	assert.Equal(t, "terraform", action.flags.infra)
+}
+
+func TestExpandProjectServiceValuesUsesEnvironment(t *testing.T) {
+	raw := map[string]any{
+		"endpoint": "${FOUNDRY_PROJECT_ENDPOINT}",
+		"nested":   []any{map[string]any{"value": "${PROJECT_VALUE}"}},
+	}
+	expandedValue, err := expandProjectServiceValues(
+		raw,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://account.services.ai.azure.com/api/projects/p",
+			"PROJECT_VALUE":            "expanded",
+		},
+	)
+	require.NoError(t, err)
+	expanded, ok := expandedValue.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(
+		t,
+		"https://account.services.ai.azure.com/api/projects/p",
+		expanded["endpoint"],
+	)
+	assert.Equal(t, "${FOUNDRY_PROJECT_ENDPOINT}", raw["endpoint"])
+}
+
+func TestDiscoverProjectServiceExpandsEndpointFromRef(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "services"), 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "services", "project.yaml"),
+		[]byte("endpoint: ${FOUNDRY_PROJECT_ENDPOINT}\n"),
+		0600,
+	))
+	section, err := structpb.NewStruct(map[string]any{
+		"project": map[string]any{"$ref": "./services/project.yaml"},
+	})
+	require.NoError(t, err)
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"project": {Host: aiProjectHost},
+			},
+		},
+		section: section,
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	reconciler := &projectServiceReconciler{
+		client:      client,
+		projectRoot: root,
+		environmentValues: map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://account.services.ai.azure.com/api/projects/p",
+		},
+	}
+	service, _, err := reconciler.discoverProjectService(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, service)
+	assert.Equal(
+		t,
+		"https://account.services.ai.azure.com/api/projects/p",
+		service.Resolved["endpoint"],
+	)
+	assert.Equal(t, "./services/project.yaml", service.ServiceRef)
+	assert.NotContains(t, service.Raw, "endpoint")
+}
+
+func TestChooseDeploymentNameTrimsExplicitName(t *testing.T) {
+	assert.Equal(t, "chat", chooseDeploymentName("  chat  ", "gpt-4.1"))
+}
+
 func TestProjectServiceEndpointUsesExactKeyTombstone(t *testing.T) {
 	server := grpc.NewServer()
 	projectServer := &recordingProjectServiceServer{}
@@ -509,6 +740,38 @@ type recordingProjectServiceServer struct {
 	request        *azdext.SetServiceConfigValueRequest
 	addRequest     *azdext.AddServiceRequest
 	sectionRequest *azdext.SetServiceConfigSectionRequest
+}
+
+type recordingProjectConfigServer struct {
+	azdext.UnimplementedProjectServiceServer
+	project    *azdext.ProjectConfig
+	section    *structpb.Struct
+	unsetPaths []string
+}
+
+func (s *recordingProjectConfigServer) Get(
+	context.Context,
+	*azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+func (s *recordingProjectConfigServer) GetConfigSection(
+	_ context.Context,
+	_ *azdext.GetProjectConfigSectionRequest,
+) (*azdext.GetProjectConfigSectionResponse, error) {
+	return &azdext.GetProjectConfigSectionResponse{
+		Section: s.section,
+		Found:   s.section != nil,
+	}, nil
+}
+
+func (s *recordingProjectConfigServer) UnsetConfig(
+	_ context.Context,
+	request *azdext.UnsetProjectConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	s.unsetPaths = append(s.unsetPaths, request.Path)
+	return &azdext.EmptyResponse{}, nil
 }
 
 func (s *recordingProjectServiceServer) AddService(

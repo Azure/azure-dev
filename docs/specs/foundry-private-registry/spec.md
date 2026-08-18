@@ -62,7 +62,7 @@ When `registryConnectionId` is absent, `registry_connection_id` is omitted. Exis
 
 - Registry-neutral `registryConnectionId` authoring and mapping to `definition.container_configuration.registry_connection_id` for hosted agents using private, already-published non-ACR images.
 - Explicit core image passthrough through top-level `image` and `docker.imagePassthrough: true`.
-- Greenfield agent init against a pre-existing Foundry project connection and declarative sibling `azure.ai.connection` workflows.
+- Greenfield and brownfield agent scenarios using pre-created or declarative sibling `azure.ai.connection` resources.
 - Connection lookup, dependency validation, and pass-through of generic credential and metadata fields.
 - Compatibility for older pre-built-image projects, with JFrog as the first E2E example rather than a production dependency.
 
@@ -130,7 +130,7 @@ services:
 
 The connection reference survives unified `azure.yaml` and legacy agent-manifest parsing and round trips. The flag value supplied to init takes precedence over a manifest value.
 
-## Greenfield agent workflow
+## Greenfield agent scenario
 
 This workflow creates a new local agent project that targets existing Foundry resources. Before running `azd ai agent init`, use the Foundry portal or Azure CLI to create the Foundry project connection. The Foundry project, private image, registry-side OIDC trust and identity binding, and Entra audience application must also already exist. Record the project resource ID and connection name; azd references these resources but does not bootstrap them.
 
@@ -177,11 +177,9 @@ services:
 
 The external connection is intentionally not appended to `uses`. The project dependency key is not fixed: init reuses an existing `azure.ai.project` service key, otherwise derives one from the selected project name, and falls back to `ai-project`. Init verifies the connection by name or ID when project context is available, but Foundry remains authoritative for compatibility, authentication, and image-pull failures.
 
-## Declarative sibling connection workflow
+## Brownfield agent scenario
 
-A connection can instead be represented as a sibling `azure.ai.connection` service. In this flow, `azd provision` is required because azd provisions the declared connection before deploying the agent.
-
-The example below uses an existing Foundry project, but the connection and agent remain declarative azd services:
+This scenario adopts an existing Foundry project and represents the connection and agent as declarative sibling azd services. In this flow, `azd provision` is required because azd provisions the declared connection before deploying the agent.
 
 ```yaml
 name: private-registry-agent
@@ -280,7 +278,7 @@ The non-interactive private-registry flow does not prompt for an image source, t
 
 The pre-created-connection workflow does not run provision after init. The Foundry project and connection are prerequisites, and the generated environment records the existing project context.
 
-The declarative sibling workflow runs provision to create or update the `azure.ai.connection` service. Provision passes generic credentials and metadata to the Foundry connection resource without interpreting registry-specific fields.
+The brownfield agent scenario runs provision to create or update the sibling `azure.ai.connection` service. Provision passes generic credentials and metadata to the Foundry connection resource without interpreting registry-specific fields.
 
 ### Build
 
@@ -304,7 +302,7 @@ Foundry uses the project connection and its service identity to retrieve the ima
 
 Changing an external connection's vendor-side configuration remains outside azd. After updating the external connection or image, rerun `azd deploy` as appropriate.
 
-For a declarative sibling connection, rerun `azd provision` after changing its declared credentials or metadata, then rerun `azd deploy` if the agent image or connection reference changed.
+For the brownfield agent scenario, rerun `azd provision` after changing the declared connection credentials or metadata, then rerun `azd deploy` if the agent image or connection reference changed.
 
 ## Package and publish compatibility fallback
 
@@ -391,7 +389,7 @@ JFrog-specific names and setup instructions belong only in examples, test fixtur
 
 ## Documentation and telemetry
 
-User documentation should distinguish the two workflows: a pre-created external connection on an existing Foundry project, with no provision after init, and declarative sibling connection provisioning, which requires provision before deploy.
+User documentation should distinguish the two scenarios: greenfield agent init with a pre-created external connection and no provision after init, and brownfield declarative connection provisioning before deploy.
 
 Documentation must state that azd does not configure vendor OIDC trust or create the Entra audience application. Vendor setup documentation may be linked as a prerequisite but must not be presented as azd-managed infrastructure.
 

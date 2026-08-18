@@ -5,7 +5,9 @@ package extensions
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -25,6 +27,54 @@ type Source interface {
 type RegistryProvider interface {
 	// GetRegistry returns the underlying registry for the source.
 	GetRegistry() *Registry
+}
+
+type categorizedSource struct {
+	Source
+	category SourceCategory
+}
+
+func newCategorizedSource(source Source, category SourceCategory) Source {
+	categorized := &categorizedSource{
+		Source:   source,
+		category: category,
+	}
+	if provider, ok := source.(RegistryProvider); ok {
+		return &categorizedRegistrySource{
+			categorizedSource: categorized,
+			provider:          provider,
+		}
+	}
+	return categorized
+}
+
+func (s *categorizedSource) ListExtensions(ctx context.Context) ([]*ExtensionMetadata, error) {
+	extensions, err := s.Source.ListExtensions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, extension := range extensions {
+		extension.SourceCategory = s.category
+	}
+	return extensions, nil
+}
+
+func (s *categorizedSource) GetExtension(ctx context.Context, extensionId string) (*ExtensionMetadata, error) {
+	extension, err := s.Source.GetExtension(ctx, extensionId)
+	if err != nil {
+		return nil, err
+	}
+	extension.SourceCategory = s.category
+	return extension, nil
+}
+
+type categorizedRegistrySource struct {
+	*categorizedSource
+	provider RegistryProvider
+}
+
+func (s *categorizedRegistrySource) GetRegistry() *Registry {
+	return s.provider.GetRegistry()
 }
 
 type registrySource struct {
@@ -74,4 +124,35 @@ func (s *registrySource) GetExtension(ctx context.Context, id string) (*Extensio
 	}
 
 	return allTemplates[matchingIndex], nil
+}
+
+// IsOfficialMainRegistrySource reports whether config identifies the
+// immutable official registry source.
+func IsOfficialMainRegistrySource(config *SourceConfig) bool {
+	if config == nil ||
+		NormalizeSourceKey(config.Name) != MainRegistryName ||
+		config.Type != SourceKindUrl {
+		return false
+	}
+
+	expected, err := normalizeOfficialSourceLocation(extensionRegistryUrl)
+	if err != nil {
+		return false
+	}
+
+	actual, err := normalizeOfficialSourceLocation(config.Location)
+	return err == nil && actual == expected
+}
+
+func normalizeOfficialSourceLocation(location string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(location))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("invalid source location")
+	}
+
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Path = strings.TrimSuffix(parsed.Path, "/")
+
+	return parsed.String(), nil
 }

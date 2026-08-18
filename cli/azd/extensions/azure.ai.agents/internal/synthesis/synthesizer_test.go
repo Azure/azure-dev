@@ -1242,6 +1242,9 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 			assert.NotEmpty(t, data, "%s should not be empty", p)
 		})
 	}
+	outputs, err := fs.ReadFile("templates/terraform/outputs.tf.tmpl")
+	require.NoError(t, err)
+	assert.Contains(t, string(outputs), `output "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"`)
 
 	// outputs.tf is rendered from outputs.tf.tmpl at eject time, and
 	// main.tfvars.json is generated -- neither is embedded as a final file

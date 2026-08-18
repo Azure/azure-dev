@@ -918,3 +918,67 @@ func TestDownloadAgentCode_ReturnsErrorOnNon200(t *testing.T) {
 	_, err := client.DownloadAgentCode(context.Background(), "no-such-agent", "v1", "")
 	require.Error(t, err)
 }
+
+func TestCreateVoiceAgent_PostsToVoiceCollectionWithPreviewHeader(t *testing.T) {
+	body := `{"object":"agent","id":"va-1","name":"my-voice","versions":{"latest":{}}}`
+	client, transport := newCaptureClient(http.StatusOK, body)
+
+	agent, err := client.CreateVoiceAgent(
+		t.Context(),
+		&CreateAgentRequest{Name: "my-voice"},
+		AgentEndpointAPIVersion,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "my-voice", agent.Name)
+
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+
+	require.Equal(t, http.MethodPost, req.Method)
+	require.Equal(t, "/api/projects/proj/voice_agents", req.URL.Path)
+	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	// Default routing: no host override.
+	require.Empty(t, req.Header.Get("x-ms-overridden-host"))
+
+	reqBody, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(reqBody), `"name":"my-voice"`)
+}
+
+func TestCreateVoiceAgent_SetsOverriddenHostHeader(t *testing.T) {
+	client, transport := newCaptureClient(http.StatusCreated, `{"name":"my-voice","versions":{"latest":{}}}`)
+
+	_, err := client.CreateVoiceAgent(
+		t.Context(),
+		&CreateAgentRequest{Name: "my-voice"},
+		AgentEndpointAPIVersion,
+		"regional.hyena.example.com",
+	)
+
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 1)
+	require.Equal(
+		t,
+		"regional.hyena.example.com",
+		transport.requests[0].Header.Get("x-ms-overridden-host"),
+	)
+}
+
+func TestCreateVoiceAgent_ReturnsErrorOnNonSuccess(t *testing.T) {
+	client, _ := newCaptureClient(
+		http.StatusForbidden,
+		`{"error":{"code":"preview_feature_required","message":"voice agents preview"}}`,
+	)
+
+	_, err := client.CreateVoiceAgent(
+		t.Context(),
+		&CreateAgentRequest{Name: "my-voice"},
+		AgentEndpointAPIVersion,
+		"",
+	)
+
+	require.Error(t, err)
+}

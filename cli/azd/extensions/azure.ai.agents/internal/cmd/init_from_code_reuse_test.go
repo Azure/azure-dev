@@ -111,6 +111,18 @@ func TestLoadAgentDefinitionFile(t *testing.T) {
 		require.Contains(t, err.Error(), "template")
 	})
 
+	t.Run("rejects prompt voice definitions", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := writeReuseTestFile(t, dir, "agent.yaml",
+			"kind: prompt-voice\nname: voice-agent\nmodel:\n  id: gpt-realtime\n")
+
+		_, err := loadAgentDefinitionFile(path)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "prompt-voice")
+		require.Contains(t, err.Error(), "Create a prompt voice agent")
+	})
+
 	t.Run("rejects missing kind via ValidateAgentDefinition", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()

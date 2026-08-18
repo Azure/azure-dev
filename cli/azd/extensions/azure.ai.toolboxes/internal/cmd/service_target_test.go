@@ -136,7 +136,10 @@ func TestPublishReuseEndpoint_WritesExpandedEndpoint(t *testing.T) {
 	// client or creates a version (it holds no azd client or resolver).
 	tgt := &toolboxServiceTarget{}
 	cfg := &toolboxServiceConfig{Endpoint: "${RESEARCH_TOOLBOX_ENDPOINT}"}
-	env := map[string]string{"RESEARCH_TOOLBOX_ENDPOINT": wantURL}
+	env := map[string]string{
+		"RESEARCH_TOOLBOX_ENDPOINT": wantURL,
+		"FOUNDRY_PROJECT_ENDPOINT":  "https://active.services.ai.azure.com/api/projects/current",
+	}
 
 	res, err := tgt.publishReuseEndpoint(t.Context(), "research", cfg, env, nil)
 	require.NoError(t, err)
@@ -144,6 +147,7 @@ func TestPublishReuseEndpoint_WritesExpandedEndpoint(t *testing.T) {
 	require.Len(t, *calls, 1)
 	assert.Equal(t, "research", (*calls)[0].name)
 	assert.Equal(t, wantURL, (*calls)[0].value)
+	assert.Equal(t, "https://active.services.ai.azure.com/api/projects/current", (*calls)[0].projectScope)
 }
 
 func TestDeployReuseUsesServiceEnvironment(t *testing.T) {

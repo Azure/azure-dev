@@ -5,6 +5,7 @@ package agentdetect
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -20,6 +21,7 @@ func TestAgentType_DisplayName(t *testing.T) {
 		{AgentTypeClaudeCode, "Claude Code"},
 		{AgentTypeGitHubCopilotCLI, "GitHub Copilot CLI"},
 		{AgentTypeGitHubCopilotApp, "GitHub Copilot App"},
+		{AgentTypeGitHubCopilotVSCode, "GitHub Copilot VSCode"},
 		{AgentTypeVSCodeCopilot, "VS Code GitHub Copilot"},
 		{AgentTypeGemini, "Gemini"},
 		{AgentTypeOpenCode, "OpenCode"},
@@ -64,8 +66,42 @@ func TestDetectFromEnvVars(t *testing.T) {
 			detected:      true,
 		},
 		{
+			name: "GitHub Copilot VSCode takes precedence over Copilot CLI",
+			envVars: map[string]string{
+				"AI_AGENT":           "github_copilot_vscode_agent",
+				"GITHUB_COPILOT_CLI": "true",
+				"GH_COPILOT":         "1",
+				"COPILOT_CLI":        "1",
+			},
+			expectedAgent: AgentTypeGitHubCopilotVSCode,
+			detected:      true,
+		},
+		{
 			name:          "Unrecognized AI_AGENT value",
 			envVars:       map[string]string{"AI_AGENT": "another_agent"},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name: "AI_AGENT requires an exact value",
+			envVars: map[string]string{
+				"AI_AGENT": "github_copilot_vscode_agent_extra",
+			},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name: "Wrong AI_AGENT value falls back to Copilot CLI",
+			envVars: map[string]string{
+				"AI_AGENT":    "github_copilot_vscode",
+				"COPILOT_CLI": "1",
+			},
+			expectedAgent: AgentTypeGitHubCopilotCLI,
+			detected:      true,
+		},
+		{
+			name:          "COPILOT_AGENT alone is not attributed",
+			envVars:       map[string]string{"COPILOT_AGENT": "1"},
 			expectedAgent: AgentTypeUnknown,
 			detected:      false,
 		},
@@ -216,16 +252,15 @@ func TestDetectFromUserAgent(t *testing.T) {
 
 func TestMatchProcessToAgent(t *testing.T) {
 	tests := []struct {
-		name          string
-		processInfo   parentProcessInfo
-		expectedAgent AgentType
-		detected      bool
+		name            string
+		processInfo     parentProcessInfo
+		expectedAgent   AgentType
+		expectedDetails string
 	}{
 		{
 			name:          "Empty process info",
 			processInfo:   parentProcessInfo{},
 			expectedAgent: AgentTypeUnknown,
-			detected:      false,
 		},
 		{
 			name: "Claude process name",
@@ -233,7 +268,6 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Name: "claude",
 			},
 			expectedAgent: AgentTypeClaudeCode,
-			detected:      true,
 		},
 		{
 			name: "Claude Code process name",
@@ -241,15 +275,27 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Name: "claude-code",
 			},
 			expectedAgent: AgentTypeClaudeCode,
-			detected:      true,
 		},
 		{
-			name: "GitHub Copilot CLI",
+			name: "GitHub Copilot CLI process name",
 			processInfo: parentProcessInfo{
 				Name: "gh-copilot",
 			},
 			expectedAgent: AgentTypeGitHubCopilotCLI,
-			detected:      true,
+		},
+		{
+			name: "GitHub Copilot CLI Windows executable",
+			processInfo: parentProcessInfo{
+				Executable: `C:\Users\example\AppData\Local\Programs\GitHub CLI\gh-copilot.exe`,
+			},
+			expectedAgent: AgentTypeGitHubCopilotCLI,
+		},
+		{
+			name: "GitHub Copilot CLI executable variants",
+			processInfo: parentProcessInfo{
+				Executable: "/usr/local/bin/github-copilot-cli",
+			},
+			expectedAgent: AgentTypeGitHubCopilotCLI,
 		},
 		{
 			name: "Gemini process",
@@ -257,7 +303,6 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Name: "gemini",
 			},
 			expectedAgent: AgentTypeGemini,
-			detected:      true,
 		},
 		{
 			name: "OpenCode process",
@@ -265,7 +310,6 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Name: "opencode",
 			},
 			expectedAgent: AgentTypeOpenCode,
-			detected:      true,
 		},
 		{
 			name: "Unknown process",
@@ -274,7 +318,52 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Executable: "/bin/bash",
 			},
 			expectedAgent: AgentTypeUnknown,
-			detected:      false,
+		},
+		{
+			name: "GitHub Copilot desktop app is not Copilot CLI",
+			processInfo: parentProcessInfo{
+				Name:       "GitHub Copilot.exe",
+				Executable: `C:\Users\example\AppData\Local\GitHub Copilot\GitHub Copilot.exe`,
+			},
+			expectedAgent: AgentTypeUnknown,
+		},
+		{
+			name: "Copilot name in host path does not match",
+			processInfo: parentProcessInfo{
+				Name:       "pwsh.exe",
+				Executable: `C:\Users\example\copilot-workspace\pwsh.exe`,
+			},
+			expectedAgent: AgentTypeUnknown,
+		},
+		{
+			name: "Copilot name substring does not match",
+			processInfo: parentProcessInfo{
+				Name: "my-copilot-wrapper",
+			},
+			expectedAgent: AgentTypeUnknown,
+		},
+		{
+			name: "Claude wrapper remains supported",
+			processInfo: parentProcessInfo{
+				Name: "my-claude-wrapper",
+			},
+			expectedAgent: AgentTypeClaudeCode,
+		},
+		{
+			name: "Gemini installation path remains supported",
+			processInfo: parentProcessInfo{
+				Name:       "node",
+				Executable: "/usr/local/lib/google-gemini/bin/node",
+			},
+			expectedAgent:   AgentTypeGemini,
+			expectedDetails: "/usr/local/lib/google-gemini/bin/node",
+		},
+		{
+			name: "OpenCode versioned executable remains supported",
+			processInfo: parentProcessInfo{
+				Name: "opencode-v1.2.3",
+			},
+			expectedAgent: AgentTypeOpenCode,
 		},
 	}
 
@@ -282,12 +371,47 @@ func TestMatchProcessToAgent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := matchProcessToAgent(tt.processInfo)
 
-			assert.Equal(t, tt.detected, result.Detected)
+			assert.Equal(t, tt.expectedAgent != AgentTypeUnknown, result.Detected)
 			assert.Equal(t, tt.expectedAgent, result.Type)
 
-			if tt.detected {
+			if result.Detected {
 				assert.Equal(t, DetectionSourceParentProcess, result.Source)
+				if tt.expectedDetails != "" {
+					assert.Equal(t, tt.expectedDetails, result.Details)
+				}
 			}
+		})
+	}
+}
+
+func TestMatchProcessToAgent_ExactExecutableNames(t *testing.T) {
+	tests := []struct {
+		processName   string
+		expectedAgent AgentType
+	}{
+		{"claude", AgentTypeClaudeCode},
+		{"claude-code", AgentTypeClaudeCode},
+		{"copilot", AgentTypeGitHubCopilotCLI},
+		{"copilot-cli", AgentTypeGitHubCopilotCLI},
+		{"gh-copilot", AgentTypeGitHubCopilotCLI},
+		{"github-copilot", AgentTypeGitHubCopilotCLI},
+		{"github-copilot-cli", AgentTypeGitHubCopilotCLI},
+		{"gemini", AgentTypeGemini},
+		{"gemini-code", AgentTypeGemini},
+		{"google-gemini", AgentTypeGemini},
+		{"opencode", AgentTypeOpenCode},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.processName, func(t *testing.T) {
+			result := matchProcessToAgent(parentProcessInfo{
+				Name:       strings.ToUpper(tt.processName) + ".EXE",
+				Executable: `C:\tools\` + tt.processName + ".exe",
+			})
+
+			assert.True(t, result.Detected)
+			assert.Equal(t, tt.expectedAgent, result.Type)
+			assert.Equal(t, DetectionSourceParentProcess, result.Source)
 		})
 	}
 }
@@ -343,7 +467,7 @@ func TestDisableAgentDetect(t *testing.T) {
 // This list must be kept in sync with knownEnvVarPatterns in detect_env.go.
 func clearAgentEnvVars(t *testing.T) {
 	envVarsToUnset := []string{
-		// GitHub Copilot App
+		// GitHub Copilot hosts
 		"AI_AGENT",
 		// Claude Code
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",

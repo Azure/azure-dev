@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -15,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
@@ -96,7 +96,7 @@ func TestResolveSourceLocation_ExistingSourceUnchanged(t *testing.T) {
 	require.Equal(t, "my-source", action.flags.source)
 }
 
-func TestResolveSourceLocation_NormalizedExistingSourceUsed(t *testing.T) {
+func TestResolveSourceLocation_InvalidAliasRejected(t *testing.T) {
 	t.Parallel()
 
 	action, _ := newBundleInstallTestAction(t)
@@ -107,8 +107,8 @@ func TestResolveSourceLocation_NormalizedExistingSourceUsed(t *testing.T) {
 	}))
 
 	action.flags.source = "my source"
-	require.NoError(t, action.resolveSourceLocation(t.Context()))
-	require.Equal(t, "my-source", action.flags.source)
+	err := action.resolveSourceLocation(t.Context())
+	require.ErrorIs(t, err, extensions.ErrSourceNameInvalid)
 }
 
 func TestResolveSourceLocation_PlainNameUnchanged(t *testing.T) {
@@ -200,7 +200,7 @@ func TestResolveSourceLocation_InvalidSourceNamePromptsAgain(t *testing.T) {
 	require.NoError(t, action.resolveSourceLocation(t.Context()))
 	require.Equal(t, "local-dev", action.flags.source)
 	require.Equal(t, 2, promptCount)
-	require.Contains(t, console.Output(), output.WithErrorFormat("Extension source name cannot contain '.'"))
+	require.Contains(t, strings.Join(console.Output(), "\n"), "invalid extension source name")
 }
 
 func TestResolveSourceLocation_ExistingSourceNamePromptsAgain(t *testing.T) {

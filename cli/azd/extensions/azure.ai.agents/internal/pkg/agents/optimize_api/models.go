@@ -77,10 +77,11 @@ type Dataset struct {
 	Items   []json.RawMessage `json:"items,omitempty"`
 }
 
-// EvaluatorRef references an evaluator by name and optional version.
+// EvaluatorRef references an evaluator by name, optional version, and optional initialization_parameters.
 type EvaluatorRef struct {
-	Name    string `json:"name"`
-	Version string `json:"version,omitempty"`
+	Name                     string         `json:"name"`
+	Version                  string         `json:"version,omitempty"`
+	InitializationParameters map[string]any `json:"initialization_parameters,omitempty"`
 }
 
 // SkillDefinition describes a skill attached to an agent.

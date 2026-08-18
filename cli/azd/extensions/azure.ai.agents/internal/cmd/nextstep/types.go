@@ -46,6 +46,11 @@ type Suggestion struct {
 // marked optional below are populated only by the resolver paths that
 // need them — see field docs.
 type State struct {
+	// EnvironmentName is the explicitly selected azd environment that emitted
+	// commands must target. It stays empty when assembly uses the current
+	// environment, preserving the existing unqualified command shape.
+	EnvironmentName string
+
 	// HasProjectEndpoint reports whether FOUNDRY_PROJECT_ENDPOINT is set
 	// (and non-empty) in the active azd environment.
 	HasProjectEndpoint bool
@@ -70,8 +75,9 @@ type State struct {
 	// reason-tag taxonomy.
 	PendingProvisionReasons []string
 
-	// MissingInfraVars names ${...} references in agent.yaml that map to
-	// Bicep outputs not yet present in the azd environment (i.e.,
+	// MissingInfraVars names ${...} references in agent config
+	// that map to Bicep outputs not yet present in the azd
+	// environment (i.e.,
 	// provision is needed or has been skipped). Named so the resolver can
 	// surface an actionable hint.
 	MissingInfraVars []string
@@ -110,18 +116,23 @@ type State struct {
 	MissingToolboxEndpoints []ResourceRef
 
 	// UnresolvedPlaceholders names {{NAME}} Mustache-style placeholders
-	// still present (literally) inside agent.yaml's environment_variables
-	// values. These are left over from init's manifest processing when
+	// still present inside an agent configuration environment
+	// value. These are left over from init's manifest processing when
 	// agent.manifest.yaml declares a placeholder without a matching
 	// parameter (or the user skipped the prompt). Unlike Missing*Vars,
 	// these cannot be supplied via `azd env set` — the literal `{{X}}`
-	// would still be in agent.yaml at deploy time. The resolver surfaces
-	// a distinct "edit agent.yaml" suggestion for each.
+	// would still be in the agent configuration at deploy time. The
+	// resolver surfaces a distinct configuration-edit suggestion for
+	// each.
 	UnresolvedPlaceholders []string
 
 	// Services is the per-service snapshot derived from azure.yaml plus
 	// the azd environment (for IsDeployed).
 	Services []ServiceState
+
+	// EnvironmentLoadErrors lists service-specific errors encountered
+	// while loading effective agent environment configuration.
+	EnvironmentLoadErrors []string
 
 	// AgentStatus is the remote agent version status as reported by the
 	// Foundry API (e.g., "Active", "Creating", "Failed"). Empty when the
@@ -210,10 +221,11 @@ type ResourceRef struct {
 // underscores — the convention used by the deploy-time env-var writer in
 // project/service_target_agent.go.
 type ServiceState struct {
-	Name          string
-	Host          string
-	Protocol      string
-	MultiProtocol bool
-	RelativePath  string
-	IsDeployed    bool
+	Name              string
+	Host              string
+	Protocol          string
+	MultiProtocol     bool
+	RelativePath      string
+	IsDeployed        bool
+	EnvironmentValues []string
 }

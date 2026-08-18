@@ -1,6 +1,68 @@
 # Release History
 
-## 1.30.0-beta.1 (Unreleased)
+## 1.32.0-beta.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
+## 1.31.1 (2026-08-13)
+
+### Bugs Fixed
+
+- [[#9535]](https://github.com/Azure/azure-dev/pull/9535) Fix custom provisioning layers consuming empty or stale Bicep outputs by inferring dependencies from `.bicepparam` and `.parameters.json` parameter references.
+
+## 1.31.0 (2026-08-12)
+
+### Features Added
+
+- [[#9417]](https://github.com/Azure/azure-dev/pull/9417) Add support for installing a self-contained extension bundle directly from an HTTPS URL with `azd extension install`, reusing the existing extraction, registry, and checksum validation path.
+- [[#9174]](https://github.com/Azure/azure-dev/pull/9174) Add a `TelemetryService.ReportUsage` extension gRPC API so extensions installed from official sources can report named usage events with bounded attributes through azd's telemetry pipeline.
+
+### Breaking Changes
+
+- [[#9370]](https://github.com/Azure/azure-dev/pull/9370) Update `azd tool update --output json` to report `"action": "update"` instead of `"action": "upgrade"` for update and dry-run results, including when invoked through the legacy `azd tool upgrade` alias; update scripts that inspect the `action` field.
+- [[#9370]](https://github.com/Azure/azure-dev/pull/9370) Update telemetry identifiers for extension and tool updates to use `update` terminology, including `ext.update`, `extension.update.*`, `extension.dependency_update_count`, and `tool.update.*`; update custom telemetry queries that use the former `upgrade` names.
+- [[#9451]](https://github.com/Azure/azure-dev/pull/9451) Update extension source names to require 1 to 64 lowercase letters, digits, hyphens, or underscores, so names such as `My Source` or `foo.bar` are now rejected instead of silently normalized and existing invalid entries must be removed and re-added.
+
+### Bugs Fixed
+
+- [[#9473]](https://github.com/Azure/azure-dev/pull/9473) Fix azd hanging during Aspire AppHost manifest generation when the Aspire CLI run hook rewrites azd's publish invocation, while keeping CLI-bundle dependency resolution enabled.
+- [[#9495]](https://github.com/Azure/azure-dev/pull/9495) Fix `azd init` and `azd template list` offering awesome-azd templates that require extension-specific initialization and cannot be initialized as standard templates.
+- [[#9476]](https://github.com/Azure/azure-dev/pull/9476) Fix duplicated punctuation in interactive prompts, so messages already ending in punctuation no longer render as `Continue with reset?:` or `Select a deployment to continue::`.
+
+### Other Changes
+
+- [[#9370]](https://github.com/Azure/azure-dev/pull/9370) Update the `azd extension upgrade` and `azd tool upgrade` commands to `azd extension update` and `azd tool update`, keeping the former names as aliases; the extension dependency opt-out flag is now `--no-dependency-updates`, with `--no-dependency-upgrades` remaining as a hidden alias for existing scripts. Thanks @hyoshis for the contribution!
+- [[#9452]](https://github.com/Azure/azure-dev/pull/9452) Update extension telemetry to emit privacy-safe source categories (`azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown`) and remove the raw `extension.source`, `extension.source.from`, and `extension.source.to` fields.
+- [[#9420]](https://github.com/Azure/azure-dev/pull/9420) Update the `execution.environment` telemetry field to report generic GitHub Copilot agent sessions in VS Code as `GitHub Copilot VSCode`, distinct from the GitHub Copilot for Azure extension. Thanks @qinezh for the contribution!
+- [[#9457]](https://github.com/Azure/azure-dev/pull/9457) Add `provider` and `config` to `infra.layers[]` entries in the `azure.yaml` schema so per-layer provisioning providers and their configuration validate in schema-aware editors.
+
+## 1.30.0 (2026-08-05)
+
+### Features Added
+
+- [[#9284]](https://github.com/Azure/azure-dev/pull/9284) Add container image deployment support for `host: function` services using a Dockerfile, prebuilt image, or remote ACR build.
+
+### Bugs Fixed
+
+- [[#9238]](https://github.com/Azure/azure-dev/pull/9238) Fix `${VAR}` substitution in `infra.deploymentStacks` settings such as `denySettings.excludedActions` and `denySettings.excludedPrincipals`.
+- [[#9324]](https://github.com/Azure/azure-dev/pull/9324) Fix `azd provision --preview` to show nested ARM failures such as quota limits and provide relevant recovery guidance.
+- [[#9325]](https://github.com/Azure/azure-dev/pull/9325) Fix `azd update` to install the exact stable version it reports instead of potentially installing a newer release.
+- [[#9329]](https://github.com/Azure/azure-dev/pull/9329) Fix `azd pipeline config --provider azdo --auth-type federated` incorrectly rejecting federated authentication and update the flag's help text to reflect existing Azure DevOps support.
+- [[#9347]](https://github.com/Azure/azure-dev/pull/9347) Fix `azd init --from-code` and `azd infra generate --force` hanging indefinitely on Aspire solutions when persistent MSBuild worker nodes keep output pipes open.
+- [[#9361]](https://github.com/Azure/azure-dev/pull/9361) Fix extension upgrade errors to identify the requested version and the source or registries checked, while preserving source and version values in retry commands.
+- [[#9361]](https://github.com/Azure/azure-dev/pull/9361) Fix extension install and upgrade errors to distinguish a missing dependency from one whose available versions do not satisfy the required constraint.
+- [[#9430]](https://github.com/Azure/azure-dev/pull/9430) Fix GitHub Actions pipeline authentication for repositories using immutable OIDC subject claims.
+- [[#9353]](https://github.com/Azure/azure-dev/pull/9353) Improve `azd init` and `azd up` to detect unsupported non-C# Aspire AppHosts early and show actionable guidance instead of misleading Docker and source-build failures.
+
+### Other Changes
+
+- [[#9380]](https://github.com/Azure/azure-dev/pull/9380) Update the bundled GitHub CLI to v2.97.0.
 
 ## 1.29.0 (2026-07-29)
 

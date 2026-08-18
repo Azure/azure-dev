@@ -248,7 +248,7 @@ func TestRunToolInstall_StepProgress(t *testing.T) {
 
 // TestRunToolUpgrade_StepProgress_ShowsVersion verifies that a non-skill
 // upgrade appends the resulting version to the step result line — the same
-// treatment skills get — e.g. "Upgrading Test Tool (v2.64.0)".
+// treatment skills get — e.g. "Updating Test Tool (v2.64.0)".
 func TestRunToolUpgrade_StepProgress_ShowsVersion(t *testing.T) {
 	t.Parallel()
 
@@ -290,8 +290,8 @@ func TestRunToolUpgrade_StepProgress_ShowsVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
 
-	assert.Equal(t, []string{"Upgrading Test Tool"}, r.starts)
-	assert.Equal(t, []string{"Upgrading Test Tool (v2.64.0)"}, r.stops,
+	assert.Equal(t, []string{"Updating Test Tool"}, r.starts)
+	assert.Equal(t, []string{"Updating Test Tool (v2.64.0)"}, r.stops,
 		"a non-skill upgrade must report the resulting version, like skills")
 }
 
@@ -1508,8 +1508,8 @@ func TestRunSkill_Upgrade_StepResultShowsVersion(t *testing.T) {
 	assert.False(t, result.AlreadyUpToDate, "an actual upgrade is not up-to-date")
 
 	// Spinner title has no version; the result line appends the new version.
-	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot"}, r.starts)
-	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot (v1.1.86)"}, r.stops)
+	assert.Equal(t, []string{"Updating Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Updating Test Azure Skills in copilot (v1.1.86)"}, r.stops)
 }
 
 // TestRunSkill_Upgrade_AlreadyUpToDate verifies that when the agent reports the
@@ -1549,7 +1549,7 @@ func TestRunSkill_Upgrade_AlreadyUpToDate(t *testing.T) {
 	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
 	assert.True(t, result.AlreadyUpToDate, "nothing changed, so already up to date")
 
-	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Updating Test Azure Skills in copilot"}, r.starts)
 	assert.Equal(t, []string{"Test Azure Skills in copilot is already up to date (v1.1.86)."}, r.stops)
 }
 
@@ -1594,7 +1594,7 @@ func TestRunSkill_Upgrade_DetectionLag_NotUpToDate(t *testing.T) {
 	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
 	assert.False(t, result.AlreadyUpToDate,
 		"a reported upgrade must not be marked up-to-date even when detection lags")
-	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot (v2.0.0)"}, r.stops)
+	assert.Equal(t, []string{"Updating Test Azure Skills in copilot (v2.0.0)"}, r.stops)
 }
 
 // TestRunSkill_OutputPrintedBelowStep verifies that when the agent CLI writes
@@ -2320,12 +2320,12 @@ func TestRunSkill_Upgrade_PrintsPerAgentHeader(t *testing.T) {
 	})
 
 	require.True(t, result.Success, "result.Error=%v", result.Error)
-	assert.Contains(t, stderr, "Upgrading Test Azure Skills in copilot")
-	assert.Contains(t, stderr, "Upgrading Test Azure Skills in claude")
+	assert.Contains(t, stderr, "Updating Test Azure Skills in copilot")
+	assert.Contains(t, stderr, "Updating Test Azure Skills in claude")
 }
 
 // TestRunSkill_Upgrade_NoAgent_NotInstalled_ReturnsInstallGuidance
-// verifies that `azd tool upgrade <skill>` with no --agent, when the
+// verifies that `azd tool update <skill>` with no --agent, when the
 // skill is installed on no available agent, returns a clear "install
 // first" guidance error instead of falling through to an agent and
 // attempting to update a plugin that was never installed (which used to

@@ -6,14 +6,92 @@ package exterrors
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestServiceFromAzure(t *testing.T) {
+	responseErr := &azcore.ResponseError{
+		StatusCode: http.StatusTooManyRequests,
+		ErrorCode:  "TooManyRequests",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Status:     "429 Too Many Requests",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"TooManyRequests"}}`)),
+			Request: &http.Request{
+				Method: http.MethodPost,
+				URL: &url.URL{
+					Scheme: "https",
+					Host:   "sample.services.ai.azure.com",
+				},
+			},
+		},
+	}
+
+	result := ServiceFromAzure(responseErr, OpCreateAgent)
+
+	var serviceErr *azdext.ServiceError
+	require.ErrorAs(t, result, &serviceErr)
+	assert.Equal(t, "create_agent.TooManyRequests", serviceErr.ErrorCode)
+	assert.Equal(t, http.StatusTooManyRequests, serviceErr.StatusCode)
+	assert.Equal(t, "sample.services.ai.azure.com", serviceErr.ServiceName)
+}
+
+func TestServiceFromAzurePreservesStructuredError(t *testing.T) {
+	expected := &azdext.LocalError{
+		Message:  "invalid input",
+		Code:     "invalid_input",
+		Category: azdext.LocalErrorCategoryValidation,
+	}
+
+	assert.Same(t, expected, ServiceFromAzure(expected, OpCreateAgent))
+}
+
+func TestFromHostPreservesServiceDetails(t *testing.T) {
+	st := status.New(codes.Unknown, "request failed")
+	withDetails, err := st.WithDetails(
+		&azdext.ServiceErrorDetail{
+			ErrorCode:   "AuthorizationFailed",
+			StatusCode:  http.StatusForbidden,
+			ServiceName: "management.azure.com",
+		},
+		&azdext.ActionableErrorDetail{
+			Suggestion: "request the required role and retry",
+		},
+	)
+	require.NoError(t, err)
+
+	result := FromHost(withDetails.Err(), OpContainerPublish, "container publish failed")
+
+	var serviceErr *azdext.ServiceError
+	require.ErrorAs(t, result, &serviceErr)
+	assert.Equal(t, "container_publish.AuthorizationFailed", serviceErr.ErrorCode)
+	assert.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
+	assert.Equal(t, "management.azure.com", serviceErr.ServiceName)
+	assert.Equal(t, "request the required role and retry", serviceErr.Suggestion)
+	assert.Contains(t, serviceErr.Message, "container publish failed")
+}
+
+func TestInternalFromErrorPreservesStructuredError(t *testing.T) {
+	expected := &azdext.LocalError{
+		Message:  "missing dependency",
+		Code:     "missing_dependency",
+		Category: azdext.LocalErrorCategoryDependency,
+	}
+
+	assert.Same(t, expected, InternalFromError(expected, OpContainerPackage, "code packaging failed"))
+}
 
 func TestFromAiService(t *testing.T) {
 	tests := []struct {

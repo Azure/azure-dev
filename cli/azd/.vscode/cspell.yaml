@@ -173,6 +173,13 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: internal/appdetect/aspire_polyglot.go
+    words:
+      - pylock
+  - filename: internal/appdetect/dotnet_apphost.go
+    words:
+      - buildpack
+      - upvote
   - filename: cmd/mcp.go
     words:
       - internalcmd
@@ -311,6 +318,8 @@ overrides:
       - println
       - myext
       - Fatalf
+      - CODEOWNERS
+      - codeowners
   - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
     words:
       - dall
@@ -488,6 +497,9 @@ overrides:
     words:
       - forbidigo
       - Logf
+  - filename: internal/cmd/up_graph.go
+    words:
+      - finalizer
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

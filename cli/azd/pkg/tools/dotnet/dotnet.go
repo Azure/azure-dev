@@ -211,6 +211,9 @@ func (cli *Cli) PublishAppHostManifest(
 	// worker nodes terminate when the build completes, closing the inherited pipe.
 	envArgs := []string{
 		"MSBUILDDISABLENODEREUSE=1",
+		// AspireUseCliBundle enables an MSBuild run hook that delegates `dotnet run` to `aspire run`.
+		// Manifest generation must run the AppHost directly because `aspire run` is a long-running command.
+		"ASPIRE_SUPPRESS_CLI_RUN_HOOK=true",
 	}
 
 	// AppHost may conditionalize their infrastructure based on the environment, so we need to pass the environment when we

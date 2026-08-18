@@ -13,6 +13,26 @@ Use `--no-inspector` to run only the local agent process:
 azd ai agent run --no-inspector
 ```
 
+The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
+move it, which is what you need when running two agents side by side or when a
+stale process still holds the default port:
+
+```bash
+azd ai agent run --port 9091 --inspector-port 9002
+```
+
+`--inspector-port` is rejected when it cannot be honored:
+
+- with `--no-client` (or the deprecated `--no-inspector`), since no local client
+  is opened and the port would go unused; and
+- for agents that use Agent Inspector, when it matches `--port`, since the agent
+  binds that address first and the inspector would then fail to bind it.
+
+azd also warns, without failing the run, when `--inspector-port` cannot take
+effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
+than the Agent Inspector, and `--port 8087` on its own collides with the
+inspector's own default UI port.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the
@@ -60,6 +80,7 @@ carries `config: env:` gets a warning naming the affected variables on both
 
 Move them up one level to fix it:
 
+<!-- azd:doc-example partial -->
 ```yaml
 services:
   my-agent:
@@ -69,6 +90,11 @@ services:
       API_KEY: ${SECRET}
       LOG_LEVEL: debug
 ```
+
+Hosted Agent Service environment variable names must start with a letter or
+underscore and contain only letters, digits, or underscores. For example,
+`API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
+before contacting Foundry Agent Service.
 
 ## Content safety policies
 
@@ -107,6 +133,38 @@ Details:
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
 
+## Session idle timeout
+
+A hosted agent's runtime session sandbox is suspended by Foundry after a period
+of inactivity. The default is 900 seconds. Override it with
+`sessionConfiguration.idleTimeoutSeconds` on the `azure.ai.agent` service entry
+in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    sessionConfiguration:
+      idleTimeoutSeconds: 300
+```
+
+`sessionConfiguration` applies to both deploy modes — container images and code
+deploys (`codeConfiguration`) alike. It is optional; when omitted, the setting
+is left out of the service request and Foundry applies its default (900
+seconds).
+
+Details:
+
+- `idleTimeoutSeconds` must be between **300 and 3600** seconds (inclusive).
+  Values outside that range are rejected at deploy time and by schema
+  validation.
+- In the deprecated on-disk `agent.yaml` shape the keys are snake_case
+  (`session_configuration.idle_timeout_seconds`). In `azure.yaml` they are
+  camelCase, like the other inline agent properties.
+
 ## Session carry-over across deploys
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and
@@ -136,6 +194,10 @@ Details:
   fails (for example, the previous session was already deleted), azd silently
   falls back to the default behavior and the next invoke starts a fresh session
   on the new version.
+
+## Customize infrastructure
+
+Use `azd ai agent init --infra` to generate editable Foundry Bicep or Terraform. Existing project infrastructure is preserved as a separate layer. See [Customize Foundry infrastructure with `--infra`](docs/infrastructure-eject.md) for migration behavior, file-conflict rules, resource-group ownership, layer dependencies, and limitations.
 
 ## Private networking for `host: azure.ai.project`
 

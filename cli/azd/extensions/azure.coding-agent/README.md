@@ -29,7 +29,7 @@ azd extension install azure.coding-agent
 Or, if you already the `azure.coding-agent` extension installed, and you want to upgrade to the latest version:
 
 ```shell
-azd extension upgrade azure.coding-agent
+azd extension update azure.coding-agent
 ```
 
 ## Usage

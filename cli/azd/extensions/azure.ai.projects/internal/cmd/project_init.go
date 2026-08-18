@@ -227,11 +227,6 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 	}
 	identityChanged := !equalProjectEndpoint(oldEndpoint, target.Endpoint) ||
 		!strings.EqualFold(oldValues["AZURE_AI_PROJECT_ID"], target.ResourceId)
-	if err := reconcileProjectEnvironment(
-		ctx, client, envName, target.Mode, target, identityChanged,
-	); err != nil {
-		return err
-	}
 	if target.Mode != projectModeExistingEndpoint &&
 		(projectConfig.GetInfra() == nil || projectConfig.GetInfra().GetProvider() == "") {
 		if err := writeFoundryProvider(ctx, client, projectConfig); err != nil {
@@ -248,6 +243,11 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 		if err := ejectProjectInfra(ctx, client, projectRoot, serviceName, infra); err != nil {
 			return err
 		}
+	}
+	if err := reconcileProjectEnvironment(
+		ctx, client, envName, target.Mode, target, identityChanged,
+	); err != nil {
+		return err
 	}
 
 	result := projectInitOutput{

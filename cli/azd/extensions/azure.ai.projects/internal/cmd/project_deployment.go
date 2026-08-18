@@ -511,9 +511,14 @@ func deploymentItems(
 	service *projectServiceInfo,
 	projectRoot string,
 ) ([]map[string]any, []map[string]any, error) {
-	rawValue, _ := service.Raw["deployments"].([]any)
-	resolvedSource, _ := service.Resolved["deployments"].([]any)
-	var err error
+	rawValue, err := deploymentArray(service.Raw, "persisted")
+	if err != nil {
+		return nil, nil, err
+	}
+	resolvedSource, err := deploymentArray(service.Resolved, "resolved")
+	if err != nil {
+		return nil, nil, err
+	}
 	if rawValue == nil && resolvedSource != nil {
 		rawValue = resolvedSource
 	}
@@ -564,6 +569,28 @@ func deploymentItems(
 		return nil, nil, fmt.Errorf("resolved project deployments changed item count")
 	}
 	return raw, resolved, nil
+}
+
+func deploymentArray(service map[string]any, source string) ([]any, error) {
+	if service == nil {
+		return nil, nil
+	}
+	value, exists := service["deployments"]
+	if !exists {
+		return nil, nil
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return nil, exterrors.Validation(
+			"project_deployments_invalid",
+			fmt.Sprintf(
+				"the %s project deployments value must be an array",
+				source,
+			),
+			"put deployment declarations and $ref entries inside the deployments array",
+		)
+	}
+	return items, nil
 }
 
 func deploymentMap(deployment synthesis.Deployment) map[string]any {

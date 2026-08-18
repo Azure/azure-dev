@@ -909,6 +909,33 @@ type recordingProjectConfigServer struct {
 	setRequest *azdext.SetProjectConfigValueRequest
 }
 
+type projectInitEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	setCalls int
+}
+
+func (s *projectInitEnvironmentServer) Select(
+	context.Context,
+	*azdext.SelectEnvironmentRequest,
+) (*azdext.EmptyResponse, error) {
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *projectInitEnvironmentServer) GetValues(
+	context.Context,
+	*azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	return &azdext.KeyValueListResponse{}, nil
+}
+
+func (s *projectInitEnvironmentServer) SetValue(
+	context.Context,
+	*azdext.SetEnvRequest,
+) (*azdext.EmptyResponse, error) {
+	s.setCalls++
+	return &azdext.EmptyResponse{}, nil
+}
+
 func (s *recordingProjectConfigServer) Get(
 	context.Context,
 	*azdext.EmptyRequest,
@@ -964,6 +991,57 @@ func (s *recordingProjectServiceServer) SetServiceConfigValue(
 ) (*azdext.EmptyResponse, error) {
 	s.request = request
 	return &azdext.EmptyResponse{}, nil
+}
+
+func TestProjectInitPersistsProjectBeforeEnvironment(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("name: test\n"),
+		0600,
+	))
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Name:     "test",
+			Path:     root,
+			Services: map[string]*azdext.ServiceConfig{},
+		},
+	}
+	envServer := &projectInitEnvironmentServer{}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	action := &ProjectInitAction{
+		client: client,
+		flags: &projectInitFlags{
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			noPrompt:        true,
+			output:          "none",
+		},
+		extCtx: &azdext.ExtensionContext{Environment: "test"},
+	}
+	err = action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "add project service")
+	assert.Zero(t, envServer.setCalls)
 }
 
 func TestProjectEnvironmentPreservesLocationWhenProjectLocationIsUnknown(t *testing.T) {
@@ -1041,6 +1119,22 @@ func TestDeploymentItemsUsesExpandedValues(t *testing.T) {
 		resolvedItems[0],
 		synthesisDeploymentForTest(),
 	))
+}
+
+func TestDeploymentItemsRejectsSectionReference(t *testing.T) {
+	_, _, err := deploymentItems(
+		&projectServiceInfo{
+			Raw: map[string]any{
+				"deployments": map[string]any{
+					"$ref": "./deployments.yaml",
+				},
+			},
+			Resolved: map[string]any{},
+		},
+		"",
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "deployments value must be an array")
 }
 
 func synthesisDeploymentForTest() synthesis.Deployment {

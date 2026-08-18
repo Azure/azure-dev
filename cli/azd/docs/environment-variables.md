@@ -139,12 +139,12 @@ Metadata requests are unauthenticated when no matching token is set.
 
 | Variable | Description |
 | --- | --- |
-| `GH_TOKEN` | Token used to request repository metadata from `github.com`. Takes precedence over `GITHUB_TOKEN`. |
-| `GITHUB_TOKEN` | Token used to request repository metadata from `github.com` when `GH_TOKEN` is not set. |
+| `GH_TOKEN` | Token used to request repository metadata from `github.com` and GitHub Enterprise Cloud `*.ghe.com` hosts. Takes precedence over `GITHUB_TOKEN`. |
+| `GITHUB_TOKEN` | Token used to request repository metadata from `github.com` and `*.ghe.com` when `GH_TOKEN` is not set. |
 | `GH_HOST` | GitHub Enterprise host recognized for repository metadata checks. |
 | `GITHUB_SERVER_URL` | GitHub server URL recognized for repository metadata checks when `GH_HOST` is not set. |
-| `GH_ENTERPRISE_TOKEN` | Token used to request repository metadata from a recognized GitHub Enterprise host. Takes precedence over `GITHUB_ENTERPRISE_TOKEN`. |
-| `GITHUB_ENTERPRISE_TOKEN` | Token used to request repository metadata from a recognized GitHub Enterprise host when `GH_ENTERPRISE_TOKEN` is not set. |
+| `GH_ENTERPRISE_TOKEN` | Token used to request repository metadata from a recognized GitHub Enterprise Server host. Takes precedence over `GITHUB_ENTERPRISE_TOKEN`. |
+| `GITHUB_ENTERPRISE_TOKEN` | Token used for a recognized GitHub Enterprise Server host when `GH_ENTERPRISE_TOKEN` is not set. |
 
 ## Extension Configuration
 

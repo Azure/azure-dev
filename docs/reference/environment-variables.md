@@ -41,9 +41,9 @@ Used by `azd init --template` when checking GitHub repository metadata before cl
 
 | Variable | Description |
 |---|---|
-| `GH_TOKEN` / `GITHUB_TOKEN` | Authenticate repository metadata requests to `github.com` |
+| `GH_TOKEN` / `GITHUB_TOKEN` | Authenticate repository metadata requests to `github.com` and GitHub Enterprise Cloud `*.ghe.com` hosts |
 | `GH_HOST` / `GITHUB_SERVER_URL` | Identify a GitHub Enterprise host for repository metadata checks |
-| `GH_ENTERPRISE_TOKEN` / `GITHUB_ENTERPRISE_TOKEN` | Authenticate repository metadata requests to the recognized GitHub Enterprise host |
+| `GH_ENTERPRISE_TOKEN` / `GITHUB_ENTERPRISE_TOKEN` | Authenticate repository metadata requests to a recognized GitHub Enterprise Server host |
 
 ## Build Configuration
 

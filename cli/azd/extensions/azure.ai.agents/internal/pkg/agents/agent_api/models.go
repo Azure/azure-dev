@@ -68,6 +68,12 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
+	// AgentKindVoice is the data-plane (service) kind for a declarative voice
+	// (speech-to-speech) agent. Note: this is the wire value posted to the
+	// /voice_agents collection. The azd manifest authoring kind is
+	// "prompt-voice" (agent_yaml.AgentKindPromptVoice), which the map layer
+	// translates to this value.
+	AgentKindVoice AgentKind = "voice"
 )
 
 // AgentEventType represents the types of events that can be handled
@@ -238,6 +244,16 @@ type ContainerConfigurationAPI struct {
 	Image string `json:"image"`
 }
 
+// SessionConfigurationAPI represents the session_configuration block in the API request.
+// It controls hosted-agent session runtime behavior; when omitted the service applies
+// its own defaults.
+type SessionConfigurationAPI struct {
+	// IdleTimeoutSeconds maps to session_configuration.idle_timeout_seconds. Valid
+	// range is 300–3600 (inclusive). When the field is unset the whole
+	// session_configuration block is omitted and the service default (900) applies.
+	IdleTimeoutSeconds int `json:"idle_timeout_seconds"`
+}
+
 // HostedAgentDefinition represents a hosted agent that can be either container-based
 // (with ContainerConfiguration) or code-based (with CodeConfiguration).
 // Both deploy modes now use "protocol_versions" in the serialized JSON.
@@ -249,6 +265,7 @@ type HostedAgentDefinition struct {
 	EnvironmentVariables   map[string]string          `json:"environment_variables,omitempty"`
 	ContainerConfiguration *ContainerConfigurationAPI `json:"container_configuration,omitempty"` // container deploy only
 	CodeConfiguration      *CodeConfigurationAPI      `json:"code_configuration,omitempty"`      // code deploy only
+	SessionConfiguration   *SessionConfigurationAPI   `json:"session_configuration,omitempty"`   // optional session tuning
 	Image                  string                     `json:"image,omitempty"`                   // deprecated: for backward compat deserialization only
 }
 
@@ -280,6 +297,76 @@ func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// VoiceModelType selects the model-inference mode for a voice agent.
+//   - "managed": Voice Live-hosted — the service runs the model on its own infra.
+//   - "self_deployed": BYOM — the service calls the customer's own Foundry deployment.
+type VoiceModelType string
+
+const (
+	VoiceModelTypeManaged      VoiceModelType = "managed"
+	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
+)
+
+// VoiceAudioFormat describes a PCM audio stream format (e.g. audio/pcm @ 24 kHz).
+type VoiceAudioFormat struct {
+	Type string `json:"type"`
+	Rate int    `json:"rate"`
+}
+
+// VoiceTurnDetection configures server-side voice-activity detection so the
+// agent auto-responds when the caller stops speaking.
+type VoiceTurnDetection struct {
+	Type              string   `json:"type"`
+	Threshold         *float64 `json:"threshold,omitempty"`
+	PrefixPaddingMs   *int     `json:"prefix_padding_ms,omitempty"`
+	SilenceDurationMs *int     `json:"silence_duration_ms,omitempty"`
+}
+
+// VoiceTranscription enables user-speech transcription events on the input stream.
+type VoiceTranscription struct {
+	Model string `json:"model,omitempty"`
+}
+
+// VoiceInputConfig is the input (caller -> agent) audio configuration.
+type VoiceInputConfig struct {
+	Format        *VoiceAudioFormat   `json:"format,omitempty"`
+	TurnDetection *VoiceTurnDetection `json:"turn_detection,omitempty"`
+	Transcription *VoiceTranscription `json:"transcription,omitempty"`
+}
+
+// VoiceConfig selects the output voice. Type is "openai" for realtime voices
+// (single lowercase word, e.g. "alloy") or "azure_standard" for Azure Neural
+// voices (e.g. "en-US-Ava:DragonHDLatestNeural").
+type VoiceConfig struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+// VoiceOutputConfig is the output (agent -> caller) audio configuration.
+type VoiceOutputConfig struct {
+	Format *VoiceAudioFormat `json:"format,omitempty"`
+	Voice  *VoiceConfig      `json:"voice,omitempty"`
+}
+
+// VoiceAudioConfig bundles the input and output audio configuration.
+type VoiceAudioConfig struct {
+	Input  *VoiceInputConfig  `json:"input,omitempty"`
+	Output *VoiceOutputConfig `json:"output,omitempty"`
+}
+
+// VoiceAgentDefinition is the data-plane definition body POSTed to the
+// /voice_agents collection for a declarative (managed) voice agent. Its Kind
+// is always AgentKindVoice ("voice").
+type VoiceAgentDefinition struct {
+	AgentDefinition
+	ModelType        VoiceModelType    `json:"model_type"`
+	Model            string            `json:"model"`
+	Instructions     string            `json:"instructions,omitempty"`
+	Audio            *VoiceAudioConfig `json:"audio,omitempty"`
+	OutputModalities []string          `json:"output_modalities,omitempty"`
+	Store            *bool             `json:"store,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version

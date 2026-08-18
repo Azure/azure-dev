@@ -10,9 +10,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -39,6 +43,17 @@ func TestIsBundleArg(t *testing.T) {
 	require.False(t, isBundleArg([]string{zipPath, "other"}))
 	require.False(t, isBundleArg([]string{dir})) // directory, not a file
 	require.False(t, isBundleArg(nil))
+
+	// Remote bundle URLs are recognized without touching the local file system.
+	// HTTP is detected here so the install path can return actionable HTTPS guidance.
+	require.True(t, isBundleArg([]string{"https://example.com/my-ext_1.0.0.zip"}))
+	require.True(t, isBundleArg([]string{"http://example.com/path/my-ext.ZIP"}))
+	require.True(t, isBundleArg([]string{"https://example.com/my-ext.zip?token=abc"}))
+	require.True(t, isBundleArg([]string{"https://example.com/%ZZ/my-ext.zip?token=abc"}))
+	require.False(t, isBundleArg([]string{"https://example.com/registry.json"}))
+	require.True(t, isBundleArg([]string{"https:///my-ext.zip"}))
+	require.False(t, isBundleArg([]string{"ftp://example.com/my-ext.zip"}))
+	require.False(t, isBundleArg([]string{"https://example.com/my-ext_1.0.0.zip", "other"}))
 }
 
 func TestNormalizeBundleSourceName(t *testing.T) {
@@ -49,6 +64,9 @@ func TestNormalizeBundleSourceName(t *testing.T) {
 		"ext_1.0.0":            "ext_1-0-0",
 		"weird@@name!!":        "weird-name",
 		"--leading-trailing--": "leading-trailing",
+		"_leading":             "leading",
+		"trailing_":            "trailing",
+		"___":                  "",
 		"UPPER":                "upper",
 	}
 
@@ -62,6 +80,30 @@ func TestBundleSourceName(t *testing.T) {
 
 	require.Equal(t, "my-ext_1-0-0", bundleSourceName("/tmp/My Ext_1.0.0.zip"))
 	require.Equal(t, "bundle", bundleSourceName("bundle.zip"))
+}
+
+func TestPrepareBundleInstall_LongNameUsesValidTransientSource(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newBundleInstallTestAction(t)
+	zipPath := makeBundleZip(t, []*extensions.ExtensionMetadata{
+		{
+			Id:          "test.ext",
+			DisplayName: "Test Extension",
+			Versions: []extensions.ExtensionVersion{
+				{Version: "1.0.0", Artifacts: map[string]extensions.ExtensionArtifact{
+					"linux/amd64": {URL: "artifacts/ext.tar.gz"},
+				}},
+			},
+		},
+	})
+	longPath := filepath.Join(filepath.Dir(zipPath), strings.Repeat("a", 100)+".zip")
+	require.NoError(t, os.Rename(zipPath, longPath))
+
+	require.NoError(t, action.prepareBundleInstall(t.Context(), longPath))
+	require.NoError(t, extensions.ValidateSourceName(action.bundleSourceName))
+	require.LessOrEqual(t, len(action.bundleSourceName), extensions.SourceNameMaxLength)
+	action.cleanupBundleInstall(t.Context())
 }
 
 func TestCleanupBundleInstall_RemovesTempDir(t *testing.T) {
@@ -188,7 +230,7 @@ func TestConfirmSourceChange(t *testing.T) {
 			`azure.ai.agents 1.0.0 is already installed from source "azd". Reinstall from bundle?`)
 	})
 
-	t.Run("UpgradeShowsTargetVersion", func(t *testing.T) {
+	t.Run("UpdateShowsTargetVersion", func(t *testing.T) {
 		console := mockinput.NewMockConsole()
 		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
 		action := newConfirmTestAction(console, false)
@@ -199,7 +241,7 @@ func TestConfirmSourceChange(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, proceed)
 		require.Contains(t, lastConfirmMessage(console),
-			`azure.ai.agents 1.0.0 is already installed from source "azd". Upgrade to 2.0.0 from bundle?`)
+			`azure.ai.agents 1.0.0 is already installed from source "azd". Update to 2.0.0 from bundle?`)
 	})
 
 	t.Run("DowngradeDeclined", func(t *testing.T) {
@@ -310,9 +352,9 @@ func TestVersionTransitionVerb(t *testing.T) {
 		expected  string
 	}{
 		{"1.0.0", "1.0.0", "Reinstall"},
-		{"1.0.0", "2.0.0", "Upgrade to 2.0.0"},
+		{"1.0.0", "2.0.0", "Update to 2.0.0"},
 		{"1.0.0", "0.9.0", "Downgrade to 0.9.0"},
-		{"1.0.0-preview", "1.0.0", "Upgrade to 1.0.0"},
+		{"1.0.0-preview", "1.0.0", "Update to 1.0.0"},
 		// Non-semver tags have no defined ordering -> neutral verb.
 		{"nightly", "1.0.0", "Replace with 1.0.0"},
 		{"1.0.0", "nightly", "Replace with nightly"},
@@ -379,6 +421,18 @@ func makeBundleZip(t *testing.T, exts []*extensions.ExtensionMetadata) string {
 func newBundleInstallTestAction(t *testing.T) (*extensionInstallAction, config.UserConfigManager) {
 	t.Helper()
 
+	action, userConfigManager, _ := newBundleInstallTestActionWithMocks(t)
+	return action, userConfigManager
+}
+
+// newBundleInstallTestActionWithMocks is like newBundleInstallTestAction but also
+// returns the mock context so tests can stub HTTP responses (e.g. remote bundle
+// downloads).
+func newBundleInstallTestActionWithMocks(
+	t *testing.T,
+) (*extensionInstallAction, config.UserConfigManager, *mocks.MockContext) {
+	t.Helper()
+
 	mockContext := mocks.NewMockContext(t.Context())
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := extensions.NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
@@ -392,9 +446,10 @@ func newBundleInstallTestAction(t *testing.T) (*extensionInstallAction, config.U
 		console:          mockinput.NewMockConsole(),
 		extensionManager: manager,
 		sourceManager:    sourceManager,
+		transport:        mockContext.HttpClient,
 		flags:            &extensionInstallFlags{global: &internal.GlobalCommandOptions{}},
 	}
-	return action, userConfigManager
+	return action, userConfigManager, mockContext
 }
 
 func TestPrepareBundleInstall_Success(t *testing.T) {
@@ -436,12 +491,289 @@ func TestPrepareBundleInstall_Success(t *testing.T) {
 	require.ErrorIs(t, err, extensions.ErrSourceNotFound)
 }
 
+// respondWithBundleZip stubs the mock HTTP client so any request for bundleURL
+// returns the bytes of the bundle .zip at zipPath.
+func respondWithBundleZip(t *testing.T, mockContext *mocks.MockContext, bundleURL string, zipPath string) {
+	t.Helper()
+
+	zipBytes, err := os.ReadFile(zipPath)
+	require.NoError(t, err)
+
+	mockContext.HttpClient.
+		When(func(request *http.Request) bool {
+			return request.URL.String() == bundleURL
+		}).
+		RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{},
+				Request:    request,
+				Body:       io.NopCloser(bytes.NewReader(zipBytes)),
+			}, nil
+		})
+}
+
+func TestPrepareBundleInstall_RemoteURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		bundleURL   = "https://example.com/builds/path-secret.zip?sig=query-secret"
+		pathSecret  = "path-secret"
+		querySecret = "query-secret"
+	)
+
+	action, _, mockContext := newBundleInstallTestActionWithMocks(t)
+	zipPath := makeBundleZip(t, []*extensions.ExtensionMetadata{
+		{
+			Id:          "test.ext",
+			DisplayName: "Test Extension",
+			Versions: []extensions.ExtensionVersion{
+				{Version: "1.0.0", Artifacts: map[string]extensions.ExtensionArtifact{
+					"linux/amd64": {URL: "artifacts/ext.tar.gz"},
+				}},
+			},
+		},
+	})
+	respondWithBundleZip(t, mockContext, bundleURL, zipPath)
+
+	err := action.prepareBundleInstall(t.Context(), bundleURL)
+	require.NoError(t, err)
+
+	// The downloaded bundle goes through the same extraction and validation path.
+	require.Equal(t, []string{"test.ext"}, action.args)
+	require.Equal(t, action.bundleSourceName, action.flags.source)
+	require.Regexp(t, `^bundle-[0-9a-f]{8}$`, action.bundleSourceName)
+	require.NotContains(t, action.bundleSourceName, pathSecret)
+	require.DirExists(t, action.bundleTempDir)
+	require.FileExists(t, action.bundleTempZip)
+
+	console, ok := action.console.(*mockinput.MockConsole)
+	require.True(t, ok)
+	for _, op := range console.SpinnerOps() {
+		require.NotContains(t, op.Message, bundleURL)
+		require.NotContains(t, op.Message, pathSecret)
+		require.NotContains(t, op.Message, querySecret)
+	}
+
+	// Cleanup removes both the extracted directory and the downloaded .zip.
+	downloadedZip := action.bundleTempZip
+	action.cleanupBundleInstall(t.Context())
+	require.NoFileExists(t, downloadedZip)
+	require.Empty(t, action.bundleTempZip)
+	require.Empty(t, action.bundleTempDir)
+}
+
+func TestPrepareBundleInstall_RejectsHTTPURL(t *testing.T) {
+	t.Parallel()
+
+	const bundleURL = "http://example.com/path-secret.zip?sig=query-secret"
+
+	action, _, _ := newBundleInstallTestActionWithMocks(t)
+	err := action.prepareBundleInstall(t.Context(), bundleURL)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "must use HTTPS")
+	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+	require.NotContains(t, err.Error(), "path-secret")
+	require.NotContains(t, err.Error(), "query-secret")
+	require.Empty(t, action.bundleTempZip)
+	require.Empty(t, action.bundleTempDir)
+}
+
+func TestExtensionInstall_InvalidRemoteURLDoesNotExposeURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		bundleURL   = "https://example.com/%ZZ-path-secret/bundle.zip?sig=query-secret"
+		pathSecret  = "path-secret"
+		querySecret = "query-secret"
+	)
+
+	action, _, _ := newBundleInstallTestActionWithMocks(t)
+	action.args = []string{bundleURL}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.ErrorContains(t, err, "invalid remote extension bundle URL")
+	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+	require.NotContains(t, err.Error(), bundleURL)
+	require.NotContains(t, err.Error(), pathSecret)
+	require.NotContains(t, err.Error(), querySecret)
+
+	console, ok := action.console.(*mockinput.MockConsole)
+	require.True(t, ok)
+	for _, message := range console.Output() {
+		require.NotContains(t, message, bundleURL)
+		require.NotContains(t, message, pathSecret)
+		require.NotContains(t, message, querySecret)
+	}
+	for _, op := range console.SpinnerOps() {
+		require.NotContains(t, op.Message, bundleURL)
+		require.NotContains(t, op.Message, pathSecret)
+		require.NotContains(t, op.Message, querySecret)
+	}
+}
+
+func TestDownloadBundle_RejectsInsecureRedirectHop(t *testing.T) {
+	t.Parallel()
+
+	var insecureRequested atomic.Bool
+	var finalRequested atomic.Bool
+	var insecureServer *httptest.Server
+
+	secureServer := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/bundle.zip":
+			http.Redirect(writer, request, insecureServer.URL+"/redirect", http.StatusFound)
+		case "/final.zip":
+			finalRequested.Store(true)
+			writer.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	t.Cleanup(secureServer.Close)
+
+	insecureServer = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		insecureRequested.Store(true)
+		http.Redirect(writer, request, secureServer.URL+"/final.zip", http.StatusFound)
+	}))
+	t.Cleanup(insecureServer.Close)
+
+	action := &extensionInstallAction{
+		console:   mockinput.NewMockConsole(),
+		transport: secureServer.Client(),
+	}
+	t.Cleanup(func() {
+		if action.bundleTempZip != "" {
+			_ = os.Remove(action.bundleTempZip)
+		}
+	})
+
+	_, err := action.downloadBundle(t.Context(), secureServer.URL+"/bundle.zip")
+	require.Error(t, err)
+	require.ErrorIs(t, err, errInsecureBundleRedirect)
+	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+	require.False(t, insecureRequested.Load(), "HTTP redirect target should not be requested")
+	require.False(t, finalRequested.Load(), "redirect chain should stop before the final HTTPS target")
+	require.Empty(t, action.bundleTempZip)
+}
+
+func TestPrepareBundleInstall_RemoteDownloadFailure(t *testing.T) {
+	t.Parallel()
+
+	const (
+		bundleURL = "https://example.com/missing.zip?sig=secret-value"
+		secret    = "secret-value"
+	)
+
+	action, _, mockContext := newBundleInstallTestActionWithMocks(t)
+	mockContext.HttpClient.
+		When(func(request *http.Request) bool { return request.URL.String() == bundleURL }).
+		RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Header:     http.Header{},
+				Request:    request,
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+			}, nil
+		})
+
+	err := action.prepareBundleInstall(t.Context(), bundleURL)
+	require.Error(t, err)
+	// Download failures are distinct from invalid bundle contents.
+	require.ErrorContains(t, err, "failed to download extension bundle")
+	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+	require.NotContains(t, err.Error(), bundleURL)
+	require.NotContains(t, err.Error(), secret)
+	require.Empty(t, action.bundleTempDir)
+
+	console, ok := action.console.(*mockinput.MockConsole)
+	require.True(t, ok)
+	for _, op := range console.SpinnerOps() {
+		require.NotContains(t, op.Message, bundleURL)
+		require.NotContains(t, op.Message, secret)
+	}
+
+	// Nothing was extracted or downloaded, so cleanup is a no-op.
+	action.cleanupBundleInstall(t.Context())
+	require.Empty(t, action.bundleTempZip)
+}
+
+func TestPrepareBundleInstall_RemoteTransportFailureDoesNotExposeURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		bundleURL = "https://example.com/bundle.zip?sig=secret-value"
+		secret    = "secret-value"
+	)
+
+	action, _, mockContext := newBundleInstallTestActionWithMocks(t)
+	transportErr := fmt.Errorf("request to %s failed", bundleURL)
+	mockContext.HttpClient.
+		When(func(request *http.Request) bool { return request.URL.String() == bundleURL }).
+		SetNonRetriableError(transportErr)
+
+	err := action.prepareBundleInstall(t.Context(), bundleURL)
+	require.EqualError(t, err, "failed to download extension bundle")
+	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+	require.NotContains(t, err.Error(), bundleURL)
+	require.NotContains(t, err.Error(), secret)
+
+	downloadErr, ok := errors.AsType[*bundleDownloadError](err)
+	require.True(t, ok)
+	require.Contains(t, downloadErr.err.Error(), secret)
+
+	console, ok := action.console.(*mockinput.MockConsole)
+	require.True(t, ok)
+	for _, op := range console.SpinnerOps() {
+		require.NotContains(t, op.Message, bundleURL)
+		require.NotContains(t, op.Message, secret)
+	}
+}
+
+func TestPrepareBundleInstall_RemoteInvalidBundle(t *testing.T) {
+	t.Parallel()
+
+	const bundleURL = "https://example.com/not-a-bundle.zip"
+
+	action, _, mockContext := newBundleInstallTestActionWithMocks(t)
+	respondWithBundleZip(t, mockContext, bundleURL, makeZipWithoutRegistry(t))
+
+	err := action.prepareBundleInstall(t.Context(), bundleURL)
+	require.Error(t, err)
+	// Invalid bundle contents surface as a bundle error, not a download error.
+	require.ErrorContains(t, err, "bundle does not contain a registry.json")
+	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+
+	// Both the downloaded .zip and the extraction directory are reclaimed.
+	downloadedZip := action.bundleTempZip
+	require.FileExists(t, downloadedZip)
+	action.cleanupBundleInstall(t.Context())
+	require.NoFileExists(t, downloadedZip)
+	require.Empty(t, action.bundleTempDir)
+}
+
 func TestPrepareBundleInstall_MissingRegistry(t *testing.T) {
 	t.Parallel()
 
 	// A .zip without a registry.json at its root is rejected with guidance.
-	stagingDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(stagingDir, "not-registry.txt"), []byte("x"), 0600))
+	zipPath := makeZipWithoutRegistry(t)
+
+	action, _ := newBundleInstallTestAction(t)
+	err := action.prepareBundleInstall(t.Context(), zipPath)
+	require.Error(t, err)
+	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+
+	// Temp dir is recorded so the deferred cleanup can still reclaim it.
+	action.cleanupBundleInstall(t.Context())
+	require.Empty(t, action.bundleTempDir)
+}
+
+// makeZipWithoutRegistry builds a .zip that is not a self-contained bundle (it
+// has no registry.json at its root) and returns its path.
+func makeZipWithoutRegistry(t *testing.T) string {
+	t.Helper()
+
 	zipPath := filepath.Join(t.TempDir(), "bad.zip")
 	zipFile, err := os.Create(zipPath)
 	require.NoError(t, err)
@@ -453,14 +785,7 @@ func TestPrepareBundleInstall_MissingRegistry(t *testing.T) {
 	require.NoError(t, zw.Close())
 	require.NoError(t, zipFile.Close())
 
-	action, _ := newBundleInstallTestAction(t)
-	err = action.prepareBundleInstall(context.Background(), zipPath)
-	require.Error(t, err)
-	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
-
-	// Temp dir is recorded so the deferred cleanup can still reclaim it.
-	action.cleanupBundleInstall(context.Background())
-	require.Empty(t, action.bundleTempDir)
+	return zipPath
 }
 
 func TestCleanupBundleInstall_RepointsInstalledToBundle(t *testing.T) {
@@ -496,6 +821,7 @@ func TestCleanupBundleInstall_RepointsInstalledToBundle(t *testing.T) {
 	installed, err := action.extensionManager.GetInstalled(extensions.FilterOptions{Id: "test.ext"})
 	require.NoError(t, err)
 	require.Equal(t, extensions.BundleSourceName, installed.Source)
+	require.Equal(t, extensions.SourceCategoryBundle, installed.SourceCategory)
 }
 
 func TestExtensionList_SurfacesBundleInstalledExtension(t *testing.T) {

@@ -476,12 +476,23 @@ func TestIsTerminal_NonTTY(t *testing.T) {
 type helpersProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
 	project *azdext.ProjectConfig
+	err     error
 }
 
 func (s *helpersProjectServer) Get(
 	_ context.Context, _ *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+func (s *helpersProjectServer) GetServiceConfigValue(
+	_ context.Context,
+	_ *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{}, nil
 }
 
 // helpersPromptServer is a fake PromptServiceServer that records Select calls
@@ -490,6 +501,7 @@ type helpersPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	selectIndex int32
 	selectCalls atomic.Int32
+	lastSelect  *azdext.SelectRequest
 }
 
 type helpersFailingEnvironmentServer struct {
@@ -507,6 +519,7 @@ func (s *helpersPromptServer) Select(
 	_ context.Context, req *azdext.SelectRequest,
 ) (*azdext.SelectResponse, error) {
 	s.selectCalls.Add(1)
+	s.lastSelect = req
 	idx := s.selectIndex
 	return &azdext.SelectResponse{Value: &idx}, nil
 }

@@ -436,6 +436,12 @@ func TestArmOutputsToProto(t *testing.T) {
 // The fix is in armOutputsToProto: case-insensitive lookup against
 // canonicalOutputNames, then emit the canonical name. Unknown keys
 // pass through verbatim so we never silently lose an output.
+func TestInvalidatedEnvKeysClearsConnectionReadinessRecord(t *testing.T) {
+	result := invalidatedEnvKeysResult()
+	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTION_NAMES")
+	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
+}
+
 func TestArmOutputsToProto_RepairsMangledKeyCase(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -611,6 +617,7 @@ func TestDeploymentName_StableForEnv(t *testing.T) {
 	// Different project paths sharing an env name must not collide.
 	other := &FoundryProvisioningProvider{envName: "dev", projectPath: "/proj/b"}
 	assert.NotEqual(t, first, other.deploymentName())
+
 }
 
 func TestDeploymentName_LongEnvironmentName(t *testing.T) {
@@ -642,6 +649,124 @@ func TestDeploymentOutputsResources_NilSafe(t *testing.T) {
 	}
 	assert.NotNil(t, deploymentOutputs(props))
 	assert.Len(t, deploymentResources(props), 1)
+}
+
+func TestVerifyLayerResourceGroupOwnership(t *testing.T) {
+	const (
+		subscriptionID = "00000000-0000-0000-0000-000000000001"
+		resourceGroup  = "rg-foundry"
+	)
+	properties := func(ids ...string) *armresources.DeploymentPropertiesExtended {
+		resources := make([]*armresources.ResourceReference, 0, len(ids))
+		for _, id := range ids {
+			resources = append(resources, &armresources.ResourceReference{ID: new(id)})
+		}
+		return &armresources.DeploymentPropertiesExtended{OutputResources: resources}
+	}
+
+	ownedID := "/subscriptions/" + subscriptionID + "/resourceGroups/" + resourceGroup
+	assert.Equal(t, ownedID, ownedLayerResourceGroupID(properties(ownedID), subscriptionID, resourceGroup))
+	require.NoError(t, verifyLayerResourceGroupOwnership(ownedID, subscriptionID, resourceGroup))
+	require.NoError(t, verifyLayerResourceGroupOwnership(strings.ToUpper(ownedID)+"/", subscriptionID, resourceGroup))
+
+	for _, tt := range []struct {
+		name    string
+		ownerID string
+		props   *armresources.DeploymentPropertiesExtended
+	}{
+		{name: "no ownership marker"},
+		{name: "only resource inside group", props: properties(ownedID + "/providers/Microsoft.Storage/storageAccounts/a")},
+		{name: "different group", ownerID: "/subscriptions/" + subscriptionID + "/resourceGroups/other"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Empty(t, ownedLayerResourceGroupID(tt.props, subscriptionID, resourceGroup))
+			err := verifyLayerResourceGroupOwnership(tt.ownerID, subscriptionID, resourceGroup)
+			require.Error(t, err)
+			var local *azdext.LocalError
+			require.ErrorAs(t, err, &local)
+			assert.Contains(t, local.Message, "refusing to delete")
+		})
+	}
+}
+
+func TestVerifyLayerResourceGroupTags(t *testing.T) {
+	require.NoError(t, verifyLayerResourceGroupTags(
+		map[string]*string{"azd-env-name": new("dev")}, "dev", "rg-foundry"))
+	require.NoError(t, verifyLayerResourceGroupTags(
+		map[string]*string{"AZD-ENV-NAME": new("dev")}, "dev", "rg-foundry"))
+
+	for _, tags := range []map[string]*string{
+		nil,
+		{"azd-env-name": nil},
+		{"azd-env-name": new("prod")},
+	} {
+		err := verifyLayerResourceGroupTags(tags, "dev", "rg-foundry")
+		require.Error(t, err)
+		var local *azdext.LocalError
+		require.ErrorAs(t, err, &local)
+		assert.Contains(t, local.Message, "not tagged")
+	}
+}
+
+func TestResolveLayerResourceGroupOwnership(t *testing.T) {
+	const (
+		subscriptionID = "00000000-0000-0000-0000-000000000001"
+		resourceGroup  = "rg-foundry"
+	)
+	ownedID := "/subscriptions/" + subscriptionID + "/resourceGroups/" + resourceGroup
+	properties := &armresources.DeploymentPropertiesExtended{
+		OutputResources: []*armresources.ResourceReference{{ID: new(ownedID)}},
+	}
+
+	assert.Equal(t, ownedID, resolveLayerResourceGroupOwnership(
+		ownedID, subscriptionID, resourceGroup, true, nil), "repeat provision preserves ownership")
+	assert.Empty(t, resolveLayerResourceGroupOwnership(
+		"/subscriptions/other/resourceGroups/old", subscriptionID, resourceGroup, true, properties),
+		"changing to an existing group must clear stale ownership")
+	assert.Equal(t, ownedID, resolveLayerResourceGroupOwnership(
+		"/subscriptions/other/resourceGroups/old", subscriptionID, resourceGroup, false, properties),
+		"changing to an absent group may establish ownership after creation")
+}
+
+func TestValidateFoundryProviderLayers(t *testing.T) {
+	require.NoError(t, validateFoundryProviderLayers([]byte(`infra:
+  provider: bicep
+  layers:
+    - name: app
+      provider: bicep
+    - name: foundry
+      provider: microsoft.foundry
+`)))
+
+	err := validateFoundryProviderLayers([]byte(`infra:
+  provider: microsoft.foundry
+  layers:
+    - name: first
+`))
+	require.Error(t, err)
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, local.Code)
+	assert.Contains(t, local.Message, "root Foundry provider")
+}
+
+func TestFoundryInfraConfig_HasFoundryLayer(t *testing.T) {
+	root, err := parseFoundryInfraConfig([]byte(`infra:
+  name: root-name
+  provider: microsoft.foundry
+`))
+	require.NoError(t, err)
+	assert.False(t, root.hasFoundryLayer("root-name"))
+
+	layered, err := parseFoundryInfraConfig([]byte(`infra:
+  provider: bicep
+  layers:
+    - name: foundry
+      provider: microsoft.foundry
+`))
+	require.NoError(t, err)
+	assert.True(t, layered.hasFoundryLayer("foundry"))
+	assert.False(t, layered.hasFoundryLayer(""))
 }
 
 func TestEncodeParamValue(t *testing.T) {
@@ -882,7 +1007,7 @@ func TestOnDiskTemplatePresent(t *testing.T) {
 	// main.bicep alone: true.
 	bicepDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(bicepDir, onDiskInfraDir), 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(bicepDir, onDiskInfraDir, onDiskBicepFile), []byte("// b"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(bicepDir, onDiskInfraDir, onDiskModule+".bicep"), []byte("// b"), 0o600))
 	p = &FoundryProvisioningProvider{projectPath: bicepDir}
 	assert.True(t, p.onDiskTemplatePresent(),
 		"main.bicep present -> true")
@@ -890,11 +1015,38 @@ func TestOnDiskTemplatePresent(t *testing.T) {
 	// main.bicepparam alone: true.
 	bicepparamDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(bicepparamDir, onDiskInfraDir), 0o750))
-	bicepparamPath := filepath.Join(bicepparamDir, onDiskInfraDir, onDiskBicepParamFile)
+	bicepparamPath := filepath.Join(bicepparamDir, onDiskInfraDir, onDiskModule+".bicepparam")
 	require.NoError(t, os.WriteFile(bicepparamPath, []byte("// bp"), 0o600))
 	p = &FoundryProvisioningProvider{projectPath: bicepparamDir}
 	assert.True(t, p.onDiskTemplatePresent(),
 		"main.bicepparam present -> true")
+
+	// Layer path/module override: the provider must not fall back to root infra.
+	customDir := t.TempDir()
+	layerDir := filepath.Join(customDir, "infra", "foundry")
+	require.NoError(t, os.MkdirAll(layerDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(layerDir, "project.bicep"), []byte("// b"), 0o600))
+	p = &FoundryProvisioningProvider{
+		projectPath: customDir,
+		infraPath:   layerDir,
+		infraModule: "project",
+	}
+	assert.True(t, p.onDiskTemplatePresent(), "custom layer path and module -> true")
+}
+
+func TestInitialize_RejectsAbsoluteLayerPath(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	p := &FoundryProvisioningProvider{}
+	err := p.Initialize(t.Context(), projectRoot, &azdext.ProvisioningOptions{
+		Provider: FoundryProviderName,
+		Path:     filepath.Join(projectRoot, "infra", "foundry"),
+	})
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+	assert.Contains(t, localErr.Message, "project-relative")
 }
 
 func TestResolveTemplate_FallsBackToEmbeddedWhenNoOnDisk(t *testing.T) {
@@ -938,7 +1090,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 	dir := t.TempDir()
 	infraDir := filepath.Join(dir, onDiskInfraDir)
 	require.NoError(t, os.MkdirAll(infraDir, 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile),
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".bicep"),
 		[]byte("// fake bicep, never actually compiled by the stub"), 0o600))
 
 	// Plant a user parameters file with one literal value so we can
@@ -951,7 +1103,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
     "userOnly": { "value": "from-user" }
   }
 }`
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".parameters.json"), []byte(params), 0o600))
 
 	// Pre-bake the on-disk source so we don't need a live bicep CLI.
 	// (resolveTemplate skips the loadOnDiskTemplate call when
@@ -975,7 +1127,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 				"location": map[string]any{"value": "user-supplied-location"},
 				"userOnly": map[string]any{"value": "from-user"},
 			},
-			sourcePath: filepath.Join(infraDir, onDiskBicepFile),
+			sourcePath: filepath.Join(infraDir, onDiskModule+".bicep"),
 		},
 	}
 
@@ -986,7 +1138,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 	assert.Equal(t, templateModeBicep, got.mode, "on-disk Bicep mode wins")
 	assert.Equal(t, "ondisk", got.armTemplate["$schema"],
 		"on-disk template is returned, not the embedded one")
-	assert.Equal(t, filepath.Join(infraDir, onDiskBicepFile), got.sourcePath)
+	assert.Equal(t, filepath.Join(infraDir, onDiskModule+".bicep"), got.sourcePath)
 
 	// Merge precedence: user wins on 'location'.
 	loc := got.parameters["location"].(map[string]any)
@@ -1198,6 +1350,29 @@ func TestWithTenantOutput(t *testing.T) {
 	})
 }
 
+func TestNormalizeOutputs_LayerOmitsRootResourceGroup(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		isLayer:          true,
+		foundryRGOwnerID: "/subscriptions/sub/resourceGroups/rg-foundry",
+	}
+	got := p.normalizeOutputs(map[string]*azdext.ProvisioningOutputParameter{
+		envKeyResourceGroup: {Type: "string", Value: "rg-foundry"},
+		envKeyFoundryRG:     {Type: "string", Value: "rg-foundry"},
+	})
+	assert.NotContains(t, got, envKeyResourceGroup)
+	assert.Contains(t, got, envKeyFoundryRG)
+	assert.Equal(t, p.foundryRGOwnerID, got[envKeyFoundryRGOwner].Value)
+}
+
+func TestNormalizeOutputs_LayerClearsStaleResourceGroupOwnership(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{isLayer: true}
+	got := p.normalizeOutputs(nil)
+	require.Contains(t, got, envKeyFoundryRGOwner)
+	assert.Equal(t, "", got[envKeyFoundryRGOwner].Value)
+}
+
 func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 	t.Parallel()
 	// envValues must always include the canonical AZURE_* keys
@@ -1211,14 +1386,21 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 		rgName:      "my-rg",
 		foundryName: "fp",
 		principalID: "pid",
+		virtualEnv: map[string]string{
+			"PLATFORM_OUTPUT": "planned-value",
+			envKeyLocation:    "stale-planned-location",
+		},
 		// azdClient intentionally nil
 	}
 	got := p.envValues(t.Context())
 	assert.Equal(t, "sub-id", got[envKeySubscriptionID])
 	assert.Equal(t, "westus2", got[envKeyLocation])
 	assert.Equal(t, "my-rg", got[envKeyResourceGroup])
+	assert.Equal(t, "my-rg", got[envKeyFoundryRG])
 	assert.Equal(t, "fp", got[envKeyProjectName])
 	assert.Equal(t, "pid", got[envKeyPrincipalID])
+	assert.Equal(t, "planned-value", got["PLATFORM_OUTPUT"])
+	assert.Equal(t, "westus2", got[envKeyLocation], "canonical values take precedence over virtual env")
 }
 
 func TestCollectPurgeableAccounts(t *testing.T) {

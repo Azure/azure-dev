@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,15 +17,27 @@ import (
 	"text/template"
 
 	"azureaiagent/internal/exterrors"
+	projectPaths "azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.yaml.in/yaml/v3"
 )
 
-// ejectArtifact records one file the eject step produced under ./infra/.
+const (
+	defaultInfraPath       = "infra"
+	defaultInfraModule     = "main"
+	foundryInfraLayerName  = "foundry"
+	foundryInfraLayerPath  = "infra/foundry"
+	foundryTerraformMarker = ".azd-foundry"
+	foundryTerraformV1     = "terraform-v1\n"
+)
+
+// ejectArtifact records one file the eject step produced.
 // Paths are forward-slash relative to projectRoot so the success output is
 // stable across operating systems.
 type ejectArtifact struct {
@@ -32,21 +45,119 @@ type ejectArtifact struct {
 	bytes   int    // size of the file just written
 }
 
+type infraEjectPlan struct {
+	targetDir         string
+	targetPath        string
+	module            string
+	layer             bool
+	mergeExisting     bool
+	updatedYAML       []byte
+	updateDescription string
+}
+
+type infraTargetState struct {
+	dir    string
+	exists bool
+	empty  bool
+}
+
+type infraConfig struct {
+	root         *yaml.Node
+	infra        *yaml.Node
+	layersNode   *yaml.Node
+	rootProvider string
+	layers       []infraLayer
+}
+
+type infraLayer struct {
+	node              *yaml.Node
+	name              string
+	path              string
+	module            string
+	provider          string
+	effectiveProvider string
+}
+
 // validateStandaloneEjectArgs refuses init-driving inputs that the
-// standalone-eject branch would silently drop. `--infra` on an existing
-// project runs eject only; honoring a positional path, -m, or --src would
-// falsely imply the input was acted upon.
-func validateStandaloneEjectArgs(args []string, flags *initFlags) error {
-	if len(args) == 0 && flags.manifestPointer == "" && flags.src == "" && flags.image == "" {
+// standalone-eject branch would silently drop. `--infra` on a project that
+// already declares a Foundry service runs eject only; honoring a positional
+// path or an explicitly changed init flag would falsely imply the input was
+// acted upon.
+//
+// Scoped to that branch only: on the init fall-through (a project without a
+// Foundry service, or no project at all) the same inputs are accepted, because
+// there they genuinely drive init.
+func validateStandaloneEjectArgs(cmd *cobra.Command, args []string) error {
+	conflicts := standaloneEjectConflictingInputs(cmd, args)
+	if len(conflicts) == 0 {
 		return nil
 	}
+
 	return exterrors.Validation(
 		exterrors.CodeInfraEjectConflictingArguments,
-		"`--infra` on an existing project runs eject only and does not "+
-			"accept a positional path, -m/--manifest, --src, or --image",
-		"drop the extra argument and run `azd ai agent init --infra` from the project root, "+
+		"`--infra` on a project that already declares a Foundry service runs eject only "+
+			fmt.Sprintf("and cannot use these init inputs: %s", strings.Join(conflicts, ", ")),
+		"drop the init inputs and run `azd ai agent init --infra` from the project root, "+
 			"or remove --infra to run the normal init flow",
 	)
+}
+
+// ensureDefaultInfraModule refuses a custom infra.module. Eject writes
+// main.bicep/main.parameters.json or main.tfvars.json, while azd derives those
+// filenames from infra.module and would ignore the generated entry point or
+// parameter file.
+func ensureDefaultInfraModule(rawYAML []byte) error {
+	config, err := readDeclaredInfraConfig(rawYAML)
+	if err != nil {
+		return err
+	}
+
+	if config.Module == "" || config.Module == "main" || config.Module == "./main" {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectCustomModule,
+		fmt.Sprintf("azure.yaml selects infrastructure module %q via `infra.module`; `--infra` "+
+			"generates the default main module and cannot preserve that entry point", config.Module),
+		fmt.Sprintf("run `azd ai agent init` without --infra to keep module %q, or remove "+
+			"`infra.module` first if you want the generated main module to replace it", config.Module),
+	)
+}
+
+// standaloneEjectConflictingInputs returns every changed input the standalone
+// eject branch cannot honor. Global execution controls remain valid; everything
+// else is assumed to belong to init so newly-added flags fail safe instead of
+// being silently ignored.
+func standaloneEjectConflictingInputs(cmd *cobra.Command, args []string) []string {
+	allowed := map[string]struct{}{
+		"cwd":            {},
+		"debug":          {},
+		"infra":          {},
+		"no-prompt":      {},
+		"output":         {},
+		"trace-log-file": {},
+		"trace-log-url":  {},
+	}
+	seen := map[string]struct{}{}
+	if len(args) > 0 {
+		seen["positional path"] = struct{}{}
+	}
+
+	collect := func(flags *pflag.FlagSet) {
+		flags.Visit(func(flag *pflag.Flag) {
+			if _, ok := allowed[flag.Name]; ok {
+				return
+			}
+			seen["--"+flag.Name] = struct{}{}
+		})
+	}
+	collect(cmd.Flags())
+	collect(cmd.InheritedFlags())
+
+	conflicts := slices.Collect(maps.Keys(seen))
+	slices.Sort(conflicts)
+	return conflicts
 }
 
 // parseInfraProvider normalizes the --infra flag value into a supported
@@ -68,6 +179,270 @@ func parseInfraProvider(value string) (string, error) {
 	}
 }
 
+// readProjectAzureYAML reads azure.yaml from projectRoot, reporting a missing
+// file as the structured CodeInfraEjectAzureYamlMissing refusal so every eject
+// entry point surfaces the same code for the same condition.
+func readProjectAzureYAML(projectRoot string) ([]byte, error) {
+	//nolint:gosec // G304: azure.yaml under the caller-supplied azd project root
+	raw, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, exterrors.Validation(
+				exterrors.CodeInfraEjectAzureYamlMissing,
+				"azure.yaml not found in the current directory; "+
+					"`azd ai agent init --infra` requires an existing azd agent project",
+				"run `azd ai agent init` first to create azure.yaml, then re-run with --infra",
+			)
+		}
+		return nil, fmt.Errorf("read azure.yaml: %w", err)
+	}
+
+	return raw, nil
+}
+
+// defaultInfraDirName is the directory eject writes into, and the directory an
+// azd project uses when it does not declare `infra.path`.
+const defaultInfraDirName = "infra"
+
+// hasFoundryServiceForEject reports whether azure.yaml at projectRoot already
+// declares the Foundry provisioning service that eject synthesizes from.
+//
+// "No Foundry service" is reported as (false, nil) rather than an error: it
+// means the project simply has nothing to eject yet, which callers resolve by
+// running the normal init flow first. Malformed YAML and ambiguous projects
+// (several Foundry services) still surface as errors.
+func hasFoundryServiceForEject(projectRoot string) (bool, error) {
+	rawYAML, err := readProjectAzureYAML(projectRoot)
+	if err != nil {
+		return false, err
+	}
+
+	return hasFoundryServiceInYAML(rawYAML)
+}
+
+// hasFoundryServiceInYAML is hasFoundryServiceForEject for callers that have
+// already read azure.yaml and need it for more than the service scan.
+func hasFoundryServiceInYAML(rawYAML []byte) (bool, error) {
+	if _, err := findFoundryServiceForEject(rawYAML); err != nil {
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			localErr.Code == exterrors.CodeInfraEjectNoFoundryService {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+type declaredInfraConfig struct {
+	Provider string `yaml:"provider"`
+	Path     string `yaml:"path"`
+	Module   string `yaml:"module"`
+	Layers   []struct {
+		Name     string `yaml:"name"`
+		Provider string `yaml:"provider"`
+		Path     string `yaml:"path"`
+	} `yaml:"layers"`
+}
+
+// readDeclaredInfraConfig returns the infra configuration declared in
+// azure.yaml. Type-invalid infra fields use the same invalid-azure.yaml
+// classification as the service scan; otherwise a value such as
+// `infra.layers: unexpected` would look like no layers and bypass the guard.
+func readDeclaredInfraConfig(rawYAML []byte) (declaredInfraConfig, error) {
+	var doc struct {
+		Infra declaredInfraConfig `yaml:"infra"`
+	}
+	if err := yaml.Unmarshal(rawYAML, &doc); err != nil {
+		return declaredInfraConfig{}, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("parse azure.yaml: %s", err),
+			"verify azure.yaml is valid YAML",
+		)
+	}
+
+	return doc.Infra, nil
+}
+
+// normalizeInfraPath mirrors azd core's project-path normalization before
+// comparing a declared path with the default ./infra directory.
+func normalizeInfraPath(path string) string {
+	if strings.Contains(path, "\\") && !strings.Contains(path, "/") {
+		path = strings.ReplaceAll(path, "\\", "/")
+	}
+	return filepath.Clean(filepath.FromSlash(path))
+}
+
+// ensureDefaultInfraPath refuses when azure.yaml points the project's
+// infrastructure somewhere other than ./infra/ via `infra.path`.
+//
+// Eject always writes ./infra/, and the Terraform path additionally stamps
+// `infra.provider: terraform` and drops `infra.path` so azd-core provisions the
+// generated module. On a project that declares its own `infra.path`, that
+// combination aims provisioning at the Foundry-only template and leaves the
+// directory the user actually maintains orphaned on disk.
+//
+// The refusal is about the declaration, not the directory: ./infra/ being absent
+// proves nothing when the project's IaC deliberately lives elsewhere, so
+// ensureInfraDirAbsent alone would wave this project through.
+func ensureDefaultInfraPath(rawYAML []byte) error {
+	config, err := readDeclaredInfraConfig(rawYAML)
+	if err != nil {
+		return err
+	}
+
+	declared := config.Path
+	if declared == "" || normalizeInfraPath(declared) == defaultInfraDirName {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectCustomInfraPath,
+		fmt.Sprintf("azure.yaml points this project's infrastructure at %q via `infra.path`; "+
+			"`--infra` writes a self-contained Foundry template to ./infra/ and cannot take "+
+			"over infrastructure the project already owns", declared),
+		fmt.Sprintf("run `azd ai agent init` without --infra to add the agent while %q stays the "+
+			"project's infrastructure, or remove `infra.path` from azure.yaml first if you want "+
+			"the generated ./infra/ to replace it", declared),
+	)
+}
+
+// ensureNoInfraLayers refuses projects that use infra.layers. Eject generates
+// one self-contained Foundry module under ./infra and cannot preserve layer
+// paths, dependency ordering, hooks, or provider inheritance.
+func ensureNoInfraLayers(rawYAML []byte) error {
+	config, err := readDeclaredInfraConfig(rawYAML)
+	if err != nil {
+		return err
+	}
+	if len(config.Layers) == 0 {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectLayersUnsupported,
+		fmt.Sprintf("azure.yaml declares %d infrastructure layer(s); `--infra` generates one "+
+			"self-contained Foundry template and cannot preserve layered provisioning", len(config.Layers)),
+		"run `azd ai agent init` without --infra to keep the existing layers, or remove "+
+			"`infra.layers` first if you want the generated ./infra/ template to replace them",
+	)
+}
+
+// ensureCompatibleInfraProvider refuses a Bicep eject when azure.yaml selects a
+// different provisioning provider. Bicep eject intentionally leaves
+// infra.provider unchanged, so azd would continue dispatching to that provider
+// and ignore the generated files.
+func ensureCompatibleInfraProvider(rawYAML []byte, requestedProvider string) error {
+	config, err := readDeclaredInfraConfig(rawYAML)
+	if err != nil {
+		return err
+	}
+
+	if requestedProvider != project.BicepProviderName {
+		return nil
+	}
+
+	declared := config.Provider
+	if declared == "" ||
+		declared == project.BicepProviderName ||
+		declared == project.FoundryProviderName {
+		return nil
+	}
+
+	suggestion := "change or remove `infra.provider` before ejecting Bicep"
+	if declared == project.TerraformProviderName {
+		suggestion = "use `azd ai agent init --infra=terraform` to generate Terraform, " +
+			"or change/remove `infra.provider` before ejecting Bicep"
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectProviderConflict,
+		fmt.Sprintf("azure.yaml uses `infra.provider: %s`, but `--infra=bicep` generates Bicep "+
+			"without changing the provider; azd would continue using %s and ignore the generated files",
+			declared, declared),
+		suggestion,
+	)
+}
+
+// ensureInfraDirAbsent refuses when projectRoot already contains ./infra/.
+// Eject writes the whole tree or nothing, so it never merges into or overwrites
+// what is already there.
+//
+// Eject leaves no marker behind, so nothing at this point can tell prior eject
+// output apart from infrastructure the user authored for the project's other
+// services — a plain "delete ./infra/" would be destructive advice half the
+// time. The suggestion therefore covers both cases and leads with the
+// non-destructive one.
+func ensureInfraDirAbsent(projectRoot string) error {
+	// Lstat makes any directory entry count, including a dangling symlink.
+	// Eject must never replace a user-owned path whose target happens to be
+	// missing.
+	if _, err := os.Lstat(filepath.Join(projectRoot, defaultInfraDirName)); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat infra directory: %w", err)
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectExists,
+		"`./infra/` already exists",
+		"if you authored ./infra/, keep it and run `azd ai agent init` without --infra: "+
+			"--infra synthesizes a self-contained Foundry template and cannot merge into "+
+			"infrastructure you already own. If a previous --infra run generated it, "+
+			"delete ./infra/ and run the command again to regenerate it from azure.yaml",
+	)
+}
+
+// infraGate is how `azd ai agent init --infra` should behave for the azd
+// project (if any) that contains the current directory.
+type infraGate struct {
+	// standaloneEject is true when an existing project already declares a
+	// Foundry service, so eject runs on its own and skips the init prompts.
+	standaloneEject bool
+	// projectRoot is the resolved azd project root. Empty when the current
+	// directory is not inside a project yet.
+	projectRoot string
+}
+
+// resolveInfraGate decides between a standalone eject and the normal init flow
+// for a `--infra` run.
+//
+// A project that already declares a Foundry service ejects standalone. Anything
+// else — no project at all, or a project azd already manages that has no Foundry
+// service yet — runs init first and ejects afterwards, so "add an agent to my
+// existing project and give me its IaC" stays a single step instead of failing
+// with "nothing to eject".
+//
+// Infrastructure compatibility is handled by the layer-aware eject planner.
+// The gate only decides whether init must add a Foundry service first.
+func resolveInfraGate(provider string) (infraGate, error) {
+	projectRoot, err := azdext.GetProjectDir()
+	if errors.Is(err, azdext.ErrProjectNotFound) {
+		return infraGate{}, nil
+	}
+	if err != nil {
+		return infraGate{}, fmt.Errorf("resolve azd project directory: %w", err)
+	}
+
+	rawYAML, err := readProjectAzureYAML(projectRoot)
+	if err != nil {
+		return infraGate{}, err
+	}
+
+	// Scanned before the infra.path check so a malformed azure.yaml keeps its
+	// established CodeInvalidAzureYaml classification.
+	hasFoundry, err := hasFoundryServiceInYAML(rawYAML)
+	if err != nil {
+		return infraGate{}, err
+	}
+
+	if hasFoundry {
+		return infraGate{standaloneEject: true, projectRoot: projectRoot}, nil
+	}
+	return infraGate{projectRoot: projectRoot}, nil
+}
+
 // ejectInfraAfterInit ejects from the azd project containing the current
 // directory. Init may create or discover a project above cwd, so use the same
 // upward project resolution as the rest of azd.
@@ -84,71 +459,51 @@ func ejectInfraAfterInit(provider string) error {
 		return fmt.Errorf("resolve azd project directory after init: %w", err)
 	}
 
-	rawYAML, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml")) //nolint:gosec // resolved azd project file
+	hasFoundry, err := hasFoundryServiceForEject(projectRoot)
 	if err != nil {
-		return fmt.Errorf("read azure.yaml after init: %w", err)
-	}
-	if _, err := findFoundryServiceForEject(rawYAML); err != nil {
-		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
-			localErr.Code == exterrors.CodeInfraEjectNoFoundryService {
-			return nil
-		}
 		return err
+	}
+	if !hasFoundry {
+		return nil
 	}
 
 	return ejectInfra(projectRoot, provider)
 }
 
-// ejectInfra synthesizes the embedded Bicep templates from azure.yaml and
-// ejectInfra synthesizes infrastructure templates from azure.yaml and writes
-// them into projectRoot/infra/. Invoked by `azd ai agent init --infra[=<provider>]`
-// either after a fresh init or as a standalone eject on an existing project.
+// ejectInfra synthesizes infrastructure templates from azure.yaml. A project
+// that already owns infrastructure is migrated to infra.layers and receives a
+// dedicated Foundry layer under infra/foundry; a Foundry-only project keeps the
+// legacy infra/ layout.
 //
 // provider selects the IaC flavor:
 //
-//   - "bicep": copies the embedded Bicep tree + main.parameters.json. azure.yaml
-//     is NOT modified (the microsoft.foundry provider compiles the on-disk Bicep).
-//   - "terraform": copies the embedded .tf module + a generated main.tfvars.json,
-//     then stamps `infra.provider: terraform` so azd-core's built-in Terraform
-//     provider handles provisioning. This is the one path that mutates azure.yaml.
+//   - "bicep": azd-core's Bicep provider compiles the on-disk Bicep.
+//   - "terraform": azd-core's built-in Terraform provider handles the layer.
 //
 // Refuse conditions (provider-independent):
 //
 //   - azure.yaml is missing -> CodeInfraEjectAzureYamlMissing
 //   - no service has a Foundry host -> CodeInfraEjectNoFoundryService
-//   - ./infra/ already exists -> CodeInfraEjectExists
+//   - a generated destination file already exists -> CodeInfraEjectExists
 //
 // On success it prints the summary block and returns nil.
 func ejectInfra(projectRoot, provider string) error {
 	yamlPath := filepath.Join(projectRoot, "azure.yaml")
-	//nolint:gosec // G304: azure.yaml under the caller-supplied azd project root
-	rawYAML, err := os.ReadFile(yamlPath)
+	rawYAML, err := readProjectAzureYAML(projectRoot)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return exterrors.Validation(
-				exterrors.CodeInfraEjectAzureYamlMissing,
-				"azure.yaml not found in the current directory; "+
-					"`azd ai agent init --infra` requires an existing azd agent project",
-				"run `azd ai agent init` first to create azure.yaml, then re-run with --infra",
-			)
-		}
-		return fmt.Errorf("read azure.yaml: %w", err)
+		return err
 	}
 
 	svcName, err := findFoundryServiceForEject(rawYAML)
 	if err != nil {
 		return err
 	}
-
-	infraDir := filepath.Join(projectRoot, "infra")
-	if _, err := os.Stat(infraDir); err == nil {
-		return exterrors.Validation(
-			exterrors.CodeInfraEjectExists,
-			"`./infra/` already exists",
-			"to regenerate from azure.yaml, delete the infra directory and run the command again",
-		)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat infra directory: %w", err)
+	plan, err := planInfraEject(projectRoot, rawYAML, provider)
+	if err != nil {
+		return err
+	}
+	if err := validateEjectTarget(plan); err != nil {
+		return err
 	}
 
 	res, err := synthesis.Synthesize(synthesis.Input{
@@ -200,88 +555,763 @@ func ejectInfra(projectRoot, provider string) error {
 		}
 	}
 
-	// Eject writes the whole infra/ tree or none of it: if any writer fails
-	// after MkdirAll, remove the partial directory so the next run isn't blocked
-	// by the "./infra/ already exists" refuse above and the command stays
-	// retryable without manual cleanup.
-	var ejectErr error
+	// Generate away from the destination, then install only after every file is
+	// ready. This lets a layered eject merge into an existing infra/ tree without
+	// exposing partial files or deleting user-owned content on failure.
+	stageDir, err := os.MkdirTemp(projectRoot, ".azd-foundry-infra-*")
+	if err != nil {
+		return exterrors.Internal(
+			exterrors.CodeInfraEjectWriteFailed,
+			fmt.Sprintf("create infrastructure staging directory: %s", err),
+		)
+	}
+	defer os.RemoveAll(stageDir)
+
+	var written []ejectArtifact
 	if provider == project.TerraformProviderName {
-		ejectErr = ejectTerraform(projectRoot, infraDir, res.Parameters)
+		written, err = ejectTerraform(stageDir, plan.targetPath, plan.module, plan.layer, res.Parameters)
 	} else {
-		ejectErr = ejectBicep(infraDir, res.Parameters)
+		written, err = ejectBicep(stageDir, plan.targetPath, plan.module, plan.layer, res.Parameters)
 	}
-	if ejectErr != nil {
-		_ = os.RemoveAll(infraDir)
-	}
-	return ejectErr
-}
-
-// ejectBicep writes the embedded Bicep tree plus the synthesized
-// main.parameters.json into infraDir and prints the summary. It does not
-// modify azure.yaml; the declared infra.provider is left unchanged.
-func ejectBicep(infraDir string, params map[string]any) error {
-	written, err := writeEmbeddedTemplates(infraDir)
 	if err != nil {
 		return err
 	}
 
-	paramsArtifact, err := writeParametersFile(infraDir, params)
+	rollback, err := installStagedInfra(stageDir, plan)
 	if err != nil {
 		return err
 	}
-	written = append(written, paramsArtifact)
+	if plan.updatedYAML != nil {
+		unchanged, err := azureYAMLUnchanged(yamlPath, rawYAML)
+		if err != nil {
+			rollback()
+			return exterrors.Internal(
+				exterrors.CodeInfraEjectWriteFailed,
+				fmt.Sprintf("re-read azure.yaml before infrastructure update: %s", err),
+			)
+		}
+		if !unchanged {
+			rollback()
+			return exterrors.Validation(
+				exterrors.CodeInfraEjectAzureYamlChanged,
+				"azure.yaml changed while infrastructure files were being generated; eject removed its generated files",
+				"review the concurrent changes and run `azd ai agent init --infra` again",
+			)
+		}
+		if err := azdext.WriteFileAtomic(yamlPath, plan.updatedYAML, 0); err != nil {
+			rollback()
+			return exterrors.Internal(
+				exterrors.CodeInfraEjectWriteFailed,
+				fmt.Sprintf("write azure.yaml after infrastructure eject: %s", err),
+			)
+		}
+	}
 	slices.SortFunc(written, func(a, b ejectArtifact) int {
 		return strings.Compare(a.relPath, b.relPath)
 	})
-
-	printEjectSummary(written, project.BicepProviderName)
+	printEjectSummary(written, plan.targetPath, plan.updateDescription)
 	return nil
 }
 
+func azureYAMLUnchanged(path string, expected []byte) (bool, error) {
+	current, err := os.ReadFile(path) //nolint:gosec // path is the active project's azure.yaml
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(current, expected), nil
+}
+
+// ejectBicep writes the embedded Bicep tree plus the synthesized
+// parameters file into infraDir.
+func ejectBicep(
+	infraDir string,
+	artifactRoot string,
+	module string,
+	layer bool,
+	params map[string]any,
+) ([]ejectArtifact, error) {
+	written, err := writeEmbeddedTemplates(infraDir, artifactRoot, module, layer)
+	if err != nil {
+		return nil, err
+	}
+
+	paramsArtifact, err := writeParametersFile(infraDir, artifactRoot, module, layer, params)
+	if err != nil {
+		return nil, err
+	}
+	written = append(written, paramsArtifact)
+	return written, nil
+}
+
 // ejectTerraform writes the embedded Terraform module plus the generated
-// main.tfvars.json into infraDir, stamps `infra.provider: terraform` onto
-// azure.yaml so azd-core's Terraform provider takes over provisioning, and
-// prints the summary.
+// tfvars file into infraDir.
 //
 // acr.tf is written only when an agent uses docker: (includeAcr). outputs.tf is
 // generated to match: the ACR outputs are included only when acr.tf is present,
 // and omitted entirely otherwise.
-func ejectTerraform(projectRoot, infraDir string, params map[string]any) error {
+func ejectTerraform(
+	infraDir string,
+	artifactRoot string,
+	module string,
+	layer bool,
+	params map[string]any,
+) ([]ejectArtifact, error) {
 	includeAcr, _ := params["includeAcr"].(bool)
 
-	written, err := writeEmbeddedTerraformTemplates(infraDir, includeAcr)
+	written, err := writeEmbeddedTerraformTemplates(infraDir, artifactRoot, includeAcr)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	outputsArtifact, err := writeOutputsFile(infraDir, includeAcr)
+	markerArtifact, err := writeFoundryTerraformMarker(infraDir, artifactRoot)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	written = append(written, markerArtifact)
+
+	outputsArtifact, err := writeOutputsFile(infraDir, artifactRoot, includeAcr, layer)
+	if err != nil {
+		return nil, err
 	}
 	written = append(written, outputsArtifact)
 
-	tfvarsArtifact, err := writeTfvarsFile(infraDir, params)
+	tfvarsArtifact, err := writeTfvarsFile(infraDir, artifactRoot, module, layer, params)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	written = append(written, tfvarsArtifact)
+	return written, nil
+}
 
-	// Stamp the provider so `azd provision` dispatches to azd-core's Terraform
-	// provider instead of this extension's microsoft.foundry provider. Done
-	// after the files land so a stamp failure does not leave azure.yaml
-	// pointing at an infra/ that was never written.
-	if err := stampInfraProvider(projectRoot, project.TerraformProviderName); err != nil {
-		// Best-effort cleanup so a half-ejected project isn't left behind.
-		_ = os.RemoveAll(infraDir)
-		return err
+func writeFoundryTerraformMarker(infraDir, artifactRoot string) (ejectArtifact, error) {
+	dst := filepath.Join(infraDir, foundryTerraformMarker)
+	//nolint:gosec // G306: generated marker is intended to be readable by project tooling
+	if err := os.WriteFile(dst, []byte(foundryTerraformV1), 0o644); err != nil {
+		return ejectArtifact{}, exterrors.Internal(
+			exterrors.CodeInfraEjectWriteFailed,
+			fmt.Sprintf("write Terraform Foundry marker: %s", err),
+		)
+	}
+	return ejectArtifact{
+		relPath: filepath.ToSlash(filepath.Join(artifactRoot, foundryTerraformMarker)),
+		bytes:   len(foundryTerraformV1),
+	}, nil
+}
+
+func planInfraEject(projectRoot string, rawYAML []byte, provider string) (*infraEjectPlan, error) {
+	if provider != project.BicepProviderName && provider != project.TerraformProviderName {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("unsupported infrastructure provider %q", provider),
+			"pass --infra=bicep or --infra=terraform",
+		)
+	}
+	config, err := parseInfraConfig(rawYAML)
+	if err != nil {
+		return nil, err
+	}
+	if config.layersNode == nil {
+		return planRootInfraEject(projectRoot, config, provider)
+	}
+	return planLayeredInfraEject(projectRoot, config, provider)
+}
+
+func parseInfraConfig(rawYAML []byte) (*infraConfig, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(rawYAML, &root); err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("parse azure.yaml: %s", err),
+			"verify azure.yaml is valid YAML",
+		)
+	}
+	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			"azure.yaml is not a YAML mapping at the top level",
+			"verify azure.yaml is a valid azd project file",
+		)
+	}
+	doc := root.Content[0]
+	infra := mappingValue(doc, "infra")
+	if infra == nil {
+		infra = newMappingNode()
+		doc.Content = append(doc.Content, newScalarNode("infra"), infra)
+	}
+	if infra.Kind != yaml.MappingNode {
+		return nil, invalidInfraForEject("infra must be a mapping")
+	}
+	for _, key := range []string{"name", "path", "module", "provider"} {
+		if value := mappingValue(infra, key); value != nil && value.Kind != yaml.ScalarNode {
+			return nil, invalidInfraForEject(fmt.Sprintf("infra.%s must be a string", key))
+		}
+	}
+	config := &infraConfig{
+		root:         &root,
+		infra:        infra,
+		layersNode:   mappingValue(infra, "layers"),
+		rootProvider: mappingScalar(infra, "provider"),
+	}
+	if config.layersNode == nil {
+		return config, nil
+	}
+	if config.layersNode.Kind != yaml.SequenceNode {
+		return nil, invalidInfraForEject("infra.layers must be a sequence")
+	}
+	seen := make(map[string]struct{}, len(config.layersNode.Content))
+	for _, node := range config.layersNode.Content {
+		if node.Kind != yaml.MappingNode {
+			return nil, invalidInfraForEject("each infra.layers entry must be a mapping")
+		}
+		for _, key := range []string{"name", "path", "module", "provider"} {
+			if value := mappingValue(node, key); value != nil && value.Kind != yaml.ScalarNode {
+				return nil, invalidInfraForEject(fmt.Sprintf("infra.layers[].%s must be a string", key))
+			}
+		}
+		layer := infraLayer{
+			node:     node,
+			name:     mappingScalar(node, "name"),
+			path:     mappingScalar(node, "path"),
+			module:   mappingScalar(node, "module"),
+			provider: mappingScalar(node, "provider"),
+		}
+		name := layer.name
+		if name == "" {
+			return nil, invalidInfraForEject("each infra.layers entry must declare a name")
+		}
+		if layer.path == "" {
+			return nil, invalidInfraForEject(fmt.Sprintf("infra layer %q must declare path", name))
+		}
+		if _, ok := seen[name]; ok {
+			return nil, invalidInfraForEject(fmt.Sprintf("duplicate infrastructure layer name %q", name))
+		}
+		seen[name] = struct{}{}
+		layer.effectiveProvider = layer.provider
+		if layer.effectiveProvider == "" {
+			layer.effectiveProvider = config.rootProvider
+		}
+		config.layers = append(config.layers, layer)
+	}
+	return config, nil
+}
+
+func planRootInfraEject(projectRoot string, config *infraConfig, provider string) (*infraEjectPlan, error) {
+	root := infraLayer{
+		node:              config.infra,
+		name:              valueOrDefault(mappingScalar(config.infra, "name"), defaultInfraPath),
+		path:              valueOrDefault(mappingScalar(config.infra, "path"), defaultInfraPath),
+		module:            valueOrDefault(mappingScalar(config.infra, "module"), defaultInfraModule),
+		provider:          config.rootProvider,
+		effectiveProvider: valueOrDefault(config.rootProvider, project.BicepProviderName),
+	}
+	target, err := inspectInfraTarget(projectRoot, root.path)
+	if err != nil {
+		return nil, err
+	}
+	userOwned, err := rootInfraUserOwned(root, target)
+	if err != nil {
+		return nil, err
+	}
+	if !userOwned {
+		wanted := foundryLayerProvider(provider)
+		changed := root.provider != wanted
+		if changed {
+			setMappingScalar(config.infra, "provider", wanted)
+		}
+		return newInfraEjectPlan(config, target, root.path, root.module, false, changed,
+			fmt.Sprintf("infra.provider: %s", wanted))
+	}
+	if sameInfraPath(root.path, foundryInfraLayerPath) {
+		return nil, invalidInfraForEject(
+			fmt.Sprintf("existing infrastructure already uses the Foundry layer path %q", foundryInfraLayerPath),
+		)
+	}
+	if root.name == foundryInfraLayerName {
+		return nil, invalidInfraForEject(
+			fmt.Sprintf("existing infrastructure name %q conflicts with the Foundry layer name", root.name),
+		)
+	}
+	existingLayerValue := *config.infra
+	existingLayer := &existingLayerValue
+	setMappingScalar(existingLayer, "name", root.name)
+	setMappingScalar(existingLayer, "path", filepath.ToSlash(root.path))
+	setMappingScalar(existingLayer, "provider", root.effectiveProvider)
+	removeMappingKey(existingLayer, "layers")
+	foundryLayer := newInfraLayerNode(foundryInfraLayerName, foundryInfraLayerPath, foundryLayerProvider(provider))
+	config.infra.Content = []*yaml.Node{
+		newScalarNode("layers"),
+		{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{existingLayer, foundryLayer}},
+	}
+	foundryTarget, err := inspectInfraTarget(projectRoot, foundryInfraLayerPath)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := newInfraEjectPlan(
+		config, foundryTarget, foundryInfraLayerPath, defaultInfraModule, true, true, "infra.layers")
+	if plan != nil {
+		plan.mergeExisting = foundryTarget.exists
+	}
+	return plan, err
+}
+
+func planLayeredInfraEject(projectRoot string, config *infraConfig, provider string) (*infraEjectPlan, error) {
+	var foundry *infraLayer
+	for i := range config.layers {
+		layer := &config.layers[i]
+		if layer.effectiveProvider == project.FoundryProviderName && layer.name != foundryInfraLayerName {
+			return nil, invalidInfraForEject(
+				fmt.Sprintf("Foundry infrastructure already exists as layer %q; eject expects the Foundry layer name %q",
+					layer.name, foundryInfraLayerName),
+			)
+		}
+		if layer.name != foundryInfraLayerName {
+			continue
+		}
+		if !isFoundryLayerProvider(layer.effectiveProvider) {
+			return nil, invalidInfraForEject(
+				fmt.Sprintf("layer name %q is reserved for Foundry infrastructure", foundryInfraLayerName),
+			)
+		}
+		foundry = layer
+	}
+	if foundry != nil && len(config.layers) == 1 {
+		return nil, invalidInfraForEject(
+			"infra.layers contains only a Foundry layer; use a root infra configuration for a Foundry-only project",
+		)
+	}
+	if len(config.layers) == 0 {
+		return nil, invalidInfraForEject("infra.layers must contain at least one existing infrastructure layer")
+	}
+	changed := false
+	newLayer := foundry == nil
+	if foundry == nil {
+		node := newInfraLayerNode(foundryInfraLayerName, foundryInfraLayerPath, foundryLayerProvider(provider))
+		config.layersNode.Content = append(config.layersNode.Content, node)
+		config.layers = append(config.layers, infraLayer{
+			node: node, name: foundryInfraLayerName, path: foundryInfraLayerPath,
+			provider: foundryLayerProvider(provider), effectiveProvider: foundryLayerProvider(provider),
+		})
+		foundry = &config.layers[len(config.layers)-1]
+		changed = true
+	}
+	wantedProvider := foundryLayerProvider(provider)
+	if foundry.effectiveProvider == "" {
+		return nil, invalidInfraForEject(
+			fmt.Sprintf("Foundry infrastructure layer %q must declare provider explicitly", foundry.name),
+		)
+	}
+	if foundry.effectiveProvider != wantedProvider {
+		return nil, invalidInfraForEject(
+			fmt.Sprintf("Foundry infrastructure layer %q already uses provider %q", foundry.name, foundry.effectiveProvider),
+		)
+	}
+	if foundry.provider != wantedProvider {
+		setMappingScalar(foundry.node, "provider", wantedProvider)
+		changed = true
+	}
+	for i := range config.layers {
+		layer := &config.layers[i]
+		if layer != foundry && sameInfraPath(layer.path, foundry.path) {
+			return nil, invalidInfraForEject(
+				fmt.Sprintf("infra layer %q already uses the Foundry layer path %q", layer.name, foundry.path),
+			)
+		}
+	}
+	target, err := inspectInfraTarget(projectRoot, foundry.path)
+	if err != nil {
+		return nil, err
+	}
+	if !newLayer && (target.exists && !target.empty ||
+		hasInfrastructureEntrypoint(target.dir, wantedProvider, valueOrDefault(foundry.module, defaultInfraModule))) {
+		return nil, foundryInfraExistsError(filepath.ToSlash(foundry.path), true)
+	}
+	plan, err := newInfraEjectPlan(config, target, foundry.path, valueOrDefault(foundry.module, defaultInfraModule),
+		true, changed, "infra.layers")
+	if plan != nil {
+		plan.mergeExisting = newLayer && target.exists
+	}
+	return plan, err
+}
+
+func rootInfraUserOwned(layer infraLayer, target infraTargetState) (bool, error) {
+	hasEntrypoint := hasInfrastructureEntrypoint(target.dir, layer.effectiveProvider, layer.module)
+	if layer.provider == project.FoundryProviderName && hasEntrypoint {
+		return false, foundryInfraExistsError(filepath.ToSlash(layer.path), false)
+	}
+	if layer.provider == project.TerraformProviderName {
+		foundry, err := isFoundryTerraformInfra(target.dir, layer.module)
+		if err != nil {
+			return false, err
+		}
+		if foundry {
+			return false, foundryInfraExistsError(filepath.ToSlash(layer.path), false)
+		}
+	}
+	builtIn := layer.provider == project.BicepProviderName || layer.provider == project.TerraformProviderName
+	if layer.provider != "" && builtIn && !hasEntrypoint {
+		return false, invalidInfraForEject(fmt.Sprintf(
+			"infrastructure declares provider %q but path %q contains no matching entry point", layer.provider, layer.path))
+	}
+	custom := layer.provider != "" && !builtIn && layer.provider != project.FoundryProviderName
+	if !hasEntrypoint && !custom && target.exists && !target.empty {
+		return false, invalidInfraForEject(
+			fmt.Sprintf("infrastructure path %q contains files but no detectable entry point", layer.path))
+	}
+	return layer.provider != project.FoundryProviderName && (hasEntrypoint || custom), nil
+}
+
+func newInfraEjectPlan(
+	config *infraConfig,
+	target infraTargetState,
+	path, module string,
+	layer, changed bool,
+	description string,
+) (*infraEjectPlan, error) {
+	plan := &infraEjectPlan{
+		targetDir: target.dir, targetPath: filepath.ToSlash(path), module: module, layer: layer,
+	}
+	if changed {
+		updated, err := marshalAzureYAML(config.root)
+		if err != nil {
+			return nil, err
+		}
+		plan.updatedYAML, plan.updateDescription = updated, description
+	}
+	return plan, nil
+}
+
+func valueOrDefault(value, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
+}
+
+func isFoundryLayerProvider(provider string) bool {
+	return provider == project.FoundryProviderName ||
+		provider == project.BicepProviderName ||
+		provider == project.TerraformProviderName
+}
+
+func validateEjectTarget(plan *infraEjectPlan) error {
+	if plan == nil || strings.TrimSpace(plan.targetDir) == "" {
+		return invalidInfraForEject("Foundry infrastructure path is empty")
+	}
+	if plan.module == "" || plan.module == "." || plan.module == ".." ||
+		filepath.Base(plan.module) != plan.module || strings.ContainsAny(plan.module, `/\\`) {
+		return invalidInfraForEject(
+			fmt.Sprintf("Foundry infrastructure module %q must be a file name without path separators", plan.module),
+		)
+	}
+	if filepath.Ext(plan.module) != "" {
+		return invalidInfraForEject(
+			fmt.Sprintf("Foundry infrastructure module %q must not include a file extension", plan.module),
+		)
+	}
+	return nil
+}
+
+func installStagedInfra(stageDir string, plan *infraEjectPlan) (func(), error) {
+	if plan.mergeExisting {
+		return mergeStagedInfra(stageDir, plan)
+	}
+	parent := filepath.Dir(plan.targetDir)
+	existingParent, err := existingDirectory(parent)
+	if err != nil {
+		return func() {}, err
+	}
+	//nolint:gosec // G301: ejected infra directories must be readable/traversable by IDEs, Git, and CI
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return func() {}, infraInstallError("create infrastructure parent directory", err)
 	}
 
-	slices.SortFunc(written, func(a, b ejectArtifact) int {
-		return strings.Compare(a.relPath, b.relPath)
-	})
+	restoreEmptyTarget := false
+	if info, err := os.Lstat(plan.targetDir); err == nil {
+		if !info.IsDir() {
+			return func() {}, ejectExistsError(plan.targetPath)
+		}
+		empty, err := dirIsEmpty(plan.targetDir)
+		if err != nil {
+			return func() {}, fmt.Errorf("inspect infrastructure destination %s: %w", plan.targetDir, err)
+		}
+		if !empty {
+			return func() {}, foundryInfraExistsError(plan.targetPath, plan.layer)
+		}
+		if err := os.Remove(plan.targetDir); err != nil {
+			return func() {}, infraInstallError("prepare empty infrastructure destination", err)
+		}
+		restoreEmptyTarget = true
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return func() {}, fmt.Errorf("stat infrastructure destination %s: %w", plan.targetDir, err)
+	}
 
-	printEjectSummary(written, project.TerraformProviderName)
-	return nil
+	if err := os.Rename(stageDir, plan.targetDir); err != nil {
+		if restoreEmptyTarget {
+			//nolint:gosec // G301: restore the readable/traversable empty project directory removed above
+			_ = os.Mkdir(plan.targetDir, 0o755)
+		}
+		removeEmptyParents(parent, existingParent)
+		return func() {}, infraInstallError("install infrastructure directory", err)
+	}
+	return func() {
+		_ = os.RemoveAll(plan.targetDir)
+		if restoreEmptyTarget {
+			//nolint:gosec // G301: restore the readable/traversable empty project directory removed above
+			_ = os.Mkdir(plan.targetDir, 0o755)
+		}
+		removeEmptyParents(parent, existingParent)
+	}, nil
+}
+
+func mergeStagedInfra(stageDir string, plan *infraEjectPlan) (func(), error) {
+	type stagedFile struct {
+		src string
+		dst string
+	}
+	var files []stagedFile
+	err := filepath.WalkDir(stageDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(stageDir, path)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(plan.targetDir, rel)
+		if _, err := os.Lstat(dst); err == nil {
+			return ejectExistsError(filepath.ToSlash(filepath.Join(plan.targetPath, rel)))
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("stat infrastructure destination %s: %w", dst, err)
+		}
+		files = append(files, stagedFile{src: path, dst: dst})
+		return nil
+	})
+	if err != nil {
+		return func() {}, err
+	}
+
+	createdFiles := make([]string, 0, len(files))
+	rollback := func() {
+		for i := len(createdFiles) - 1; i >= 0; i-- {
+			_ = os.Remove(createdFiles[i])
+			removeEmptyParents(filepath.Dir(createdFiles[i]), plan.targetDir)
+		}
+	}
+	for _, file := range files {
+		//nolint:gosec // G301: generated infrastructure directories must be readable by project tooling
+		if err := os.MkdirAll(filepath.Dir(file.dst), 0o755); err != nil {
+			rollback()
+			return func() {}, infraInstallError("create infrastructure directory", err)
+		}
+		if err := azdext.CopyFileAtomic(file.src, file.dst, 0o644); err != nil {
+			rollback()
+			return func() {}, infraInstallError("install infrastructure file", err)
+		}
+		createdFiles = append(createdFiles, file.dst)
+	}
+	return rollback, nil
+}
+
+func infraInstallError(action string, err error) error {
+	return exterrors.Internal(exterrors.CodeInfraEjectWriteFailed, fmt.Sprintf("%s: %s", action, err))
+}
+
+func existingDirectory(path string) (string, error) {
+	for current := path; ; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if err == nil {
+			if !info.IsDir() {
+				return "", fmt.Errorf("infrastructure parent path %s is not a directory", current)
+			}
+			return current, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("stat infrastructure parent path %s: %w", current, err)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("no existing parent directory for infrastructure path %s", path)
+		}
+	}
+}
+
+func removeEmptyParents(path, stop string) {
+	for path != stop {
+		_ = os.Remove(path)
+		path = filepath.Dir(path)
+	}
+}
+
+func newInfraLayerNode(name, path, provider string) *yaml.Node {
+	return &yaml.Node{
+		Kind: yaml.MappingNode,
+		Tag:  "!!map",
+		Content: []*yaml.Node{
+			newScalarNode("name"), newScalarNode(name),
+			newScalarNode("path"), newScalarNode(filepath.ToSlash(path)),
+			newScalarNode("provider"), newScalarNode(provider),
+		},
+	}
+}
+
+func foundryLayerProvider(ejectProvider string) string {
+	if ejectProvider == project.TerraformProviderName {
+		return project.TerraformProviderName
+	}
+	return project.FoundryProviderName
+}
+
+func inspectInfraTarget(projectRoot, path string) (infraTargetState, error) {
+	dir, err := projectPaths.Join(projectRoot, path)
+	if err != nil {
+		return infraTargetState{}, invalidInfraForEject(
+			fmt.Sprintf("invalid Foundry infrastructure path %q: %s", path, err),
+		)
+	}
+	info, err := os.Stat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return infraTargetState{dir: dir}, nil
+	}
+	if err != nil {
+		return infraTargetState{}, fmt.Errorf("stat infrastructure path %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return infraTargetState{}, ejectExistsError(filepath.ToSlash(path))
+	}
+	empty, err := dirIsEmpty(dir)
+	if err != nil {
+		return infraTargetState{}, fmt.Errorf("inspect infrastructure path %s: %w", dir, err)
+	}
+	return infraTargetState{dir: dir, exists: true, empty: empty}, nil
+}
+
+func sameInfraPath(a, b string) bool {
+	left := filepath.Clean(filepath.FromSlash(a))
+	right := filepath.Clean(filepath.FromSlash(b))
+	return strings.EqualFold(left, right)
+}
+
+func hasInfrastructureEntrypoint(infraDir, provider, module string) bool {
+	switch provider {
+	case project.BicepProviderName, project.FoundryProviderName:
+		return fileExists(filepath.Join(infraDir, module+".bicep")) ||
+			fileExists(filepath.Join(infraDir, module+".bicepparam"))
+	case project.TerraformProviderName:
+		entries, err := os.ReadDir(infraDir)
+		if err != nil {
+			return false
+		}
+		return slices.ContainsFunc(entries, func(entry os.DirEntry) bool {
+			return !entry.IsDir() && strings.HasSuffix(entry.Name(), ".tf")
+		})
+	default:
+		info, err := os.Stat(infraDir)
+		return err == nil && info.IsDir()
+	}
+}
+
+func isFoundryTerraformInfra(infraDir, module string) (bool, error) {
+	markerPath := filepath.Join(infraDir, foundryTerraformMarker)
+	markerInfo, err := os.Lstat(markerPath)
+	if err == nil {
+		if !markerInfo.Mode().IsRegular() {
+			return false, invalidFoundryTerraformMarker(markerPath, "marker is not a regular file")
+		}
+		marker, err := os.ReadFile(markerPath) //nolint:gosec // validated project infra marker
+		if err != nil {
+			return false, invalidFoundryTerraformMarker(markerPath, err.Error())
+		}
+		if string(marker) != foundryTerraformV1 {
+			return false, invalidFoundryTerraformMarker(markerPath, "marker version is unsupported or edited")
+		}
+		return true, nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return false, invalidFoundryTerraformMarker(markerPath, err.Error())
+	}
+
+	// Legacy ejects predate the marker. Require both the generated tfvars file
+	// and distinctive Foundry resource declarations; either signal alone is
+	// common in user-authored Terraform projects.
+	if !fileExists(filepath.Join(infraDir, module+".tfvars.json")) {
+		return false, nil
+	}
+	main, err := os.ReadFile(filepath.Join(infraDir, "main.tf")) //nolint:gosec // project infrastructure path
+	if err != nil {
+		return false, nil
+	}
+	source := string(main)
+	return strings.Contains(source, `resource "azapi_resource" "foundry_account"`) &&
+		strings.Contains(source, `resource "azapi_resource" "project"`) &&
+		strings.Contains(source, "Microsoft.CognitiveServices/accounts") &&
+		strings.Contains(source, "Microsoft.CognitiveServices/accounts/projects"), nil
+}
+
+func invalidFoundryTerraformMarker(path, reason string) error {
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectMarkerInvalid,
+		fmt.Sprintf("Foundry ownership marker %q cannot be used: %s; eject did not modify the infrastructure",
+			filepath.ToSlash(path), reason),
+		"restore the marker from source control or use an azure.ai.agents version that supports it. "+
+			"If this is intentionally user-owned Terraform, remove the marker only after verifying the infrastructure",
+	)
+}
+
+func marshalAzureYAML(root *yaml.Node) ([]byte, error) {
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeInfraEjectWriteFailed,
+			fmt.Sprintf("marshal azure.yaml after infrastructure eject: %s", err),
+		)
+	}
+	return out, nil
+}
+
+func invalidInfraForEject(message string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidAzureYaml,
+		message,
+		"fix the infra configuration in azure.yaml and run the command again",
+	)
+}
+
+func ejectExistsError(path string) error {
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectExists,
+		fmt.Sprintf("`./%s` already exists", filepath.ToSlash(path)),
+		"remove the conflicting path or edit the existing infrastructure manually. To use another Foundry path, "+
+			"first declare an infra.layers entry named 'foundry' with a different project-relative path in azure.yaml",
+	)
+}
+
+func foundryInfraExistsError(path string, layer bool) error {
+	location := "Foundry infrastructure"
+	suggestion := "remove the existing generated Foundry infrastructure before ejecting it again, or edit it manually"
+	if layer {
+		location = fmt.Sprintf("Foundry infrastructure layer %q", foundryInfraLayerName)
+		suggestion += ". To use another path, change the project-relative path on the 'foundry' entry in infra.layers"
+	}
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectExists,
+		fmt.Sprintf("%s already exists at `./%s`; eject did not overwrite it", location, filepath.ToSlash(path)),
+		suggestion,
+	)
+}
+
+func newMappingNode() *yaml.Node {
+	return &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+}
+
+func newScalarNode(value string) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
+}
+
+func mappingScalar(mapping *yaml.Node, key string) string {
+	value := mappingValue(mapping, key)
+	if value == nil || value.Kind != yaml.ScalarNode {
+		return ""
+	}
+	return strings.TrimSpace(value.Value)
 }
 
 // findFoundryServiceForEject scans azure.yaml for the azure.ai.project service
@@ -381,7 +1411,12 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 //     project, main.bicep never references brownfield.bicep, and the
 //     provider's brownfield path always loads the embedded
 //     synthesis.BrownfieldARMTemplate() instead of anything under infra/.
-func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
+func writeEmbeddedTemplates(
+	infraDir string,
+	artifactRoot string,
+	module string,
+	layer bool,
+) (_ []ejectArtifact, retErr error) {
 	//nolint:gosec // G301: ejected infra/ directory must be readable/traversable by IDEs, Git, and CI
 	if err := os.MkdirAll(infraDir, 0o755); err != nil {
 		return nil, exterrors.Internal(
@@ -412,7 +1447,11 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 			return err
 		}
 		// embed.FS always returns forward slashes; normalize for the OS.
-		dst := filepath.Join(infraDir, filepath.FromSlash(rel))
+		dstRel := rel
+		if rel == "main.bicep" {
+			dstRel = module + ".bicep"
+		}
+		dst := filepath.Join(infraDir, filepath.FromSlash(dstRel))
 
 		if d.IsDir() {
 			//nolint:gosec // G301: ejected infra/ subdirectories must remain readable/traversable
@@ -436,7 +1475,7 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 			return err
 		}
 		artifacts = append(artifacts, ejectArtifact{
-			relPath: filepath.ToSlash(filepath.Join("infra", rel)),
+			relPath: filepath.ToSlash(filepath.Join(artifactRoot, dstRel)),
 			bytes:   len(data),
 		})
 		return nil
@@ -458,13 +1497,29 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 // supplied by the provider at `azd provision`. The result is a partial
 // parameters file -- enough for `bicep build` to validate, not for a
 // standalone `az deployment sub create`.
-func writeParametersFile(infraDir string, params map[string]any) (ejectArtifact, error) {
+func writeParametersFile(
+	infraDir string,
+	artifactRoot string,
+	module string,
+	layer bool,
+	params map[string]any,
+) (ejectArtifact, error) {
 	type paramValue struct {
 		Value any `json:"value"`
 	}
 	wrapped := map[string]paramValue{}
 	for k, v := range params {
 		wrapped[k] = paramValue{Value: v}
+	}
+	if layer {
+		wrapped["resourceGroupName"] = paramValue{
+			Value: "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}",
+		}
+		wrapped["location"] = paramValue{Value: "${AZURE_LOCATION}"}
+		wrapped["foundryProjectName"] = paramValue{Value: "${AZURE_AI_PROJECT_NAME=${AZURE_ENV_NAME}}"}
+		wrapped["resourceTokenSalt"] = paramValue{Value: "${AZD_RESOURCE_TOKEN_SALT}"}
+		wrapped["principalId"] = paramValue{Value: "${AZURE_PRINCIPAL_ID}"}
+		wrapped["principalType"] = paramValue{Value: "${AZURE_PRINCIPAL_TYPE}"}
 	}
 
 	doc := map[string]any{
@@ -474,28 +1529,8 @@ func writeParametersFile(infraDir string, params map[string]any) (ejectArtifact,
 		"parameters":     wrapped,
 	}
 
-	data, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("marshal main.parameters.json: %s", err),
-		)
-	}
-	// json.MarshalIndent omits a trailing newline; add one for editors/POSIX tools.
-	data = append(data, '\n')
-
-	dst := filepath.Join(infraDir, "main.parameters.json")
-	//nolint:gosec // G306: ejected parameters file is intended to be human-readable
-	if err := os.WriteFile(dst, data, 0o644); err != nil {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("write main.parameters.json: %s", err),
-		)
-	}
-	return ejectArtifact{
-		relPath: "infra/main.parameters.json",
-		bytes:   len(data),
-	}, nil
+	filename := module + ".parameters.json"
+	return writeJSONArtifact(infraDir, artifactRoot, filename, doc)
 }
 
 // writeEmbeddedTerraformTemplates copies the static *.tf files under the
@@ -509,7 +1544,11 @@ func writeParametersFile(infraDir string, params map[string]any) (ejectArtifact,
 // Files that are not verbatim copies are skipped here and produced elsewhere:
 // outputs.tf is rendered from outputs.tf.tmpl by writeOutputsFile, and
 // main.tfvars.json is generated by writeTfvarsFile, so neither goes stale.
-func writeEmbeddedTerraformTemplates(infraDir string, includeAcr bool) (_ []ejectArtifact, retErr error) {
+func writeEmbeddedTerraformTemplates(
+	infraDir string,
+	artifactRoot string,
+	includeAcr bool,
+) (_ []ejectArtifact, retErr error) {
 	//nolint:gosec // G301: ejected infra/ directory must be readable/traversable by IDEs, Git, and CI
 	if err := os.MkdirAll(infraDir, 0o755); err != nil {
 		return nil, exterrors.Internal(
@@ -565,7 +1604,7 @@ func writeEmbeddedTerraformTemplates(infraDir string, includeAcr bool) (_ []ejec
 			)
 		}
 		artifacts = append(artifacts, ejectArtifact{
-			relPath: filepath.ToSlash(filepath.Join("infra", name)),
+			relPath: filepath.ToSlash(filepath.Join(artifactRoot, name)),
 			bytes:   len(data),
 		})
 	}
@@ -577,7 +1616,12 @@ func writeEmbeddedTerraformTemplates(infraDir string, includeAcr bool) (_ []ejec
 // The ACR outputs are included only when includeAcr is true (acr.tf was
 // written); otherwise they are omitted entirely, since Terraform resolves
 // resource references statically and acr.tf's resources are not present.
-func writeOutputsFile(infraDir string, includeAcr bool) (ejectArtifact, error) {
+func writeOutputsFile(
+	infraDir string,
+	artifactRoot string,
+	includeAcr bool,
+	layer bool,
+) (ejectArtifact, error) {
 	const tmplPath = "templates/terraform/outputs.tf.tmpl"
 	raw, err := fs.ReadFile(synthesis.TerraformTemplatesFS(), tmplPath)
 	if err != nil {
@@ -596,13 +1640,15 @@ func writeOutputsFile(infraDir string, includeAcr bool) (ejectArtifact, error) {
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, struct{ IncludeAcr bool }{IncludeAcr: includeAcr}); err != nil {
+	if err := tmpl.Execute(&buf, struct {
+		IncludeAcr bool
+		Layer      bool
+	}{IncludeAcr: includeAcr, Layer: layer}); err != nil {
 		return ejectArtifact{}, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,
 			fmt.Sprintf("render outputs template: %s", err),
 		)
 	}
-
 	dst := filepath.Join(infraDir, "outputs.tf")
 	//nolint:gosec // G306: ejected Terraform sources are intended to be human-readable
 	if err := os.WriteFile(dst, buf.Bytes(), 0o644); err != nil {
@@ -612,7 +1658,7 @@ func writeOutputsFile(infraDir string, includeAcr bool) (ejectArtifact, error) {
 		)
 	}
 	return ejectArtifact{
-		relPath: "infra/outputs.tf",
+		relPath: filepath.ToSlash(filepath.Join(artifactRoot, "outputs.tf")),
 		bytes:   buf.Len(),
 	}, nil
 }
@@ -622,22 +1668,32 @@ func writeOutputsFile(infraDir string, includeAcr bool) (ejectArtifact, error) {
 // environment at provision time. The synthesizer-known values `deployments`
 // and `connections` are written literally; deploy-time inputs (location,
 // resource_group_name, foundry_project_name, principal_id, subscription_id,
-// environment_name, resource_token_salt) are left as ${AZURE_*} placeholders.
+// environment_name, resource_token_salt) are left as azd environment placeholders.
 //
 // include_acr is NOT written: whether ACR is provisioned is decided at eject
 // time by the presence of acr.tf, not by a Terraform variable.
-func writeTfvarsFile(infraDir string, params map[string]any) (ejectArtifact, error) {
+func writeTfvarsFile(
+	infraDir string,
+	artifactRoot string,
+	module string,
+	layer bool,
+	params map[string]any,
+) (ejectArtifact, error) {
 	// Static keys carry ${...} placeholders azd resolves from the environment.
 	// json.MarshalIndent sorts map keys alphabetically, so the generated file is
 	// deterministic; the placeholder values are JSON strings azd env-substitutes.
-	doc := map[string]any{
+	doc := map[string]any{ //nolint:gosec // G101: environment placeholder names, not credentials
 		"subscription_id":      "${AZURE_SUBSCRIPTION_ID}",
 		"location":             "${AZURE_LOCATION}",
 		"resource_group_name":  "${AZURE_RESOURCE_GROUP}",
 		"environment_name":     "${AZURE_ENV_NAME}",
 		"foundry_project_name": "${AZURE_AI_PROJECT_NAME}",
 		"principal_id":         "${AZURE_PRINCIPAL_ID}",
-		"resource_token_salt":  "${AZURE_RESOURCE_TOKEN_SALT}",
+		"resource_token_salt":  "${AZD_RESOURCE_TOKEN_SALT}",
+	}
+	if layer {
+		doc["resource_group_name"] = "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}"
+		doc["foundry_project_name"] = "${AZURE_AI_PROJECT_NAME=}"
 	}
 
 	// deployments and connections are the only synthesizer-derived values
@@ -668,86 +1724,33 @@ func writeTfvarsFile(infraDir string, params map[string]any) (ejectArtifact, err
 		connectionCredentials,
 	)
 
-	data, err := json.MarshalIndent(doc, "", "  ")
+	filename := module + ".tfvars.json"
+	return writeJSONArtifact(infraDir, artifactRoot, filename, doc)
+}
+
+func writeJSONArtifact(infraDir, artifactRoot, filename string, value any) (ejectArtifact, error) {
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return ejectArtifact{}, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("marshal main.tfvars.json: %s", err),
+			fmt.Sprintf("marshal %s: %s", filename, err),
 		)
 	}
 	// json.MarshalIndent omits a trailing newline; add one for editors/POSIX tools.
 	data = append(data, '\n')
 
-	dst := filepath.Join(infraDir, "main.tfvars.json")
-	//nolint:gosec // G306: ejected tfvars file is intended to be human-readable
+	dst := filepath.Join(infraDir, filename)
+	//nolint:gosec // G306: ejected JSON is intended to be human-readable
 	if err := os.WriteFile(dst, data, 0o644); err != nil {
 		return ejectArtifact{}, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("write main.tfvars.json: %s", err),
+			fmt.Sprintf("write %s: %s", filename, err),
 		)
 	}
 	return ejectArtifact{
-		relPath: "infra/main.tfvars.json",
+		relPath: filepath.ToSlash(filepath.Join(artifactRoot, filename)),
 		bytes:   len(data),
 	}, nil
-}
-
-// stampInfraProvider sets `infra.provider: <provider>` in azure.yaml, creating
-// the infra: block if absent and dropping any starter `infra.path`. Eject runs
-// as a standalone command without an AzdClient, so this is an in-place YAML
-// edit (the Bicep path leaves azure.yaml untouched; only Terraform stamps a
-// provider so azd-core takes over provisioning).
-func stampInfraProvider(projectRoot, provider string) error {
-	yamlPath := filepath.Join(projectRoot, "azure.yaml")
-	//nolint:gosec // G304: azure.yaml under the caller-supplied azd project root
-	raw, err := os.ReadFile(yamlPath)
-	if err != nil {
-		return fmt.Errorf("read azure.yaml for provider stamp: %w", err)
-	}
-
-	var root yaml.Node
-	if err := yaml.Unmarshal(raw, &root); err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("parse azure.yaml: %s", err),
-			"verify azure.yaml is valid YAML",
-		)
-	}
-	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			"azure.yaml is not a YAML mapping at the top level",
-			"verify azure.yaml is a valid azd project file",
-		)
-	}
-
-	doc := root.Content[0]
-	infra := mappingValue(doc, "infra")
-	if infra == nil {
-		infra = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-		doc.Content = append(doc.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "infra"},
-			infra,
-		)
-	}
-	setMappingScalar(infra, "provider", provider)
-	removeMappingKey(infra, "path")
-
-	out, err := yaml.Marshal(&root)
-	if err != nil {
-		return exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("marshal azure.yaml after provider stamp: %s", err),
-		)
-	}
-	//nolint:gosec // G306: azure.yaml is a human-edited project file
-	if err := os.WriteFile(yamlPath, out, 0o644); err != nil {
-		return exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("write azure.yaml after provider stamp: %s", err),
-		)
-	}
-	return nil
 }
 
 // mappingValue returns the value node for key in a YAML mapping node, or nil.
@@ -791,9 +1794,9 @@ func removeMappingKey(m *yaml.Node, key string) {
 	}
 }
 
-// printEjectSummary renders the user-facing success block to stdout. For the
-// Terraform provider it also notes that infra.provider was set in azure.yaml.
-func printEjectSummary(written []ejectArtifact, provider string) {
+// printEjectSummary renders the user-facing success block to stdout and notes
+// any azure.yaml provider/layer update.
+func printEjectSummary(written []ejectArtifact, targetPath string, updateDescription string) {
 	fmt.Println()
 	fmt.Println("Generating infrastructure files from azure.yaml...")
 	fmt.Println()
@@ -801,11 +1804,11 @@ func printEjectSummary(written []ejectArtifact, provider string) {
 		fmt.Printf("  %s %s\n", color.GreenString("Created"), a.relPath)
 	}
 	fmt.Println()
-	if provider == project.TerraformProviderName {
-		fmt.Printf("  %s azure.yaml (infra.provider: terraform)\n", color.GreenString("Updated"))
+	if updateDescription != "" {
+		fmt.Printf("  %s azure.yaml (%s)\n", color.GreenString("Updated"), updateDescription)
 		fmt.Println()
 	}
-	fmt.Println("Future provisions will read from ./infra/.")
+	fmt.Printf("Future provisions will read the Foundry layer from ./%s/.\n", filepath.ToSlash(targetPath))
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Println("  azd provision    Apply changes")

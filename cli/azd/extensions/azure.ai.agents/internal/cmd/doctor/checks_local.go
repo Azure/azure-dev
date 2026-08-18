@@ -132,6 +132,16 @@ type Dependencies struct {
 		serviceName string,
 	) (name string, version string, err error)
 
+	// filterHostedAgentServicesFn is a test seam for the hosted-agent status
+	// check. Production uses project config to remove prompt-voice services from
+	// the hosted NAME/VERSION probe; tests can keep the historical service list
+	// without standing up a project gRPC server.
+	filterHostedAgentServicesFn func(
+		ctx context.Context,
+		azdClient *azdext.AzdClient,
+		services []string,
+	) []string
+
 	// lookupToolboxEnv is a test seam for the `local.toolboxes`
 	// check (Phase 5 C14). When non-nil it replaces the production
 	// `makeRealToolboxEnvLookup` closure inside the check, letting
@@ -234,7 +244,7 @@ func newCheckGRPCAndVersion(deps Dependencies) Check {
 					Message: fmt.Sprintf(
 						"Extension version %s is older than %s; the new hosted-agents backend requires the floor.",
 						ver, MinNewBackendVersion),
-					Suggestion: "Upgrade with `azd ext upgrade azure.ai.agents`.",
+					Suggestion: "Update with `azd ext update azure.ai.agents`.",
 					Links:      []string{"https://aka.ms/hostedagents/tsg/readme"},
 					Details: map[string]any{
 						"extensionVersion":  ver,

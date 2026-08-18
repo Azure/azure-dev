@@ -1,5 +1,11 @@
 # Release History
 
+## 0.8.0 (2026-07-30)
+
+### Features Added
+
+- [[#9174]](https://github.com/Azure/azure-dev/pull/9174) Add a `telemetry` command demonstrating the `TelemetryService` gRPC service for reporting extension usage events.
+
 ## 0.7.2 (2026-07-16)
 
 - Simple test release of extension, with no changes.

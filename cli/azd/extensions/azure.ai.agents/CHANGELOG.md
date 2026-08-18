@@ -1,5 +1,42 @@
 # Release History
 
+## 1.0.0-beta.10 (2026-08-13)
+
+### Features Added
+
+- [[#9332]](https://github.com/Azure/azure-dev/pull/9332) Add `azd ai agent pack` and `azd ai agent publish` commands for packaging and publishing Teams activity agents. Thanks @v1212 for the contribution!
+- [[#9457]](https://github.com/Azure/azure-dev/pull/9457) Allow `azd ai agent init --infra` to add isolated Foundry infrastructure alongside existing project infrastructure by using layers.
+
+### Bugs Fixed
+
+- [[#9517]](https://github.com/Azure/azure-dev/pull/9517) Fix `azd ai agent monitor <agent-name>` outside an azd project while preserving project-aware resolution when available.
+- [[#9531]](https://github.com/Azure/azure-dev/pull/9531) Fix inconsistent Doctor and next-step environment diagnostics across inline `azure.yaml`, deprecated `config:`, and legacy agent manifests.
+- [[#9543]](https://github.com/Azure/azure-dev/pull/9543) Preserve specific Activity Agent deployment failures for endpoint, Azure Bot, and Teams channel operations. Thanks @jayzhang for the contribution!
+- [[#9497]](https://github.com/Azure/azure-dev/pull/9497) Fix Activity Agent deployments to reuse the Azure Bot already bound to the agent identity and persist the resolved bot name. Thanks @jayzhang for the contribution!
+- [[#9491]](https://github.com/Azure/azure-dev/pull/9491) Preserve actionable hosted-agent deployment errors and remediation guidance.
+
+### Other Changes
+
+- [[#9370]](https://github.com/Azure/azure-dev/pull/9370) Update agent guidance to use the renamed `azd extension update` command. Thanks @hyoshis for the contribution!
+
+## 1.0.0-beta.9 (2026-08-06)
+
+### Features Added
+
+- [[#9079]](https://github.com/Azure/azure-dev/pull/9079) Add service-scoped environment support for Foundry agent services while preserving project-wide fallback behavior.
+- [[#9366]](https://github.com/Azure/azure-dev/pull/9366) Add an `--inspector-port` option to `azd ai agent run` so multiple local agents can use separate Inspector ports.
+
+### Bugs Fixed
+
+- [[#9326]](https://github.com/Azure/azure-dev/pull/9326) Validate Foundry dependencies before creating an agent version and provide actionable guidance when resources are not ready.
+- [[#9367]](https://github.com/Azure/azure-dev/pull/9367) Fix Foundry network environment references to apply shared defaults, escaping, and unresolved-variable validation consistently during synthesis.
+- [[#9397]](https://github.com/Azure/azure-dev/pull/9397) Stop agent lifecycle hooks from rewriting user-authored `azure.yaml` while preserving resolved deployment defaults.
+- [[#9404]](https://github.com/Azure/azure-dev/pull/9404) Fix `azd ai agent init` re-prompting for agent settings when an existing `azure.yaml` already defines the agent.
+- [[#9407]](https://github.com/Azure/azure-dev/pull/9407) Allow `azd ai agent init --infra` to continue through existing projects without a Foundry service and reject unsupported infrastructure layouts before mutation.
+- [[#9422]](https://github.com/Azure/azure-dev/pull/9422) Restrict unified manifest adoption in `azd ai agent init` to manifests that declare an `azure.ai.agent` service.
+- [[#9438]](https://github.com/Azure/azure-dev/pull/9438) Clarify agent initialization output by naming the agent added to `azure.yaml`.
+- [[#9439]](https://github.com/Azure/azure-dev/pull/9439) Validate hosted-agent environment variable names before deployment and report actionable errors for invalid names.
+
 ## 1.0.0-beta.8 (2026-07-30)
 
 ### Features Added

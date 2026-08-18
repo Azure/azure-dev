@@ -214,6 +214,24 @@ func TestResolveAfterInit_MissingAzureContextVarsPrecedeProvision(t *testing.T) 
 	assert.True(t, out[3].Trailing, "deploy footer must be Trailing")
 }
 
+func TestResolveAfterInit_QualifiesExplicitEnvironment(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		EnvironmentName:         "prod west",
+		PendingProvisionReasons: []string{"project"},
+		MissingAzureContextVars: []string{"AZURE_SUBSCRIPTION_ID"},
+	}
+	out := ResolveAfterInit(state, nil)
+	require.Len(t, out, 3)
+	assert.Equal(t,
+		`azd --environment "prod west" env set AZURE_SUBSCRIPTION_ID <value>`,
+		out[0].Command,
+	)
+	assert.Equal(t, `azd --environment "prod west" provision`, out[1].Command)
+	assert.Equal(t, `azd --environment "prod west" deploy`, out[2].Command)
+}
+
 func TestResolveAfterInit_NilState(t *testing.T) {
 	t.Parallel()
 	assert.Nil(t, ResolveAfterInit(nil, nil))
@@ -262,10 +280,11 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 }
 
 // TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape locks the
-// single-missing-manual-var case end-to-end. Three asserts: the env-set
-// line has the enriched "referenced by azure.yaml but not set in azd
-// env" description, the `azd ai agent run` follow-up immediately follows
-// the env-set lines, and the trailing `azd deploy` reminder is preserved.
+// single-missing-manual-var case end-to-end.
+// Three asserts: the env-set line has the enriched
+// "referenced by agent configuration but not set in azd env" description,
+// the `azd ai agent run` follow-up immediately follows the env-set lines,
+// and the trailing `azd deploy` reminder is preserved.
 // This is the canonical B2 fix shape from issue #7975's "Example output
 // (project ready, but manual config values missing)".
 func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
@@ -280,7 +299,7 @@ func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
 	require.Len(t, out, 4)
 
 	assert.Equal(t, "azd env set MY_API_KEY <value>", out[0].Command)
-	assert.Equal(t, "referenced by azure.yaml but not set in azd env", out[0].Description,
+	assert.Equal(t, "referenced by agent configuration but not set in azd env", out[0].Description,
 		"enriched description must explain WHY the env-set is needed")
 	assert.False(t, out[0].Trailing)
 
@@ -447,7 +466,7 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit azure.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
+		"edit agent configuration: replace {{TOOLBOX_ENDPOINT}} with the actual value",
 		"placeholder fix-up missing")
 	assert.Contains(t, rendered, "azd provision",
 		"toolbox-endpoint branch should route to azd provision")
@@ -587,7 +606,7 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit azure.yaml: replace {{AGENT_NAME}} with the actual value",
+		"edit agent configuration: replace {{AGENT_NAME}} with the actual value",
 		"placeholder fix-up missing")
 	assert.Contains(t, rendered, "azd provision",
 		"coexistence+placeholders: toolbox sub-branch must still emit provision")
@@ -728,7 +747,7 @@ func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
 			for i, name := range tt.wantPlaceholders {
 				require.Less(t, i, len(out))
 				assert.Equal(t,
-					"edit azure.yaml: replace {{"+name+"}} with the actual value",
+					"edit agent configuration: replace {{"+name+"}} with the actual value",
 					out[i].Command,
 				)
 			}

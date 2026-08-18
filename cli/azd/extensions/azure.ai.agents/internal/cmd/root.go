@@ -58,6 +58,8 @@ func NewRootCommand() *cobra.Command {
 	}))
 	rootCmd.AddCommand(newShowCommand(extCtx))
 	rootCmd.AddCommand(newDeleteCommand(extCtx))
+	rootCmd.AddCommand(newPackCommand(extCtx))
+	rootCmd.AddCommand(newPublishCommand(extCtx))
 	rootCmd.AddCommand(newEndpointCommand(extCtx))
 	rootCmd.AddCommand(newMonitorCommand(extCtx))
 	rootCmd.AddCommand(newFilesCommand(extCtx))

@@ -16,6 +16,20 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
+	// AgentKindPromptVoice is the authoring (agent.yaml) kind for a declarative
+	// voice (speech-to-speech) agent. It is intentionally distinct from the
+	// data-plane service kind "voice": the map layer translates prompt-voice ->
+	// voice when building the create request. Reserving "prompt-voice" keeps a
+	// clean boundary against a future hosted (code) voice agent.
+	AgentKindPromptVoice AgentKind = "prompt-voice"
+)
+
+// VoiceModelType selects the model-inference mode for a voice agent.
+type VoiceModelType string
+
+const (
+	VoiceModelTypeManaged      VoiceModelType = "managed"
+	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
 )
 
 // IsValidAgentKind checks if the provided AgentKind is valid
@@ -28,6 +42,7 @@ func ValidAgentKinds() []AgentKind {
 	return []AgentKind{
 		AgentKindHosted,
 		AgentKindWorkflow,
+		AgentKindPromptVoice,
 	}
 }
 
@@ -176,6 +191,34 @@ type Workflow struct {
 	Trigger         *map[string]any `json:"trigger,omitempty" yaml:"trigger,omitempty"`
 }
 
+// VoiceAgent is a declarative (managed) voice speech-to-speech agent authored in
+// agent.yaml with kind "prompt-voice". Unlike a ContainerAgent it has no image,
+// Dockerfile, or code — Foundry's Voice Live service hosts the model and audio
+// pipeline. The map layer translates this into a data-plane VoiceAgentDefinition
+// whose service kind is "voice".
+//
+// v1 keeps authoring lightweight: only the model and (optionally) a voice name,
+// instructions, model type, and store flag are author-facing. ModelType defaults
+// to "managed" when omitted; BYOM uses "self_deployed". The audio pipeline (PCM16 @
+// 24 kHz, server VAD turn detection, input transcription) is defaulted by the
+// map layer so authors don't have to specify it.
+type VoiceAgent struct {
+	AgentDefinition `json:",inline" yaml:",inline"`
+	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.
+	ModelType VoiceModelType `json:"modelType,omitempty" yaml:"model_type,omitempty"`
+	// Model names the speech-to-speech model (e.g. "gpt-realtime"). Reuses the
+	// shared Model struct; only Id is required for voice.
+	Model *Model `json:"model,omitempty" yaml:"model,omitempty"`
+	// Instructions is the system prompt for the voice assistant.
+	Instructions *string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+	// Voice is the output voice name (e.g. "en-US-Ava:DragonHDLatestNeural" for
+	// an Azure Neural voice, or "alloy" for an OpenAI realtime voice).
+	Voice *string `json:"voice,omitempty" yaml:"voice,omitempty"`
+	// Store toggles server-side logging (transcript + per-turn audio). Optional;
+	// the service defaults to false when omitted.
+	Store *bool `json:"store,omitempty" yaml:"store,omitempty"`
+}
+
 // ContainerResources represents the resource allocation for a containerized agent.
 type ContainerResources struct {
 	Cpu    string `json:"cpu" yaml:"cpu"`
@@ -196,6 +239,25 @@ type CodeConfiguration struct {
 // an empty dependency_resolution, so callers default to this value (the same
 // default as `azd ai agent init --dep-resolution`).
 const DefaultDependencyResolution = "remote_build"
+
+// Session idle-timeout bounds (in seconds) for a hosted agent, matching the
+// upstream HostedAgentDefinition.session_configuration.idle_timeout_seconds
+// contract. When omitted, the service applies its own default.
+const (
+	// MinSessionIdleTimeoutSeconds is the smallest accepted idle timeout.
+	MinSessionIdleTimeoutSeconds = 300
+	// MaxSessionIdleTimeoutSeconds is the largest accepted idle timeout.
+	MaxSessionIdleTimeoutSeconds = 3600
+)
+
+// SessionConfiguration configures the runtime session behavior of a hosted agent.
+type SessionConfiguration struct {
+	// IdleTimeoutSeconds is the idle duration, in seconds, before a session's
+	// sandbox is suspended. Valid range is 300–3600 (inclusive). When nil,
+	// session_configuration is omitted from the request and the service default
+	// (900 seconds) applies.
+	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty" yaml:"idle_timeout_seconds,omitempty"`
+}
 
 // PolicyType identifies the kind of governance policy attached to a hosted agent.
 type PolicyType string
@@ -235,6 +297,7 @@ type ContainerAgent struct {
 	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agent_card,omitempty"`
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
+	SessionConfiguration *SessionConfiguration   `json:"sessionConfiguration,omitempty" yaml:"session_configuration,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

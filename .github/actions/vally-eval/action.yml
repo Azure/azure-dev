@@ -34,6 +34,24 @@ inputs:
       used as the artifact name and job summary heading. Callers can derive it
       from the job name, for example "<job>-vally-results".
     required: true
+  install-azd:
+    description: >
+      Whether to install the released azd CLI. Needed by evals that shell out to `azd`.
+    required: false
+    default: "false"
+  azd-extensions:
+    description: >
+      Space-separated azd extension ids to install, optionally pinned as
+      "<id>@<version>" (for example "microsoft.foundry@1.0.0-beta.2").
+      Implies install-azd.
+    required: false
+    default: ""
+  fetch-skills:
+    description: >
+      Whether to run scripts/fetch-foundry-skill.mjs before the eval. Needed by evals
+      that load a skill from skills/.external/.
+    required: false
+    default: "false"
 
 outputs:
   vally-exit-code:
@@ -78,6 +96,55 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       run: npm ci
 
+    # Keep installed extensions and auth state in a job-local dir so a run never
+    # touches or depends on persistent runner state.
+    - name: Configure azd environment
+      if: steps.copilot.outputs.enabled == 'true' && (inputs.install-azd == 'true' || inputs.azd-extensions != '')
+      shell: bash
+      run: |
+        azd_config_dir="$RUNNER_TEMP/azd-config"
+        mkdir -p "$azd_config_dir"
+        {
+          echo "AZD_CONFIG_DIR=$azd_config_dir"
+          echo "AZURE_DEV_COLLECT_TELEMETRY=no"
+          echo "NO_COLOR=1"
+        } >> "$GITHUB_ENV"
+
+    - name: Install azd
+      if: steps.copilot.outputs.enabled == 'true' && (inputs.install-azd == 'true' || inputs.azd-extensions != '')
+      shell: bash
+      run: |
+        curl -fsSL https://aka.ms/install-azd.sh | bash
+        azd version
+
+    - name: Install azd extensions
+      if: steps.copilot.outputs.enabled == 'true' && inputs.azd-extensions != ''
+      shell: bash
+      env:
+        AZD_EXTENSIONS: ${{ inputs.azd-extensions }}
+      run: |
+        for spec in $AZD_EXTENSIONS; do
+          # "<id>" or "<id>@<version>"
+          id="${spec%@*}"
+          version=""
+          [[ "$spec" == *@* ]] && version="${spec##*@}"
+
+          if [[ -n "$version" ]]; then
+            azd extension install "$id" --version "$version" --no-prompt
+          else
+            azd extension install "$id" --no-prompt
+          fi
+        done
+        azd extension list --installed
+
+    - name: Fetch external skills
+      if: steps.copilot.outputs.enabled == 'true' && inputs.fetch-skills == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        node ./scripts/fetch-foundry-skill.mjs
+        cat skills/.external/.skill-ref
+
     - name: Run vally eval
       id: run
       if: steps.copilot.outputs.enabled == 'true'
@@ -103,6 +170,19 @@ runs:
         run_dir=$(find vally-results -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n1)
         run_dir=${run_dir:-vally-results}
         echo "vally-run-dir=$(pwd)/$run_dir" >> "$GITHUB_OUTPUT"
+
+    # The skill tracks another repo's default branch, so record which commit this run
+    # saw -- otherwise the results artifact can't be tied back to it.
+    - name: Capture skill provenance
+      if: always() && steps.copilot.outputs.enabled == 'true' && inputs.fetch-skills == 'true' && steps.run.outputs.vally-run-dir != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        VALLY_RUN_DIR: ${{ steps.run.outputs.vally-run-dir }}
+      run: |
+        if [[ -d "$VALLY_RUN_DIR" && -f skills/.external/.skill-ref ]]; then
+          cp skills/.external/.skill-ref "$VALLY_RUN_DIR/skill-ref.txt"
+        fi
 
     - name: Generate vally report
       if: always() && steps.copilot.outputs.enabled == 'true' && steps.run.outputs.vally-run-dir != ''

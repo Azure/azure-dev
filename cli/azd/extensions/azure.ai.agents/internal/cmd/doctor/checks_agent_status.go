@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agentkind"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -249,6 +251,18 @@ func newCheckAgentStatus(deps Dependencies) Check {
 					Status: StatusSkip,
 					Message: "skipped: upstream check passed but did not " +
 						"surface agent service names in its Details.",
+				}
+			}
+			serviceFilter := deps.filterHostedAgentServicesFn
+			if serviceFilter == nil {
+				serviceFilter = filterHostedAgentServices
+			}
+			services = serviceFilter(ctx, deps.AzdClient, services)
+			if len(services) == 0 {
+				return Result{
+					Status: StatusSkip,
+					Message: "skipped: no hosted agent services to probe; " +
+						"prompt-voice services are not checked by this hosted-agent probe.",
 				}
 			}
 
@@ -686,6 +700,45 @@ func readAgentServices(prior []Result) []string {
 		return v
 	}
 	return nil
+}
+
+// filterHostedAgentServices removes prompt-voice services from the hosted-agent
+// status probe. The remote.agent-status check targets hosted agent versions
+// (`/agents/{name}/versions/{version}`) and relies on AGENT_<KEY>_VERSION; a
+// prompt-voice deploy writes NAME+ENDPOINT only and should be covered by a
+// voice-specific doctor check in a future PR.
+func filterHostedAgentServices(ctx context.Context, azdClient *azdext.AzdClient, services []string) []string {
+	if len(services) == 0 || azdClient == nil {
+		return services
+	}
+
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp == nil || resp.Project == nil {
+		return services
+	}
+
+	byName := make(map[string]*azdext.ServiceConfig, len(resp.Project.Services))
+	for _, svc := range resp.Project.Services {
+		if svc != nil {
+			byName[svc.GetName()] = svc
+		}
+	}
+
+	hosted := make([]string, 0, len(services))
+	for _, name := range services {
+		svc := byName[name]
+		if svc == nil {
+			hosted = append(hosted, name)
+			continue
+		}
+		isVoice, err := agentkind.IsPromptVoice(svc, resp.Project.GetPath(), os.Getenv("AGENT_DEFINITION_PATH"))
+		if err == nil && isVoice {
+			continue
+		}
+		hosted = append(hosted, name)
+	}
+
+	return hosted
 }
 
 // readAgentNameVersion pulls AGENT_<KEY>_NAME and AGENT_<KEY>_VERSION

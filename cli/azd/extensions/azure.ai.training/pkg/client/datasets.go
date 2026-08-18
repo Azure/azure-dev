@@ -16,13 +16,14 @@ import (
 // StartPendingUpload initiates a pending upload for a dataset version.
 // POST .../datasets/{name}/versions/{version}/startPendingUpload
 func (c *Client) StartPendingUpload(
-	ctx context.Context, datasetName, version string,
+	ctx context.Context, datasetName, version, connectionName string,
 ) (*models.PendingUploadResponse, error) {
 	path := fmt.Sprintf("datasets/%s/versions/%s/startPendingUpload",
 		url.PathEscape(datasetName), url.PathEscape(version))
 
 	reqBody := &models.PendingUploadRequest{
 		PendingUploadType: "BlobReference",
+		ConnectionName:    connectionName,
 	}
 
 	resp, err := c.doDataPlaneWithVersion(ctx, http.MethodPost, path, DatasetAPIVersion, reqBody)

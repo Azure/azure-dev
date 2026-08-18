@@ -97,7 +97,7 @@ func TestLoadOnDiskTemplate_BicepOnly(t *testing.T) {
 	dir := t.TempDir()
 	infraDir := filepath.Join(dir, onDiskInfraDir)
 	require.NoError(t, os.MkdirAll(infraDir, 0o750))
-	bicepPath := filepath.Join(infraDir, onDiskBicepFile)
+	bicepPath := filepath.Join(infraDir, onDiskModule+".bicep")
 	require.NoError(t, os.WriteFile(bicepPath, []byte("// fake bicep\n"), 0o600))
 
 	stub := &stubCompiler{buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()}}
@@ -124,14 +124,14 @@ func TestLoadOnDiskTemplate_BicepWithParams(t *testing.T) {
 	dir := t.TempDir()
 	infraDir := filepath.Join(dir, onDiskInfraDir)
 	require.NoError(t, os.MkdirAll(infraDir, 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// bicep\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".bicep"), []byte("// bicep\n"), 0o600))
 
 	params := minimalARMParametersFile(t, map[string]any{
 		"location":           "${AZURE_LOCATION}", // ${VAR} resolved
 		"foundryProjectName": "my-project",        // literal
 		"shouldDrop":         "${UNSET_VAR}",      // unresolved -> dropped
 	})
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".parameters.json"), []byte(params), 0o600))
 
 	stub := &stubCompiler{buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()}}
 	envValues := map[string]string{"AZURE_LOCATION": "eastus"}
@@ -253,14 +253,33 @@ func TestLoadOnDiskTemplate_ConnectionServiceScopes(t *testing.T) {
 	assert.Equal(t, "project-key", asMap(credentials["legacy"])["key"])
 }
 
+func TestLoadOnDiskTemplateAt_CustomPathAndModule(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "infra", "foundry")
+	require.NoError(t, os.MkdirAll(dir, 0o750))
+	bicepPath := filepath.Join(dir, "project.bicep")
+	require.NoError(t, os.WriteFile(bicepPath, []byte("// custom module\n"), 0o600))
+	params := minimalARMParametersFile(t, map[string]any{"location": "eastus"})
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "project.parameters.json"), []byte(params), 0o600))
+	stub := &stubCompiler{buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()}}
+
+	got, err := loadOnDiskTemplateAt(t.Context(), dir, "project", stub, nil)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, bicepPath, got.sourcePath)
+	require.Len(t, stub.buildCalls, 1)
+	assert.Equal(t, bicepPath, stub.buildCalls[0])
+	require.Contains(t, got.parameters, "location")
+}
+
 func TestLoadOnDiskTemplate_BicepparamPrecedence(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	infraDir := filepath.Join(dir, onDiskInfraDir)
 	require.NoError(t, os.MkdirAll(infraDir, 0o750))
 	// Both .bicep and .bicepparam present; .bicepparam must win.
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// bicep"), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepParamFile), []byte("// bicepparam"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".bicep"), []byte("// bicep"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".bicepparam"), []byte("// bicepparam"), 0o600))
 
 	envelope, err := json.Marshal(map[string]string{
 		"templateJson": minimalARMTemplate(),
@@ -276,7 +295,7 @@ func TestLoadOnDiskTemplate_BicepparamPrecedence(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, templateModeBicepParam, got.mode)
-	assert.Equal(t, filepath.Join(infraDir, onDiskBicepParamFile), got.sourcePath)
+	assert.Equal(t, filepath.Join(infraDir, onDiskModule+".bicepparam"), got.sourcePath)
 
 	// .bicepparam path is taken exclusively.
 	require.Len(t, stub.buildParamCalls, 1)
@@ -296,7 +315,7 @@ func TestLoadOnDiskTemplate_CompileError(t *testing.T) {
 	dir := t.TempDir()
 	infraDir := filepath.Join(dir, onDiskInfraDir)
 	require.NoError(t, os.MkdirAll(infraDir, 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// broken bicep"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".bicep"), []byte("// broken bicep"), 0o600))
 
 	stub := &stubCompiler{buildErr: errors.New("bicep error BCP068: expected resource type string at line 3")}
 
@@ -319,7 +338,7 @@ func TestLoadOnDiskTemplate_InvalidJSONFromBicep(t *testing.T) {
 	dir := t.TempDir()
 	infraDir := filepath.Join(dir, onDiskInfraDir)
 	require.NoError(t, os.MkdirAll(infraDir, 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// bicep"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".bicep"), []byte("// bicep"), 0o600))
 
 	// Bicep "succeeds" but returns junk (defensive case; shouldn't
 	// happen in practice, but we surface it clearly).

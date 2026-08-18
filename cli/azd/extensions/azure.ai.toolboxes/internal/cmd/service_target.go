@@ -186,7 +186,7 @@ func (p *toolboxServiceTarget) Deploy(
 
 	// Surface the toolbox's MCP endpoint to agents (and the developer) without re-running.
 	mcpURL := buildToolboxMcpURL(endpoint, name, created.Version)
-	if err := setToolboxEndpointEnvFunc(ctx, name, mcpURL); err != nil {
+	if err := setToolboxEndpointEnvFunc(ctx, name, mcpURL, ""); err != nil {
 		return nil, err
 	}
 
@@ -233,7 +233,9 @@ func (p *toolboxServiceTarget) publishReuseEndpoint(
 		progress(fmt.Sprintf("Reusing existing toolbox %q", name))
 	}
 
-	if err := setToolboxEndpointEnvFunc(ctx, name, resolved); err != nil {
+	// Explicit reuse may reference a toolbox managed outside this project. The scope records
+	// readiness for this deployment context rather than asserting ownership of the endpoint.
+	if err := setToolboxEndpointEnvFunc(ctx, name, resolved, env["FOUNDRY_PROJECT_ENDPOINT"]); err != nil {
 		return nil, err
 	}
 	return &azdext.ServiceDeployResult{}, nil

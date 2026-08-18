@@ -1,0 +1,705 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func autoInstallTestExtension(
+	id string,
+	name string,
+	source string,
+	category extensions.SourceCategory,
+) *extensions.ExtensionMetadata {
+	return &extensions.ExtensionMetadata{
+		Id:             id,
+		DisplayName:    name,
+		Description:    name + " description",
+		Source:         source,
+		SourceCategory: category,
+		Versions:       []extensions.ExtensionVersion{{Version: "1.2.3"}},
+	}
+}
+
+func autoInstallTestRequirement(
+	candidates ...*extensions.ExtensionMetadata,
+) projectExtensionRequirement {
+	return projectExtensionRequirement{
+		extension:  candidates[0],
+		candidates: candidates,
+	}
+}
+
+func TestRecommendedSourceCandidate(t *testing.T) {
+	t.Parallel()
+
+	officialAlias := autoInstallTestExtension(
+		"demo",
+		"Demo",
+		"official",
+		extensions.SourceCategoryAzd,
+	)
+	azd := autoInstallTestExtension("demo", "Demo", "azd", extensions.SourceCategoryAzd)
+	local := autoInstallTestExtension("demo", "Demo", "local", extensions.SourceCategoryLocal)
+
+	tests := []struct {
+		name       string
+		candidates []*extensions.ExtensionMetadata
+		expected   *extensions.ExtensionMetadata
+	}{
+		{
+			name:       "unique official source",
+			candidates: []*extensions.ExtensionMetadata{local, officialAlias},
+			expected:   officialAlias,
+		},
+		{
+			name:       "literal azd wins among aliases",
+			candidates: []*extensions.ExtensionMetadata{officialAlias, azd, local},
+			expected:   azd,
+		},
+		{
+			name: "ambiguous official aliases",
+			candidates: []*extensions.ExtensionMetadata{
+				officialAlias,
+				autoInstallTestExtension("demo", "Demo", "mirror", extensions.SourceCategoryAzd),
+			},
+		},
+		{
+			name:       "no official source",
+			candidates: []*extensions.ExtensionMetadata{local},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			requirement := autoInstallTestRequirement(tt.candidates...)
+			assert.Same(t, tt.expected, recommendedSourceCandidate(requirement))
+		})
+	}
+}
+
+func TestSourceSummaryCollapsesFourOrMoreSources(t *testing.T) {
+	t.Parallel()
+
+	candidates := []*extensions.ExtensionMetadata{
+		autoInstallTestExtension("demo", "Demo", "azd", extensions.SourceCategoryAzd),
+		autoInstallTestExtension("demo", "Demo", "source-a", extensions.SourceCategoryOther),
+		autoInstallTestExtension("demo", "Demo", "source-b", extensions.SourceCategoryOther),
+		autoInstallTestExtension("demo", "Demo", "source-c", extensions.SourceCategoryOther),
+		autoInstallTestExtension("demo", "Demo", "source-d", extensions.SourceCategoryOther),
+	}
+	requirement := autoInstallTestRequirement(candidates...)
+
+	assert.Equal(
+		t,
+		"azd "+output.WithGrayFormat("(+4 more)"),
+		sourceSummary(requirement, true),
+	)
+	assert.Equal(
+		t,
+		"azd, source-a, source-b, source-c, source-d",
+		sourceSummary(requirement, false),
+	)
+	assert.Equal(
+		t,
+		"azd, source-a, source-b",
+		sourceSummary(autoInstallTestRequirement(candidates[:3]...), true),
+	)
+}
+
+func TestCommonRecommendedSourceRequiresSameConfiguredName(t *testing.T) {
+	t.Parallel()
+
+	requirements := []projectExtensionRequirement{
+		autoInstallTestRequirement(
+			autoInstallTestExtension("demo", "Demo", "azd", extensions.SourceCategoryAzd),
+		),
+		autoInstallTestRequirement(
+			autoInstallTestExtension("storage", "Storage", "official", extensions.SourceCategoryAzd),
+		),
+	}
+
+	source, ok := commonRecommendedSource(requirements)
+
+	assert.False(t, ok)
+	assert.Empty(t, source)
+}
+
+func TestInteractiveSingleInstallPlan(t *testing.T) {
+	t.Parallel()
+
+	azd := autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd)
+	local := autoInstallTestExtension("demo", "Demo Extension", "local", extensions.SourceCategoryLocal)
+
+	t.Run("single source confirms", func(t *testing.T) {
+		t.Parallel()
+		console := mockinput.NewMockConsole()
+		console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return options.Message == "Install Demo Extension?"
+		}).Respond(true)
+
+		selections, declined, err := interactiveSingleInstallPlan(
+			t.Context(),
+			console,
+			autoInstallTestRequirement(azd),
+		)
+
+		require.NoError(t, err)
+		require.False(t, declined)
+		require.Len(t, selections, 1)
+		assert.Same(t, azd, selections[0].extension)
+	})
+
+	t.Run("recommended source selected", func(t *testing.T) {
+		t.Parallel()
+		console := mockinput.NewMockConsole()
+		console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return options.Message == "Install Demo Extension from 'azd'" &&
+				options.EnableFiltering != nil && !*options.EnableFiltering
+		}).Respond(0)
+
+		selections, declined, err := interactiveSingleInstallPlan(
+			t.Context(),
+			console,
+			autoInstallTestRequirement(local, azd),
+		)
+
+		require.NoError(t, err)
+		require.False(t, declined)
+		require.Len(t, selections, 1)
+		assert.Same(t, azd, selections[0].extension)
+	})
+
+	t.Run("different source selected", func(t *testing.T) {
+		t.Parallel()
+		console := mockinput.NewMockConsole()
+		console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return options.Message == "Install Demo Extension from 'azd'"
+		}).Respond(1)
+		console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return options.Message == "Select a source for Demo Extension" &&
+				options.EnableFiltering != nil && !*options.EnableFiltering &&
+				assert.Equal(t, []string{"azd", "local"}, options.Options)
+		}).Respond(1)
+
+		selections, declined, err := interactiveSingleInstallPlan(
+			t.Context(),
+			console,
+			autoInstallTestRequirement(local, azd),
+		)
+
+		require.NoError(t, err)
+		require.False(t, declined)
+		require.Len(t, selections, 1)
+		assert.Same(t, local, selections[0].extension)
+	})
+
+	t.Run("cancel stops the plan", func(t *testing.T) {
+		t.Parallel()
+		console := mockinput.NewMockConsole()
+		console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return options.Message == "Install Demo Extension from 'azd'"
+		}).Respond(2)
+
+		selections, declined, err := interactiveSingleInstallPlan(
+			t.Context(),
+			console,
+			autoInstallTestRequirement(local, azd),
+		)
+
+		require.NoError(t, err)
+		assert.True(t, declined)
+		assert.Empty(t, selections)
+	})
+}
+
+func TestInteractiveMultipleInstallPlanDifferentSourceShortcut(t *testing.T) {
+	t.Parallel()
+
+	requirements := []projectExtensionRequirement{
+		autoInstallTestRequirement(
+			autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd),
+			autoInstallTestExtension("demo", "Demo Extension", "local", extensions.SourceCategoryLocal),
+		),
+		autoInstallTestRequirement(
+			autoInstallTestExtension("storage", "Storage Helper", "azd", extensions.SourceCategoryAzd),
+			autoInstallTestExtension("storage", "Storage Helper", "local", extensions.SourceCategoryLocal),
+		),
+		autoInstallTestRequirement(
+			autoInstallTestExtension("monitor", "Monitoring Tools", "azd", extensions.SourceCategoryAzd),
+			autoInstallTestExtension("monitor", "Monitoring Tools", "local", extensions.SourceCategoryLocal),
+		),
+	}
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Install all 3 required extensions from 'azd'" &&
+			options.EnableFiltering != nil && !*options.EnableFiltering
+	}).Respond(1)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select a source for Demo Extension"
+	}).Respond(1)
+	console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		return options.Message == "Install remaining extensions from 'local'?"
+	}).Respond(true)
+
+	selections, declined, err := interactiveMultipleInstallPlan(t.Context(), console, requirements)
+
+	require.NoError(t, err)
+	require.False(t, declined)
+	require.Len(t, selections, 3)
+	for _, selection := range selections {
+		assert.Equal(t, "local", selection.extension.Source)
+	}
+}
+
+func TestInteractiveMultipleInstallPlanFallsBackToIndividualSources(t *testing.T) {
+	t.Parallel()
+
+	requirements := []projectExtensionRequirement{
+		autoInstallTestRequirement(
+			autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd),
+			autoInstallTestExtension("demo", "Demo Extension", "local", extensions.SourceCategoryLocal),
+		),
+		autoInstallTestRequirement(
+			autoInstallTestExtension("storage", "Storage Helper", "azd", extensions.SourceCategoryAzd),
+			autoInstallTestExtension("storage", "Storage Helper", "private", extensions.SourceCategoryOther),
+		),
+	}
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Install all 2 required extensions from 'azd'"
+	}).Respond(1)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select a source for Demo Extension"
+	}).Respond(1)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select a source for Storage Helper"
+	}).Respond(1)
+
+	selections, declined, err := interactiveMultipleInstallPlan(t.Context(), console, requirements)
+
+	require.NoError(t, err)
+	require.False(t, declined)
+	require.Len(t, selections, 2)
+	assert.Equal(t, "local", selections[0].extension.Source)
+	assert.Equal(t, "private", selections[1].extension.Source)
+}
+
+func TestAutoInstallExtensionRequirementsDeclined(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+
+	extension := autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd)
+	console := mockinput.NewMockConsole()
+	console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		return options.Message == "Install Demo Extension?"
+	}).Respond(false)
+	manager := &fakeExtensionAutoInstallManager{installed: map[string]*extensions.Extension{}}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		[]projectExtensionRequirement{autoInstallTestRequirement(extension)},
+		autoInstallDisplayContext{requiredByProject: true},
+	)
+
+	require.NoError(t, err)
+	assert.True(t, result.declined)
+	assert.False(t, result.installed)
+	assert.Contains(t, strings.Join(console.Output(), "\n"), "Canceled: required extension isn't installed.")
+	assert.Empty(t, manager.installed)
+}
+
+func TestAutoInstallExtensionRequirementsNoPrompt(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+
+	requirements := []projectExtensionRequirement{
+		autoInstallTestRequirement(
+			autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd),
+		),
+		autoInstallTestRequirement(
+			autoInstallTestExtension("storage", "Storage Helper", "local", extensions.SourceCategoryLocal),
+		),
+	}
+	console := mockinput.NewMockConsole()
+	console.SetNoPromptMode(true)
+	manager := &fakeExtensionAutoInstallManager{installed: map[string]*extensions.Extension{}}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		requirements,
+		autoInstallDisplayContext{requiredByProject: true},
+	)
+
+	require.NoError(t, err)
+	assert.True(t, result.installed)
+	assert.Contains(
+		t,
+		strings.Join(console.Output(), "\n"),
+		"No-prompt mode: installing required extensions automatically.",
+	)
+	require.Len(t, console.SpinnerOps(), 4)
+	assert.Equal(t, input.StepDone, console.SpinnerOps()[1].Format)
+	assert.Equal(
+		t,
+		"Installing "+output.WithHighLightFormat("demo")+
+			output.WithGrayFormat(" (1.2.3)")+" from azd",
+		console.SpinnerOps()[1].Message,
+	)
+	assert.Equal(t, input.StepDone, console.SpinnerOps()[3].Format)
+	assert.Equal(
+		t,
+		"Installing "+output.WithHighLightFormat("storage")+
+			output.WithGrayFormat(" (1.2.3)")+" from local",
+		console.SpinnerOps()[3].Message,
+	)
+	require.NotEmpty(t, console.Output())
+	assert.Empty(t, console.Output()[len(console.Output())-1])
+}
+
+func TestAutoInstallExtensionRequirementsInstallFailure(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+
+	extension := autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd)
+	console := mockinput.NewMockConsole()
+	console.SetNoPromptMode(true)
+	manager := &fakeExtensionAutoInstallManager{
+		installed:  map[string]*extensions.Extension{},
+		installErr: errors.New("download failed"),
+	}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		[]projectExtensionRequirement{autoInstallTestRequirement(extension)},
+		autoInstallDisplayContext{},
+	)
+
+	require.ErrorContains(t, err, "failed to install extension: download failed")
+	assert.False(t, result.installed)
+	require.Len(t, console.SpinnerOps(), 2)
+	assert.Equal(t, input.StepFailed, console.SpinnerOps()[1].Format)
+	assert.Equal(
+		t,
+		"Installing "+output.WithHighLightFormat("demo"),
+		console.SpinnerOps()[1].Message,
+	)
+}
+
+func TestAutoInstallExtensionRequirementsDisplaysInstalledDependencies(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+
+	parent := autoInstallTestExtension("parent", "Parent", "azd", extensions.SourceCategoryAzd)
+	parent.Versions[0].Dependencies = []extensions.ExtensionDependency{{Id: "child", Version: "2.0.0"}}
+	child := autoInstallTestExtension("child", "Child", "azd", extensions.SourceCategoryAzd)
+	child.Versions[0].Version = "2.0.0"
+	child.Versions[0].Dependencies = []extensions.ExtensionDependency{{Id: "grandchild", Version: "3.0.0"}}
+	grandchild := autoInstallTestExtension("grandchild", "Grandchild", "azd", extensions.SourceCategoryAzd)
+	grandchild.Versions[0].Version = "3.0.0"
+
+	console := mockinput.NewMockConsole()
+	console.SetNoPromptMode(true)
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{parent, child, grandchild},
+		installed: map[string]*extensions.Extension{},
+	}
+	manager.installFn = func(extension *extensions.ExtensionMetadata) (*extensions.ExtensionVersion, error) {
+		manager.installed[parent.Id] = &extensions.Extension{
+			Id:      parent.Id,
+			Version: parent.Versions[0].Version,
+			Source:  parent.Source,
+		}
+		manager.installed[child.Id] = &extensions.Extension{
+			Id:      child.Id,
+			Version: child.Versions[0].Version,
+			Source:  child.Source,
+		}
+		manager.installed[grandchild.Id] = &extensions.Extension{
+			Id:      grandchild.Id,
+			Version: grandchild.Versions[0].Version,
+			Source:  grandchild.Source,
+		}
+		return &extension.Versions[0], nil
+	}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		[]projectExtensionRequirement{autoInstallTestRequirement(parent)},
+		autoInstallDisplayContext{requiredByProject: true},
+	)
+
+	require.NoError(t, err)
+	require.True(t, result.installed)
+	rendered := strings.Join(console.Output(), "\n")
+	require.Contains(t, rendered, "Installing child dependency")
+	require.Contains(t, rendered, "(2.0.0)")
+	require.Contains(t, rendered, "Installing grandchild dependency")
+	require.Contains(t, rendered, "(3.0.0)")
+	require.Less(t, strings.Index(rendered, "child dependency"), strings.Index(rendered, "grandchild dependency"))
+}
+
+func TestAutoInstallExtensionRequirementsNoPromptAmbiguous(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+
+	azd := autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd)
+	local := autoInstallTestExtension("demo", "Demo Extension", "local", extensions.SourceCategoryLocal)
+	console := mockinput.NewMockConsole()
+	console.SetNoPromptMode(true)
+	manager := &fakeExtensionAutoInstallManager{installed: map[string]*extensions.Extension{}}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		[]projectExtensionRequirement{autoInstallTestRequirement(azd, local)},
+		autoInstallDisplayContext{},
+	)
+
+	assert.False(t, result.installed)
+	suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+	require.True(t, ok)
+	assert.Contains(t, suggestionErr.Suggestion, "Choose one source for demo:")
+	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source azd")
+	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source local")
+	assert.NotContains(t, suggestionErr.Suggestion, "--version")
+	assert.Empty(t, manager.installed)
+}
+
+func TestManualInstallErrorIncludesResolvedVersion(t *testing.T) {
+	t.Parallel()
+
+	candidate := autoInstallTestExtension(
+		"demo",
+		"Demo Extension",
+		"azd",
+		extensions.SourceCategoryAzd,
+	)
+	candidate.Versions = append(candidate.Versions, extensions.ExtensionVersion{Version: "2.0.0"})
+	requirement := autoInstallTestRequirement(candidate)
+	requirement.versionPreference = ">=1.0.0 <2.0.0"
+
+	err := manualInstallError(
+		[]projectExtensionRequirement{requirement},
+		"Manual installation required.",
+	)
+
+	suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+	require.True(t, ok)
+	require.Contains(
+		t,
+		suggestionErr.Suggestion,
+		"azd extension install demo --source azd --version 1.2.3",
+	)
+}
+
+func TestAutoInstallExtensionRequirementsHonorsSelectedDependencySource(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+	parent := autoInstallTestExtension("parent", "Parent", "azd", extensions.SourceCategoryAzd)
+	parent.Versions[0].Dependencies = []extensions.ExtensionDependency{{Id: "child"}}
+	child := autoInstallTestExtension("child", "Child", "local", extensions.SourceCategoryLocal)
+
+	console := mockinput.NewMockConsole()
+	console.SetNoPromptMode(true)
+	manager := &fakeExtensionAutoInstallManager{installed: map[string]*extensions.Extension{}}
+	var installOrder []string
+	manager.installFn = func(extension *extensions.ExtensionMetadata) (*extensions.ExtensionVersion, error) {
+		installOrder = append(installOrder, extension.Id+"@"+extension.Source)
+		version := &extension.Versions[0]
+		manager.installed[extension.Id] = &extensions.Extension{
+			Id:      extension.Id,
+			Version: version.Version,
+			Source:  extension.Source,
+		}
+		return version, nil
+	}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		[]projectExtensionRequirement{
+			autoInstallTestRequirement(parent),
+			autoInstallTestRequirement(child),
+		},
+		autoInstallDisplayContext{requiredByProject: true},
+	)
+
+	require.NoError(t, err)
+	require.True(t, result.installed)
+	require.Equal(t, []string{"child@local", "parent@azd"}, installOrder)
+}
+
+func TestAutoInstallExtensionRequirementsOmitsSourceWhenSelectionUsesOneSource(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+
+	azd := autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd)
+	local := autoInstallTestExtension("demo", "Demo Extension", "local", extensions.SourceCategoryLocal)
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Install Demo Extension from 'azd'"
+	}).Respond(0)
+	manager := &fakeExtensionAutoInstallManager{installed: map[string]*extensions.Extension{}}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		[]projectExtensionRequirement{autoInstallTestRequirement(azd, local)},
+		autoInstallDisplayContext{},
+	)
+
+	require.NoError(t, err)
+	assert.True(t, result.installed)
+	require.Len(t, console.SpinnerOps(), 2)
+	assert.Equal(
+		t,
+		"Installing "+output.WithHighLightFormat("demo")+
+			output.WithGrayFormat(" (1.2.3)"),
+		console.SpinnerOps()[1].Message,
+	)
+}
+
+func TestInstallSelectionsUseMultipleSources(t *testing.T) {
+	t.Parallel()
+
+	selection := func(id string, source string) extensionInstallSelection {
+		return extensionInstallSelection{
+			extension: autoInstallTestExtension(id, id, source, extensions.SourceCategoryOther),
+		}
+	}
+
+	tests := []struct {
+		name       string
+		selections []extensionInstallSelection
+		expected   bool
+	}{
+		{name: "empty"},
+		{
+			name:       "single source",
+			selections: []extensionInstallSelection{selection("one", "azd"), selection("two", "azd")},
+		},
+		{
+			name:       "source names are case insensitive",
+			selections: []extensionInstallSelection{selection("one", "azd"), selection("two", "AZD")},
+		},
+		{
+			name:       "multiple sources",
+			selections: []extensionInstallSelection{selection("one", "azd"), selection("two", "local")},
+			expected:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.expected, installSelectionsUseMultipleSources(tt.selections))
+		})
+	}
+}
+
+func TestDisplayExtensionRequirements(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single project requirement", func(t *testing.T) {
+		t.Parallel()
+		console := mockinput.NewMockConsole()
+		displayExtensionRequirements(
+			t.Context(),
+			console,
+			[]projectExtensionRequirement{autoInstallTestRequirement(
+				autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd),
+			)},
+			autoInstallDisplayContext{requiredByProject: true},
+		)
+
+		output := strings.Join(console.Output(), "\n")
+		require.NotEmpty(t, console.Output())
+		assert.NotEmpty(t, console.Output()[0])
+		assert.Contains(t, output, "Extension required by azure.yaml: Demo Extension")
+		assert.Contains(t, output, "ID:")
+		assert.Contains(t, output, "Source:")
+		assert.NotContains(t, output, "\nRequired by azure.yaml.")
+		assert.Empty(t, console.Output()[len(console.Output())-1])
+	})
+
+	t.Run("multiple requirements use sources heading", func(t *testing.T) {
+		t.Parallel()
+		console := mockinput.NewMockConsole()
+		displayExtensionRequirements(
+			t.Context(),
+			console,
+			[]projectExtensionRequirement{
+				autoInstallTestRequirement(
+					autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd),
+					autoInstallTestExtension("demo", "Demo Extension", "local", extensions.SourceCategoryLocal),
+				),
+				autoInstallTestRequirement(
+					autoInstallTestExtension("storage", "Storage Helper", "azd", extensions.SourceCategoryAzd),
+				),
+			},
+			autoInstallDisplayContext{requiredByProject: true},
+		)
+
+		output := strings.Join(console.Output(), "\n")
+		require.GreaterOrEqual(t, len(console.Output()), 3)
+		assert.NotEmpty(t, console.Output()[0])
+		assert.Empty(t, console.Output()[1])
+		assert.Contains(t, output, "2 extensions required by azure.yaml:")
+		assert.Contains(t, output, "Extension")
+		assert.Contains(t, output, "ID")
+		assert.Contains(t, output, "Sources")
+		assert.Contains(t, output, "Demo Extension")
+		assert.Contains(t, output, "azd, local")
+		assert.Empty(t, console.Output()[len(console.Output())-1])
+	})
+}
+
+func TestAutoInstallExtensionRequirementsCIListsAllRequirements(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+	t.Setenv("CI", "true")
+
+	requirements := []projectExtensionRequirement{
+		autoInstallTestRequirement(
+			autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd),
+		),
+		autoInstallTestRequirement(
+			autoInstallTestExtension("storage", "Storage Helper", "local", extensions.SourceCategoryLocal),
+		),
+	}
+	console := mockinput.NewMockConsole()
+	manager := &fakeExtensionAutoInstallManager{installed: map[string]*extensions.Extension{}}
+
+	_, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		requirements,
+		autoInstallDisplayContext{requiredByProject: true},
+	)
+
+	suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+	require.True(t, ok)
+	assert.Equal(t, "Auto-installation is not supported in CI/CD environments.", suggestionErr.Message)
+	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source azd")
+	assert.Contains(t, suggestionErr.Suggestion, "azd extension install storage --source local")
+	assert.NotContains(t, suggestionErr.Suggestion, "--version")
+	assert.Empty(t, manager.installed)
+}

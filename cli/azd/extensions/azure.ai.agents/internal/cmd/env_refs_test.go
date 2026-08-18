@@ -18,7 +18,7 @@ import (
 func TestFindEnvironmentReferencesEscapedOuterKeepsInnerLive(t *testing.T) {
 	t.Parallel()
 
-	got := findEnvironmentReferences("$${A:-${B}}", honorEnvironmentEscaping)
+	got := findEnvironmentReferences("$${A:-${B}}")
 	require.Equal(t, []environmentReference{{Name: "B", Start: 6, End: 10}}, got)
 }
 
@@ -26,29 +26,25 @@ func TestFindEnvironmentReferences(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		value         string
-		honorEscaping bool
-		want          []environmentReference
+		name  string
+		value string
+		want  []environmentReference
 	}{
 		{
-			name:          "bare reference",
-			value:         "${PLAIN}",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          []environmentReference{{Name: "PLAIN", Start: 0, End: 8}},
+			name:  "bare reference",
+			value: "${PLAIN}",
+			want:  []environmentReference{{Name: "PLAIN", Start: 0, End: 8}},
 		},
 		{
-			name:          "reference with default",
-			value:         "${NAME:-fallback}",
-			honorEscaping: honorEnvironmentEscaping,
+			name:  "reference with default",
+			value: "${NAME:-fallback}",
 			want: []environmentReference{
 				{Name: "NAME", Start: 0, End: 17, HasDefault: true},
 			},
 		},
 		{
-			name:          "multiple references keep order",
-			value:         "prefix ${ONE} mid ${TWO:-x} suffix",
-			honorEscaping: honorEnvironmentEscaping,
+			name:  "multiple references keep order",
+			value: "prefix ${ONE} mid ${TWO:-x} suffix",
 			want: []environmentReference{
 				{Name: "ONE", Start: 7, End: 13},
 				{Name: "TWO", Start: 18, End: 27, HasDefault: true},
@@ -57,55 +53,35 @@ func TestFindEnvironmentReferences(t *testing.T) {
 		{
 			// drone/envsubst collapses '$' pairs, so one leading '$'
 			// escapes the reference.
-			name:          "single escape is dropped",
-			value:         "$${VAR}",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          nil,
+			name:  "single escape is dropped",
+			value: "$${VAR}",
+			want:  nil,
 		},
 		{
 			// Two leading '$' collapse to a literal '$' and the
 			// reference still expands.
-			name:          "double escape still expands",
-			value:         "$$${VAR}",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          []environmentReference{{Name: "VAR", Start: 2, End: 8}},
+			name:  "double escape still expands",
+			value: "$$${VAR}",
+			want:  []environmentReference{{Name: "VAR", Start: 2, End: 8}},
 		},
 		{
-			name:          "triple escape is dropped",
-			value:         "$$$${VAR}",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          nil,
+			name:  "triple escape is dropped",
+			value: "$$$${VAR}",
+			want:  nil,
 		},
 		{
-			name:          "escapes ignored when the owner does not honor them",
-			value:         "$${VAR}",
-			honorEscaping: ignoreEnvironmentEscaping,
-			want:          []environmentReference{{Name: "VAR", Start: 1, End: 7}},
+			name:  "foundry expression yields nothing",
+			value: "${{connections.store.credentials.key}}",
+			want:  nil,
 		},
 		{
-			name:          "foundry expression yields nothing",
-			value:         "${{connections.store.credentials.key}}",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          nil,
+			name:  "reference inside a foundry expression is reserved",
+			value: "${{ tools.${INNER} }}",
+			want:  nil,
 		},
 		{
-			name:          "reference inside a foundry expression is reserved",
-			value:         "${{ tools.${INNER} }}",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          nil,
-		},
-		{
-			// Protection rides on the same switch as escaping so the
-			// scan matches whichever expander owns the field.
-			name:          "foundry expression unprotected when escaping ignored",
-			value:         "${{ tools.${INNER} }}",
-			honorEscaping: ignoreEnvironmentEscaping,
-			want:          []environmentReference{{Name: "INNER", Start: 10, End: 18}},
-		},
-		{
-			name:          "foundry expression as a default value",
-			value:         "${MISSING:-${{event.body}}}",
-			honorEscaping: honorEnvironmentEscaping,
+			name:  "foundry expression as a default value",
+			value: "${MISSING:-${{event.body}}}",
 			want: []environmentReference{
 				{Name: "MISSING", Start: 0, End: 27, HasDefault: true},
 			},
@@ -114,9 +90,8 @@ func TestFindEnvironmentReferences(t *testing.T) {
 			// Nested references are unsupported by design. The span
 			// covers the default so scanning resumes after it and
 			// NESTED is never reported.
-			name:          "nested default is spanned, inner name unsupported",
-			value:         "${OUTER:-${NESTED}} ${AFTER}",
-			honorEscaping: honorEnvironmentEscaping,
+			name:  "nested default is spanned, inner name unsupported",
+			value: "${OUTER:-${NESTED}} ${AFTER}",
 			want: []environmentReference{
 				{Name: "OUTER", Start: 0, End: 19, HasDefault: true},
 				{Name: "AFTER", Start: 20, End: 28},
@@ -126,36 +101,31 @@ func TestFindEnvironmentReferences(t *testing.T) {
 			// A '$' the expander ignores must stay ignored here,
 			// or a literal like "costs $price} today" writes a
 			// phantom rice: ${rice} into the service env block.
-			name:          "bare dollar is not a reference",
-			value:         "$foo}",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          nil,
+			name:  "bare dollar is not a reference",
+			value: "$foo}",
+			want:  nil,
 		},
 		{
 			// The phantom would span the whole string and carry
 			// HasDefault, hiding REAL from init prompting.
-			name:          "bare dollar keeps a later reference live",
-			value:         "$ab:-${REAL}}",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          []environmentReference{{Name: "REAL", Start: 5, End: 12}},
+			name:  "bare dollar keeps a later reference live",
+			value: "$ab:-${REAL}}",
+			want:  []environmentReference{{Name: "REAL", Start: 5, End: 12}},
 		},
 		{
-			name:          "invalid name yields nothing",
-			value:         "${1BAD}",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          nil,
+			name:  "invalid name yields nothing",
+			value: "${1BAD}",
+			want:  nil,
 		},
 		{
-			name:          "unterminated reference yields nothing",
-			value:         "${UNCLOSED",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          nil,
+			name:  "unterminated reference yields nothing",
+			value: "${UNCLOSED",
+			want:  nil,
 		},
 		{
-			name:          "plain text yields nothing",
-			value:         "no references here",
-			honorEscaping: honorEnvironmentEscaping,
-			want:          nil,
+			name:  "plain text yields nothing",
+			value: "no references here",
+			want:  nil,
 		},
 	}
 
@@ -163,7 +133,7 @@ func TestFindEnvironmentReferences(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := findEnvironmentReferences(tt.value, tt.honorEscaping)
+			got := findEnvironmentReferences(tt.value)
 			require.Equal(t, tt.want, got)
 		})
 	}
@@ -186,7 +156,6 @@ func TestFindEnvironmentReferencesPolicies(t *testing.T) {
 		collectAzureYamlEnvironmentReferences(
 			value,
 			false,
-			honorEnvironmentEscaping,
 			&references,
 			map[string]int{},
 		)
@@ -223,7 +192,6 @@ func TestNestedDefaultIsNotDiscovered(t *testing.T) {
 	collectAzureYamlEnvironmentReferences(
 		value,
 		false,
-		honorEnvironmentEscaping,
 		&references,
 		map[string]int{},
 	)
@@ -238,14 +206,12 @@ func TestCollectAzureYamlEnvironmentReferencesUpgradesSecret(t *testing.T) {
 	collectAzureYamlEnvironmentReferences(
 		"${SHARED}",
 		false,
-		honorEnvironmentEscaping,
 		&references,
 		indexByName,
 	)
 	collectAzureYamlEnvironmentReferences(
 		"${SHARED}",
 		true,
-		honorEnvironmentEscaping,
 		&references,
 		indexByName,
 	)
@@ -298,7 +264,7 @@ func TestFindEnvironmentReferencesMatchesExpander(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			for _, reference := range findEnvironmentReferences(value, honorEnvironmentEscaping) {
+			for _, reference := range findEnvironmentReferences(value) {
 				require.Truef(
 					t,
 					lookedUp[reference.Name],

@@ -10,9 +10,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -250,6 +253,27 @@ func TestAssembleState(t *testing.T) {
 	}
 }
 
+func TestAssembleState_WithEnvironmentDoesNotReadCurrent(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName:    "dev",
+		envNameErr: errors.New("current environment should not be read"),
+		project:    &azdext.ProjectConfig{Name: "demo"},
+		values: map[string]string{
+			"prod/FOUNDRY_PROJECT_ENDPOINT": "https://x.services.ai.azure.com",
+			"prod/AZURE_SUBSCRIPTION_ID":    "sub-id",
+			"prod/AZURE_LOCATION":           "eastus",
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src, WithEnvironment("prod"))
+	require.Empty(t, errs)
+	assert.Equal(t, "prod", state.EnvironmentName)
+	assert.True(t, state.HasProjectEndpoint)
+	assert.Empty(t, state.MissingAzureContextVars)
+}
+
 func TestAssembleState_NilServiceEntriesAreIgnored(t *testing.T) {
 	t.Parallel()
 
@@ -292,12 +316,66 @@ func TestServiceKey(t *testing.T) {
 	}
 }
 
+// TestIsDeployed_VoiceEndpointFallback verifies that a voice agent — which sets
+// only AGENT_<KEY>_NAME and AGENT_<KEY>_ENDPOINT, never AGENT_<KEY>_VERSION — is
+// still reported as deployed via the base endpoint marker, while an agent with
+// neither version nor endpoint is reported undeployed.
+func TestIsDeployed_VoiceEndpointFallback(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		values  map[string]string
+		isVoice bool
+		want    bool
+	}{
+		{
+			name:   "version set: deployed (hosted agent)",
+			values: map[string]string{"env1/AGENT_VOICE_SVC_VERSION": "1"},
+			want:   true,
+		},
+		{
+			name:    "no version but base endpoint set: deployed (voice agent)",
+			values:  map[string]string{"env1/AGENT_VOICE_SVC_ENDPOINT": "https://x/voice_agents/a"},
+			isVoice: true,
+			want:    true,
+		},
+		{
+			name: "hosted agent with lingering endpoint but no version: undeployed",
+			// A partially-failed hosted deploy can present an empty VERSION with a
+			// stale ENDPOINT. The endpoint fallback must not fire for non-voice
+			// services, so it stays reported as not-deployed.
+			values:  map[string]string{"env1/AGENT_VOICE_SVC_ENDPOINT": "https://x/agents/a"},
+			isVoice: false,
+			want:    false,
+		},
+		{
+			name:   "neither version nor endpoint: undeployed",
+			values: map[string]string{},
+			want:   false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			src := &fakeSource{values: tc.values}
+			var errs []error
+			got := isDeployed(t.Context(), src, "env1", "voice-svc", tc.isVoice, &errs)
+			assert.Equal(t, tc.want, got)
+			assert.Empty(t, errs)
+		})
+	}
+}
+
 func TestOptionsApplyCleanly(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config{}
+	WithEnvironment("prod")(cfg)
 	WithOpenAPIProbe("echo", "local")(cfg)
 	WithLiveOpenAPIProbe(func(context.Context) ([]byte, error) { return nil, nil })(cfg)
+	assert.Equal(t, "prod", cfg.environmentName)
 	assert.Equal(t, "echo", cfg.openAPIAgent)
 	assert.Equal(t, "local", cfg.openAPISuffix)
 	assert.NotNil(t, cfg.openAPILiveFetch)
@@ -881,7 +959,7 @@ func TestAssembleState_MarksInlineMultiProtocolService(t *testing.T) {
 	assert.True(t, state.Services[0].MultiProtocol)
 }
 
-func TestExtractAgentYamlEnvRefs(t *testing.T) {
+func TestExtractEnvironmentRefs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -905,6 +983,15 @@ environment_variables:
 environment_variables:
   - name: MODEL
     value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
+`,
+			wantRefs: nil,
+		},
+		{
+			name: "escaped literal keeps the ref out of missing-var hints",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: LITERAL
+    value: $${FOUNDRY_PROJECT_ENDPOINT}
 `,
 			wantRefs: nil,
 		},
@@ -1027,6 +1114,16 @@ environment_variables:
 			wantPlaceholders: []string{"my.component.id"},
 		},
 		{
+			name: "Foundry expressions are not placeholders",
+			manifest: `kind: hostedAgent
+ environment_variables:
+   - name: PROJECT_ENDPOINT
+     value: '${{project.endpoint}}'
+   - name: PROJECT_NAME
+     value: '$${{project.name}}'
+ `,
+		},
+		{
 			// Empty placeholder body must not be flagged — it cannot
 			// correspond to a manifest parameter and is more likely
 			// stray literal text.
@@ -1054,71 +1151,36 @@ environment_variables:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			projectRoot := t.TempDir()
-			svcDir := filepath.Join(projectRoot, "echo")
-			require.NoError(t, os.MkdirAll(svcDir, 0o750))
-			require.NoError(t, os.WriteFile(
-				filepath.Join(svcDir, "agent.yaml"),
-				[]byte(tt.manifest),
-				0o600,
-			))
-			gotRefs, gotPlaceholders := extractAgentYamlEnvRefs(projectRoot, "echo")
+			gotRefs, gotPlaceholders := extractEnvironmentRefs(
+				environmentValuesFromManifest(t, tt.manifest),
+			)
 			assert.Equal(t, tt.wantRefs, gotRefs, "refs")
 			assert.Equal(t, tt.wantPlaceholders, gotPlaceholders, "placeholders")
 		})
 	}
 }
 
-func TestExtractAgentYamlEnvRefs_MissingFileOrArgs(t *testing.T) {
-	t.Parallel()
-
-	for _, args := range [][2]string{
-		{"", "echo"},
-		{t.TempDir(), ""},
-		{t.TempDir(), "missing"},
-	} {
-		refs, placeholders := extractAgentYamlEnvRefs(args[0], args[1])
-		assert.Nil(t, refs)
-		assert.Nil(t, placeholders)
+func environmentValuesFromManifest(t *testing.T, data string) []string {
+	var hosted agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal([]byte(data), &hosted); err != nil {
+		return nil
 	}
+	if hosted.EnvironmentVariables == nil {
+		return nil
+	}
+	values := make([]string, 0, len(*hosted.EnvironmentVariables))
+	for _, value := range *hosted.EnvironmentVariables {
+		values = append(values, value.Value)
+	}
+	return values
 }
 
-func TestExtractAgentYamlEnvRefs_RejectsTraversal(t *testing.T) {
+func TestExtractEnvironmentRefs_EmptyValues(t *testing.T) {
 	t.Parallel()
 
-	parent := t.TempDir()
-	projectRoot := filepath.Join(parent, "project")
-	outside := filepath.Join(parent, "outside")
-	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
-	require.NoError(t, os.MkdirAll(outside, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(outside, "agent.yaml"),
-		[]byte("kind: hostedAgent\nenvironment_variables:\n  - name: SECRET\n    value: ${OUTSIDE_SECRET}\n"),
-		0o600,
-	))
-
-	refs, placeholders := extractAgentYamlEnvRefs(projectRoot, "../outside")
-
+	refs, placeholders := extractEnvironmentRefs(nil)
 	assert.Nil(t, refs)
 	assert.Nil(t, placeholders)
-}
-
-func TestExtractAgentYamlEnvRefs_RootRelativePath(t *testing.T) {
-	t.Parallel()
-
-	projectRoot := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "agent.yaml"),
-		[]byte("kind: hostedAgent\nenvironment_variables:\n  - name: SECRET\n    value: ${ROOT_SECRET}\n"),
-		0o600,
-	))
-
-	for _, rel := range []string{"", "."} {
-		refs, placeholders := extractAgentYamlEnvRefs(projectRoot, rel)
-
-		assert.Equal(t, []string{"ROOT_SECRET"}, refs)
-		assert.Nil(t, placeholders)
-	}
 }
 
 func TestAssembleState_PopulatesMissingVars(t *testing.T) {
@@ -1171,6 +1233,151 @@ output AZURE_AI_MODEL_DEPLOYMENT_NAME string = ''
 	require.Empty(t, errs)
 	assert.Equal(t, []string{"FOUNDRY_PROJECT_ENDPOINT"}, state.MissingInfraVars)
 	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
+}
+
+func TestAssembleState_UsesUnifiedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAzureYAML(t, projectRoot, `
+services:
+  echo:
+    host: azure.ai.agent
+    env:
+      SHARED: set
+`)
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "infra", "main.bicep"),
+		[]byte("output INFRA_VALUE string = ''\n"),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": newAgentService(t, map[string]any{
+					"kind": "hostedAgent",
+					"environmentVariables": []any{
+						map[string]any{
+							"name":  "INFRA",
+							"value": "${INFRA_VALUE}",
+						},
+						map[string]any{
+							"name":  "MANUAL",
+							"value": "${MANUAL_VALUE}",
+						},
+						map[string]any{
+							"name":  "DEFAULT",
+							"value": "${DEFAULT_VALUE:-fallback}",
+						},
+						map[string]any{
+							"name":  "FOUNDRY",
+							"value": "${{project.endpoint}}",
+						},
+						map[string]any{
+							"name":  "PLACEHOLDER",
+							"value": "{{PLACEHOLDER}}",
+						},
+						map[string]any{
+							"name":  "SHARED",
+							"value": "${SHOULD_NOT_BE_READ}",
+						},
+					},
+				}),
+			},
+		},
+		values: map[string]string{
+			"dev/MANUAL_VALUE": "set",
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+
+	require.Empty(t, errs)
+	assert.Equal(t, []string{"INFRA_VALUE"}, state.MissingInfraVars)
+	assert.Empty(t, state.MissingManualVars)
+	assert.Equal(t, []string{"PLACEHOLDER"}, state.UnresolvedPlaceholders)
+	assert.Empty(t, state.EnvironmentLoadErrors)
+}
+
+func TestAssembleState_UsesReferencedUnifiedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAzureYAML(t, projectRoot, `
+services:
+  echo:
+    host: azure.ai.agent
+    $ref: ./service.yaml
+`)
+	writeProjectFile(t, projectRoot, "service.yaml", `
+kind: hostedAgent
+environmentVariables:
+  - name: REF_VALUE
+    value: ${REF_VALUE}
+`)
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {
+					Name:                 "echo",
+					Host:                 agentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./service.yaml"}),
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+
+	require.Empty(t, errs)
+	assert.Equal(t, []string{"REF_VALUE"}, state.MissingManualVars)
+	assert.Empty(t, state.MissingInfraVars)
+	assert.Equal(t, []string{"${REF_VALUE}"}, state.Services[0].EnvironmentValues)
+}
+
+func TestAssembleState_EnvironmentLoadErrorIsRecorded(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAzureYAML(t, projectRoot, `
+services:
+  echo:
+    host: azure.ai.agent
+    env:
+      INVALID:
+        - value
+`)
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": newAgentService(t, map[string]any{
+					"kind": "hostedAgent",
+				}),
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+
+	require.NotEmpty(t, errs)
+	require.NotNil(t, state)
+	require.Len(t, state.EnvironmentLoadErrors, 1)
+	assert.Contains(
+		t,
+		state.EnvironmentLoadErrors[0],
+		`service "echo" agent environment`,
+	)
+	assert.Empty(t, state.MissingManualVars)
 }
 
 func TestAssembleState_MissingVarsDedupedAcrossServices(t *testing.T) {

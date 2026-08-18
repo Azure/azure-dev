@@ -22,6 +22,8 @@ overrides:
           - msrc
     - filename: ./docs/specs/metrics-audit/**
       words:
+          - apphost
+          - appdetect
           - vsrpc
           - Buildpacks
           - devdeviceid
@@ -117,6 +119,7 @@ overrides:
           - vsrpc
     - filename: docs/reference/**/*.md
       words:
+          - apphost
           - appinit
           - appservice
           - buildpack
@@ -153,3 +156,7 @@ overrides:
           - usgovcloudapi
           - vsrpc
           - whatif
+    - filename: ./agency.toml
+      words:
+          - mcps
+          - toolsets

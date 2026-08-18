@@ -404,8 +404,10 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// configuration pass that can conflict with the deploy-time bot name.
 	envName, endpoint, _, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
 
-	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil &&
-		isHosted && project.ResolveActivityProfile(ca).IsActivity {
+	activityProfile, profileErr := resolveServiceActivityProfile(svc, args.Project.Path)
+	if profileErr != nil {
+		log.Printf("postdeploy: skipping Teams setup for %s: %v", svc.Name, profileErr)
+	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseSimple {
 		serviceKey := toServiceKey(svc.Name)
 		agentName, nameErr := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
 		botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
@@ -472,6 +474,22 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
 
 	return nil
+}
+
+func resolveServiceActivityProfile(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (project.ActivityProfile, error) {
+	agent, isHosted, _, err := project.LoadAgentDefinition(svc, projectRoot)
+	if err != nil || !isHosted {
+		return project.ActivityProfile{}, err
+	}
+
+	config, err := project.LoadServiceTargetAgentConfig(svc)
+	if err != nil {
+		return project.ActivityProfile{}, err
+	}
+	return project.ResolveActivityProfileWithSettings(agent, config.Activity)
 }
 
 // postdownHandler cleans up config store entries (sessions, conversations) for agent services

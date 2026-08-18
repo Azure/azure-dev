@@ -10,8 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/project"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestActivityBotTeardownTarget(t *testing.T) {
@@ -58,6 +61,66 @@ func TestActivityBotTeardownTarget(t *testing.T) {
 			require.Equal(t, test.wantBotName, botName)
 			require.Equal(t, test.wantResourceGroup, resourceGroup)
 			require.Equal(t, test.wantTracked, tracked)
+		})
+	}
+}
+
+func TestResolveServiceActivityProfileUsesConfiguredUseCase(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		activity map[string]any
+		want     project.ActivityUseCase
+	}{
+		{
+			name: "simple is the default",
+			want: project.ActivityUseCaseSimple,
+		},
+		{
+			name: "digital worker skips simple flow",
+			activity: map[string]any{
+				"useCase": "digital_worker",
+				"publish": map[string]any{
+					"publishAsAutopilot": true,
+					"publishScope":       "tenant",
+					"agenticUserTemplate": map[string]any{
+						"id":                    "digitalWorkerTemplate",
+						"file":                  "agenticUserTemplateManifest.json",
+						"schemaVersion":         "0.1.0-preview",
+						"communicationProtocol": "activityProtocol",
+					},
+				},
+			},
+			want: project.ActivityUseCaseDigitalWorker,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			values := map[string]any{
+				"kind": "hosted",
+				"name": "activity-agent",
+				"protocols": []any{
+					map[string]any{"protocol": "activity", "version": "2.0.0"},
+				},
+			}
+			if test.activity != nil {
+				values["activity"] = test.activity
+			}
+			props, err := structpb.NewStruct(values)
+			require.NoError(t, err)
+
+			profile, err := resolveServiceActivityProfile(&azdext.ServiceConfig{
+				Name:                 "activity-agent",
+				Host:                 AiAgentHost,
+				AdditionalProperties: props,
+			}, t.TempDir())
+			require.NoError(t, err)
+			require.True(t, profile.IsActivity)
+			require.Equal(t, test.want, profile.UseCase)
 		})
 	}
 }

@@ -1675,25 +1675,25 @@ func TraceWindowEndsBeforeItStarts(start, end string) error {
 // lookback_hours measures back from where the window closes and start_time is
 // an absolute bound, so a file carrying both does not say which was meant.
 func TraceWindowOverSpecified() error {
-	return fmt.Errorf(
+	return errors.New(
 		"source declares both start_time and lookback_hours, which are two ways " +
 			"of saying where the window opens: keep one")
 }
 
-// NegativeLookbackHours reports a window that reaches forwards.
+// NegativeLookbackHours reports a lookback that is not a length.
 func NegativeLookbackHours(hours int) error {
 	return fmt.Errorf(
-		"source.lookback_hours is %d, and a window cannot reach into the future: "+
-			"give the hours to look back",
+		"source.lookback_hours is %d, and how far back to look cannot be "+
+			"negative: give the hours to look back",
 		hours)
 }
 
 // LookbackTooLarge reports a lookback beyond the span a window may cover.
-func LookbackTooLarge(hours, max int) error {
+func LookbackTooLarge(hours, limit int) error {
 	return fmt.Errorf(
 		"source.lookback_hours is %d, which is beyond the %d hours a window can "+
 			"reach back: give a shorter lookback, or replace it with a start_time",
-		hours, max)
+		hours, limit)
 }
 
 // MaxTracesUnusable reports a negative cap written into the file.
@@ -1708,12 +1708,28 @@ func MaxTracesUnusable(maxTraces int) error {
 		maxTraces)
 }
 
-// WindowOnANonTraceSource reports window fields a source cannot use.
-func WindowOnANonTraceSource(sourceType, traces string) error {
+// SourceFieldsNotRead reports fields the declared source type ignores.
+func SourceFieldsNotRead(sourceType string, fields []string) error {
 	return fmt.Errorf(
-		"source declares a trace window, which a %q source does not read: "+
-			"remove it, or set type to %q",
-		sourceType, traces)
+		"source declares %s, which a %q source does not read: "+
+			"remove them, or change the type to one that does",
+		strings.Join(fields, ", "), sourceType)
+}
+
+// MaxTurnsUnusable reports a turn cap a run could not apply.
+func MaxTurnsUnusable(maxTurns int) error {
+	return fmt.Errorf(
+		"source.max_turns is %d: give a positive cap, or leave it out to use "+
+			"the service's default",
+		maxTurns)
+}
+
+// LookbackReachesTooFarBack reports a lookback that lands on an unusable start.
+func LookbackReachesTooFarBack(hours int) error {
+	return fmt.Errorf(
+		"source.lookback_hours is %d, which opens the window before any trace "+
+			"was recorded: give a shorter lookback",
+		hours)
 }
 
 // AmbiguousJudgeModel reports several deployments where only one can be used.

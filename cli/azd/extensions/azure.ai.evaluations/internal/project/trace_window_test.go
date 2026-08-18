@@ -13,11 +13,17 @@ import (
 
 // The bound exists so a lookback cannot reach far enough back to overflow the
 // duration it becomes, which would wrap the start into the future and read
-// nothing. Asserted rather than reasoned about, so raising the constant to a
-// value that does overflow fails here instead of in a run that comes back empty.
-func TestLookbackBoundCannotOverflowTheDurationItBecomes(t *testing.T) {
-	assert.Positive(t, time.Duration(MaxLookbackHours)*time.Hour)
-	assert.Equal(t, MaxLookbackHours, 24*365*10)
+// nothing. Asserted through the resolver rather than against the constant: a
+// comparison of the constant with its own definition cannot fail, and the
+// multiplication is constant-folded, so an overflowing value would stop the
+// package compiling rather than fail a test.
+func TestResolveTraceWindow_TheLargestLookbackStillOpensInThePast(t *testing.T) {
+	start, _, err := ResolveTraceWindow(&SourceDecl{LookbackHours: MaxLookbackHours})
+
+	require.NoError(t, err)
+	assert.True(t, start.Before(time.Now()), "the window has to open in the past")
+	assert.True(t, start.After(time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)),
+		"an overflowed duration lands centuries away, not ten years")
 }
 
 // A lookback beside an end_time used to be measured from now, which made the
@@ -64,6 +70,69 @@ func TestResolveTraceWindow_OpenWindowIsFine(t *testing.T) {
 	assert.True(t, end.IsZero())
 }
 
+// One end bounded and the other open is a window, not an error: "everything
+// since" and "everything up to" are both things an eval can mean.
+func TestResolveTraceWindow_OneEndOpenIsAWindow(t *testing.T) {
+	start, end, err := ResolveTraceWindow(&SourceDecl{StartTime: "2026-08-01T00:00:00Z"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1785542400), start.Unix())
+	assert.True(t, end.IsZero())
+
+	start, end, err = ResolveTraceWindow(&SourceDecl{EndTime: "2026-08-02T00:00:00Z"})
+	require.NoError(t, err)
+	assert.True(t, start.IsZero())
+	assert.Equal(t, int64(1785628800), end.Unix())
+}
+
+// A lookback long enough to reach past the epoch lands on a start the wire
+// drops, which is the same silence a written bound at the epoch is refused for.
+// The bound is arrived at differently and has to be held to the same rule.
+func TestResolveTraceWindow_RefusesALookbackPastTheEpoch(t *testing.T) {
+	_, _, err := ResolveTraceWindow(&SourceDecl{
+		EndTime: "1970-01-01T01:00:00Z", LookbackHours: 1,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "before any trace was recorded")
+}
+
+// A file wrong in two ways names the value that cannot be read at all, rather
+// than a pair it also got wrong: fixing the pair would leave the unreadable
+// value in place and send the reader round again.
+func TestResolveTraceWindow_ReportsTheUnreadableValueFirst(t *testing.T) {
+	_, _, err := ResolveTraceWindow(&SourceDecl{StartTime: "yesterday", LookbackHours: -1})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "which is not a time")
+	assert.NotContains(t, err.Error(), "lookback_hours")
+}
+
+// Fields the declared type never reads are refused rather than ignored: a
+// lookback under a responses source looks like it bounds the run and never has.
+func TestValidateSource_RefusesFieldsTheTypeDoesNotRead(t *testing.T) {
+	err := ValidateSource(&SourceDecl{
+		Type: SourceTypeResponses, ResponseIDs: []string{"resp_1"},
+		LookbackHours: 24, AgentName: "a",
+	})
+	require.Error(t, err)
+	// Named, because a reader with several set should not have to bisect.
+	assert.Contains(t, err.Error(), "lookback_hours, agent_name")
+
+	err = ValidateSource(&SourceDecl{
+		Type: SourceTypeTraces, AgentName: "a", MaxTurns: 3,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_turns")
+
+	// max_traces is refused for its sign wherever it appears; max_turns is the
+	// same kind of value and was going out unchecked.
+	err = ValidateSource(&SourceDecl{
+		Type: SourceTypeResponses, ResponseIDs: []string{"resp_1"}, MaxTurns: -3,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "source.max_turns is -3")
+}
+
 // Every rule, at the boundary rather than well past it, so a bound that is
 // moved by one still fails.
 func TestResolveTraceWindow_Refuses(t *testing.T) {
@@ -97,7 +166,7 @@ func TestResolveTraceWindow_Refuses(t *testing.T) {
 		{
 			name:    "negative lookback",
 			source:  SourceDecl{LookbackHours: -1},
-			wantErr: "cannot reach into the future",
+			wantErr: "how far back to look cannot be negative",
 		},
 		{
 			name:    "lookback one past the bound",
@@ -142,5 +211,4 @@ func TestResolveTraceWindow_AcceptsTheLargestLookbackAllowed(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.False(t, start.IsZero())
-	assert.True(t, start.Before(time.Now()), "the window has to open in the past")
 }

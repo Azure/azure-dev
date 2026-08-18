@@ -135,7 +135,7 @@ func TestBuildRunDataSource_TracesRefusesEveryWindowTheConfigWould(t *testing.T)
 		{"start that is not a time", project.SourceDecl{StartTime: "yesterday"}, "not a time"},
 		{"start at year one", project.SourceDecl{StartTime: "0001-01-01T00:00:00Z"}, "traces were recorded at"},
 		{"start at the unix epoch", project.SourceDecl{StartTime: "1970-01-01T00:00:00Z"}, "traces were recorded at"},
-		{"negative lookback", project.SourceDecl{LookbackHours: -24}, "cannot reach into the future"},
+		{"negative lookback", project.SourceDecl{LookbackHours: -24}, "cannot be negative"},
 		{"lookback past the bound", project.SourceDecl{LookbackHours: project.MaxLookbackHours + 1}, "beyond the"},
 		{"negative cap", project.SourceDecl{MaxTraces: -5}, "source.max_traces"},
 		{

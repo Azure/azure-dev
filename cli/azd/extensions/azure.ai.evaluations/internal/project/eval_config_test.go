@@ -255,7 +255,7 @@ func TestValidate_Rejects(t *testing.T) {
 			name: "lookback reaching forwards",
 			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
 				"      lookback_hours: -24\n    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "cannot reach into the future",
+			wantErr: "how far back to look cannot be negative",
 		},
 		{
 			// The bound exists to keep a typo from becoming a query over every
@@ -297,7 +297,7 @@ func TestValidate_Rejects(t *testing.T) {
 			body: "evals:\n  - name: e\n    source:\n      type: responses\n" +
 				"      response_ids: [resp_1]\n      lookback_hours: 24\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "does not read",
+			wantErr: "source declares lookback_hours, which a \"responses\" source does not read",
 		},
 		{
 			name:    "dataset without a name",

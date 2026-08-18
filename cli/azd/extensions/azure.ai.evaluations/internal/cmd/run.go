@@ -387,7 +387,7 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 	if list == nil || len(list.Data) == 0 || list.Data[0].DataSource == nil {
 		return nil, messages.EvalHasNoPreviousRun(evalID)
 	}
-	return upgradeLegacyTraceSource(list.Data[0].DataSource), nil
+	return pinReusedTraceWindow(list.Data[0].DataSource), nil
 }
 
 // legacyTraceLookbackHours is the window a legacy source with no lookback ran
@@ -400,38 +400,63 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 // of history instead.
 const legacyTraceLookbackHours = 24 * 7
 
+// pinReusedTraceWindow closes the window a reattached run repeats.
+//
+// A run reached by id repeats whatever data source the last one sent, and a
+// trace window with a start and no end means "up to now". Replaying it a week
+// later grades a week more than the run it was copied from, and the run after
+// that more again, so the span grows without limit and nothing says so. Every
+// reused trace window therefore gets both ends written down.
+//
+// It is graded over the span it covers rather than the span it covered: the
+// declaration is where a window that should move with each run comes from, and
+// a run reached by id has no declaration to read. Freezing it once is the
+// closest a shape with no lookback can come to one.
+//
+// Pinning the end at now also excludes traces the service has not finished
+// ingesting, which an open end would have picked up on the next run.
+func pinReusedTraceWindow(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunDataSource {
+	switch {
+	case ds == nil:
+		return ds
+	case ds.Type == eval_api.EvalRunDataSourceTypeTraces:
+		return upgradeLegacyTraceSource(ds)
+	case ds.Type == eval_api.EvalRunDataSourceTypeTracePreview:
+		if ds.TraceSource == nil || ds.TraceSource.EndTime != 0 {
+			return ds
+		}
+		ds.TraceSource.EndTime = time.Now().Unix()
+		return ds
+	default:
+		return ds
+	}
+}
+
 // upgradeLegacyTraceSource carries a run recorded under the old trace shape
 // onto the one that keeps what it is given.
 //
-// A run reattached by id repeats whatever the last one sent, so without this an
-// eval whose last run predates the change would keep the version-blind source
-// for good, and nothing would say so.
-//
-// Both bounds are written down, including the end. The old shape said "the last
-// n hours" and was re-read on every run; the new one has no lookback to carry,
-// so leaving the end open would let each reattach replay the same start against
-// a later now and grade a wider span than the run before it, without limit and
-// without saying so. Pinning both keeps the length of the window, which is the
-// closest a shape with no lookback can come to one.
+// Without it, an eval whose last run predates the change would keep sending the
+// version-blind source for good, and nothing would say so.
 func upgradeLegacyTraceSource(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunDataSource {
-	if ds == nil || ds.Type != eval_api.EvalRunDataSourceTypeTraces {
-		return ds
-	}
 	end := time.Now()
-	if ds.EndTime != 0 {
+	if ds.EndTime > 0 {
 		end = time.Unix(ds.EndTime, 0)
 	}
-	// The recorded value is whatever an older build sent, from before the
-	// bound existed, so it is clamped rather than trusted: a lookback large
+	// The recorded values are whatever an older build sent, from before the
+	// bounds existed, so they are clamped rather than trusted: a lookback large
 	// enough to overflow the duration puts the start in the future, and the
 	// reattached run reads nothing.
 	hours := ds.LookbackHours
 	if hours <= 0 || hours > project.MaxLookbackHours {
 		hours = legacyTraceLookbackHours
 	}
+	// A negative cap is no cap at all, and leaving it off means the service's
+	// own default of a thousand traces -- a bigger, costlier run than the one
+	// being repeated. The cap `init` writes is bounded and can be raised in the
+	// declaration, which is the only place a considered value can come from.
 	maxTraces := ds.MaxTraces
 	if maxTraces < 0 {
-		maxTraces = 0
+		maxTraces = project.DefaultScaffoldMaxTraces
 	}
 	// The old shape carried no version, so this pins nothing that was not
 	// pinned before; it stops the service choosing differently run to run only
@@ -520,7 +545,10 @@ func (ec *evalContext) buildRunDataSource(
 // run invokes nothing.
 func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
 	agent := group.Source.AgentName
-	if agent == "" && group.Target != nil {
+	// Only an agent target names an agent. A model target names a deployment,
+	// and filtering spans by a deployment name matches nothing: the run comes
+	// back empty with no reason given.
+	if agent == "" && group.Target != nil && group.Target.Type == project.TargetTypeAgent {
 		agent = group.Target.Name
 	}
 	if agent == "" {
@@ -543,10 +571,13 @@ func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) 
 // traceWindow resolves the bounds of the span a trace run reads.
 //
 // The rules live in the project package, with the check the configuration runs,
-// so a window is judged the same way whether it is being validated or sent. The
+// so a source is judged the same way whether it is being validated or sent. The
 // two used to be separate and had drifted on six inputs, each accepted by one
 // and refused by the other.
 func traceWindow(evalName string, source *project.SourceDecl) (start, end time.Time, err error) {
+	if err := project.ValidateSource(source); err != nil {
+		return time.Time{}, time.Time{}, messages.InEval(evalName, err)
+	}
 	start, end, err = project.ResolveTraceWindow(source)
 	if err != nil {
 		return time.Time{}, time.Time{}, messages.InEval(evalName, err)
@@ -558,6 +589,11 @@ func traceWindow(evalName string, source *project.SourceDecl) (start, end time.T
 func responsesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
 	if len(group.Source.ResponseIDs) == 0 {
 		return nil, messages.ResponsesNeedIDs(group.Name)
+	}
+	// The same check the configuration runs, so a field this source does not
+	// read is refused here too rather than only on the way to a deploy.
+	if err := project.ValidateSource(group.Source); err != nil {
+		return nil, messages.InEval(group.Name, err)
 	}
 	return eval_api.NewResponsesDataSource(group.Source.ResponseIDs, group.Source.MaxTurns), nil
 }

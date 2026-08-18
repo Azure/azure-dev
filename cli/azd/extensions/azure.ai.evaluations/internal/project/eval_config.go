@@ -75,7 +75,8 @@ type SourceDecl struct {
 	// version it picked.
 	AgentVersion string `yaml:"agent_version,omitempty"   json:"agent_version,omitempty"`
 	// StartTime and EndTime bound the window explicitly. LookbackHours stays
-	// supported and is read as a start bound relative to now.
+	// supported, read as a start bound measured back from EndTime, or from now
+	// when nothing closes the window.
 	StartTime string `yaml:"start_time,omitempty"      json:"start_time,omitempty"`
 	EndTime   string `yaml:"end_time,omitempty"        json:"end_time,omitempty"`
 }
@@ -309,30 +310,16 @@ func (c *EvalConfig) validateCatalogs() error {
 	return nil
 }
 
-// validateTraceWindow refuses a window a run could not use.
+// validateSource refuses a source declaration a run could not carry out.
 //
-// Checked with the rest of the configuration rather than at run time, so a
-// mistyped timestamp is caught before the eval is created rather than after.
-// The rules themselves live with the resolver the run also uses, so the two
-// cannot come to different conclusions about the same file.
-func validateTraceWindow(i int, name string, source *SourceDecl) error {
-	if _, _, err := ResolveTraceWindow(source); err != nil {
+// The rules live with the resolver the run also uses, so the two cannot come to
+// different conclusions about the same file. Only the wrapper differs: here
+// there is an index to name, and at run time there is not.
+func validateSource(i int, name string, source *SourceDecl) error {
+	if err := ValidateSource(source); err != nil {
 		return messages.InEvalAt(i, name, err)
 	}
 	return nil
-}
-
-// validateNoTraceWindow refuses window fields on a source that cannot read one.
-//
-// Silently inert fields are how a file comes to say something it does not do:
-// a `lookback_hours` under `type: responses` looks like it bounds the run and
-// never has.
-func validateNoTraceWindow(i int, name string, source *SourceDecl) error {
-	if source.StartTime == "" && source.EndTime == "" &&
-		source.LookbackHours == 0 && source.MaxTraces == 0 {
-		return nil
-	}
-	return messages.InEvalAt(i, name, messages.WindowOnANonTraceSource(source.Type, SourceTypeTraces))
 }
 
 func (c *EvalConfig) validateEval(i int, eval Eval) error {
@@ -358,14 +345,14 @@ func (c *EvalConfig) validateEval(i int, eval Eval) error {
 			if eval.Source.AgentName == "" && (eval.Target == nil || eval.Target.Name == "") {
 				return messages.TracesSourceNeedsAgentName(i, eval.Name)
 			}
-			if err := validateTraceWindow(i, eval.Name, eval.Source); err != nil {
+			if err := validateSource(i, eval.Name, eval.Source); err != nil {
 				return err
 			}
 		case SourceTypeResponses:
 			if len(eval.Source.ResponseIDs) == 0 {
 				return messages.ResponsesSourceNeedsIDs(i, eval.Name)
 			}
-			if err := validateNoTraceWindow(i, eval.Name, eval.Source); err != nil {
+			if err := validateSource(i, eval.Name, eval.Source); err != nil {
 				return err
 			}
 		case "":

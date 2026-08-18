@@ -107,6 +107,9 @@
     "codeConfiguration": {
       "$ref": "#/definitions/CodeConfiguration"
     },
+    "sessionConfiguration": {
+      "$ref": "#/definitions/SessionConfiguration"
+    },
     "policies": {
       "type": "array",
       "description": "Governance policies attached to the agent (e.g., Responsible AI).",
@@ -158,6 +161,19 @@
         "dependencyResolution": { "type": "string", "description": "Dependency resolution mode (e.g., 'bundled', 'remote_build')." }
       },
       "required": ["runtime", "entryPoint"],
+      "additionalProperties": false
+    },
+    "SessionConfiguration": {
+      "type": "object",
+      "description": "Optional hosted-agent session runtime settings. When omitted, the service applies its defaults (idle timeout 900 seconds).",
+      "properties": {
+        "idleTimeoutSeconds": {
+          "type": "integer",
+          "description": "Seconds a session may stay idle before the service tears it down. Range 300–3600 (inclusive). Defaults to 900 when omitted.",
+          "minimum": 300,
+          "maximum": 3600
+        }
+      },
       "additionalProperties": false
     },
     "Policy": {

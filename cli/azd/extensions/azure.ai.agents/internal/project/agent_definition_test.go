@@ -94,6 +94,30 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.Equal(t, "1", cfg.Container.Resources.Cpu)
 }
 
+// TestAgentDefinitionRoundTrip_SessionConfiguration verifies the optional
+// sessionConfiguration.idleTimeoutSeconds survives the inline marshal/unmarshal.
+func TestAgentDefinitionRoundTrip_SessionConfiguration(t *testing.T) {
+	ca := sampleContainerAgent()
+	ca.SessionConfiguration = &agent_yaml.SessionConfiguration{IdleTimeoutSeconds: new(600)}
+
+	props, err := AgentDefinitionToServiceProperties(ca, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+		Environment:          AgentEnvironment(ca),
+	}
+
+	got, _, found, _, err := AgentDefinitionFromService(svc)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NotNil(t, got.SessionConfiguration)
+	require.NotNil(t, got.SessionConfiguration.IdleTimeoutSeconds)
+	require.Equal(t, 600, *got.SessionConfiguration.IdleTimeoutSeconds)
+}
+
 // TestAgentDefinitionFromService_LegacyConfigShape verifies that a definition
 // stored under the deprecated config-nested shape is detected as legacy.
 func TestAgentDefinitionFromService_LegacyConfigShape(t *testing.T) {

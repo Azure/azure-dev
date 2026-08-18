@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // -e/--environment is parsed by the SDK and then has to be acted on. It was
@@ -106,4 +108,69 @@ func TestWithSelectedEnvironmentIgnoresAnEmptyName(t *testing.T) {
 	assert.Equal(t, "staging",
 		SelectedEnvironment(WithSelectedEnvironment(context.Background(), "staging")))
 	assert.Empty(t, SelectedEnvironment(context.Background()))
+}
+
+// failingEnv answers GetValue with a fixed error, which is how azd reports an
+// environment it does not have.
+type failingEnv struct {
+	err          error
+	currentCalls int
+}
+
+func (f *failingEnv) GetCurrent(
+	context.Context, *azdext.EmptyRequest, ...grpc.CallOption,
+) (*azdext.EnvironmentResponse, error) {
+	f.currentCalls++
+	return &azdext.EnvironmentResponse{
+		Environment: &azdext.Environment{Name: "default"},
+	}, nil
+}
+
+func (f *failingEnv) GetValue(
+	context.Context, *azdext.GetEnvRequest, ...grpc.CallOption,
+) (*azdext.KeyValueResponse, error) {
+	return nil, f.err
+}
+
+// A name the caller typed and azd does not have is a mistake to report, not an
+// absence to step over. Stepping over it runs the command against a
+// lower-priority endpoint, which can belong to another project, and then writes
+// its ids into an environment that does not exist.
+func TestATypoedEnvironmentNameIsReportedNotSteppedOver(t *testing.T) {
+	fake := &failingEnv{
+		err: status.Error(codes.Unknown, "'does-not-exist': environment not found"),
+	}
+
+	ctx := WithSelectedEnvironment(context.Background(), "does-not-exist")
+	_, _, err := readEnvHostedSource(ctx, fake)
+
+	require.Error(t, err, "a named environment azd does not have must stop the cascade")
+	assert.Contains(t, err.Error(), "does-not-exist")
+}
+
+// The same answer without a name given is ordinary absence: there is simply no
+// endpoint in the current environment, and the cascade carries on.
+func TestTheSameAnswerWithoutANameIsStillAbsence(t *testing.T) {
+	fake := &failingEnv{
+		err: status.Error(codes.Unknown, "'default': environment not found"),
+	}
+
+	value, name, err := readEnvHostedSource(context.Background(), fake)
+
+	require.NoError(t, err, "without -e this is absence, and the cascade continues")
+	assert.Empty(t, value)
+	assert.Empty(t, name)
+}
+
+// A named environment that exists but cannot be read for some other reason is
+// a failure, and must not be reported as a missing environment either.
+func TestANamedEnvironmentThatFailsDifferentlyStillFails(t *testing.T) {
+	fake := &failingEnv{err: status.Error(codes.Internal, "the store is on fire")}
+
+	ctx := WithSelectedEnvironment(context.Background(), "staging")
+	_, _, err := readEnvHostedSource(ctx, fake)
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "does not exist",
+		"a broken read is not a missing environment")
 }

@@ -1649,15 +1649,23 @@ func TraceWindowBoundUnusable(i int, eval, field, value string) error {
 }
 
 // TraceWindowEndsBeforeItStarts reports a window that can hold no traces.
-//
-// The start is named by the field that set it, which is lookback_hours when the
-// window was written that way: naming start_time there sends a reader looking
-// for a key their file does not contain.
-func TraceWindowEndsBeforeItStarts(i int, eval, startField, startValue, end string) error {
+func TraceWindowEndsBeforeItStarts(i int, eval, start, end string) error {
 	return fmt.Errorf(
-		"evals[%d] %q: source.end_time %q is not after source.%s %q, "+
+		"evals[%d] %q: source.end_time %q is not after source.start_time %q, "+
 			"so the window holds no traces",
-		i, eval, end, startField, startValue)
+		i, eval, end, start)
+}
+
+// TraceWindowOpensAfterItEnds reports the same emptiness for a lookback.
+//
+// Its own sentence rather than the one above with a field substituted: a
+// lookback is a length, not an instant, so "end_time is not after
+// lookback_hours" reads as a comparison nobody can make.
+func TraceWindowOpensAfterItEnds(i int, eval string, hours int, end string) error {
+	return fmt.Errorf(
+		"evals[%d] %q: source.lookback_hours is %d, which opens the window after "+
+			"source.end_time %q, so it holds no traces",
+		i, eval, hours, end)
 }
 
 // RunTraceWindowNotATime reports a window bound a run cannot read.
@@ -1672,11 +1680,19 @@ func RunTraceWindowNotATime(eval, field, value string) error {
 }
 
 // RunTraceWindowEndsBeforeItStarts reports a window a run would read nothing from.
-func RunTraceWindowEndsBeforeItStarts(eval, startField, startValue, end string) error {
+func RunTraceWindowEndsBeforeItStarts(eval, start, end string) error {
 	return fmt.Errorf(
-		"eval %q: source.end_time %q is not after source.%s %q, "+
+		"eval %q: source.end_time %q is not after source.start_time %q, "+
 			"so the window holds no traces",
-		eval, end, startField, startValue)
+		eval, end, start)
+}
+
+// RunTraceWindowOpensAfterItEnds reports the same emptiness for a lookback.
+func RunTraceWindowOpensAfterItEnds(eval string, hours int, end string) error {
+	return fmt.Errorf(
+		"eval %q: source.lookback_hours is %d, which opens the window after "+
+			"source.end_time %q, so it holds no traces",
+		eval, hours, end)
 }
 
 // TraceWindowOverSpecified reports a window declared twice over.
@@ -1713,8 +1729,8 @@ func LookbackTooLarge(i int, eval string, hours, max int) error {
 // back empty.
 func MaxTracesMustBePositiveIn(i int, eval string, maxTraces int) error {
 	return fmt.Errorf(
-		"evals[%d] %q: source.max_traces is %d, and a run cannot read fewer than "+
-			"no traces: give a positive cap, or leave it out for the default",
+		"evals[%d] %q: source.max_traces is %d: give a positive cap, or leave it "+
+			"out to read as many as the service allows",
 		i, eval, maxTraces)
 }
 

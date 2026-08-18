@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -550,7 +549,7 @@ func traceWindow(evalName string, source *project.SourceDecl) (start, end time.T
 		return time.Time{}, time.Time{}, nil
 	}
 
-	startField, startValue := "start_time", source.StartTime
+	fromLookback := false
 	if source.StartTime != "" {
 		start, err = time.Parse(time.RFC3339, source.StartTime)
 		if err != nil {
@@ -559,9 +558,9 @@ func traceWindow(evalName string, source *project.SourceDecl) (start, end time.T
 		}
 	} else if source.LookbackHours > 0 {
 		start = time.Now().Add(-time.Duration(source.LookbackHours) * time.Hour)
-		// Named as the file spells it, so the error does not send a reader
+		// Reported as the file spells it, so the error does not send a reader
 		// looking for a start_time they never wrote.
-		startField, startValue = "lookback_hours", strconv.Itoa(source.LookbackHours)
+		fromLookback = true
 	}
 
 	if source.EndTime != "" {
@@ -572,8 +571,12 @@ func traceWindow(evalName string, source *project.SourceDecl) (start, end time.T
 		}
 	}
 	if !start.IsZero() && !end.IsZero() && !end.After(start) {
+		if fromLookback {
+			return time.Time{}, time.Time{}, messages.RunTraceWindowOpensAfterItEnds(
+				evalName, source.LookbackHours, source.EndTime)
+		}
 		return time.Time{}, time.Time{}, messages.RunTraceWindowEndsBeforeItStarts(
-			evalName, startField, startValue, source.EndTime)
+			evalName, source.StartTime, source.EndTime)
 	}
 	return start, end, nil
 }

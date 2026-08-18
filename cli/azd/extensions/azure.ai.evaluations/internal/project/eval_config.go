@@ -6,7 +6,6 @@
 package project
 
 import (
-	"strconv"
 	"strings"
 	"time"
 
@@ -357,16 +356,17 @@ func validateTraceWindow(i int, name string, source *SourceDecl) error {
 	// it to. Without this, `lookback_hours: 24` beside an end_time from last
 	// year passes here and fails at `run start`, which is the failure this
 	// function exists to move earlier.
-	startField := "start_time"
-	startValue := source.StartTime
+	fromLookback := false
 	if start.IsZero() && source.LookbackHours > 0 {
 		start = time.Now().Add(-time.Duration(source.LookbackHours) * time.Hour)
-		startField = "lookback_hours"
-		startValue = strconv.Itoa(source.LookbackHours)
+		fromLookback = true
 	}
 
 	if !start.IsZero() && !end.IsZero() && !end.After(start) {
-		return messages.TraceWindowEndsBeforeItStarts(i, name, startField, startValue, source.EndTime)
+		if fromLookback {
+			return messages.TraceWindowOpensAfterItEnds(i, name, source.LookbackHours, source.EndTime)
+		}
+		return messages.TraceWindowEndsBeforeItStarts(i, name, source.StartTime, source.EndTime)
 	}
 	return nil
 }

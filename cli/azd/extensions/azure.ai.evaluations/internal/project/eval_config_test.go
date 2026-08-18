@@ -266,13 +266,13 @@ func TestValidate_Rejects(t *testing.T) {
 			wantErr: "beyond the",
 		},
 		{
-			// A window written as a lookback is named as one: reporting an
-			// empty start_time sends the reader to a key their file lacks.
-			name: "lookback that ends before it starts",
+			// A window written as a lookback is reported as a lookback: naming
+			// start_time sends the reader to a key their file lacks.
+			name: "lookback that opens after the window ends",
 			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
 				"      lookback_hours: 1\n      end_time: \"2020-01-01T00:00:00Z\"\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "source.lookback_hours",
+			wantErr: "source.lookback_hours is 1, which opens the window after",
 		},
 		{
 			// Parses, then reads as "no bound" everywhere after, so the bound

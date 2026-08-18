@@ -137,14 +137,15 @@ func TestBuildRunDataSource_TracesRefusesAnUnusableWindow(t *testing.T) {
 	assert.Contains(t, err.Error(), `eval "trace-eval"`)
 	assert.Contains(t, err.Error(), "holds no traces")
 
-	// A window written as a lookback is named as a lookback. Reporting an empty
-	// start_time sends the reader looking for a key their file does not have.
+	// A window written as a lookback is reported as a lookback. Reporting an
+	// empty start_time sends the reader looking for a key their file lacks, and
+	// "end_time is not after lookback_hours" compares a moment with a length.
 	err = build(&project.SourceDecl{
 		Type: project.SourceTypeTraces, AgentName: "a",
 		LookbackHours: 1, EndTime: "2020-01-01T00:00:00Z",
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "source.lookback_hours")
+	assert.Contains(t, err.Error(), "source.lookback_hours is 1, which opens the window after")
 	assert.NotContains(t, err.Error(), "start_time")
 }
 

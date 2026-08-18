@@ -4,6 +4,8 @@
 package dataset_api
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +15,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Refusing IsNotFound must not cost the rest of the error's identity.
+//
+// The first version of this guard dropped Unwrap altogether, which did stop a
+// later-page 404 reading as absence but also made a cancelled walk stop looking
+// like a cancellation to everything upstream.
+func TestAPageWalkFailureKeepsItsCause(t *testing.T) {
+	wrapped := pageWalkError{cause: context.Canceled}
+
+	assert.True(t, errors.Is(wrapped, context.Canceled),
+		"a walk cancelled part-way through is still a cancellation")
+	assert.False(t, IsNotFound(wrapped),
+		"the first page answered, so the dataset is not missing")
+	assert.Contains(t, wrapped.Error(), "later page",
+		"and the message says which part of the listing failed")
+}
 
 // A 404 on the first page means the service does not know this dataset. A 404
 // on a later page means the continuation failed -- the first page already

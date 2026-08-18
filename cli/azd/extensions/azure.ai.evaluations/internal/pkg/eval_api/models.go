@@ -278,6 +278,11 @@ type OpenAIEval struct {
 	ModifiedAt any               `json:"modified_at,omitempty"`
 	CreatedBy  string            `json:"created_by,omitempty"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+	// The service returns these on a read, and they are what makes `show` a
+	// definition rather than an id: what the eval grades, and where its rows
+	// come from. Both are fixed at creation.
+	DataSourceConfig map[string]any     `json:"data_source_config,omitempty"`
+	TestingCriteria  []TestingCriterion `json:"testing_criteria,omitempty"`
 }
 
 // OpenAIEvalList is the response for listing OpenAI eval definitions.

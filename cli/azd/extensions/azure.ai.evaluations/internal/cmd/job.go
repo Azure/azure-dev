@@ -201,7 +201,7 @@ func newJobShowCommand() *cobra.Command {
 
 			job, err := kind.get(ctx, ec, jobID)
 			if err != nil {
-				return jobLookupError(kind, jobID, err)
+				return jobLookupError("reading", kind, jobID, err)
 			}
 
 			if isJSON(cmd) {
@@ -244,7 +244,7 @@ func newJobCancelCommand() *cobra.Command {
 
 			canceled, err := kind.cancel(ctx, ec, jobID)
 			if err != nil {
-				return jobLookupError(kind, jobID, err)
+				return jobLookupError("cancelling", kind, jobID, err)
 			}
 
 			if isJSON(cmd) {
@@ -287,7 +287,7 @@ func newJobDeleteCommand() *cobra.Command {
 			defer ec.Close()
 
 			if err := kind.remove(ctx, ec, jobID); err != nil {
-				return jobLookupError(kind, jobID, err)
+				return jobLookupError("deleting", kind, jobID, err)
 			}
 
 			if isJSON(cmd) {
@@ -307,7 +307,10 @@ func newJobDeleteCommand() *cobra.Command {
 
 // jobLookupError names the sibling group, because the two job types share an id
 // shape and reaching for the wrong one is the likely mistake.
-func jobLookupError(kind jobKind, jobID string, err error) error {
+//
+// action is what the caller was doing, so a failed delete does not report that
+// a read failed.
+func jobLookupError(action string, kind jobKind, jobID string, err error) error {
 	if eval_api.IsNotFound(err) {
 		other := jobKindEvaluator
 		if kind.name == jobKindEvaluator {
@@ -315,5 +318,8 @@ func jobLookupError(kind jobKind, jobID string, err error) error {
 		}
 		return messages.JobNotFound(kind.name, jobID, other)
 	}
-	return messages.ReadingJob(kind.name, jobID, err)
+	if action == "reading" {
+		return messages.ReadingJob(kind.name, jobID, err)
+	}
+	return messages.JobActionFailed(action, kind.name, jobID, err)
 }

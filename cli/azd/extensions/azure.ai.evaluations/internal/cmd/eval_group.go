@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
@@ -224,7 +225,7 @@ func newEvalShowCommand() *cobra.Command {
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), group)
 			}
-			return emitDetail(cmd.OutOrStdout(), []field{
+			detail := []field{
 				{"Id", group.ID},
 				{"Name", group.Name},
 				// CreatedAt is `any` because the service sends epoch seconds here
@@ -232,12 +233,54 @@ func newEvalShowCommand() *cobra.Command {
 				// in scientific notation.
 				{"Created", timestampString(group.CreatedAt)},
 				{"Created By", group.CreatedBy},
-			})
+			}
+			// Without these the command answers "does this id exist", which is
+			// not what a definition is, nor what its own help promises.
+			if source := evalSourceType(group); source != "" {
+				detail = append(detail, field{"Source", source})
+			}
+			if graders := evalGraders(group); graders != "" {
+				detail = append(detail, field{"Evaluators", graders})
+			}
+			return emitDetail(cmd.OutOrStdout(), detail)
 		},
 	}
 
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+// evalSourceType reports where the eval's rows come from, as the service
+// records it. Empty when the service sent no data source config.
+func evalSourceType(group *eval_api.OpenAIEval) string {
+	if group == nil || group.DataSourceConfig == nil {
+		return ""
+	}
+	kind, _ := group.DataSourceConfig["type"].(string)
+	return kind
+}
+
+// evalGraders lists the evaluators the eval grades with, preferring the
+// reference a caller would recognize over the criterion label.
+func evalGraders(group *eval_api.OpenAIEval) string {
+	if group == nil {
+		return ""
+	}
+	names := make([]string, 0, len(group.TestingCriteria))
+	for _, c := range group.TestingCriteria {
+		name := c.EvaluatorName
+		if name == "" {
+			name = c.Name
+		}
+		if name == "" {
+			continue
+		}
+		if c.EvaluatorVersion != "" {
+			name += " (" + c.EvaluatorVersion + ")"
+		}
+		names = append(names, name)
+	}
+	return strings.Join(names, ", ")
 }
 
 func newEvalDeleteCommand() *cobra.Command {

@@ -831,6 +831,13 @@ func ReadingJob(kind, jobID string, err error) error {
 	return fmt.Errorf("reading %s generation job %s: %w", kind, jobID, err)
 }
 
+// JobActionFailed reports a job operation that was not a read, so the sentence
+// names what was attempted. A delete that reports "reading" sends the reader
+// looking for a read that never happened.
+func JobActionFailed(action, kind, jobID string, err error) error {
+	return fmt.Errorf("%s %s generation job %s: %w", action, kind, jobID, err)
+}
+
 // JobFailedWithReason reports a polled job that failed and said why.
 func JobFailedWithReason(status, message string) string {
 	return fmt.Sprintf("job failed with status %q: %s", status, message)

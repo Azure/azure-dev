@@ -4,11 +4,13 @@
 package cmd
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
 	"azureaieval/internal/project"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -139,11 +141,30 @@ func TestDefaultEvalName(t *testing.T) {
 // group is a command that returns "not found".
 func TestJobLookupErrorNamesTheGroup(t *testing.T) {
 	for _, kind := range []jobKind{datasetJobs, evaluatorJobs} {
-		err := jobLookupError(kind, "job_1", assert.AnError)
+		err := jobLookupError("reading", kind, "job_1", assert.AnError)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "job_1")
 		assert.Truef(t, strings.Contains(err.Error(), kind.name),
 			"the error must name the %q group so the retry goes to the right one", kind.name)
 	}
+}
+
+// A failed delete used to report that a read failed, which sends the reader
+// looking for a read that never happened.
+func TestJobLookupErrorNamesWhatWasAttempted(t *testing.T) {
+	deleteErr := jobLookupError("deleting", datasetJobs, "job_1", assert.AnError)
+	require.Error(t, deleteErr)
+	assert.Contains(t, deleteErr.Error(), "deleting")
+	assert.NotContains(t, deleteErr.Error(), "reading")
+
+	cancelErr := jobLookupError("cancelling", datasetJobs, "job_1", assert.AnError)
+	require.Error(t, cancelErr)
+	assert.Contains(t, cancelErr.Error(), "cancelling")
+
+	// A genuine 404 still points at the sibling group whatever the verb was.
+	notFound := jobLookupError("deleting", datasetJobs, "job_1",
+		&azcore.ResponseError{StatusCode: http.StatusNotFound})
+	require.Error(t, notFound)
+	assert.Contains(t, notFound.Error(), jobKindEvaluator)
 }

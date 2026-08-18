@@ -4545,16 +4545,30 @@ func (a *InitAction) verifyRegistryConnection(ctx context.Context) error {
 		return nil
 	}
 
-	if err := verifyFoundryProjectConnection(
+	return verifyRegistryConnectionOnProject(
 		ctx,
 		a.credential,
 		*a.selectedFoundryProject,
 		a.flags.registryConnection,
+	)
+}
+
+func verifyRegistryConnectionOnProject(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	foundryProject FoundryProjectInfo,
+	connectionRef string,
+) error {
+	if err := verifyFoundryProjectConnection(
+		ctx,
+		credential,
+		foundryProject,
+		connectionRef,
 		listFoundryProjectConnections,
 	); err != nil {
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
-			fmt.Sprintf("failed to verify registry connection %q: %s", a.flags.registryConnection, err),
+			fmt.Sprintf("failed to verify registry connection %q: %s", connectionRef, err),
 			"Create the connection on the selected Foundry project or pass the name or ID of an existing connection",
 		)
 	}

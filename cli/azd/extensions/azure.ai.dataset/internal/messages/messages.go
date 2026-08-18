@@ -559,3 +559,12 @@ func BlobDownloadStatusFor(status int, blobName string) error {
 func ReadingBlobContent(err error) error {
 	return fmt.Errorf("failed to read blob content: %w", err)
 }
+
+// ListingTruncated reports a page walk that stopped before the end.
+//
+// Worth saying out loud rather than logging: a short listing is indistinguishable
+// from a complete one, and log goes to io.Discard unless --debug.
+func ListingTruncated(pages int) error {
+	return fmt.Errorf(
+		"stopped reading the listing after %d pages, so it may be incomplete", pages)
+}

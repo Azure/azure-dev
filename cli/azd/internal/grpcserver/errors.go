@@ -78,7 +78,7 @@ func hostErrorStatus(
 	}
 
 	statusProto := proto.Clone(existingStatus.Proto()).(*statuspb.Status)
-	statusProto.Code = int32(code)
+	statusProto.Code = int32(code) //nolint:gosec // gRPC status codes use the defined int32 range
 	statusProto.Message = message
 	return status.FromProto(statusProto)
 }

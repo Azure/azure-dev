@@ -24,6 +24,11 @@ func TestUnansweredHostedSourcesLetTheCascadeCarryOn(t *testing.T) {
 		"nothing under that key": status.Error(codes.NotFound, "key not found"),
 		"no default environment": status.Error(codes.Unknown, "default environment not found"),
 		"no such environment":    status.Error(codes.Unknown, "'dev': environment not found"),
+		// The atomic commands are meant to work standalone against the data
+		// plane with FOUNDRY_PROJECT_ENDPOINT exported, so running outside a
+		// project has to reach the host variable rather than stop here.
+		"outside a project": status.Error(codes.Unknown,
+			"no project exists; to create a new project, run `azd init`"),
 		"wrapped in context": fmt.Errorf("reading the environment: %w",
 			status.Error(codes.Unknown, "default environment not found")),
 	} {

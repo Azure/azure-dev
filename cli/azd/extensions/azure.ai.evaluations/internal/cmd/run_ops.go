@@ -17,9 +17,8 @@ import (
 
 // addRunSubcommands attaches the atomic run operations.
 //
-// `azd ai eval run` stays the composite that creates the group if needed and
-// starts a run; these expose the individual operations so every one is
-// reachable without the config file.
+// `azd ai eval run` is a group rather than a verb; these are the operations it
+// groups, each reachable without the config file.
 func addRunSubcommands(cmd *cobra.Command) {
 	cmd.AddCommand(
 		newRunListCommand(),

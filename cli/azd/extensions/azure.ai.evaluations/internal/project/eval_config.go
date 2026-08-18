@@ -250,12 +250,20 @@ func (c *EvalConfig) validate(deploying bool) error {
 		}
 		seen[eval.Name] = true
 
-		if err := c.validateEval(i, eval, deploying); err != nil {
-			return err
+		if !deploying {
+			// Only what resolving a declaration by name depends on, which is a
+			// name that is present and not shared. Everything an eval says about
+			// itself is checked on the way to deploying it, and again at the run
+			// door on the entry the run is actually about. Enforcing it here
+			// stranded commands that had already been told which eval they
+			// meant: one malformed entry stopped `run list --eval <another>`
+			// listing anything, and the way out was to hand-edit a file the
+			// error did not mention.
+			continue
 		}
 
-		if !deploying {
-			continue
+		if err := c.validateEval(i, eval); err != nil {
+			return err
 		}
 
 		// Two evals that differ only by name are indistinguishable once
@@ -315,12 +323,6 @@ func (c *EvalConfig) validateCatalogs() error {
 // The rules live with the resolver the run also uses, so the two cannot come to
 // different conclusions about the same file. Only the wrapper differs: here
 // there is an index to name, and at run time there is not.
-//
-// Deploy-time only. What a source says is not what resolving a declaration by
-// name depends on, and enforcing it on the way to a lookup strands commands
-// that had already been told which eval they meant: an inert `max_turns` in one
-// entry would stop `run list --eval <another>` listing anything. The run door
-// runs the same check on the entry it is actually about.
 func validateSource(i int, name string, source *SourceDecl) error {
 	if _, _, err := ValidateSource(source); err != nil {
 		return messages.InEvalAt(i, name, err)
@@ -328,7 +330,7 @@ func validateSource(i int, name string, source *SourceDecl) error {
 	return nil
 }
 
-func (c *EvalConfig) validateEval(i int, eval Eval, deploying bool) error {
+func (c *EvalConfig) validateEval(i int, eval Eval) error {
 	if eval.Dataset != "" && eval.Source != nil {
 		return messages.DatasetAndSourceBothDeclared(i, eval.Name)
 	}
@@ -347,23 +349,19 @@ func (c *EvalConfig) validateEval(i int, eval Eval, deploying bool) error {
 		case SourceTypeTraces:
 			// The run needs one of these to say whose traces to read. Refusing
 			// here rather than at run time keeps a config that cannot run from
-			// deploying.
-			if eval.Source.AgentName == "" && (eval.Target == nil || eval.Target.Name == "") {
+			// deploying, so it has to be the same question the run asks.
+			if TraceAgentName(eval.Source, eval.Target) == "" {
 				return messages.TracesSourceNeedsAgentName(i, eval.Name)
 			}
-			if deploying {
-				if err := validateSource(i, eval.Name, eval.Source); err != nil {
-					return err
-				}
+			if err := validateSource(i, eval.Name, eval.Source); err != nil {
+				return err
 			}
 		case SourceTypeResponses:
 			if len(eval.Source.ResponseIDs) == 0 {
 				return messages.ResponsesSourceNeedsIDs(i, eval.Name)
 			}
-			if deploying {
-				if err := validateSource(i, eval.Name, eval.Source); err != nil {
-					return err
-				}
+			if err := validateSource(i, eval.Name, eval.Source); err != nil {
+				return err
 			}
 		case "":
 			return messages.SourceTypeRequired(i, eval.Name)

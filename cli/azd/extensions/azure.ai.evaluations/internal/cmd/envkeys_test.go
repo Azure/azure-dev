@@ -10,7 +10,6 @@ import (
 	"azureaieval/internal/project"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // Ids are per declaration. A shared key works only while a config has one
@@ -50,13 +49,12 @@ func TestIDKey_DoesNotCollideWithVersionKey(t *testing.T) {
 
 // Setting EVAL_ID by hand is the documented way to point a config at an eval
 // that already exists. It is also the key the extension writes itself, which is
-// what let a second eval adopt the first one's id — so it stays readable only
+// what let a second eval adopt the first one's id -- so it stays readable only
 // where it cannot be ambiguous. Fixing the aliasing dropped this fallback
-// entirely once, silently breaking the documented behaviour.
+// entirely once, silently breaking the documented behaviour, and it was later
+// left in a helper that nothing called.
 func TestGroupIDKeys_SharedKeyReadOnlyWhenUnambiguous(t *testing.T) {
-	write := func(t *testing.T, names ...string) string {
-		t.Helper()
-		dir := t.TempDir()
+	configOf := func(names ...string) *project.EvalConfig {
 		cfg := &project.EvalConfig{}
 		for _, n := range names {
 			cfg.Evals = append(cfg.Evals, project.Eval{
@@ -64,17 +62,19 @@ func TestGroupIDKeys_SharedKeyReadOnlyWhenUnambiguous(t *testing.T) {
 				Evaluators: evalcore.EvaluatorList{{Evaluator: "builtin.relevance"}},
 			})
 		}
-		require.NoError(t, project.SaveEvalConfig(dir, cfg))
-		return dir
+		return cfg
 	}
 
-	sole := evalIDKeys("quality", write(t, "quality"))
+	sole := evalIDKeys(configOf("quality"), "quality")
 	assert.Equal(t, idKey("eval", "quality"), sole[0],
 		"an eval's own entry is preferred over the shared one")
 	assert.Contains(t, sole, envKeyEvalID,
 		"a project with one eval honours an id set by hand")
 
 	assert.Equal(t, []string{idKey("eval", "quality")},
-		evalIDKeys("quality", write(t, "quality", "nightly")),
+		evalIDKeys(configOf("quality", "nightly"), "quality"),
 		"with several evals the shared entry cannot say which one it means")
+
+	assert.Equal(t, []string{idKey("eval", "quality")}, evalIDKeys(nil, "quality"),
+		"an eval reached without a config has only its own entry")
 }

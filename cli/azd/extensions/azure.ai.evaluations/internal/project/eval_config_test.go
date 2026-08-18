@@ -224,6 +224,16 @@ func TestValidate_Rejects(t *testing.T) {
 			wantErr: "source.agent_name is required",
 		},
 		{
+			// A model target names a deployment. The run refuses to filter
+			// spans by one, so accepting it here would deploy a config that
+			// cannot run -- which is what this check exists to prevent.
+			name: "trace source pointed at a model target",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n" +
+				"    target:\n      type: model\n      name: gpt-4o-mini\n" +
+				"    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "source.agent_name is required",
+		},
+		{
 			name: "responses source listing no ids",
 			body: "evals:\n  - name: e\n    source:\n      type: responses\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
@@ -415,6 +425,33 @@ func TestValidateForLookupStillRefusesADuplicateName(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "duplicate")
+}
+
+// What an eval says about itself is not what resolving it by name depends on.
+// One malformed entry used to stop `run list --eval <another>` listing
+// anything, and the way out was to hand-edit a file the error did not mention.
+// The run door checks the entry the run is actually about.
+func TestValidateForLookupLeavesAnEvalsOwnDeclarationToDeploying(t *testing.T) {
+	cases := map[string]string{
+		"a field the source does not read": "evals:\n  - name: a\n    source:\n" +
+			"      type: traces\n      agent_name: x\n      max_turns: 3\n" +
+			"    evaluators:\n      - evaluator: builtin.relevance\n",
+		"a mistyped source type": "evals:\n  - name: a\n    source:\n      type: tracs\n" +
+			"    evaluators:\n      - evaluator: builtin.relevance\n",
+		"an unusable window": "evals:\n  - name: a\n    source:\n      type: traces\n" +
+			"      agent_name: x\n      lookback_hours: -1\n" +
+			"    evaluators:\n      - evaluator: builtin.relevance\n",
+	}
+
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := loadFromString(t, body)
+
+			require.NoError(t, cfg.ValidateForLookup(),
+				"a lookup only needs the name to be present and unique")
+			require.Error(t, cfg.Validate(), "deploying it is another matter")
+		})
+	}
 }
 
 // outputDir accepts a directory or an explicit file path.

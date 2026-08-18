@@ -82,7 +82,7 @@ func newRunCommand() *cobra.Command {
 	}
 	addRunSubcommands(cmd)
 	cmd.AddCommand(buildRunCommand(
-		"start", "Start a run, creating the eval if it does not exist yet."))
+		"start", "Start a run of an eval that has been deployed."))
 	return cmd
 }
 
@@ -301,24 +301,6 @@ func buildRunCommand(use, short string) *cobra.Command {
 	return cmd
 }
 
-// evalIDKeys lists the env entries that may hold this eval's id, most
-// specific first.
-//
-// The per-name entry is what the extension writes. EVAL_ID is also the
-// documented way to point a config at an eval that already exists, created in
-// the portal or by another tool, so it stays readable — but only when the
-// configuration declares a single eval. With more than one there is no way to
-// tell which eval a shared entry refers to, and reading it anyway is what let a
-// second eval adopt the first one's id.
-func evalIDKeys(name, evalDir string) []string {
-	keys := []string{idKey("eval", name)}
-	if cfg, err := project.OpenEvalConfig(evalDir); err == nil &&
-		cfg != nil && len(cfg.Evals) == 1 {
-		keys = append(keys, envKeyEvalID)
-	}
-	return keys
-}
-
 // checkDatasetRegistered fails when the group's local dataset has edits that
 // were never deployed.
 //
@@ -409,7 +391,8 @@ const legacyTraceLookbackHours = 24 * 7
 //
 // A window with no start at all is repeated as it stands: it says "everything",
 // which is what it said when it was recorded, and closing it would freeze a
-// declaration that never asked to be bounded.
+// declaration that never asked to be bounded. So is a window that already has
+// an end, which cannot widen and is not this function's to move.
 //
 // It is graded over the span it covers rather than the span it covered: the
 // declaration is where a window that should move with each run comes from, and
@@ -447,9 +430,21 @@ func pinReusedTraceWindow(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunDataS
 // Without it, an eval whose last run predates the change would keep sending the
 // version-blind source for good, and nothing would say so.
 func upgradeLegacyTraceSource(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunDataSource {
+	// Without an agent the preview shape carries no filter at all, and
+	// omitempty drops it: the reattached run would read every agent's spans,
+	// a broader and costlier query than the one it is repeating. Repeating
+	// what was recorded is the lesser wrong.
+	if ds.AgentName == "" {
+		return ds
+	}
 	end := time.Now()
 	if ds.EndTime > 0 {
 		end = time.Unix(ds.EndTime, 0)
+		// A recorded end in the future would close the window after the last
+		// trace that exists, which reads nothing past now and says nothing.
+		if end.After(time.Now()) {
+			end = time.Now()
+		}
 	}
 	// The recorded values are whatever an older build sent, from before the
 	// bounds existed, so they are clamped rather than trusted: a lookback beyond
@@ -467,6 +462,13 @@ func upgradeLegacyTraceSource(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunD
 	if start.Unix() <= 0 {
 		end = time.Now()
 		start = end.Add(-time.Duration(hours) * time.Hour)
+	}
+	// Only reachable on a machine whose clock is set before about 1980, where
+	// even now minus the longest window a declaration may name lands in the
+	// pre-epoch. Dropping the bound says "everything", which is at least what
+	// the legacy shape said when it carried no start.
+	if start.Unix() <= 0 {
+		start = time.Time{}
 	}
 	// A negative cap is no cap at all, and leaving it off means the service's
 	// own default of a thousand traces -- a bigger, costlier run than the one
@@ -560,15 +562,7 @@ func (ec *evalContext) buildRunDataSource(
 // found. `agent_name` filters the traces; it is not a target, because a trace
 // run invokes nothing.
 func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
-	agent := group.Source.AgentName
-	// A model target names a deployment, and filtering spans by a deployment
-	// name matches nothing: the run comes back empty with no reason given.
-	// Anything else is read as an agent, which is how the dataset branch reads
-	// an untyped target too -- a config that deploys has to be one a run can
-	// send, and `target.type` is optional.
-	if agent == "" && group.Target != nil && group.Target.Type != project.TargetTypeModel {
-		agent = group.Target.Name
-	}
+	agent := project.TraceAgentName(group.Source, group.Target)
 	if agent == "" {
 		return nil, messages.TracesNeedAgentName(group.Name)
 	}

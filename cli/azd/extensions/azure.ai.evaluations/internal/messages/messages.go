@@ -154,16 +154,6 @@ func DatasetHasUnregisteredEdits(dataset, deployCmd string) error {
 		dataset, deployCmd)
 }
 
-// CreatingEval reports an eval being created because it has never been deployed.
-func CreatingEval(eval string) string {
-	return fmt.Sprintf("Creating eval %q...\n", eval)
-}
-
-// CreatingEvalFailed reports the service refusing to create the eval.
-func CreatingEvalFailed(eval string, err error) error {
-	return fmt.Errorf("creating eval %q: %w", eval, err)
-}
-
 // StartingRun reports the service refusing to start the run.
 func StartingRun(err error) error {
 	return fmt.Errorf("starting the evaluation run: %w", err)

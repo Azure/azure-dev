@@ -130,55 +130,55 @@ func TestValidateSource_Refuses(t *testing.T) {
 	}{
 		{
 			name:    "start that is not a time",
-			source:  SourceDecl{StartTime: "yesterday"},
+			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", StartTime: "yesterday"},
 			wantErr: "source.start_time is \"yesterday\", which is not a time",
 		},
 		{
 			name:    "end that is not a time",
-			source:  SourceDecl{EndTime: "tomorrow"},
+			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", EndTime: "tomorrow"},
 			wantErr: "source.end_time is \"tomorrow\", which is not a time",
 		},
 		{
 			name:    "start at year one",
-			source:  SourceDecl{StartTime: "0001-01-01T00:00:00Z"},
+			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", StartTime: "0001-01-01T00:00:00Z"},
 			wantErr: "not a time any traces were recorded at",
 		},
 		{
 			// Parses, is not Go's zero time, and still serializes to a unix
 			// zero that omitempty drops from the request.
 			name:    "start at the unix epoch",
-			source:  SourceDecl{StartTime: "1970-01-01T00:00:00Z"},
+			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", StartTime: "1970-01-01T00:00:00Z"},
 			wantErr: "not a time any traces were recorded at",
 		},
 		{
 			name:    "negative lookback",
-			source:  SourceDecl{LookbackHours: -1},
+			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", LookbackHours: -1},
 			wantErr: "how far back to look cannot be negative",
 		},
 		{
 			name:    "lookback one past the bound",
-			source:  SourceDecl{LookbackHours: MaxLookbackHours + 1},
+			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", LookbackHours: MaxLookbackHours + 1},
 			wantErr: "beyond the 87600 hours",
 		},
 		{
 			name:    "negative cap",
-			source:  SourceDecl{MaxTraces: -1},
+			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", MaxTraces: -1},
 			wantErr: "source.max_traces is -1",
 		},
 		{
 			name:    "window declared twice over",
-			source:  SourceDecl{StartTime: "2026-08-01T00:00:00Z", LookbackHours: 1},
+			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", StartTime: "2026-08-01T00:00:00Z", LookbackHours: 1},
 			wantErr: "keep one",
 		},
 		{
 			name:    "end before start",
-			source:  SourceDecl{StartTime: "2026-08-02T00:00:00Z", EndTime: "2026-08-01T00:00:00Z"},
+			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", StartTime: "2026-08-02T00:00:00Z", EndTime: "2026-08-01T00:00:00Z"},
 			wantErr: "holds no traces",
 		},
 		{
 			// An instant is not a window, and a run over it reads nothing.
 			name:    "end equal to start",
-			source:  SourceDecl{StartTime: "2026-08-01T00:00:00Z", EndTime: "2026-08-01T00:00:00Z"},
+			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", StartTime: "2026-08-01T00:00:00Z", EndTime: "2026-08-01T00:00:00Z"},
 			wantErr: "holds no traces",
 		},
 	}

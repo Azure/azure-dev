@@ -17,6 +17,27 @@ import (
 // rather than a window, and the run it produces is expensive and empty.
 const MaxLookbackHours = 24 * 365 * 10
 
+// TraceAgentName says whose conversations a trace eval reads.
+//
+// `agent_name` is the filter; an eval that leaves it off and names a target
+// still means "this agent's traces". A model target is not an agent: it names a
+// deployment, and filtering spans by a deployment name matches nothing, so the
+// run comes back empty with no reason given. `target.type` is optional, and an
+// untyped target is read as an agent, which is how the dataset path reads one.
+//
+// One definition, because the configuration check and the request builder both
+// have to answer this and used to answer it separately: the config accepted a
+// model target and every run of it then failed.
+func TraceAgentName(source *SourceDecl, target *Target) string {
+	if source != nil && source.AgentName != "" {
+		return source.AgentName
+	}
+	if target == nil || target.Type == TargetTypeModel {
+		return ""
+	}
+	return target.Name
+}
+
 // ValidateSource checks a source declaration and resolves the window it names.
 //
 // One definition of what a source may say, called by the configuration check
@@ -91,6 +112,10 @@ func namesOfSet(fields ...sourceField) []string {
 }
 
 // resolveTraceWindow reads the span of traces an eval grades.
+//
+// The sole enforcement point for the sign and size of a lookback, the sign of
+// max_traces, a window declared twice over, and the pre-epoch rule for both a
+// written bound and a derived one. A new rule about the window belongs here.
 func resolveTraceWindow(source *SourceDecl) (start, end time.Time, err error) {
 	// Parsed first, so a file that is wrong in two ways names the value that
 	// cannot be read at all rather than the pair it also got wrong.

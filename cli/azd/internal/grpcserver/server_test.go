@@ -11,8 +11,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -460,6 +463,175 @@ func Test_mapHostError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMapHostError_ResponseErrorPreservesServiceDetails(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{
+		StatusCode: http.StatusTooManyRequests,
+		ErrorCode:  "TooManyRequests",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Request: &http.Request{
+				Host: "registry.azurecr.io",
+				URL:  &url.URL{Scheme: "https", Host: "registry.azurecr.io"},
+			},
+		},
+	}
+
+	mapped := mapHostError(responseErr)
+	st, ok := status.FromError(mapped)
+	require.True(t, ok)
+	require.Equal(t, codes.Unknown, st.Code())
+
+	detail := requireServiceErrorDetail(t, st)
+	require.Equal(t, "TooManyRequests", detail.GetErrorCode())
+	require.Equal(t, int32(http.StatusTooManyRequests), detail.GetStatusCode())
+	require.Equal(t, "registry.azurecr.io", detail.GetServiceName())
+}
+
+func TestMapHostError_ResponseErrorUsesURLHostname(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		ErrorCode:  "AuthorizationFailed",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusForbidden,
+			Request: &http.Request{
+				URL: &url.URL{
+					Scheme: "https",
+					Host:   "management.azure.com",
+					Path:   "/subscriptions/redacted",
+				},
+			},
+		},
+	}
+
+	st, ok := status.FromError(mapHostError(responseErr))
+	require.True(t, ok)
+
+	detail := requireServiceErrorDetail(t, st)
+	require.Equal(t, "management.azure.com", detail.GetServiceName())
+}
+
+func TestMapHostError_ResponseErrorPreservesExistingDetails(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		ErrorCode:  "AuthorizationFailed",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusForbidden,
+			Request: &http.Request{
+				Host: "management.azure.com",
+				URL:  &url.URL{Scheme: "https", Host: "management.azure.com"},
+			},
+		},
+	}
+	baseStatus, err := status.New(codes.Unavailable, "service unavailable").WithDetails(
+		&errdetails.ErrorInfo{Reason: "existing-detail"},
+	)
+	require.NoError(t, err)
+
+	wrapped := &internal.ErrorWithSuggestion{
+		Err:        &hostErrorChain{error: responseErr, status: baseStatus},
+		Message:    "request failed",
+		Suggestion: "try again later",
+	}
+
+	st, ok := status.FromError(mapHostError(wrapped))
+	require.True(t, ok)
+	require.Equal(t, codes.Unavailable, st.Code())
+	require.Equal(t, "request failed", st.Message())
+	require.Equal(t, "existing-detail", requireErrorInfo(t, st).GetReason())
+	require.Equal(t, "try again later", azdext.ActionableErrorDetailFromStatus(st).GetSuggestion())
+
+	detail := requireServiceErrorDetail(t, st)
+	require.Equal(t, "AuthorizationFailed", detail.GetErrorCode())
+	require.Equal(t, int32(http.StatusForbidden), detail.GetStatusCode())
+}
+
+func TestMapHostError_DoesNotDuplicateExistingServiceDetails(t *testing.T) {
+	t.Parallel()
+
+	baseStatus, err := status.New(codes.Unknown, "request failed").WithDetails(
+		&azdext.ServiceErrorDetail{
+			ErrorCode:   "AlreadyStructured",
+			StatusCode:  http.StatusBadGateway,
+			ServiceName: "management.azure.com",
+		},
+	)
+	require.NoError(t, err)
+
+	wrapped := &internal.ErrorWithSuggestion{
+		Err:        baseStatus.Err(),
+		Suggestion: "try again later",
+	}
+
+	st, ok := status.FromError(mapHostError(wrapped))
+	require.True(t, ok)
+	require.Len(t, serviceErrorDetails(st), 1)
+	require.Equal(t, "AlreadyStructured", requireServiceErrorDetail(t, st).GetErrorCode())
+}
+
+func TestMapHostError_ResponseErrorWithoutRawResponse(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{
+		StatusCode: http.StatusBadGateway,
+		ErrorCode:  "BadGateway",
+	}
+
+	st, ok := status.FromError(mapHostError(responseErr))
+	require.True(t, ok)
+
+	detail := requireServiceErrorDetail(t, st)
+	require.Equal(t, "BadGateway", detail.GetErrorCode())
+	require.Equal(t, int32(http.StatusBadGateway), detail.GetStatusCode())
+	require.Empty(t, detail.GetServiceName())
+}
+
+type hostErrorChain struct {
+	error
+	status *status.Status
+}
+
+func (e *hostErrorChain) Unwrap() error {
+	return e.error
+}
+
+func (e *hostErrorChain) GRPCStatus() *status.Status {
+	return e.status
+}
+
+func serviceErrorDetails(st *status.Status) []*azdext.ServiceErrorDetail {
+	var result []*azdext.ServiceErrorDetail
+	for _, detail := range st.Details() {
+		if serviceDetail, ok := detail.(*azdext.ServiceErrorDetail); ok {
+			result = append(result, serviceDetail)
+		}
+	}
+	return result
+}
+
+func requireServiceErrorDetail(t *testing.T, st *status.Status) *azdext.ServiceErrorDetail {
+	t.Helper()
+	details := serviceErrorDetails(st)
+	require.Len(t, details, 1)
+	return details[0]
+}
+
+func requireErrorInfo(t *testing.T, st *status.Status) *errdetails.ErrorInfo {
+	t.Helper()
+	for _, detail := range st.Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok {
+			return info
+		}
+	}
+	require.FailNow(t, "expected ErrorInfo detail")
+	return nil
 }
 
 func requireAuthErrorInfo(t *testing.T, st *status.Status) *errdetails.ErrorInfo {

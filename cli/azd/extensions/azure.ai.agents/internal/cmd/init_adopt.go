@@ -1079,6 +1079,16 @@ func runInitFromAzureYaml(
 	// azure.ai.project service so the provisioning provider recognizes the
 	// brownfield signal and reuses the project instead of creating a new one.
 	if result.FoundryProject != nil {
+		if flags.registryConnection != "" {
+			if err := verifyRegistryConnectionOnProject(
+				ctx,
+				result.Credential,
+				*result.FoundryProject,
+				strings.TrimSpace(flags.registryConnection),
+			); err != nil {
+				return err
+			}
+		}
 		if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
 			return err
 		}
@@ -1605,6 +1615,65 @@ func applyDeployModeToService(
 	serviceName string,
 	svc *azdext.ServiceConfig,
 ) (bool, error) {
+	resolvedAgent, isHosted, hasDefinition, _, err := project.AgentDefinitionFromResolvedService(svc, projectPath)
+	if err != nil {
+		return false, fmt.Errorf("reading adopted agent service %q: %w", serviceName, err)
+	}
+	hasCodeConfig := adoptedServiceHasCodeConfig(svc) ||
+		(hasDefinition && resolvedAgent.CodeConfiguration != nil)
+
+	connectionRef := strings.TrimSpace(flags.registryConnection)
+	if flags.registryConnection != "" {
+		if connectionRef == "" {
+			return false, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"registry connection cannot be empty or whitespace",
+				"provide the name or ID of an existing Foundry project connection",
+			)
+		}
+		if hasDefinition && !isHosted {
+			return false, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"a registry connection is only valid for hosted container agents",
+				"use a registry connection with a hosted agent that supplies a pre-built image",
+			)
+		}
+		if flags.image == "" && hasCodeConfig {
+			return false, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"a registry connection cannot be used with code deploy",
+				"use the registry connection with a pre-built image or remove it",
+			)
+		}
+
+		effectiveImage := strings.TrimSpace(flags.image)
+		if effectiveImage == "" {
+			effectiveImage = strings.TrimSpace(svc.GetImage())
+		}
+		if effectiveImage == "" && hasDefinition {
+			effectiveImage = strings.TrimSpace(resolvedAgent.Image)
+		}
+		if effectiveImage == "" {
+			return false, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"a registry connection requires a pre-built image",
+				"pass --image <registry/image:tag> or provide an image in the hosted-agent manifest",
+			)
+		}
+
+		connectionValue, err := structpb.NewValue(connectionRef)
+		if err != nil {
+			return false, fmt.Errorf("encoding registry connection value: %w", err)
+		}
+		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        "registryConnectionId",
+			Value:       connectionValue,
+		}); err != nil {
+			return false, fmt.Errorf("writing registry connection to agent service %q: %w", serviceName, err)
+		}
+	}
+
 	// Apply --image override to the agent service when provided.
 	if flags.image != "" {
 		imageValue, err := structpb.NewValue(flags.image)
@@ -1627,24 +1696,28 @@ func applyDeployModeToService(
 		return false, nil
 	}
 
+	// Check whether the service already specifies its deploy mode. Code deploy
+	// takes precedence over stale image or docker properties when no override
+	// is requested.
+	hasDocker := adoptedServiceHasDocker(svc)
+	if flags.deployMode == "" && hasCodeConfig {
+		return false, nil
+	}
+
 	// An adopted service that already declares an image also uses passthrough,
-	// even when --image was not supplied during this init.
-	if strings.TrimSpace(svc.GetImage()) != "" {
+	// even when --image was not supplied during this init. An explicit code mode
+	// overrides a leftover image.
+	if strings.TrimSpace(svc.GetImage()) != "" && flags.deployMode != "code" {
 		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, svc.GetImage()); err != nil {
 			return false, err
 		}
 		return false, nil
 	}
 
-	// Check whether the service already specifies its deploy mode.
-	hasCodeConfig := adoptedServiceHasCodeConfig(svc)
-	hasDocker := adoptedServiceHasDocker(svc)
-
-	// When no explicit --deploy-mode flag is passed and the service
-	// is already configured, respect the sample's existing config. A
-	// pre-configured docker property means container deploy.
-	if flags.deployMode == "" && (hasCodeConfig || hasDocker) {
-		return hasDocker, nil
+	// When no explicit --deploy-mode flag is passed and the service is already
+	// configured for a source-container build, respect that configuration.
+	if flags.deployMode == "" && hasDocker {
+		return true, nil
 	}
 
 	// Use the service's subdirectory for language detection (not project root).

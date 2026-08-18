@@ -691,18 +691,7 @@ func (p *AgentServiceTargetProvider) Package(
 		return nil, err
 	}
 
-	// Core image passthrough owns the artifact lifecycle for all pre-built images,
-	// whether the source registry is public or accessed through a Foundry connection.
-	if DockerImagePassthrough(serviceConfig.GetDocker()) {
-		progress("Packaging pre-built container image")
-		artifacts, err := p.packageContainer(ctx, serviceConfig, serviceContext)
-		if err != nil {
-			return nil, err
-		}
-		return &azdext.ServicePackageResult{Artifacts: artifacts}, nil
-	}
-
-	// Code deploy: ZIP the source directory.
+	// Code deploy takes precedence over stale or mixed image configuration.
 	if agentDef.CodeConfiguration != nil {
 		progress("Packaging code")
 		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
@@ -723,6 +712,17 @@ func (p *AgentServiceTargetProvider) Package(
 				},
 			},
 		}, nil
+	}
+
+	// Core image passthrough owns the artifact lifecycle for all pre-built images,
+	// whether the source registry is public or accessed through a Foundry connection.
+	if DockerImagePassthrough(serviceConfig.GetDocker()) {
+		progress("Packaging pre-built container image")
+		artifacts, err := p.packageContainer(ctx, serviceConfig, serviceContext)
+		if err != nil {
+			return nil, err
+		}
+		return &azdext.ServicePackageResult{Artifacts: artifacts}, nil
 	}
 
 	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
@@ -808,6 +808,20 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
+	p.adoptServiceConfig(serviceConfig)
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
+	serviceConfig = p.serviceConfig
+
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent || agentDef.CodeConfiguration != nil {
+		return &azdext.ServicePublishResult{}, nil
+	}
+
 	// A pre-built image does not start a container publish operation. Preserve
 	// this fast path; Activity Bot selection still runs in Deploy because the
 	// deployed agent identity is required to prefer an already-bound bot.
@@ -816,24 +830,6 @@ func (p *AgentServiceTargetProvider) Publish(
 		return &azdext.ServicePublishResult{
 			Artifacts: []*azdext.Artifact{preBuiltArtifact},
 		}, nil
-	}
-
-	p.adoptServiceConfig(serviceConfig)
-	if err := p.ensureDeployContext(ctx); err != nil {
-		return nil, err
-	}
-	serviceConfig = p.serviceConfig
-	// Code deploy skips Publish (no ACR needed)
-	if p.isCodeDeployAgent() {
-		return &azdext.ServicePublishResult{}, nil
-	}
-
-	_, isContainerAgent, err := p.loadContainerAgentDefinition()
-	if err != nil {
-		return nil, err
-	}
-	if !isContainerAgent {
-		return &azdext.ServicePublishResult{}, nil
 	}
 
 	progress("Publishing container")
@@ -1861,8 +1857,9 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	// service plus AZD_AGENT_SKIP_ACR=true. Honor that exact legacy shape during
 	// the compatibility window without using the provisioning variable for new
 	// or hand-authored image configurations.
-	if p.serviceConfig.GetDocker() != nil &&
-		!DockerImagePassthrough(p.serviceConfig.GetDocker()) &&
+	dockerOptions := p.serviceConfig.GetDocker()
+	if hasConfiguredDockerOptions(dockerOptions) &&
+		!DockerImagePassthrough(dockerOptions) &&
 		p.shouldSkipACRForEnvironment(ctx) {
 		log.Printf("legacy pre-built image configuration detected: using configured image")
 		return true, nil
@@ -1889,6 +1886,21 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	return resp.Value != nil && choices[*resp.Value].Value == "prebuilt", nil
 }
 
+func hasConfiguredDockerOptions(options *azdext.DockerProjectOptions) bool {
+	return options != nil &&
+		(options.GetPath() != "" ||
+			options.GetContext() != "" ||
+			options.GetPlatform() != "" ||
+			options.GetTarget() != "" ||
+			options.GetRegistry() != "" ||
+			options.GetImage() != "" ||
+			options.GetTag() != "" ||
+			options.GetRemoteBuild() ||
+			len(options.GetBuildArgs()) > 0 ||
+			options.GetNetwork() != "" ||
+			DockerImagePassthrough(options))
+}
+
 func (p *AgentServiceTargetProvider) shouldSkipACRForEnvironment(ctx context.Context) bool {
 	if p.env == nil || p.env.Name == "" {
 		return false
@@ -1903,16 +1915,6 @@ func (p *AgentServiceTargetProvider) shouldSkipACRForEnvironment(ctx context.Con
 	}
 
 	return strings.EqualFold(strings.TrimSpace(resp.Value), "true")
-}
-
-// isCodeDeployAgent returns true if the agent definition has code_configuration (code deploy mode)
-func (p *AgentServiceTargetProvider) isCodeDeployAgent() bool {
-	agentDef, isHosted, err := p.loadContainerAgentDefinition()
-	if err != nil || !isHosted {
-		return false
-	}
-
-	return agentDef.CodeConfiguration != nil
 }
 
 // deployPrepResult holds the common outputs from prepareDeploy, used by both

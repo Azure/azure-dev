@@ -96,6 +96,8 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 	}
 	preBuiltService := agentServiceConfig(t, svcName, dockerProps)
 	preBuiltService.Image = "registry.example.com/team/agent:v1"
+	mixedCodeService := agentServiceConfig(t, svcName, codeProps)
+	mixedCodeService.Image = "registry.example.com/team/agent:v1"
 
 	tests := []struct {
 		name         string
@@ -105,6 +107,7 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 		wantLanguage any
 		wantDocker   map[string]any
 		wantCodeSet  bool
+		wantRegistry string
 	}{
 		{
 			name:         "explicit container flag wires ACR",
@@ -131,6 +134,18 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			wantDocker:   map[string]any{"imagePassthrough": true},
 		},
 		{
+			name: "prebuilt image applies registry connection",
+			flags: &initFlags{
+				image:              "registry.example.com/team/agent:v1",
+				registryConnection: "private-registry",
+			},
+			service:      agentServiceConfig(t, svcName, nil),
+			wantNeedsACR: false,
+			wantLanguage: "docker",
+			wantDocker:   map[string]any{"imagePassthrough": true},
+			wantRegistry: "private-registry",
+		},
+		{
 			name:         "existing image uses passthrough",
 			flags:        &initFlags{},
 			service:      preBuiltService,
@@ -148,6 +163,12 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			name:         "respects sample code config",
 			flags:        &initFlags{},
 			service:      agentServiceConfig(t, svcName, codeProps),
+			wantNeedsACR: false,
+		},
+		{
+			name:         "code config takes precedence over existing image",
+			flags:        &initFlags{},
+			service:      mixedCodeService,
 			wantNeedsACR: false,
 		},
 	}
@@ -174,10 +195,51 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			if tc.wantCodeSet {
 				assert.Contains(t, sets, "codeConfiguration")
 			}
+			if tc.wantRegistry != "" {
+				assert.Equal(t, tc.wantRegistry, sets["registryConnectionId"])
+			}
 			// A respected sample config must not be rewritten.
-			if tc.wantDocker == nil && !tc.wantCodeSet && tc.wantLanguage == nil {
+			if tc.wantDocker == nil && !tc.wantCodeSet && tc.wantLanguage == nil && tc.wantRegistry == "" {
 				assert.Empty(t, sets)
 			}
+		})
+	}
+}
+
+func TestApplyDeployModeToAdoptedProject_ValidatesRegistryConnection(t *testing.T) {
+	const svcName = "agent"
+
+	tests := []struct {
+		name        string
+		service     *azdext.ServiceConfig
+		wantContain string
+	}{
+		{
+			name:        "requires image",
+			service:     agentServiceConfig(t, svcName, nil),
+			wantContain: "requires a pre-built image",
+		},
+		{
+			name: "rejects code deploy",
+			service: agentServiceConfig(t, svcName, map[string]any{
+				"codeConfiguration": map[string]any{"runtime": "python_3_13", "entryPoint": "app.py"},
+			}),
+			wantContain: "cannot be used with code deploy",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := &deployModeProjectServer{
+				path:     t.TempDir(),
+				services: map[string]*azdext.ServiceConfig{svcName: test.service},
+			}
+			client := newProjectRecorderClient(t, server)
+
+			_, err := applyDeployModeToAdoptedProject(t.Context(), &initFlags{
+				registryConnection: "private-registry",
+			}, client)
+			require.ErrorContains(t, err, test.wantContain)
 		})
 	}
 }

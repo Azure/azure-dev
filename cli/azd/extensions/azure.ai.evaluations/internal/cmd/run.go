@@ -390,12 +390,14 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 	return upgradeLegacyTraceSource(list.Data[0].DataSource), nil
 }
 
-// legacyTraceLookbackHours is the window the old trace shape fell back to.
+// legacyTraceLookbackHours is the window a legacy source with no lookback ran
+// under: the service's own default of seven days.
 //
-// The old data source had no start bound: a start_time was accepted and
-// dropped, and the service graded its own default of seven days. Carrying a run
-// forward with no start at all would quietly widen it to all of history, so the
-// default it was actually run under is what gets written down.
+// Recorded here because the old data source had no start bound of its own --
+// it carried agent_name, lookback_hours, end_time and max_traces, and nothing
+// else -- so a run that set no lookback was graded over whatever the service
+// chose. Carrying such a run forward with no start at all would widen it to all
+// of history instead.
 const legacyTraceLookbackHours = 24 * 7
 
 // upgradeLegacyTraceSource carries a run recorded under the old trace shape
@@ -405,33 +407,37 @@ const legacyTraceLookbackHours = 24 * 7
 // eval whose last run predates the change would keep the version-blind source
 // for good, and nothing would say so.
 //
-// The window it produces is anchored at the moment of the upgrade rather than
-// rolling: the new shape has no lookback to carry, and the upgraded source is
-// what the next reattach reads back. A window that should move with each run
-// has to come from the declaration, which is where `run start --eval <name>`
-// reads it from anyway; this path exists only for an eval reached by id, with
-// no declaration to read.
+// Both bounds are written down, including the end. The old shape said "the last
+// n hours" and was re-read on every run; the new one has no lookback to carry,
+// so leaving the end open would let each reattach replay the same start against
+// a later now and grade a wider span than the run before it, without limit and
+// without saying so. Pinning both keeps the length of the window, which is the
+// closest a shape with no lookback can come to one.
 func upgradeLegacyTraceSource(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunDataSource {
 	if ds == nil || ds.Type != eval_api.EvalRunDataSourceTypeTraces {
 		return ds
 	}
-	var end time.Time
-	if ds.EndTime > 0 {
+	end := time.Now()
+	if ds.EndTime != 0 {
 		end = time.Unix(ds.EndTime, 0)
 	}
-	from := end
-	if from.IsZero() {
-		from = time.Now()
-	}
+	// The recorded value is whatever an older build sent, from before the
+	// bound existed, so it is clamped rather than trusted: a lookback large
+	// enough to overflow the duration puts the start in the future, and the
+	// reattached run reads nothing.
 	hours := ds.LookbackHours
-	if hours <= 0 {
+	if hours <= 0 || hours > project.MaxLookbackHours {
 		hours = legacyTraceLookbackHours
 	}
-	start := from.Add(-time.Duration(hours) * time.Hour)
+	maxTraces := ds.MaxTraces
+	if maxTraces < 0 {
+		maxTraces = 0
+	}
 	// The old shape carried no version, so this pins nothing that was not
 	// pinned before; it stops the service choosing differently run to run only
 	// once the declaration names one.
-	return eval_api.NewTracePreviewDataSource(ds.AgentName, "", start, end, ds.MaxTraces)
+	return eval_api.NewTracePreviewDataSource(
+		ds.AgentName, "", end.Add(-time.Duration(hours)*time.Hour), end, maxTraces)
 }
 
 // buildRunDataSource binds the eval's rows to the run.
@@ -536,47 +542,14 @@ func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) 
 
 // traceWindow resolves the bounds of the span a trace run reads.
 //
-// lookback_hours predates start_time and stays supported, read as a start bound
-// relative to now. Config validation refuses the pair, so in practice only one
-// of the two is set; the precedence here is what makes that a validation rule
-// rather than the only thing standing between the file and a dropped bound.
-//
-// The bounds are parsed again rather than trusted, because this is the last
-// place they can be refused before the request is built, and a value that fails
-// here would otherwise be sent as a zero and read as "no bound".
+// The rules live in the project package, with the check the configuration runs,
+// so a window is judged the same way whether it is being validated or sent. The
+// two used to be separate and had drifted on six inputs, each accepted by one
+// and refused by the other.
 func traceWindow(evalName string, source *project.SourceDecl) (start, end time.Time, err error) {
-	if source == nil {
-		return time.Time{}, time.Time{}, nil
-	}
-
-	fromLookback := false
-	if source.StartTime != "" {
-		start, err = time.Parse(time.RFC3339, source.StartTime)
-		if err != nil {
-			return time.Time{}, time.Time{}, messages.RunTraceWindowNotATime(
-				evalName, "start_time", source.StartTime)
-		}
-	} else if source.LookbackHours > 0 {
-		start = time.Now().Add(-time.Duration(source.LookbackHours) * time.Hour)
-		// Reported as the file spells it, so the error does not send a reader
-		// looking for a start_time they never wrote.
-		fromLookback = true
-	}
-
-	if source.EndTime != "" {
-		end, err = time.Parse(time.RFC3339, source.EndTime)
-		if err != nil {
-			return time.Time{}, time.Time{}, messages.RunTraceWindowNotATime(
-				evalName, "end_time", source.EndTime)
-		}
-	}
-	if !start.IsZero() && !end.IsZero() && !end.After(start) {
-		if fromLookback {
-			return time.Time{}, time.Time{}, messages.RunTraceWindowOpensAfterItEnds(
-				evalName, source.LookbackHours, source.EndTime)
-		}
-		return time.Time{}, time.Time{}, messages.RunTraceWindowEndsBeforeItStarts(
-			evalName, source.StartTime, source.EndTime)
+	start, end, err = project.ResolveTraceWindow(source)
+	if err != nil {
+		return time.Time{}, time.Time{}, messages.InEval(evalName, err)
 	}
 	return start, end, nil
 }

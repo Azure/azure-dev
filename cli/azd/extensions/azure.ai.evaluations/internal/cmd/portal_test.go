@@ -11,6 +11,7 @@ import (
 
 	"azureaieval/internal/pkg/eval_api"
 
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,6 +36,21 @@ func TestWritePortalLink_SilentWithoutAURL(t *testing.T) {
 	writePortalLink(&buf, "")
 
 	assert.Empty(t, buf.String())
+}
+
+// Colour is pinned off for the rest of the package, which leaves nothing
+// exercising the branch that actually runs in a terminal. The escape codes have
+// to wrap the URL and nothing else: one leaking into the label, or past the
+// newline, follows the link into whatever a reader pastes it in.
+func TestWritePortalLink_WrapsOnlyTheURL(t *testing.T) {
+	restore := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = restore })
+
+	var buf bytes.Buffer
+	writePortalLink(&buf, "https://ai.azure.com/x")
+
+	assert.Equal(t, "Portal: \x1b[36mhttps://ai.azure.com/x\x1b[0m\n", buf.String())
 }
 
 // `-o json` carries the same link the terminal prints, so a pipeline reading

@@ -258,21 +258,13 @@ func TestValidate_Rejects(t *testing.T) {
 			wantErr: "cannot reach into the future",
 		},
 		{
-			// Large enough to overflow the nanosecond duration the hours become,
-			// which wraps the start bound into the future and reads no traces.
-			name: "lookback beyond what a duration holds",
+			// The bound exists to keep a typo from becoming a query over every
+			// trace ever recorded. Checked one past it, so raising the constant
+			// without meaning to fails here.
+			name: "lookback beyond what a window may cover",
 			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
-				"      lookback_hours: 100000000\n    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "beyond the",
-		},
-		{
-			// A window written as a lookback is reported as a lookback: naming
-			// start_time sends the reader to a key their file lacks.
-			name: "lookback that opens after the window ends",
-			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
-				"      lookback_hours: 1\n      end_time: \"2020-01-01T00:00:00Z\"\n" +
-				"    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "source.lookback_hours is 1, which opens the window after",
+				"      lookback_hours: 87601\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "is beyond the 87600 hours a window can reach back",
 		},
 		{
 			// Parses, then reads as "no bound" everywhere after, so the bound
@@ -281,13 +273,31 @@ func TestValidate_Rejects(t *testing.T) {
 			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
 				"      start_time: \"0001-01-01T00:00:00Z\"\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "not a window any traces fall in",
+			wantErr: "not a time any traces were recorded at",
+		},
+		{
+			// The wire drops a zero as readily as Go does, so an end bound at
+			// the epoch is the same silence one field over.
+			name: "end bound at the unix epoch",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
+				"      end_time: \"1970-01-01T00:00:00Z\"\n" +
+				"    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "source.end_time",
 		},
 		{
 			name: "negative trace cap",
 			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
 				"      max_traces: -5\n    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "source.max_traces",
+			wantErr: "source.max_traces is -5",
+		},
+		{
+			// A responses source reads no traces, so a window on it bounds
+			// nothing and only looks as though it does.
+			name: "trace window on a responses source",
+			body: "evals:\n  - name: e\n    source:\n      type: responses\n" +
+				"      response_ids: [resp_1]\n      lookback_hours: 24\n" +
+				"    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "does not read",
 		},
 		{
 			name:    "dataset without a name",

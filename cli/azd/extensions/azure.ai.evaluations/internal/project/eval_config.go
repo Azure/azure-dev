@@ -7,7 +7,6 @@ package project
 
 import (
 	"strings"
-	"time"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
@@ -310,85 +309,30 @@ func (c *EvalConfig) validateCatalogs() error {
 	return nil
 }
 
-// maxLookbackHours bounds `lookback_hours` at ten years.
-//
-// The bound exists because the value becomes a time.Duration in nanoseconds,
-// which wraps negative above about 2.5 million hours: a lookback large enough
-// to overflow produces a start bound in the future, and the run then reads no
-// traces and says nothing about why.
-const maxLookbackHours = 24 * 365 * 10
-
 // validateTraceWindow refuses a window a run could not use.
 //
 // Checked with the rest of the configuration rather than at run time, so a
 // mistyped timestamp is caught before the eval is created rather than after.
-//
-// The window has two spellings for where it starts -- an absolute start_time
-// and a lookback in hours -- and both are resolved here, so that a window is
-// judged the same way however it was written.
+// The rules themselves live with the resolver the run also uses, so the two
+// cannot come to different conclusions about the same file.
 func validateTraceWindow(i int, name string, source *SourceDecl) error {
-	// Ordered before the pair check, so a file that is wrong twice over is not
-	// told to delete the field that would have left it wrong in another way.
-	if source.LookbackHours < 0 {
-		return messages.NegativeLookbackHours(i, name, source.LookbackHours)
-	}
-	if source.LookbackHours > maxLookbackHours {
-		return messages.LookbackTooLarge(i, name, source.LookbackHours, maxLookbackHours)
-	}
-	if source.MaxTraces < 0 {
-		return messages.MaxTracesMustBePositiveIn(i, name, source.MaxTraces)
-	}
-	// Two ways of saying the same thing, and the file cannot say which was
-	// meant. Every other contradictory pair here is refused rather than ranked.
-	if source.StartTime != "" && source.LookbackHours != 0 {
-		return messages.TraceWindowOverSpecified(i, name)
-	}
-
-	start, err := traceBound(i, name, "start_time", source.StartTime)
-	if err != nil {
-		return err
-	}
-	end, err := traceBound(i, name, "end_time", source.EndTime)
-	if err != nil {
-		return err
-	}
-	// The lookback is resolved to the same kind of bound the run will resolve
-	// it to. Without this, `lookback_hours: 24` beside an end_time from last
-	// year passes here and fails at `run start`, which is the failure this
-	// function exists to move earlier.
-	fromLookback := false
-	if start.IsZero() && source.LookbackHours > 0 {
-		start = time.Now().Add(-time.Duration(source.LookbackHours) * time.Hour)
-		fromLookback = true
-	}
-
-	if !start.IsZero() && !end.IsZero() && !end.After(start) {
-		if fromLookback {
-			return messages.TraceWindowOpensAfterItEnds(i, name, source.LookbackHours, source.EndTime)
-		}
-		return messages.TraceWindowEndsBeforeItStarts(i, name, source.StartTime, source.EndTime)
+	if _, _, err := ResolveTraceWindow(source); err != nil {
+		return messages.InEvalAt(i, name, err)
 	}
 	return nil
 }
 
-// traceBound reads one end of the window.
+// validateNoTraceWindow refuses window fields on a source that cannot read one.
 //
-// A bound that parses to the zero time is refused rather than returned: the
-// zero value is what the rest of the window logic reads as "not set", so
-// year one would be accepted here and then dropped from the request without
-// a word, which is the whole defect this validation exists to close.
-func traceBound(i int, name, field, value string) (time.Time, error) {
-	if value == "" {
-		return time.Time{}, nil
+// Silently inert fields are how a file comes to say something it does not do:
+// a `lookback_hours` under `type: responses` looks like it bounds the run and
+// never has.
+func validateNoTraceWindow(i int, name string, source *SourceDecl) error {
+	if source.StartTime == "" && source.EndTime == "" &&
+		source.LookbackHours == 0 && source.MaxTraces == 0 {
+		return nil
 	}
-	parsed, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		return time.Time{}, messages.TraceWindowNotATime(i, name, field, value)
-	}
-	if parsed.IsZero() {
-		return time.Time{}, messages.TraceWindowBoundUnusable(i, name, field, value)
-	}
-	return parsed, nil
+	return messages.InEvalAt(i, name, messages.WindowOnANonTraceSource(source.Type, SourceTypeTraces))
 }
 
 func (c *EvalConfig) validateEval(i int, eval Eval) error {
@@ -420,6 +364,9 @@ func (c *EvalConfig) validateEval(i int, eval Eval) error {
 		case SourceTypeResponses:
 			if len(eval.Source.ResponseIDs) == 0 {
 				return messages.ResponsesSourceNeedsIDs(i, eval.Name)
+			}
+			if err := validateNoTraceWindow(i, eval.Name, eval.Source); err != nil {
+				return err
 			}
 		case "":
 			return messages.SourceTypeRequired(i, eval.Name)

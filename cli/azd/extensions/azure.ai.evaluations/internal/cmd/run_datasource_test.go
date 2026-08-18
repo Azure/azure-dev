@@ -112,41 +112,54 @@ func TestBuildRunDataSource_TracesCarriesAnExplicitWindow(t *testing.T) {
 
 // A window nobody can read, or one that holds nothing, is refused here rather
 // than by a service that answers with no rows and no reason.
-func TestBuildRunDataSource_TracesRefusesAnUnusableWindow(t *testing.T) {
+//
+// Every input the configuration refuses has to be refused here too. The two
+// used to be separate checks and had drifted on six inputs, each accepted by
+// one door and refused by the other, so which rules applied depended on how the
+// eval was reached.
+func TestBuildRunDataSource_TracesRefusesEveryWindowTheConfigWould(t *testing.T) {
 	ec := &evalContext{}
 	build := func(source *project.SourceDecl) error {
+		source.Type = project.SourceTypeTraces
+		source.AgentName = "a"
 		_, err := ec.buildRunDataSource(context.Background(),
 			&project.Eval{Name: "trace-eval", Source: source}, "", 0)
 		return err
 	}
 
-	err := build(&project.SourceDecl{
-		Type: project.SourceTypeTraces, AgentName: "a", StartTime: "yesterday",
-	})
-	require.Error(t, err)
-	// The eval is named, not the agent: the reader has to know which entry to
-	// go and edit, and a file can declare several trace evals over one agent.
-	assert.Contains(t, err.Error(), `eval "trace-eval"`)
-	assert.Contains(t, err.Error(), "start_time")
+	cases := []struct {
+		name    string
+		source  project.SourceDecl
+		wantErr string
+	}{
+		{"start that is not a time", project.SourceDecl{StartTime: "yesterday"}, "not a time"},
+		{"start at year one", project.SourceDecl{StartTime: "0001-01-01T00:00:00Z"}, "traces were recorded at"},
+		{"start at the unix epoch", project.SourceDecl{StartTime: "1970-01-01T00:00:00Z"}, "traces were recorded at"},
+		{"negative lookback", project.SourceDecl{LookbackHours: -24}, "cannot reach into the future"},
+		{"lookback past the bound", project.SourceDecl{LookbackHours: project.MaxLookbackHours + 1}, "beyond the"},
+		{"negative cap", project.SourceDecl{MaxTraces: -5}, "source.max_traces"},
+		{
+			"window declared twice over",
+			project.SourceDecl{StartTime: "2026-08-01T00:00:00Z", LookbackHours: 24},
+			"keep one",
+		},
+		{
+			"end before start",
+			project.SourceDecl{StartTime: "2026-08-02T00:00:00Z", EndTime: "2026-08-01T00:00:00Z"},
+			"holds no traces",
+		},
+	}
 
-	err = build(&project.SourceDecl{
-		Type: project.SourceTypeTraces, AgentName: "a",
-		StartTime: "2026-08-02T00:00:00Z", EndTime: "2026-08-01T00:00:00Z",
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `eval "trace-eval"`)
-	assert.Contains(t, err.Error(), "holds no traces")
-
-	// A window written as a lookback is reported as a lookback. Reporting an
-	// empty start_time sends the reader looking for a key their file lacks, and
-	// "end_time is not after lookback_hours" compares a moment with a length.
-	err = build(&project.SourceDecl{
-		Type: project.SourceTypeTraces, AgentName: "a",
-		LookbackHours: 1, EndTime: "2020-01-01T00:00:00Z",
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "source.lookback_hours is 1, which opens the window after")
-	assert.NotContains(t, err.Error(), "start_time")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := build(&tc.source)
+			require.Error(t, err)
+			// The eval is named, not the agent: the reader has to know which
+			// entry to edit, and a file can declare several evals over one agent.
+			assert.Contains(t, err.Error(), `eval "trace-eval"`)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
 }
 
 // agent_name under source: is a filter, but an eval that names a target and

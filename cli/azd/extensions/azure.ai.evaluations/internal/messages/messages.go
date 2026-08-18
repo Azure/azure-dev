@@ -1629,109 +1629,91 @@ func GateNeedsATerminalRun(runID, status string) error {
 		runID, status)
 }
 
+// InEvalAt says which declaration an error came from.
+//
+// The window rules are checked in one place and reported from two, because the
+// same file is read when it is validated and again when a run is built. Only
+// the first of those has an index to name.
+func InEvalAt(i int, eval string, err error) error {
+	return fmt.Errorf("evals[%d] (%s): %w", i, eval, err)
+}
+
+// InEval says which eval an error came from, where there is no index.
+func InEval(eval string, err error) error {
+	return fmt.Errorf("eval %q: %w", eval, err)
+}
+
 // TraceWindowNotATime reports a window bound that is not a timestamp.
-func TraceWindowNotATime(i int, eval, field, value string) error {
+func TraceWindowNotATime(field, value string) error {
 	return fmt.Errorf(
-		"evals[%d] %q: source.%s is %q, which is not a time: use RFC 3339, "+
+		"source.%s is %q, which is not a time: use RFC 3339, "+
 			"for example 2026-08-18T09:00:00Z",
-		i, eval, field, value)
+		field, value)
 }
 
 // TraceWindowBoundUnusable reports a bound that parses but says nothing.
 //
-// The zero time is what the window logic reads as "no bound", so a bound that
-// resolves to it would be dropped from the request rather than applied.
-func TraceWindowBoundUnusable(i int, eval, field, value string) error {
+// Both this layer and the wire read a zero as "no bound", so a bound that
+// resolves to one would be dropped from the request rather than applied.
+func TraceWindowBoundUnusable(field, value string) error {
 	return fmt.Errorf(
-		"evals[%d] %q: source.%s is %q, which is not a window any traces fall in: "+
+		"source.%s is %q, which is not a time any traces were recorded at: "+
 			"give a time the agent was running",
-		i, eval, field, value)
+		field, value)
 }
 
 // TraceWindowEndsBeforeItStarts reports a window that can hold no traces.
-func TraceWindowEndsBeforeItStarts(i int, eval, start, end string) error {
+func TraceWindowEndsBeforeItStarts(start, end string) error {
 	return fmt.Errorf(
-		"evals[%d] %q: source.end_time %q is not after source.start_time %q, "+
+		"source.end_time %q is not after source.start_time %q, "+
 			"so the window holds no traces",
-		i, eval, end, start)
-}
-
-// TraceWindowOpensAfterItEnds reports the same emptiness for a lookback.
-//
-// Its own sentence rather than the one above with a field substituted: a
-// lookback is a length, not an instant, so "end_time is not after
-// lookback_hours" reads as a comparison nobody can make.
-func TraceWindowOpensAfterItEnds(i int, eval string, hours int, end string) error {
-	return fmt.Errorf(
-		"evals[%d] %q: source.lookback_hours is %d, which opens the window after "+
-			"source.end_time %q, so it holds no traces",
-		i, eval, hours, end)
-}
-
-// RunTraceWindowNotATime reports a window bound a run cannot read.
-//
-// Separate from the configuration message because a run has no index to name:
-// it was reached by id, or by a name that already resolved.
-func RunTraceWindowNotATime(eval, field, value string) error {
-	return fmt.Errorf(
-		"eval %q: source.%s is %q, which is not a time: use RFC 3339, "+
-			"for example 2026-08-18T09:00:00Z",
-		eval, field, value)
-}
-
-// RunTraceWindowEndsBeforeItStarts reports a window a run would read nothing from.
-func RunTraceWindowEndsBeforeItStarts(eval, start, end string) error {
-	return fmt.Errorf(
-		"eval %q: source.end_time %q is not after source.start_time %q, "+
-			"so the window holds no traces",
-		eval, end, start)
-}
-
-// RunTraceWindowOpensAfterItEnds reports the same emptiness for a lookback.
-func RunTraceWindowOpensAfterItEnds(eval string, hours int, end string) error {
-	return fmt.Errorf(
-		"eval %q: source.lookback_hours is %d, which opens the window after "+
-			"source.end_time %q, so it holds no traces",
-		eval, hours, end)
+		end, start)
 }
 
 // TraceWindowOverSpecified reports a window declared twice over.
 //
-// lookback_hours is a start bound relative to now and start_time is an absolute
-// one, so a file carrying both does not say which window was meant.
-func TraceWindowOverSpecified(i int, eval string) error {
+// lookback_hours measures back from where the window closes and start_time is
+// an absolute bound, so a file carrying both does not say which was meant.
+func TraceWindowOverSpecified() error {
 	return fmt.Errorf(
-		"evals[%d] %q: source declares both start_time and lookback_hours, "+
-			"which are two ways of saying where the window starts: keep one",
-		i, eval)
+		"source declares both start_time and lookback_hours, which are two ways " +
+			"of saying where the window opens: keep one")
 }
 
 // NegativeLookbackHours reports a window that reaches forwards.
-func NegativeLookbackHours(i int, eval string, hours int) error {
+func NegativeLookbackHours(hours int) error {
 	return fmt.Errorf(
-		"evals[%d] %q: source.lookback_hours is %d, and a window cannot reach "+
-			"into the future: give the hours to look back",
-		i, eval, hours)
+		"source.lookback_hours is %d, and a window cannot reach into the future: "+
+			"give the hours to look back",
+		hours)
 }
 
-// LookbackTooLarge reports a lookback that would overflow into the future.
-func LookbackTooLarge(i int, eval string, hours, max int) error {
+// LookbackTooLarge reports a lookback beyond the span a window may cover.
+func LookbackTooLarge(hours, max int) error {
 	return fmt.Errorf(
-		"evals[%d] %q: source.lookback_hours is %d, which is beyond the %d hours "+
-			"a window can reach back: give a shorter lookback, or a start_time",
-		i, eval, hours, max)
+		"source.lookback_hours is %d, which is beyond the %d hours a window can "+
+			"reach back: give a shorter lookback, or replace it with a start_time",
+		hours, max)
 }
 
-// MaxTracesMustBePositiveIn reports a negative cap written into the file.
+// MaxTracesUnusable reports a negative cap written into the file.
 //
 // The flag that writes it is already guarded; this catches the file being
 // edited afterwards, where a negative value is sent as-is and the run comes
 // back empty.
-func MaxTracesMustBePositiveIn(i int, eval string, maxTraces int) error {
+func MaxTracesUnusable(maxTraces int) error {
 	return fmt.Errorf(
-		"evals[%d] %q: source.max_traces is %d: give a positive cap, or leave it "+
-			"out to read as many as the service allows",
-		i, eval, maxTraces)
+		"source.max_traces is %d: give a positive cap, or leave it out to use "+
+			"the service's default",
+		maxTraces)
+}
+
+// WindowOnANonTraceSource reports window fields a source cannot use.
+func WindowOnANonTraceSource(sourceType, traces string) error {
+	return fmt.Errorf(
+		"source declares a trace window, which a %q source does not read: "+
+			"remove it, or set type to %q",
+		sourceType, traces)
 }
 
 // AmbiguousJudgeModel reports several deployments where only one can be used.

@@ -1,5 +1,12 @@
 # Release History
 
+## 0.0.3-preview (2026-08-14)
+
+### Features Added
+
+- [[#9349]](https://github.com/Azure/azure-dev/pull/9349) Align the training job YAML schema with the new command job schema. Support partial SKU scenarios using `gpu_count`, and simplify the `resources` block.
+- [[#9568]](https://github.com/Azure/azure-dev/pull/9568) Support Foundry storage connections for local uploads, preserve named output asset metadata, and pass through `azureai` dataset references.
+
 ## 0.0.2-preview (2026-06-25)
 
 ### Features

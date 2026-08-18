@@ -5,8 +5,10 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"azure.ai.training/internal/azcopy"
 	"azure.ai.training/pkg/client"
@@ -19,7 +21,9 @@ import (
 type uploadClient interface {
 	GetDatasetVersion(ctx context.Context, datasetName, version string) (*models.DatasetVersion, error)
 	DeleteDatasetVersion(ctx context.Context, datasetName, version string) error
-	StartPendingUpload(ctx context.Context, datasetName, version string) (*models.PendingUploadResponse, error)
+	StartPendingUpload(
+		ctx context.Context, datasetName, version, connectionName string,
+	) (*models.PendingUploadResponse, error)
 	CreateOrUpdateDatasetVersion(
 		ctx context.Context, datasetName, version string, dataset *models.DatasetVersion,
 	) (*models.DatasetVersion, error)
@@ -32,15 +36,21 @@ type uploadRunner interface {
 
 // UploadService handles uploading local directories as datasets via the dataset API + azcopy.
 type UploadService struct {
-	client       uploadClient
-	azcopyRunner uploadRunner
+	client                uploadClient
+	azcopyRunner          uploadRunner
+	storageConnectionName string
 }
 
 // NewUploadService creates a new upload service.
-func NewUploadService(apiClient *client.Client, azcopyRunner *azcopy.Runner) *UploadService {
+func NewUploadService(
+	apiClient *client.Client,
+	azcopyRunner *azcopy.Runner,
+	storageConnectionName string,
+) *UploadService {
 	return &UploadService{
-		client:       apiClient,
-		azcopyRunner: azcopyRunner,
+		client:                apiClient,
+		azcopyRunner:          azcopyRunner,
+		storageConnectionName: storageConnectionName,
 	}
 }
 
@@ -57,7 +67,7 @@ type UploadResult struct {
 //
 // Dedup flow:
 //  1. Compute a SHA-256 hash of the directory contents (file paths + data).
-//  2. Truncate the hash to 49 chars and use it as the dataset version.
+//  2. Derive a 49-char dataset version from the content hash and storage connection.
 //  3. Call GET to check if that version already exists.
 //  4. If it exists, skip upload and return the existing dataset resource ID.
 //  5. If it doesn't exist, do the full upload: POST startPendingUpload → azcopy → PATCH confirm.
@@ -82,7 +92,7 @@ func (s *UploadService) UploadDirectory(
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute hash for %s: %w", localPath, err)
 	}
-	version := TruncateHashVersion(fullHash)
+	version := datasetVersionForUpload(fullHash, s.storageConnectionName)
 
 	// Step 2: Check if this version already exists (dedup)
 	existing, err := s.client.GetDatasetVersion(ctx, datasetName, version)
@@ -125,6 +135,16 @@ func (s *UploadService) UploadDirectory(
 	})
 }
 
+func datasetVersionForUpload(fullHash, storageConnectionName string) string {
+	connectionName := strings.TrimSpace(storageConnectionName)
+	if connectionName == "" {
+		return TruncateHashVersion(fullHash)
+	}
+
+	versionHash := sha256.Sum256([]byte(fullHash + "\x00" + connectionName))
+	return TruncateHashVersion(fmt.Sprintf("%x", versionHash))
+}
+
 // UploadDirectoryNoDedup uploads a local directory without content-based dedup.
 // This is used as a fallback when a hash collision is detected.
 // It always uploads with the given dataset name and version (typically "1").
@@ -156,7 +176,9 @@ func (s *UploadService) doUpload(
 	description string,
 	tags map[string]string,
 ) (*UploadResult, error) {
-	uploadResp, err := s.client.StartPendingUpload(ctx, datasetName, version)
+	uploadResp, err := s.client.StartPendingUpload(
+		ctx, datasetName, version, s.storageConnectionName,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start pending upload: %w", err)
 	}

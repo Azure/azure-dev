@@ -676,6 +676,52 @@ OperationId: 28ce1f2898a4fec84522107e36c22038
 | summarize arg_min(TimeGenerated, *) by OperationId
 ```
 
+### `azd up` Synthetic `cmd.provision` / `cmd.package` / `cmd.deploy` Spans
+
+Since **v1.25.0** the unified `azd up` graph runs provision, package, publish, and
+deploy in-process as `exegraph.step`s rather than as child `azd provision` /
+`azd package` / `azd deploy` commands. To preserve the historical nested-span
+shape, `up` emits **synthetic** phase spans as children of `cmd.up`. The
+`cmd.provision` and `cmd.package` spans have been emitted since **v1.25.0**;
+`cmd.deploy` is emitted only **from the issue #9054 fix onward** (see the version
+window below — before that fix no synthetic `cmd.deploy` span was recorded under
+`up`).
+
+**Success/ResultCode behavior differs by version — mind the window when reading dashboards:**
+
+- **v1.25.0 → the release containing the issue #9054 fix (exclusive):** the
+  synthetic `cmd.provision` and `cmd.package` spans were always closed with an
+  Unset status, which the AppInsights exporter reads as **Success**. In this
+  window their under-`up` success rate is **over-reported** (a failing provision
+  or package still shows Success and drops its ARM/Bicep ResultCode), and **no
+  `cmd.deploy` span is emitted under `up` at all**, so the `cmd.deploy` success
+  rate is **deflated** (it misses the high-success under-`up` deploy population).
+- **From the #9054 fix onward:** each synthetic span carries the **real**
+  per-phase outcome — on failure it gets the status + ResultCode `cmd.MapError`
+  produces for that phase's error. For most failures this matches what the
+  stand-alone `azd provision` / `azd package` / `azd deploy` command reports. One
+  deliberate exception: when a provision error is wrapped with a user-facing
+  suggestion (`ErrorWithSuggestion`), stand-alone `azd provision` reports
+  `error.suggestion`, whereas the synthetic `cmd.provision` span maps the
+  underlying graph-step error so the specific ARM/Bicep ResultCode (e.g.
+  `tool.bicep.failed`, `service.arm.deployment.failed`) is preserved for
+  dashboards. `cmd.deploy` is emitted **only when the deploy phase actually
+  ran**; when provision/package fails first (FailFast skips deploy) no
+  `cmd.deploy` span is emitted, matching legacy `azd up` where the deploy
+  sub-command never ran.
+
+**Correcting historical dashboards for the affected window:** the underlying
+`exegraph.step` spans recorded the correct per-step status throughout, so an
+**approximate** correction is to redirect the provision, package, and deploy
+panels to them, matched on their raw `exegraph.step.tags` (`provision`,
+`package`, `deploy`, `publish`) — **not** on `exegraph.step.name`, which is
+SHA-256 hashed and cannot be filtered by phase. This is only approximate:
+pre/post lifecycle hook and event failures are tagged `cmdhook`/`event` rather
+than a phase tag, and a step canceled by a fail-fast teardown ends its own span
+as an error even when the synthetic phase span deliberately does not blame it.
+For an exact figure, exclude under-`up` `cmd.provision` / `cmd.package` Success
+from reliability aggregates for that version range.
+
 ### `validation.provision` Emitted Twice Per Bicep Provision
 
 The `validation.provision` event is emitted from **two** dispatch sites:

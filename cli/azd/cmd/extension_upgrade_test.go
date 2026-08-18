@@ -779,7 +779,7 @@ func TestDisplayPromotionWarning(t *testing.T) {
 	action := &extensionUpgradeAction{console: console}
 	action.displayPromotionWarning(
 		t.Context(),
-		"Updating test.extension extension",
+		"Updating test.extension",
 		"test.extension",
 		"1.0.0",
 		"1.1.0",
@@ -790,7 +790,7 @@ func TestDisplayPromotionWarning(t *testing.T) {
 	require.Len(t, console.SpinnerOps(), 1)
 	require.Equal(t, input.StepWarning, console.SpinnerOps()[0].Format)
 	rendered := strings.Join(console.Output(), "\n")
-	require.Contains(t, rendered, "Updated test.extension extension")
+	require.Contains(t, rendered, "Updated test.extension")
 	require.Contains(t, rendered, "1.0.0")
 	require.Contains(t, rendered, "1.1.0")
 	require.Contains(t, rendered, "promoted from the dev registry")

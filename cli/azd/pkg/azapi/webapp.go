@@ -26,6 +26,28 @@ type AzCliAppServiceProperties struct {
 	HostNames []string
 }
 
+// AppServiceZipDeployResult describes the outcome of an App Service zip deployment.
+type AppServiceZipDeployResult struct {
+	Status               string
+	RuntimeStatusWarning string
+}
+
+func appServiceStatusTimeoutResult(err error) (*AppServiceZipDeployResult, bool) {
+	timeoutErr, ok := errors.AsType[*azsdk.DeploymentStatusTimeoutError](err)
+	if !ok {
+		return nil, false
+	}
+
+	return &AppServiceZipDeployResult{
+		Status: "OK",
+		RuntimeStatusWarning: fmt.Sprintf(
+			"Deployment completed, but azd observed no App Service deployment status change for %s. "+
+				"Check the app's runtime status and startup logs in the Azure Portal.",
+			timeoutErr.Timeout,
+		),
+	}, true
+}
+
 func (cli *AzureClient) GetAppServiceProperties(
 	ctx context.Context,
 	subscriptionId string,
@@ -169,7 +191,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 	deployZipFile io.ReadSeeker,
 	progressLog func(string),
 	skipStatusCheck bool,
-) (_ *string, err error) {
+) (_ *AppServiceZipDeployResult, err error) {
 	ctx, span := tracing.Start(ctx, events.DeployAppServiceZipEvent)
 	defer func() { span.EndWithStatus(err) }()
 
@@ -234,6 +256,9 @@ func (cli *AzureClient) DeployAppServiceZip(
 			err = client.DeployTrackStatus(
 				ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog)
 			if err != nil {
+				if timeoutResult, ok := appServiceStatusTimeoutResult(err); ok {
+					return timeoutResult, nil
+				}
 				if isBuildFailure(err) && attempt < maxBuildRetries {
 					progressLog("Build process failed — will retry after SCM stabilizes")
 					continue
@@ -243,7 +268,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 				}
 			} else {
 				// Deployment is successful
-				return new("OK"), nil
+				return &AppServiceZipDeployResult{Status: "OK"}, nil
 			}
 			break
 		}
@@ -263,7 +288,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 		return nil, err
 	}
 
-	return &response.StatusText, nil
+	return &AppServiceZipDeployResult{Status: response.StatusText}, nil
 }
 
 // isBuildFailure returns true when the deployment error indicates a transient

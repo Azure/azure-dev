@@ -459,6 +459,13 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 			"set archive to a .zip file or a directory containing SKILL.md",
 		)
 	}
+	if info.Size() > skill_api.MaxUploadBytes {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("skill archive %s exceeds the 25 MB upload size limit", path),
+			"reduce the archive size to 25 MB or less",
+		)
+	}
 	file, err := os.Open(path) //nolint:gosec // user-authored azure.yaml path opened on user's behalf
 	if err != nil {
 		return nil, exterrors.Validation(

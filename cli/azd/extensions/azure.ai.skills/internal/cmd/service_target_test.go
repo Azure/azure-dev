@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"testing"
 
+	"azureaiskills/internal/pkg/skill_api"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -357,6 +359,20 @@ func TestPrepareSkillArchive_RejectsUnsupportedFile(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, archive)
 	assert.Contains(t, err.Error(), ".zip")
+}
+
+func TestPrepareSkillArchive_RejectsOversizedZip(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "skill.zip")
+	file, err := os.Create(path) //nolint:gosec // test creates a file in t.TempDir
+	require.NoError(t, err)
+	require.NoError(t, file.Truncate(skill_api.MaxUploadBytes+1))
+	require.NoError(t, file.Close())
+
+	archive, err := prepareSkillArchive(path)
+	require.ErrorContains(t, err, "exceeds the 25 MB upload size limit")
+	assert.Nil(t, archive)
 }
 
 func TestPrepareSkillArchive_RejectsNonRegularZip(t *testing.T) {

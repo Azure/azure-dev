@@ -486,6 +486,13 @@ const baggagePkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing/bagg
 // caller-supplied KeyValue would emit a key the classifier never sees.
 const tracingPkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing"
 
+// internalCmdPkgPath is the import path of the error-mapping package whose
+// MapError re-keys already-classified attributes under the error.* namespace by
+// writing the Key field of an existing attribute.KeyValue (fields.ErrorKey on a
+// key that a classified fields.* var produced). That field write is sanctioned
+// plumbing, so it is exempt from the KeyValue Key-mutation rule below.
+const internalCmdPkgPath = "github.com/azure/azure-dev/cli/azd/internal/cmd"
+
 // isFieldsAttributeKeyType reports whether t is exactly the sanctioned
 // fields.AttributeKey named type. That wrapper is the only type the metadata
 // classifier discovers and reads Classification/Purpose/Endpoint from, so it is
@@ -680,6 +687,17 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 		return p == fieldsPkgPath || p == baggagePkgPath
 	}
 
+	// isKeyValueKeyMutationPkgPath reports whether p may write the Key field of an
+	// existing attribute.KeyValue (kv.Key = ...). The KeyValue construction rule
+	// forbids building a raw struct outside the plumbing packages, but a value can
+	// also be assembled field by field; a raw kv.Key = attribute.Key("x") write is
+	// the same bypass. Only the sanctioned plumbing packages plus internal/cmd
+	// (MapError re-keys classified attributes under error.*) legitimately mutate a
+	// KeyValue's key.
+	isKeyValueKeyMutationPkgPath := func(p string) bool {
+		return isKeyValuePlumbingPkgPath(p) || p == internalCmdPkgPath
+	}
+
 	var violations []string
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch node := n.(type) {
@@ -747,6 +765,38 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 						"fields.AttributeKey instead)", rel, pos.Line, node.Name))
 			}
 			return true
+		case *ast.AssignStmt:
+			// Writing the embedded Key field defeats the type-based exemptions the
+			// two rules above rely on. A copied or zero-valued classified key whose
+			// Key is overwritten (k := fields.ServiceNameKey; k.Key =
+			// attribute.Key("raw"); k.String(v)) keeps the fields.AttributeKey type,
+			// so the method branch would accept its emission even though the key is
+			// unclassified; and a field-by-field attribute.KeyValue assembled the same
+			// way sidesteps the KeyValue construction rule. Flag either mutation
+			// outside the packages sanctioned to perform it. Only plain assignment can
+			// target a selector; := cannot.
+			if node.Tok != token.ASSIGN {
+				return true
+			}
+			for _, lhs := range node.Lhs {
+				sel, ok := lhs.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "Key" {
+					continue
+				}
+				baseType := info.TypeOf(sel.X)
+				pos := fset.Position(sel.Pos())
+				if isFieldsAttributeKeyType(baseType) && pkgPath != fieldsPkgPath {
+					violations = append(violations, fmt.Sprintf(
+						"  %s:%d: the Key of a fields.AttributeKey is mutated outside the fields "+
+							"package (its emissions would be exempted by type while carrying an "+
+							"unclassified key)", rel, pos.Line))
+				} else if isRawAttributeKeyValueType(baseType) && !isKeyValueKeyMutationPkgPath(pkgPath) {
+					violations = append(violations, fmt.Sprintf(
+						"  %s:%d: attribute.KeyValue.Key is mutated outside the telemetry plumbing "+
+							"(assemble it from a fields.AttributeKey instead)", rel, pos.Line))
+				}
+			}
+			return true
 		}
 		return true
 	})
@@ -761,15 +811,20 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 // producing attribute.Key builders reached as a method value (through a
 // parameter, local, struct field, or function result) or as a method expression
 // (attribute.Key.String, including when captured as a function value), a
-// fields.AttributeKey constructed outside the fields package, and any raw
+// fields.AttributeKey constructed outside the fields package, any raw
 // attribute.KeyValue struct built outside the sanctioned plumbing packages
 // (whatever its key — a literal, a run-time attribute.Key(x) conversion, or a
-// variable forwarding one) are all flagged; while the sanctioned promoted-method
+// variable forwarding one), and a Key-field mutation that would smuggle an
+// unclassified key through the type-based exemptions (overwriting the Key of a
+// copied or zero-valued fields.AttributeKey, or assembling an attribute.KeyValue
+// field by field) are all flagged; while the sanctioned promoted-method
 // call on the classified fields.AttributeKey, fields.ExtensionUsageAttribute, a
-// bare attribute.Key(k) conversion (which does not build a KeyValue), and
-// non-KeyValue uses of a key (e.g. a map lookup) are not. The in-package
-// exemptions — the fields registry vars, ExtensionUsageAttribute, and the
-// fields/baggage KeyValue plumbing — are keyed on package path and so are
+// bare attribute.Key(k) conversion (which does not build a KeyValue), a write to
+// an unrelated Key field, and non-KeyValue uses of a key (e.g. a map lookup) are
+// not. The in-package
+// exemptions — the fields registry vars, ExtensionUsageAttribute, the
+// fields/baggage KeyValue plumbing, and internal/cmd's error.* re-keying — are
+// keyed on package path and so are
 // exercised by the module walk rather than these package-p fixtures. Fixtures are
 // type-checked against the real attribute and fields packages via go/packages, so
 // the guard runs with the same type information it uses on the module.
@@ -990,6 +1045,57 @@ import "go.opentelemetry.io/otel/attribute"
 func f(kv attribute.KeyValue) { _ = kv.Key.String("v") }
 `,
 			wantViolation: true,
+		},
+		{
+			name: "mutated Key on a copied classified fields.AttributeKey",
+			src: `package p
+import (
+	"go.opentelemetry.io/otel/attribute"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+)
+func f() {
+	k := fields.ServiceNameKey
+	k.Key = attribute.Key("raw.key")
+	_ = k.String("v")
+}
+`,
+			wantViolation: true,
+		},
+		{
+			name: "mutated Key on a zero-value fields.AttributeKey",
+			src: `package p
+import (
+	"go.opentelemetry.io/otel/attribute"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+)
+func f() {
+	var k fields.AttributeKey
+	k.Key = attribute.Key("raw.key")
+	_ = k.String("v")
+}
+`,
+			wantViolation: true,
+		},
+		{
+			name: "field-by-field attribute.KeyValue construction with a raw key",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+func f() attribute.KeyValue {
+	var kv attribute.KeyValue
+	kv.Key = attribute.Key("raw.key")
+	kv.Value = attribute.StringValue("v")
+	return kv
+}
+`,
+			wantViolation: true,
+		},
+		{
+			name: "assignment to unrelated Key field",
+			src: `package p
+type config struct{ Key string }
+func f(c *config) { c.Key = "x" }
+`,
+			wantViolation: false,
 		},
 		{
 			name: "bare key conversion without value",

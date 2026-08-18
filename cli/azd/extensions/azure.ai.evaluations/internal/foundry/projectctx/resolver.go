@@ -6,6 +6,7 @@ package projectctx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -81,7 +82,8 @@ type envSource interface {
 // azd for the current environment instead is how `azd -e staging` came to read
 // the endpoint out of the default environment and write its ids back there.
 func readEnvHostedSource(ctx context.Context, env envSource) (value, name string, err error) {
-	name = SelectedEnvironment(ctx)
+	selected := SelectedEnvironment(ctx)
+	name = selected
 	if name == "" {
 		envResp, envErr := env.GetCurrent(ctx, &azdext.EmptyRequest{})
 		if envErr != nil {
@@ -102,6 +104,14 @@ func readEnvHostedSource(ctx context.Context, env envSource) (value, name string
 			Key:     key,
 		})
 		if valErr != nil {
+			// A name the caller typed and azd does not have is a mistake to
+			// report, not an absence to step over. Falling through would run
+			// the command against a lower-priority endpoint -- possibly another
+			// project -- and then write its ids into an environment that does
+			// not exist, which azd accepts only far enough to warn about.
+			if selected != "" && noSuchEnvironment(valErr) {
+				return "", "", ErrNoSuchEnvironment(name)
+			}
 			if !hostedSourceAbsent(valErr) {
 				return "", "", valErr
 			}
@@ -114,6 +124,26 @@ func readEnvHostedSource(ctx context.Context, env envSource) (value, name string
 	// The name is reported only alongside a value: it says where the endpoint
 	// came from, and there is no endpoint here.
 	return "", "", nil
+}
+
+// noSuchEnvironment is azd's answer for a named environment it does not have,
+// as distinct from the other absences: there being no default, or no project.
+func noSuchEnvironment(err error) bool {
+	st, ok := azdext.GRPCStatusFromError(err)
+	if !ok || st.Code() != codes.Unknown {
+		return false
+	}
+	return strings.HasSuffix(st.Message(), "': "+azdNoSuchEnvironment)
+}
+
+// ErrNoSuchEnvironment reports a -e/--environment naming something azd does not
+// have. Built here rather than in either extension's messages package, so this
+// file stays free of module-local imports and identical in both.
+func ErrNoSuchEnvironment(name string) error {
+	return fmt.Errorf(
+		"azd environment %q does not exist; run `azd env list` to see the ones that do",
+		name,
+	)
 }
 
 // selectedEnvKey carries the environment -e/--environment named.

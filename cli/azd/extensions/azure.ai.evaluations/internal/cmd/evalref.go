@@ -42,7 +42,10 @@ func (ec *evalContext) resolveEvalRef(
 	ctx context.Context,
 	evalDir, nameOrID string,
 ) (evalRef, error) {
-	configPath := project.ResolveEvalConfigPath(evalDir)
+	configPath, err := project.ResolveEvalConfigPath(evalDir)
+	if err != nil {
+		return evalRef{}, err
+	}
 	cfg, err := project.OpenEvalConfig(evalDir)
 	if err != nil {
 		return evalRef{}, err

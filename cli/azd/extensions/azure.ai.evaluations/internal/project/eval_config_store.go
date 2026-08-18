@@ -48,7 +48,23 @@ func EvalConfigPath(evalDir string) string {
 
 // ResolveEvalConfigPath is the configuration this directory actually holds:
 // the current name, or the legacy one when that is the only file there.
-func ResolveEvalConfigPath(evalDir string) string {
+//
+// It refuses a directory holding both, rather than leaving that to the caller.
+// The rule used to live in OpenEvalConfig alone, so `eval create` -- which
+// needs the path rather than the parsed configuration -- resolved one silently
+// while `run`, `init` and `generate` all refused. Returning an error is what
+// makes the guard unavoidable: there is no longer a way to ask this question
+// and not be told.
+func ResolveEvalConfigPath(evalDir string) (string, error) {
+	if err := checkOneConfig(evalDir); err != nil {
+		return "", err
+	}
+	return resolvedConfigPath(evalDir), nil
+}
+
+// resolvedConfigPath is the naming rule on its own, for the two functions that
+// have already applied the guard.
+func resolvedConfigPath(evalDir string) string {
 	current := EvalConfigPath(evalDir)
 	if _, err := os.Stat(current); err == nil {
 		return current
@@ -85,7 +101,7 @@ func OpenEvalConfig(evalDir string) (*EvalConfig, error) {
 	if err := checkOneConfig(evalDir); err != nil {
 		return nil, err
 	}
-	cfg, err := LoadEvalConfig(ResolveEvalConfigPath(evalDir))
+	cfg, err := LoadEvalConfig(resolvedConfigPath(evalDir))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -143,7 +159,7 @@ func SaveEvalConfig(evalDir string, cfg *EvalConfig) error {
 	if err := os.MkdirAll(evalDir, 0o750); err != nil {
 		return messages.Creating(evalDir, err)
 	}
-	return SaveEvalConfigTo(ResolveEvalConfigPath(evalDir), cfg)
+	return SaveEvalConfigTo(resolvedConfigPath(evalDir), cfg)
 }
 
 // SaveEvalConfigTo writes cfg over an explicit path, for callers that already

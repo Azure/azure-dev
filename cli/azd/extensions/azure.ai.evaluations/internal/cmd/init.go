@@ -129,7 +129,10 @@ func newInitCommand() *cobra.Command {
 				}
 			}
 
-			configPath := project.ResolveEvalConfigPath(path)
+			configPath, err := project.ResolveEvalConfigPath(path)
+			if err != nil {
+				return err
+			}
 			// Captured before the write: init merges into an existing config, so
 			// reporting it as created would claim a file it only added to.
 			_, configExistedErr := os.Stat(configPath)

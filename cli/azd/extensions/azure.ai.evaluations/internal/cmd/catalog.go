@@ -107,7 +107,11 @@ func updateCatalog(
 		// Resolved, not the current name: SaveEvalConfig writes back over a
 		// legacy file when that is what the project has, and the line has to
 		// name the file it actually wrote.
-		path := filepath.ToSlash(project.ResolveEvalConfigPath(evalDir))
+		resolved, err := project.ResolveEvalConfigPath(evalDir)
+		if err != nil {
+			return err
+		}
+		path := filepath.ToSlash(resolved)
 		if created {
 			fmt.Fprint(cmd.OutOrStdout(), messages.CreatedCatalogFile(path))
 		}

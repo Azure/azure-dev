@@ -56,16 +56,38 @@ func TestSaveEvalConfig_WritesBackOverALegacyFile(t *testing.T) {
 		"a second configuration beside the one azure.yaml references would be inert")
 }
 
-// With both present the current name wins, so a project that has migrated is
-// not dragged back to the old file.
-func TestResolveEvalConfigPath_PrefersTheCurrentName(t *testing.T) {
+// A directory holding both names is refused, not silently resolved. Preferring
+// one is the dangerous answer: azure.yaml $refs a single file by name, so the
+// CLI would edit one configuration while `azd up` deployed the other.
+//
+// This used to assert the preference instead, and `eval create` -- the one
+// command that asks for the path rather than the parsed configuration -- read
+// one of the two without a word while `run`, `init` and `generate` all refused.
+func TestResolveEvalConfigPath_RefusesADirectoryHoldingBoth(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, LegacyEvalConfigBase), []byte(minimalConfig), 0o600))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, EvalConfigBase), []byte(minimalConfig), 0o600))
 
-	assert.Equal(t, EvalConfigPath(dir), ResolveEvalConfigPath(dir))
+	path, err := ResolveEvalConfigPath(dir)
+	require.Error(t, err, "both names present has no single right answer")
+	assert.Empty(t, path)
+	assert.Contains(t, err.Error(), LegacyEvalConfigBase)
+	assert.Contains(t, err.Error(), EvalConfigBase)
+}
+
+// The naming preference itself still holds for the callers that have already
+// applied the guard: with only the legacy file there, that is the file a save
+// writes back over.
+func TestResolvedConfigPath_PrefersTheCurrentName(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, LegacyEvalConfigBase), []byte(minimalConfig), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, EvalConfigBase), []byte(minimalConfig), 0o600))
+
+	assert.Equal(t, EvalConfigPath(dir), resolvedConfigPath(dir))
 }
 
 // An empty directory resolves to the current name, which is what a first
@@ -73,5 +95,19 @@ func TestResolveEvalConfigPath_PrefersTheCurrentName(t *testing.T) {
 func TestResolveEvalConfigPath_EmptyDirectoryUsesTheCurrentName(t *testing.T) {
 	dir := t.TempDir()
 
-	assert.Equal(t, EvalConfigPath(dir), ResolveEvalConfigPath(dir))
+	path, err := ResolveEvalConfigPath(dir)
+	require.NoError(t, err)
+	assert.Equal(t, EvalConfigPath(dir), path)
+}
+
+// Only the legacy file present resolves to it, so a project that has not
+// migrated keeps working.
+func TestResolveEvalConfigPath_LegacyOnlyResolvesToLegacy(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, LegacyEvalConfigBase), []byte(minimalConfig), 0o600))
+
+	path, err := ResolveEvalConfigPath(dir)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, LegacyEvalConfigBase), path)
 }

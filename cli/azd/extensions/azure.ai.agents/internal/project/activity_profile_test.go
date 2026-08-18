@@ -116,12 +116,12 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 			Publish: &DigitalWorkerPublishConfig{
 				PublishAsAutopilot: true,
 				PublishScope:       "tenant",
-					AgenticUserTemplate: &AgenticUserTemplateConfig{
-						ID:                    "digitalWorkerTemplate",
-						File:                  "agenticUserTemplateManifest.json",
-						SchemaVersion:         "0.1.0-preview",
-						CommunicationProtocol: "activityProtocol",
-					},
+				AgenticUserTemplate: &AgenticUserTemplateConfig{
+					ID:                    "digitalWorkerTemplate",
+					File:                  "agenticUserTemplateManifest.json",
+					SchemaVersion:         "0.1.0-preview",
+					CommunicationProtocol: "activityProtocol",
+				},
 			},
 		})
 		require.NoError(t, err)
@@ -154,12 +154,12 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 			Publish: &DigitalWorkerPublishConfig{
 				PublishAsAutopilot: true,
 				PublishScope:       "tenant",
-					AgenticUserTemplate: &AgenticUserTemplateConfig{
-						ID:                    "digitalWorkerTemplate",
-						File:                  "agenticUserTemplateManifest.json",
-						SchemaVersion:         "0.1.0-preview",
-						CommunicationProtocol: "activityProtocol",
-					},
+				AgenticUserTemplate: &AgenticUserTemplateConfig{
+					ID:                    "digitalWorkerTemplate",
+					File:                  "agenticUserTemplateManifest.json",
+					SchemaVersion:         "0.1.0-preview",
+					CommunicationProtocol: "activityProtocol",
+				},
 			},
 		})
 		require.ErrorContains(t, err, "Activity-protocol")

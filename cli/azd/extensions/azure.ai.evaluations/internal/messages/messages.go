@@ -1040,12 +1040,20 @@ func DatasetVersionConflict(dataset, version string) error {
 		dataset, version)
 }
 
-// DatasetDrifted reports a version published outside the repo since the last deploy.
+// DatasetDrifted reports a version published outside this configuration since
+// the last deploy.
+//
+// `azd ai eval dataset update` publishes without recording the per-dataset
+// version the reconciler reads, so it is a likely cause and naming it saves the
+// reader looking for a colleague who did nothing. "Pull the newer content
+// locally" was the other half of the old advice and is a no-op when the bytes
+// already match, which is the common case.
 func DatasetDrifted(dataset, latest, recorded string) error {
 	return fmt.Errorf(
 		"dataset %q is at version %s on the project but %s was recorded at the last deploy; "+
-			"someone published a version outside this repo. "+
-			"Pin it with `version: %s` on the dataset, or pull the newer content locally, "+
+			"something published outside this configuration, which `azd ai eval dataset update` "+
+			"on the same dataset also does. Pin it with `version: %s` on the dataset to deploy "+
+			"what is already there, or publish a new version from the configuration's source, "+
 			"then deploy again",
 		dataset, latest, recorded, latest)
 }
@@ -1251,12 +1259,18 @@ func EvaluatorNotLocalNorFound(evaluator string, err error) error {
 		evaluator, err)
 }
 
-// EvaluatorDrifted reports a version published outside the repo since the last deploy.
+// EvaluatorDrifted reports a version published outside this configuration since
+// the last deploy.
+//
+// `azd ai eval evaluator update` publishes without recording the version the
+// reconciler reads, so it is a likely cause and naming it saves the reader
+// looking for a colleague who did nothing.
 func EvaluatorDrifted(evaluator, remote, recorded string) error {
 	return fmt.Errorf(
 		"evaluator %q is at version %s on the project but %s was recorded at the last "+
-			"deploy, and the local definition does not match it: someone published a "+
-			"version outside this repo. Publishing over it would leave their change "+
+			"deploy, and the local definition does not match it: something published a "+
+			"version outside this configuration, which `azd ai eval evaluator update` on "+
+			"the same evaluator also does. Publishing over it would leave that change "+
 			"behind, so bring version %s into the declared source and deploy again, or "+
 			"delete that version if it was a mistake",
 		evaluator, remote, recorded, remote)

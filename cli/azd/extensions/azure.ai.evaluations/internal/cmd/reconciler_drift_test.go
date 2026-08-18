@@ -25,8 +25,8 @@ func TestCheckEvaluatorDrift(t *testing.T) {
 	assert.Contains(t, err.Error(), "support-quality")
 	assert.Contains(t, err.Error(), "version 4")
 	assert.Contains(t, err.Error(), "3 was recorded")
-	assert.Contains(t, err.Error(), "outside this repo",
-		"the message has to say who moved, not just that something did")
+	assert.Contains(t, err.Error(), "outside this configuration",
+		"the message has to say what moved, not just that something did")
 
 	// A version that went backwards is not drift: a newer version was
 	// deleted, and republishing is how the repo takes the name back.

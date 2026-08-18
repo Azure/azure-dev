@@ -56,7 +56,7 @@ func TestCheckDatasetDriftRefusesANewerPublishedVersion(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "3.0", "the version that is actually there")
 	assert.Contains(t, err.Error(), "2.0", "and the one this repo last deployed")
-	assert.Contains(t, err.Error(), "outside this repo")
+	assert.Contains(t, err.Error(), "outside this configuration")
 	assert.Contains(t, err.Error(), "version: 3.0", "the fix is a pin the user can paste")
 }
 

@@ -28,7 +28,7 @@ import (
 // For a few seconds after a publish the service can answer the next one with
 // the version it just assigned, writing over it rather than adding one.
 // Nothing observable marks the end of that race — the version listing lags a
-// publish as well, answering 404 immediately after a create — so the defence
+// publish as well, answering 404 immediately after a create — so the guard
 // is the document the caller already read: it says which version exists and
 // when it was written.
 //

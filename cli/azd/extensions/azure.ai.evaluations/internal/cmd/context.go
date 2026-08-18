@@ -192,15 +192,6 @@ func (ec *evalContext) setEnvValue(ctx context.Context, key, value string) error
 	return nil
 }
 
-// azdNoDefaultEnvironment is what azd's environment service answers with when
-// the project has no environment selected. It arrives over gRPC as a status
-// whose message carries the text, so the text is what there is to match on.
-//
-// azd returns this as an ERROR rather than an empty answer, which is the whole
-// difficulty: "there is no environment" and "azd could not be reached" are both
-// non-nil errors, and only the first is something to tell the user about.
-const azdNoDefaultEnvironment = "default environment not found"
-
 // confirmedNoAzdEnvironment reports that azd answered, and the answer was that
 // there is no current environment.
 //

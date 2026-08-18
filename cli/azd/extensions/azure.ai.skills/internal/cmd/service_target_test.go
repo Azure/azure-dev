@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -356,4 +357,18 @@ func TestPrepareSkillArchive_RejectsUnsupportedFile(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, archive)
 	assert.Contains(t, err.Error(), ".zip")
+}
+
+func TestPrepareSkillArchive_RejectsNonRegularZip(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("creating a symbolic link requires elevated privileges on Windows")
+	}
+
+	path := filepath.Join(t.TempDir(), "skill.zip")
+	require.NoError(t, os.Symlink(os.DevNull, path))
+
+	archive, err := prepareSkillArchive(path)
+	require.ErrorContains(t, err, "must be a regular .zip file")
+	assert.Nil(t, archive)
 }

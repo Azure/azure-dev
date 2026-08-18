@@ -444,6 +444,14 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 		}, nil
 	}
 
+	if !info.Mode().IsRegular() {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("skill archive %s must be a regular .zip file", path),
+			"set archive to a regular .zip file or a directory containing SKILL.md",
+		)
+	}
+
 	if !strings.EqualFold(filepath.Ext(path), ".zip") {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,

@@ -423,6 +423,32 @@ func TestStageAzureYamlTemplate_LocalRenamesToAzureYaml(t *testing.T) {
 	require.True(t, fileExists(filepath.Join(staging, "agents", "main.py")))
 }
 
+func TestStageAzureYamlTemplate_PreservesSkillService(t *testing.T) {
+	sampleDir := t.TempDir()
+	pointer := filepath.Join(sampleDir, "sample.yaml")
+	content := `name: foundry-simple
+services:
+  summarize:
+    host: azure.ai.skill
+    instructions: Summarize the user's input.
+  assistant:
+    host: azure.ai.agent
+    uses:
+      - summarize
+    kind: hosted
+`
+	require.NoError(t, os.WriteFile(pointer, []byte(content), 0600))
+
+	flags := &initFlags{manifestPointer: pointer}
+	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
+	require.NoError(t, err)
+	defer cleanup()
+
+	staged, err := os.ReadFile(filepath.Join(staging, "azure.yaml"))
+	require.NoError(t, err)
+	require.YAMLEq(t, content, string(staged))
+}
+
 func TestAdoptedServiceHasCodeConfig(t *testing.T) {
 	tests := []struct {
 		name string

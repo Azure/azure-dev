@@ -1958,6 +1958,40 @@ func TestPackage_DelegatesImagePassthroughToCore(t *testing.T) {
 	}
 }
 
+func TestPackage_ReusesCoreImagePassthroughArtifact(t *testing.T) {
+	t.Parallel()
+
+	const image = "registry.example.com/agents/my-agent:v1"
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, image)
+	containerStub := &stubContainerServer{packageImage: image}
+	dockerOptions := &azdext.DockerProjectOptions{}
+	EnableDockerImagePassthrough(dockerOptions)
+	provider := &AgentServiceTargetProvider{
+		azdClient:           newContainerTestClient(t, containerStub),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+	serviceContext := &azdext.ServiceContext{Package: []*azdext.Artifact{{
+		Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+		Location:     image,
+		LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+		Metadata:     map[string]string{"imagePassthrough": "true"},
+	}}}
+
+	result, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+		serviceContext,
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, result.Artifacts, "core already added the passthrough artifact to the shared context")
+	require.Len(t, serviceContext.Package, 1)
+	require.Equal(t, int32(0), containerStub.packageCalls.Load())
+}
+
 func TestPackage_CodeDeployTakesPrecedenceOverImagePassthrough(t *testing.T) {
 	t.Parallel()
 

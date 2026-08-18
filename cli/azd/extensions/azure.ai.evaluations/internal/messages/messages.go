@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -480,9 +481,18 @@ func GateNoRowsScored() string {
 }
 
 // GatePassRateBelow reports a pass-rate gate that was breached.
+//
+// One decimal, which is what the spec's hero scenario shows -- except when that
+// rounds the actual rate onto the threshold. The gate compares exact values, so
+// 7996/10000 breaches 0.8 while both read "80.0%", and the line would say a
+// rate is below itself. Only that case is given more precision.
 func GatePassRateBelow(actual, required float64) string {
-	return fmt.Sprintf("pass rate %.1f%% is below the required %.1f%%",
-		actual*100, required*100)
+	shown := fmt.Sprintf("%.1f", actual*100)
+	if shown == fmt.Sprintf("%.1f", required*100) {
+		shown = strconv.FormatFloat(actual*100, 'f', -1, 64)
+	}
+	return fmt.Sprintf("pass rate %s%% is below the required %.1f%%",
+		shown, required*100)
 }
 
 // GateBreached is the block a breached gate leaves in a pipeline's log.

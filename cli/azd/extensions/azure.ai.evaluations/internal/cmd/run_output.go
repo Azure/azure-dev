@@ -469,21 +469,37 @@ func verdictWord(r eval_api.OutputResult) string {
 }
 
 // formatScore prints a judge's score at the two decimals the scale carries.
+// formatScore shows a score, or a dash where there is none. An evaluator that
+// errored on a row still sends a result, and its score decodes to NaN; printing
+// that verbatim put "NaN" in the SCORE column.
 func formatScore(score eval_api.LenientFloat) string {
+	if !score.Defined() {
+		return "-"
+	}
 	return strconv.FormatFloat(float64(score), 'f', 2, 64)
 }
 
 // meanScoreOf averages a sample's scores so the list can tell a bare pass from
 // a strong one. Pass/fail alone sent anyone asking "how well?" to the portal.
+//
+// Rows an evaluator errored on are left out rather than counted, the same rule
+// criteriaMeans applies to the summary: averaging a NaN in makes the whole
+// sample read NaN, and counting it as zero drags the mean toward a number no
+// evaluator produced.
 func meanScoreOf(results []eval_api.OutputResult) string {
-	if len(results) == 0 {
+	total := 0.0
+	scored := 0
+	for _, r := range results {
+		if !r.Score.Defined() {
+			continue
+		}
+		total += float64(r.Score)
+		scored++
+	}
+	if scored == 0 {
 		return "-"
 	}
-	total := 0.0
-	for _, r := range results {
-		total += float64(r.Score)
-	}
-	return strconv.FormatFloat(total/float64(len(results)), 'f', 2, 64)
+	return strconv.FormatFloat(total/float64(scored), 'f', 2, 64)
 }
 
 func renderResults(

@@ -90,10 +90,14 @@ func (c *Config) RemoteDatasetReference() *DatasetRef {
 
 // EvaluatorRef describes an evaluator. It can be a simple string name or a
 // structured entry with name, version, and local_uri.
+// EvaluatorRef describes an evaluator. It can be a simple string name or a
+// structured entry with name, version, local_uri, and initialization_parameters.
 type EvaluatorRef struct {
 	Name     string `yaml:"name" json:"name"`
 	Version  string `yaml:"version,omitempty" json:"version,omitempty"`
 	LocalURI string `yaml:"local_uri,omitempty" json:"local_uri,omitempty"`
+	// InitializationParameters holds evaluator-specific configuration parameters.
+	InitializationParameters map[string]any `yaml:"initialization_parameters,omitempty" json:"-"`
 }
 
 // EvaluatorList is a list of evaluators that supports mixed YAML:
@@ -133,11 +137,11 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 }
 
 // MarshalYAML emits plain strings for simple evaluators and mappings for
-// structured ones (those with version or local_uri).
+// structured ones (those with version, local_uri, or initialization_parameters).
 func (el EvaluatorList) MarshalYAML() (any, error) {
 	nodes := make([]*yaml.Node, 0, len(el))
 	for _, ref := range el {
-		if ref.Version == "" && ref.LocalURI == "" {
+		if ref.Version == "" && ref.LocalURI == "" && len(ref.InitializationParameters) == 0 {
 			// Emit as a plain string.
 			nodes = append(nodes, &yaml.Node{
 				Kind:  yaml.ScalarNode,

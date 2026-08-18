@@ -95,7 +95,7 @@ func newRunOutputListCommand() *cobra.Command {
 				if err != nil {
 					return messages.Creating(outFile, err)
 				}
-				if err := emitJSON(f, rows); err != nil {
+				if err := emitJSONList(f, rows); err != nil {
 					_ = f.Close()
 					return err
 				}
@@ -107,7 +107,7 @@ func newRunOutputListCommand() *cobra.Command {
 				return nil
 			}
 			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), rows)
+				return emitJSONList(cmd.OutOrStdout(), rows)
 			}
 			return renderResults(cmd.OutOrStdout(), run, rows, failedOnly)
 		},
@@ -548,21 +548,41 @@ func renderResults(
 			// One row per evaluated sample, not per verdict: a sample that
 			// failed three evaluators is one sample to go and look at, and
 			// listing it three times buries how much is actually wrong.
-			var failed []string
+			//
+			// An evaluator that returned no verdict is held apart from one that
+			// returned a failing verdict. Both keep the row, because the row is
+			// still worth looking at, but naming an errored evaluator among the
+			// ones the sample failed states something about the sample that
+			// nothing measured.
+			var failed, unjudged []string
 			reason := ""
 			for _, r := range it.Results {
-				if r.DidPass() {
+				switch {
+				case !r.Judged():
+					unjudged = append(unjudged, r.Name)
+				case r.DidPass():
 					continue
+				default:
+					failed = append(failed, r.Name)
 				}
-				failed = append(failed, r.Name)
 				if reason == "" {
 					reason = r.Reason
 				}
 			}
-			if failedOnly && len(failed) == 0 {
+			// The same predicate `-o json` filters on, so the two views of
+			// --failed-only cannot disagree about which rows went wrong.
+			if failedOnly && !it.Failed() {
 				continue
 			}
 			verdicts := strings.Join(failed, ", ")
+			if len(unjudged) > 0 {
+				note := strings.Join(unjudged, ", ") + " (no verdict)"
+				if verdicts == "" {
+					verdicts = note
+				} else {
+					verdicts += "; " + note
+				}
+			}
 			if verdicts == "" {
 				verdicts = "-"
 			}
@@ -607,7 +627,6 @@ func truncate(s string, n int) string {
 
 func writeResultsCSV(w io.Writer, run *eval_api.OpenAIEvalRun) error {
 	cw := csv.NewWriter(w)
-	defer cw.Flush()
 
 	// Named as the service names it, and as the jsonl export already did, so a
 	// pipeline reading both formats needs one spelling rather than two.
@@ -615,7 +634,10 @@ func writeResultsCSV(w io.Writer, run *eval_api.OpenAIEvalRun) error {
 		return err
 	}
 	if len(run.PerTestingCriteria) == 0 {
-		return cw.Write([]string{run.ID, run.Status, "", "", ""})
+		if err := cw.Write([]string{run.ID, run.Status, "", "", ""}); err != nil {
+			return err
+		}
+		return flushCSV(cw)
 	}
 	for _, cr := range run.PerTestingCriteria {
 		if err := cw.Write([]string{
@@ -625,7 +647,17 @@ func writeResultsCSV(w io.Writer, run *eval_api.OpenAIEvalRun) error {
 			return err
 		}
 	}
-	return nil
+	return flushCSV(cw)
+}
+
+// flushCSV reports what the buffer swallowed.
+//
+// csv.Writer buffers, so a disk that filled or a pipe that closed shows up only
+// in Error() after the final Flush. Deferring the flush and returning nil made
+// `run output export` report success over a file it had not finished writing.
+func flushCSV(cw *csv.Writer) error {
+	cw.Flush()
+	return cw.Error()
 }
 
 // Export formats. csv is the default because the results are a table and a

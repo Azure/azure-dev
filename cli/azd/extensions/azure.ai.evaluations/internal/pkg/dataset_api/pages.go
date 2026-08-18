@@ -7,10 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -54,8 +56,9 @@ func (c *DatasetClient) followPages(ctx context.Context, first *DatasetList) (*D
 	for next := first.NextLink; next != ""; {
 		if seen[next] || len(seen) >= maxListPages {
 			// A repeated or endless link is the service misbehaving, not a reason
-			// to fail the command, but the list is short and nobody would know.
-			log.Printf("[dataset_api] stopped paging after %d pages; the listing may be incomplete", len(seen))
+			// to fail the command -- but the list is short and, said through log,
+			// nobody would know: log goes to io.Discard unless --debug.
+			fmt.Fprint(os.Stderr, messages.Warning(messages.ListingTruncated(len(seen))))
 			break
 		}
 		seen[next] = true

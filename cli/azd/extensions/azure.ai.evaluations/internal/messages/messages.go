@@ -2124,6 +2124,25 @@ func InstructionFileUnreadable(metadataPath, named string, err error) error {
 		metadataPath, named, err)
 }
 
+// ListingTruncated reports a page walk that stopped before the end.
+//
+// Worth saying out loud rather than logging: a short evaluator listing resolves
+// the latest version from the pages that arrived, so a truncated one can pick
+// an older version and report nothing unusual.
+func ListingTruncated(pages int) error {
+	return fmt.Errorf(
+		"stopped reading the listing after %d pages, so it may be incomplete", pages)
+}
+
+// ServiceRefPointsElsewhere reports an existing service entry wired to a
+// different configuration than the one just scaffolded.
+func ServiceRefPointsElsewhere(serviceName, have, want string) error {
+	return fmt.Errorf(
+		"service %q already points at %s, and the configuration just written is "+
+			"%s; point the service's $ref at the one you want, or scaffold with "+
+			"--path %s", serviceName, have, want, have)
+}
+
 // InstructionFileOutsideProject reports metadata pointing outside the project.
 //
 // The pointer is read from a file in the checkout, so it is only as trustworthy

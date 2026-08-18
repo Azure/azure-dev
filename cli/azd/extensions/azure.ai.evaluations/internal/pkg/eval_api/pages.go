@@ -7,10 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -98,7 +100,7 @@ func walkNextLinks[T any](
 		// A repeated link, not just a self-referencing one, ends the walk: a
 		// two-page cycle would otherwise run to maxPages for no benefit.
 		if seen[link] || len(seen) >= maxPages {
-			log.Printf("[eval_api] stopped paging after %d pages; the listing may be incomplete", len(seen))
+			fmt.Fprint(os.Stderr, messages.Warning(messages.ListingTruncated(len(seen))))
 			break
 		}
 		seen[link] = true

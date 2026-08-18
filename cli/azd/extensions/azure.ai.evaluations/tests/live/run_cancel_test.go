@@ -85,6 +85,12 @@ func TestLiveRunCancel(t *testing.T) {
 		// left here to observe.
 		current, getErr := env.evalClient.GetOpenAIEvalRun(ctx, group.ID, run.ID)
 		require.NoError(t, getErr, "reading the run whose cancel was refused")
+
+		// Only that race is skipped. A refusal while the run is still moving is
+		// the failure this test exists to catch, and skipping on any error at
+		// all retires the test without anyone deciding to.
+		require.Truef(t, runAlreadyFinished(current.Status),
+			"cancel was refused while the run was still %q: %v", current.Status, err)
 		t.Skipf("cancel was refused with the run already at %q: %v", current.Status, err)
 	}
 	require.NotNil(t, canceled)
@@ -109,4 +115,15 @@ func TestLiveRunCancel(t *testing.T) {
 	}
 
 	t.Logf("run reached %s", status)
+}
+
+// runAlreadyFinished reports a run that has stopped, so a refused cancel is the
+// race rather than a fault. Spelled out here because tests/live cannot reach
+// internal/cmd's copy, and both spellings of cancelled are in use.
+func runAlreadyFinished(status string) bool {
+	switch strings.ToLower(status) {
+	case "completed", "failed", "canceled", "cancelled", "error":
+		return true
+	}
+	return false
 }

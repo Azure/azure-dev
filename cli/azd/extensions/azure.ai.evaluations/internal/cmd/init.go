@@ -763,12 +763,21 @@ func ensureRootEvalService(
 
 	// A service already pointing at this configuration is left alone:
 	// re-adding it would deploy the same evals twice.
+	//
+	// Pointing at a different one is not the same thing. Matching on name and
+	// host alone reported the wiring present after `init --path` moved the
+	// configuration, and `azd up` went on deploying the file that was left
+	// behind -- the scaffold the reader was looking at was never deployed.
+	wantRef := "./" + filepath.ToSlash(configPath)
 	if svc, ok := resp.GetProject().GetServices()[serviceName]; ok && svc.GetHost() == project.EvalHost {
+		if have := serviceConfigRef(svc); have != "" && !sameRefTarget(have, wantRef) {
+			return "", messages.ServiceRefPointsElsewhere(serviceName, have, wantRef)
+		}
 		return wiringPresent, nil
 	}
 
 	props, err := structpb.NewStruct(map[string]any{
-		"$ref": "./" + filepath.ToSlash(configPath),
+		"$ref": wantRef,
 	})
 	if err != nil {
 		return "", messages.BuildingServiceEntry(err)
@@ -786,6 +795,23 @@ func ensureRootEvalService(
 		return "", messages.AddingServiceTo(rootConfigName, err)
 	}
 	return wiringAdded, nil
+}
+
+// serviceConfigRef reads the $ref a service entry was authored with, or empty
+// when it holds its configuration inline.
+func serviceConfigRef(svc *azdext.ServiceConfig) string {
+	props := svc.GetAdditionalProperties()
+	if props == nil {
+		return ""
+	}
+	ref, _ := props.AsMap()["$ref"].(string)
+	return ref
+}
+
+// sameRefTarget compares two $ref values as paths rather than as text, so
+// `evals/azure.eval.yaml` and `./evals/azure.eval.yaml` are one answer.
+func sameRefTarget(a, b string) bool {
+	return filepath.Clean(filepath.FromSlash(a)) == filepath.Clean(filepath.FromSlash(b))
 }
 
 // evalServiceUses orders the eval after the things it reads.

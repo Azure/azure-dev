@@ -484,12 +484,30 @@ func upgradeLegacyTraceSource(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunD
 	return eval_api.NewTracePreviewDataSource(ds.AgentName, "", start, end, maxTraces)
 }
 
+// runnableEval refuses a declaration this run could not carry out.
+//
+// The rules live with the check the configuration runs, so the two cannot come
+// to different conclusions about the same eval. Only the wrapper differs: the
+// configuration has an index to name and a run does not.
+func runnableEval(group *project.Eval) error {
+	if err := project.ValidateRunnable(group); err != nil {
+		return messages.InEval(group.Name, err)
+	}
+	return nil
+}
+
 // buildRunDataSource binds the eval's rows to the run.
 //
 // Three shapes, in the order the configuration decides them. A `source:` block
 // hands the gathering to the service and sends nothing local. Otherwise the
-// rows come from a dataset, and `target:` says what to invoke for each one —
+// rows come from a dataset, and `target:` says what to invoke for each one --
 // including nothing at all, when the rows already hold both sides.
+//
+// This is where a declaration is refused, not merely where it is read. Resolving
+// an eval by name does not validate what it says about itself, and a run reached
+// by id has no declaration to validate, so every contradiction the configuration
+// names has to be answered here as well. Settling one by evaluation order sends
+// a request that succeeds and grades something the file did not ask for.
 func (ec *evalContext) buildRunDataSource(
 	ctx context.Context,
 	group *project.Eval,
@@ -499,19 +517,19 @@ func (ec *evalContext) buildRunDataSource(
 	if group == nil {
 		return nil, messages.NoEvalToRun()
 	}
+	if err := runnableEval(group); err != nil {
+		return nil, err
+	}
+	if group.Dataset != "" && configPath != "" && !datasetIsDeclared(configPath, group) {
+		return nil, messages.InEval(group.Name, messages.DatasetNotDeclared(group.Dataset))
+	}
 
 	if group.Source != nil {
 		switch group.Source.Type {
 		case project.SourceTypeTraces:
 			return tracesDataSource(group)
-		case project.SourceTypeResponses:
-			return responsesDataSource(group)
 		default:
-			// Config validation rejects this first, but a run reached by id has no
-			// config to have been validated. Falling through would score the wrong
-			// rows and say the eval declared no source.
-			return nil, messages.InEval(group.Name, messages.SourceTypeNotSupported(
-				group.Source.Type, project.SourceTypeTraces, project.SourceTypeResponses))
+			return responsesDataSource(group)
 		}
 	}
 
@@ -562,6 +580,8 @@ func (ec *evalContext) buildRunDataSource(
 // found. `agent_name` filters the traces; it is not a target, because a trace
 // run invokes nothing.
 func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
+	// Checked by runnableEval before this is reached; read again rather than
+	// assumed, because an agent name is what the whole request is about.
 	agent := project.TraceAgentName(group.Source, group.Target)
 	if agent == "" {
 		return nil, messages.TracesNeedAgentName(group.Name)
@@ -596,11 +616,6 @@ func traceWindow(evalName string, source *project.SourceDecl) (start, end time.T
 func responsesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
 	if len(group.Source.ResponseIDs) == 0 {
 		return nil, messages.ResponsesNeedIDs(group.Name)
-	}
-	// The same check the configuration runs, so a field this source does not
-	// read is refused here too rather than only on the way to a deploy.
-	if _, _, err := project.ValidateSource(group.Source); err != nil {
-		return nil, messages.InEval(group.Name, err)
 	}
 	return eval_api.NewResponsesDataSource(group.Source.ResponseIDs, group.Source.MaxTurns), nil
 }
@@ -681,6 +696,22 @@ func localDatasetPath(configPath string, group *project.Eval) string {
 		return decl.Source
 	}
 	return filepath.Join(filepath.Dir(configPath), decl.Source)
+}
+
+// datasetIsDeclared says whether the configuration's catalog holds the dataset
+// this eval names.
+//
+// Without it a mistyped name falls through to a registry read and comes back as
+// a 404 for a dataset nobody ever registered, which sends the reader to the
+// service rather than to the line they mistyped. Answered yes when there is no
+// configuration to ask: an eval reached by id has no catalog.
+func datasetIsDeclared(configPath string, group *project.Eval) bool {
+	cfg, err := project.LoadEvalConfig(configPath)
+	if err != nil || cfg == nil {
+		return true
+	}
+	_, ok := cfg.DatasetDeclaration(group.Dataset)
+	return ok
 }
 
 // readJSONL reads newline-delimited JSON, optionally truncating to limit rows.

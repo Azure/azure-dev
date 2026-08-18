@@ -219,14 +219,19 @@ func (c *EvalConfig) Validate() error {
 	return c.validate(true)
 }
 
-// ValidateForLookup checks only what resolving a declaration by name depends
-// on.
+// ValidateForLookup checks what resolving a declaration by name depends on: a
+// readable set of catalogs, and a name that is present and not shared.
 //
-// Two evals that differ only in substance still resolve unambiguously by name,
-// and that clash only matters to something about to deploy. Enforcing it on the
-// way to a lookup stranded commands that had already been told which eval they
-// meant -- `run list --eval <name>` refused to list anything, and the way out
-// was to hand-edit the config, which the error did not say.
+// What an eval says about itself is left to deploying it, and to the run door,
+// which applies the same rules to the entry the run is actually about. Checking
+// it here stranded commands that had already been told which eval they meant --
+// `run list --eval <name>` refused to list anything because a different entry
+// was malformed, and the way out was to hand-edit a file the error did not
+// mention.
+//
+// The catalogs stay, because they are the file's shared half: a duplicate
+// dataset name makes the lookup this method exists to serve ambiguous, and no
+// declaration can be read against a catalog that does not parse into one.
 func (c *EvalConfig) ValidateForLookup() error {
 	return c.validate(false)
 }
@@ -331,43 +336,14 @@ func validateSource(i int, name string, source *SourceDecl) error {
 }
 
 func (c *EvalConfig) validateEval(i int, eval Eval) error {
-	if eval.Dataset != "" && eval.Source != nil {
-		return messages.DatasetAndSourceBothDeclared(i, eval.Name)
-	}
-	// A negative cap read as "no cap", so the whole dataset went to a billed
-	// run when the config asked for fewer rows than that.
-	if eval.MaxSamples < 0 {
-		return messages.NegativeMaxSamples(i, eval.Name, eval.MaxSamples)
+	// Everything an eval says about itself, from the definition the run door
+	// also uses. What follows is only what needs the rest of the file.
+	if err := ValidateRunnable(&eval); err != nil {
+		return messages.InEvalAt(i, eval.Name, err)
 	}
 	if eval.Dataset != "" {
 		if _, ok := c.DatasetDeclaration(eval.Dataset); !ok {
 			return messages.DatasetNotInDatasetsCatalog(i, eval.Name, eval.Dataset)
-		}
-	}
-	if eval.Source != nil {
-		switch eval.Source.Type {
-		case SourceTypeTraces:
-			// The run needs one of these to say whose traces to read. Refusing
-			// here rather than at run time keeps a config that cannot run from
-			// deploying, so it has to be the same question the run asks.
-			if TraceAgentName(eval.Source, eval.Target) == "" {
-				return messages.TracesSourceNeedsAgentName(i, eval.Name)
-			}
-			if err := validateSource(i, eval.Name, eval.Source); err != nil {
-				return err
-			}
-		case SourceTypeResponses:
-			if len(eval.Source.ResponseIDs) == 0 {
-				return messages.ResponsesSourceNeedsIDs(i, eval.Name)
-			}
-			if err := validateSource(i, eval.Name, eval.Source); err != nil {
-				return err
-			}
-		case "":
-			return messages.SourceTypeRequired(i, eval.Name)
-		default:
-			return messages.SourceTypeUnsupported(
-				i, eval.Name, eval.Source.Type, SourceTypeTraces, SourceTypeResponses)
 		}
 	}
 
@@ -395,18 +371,6 @@ func (c *EvalConfig) validateEval(i int, eval Eval) error {
 		}
 	}
 
-	if eval.Target != nil {
-		if eval.Target.Type != "" &&
-			eval.Target.Type != TargetTypeAgent && eval.Target.Type != TargetTypeModel {
-			return messages.TargetTypeUnsupported(
-				i, eval.Name, eval.Target.Type, TargetTypeAgent, TargetTypeModel)
-		}
-		// A target with no name is scored as though nothing were invoked, which
-		// is a different evaluation from the one that was written down.
-		if eval.Target.Name == "" {
-			return messages.TargetNameRequired(i, eval.Name)
-		}
-	}
 	switch eval.EvaluationLevel {
 	case "", EvaluationLevelTurn, EvaluationLevelConversation:
 	default:

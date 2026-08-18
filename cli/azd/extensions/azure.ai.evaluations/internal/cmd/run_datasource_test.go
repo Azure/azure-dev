@@ -355,22 +355,85 @@ func TestBuildRunDataSource_NoRowsFromAnywhere(t *testing.T) {
 
 // A misspelled source.type used to fall through to the dataset path, which
 // scored the wrong rows and then blamed the eval for declaring no source.
-// Config validation catches it first, but a run reached by id has no config to
-// have been validated.
+//
+// The run door is the first refusal for a declared eval as well as for one
+// reached by id: resolving an eval by name checks only the name.
 func TestBuildRunDataSource_UnknownSourceTypeIsRefused(t *testing.T) {
 	ec := &evalContext{}
 	group := &project.Eval{
-		Name:    "typo",
-		Dataset: "d",
-		Source:  &project.SourceDecl{Type: "trace"},
+		Name:   "typo",
+		Source: &project.SourceDecl{Type: "trace"},
 	}
 
 	_, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "trace")
+	assert.Contains(t, err.Error(), `source.type "trace" is not supported`)
 	assert.NotContains(t, err.Error(), "references no dataset",
 		"a declared source must not be reported as no source at all")
+}
+
+// The run door refuses every contradiction the configuration names. Resolving
+// an eval by name does not check what it says about itself, and a run reached
+// by id has no declaration to check, so settling one of these by evaluation
+// order sends a request that succeeds and grades something else.
+func TestBuildRunDataSource_RefusesADeclarationNoRunCouldCarryOut(t *testing.T) {
+	ec := &evalContext{}
+
+	cases := []struct {
+		name    string
+		eval    project.Eval
+		wantErr string
+	}{
+		{
+			"rows from two places",
+			project.Eval{
+				Dataset: "d",
+				Source:  &project.SourceDecl{Type: project.SourceTypeTraces, AgentName: "a"},
+			},
+			"declare one",
+		},
+		{
+			// Read as "no cap", so the whole dataset went to a run billed per
+			// row when the file asked for fewer rows than that.
+			"a negative cap",
+			project.Eval{Dataset: "d", MaxSamples: -1},
+			"max_samples cannot be negative",
+		},
+		{
+			// Scored as though nothing were invoked, which is a different
+			// evaluation from the one that was written down.
+			"a target naming nothing",
+			project.Eval{Dataset: "d", Target: &project.Target{Type: project.TargetTypeAgent}},
+			"target.name is required",
+		},
+		{
+			"a target nothing can invoke",
+			project.Eval{Dataset: "d", Target: &project.Target{Type: "prompt", Name: "x"}},
+			"is not supported",
+		},
+		{
+			"a source that does not say what it reads",
+			project.Eval{Source: &project.SourceDecl{}},
+			"source.type is required",
+		},
+		{
+			"a responses source listing nothing",
+			project.Eval{Source: &project.SourceDecl{Type: project.SourceTypeResponses}},
+			"source.response_ids is required",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.eval.Name = "e"
+			_, err := ec.buildRunDataSource(context.Background(), &tc.eval, "", 0)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), `eval "e"`)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
 }
 
 // --max-samples has to mean the same thing wherever the rows come from.

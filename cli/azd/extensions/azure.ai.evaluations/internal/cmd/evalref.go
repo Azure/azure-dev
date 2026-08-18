@@ -55,7 +55,7 @@ func (ec *evalContext) resolveEvalRef(
 		eval, err := cfg.Eval(nameOrID)
 		switch {
 		case err == nil:
-			id := ec.recordedEvalID(ctx, cfg, eval.Name)
+			id := ec.recordedEvalID(ctx, eval.Name)
 			if id == "" {
 				// Nothing recorded is not the same as nothing published. The
 				// id is kept in the azd environment, so a run against
@@ -97,7 +97,7 @@ func (ec *evalContext) resolveEvalRef(
 				// leaves it empty, and recordedEvalID answers "" without
 				// asking when it is. Now that there is a name, ask properly
 				// before reporting a deployed eval as missing.
-				if id = ec.recordedEvalID(ctx, cfg, eval.Name); id == "" {
+				if id = ec.recordedEvalID(ctx, eval.Name); id == "" {
 					return evalRef{}, messages.EvalNotDeployedYet(
 						eval.Name, ec.deployCommand(ctx))
 				}
@@ -118,30 +118,16 @@ func (ec *evalContext) resolveEvalRef(
 }
 
 // recordedEvalID reads the id `azd up` stored for a declared eval.
-func (ec *evalContext) recordedEvalID(ctx context.Context, cfg *project.EvalConfig, evalName string) string {
-	for _, key := range evalIDKeys(cfg, evalName) {
-		if id := ec.getEnvValue(ctx, key); id != "" {
-			return id
-		}
-	}
-	return ""
-}
-
-// evalIDKeys lists the env entries that may hold this eval's id, most specific
-// first.
 //
-// The per-name entry is what the extension writes. EVAL_ID is the documented
-// way to point a config at an eval that already exists, created in the portal
-// or by another tool, so it stays readable -- but only when the configuration
-// declares a single eval. With more than one there is no way to tell which eval
-// a shared entry refers to, and reading it anyway is what let a second eval
-// adopt the first one's id.
-func evalIDKeys(cfg *project.EvalConfig, name string) []string {
-	keys := []string{idKey("eval", name)}
-	if cfg != nil && len(cfg.Evals) == 1 {
-		keys = append(keys, envKeyEvalID)
-	}
-	return keys
+// Only the entry recorded under this eval's own name. EVAL_ID is written by
+// every deploy as well as being settable by hand, so nothing tells a value that
+// was meant for this declaration from one left behind by the eval it replaced.
+// Reading it for a config that names a single eval meant a file whose one entry
+// had been swapped for a different one ran the previous eval's criteria over
+// the new one's rows, reported as success. A miss falls through to the service
+// listing by name, which answers the question the id was standing in for.
+func (ec *evalContext) recordedEvalID(ctx context.Context, evalName string) string {
+	return ec.getEnvValue(ctx, idKey("eval", evalName))
 }
 
 // evalIDNamed finds the id of the eval the service lists under this name.

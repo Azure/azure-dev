@@ -1934,21 +1934,37 @@ func EvaluatorVersionWithSource(index int, evaluator string) error {
 
 // DatasetAndSourceBothDeclared reports two answers to where rows come from.
 func DatasetAndSourceBothDeclared(index int, eval string) error {
-	return fmt.Errorf(
-		"evals[%d] (%s): `dataset` and `source` both say where rows come from; "+
-			"declare one", index, eval)
+	return InEvalAt(index, eval, DatasetAndSourceDeclareTheSameThing())
+}
+
+// DatasetAndSourceDeclareTheSameThing reports it where there is no index.
+func DatasetAndSourceDeclareTheSameThing() error {
+	return errors.New("`dataset` and `source` both say where rows come from; declare one")
+}
+
+// NoEvalToValidate reports a declaration that is not there at all.
+func NoEvalToValidate() error {
+	return errors.New("no eval declaration to check")
 }
 
 // DatasetNotInDatasetsCatalog reports an eval naming a dataset nobody declared.
 func DatasetNotInDatasetsCatalog(index int, eval, dataset string) error {
-	return fmt.Errorf(
-		"evals[%d] (%s): dataset %q is not in the datasets catalog",
-		index, eval, dataset)
+	return InEvalAt(index, eval, DatasetNotDeclared(dataset))
+}
+
+// DatasetNotDeclared reports it where there is no index.
+func DatasetNotDeclared(dataset string) error {
+	return fmt.Errorf("dataset %q is not in the datasets catalog", dataset)
 }
 
 // SourceTypeRequired reports a source: block that does not say what it reads.
 func SourceTypeRequired(index int, eval string) error {
-	return fmt.Errorf("evals[%d] (%s): source.type is required", index, eval)
+	return InEvalAt(index, eval, SourceTypeMissing())
+}
+
+// SourceTypeMissing reports it where there is no index.
+func SourceTypeMissing() error {
+	return errors.New("source.type is required")
 }
 
 // SourceTypeUnsupported reports a source.type the extension has no path for.
@@ -1964,17 +1980,28 @@ func SourceTypeNotSupported(got, traces, responses string) error {
 // TracesSourceNeedsAgentName reports a trace source that does not say whose
 // conversations to read.
 func TracesSourceNeedsAgentName(index int, eval string) error {
-	return fmt.Errorf(
-		"evals[%d] (%s): source.agent_name is required for a trace source, "+
-			"or declare target.name", index, eval)
+	return InEvalAt(index, eval, TraceSourceNeedsAnAgent())
+}
+
+// TraceSourceNeedsAnAgent reports it where there is no index.
+//
+// A target names one too, unless it names a model: a deployment name matches
+// no spans, so it is not an answer to whose conversations to read.
+func TraceSourceNeedsAnAgent() error {
+	return errors.New(
+		"source.agent_name is required for a trace source, " +
+			"or declare an agent target.name")
 }
 
 // ResponsesSourceNeedsIDs reports a stored-response source with nothing to
 // retrieve.
 func ResponsesSourceNeedsIDs(index int, eval string) error {
-	return fmt.Errorf(
-		"evals[%d] (%s): source.response_ids is required for a responses source",
-		index, eval)
+	return InEvalAt(index, eval, ResponsesSourceNeedsResponseIDs())
+}
+
+// ResponsesSourceNeedsResponseIDs reports it where there is no index.
+func ResponsesSourceNeedsResponseIDs() error {
+	return errors.New("source.response_ids is required for a responses source")
 }
 
 // AtLeastOneEvaluatorRequired reports an eval that scores nothing.
@@ -2003,9 +2030,12 @@ func EvaluatorNotInCatalog(evalIndex, refIndex int, evaluator string) error {
 
 // TargetTypeUnsupported reports a target.type the extension cannot invoke.
 func TargetTypeUnsupported(index int, eval, got, agent, model string) error {
-	return fmt.Errorf(
-		"evals[%d] (%s): target.type %q is not supported; use %q or %q",
-		index, eval, got, agent, model)
+	return InEvalAt(index, eval, TargetTypeNotSupported(got, agent, model))
+}
+
+// TargetTypeNotSupported reports it where there is no index.
+func TargetTypeNotSupported(got, agent, model string) error {
+	return fmt.Errorf("target.type %q is not supported; use %q or %q", got, agent, model)
 }
 
 // EvaluationLevelInvalid reports a scoring granularity the service does not accept.
@@ -2017,9 +2047,13 @@ func EvaluationLevelInvalid(index int, eval, got, turn, conversation string) err
 
 // TargetNameRequired reports a declared target that names nothing to invoke.
 func TargetNameRequired(index int, eval string) error {
-	return fmt.Errorf(
-		"evals[%d] (%s): target.name is required; remove the target: to score the "+
-			"dataset as it stands", index, eval)
+	return InEvalAt(index, eval, TargetNameMissing())
+}
+
+// TargetNameMissing reports it where there is no index.
+func TargetNameMissing() error {
+	return errors.New(
+		"target.name is required; remove the target: to score the dataset as it stands")
 }
 
 // AmbiguousEvalConfig reports a directory holding both configuration names.
@@ -2148,10 +2182,14 @@ func SampleSizeOutOfRange(min, max, got int) error {
 // dataset to a run that is billed per row -- the opposite of what a cap asks
 // for, and silent.
 func NegativeMaxSamples(index int, name string, got int) error {
+	return InEvalAt(index, name, MaxSamplesNegative(got))
+}
+
+// MaxSamplesNegative reports it where there is no index.
+func MaxSamplesNegative(got int) error {
 	return fmt.Errorf(
-		"evals[%d] %q: max_samples cannot be negative, got %d. "+
-			"Remove it to send every row, or set the number of rows to send",
-		index, name, got)
+		"max_samples cannot be negative, got %d. "+
+			"Remove it to send every row, or set the number of rows to send", got)
 }
 
 // NegativeMaxSamplesFlag reports the same thing given on the command line.

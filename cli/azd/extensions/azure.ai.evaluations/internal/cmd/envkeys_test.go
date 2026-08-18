@@ -6,9 +6,6 @@ package cmd
 import (
 	"testing"
 
-	"azureaieval/internal/pkg/evalcore"
-	"azureaieval/internal/project"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,34 +44,13 @@ func TestIDKey_DoesNotCollideWithVersionKey(t *testing.T) {
 	assert.NotEqual(t, idKey("dataset", "golden"), versionKey("dataset", "golden"))
 }
 
-// Setting EVAL_ID by hand is the documented way to point a config at an eval
-// that already exists. It is also the key the extension writes itself, which is
-// what let a second eval adopt the first one's id -- so it stays readable only
-// where it cannot be ambiguous. Fixing the aliasing dropped this fallback
-// entirely once, silently breaking the documented behaviour, and it was later
-// left in a helper that nothing called.
-func TestGroupIDKeys_SharedKeyReadOnlyWhenUnambiguous(t *testing.T) {
-	configOf := func(names ...string) *project.EvalConfig {
-		cfg := &project.EvalConfig{}
-		for _, n := range names {
-			cfg.Evals = append(cfg.Evals, project.Eval{
-				Name:       n,
-				Evaluators: evalcore.EvaluatorList{{Evaluator: "builtin.relevance"}},
-			})
-		}
-		return cfg
-	}
-
-	sole := evalIDKeys(configOf("quality"), "quality")
-	assert.Equal(t, idKey("eval", "quality"), sole[0],
-		"an eval's own entry is preferred over the shared one")
-	assert.Contains(t, sole, envKeyEvalID,
-		"a project with one eval honours an id set by hand")
-
-	assert.Equal(t, []string{idKey("eval", "quality")},
-		evalIDKeys(configOf("quality", "nightly"), "quality"),
-		"with several evals the shared entry cannot say which one it means")
-
-	assert.Equal(t, []string{idKey("eval", "quality")}, evalIDKeys(nil, "quality"),
-		"an eval reached without a config has only its own entry")
+// The shared EVAL_ID entry is written by every deploy, so it cannot say which
+// declaration it belongs to. Reading it for a config that names a single eval
+// let a file whose one entry had been replaced run the previous eval's criteria
+// over the new one's rows, reported as success. An eval's id is read from the
+// entry recorded under its own name and nowhere else.
+func TestEvalIDIsReadFromTheEvalsOwnEntry(t *testing.T) {
+	assert.NotEqual(t, envKeyEvalID, idKey("eval", "quality"))
+	assert.NotEqual(t, idKey("eval", "quality"), idKey("eval", "nightly"),
+		"two declarations cannot share an entry")
 }

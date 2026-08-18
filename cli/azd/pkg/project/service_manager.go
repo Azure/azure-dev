@@ -502,6 +502,10 @@ func (sm *serviceManager) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
+	if err := validatePublishOptions(serviceConfig, publishOptions); err != nil {
+		return nil, err
+	}
+
 	if serviceContext == nil {
 		serviceContext = NewServiceContext()
 	}

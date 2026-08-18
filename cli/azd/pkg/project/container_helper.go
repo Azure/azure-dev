@@ -40,6 +40,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/benbjohnson/clock"
+	"github.com/distribution/reference"
 	"github.com/sethvargo/go-retry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -274,11 +275,12 @@ func resolveImagePassthrough(
 		return "", fmt.Errorf("docker.imagePassthrough requires the service image property")
 	}
 
-	parsed, err := docker.ParseContainerImage(image)
-	if err != nil {
+	if _, err := reference.Parse(image); err != nil {
 		return "", fmt.Errorf("parsing passthrough image: %w", err)
 	}
-	return parsed.Remote(), nil
+
+	// Passthrough preserves the expanded reference exactly, including tag and digest combinations.
+	return image, nil
 }
 
 func imagePassthroughArtifact(image string) *Artifact {
@@ -666,6 +668,14 @@ func (ch *ContainerHelper) Package(
 	}, nil
 }
 
+func validatePublishOptions(serviceConfig *ServiceConfig, options *PublishOptions) error {
+	if serviceConfig.Docker.ImagePassthrough && options != nil && options.Image != "" {
+		return fmt.Errorf("docker.imagePassthrough cannot be combined with a publish image override")
+	}
+
+	return nil
+}
+
 // Publish pushes an image to a remote server and returns the fully qualified remote image name.
 func (ch *ContainerHelper) Publish(
 	ctx context.Context,
@@ -684,6 +694,10 @@ func (ch *ContainerHelper) Publish(
 
 	var remoteImage string
 
+	if err := validatePublishOptions(serviceConfig, options); err != nil {
+		return nil, err
+	}
+
 	// Parse PublishOptions into ImageOverride
 	imageOverride, err := parseImageOverride(options)
 	if err != nil {
@@ -691,9 +705,6 @@ func (ch *ContainerHelper) Publish(
 	}
 
 	if serviceConfig.Docker.ImagePassthrough {
-		if imageOverride != nil {
-			return nil, fmt.Errorf("docker.imagePassthrough cannot be combined with a publish image override")
-		}
 		remoteImage, err = resolveImagePassthrough(serviceConfig, env)
 	} else if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)

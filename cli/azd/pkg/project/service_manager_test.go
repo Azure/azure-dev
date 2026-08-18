@@ -320,6 +320,29 @@ func Test_ServiceManager_Publish(t *testing.T) {
 	require.True(t, raisedPostPublishEvent)
 }
 
+func Test_ServiceManager_Publish_RejectsImageOverrideForPassthrough(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	setupMocksForServiceManager(mockContext)
+	env := environment.New("test")
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	serviceConfig.Docker.ImagePassthrough = true
+
+	publishCalled := new(false)
+	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
+
+	_, err := sm.Publish(
+		ctx,
+		serviceConfig,
+		NewServiceContext(),
+		async.NewProgress[ServiceProgress](),
+		&PublishOptions{Image: "other.example.com/team/agent:v2"},
+	)
+
+	require.ErrorContains(t, err, "docker.imagePassthrough cannot be combined with a publish image override")
+	require.False(t, *publishCalled)
+}
+
 func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 	t.Run("Standard", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())

@@ -1301,6 +1301,15 @@ func TestResolveImagePassthrough(t *testing.T) {
 			want:   "private.example.com/team/agent:v1",
 		},
 		{
+			name: "preserves tag and digest",
+			image: "${PRIVATE_REGISTRY}/team/agent:v1@sha256:" +
+				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			docker: DockerProjectOptions{ImagePassthrough: true},
+			env:    map[string]string{"PRIVATE_REGISTRY": "private.example.com"},
+			want: "private.example.com/team/agent:v1@sha256:" +
+				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		},
+		{
 			name:        "requires service image",
 			docker:      DockerProjectOptions{ImagePassthrough: true},
 			wantErr:     true,

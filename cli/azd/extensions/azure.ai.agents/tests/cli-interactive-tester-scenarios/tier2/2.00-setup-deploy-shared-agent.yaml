@@ -22,20 +22,21 @@ tags: ["tier:2", "cmd:init", "cmd:provision", "cmd:deploy", "serial-only"]
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
 
-# Idempotent setup: if a previous run left a project here, tear down its Azure
-# resources FIRST (so we never orphan them), then clear the dir for a fresh
-# deploy. The down step gets a long timeout and continues on error (there may be
-# nothing to tear down). Re-using a clean path also avoids the resource-name hash
-# collision in issue #8360.
+# Idempotent setup: if this run's project path already contains a project, tear
+# down its Azure resources FIRST, then clear only that project directory for a
+# fresh deploy. Other run directories under azd-agents-shared are left intact.
+# The down step gets a long timeout and continues on error (there may be nothing
+# to tear down). Re-using a clean path also avoids the resource-name hash collision
+# in issue #8360.
 pre:
   - run: "if [ -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml ]; then (cd ~/working/azd-agents-shared/{shared_agent_name} && azd down --force --purge); fi"
     cwd: "~/working/azd-agents-shared"
     name: "tear down any leftover deployed agent"
     continue_on_error: true
     timeout: 900
-  - run: "rm -rf ~/working/azd-agents-shared"
+  - run: "rm -rf ~/working/azd-agents-shared/{shared_agent_name}"
     cwd: "~/working"
-    name: "clear the shared working dir"
+    name: "clear the current run project dir"
 
 goals:
   - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with '{prefix}-' (e.g. '{shared_agent_name}'). Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."

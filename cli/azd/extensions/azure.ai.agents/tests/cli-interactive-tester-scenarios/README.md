@@ -563,13 +563,15 @@ How they're used here:
   `gh` CLI (and an interactive login) when the anonymous GitHub API is
   rate-limited. Run `gh auth login` first (see [Authentication](#authentication)).
 - **`pre` idempotent setup (Tier 2)** — `2.00-setup-deploy-shared-agent` first runs
-  `azd down --force --purge` if a leftover project exists in the shared dir (so it
-  never orphans live Azure resources), then clears the dir. The down hook uses
-  `timeout: 900` and `continue_on_error: true`.
+  `azd down --force --purge` if a project exists at the current run's
+  `{shared_agent_name}` path, then clears only that project directory. Other run
+  directories under `~/working/azd-agents-shared` are left intact. The down hook
+  uses `timeout: 900` and `continue_on_error: true`.
 - **`pre` precondition guard (Tier 2 reuse)** — `2.01-`…`2.18` print a clear "run
   2.00-setup first" warning if the shared agent isn't deployed (non-fatal).
-- **`post` cleanup** — `2.99-teardown-down` clears the shared working dir after the
-  in-session `azd down` completes.
+- **`post` cleanup** — `2.99-teardown-down` clears the current run's
+  `{shared_agent_name}` project directory after the in-session `azd down`
+  completes, leaving other run directories intact.
 
 ## Fixtures
 
@@ -600,17 +602,18 @@ be run back to back in any order within a tier:
 - Tier 0/1 stateful scenarios **pre-wipe** their own `cwd`. Cleanup is pre-wipe
   **only** (no `post` delete), so the generated scaffold stays on disk for
   inspection after a run while the next run still starts clean.
-- The shared Tier 2 dir is reset by `2.00-setup`'s `pre` hook, which **downs any
-  leftover deployed project first** to avoid orphaning live Azure resources (this
-  also sidesteps the resource-name hash collision behind
-  [#8360](https://github.com/Azure/azure-dev/issues/8360)). `2.99-teardown-down`
-  additionally clears the dir in a `post` hook.
+- The current Tier 2 run's `{shared_agent_name}` project dir is reset by
+  `2.00-setup`'s `pre` hook, which **downs a deployed project at that exact path
+  first** (this also sidesteps the resource-name hash collision behind
+  [#8360](https://github.com/Azure/azure-dev/issues/8360)). Other run directories
+  are preserved. `2.99-teardown-down` additionally clears the current run's
+  project dir in a `post` hook.
 - Read-only scenarios (`version`, `--help`, `sample list`) run in `/tmp`, hold no
   state, and declare no hooks.
 
-> If a Tier 2 run is interrupted before `2.99-teardown`, just re-run
-> `2.00-setup-deploy-shared-agent` — its `pre` hook downs any live project in the
-> shared dir before redeploying, so resources won't be orphaned.
+> If a Tier 2 run is interrupted before `2.99-teardown`, run
+> `2.99-teardown-down` with that run's original `shared_agent_name`. The cleanup
+> deliberately does not remove directories belonging to other runs.
 
 ## Notes
 

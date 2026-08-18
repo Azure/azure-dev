@@ -15,10 +15,11 @@ goals:
   - "Take a screenshot of the completed teardown."
   - "Report a finding if teardown fails, leaves orphaned resources, or hangs."
 
-# After the in-session teardown, clear the shared working dir so the next full
-# Tier 2 pass starts clean. continue_on_error so a missing dir is not fatal.
+# After the in-session teardown, clear only this run's project directory.
+# Other run directories under azd-agents-shared are left intact.
+# continue_on_error so a missing dir is not fatal.
 post:
-  - run: "rm -rf ~/working/azd-agents-shared"
+  - run: "rm -rf ~/working/azd-agents-shared/{shared_agent_name}"
     cwd: "~/working"
-    name: "clear the shared working dir"
+    name: "clear the current run project dir"
     continue_on_error: true

@@ -13,8 +13,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// azd answers "no default environment" and "no such key" with plain Go errors.
-// Its interceptor only rewrites errors carrying a suggestion or an auth
+// azd answers "no default environment" and "no such environment" with plain Go
+// errors. Its interceptor only rewrites errors carrying a suggestion or an auth
 // failure, so everything else reaches the client as Unknown. Reading Unknown as
 // a failure would stop a project with no environment selected from ever
 // reaching the global config or the host variable.
@@ -23,6 +23,7 @@ func TestUnansweredHostedSourcesLetTheCascadeCarryOn(t *testing.T) {
 		"no daemon at all":       status.Error(codes.Unavailable, "connection refused"),
 		"nothing under that key": status.Error(codes.NotFound, "key not found"),
 		"no default environment": status.Error(codes.Unknown, "default environment not found"),
+		"no such environment":    status.Error(codes.Unknown, "'dev': environment not found"),
 		"wrapped in context": fmt.Errorf("reading the environment: %w",
 			status.Error(codes.Unknown, "default environment not found")),
 	} {
@@ -48,6 +49,14 @@ func TestAFailureToAnswerIsReportedRatherThanSkipped(t *testing.T) {
 		// A bare error carries no status at all, so it never travelled the wire
 		// as an absence the daemon reported.
 		"not a status at all": errors.New("something local went wrong"),
+		// Unknown is not absence on its own. azd passes any error carrying no
+		// suggestion and no auth failure through untouched, so a failure to
+		// load project state or the environment manager arrives under the same
+		// code as "no default environment".
+		"project state would not load": status.Error(codes.Unknown,
+			"loading project state: open azure.yaml: permission denied"),
+		"the environment manager broke": status.Error(codes.Unknown,
+			"creating environment manager: no such host"),
 		"wrapped expiry": fmt.Errorf("reading the environment: %w",
 			status.Error(codes.Unauthenticated, "expired")),
 		"nested twice over": fmt.Errorf("outer: %w",

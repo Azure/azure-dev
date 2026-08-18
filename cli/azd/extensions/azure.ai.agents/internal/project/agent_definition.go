@@ -13,6 +13,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 
@@ -133,6 +134,40 @@ type AgentDefinitionInline struct {
 	AgentCard            *agent_yaml.AgentCard             `json:"agentCard,omitempty"`
 	CodeConfiguration    *agent_yaml.CodeConfiguration     `json:"codeConfiguration,omitempty"`
 	Policies             []agent_yaml.Policy               `json:"policies,omitempty"`
+	SessionConfiguration *agent_yaml.SessionConfiguration  `json:"sessionConfiguration,omitempty"`
+
+	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
+	// workflow entries are byte-for-byte unchanged.
+	ModelType    agent_yaml.VoiceModelType `json:"modelType,omitempty"`
+	Model        *agent_yaml.Model         `json:"model,omitempty"`
+	Instructions *string                   `json:"instructions,omitempty"`
+	Voice        *string                   `json:"voice,omitempty"`
+	Store        *bool                     `json:"store,omitempty"`
+}
+
+// voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
+// written to azure.yaml. Voice agents carry no container/image/code config.
+func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInline {
+	return AgentDefinitionInline{
+		AgentDefinition: va.AgentDefinition,
+		ModelType:       va.ModelType,
+		Model:           va.Model,
+		Instructions:    va.Instructions,
+		Voice:           va.Voice,
+		Store:           va.Store,
+	}
+}
+
+// toVoiceAgent rebuilds an agent_yaml.VoiceAgent from the inline definition.
+func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
+	return agent_yaml.VoiceAgent{
+		AgentDefinition: d.AgentDefinition,
+		ModelType:       d.ModelType,
+		Model:           d.Model,
+		Instructions:    d.Instructions,
+		Voice:           d.Voice,
+		Store:           d.Store,
+	}
 }
 
 // agentDefinitionToInline splits a ContainerAgent into the inline definition,
@@ -141,12 +176,13 @@ type AgentDefinitionInline struct {
 // returned separately so the caller can place them on their respective homes.
 func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInline, *ContainerSettings, string) {
 	inline := AgentDefinitionInline{
-		AgentDefinition:   ca.AgentDefinition,
-		Protocols:         ca.Protocols,
-		AgentEndpoint:     ca.AgentEndpoint,
-		AgentCard:         ca.AgentCard,
-		CodeConfiguration: ca.CodeConfiguration,
-		Policies:          ca.Policies,
+		AgentDefinition:      ca.AgentDefinition,
+		Protocols:            ca.Protocols,
+		AgentEndpoint:        ca.AgentEndpoint,
+		AgentCard:            ca.AgentCard,
+		CodeConfiguration:    ca.CodeConfiguration,
+		Policies:             ca.Policies,
+		SessionConfiguration: ca.SessionConfiguration,
 	}
 
 	var container *ContainerSettings
@@ -188,6 +224,7 @@ func (d AgentDefinitionInline) toContainerAgent(
 		AgentCard:            d.AgentCard,
 		CodeConfiguration:    d.CodeConfiguration,
 		Policies:             d.Policies,
+		SessionConfiguration: d.SessionConfiguration,
 	}
 
 	if container != nil && container.Resources != nil {
@@ -850,7 +887,85 @@ func parseContainerAgentYAML(data []byte) (agent_yaml.ContainerAgent, bool, erro
 	return agentDef, true, nil
 }
 
-// AgentDefinitionToServiceProperties marshals a ContainerAgent into the inline
+// voiceAgentFromDefinitionFile reads an agent definition file (an
+// AGENT_DEFINITION_PATH override) and reports whether it declares a prompt-voice
+// agent, returning the parsed VoiceAgent when it does. A non-voice (e.g. hosted)
+// definition returns found=false with no error so the caller can fall through to
+// the container path, mirroring VoiceAgentFromResolvedService's contract. This
+// lets an explicit override drive the voice/container dispatch with the same
+// precedence loadContainerAgentDefinition documents.
+func voiceAgentFromDefinitionFile(path string) (agent_yaml.VoiceAgent, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("failed to read agent manifest file: %s", err),
+			"verify the agent.yaml file exists and is readable",
+		)
+	}
+
+	var genericTemplate map[string]any
+	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
+		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid: %s", err),
+			"verify the agent.yaml has valid YAML syntax",
+		)
+	}
+
+	if kind, _ := genericTemplate["kind"].(string); kind != string(agent_yaml.AgentKindPromptVoice) {
+		// Not a voice definition; let the container path handle the override.
+		return agent_yaml.VoiceAgent{}, false, nil
+	}
+
+	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
+		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent.yaml is not valid: %s", err),
+			"fix the agent.yaml file according to the schema",
+		)
+	}
+
+	var va agent_yaml.VoiceAgent
+	if err := yaml.Unmarshal(data, &va); err != nil {
+		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid for a voice agent: %s", err),
+			"fix the agent.yaml to match the prompt-voice schema",
+		)
+	}
+
+	return va, true, nil
+}
+
+// resolveVoiceAgentForDeploy determines whether the service should deploy a
+// prompt-voice agent, honoring the AGENT_DEFINITION_PATH override precedence: an
+// explicit override file wins over the service entry (matching
+// loadContainerAgentDefinition). When agentDefinitionPath is empty the resolved
+// service entry is inspected instead. A non-voice result returns found=false so
+// the caller falls through to the container deploy path unchanged.
+//
+// The voice/non-voice decision is delegated to the shared agentkind lookup so
+// deploy, Endpoints, and next-step all classify a service identically; this
+// function then parses the definition from whichever source agentkind matched.
+func resolveVoiceAgentForDeploy(
+	agentDefinitionPath string,
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (agent_yaml.VoiceAgent, bool, error) {
+	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot, agentDefinitionPath)
+	if err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
+	if !isVoice {
+		return agent_yaml.VoiceAgent{}, false, nil
+	}
+	if agentDefinitionPath != "" {
+		return voiceAgentFromDefinitionFile(agentDefinitionPath)
+	}
+	return VoiceAgentFromResolvedService(svc, projectRoot)
+}
+
 // service-level properties (and the `container` CPU/memory config) used by the
 // unified azure.ai.agent service entry. The returned struct is merged into the
 // service entry's AdditionalProperties at init time.
@@ -887,4 +1002,75 @@ func AgentDefinitionToServiceProperties(
 	maps.Copy(defStruct.Fields, cfgStruct.GetFields())
 
 	return defStruct, nil
+}
+
+// VoiceAgentDefinitionToServiceProperties marshals a VoiceAgent (kind:
+// prompt-voice) into the inline service-level properties written to azure.yaml.
+// Voice agents carry no container/image/code config, so — unlike the container
+// writer — there is no `container` block to merge. The optional extra config is
+// still merged so provision-time settings (env, etc.) round-trip.
+func VoiceAgentDefinitionToServiceProperties(
+	va agent_yaml.VoiceAgent,
+	extra *ServiceTargetAgentConfig,
+) (*structpb.Struct, error) {
+	inline := voiceAgentDefinitionToInline(va)
+
+	defStruct, err := MarshalStruct(&inline)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling voice agent definition: %w", err)
+	}
+
+	if extra != nil {
+		cfgStruct, err := MarshalStruct(extra)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling voice agent service config: %w", err)
+		}
+		maps.Copy(defStruct.Fields, cfgStruct.GetFields())
+	}
+
+	return defStruct, nil
+}
+
+// VoiceAgentFromResolvedService resolves a prompt-voice agent definition from a
+// service entry's inline (preferred) or legacy config properties. It returns the
+// parsed VoiceAgent and whether a prompt-voice definition was found. Non-voice
+// (or absent) definitions return found=false with no error so callers can fall
+// through to the container path unchanged.
+func VoiceAgentFromResolvedService(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (agent_yaml.VoiceAgent, bool, error) {
+	candidates := []*structpb.Struct{
+		svc.GetAdditionalProperties(),
+		svc.GetConfig(),
+	}
+	for _, props := range candidates {
+		if props == nil || len(props.GetFields()) == 0 {
+			continue
+		}
+		resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
+		if err != nil {
+			return agent_yaml.VoiceAgent{}, false, err
+		}
+		if !structHasKind(resolved) {
+			continue
+		}
+		if resolved.GetFields()["kind"].GetStringValue() !=
+			string(agent_yaml.AgentKindPromptVoice) {
+			// A definition is present but it is not a voice agent.
+			return agent_yaml.VoiceAgent{}, false, nil
+		}
+
+		var inline AgentDefinitionInline
+		if err := UnmarshalStruct(resolved, &inline); err != nil {
+			return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("voice agent service config is not valid: %s", err),
+				"re-run `azd ai agent init` to regenerate the agent service entry",
+			)
+		}
+		return inline.toVoiceAgent(), true, nil
+	}
+
+	return agent_yaml.VoiceAgent{}, false, nil
 }

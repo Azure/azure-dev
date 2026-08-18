@@ -17,8 +17,9 @@ OpenTelemetry span name or event name.
 | `AgentTroubleshootEvent` | `agent.troubleshoot` | Agent troubleshooting event |
 | `ExtensionRunEvent` | `ext.run` | Extension execution event |
 | `ExtensionInstallEvent` | `ext.install` | Extension install/upgrade event |
-| `ExtensionUpgradeEvent` | `ext.upgrade` | Single extension upgrade attempt |
+| `ExtensionUpdateEvent` | `ext.update` | Single extension update attempt |
 | `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
+| `ExtensionUsageEvent` | `ext.usage` | One usage event reported by an extension through the telemetry service |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |
 | `CopilotSessionEvent` | `copilot.session` | Copilot session lifecycle event |
 | `ProvisionValidationEvent` | `validation.provision` | Local provision validation outcome |
@@ -211,16 +212,57 @@ not emitted by azd spans.
 | Extension ID | `extension.id` | SystemMetadata | FeatureInsight | |
 | Extension version | `extension.version` | SystemMetadata | FeatureInsight | |
 | Extension installed | `extension.installed` | SystemMetadata | FeatureInsight | List of installed extensions, each formatted `id@version` |
-| Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an upgrade |
-| Extension version to | `extension.version.to` | SystemMetadata | FeatureInsight | Target version after an upgrade |
-| Extension source | `extension.source` | SystemMetadata | FeatureInsight | Registry source used for the upgrade |
+| Installed extension source category | `extension.installed.source.category` | SystemMetadata | FeatureInsight | List formatted `id@category`; categories: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
+| Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an update |
+| Extension version to | `extension.version.to` | SystemMetadata | FeatureInsight | Target version after an update |
+| Extension source category | `extension.source.category` | SystemMetadata | FeatureInsight | Allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Extension source kind | `extension.source.kind` | SystemMetadata | FeatureInsight | Allowed values: `none`, `registered`, `location` |
-| Extension source from | `extension.source.from` | SystemMetadata | FeatureInsight | Registry source before a promotion |
-| Extension source to | `extension.source.to` | SystemMetadata | FeatureInsight | Registry source after a promotion |
-| Upgrade duration | `extension.upgrade.duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — time in ms for one upgrade |
-| Upgrade outcome | `extension.upgrade.outcome` | SystemMetadata | FeatureInsight | Upgrade result status |
-| Dependency of | `extension.dependency_of` | SystemMetadata | FeatureInsight | Parent extension for a dependency upgrade |
-| Dependency upgrade count | `extension.dependency_upgrade_count` | SystemMetadata | FeatureInsight | Recursive dependency upgrade count |
+| Extension source category from | `extension.source.category.from` | SystemMetadata | FeatureInsight | Category before a promotion; allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
+| Extension source category to | `extension.source.category.to` | SystemMetadata | FeatureInsight | Category after a promotion; allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
+| Update duration | `extension.update.duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — time in ms for one update |
+| Update outcome | `extension.update.outcome` | SystemMetadata | FeatureInsight | Update result status |
+| Dependency of | `extension.dependency_of` | SystemMetadata | FeatureInsight | Parent extension for a dependency update |
+| Dependency update count | `extension.dependency_update_count` | SystemMetadata | FeatureInsight | Recursive dependency update count |
+
+#### Extension-contributed usage attributes
+
+Extensions do not have individual fields listed in this document. An extension
+reports a named event with an arbitrary attribute map, and `azd` records it on
+an `ext.usage` span alongside `extension.id`, `extension.version`,
+`extension.source`, and `extension.event`.
+
+`azd` core carries no product-specific telemetry semantics for these fields.
+The following rules are enforced by the host and are what this schema
+guarantees about the whole class:
+
+| Rule | Enforcement |
+|------|-------------|
+| Eligibility | Only extensions whose configured `azd` source matches the verified official registry name, type, and normalized URL produce `ext.usage` spans. A call from any other source succeeds but is dropped without recording |
+| Key namespace | Every caller-supplied key is prefixed with `ext.` by the host, so it can never overwrite a host-owned attribute |
+| Size | At most 32 attributes per event; event name and keys at most 128 UTF-8 bytes; values at most 512 UTF-8 bytes |
+| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that are dropped without recording |
+| Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
+| Classification | Always `SystemMetadata` |
+| Purpose | Always `FeatureInsight` |
+| Trust | `extension.id` and `extension.version` are derived from host-signed claims; `extension.source` and eligibility are checked against the installed record and verified source config, never from the request |
+| Review | Extension telemetry is reviewed when the extension is admitted to the official registry, under the same documentation, classification, and privacy rules as core fields. The eligibility rule above is what ties recording to that review |
+
+Because `ext.usage` spans share the command's trace, they join the originating
+command in Kusto on `operation_Id`. See
+[ADR-001](../../architecture/adr-001-extension-telemetry-events.md) for
+the design rationale and
+[Extension Telemetry](../../../cli/azd/docs/extensions/extension-telemetry.md)
+for the author-facing rules.
+
+#### What this class does and does not guarantee
+
+The installed extension identity and source information originate from local
+`azd` configuration. Eligibility is determined from the verified install
+source and is not a cryptographic provenance guarantee.
+
+When governing this data, treat `(extension.id, extension.version, key)` as
+the authoritative filter rather than assuming the client enforced the reviewed
+set on its own.
 
 ### Update
 
@@ -329,8 +371,8 @@ remain defined to support a possible future redesign without changing the teleme
 | Install failure count | `tool.install.failure_count` | SystemMetadata | FeatureInsight | **Measurement** — number of tools that failed in a batch |
 | Install failed IDs | `tool.install.failed_ids` | SystemMetadata | FeatureInsight | Comma-separated built-in tool IDs whose install/upgrade failed. Per-tool error messages are intentionally not captured |
 | Install duration | `tool.install.duration_ms` | SystemMetadata | FeatureInsight | **Measurement** — total install/upgrade duration in ms |
-| Upgrade from version | `tool.upgrade.from_version` | SystemMetadata | FeatureInsight | Prior version (single-target upgrades) |
-| Upgrade to version | `tool.upgrade.to_version` | SystemMetadata | FeatureInsight | New version after a successful upgrade |
+| Update from version | `tool.update.from_version` | SystemMetadata | FeatureInsight | Prior version (single-target updates) |
+| Update to version | `tool.update.to_version` | SystemMetadata | FeatureInsight | New version after a successful update |
 | Updates available | `tool.check.updates_available` | SystemMetadata | FeatureInsight | **Measurement** — number of installed tools with an available upgrade |
 
 ### Provision Validation

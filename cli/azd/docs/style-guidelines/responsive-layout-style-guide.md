@@ -51,7 +51,7 @@ Each column is a `PrettyColumn` (a `Column` plus responsive metadata). Use the c
 | Status text | Meaning | Color helper |
 | --- | --- | --- |
 | `Installed` / `Up to date` | Present and current | `WithSuccessFormat` |
-| `Upgrade available` | Installed but outdated | `WithWarningFormat` |
+| `Update available` | Installed but outdated | `WithWarningFormat` |
 | `Not installed` | Absent (not an error) | `WithGrayFormat` |
 
 ## Layout Examples

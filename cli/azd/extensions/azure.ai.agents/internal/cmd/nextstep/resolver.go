@@ -157,10 +157,11 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		})
 	}
 
-	// Placeholder fix-ups always come first when present: they are broken
-	// state in azure.yaml itself and block both `run` and `deploy`. The
-	// user has to edit azure.yaml (or define a matching parameter in
-	// agent.manifest.yaml) — `azd env set` cannot reach them.
+	// Placeholder fix-ups come first when present: they are
+	// broken state in the agent configuration and block both `run` and
+	// `deploy`. The user has to edit the agent configuration (or define a
+	// matching parameter in agent.manifest.yaml) — `azd env set` cannot
+	// reach them.
 	hasPlaceholders := len(state.UnresolvedPlaceholders) > 0
 	if hasPlaceholders {
 		placeholders := slices.Clone(state.UnresolvedPlaceholders)
@@ -168,8 +169,8 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		limit := min(len(placeholders), maxFixupLines)
 		for _, name := range placeholders[:limit] {
 			out = append(out, Suggestion{
-				Command:     fmt.Sprintf("edit azure.yaml: replace {{%s}} with the actual value", name),
-				Description: "azure.yaml has unresolved manifest placeholders",
+				Command:     fmt.Sprintf("edit agent configuration: replace {{%s}} with the actual value", name),
+				Description: "agent configuration has unresolved manifest placeholders",
 				Priority:    priority,
 			})
 			priority++
@@ -246,7 +247,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 			for _, key := range manual[:limit] {
 				out = append(out, Suggestion{
 					Command:     fmt.Sprintf("azd env set %s <value>", key),
-					Description: "referenced by azure.yaml but not set in azd env",
+					Description: "referenced by agent configuration but not set in azd env",
 					Priority:    priority,
 				})
 				priority++
@@ -256,9 +257,9 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		// for toolboxes, env-set for manual vars), the next productive
 		// command is `azd ai agent run` and the invoke-local secondary.
 		// Suppressed when placeholders are also unresolved because
-		// literal `{{NAME}}` values in agent.yaml still break the local
-		// agent — the user must finish the placeholder fix-ups first;
-		// the trailing `azd deploy` reminder still applies.
+		// literal `{{NAME}}` values in the agent configuration still
+		// break the local agent — the user must finish the placeholder
+		// fix-ups first; the trailing `azd deploy` reminder still applies.
 		if !hasPlaceholders {
 			out = append(out, Suggestion{
 				Command:     "azd ai agent run",

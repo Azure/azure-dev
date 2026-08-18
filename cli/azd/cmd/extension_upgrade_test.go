@@ -15,15 +15,22 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // ---------------------------------------------------------------------------
@@ -57,23 +64,23 @@ func TestUpgradeRetryCommand(t *testing.T) {
 	}{
 		{
 			name: "extension only",
-			want: "azd extension upgrade ext-a",
+			want: "azd extension update ext-a",
 		},
 		{
 			name:   "source",
 			source: "test",
-			want:   "azd extension upgrade ext-a --source test",
+			want:   "azd extension update ext-a --source test",
 		},
 		{
 			name:    "version",
 			version: "3.0.0",
-			want:    "azd extension upgrade ext-a --version 3.0.0",
+			want:    "azd extension update ext-a --version 3.0.0",
 		},
 		{
 			name:    "source and version",
 			source:  "test",
 			version: "3.0.0",
-			want:    "azd extension upgrade ext-a --source test --version 3.0.0",
+			want:    "azd extension update ext-a --source test --version 3.0.0",
 		},
 	}
 
@@ -209,7 +216,7 @@ func TestUpgradeOneExtension_InteractiveFailurePreservesRetryFlags(t *testing.T)
 
 	rendered := strings.Join(console.Output(), "\n")
 	require.Contains(t, rendered, result.Error.Error())
-	require.Contains(t, rendered, "azd extension upgrade ext-a --source test --version 3.0.0")
+	require.Contains(t, rendered, "azd extension update ext-a --source test --version 3.0.0")
 }
 
 func TestDisplayDependencyUpgradeResultsFailedSuggestion(t *testing.T) {
@@ -262,8 +269,8 @@ func TestDisplayDependencyUpgradeResultsChangesAndSkips(t *testing.T) {
 			{
 				ExtensionId: "skipped",
 				Status:      extensions.UpgradeStatusSkipped,
-				SkipReason:  "dependency upgrades disabled",
-				Suggestion:  "Retry without --no-dependency-upgrades.",
+				SkipReason:  "dependency updates disabled",
+				Suggestion:  "Retry without --no-dependency-updates.",
 			},
 		},
 		"  ",
@@ -272,13 +279,13 @@ func TestDisplayDependencyUpgradeResultsChangesAndSkips(t *testing.T) {
 	rendered := strings.Join(console.Output(), "\n")
 	require.Contains(t, rendered, "Downgraded downgraded dependency")
 	require.Contains(t, rendered, "Updated non-semver dependency")
-	require.Contains(t, rendered, "dependency upgrades disabled")
-	require.Contains(t, rendered, "Retry without --no-dependency-upgrades.")
+	require.Contains(t, rendered, "dependency updates disabled")
+	require.Contains(t, rendered, "Retry without --no-dependency-updates.")
 	require.Contains(
 		t,
 		console.Output(),
 		"  "+strings.Repeat(" ", len("(-) Skipped: "))+
-			"Retry without --no-dependency-upgrades.",
+			"Retry without --no-dependency-updates.",
 	)
 }
 
@@ -291,7 +298,7 @@ func TestDependencyChangeVerb(t *testing.T) {
 		toVersion   string
 		want        string
 	}{
-		{name: "upgrade", fromVersion: "1.0.0", toVersion: "2.0.0", want: "Upgraded"},
+		{name: "update", fromVersion: "1.0.0", toVersion: "2.0.0", want: "Updated"},
 		{name: "downgrade", fromVersion: "2.0.0", toVersion: "1.0.0", want: "Downgraded"},
 		{name: "non-semver", fromVersion: "nightly", toVersion: "dev", want: "Updated"},
 	}
@@ -407,7 +414,7 @@ func TestUpgradeAction_ContextCancellation(t *testing.T) {
 	// All extensions should be marked as failed
 	require.Error(t, err)
 	require.NotNil(t, result)
-	assert.Contains(t, err.Error(), "extensions failed to upgrade")
+	assert.Contains(t, err.Error(), "extensions failed to update")
 
 	// Parse the JSON output to verify all have failed status
 	var report struct {
@@ -439,21 +446,28 @@ func TestUpgradeOneExtension(t *testing.T) {
 	const registryURL = "https://test.example.com/registry.json"
 
 	tests := []struct {
-		name           string
-		extensionId    string
-		installed      map[string]*extensions.Extension
-		registry       extensions.Registry
-		flags          extensionUpgradeFlags
-		wantStatus     extensions.UpgradeStatus
-		wantErr        string
-		wantErrSubstr  string
-		wantSkipReason string
+		name                   string
+		extensionId            string
+		installed              map[string]*extensions.Extension
+		registry               extensions.Registry
+		flags                  extensionUpgradeFlags
+		wantStatus             extensions.UpgradeStatus
+		wantErr                string
+		wantErrSubstr          string
+		wantSkipReason         string
+		wantFromSourceCategory extensions.SourceCategory
+		wantToSourceCategory   extensions.SourceCategory
 	}{
 		{
 			name:        "skip_already_up_to_date",
 			extensionId: "ext-a",
 			installed: map[string]*extensions.Extension{
-				"ext-a": {Id: "ext-a", Version: "1.0.0", Source: "test"},
+				"ext-a": {
+					Id:             "ext-a",
+					Version:        "1.0.0",
+					Source:         "test",
+					SourceCategory: extensions.SourceCategoryLocal,
+				},
 			},
 			registry: testRegistry(
 				testExtMeta("ext-a", "1.0.0", "test"),
@@ -461,8 +475,10 @@ func TestUpgradeOneExtension(t *testing.T) {
 			flags: extensionUpgradeFlags{
 				global: &internal.GlobalCommandOptions{NoPrompt: true},
 			},
-			wantStatus:     extensions.UpgradeStatusSkipped,
-			wantSkipReason: "already up to date",
+			wantStatus:             extensions.UpgradeStatusSkipped,
+			wantSkipReason:         "already up to date",
+			wantFromSourceCategory: extensions.SourceCategoryLocal,
+			wantToSourceCategory:   extensions.SourceCategoryOther,
 		},
 		{
 			name:        "skip_installed_is_newer",
@@ -483,14 +499,21 @@ func TestUpgradeOneExtension(t *testing.T) {
 			name:        "skipped_delisted_extension",
 			extensionId: "missing-ext",
 			installed: map[string]*extensions.Extension{
-				"missing-ext": {Id: "missing-ext", Version: "1.0.0", Source: "test"},
+				"missing-ext": {
+					Id:             "missing-ext",
+					Version:        "1.0.0",
+					Source:         "test",
+					SourceCategory: extensions.SourceCategoryDev,
+				},
 			},
 			registry: testRegistry(), // empty registry
 			flags: extensionUpgradeFlags{
 				global: &internal.GlobalCommandOptions{NoPrompt: true},
 			},
-			wantStatus:     extensions.UpgradeStatusSkipped,
-			wantSkipReason: "extension no longer available in any configured registry",
+			wantStatus:             extensions.UpgradeStatusSkipped,
+			wantSkipReason:         "extension no longer available in any configured registry",
+			wantFromSourceCategory: extensions.SourceCategoryDev,
+			wantToSourceCategory:   extensions.SourceCategoryDev,
 		},
 		{
 			name:        "failed_no_stored_or_main_source_match",
@@ -662,8 +685,147 @@ func TestUpgradeOneExtension(t *testing.T) {
 			if tt.wantSkipReason != "" {
 				assert.Equal(t, tt.wantSkipReason, result.SkipReason)
 			}
+			if tt.wantFromSourceCategory != "" {
+				assert.Equal(t, tt.wantFromSourceCategory, result.FromSourceCategory)
+			}
+			if tt.wantToSourceCategory != "" {
+				assert.Equal(t, tt.wantToSourceCategory, result.ToSourceCategory)
+			}
 		})
 	}
+}
+
+func TestExtensionLifecycleTelemetrySpans(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder))
+	previousProvider := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() { otel.SetTracerProvider(previousProvider) })
+
+	t.Run("UnresolvedUpgradeUsesPersistedCategory", func(t *testing.T) {
+		const registryURL = "https://private.example/registry.json"
+		const sourceName = "private-source"
+
+		mockContext := mocks.NewMockContext(t.Context())
+		manager, sourceManager := createUpgradeTestManager(
+			t,
+			mockContext,
+			map[string]*extensions.Extension{
+				"missing-ext": {
+					Id:             "missing-ext",
+					Version:        "1.0.0",
+					Source:         sourceName,
+					SourceCategory: extensions.SourceCategoryDev,
+				},
+			},
+			registryURL,
+			testRegistry(),
+		)
+		action := &extensionUpgradeAction{
+			args: []string{"missing-ext"},
+			flags: &extensionUpgradeFlags{
+				global: &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			formatter:        &output.JsonFormatter{},
+			writer:           &bytes.Buffer{},
+			console:          mockinput.NewMockConsole(),
+			sourceManager:    sourceManager,
+			extensionManager: manager,
+		}
+
+		result := action.upgradeOneExtension(t.Context(), "missing-ext", 0, nil, true)
+		require.Equal(t, extensions.UpgradeStatusSkipped, result.Status)
+
+		span := extensionEndedSpan(t, recorder, events.ExtensionUpdateEvent)
+		require.Equal(
+			t,
+			string(extensions.SourceCategoryDev),
+			extensionSpanAttribute(t, span.Attributes(), fields.ExtensionSourceCategory.Key).Value.AsString(),
+		)
+		for _, attr := range span.Attributes() {
+			require.NotContains(t, attr.Value.Emit(), sourceName)
+			require.NotContains(t, attr.Value.Emit(), registryURL)
+		}
+	})
+
+	t.Run("PromotionUsesFixedCategories", func(t *testing.T) {
+		emitPromotionEvent(
+			t.Context(),
+			"test.extension",
+			"1.0.0",
+			"1.1.0",
+			extensions.SourceCategoryDev,
+			extensions.SourceCategoryAzd,
+		)
+
+		span := extensionEndedSpan(t, recorder, events.ExtensionPromoteEvent)
+		require.Equal(
+			t,
+			string(extensions.SourceCategoryDev),
+			extensionSpanAttribute(t, span.Attributes(), fields.ExtensionSourceCategoryFrom.Key).Value.AsString(),
+		)
+		require.Equal(
+			t,
+			string(extensions.SourceCategoryAzd),
+			extensionSpanAttribute(t, span.Attributes(), fields.ExtensionSourceCategoryTo.Key).Value.AsString(),
+		)
+	})
+}
+
+func TestDisplayPromotionWarning(t *testing.T) {
+	t.Parallel()
+
+	console := mockinput.NewMockConsole()
+	action := &extensionUpgradeAction{console: console}
+	action.displayPromotionWarning(
+		t.Context(),
+		"Updating test.extension",
+		"test.extension",
+		"1.0.0",
+		"1.1.0",
+		"dev",
+		"azd",
+	)
+
+	require.Len(t, console.SpinnerOps(), 1)
+	require.Equal(t, input.StepWarning, console.SpinnerOps()[0].Format)
+	rendered := strings.Join(console.Output(), "\n")
+	require.Contains(t, rendered, "Updated test.extension")
+	require.Contains(t, rendered, "1.0.0")
+	require.Contains(t, rendered, "1.1.0")
+	require.Contains(t, rendered, "promoted from the dev registry")
+	require.Contains(t, rendered, "official azd registry")
+	require.Contains(t, rendered, "azd extension install test.extension --source dev")
+}
+
+func extensionEndedSpan(
+	t *testing.T,
+	recorder *tracetest.SpanRecorder,
+	name string,
+) tracesdk.ReadOnlySpan {
+	t.Helper()
+	for _, span := range recorder.Ended() {
+		if span.Name() == name {
+			return span
+		}
+	}
+	require.FailNow(t, "telemetry span not found", "name: %s", name)
+	return nil
+}
+
+func extensionSpanAttribute(
+	t *testing.T,
+	attributes []attribute.KeyValue,
+	key attribute.Key,
+) attribute.KeyValue {
+	t.Helper()
+	for _, attr := range attributes {
+		if attr.Key == key {
+			return attr
+		}
+	}
+	require.FailNow(t, "telemetry attribute not found", "key: %s", key)
+	return attribute.KeyValue{}
 }
 
 // TestUpgradeAction_MixedBatch tests a batch with some skip, some fail.

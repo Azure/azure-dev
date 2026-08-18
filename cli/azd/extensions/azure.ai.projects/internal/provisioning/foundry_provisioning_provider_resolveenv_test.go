@@ -144,6 +144,59 @@ func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {
 		"location should be persisted to the azd environment")
 }
 
+func TestResolveEnv_UsesVirtualEnvFromPreviousLayer(t *testing.T) {
+	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{}}
+	prompt := &resolveEnvStubPromptServer{}
+	client := newResolveEnvTestClient(t, env, prompt)
+
+	p := &FoundryProvisioningProvider{
+		azdClient: client,
+		isLayer:   true,
+		virtualEnv: map[string]string{
+			envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+			envKeyLocation:       "westus2",
+			envKeyFoundryRG:      "rg-platform-foundry",
+		},
+	}
+	require.NoError(t, p.resolveEnv(t.Context()))
+
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", p.subID)
+	assert.Equal(t, "westus2", p.location)
+	assert.Equal(t, "rg-platform-foundry", p.rgName)
+	assert.Zero(t, prompt.subscriptionN)
+	assert.Zero(t, prompt.locationN)
+}
+
+func TestResolveEnv_LoadsLayerResourceGroupOwnership(t *testing.T) {
+	const ownerID = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-platform-foundry"
+	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{
+		envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+		envKeyLocation:       "westus2",
+		envKeyFoundryRG:      "rg-platform-foundry",
+		envKeyFoundryRGOwner: ownerID,
+	}}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	p := &FoundryProvisioningProvider{azdClient: client, isLayer: true}
+
+	require.NoError(t, p.resolveEnv(t.Context()))
+	assert.Equal(t, ownerID, p.foundryRGOwnerID)
+}
+
+func TestResolveEnv_LayerDefaultResourceGroupIsNotPersistedOrOwned(t *testing.T) {
+	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{
+		envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+		envKeyLocation:       "westus2",
+	}}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+
+	p := &FoundryProvisioningProvider{azdClient: client, isLayer: true}
+	require.NoError(t, p.resolveEnv(t.Context()))
+
+	assert.Equal(t, "rg-foundry-layer-foundry", p.rgName)
+	assert.False(t, p.rgExplicit)
+	assert.NotContains(t, env.set, envKeyFoundryRG)
+}
+
 func TestResolveEnv_NoPromptSubscriptionReturnsActionableError(t *testing.T) {
 	// Under `--no-prompt` the azd host returns a "prompt required" error. The
 	// provider must surface an actionable suggestion naming the env var so CI
@@ -288,6 +341,29 @@ func TestResolveEnv_LocationReadErrorSurfaces(t *testing.T) {
 	var local *azdext.LocalError
 	require.ErrorAs(t, err, &local)
 	assert.Equal(t, exterrors.CodeEnvironmentValuesFailed, local.Code)
+}
+
+func TestResolveEnv_OptionalValueReadErrorsSurface(t *testing.T) {
+	for _, key := range []string{envKeyFoundryRG, envKeyFoundryRGOwner, envKeyProjectName, envKeyPrincipalID} {
+		t.Run(key, func(t *testing.T) {
+			env := &resolveEnvStubEnvServer{
+				envName: "foundry-layer",
+				get: map[string]string{
+					envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+					envKeyLocation:       "westus2",
+				},
+				getErr: map[string]error{key: status.Error(codes.Internal, "env read failed")},
+			}
+			client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			p := &FoundryProvisioningProvider{azdClient: client, isLayer: true}
+
+			err := p.resolveEnv(t.Context())
+			require.Error(t, err)
+			var local *azdext.LocalError
+			require.ErrorAs(t, err, &local)
+			assert.Equal(t, exterrors.CodeEnvironmentValuesFailed, local.Code)
+		})
+	}
 }
 
 func TestResolveEnv_EmptyLocationResponseReturnsError(t *testing.T) {

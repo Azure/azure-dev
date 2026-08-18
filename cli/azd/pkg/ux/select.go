@@ -337,10 +337,7 @@ func (p *Select) renderValidation(printer Printer) {
 }
 
 func (p *Select) renderMessage(printer Printer) {
-	printer.Fprintf("%s", output.WithHighLightFormat("? "))
-
-	// Message
-	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
+	renderPromptMessage(printer, p.options.Message)
 
 	// Cancelled
 	if p.cancelled {
@@ -355,9 +352,12 @@ func (p *Select) renderMessage(printer Printer) {
 
 	printer.Fprintln()
 
+	if !p.cancelled && !p.complete {
+		printer.Fprintln()
+	}
+
 	// Filter
 	if !p.cancelled && !p.complete && *p.options.EnableFiltering {
-		printer.Fprintln()
 		printer.Fprintf("  Filter: ")
 
 		if p.filter == "" {

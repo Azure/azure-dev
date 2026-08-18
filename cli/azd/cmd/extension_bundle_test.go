@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -63,6 +64,9 @@ func TestNormalizeBundleSourceName(t *testing.T) {
 		"ext_1.0.0":            "ext_1-0-0",
 		"weird@@name!!":        "weird-name",
 		"--leading-trailing--": "leading-trailing",
+		"_leading":             "leading",
+		"trailing_":            "trailing",
+		"___":                  "",
 		"UPPER":                "upper",
 	}
 
@@ -76,6 +80,30 @@ func TestBundleSourceName(t *testing.T) {
 
 	require.Equal(t, "my-ext_1-0-0", bundleSourceName("/tmp/My Ext_1.0.0.zip"))
 	require.Equal(t, "bundle", bundleSourceName("bundle.zip"))
+}
+
+func TestPrepareBundleInstall_LongNameUsesValidTransientSource(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newBundleInstallTestAction(t)
+	zipPath := makeBundleZip(t, []*extensions.ExtensionMetadata{
+		{
+			Id:          "test.ext",
+			DisplayName: "Test Extension",
+			Versions: []extensions.ExtensionVersion{
+				{Version: "1.0.0", Artifacts: map[string]extensions.ExtensionArtifact{
+					"linux/amd64": {URL: "artifacts/ext.tar.gz"},
+				}},
+			},
+		},
+	})
+	longPath := filepath.Join(filepath.Dir(zipPath), strings.Repeat("a", 100)+".zip")
+	require.NoError(t, os.Rename(zipPath, longPath))
+
+	require.NoError(t, action.prepareBundleInstall(t.Context(), longPath))
+	require.NoError(t, extensions.ValidateSourceName(action.bundleSourceName))
+	require.LessOrEqual(t, len(action.bundleSourceName), extensions.SourceNameMaxLength)
+	action.cleanupBundleInstall(t.Context())
 }
 
 func TestCleanupBundleInstall_RemovesTempDir(t *testing.T) {
@@ -202,7 +230,7 @@ func TestConfirmSourceChange(t *testing.T) {
 			`azure.ai.agents 1.0.0 is already installed from source "azd". Reinstall from bundle?`)
 	})
 
-	t.Run("UpgradeShowsTargetVersion", func(t *testing.T) {
+	t.Run("UpdateShowsTargetVersion", func(t *testing.T) {
 		console := mockinput.NewMockConsole()
 		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
 		action := newConfirmTestAction(console, false)
@@ -213,7 +241,7 @@ func TestConfirmSourceChange(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, proceed)
 		require.Contains(t, lastConfirmMessage(console),
-			`azure.ai.agents 1.0.0 is already installed from source "azd". Upgrade to 2.0.0 from bundle?`)
+			`azure.ai.agents 1.0.0 is already installed from source "azd". Update to 2.0.0 from bundle?`)
 	})
 
 	t.Run("DowngradeDeclined", func(t *testing.T) {
@@ -324,9 +352,9 @@ func TestVersionTransitionVerb(t *testing.T) {
 		expected  string
 	}{
 		{"1.0.0", "1.0.0", "Reinstall"},
-		{"1.0.0", "2.0.0", "Upgrade to 2.0.0"},
+		{"1.0.0", "2.0.0", "Update to 2.0.0"},
 		{"1.0.0", "0.9.0", "Downgrade to 0.9.0"},
-		{"1.0.0-preview", "1.0.0", "Upgrade to 1.0.0"},
+		{"1.0.0-preview", "1.0.0", "Update to 1.0.0"},
 		// Non-semver tags have no defined ordering -> neutral verb.
 		{"nightly", "1.0.0", "Replace with 1.0.0"},
 		{"1.0.0", "nightly", "Replace with nightly"},
@@ -793,6 +821,7 @@ func TestCleanupBundleInstall_RepointsInstalledToBundle(t *testing.T) {
 	installed, err := action.extensionManager.GetInstalled(extensions.FilterOptions{Id: "test.ext"})
 	require.NoError(t, err)
 	require.Equal(t, extensions.BundleSourceName, installed.Source)
+	require.Equal(t, extensions.SourceCategoryBundle, installed.SourceCategory)
 }
 
 func TestExtensionList_SurfacesBundleInstalledExtension(t *testing.T) {

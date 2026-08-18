@@ -334,7 +334,7 @@ func TestNewUnsupportedRegistrySchemaError(t *testing.T) {
 	suggestionErr, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
 	require.True(t, ok)
 	require.Equal(t, schemaErr.Error(), suggestionErr.Message)
-	require.Contains(t, suggestionErr.Suggestion, "Upgrade azd")
+	require.Contains(t, suggestionErr.Suggestion, "Update azd")
 	require.Len(t, suggestionErr.Links, 1)
 	require.Equal(t, "https://aka.ms/azd/install", suggestionErr.Links[0].URL)
 }

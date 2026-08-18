@@ -1150,13 +1150,13 @@ func (i *installer) run(
 	}
 	verb := "Installing"
 	if upgrade {
-		verb = "Upgrading"
+		verb = "Updating"
 	}
 	title := fmt.Sprintf("%s %s", verb, tool.Name)
 	cfg.renderer.ShowSpinner(ctx, title, input.Step)
 	result, err := i.runToolInstall(ctx, tool, upgrade)
 	// On a successful upgrade, append the resulting version to the result
-	// line, mirroring skills — e.g. "Upgrading Azure CLI (v2.0.0)".
+	// line, mirroring skills — e.g. "Updating Azure CLI (v2.0.0)".
 	doneTitle := title
 	if upgrade && err == nil && result != nil && result.Success && result.InstalledVersion != "" {
 		doneTitle = fmt.Sprintf("%s (v%s)", title, result.InstalledVersion)
@@ -1404,7 +1404,7 @@ func (i *installer) runSkill(
 	//    latest, which the result line reports.
 	verb := "Installing"
 	if upgrade {
-		verb = "Upgrading"
+		verb = "Updating"
 	}
 	var (
 		succeeded   []string
@@ -1542,7 +1542,7 @@ func (i *installer) resolveSkillTargets(
 					continue
 				}
 				fmt.Fprintln(os.Stderr, output.WithWarningFormat(
-					"Skipping upgrade for %s: %s is not installed on it.",
+					"Skipping update for %s: %s is not installed on it.",
 					agent.DisplayName, tool.Name,
 				))
 			}
@@ -1553,7 +1553,7 @@ func (i *installer) resolveSkillTargets(
 				}
 				return nil, fmt.Errorf(
 					"%s is not installed on any available agent (%s); "+
-						"nothing to upgrade",
+						"nothing to update",
 					tool.Name, strings.Join(onPathNames, ", "),
 				)
 			}
@@ -1588,7 +1588,7 @@ func (i *installer) resolveSkillTargets(
 					"%s is not installed on any available agent",
 					tool.Name,
 				),
-				Message: "Cannot upgrade " + tool.Name,
+				Message: "Cannot update " + tool.Name,
 				Suggestion: fmt.Sprintf(
 					"%s is not installed yet. Install it first:\n\n"+
 						"    azd tool install %s",

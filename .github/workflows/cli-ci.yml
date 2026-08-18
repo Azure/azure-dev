@@ -73,6 +73,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: cli/azd/go.mod
-      - name: Run mage helper tests (resolveCoverageFile, resolveBaselineFile, resolveChangedFilesForDiff)
+      - name: Run mage helper tests
         working-directory: cli/azd
-        run: go test -tags mage -run '^TestResolve' -v .
+        run: go test -tags mage -run '^Test(Resolve|DependencyVersion)' -v .

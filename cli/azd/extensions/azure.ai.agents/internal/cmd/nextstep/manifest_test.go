@@ -173,7 +173,12 @@ func TestAssembleState_ManifestWalker_RejectsTraversal(t *testing.T) {
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "../outside"},
+				"echo": {
+					Name:                 "echo",
+					Host:                 agentHost,
+					RelativePath:         "../outside",
+					AdditionalProperties: mustStruct(t, map[string]any{"kind": "hostedAgent"}),
+				},
 			},
 		},
 	}

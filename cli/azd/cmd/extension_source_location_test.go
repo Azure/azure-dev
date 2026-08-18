@@ -131,7 +131,7 @@ func TestExtensionList_UnknownRegisteredNameErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestExtensionList_NormalizedRegisteredSourceName(t *testing.T) {
+func TestExtensionList_InvalidSourceAliasErrors(t *testing.T) {
 	t.Parallel()
 
 	mockContext, manager, sourceManager := newSourceLocationTestManager(t)
@@ -153,12 +153,7 @@ func TestExtensionList_NormalizedRegisteredSourceName(t *testing.T) {
 	}
 
 	_, err := action.Run(t.Context())
-	require.NoError(t, err)
-
-	var rows []extensionListItem
-	require.NoError(t, json.Unmarshal(buf.Bytes(), &rows))
-	require.Len(t, rows, 1)
-	require.Equal(t, "my-source", rows[0].Source)
+	require.ErrorIs(t, err, extensions.ErrSourceNameInvalid)
 }
 
 func TestExtensionList_DirectRelativeFileSource(t *testing.T) {
@@ -233,7 +228,7 @@ func TestExtensionShow_DirectUrlSource(t *testing.T) {
 	requireLocationNotRegistered(t, sourceManager, sourceLocationRegistryURL)
 }
 
-func TestExtensionShow_NormalizedRegisteredSourceName(t *testing.T) {
+func TestExtensionShow_InvalidSourceAliasErrors(t *testing.T) {
 	t.Parallel()
 
 	mockContext, manager, sourceManager := newSourceLocationTestManager(t)
@@ -258,7 +253,7 @@ func TestExtensionShow_NormalizedRegisteredSourceName(t *testing.T) {
 	}
 
 	_, err := action.Run(t.Context())
-	require.NoError(t, err)
+	require.ErrorIs(t, err, extensions.ErrSourceNameInvalid)
 }
 
 func TestExtensionShow_UnknownRegisteredNameErrors(t *testing.T) {

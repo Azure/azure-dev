@@ -892,7 +892,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--infra'],
-									description: 'Eject infrastructure-as-code from azure.yaml into ./infra/. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets infra.provider: terraform; --infra=bicep is explicit Bicep. When azure.yaml already declares a Foundry project service, runs as a standalone eject and skips the init prompts; otherwise init runs first and the eject follows it.',
+									description: 'Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and Foundry files are generated as a separate infra/foundry layer. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets the Foundry layer provider to terraform; Bicep keeps the microsoft.foundry provider. --infra=bicep is explicit Bicep. When azure.yaml already declares a Foundry project service, runs as a standalone eject and skips the init prompts; otherwise init runs first and the eject follows it.',
 									args: [
 										{
 											name: 'infra',
@@ -910,7 +910,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--model'],
-									description: 'Name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence',
+									description: 'Name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence.',
 									args: [
 										{
 											name: 'model',
@@ -1442,6 +1442,91 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['pack'],
+							description: 'Build a ready-to-sideload Teams app package for an activity agent.',
+							options: [
+								{
+									name: ['--app-version'],
+									description: 'Version stamped into the Teams app manifest',
+									args: [
+										{
+											name: 'app-version',
+										},
+									],
+								},
+								{
+									name: ['--display-name'],
+									description: 'Display name for the Teams app (defaults to the agent name)',
+									args: [
+										{
+											name: 'display-name',
+										},
+									],
+								},
+								{
+									name: ['--output-dir'],
+									description: 'Directory to write appPackage.zip to (defaults to the agent source directory)',
+									args: [
+										{
+											name: 'output-dir',
+										},
+									],
+								},
+								{
+									name: ['--scope'],
+									description: 'Publish scope for the package (personal: per-user sideload (no admin approval required); shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval))',
+									args: [
+										{
+											name: 'scope',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['publish'],
+							description: 'Publish an activity agent as a Teams app to the Microsoft 365 store.',
+							options: [
+								{
+									name: ['--app-version'],
+									description: 'Version stamped into the Teams app manifest',
+									args: [
+										{
+											name: 'app-version',
+										},
+									],
+								},
+								{
+									name: ['--display-name'],
+									description: 'Display name for the Teams app (defaults to the agent name)',
+									args: [
+										{
+											name: 'display-name',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'none'],
+										},
+									],
+								},
+								{
+									name: ['--scope'],
+									description: 'Publish scope (shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval; alias: org))',
+									args: [
+										{
+											name: 'scope',
 										},
 									],
 								},
@@ -5958,7 +6043,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--name', '-n'],
-									description: 'The name of the extension source',
+									description: 'The source name: 1-64 lowercase letters, digits, hyphens, or underscores.',
 									args: [
 										{
 											name: 'name',
@@ -6018,20 +6103,20 @@ const completionSpec: Fig.Spec = {
 					},
 				},
 				{
-					name: ['upgrade'],
-					description: 'Upgrade installed extensions to the latest version.',
+					name: ['update', 'upgrade'],
+					description: 'Update installed extensions to the latest version.',
 					options: [
 						{
 							name: ['--all'],
-							description: 'Upgrade all installed extensions',
+							description: 'Update all installed extensions',
 						},
 						{
-							name: ['--no-dependency-upgrades'],
-							description: 'Do not upgrade dependencies when upgrading an extension that has dependencies',
+							name: ['--no-dependency-updates'],
+							description: 'Do not update dependencies when updating an extension that has dependencies',
 						},
 						{
 							name: ['--source', '-s'],
-							description: 'The registered source name or registry location (URL or file path) to use for upgrades.',
+							description: 'The registered source name or registry location (URL or file path) to use for updates.',
 							args: [
 								{
 									name: 'source',
@@ -6040,7 +6125,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--version', '-v'],
-							description: 'The version of the extension to upgrade to',
+							description: 'The version of the extension to update to',
 							args: [
 								{
 									name: 'version',
@@ -6524,7 +6609,7 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['check'],
-					description: 'Check for tool upgrades.',
+					description: 'Check for tool updates.',
 				},
 				{
 					name: ['install'],
@@ -6594,12 +6679,12 @@ const completionSpec: Fig.Spec = {
 					},
 				},
 				{
-					name: ['upgrade'],
-					description: 'Upgrade installed tools.',
+					name: ['update', 'upgrade'],
+					description: 'Update installed tools.',
 					options: [
 						{
 							name: ['--agent'],
-							description: 'Upgrade the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
+							description: 'Update the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
 							isRepeatable: true,
 							args: [
 								{
@@ -6609,11 +6694,11 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--all'],
-							description: 'Upgrade all installed tools',
+							description: 'Update all installed tools',
 						},
 						{
 							name: ['--dry-run'],
-							description: 'Preview what would be upgraded without making changes',
+							description: 'Preview what would be updated without making changes',
 						},
 					],
 					args: {
@@ -6708,7 +6793,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--capabilities'],
-							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider,framework-service-provider,metadata,provisioning-provider).',
+							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider,framework-service-provider,metadata,provisioning-provider,validation-provider).',
 							isRepeatable: true,
 							args: [
 								{
@@ -6741,7 +6826,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--language'],
-							description: 'The programming language for the extension (go, dotnet, javascript, python).',
+							description: 'The programming language for the extension (go (recommended), dotnet, javascript, python).',
 							args: [
 								{
 									name: 'language',

@@ -1,5 +1,5 @@
 
-Check for tool upgrades.
+Check for tool updates.
 
 Usage
   azd tool check [flags]

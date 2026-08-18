@@ -34,16 +34,26 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	instructions := "Route callers to the right team."
 	voice := "alloy"
 	store := true
+	rate := 16000
+	speed := 1.1
 	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindPromptVoice,
 			Name: "voice-agent",
 		},
-		ModelType:    agent_yaml.VoiceModelTypeSelfDeployed,
-		Model:        &agent_yaml.Model{Id: "my-realtime-deployment"},
-		Instructions: &instructions,
-		Voice:        &voice,
-		Store:        &store,
+		ModelType:        agent_yaml.VoiceModelTypeSelfDeployed,
+		Model:            &agent_yaml.Model{Id: "my-realtime-deployment"},
+		Instructions:     &instructions,
+		Voice:            &voice,
+		StructuredInputs: map[string]any{"persona": map[string]any{"type": "string"}},
+		Audio: &agent_yaml.VoiceAudio{Output: &agent_yaml.VoiceAudioOutput{
+			Format: &agent_yaml.VoiceAudioFormat{Type: "audio/pcm", Rate: &rate},
+			Speed:  &speed,
+		}},
+		OutputModalities: []string{"audio", "text"},
+		Store:            &store,
+		Tools:            []map[string]any{{"type": "system", "name": "end_conversation"}},
+		Avatar:           map[string]any{"type": "video-avatar", "character": "lisa"},
 	}, nil)
 	require.NoError(t, err)
 
@@ -64,8 +74,20 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	require.Equal(t, instructions, *got.Instructions)
 	require.NotNil(t, got.Voice)
 	require.Equal(t, voice, *got.Voice)
+	require.NotNil(t, got.StructuredInputs["persona"])
+	require.NotNil(t, got.Audio)
+	require.NotNil(t, got.Audio.Output)
+	require.Equal(t, "audio/pcm", got.Audio.Output.Format.Type)
+	require.NotNil(t, got.Audio.Output.Format.Rate)
+	require.Equal(t, rate, *got.Audio.Output.Format.Rate)
+	require.NotNil(t, got.Audio.Output.Speed)
+	require.Equal(t, speed, *got.Audio.Output.Speed)
+	require.Equal(t, []string{"audio", "text"}, got.OutputModalities)
 	require.NotNil(t, got.Store)
 	require.Equal(t, store, *got.Store)
+	require.Len(t, got.Tools, 1)
+	require.Equal(t, "system", got.Tools[0]["type"])
+	require.Equal(t, "lisa", got.Avatar["character"])
 }
 
 func TestApplyAgentMetadata(t *testing.T) {

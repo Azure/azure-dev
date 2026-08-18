@@ -133,6 +133,84 @@ Details:
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
 
+## Prompt voice agent configuration
+
+Prompt voice agents keep their editable definition on the `azure.ai.agent`
+service entry in `azure.yaml`. A minimal managed model agent only needs `kind`,
+`model`, and `name`; advanced voice settings can be layered on the same service
+without changing hosted-agent projects.
+
+```yaml
+services:
+  voice-agent:
+    host: azure.ai.agent
+    project: src/voice-agent
+    kind: prompt-voice
+    name: voice-agent
+    modelType: managed # or self_deployed for BYOM
+    model:
+      id: gpt-realtime
+    instructions: You are {{agent_persona}}, a concise support agent.
+    structuredInputs:
+      agent_persona:
+        type: string
+        defaultValue: Ada
+    audio:
+      input:
+        format:
+          type: audio/pcm
+          rate: 24000
+        noiseReduction:
+          type: near_field
+        turnDetection:
+          type: server_vad
+          threshold: 0.5
+          prefixPaddingMs: 300
+          silenceDurationMs: 500
+          createResponse: true
+        transcription:
+          model: whisper-1
+          language: en-US
+          prompt: Contoso product names
+      output:
+        format:
+          type: audio/pcm
+          rate: 24000
+        voice:
+          type: azure_standard
+          name: en-US-AvaNeural
+        speed: 1.0
+    outputModalities: [audio]
+    store: true
+    tools:
+      - type: system
+        name: end_conversation
+      - type: function
+        name: get_weather
+        description: Get weather for a city
+        parameters:
+          type: object
+          properties: {}
+    avatar:
+      type: video-avatar
+      character: lisa
+      style: casual-sitting
+      output_protocol: webrtc
+```
+
+Details:
+
+- Existing simple fields continue to work: `instructions`, `voice`, and `store`
+  are shorthand for the common settings. If `audio.output.voice` is present, it
+  takes precedence over the shorthand `voice` field.
+- Missing `audio` fields keep azd defaults: PCM audio at 24 kHz, server VAD,
+  `azure-speech` transcription, and the default Azure Neural voice.
+- `tools` and `avatar` are passed through to the prompt voice service so new
+  service-side capabilities can be adopted without adding azd command flags.
+- In deprecated standalone `agent.yaml` files the equivalent keys use snake_case,
+  for example `model_type`, `structured_inputs`, `output_modalities`,
+  `turn_detection`, and `prefix_padding_ms`.
+
 ## Session carry-over across deploys
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and

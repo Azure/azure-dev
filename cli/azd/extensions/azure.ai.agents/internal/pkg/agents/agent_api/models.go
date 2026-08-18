@@ -301,7 +301,7 @@ const (
 // VoiceAudioFormat describes a PCM audio stream format (e.g. audio/pcm @ 24 kHz).
 type VoiceAudioFormat struct {
 	Type string `json:"type"`
-	Rate int    `json:"rate"`
+	Rate *int   `json:"rate,omitempty"`
 }
 
 // VoiceTurnDetection configures server-side voice-activity detection so the
@@ -311,18 +311,28 @@ type VoiceTurnDetection struct {
 	Threshold         *float64 `json:"threshold,omitempty"`
 	PrefixPaddingMs   *int     `json:"prefix_padding_ms,omitempty"`
 	SilenceDurationMs *int     `json:"silence_duration_ms,omitempty"`
+	CreateResponse    *bool    `json:"create_response,omitempty"`
+	Eagerness         *string  `json:"eagerness,omitempty"`
 }
 
 // VoiceTranscription enables user-speech transcription events on the input stream.
 type VoiceTranscription struct {
-	Model string `json:"model,omitempty"`
+	Model    string  `json:"model,omitempty"`
+	Language *string `json:"language,omitempty"`
+	Prompt   *string `json:"prompt,omitempty"`
+}
+
+// VoiceNoiseReduction configures input audio noise reduction.
+type VoiceNoiseReduction struct {
+	Type string `json:"type"`
 }
 
 // VoiceInputConfig is the input (caller -> agent) audio configuration.
 type VoiceInputConfig struct {
-	Format        *VoiceAudioFormat   `json:"format,omitempty"`
-	TurnDetection *VoiceTurnDetection `json:"turn_detection,omitempty"`
-	Transcription *VoiceTranscription `json:"transcription,omitempty"`
+	Format         *VoiceAudioFormat    `json:"format,omitempty"`
+	NoiseReduction *VoiceNoiseReduction `json:"noise_reduction,omitempty"`
+	TurnDetection  *VoiceTurnDetection  `json:"turn_detection,omitempty"`
+	Transcription  *VoiceTranscription  `json:"transcription,omitempty"`
 }
 
 // VoiceConfig selects the output voice. Type is "openai" for realtime voices
@@ -337,6 +347,7 @@ type VoiceConfig struct {
 type VoiceOutputConfig struct {
 	Format *VoiceAudioFormat `json:"format,omitempty"`
 	Voice  *VoiceConfig      `json:"voice,omitempty"`
+	Speed  *float64          `json:"speed,omitempty"`
 }
 
 // VoiceAudioConfig bundles the input and output audio configuration.
@@ -353,9 +364,12 @@ type VoiceAgentDefinition struct {
 	ModelType        VoiceModelType    `json:"model_type"`
 	Model            string            `json:"model"`
 	Instructions     string            `json:"instructions,omitempty"`
+	StructuredInputs map[string]any    `json:"structured_inputs,omitempty"`
 	Audio            *VoiceAudioConfig `json:"audio,omitempty"`
 	OutputModalities []string          `json:"output_modalities,omitempty"`
 	Store            *bool             `json:"store,omitempty"`
+	Tools            []map[string]any  `json:"tools,omitempty"`
+	Avatar           map[string]any    `json:"avatar,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version

@@ -117,7 +117,8 @@ func TestCreateVoiceAgentAPIRequest_Defaults(t *testing.T) {
 		t.Fatalf("Audio pipeline not populated: %+v", def.Audio)
 	}
 	in := def.Audio.Input
-	if in.Format == nil || in.Format.Type != defaultVoiceAudioType || in.Format.Rate != defaultVoiceAudioRate {
+	if in.Format == nil || in.Format.Type != defaultVoiceAudioType || in.Format.Rate == nil ||
+		*in.Format.Rate != defaultVoiceAudioRate {
 		t.Errorf("input format = %+v", in.Format)
 	}
 	if in.TurnDetection == nil || in.TurnDetection.Type != defaultVoiceTurnDetectionType {
@@ -127,7 +128,8 @@ func TestCreateVoiceAgentAPIRequest_Defaults(t *testing.T) {
 		t.Errorf("transcription = %+v", in.Transcription)
 	}
 	out := def.Audio.Output
-	if out.Format == nil || out.Format.Type != defaultVoiceAudioType || out.Format.Rate != defaultVoiceAudioRate {
+	if out.Format == nil || out.Format.Type != defaultVoiceAudioType || out.Format.Rate == nil ||
+		*out.Format.Rate != defaultVoiceAudioRate {
 		t.Errorf("output format = %+v", out.Format)
 	}
 	// Default voice is the DragonHD Azure Neural voice.
@@ -169,6 +171,94 @@ func TestCreateVoiceAgentAPIRequest_Overrides(t *testing.T) {
 	}
 	if def.Store == nil || !*def.Store {
 		t.Errorf("Store = %v, want true", def.Store)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequest_AdvancedConfig(t *testing.T) {
+	t.Parallel()
+	inRate := 16000
+	outRate := 24000
+	threshold := 0.4
+	prefixPaddingMs := 250
+	silenceDurationMs := 600
+	createResponse := false
+	language := "en-US"
+	prompt := "Contoso product names"
+	speed := 1.2
+	store := true
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "advanced-voice"},
+		Model:           &Model{Id: "gpt-realtime"},
+		StructuredInputs: map[string]any{
+			"agent_persona": map[string]any{"type": "string", "defaultValue": "Ada"},
+		},
+		Audio: &VoiceAudio{
+			Input: &VoiceAudioInput{
+				Format:         &VoiceAudioFormat{Type: "audio/pcmu", Rate: &inRate},
+				NoiseReduction: &VoiceNoiseReduction{Type: "near_field"},
+				TurnDetection: &VoiceTurnDetection{
+					Type:              "server_vad",
+					Threshold:         &threshold,
+					PrefixPaddingMs:   &prefixPaddingMs,
+					SilenceDurationMs: &silenceDurationMs,
+					CreateResponse:    &createResponse,
+				},
+				Transcription: &VoiceTranscription{Model: "whisper-1", Language: &language, Prompt: &prompt},
+			},
+			Output: &VoiceAudioOutput{
+				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: &outRate},
+				Voice:  &VoiceConfig{Type: "azure_standard", Name: "en-US-AvaNeural"},
+				Speed:  &speed,
+			},
+		},
+		OutputModalities: []string{"audio", "text"},
+		Store:            &store,
+		Tools:            []map[string]any{{"type": "system", "name": "end_conversation"}},
+		Avatar:           map[string]any{"type": "video-avatar", "character": "lisa"},
+	}
+
+	req, err := CreateVoiceAgentAPIRequest(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	if def.StructuredInputs["agent_persona"] == nil {
+		t.Fatalf("structured inputs not mapped: %+v", def.StructuredInputs)
+	}
+	if def.Audio.Input.Format.Type != "audio/pcmu" || *def.Audio.Input.Format.Rate != inRate {
+		t.Errorf("input format = %+v", def.Audio.Input.Format)
+	}
+	if def.Audio.Input.NoiseReduction == nil || def.Audio.Input.NoiseReduction.Type != "near_field" {
+		t.Errorf("noise reduction = %+v", def.Audio.Input.NoiseReduction)
+	}
+	if def.Audio.Input.TurnDetection.Threshold != &threshold ||
+		def.Audio.Input.TurnDetection.PrefixPaddingMs != &prefixPaddingMs ||
+		def.Audio.Input.TurnDetection.SilenceDurationMs != &silenceDurationMs ||
+		def.Audio.Input.TurnDetection.CreateResponse != &createResponse {
+		t.Errorf("turn detection = %+v", def.Audio.Input.TurnDetection)
+	}
+	if def.Audio.Input.Transcription.Model != "whisper-1" ||
+		def.Audio.Input.Transcription.Language != &language ||
+		def.Audio.Input.Transcription.Prompt != &prompt {
+		t.Errorf("transcription = %+v", def.Audio.Input.Transcription)
+	}
+	if def.Audio.Output.Format.Type != "audio/pcm" || *def.Audio.Output.Format.Rate != outRate {
+		t.Errorf("output format = %+v", def.Audio.Output.Format)
+	}
+	if def.Audio.Output.Voice.Type != "azure_standard" || def.Audio.Output.Voice.Name != "en-US-AvaNeural" {
+		t.Errorf("voice = %+v", def.Audio.Output.Voice)
+	}
+	if def.Audio.Output.Speed != &speed {
+		t.Errorf("speed = %v", def.Audio.Output.Speed)
+	}
+	if len(def.OutputModalities) != 2 || def.OutputModalities[1] != "text" {
+		t.Errorf("output modalities = %v", def.OutputModalities)
+	}
+	if len(def.Tools) != 1 || def.Tools[0]["type"] != "system" {
+		t.Errorf("tools = %+v", def.Tools)
+	}
+	if def.Avatar["character"] != "lisa" {
+		t.Errorf("avatar = %+v", def.Avatar)
 	}
 }
 
@@ -261,5 +351,20 @@ func TestCreateVoiceAgentAPIRequest_InvalidModelType(t *testing.T) {
 	}
 	if _, err := CreateVoiceAgentAPIRequest(agent); err == nil {
 		t.Error("expected error for unsupported model_type")
+	}
+}
+
+func TestCreateVoiceAgentAPIRequest_InvalidAdvancedConfig(t *testing.T) {
+	t.Parallel()
+	badThreshold := 2.0
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "v"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Audio: &VoiceAudio{Input: &VoiceAudioInput{
+			TurnDetection: &VoiceTurnDetection{Type: "server_vad", Threshold: &badThreshold},
+		}},
+	}
+	if _, err := CreateVoiceAgentAPIRequest(agent); err == nil {
+		t.Error("expected error for invalid advanced config")
 	}
 }

@@ -68,9 +68,32 @@
       "type": "string",
       "description": "Voice agent (kind: prompt-voice) output voice name (e.g. 'en-US-Ava:DragonHDLatestNeural' for an Azure Neural voice, or 'alloy' for an OpenAI realtime voice)."
     },
+    "structuredInputs": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) structured prompt inputs used by templated instructions.",
+      "additionalProperties": true
+    },
+    "audio": {
+      "$ref": "#/definitions/VoiceAudio"
+    },
+    "outputModalities": {
+      "type": "array",
+      "description": "Voice agent (kind: prompt-voice) output modalities, such as audio or text.",
+      "items": { "type": "string", "minLength": 1 }
+    },
     "store": {
       "type": "boolean",
       "description": "Voice agent (kind: prompt-voice) server-side logging toggle (transcript + per-turn audio). Defaults to false when omitted."
+    },
+    "tools": {
+      "type": "array",
+      "description": "Voice agent (kind: prompt-voice) service-side tools. Supported service types include function, mcp, system, and toolbox.",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "avatar": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) avatar output configuration.",
+      "additionalProperties": true
     },
     "name": {
       "type": "string",
@@ -158,6 +181,82 @@
         "dependencyResolution": { "type": "string", "description": "Dependency resolution mode (e.g., 'bundled', 'remote_build')." }
       },
       "required": ["runtime", "entryPoint"],
+      "additionalProperties": false
+    },
+    "VoiceAudio": {
+      "type": "object",
+      "description": "Prompt voice input and output audio configuration. Missing fields keep azd defaults.",
+      "properties": {
+        "input": { "$ref": "#/definitions/VoiceAudioInput" },
+        "output": { "$ref": "#/definitions/VoiceAudioOutput" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioInput": {
+      "type": "object",
+      "properties": {
+        "format": { "$ref": "#/definitions/VoiceAudioFormat" },
+        "noiseReduction": { "$ref": "#/definitions/VoiceNoiseReduction" },
+        "turnDetection": { "$ref": "#/definitions/VoiceTurnDetection" },
+        "transcription": { "$ref": "#/definitions/VoiceTranscription" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioOutput": {
+      "type": "object",
+      "properties": {
+        "format": { "$ref": "#/definitions/VoiceAudioFormat" },
+        "voice": { "$ref": "#/definitions/VoiceConfig" },
+        "speed": { "type": "number", "minimum": 0.25, "maximum": 1.5, "description": "Output speech speed." }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioFormat": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Audio format such as audio/pcm, audio/pcmu, or audio/pcma." },
+        "rate": { "type": "integer", "minimum": 1, "description": "Sample rate in Hz when applicable." }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceNoiseReduction": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Noise reduction type such as near_field, far_field, or azure_deep_noise_suppression." }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceTurnDetection": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Turn detection type such as server_vad or semantic_vad." },
+        "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "prefixPaddingMs": { "type": "integer", "minimum": 0 },
+        "silenceDurationMs": { "type": "integer", "minimum": 0 },
+        "createResponse": { "type": "boolean" },
+        "eagerness": { "type": "string", "description": "Semantic VAD eagerness when supported by the service." }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceTranscription": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string", "description": "Transcription model, such as azure-speech or whisper-1." },
+        "language": { "type": "string" },
+        "prompt": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceConfig": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Voice provider type, such as openai or azure_standard." },
+        "name": { "type": "string", "description": "Voice name." }
+      },
+      "required": ["type", "name"],
       "additionalProperties": false
     },
     "Policy": {

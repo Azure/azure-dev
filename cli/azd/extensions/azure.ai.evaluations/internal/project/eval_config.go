@@ -7,6 +7,7 @@ package project
 
 import (
 	"strings"
+	"time"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
@@ -309,6 +310,41 @@ func (c *EvalConfig) validateCatalogs() error {
 	return nil
 }
 
+// validateTraceWindow refuses a window a run could not use.
+//
+// Checked with the rest of the configuration rather than at run time, so a
+// mistyped timestamp is caught before the eval is created rather than after.
+func validateTraceWindow(i int, name string, source *SourceDecl) error {
+	start, end := time.Time{}, time.Time{}
+
+	if source.StartTime != "" {
+		parsed, err := time.Parse(time.RFC3339, source.StartTime)
+		if err != nil {
+			return messages.TraceWindowNotATime(i, name, "start_time", source.StartTime)
+		}
+		start = parsed
+	}
+	if source.EndTime != "" {
+		parsed, err := time.Parse(time.RFC3339, source.EndTime)
+		if err != nil {
+			return messages.TraceWindowNotATime(i, name, "end_time", source.EndTime)
+		}
+		end = parsed
+	}
+	if !start.IsZero() && !end.IsZero() && !end.After(start) {
+		return messages.TraceWindowEndsBeforeItStarts(i, name, source.StartTime, source.EndTime)
+	}
+	// Two ways of saying the same thing, and the file cannot say which was
+	// meant. Every other contradictory pair here is refused rather than ranked.
+	if source.StartTime != "" && source.LookbackHours != 0 {
+		return messages.TraceWindowOverSpecified(i, name)
+	}
+	if source.LookbackHours < 0 {
+		return messages.NegativeLookbackHours(i, name, source.LookbackHours)
+	}
+	return nil
+}
+
 func (c *EvalConfig) validateEval(i int, eval Eval) error {
 	if eval.Dataset != "" && eval.Source != nil {
 		return messages.DatasetAndSourceBothDeclared(i, eval.Name)
@@ -331,6 +367,9 @@ func (c *EvalConfig) validateEval(i int, eval Eval) error {
 			// deploying.
 			if eval.Source.AgentName == "" && (eval.Target == nil || eval.Target.Name == "") {
 				return messages.TracesSourceNeedsAgentName(i, eval.Name)
+			}
+			if err := validateTraceWindow(i, eval.Name, eval.Source); err != nil {
+				return err
 			}
 		case SourceTypeResponses:
 			if len(eval.Source.ResponseIDs) == 0 {

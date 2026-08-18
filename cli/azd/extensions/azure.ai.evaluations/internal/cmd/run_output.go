@@ -15,6 +15,7 @@ import (
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -569,7 +570,7 @@ func renderResults(
 	}
 
 	if url := runLink(run.ReportURL, run.PortalURL); url != "" {
-		fmt.Fprint(w, messages.ReportLinkAfterRows(url))
+		fmt.Fprint(w, messages.ReportLinkAfterRows(color.CyanString(url)))
 	}
 	return nil
 }

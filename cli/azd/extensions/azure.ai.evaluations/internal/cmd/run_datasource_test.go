@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
@@ -57,8 +58,10 @@ func TestBuildRunDataSource_Traces(t *testing.T) {
 	assert.Equal(t, "agent_filter", ds.TraceSource.Type)
 	assert.Equal(t, "support-agent", ds.TraceSource.AgentName)
 	assert.Equal(t, 500, ds.TraceSource.MaxTraces)
-	// lookback_hours is still honoured, as the window's start bound.
-	assert.NotZero(t, ds.TraceSource.StartTime)
+	// lookback_hours is still honoured, as the window's start bound. Asserted
+	// as a distance from now, because a merely non-zero start is also what a
+	// lookback that reached forwards would produce.
+	assert.InDelta(t, time.Now().Add(-24*time.Hour).Unix(), ds.TraceSource.StartTime, 60)
 	assert.Zero(t, ds.TraceSource.EndTime, "an open end means up to now")
 	// Nothing is invoked and nothing local is sent.
 	assert.Nil(t, ds.Target)
@@ -85,8 +88,9 @@ func TestBuildRunDataSource_TracesPinsTheAgentVersion(t *testing.T) {
 	assert.Equal(t, "2", ds.TraceSource.AgentVersion)
 }
 
-// An explicit window travels intact, and wins over lookback_hours, which says
-// the same thing but drifts every time the command runs.
+// An explicit window travels intact. Declaring it beside lookback_hours is
+// refused by config validation, but a run reached by id has no config that was
+// validated, so the absolute bound still has to win rather than be dropped.
 func TestBuildRunDataSource_TracesCarriesAnExplicitWindow(t *testing.T) {
 	ec := &evalContext{}
 	group := &project.Eval{

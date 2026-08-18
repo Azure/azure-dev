@@ -230,6 +230,34 @@ func TestValidate_Rejects(t *testing.T) {
 			wantErr: "source.response_ids is required",
 		},
 		{
+			// A window bound the run path cannot parse is dropped by the
+			// service, which then grades a default seven days and says nothing.
+			name: "window bound that is not a time",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
+				"      start_time: yesterday\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "which is not a time",
+		},
+		{
+			name: "window ending before it starts",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
+				"      start_time: \"2026-08-02T00:00:00Z\"\n      end_time: \"2026-08-01T00:00:00Z\"\n" +
+				"    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "holds no traces",
+		},
+		{
+			name: "window declared twice over",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
+				"      start_time: \"2026-08-01T00:00:00Z\"\n      lookback_hours: 24\n" +
+				"    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "keep one",
+		},
+		{
+			name: "lookback reaching forwards",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
+				"      lookback_hours: -24\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "cannot reach into the future",
+		},
+		{
 			name:    "dataset without a name",
 			body:    "datasets:\n  - source: ./d.jsonl\n" + oneEval,
 			wantErr: "'name' is required",

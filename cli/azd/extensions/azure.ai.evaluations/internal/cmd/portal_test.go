@@ -79,8 +79,6 @@ func TestPortalRunURLShape(t *testing.T) {
 		"/build/evaluations/eval_1/run/evalrun_9"))
 }
 
-// The report line and the portal line are different things: one is the
-// service's own link, the other is built here. A run carrying both prints both.
 // A run has one destination. The service's report_url and the portal URL the
 // extension builds resolve to the same page, and printing both put two labels
 // on it with no rule a reader could infer.

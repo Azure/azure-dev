@@ -22,6 +22,7 @@ import (
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -386,7 +387,35 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 	if list == nil || len(list.Data) == 0 || list.Data[0].DataSource == nil {
 		return nil, messages.EvalHasNoPreviousRun(evalID)
 	}
-	return list.Data[0].DataSource, nil
+	return upgradeLegacyTraceSource(list.Data[0].DataSource), nil
+}
+
+// upgradeLegacyTraceSource carries a run recorded under the old trace shape
+// onto the one that keeps what it is given.
+//
+// A run reattached by id repeats whatever the last one sent, so without this an
+// eval whose last run predates the change would keep the version-blind,
+// drifting-lookback source for good, and nothing would say so.
+func upgradeLegacyTraceSource(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunDataSource {
+	if ds == nil || ds.Type != eval_api.EvalRunDataSourceTypeTraces {
+		return ds
+	}
+	var end time.Time
+	if ds.EndTime > 0 {
+		end = time.Unix(ds.EndTime, 0)
+	}
+	var start time.Time
+	if ds.LookbackHours > 0 {
+		from := end
+		if from.IsZero() {
+			from = time.Now()
+		}
+		start = from.Add(-time.Duration(ds.LookbackHours) * time.Hour)
+	}
+	// The old shape carried no version, so this pins nothing that was not
+	// pinned before; it stops the service choosing differently run to run only
+	// once the declaration names one.
+	return eval_api.NewTracePreviewDataSource(ds.AgentName, "", start, end, ds.MaxTraces)
 }
 
 // buildRunDataSource binds the eval's rows to the run.
@@ -492,13 +521,21 @@ func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) 
 // traceWindow resolves the bounds of the span a trace run reads.
 //
 // lookback_hours predates start_time and stays supported, read as a start bound
-// relative to now. An explicit start_time wins, because it says the same thing
-// without drifting every time the command runs.
+// relative to now. The pair is refused by config validation, so only one of the
+// two is ever set here.
+//
+// Bounds are parsed rather than validated: a run reached by id has no config to
+// have been validated, so a malformed value still has to fail rather than be
+// dropped.
 func traceWindow(source *project.SourceDecl) (start, end time.Time, err error) {
+	if source == nil {
+		return time.Time{}, time.Time{}, nil
+	}
 	if source.StartTime != "" {
 		start, err = time.Parse(time.RFC3339, source.StartTime)
 		if err != nil {
-			return time.Time{}, time.Time{}, messages.TraceWindowNotATime("start_time", source.StartTime)
+			return time.Time{}, time.Time{}, messages.TraceWindowNotATime(
+				0, source.AgentName, "start_time", source.StartTime)
 		}
 	} else if source.LookbackHours > 0 {
 		start = time.Now().Add(-time.Duration(source.LookbackHours) * time.Hour)
@@ -507,11 +544,19 @@ func traceWindow(source *project.SourceDecl) (start, end time.Time, err error) {
 	if source.EndTime != "" {
 		end, err = time.Parse(time.RFC3339, source.EndTime)
 		if err != nil {
-			return time.Time{}, time.Time{}, messages.TraceWindowNotATime("end_time", source.EndTime)
+			return time.Time{}, time.Time{}, messages.TraceWindowNotATime(
+				0, source.AgentName, "end_time", source.EndTime)
 		}
 	}
 	if !start.IsZero() && !end.IsZero() && !end.After(start) {
-		return time.Time{}, time.Time{}, messages.TraceWindowEndsBeforeItStarts(source.StartTime, source.EndTime)
+		// The start is named as it was written, which is lookback_hours when
+		// that is where it came from rather than an empty start_time.
+		written := source.StartTime
+		if written == "" {
+			written = fmt.Sprintf("%dh before now", source.LookbackHours)
+		}
+		return time.Time{}, time.Time{}, messages.TraceWindowEndsBeforeItStarts(
+			0, source.AgentName, written, source.EndTime)
 	}
 	return start, end, nil
 }
@@ -883,7 +928,7 @@ func renderRun(
 	}
 
 	if url := runLink(run.ReportURL, run.PortalURL); url != "" {
-		fmt.Fprint(out, messages.ReportLink(url))
+		fmt.Fprint(out, messages.ReportLink(color.CyanString(url)))
 	}
 	return nil
 }

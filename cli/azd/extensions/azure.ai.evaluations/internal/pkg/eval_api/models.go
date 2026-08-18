@@ -428,25 +428,6 @@ func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDa
 	}
 }
 
-// NewTracesDataSource evaluates an agent's recorded traces instead of a dataset.
-//
-// The window is a lookback in hours. The service has no start bound on this
-// data source: a start_time is accepted and dropped, leaving the default seven
-// days in place, so the conversion happens here rather than being left to look
-// like it worked.
-func NewTracesDataSource(agentName string, lookbackHours int, end time.Time, maxTraces int) *EvalRunDataSource {
-	ds := &EvalRunDataSource{
-		Type:          EvalRunDataSourceTypeTraces,
-		AgentName:     agentName,
-		LookbackHours: lookbackHours,
-		MaxTraces:     maxTraces,
-	}
-	if !end.IsZero() {
-		ds.EndTime = end.Unix()
-	}
-	return ds
-}
-
 // TraceSourceFilter selects which spans a trace run reads.
 //
 // The window and the cap live here, not beside the data source type: verified

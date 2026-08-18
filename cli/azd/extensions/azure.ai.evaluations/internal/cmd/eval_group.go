@@ -236,9 +236,7 @@ func newEvalShowCommand() *cobra.Command {
 			}
 			// Without these the command answers "does this id exist", which is
 			// not what a definition is, nor what its own help promises.
-			if source := evalSourceType(group); source != "" {
-				detail = append(detail, field{"Source", source})
-			}
+
 			if graders := evalGraders(group); graders != "" {
 				detail = append(detail, field{"Evaluators", graders})
 			}
@@ -250,18 +248,13 @@ func newEvalShowCommand() *cobra.Command {
 	return cmd
 }
 
-// evalSourceType reports where the eval's rows come from, as the service
-// records it. Empty when the service sent no data source config.
-func evalSourceType(group *eval_api.OpenAIEval) string {
-	if group == nil || group.DataSourceConfig == nil {
-		return ""
-	}
-	kind, _ := group.DataSourceConfig["type"].(string)
-	return kind
-}
-
 // evalGraders lists the evaluators the eval grades with, preferring the
 // reference a caller would recognize over the criterion label.
+//
+// data_source_config is deliberately not shown beside it: every eval this
+// extension creates carries type "custom", which describes the item schema
+// rather than where the rows come from, so a "Source" row would read as an
+// answer while always saying the same thing.
 func evalGraders(group *eval_api.OpenAIEval) string {
 	if group == nil {
 		return ""

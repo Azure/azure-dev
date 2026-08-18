@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
@@ -75,12 +76,18 @@ func newInitCommand() *cobra.Command {
 			if err := validateEvaluatorRefs(evaluators); err != nil {
 				return err
 			}
+			// Asked twice -- once to pick the default source, once to say so --
+			// and each call opens an azd connection. The answer cannot change
+			// mid-command, and a run that never asks never connects.
+			tracesWired := sync.OnceValue(func() bool {
+				return tracesConnected(commandContext(cmd))
+			})
 			if source == "" {
 				// The same signal `generate --from` defaults on, read from the azd
 				// environment rather than the service, so init still makes no
 				// service calls. Traces are real conversations; a project wired to
 				// collect them should not have to ask for them by flag.
-				if tracesConnected(commandContext(cmd)) {
+				if tracesWired() {
 					source = initSourceTraces
 				} else {
 					source = initSourceDataset
@@ -234,7 +241,7 @@ func newInitCommand() *cobra.Command {
 			if source == initSourceTraces {
 				// Claiming the connection is only honest when it was found. init
 				// makes no service calls, so it cannot verify one it did not see.
-				fmt.Fprint(out, messages.UsingTraceSource(tracesConnected(commandContext(cmd))))
+				fmt.Fprint(out, messages.UsingTraceSource(tracesWired()))
 			}
 			// Only what was settled without asking: a reader who just picked
 			// from a list does not need it read back to them.

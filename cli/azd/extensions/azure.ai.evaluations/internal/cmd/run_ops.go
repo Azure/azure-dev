@@ -11,6 +11,7 @@ import (
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -187,7 +188,7 @@ func newRunShowCommand() *cobra.Command {
 				fmt.Fprint(out, messages.RunResultsLine(counts))
 			}
 			if url := runLink(run.ReportURL, run.PortalURL); url != "" {
-				fmt.Fprint(out, messages.RunReportLine(url))
+				fmt.Fprint(out, messages.RunReportLine(color.CyanString(url)))
 			}
 			if gateOnStatus {
 				if err := runCompleted(run); err != nil {

@@ -318,8 +318,5 @@ func jobLookupError(action string, kind jobKind, jobID string, err error) error 
 		}
 		return messages.JobNotFound(kind.name, jobID, other)
 	}
-	if action == "reading" {
-		return messages.ReadingJob(kind.name, jobID, err)
-	}
 	return messages.JobActionFailed(action, kind.name, jobID, err)
 }

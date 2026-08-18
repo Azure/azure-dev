@@ -13,19 +13,17 @@ import (
 
 // `show` is documented as showing an eval definition, and answered with the id,
 // the name and who created it -- true of any eval, and none of the definition.
-// The service returns both of these on a read.
+// The graders are the part of the definition the service does return.
 func TestShowSurfacesWhatTheEvalGrades(t *testing.T) {
 	group := &eval_api.OpenAIEval{
-		ID:               "eval_1",
-		Name:             "support-trace-eval",
-		DataSourceConfig: map[string]any{"type": "custom"},
+		ID:   "eval_1",
+		Name: "support-trace-eval",
 		TestingCriteria: []eval_api.TestingCriterion{
 			{Name: "task_adherence", EvaluatorName: "builtin.task_adherence"},
 			{Name: "quality", EvaluatorName: "support-quality", EvaluatorVersion: "2"},
 		},
 	}
 
-	assert.Equal(t, "custom", evalSourceType(group))
 	assert.Equal(t, "builtin.task_adherence, support-quality (2)", evalGraders(group))
 }
 
@@ -42,9 +40,7 @@ func TestShowFallsBackToTheCriterionLabel(t *testing.T) {
 // An older eval, or one the service answers without a definition, still shows
 // its identity rather than blank rows.
 func TestShowOmitsWhatTheServiceDidNotSend(t *testing.T) {
-	assert.Empty(t, evalSourceType(&eval_api.OpenAIEval{ID: "eval_1"}))
 	assert.Empty(t, evalGraders(&eval_api.OpenAIEval{ID: "eval_1"}))
-	assert.Empty(t, evalSourceType(nil))
 	assert.Empty(t, evalGraders(nil))
 
 	// A criterion carrying no name at all contributes nothing rather than an

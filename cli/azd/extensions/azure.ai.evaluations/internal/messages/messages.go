@@ -249,7 +249,7 @@ func ErroredNotScored(errored int) string {
 	return fmt.Sprintf("(%d errored, not scored)", errored)
 }
 
-// ReportLink closes a run summary with the service's own report.
+// ReportLink closes a run summary with the one link the run has.
 func ReportLink(url string) string {
 	return fmt.Sprintf("Report: %s\n", url)
 }
@@ -334,7 +334,7 @@ func RunResultsLine(counts string) string {
 	return fmt.Sprintf("  results : %s\n", counts)
 }
 
-// RunReportLine reports the run's report URL in the detail view.
+// RunReportLine reports the run's one link in the detail view.
 func RunReportLine(url string) string {
 	return fmt.Sprintf("  report  : %s\n", url)
 }
@@ -468,7 +468,7 @@ func OutputItemReason(reason string) string {
 	return fmt.Sprintf("  %s\n", reason)
 }
 
-// ReportLinkAfterRows closes a per-sample listing with the service's report.
+// ReportLinkAfterRows closes a per-sample listing with the run's one link.
 func ReportLinkAfterRows(url string) string {
 	return fmt.Sprintf("\nReport: %s\n", url)
 }
@@ -1630,17 +1630,38 @@ func GateNeedsATerminalRun(runID, status string) error {
 }
 
 // TraceWindowNotATime reports a window bound that is not a timestamp.
-func TraceWindowNotATime(field, value string) error {
+func TraceWindowNotATime(i int, eval, field, value string) error {
 	return fmt.Errorf(
-		"source.%s is %q, which is not a time: use RFC 3339, for example 2026-08-18T09:00:00Z",
-		field, value)
+		"evals[%d] %q: source.%s is %q, which is not a time: use RFC 3339, "+
+			"for example 2026-08-18T09:00:00Z",
+		i, eval, field, value)
 }
 
 // TraceWindowEndsBeforeItStarts reports a window that can hold no traces.
-func TraceWindowEndsBeforeItStarts(start, end string) error {
+func TraceWindowEndsBeforeItStarts(i int, eval, start, end string) error {
 	return fmt.Errorf(
-		"source.end_time %q is not after source.start_time %q, so the window holds no traces",
-		end, start)
+		"evals[%d] %q: source.end_time %q is not after source.start_time %q, "+
+			"so the window holds no traces",
+		i, eval, end, start)
+}
+
+// TraceWindowOverSpecified reports a window declared twice over.
+//
+// lookback_hours is a start bound relative to now and start_time is an absolute
+// one, so a file carrying both does not say which window was meant.
+func TraceWindowOverSpecified(i int, eval string) error {
+	return fmt.Errorf(
+		"evals[%d] %q: source declares both start_time and lookback_hours, "+
+			"which are two ways of saying where the window starts: keep one",
+		i, eval)
+}
+
+// NegativeLookbackHours reports a window that reaches forwards.
+func NegativeLookbackHours(i int, eval string, hours int) error {
+	return fmt.Errorf(
+		"evals[%d] %q: source.lookback_hours is %d, and a window cannot reach "+
+			"into the future: give the hours to look back",
+		i, eval, hours)
 }
 
 // AmbiguousJudgeModel reports several deployments where only one can be used.

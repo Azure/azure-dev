@@ -416,6 +416,38 @@ max_stalls: 3
 	assert.Equal(t, 3, *opts.MaxStalls)
 }
 
+// TestOptions_MaxConcurrentAgentRuns verifies the max_concurrent_agent_runs key
+// populates MaxConcurrentAgentRuns.
+func TestOptions_MaxConcurrentAgentRuns(t *testing.T) {
+	t.Parallel()
+
+	input := `
+eval_model: gpt-4.1
+optimization_model: gpt-5
+max_concurrent_agent_runs: 8
+`
+	var opts Options
+	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
+
+	require.NotNil(t, opts.MaxConcurrentAgentRuns)
+	assert.Equal(t, 8, *opts.MaxConcurrentAgentRuns)
+}
+
+// TestOptions_MaxConcurrentAgentRunsOmitted verifies MaxConcurrentAgentRuns is nil
+// when the key is absent.
+func TestOptions_MaxConcurrentAgentRunsOmitted(t *testing.T) {
+	t.Parallel()
+
+	input := `
+eval_model: gpt-4.1
+optimization_model: gpt-5
+`
+	var opts Options
+	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
+
+	assert.Nil(t, opts.MaxConcurrentAgentRuns)
+}
+
 func TestOptions_OptimizationConfig_NativeYAML(t *testing.T) {
 	t.Parallel()
 

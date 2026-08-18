@@ -400,6 +400,7 @@ func TestSkipACR(t *testing.T) {
 		isCodeDeploy       bool
 		image              string
 		registryConnection string
+		usesPreBuiltImage  bool
 		isVoiceAgent       bool
 		want               bool
 	}{
@@ -427,6 +428,11 @@ func TestSkipACR(t *testing.T) {
 			want:               true,
 		},
 		{
+			name:              "manifest image skips ACR",
+			usesPreBuiltImage: true,
+			want:              true,
+		},
+		{
 			name:         "voice agent skips ACR",
 			isCodeDeploy: false,
 			image:        "",
@@ -446,8 +452,9 @@ func TestSkipACR(t *testing.T) {
 			t.Parallel()
 
 			action := &InitAction{
-				isCodeDeploy: tt.isCodeDeploy,
-				isVoiceAgent: tt.isVoiceAgent,
+				isCodeDeploy:      tt.isCodeDeploy,
+				usesPreBuiltImage: tt.usesPreBuiltImage,
+				isVoiceAgent:      tt.isVoiceAgent,
 				flags: &initFlags{
 					image:              tt.image,
 					registryConnection: tt.registryConnection,
@@ -470,12 +477,14 @@ func TestIsHostedAgent(t *testing.T) {
 		isCodeDeploy       bool
 		image              string
 		registryConnection string
+		usesPreBuiltImage  bool
 		isVoiceAgent       bool
 		want               bool
 	}{
 		{name: "code deploy is hosted", isCodeDeploy: true, want: true},
 		{name: "image is hosted", image: "myacr.azurecr.io/agent:v1", want: true},
 		{name: "registry connection is hosted", registryConnection: "private-registry", want: true},
+		{name: "manifest image is hosted", usesPreBuiltImage: true, want: true},
 		{name: "voice is not hosted", isVoiceAgent: true, want: false},
 		{name: "plain container is not hosted", want: false},
 	}
@@ -485,8 +494,9 @@ func TestIsHostedAgent(t *testing.T) {
 			t.Parallel()
 
 			action := &InitAction{
-				isCodeDeploy: tt.isCodeDeploy,
-				isVoiceAgent: tt.isVoiceAgent,
+				isCodeDeploy:      tt.isCodeDeploy,
+				usesPreBuiltImage: tt.usesPreBuiltImage,
+				isVoiceAgent:      tt.isVoiceAgent,
 				flags: &initFlags{
 					image:              tt.image,
 					registryConnection: tt.registryConnection,

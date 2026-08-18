@@ -3,6 +3,8 @@
 
 package project
 
+// cSpell:ignore containerref
+
 import (
 	"archive/zip"
 	"bytes"
@@ -34,6 +36,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/botservice"
+	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 
@@ -1808,11 +1811,19 @@ func validateRegistryConnectionDefinition(agentDef agent_yaml.ContainerAgent) er
 			"use registryConnectionId with a pre-built image or remove it for code deploy",
 		)
 	}
-	if strings.TrimSpace(agentDef.Image) == "" {
+	image := strings.TrimSpace(agentDef.Image)
+	if image == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"registryConnectionId requires a pre-built container image",
 			"set image on the azure.ai.agent service or remove registryConnectionId",
+		)
+	}
+	if !containerref.IsFullyQualified(image) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId requires an image with an explicit registry host and repository",
+			"set image to a fully qualified reference such as registry.example.com/team/agent:v1",
 		)
 	}
 	return nil
@@ -1846,15 +1857,19 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return false, nil
 	}
 
-	if p.shouldSkipACRForEnvironment(ctx) {
-		log.Printf("AZD_AGENT_SKIP_ACR=true: using pre-built image from agent definition")
+	// Releases before docker.imagePassthrough represented init --image as a docker
+	// service plus AZD_AGENT_SKIP_ACR=true. Honor that exact legacy shape during
+	// the compatibility window without using the provisioning variable for new
+	// or hand-authored image configurations.
+	if p.serviceConfig.GetDocker() != nil &&
+		!DockerImagePassthrough(p.serviceConfig.GetDocker()) &&
+		p.shouldSkipACRForEnvironment(ctx) {
+		log.Printf("legacy pre-built image configuration detected: using configured image")
 		return true, nil
 	}
 
-	// Default to build so the pre-built path requires an explicit choice.
-	// In non-interactive mode (--no-prompt), the framework returns the default
-	// selection (index 0 = build) automatically unless AZD_AGENT_SKIP_ACR=true
-	// was set by init --image.
+	// Default to build so the legacy pre-built path requires an explicit choice.
+	// New projects use docker.imagePassthrough and do not enter this fallback.
 	choices := []*azdext.SelectChoice{
 		{Value: "build", Label: "Build a new image for me"},
 		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},

@@ -278,16 +278,17 @@ func dedent(line string, n int) string {
 // coreDockerFields mirrors project.DockerProjectOptions without importing the
 // full project package into this test-only validator.
 type coreDockerFields struct {
-	Path        string   `yaml:"path"`
-	Context     string   `yaml:"context"`
-	Platform    string   `yaml:"platform"`
-	Target      string   `yaml:"target"`
-	Registry    string   `yaml:"registry"`
-	Image       string   `yaml:"image"`
-	Tag         string   `yaml:"tag"`
-	RemoteBuild bool     `yaml:"remoteBuild"`
-	Network     string   `yaml:"network"`
-	BuildArgs   []string `yaml:"buildArgs"`
+	Path             string   `yaml:"path"`
+	Context          string   `yaml:"context"`
+	Platform         string   `yaml:"platform"`
+	Target           string   `yaml:"target"`
+	Registry         string   `yaml:"registry"`
+	Image            string   `yaml:"image"`
+	Tag              string   `yaml:"tag"`
+	RemoteBuild      bool     `yaml:"remoteBuild"`
+	ImagePassthrough bool     `yaml:"imagePassthrough"`
+	Network          string   `yaml:"network"`
+	BuildArgs        []string `yaml:"buildArgs"`
 }
 
 // coreK8sFields mirrors the azure.yaml-facing portion of project.AksOptions.

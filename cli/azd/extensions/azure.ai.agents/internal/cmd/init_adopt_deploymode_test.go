@@ -85,11 +85,8 @@ func agentServiceConfig(t *testing.T, name string, props map[string]any) *azdext
 	return sc
 }
 
-// TestApplyDeployModeToAdoptedProject verifies that the adopt flow
-// reports whether the resolved deploy mode is a container (Docker)
-// deploy so the caller can wire an Azure Container Registry. A
-// container agent that never reported itself would leave
-// AZURE_CONTAINER_REGISTRY_ENDPOINT unset and fail deploy.
+// TestApplyDeployModeToAdoptedProject verifies that the adopt flow reports
+// whether the resolved deploy mode requires an Azure Container Registry.
 func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 	const svcName = "agent"
 
@@ -97,51 +94,61 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 	codeProps := map[string]any{
 		"codeConfiguration": map[string]any{"runtime": "python_3_13", "entryPoint": "app.py"},
 	}
+	preBuiltService := agentServiceConfig(t, svcName, dockerProps)
+	preBuiltService.Image = "registry.example.com/team/agent:v1"
 
 	tests := []struct {
-		name          string
-		flags         *initFlags
-		service       *azdext.ServiceConfig
-		wantContainer bool
-		wantLanguage  any
-		wantDockerSet bool
-		wantCodeSet   bool
+		name         string
+		flags        *initFlags
+		service      *azdext.ServiceConfig
+		wantNeedsACR bool
+		wantLanguage any
+		wantDocker   map[string]any
+		wantCodeSet  bool
 	}{
 		{
-			name:          "explicit container flag wires ACR",
-			flags:         &initFlags{deployMode: "container"},
-			service:       agentServiceConfig(t, svcName, nil),
-			wantContainer: true,
-			wantLanguage:  "docker",
-			wantDockerSet: true,
+			name:         "explicit container flag wires ACR",
+			flags:        &initFlags{deployMode: "container"},
+			service:      agentServiceConfig(t, svcName, nil),
+			wantNeedsACR: true,
+			wantLanguage: "docker",
+			wantDocker:   map[string]any{"remoteBuild": true},
 		},
 		{
-			name:          "explicit code flag skips ACR",
-			flags:         &initFlags{deployMode: "code", runtime: "python_3_13", entryPoint: "app.py"},
-			service:       agentServiceConfig(t, svcName, nil),
-			wantContainer: false,
-			wantLanguage:  "python",
-			wantCodeSet:   true,
+			name:         "explicit code flag skips ACR",
+			flags:        &initFlags{deployMode: "code", runtime: "python_3_13", entryPoint: "app.py"},
+			service:      agentServiceConfig(t, svcName, nil),
+			wantNeedsACR: false,
+			wantLanguage: "python",
+			wantCodeSet:  true,
 		},
 		{
-			name:          "prebuilt image is container deploy",
-			flags:         &initFlags{image: "myacr.azurecr.io/agent:v1"},
-			service:       agentServiceConfig(t, svcName, nil),
-			wantContainer: true,
-			wantLanguage:  "docker",
-			wantDockerSet: true,
+			name:         "prebuilt image uses passthrough",
+			flags:        &initFlags{image: "myacr.azurecr.io/agent:v1"},
+			service:      agentServiceConfig(t, svcName, nil),
+			wantNeedsACR: false,
+			wantLanguage: "docker",
+			wantDocker:   map[string]any{"imagePassthrough": true},
 		},
 		{
-			name:          "respects sample docker config",
-			flags:         &initFlags{},
-			service:       agentServiceConfig(t, svcName, dockerProps),
-			wantContainer: true,
+			name:         "existing image uses passthrough",
+			flags:        &initFlags{},
+			service:      preBuiltService,
+			wantNeedsACR: false,
+			wantLanguage: "docker",
+			wantDocker:   map[string]any{"imagePassthrough": true},
 		},
 		{
-			name:          "respects sample code config",
-			flags:         &initFlags{},
-			service:       agentServiceConfig(t, svcName, codeProps),
-			wantContainer: false,
+			name:         "respects sample docker config",
+			flags:        &initFlags{},
+			service:      agentServiceConfig(t, svcName, dockerProps),
+			wantNeedsACR: true,
+		},
+		{
+			name:         "respects sample code config",
+			flags:        &initFlags{},
+			service:      agentServiceConfig(t, svcName, codeProps),
+			wantNeedsACR: false,
 		},
 	}
 
@@ -153,22 +160,22 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			}
 			client := newProjectRecorderClient(t, server)
 
-			usesContainer, err := applyDeployModeToAdoptedProject(t.Context(), tc.flags, client)
+			needsACR, err := applyDeployModeToAdoptedProject(t.Context(), tc.flags, client)
 			require.NoError(t, err)
-			assert.Equal(t, tc.wantContainer, usesContainer)
+			assert.Equal(t, tc.wantNeedsACR, needsACR)
 
 			sets := server.sets[svcName]
 			if tc.wantLanguage != nil {
 				assert.Equal(t, tc.wantLanguage, sets["language"])
 			}
-			if tc.wantDockerSet {
-				assert.Contains(t, sets, "docker")
+			if tc.wantDocker != nil {
+				assert.Equal(t, tc.wantDocker, sets["docker"])
 			}
 			if tc.wantCodeSet {
 				assert.Contains(t, sets, "codeConfiguration")
 			}
 			// A respected sample config must not be rewritten.
-			if !tc.wantDockerSet && !tc.wantCodeSet && tc.wantLanguage == nil {
+			if tc.wantDocker == nil && !tc.wantCodeSet && tc.wantLanguage == nil {
 				assert.Empty(t, sets)
 			}
 		})

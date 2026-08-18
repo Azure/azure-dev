@@ -418,6 +418,13 @@ Go module version tags (`cli/azd/vX.Y.Z`) are created alongside each CLI release
 
 When cutting a release, `eng/scripts/Update-CliVersion.ps1` automatically updates both `cli/version.txt` and `pkg/azdext/version.go` to keep versions in sync.
 
+### Go Dependency Version Synchronization
+
+`cli/azd/go.mod` is the source of truth for dependencies directly shared by core and first-party Go extensions.
+Run `mage checkDependencyVersions` to validate alignment or `mage syncDependencyVersions` to update unapproved
+mismatches. Temporary exceptions must be exact, issue-linked entries in `dependency-versions.json`. See
+`docs/dependency-version-sync.md` for the policy and workflow.
+
 ## Extensions
 
 First-party azd extensions live in `cli/azd/extensions/`.

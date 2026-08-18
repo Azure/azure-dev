@@ -1154,9 +1154,10 @@ var (
 		IsMeasurement:  true,
 	}
 
-	// ContainerRemoteBuildKey records whether the container image was
-	// built remotely (ACR build) rather than locally for a container publish.
-	// It is a boolean (fixed cardinality), so it is emitted raw (not hashed).
+	// ContainerRemoteBuildKey records the user-configured remote-build
+	// preference (serviceConfig.Docker.RemoteBuild) requested for a container
+	// publish — true when a remote (ACR) build was requested, false for a local
+	// build. It is a boolean (fixed cardinality), so it is emitted raw (not hashed).
 	ContainerRemoteBuildKey = AttributeKey{
 		Key:            attribute.Key("container.remotebuild"),
 		Classification: SystemMetadata,

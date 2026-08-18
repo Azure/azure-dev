@@ -190,7 +190,7 @@ not emitted by azd spans.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Remote build count | `container.remoteBuild.count` | SystemMetadata | FeatureInsight | **Measurement** |
-| Publish remote build | `container.remotebuild` | SystemMetadata | FeatureInsight | Bool — whether the image was built remotely (ACR) rather than locally. Not hashed; not a measurement. |
+| Publish remote build | `container.remotebuild` | SystemMetadata | FeatureInsight | Bool — whether a remote (ACR) build was requested (the configured `Docker.RemoteBuild` preference) rather than a local build. Not hashed; not a measurement. |
 
 ### AKS
 

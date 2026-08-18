@@ -622,16 +622,12 @@ func (ch *ContainerHelper) Publish(
 	options *PublishOptions,
 ) (_ *ServicePublishResult, err error) {
 	ctx, span := tracing.Start(ctx, events.ContainerPublishEvent)
-	// Record whether the image was actually built remotely. It stays false until a
-	// remote build completes successfully, so early returns (invalid publish
-	// options, or a remote-build failure with no local runtime) and a fallback to a
-	// local build all report false — matching the field's documented meaning
-	// ("was built remotely") rather than the method requested.
-	remoteBuildUsed := false
-	defer func() {
-		span.SetAttributes(fields.ContainerRemoteBuildKey.Bool(remoteBuildUsed))
-		span.EndWithStatus(err)
-	}()
+	defer func() { span.EndWithStatus(err) }()
+	// Record the user-configured remote-build preference (serviceConfig.Docker.RemoteBuild),
+	// which already carries the requested true/false value.
+	span.SetAttributes(
+		fields.ContainerRemoteBuildKey.Bool(serviceConfig.Docker.RemoteBuild),
+	)
 
 	var remoteImage string
 
@@ -658,8 +654,6 @@ func (ch *ContainerHelper) Publish(
 			})
 			remoteImage, err = ch.publishLocalImage(
 				ctx, serviceConfig, serviceContext, env, progress, imageOverride)
-		} else {
-			remoteBuildUsed = true
 		}
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
 		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, env, progress)

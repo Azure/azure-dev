@@ -427,7 +427,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `container.remoteBuild.count` | measurement | Number of remote container builds performed |
-| `container.remotebuild` | bool | Whether the image was built remotely (ACR) rather than locally. |
+| `container.remotebuild` | bool | Whether a remote (ACR) build was requested (the configured preference) rather than a local build. |
 </details>
 
 <details>

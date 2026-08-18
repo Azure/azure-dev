@@ -79,10 +79,15 @@ func TestGatesStillJudgeRunsThatScoredSomething(t *testing.T) {
 // and silently skipping the gate would leave a pipeline believing it is
 // protected when it is not.
 func TestOnlyATerminalRunCanBeGated(t *testing.T) {
-	for _, status := range []string{"completed", "failed", "canceled", "cancelled", ""} {
+	// Read from the polling vocabulary instead of a second copy of it. Spelling
+	// the list out here is what hid "error" being gateable: the test agreed with
+	// the bug.
+	for status := range terminalRunStates {
 		assert.Truef(t, runIsTerminal(&eval_api.OpenAIEvalRun{Status: status}),
-			"%q has stopped moving, so its counts are final", status)
+			"the poller stops on %q, so its counts are final", status)
 	}
+	assert.True(t, runIsTerminal(&eval_api.OpenAIEvalRun{Status: ""}),
+		"a run the service reported no status for is gated on the counts it gave")
 
 	for _, status := range []string{"in_progress", "queued", "running"} {
 		assert.Falsef(t, runIsTerminal(&eval_api.OpenAIEvalRun{Status: status}),

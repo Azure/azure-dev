@@ -65,6 +65,9 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidEvaluatorName(name)
+			}
 			if fromFile == "" {
 				return requireFlag("from-file")
 			}
@@ -271,6 +274,9 @@ func newEvaluatorVersionsListCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidEvaluatorName(name)
+			}
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -362,6 +368,9 @@ func newEvaluatorShowCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidEvaluatorName(name)
+			}
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -467,6 +476,9 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidEvaluatorName(name)
+			}
 			if version == "" {
 				return requireFlag("version")
 			}

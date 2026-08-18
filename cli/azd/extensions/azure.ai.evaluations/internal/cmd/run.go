@@ -60,15 +60,19 @@ func runCompleted(run *eval_api.OpenAIEvalRun) error {
 // A gate read from a run still in progress is read from partial counts: it can
 // fail a run that would have passed, and it can pass one that has not finished
 // failing.
+//
+// Derived from the polling vocabulary rather than repeating it: a state the
+// poller stops waiting on is a state whose counts are final, and keeping two
+// lists let "error" fall out of this one -- which told anyone gating an errored
+// run to pass --wait, on a run that had already stopped. The empty status is
+// the one deliberate difference: polling keeps waiting on a run the service has
+// not described yet, while a gate reads the counts it was handed.
 func runIsTerminal(run *eval_api.OpenAIEvalRun) bool {
 	if run == nil {
 		return false
 	}
-	switch strings.ToLower(run.Status) {
-	case "completed", "failed", "canceled", "cancelled", "":
-		return true
-	}
-	return false
+	status := strings.ToLower(run.Status)
+	return status == "" || terminalRunStates[status]
 }
 
 // newRunCommand builds the run group.

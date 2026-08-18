@@ -909,9 +909,18 @@ func FromFileDirectoryIsAmbiguous(dir string, names []string) error {
 
 // InvalidDatasetName reports a name the service will not accept.
 func InvalidDatasetName(name string) error {
+	return invalidAssetName("dataset", name)
+}
+
+// InvalidEvaluatorName reports a name the service will not accept.
+func InvalidEvaluatorName(name string) error {
+	return invalidAssetName("evaluator", name)
+}
+
+func invalidAssetName(kind, name string) error {
 	return fmt.Errorf(
-		"dataset name %q is invalid: use letters, digits, dashes and underscores, "+
-			"up to 255 characters", name)
+		"%s name %q is invalid: use letters, digits, dashes and underscores, "+
+			"up to 255 characters", kind, name)
 }
 
 // RegisteringDataset reports the service refusing to publish the dataset.

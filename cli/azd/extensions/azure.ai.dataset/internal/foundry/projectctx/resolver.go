@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/codes"
@@ -78,25 +79,47 @@ func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 	return out, nil
 }
 
+// azd's sentinels for the two absences that reach us without a status.
+//
+// `pkg/environment` declares these with errors.New, and the daemon's
+// error-wrapping interceptor passes an error carrying no suggestion and no auth
+// failure through untouched, so grpc encodes both as Unknown -- the same code a
+// failure to load project state or the environment manager arrives under. The
+// message is the only thing left to tell them apart.
+//
+// Matched rather than imported: taking a dependency on the environment manager
+// for two strings costs more than it settles, and a rename fails closed. The
+// command would report the daemon error instead of resolving quietly to a
+// lower-priority endpoint, which is the direction to fail in.
+const (
+	azdNoDefaultEnvironment = "default environment not found"
+	azdNoSuchEnvironment    = "environment not found"
+)
+
 // hostedSourceAbsent reports whether an error from the azd daemon leaves the
 // cascade free to carry on to the next level.
 //
-// Three codes mean "nothing here". Unavailable is no daemon at all. NotFound is
-// a daemon with nothing under that name. Unknown is the one that is not
-// obvious: azd answers the ordinary absences -- no default environment, no such
-// key -- with plain Go errors, its interceptor passes those through untouched,
-// and grpc encodes an error carrying no status as Unknown. Without it, a
+// Unavailable is no daemon at all. NotFound is a daemon with nothing under that
+// name. Unknown is the one that is not obvious: azd answers the ordinary
+// absences -- no default environment, no such environment -- with plain Go
+// errors that reach us with no status, and without letting those through, a
 // project that simply has no environment selected could never reach the global
-// config or the host variable.
+// config or the host variable. It is admitted only for those two, because
+// Unknown is equally what a failure to load project state arrives as.
 //
 // Everything else is a failure to answer rather than an answer of "nothing":
 // an expired login, a denial, a cancellation, or a server fault. Falling
 // through on any of those would resolve quietly to a lower-priority endpoint
 // that can belong to a different project.
 func hostedSourceAbsent(err error) bool {
-	return containsGRPCCode(err, codes.Unavailable) ||
-		containsGRPCCode(err, codes.NotFound) ||
-		containsGRPCCode(err, codes.Unknown)
+	if containsGRPCCode(err, codes.Unavailable) || containsGRPCCode(err, codes.NotFound) {
+		return true
+	}
+	if !containsGRPCCode(err, codes.Unknown) {
+		return false
+	}
+	msg := status.Convert(err).Message()
+	return strings.Contains(msg, azdNoDefaultEnvironment) || strings.Contains(msg, azdNoSuchEnvironment)
 }
 
 // containsGRPCCode walks the error chain looking for a gRPC status with the

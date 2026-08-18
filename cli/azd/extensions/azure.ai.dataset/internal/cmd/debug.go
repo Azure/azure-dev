@@ -31,20 +31,29 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 
 	// Written outside the working directory: that is the user's repository, the
 	// scaffolded .gitignore does not cover this name, and a routine `git add -A`
-	// committed one. The private subdirectory matters because the temp directory
-	// is shared on Linux -- at a predictable path another user could leave a
-	// symbolic link and have the HTTP trace appended to a file of their choosing.
-	logDir := filepath.Join(os.TempDir(), "azd-ai-dataset")
-	if err := os.MkdirAll(logDir, 0o700); err != nil {
-		logDir = os.TempDir()
+	// committed one.
+	//
+	// A fresh random directory rather than a named one. The temp directory is
+	// shared on Linux, and MkdirAll accepts a directory that is already there
+	// without making it private, so at a predictable path another user could
+	// leave one they own -- world-readable, to read the HTTP traces, or holding
+	// a symbolic link at the predictable daily name, to have them appended to a
+	// file of their choosing. MkdirTemp picks the name and creates it in one
+	// step, so neither is possible. The path is echoed below, which is what
+	// made the fixed name worth having.
+	logDir, dirErr := os.MkdirTemp("", "azd-ai-dataset-")
+	var logFile *os.File
+	var err error
+	if dirErr != nil {
+		err = dirErr
+	} else {
+		logFileName := filepath.Join(
+			logDir,
+			fmt.Sprintf("azd-ai-dataset-%s.log", time.Now().Format("2006-01-02")),
+		)
+		//nolint:gosec // the directory was just created private, and the name is a date
+		logFile, err = os.OpenFile(logFileName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	}
-	logFileName := filepath.Join(
-		logDir,
-		fmt.Sprintf("azd-ai-dataset-%s.log", time.Now().Format("2006-01-02")),
-	)
-
-	//nolint:gosec // the name is generated locally from the date, not user input
-	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 
 	var w io.Writer
 	var closeFile func()
@@ -56,7 +65,7 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 		closeFile = func() { logFile.Close() } //nolint:gosec // best-effort cleanup
 		// A log nobody can find is not a log. Debugging was asked for
 		// explicitly, so naming the file costs nothing.
-		fmt.Fprintf(os.Stderr, "Debug log: %s\n", filepath.ToSlash(logFileName))
+		fmt.Fprintf(os.Stderr, "Debug log: %s\n", filepath.ToSlash(logFile.Name()))
 	}
 
 	log.SetOutput(w)

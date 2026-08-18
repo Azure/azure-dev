@@ -531,18 +531,27 @@ func deploymentItems(
 			return nil, nil, fmt.Errorf("copy deployment item %d: %w", i, err)
 		}
 	}
-	resolvedMap := map[string]any{"deployments": rawValue}
-	if projectRoot != "" {
-		cloned, cloneErr := cloneMap(resolvedMap)
-		if cloneErr != nil {
-			return nil, nil, fmt.Errorf("copy project deployments: %w", cloneErr)
+	resolvedValue := resolvedSource
+	if resolvedValue == nil {
+		resolvedMap := map[string]any{"deployments": rawValue}
+		if projectRoot != "" {
+			cloned, cloneErr := cloneMap(resolvedMap)
+			if cloneErr != nil {
+				return nil, nil, fmt.Errorf("copy project deployments: %w", cloneErr)
+			}
+			resolvedMap, err = foundry.ResolveFileRefs(cloned, projectRoot)
+			if err != nil {
+				return nil, nil, fmt.Errorf(
+					"resolve project deployment references: %w",
+					err,
+				)
+			}
 		}
-		resolvedMap, err = foundry.ResolveFileRefs(cloned, projectRoot)
-		if err != nil {
-			return nil, nil, fmt.Errorf("resolve project deployment references: %w", err)
-		}
+		resolvedValue, _ = resolvedMap["deployments"].([]any)
 	}
-	resolvedValue, _ := resolvedMap["deployments"].([]any)
+	if resolvedValue == nil {
+		resolvedValue = []any{}
+	}
 	resolved := make([]map[string]any, len(resolvedValue))
 	for i, value := range resolvedValue {
 		item, ok := value.(map[string]any)

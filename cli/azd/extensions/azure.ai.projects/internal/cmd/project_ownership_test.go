@@ -495,6 +495,34 @@ func TestValidateFoundryProviderAllowsSingleFoundryLayer(t *testing.T) {
 	}))
 }
 
+func TestValidateFoundryProviderAllowsEjectedTerraformLayer(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+    - name: foundry
+      path: infra/foundry
+      provider: terraform
+`),
+		0600,
+	))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra", "foundry"), 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "infra", "foundry", foundryTerraformMarker),
+		[]byte(foundryTerraformMarkerVersion),
+		0600,
+	))
+
+	require.NoError(t, validateFoundryProvider(&azdext.ProjectConfig{
+		Path:  root,
+		Infra: &azdext.InfraOptions{},
+	}))
+}
+
 func TestEjectBicepClearsCustomInfraPath(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
@@ -542,6 +570,137 @@ services:
 	_, err = os.Stat(filepath.Join(root, "infra", "main.bicep"))
 	require.NoError(t, err)
 	assert.Contains(t, projectServer.unsetPaths, "infra.path")
+}
+
+func TestEjectBicepUsesFoundryLayerPathAndModule(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`name: test
+infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+    - name: foundry
+      path: infra/foundry
+      module: project
+      provider: microsoft.foundry
+services:
+  project:
+    host: azure.ai.project
+    deployments:
+      - name: chat
+        model: {format: OpenAI, name: gpt-4.1, version: "2025-04-14"}
+        sku: {name: GlobalStandard, capacity: 10}
+`),
+		0600,
+	))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra", "app"), 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "infra", "app", "main.bicep"),
+		[]byte("targetScope = 'subscription'\n"),
+		0600,
+	))
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Path:  root,
+			Infra: &azdext.InfraOptions{Provider: "bicep"},
+		},
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	require.NoError(t, ejectProjectInfra(
+		t.Context(), client, root, "project", "bicep",
+	))
+	_, err = os.Stat(filepath.Join(root, "infra", "foundry", "project.bicep"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(root, "infra", "foundry", "project.parameters.json"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(root, "infra", "main.bicep"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	assert.NotContains(t, projectServer.unsetPaths, "infra.path")
+}
+
+func TestEjectTerraformUsesFoundryLayerPathAndProvider(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`name: test
+infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+    - name: foundry
+      path: infra/foundry
+      provider: microsoft.foundry
+services:
+  project:
+    host: azure.ai.project
+    deployments:
+      - name: chat
+        model: {format: OpenAI, name: gpt-4.1, version: "2025-04-14"}
+        sku: {name: GlobalStandard, capacity: 10}
+`),
+		0600,
+	))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra", "app"), 0750))
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Path:  root,
+			Infra: &azdext.InfraOptions{Provider: "bicep"},
+		},
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	require.NoError(t, ejectProjectInfra(
+		t.Context(), client, root, "project", "terraform",
+	))
+	_, err = os.Stat(filepath.Join(root, "infra", "foundry", "main.tf"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(root, "infra", "foundry", "main.tfvars.json"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(root, "infra", "main.tf"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	require.NotNil(t, projectServer.setRequest)
+	assert.Equal(t, "infra.layers", projectServer.setRequest.Path)
+	layers, ok := projectServer.setRequest.Value.AsInterface().([]any)
+	require.True(t, ok)
+	require.Len(t, layers, 2)
+	foundry, ok := layers[1].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "terraform", foundry["provider"])
 }
 
 func TestLoadDelegatedProjectInitNormalizesInfraProvider(t *testing.T) {
@@ -747,6 +906,7 @@ type recordingProjectConfigServer struct {
 	project    *azdext.ProjectConfig
 	section    *structpb.Struct
 	unsetPaths []string
+	setRequest *azdext.SetProjectConfigValueRequest
 }
 
 func (s *recordingProjectConfigServer) Get(
@@ -771,6 +931,14 @@ func (s *recordingProjectConfigServer) UnsetConfig(
 	request *azdext.UnsetProjectConfigRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.unsetPaths = append(s.unsetPaths, request.Path)
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectConfigServer) SetConfigValue(
+	_ context.Context,
+	request *azdext.SetProjectConfigValueRequest,
+) (*azdext.EmptyResponse, error) {
+	s.setRequest = request
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -815,6 +983,18 @@ func TestProjectEnvironmentPreservesLocationWhenProjectLocationIsUnknown(t *test
 	assert.NotContains(t, plan.Unsets, "AZURE_LOCATION")
 }
 
+func TestProjectEnvironmentPreservesExistingLocation(t *testing.T) {
+	plan := planProjectEnvironment(
+		map[string]string{"AZURE_LOCATION": "westus2"},
+		projectModeExistingID,
+		&resolvedProject{Location: "eastus"},
+		false,
+	)
+
+	assert.NotContains(t, plan.Sets, "AZURE_LOCATION")
+	assert.NotContains(t, plan.Unsets, "AZURE_LOCATION")
+}
+
 func TestDeploymentSemanticEqualityIgnoresNameCase(t *testing.T) {
 	value := map[string]any{
 		"name": "Chat",
@@ -824,6 +1004,43 @@ func TestDeploymentSemanticEqualityIgnoresNameCase(t *testing.T) {
 		"sku": map[string]any{"name": "GlobalStandard", "capacity": float64(10)},
 	}
 	assert.True(t, deploymentSemanticallyEqual(value, synthesisDeploymentForTest()))
+}
+
+func TestDeploymentItemsUsesExpandedValues(t *testing.T) {
+	raw := map[string]any{
+		"name": "${DEPLOYMENT_NAME}",
+		"model": map[string]any{
+			"format": "OpenAI",
+			"name":   "${MODEL_NAME}",
+		},
+		"sku": map[string]any{"name": "GlobalStandard", "capacity": 10},
+	}
+	expanded := map[string]any{
+		"name": "chat",
+		"model": map[string]any{
+			"format":  "OpenAI",
+			"name":    "gpt-4.1",
+			"version": "2025-04-14",
+		},
+		"sku": map[string]any{"name": "GlobalStandard", "capacity": 10},
+	}
+
+	rawItems, resolvedItems, err := deploymentItems(
+		&projectServiceInfo{
+			Raw:      map[string]any{"deployments": []any{raw}},
+			Resolved: map[string]any{"deployments": []any{expanded}},
+		},
+		"",
+	)
+	require.NoError(t, err)
+	require.Len(t, rawItems, 1)
+	require.Len(t, resolvedItems, 1)
+	assert.Equal(t, "${MODEL_NAME}", rawItems[0]["model"].(map[string]any)["name"])
+	assert.Equal(t, "gpt-4.1", resolvedItems[0]["model"].(map[string]any)["name"])
+	assert.True(t, deploymentSemanticallyEqual(
+		resolvedItems[0],
+		synthesisDeploymentForTest(),
+	))
 }
 
 func synthesisDeploymentForTest() synthesis.Deployment {

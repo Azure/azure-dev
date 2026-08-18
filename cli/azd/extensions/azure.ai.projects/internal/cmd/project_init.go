@@ -61,6 +61,11 @@ var projectResourceIDPattern = regexp.MustCompile(
 
 const foundryProjectResourceType = "Microsoft.CognitiveServices/accounts/projects"
 
+const (
+	foundryTerraformMarker        = ".azd-foundry"
+	foundryTerraformMarkerVersion = "terraform-v1\n"
+)
+
 // ProjectInitAction implements `azd ai project init`.
 type ProjectInitAction struct {
 	client *azdext.AzdClient
@@ -1021,6 +1026,15 @@ func setProjectConfigString(
 	client *azdext.AzdClient,
 	path, value string,
 ) error {
+	return setProjectConfigValue(ctx, client, path, value)
+}
+
+func setProjectConfigValue(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	path string,
+	value any,
+) error {
 	structValue, err := structpb.NewValue(value)
 	if err != nil {
 		return err
@@ -1076,14 +1090,28 @@ func restoreProjectInfraConfig(
 	return errors.Join(restoreErrs...)
 }
 
+func restoreProjectInfraLayers(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	layers []map[string]any,
+) error {
+	if layers == nil {
+		return unsetProjectConfigValue(ctx, client, "infra.layers")
+	}
+	values := make([]any, len(layers))
+	for i := range layers {
+		values[i] = layers[i]
+	}
+	return setProjectConfigValue(ctx, client, "infra.layers", values)
+}
+
 func validateFoundryProvider(project *azdext.ProjectConfig) error {
 	infraDeclaration, err := readProjectInfraDeclaration(project)
 	if err != nil {
 		return err
 	}
 	if infraDeclaration.layerCount > 0 {
-		switch {
-		case infraDeclaration.rootProvider == provisioning.FoundryProviderName:
+		if infraDeclaration.rootProvider == provisioning.FoundryProviderName {
 			return exterrors.Validation(
 				"infra_provider_conflict",
 				fmt.Sprintf(
@@ -1094,16 +1122,27 @@ func validateFoundryProvider(project *azdext.ProjectConfig) error {
 				"keep one named Foundry layer with provider microsoft.foundry "+
 					"instead of setting the root provider",
 			)
-		case infraDeclaration.rootProvider == "" &&
-			infraDeclaration.foundryLayerCount != 1:
+		}
+		if infraDeclaration.foundryLayerCount == 0 {
+			if infraDeclaration.ejectedTerraformLayerCount == 1 {
+				return nil
+			}
 			return exterrors.Validation(
 				"infra_provider_conflict",
-				"azure.yaml declares named infrastructure layers without exactly one "+
-					"microsoft.foundry layer",
+				"azure.yaml declares named infrastructure layers without a Foundry layer",
 				"configure exactly one layer with provider microsoft.foundry "+
 					"before initializing a Foundry project",
 			)
 		}
+		if infraDeclaration.foundryLayerCount != 1 {
+			return exterrors.Validation(
+				"infra_provider_conflict",
+				"azure.yaml declares more than one microsoft.foundry layer",
+				"configure exactly one layer with provider microsoft.foundry "+
+					"before initializing a Foundry project",
+			)
+		}
+		return nil
 	}
 	if project != nil && project.GetInfra() != nil &&
 		project.GetInfra().GetProvider() != "" &&
@@ -1147,9 +1186,21 @@ func validateFoundryProvider(project *azdext.ProjectConfig) error {
 }
 
 type projectInfraDeclaration struct {
-	rootProvider      string
-	layerCount        int
-	foundryLayerCount int
+	rootProvider               string
+	rootModule                 string
+	layerCount                 int
+	foundryLayerCount          int
+	ejectedTerraformLayerCount int
+	layers                     []map[string]any
+	foundryLayer               *projectInfraLayer
+}
+
+type projectInfraLayer struct {
+	index    int
+	name     string
+	path     string
+	module   string
+	provider string
 }
 
 func readProjectInfraDeclaration(
@@ -1173,10 +1224,9 @@ func readProjectInfraDeclaration(
 	}
 	var document struct {
 		Infra struct {
-			Provider string `yaml:"provider"`
-			Layers   []struct {
-				Provider string `yaml:"provider"`
-			} `yaml:"layers"`
+			Provider string           `yaml:"provider"`
+			Module   string           `yaml:"module"`
+			Layers   []map[string]any `yaml:"layers"`
 		} `yaml:"infra"`
 	}
 	if err := yaml.Unmarshal(raw, &document); err != nil {
@@ -1188,18 +1238,64 @@ func readProjectInfraDeclaration(
 	}
 	declaration := projectInfraDeclaration{
 		rootProvider: strings.TrimSpace(document.Infra.Provider),
+		rootModule:   strings.TrimSpace(document.Infra.Module),
 		layerCount:   len(document.Infra.Layers),
+		layers:       document.Infra.Layers,
 	}
-	for _, layer := range document.Infra.Layers {
-		provider := strings.TrimSpace(layer.Provider)
+	for index, layer := range document.Infra.Layers {
+		name, _ := layer["name"].(string)
+		path, _ := layer["path"].(string)
+		module, _ := layer["module"].(string)
+		provider, _ := layer["provider"].(string)
+		provider = strings.TrimSpace(provider)
 		if provider == "" {
 			provider = declaration.rootProvider
 		}
 		if provider == provisioning.FoundryProviderName {
 			declaration.foundryLayerCount++
+			declaration.foundryLayer = &projectInfraLayer{
+				index:    index,
+				name:     strings.TrimSpace(name),
+				path:     strings.TrimSpace(path),
+				module:   strings.TrimSpace(module),
+				provider: provider,
+			}
+		}
+		if provider == provisioning.TerraformProviderName &&
+			isFoundryTerraformLayer(project.GetPath(), path, module) {
+			declaration.ejectedTerraformLayerCount++
 		}
 	}
 	return declaration, nil
+}
+
+func isFoundryTerraformLayer(projectRoot, path, module string) bool {
+	if projectRoot == "" || path == "" {
+		return false
+	}
+	if module == "" {
+		module = "main"
+	}
+	infraDir := filepath.Join(projectRoot, filepath.FromSlash(path))
+	marker, err := os.ReadFile(filepath.Join(infraDir, foundryTerraformMarker))
+	if err == nil {
+		return string(marker) == foundryTerraformMarkerVersion
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(infraDir, module+".tfvars.json")); err != nil {
+		return false
+	}
+	// Support Terraform ejection created before the marker was added.
+	// #nosec G304
+	main, err := os.ReadFile(filepath.Join(infraDir, "main.tf"))
+	if err != nil {
+		return false
+	}
+	source := string(main)
+	return strings.Contains(source, `resource "azapi_resource" "foundry_account"`) &&
+		strings.Contains(source, `resource "azapi_resource" "project"`)
 }
 
 func validateExistingEndpointMode(
@@ -1252,6 +1348,177 @@ func parseInfraProvider(value string) (string, error) {
 	}
 }
 
+type projectInfraEjectTarget struct {
+	path   string
+	module string
+	layer  bool
+}
+
+func resolveProjectInfraEjectTarget(
+	projectRoot string,
+	declaration projectInfraDeclaration,
+) (projectInfraEjectTarget, error) {
+	target := projectInfraEjectTarget{
+		path:   "infra",
+		module: "main",
+	}
+	if declaration.layerCount == 0 {
+		target.module = normalizeProjectInfraEjectModule(declaration.rootModule)
+		if err := validateProjectInfraEjectModule(target.module); err != nil {
+			return target, err
+		}
+		return target, nil
+	}
+	if declaration.foundryLayerCount != 1 {
+		return target, exterrors.Validation(
+			"infra_provider_conflict",
+			"azure.yaml must declare exactly one microsoft.foundry layer",
+			"configure exactly one layer with provider microsoft.foundry "+
+				"before ejecting Foundry infrastructure",
+		)
+	}
+	if declaration.foundryLayer == nil {
+		return target, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			"azure.yaml does not declare a Foundry infrastructure layer",
+			"configure exactly one infra.layers[] entry with "+
+				"provider microsoft.foundry",
+		)
+	}
+	target.layer = true
+	target.path = declaration.foundryLayer.path
+	if target.path == "" {
+		return target, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			"the Foundry infrastructure layer must declare a path",
+			"set infra.layers[].path to a project-relative directory",
+		)
+	}
+	target.module = normalizeProjectInfraEjectModule(
+		declaration.foundryLayer.module,
+	)
+	if filepath.IsAbs(filepath.FromSlash(target.path)) {
+		return target, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("Foundry infrastructure path %q must be project-relative",
+				target.path),
+			"set infra.layers[].path to a directory inside the project",
+		)
+	}
+	cleanPath := filepath.Clean(filepath.FromSlash(target.path))
+	if cleanPath == "." || cleanPath == ".." ||
+		strings.HasPrefix(cleanPath, ".."+string(filepath.Separator)) {
+		return target, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("Foundry infrastructure path %q must be inside the project",
+				target.path),
+			"set infra.layers[].path to a directory inside the project",
+		)
+	}
+	absRoot, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return target, fmt.Errorf("resolve project root for infrastructure ejection: %w", err)
+	}
+	absTarget, err := filepath.Abs(filepath.Join(absRoot, cleanPath))
+	if err != nil {
+		return target, fmt.Errorf("resolve Foundry infrastructure path: %w", err)
+	}
+	relative, err := filepath.Rel(absRoot, absTarget)
+	if err != nil || relative == "." || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return target, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("Foundry infrastructure path %q must be inside the project",
+				target.path),
+			"set infra.layers[].path to a directory inside the project",
+		)
+	}
+	rootReal, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return target, fmt.Errorf("resolve project root symlinks: %w", err)
+	}
+	existingPath := absTarget
+	for {
+		if _, statErr := os.Lstat(existingPath); statErr == nil {
+			break
+		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			return target, fmt.Errorf(
+				"inspect Foundry infrastructure path %q: %w",
+				target.path,
+				statErr,
+			)
+		}
+		parent := filepath.Dir(existingPath)
+		if parent == existingPath {
+			break
+		}
+		existingPath = parent
+	}
+	existingReal, err := filepath.EvalSymlinks(existingPath)
+	if err != nil {
+		return target, fmt.Errorf("resolve Foundry infrastructure path: %w", err)
+	}
+	relative, err = filepath.Rel(rootReal, existingReal)
+	if err != nil || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return target, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf(
+				"Foundry infrastructure path %q escapes the project through a symbolic link",
+				target.path,
+			),
+			"set infra.layers[].path to a directory inside the project",
+		)
+	}
+	if err := validateProjectInfraEjectModule(target.module); err != nil {
+		return target, err
+	}
+	return target, nil
+}
+
+func normalizeProjectInfraEjectModule(module string) string {
+	if module == "" || filepath.ToSlash(module) == "./main" {
+		return "main"
+	}
+	return module
+}
+
+func validateProjectInfraEjectModule(module string) error {
+	if module == "" || module == "." || module == ".." ||
+		filepath.Base(module) != module ||
+		strings.ContainsAny(module, `/\\`) ||
+		filepath.Ext(module) != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("Foundry infrastructure module %q must be a file name "+
+				"without an extension", module),
+			"set infra.layers[].module to a file name such as main",
+		)
+	}
+	return nil
+}
+
+func updateFoundryLayerProvider(
+	declaration projectInfraDeclaration,
+	provider string,
+) ([]map[string]any, error) {
+	if declaration.foundryLayer == nil || declaration.layers == nil {
+		return nil, fmt.Errorf("Foundry infrastructure layer is not declared")
+	}
+	updated := make([]map[string]any, len(declaration.layers))
+	for index, layer := range declaration.layers {
+		cloned, err := cloneMap(layer)
+		if err != nil {
+			return nil, fmt.Errorf("copy infrastructure layer %d: %w", index, err)
+		}
+		if index == declaration.foundryLayer.index {
+			cloned["provider"] = provider
+		}
+		updated[index] = cloned
+	}
+	return updated, nil
+}
+
 func ejectProjectInfra(
 	ctx context.Context,
 	client *azdext.AzdClient,
@@ -1261,7 +1528,12 @@ func ejectProjectInfra(
 	if projectErr != nil {
 		return fmt.Errorf("read project configuration before infrastructure ejection: %w", projectErr)
 	}
+	declaration, err := readProjectInfraDeclaration(projectResponse.GetProject())
+	if err != nil {
+		return err
+	}
 	if projectResponse.GetProject() != nil &&
+		declaration.layerCount == 0 &&
 		projectResponse.Project.GetInfra() != nil &&
 		projectResponse.Project.Infra.GetProvider() != "" &&
 		projectResponse.Project.Infra.GetProvider() != provisioning.FoundryProviderName {
@@ -1274,6 +1546,10 @@ func ejectProjectInfra(
 			"remove --infra or change the project to microsoft.foundry explicitly",
 		)
 	}
+	target, err := resolveProjectInfraEjectTarget(projectRoot, declaration)
+	if err != nil {
+		return err
+	}
 	oldProvider, oldPath := projectInfraConfig(projectResponse.GetProject())
 	projectFile, err := projectFilePath(projectRoot)
 	if err != nil {
@@ -1284,14 +1560,22 @@ func ejectProjectInfra(
 	if err != nil {
 		return fmt.Errorf("read %s for infrastructure ejection: %w", projectFile, err)
 	}
-	if _, err := os.Stat(filepath.Join(projectRoot, "infra")); err == nil {
+	infraDir := filepath.Join(projectRoot, filepath.FromSlash(target.path))
+	if _, err := os.Stat(infraDir); err == nil {
+		location := "infra/"
+		if target.layer {
+			location = filepath.ToSlash(target.path)
+		}
 		return exterrors.Validation(
 			"infra_eject_exists",
-			"cannot eject Foundry infrastructure because infra/ already exists",
-			"remove or rename the existing infra/ directory and retry",
+			fmt.Sprintf(
+				"cannot eject Foundry infrastructure because %s already exists",
+				location,
+			),
+			"remove or rename the existing infrastructure directory and retry",
 		)
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("check infra directory: %w", err)
+		return fmt.Errorf("check infrastructure directory: %w", err)
 	}
 	result, err := synthesis.Synthesize(synthesis.Input{
 		RawAzureYAML:    raw,
@@ -1307,7 +1591,6 @@ func ejectProjectInfra(
 			"fix the project service configuration and retry",
 		)
 	}
-	infraDir := filepath.Join(projectRoot, "infra")
 	// #nosec G301
 	if err := os.MkdirAll(infraDir, 0755); err != nil {
 		return fmt.Errorf("create infra directory: %w", err)
@@ -1321,14 +1604,33 @@ func ejectProjectInfra(
 		}
 		return operationErr
 	}
+	oldLayers := declaration.layers
+	var updatedLayers []map[string]any
+	layersChanged := target.layer && provider == provisioning.TerraformProviderName
+	if layersChanged {
+		updatedLayers, err = updateFoundryLayerProvider(
+			declaration,
+			provisioning.TerraformProviderName,
+		)
+		if err != nil {
+			return cleanup(err)
+		}
+	}
 	rollback := func(operationErr error) error {
 		operationErr = cleanup(operationErr)
-		if restoreErr := restoreProjectInfraConfig(
-			ctx,
-			client,
-			oldProvider,
-			oldPath,
-		); restoreErr != nil {
+		var restoreErr error
+		switch {
+		case layersChanged:
+			restoreErr = restoreProjectInfraLayers(ctx, client, oldLayers)
+		case !target.layer:
+			restoreErr = restoreProjectInfraConfig(
+				ctx,
+				client,
+				oldProvider,
+				oldPath,
+			)
+		}
+		if restoreErr != nil {
 			return errors.Join(
 				operationErr,
 				fmt.Errorf("restore project infrastructure config: %w", restoreErr),
@@ -1344,36 +1646,65 @@ func ejectProjectInfra(
 				"eject Bicep instead",
 			))
 		}
-		if err := writeTerraformEjectedInfra(infraDir, result.Parameters); err != nil {
+		if err := writeTerraformEjectedInfraAt(
+			infraDir,
+			result.Parameters,
+			target.layer,
+			target.module,
+		); err != nil {
 			return cleanup(err)
 		}
-		if err := setProjectConfigString(
-			ctx,
-			client,
-			"infra.provider",
-			provisioning.TerraformProviderName,
-		); err != nil {
-			return rollback(fmt.Errorf("stamp Terraform provider: %w", err))
-		}
-		if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
-			return rollback(fmt.Errorf("remove infra.path: %w", err))
+		if target.layer {
+			if err := setProjectConfigValue(
+				ctx,
+				client,
+				"infra.layers",
+				mapsToValues(updatedLayers),
+			); err != nil {
+				return rollback(fmt.Errorf("stamp Terraform layer provider: %w", err))
+			}
+		} else {
+			if err := setProjectConfigString(
+				ctx,
+				client,
+				"infra.provider",
+				provisioning.TerraformProviderName,
+			); err != nil {
+				return rollback(fmt.Errorf("stamp Terraform provider: %w", err))
+			}
+			if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
+				return rollback(fmt.Errorf("remove infra.path: %w", err))
+			}
 		}
 	} else {
-		if err := copyEmbeddedBicep(infraDir); err != nil {
+		if err := copyEmbeddedBicep(infraDir, target.module); err != nil {
 			return cleanup(err)
 		}
 		parameters := map[string]any{"parameters": map[string]any{}}
 		for key, value := range result.Parameters {
 			parameters["parameters"].(map[string]any)[key] = map[string]any{"value": value}
 		}
-		if err := writeJSONFile(filepath.Join(infraDir, "main.parameters.json"), parameters); err != nil {
+		if err := writeJSONFile(
+			filepath.Join(infraDir, target.module+".parameters.json"),
+			parameters,
+		); err != nil {
 			return cleanup(err)
 		}
-		if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
-			return rollback(fmt.Errorf("remove infra.path: %w", err))
+		if !target.layer {
+			if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
+				return rollback(fmt.Errorf("remove infra.path: %w", err))
+			}
 		}
 	}
 	return nil
+}
+
+func mapsToValues(maps []map[string]any) []any {
+	values := make([]any, len(maps))
+	for i := range maps {
+		values[i] = maps[i]
+	}
+	return values
 }
 
 func projectFilePath(projectRoot string) (string, error) {
@@ -1396,12 +1727,38 @@ func projectFilePath(projectRoot string) (string, error) {
 	)
 }
 
-func copyEmbeddedBicep(destination string) error {
-	return copyEmbeddedTree(synthesis.TemplatesFS(), "templates", destination,
-		map[string]struct{}{"main.arm.json": {}, "brownfield.bicep": {}, "brownfield.arm.json": {}})
+func copyEmbeddedBicep(destination, module string) error {
+	if err := copyEmbeddedTree(
+		synthesis.TemplatesFS(),
+		"templates",
+		destination,
+		map[string]struct{}{
+			"main.arm.json":       {},
+			"brownfield.bicep":    {},
+			"brownfield.arm.json": {},
+		},
+	); err != nil {
+		return err
+	}
+	if module == "" || module == "main" {
+		return nil
+	}
+	return os.Rename(
+		filepath.Join(destination, "main.bicep"),
+		filepath.Join(destination, module+".bicep"),
+	)
 }
 
 func writeTerraformEjectedInfra(infraDir string, parameters map[string]any) error {
+	return writeTerraformEjectedInfraAt(infraDir, parameters, false, "main")
+}
+
+func writeTerraformEjectedInfraAt(
+	infraDir string,
+	parameters map[string]any,
+	layer bool,
+	module string,
+) error {
 	variables, includeAcr, err := terraformEjectionVariables(parameters)
 	if err != nil {
 		return err
@@ -1409,11 +1766,21 @@ func writeTerraformEjectedInfra(infraDir string, parameters map[string]any) erro
 	if err := copyEmbeddedTerraform(infraDir, includeAcr); err != nil {
 		return fmt.Errorf("copy Terraform templates: %w", err)
 	}
-	if err := renderTerraformOutputs(infraDir, includeAcr); err != nil {
+	if err := renderTerraformOutputs(infraDir, includeAcr, layer); err != nil {
 		return fmt.Errorf("render Terraform outputs: %w", err)
 	}
-	if err := writeJSONFile(filepath.Join(infraDir, "main.tfvars.json"), variables); err != nil {
+	if err := writeJSONFile(filepath.Join(infraDir, module+".tfvars.json"), variables); err != nil {
 		return fmt.Errorf("write Terraform variables: %w", err)
+	}
+	if layer {
+		// #nosec G306
+		if err := os.WriteFile(
+			filepath.Join(infraDir, foundryTerraformMarker),
+			[]byte(foundryTerraformMarkerVersion),
+			0644,
+		); err != nil {
+			return fmt.Errorf("write Terraform ownership marker: %w", err)
+		}
 	}
 	return nil
 }
@@ -1470,7 +1837,7 @@ func copyEmbeddedTerraform(destination string, includeAcr bool) error {
 		skip)
 }
 
-func renderTerraformOutputs(destination string, includeAcr bool) error {
+func renderTerraformOutputs(destination string, includeAcr, layer bool) error {
 	const templatePath = "templates/terraform/outputs.tf.tmpl"
 	source, err := fs.ReadFile(synthesis.TerraformTemplatesFS(), templatePath)
 	if err != nil {
@@ -1484,7 +1851,7 @@ func renderTerraformOutputs(destination string, includeAcr bool) error {
 	if err := tmpl.Execute(&output, struct {
 		IncludeAcr bool
 		Layer      bool
-	}{IncludeAcr: includeAcr}); err != nil {
+	}{IncludeAcr: includeAcr, Layer: layer}); err != nil {
 		return fmt.Errorf("render Terraform outputs template: %w", err)
 	}
 	// #nosec G306

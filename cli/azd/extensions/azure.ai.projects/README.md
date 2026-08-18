@@ -27,6 +27,23 @@ services:
 
 When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
 
+For projects that use `infra.layers`, declare exactly one layer with
+`provider: microsoft.foundry` and leave the root provider available for the
+other layers:
+
+```yaml
+infra:
+  provider: bicep
+  layers:
+    - name: foundry
+      path: infra/foundry
+      provider: microsoft.foundry
+```
+
+When `azd ai project init --infra` is used with layers, infrastructure is
+ejected into the Foundry layer's configured path and module. The root
+`microsoft.foundry` provider cannot be combined with named layers.
+
 ## Project authoring
 
 Initialize a new Foundry project in the current azd workspace:

@@ -56,7 +56,7 @@ func planProjectEnvironment(
 			}
 		}
 		// Do not overwrite a preselected location when ARM omits one.
-		if project.Location != "" {
+		if project.Location != "" && oldValues["AZURE_LOCATION"] == "" {
 			sets["AZURE_LOCATION"] = project.Location
 		}
 	case projectModeExistingEndpoint:

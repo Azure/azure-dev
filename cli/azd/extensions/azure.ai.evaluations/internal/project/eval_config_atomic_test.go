@@ -4,8 +4,10 @@
 package project
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -36,9 +38,24 @@ func TestSaveEvalConfigNeverExposesAHalfWrittenFile(t *testing.T) {
 	}
 	require.NoError(t, SaveEvalConfigTo(path, full))
 
+	// Every field, not the eval count. A document caught mid-write can still
+	// parse with two evals while having lost the datasets, or a field off the
+	// second one, and counting entries reports that as a whole file. Read back
+	// what a correct read returns and hold every later read to it.
+	baseline, err := LoadEvalConfig(path)
+	require.NoError(t, err)
+	require.Len(t, baseline.Evals, 2)
+	require.Len(t, baseline.Datasets, 1)
+
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
-	var truncated int
+	// Counted apart, because they want opposite responses. A config observed
+	// with fields missing is the bug this test guards. A read that failed under
+	// contention may only mean the retry budget was short on a loaded machine.
+	// One combined counter, or one example off whichever happened first, leaves
+	// a run where both occurred looking like whichever won the race.
+	var readErrors, mismatches int
+	var firstReadError, firstMismatch string
 	var replacements int64
 
 	wg.Go(func() {
@@ -50,11 +67,20 @@ func TestSaveEvalConfigNeverExposesAHalfWrittenFile(t *testing.T) {
 				// remove-then-rename exposes, and OpenEvalConfig turns it into
 				// "there is no configuration yet" -- the same loss this guards
 				// against, by another route.
-				truncated++
+				readErrors++
+				if firstReadError == "" {
+					firstReadError = err.Error()
+				}
 				continue
 			}
-			if len(cfg.Evals) != 2 {
-				truncated++
+			if !reflect.DeepEqual(cfg, baseline) {
+				mismatches++
+				if firstMismatch == "" {
+					firstMismatch = fmt.Sprintf(
+						"%d evals and %d datasets, wanted %d and %d",
+						len(cfg.Evals), len(cfg.Datasets),
+						len(baseline.Evals), len(baseline.Datasets))
+				}
 			}
 		}
 		close(stop)
@@ -76,8 +102,20 @@ func TestSaveEvalConfigNeverExposesAHalfWrittenFile(t *testing.T) {
 
 	require.NotZero(t, atomic.LoadInt64(&replacements),
 		"the writer has to have replaced the file, or nothing was under test")
-	assert.Zerof(t, truncated,
-		"a concurrent reader failed to see the whole config %d times", truncated)
+	assert.Zerof(t, readErrors+mismatches,
+		"over %d replacements a concurrent reader saw %d incomplete configs (first: %s) "+
+			"and %d failed reads (first: %s)",
+		atomic.LoadInt64(&replacements),
+		mismatches, orNone(firstMismatch),
+		readErrors, orNone(firstReadError))
+}
+
+// orNone keeps an absent example from reading as an empty one.
+func orNone(s string) string {
+	if s == "" {
+		return "none"
+	}
+	return s
 }
 
 // OpenEvalConfig maps a missing file to "no configuration yet", which callers
@@ -131,13 +169,18 @@ func TestSaveEvalConfigRoundTripsThroughTheRename(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "azure.eval.yaml")
 	want := &EvalConfig{Evals: []Eval{{Name: "only", EvaluationLevel: "turn"}}}
 
+	// A different first write, so the second one has something to replace.
+	// Writing the same payload twice passes even if the second save silently
+	// left the original file where it was, which is the case worth catching.
+	first := &EvalConfig{Evals: []Eval{{Name: "replaced", EvaluationLevel: "conversation"}}}
+	require.NoError(t, SaveEvalConfigTo(path, first))
 	require.NoError(t, SaveEvalConfigTo(path, want))
-	require.NoError(t, SaveEvalConfigTo(path, want)) // over an existing file
 
 	got, err := LoadEvalConfig(path)
 	require.NoError(t, err)
 	require.Len(t, got.Evals, 1)
-	assert.Equal(t, "only", got.Evals[0].Name)
+	assert.Equal(t, "only", got.Evals[0].Name, "the second save has to have replaced the first")
+	assert.Equal(t, "turn", got.Evals[0].EvaluationLevel)
 
 	// The temporary file is this function's business and must not be left over.
 	entries, err := os.ReadDir(filepath.Dir(path))

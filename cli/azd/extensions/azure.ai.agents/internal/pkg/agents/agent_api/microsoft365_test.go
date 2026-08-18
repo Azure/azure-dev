@@ -4,8 +4,10 @@
 package agent_api
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"testing"
 
@@ -99,6 +101,51 @@ func TestPublishTeamsApp_Success(t *testing.T) {
 	var sent TeamsAppPackageRequest
 	require.NoError(t, json.Unmarshal(bodyBytes, &sent))
 	require.Equal(t, request, sent)
+}
+
+func TestPublishTeamsApp_DigitalWorkerRequest(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogWriter := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previousLogWriter) })
+
+	client, transport := newCaptureClient(
+		http.StatusOK,
+		`{"titleId":"T_123","teamsAppId":"app-456"}`,
+	)
+	request := TeamsAppPackageRequest{
+		PublishAsAutopilot:     true,
+		UseAgenticUserTemplate: true,
+		AgenticUserTemplate: &AgenticUserTemplate{
+			ID:                       "digitalWorkerTemplate",
+			File:                     "agenticUserTemplateManifest.json",
+			SchemaVersion:            "0.1.0-preview",
+			AgentIdentityBlueprintID: "blueprint-client-id",
+			CommunicationProtocol:    "activityProtocol",
+		},
+		PublishScope:     "Tenant",
+		AgentDisplayName: "my-agent",
+		AppVersion:       "1.0.0",
+	}
+
+	_, err := client.PublishTeamsApp(
+		t.Context(), "my-agent", request, Microsoft365DigitalWorkerAPIVersion,
+	)
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 1)
+	got := transport.requests[0]
+	require.Equal(t, Microsoft365DigitalWorkerAPIVersion, got.URL.Query().Get("api-version"))
+
+	bodyBytes, err := io.ReadAll(got.Body)
+	require.NoError(t, err)
+	var sent TeamsAppPackageRequest
+	require.NoError(t, json.Unmarshal(bodyBytes, &sent))
+	require.Equal(t, request, sent)
+	require.Empty(t, sent.BotServiceArmID)
+	require.Equal(t, "blueprint-client-id", sent.AgenticUserTemplate.AgentIdentityBlueprintID)
+	require.Contains(t, logs.String(), "POST https://test.example.com/api/projects/proj/agents/my-agent/microsoft365/publish?api-version=2025-11-15-preview")
+	require.Contains(t, logs.String(), `"PublishScope": "Tenant"`)
+	require.Contains(t, logs.String(), `"AgentIdentityBlueprintId": "blueprint-client-id"`)
 }
 
 func TestPublishTeamsApp_ErrorStatus(t *testing.T) {

@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -73,6 +75,90 @@ func TestBuildTeamsAppPackageRequest(t *testing.T) {
 	}
 	if !req.CanRespondWithoutMention {
 		t.Error("CanRespondWithoutMention = false, want true")
+	}
+}
+
+func TestBuildTeamsAppPackageRequest_DigitalWorkerUsesPublishMetadata(t *testing.T) {
+	scope, err := resolveTeamsPackScope("shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canRespond := true
+	publish := &project.DigitalWorkerPublishConfig{
+		PublishAsAutopilot:       true,
+		PublishScope:             "tenant",
+		CanRespondWithoutMention: &canRespond,
+		AppVersion:               "2.3.4",
+		AgentDisplayName:         "DW Helper",
+		ShortDescription:         "A digital worker",
+		FullDescription:          "A digital worker for Teams",
+		DeveloperName:            "Contoso",
+		DeveloperWebsiteURL:      "https://contoso.example",
+		PrivacyURL:               "https://contoso.example/privacy",
+		TermsOfUseURL:            "https://contoso.example/terms",
+		AgenticUserTemplate: &project.AgenticUserTemplateConfig{
+			ID:                    "dw-template",
+			File:                  "agenticUserTemplateManifest.json",
+			SchemaVersion:         "0.1.0-preview",
+			CommunicationProtocol: "activityProtocol",
+		},
+	}
+	req := buildTeamsAppPackageRequest("/subscriptions/s/bot", teamsAppRequestOptions{
+		scope:             scope,
+		displayName:       "CLI Overridden",
+		appVersion:        "",
+		blueprintClientID: "blueprint-client-id",
+		publish:           publish,
+	})
+	if !req.PublishAsAutopilot {
+		t.Fatal("PublishAsAutopilot = false, want true")
+	}
+	if !req.UseAgenticUserTemplate {
+		t.Fatal("UseAgenticUserTemplate = false, want true")
+	}
+	if req.AgenticUserTemplate == nil {
+		t.Fatal("AgenticUserTemplate = nil, want template")
+	}
+	if req.AgenticUserTemplate.AgentIdentityBlueprintID != "blueprint-client-id" {
+		t.Errorf(
+			"AgentIdentityBlueprintID = %q, want blueprint-client-id",
+			req.AgenticUserTemplate.AgentIdentityBlueprintID,
+		)
+	}
+	if req.PublishScope != "Shared" {
+		t.Errorf("PublishScope = %q, want Shared", req.PublishScope)
+	}
+	if req.AgentDisplayName != "DW Helper" {
+		t.Errorf("AgentDisplayName = %q, want DW Helper", req.AgentDisplayName)
+	}
+	if req.AppVersion != "2.3.4" {
+		t.Errorf("AppVersion = %q, want 2.3.4", req.AppVersion)
+	}
+	if req.ShortDescription != "A digital worker" {
+		t.Errorf("ShortDescription = %q, want A digital worker", req.ShortDescription)
+	}
+}
+
+func TestMicrosoft365APIVersion(t *testing.T) {
+	simple := &teamsPackContext{
+		activityProfile: project.ActivityProfile{IsActivity: true, UseCase: project.ActivityUseCaseSimple},
+	}
+	if got := microsoft365APIVersion(simple); got != agent_api.Microsoft365APIVersion {
+		t.Errorf("simple API version = %q, want %q", got, agent_api.Microsoft365APIVersion)
+	}
+
+	digitalWorker := &teamsPackContext{
+		activityProfile: project.ActivityProfile{
+			IsActivity: true,
+			UseCase:    project.ActivityUseCaseDigitalWorker,
+		},
+	}
+	if got := microsoft365APIVersion(digitalWorker); got != agent_api.Microsoft365DigitalWorkerAPIVersion {
+		t.Errorf(
+			"digital worker API version = %q, want %q",
+			got,
+			agent_api.Microsoft365DigitalWorkerAPIVersion,
+		)
 	}
 }
 

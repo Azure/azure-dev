@@ -13,6 +13,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -97,6 +98,13 @@ func (a *PackAction) Run(ctx context.Context) error {
 	packCtx, err := resolveTeamsPackContext(ctx, azdClient, a.flags.name, a.flags.noPrompt)
 	if err != nil {
 		return err
+	}
+	if packCtx.activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
+		return exterrors.Validation(
+			exterrors.CodeInvalidPublishScope,
+			"digital_worker agents cannot be packed into a Microsoft Teams zip package",
+			"use 'azd ai agent publish' for digital_worker; zip packaging is only for the simple Activity agent flow",
+		)
 	}
 
 	displayName := a.flags.displayName

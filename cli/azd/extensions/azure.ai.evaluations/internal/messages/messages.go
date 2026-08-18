@@ -2124,6 +2124,17 @@ func InstructionFileUnreadable(metadataPath, named string, err error) error {
 		metadataPath, named, err)
 }
 
+// InstructionFileOutsideProject reports metadata pointing outside the project.
+//
+// The pointer is read from a file in the checkout, so it is only as trustworthy
+// as the checkout: an absolute path or one climbing out with `..` would read
+// something the project does not contain and send it on as agent instructions.
+func InstructionFileOutsideProject(metadataPath, named string) error {
+	return fmt.Errorf(
+		"%s names instruction_file %q, which is outside the project; "+
+			"name a path inside it", metadataPath, named)
+}
+
 // FromNotASource reports a --from value the generation service has no path for.
 func FromNotASource(from string, sources []string) error {
 	return fmt.Errorf(

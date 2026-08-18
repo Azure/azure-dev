@@ -85,7 +85,14 @@ func AgentInstructionsFromProject(
 	if !filepath.IsAbs(instructionPath) {
 		instructionPath = filepath.Join(configDir, instructionPath)
 	}
-	text, err := os.ReadFile(instructionPath) //nolint:gosec // named by the metadata beside it
+	// The pointer comes out of the checkout, so it carries the checkout's
+	// trust. Left alone, an absolute path or one climbing out with `..` reads a
+	// file the project does not contain and sends it on as agent instructions.
+	if !withinDir(proj.GetPath(), instructionPath) {
+		return "", "", messages.InstructionFileOutsideProject(
+			filepath.Join(configDir, agentMetadataFile), meta.InstructionFile)
+	}
+	text, err := os.ReadFile(instructionPath) //nolint:gosec // checked to be inside the project
 	if err != nil {
 		// The metadata named a file that is not there. That is worth saying:
 		// something wrote the pointer and not the target.
@@ -94,6 +101,18 @@ func AgentInstructionsFromProject(
 	}
 
 	return strings.TrimSpace(string(text)), instructionPath, nil
+}
+
+// withinDir reports whether path resolves to somewhere inside root.
+//
+// Compared after cleaning both, so `..` segments are resolved before the
+// question is asked rather than matched as text.
+func withinDir(root, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // findAgentService resolves a target name to the one service that is it.

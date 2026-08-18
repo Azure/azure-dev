@@ -61,22 +61,6 @@ func DatasetFileEmpty(path string) error {
 	return fmt.Errorf("dataset file %q has no rows", filepath.ToSlash(path))
 }
 
-// TracesNeedAgentName reports a trace-backed eval that does not say whose
-// traces to read.
-func TracesNeedAgentName(eval string) error {
-	return fmt.Errorf(
-		"eval %q reads traces but does not say whose. Set source.agent_name to the "+
-			"agent whose conversations should be evaluated",
-		eval)
-}
-
-// ResponsesNeedIDs reports a stored-response eval with nothing to retrieve.
-func ResponsesNeedIDs(eval string) error {
-	return fmt.Errorf(
-		"eval %q evaluates stored responses but lists none. Set source.response_ids",
-		eval)
-}
-
 // DatasetOverrideNeedsDeclaredEval reports --dataset passed against a bare id.
 func DatasetOverrideNeedsDeclaredEval() error {
 	return errors.New(
@@ -277,11 +261,6 @@ func NoEvalNamedOrDeclared(configPath string) error {
 	return fmt.Errorf(
 		"no eval was named and none is declared in %s; pass --eval with a name or an id",
 		filepath.ToSlash(configPath))
-}
-
-// NoEvalGiven reports a command run outside a project with no eval id.
-func NoEvalGiven() error {
-	return errors.New("no eval given; pass its id as an argument, or name one with --eval")
 }
 
 // ListingRuns reports a failure to list an eval's runs.
@@ -766,11 +745,6 @@ func ArtifactExists(path string) error {
 		path)
 }
 
-// NothingGenerated reports a generation that produced no artifact.
-func NothingGenerated() string {
-	return "Nothing was generated.\n"
-}
-
 // JobKindRequired reports a job command that does not say which collection.
 func JobKindRequired() error {
 	return errors.New("pass --dataset or --evaluator to say which generation jobs to act on")
@@ -814,11 +788,6 @@ func JobNotFound(kind, jobID, other string) error {
 	return fmt.Errorf(
 		"no %s generation job %q in this project; try the %s job group",
 		kind, jobID, other)
-}
-
-// ReadingJob reports a failure to read a generation job.
-func ReadingJob(kind, jobID string, err error) error {
-	return fmt.Errorf("reading %s generation job %s: %w", kind, jobID, err)
 }
 
 // JobActionFailed reports a job operation that was not a read, so the sentence
@@ -1345,11 +1314,6 @@ func ReadingServiceConfig(err error) error {
 	return fmt.Errorf("reading the eval service configuration: %w", err)
 }
 
-// ParsingServiceConfig reports the service entry failing to parse.
-func ParsingServiceConfig(err error) error {
-	return fmt.Errorf("parsing the eval service configuration: %w", err)
-}
-
 // ReconcilingDataset reports the dataset a deploy has reached.
 func ReconcilingDataset(dataset string) string {
 	return fmt.Sprintf("Reconciling dataset %s", dataset)
@@ -1379,11 +1343,6 @@ func UnchangedAtVersion(kind, name, version string) string {
 // EvalProblem attributes a failure to the eval it happened under.
 func EvalProblem(eval string, err error) error {
 	return fmt.Errorf("eval %q: %w", eval, err)
-}
-
-// EvalIs reports the id a deployed eval resolved to.
-func EvalIs(eval, id string) string {
-	return fmt.Sprintf("Eval %s is %s", eval, id)
 }
 
 // EvalCreatedProgress and EvalUnchangedProgress are the deploy-time equivalents
@@ -1778,8 +1737,8 @@ func GradingWith(evaluators []string) string {
 	return fmt.Sprintf("%s Grading with: %s\n", DoneMark, strings.Join(evaluators, ", "))
 }
 
-// CreatedHeading opens the list of what a scaffold wrote.
-func CreatedHeading() string {
+// createdHeading opens the list of what a scaffold wrote.
+func createdHeading() string {
 	return "\nCreated\n"
 }
 
@@ -1790,11 +1749,11 @@ func ScaffoldHeading(existed bool) string {
 	if existed {
 		return "\nUpdated\n"
 	}
-	return CreatedHeading()
+	return createdHeading()
 }
 
-// CreatedConfigLine names the configuration a scaffold wrote.
-func CreatedConfigLine(configPath string) string {
+// createdConfigLine names the configuration a scaffold wrote.
+func createdConfigLine(configPath string) string {
 	return fmt.Sprintf("  %-33s evaluation configuration\n", configPath)
 }
 
@@ -1803,7 +1762,7 @@ func ScaffoldConfigLine(configPath string, existed bool) string {
 	if existed {
 		return fmt.Sprintf("  %-33s evaluation configuration (eval added)\n", configPath)
 	}
-	return CreatedConfigLine(configPath)
+	return createdConfigLine(configPath)
 }
 
 // AddedServiceLine reports the eval service being added to the root config.
@@ -2040,12 +1999,12 @@ func AmbiguousEvalConfig(current, legacy string) error {
 // ReadingEvalConfig reports a configuration file that would not read.
 func ReadingEvalConfig(path string, err error) error {
 	if errors.Is(err, fs.ErrNotExist) {
-		return NoEvalConfig(path)
+		return noEvalConfig(path)
 	}
 	return fmt.Errorf("reading eval config %q: %w", filepath.ToSlash(path), err)
 }
 
-// NoEvalConfig reports a command run before anything scaffolded a config.
+// noEvalConfig reports a command run before anything scaffolded a config.
 //
 // The bare read failure underneath is a Windows syscall phrase about a path,
 // which describes the symptom of running `create` before `init` without naming
@@ -2055,7 +2014,7 @@ func ReadingEvalConfig(path string, err error) error {
 // configuration — OpenEvalConfig, and the reference resolution above it — decide
 // that by asking, and a nicer sentence that stopped answering would turn every
 // one of those into a failure.
-func NoEvalConfig(path string) error {
+func noEvalConfig(path string) error {
 	return &missingFileError{
 		msg: fmt.Sprintf(
 			"no eval configuration at %s; run `azd ai eval init` to scaffold one",
@@ -2149,16 +2108,11 @@ func SampleSizeOutOfRange(min, max, got int) error {
 	return fmt.Errorf("sample size must be between %d and %d, got %d", min, max, got)
 }
 
-// NegativeMaxSamples reports a declared row cap below zero.
+// MaxSamplesNegative reports a declared row cap below zero.
 //
 // Anything not above zero reads as "no cap", so this used to send the whole
 // dataset to a run that is billed per row -- the opposite of what a cap asks
 // for, and silent.
-func NegativeMaxSamples(index int, name string, got int) error {
-	return InEvalAt(index, name, MaxSamplesNegative(got))
-}
-
-// MaxSamplesNegative reports it where there is no index.
 func MaxSamplesNegative(got int) error {
 	return fmt.Errorf(
 		"max_samples cannot be negative, got %d. "+

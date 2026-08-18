@@ -140,14 +140,29 @@ func populateSplitToolboxes(
 	projectCfg *azdext.ProjectConfig,
 	state *State,
 	errs *[]error,
-) {
+) splitToolboxResult {
 	if projectCfg == nil || state == nil {
-		return
+		return splitToolboxResult{}
 	}
 
-	candidates := splitToolboxDependencies(projectCfg)
+	candidates, excludedAgents := splitToolboxDependencies(
+		ctx,
+		src,
+		envName,
+		projectCfg,
+		state,
+		errs,
+	)
+	endpointKeys := make(map[string]struct{}, len(candidates))
+	for key := range candidates {
+		endpointKeys[key] = struct{}{}
+	}
 	if len(candidates) == 0 {
-		return
+		slices.Sort(state.ToolboxDependencyErrors)
+		return splitToolboxResult{
+			excludedAgents: excludedAgents,
+			endpointKeys:   endpointKeys,
+		}
 	}
 
 	split := make(map[string]ResourceRef)
@@ -227,6 +242,15 @@ func populateSplitToolboxes(
 	state.Toolboxes = merged
 	state.HasToolboxes = len(merged) > 0
 	slices.Sort(state.ToolboxDependencyErrors)
+	return splitToolboxResult{
+		excludedAgents: excludedAgents,
+		endpointKeys:   endpointKeys,
+	}
+}
+
+type splitToolboxResult struct {
+	excludedAgents map[string]struct{}
+	endpointKeys   map[string]struct{}
 }
 
 type splitToolboxCandidate struct {
@@ -241,8 +265,13 @@ type splitToolboxService struct {
 }
 
 func splitToolboxDependencies(
+	ctx context.Context,
+	src Source,
+	envName string,
 	projectCfg *azdext.ProjectConfig,
-) map[string]splitToolboxCandidate {
+	state *State,
+	errs *[]error,
+) (map[string]splitToolboxCandidate, map[string]struct{}) {
 	services := make(map[string]splitToolboxService)
 	for serviceName, svc := range projectCfg.Services {
 		if svc == nil || svc.GetHost() != toolboxHost {
@@ -269,6 +298,7 @@ func splitToolboxDependencies(
 	}
 
 	candidates := make(map[string]splitToolboxCandidate)
+	excludedAgents := make(map[string]struct{})
 	for serviceName, svc := range projectCfg.Services {
 		if svc == nil || svc.GetHost() != agentHost {
 			continue
@@ -277,11 +307,54 @@ func splitToolboxDependencies(
 		if agentName == "" {
 			agentName = serviceName
 		}
+		dependencies := make([]splitToolboxService, 0)
 		for _, dependencyName := range svc.GetUses() {
 			service, ok := services[dependencyName]
 			if !ok {
 				continue
 			}
+			dependencies = append(dependencies, service)
+		}
+		if len(dependencies) == 0 {
+			continue
+		}
+
+		enabled, err := isServiceEnabled(ctx, src, envName, serviceName)
+		if err != nil {
+			names := make([]string, 0, len(dependencies))
+			for _, service := range dependencies {
+				names = appendUnique(names, service.ref.ServiceName)
+			}
+			slices.Sort(names)
+			issue := fmt.Sprintf(
+				"agent service %q uses toolbox service(s) %s but has an invalid deployment condition: %v",
+				agentName,
+				strings.Join(names, ", "),
+				err,
+			)
+			state.ToolboxDependencyErrors = append(
+				state.ToolboxDependencyErrors,
+				issue,
+			)
+			*errs = append(
+				*errs,
+				fmt.Errorf(
+					"agent service %q deployment condition: %w",
+					agentName,
+					err,
+				),
+			)
+			excludedAgents[agentName] = struct{}{}
+			excludedAgents[serviceName] = struct{}{}
+			continue
+		}
+		if !enabled {
+			excludedAgents[agentName] = struct{}{}
+			excludedAgents[serviceName] = struct{}{}
+			continue
+		}
+
+		for _, service := range dependencies {
 			key := envkey.ToolboxMCPEndpoint(service.ref.Name)
 			candidate := candidates[key]
 			if candidate.ref.Name == "" ||
@@ -298,7 +371,7 @@ func splitToolboxDependencies(
 		slices.Sort(candidate.agents)
 		candidates[key] = candidate
 	}
-	return candidates
+	return candidates, excludedAgents
 }
 
 func appendUnique(values []string, value string) []string {

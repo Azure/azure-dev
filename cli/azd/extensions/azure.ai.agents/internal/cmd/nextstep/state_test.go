@@ -141,6 +141,48 @@ func TestAssembleState_SplitToolboxMissingEndpointIsNotManual(t *testing.T) {
 	require.Equal(t, 0, src.calls["dev/TOOLBOX_MISSING_MCP_ENDPOINT"])
 }
 
+func TestAssembleState_DisabledAgentDoesNotCollectSplitToolbox(t *testing.T) {
+	t.Parallel()
+
+	disabledAgent := newAgentService(t, map[string]any{
+		"kind": "hostedAgent",
+		"environmentVariables": []any{
+			map[string]any{
+				"name":  "TOOLS_ENDPOINT",
+				"value": "${TOOLBOX_TOOLS_MCP_ENDPOINT}",
+			},
+		},
+	})
+	disabledAgent.Name = "disabled-agent"
+	disabledAgent.Uses = []string{"tools"}
+
+	src := &fakeSource{
+		envName: "dev",
+		configValues: map[string]*structpb.Value{
+			"disabled-agent/condition": structpb.NewBoolValue(false),
+		},
+		configErrors: map[string]error{
+			"tools/condition": errors.New("disabled toolbox condition must not be read"),
+		},
+		calls: make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"tools": {
+					Name: "tools", Host: toolboxHost,
+				},
+				"disabled-agent": disabledAgent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Empty(t, state.Toolboxes)
+	require.Empty(t, state.MissingToolboxEndpoints)
+	require.Empty(t, state.MissingManualVars)
+	require.Equal(t, 0, src.calls["dev/TOOLBOX_TOOLS_MCP_ENDPOINT"])
+}
+
 func TestAssembleState_SplitToolboxEndpointErrorIsSurfaced(t *testing.T) {
 	t.Parallel()
 
@@ -239,6 +281,70 @@ func TestAssembleState_SplitToolboxConditionDisabled(t *testing.T) {
 	require.Len(t, state.ToolboxDependencyErrors, 1)
 	require.Contains(t, state.ToolboxDependencyErrors[0], "disabled")
 	require.Equal(t, 0, src.calls["dev/TOOLBOX_DISABLED_MCP_ENDPOINT"])
+}
+
+func TestAssembleState_InactiveSplitToolboxEndpointIsNotManual(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		condition    *structpb.Value
+		conditionErr error
+	}{
+		"disabled": {
+			condition: structpb.NewBoolValue(false),
+		},
+		"condition read error": {
+			conditionErr: errors.New("condition unavailable"),
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			agent := newAgentService(t, map[string]any{
+				"kind": "hostedAgent",
+				"environmentVariables": []any{
+					map[string]any{
+						"name":  "TOOLS_ENDPOINT",
+						"value": "${TOOLBOX_DISABLED_MCP_ENDPOINT}",
+					},
+				},
+			})
+			agent.Name = "agent"
+			agent.Uses = []string{"disabled"}
+
+			src := &fakeSource{
+				envName: "dev",
+				configValues: map[string]*structpb.Value{
+					"disabled/condition": tt.condition,
+				},
+				configErrors: map[string]error{
+					"disabled/condition": tt.conditionErr,
+				},
+				calls: make(map[string]int),
+				project: &azdext.ProjectConfig{
+					Services: map[string]*azdext.ServiceConfig{
+						"disabled": {
+							Name: "disabled", Host: toolboxHost,
+						},
+						"agent": agent,
+					},
+				},
+			}
+
+			state, errs := assembleState(t.Context(), src)
+			require.Len(t, errs, 1)
+			require.Empty(t, state.MissingManualVars)
+			require.Empty(t, state.MissingToolboxEndpoints)
+			require.Len(t, state.ToolboxDependencyErrors, 1)
+			require.Equal(
+				t,
+				0,
+				src.calls["dev/TOOLBOX_DISABLED_MCP_ENDPOINT"],
+			)
+		})
+	}
 }
 
 func TestAssembleState_SplitToolboxConditionUsesEnvironment(t *testing.T) {

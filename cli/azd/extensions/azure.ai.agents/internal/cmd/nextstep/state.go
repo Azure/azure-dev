@@ -326,17 +326,34 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		&state.EnvironmentLoadErrors,
 	)
 
+	var splitToolboxState splitToolboxResult
 	if project != nil {
 		if len(state.Services) > 0 {
 			populateManifestResources(project.Path, state)
 		}
-		populateSplitToolboxes(ctx, src, envName, project, state, &errs)
+		splitToolboxState = populateSplitToolboxes(
+			ctx,
+			src,
+			envName,
+			project,
+			state,
+			&errs,
+		)
 	}
 
 	if project != nil && envName != "" {
-		state.MissingInfraVars, state.MissingManualVars, state.UnresolvedPlaceholders = detectMissingVars(
-			ctx, src, envName, project.Path, state.Services, state.Toolboxes, &errs,
-		)
+		state.MissingInfraVars, state.MissingManualVars, state.UnresolvedPlaceholders =
+			detectMissingVars(
+				ctx,
+				src,
+				envName,
+				project.Path,
+				state.Services,
+				state.Toolboxes,
+				splitToolboxState.endpointKeys,
+				splitToolboxState.excludedAgents,
+				&errs,
+			)
 		populateOpenAPIPayload(ctx, cfg, project.Path, envName, state)
 	}
 
@@ -669,6 +686,8 @@ func detectMissingVars(
 	envName, projectPath string,
 	services []ServiceState,
 	toolboxes []ResourceRef,
+	splitToolboxEndpointKeys map[string]struct{},
+	excludedAgents map[string]struct{},
 	errs *[]error,
 ) (infra, manual, placeholders []string) {
 	if envName == "" || projectPath == "" || len(services) == 0 {
@@ -683,8 +702,14 @@ func detectMissingVars(
 	for _, toolbox := range toolboxes {
 		toolboxKeys[envkey.ToolboxMCPEndpoint(toolbox.Name)] = struct{}{}
 	}
+	for key := range splitToolboxEndpointKeys {
+		toolboxKeys[key] = struct{}{}
+	}
 
 	for _, svc := range services {
+		if _, excluded := excludedAgents[svc.Name]; excluded {
+			continue
+		}
 		refs, phs := extractEnvironmentRefs(svc.EnvironmentValues)
 		for _, name := range refs {
 			if _, isToolbox := toolboxKeys[name]; isToolbox {

@@ -831,15 +831,20 @@ func Test_ResolveDependency_SequentialConfiguredSourceLookups(t *testing.T) {
 			}},
 		}},
 	})
-	mainRegistry := writeExtensionRegistryFile(t, Registry{
+	mainRegistry := Registry{
 		SchemaVersion: CurrentRegistrySchemaVersion,
 		Extensions: []*ExtensionMetadata{{
 			Id:       "test.child",
 			Versions: []ExtensionVersion{{Version: "1.0.0"}},
 		}},
-	})
+	}
 
 	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, mainRegistry)
+	})
 	cfg, err := mockContext.ConfigManager.Load("")
 	require.NoError(t, err)
 	require.NoError(t, cfg.Set("extension.sources.local", &SourceConfig{
@@ -849,8 +854,8 @@ func Test_ResolveDependency_SequentialConfiguredSourceLookups(t *testing.T) {
 	}))
 	require.NoError(t, cfg.Set("extension.sources.azd", &SourceConfig{
 		Name:     MainRegistryName,
-		Type:     SourceKindFile,
-		Location: mainRegistry,
+		Type:     SourceKindUrl,
+		Location: extensionRegistryUrl,
 	}))
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)

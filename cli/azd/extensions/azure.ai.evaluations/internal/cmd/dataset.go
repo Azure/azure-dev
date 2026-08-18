@@ -312,7 +312,7 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 		rows = append(rows, []string{d.Name, d.Version, d.Type})
 	}
 	if len(rows) == 0 {
-		fmt.Fprint(cmd.OutOrStdout(), messages.NoDatasets())
+		fmt.Fprint(cmd.OutOrStdout(), whenEmpty)
 		return nil
 	}
 	// TYPE, not FORMAT: the service populates type (`uri_file`) and leaves

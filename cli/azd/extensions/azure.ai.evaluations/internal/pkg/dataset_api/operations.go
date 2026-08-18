@@ -188,7 +188,14 @@ func IsVersionConflict(err error) bool {
 
 // IsNotFound reports whether the service answered 404, which is how it says a
 // dataset does not exist yet.
+//
+// A failure part-way through a page walk is refused before the status is read:
+// the first page answered, so the dataset exists, and reading that 404 as
+// absence restarts an existing dataset at 1.0.
 func IsNotFound(err error) bool {
+	if _, walking := errors.AsType[pageWalkError](err); walking {
+		return false
+	}
 	respErr, ok := errors.AsType[*azcore.ResponseError](err)
 	if !ok {
 		return false

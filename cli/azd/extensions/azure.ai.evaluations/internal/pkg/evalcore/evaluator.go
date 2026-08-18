@@ -6,6 +6,10 @@ package evalcore
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -90,9 +94,9 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 			}
 			return messages.BareEvaluatorEntry(name)
 		case yaml.MappingNode:
-			var ref EvaluatorRef
-			if err := node.Decode(&ref); err != nil {
-				return messages.DecodingEvaluator(err)
+			ref, err := decodeEvaluatorRef(node)
+			if err != nil {
+				return err
 			}
 			if ref.Evaluator == "" {
 				return messages.EvaluatorEntryMissingEvaluator()
@@ -105,6 +109,47 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 
 	*el = result
 	return nil
+}
+
+// decodeEvaluatorRef decodes one entry with the strictness the file promises.
+//
+// yaml.Node.Decode does not inherit KnownFields from the decoder that reached
+// it, so `verison:` inside an evaluator entry was dropped in silence while the
+// same typo one level up was named. Round-tripping the node through a strict
+// decoder restores it; the error keeps yaml's own "field X not found in type Y"
+// shape, which the caller rewrites into the file's vocabulary.
+func decodeEvaluatorRef(node *yaml.Node) (EvaluatorRef, error) {
+	raw, err := yaml.Marshal(node)
+	if err != nil {
+		return EvaluatorRef{}, messages.DecodingEvaluator(err)
+	}
+
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
+
+	var ref EvaluatorRef
+	if err := decoder.Decode(&ref); err != nil {
+		return EvaluatorRef{}, messages.DecodingEvaluator(rebaseYAMLLines(err, node.Line))
+	}
+	return ref, nil
+}
+
+// yamlErrorLine matches the line number yaml puts on each unmarshal error.
+var yamlErrorLine = regexp.MustCompile(`line (\d+):`)
+
+// rebaseYAMLLines moves line numbers from the extracted snippet back onto the
+// file, so the reader is pointed at the key they typed rather than at line 2.
+func rebaseYAMLLines(err error, startLine int) error {
+	if startLine <= 0 {
+		return err
+	}
+	return errors.New(yamlErrorLine.ReplaceAllStringFunc(err.Error(), func(m string) string {
+		n, convErr := strconv.Atoi(yamlErrorLine.FindStringSubmatch(m)[1])
+		if convErr != nil {
+			return m
+		}
+		return fmt.Sprintf("line %d:", startLine+n-1)
+	}))
 }
 
 // UnmarshalJSON accepts the same mapping-only form as the YAML decoder.

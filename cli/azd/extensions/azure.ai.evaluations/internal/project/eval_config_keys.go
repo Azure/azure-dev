@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+
+	"azureaieval/internal/pkg/evalcore"
 )
 
 // goTypeInField matches what yaml.KnownFields reports for an unrecognized key:
@@ -97,6 +99,8 @@ func keysOfType(goType string) []string {
 		v = Target{}
 	case "project.SourceDecl":
 		v = SourceDecl{}
+	case "evalcore.EvaluatorRef":
+		v = evalcore.EvaluatorRef{}
 	default:
 		return nil
 	}

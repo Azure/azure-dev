@@ -294,9 +294,16 @@ func (r *evalReconciler) EnsureEvaluator(
 
 	// Compare against the definition already on the service.
 	var known json.RawMessage
-	if existing, err := r.ec.evalClient.GetEvaluatorRaw(
+	existing, err := r.ec.evalClient.GetEvaluatorRaw(
 		ctx, decl.Name, "", ProjectEndpointAPIVersion,
-	); err == nil {
+	)
+	// A read that failed is not a read that found nothing: falling through
+	// publishes a new version with no drift check, over whatever is already
+	// there. Only a confirmed absence is a first publish.
+	if err != nil && !eval_api.IsNotFound(err) {
+		return "", false, messages.CheckingEvaluatorExists(decl.Name, err)
+	}
+	if err == nil {
 		remote := versionFromRaw(existing, "")
 		if !authorEdited && sameDefinition(existing, body) {
 			// Nothing to publish, but the version is still worth recording:

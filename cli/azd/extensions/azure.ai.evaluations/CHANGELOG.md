@@ -21,7 +21,7 @@ First release of the Foundry evaluations extension.
   keys the author wrote, and eval groups are recreated only when their own
   declaration changes.
 - Atomic commands for every operation: `dataset`, `evaluator`, `run` and
-  `results` subcommands, all supporting `-o json` and `--no-prompt`.
+  `run output` subcommands, all supporting `-o json` and `--no-prompt`.
 - Testing criteria are shaped from each evaluator's published contract, so
   evaluators requiring inputs beyond the agent shape — `ground_truth`,
   `context`, `instruction_id_list` — work by binding them to dataset columns.

@@ -57,9 +57,9 @@ func TestBuildTeamsAppPackageRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := buildTeamsAppPackageRequest("/subscriptions/s/bot", teamsAppRequestOptions{
-		scope:       scope,
-		displayName: "Contoso Helper",
-		appVersion:  "",
+		scope:      scope,
+		agentName:  "Contoso Helper",
+		appVersion: "",
 	})
 	if req.BotServiceArmID != "/subscriptions/s/bot" {
 		t.Errorf("BotServiceArmID = %q", req.BotServiceArmID)
@@ -128,8 +128,8 @@ func TestBuildTeamsAppPackageRequest_DigitalWorkerUsesPublishMetadata(t *testing
 	if req.PublishScope != "Shared" {
 		t.Errorf("PublishScope = %q, want Shared", req.PublishScope)
 	}
-	if req.AgentDisplayName != "DW Helper" {
-		t.Errorf("AgentDisplayName = %q, want DW Helper", req.AgentDisplayName)
+	if req.AgentDisplayName != "CLI Overridden" {
+		t.Errorf("AgentDisplayName = %q, want CLI Overridden", req.AgentDisplayName)
 	}
 	if req.AppVersion != "2.3.4" {
 		t.Errorf("AppVersion = %q, want 2.3.4", req.AppVersion)

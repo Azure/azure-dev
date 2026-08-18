@@ -143,7 +143,11 @@ func TestPublishTeamsApp_DigitalWorkerRequest(t *testing.T) {
 	require.Equal(t, request, sent)
 	require.Empty(t, sent.BotServiceArmID)
 	require.Equal(t, "blueprint-client-id", sent.AgenticUserTemplate.AgentIdentityBlueprintID)
-	require.Contains(t, logs.String(), "POST https://test.example.com/api/projects/proj/agents/my-agent/microsoft365/publish?api-version=2025-11-15-preview")
+	require.Contains(
+		t,
+		logs.String(),
+		"POST https://test.example.com/api/projects/proj/agents/my-agent/microsoft365/publish?api-version=2025-11-15-preview",
+	)
 	require.Contains(t, logs.String(), `"PublishScope": "Tenant"`)
 	require.Contains(t, logs.String(), `"AgentIdentityBlueprintId": "blueprint-client-id"`)
 }

@@ -260,6 +260,7 @@ func teamsBotArmID(subscriptionID, defaultResourceGroup, botName, botResourceGro
 // derived from the agent name.
 type teamsAppRequestOptions struct {
 	scope             teamsPackScope
+	agentName         string
 	displayName       string
 	appVersion        string
 	blueprintClientID string
@@ -295,6 +296,9 @@ func buildTeamsAppPackageRequest(
 	}
 	if appVersion == "" {
 		appVersion = "1.0.0"
+	}
+	if displayName == "" {
+		displayName = strings.TrimSpace(opts.agentName)
 	}
 	if displayName == "" {
 		displayName = "Agent"

@@ -111,7 +111,9 @@ func ResolveActivityProfileWithSettings(
 		}
 		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}, nil
 	default:
-		return ActivityProfile{}, fmt.Errorf("activity.useCase must be %q or %q", ActivityUseCaseSimple, ActivityUseCaseDigitalWorker)
+		return ActivityProfile{}, fmt.Errorf(
+			"activity.useCase must be %q or %q", ActivityUseCaseSimple, ActivityUseCaseDigitalWorker,
+		)
 	}
 }
 

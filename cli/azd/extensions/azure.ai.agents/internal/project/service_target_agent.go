@@ -3264,9 +3264,11 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 			return fmt.Errorf("Digital Worker agent version is missing Blueprint client ID")
 		}
 
-		envVars = append(envVars,
-			azdext.SetEnvRequest{EnvName: p.env.Name, Key: envkey.AgentBlueprintClientID(serviceConfig.Name), Value: blueprint.ClientID},
-		)
+		envVars = append(envVars, azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     envkey.AgentBlueprintClientID(serviceConfig.Name),
+			Value:   blueprint.ClientID,
+		})
 	}
 
 	for i := range envVars {

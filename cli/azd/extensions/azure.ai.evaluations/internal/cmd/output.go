@@ -162,8 +162,8 @@ func emitDetail(w io.Writer, fields []field) error {
 	return tw.Flush()
 }
 
-// requireFlag returns an error naming the missing flag, used when --no-prompt
-// prevents asking for a required value.
+// requireFlag returns an error naming a flag the command needs and has no way
+// to settle for itself.
 func requireFlag(name string) error {
 	return messages.FlagRequired(name)
 }

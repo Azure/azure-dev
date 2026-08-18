@@ -939,6 +939,19 @@ func NoDatasets() string {
 	return "No datasets found.\n"
 }
 
+// NoDatasetVersions reports a name whose versions listed nothing.
+//
+// Listing a name that does not exist is not an error — a delete is checked for
+// idempotence this way — so this has to read as an answer about that name
+// rather than as a report about the project, which holds other datasets.
+//
+// The suggested command carries no placeholder, so it pastes and runs; the file
+// is the one thing only the caller knows, and is named outside the command.
+func NoDatasetVersions(dataset string) string {
+	return fmt.Sprintf("No versions of dataset %q. Publish one with "+
+		"`azd ai eval dataset create %s` and a --from-file path.\n", dataset, dataset)
+}
+
 // ResolvingLatestDatasetVersion reports a failure to find what "latest" means.
 func ResolvingLatestDatasetVersion(dataset string, err error) error {
 	return fmt.Errorf("resolving the latest version of %q: %w", dataset, err)
@@ -2284,9 +2297,13 @@ func PortalLink(url string) string {
 	return fmt.Sprintf("Portal: %s\n", url)
 }
 
-// FlagRequired reports a value that cannot be prompted for.
+// FlagRequired reports a value the command needs and cannot settle itself.
+//
+// It used to add "(running with --no-prompt)", which was untrue at every call
+// site: none of them prompts, so the parenthetical named a flag the caller had
+// not passed and implied that dropping it would make the command ask.
 func FlagRequired(name string) error {
-	return fmt.Errorf("--%s is required (running with --no-prompt)", name)
+	return fmt.Errorf("--%s is required", name)
 }
 
 // Creating reports a directory or file that could not be created.

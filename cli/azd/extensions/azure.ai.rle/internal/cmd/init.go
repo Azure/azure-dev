@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"azure.ai.rle/internal/project"
@@ -83,17 +84,36 @@ func (a *initAction) Run() error {
 	}
 
 	displayDir := "." + string(os.PathSeparator) + sessionDir
-	_, err = fmt.Fprintf(
-		a.cmd.OutOrStdout(),
+	_, err = fmt.Fprint(a.cmd.OutOrStdout(), initNextSteps(displayDir, runtime.GOOS, os.Getenv("SHELL")))
+	return err
+}
+
+func initNextSteps(displayDir string, goos string, shell string) string {
+	projectEndpoint := `https://<account>.services.ai.azure.com/api/projects/<project>`
+	registryEndpoint := `<registry>.azurecr.io`
+	setEnvironment := fmt.Sprintf(
+		"  $env:FOUNDRY_PROJECT_ENDPOINT = %q\n  $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = %q\n",
+		projectEndpoint,
+		registryEndpoint,
+	)
+	if goos != "windows" || strings.Contains(strings.ToLower(shell), "sh") {
+		setEnvironment = fmt.Sprintf(
+			"  export FOUNDRY_PROJECT_ENDPOINT=%q\n  export AZURE_CONTAINER_REGISTRY_ENDPOINT=%q\n",
+			projectEndpoint,
+			registryEndpoint,
+		)
+	}
+
+	return fmt.Sprintf(
 		"Created OpenEnv-style environment at: %s\n"+
-			"Next steps:\n"+
+			"\nRun locally:\n"+
 			"  cd \"%s\"\n"+
 			"  azd ai rle run\n"+
-			"  $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"\n"+
-			"  $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"\n"+
+			"\nPublish to RLE when ready (optional):\n"+
+			"%s"+
 			"  azd ai rle publish\n",
 		displayDir,
 		displayDir,
+		setEnvironment,
 	)
-	return err
 }

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -91,12 +92,13 @@ func (a *showAction) Run() error {
 
 func (a *showAction) resolveTarget() (showResult, error) {
 	environmentName := strings.TrimSpace(a.environmentName)
+	projectEndpoint := ""
 	if environmentName == "" {
 		state, err := loadRleState()
 		if err != nil {
 			return showResult{}, err
 		}
-		environmentName = strings.TrimSpace(state.Name)
+		environmentName = strings.TrimSpace(state.EnvironmentName)
 		if environmentName == "" {
 			return showResult{}, &azdext.LocalError{
 				Message:    "The saved RLE environment does not include a name.",
@@ -105,11 +107,23 @@ func (a *showAction) resolveTarget() (showResult, error) {
 				Suggestion: "Provide an environment name: azd ai rle show <environment-name>.",
 			}
 		}
+		projectEndpoint = strings.TrimSpace(state.ProjectEndpoint)
+		if projectEndpoint == "" {
+			return showResult{}, &azdext.LocalError{
+				Message:    "The saved RLE environment does not include a Foundry project endpoint.",
+				Code:       "rle_project_required",
+				Category:   azdext.LocalErrorCategoryUser,
+				Suggestion: "Run azd ai rle publish first, or provide an environment name with FOUNDRY_PROJECT_ENDPOINT set.",
+			}
+		}
 	}
 
-	projectEndpoint, err := resolveEnvironmentListProjectEndpoint()
-	if err != nil {
-		return showResult{}, err
+	if projectEndpoint == "" {
+		var err error
+		projectEndpoint, err = resolveEnvironmentListProjectEndpoint()
+		if err != nil {
+			return showResult{}, err
+		}
 	}
 	client, err := createRleClient(projectEndpoint)
 	if err != nil {
@@ -131,9 +145,29 @@ func resolveEnvironmentVersions(
 	client *rleClient,
 	current *environmentResource,
 ) ([]environmentResource, error) {
-	history, err := client.listEnvironmentVersions(ctx, current.Name)
-	if err != nil {
-		return nil, err
+	var history []environmentVersionResource
+	after := ""
+	complete := false
+	for range environmentListMaxPages {
+		page, err := client.listEnvironmentVersions(ctx, current.Name, after, environmentListPageSize)
+		if err != nil {
+			return nil, err
+		}
+		history = append(history, page.Data...)
+		if !page.HasMore {
+			complete = true
+			break
+		}
+		if page.LastId == "" || page.LastId == after {
+			return nil, fmt.Errorf("environment version pagination did not return a new cursor")
+		}
+		after = page.LastId
+	}
+	if !complete {
+		return nil, fmt.Errorf(
+			"environment version list exceeded the %d-item safety limit",
+			environmentListPageSize*environmentListMaxPages,
+		)
 	}
 	if len(history) == 0 {
 		return []environmentResource{*current}, nil

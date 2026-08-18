@@ -101,7 +101,7 @@ func (a *publishAction) Run() error {
 	if err != nil {
 		return err
 	}
-	request := buildEnvironmentCreateRequest(state.Name, image, versionBump)
+	request := buildEnvironmentCreateRequest(state.EnvironmentName, image, versionBump)
 
 	var environment *environmentResource
 	created := state.EnvironmentId == ""
@@ -114,7 +114,7 @@ func (a *publishAction) Run() error {
 		a.cmd.OutOrStdout(),
 		"%s environment '%s' (image=%s) ...\n",
 		action,
-		state.Name,
+		state.EnvironmentName,
 		image,
 	); err != nil {
 		return err
@@ -123,7 +123,7 @@ func (a *publishAction) Run() error {
 	if err != nil {
 		return serviceError(err)
 	}
-	state.Name = environment.Name
+	state.EnvironmentName = environment.Name
 	state.EnvironmentId = environment.Id
 	state.EnvironmentVersion = environment.Version
 	if err := saveRleState(state); err != nil {
@@ -138,7 +138,7 @@ func (a *publishAction) Run() error {
 		a.cmd.OutOrStdout(),
 		"\n%s environment '%s' (%s).\n",
 		label,
-		state.Name,
+		state.EnvironmentName,
 		state.EnvironmentId,
 	); err != nil {
 		return err
@@ -198,7 +198,7 @@ func resolvePublishState() (rleState, bool, error) {
 		state = defaultRleState(defaultSourceName("."))
 	}
 
-	state.Name = firstNonEmpty(state.Name, defaultSourceName("."))
+	state.EnvironmentName = firstNonEmpty(state.EnvironmentName, defaultSourceName("."))
 
 	projectEndpoint, err := resolveFoundryProjectEndpoint()
 	if err != nil {
@@ -225,7 +225,12 @@ func resolvePublishImage(state rleState) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s-%s:latest", registry, project.Slug(projectName), project.Slug(state.Name)), nil
+	return fmt.Sprintf(
+		"%s/%s-%s:latest",
+		registry,
+		project.Slug(projectName),
+		project.Slug(state.EnvironmentName),
+	), nil
 }
 
 type environmentOutput struct {

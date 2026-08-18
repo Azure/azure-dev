@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +22,7 @@ import (
 )
 
 const (
-	environmentCollectionPath = "/fine_tuning/environments"
+	environmentCollectionPath = "/rl_environments"
 	foundryAPIVersion         = "2025-11-15-preview"
 	foundryTokenScope         = "https://ai.azure.com/.default" //nolint:gosec // OAuth scope, not a credential
 )
@@ -56,7 +55,9 @@ type environmentResource struct {
 }
 
 type listEnvironmentsResponse struct {
-	Value []environmentResource `json:"value"`
+	Data    []environmentResource `json:"data"`
+	LastId  string                `json:"last_id,omitempty"`
+	HasMore bool                  `json:"has_more"`
 }
 
 type environmentVersionResource struct {
@@ -67,20 +68,29 @@ type environmentVersionResource struct {
 	CreatedAt     string `json:"createdAtUtc,omitempty"`
 }
 
-type sandboxCreateRequest struct {
-	Version string `json:"version,omitempty"`
+type listEnvironmentVersionsResponse struct {
+	Data    []environmentVersionResource `json:"data"`
+	LastId  string                       `json:"last_id,omitempty"`
+	HasMore bool                         `json:"has_more"`
 }
 
-type sandboxResource struct {
-	Id            string `json:"id"`
-	ProjectId     string `json:"projectId,omitempty"`
-	EnvironmentId string `json:"environmentId,omitempty"`
-	Version       string `json:"version,omitempty"`
-	BaseUrl       string `json:"baseUrl,omitempty"`
-	Status        string `json:"status,omitempty"`
-	Error         string `json:"error,omitempty"`
-	CreatedAt     string `json:"createdAtUtc,omitempty"`
-	UpdatedAt     string `json:"updatedAtUtc,omitempty"`
+type createInstanceGroupRequest struct {
+	MaxActiveInstances int `json:"maxActiveInstances"`
+}
+
+type instanceGroupResource struct {
+	Id                 string `json:"id"`
+	EnvironmentName    string `json:"environmentName"`
+	EnvironmentVersion string `json:"environmentVersion"`
+	MaxActiveInstances int    `json:"maxActiveInstances"`
+}
+
+type instanceResource struct {
+	InstanceId      string `json:"instanceId"`
+	InstanceGroupId string `json:"instanceGroupId"`
+	BaseUrl         string `json:"baseUrl,omitempty"`
+	Status          string `json:"status,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 type rleHTTPError struct {
@@ -141,12 +151,14 @@ func (c *rleClient) createV1Environment(
 
 func (c *rleClient) listEnvironments(
 	ctx context.Context,
-	skip int,
-	top int,
+	after string,
+	limit int,
 ) (*listEnvironmentsResponse, error) {
 	query := url.Values{}
-	query.Set("skip", strconv.Itoa(skip))
-	query.Set("top", strconv.Itoa(top))
+	query.Set("limit", fmt.Sprintf("%d", limit))
+	if after != "" {
+		query.Set("after", after)
+	}
 
 	var result listEnvironmentsResponse
 	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+"?"+query.Encode(), nil, &result); err != nil {
@@ -156,20 +168,32 @@ func (c *rleClient) listEnvironments(
 	return &result, nil
 }
 
+func (c *rleClient) getEnvironment(
+	ctx context.Context,
+	name string,
+) (*environmentResource, error) {
+	path := environmentCollectionPath + "/" + url.PathEscape(name)
+
+	var result environmentResource
+	if err := c.do(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (c *rleClient) getEnvironmentVersion(
 	ctx context.Context,
 	name string,
 	version string,
 ) (*environmentResource, error) {
-	path := fmt.Sprintf(
-		"%s/%s/versions/%s",
-		environmentCollectionPath,
+	suffix := fmt.Sprintf(
+		"/%s/versions/%s",
 		url.PathEscape(name),
 		url.PathEscape(version),
 	)
 
 	var result environmentResource
-	if err := c.do(ctx, http.MethodGet, path, nil, &result); err != nil {
+	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
 		return nil, err
 	}
 
@@ -179,66 +203,120 @@ func (c *rleClient) getEnvironmentVersion(
 func (c *rleClient) listEnvironmentVersions(
 	ctx context.Context,
 	name string,
-) ([]environmentVersionResource, error) {
-	path := fmt.Sprintf("%s/%s/versions", environmentCollectionPath, url.PathEscape(name))
-
-	var result []environmentVersionResource
-	if err := c.do(ctx, http.MethodGet, path, nil, &result); err != nil {
-		return nil, err
+	after string,
+	limit int,
+) (*listEnvironmentVersionsResponse, error) {
+	query := url.Values{}
+	query.Set("limit", fmt.Sprintf("%d", limit))
+	if after != "" {
+		query.Set("after", after)
 	}
+	suffix := fmt.Sprintf("/%s/versions?%s", url.PathEscape(name), query.Encode())
 
-	return result, nil
-}
-
-func (c *rleClient) createSandbox(
-	ctx context.Context,
-	environmentId string,
-	request sandboxCreateRequest,
-) (*sandboxResource, error) {
-	path := fmt.Sprintf(
-		"%s/%s/sandboxes/lease",
-		environmentCollectionPath,
-		url.PathEscape(environmentId),
-	)
-
-	var result sandboxResource
-	if err := c.do(ctx, http.MethodPost, path, request, &result); err != nil {
+	var result listEnvironmentVersionsResponse
+	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
 		return nil, err
 	}
 
 	return &result, nil
 }
 
-func (c *rleClient) getSandbox(
+func (c *rleClient) createInstanceGroup(
 	ctx context.Context,
-	environmentId string,
-	sandboxId string,
-) (*sandboxResource, error) {
-	path := sandboxPath(environmentId, sandboxId)
+	environmentName string,
+	environmentVersion string,
+) (*instanceGroupResource, error) {
+	suffix := instanceGroupCollectionSuffix(environmentName, environmentVersion)
+	request := createInstanceGroupRequest{MaxActiveInstances: 1}
 
-	var result sandboxResource
-	if err := c.do(ctx, http.MethodGet, path, nil, &result); err != nil {
+	var result instanceGroupResource
+	if err := c.do(ctx, http.MethodPost, environmentCollectionPath+suffix, request, &result); err != nil {
 		return nil, err
 	}
-
 	return &result, nil
 }
 
-func (c *rleClient) deleteSandbox(
+func (c *rleClient) deleteInstanceGroup(
 	ctx context.Context,
-	environmentId string,
-	sandboxId string,
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
 ) error {
-	return c.do(ctx, http.MethodDelete, sandboxPath(environmentId, sandboxId)+"/release", nil, nil)
+	suffix := instanceGroupSuffix(environmentName, environmentVersion, instanceGroupId)
+	return c.do(ctx, http.MethodDelete, environmentCollectionPath+suffix, nil, nil)
 }
 
-func sandboxPath(environmentId string, sandboxId string) string {
-	return fmt.Sprintf(
-		"%s/%s/sandboxes/%s",
-		environmentCollectionPath,
-		url.PathEscape(environmentId),
-		url.PathEscape(sandboxId),
-	)
+func (c *rleClient) createInstance(
+	ctx context.Context,
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+) (*instanceResource, error) {
+	suffix := instanceCollectionSuffix(environmentName, environmentVersion, instanceGroupId)
+
+	var result instanceResource
+	if err := c.do(ctx, http.MethodPost, environmentCollectionPath+suffix, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *rleClient) getInstance(
+	ctx context.Context,
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+	instanceId string,
+) (*instanceResource, error) {
+	suffix := instanceSuffix(environmentName, environmentVersion, instanceGroupId, instanceId)
+
+	var result instanceResource
+	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *rleClient) deleteInstance(
+	ctx context.Context,
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+	instanceId string,
+) error {
+	suffix := instanceSuffix(environmentName, environmentVersion, instanceGroupId, instanceId)
+	return c.do(ctx, http.MethodDelete, environmentCollectionPath+suffix, nil, nil)
+}
+
+func instanceSuffix(
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+	instanceId string,
+) string {
+	return instanceCollectionSuffix(environmentName, environmentVersion, instanceGroupId) +
+		"/" + url.PathEscape(instanceId)
+}
+
+func instanceCollectionSuffix(
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+) string {
+	return instanceGroupSuffix(environmentName, environmentVersion, instanceGroupId) + "/instances"
+}
+
+func instanceGroupSuffix(environmentName string, environmentVersion string, instanceGroupId string) string {
+	return instanceGroupCollectionSuffix(environmentName, environmentVersion) +
+		"/" + url.PathEscape(instanceGroupId)
+}
+
+func instanceGroupCollectionSuffix(environmentName string, environmentVersion string) string {
+	path := "/" + url.PathEscape(environmentName)
+	if environmentVersion != "" {
+		path += "/versions/" + url.PathEscape(environmentVersion)
+	}
+	return path + "/instance_groups"
 }
 
 func (c *rleClient) do(ctx context.Context, method string, path string, body any, target any) error {
@@ -266,13 +344,11 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 	if !strings.EqualFold(req.URL.Scheme, "https") {
 		return errors.New("RLE control-plane authentication requires an HTTPS Foundry project endpoint")
 	}
-	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{foundryTokenScope},
-	})
+	authorization, err := c.authorizationHeader(ctx)
 	if err != nil {
 		return fmt.Errorf("authenticate to Foundry: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+token.Token)
+	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -295,9 +371,20 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 	if target == nil || len(respBody) == 0 {
 		return nil
 	}
+
 	if err := json.Unmarshal(respBody, target); err != nil {
 		return fmt.Errorf("decode RLE response: %w", err)
 	}
 
 	return nil
+}
+
+func (c *rleClient) authorizationHeader(ctx context.Context) (string, error) {
+	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{foundryTokenScope},
+	})
+	if err != nil {
+		return "", err
+	}
+	return "Bearer " + token.Token, nil
 }

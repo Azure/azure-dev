@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -79,7 +81,7 @@ func TestRunShellCallsCommands(t *testing.T) {
 
 	input := strings.NewReader("health\nreset {\"seed\":0}\nstep {\"message\":\"hello\"}\nstate\nexit\n")
 	var output bytes.Buffer
-	if err := runShell(input, &output, server.URL, 30); err != nil {
+	if err := runShell(t.Context(), input, &output, server.URL, 30, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -106,11 +108,36 @@ func TestRunShellRequiresStepPayload(t *testing.T) {
 
 	input := strings.NewReader("step\nexit\n")
 	var output bytes.Buffer
-	if err := runShell(input, &output, server.URL, 30); err != nil {
+	if err := runShell(t.Context(), input, &output, server.URL, 30, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "step requires a JSON action payload") {
 		t.Fatalf("expected step payload error, got %s", output.String())
+	}
+}
+
+func TestRunShellRefreshesAuthorizationForEachRequest(t *testing.T) {
+	var authorizations []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorizations = append(authorizations, r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	tokenNumber := 0
+	authorizationProvider := func(context.Context) (string, error) {
+		tokenNumber++
+		return fmt.Sprintf("Bearer token-%d", tokenNumber), nil
+	}
+	input := strings.NewReader("health\nstate\nexit\n")
+	var output bytes.Buffer
+	if err := runShell(t.Context(), input, &output, server.URL, 30, authorizationProvider); err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []string{"Bearer token-1", "Bearer token-2"}
+	if !slices.Equal(authorizations, expected) {
+		t.Fatalf("expected refreshed authorization headers %v, got %v", expected, authorizations)
 	}
 }
 

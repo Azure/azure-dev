@@ -47,6 +47,8 @@ azd ai rle version
 $env:AZD_AI_RLE_ENABLE = "true"
 ```
 
+Remote invocation accepts HTTPS OpenEnv URLs on the configured Foundry project origin or under the RLE-managed `hyena.infra.ai.azure.com` domain. Other origins, embedded credentials, insecure HTTP URLs, and custom ports are rejected.
+
 ## Configure the Foundry project endpoint
 
 RLE control-plane APIs are called relative to the Foundry project endpoint. APIM maps the project endpoint request to the workspace-scoped RLE service internally, so the extension does not require a separate control-plane endpoint.
@@ -60,7 +62,7 @@ $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/pro
 For example, RLE environment registration is sent to:
 
 ```text
-<FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments?api-version=2025-11-15-preview
+<FOUNDRY_PROJECT_ENDPOINT>/rl_environments?api-version=2025-11-15-preview
 ```
 
 Publish also needs an ACR registry endpoint:
@@ -86,7 +88,7 @@ azd ai rle init
 cd .\echo_env
 ```
 
-The default echo session downloads the Hugging Face `OpenEnv` repo, copies `envs/echo_env` into the session folder, and writes `.azd-rle.json` with the local environment name.
+The default echo session downloads the Hugging Face `OpenEnv` repo, copies `envs/echo_env` into the session folder, and writes `.azd-rle.json` with the local `environmentName`. Existing state files that use the legacy `name` property remain supported.
 
 The copied session does not keep `.git` metadata from the upstream repository.
 
@@ -156,7 +158,7 @@ $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
 azd ai rle publish --version-bump major
 ```
 
-Publish reads the Foundry project endpoint from `FOUNDRY_PROJECT_ENDPOINT` and the ACR registry from `AZURE_CONTAINER_REGISTRY_ENDPOINT`. It derives the project route segment from `/api/projects/<project>`, builds the Docker image as `<registry>.azurecr.io/<project>-<environment>:latest`, pushes it to ACR, registers that image by calling `<FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments`, and saves the project/environment details in `.azd-rle.json`.
+Publish reads the Foundry project endpoint from `FOUNDRY_PROJECT_ENDPOINT` and the ACR registry from `AZURE_CONTAINER_REGISTRY_ENDPOINT`. It derives the project route segment from `/api/projects/<project>`, builds the Docker image as `<registry>.azurecr.io/<project>-<environment>:latest`, pushes it to ACR, registers that image by calling `<FOUNDRY_PROJECT_ENDPOINT>/rl_environments`, and saves the project/environment details in `.azd-rle.json`.
 
 Use `--version-bump major` (default), `--version-bump minor`, or `--version-bump patch` to control the environment version that RLE creates.
 
@@ -200,7 +202,13 @@ azd ai rle show
 
 ### 6. Invoke remotely
 
-Remote invoke uses the deployed environment, leases a sandbox from `<FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments/<environmentId>/sandboxes/lease`, opens the sandbox `/web` UI when available (or a local proxy UI otherwise), keeps the shell attached, and releases the sandbox when the shell exits:
+Remote invoke creates a temporary instance group and one instance through the public RLE routes:
+
+- Named invoke without `--version`: create the group at `/rl_environments/<environmentName>/instance_groups`; RLE resolves the latest version.
+- Saved state or explicit `--version`: create the group at `/rl_environments/<environmentName>/versions/<version>/instance_groups`.
+- Create and poll the instance under the resolved version at `/instance_groups/<groupId>/instances`.
+
+It opens a generic local playground that proxies authenticated OpenEnv operations to the environment and keeps the shell attached. When invoke exits, it deletes the temporary instance and then its group using cleanup contexts that are independent from Ctrl+C:
 
 ```powershell
 azd ai rle invoke --timeout 60
@@ -213,13 +221,13 @@ $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/pro
 azd ai rle invoke code_rl
 ```
 
-The command resolves the latest version and environment ID returned by the project. Pin a specific published version when needed:
+The unversioned instance-group response supplies the resolved latest version used for all subsequent instance requests. Pin a specific published version when needed:
 
 ```powershell
 azd ai rle invoke code_rl --version 2.1.0
 ```
 
-Cloud-only invocation does not create or modify `.azd-rle.json`. If the selected disk image is not ready, invoke fails with a user-facing error instead of waiting.
+Cloud-only invocation does not create or modify `.azd-rle.json`. If the selected disk image is not ready, group creation fails before an instance is created.
 
 ## Build and install from source
 

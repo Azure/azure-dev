@@ -15,23 +15,19 @@ func resolveLatestEnvironmentByName(
 	client *rleClient,
 	environmentName string,
 ) (*environmentResource, error) {
-	environments, err := listAllEnvironments(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, environment := range environments {
-		if environment.Name == environmentName {
-			return &environment, nil
+	environment, err := client.getEnvironment(ctx, environmentName)
+	if isRleNotFound(err) {
+		return nil, &azdext.LocalError{
+			Message:    fmt.Sprintf("RLE environment %q was not found in this Foundry project.", environmentName),
+			Code:       "rle_environment_not_found",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Run azd ai rle list to see the available environments.",
 		}
 	}
-
-	return nil, &azdext.LocalError{
-		Message:    fmt.Sprintf("RLE environment %q was not found in this Foundry project.", environmentName),
-		Code:       "rle_environment_not_found",
-		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: "Run azd ai rle list to see the available environments.",
+	if err != nil {
+		return nil, serviceError(err)
 	}
+	return environment, nil
 }
 
 func requireReadyEnvironment(environment *environmentResource, environmentName string) error {

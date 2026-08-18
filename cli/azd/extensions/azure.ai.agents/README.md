@@ -135,8 +135,8 @@ Details:
 
 ## Session idle timeout
 
-A hosted agent's runtime sessions are torn down by Foundry after a period of
-inactivity. The default is 900 seconds. Override it with
+A hosted agent's runtime session sandbox is suspended by Foundry after a period
+of inactivity. The default is 900 seconds. Override it with
 `sessionConfiguration.idleTimeoutSeconds` on the `azure.ai.agent` service entry
 in `azure.yaml`:
 

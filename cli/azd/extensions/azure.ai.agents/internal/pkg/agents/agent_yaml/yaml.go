@@ -252,8 +252,8 @@ const (
 
 // SessionConfiguration configures the runtime session behavior of a hosted agent.
 type SessionConfiguration struct {
-	// IdleTimeoutSeconds is the number of seconds a session may stay idle before
-	// the service tears it down. Valid range is 300–3600 (inclusive). When nil,
+	// IdleTimeoutSeconds is the idle duration, in seconds, before a session's
+	// sandbox is suspended. Valid range is 300–3600 (inclusive). When nil,
 	// session_configuration is omitted from the request and the service default
 	// (900 seconds) applies.
 	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty" yaml:"idle_timeout_seconds,omitempty"`

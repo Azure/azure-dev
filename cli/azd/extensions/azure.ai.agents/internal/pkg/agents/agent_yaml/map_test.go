@@ -1753,6 +1753,16 @@ func TestCreateHostedAgentAPIRequest_ContainerSessionConfiguration(t *testing.T)
 	if imgDef.SessionConfiguration.IdleTimeoutSeconds != 600 {
 		t.Errorf("IdleTimeoutSeconds = %d, want 600", imgDef.SessionConfiguration.IdleTimeoutSeconds)
 	}
+
+	// Assert the wire payload so a wrong JSON tag can't slip through: the struct
+	// check above passes regardless of the tag, but the service reads the JSON.
+	data, err := json.Marshal(imgDef)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if !strings.Contains(string(data), `"session_configuration":{"idle_timeout_seconds":600}`) {
+		t.Errorf("wire payload missing session_configuration.idle_timeout_seconds, got %s", data)
+	}
 }
 
 func TestCreateAgentAPIRequest_CodeDeploySessionConfiguration(t *testing.T) {

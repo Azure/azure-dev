@@ -35,6 +35,9 @@ func (s *presenceServer) requested() []string {
 // newPresenceClient wires a DatasetClient to a server that answers the version
 // listing with listStatus/listBody, and answers a point read of a dataset
 // version with whatever found reports for that version.
+//
+// Retries are off: a test that means "the service said 404" should cost one
+// request, not a backoff schedule.
 func newPresenceClient(
 	t *testing.T,
 	listStatus int,
@@ -83,7 +86,8 @@ func TestPresenceTrustsANonEmptyVersionListing(t *testing.T) {
 	client, rec := newPresenceClient(t,
 		http.StatusOK, `{"value":[{"name":"ds","version":"1.0"}]}`, nil)
 
-	exists, absenceCertain := datasetPresence(t.Context(), client, "ds")
+	exists, absenceCertain, err := datasetPresence(t.Context(), client, "ds")
+	require.NoError(t, err)
 
 	require.True(t, exists)
 	require.False(t, absenceCertain)
@@ -98,7 +102,8 @@ func TestPresenceProbesPastAListingThatHasNotCaughtUp(t *testing.T) {
 	client, rec := newPresenceClient(t,
 		http.StatusOK, `{"value":[]}`, map[string]bool{"1.0": true})
 
-	exists, absenceCertain := datasetPresence(t.Context(), client, "ds")
+	exists, absenceCertain, err := datasetPresence(t.Context(), client, "ds")
+	require.NoError(t, err)
 
 	require.True(t, exists, "the point read found the version the listing had not")
 	require.False(t, absenceCertain)
@@ -116,7 +121,8 @@ func TestPresenceProbesTheVersionSomethingElseRegistered(t *testing.T) {
 	client, rec := newPresenceClient(t,
 		http.StatusOK, `{"value":[]}`, map[string]bool{"1": true})
 
-	exists, absenceCertain := datasetPresence(t.Context(), client, "ds")
+	exists, absenceCertain, err := datasetPresence(t.Context(), client, "ds")
+	require.NoError(t, err)
 
 	require.True(t, exists)
 	require.False(t, absenceCertain)
@@ -132,7 +138,8 @@ func TestPresenceProbesTheVersionSomethingElseRegistered(t *testing.T) {
 func TestPresenceWillNotCallAnEmptyListingProofOfAbsence(t *testing.T) {
 	client, _ := newPresenceClient(t, http.StatusOK, `{"value":[]}`, nil)
 
-	exists, absenceCertain := datasetPresence(t.Context(), client, "ds")
+	exists, absenceCertain, err := datasetPresence(t.Context(), client, "ds")
+	require.NoError(t, err)
 
 	require.False(t, exists)
 	require.False(t, absenceCertain,
@@ -147,14 +154,65 @@ func TestPresenceTreatsA404ListingAsProofOfAbsence(t *testing.T) {
 	client, _ := newPresenceClient(t,
 		http.StatusNotFound, `{"error":{"code":"NotFound"}}`, nil)
 
-	exists, absenceCertain := datasetPresence(t.Context(), client, "ds")
+	exists, absenceCertain, err := datasetPresence(t.Context(), client, "ds")
+	require.NoError(t, err)
 
 	require.False(t, exists)
 	require.True(t, absenceCertain)
 
-	err := checkAssetExistence("update", "dataset", "ds", exists, absenceCertain)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), `dataset "ds" does not exist`)
+	gateErr := checkAssetExistence("update", "dataset", "ds", exists, absenceCertain)
+	require.Error(t, gateErr)
+	require.Contains(t, gateErr.Error(), `dataset "ds" does not exist`)
 	require.NoError(t, checkAssetExistence("create", "dataset", "ds", exists, absenceCertain),
 		"create is exactly what a proven-absent name should allow")
+}
+
+// A read that failed proves nothing. Answering "not there" let `create` publish
+// a further version of a dataset that already existed -- the one thing
+// separating create from update, decided by an error nobody looked at.
+func TestPresenceReportsAListingThatFailedRatherThanGuessing(t *testing.T) {
+	for _, status := range []int{
+		http.StatusForbidden,
+		http.StatusUnauthorized,
+		http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			client, _ := newPresenceClient(t, status, `{"error":{"code":"Nope"}}`, nil)
+
+			exists, absenceCertain, err := datasetPresence(t.Context(), client, "ds")
+
+			require.Error(t, err, "a failed listing is not an answer about existence")
+			require.False(t, exists)
+			require.False(t, absenceCertain)
+			require.Contains(t, err.Error(), "ds")
+		})
+	}
+}
+
+// The same rule on the point read: only a 404 means "not this version".
+func TestPresenceReportsAPointReadThatFailedRatherThanGuessing(t *testing.T) {
+	rec := &presenceServer{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.mu.Lock()
+		rec.paths = append(rec.paths, r.URL.Path)
+		rec.mu.Unlock()
+
+		if strings.HasSuffix(r.URL.Path, "/versions") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"value":[]}`))
+			return
+		}
+		http.Error(w, `{"error":{"code":"Forbidden"}}`, http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := dataset_api.NewDatasetClientFromPipeline(
+		srv.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
+
+	exists, absenceCertain, err := datasetPresence(t.Context(), client, "ds")
+
+	require.Error(t, err)
+	require.False(t, exists)
+	require.False(t, absenceCertain)
 }

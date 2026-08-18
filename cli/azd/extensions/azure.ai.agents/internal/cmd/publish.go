@@ -155,8 +155,11 @@ func (a *PublishAction) Run(ctx context.Context) error {
 	}
 
 	deepLink := teamsAppDeepLink(result.TitleID)
+	isDigitalWorker := packCtx.activityProfile.UseCase == project.ActivityUseCaseDigitalWorker
 
-	return writePublishResult(os.Stdout, a.flags.output, result, scope, displayName, packCtx.agentName, deepLink)
+	return writePublishResult(
+		os.Stdout, a.flags.output, result, scope, displayName, packCtx.agentName, deepLink, isDigitalWorker,
+	)
 }
 
 func resolvePublishScope(flags *publishFlags, packCtx *teamsPackContext) (teamsPackScope, error) {
@@ -205,6 +208,7 @@ func writePublishResult(
 	displayName string,
 	agentName string,
 	deepLink string,
+	isDigitalWorker bool,
 ) error {
 	if output == "json" {
 		payload := map[string]string{
@@ -213,9 +217,10 @@ func writePublishResult(
 			"scope":       scope.flag,
 			"displayName": displayName,
 		}
-		if scope.flag == "tenant" {
+		if scope.flag == "tenant" || isDigitalWorker {
 			payload["approvalLink"] = tenantAgentApprovalURL
-		} else {
+		}
+		if scope.flag != "tenant" {
 			payload["deepLink"] = deepLink
 		}
 		data, jsonErr := json.MarshalIndent(payload, "", "  ")
@@ -226,16 +231,34 @@ func writePublishResult(
 		return err
 	}
 
-	fmt.Fprintf(w, "Published Teams app %q for agent %q (scope: %s)\n", displayName, agentName, scope.flag)
+	agentType := "Teams app"
+	if isDigitalWorker {
+		agentType = "Digital Worker"
+	}
+	fmt.Fprintf(w, "Published %s %q for agent %q (scope: %s)\n", agentType, displayName, agentName, scope.flag)
 	fmt.Fprintf(w, "  Title ID:     %s\n", result.TitleID)
 	fmt.Fprintf(w, "  Teams App ID: %s\n", result.TeamsAppID)
-	switch scope.flag {
-	case "tenant":
+
+	switch {
+	case isDigitalWorker && scope.flag == "shared":
+		fmt.Fprintf(w, "  Install link: %s\n", deepLink)
+		fmt.Fprintln(w, "Open or share the install link to add the Digital Worker in Teams.")
+		fmt.Fprintln(w, "The first attempt to create an instance may submit an activation request if the "+
+			"Digital Worker template is not yet active in the tenant.")
+		fmt.Fprintf(w, "  Admin approval: %s\n", tenantAgentApprovalURL)
+		fmt.Fprintln(w, "After approval, reopen the install link to create your personal instance.")
+	case isDigitalWorker && scope.flag == "tenant":
+		fmt.Fprintln(w, "The Digital Worker was submitted for tenant administration and may require approval "+
+			"and template activation before users can create instances.")
+		fmt.Fprintf(w, "  Admin approval: %s\n", tenantAgentApprovalURL)
+		fmt.Fprintln(w, "After approval, users can open the Digital Worker in Teams and create their personal instances.")
+	case scope.flag == "tenant":
 		fmt.Fprintln(w, "The app is submitted to the organization catalog and awaits IT-admin approval.")
 		fmt.Fprintf(w, "  Admin approval: %s\n", tenantAgentApprovalURL)
 	default:
 		fmt.Fprintf(w, "  Install link: %s\n", deepLink)
-		fmt.Fprintln(w, "Share the install link above; recipients can add the app without tenant-admin approval.")
+		fmt.Fprintln(w, "Share this link with users in the target tenant. Users can add the app directly, "+
+			"subject to their tenant's app installation policies.")
 	}
 	return nil
 }

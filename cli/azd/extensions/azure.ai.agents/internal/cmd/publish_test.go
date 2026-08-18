@@ -33,6 +33,7 @@ func TestWritePublishResultJson(t *testing.T) {
 		"Contoso Helper",
 		"agent-service",
 		"https://teams.microsoft.com/v2/#/l/app/?titleId=T_title",
+		false,
 	)
 	require.NoError(t, err)
 
@@ -49,11 +50,8 @@ func TestWritePublishResultJson(t *testing.T) {
 	require.False(t, strings.Contains(stdout.String(), "Published Teams app"))
 }
 
-func TestWritePublishResultTenantOmitsUnavailableInstallLink(t *testing.T) {
+func TestWritePublishResultGuidance(t *testing.T) {
 	t.Parallel()
-
-	scope, err := resolveTeamsPackScope("tenant")
-	require.NoError(t, err)
 
 	result := &agent_api.TeamsAppPublishResult{
 		TitleID:    "T_title",
@@ -61,24 +59,103 @@ func TestWritePublishResultTenantOmitsUnavailableInstallLink(t *testing.T) {
 	}
 	deepLink := "https://teams.microsoft.com/v2/#/l/app/?titleId=T_title"
 
-	var textOutput bytes.Buffer
-	require.NoError(t, writePublishResult(
-		&textOutput, "", result, scope, "Contoso Helper", "agent-service", deepLink,
-	))
-	require.NotContains(t, textOutput.String(), "Install link")
-	require.NotContains(t, textOutput.String(), deepLink)
-	require.Contains(t, textOutput.String(), "awaits IT-admin approval")
-	require.Contains(t, textOutput.String(), "Admin approval: "+tenantAgentApprovalURL)
+	tests := []struct {
+		name             string
+		scope            string
+		isDigitalWorker  bool
+		contains         []string
+		notContains      []string
+		wantDeepLink     bool
+		wantApprovalLink bool
+	}{
+		{
+			name:  "simple shared",
+			scope: "shared",
+			contains: []string{
+				"Published Teams app",
+				"Install link: " + deepLink,
+				"subject to their tenant's app installation policies",
+			},
+			notContains:  []string{"create an instance", "Admin approval"},
+			wantDeepLink: true,
+		},
+		{
+			name:  "simple tenant",
+			scope: "tenant",
+			contains: []string{
+				"Published Teams app",
+				"awaits IT-admin approval",
+				"Admin approval: " + tenantAgentApprovalURL,
+			},
+			notContains:      []string{"Install link", "create instances"},
+			wantApprovalLink: true,
+		},
+		{
+			name:            "digital worker shared",
+			scope:           "shared",
+			isDigitalWorker: true,
+			contains: []string{
+				"Published Digital Worker",
+				"Install link: " + deepLink,
+				"may submit an activation request",
+				"Admin approval: " + tenantAgentApprovalURL,
+				"reopen the install link",
+			},
+			wantDeepLink:     true,
+			wantApprovalLink: true,
+		},
+		{
+			name:            "digital worker tenant",
+			scope:           "tenant",
+			isDigitalWorker: true,
+			contains: []string{
+				"Published Digital Worker",
+				"may require approval and template activation",
+				"Admin approval: " + tenantAgentApprovalURL,
+				"create their personal instances",
+			},
+			notContains:      []string{"Install link"},
+			wantApprovalLink: true,
+		},
+	}
 
-	var jsonOutput bytes.Buffer
-	require.NoError(t, writePublishResult(
-		&jsonOutput, "json", result, scope, "Contoso Helper", "agent-service", deepLink,
-	))
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	var payload map[string]string
-	require.NoError(t, json.Unmarshal(jsonOutput.Bytes(), &payload))
-	require.NotContains(t, payload, "deepLink")
-	require.Equal(t, tenantAgentApprovalURL, payload["approvalLink"])
+			scope, err := resolveTeamsPackScope(test.scope)
+			require.NoError(t, err)
+
+			var textOutput bytes.Buffer
+			require.NoError(t, writePublishResult(
+				&textOutput, "", result, scope, "Contoso Helper", "agent-service", deepLink, test.isDigitalWorker,
+			))
+			for _, expected := range test.contains {
+				require.Contains(t, textOutput.String(), expected)
+			}
+			for _, unexpected := range test.notContains {
+				require.NotContains(t, textOutput.String(), unexpected)
+			}
+
+			var jsonOutput bytes.Buffer
+			require.NoError(t, writePublishResult(
+				&jsonOutput, "json", result, scope, "Contoso Helper", "agent-service", deepLink, test.isDigitalWorker,
+			))
+
+			var payload map[string]string
+			require.NoError(t, json.Unmarshal(jsonOutput.Bytes(), &payload))
+			if test.wantDeepLink {
+				require.Equal(t, deepLink, payload["deepLink"])
+			} else {
+				require.NotContains(t, payload, "deepLink")
+			}
+			if test.wantApprovalLink {
+				require.Equal(t, tenantAgentApprovalURL, payload["approvalLink"])
+			} else {
+				require.NotContains(t, payload, "approvalLink")
+			}
+		})
+	}
 }
 
 func TestResolvePublishScopeUsesDigitalWorkerConfigWhenFlagOmitted(t *testing.T) {

@@ -113,8 +113,8 @@ func modelDeploymentFromAzdEnv(ctx context.Context) string {
 	return azdEnvValue(ctx, judgeModelEnvKey)
 }
 
-// azdEnvValue reads one key from the active azd environment, answering empty
-// whenever there is no daemon, no environment, or no such key.
+// azdEnvValue reads one key from the azd environment this invocation acts on,
+// answering empty whenever there is no daemon, no environment, or no such key.
 func azdEnvValue(ctx context.Context, key string) string {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
@@ -122,12 +122,12 @@ func azdEnvValue(ctx context.Context, key string) string {
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp.GetEnvironment() == nil {
+	envName := azdEnvironmentName(ctx, azdClient)
+	if envName == "" {
 		return ""
 	}
 	val, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: envName,
 		Key:     key,
 	})
 	if err != nil {

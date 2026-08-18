@@ -126,19 +126,40 @@ func (c azdTokenRetry) GetToken(
 
 // lookupEndpointFromAzd reads the endpoint from the active azd environment,
 // returning empty strings when azd has no current environment.
-func lookupEndpointFromAzd(ctx context.Context, azdClient *azdext.AzdClient) (endpoint, envName string) {
+// azdEnvironmentName is the environment this invocation acts on: the one
+// -e/--environment named, or azd's current one when it named none.
+//
+// Answered here because it was answered independently in five places and
+// -e was honoured by none of them. `azd ai eval create -e staging` read its
+// endpoint out of the default environment and wrote its eval id back there,
+// and `-e a-name-azd-rejects` was accepted in silence.
+//
+// Empty means there is no environment to act on, which is ordinary: the atomic
+// commands work standalone against the data plane.
+func azdEnvironmentName(ctx context.Context, azdClient *azdext.AzdClient) string {
+	if name := projectctx.SelectedEnvironment(ctx); name != "" {
+		return name
+	}
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil || envResp.Environment == nil {
+	if err != nil || envResp.GetEnvironment() == nil {
+		return ""
+	}
+	return envResp.Environment.Name
+}
+
+func lookupEndpointFromAzd(ctx context.Context, azdClient *azdext.AzdClient) (endpoint, envName string) {
+	envName = azdEnvironmentName(ctx, azdClient)
+	if envName == "" {
 		return "", ""
 	}
 	val, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: envName,
 		Key:     projectEndpointEnvKey,
 	})
 	if err != nil || val == nil || val.Value == "" {
-		return "", envResp.Environment.Name
+		return "", envName
 	}
-	return val.Value, envResp.Environment.Name
+	return val.Value, envName
 }
 
 // errNoAzdEnvironment reports that there is no azd environment to persist into.
@@ -455,6 +476,10 @@ func resolveEvalDir(ctx context.Context, flagValue string) (string, error) {
 			return "", nil
 		}
 		defer azdClient.Close()
+
+		if name := projectctx.SelectedEnvironment(ctx); name != "" {
+			return readRecordedEvalPath(ctx, azdClient, name)
+		}
 
 		env, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 		if err != nil {

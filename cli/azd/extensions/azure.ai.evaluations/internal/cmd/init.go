@@ -723,12 +723,12 @@ func recordEvalPath(ctx context.Context, path string) {
 	}
 	defer azdClient.Close()
 
-	env, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || env.GetEnvironment() == nil {
+	envName := azdEnvironmentName(ctx, azdClient)
+	if envName == "" {
 		return
 	}
 	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: env.GetEnvironment().GetName(),
+		EnvName: envName,
 		Key:     envKeyEvalPath,
 		Value:   filepath.ToSlash(path),
 	})

@@ -4,9 +4,11 @@
 
 ## Problem
 
-Before this change, Foundry hosted agents could deploy a pre-built container image, but `azure.ai.agents` could not associate that image with a Foundry project connection. Public non-ACR images worked because Foundry could pull them anonymously, and private ACR images used the existing Azure identity path. A private image hosted by another Docker-compatible registry requires the hosted-agent definition to reference a registry connection through the service API's `container_configuration.registry_connection_id` property.
+Enable Foundry hosted agents to run from container images in a customer's **private, non-ACR registry**, such as private JFrog Artifactory. Today, hosted agents support **public and private ACR images** and **public non-ACR images**. Private non-ACR registries are not supported; this design closes that gap.
 
-Without this mapping, developers cannot use `azd` to deploy a hosted agent from a private non-ACR registry even when the registry, workload identity trust, Foundry project, and Foundry connection already exist.
+The developer registers the private registry as a Foundry project connection and names that connection on the hosted-agent version. When Foundry pulls the image, it authenticates to the registry using the connection's configured credential mode. The first supported mode is OAuth 2.0 token exchange ([RFC 8693](https://www.rfc-editor.org/rfc/rfc8693)) with the Foundry project's managed identity. Additional credential modes can be added over time without changing the hosted-agent contract.
+
+Before this change, `azure.ai.agents` could not associate a pre-built image with a Foundry project connection through the service API's `container_configuration.registry_connection_id` property. Without that mapping, developers cannot use `azd` to deploy a hosted agent from a private non-ACR registry even when the registry, workload identity trust, Foundry project, and Foundry connection already exist.
 
 This design adds a registry-neutral authoring and deployment path. JFrog is the first end-to-end example, but neither the `azure.yaml` contract nor production code contains vendor names, hostname allowlists, vendor-specific validation, or setup logic.
 
@@ -60,7 +62,7 @@ When `registryConnectionId` is absent, `registry_connection_id` is omitted. Exis
 
 - Registry-neutral `registryConnectionId` authoring and mapping to `definition.container_configuration.registry_connection_id` for hosted agents using private, already-published non-ACR images.
 - Explicit core image passthrough through top-level `image` and `docker.imagePassthrough: true`.
-- Existing-project init with `--registry-connection` and declarative sibling `azure.ai.connection` workflows.
+- Greenfield agent init against a pre-existing Foundry project connection and declarative sibling `azure.ai.connection` workflows.
 - Connection lookup, dependency validation, and pass-through of generic credential and metadata fields.
 - Compatibility for older pre-built-image projects, with JFrog as the first E2E example rather than a production dependency.
 
@@ -128,47 +130,14 @@ services:
 
 The connection reference survives unified `azure.yaml` and legacy agent-manifest parsing and round trips. The flag value supplied to init takes precedence over a manifest value.
 
-## Existing-project workflow
+## Greenfield agent workflow
 
-This workflow requires an existing Foundry project connection. Before running `azd ai agent init`, create the connection through the Foundry portal or the Azure CLI. The project, private image, registry-side OIDC trust and identity binding, and Entra audience application must also already exist. azd references the connection but does not bootstrap these prerequisites.
-
-The following Azure CLI example creates the connection through its ARM resource. The JFrog-shaped values illustrate the generic service contract and are not an azd vendor dependency:
+This workflow creates a new local agent project that targets existing Foundry resources. Before running `azd ai agent init`, use the Foundry portal or Azure CLI to create the Foundry project connection. The Foundry project, private image, registry-side OIDC trust and identity binding, and Entra audience application must also already exist. Record the project resource ID and connection name; azd references these resources but does not bootstrap them.
 
 ```bash
 PROJECT_ID="<foundry-project-resource-id>"
 CONNECTION_NAME="private-registry"
-CONNECTION_ID="$PROJECT_ID/connections/$CONNECTION_NAME"
 
-cat > connection.json <<'JSON'
-{
-  "properties": {
-    "category": "CustomKeys",
-    "target": "https://<private-registry-host>",
-    "authType": "CustomKeys",
-    "credentials": {
-      "keys": {
-        "audience": "<entra-audience-app-id>",
-        "tokenEndpoint": "/access/api/v1/oidc/token",
-        "body.provider_name": "<oidc-provider-name>"
-      }
-    },
-    "metadata": {
-      "type": "registry_connection",
-      "mode": "oauth_token_exchange"
-    }
-  }
-}
-JSON
-
-az rest \
-  --method put \
-  --url "https://management.azure.com${CONNECTION_ID}?api-version=2025-04-01-preview" \
-  --body @connection.json
-```
-
-After the portal or Azure CLI creates the connection, initialize the agent against the existing project:
-
-```bash
 # Init verifies the pre-created connection and writes the agent service with
 # imagePassthrough enabled.
 azd ai agent init --no-prompt \

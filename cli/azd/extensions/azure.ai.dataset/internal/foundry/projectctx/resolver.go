@@ -155,7 +155,7 @@ func DaemonUnreachable(err error) bool {
 // cascade free to carry on to the next level.
 //
 // Unavailable is no daemon at all. NotFound is a daemon with nothing under that
-// name -- kept as a defence, though azd's environment service does not use it
+// name -- kept as a guard, though azd's environment service does not use it
 // today. Unknown is the one that is not obvious: azd answers the ordinary
 // absences with plain Go errors that reach us with no status, and without
 // letting those through, a project with no environment selected -- or a command

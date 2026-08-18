@@ -362,3 +362,51 @@ func TestAgentPoliciesInvocationsModerationInlineValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestAgentPoliciesInvocationsModerationNonHostedInline covers the production entry point for
+// the non-hosted kinds. Those services are validated from the raw inline property map, so the
+// validator sees the camelCase keys the user authored rather than the snake_case YAML tags —
+// a block reaching the service would be dropped instead of enforced.
+func TestAgentPoliciesInvocationsModerationNonHostedInline(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []string{"workflow", "prompt-voice"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+
+			_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+				"kind": kind,
+				"name": "rai-agent",
+				"policies": []any{
+					map[string]any{
+						"type":          "rai_policy",
+						"raiPolicyName": raiPolicyID,
+						"invocationsModeration": map[string]any{
+							"responseMode": "non_streaming",
+							"inputPaths":   []any{"$.input"},
+							"outputPaths":  []any{"$.output"},
+						},
+					},
+				},
+			}))
+			require.ErrorContains(t, err, "invocationsModeration is only supported for 'hosted' agents")
+		})
+	}
+}
+
+// TestAgentPoliciesSingleRaiPolicyInline pins the one-policy rule on the inline shape, where a
+// second rai_policy would otherwise validate cleanly and then be dropped by the mapper.
+func TestAgentPoliciesSingleRaiPolicyInline(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":  "hosted",
+		"name":  "rai-agent",
+		"image": "myregistry.azurecr.io/agent:v1",
+		"policies": []any{
+			map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID},
+			map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID + "-2"},
+		},
+	}))
+	require.ErrorContains(t, err, "only one is supported")
+}

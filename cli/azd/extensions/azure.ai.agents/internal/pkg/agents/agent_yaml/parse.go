@@ -400,9 +400,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			case AgentKindHosted:
 				var agent ContainerAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					raiPolicyCount := 0
 					for i, policy := range agent.Policies {
 						switch policy.Type {
 						case PolicyTypeRai:
+							raiPolicyCount++
 							if policy.RaiPolicyName == "" {
 								errors = append(errors, fmt.Sprintf(
 									"policies[%d] of type '%s' requires a policy name "+
@@ -419,6 +421,14 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"policies[%d] has an unsupported type '%s' (supported: %s)",
 								i, policy.Type, PolicyTypeRai))
 						}
+					}
+					// rai_config carries a single policy on the wire, so only the first
+					// rai_policy would ever reach the service. Reject the ambiguity rather
+					// than silently dropping the rest.
+					if raiPolicyCount > 1 {
+						errors = append(errors, fmt.Sprintf(
+							"policies declares %d policies of type '%s', but only one is supported",
+							raiPolicyCount, PolicyTypeRai))
 					}
 					// TODO: Do we need this?
 					// if len(agent.Models) == 0 {
@@ -489,9 +499,15 @@ func ValidateAgentName(name string) error {
 // non-hosted agent. Only ContainerAgent carries policies through to the service, so such a
 // block would be dropped silently rather than enforced. It reads a minimal envelope because
 // the kind-specific structs for the other kinds have no policies field at all.
+//
+// The policies are decoded as raw maps rather than into [Policy] because the two authoring
+// surfaces spell the key differently: a standalone agent.yaml uses the snake_case YAML tags,
+// while an inline azure.yaml service is validated from the raw property map and therefore
+// still carries the camelCase keys the user authored. Decoding into [Policy] would only ever
+// match the snake_case spelling and let every inline definition bypass this check.
 func validateInvocationsModerationKind(templateBytes []byte, kind AgentKind) []string {
 	var envelope struct {
-		Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
+		Policies []map[string]any `json:"policies,omitempty" yaml:"policies,omitempty"`
 	}
 	if err := yaml.Unmarshal(templateBytes, &envelope); err != nil {
 		// A malformed document is reported by the kind-specific parse instead.
@@ -500,13 +516,25 @@ func validateInvocationsModerationKind(templateBytes []byte, kind AgentKind) []s
 
 	var errors []string
 	for i, policy := range envelope.Policies {
-		if policy.InvocationsModeration != nil {
-			errors = append(errors, fmt.Sprintf(
-				"policies[%d] invocationsModeration is only supported for '%s' agents, got kind '%s'",
-				i, AgentKindHosted, kind))
+		if !hasInvocationsModeration(policy) {
+			continue
 		}
+		errors = append(errors, fmt.Sprintf(
+			"policies[%d] invocationsModeration is only supported for '%s' agents, got kind '%s'",
+			i, AgentKindHosted, kind))
 	}
 	return errors
+}
+
+// hasInvocationsModeration reports whether a raw policy map declares a moderation block under
+// either the camelCase (azure.yaml) or snake_case (agent.yaml) spelling.
+func hasInvocationsModeration(policy map[string]any) bool {
+	for _, key := range []string{"invocationsModeration", "invocations_moderation"} {
+		if value, ok := policy[key]; ok && value != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // validateInvocationsModeration checks a policy's invocations-moderation block against the

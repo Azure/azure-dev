@@ -1534,8 +1534,73 @@ policies:
     rai_policy_name: /subscriptions/x/raiPolicies/p
 `,
 		},
+		{
+			name: "camelCase block on a non-hosted agent",
+			yaml: `kind: workflow
+name: workflow-agent
+policies:
+  - type: rai_policy
+    raiPolicyName: /subscriptions/x/raiPolicies/p
+    invocationsModeration:
+      responseMode: non_streaming
+      inputPaths: ["$.input"]
+      outputPaths: ["$.output"]
+`,
+			wantErrSubst: "policies[0] invocationsModeration is only supported for 'hosted' agents",
+		},
 	}
 
+	runValidateAgentDefinitionCases(t, tests)
+}
+
+// TestValidateAgentDefinition_SingleRaiPolicy pins the one-policy rule. rai_config is a single
+// object on the wire, so a second rai_policy (and any moderation block it carries) would be
+// dropped by the mapper after passing validation rather than enforced.
+func TestValidateAgentDefinition_SingleRaiPolicy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		yaml         string
+		wantErrSubst string
+	}{
+		{
+			name: "a single rai policy stays valid",
+			yaml: `kind: hosted
+name: hosted-agent
+image: myregistry.azurecr.io/agent:v1
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/p1
+`,
+		},
+		{
+			name: "two rai policies are rejected",
+			yaml: `kind: hosted
+name: hosted-agent
+image: myregistry.azurecr.io/agent:v1
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/p1
+  - type: rai_policy
+    rai_policy_name: /subscriptions/x/raiPolicies/p2
+`,
+			wantErrSubst: "policies declares 2 policies of type 'rai_policy', but only one is supported",
+		},
+	}
+
+	runValidateAgentDefinitionCases(t, tests)
+}
+
+// runValidateAgentDefinitionCases runs a table of definitions through ValidateAgentDefinition,
+// asserting either success or that the error mentions the expected substring.
+func runValidateAgentDefinitionCases(t *testing.T, tests []struct {
+	name         string
+	yaml         string
+	wantErrSubst string
+},
+) {
+	t.Helper()
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

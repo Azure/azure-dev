@@ -175,13 +175,15 @@ func TestShowUsesADetailView(t *testing.T) {
 		"dataset show returns one thing, so dataset.go renders it as a detail view")
 }
 
-// The message has to name the flag that would have supplied the value, since
-// --no-prompt means nobody is there to be asked.
+// The message has to name the flag that would have supplied the value, and
+// nothing else: none of these commands prompts, so blaming --no-prompt named a
+// flag the caller had not passed and implied that dropping it would make the
+// command ask.
 func TestRequireFlag(t *testing.T) {
 	err := requireFlag("name")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--name")
-	assert.Contains(t, err.Error(), "--no-prompt")
+	assert.NotContains(t, err.Error(), "--no-prompt")
 }
 
 // --from-file takes either the file or the directory holding it, because both

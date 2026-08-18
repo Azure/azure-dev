@@ -170,6 +170,53 @@ func SelectedEnvironment(ctx context.Context) string {
 	return name
 }
 
+// envLookup is the one call needed to confirm a named environment exists.
+type envLookup interface {
+	Get(
+		context.Context, *azdext.GetEnvironmentRequest, ...grpc.CallOption,
+	) (*azdext.EnvironmentResponse, error)
+}
+
+// VerifySelectedEnvironment refuses a -e/--environment azd does not have.
+//
+// Checked here rather than as a side effect of reading the endpoint, because
+// the endpoint may not be read at all: --project-endpoint answers at level 1
+// and the cascade never runs, so `run start -e typo --project-endpoint ...` was
+// accepted while the same command without the flag was refused. The name
+// decides which environment every id, version and fingerprint is read from and
+// written to, whichever level supplied the endpoint.
+func VerifySelectedEnvironment(ctx context.Context) error {
+	name := SelectedEnvironment(ctx)
+	if name == "" {
+		return nil
+	}
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		// Nothing to ask: the extension is running outside azd.
+		return nil
+	}
+	defer client.Close()
+
+	return verifyEnvironment(ctx, client.Environment(), name)
+}
+
+// verifyEnvironment is the rule on its own, so it can be tested without a
+// daemon.
+//
+// Only azd saying it has no such environment is an answer. Any other failure is
+// not one, and is left to the commands that actually need azd to report, rather
+// than turning a hiccup into "your environment does not exist".
+func verifyEnvironment(ctx context.Context, env envLookup, name string) error {
+	_, err := env.Get(ctx, &azdext.GetEnvironmentRequest{Name: name})
+	if err == nil {
+		return nil
+	}
+	if noSuchEnvironment(err) || containsGRPCCode(err, codes.NotFound) {
+		return ErrNoSuchEnvironment(name)
+	}
+	return nil
+}
+
 // azd's absence sentinels, as they reach us.
 //
 // `pkg/environment` and `pkg/environment/azdcontext` declare these with

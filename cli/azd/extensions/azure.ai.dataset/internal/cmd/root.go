@@ -46,6 +46,9 @@ func NewRootCommand() *cobra.Command {
 		// each reader, so there is one answer to which environment this
 		// invocation is about.
 		cmd.SetContext(projectctx.WithSelectedEnvironment(cmd.Context(), extCtx.Environment))
+		if err := projectctx.VerifySelectedEnvironment(cmd.Context()); err != nil {
+			return err
+		}
 		setupDebugLogging(cmd.Flags())
 		return nil
 	}

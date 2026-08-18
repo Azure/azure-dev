@@ -361,9 +361,13 @@ func Warning(err error) string {
 	return fmt.Sprintf("warning: %v\n", err)
 }
 
-// FlagRequired reports a value that cannot be prompted for.
+// FlagRequired reports a value the command needs and cannot settle itself.
+//
+// It used to add "(running with --no-prompt)", which was untrue at every call
+// site: none of them prompts, so the parenthetical named a flag the caller had
+// not passed and implied that dropping it would make the command ask.
 func FlagRequired(name string) error {
-	return fmt.Errorf("--%s is required (running with --no-prompt)", name)
+	return fmt.Errorf("--%s is required", name)
 }
 
 // ReadingPath reports a file or directory that could not be read.

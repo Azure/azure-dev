@@ -79,27 +79,28 @@ func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 	return out, nil
 }
 
-// azd's two absence sentinels, as they reach us.
+// azd's absence sentinels, as they reach us.
 //
-// `pkg/environment` declares them with errors.New, and the daemon's
-// error-wrapping interceptor passes an error carrying no suggestion and no auth
-// failure through untouched, so both arrive as Unknown -- the same code a
-// failure to load project state arrives under. The message is the only thing
-// left to tell them apart.
+// `pkg/environment` and `pkg/environment/azdcontext` declare these with
+// errors.New, and the daemon's error-wrapping interceptor passes an error
+// carrying no suggestion and no auth failure through untouched, so all three
+// arrive as Unknown -- the same code a failure to load project state arrives
+// under. The message is the only thing left to tell them apart.
 //
 // Matched whole rather than by substring. The message is the only evidence
 // there is, so a failure whose prose happens to mention an environment must not
-// read as one of these. The default-environment sentinel arrives on its own;
-// the named one arrives from the data store as `'<name>': environment not
-// found`.
+// read as one of these. The default-environment and no-project sentinels arrive
+// on their own; the named-environment one arrives from the data store as
+// `'<name>': environment not found`.
 //
 // Matched rather than imported: taking a dependency on the environment manager
-// for two strings costs more than it settles, and a rename fails closed. The
+// for three strings costs more than it settles, and a rename fails closed. The
 // command would report the daemon error instead of resolving quietly to a
 // lower-priority endpoint, which is the direction to fail in.
 const (
 	azdNoDefaultEnvironment = "default environment not found"
 	azdNoSuchEnvironment    = "environment not found"
+	azdNoProject            = "no project exists; to create a new project, run `azd init`"
 )
 
 // hostedSourceAbsent reports whether an error from the azd daemon leaves the
@@ -109,10 +110,11 @@ const (
 // name -- kept as a defence, though azd's environment service does not use it
 // today. Unknown is the one that is not obvious: azd answers the ordinary
 // absences with plain Go errors that reach us with no status, and without
-// letting those through, a project that simply has no environment selected
-// could never reach the global config or the host variable. It is admitted only
-// for the two messages above, because Unknown is equally what a failure to load
-// project state arrives as.
+// letting those through, a project with no environment selected -- or a command
+// run outside a project at all, which the atomic commands are meant to support
+// -- could never reach the global config or the host variable. It is admitted
+// only for the three messages above, because Unknown is equally what a failure
+// to load project state arrives as.
 //
 // Everything else is a failure to answer rather than an answer of "nothing":
 // an expired login, a denial, a cancellation, or a server fault. Falling
@@ -122,32 +124,17 @@ func hostedSourceAbsent(err error) bool {
 	if containsGRPCCode(err, codes.Unavailable) || containsGRPCCode(err, codes.NotFound) {
 		return true
 	}
-	msg, ok := unknownStatusMessage(err)
-	if !ok {
+	// The status the daemon sent, not the flattened text: status.FromError
+	// replaces a wrapped error's message with the whole of err.Error(), so the
+	// wrapper's own prose would take part in the comparison below.
+	st, ok := azdext.GRPCStatusFromError(err)
+	if !ok || st.Code() != codes.Unknown {
 		return false
 	}
-	return msg == azdNoDefaultEnvironment || strings.HasSuffix(msg, "': "+azdNoSuchEnvironment)
-}
-
-// unknownStatusMessage is the message carried by the innermost Unknown status
-// in the chain, if there is one.
-//
-// Read link by link rather than through status.FromError, which flattens: given
-// a wrapped error it replaces the status message with the whole of err.Error(),
-// so the wrapper's own prose would take part in the comparison above. Only what
-// the daemon said should decide whether this is an absence.
-func unknownStatusMessage(err error) (string, bool) {
-	type grpcStatuser interface{ GRPCStatus() *status.Status }
-	for ; err != nil; err = errors.Unwrap(err) {
-		gs, ok := err.(grpcStatuser)
-		if !ok {
-			continue
-		}
-		if st := gs.GRPCStatus(); st != nil && st.Code() == codes.Unknown {
-			return st.Message(), true
-		}
-	}
-	return "", false
+	msg := st.Message()
+	return msg == azdNoDefaultEnvironment ||
+		msg == azdNoProject ||
+		strings.HasSuffix(msg, "': "+azdNoSuchEnvironment)
 }
 
 // containsGRPCCode walks the error chain looking for a gRPC status with the

@@ -239,6 +239,13 @@ func (ec *evalContext) confirmedNoAzdEnvironment(ctx context.Context) bool {
 // already have. Matching on text because that is what survives the trip -- the
 // sentinel is wrapped in a gRPC status on the way out of azd, so errors.Is has
 // nothing to compare against on this side.
+//
+// Deliberately not projectctx.AbsentFromAzd, which answers a different
+// question. That one asks whether the cascade may carry on to the next level,
+// and an unreachable daemon means yes. This one asks whether the reason is that
+// no environment is selected, and an unreachable daemon means no -- it is not
+// an answer about environments at all. The two agree on everything except that,
+// and that is the case each exists for.
 func isNoDefaultEnvironmentError(err error) bool {
 	if err == nil {
 		return false

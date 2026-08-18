@@ -151,6 +151,9 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			"run `azd ai project init` before adding a deployment",
 		)
 	}
+	if err := validateConfiguredProjectIdentity(values, service); err != nil {
+		return err
+	}
 	if requiresExistingProjectID(values, service) {
 		return exterrors.Validation(
 			"project_deployment_requires_id",
@@ -273,6 +276,32 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		fmt.Printf("Managed deployment %q %s.\n", selected.Deployment.Name, mutation)
 	}
 	return nil
+}
+
+func validateConfiguredProjectIdentity(
+	values map[string]string,
+	service *projectServiceInfo,
+) error {
+	projectID := strings.TrimSpace(values["AZURE_AI_PROJECT_ID"])
+	if projectID == "" {
+		return nil
+	}
+	project, err := projectFromResourceID(projectID)
+	if err != nil {
+		return err
+	}
+	if service == nil {
+		return nil
+	}
+	endpoint := serviceEndpoint(service.Resolved)
+	if endpoint == "" || equalProjectEndpoint(endpoint, project.Endpoint) {
+		return nil
+	}
+	return exterrors.Validation(
+		"project_target_mismatch",
+		"the configured project endpoint and AZURE_AI_PROJECT_ID identify different projects",
+		"rerun `azd ai project init` with the intended project target",
+	)
 }
 
 func requiresExistingProjectID(

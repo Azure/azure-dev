@@ -204,6 +204,8 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 			service,
 			target.Endpoint,
 			infraFromRequest(request, a.flags),
+			projectConfig,
+			oldValues,
 		); err != nil {
 			return err
 		}
@@ -1162,14 +1164,17 @@ func validateFoundryProvider(project *azdext.ProjectConfig) error {
 	}
 
 	if project != nil && project.GetInfra() != nil &&
-		project.GetInfra().GetPath() != "" &&
-		project.GetInfra().GetPath() != "." &&
-		project.GetInfra().GetPath() != "./infra" {
-		return exterrors.Validation(
-			"infra_provider_conflict",
-			fmt.Sprintf("azure.yaml uses custom infrastructure path %q", project.GetInfra().GetPath()),
-			"remove the custom infrastructure path or keep the existing provider",
+		project.GetInfra().GetPath() != "" {
+		infraPath := filepath.Clean(
+			filepath.FromSlash(project.GetInfra().GetPath()),
 		)
+		if infraPath != filepath.Clean(filepath.FromSlash("infra")) {
+			return exterrors.Validation(
+				"infra_provider_conflict",
+				fmt.Sprintf("azure.yaml uses custom infrastructure path %q", project.GetInfra().GetPath()),
+				"remove the custom infrastructure path or keep the existing provider",
+			)
+		}
 	}
 	if project != nil && project.GetPath() != "" {
 		if _, err := os.Stat(filepath.Join(project.GetPath(), "infra")); err == nil {
@@ -1277,6 +1282,7 @@ func isFoundryTerraformLayer(projectRoot, path, module string) bool {
 		module = "main"
 	}
 	infraDir := filepath.Join(projectRoot, filepath.FromSlash(path))
+	// #nosec G304 -- infraDir is derived from project config.
 	marker, err := os.ReadFile(filepath.Join(infraDir, foundryTerraformMarker))
 	if err == nil {
 		return string(marker) == foundryTerraformMarkerVersion
@@ -1302,12 +1308,23 @@ func validateExistingEndpointMode(
 	service *projectServiceInfo,
 	endpoint string,
 	infra string,
+	project *azdext.ProjectConfig,
+	values map[string]string,
 ) error {
 	if infra != "" {
 		return exterrors.Dependency(
 			"managed_deployment_requires_project_id",
 			"infrastructure ejection requires a verified Foundry project resource ID",
 			"rerun `azd ai project init --project-id <resource-id> --infra",
+		)
+	}
+	if hasProjectConnections(project) || hasPendingAcrProvision(values) {
+		return exterrors.Dependency(
+			"project_reconciliation_requires_project_id",
+			"endpoint-only initialization cannot reconcile project connections "+
+				"or a pending container registry",
+			"rerun `azd ai project init --project-id <resource-id>` "+
+				"before retaining project resources",
 		)
 	}
 	if service == nil {
@@ -1331,6 +1348,35 @@ func validateExistingEndpointMode(
 		)
 	}
 	return nil
+}
+
+func hasProjectConnections(project *azdext.ProjectConfig) bool {
+	if project == nil {
+		return false
+	}
+	for _, service := range project.GetServices() {
+		if service != nil &&
+			strings.EqualFold(
+				strings.TrimSpace(service.GetHost()),
+				"azure.ai.connection",
+			) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPendingAcrProvision(values map[string]string) bool {
+	if values == nil ||
+		strings.TrimSpace(values["AZURE_CONTAINER_REGISTRY_ENDPOINT"]) != "" {
+		return false
+	}
+	for reason := range strings.SplitSeq(values["AI_AGENT_PENDING_PROVISION"], ",") {
+		if strings.EqualFold(strings.TrimSpace(reason), "acr") {
+			return true
+		}
+	}
+	return false
 }
 
 func parseInfraProvider(value string) (string, error) {

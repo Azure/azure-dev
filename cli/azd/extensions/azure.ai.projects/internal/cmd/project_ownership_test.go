@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azure.ai.projects/internal/synthesis"
@@ -306,6 +307,55 @@ func TestRequiresExistingProjectID(t *testing.T) {
 	}
 }
 
+func TestValidateConfiguredProjectIdentity(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	const projectID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	service := &projectServiceInfo{
+		Resolved: map[string]any{"endpoint": endpoint},
+	}
+
+	require.NoError(t, validateConfiguredProjectIdentity(
+		map[string]string{"AZURE_AI_PROJECT_ID": projectID},
+		service,
+	))
+
+	err := validateConfiguredProjectIdentity(
+		map[string]string{
+			"AZURE_AI_PROJECT_ID": strings.Replace(
+				projectID, "/projects/project", "/projects/other", 1,
+			),
+		},
+		service,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "identify different projects")
+
+	err = validateConfiguredProjectIdentity(
+		map[string]string{"AZURE_AI_PROJECT_ID": "project-id"},
+		service,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a Microsoft.CognitiveServices project")
+}
+
+func TestValidateDeploymentSelectionRejectsNegativeCapacity(t *testing.T) {
+	require.NoError(t, validateDeploymentSelection(
+		deploymentSelectionOptions{Capacity: 0},
+	))
+	require.NoError(t, validateDeploymentSelection(
+		deploymentSelectionOptions{Capacity: 10},
+	))
+
+	err := validateDeploymentSelection(
+		deploymentSelectionOptions{Capacity: -1},
+	)
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, "invalid_parameter", localErr.Code)
+}
+
 func TestValidateAllowedProjectLocationUsesFallback(t *testing.T) {
 	require.Error(t, validateAllowedProjectLocation(
 		&resolvedProject{},
@@ -435,7 +485,7 @@ func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
 		},
 	}
 
-	err := validateExistingEndpointMode(service, endpoint, "")
+	err := validateExistingEndpointMode(service, endpoint, "", nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot retain managed model deployments")
 }
@@ -453,7 +503,41 @@ func TestExistingEndpointModeAllowsNetworkOnlyService(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, validateExistingEndpointMode(service, endpoint, ""))
+	require.NoError(t, validateExistingEndpointMode(service, endpoint, "", nil, nil))
+}
+
+func TestExistingEndpointModeRejectsConnections(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	project := &azdext.ProjectConfig{
+		Services: map[string]*azdext.ServiceConfig{
+			"search": {Host: "azure.ai.connection"},
+		},
+	}
+
+	err := validateExistingEndpointMode(nil, endpoint, "", project, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "project connections")
+}
+
+func TestExistingEndpointModeRejectsPendingAcr(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	values := map[string]string{
+		"AI_AGENT_PENDING_PROVISION": "model_deployment,acr",
+	}
+
+	err := validateExistingEndpointMode(nil, endpoint, "", nil, values)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pending container registry")
+	require.NoError(t, validateExistingEndpointMode(
+		nil,
+		endpoint,
+		"",
+		nil,
+		map[string]string{
+			"AI_AGENT_PENDING_PROVISION":        "acr",
+			"AZURE_CONTAINER_REGISTRY_ENDPOINT": "registry.azurecr.io",
+		},
+	))
 }
 
 func TestValidateFoundryProviderRejectsRootProviderWithLayers(t *testing.T) {
@@ -493,6 +577,31 @@ func TestValidateFoundryProviderAllowsSingleFoundryLayer(t *testing.T) {
 		Path:  root,
 		Infra: &azdext.InfraOptions{},
 	}))
+}
+
+func TestValidateFoundryProviderAllowsDefaultInfraPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "dot slash", path: filepath.FromSlash("./infra")},
+		{name: "plain", path: filepath.FromSlash("infra")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"),
+				[]byte("name: test\n"),
+				0600,
+			))
+			require.NoError(t, validateFoundryProvider(&azdext.ProjectConfig{
+				Path:  root,
+				Infra: &azdext.InfraOptions{Path: tt.path},
+			}))
+		})
+	}
 }
 
 func TestValidateFoundryProviderAllowsEjectedTerraformLayer(t *testing.T) {

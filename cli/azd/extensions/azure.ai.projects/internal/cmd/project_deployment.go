@@ -72,6 +72,9 @@ func selectModelDeployment(
 	selection deploymentSelectionOptions,
 	noPrompt bool,
 ) (*selectedDeployment, error) {
+	if err := validateDeploymentSelection(selection); err != nil {
+		return nil, err
+	}
 	modelFormat, modelName := splitModelReference(model.Name)
 	if modelName == "" {
 		return nil, contractValidationError("model.name is required")
@@ -198,6 +201,20 @@ func selectModelDeployment(
 		},
 		Location: location,
 	}, nil
+}
+
+func validateDeploymentSelection(selection deploymentSelectionOptions) error {
+	if selection.Capacity >= 0 {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf(
+			"deployment capacity must be zero or greater, got %d",
+			selection.Capacity,
+		),
+		"use --capacity 0 for automatic selection or a positive value",
+	)
 }
 
 func deploymentLocations(

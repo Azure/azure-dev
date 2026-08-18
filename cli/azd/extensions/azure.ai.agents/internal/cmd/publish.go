@@ -91,8 +91,8 @@ failure rather than silently skipped.`,
 		fmt.Sprintf("Publish scope (%s)", joinScopesHelp(teamsPublishScopes)))
 	cmd.Flags().StringVar(&flags.displayName, "display-name", "",
 		"Display name for the Teams app (defaults to the agent name)")
-	cmd.Flags().StringVar(&flags.appVersion, "app-version", "1.0.0",
-		"Version stamped into the Teams app manifest")
+	cmd.Flags().StringVar(&flags.appVersion, "app-version", "",
+		"Version stamped into the Teams app manifest (defaults to the configured value or 1.0.0)")
 
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
@@ -125,14 +125,9 @@ func (a *PublishAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	displayName := a.flags.displayName
-	if displayName == "" {
-		displayName = packCtx.agentName
-	}
-
 	request := buildTeamsAppPackageRequest(packCtx.botArmID, teamsAppRequestOptions{
 		scope:             scope,
-		displayName:       displayName,
+		displayName:       a.flags.displayName,
 		appVersion:        a.flags.appVersion,
 		blueprintClientID: packCtx.blueprintClientID,
 		publish:           digitalWorkerPublishConfig(packCtx),
@@ -141,7 +136,7 @@ func (a *PublishAction) Run(ctx context.Context) error {
 	if a.flags.output != "json" {
 		fmt.Printf(
 			"Publishing Teams app %q for agent %q (scope: %s)...\n",
-			displayName,
+			request.AgentDisplayName,
 			packCtx.agentName,
 			scope.flag,
 		)
@@ -158,7 +153,7 @@ func (a *PublishAction) Run(ctx context.Context) error {
 	isDigitalWorker := packCtx.activityProfile.UseCase == project.ActivityUseCaseDigitalWorker
 
 	return writePublishResult(
-		os.Stdout, a.flags.output, result, scope, displayName, packCtx.agentName, deepLink, isDigitalWorker,
+		os.Stdout, a.flags.output, result, scope, request.AgentDisplayName, packCtx.agentName, deepLink, isDigitalWorker,
 	)
 }
 

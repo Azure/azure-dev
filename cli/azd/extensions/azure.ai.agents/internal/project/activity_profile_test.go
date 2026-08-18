@@ -116,6 +116,12 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 			Publish: &DigitalWorkerPublishConfig{
 				PublishAsAutopilot: true,
 				PublishScope:       "tenant",
+					AgenticUserTemplate: &AgenticUserTemplateConfig{
+						ID:                    "digitalWorkerTemplate",
+						File:                  "agenticUserTemplateManifest.json",
+						SchemaVersion:         "0.1.0-preview",
+						CommunicationProtocol: "activityProtocol",
+					},
 			},
 		})
 		require.NoError(t, err)
@@ -131,12 +137,29 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 		require.ErrorContains(t, err, "publishAsAutopilot")
 	})
 
+	t.Run("digital worker requires agentic user template", func(t *testing.T) {
+		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			UseCase: ActivityUseCaseDigitalWorker,
+			Publish: &DigitalWorkerPublishConfig{
+				PublishAsAutopilot: true,
+				PublishScope:       "tenant",
+			},
+		})
+		require.ErrorContains(t, err, "agenticUserTemplate")
+	})
+
 	t.Run("digital worker requires activity protocol", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(agent_yaml.ContainerAgent{}, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,
 			Publish: &DigitalWorkerPublishConfig{
 				PublishAsAutopilot: true,
 				PublishScope:       "tenant",
+					AgenticUserTemplate: &AgenticUserTemplateConfig{
+						ID:                    "digitalWorkerTemplate",
+						File:                  "agenticUserTemplateManifest.json",
+						SchemaVersion:         "0.1.0-preview",
+						CommunicationProtocol: "activityProtocol",
+					},
 			},
 		})
 		require.ErrorContains(t, err, "Activity-protocol")

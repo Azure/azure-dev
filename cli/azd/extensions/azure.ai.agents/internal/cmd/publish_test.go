@@ -190,6 +190,27 @@ func TestResolvePublishScopeExplicitFlagOverridesDigitalWorkerConfig(t *testing.
 	require.Equal(t, "shared", scope.flag)
 }
 
+func TestBuildTeamsAppPackageRequestPublishMetadataPrecedence(t *testing.T) {
+	t.Parallel()
+
+	publish := &project.DigitalWorkerPublishConfig{
+		AppVersion:       "2.3.4",
+		AgentDisplayName: "Configured Digital Worker",
+	}
+
+	configured := buildTeamsAppPackageRequest("", teamsAppRequestOptions{publish: publish})
+	require.Equal(t, "2.3.4", configured.AppVersion)
+	require.Equal(t, "Configured Digital Worker", configured.AgentDisplayName)
+
+	explicit := buildTeamsAppPackageRequest("", teamsAppRequestOptions{
+		displayName: "Flag Digital Worker",
+		appVersion:  "9.8.7",
+		publish:     publish,
+	})
+	require.Equal(t, "9.8.7", explicit.AppVersion)
+	require.Equal(t, "Flag Digital Worker", explicit.AgentDisplayName)
+}
+
 func digitalWorkerPackContext(publishScope string) *teamsPackContext {
 	return &teamsPackContext{
 		activityProfile: project.ActivityProfile{UseCase: project.ActivityUseCaseDigitalWorker},

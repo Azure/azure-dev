@@ -93,6 +93,22 @@ func ResolveActivityProfileWithSettings(
 		if strings.TrimSpace(settings.Publish.PublishScope) == "" {
 			return ActivityProfile{}, fmt.Errorf("activity.publish.publishScope is required for digital_worker")
 		}
+		template := settings.Publish.AgenticUserTemplate
+		if template == nil {
+			return ActivityProfile{}, fmt.Errorf("activity.publish.agenticUserTemplate is required for digital_worker")
+		}
+		for field, value := range map[string]string{
+			"id":                    template.ID,
+			"file":                  template.File,
+			"schemaVersion":         template.SchemaVersion,
+			"communicationProtocol": template.CommunicationProtocol,
+		} {
+			if strings.TrimSpace(value) == "" {
+				return ActivityProfile{}, fmt.Errorf(
+					"activity.publish.agenticUserTemplate.%s is required for digital_worker", field,
+				)
+			}
+		}
 		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}, nil
 	default:
 		return ActivityProfile{}, fmt.Errorf("activity.useCase must be %q or %q", ActivityUseCaseSimple, ActivityUseCaseDigitalWorker)

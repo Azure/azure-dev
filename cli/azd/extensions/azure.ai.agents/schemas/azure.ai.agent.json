@@ -41,6 +41,9 @@
       "type": "string",
       "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
     },
+    "activity": {
+      "$ref": "#/definitions/ActivitySettings"
+    },
     "kind": {
       "type": "string",
       "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt-voice' for a declarative (managed) speech-to-speech voice agent.",
@@ -136,9 +139,73 @@
       "then": {
         "required": ["model"]
       }
+    },
+    {
+      "$comment": "Digital Workers require a Microsoft 365 publish configuration and the agentic-user template that carries the persisted blueprint identity.",
+      "if": {
+        "properties": {
+          "activity": {
+            "properties": {
+              "useCase": { "const": "digital_worker" }
+            },
+            "required": ["useCase"]
+          }
+        },
+        "required": ["activity"]
+      },
+      "then": {
+        "properties": {
+          "activity": {
+            "required": ["publish"],
+            "properties": {
+              "publish": {
+                "required": ["publishAsAutopilot", "publishScope", "agenticUserTemplate"]
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "definitions": {
+    "ActivitySettings": {
+      "type": "object",
+      "description": "Activity-protocol Teams configuration. Digital Workers require the publish settings below.",
+      "properties": {
+        "useCase": { "type": "string", "enum": ["simple", "digital_worker"] },
+        "publish": { "$ref": "#/definitions/DigitalWorkerPublishConfig" }
+      },
+      "additionalProperties": false
+    },
+    "DigitalWorkerPublishConfig": {
+      "type": "object",
+      "properties": {
+        "publishAsAutopilot": { "type": "boolean" },
+        "publishScope": { "type": "string", "enum": ["shared", "tenant"] },
+        "canRespondWithoutMention": { "type": "boolean" },
+        "appVersion": { "type": "string", "minLength": 1 },
+        "agentDisplayName": { "type": "string", "minLength": 1 },
+        "shortDescription": { "type": "string" },
+        "fullDescription": { "type": "string" },
+        "developerName": { "type": "string" },
+        "developerWebsiteUrl": { "type": "string", "format": "uri" },
+        "privacyUrl": { "type": "string", "format": "uri" },
+        "termsOfUseUrl": { "type": "string", "format": "uri" },
+        "agenticUserTemplate": { "$ref": "#/definitions/AgenticUserTemplateConfig" }
+      },
+      "additionalProperties": false
+    },
+    "AgenticUserTemplateConfig": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "file": { "type": "string", "minLength": 1 },
+        "schemaVersion": { "type": "string", "minLength": 1 },
+        "communicationProtocol": { "type": "string", "minLength": 1 }
+      },
+      "required": ["id", "file", "schemaVersion", "communicationProtocol"],
+      "additionalProperties": false
+    },
     "ProtocolVersionRecord": {
       "type": "object",
       "description": "A protocol the agent implements, with its version.",

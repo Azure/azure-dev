@@ -325,7 +325,7 @@ func buildTeamsAppPackageRequest(
 				CommunicationProtocol:    publish.AgenticUserTemplate.CommunicationProtocol,
 			}
 		}
-		if strings.TrimSpace(publish.AgentDisplayName) != "" {
+		if request.AgentDisplayName == "" && strings.TrimSpace(publish.AgentDisplayName) != "" {
 			request.AgentDisplayName = publish.AgentDisplayName
 		}
 		if strings.TrimSpace(publish.ShortDescription) != "" {

@@ -126,9 +126,12 @@ func TestNoTeamsSetupGuideCreated(t *testing.T) {
 		t.Fatalf("guide path = %q, want %q", path, want)
 	}
 
-	guidePath := filepath.Join(root, "src", teamsSetupGuideFile)
-	if _, err := os.Stat(guidePath); !os.IsNotExist(err) {
-		t.Fatalf("guide should not be created at %q: err=%v", guidePath, err)
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read setup guide %q: %v", path, err)
+	}
+	if !strings.Contains(string(contents), "echo-agent-bot-uai") {
+		t.Fatalf("setup guide must contain the bot name; got:\n%s", contents)
 	}
 }
 

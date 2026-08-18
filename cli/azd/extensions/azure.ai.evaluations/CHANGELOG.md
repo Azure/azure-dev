@@ -1,6 +1,6 @@
 # Release History
 
-## 1.0.11-beta (Unreleased)
+## 1.0.12-beta (Unreleased)
 
 First release of the Foundry evaluations extension.
 

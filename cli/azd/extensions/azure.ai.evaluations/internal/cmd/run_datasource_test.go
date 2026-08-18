@@ -88,19 +88,18 @@ func TestBuildRunDataSource_TracesPinsTheAgentVersion(t *testing.T) {
 	assert.Equal(t, "2", ds.TraceSource.AgentVersion)
 }
 
-// An explicit window travels intact. Declaring it beside lookback_hours is
-// refused by config validation, but a run reached by id has no config that was
-// validated, so the absolute bound still has to win rather than be dropped.
+// An explicit window travels intact, in seconds and in UTC. The epochs are
+// spelled out because a drift into local time, or into milliseconds, would
+// still produce a window the service accepts and grades the wrong span of.
 func TestBuildRunDataSource_TracesCarriesAnExplicitWindow(t *testing.T) {
 	ec := &evalContext{}
 	group := &project.Eval{
 		Name: "trace-eval",
 		Source: &project.SourceDecl{
-			Type:          project.SourceTypeTraces,
-			AgentName:     "support-agent",
-			LookbackHours: 999,
-			StartTime:     "2026-08-01T00:00:00Z",
-			EndTime:       "2026-08-02T00:00:00Z",
+			Type:      project.SourceTypeTraces,
+			AgentName: "support-agent",
+			StartTime: "2026-08-01T00:00:00Z",
+			EndTime:   "2026-08-02T00:00:00Z",
 		},
 	}
 
@@ -125,6 +124,9 @@ func TestBuildRunDataSource_TracesRefusesAnUnusableWindow(t *testing.T) {
 		Type: project.SourceTypeTraces, AgentName: "a", StartTime: "yesterday",
 	})
 	require.Error(t, err)
+	// The eval is named, not the agent: the reader has to know which entry to
+	// go and edit, and a file can declare several trace evals over one agent.
+	assert.Contains(t, err.Error(), `eval "trace-eval"`)
 	assert.Contains(t, err.Error(), "start_time")
 
 	err = build(&project.SourceDecl{
@@ -132,7 +134,18 @@ func TestBuildRunDataSource_TracesRefusesAnUnusableWindow(t *testing.T) {
 		StartTime: "2026-08-02T00:00:00Z", EndTime: "2026-08-01T00:00:00Z",
 	})
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), `eval "trace-eval"`)
 	assert.Contains(t, err.Error(), "holds no traces")
+
+	// A window written as a lookback is named as a lookback. Reporting an empty
+	// start_time sends the reader looking for a key their file does not have.
+	err = build(&project.SourceDecl{
+		Type: project.SourceTypeTraces, AgentName: "a",
+		LookbackHours: 1, EndTime: "2020-01-01T00:00:00Z",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "source.lookback_hours")
+	assert.NotContains(t, err.Error(), "start_time")
 }
 
 // agent_name under source: is a filter, but an eval that names a target and

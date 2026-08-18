@@ -258,6 +258,38 @@ func TestValidate_Rejects(t *testing.T) {
 			wantErr: "cannot reach into the future",
 		},
 		{
+			// Large enough to overflow the nanosecond duration the hours become,
+			// which wraps the start bound into the future and reads no traces.
+			name: "lookback beyond what a duration holds",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
+				"      lookback_hours: 100000000\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "beyond the",
+		},
+		{
+			// A window written as a lookback is named as one: reporting an
+			// empty start_time sends the reader to a key their file lacks.
+			name: "lookback that ends before it starts",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
+				"      lookback_hours: 1\n      end_time: \"2020-01-01T00:00:00Z\"\n" +
+				"    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "source.lookback_hours",
+		},
+		{
+			// Parses, then reads as "no bound" everywhere after, so the bound
+			// the file declared would be dropped from the request in silence.
+			name: "window bound at the zero time",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
+				"      start_time: \"0001-01-01T00:00:00Z\"\n" +
+				"    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "not a window any traces fall in",
+		},
+		{
+			name: "negative trace cap",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
+				"      max_traces: -5\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "source.max_traces",
+		},
+		{
 			name:    "dataset without a name",
 			body:    "datasets:\n  - source: ./d.jsonl\n" + oneEval,
 			wantErr: "'name' is required",

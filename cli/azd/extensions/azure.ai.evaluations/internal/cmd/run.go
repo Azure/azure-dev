@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -390,12 +391,27 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 	return upgradeLegacyTraceSource(list.Data[0].DataSource), nil
 }
 
+// legacyTraceLookbackHours is the window the old trace shape fell back to.
+//
+// The old data source had no start bound: a start_time was accepted and
+// dropped, and the service graded its own default of seven days. Carrying a run
+// forward with no start at all would quietly widen it to all of history, so the
+// default it was actually run under is what gets written down.
+const legacyTraceLookbackHours = 24 * 7
+
 // upgradeLegacyTraceSource carries a run recorded under the old trace shape
 // onto the one that keeps what it is given.
 //
 // A run reattached by id repeats whatever the last one sent, so without this an
-// eval whose last run predates the change would keep the version-blind,
-// drifting-lookback source for good, and nothing would say so.
+// eval whose last run predates the change would keep the version-blind source
+// for good, and nothing would say so.
+//
+// The window it produces is anchored at the moment of the upgrade rather than
+// rolling: the new shape has no lookback to carry, and the upgraded source is
+// what the next reattach reads back. A window that should move with each run
+// has to come from the declaration, which is where `run start --eval <name>`
+// reads it from anyway; this path exists only for an eval reached by id, with
+// no declaration to read.
 func upgradeLegacyTraceSource(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunDataSource {
 	if ds == nil || ds.Type != eval_api.EvalRunDataSourceTypeTraces {
 		return ds
@@ -404,14 +420,15 @@ func upgradeLegacyTraceSource(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunD
 	if ds.EndTime > 0 {
 		end = time.Unix(ds.EndTime, 0)
 	}
-	var start time.Time
-	if ds.LookbackHours > 0 {
-		from := end
-		if from.IsZero() {
-			from = time.Now()
-		}
-		start = from.Add(-time.Duration(ds.LookbackHours) * time.Hour)
+	from := end
+	if from.IsZero() {
+		from = time.Now()
 	}
+	hours := ds.LookbackHours
+	if hours <= 0 {
+		hours = legacyTraceLookbackHours
+	}
+	start := from.Add(-time.Duration(hours) * time.Hour)
 	// The old shape carried no version, so this pins nothing that was not
 	// pinned before; it stops the service choosing differently run to run only
 	// once the declaration names one.
@@ -505,7 +522,7 @@ func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) 
 		return nil, messages.TracesNeedAgentName(group.Name)
 	}
 
-	start, end, err := traceWindow(group.Source)
+	start, end, err := traceWindow(group.Name, group.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -521,42 +538,42 @@ func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) 
 // traceWindow resolves the bounds of the span a trace run reads.
 //
 // lookback_hours predates start_time and stays supported, read as a start bound
-// relative to now. The pair is refused by config validation, so only one of the
-// two is ever set here.
+// relative to now. Config validation refuses the pair, so in practice only one
+// of the two is set; the precedence here is what makes that a validation rule
+// rather than the only thing standing between the file and a dropped bound.
 //
-// Bounds are parsed rather than validated: a run reached by id has no config to
-// have been validated, so a malformed value still has to fail rather than be
-// dropped.
-func traceWindow(source *project.SourceDecl) (start, end time.Time, err error) {
+// The bounds are parsed again rather than trusted, because this is the last
+// place they can be refused before the request is built, and a value that fails
+// here would otherwise be sent as a zero and read as "no bound".
+func traceWindow(evalName string, source *project.SourceDecl) (start, end time.Time, err error) {
 	if source == nil {
 		return time.Time{}, time.Time{}, nil
 	}
+
+	startField, startValue := "start_time", source.StartTime
 	if source.StartTime != "" {
 		start, err = time.Parse(time.RFC3339, source.StartTime)
 		if err != nil {
-			return time.Time{}, time.Time{}, messages.TraceWindowNotATime(
-				0, source.AgentName, "start_time", source.StartTime)
+			return time.Time{}, time.Time{}, messages.RunTraceWindowNotATime(
+				evalName, "start_time", source.StartTime)
 		}
 	} else if source.LookbackHours > 0 {
 		start = time.Now().Add(-time.Duration(source.LookbackHours) * time.Hour)
+		// Named as the file spells it, so the error does not send a reader
+		// looking for a start_time they never wrote.
+		startField, startValue = "lookback_hours", strconv.Itoa(source.LookbackHours)
 	}
 
 	if source.EndTime != "" {
 		end, err = time.Parse(time.RFC3339, source.EndTime)
 		if err != nil {
-			return time.Time{}, time.Time{}, messages.TraceWindowNotATime(
-				0, source.AgentName, "end_time", source.EndTime)
+			return time.Time{}, time.Time{}, messages.RunTraceWindowNotATime(
+				evalName, "end_time", source.EndTime)
 		}
 	}
 	if !start.IsZero() && !end.IsZero() && !end.After(start) {
-		// The start is named as it was written, which is lookback_hours when
-		// that is where it came from rather than an empty start_time.
-		written := source.StartTime
-		if written == "" {
-			written = fmt.Sprintf("%dh before now", source.LookbackHours)
-		}
-		return time.Time{}, time.Time{}, messages.TraceWindowEndsBeforeItStarts(
-			0, source.AgentName, written, source.EndTime)
+		return time.Time{}, time.Time{}, messages.RunTraceWindowEndsBeforeItStarts(
+			evalName, startField, startValue, source.EndTime)
 	}
 	return start, end, nil
 }

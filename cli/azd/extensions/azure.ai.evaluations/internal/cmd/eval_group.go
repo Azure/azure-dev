@@ -234,9 +234,8 @@ func newEvalShowCommand() *cobra.Command {
 				{"Created", timestampString(group.CreatedAt)},
 				{"Created By", group.CreatedBy},
 			}
-			// Without these the command answers "does this id exist", which is
+			// Without this the command answers "does this id exist", which is
 			// not what a definition is, nor what its own help promises.
-
 			if graders := evalGraders(group); graders != "" {
 				detail = append(detail, field{"Evaluators", graders})
 			}

@@ -57,6 +57,15 @@ func TestAFailureToAnswerIsReportedRatherThanSkipped(t *testing.T) {
 			"loading project state: open azure.yaml: permission denied"),
 		"the environment manager broke": status.Error(codes.Unknown,
 			"creating environment manager: no such host"),
+		// The message is the only evidence, so it is matched whole. A failure
+		// whose prose happens to mention one must not read as an absence.
+		"a failure that mentions an environment": status.Error(codes.Unknown,
+			"listing deployments: the environment not found in the subscription cache"),
+		// status.FromError flattens a wrapper's own prose into the message it
+		// reports, so a wrapper worded like an absence must not decide this.
+		"a failure wrapped in absence-sounding prose": fmt.Errorf(
+			"default environment not found in the cache: %w",
+			status.Error(codes.Unknown, "loading project state: permission denied")),
 		"wrapped expiry": fmt.Errorf("reading the environment: %w",
 			status.Error(codes.Unauthenticated, "expired")),
 		"nested twice over": fmt.Errorf("outer: %w",

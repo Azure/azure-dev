@@ -20,8 +20,11 @@ import (
 //
 // The data-plane clients trace every request through log.Printf, which Go
 // writes to stderr by default. Without this the CLI interleaves raw HTTP traces
-// with its own output on every command. Returns a cleanup function the caller
-// should defer.
+// with its own output on every command.
+//
+// The returned function puts the logger back and closes the file. Callers run
+// for the length of the process and let the OS close it, so it is returned for
+// tests and for any caller that wants to stop logging early.
 func setupDebugLogging(flags *pflag.FlagSet) func() {
 	if !isDebug(flags) {
 		log.SetOutput(io.Discard)
@@ -33,27 +36,15 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 	// scaffolded .gitignore does not cover this name, and a routine `git add -A`
 	// committed one.
 	//
-	// A fresh random directory rather than a named one. The temp directory is
-	// shared on Linux, and MkdirAll accepts a directory that is already there
-	// without making it private, so at a predictable path another user could
-	// leave one they own -- world-readable, to read the HTTP traces, or holding
-	// a symbolic link at the predictable daily name, to have them appended to a
-	// file of their choosing. MkdirTemp picks the name and creates it in one
-	// step, so neither is possible. The path is echoed below, which is what
-	// made the fixed name worth having.
-	logDir, dirErr := os.MkdirTemp("", "azd-ai-dataset-")
-	var logFile *os.File
-	var err error
-	if dirErr != nil {
-		err = dirErr
-	} else {
-		logFileName := filepath.Join(
-			logDir,
-			fmt.Sprintf("azd-ai-dataset-%s.log", time.Now().Format("2006-01-02")),
-		)
-		//nolint:gosec // the directory was just created private, and the name is a date
-		logFile, err = os.OpenFile(logFileName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	}
+	// The name is picked by CreateTemp rather than built from the date alone.
+	// The temp directory is shared on Linux, and at a predictable path another
+	// user can leave a file of their own -- readable, to collect HTTP traces
+	// that carry request headers, or a symbolic link, to have them written to a
+	// file of their choosing. CreateTemp finds an unused name and creates it
+	// 0600 in one step, so neither is reachable. The date stays in the name
+	// because it is what makes a directory of these readable, and the full path
+	// is echoed below.
+	logFile, err := os.CreateTemp("", fmt.Sprintf("azd-ai-dataset-%s-*.log", time.Now().Format("2006-01-02")))
 
 	var w io.Writer
 	var closeFile func()
@@ -62,7 +53,7 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 		closeFile = func() {}
 	} else {
 		w = logFile
-		closeFile = func() { logFile.Close() } //nolint:gosec // best-effort cleanup
+		closeFile = func() { _ = logFile.Close() }
 		// A log nobody can find is not a log. Debugging was asked for
 		// explicitly, so naming the file costs nothing.
 		fmt.Fprintf(os.Stderr, "Debug log: %s\n", filepath.ToSlash(logFile.Name()))

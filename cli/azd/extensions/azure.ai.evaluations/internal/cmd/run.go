@@ -580,11 +580,11 @@ func (ec *evalContext) buildRunDataSource(
 // found. `agent_name` filters the traces; it is not a target, because a trace
 // run invokes nothing.
 func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
-	// Checked by runnableEval before this is reached; read again rather than
-	// assumed, because an agent name is what the whole request is about.
+	// runnableEval has already refused an empty one; read rather than assumed,
+	// because the agent name is what the whole request is about.
 	agent := project.TraceAgentName(group.Source, group.Target)
 	if agent == "" {
-		return nil, messages.TracesNeedAgentName(group.Name)
+		return nil, messages.InEval(group.Name, messages.TraceSourceNeedsAnAgent())
 	}
 
 	start, end, err := traceWindow(group.Name, group.Source)
@@ -615,7 +615,7 @@ func traceWindow(evalName string, source *project.SourceDecl) (start, end time.T
 // responsesDataSource evaluates responses the project already stored.
 func responsesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
 	if len(group.Source.ResponseIDs) == 0 {
-		return nil, messages.ResponsesNeedIDs(group.Name)
+		return nil, messages.InEval(group.Name, messages.ResponsesSourceNeedsResponseIDs())
 	}
 	return eval_api.NewResponsesDataSource(group.Source.ResponseIDs, group.Source.MaxTurns), nil
 }

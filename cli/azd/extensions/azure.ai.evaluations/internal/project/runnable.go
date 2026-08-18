@@ -16,9 +16,11 @@ import "azureaieval/internal/messages"
 //
 // The errors carry no prefix. The caller says whether it has an index to name.
 //
-// What is not here needs the rest of the file to decide: whether a dataset or
-// an evaluator is in its catalog, and whether two evals are the same in
-// substance.
+// What is not here is what the rest of the file, or the service, has to decide:
+// whether a dataset or an evaluator is in its catalog, whether two evals are
+// the same in substance, and what a published evaluator requires. The evaluator
+// checks stay at the create door because they constrain what is created rather
+// than what a run sends.
 func ValidateRunnable(eval *Eval) error {
 	if eval == nil {
 		return messages.NoEvalToValidate()
@@ -33,10 +35,33 @@ func ValidateRunnable(eval *Eval) error {
 		return messages.MaxSamplesNegative(eval.MaxSamples)
 	}
 
+	// The target is checked before the source, because the trace rule below
+	// reads the target: without this, an eval with an unusable target is told
+	// to name an agent on it, and told on the next run that the target it was
+	// sent to name is a kind nothing can invoke.
+	if eval.Target != nil {
+		if eval.Target.Type != "" &&
+			eval.Target.Type != TargetTypeAgent && eval.Target.Type != TargetTypeModel {
+			return messages.TargetTypeNotSupported(eval.Target.Type, TargetTypeAgent, TargetTypeModel)
+		}
+		// A target with no name is scored as though nothing were invoked,
+		// which is a different evaluation from the one that was written down.
+		if eval.Target.Name == "" {
+			return messages.TargetNameMissing()
+		}
+	}
+
 	if eval.Source != nil {
 		switch eval.Source.Type {
 		case SourceTypeTraces:
 			if TraceAgentName(eval.Source, eval.Target) == "" {
+				// A model target is the one case where a target is present and
+				// still no answer. Saying "or declare an agent target.name"
+				// there reads as an invitation to relabel the deployment, which
+				// produces a filter that matches no spans and reports nothing.
+				if eval.Target != nil && eval.Target.Type == TargetTypeModel {
+					return messages.TraceSourceCannotReadAModelTarget(eval.Target.Name)
+				}
 				return messages.TraceSourceNeedsAnAgent()
 			}
 		case SourceTypeResponses:
@@ -54,19 +79,14 @@ func ValidateRunnable(eval *Eval) error {
 		}
 	}
 
-	if eval.Target != nil {
-		// The type is checked first because it is the thing that was written:
-		// a target with an unsupported type and no name should be told about
-		// the type rather than sent to add a name it cannot use.
-		if eval.Target.Type != "" &&
-			eval.Target.Type != TargetTypeAgent && eval.Target.Type != TargetTypeModel {
-			return messages.TargetTypeNotSupported(eval.Target.Type, TargetTypeAgent, TargetTypeModel)
-		}
-		// A target with no name is scored as though nothing were invoked,
-		// which is a different evaluation from the one that was written down.
-		if eval.Target.Name == "" {
-			return messages.TargetNameMissing()
-		}
+	switch eval.EvaluationLevel {
+	case "", EvaluationLevelTurn, EvaluationLevelConversation:
+	default:
+		// Sent as run metadata, and anything that is not "conversation" is
+		// read as turn-shaped, so a value nobody recognises grades the run at
+		// a granularity the file did not ask for.
+		return messages.EvaluationLevelNotSupported(
+			eval.EvaluationLevel, EvaluationLevelTurn, EvaluationLevelConversation)
 	}
 	return nil
 }

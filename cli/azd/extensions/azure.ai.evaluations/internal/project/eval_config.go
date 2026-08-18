@@ -240,7 +240,12 @@ func (c *EvalConfig) validate(deploying bool) error {
 	if err := c.validateCatalogs(); err != nil {
 		return err
 	}
-	if len(c.Evals) == 0 {
+	// A catalog with no eval is what `generate` leaves behind, and it stays
+	// that way until `init` wires one. Refusing it on the way to a lookup
+	// stranded `run --eval <id>` in a project where `generate` ran first, over
+	// the absence of a declaration the id did not need. `Eval` answers for the
+	// case that does need one.
+	if deploying && len(c.Evals) == 0 {
 		return messages.AtLeastOneEvalRequired()
 	}
 
@@ -323,21 +328,7 @@ func (c *EvalConfig) validateCatalogs() error {
 	return nil
 }
 
-// validateSource refuses a source declaration a run could not carry out.
-//
-// The rules live with the resolver the run also uses, so the two cannot come to
-// different conclusions about the same file. Only the wrapper differs: here
-// there is an index to name, and at run time there is not.
-func validateSource(i int, name string, source *SourceDecl) error {
-	if _, _, err := ValidateSource(source); err != nil {
-		return messages.InEvalAt(i, name, err)
-	}
-	return nil
-}
-
 func (c *EvalConfig) validateEval(i int, eval Eval) error {
-	// Everything an eval says about itself, from the definition the run door
-	// also uses. What follows is only what needs the rest of the file.
 	if err := ValidateRunnable(&eval); err != nil {
 		return messages.InEvalAt(i, eval.Name, err)
 	}
@@ -371,11 +362,5 @@ func (c *EvalConfig) validateEval(i int, eval Eval) error {
 		}
 	}
 
-	switch eval.EvaluationLevel {
-	case "", EvaluationLevelTurn, EvaluationLevelConversation:
-	default:
-		return messages.EvaluationLevelInvalid(
-			i, eval.Name, eval.EvaluationLevel, EvaluationLevelTurn, EvaluationLevelConversation)
-	}
 	return nil
 }

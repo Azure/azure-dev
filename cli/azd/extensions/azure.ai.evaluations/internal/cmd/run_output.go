@@ -292,19 +292,17 @@ func resolveEvalID(
 		return args[0], nil
 	}
 
-	if groupName != "" {
-		ref, err := ec.resolveEvalRef(
-			cmd.Context(), ec.evalDir(cmd.Context(), evalPathFlag(cmd)), groupName)
-		if err != nil {
-			return "", err
-		}
-		return ref.ID, nil
+	// With no name given, the eval is the one the configuration declares,
+	// which is how `run start` decides it. Reading EVAL_ID here instead made
+	// the two disagree: every deploy writes that key, so a file whose one entry
+	// had been replaced sent `run cancel` at the eval it used to be -- a
+	// destructive verb on the wrong resource, chosen silently.
+	ref, err := ec.resolveEvalRef(
+		cmd.Context(), ec.evalDir(cmd.Context(), evalPathFlag(cmd)), groupName)
+	if err != nil {
+		return "", err
 	}
-
-	if cached := ec.getEnvValue(cmd.Context(), envKeyEvalID); cached != "" {
-		return cached, nil
-	}
-	return "", messages.NoEvalGiven()
+	return ref.ID, nil
 }
 
 // addEvalFlag registers the flag that says which eval a command acts on. It

@@ -231,26 +231,22 @@ func (ec *evalContext) confirmedNoAzdEnvironment(ctx context.Context) bool {
 	return false
 }
 
-// isNoDefaultEnvironmentError picks azd's "there is no environment" out of
-// every other reason the call could have failed.
+// isNoDefaultEnvironmentError picks azd's "there is no environment to record
+// anything in" out of every other reason the call could have failed.
 //
 // The distinction is the whole point: a transport failure must not be reported
 // as a missing environment, or a gRPC hiccup tells the user to create one they
-// already have. Matching on text because that is what survives the trip -- the
-// sentinel is wrapped in a gRPC status on the way out of azd, so errors.Is has
-// nothing to compare against on this side.
+// already have.
 //
-// Deliberately not projectctx.AbsentFromAzd, which answers a different
-// question. That one asks whether the cascade may carry on to the next level,
-// and an unreachable daemon means yes. This one asks whether the reason is that
-// no environment is selected, and an unreachable daemon means no -- it is not
-// an answer about environments at all. The two agree on everything except that,
-// and that is the case each exists for.
+// Written as the cascade's own rule minus the one case the two disagree on,
+// rather than as a second list of azd's sentinels. Keeping a second list is how
+// `no project exists` came to be handled in the cascade and missed here, which
+// told anyone running outside a project to publish an eval that already exists.
 func isNoDefaultEnvironmentError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(strings.ToLower(err.Error()), azdNoDefaultEnvironment)
+	return projectctx.HostedSourceAbsent(err) && !projectctx.DaemonUnreachable(err)
 }
 
 // getEnvValue reads a value from the active azd environment, returning empty

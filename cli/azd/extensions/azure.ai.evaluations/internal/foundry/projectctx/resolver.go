@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -35,40 +36,18 @@ func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 	}
 	defer azdClient.Close()
 
-	envResp, envErr := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if envErr != nil && !hostedSourceAbsent(envErr) {
-		// The daemon answered, but not with "there is no current environment".
-		// Reading that as absence falls through to global config or the host
-		// variable, which can point at a different project -- and the command
-		// would then land there without anything having said so.
+	envValue, envName, envErr := readEnvHostedSource(ctx, azdClient.Environment())
+	if envErr != nil {
 		return out, envErr
 	}
-	if envErr == nil && envResp.GetEnvironment() != nil {
-		for _, key := range []string{foundryEnvKey, azureAiEnvKey} {
-			envVal, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-				EnvName: envResp.Environment.Name,
-				Key:     key,
-			})
-			if valErr != nil {
-				if !hostedSourceAbsent(valErr) {
-					return out, valErr
-				}
-				continue
-			}
-			if envVal.GetValue() != "" {
-				out.EnvValue = envVal.Value
-				out.EnvName = envResp.Environment.Name
-				break
-			}
-		}
-	}
+	out.EnvValue, out.EnvName = envValue, envName
 
 	state, found, cfgErr := getProjectContext(ctx, azdClient)
 	if cfgErr != nil {
-		// A gRPC Unavailable code means the azd daemon is not reachable;
-		// treat it the same as azdClient creation failing and fall through.
-		// Any other error (e.g. parse failure) is a hard error.
-		if !containsGRPCCode(cfgErr, codes.Unavailable) {
+		// The same rule the environment reads use. Today the config service can
+		// only fail here by being unreachable, but stating it differently in
+		// one of three places is how the three come to disagree.
+		if !hostedSourceAbsent(cfgErr) {
 			return out, cfgErr
 		}
 	} else {
@@ -77,6 +56,54 @@ func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 	}
 
 	return out, nil
+}
+
+// envSource is the slice of azd's environment service this file reads.
+//
+// Narrowed to an interface so the classification below can be tested. The rule
+// it applies -- carry on when the daemon answered "nothing", stop when it
+// failed to answer -- has regressed twice while every test passed, because the
+// only seam was the whole function.
+type envSource interface {
+	GetCurrent(context.Context, *azdext.EmptyRequest, ...grpc.CallOption) (*azdext.EnvironmentResponse, error)
+	GetValue(context.Context, *azdext.GetEnvRequest, ...grpc.CallOption) (*azdext.KeyValueResponse, error)
+}
+
+// readEnvHostedSource reads the active environment's project endpoint.
+//
+// Returns an empty value and no error when there is nothing to read: no
+// environment selected, no project at all, or neither key set. An error means
+// the daemon failed to answer, which the caller must not read as absence --
+// falling through would resolve to a lower-priority endpoint that can belong to
+// a different project.
+func readEnvHostedSource(ctx context.Context, env envSource) (value, name string, err error) {
+	envResp, envErr := env.GetCurrent(ctx, &azdext.EmptyRequest{})
+	if envErr != nil {
+		if !hostedSourceAbsent(envErr) {
+			return "", "", envErr
+		}
+		return "", "", nil
+	}
+	if envResp.GetEnvironment() == nil {
+		return "", "", nil
+	}
+
+	for _, key := range []string{foundryEnvKey, azureAiEnvKey} {
+		envVal, valErr := env.GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envResp.Environment.Name,
+			Key:     key,
+		})
+		if valErr != nil {
+			if !hostedSourceAbsent(valErr) {
+				return "", "", valErr
+			}
+			continue
+		}
+		if envVal.GetValue() != "" {
+			return envVal.Value, envResp.Environment.Name, nil
+		}
+	}
+	return "", "", nil
 }
 
 // azd's absence sentinels, as they reach us.
@@ -102,6 +129,27 @@ const (
 	azdNoSuchEnvironment    = "environment not found"
 	azdNoProject            = "no project exists; to create a new project, run `azd init`"
 )
+
+// HostedSourceAbsent reports whether an error from the azd daemon is an answer
+// of "nothing here" rather than a failure to answer.
+//
+// Exported because more than the cascade has to ask it. Deriving the set of
+// azd's absences a second time elsewhere is how a sentinel comes to be handled
+// in one place and missed in another, which has happened three times.
+func HostedSourceAbsent(err error) bool {
+	return hostedSourceAbsent(err)
+}
+
+// DaemonUnreachable reports the one absence that is not an answer about
+// anything: there was nobody to ask.
+//
+// The cascade carries on regardless -- an unreachable daemon has no endpoint to
+// offer, so the next level should be consulted. A caller reporting *why* a
+// value is missing has to tell it apart, or a gRPC hiccup ends up phrased as a
+// fact about the project.
+func DaemonUnreachable(err error) bool {
+	return containsGRPCCode(err, codes.Unavailable)
+}
 
 // hostedSourceAbsent reports whether an error from the azd daemon leaves the
 // cascade free to carry on to the next level.

@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"testing"
 
@@ -25,20 +24,26 @@ import (
 // every error as "no environment" would tell someone whose azd hiccupped to
 // create an environment they already have.
 //
-// The sentinel is wrapped in a gRPC status on the way out of azd, so the text
-// is what there is to match on. These are the real shapes.
+// The only caller reads these off a gRPC call, so every error carries a status.
+// These are the shapes that reach it.
 func TestNoDefaultEnvironmentIsToldApartFromAFailureToAsk(t *testing.T) {
 	// The text of azd's environment.ErrDefaultEnvironmentNotFound.
 	const azdText = "default environment not found"
 
-	assert.True(t, isNoDefaultEnvironmentError(errors.New(azdText)),
-		"the sentinel's own text")
 	assert.True(t,
 		isNoDefaultEnvironmentError(status.Error(codes.Unknown, azdText)),
-		"and the same thing after azd wraps it in a gRPC status")
+		"the sentinel, as azd wraps it in a gRPC status")
 	assert.True(t,
-		isNoDefaultEnvironmentError(fmt.Errorf("getting environment: %w", errors.New(azdText))),
+		isNoDefaultEnvironmentError(fmt.Errorf("getting environment: %w",
+			status.Error(codes.Unknown, azdText))),
 		"and wrapped again by a caller")
+	// Outside a project there is nowhere an id could have been recorded, which
+	// is the same answer for this caller. Missing it told anyone running
+	// standalone to publish an eval that may already exist.
+	assert.True(t,
+		isNoDefaultEnvironmentError(status.Error(codes.Unknown,
+			"no project exists; to create a new project, run `azd init`")),
+		"outside a project there is no environment either")
 
 	assert.False(t,
 		isNoDefaultEnvironmentError(status.Error(codes.Unavailable, "connection refused")),
@@ -46,5 +51,8 @@ func TestNoDefaultEnvironmentIsToldApartFromAFailureToAsk(t *testing.T) {
 	assert.False(t,
 		isNoDefaultEnvironmentError(status.Error(codes.DeadlineExceeded, "context deadline exceeded")),
 		"nor is a timeout")
+	assert.False(t,
+		isNoDefaultEnvironmentError(status.Error(codes.Unknown, "loading project state: permission denied")),
+		"nor is a daemon that broke while looking")
 	assert.False(t, isNoDefaultEnvironmentError(nil), "nor is success")
 }

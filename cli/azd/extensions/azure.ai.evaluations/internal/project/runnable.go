@@ -83,7 +83,7 @@ func ValidateRunnable(eval *Eval) error {
 	case "", EvaluationLevelTurn, EvaluationLevelConversation:
 	default:
 		// Sent as run metadata, and anything that is not "conversation" is
-		// read as turn-shaped, so a value nobody recognises grades the run at
+		// read as turn-shaped, so a value nothing knows about grades the run at
 		// a granularity the file did not ask for.
 		return messages.EvaluationLevelNotSupported(
 			eval.EvaluationLevel, EvaluationLevelTurn, EvaluationLevelConversation)

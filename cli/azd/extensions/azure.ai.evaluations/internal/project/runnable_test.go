@@ -70,8 +70,8 @@ func TestValidateRunnable_RefusesWhatNoRunCouldCarryOut(t *testing.T) {
 		},
 		{
 			// Sent as run metadata, and anything that is not "conversation" is
-			// read as turn-shaped, so an unrecognised value grades the run at a
-			// granularity the file did not ask for.
+			// read as turn-shaped, so a value nothing knows about grades the run
+			// at a granularity the file did not ask for.
 			"a granularity nothing scores at",
 			dataset(Eval{EvaluationLevel: "sentence"}),
 			`evaluation_level "sentence" is invalid`,

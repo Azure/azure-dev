@@ -1,6 +1,6 @@
 # Azure Developer CLI (azd) - Agent Instructions
 
-<!-- cspell:ignore Errorf Chdir azapi gofmt golangci stdlib strconv Readdirnames -->
+<!-- cspell:ignore Errorf Chdir azapi gofmt golangci stdlib strconv Readdirnames preconfigures -->
 
 Instructions for AI coding agents working with the Azure Developer CLI.
 
@@ -34,6 +34,24 @@ cli/azd/
 
 **Tip**: Service registration in `cmd/container.go` shows all major components. To find where a feature is implemented, start with the command in `cmd/`, follow to the action, then trace service dependencies.
 
+## Agency and MCP Tools
+
+For Microsoft contributors, this repository's [`agency.toml`](../../agency.toml) preconfigures [Agency](https://aka.ms/agency) with Azure DevOps MCP access for the `azure-sdk` organization and Kusto MCP access to the `DevCli` database. Prefer these tools for ADO operations and authorized telemetry investigations. Do not expose customer-identifying data in issues, pull requests, logs, or generated artifacts.
+
+### Checking Azure DevOps Pipelines
+
+All repository-owned azd pipelines are in the Azure DevOps `internal` project:
+
+- [Core and repository pipelines](https://dev.azure.com/azure-sdk/internal/_build?definitionScope=%5Cazure-dev) are under `\azure-dev`.
+- [Extension pipelines](https://dev.azure.com/azure-sdk/internal/_build?definitionScope=%5Cazure-dev%5Cextensions) are under `\azure-dev\extensions`.
+
+When investigating a pipeline:
+
+- Start from the GitHub pull request check link when available. It identifies the exact Azure DevOps build and often the specific job.
+- Otherwise, locate the relevant pipeline in the folders above.
+- Correlate runs using the pull request number, commit SHA, and source branch.
+- Inspect the failed or running job logs first. Distinguish the root failure from secondary warnings, infrastructure noise, or downstream failures.
+- For releases, distinguish publishing from validation using the source branch and template parameters. For the core CLI pipeline, `DoPublish=true` identifies a publishing release run.
 
 ## Development
 

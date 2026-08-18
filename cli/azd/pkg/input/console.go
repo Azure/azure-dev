@@ -195,6 +195,8 @@ type ConsoleOptions struct {
 	// OptionDetails is an optional field that can be used to provide additional information about the options.
 	OptionDetails []string
 	DefaultValue  any
+	// EnableFiltering controls whether select prompts allow filtering. Nil uses the component default.
+	EnableFiltering *bool
 
 	// Prompt-only options
 	IsPassword bool

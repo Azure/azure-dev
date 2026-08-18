@@ -933,7 +933,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.Message(ctx, "")
 		}
 
-		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
+		stepMessage := extensionTaskMessage("Installing", extensionId)
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Check if extension is already installed
@@ -2023,7 +2023,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 	}
 
 	for _, extensionId := range extensionIds {
-		stepMessage := fmt.Sprintf("Uninstalling %s extension", output.WithHighLightFormat(extensionId))
+		stepMessage := extensionTaskMessage("Uninstalling", extensionId)
 
 		installed, err := a.extensionManager.GetInstalled(extensions.FilterOptions{
 			Id: extensionId,
@@ -2035,7 +2035,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 			return nil, fmt.Errorf("failed to get installed extension: %w", err)
 		}
 
-		stepMessage += fmt.Sprintf(" (%s)", installed.Version)
+		stepMessage = extensionTaskMessageWithVersion("Uninstalling", extensionId, installed.Version)
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		if err := a.extensionManager.Uninstall(ctx, extensionId); err != nil {
@@ -2358,10 +2358,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		a.console.Message(ctx, "")
 	}
 
-	stepMsg := fmt.Sprintf(
-		"Updating %s extension",
-		output.WithHighLightFormat(extensionId),
-	)
+	stepMsg := extensionTaskMessage("Updating", extensionId)
 	if !isJsonOutput {
 		a.console.ShowSpinner(ctx, stepMsg, input.Step)
 	}
@@ -2418,9 +2415,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		baseResult.SkipReason = "installed from a self-contained bundle; " +
 			"reinstall with a newer bundle to update"
 		if !isJsonOutput {
-			skipMsg := fmt.Sprintf(
-				"Updating %s extension",
-				output.WithHighLightFormat(extensionId),
+			skipMsg := extensionTaskMessage(
+				"Updating",
+				extensionId,
 			) + output.WithGrayFormat(
 				" (Installed from a bundle)",
 			)
@@ -2520,9 +2517,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 				"in any configured registry"
 		}
 		if !isJsonOutput {
-			skipMsg := fmt.Sprintf(
-				"Updating %s extension",
-				output.WithHighLightFormat(extensionId),
+			skipMsg := extensionTaskMessage(
+				"Updating",
+				extensionId,
 			) + output.WithGrayFormat(
 				" (No longer available in any registry)",
 			)
@@ -2716,13 +2713,12 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 
 	if !isJsonOutput {
-		doneMsg := fmt.Sprintf(
-			"Updated %s extension %s",
-			output.WithHighLightFormat(extensionId),
-			output.WithGrayFormat(
-				"(%s \u2192 %s)",
-				installed.Version, extVersion.Version,
-			),
+		doneMsg := extensionTaskMessage(
+			"Updated",
+			extensionId,
+		) + " " + output.WithGrayFormat(
+			"(%s \u2192 %s)",
+			installed.Version, extVersion.Version,
 		)
 		a.console.StopSpinner(ctx, doneMsg, input.StepDone)
 		displayDependencyUpgradeResults(ctx, a.console, baseResult.DependencyUpgrades, "  ")
@@ -2747,7 +2743,7 @@ func (a *extensionUpgradeAction) displayPromotionWarning(
 ) {
 	a.console.StopSpinner(ctx, stepMsg, input.StepWarning)
 	a.console.Message(ctx, output.WithWarningFormat(
-		"  (!) Warning: Updated %s extension (%s \u2192 %s, %s \u2192 %s registry)",
+		"  (!) Warning: Updated %s (%s \u2192 %s, %s \u2192 %s registry)",
 		output.WithHighLightFormat(extensionId),
 		fromVersion, toVersion,
 		output.WithHighLightFormat(oldSource),
@@ -3249,10 +3245,18 @@ func displayExtensionUsageAndExamples(
 
 // displayInstalledDependencies renders newly installed and skipped dependencies
 // as flat rows aligned with the parent step.
+type installedDependencyManager interface {
+	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
+	FindExtensions(
+		ctx context.Context,
+		options *extensions.FilterOptions,
+	) ([]*extensions.ExtensionMetadata, error)
+}
+
 func displayInstalledDependencies(
 	ctx context.Context,
 	console input.Console,
-	manager *extensions.Manager,
+	manager installedDependencyManager,
 	deps []extensions.ExtensionDependency,
 	preInstalledIds map[string]struct{},
 	indent string,

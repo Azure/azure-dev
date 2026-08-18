@@ -37,6 +37,15 @@ type Span struct {
 	SpanContext SpanContext
 	Resource    []Attribute
 	Attributes  []Attribute
+	Status      SpanStatus
+}
+
+// SpanStatus mirrors the status block the stdouttrace exporter writes for each
+// span. Code is the OTel status ("Unset", "Error", or "Ok") and Description
+// carries the AppInsights ResultCode that cmd.MapError stamps on failure.
+type SpanStatus struct {
+	Code        string
+	Description string
 }
 
 // Like [trace.SpanContext], except uses string representations of IDs.
@@ -335,6 +344,16 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	require.Contains(t, upAttrs, fields.CmdArgsCount.Key)
 	require.Equal(t, float64(0), upAttrs[fields.CmdArgsCount.Key])
 
+	// The synthetic phase spans mirror the argument-less stand-alone
+	// sub-commands, so they carry cmd.args.count=0 like the real command spans
+	// (keeping the command entry-point schema complete). cmd.deploy is not
+	// emitted in this failing-provision scenario, so it is exercised elsewhere.
+	for _, name := range []string{"cmd.package", "cmd.provision"} {
+		attrs := attributesMap(cmdSpans[name].Attributes)
+		require.Contains(t, attrs, fields.CmdArgsCount.Key, "%s must carry cmd.args.count", name)
+		require.Equal(t, float64(0), attrs[fields.CmdArgsCount.Key], "%s cmd.args.count must be 0", name)
+	}
+
 	// infra.provider is scoped to the provisioning lifecycle. The minimal project has no explicit
 	// provider, so it resolves to the default ("bicep"). It is recorded as a slice of the resolved
 	// providers and must be present with that value on cmd.provision and the parent cmd.up span,
@@ -348,6 +367,34 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 		"cmd.provision should carry the resolved infra.provider")
 	require.ElementsMatch(t, []string{"bicep"}, upAttrs[fields.InfraProviderKey.Key],
 		"cmd.up should carry the resolved infra.provider")
+
+	// Issue #9054: the synthetic cmd.provision span must reflect the *real*
+	// provision outcome. This scenario forces a provisioning failure (the infra
+	// folder holds only a bogus main.something), so cmd.provision must report
+	// Error with the real failure ResultCode — not the pre-fix Unset status that
+	// the AppInsights exporter reads as Success.
+	require.Equal(t, "Error", cmdSpans["cmd.provision"].Status.Code,
+		"cmd.provision must report Error when provisioning fails under azd up")
+	// Assert the *exact* ResultCode, not merely that one is present: a bare
+	// non-empty check would also pass for a degraded classification (e.g. the
+	// internal.unclassified fallback), silently weakening this guard. With
+	// infra/main.bicep absent, the provision step fails when `bicep build` cannot
+	// find the template, surfacing as an *exec.ExitError that cmd.MapError maps to
+	// the typed "tool.bicep.failed" ResultCode — the same code a stand-alone
+	// `azd provision` reports for this failure.
+	require.Equal(t, "tool.bicep.failed", cmdSpans["cmd.provision"].Status.Description,
+		"cmd.provision must carry the real Bicep failure ResultCode")
+
+	// The minimal project has no services, so packaging has nothing to fail on;
+	// cmd.package must not be misreported as an error.
+	require.NotEqual(t, "Error", cmdSpans["cmd.package"].Status.Code,
+		"cmd.package must not report Error when no package step failed")
+
+	// Deploy never runs once provisioning fails (FailFast skips the deploy
+	// steps), so — mirroring legacy `azd up` — no synthetic cmd.deploy span is
+	// emitted rather than a misleading Success one.
+	require.NotContains(t, cmdSpans, "cmd.deploy",
+		"cmd.deploy must not be emitted when the deploy phase is skipped")
 }
 
 func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {

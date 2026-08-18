@@ -42,6 +42,24 @@ const ALLOWED_ARTIFACT_URL_PREFIX = `${ALLOWED_ARTIFACT_URL_ORIGIN}${ALLOWED_ART
 // understand those other fields, just preserve the status quo. 
 const ALLOWED_EXTENSION_METADATA_CHANGES = new Set(['displayName', 'description', 'tags']);
 
+// GitHub recomputes `refs/pull/<number>/merge` asynchronously, so it can briefly be missing or
+// point at an older PR head. We retry a few times rather than failing the check on that lag.
+const MERGE_PREVIEW_ATTEMPTS = 3;
+const MERGE_PREVIEW_RETRY_DELAY_MS = 2_000;
+
+/**
+ * Raised when GitHub can't give us a merge preview that matches the head being evaluated.
+ * Usually the pull request has merge conflicts, so the failure is reported to the contributor
+ * directly instead of being labelled an internal script error.
+ */
+class MergePreviewUnavailableError extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'MergePreviewUnavailableError';
+  }
+}
+
 // GitHub action types
 
 /**
@@ -89,12 +107,26 @@ const ALLOWED_EXTENSION_METADATA_CHANGES = new Set(['displayName', 'description'
  */
 
 /**
- * @param {{ github: Octokit, context: Context, core: Core, coreTeam?: Set<string>, registryBaseRef?: string }} args
+ * The two commits the registry policy compares: the base the PR would merge into, and
+ * the state the registry would have after that merge.
+ *
+ * @typedef {object} RegistryComparisonRefs
+ * @property {string} baseRef
+ * @property {string} proposedRef
  */
-async function run({ github: octokit, context, core, coreTeam, registryBaseRef }) {
+
+/**
+ * @param {{
+ *   github: Octokit,
+ *   context: Context,
+ *   core: Core,
+ *   coreTeam?: Set<string>,
+ *   registryComparisonRefs?: RegistryComparisonRefs,
+ * }} args
+ */
+async function run({ github: octokit, context, core, coreTeam, registryComparisonRefs }) {
   try {
     assertHasPullRequest(context);
-    const baseRef = registryBaseRef ?? context.payload.pull_request['base']?.sha ?? 'main';
     const coreReviewers = coreTeam ?? getCoreReviewers({ core });
 
     // no extra checks needed if a registry maintainer authored the PR.
@@ -116,19 +148,23 @@ async function run({ github: octokit, context, core, coreTeam, registryBaseRef }
 
     // Simple release-only registry changes can proceed without core review. Deleted registries
     // are reported by diffChangedFiles above and skipped here, since there's nothing to fetch
-    // at the PR head.
+    // from the proposed merge result.
     const changedRegistryPaths = [...REGISTRY_JSON_PATHS]
       .filter((registryPath) => changedFiles.some(
         (file) => file.filename === registryPath && file.status !== 'removed'));
     const registryReviewReasons = [];
-    for (const registryPath of changedRegistryPaths) {
-      const reasons = await isAllowedRegistryJsonUpdate({
-        octokit,
-        context,
-        registryBaseRef: baseRef,
-        registryPath,
-      });
-      registryReviewReasons.push(...reasons.map((reason) => `${registryPath}: ${reason}`));
+    if (changedRegistryPaths.length > 0) {
+      const comparisonRefs = registryComparisonRefs ??
+        await getRegistryComparisonRefs({ octokit, context });
+      for (const registryPath of changedRegistryPaths) {
+        const reasons = await isAllowedRegistryJsonUpdate({
+          octokit,
+          context,
+          registryComparisonRefs: comparisonRefs,
+          registryPath,
+        });
+        registryReviewReasons.push(...reasons.map((reason) => `${registryPath}: ${reason}`));
+      }
     }
 
     const reviewReasons = changedFileReviewReasons.concat(registryReviewReasons);
@@ -146,6 +182,13 @@ async function run({ github: octokit, context, core, coreTeam, registryBaseRef }
       `2. After approval, re-run this build step so it'll re-evaluate the PR - no commits or pushes needed.`
     );
   } catch (err) {
+    // A missing or stale merge preview is normally the contributor's PR to fix (most often a
+    // merge conflict), so it's reported as-is rather than as a script bug.
+    if (err instanceof MergePreviewUnavailableError) {
+      core.setFailed(err.message);
+      return;
+    }
+
     core.setFailed(`Internal failure in script: ${err instanceof Error ? err.message : err}`);
   }
 }
@@ -256,41 +299,93 @@ function isCreatedByCoreTeam({ context, core, coreTeam }) {
 /**
  * Checks whether the registry update is simple enough to proceed without core-team review.
  *
- * @param {{ octokit: Octokit, context: Context, registryPath: string, registryBaseRef: string }} args
+ * Both sides are read from the base repository at a matched pair of commits, so the
+ * comparison describes exactly what this PR changes, and isn't skewed by registry updates
+ * that landed on the base branch after the PR branch was created.
+ *
+ * @param {{
+ *   octokit: Octokit,
+ *   context: Context,
+ *   registryPath: string,
+ *   registryComparisonRefs: RegistryComparisonRefs,
+ * }} args
  * @returns {Promise<string[]>} the reasons core review is needed; empty means the change is approved
  */
 async function isAllowedRegistryJsonUpdate({
   octokit,
   context,
   registryPath,
-  registryBaseRef,
+  registryComparisonRefs,
 }) {
+  const [baseRegistry, proposedRegistry] = await Promise.all([
+    getRegistryJson({ octokit, ...context.repo, ref: registryComparisonRefs.baseRef, registryPath }),
+    getRegistryJson({ octokit, ...context.repo, ref: registryComparisonRefs.proposedRef, registryPath }),
+  ]);
+
+  return diffRegistry(baseRegistry, proposedRegistry);
+}
+
+/**
+ * Resolves the commits the registry policy should compare, using GitHub's synthetic merge
+ * commit (`refs/pull/<number>/merge`) as the proposed state.
+ *
+ * The refs are deliberately taken as a pair: the merge commit's first parent is the exact
+ * base the preview was built from, so the diff always describes what this PR changes,
+ * never what other PRs merged in the meantime.
+ *
+ * The second parent must match the head this workflow run is evaluating, otherwise the
+ * preview is stale and could approve content we never looked at.
+ *
+ * @param {{ octokit: Octokit, context: Context }} args
+ * @returns {Promise<RegistryComparisonRefs>}
+ */
+async function getRegistryComparisonRefs({ octokit, context }) {
   assertHasPullRequest(context);
-  const pr = context.payload.pull_request;
 
-  const mainRegistry = await getRegistryJson({
-    octokit,
-    owner: context.repo.owner,
-    repo: context.repo.repo,
-    ref: registryBaseRef,
-    registryPath,
-  });
-
-  const head = pr['head'];
-  const ref = head?.sha ?? head?.ref;
-  if (!ref) {
-    throw new Error('Unable to determine PR head ref for registry.json update check');
+  const headSha = context.payload.pull_request['head']?.sha;
+  if (!headSha) {
+    throw new Error('Unable to determine PR head commit for registry.json update check');
   }
 
-  const prRegistry = await getRegistryJson({
-    octokit,
-    owner: head?.repo?.owner?.login ?? context.repo.owner,
-    repo: head?.repo?.name ?? context.repo.repo,
-    ref,
-    registryPath,
-  });
+  const mergeRef = `refs/pull/${context.payload.pull_request.number}/merge`;
+  /** @type {Error | undefined} */
+  let lastError;
 
-  return diffRegistry(mainRegistry, prRegistry);
+  for (let attempt = 1; attempt <= MERGE_PREVIEW_ATTEMPTS; attempt++) {
+    if (attempt > 1) {
+      await new Promise((resolve) => setTimeout(resolve, MERGE_PREVIEW_RETRY_DELAY_MS));
+    }
+
+    try {
+      const { data: mergeCommit } = await octokit.rest.repos.getCommit({
+        ...context.repo,
+        ref: mergeRef,
+      });
+      const [baseParent, headParent] = mergeCommit.parents;
+
+      if (!baseParent?.sha || !headParent?.sha) {
+        lastError = new Error(`GitHub's merge preview for this PR is not a two-parent merge commit`);
+        continue;
+      }
+
+      if (headParent.sha !== headSha) {
+        lastError = new Error(`GitHub's merge preview is stale for the current PR head (${headSha})`);
+        continue;
+      }
+
+      return {
+        baseRef: baseParent.sha,
+        proposedRef: mergeCommit.sha,
+      };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  throw new MergePreviewUnavailableError(
+    `Unable to load a current GitHub merge preview for this PR after ${MERGE_PREVIEW_ATTEMPTS} attempts. ` +
+    `Resolve any merge conflicts or re-run the check after GitHub computes the preview: ${lastError?.message}`,
+  );
 }
 
 /**
@@ -416,15 +511,15 @@ async function getRegistryJson({ octokit, owner, repo, ref, registryPath }) {
 }
 
 /**
- * Diffs the base (main) registry against the registry proposed by a PR and decides
+ * Diffs the base-branch registry against the registry the PR would produce, and decides
  * whether the change can proceed without core review, or whether a core reviewer
  * needs to review it.
  *
  * New releases can proceed without core review when they keep the previous release's
  * capabilities and providers, and only add a new release to an existing extension.
  * 
- * @param {RegistryJson} baseRegistry  registry.json as it exists on main
- * @param {RegistryJson} prRegistry    registry.json as proposed by the PR
+ * @param {RegistryJson} baseRegistry  registry.json as it exists on the base branch
+ * @param {RegistryJson} prRegistry    registry.json as it would exist once the PR merges
  * @returns {string[]} the reasons core review is needed; empty means the change is approved
  */
 function diffRegistry(baseRegistry, prRegistry) {

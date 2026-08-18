@@ -411,8 +411,32 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
 		msaAppID, idErr := readEnvValue(ctx, azdClient, envName, envkey.AgentInstanceIdentityClientID(svc.Name))
 		if nameErr == nil && botErr == nil && idErr == nil {
-			_ = writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID)
-			printTeamsNextSteps(botName, msaAppID, "")
+			packagePath := ""
+			if inputErr == nil {
+				subscriptionID, subErr := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
+				resourceGroup, rgErr := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
+				if subErr == nil && rgErr == nil {
+					botResourceGroup := readOptionalEnvValue(
+						ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name),
+					)
+					if botResourceGroup != "" {
+						resourceGroup = botResourceGroup
+					}
+					agentClient := agent_api.NewAgentClient(endpoint, cred)
+					packagePath = writeTeamsAppPackage(
+						ctx, agentClient, args.Project, svc, agentName, subscriptionID, resourceGroup, botName,
+					)
+				} else {
+					log.Printf(
+						"postdeploy: skipping Teams app package for %s: subscription: %v, resource group: %v",
+						svc.Name, subErr, rgErr,
+					)
+				}
+			} else {
+				log.Printf("postdeploy: skipping Teams app package for %s: %v", svc.Name, inputErr)
+			}
+			guidePath := writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID, packagePath)
+			printTeamsNextSteps(botName, msaAppID, guidePath, packagePath)
 		} else {
 			log.Printf(
 				"postdeploy: skipping Teams setup guide for %s: agent name: %v, bot name: %v, instance identity: %v",

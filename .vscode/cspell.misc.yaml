@@ -156,3 +156,7 @@ overrides:
           - usgovcloudapi
           - vsrpc
           - whatif
+    - filename: ./agency.toml
+      words:
+          - mcps
+          - toolsets

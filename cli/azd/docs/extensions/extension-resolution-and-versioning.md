@@ -291,7 +291,15 @@ Resolution during project commands differs from `azd init` in two ways:
 - It **does** check installed extensions against the configured constraint, and fails with the conflicting constraint rather than proceeding with an unsatisfying version.
 - It resolves not only `requiredVersions.extensions` but also the providers the project implies (see below).
 
-Resolution only prompts for extensions that are genuinely missing, and it is skipped when the command renders help instead of running, such as `azd up --help`. Each install is confirmed before it happens; `--no-prompt` accepts that confirmation, matching how the rest of `azd` treats declared configuration in scripts and CI.
+Resolution only prompts for extensions that are genuinely missing, and it is skipped when the command renders help instead of running, such as `azd up --help`.
+
+Before installing anything, `azd` displays the complete set of missing extensions and their available configured sources. A single missing extension is shown with its ID, source or sources, and description. Multiple missing extensions are summarized in a table and confirmed together.
+
+When the official azd registry is one of several sources, `azd` recommends it but allows another configured source to be selected. For multiple extensions, a source selected for the first extension can be reused for the remaining extensions only when that source publishes every remaining requirement. Otherwise, azd prompts for each ambiguous source separately. Declining installation prints `Canceled: required extension isn't installed.`, stops the requested command before it runs, and exits successfully.
+
+With an explicit local `--no-prompt`, azd installs automatically only when every missing extension has one eligible source. The sources do not need to be the same. If any extension is available from several sources, azd stops and prints the exact `azd extension install` commands that can resolve the ambiguity.
+
+Auto-install remains disabled in detected CI/CD environments, including when CI detection enables no-prompt mode automatically. The error lists manual install commands for every missing extension so the pipeline can install them explicitly before rerunning the project command.
 
 ### Inferred extension requirements
 

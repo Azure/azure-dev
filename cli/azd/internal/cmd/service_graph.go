@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -592,6 +593,23 @@ func deployTimeoutWarning(svcName string, timeout time.Duration) *ux.WarningMess
 					" or AZD_DEPLOY_TIMEOUT env var (e.g. AZD_DEPLOY_TIMEOUT=%d).",
 				int(timeout.Seconds())*2, int(timeout.Seconds())*2),
 		},
+	}
+}
+
+func displayDeployWarnings(
+	ctx context.Context,
+	console input.Console,
+	services []*project.ServiceConfig,
+	state *deployGraphState,
+) {
+	for _, svc := range services {
+		if result := state.GetResult(svc.Name); result != nil {
+			for _, warning := range result.Warnings {
+				console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: fmt.Sprintf("Service '%s': %s", svc.Name, warning),
+				})
+			}
+		}
 	}
 }
 

@@ -238,9 +238,10 @@ func TestNewPromptOptions(t *testing.T) {
 func TestNewSelectOptions(t *testing.T) {
 	buf := &bytes.Buffer{}
 	opts := newSelectOptions(buf, ConsoleOptions{
-		Message:      "message",
-		Options:      []string{"alpha", "beta", "gamma"},
-		DefaultValue: "gamma",
+		Message:         "message",
+		Options:         []string{"alpha", "beta", "gamma"},
+		DefaultValue:    "gamma",
+		EnableFiltering: new(false),
 	})
 
 	require.Equal(t, buf, opts.Writer)
@@ -248,6 +249,8 @@ func TestNewSelectOptions(t *testing.T) {
 	require.Len(t, opts.Choices, 3)
 	require.NotNil(t, opts.SelectedIndex)
 	require.Equal(t, 2, *opts.SelectedIndex)
+	require.NotNil(t, opts.EnableFiltering)
+	require.False(t, *opts.EnableFiltering)
 }
 
 func TestNewConfirmOptions(t *testing.T) {

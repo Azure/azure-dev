@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.6 (2026-08-13)
+
+### Features Added
+
+- [[#9457]](https://github.com/Azure/azure-dev/pull/9457) Support Foundry provisioning as an isolated infrastructure layer with layer paths, virtual outputs, ownership tracking, repeat provisioning, and teardown behavior.
+
 ## 1.0.0-beta.5 (2026-08-06)
 
 ### Features Added

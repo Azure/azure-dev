@@ -363,7 +363,6 @@ func convertFloat64ToFloat32(f64 *float64) *float32 {
 	return &f32
 }
 
-// CreateHostedAgentAPIRequest creates a CreateAgentRequest for hosted agents
 // mapSessionConfiguration converts the author-facing session configuration into
 // the API shape, validating the idle-timeout bounds. It returns nil when the
 // author omitted session configuration so session_configuration is left out of
@@ -376,13 +375,16 @@ func mapSessionConfiguration(sc *SessionConfiguration) (*agent_api.SessionConfig
 	idle := *sc.IdleTimeoutSeconds
 	if idle < MinSessionIdleTimeoutSeconds || idle > MaxSessionIdleTimeoutSeconds {
 		return nil, fmt.Errorf(
-			"sessionConfiguration.idleTimeoutSeconds must be between %d and %d seconds, got %d",
+			"session idle timeout must be between %d and %d seconds, got %d "+
+				"('sessionConfiguration.idleTimeoutSeconds' in azure.yaml, "+
+				"'session_configuration.idle_timeout_seconds' in agent.yaml)",
 			MinSessionIdleTimeoutSeconds, MaxSessionIdleTimeoutSeconds, idle)
 	}
 
 	return &agent_api.SessionConfigurationAPI{IdleTimeoutSeconds: idle}, nil
 }
 
+// CreateHostedAgentAPIRequest creates a CreateAgentRequest for hosted agents
 func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
 	imageURL := hostedAgent.Image
 	cpu := "1"      // Default CPU

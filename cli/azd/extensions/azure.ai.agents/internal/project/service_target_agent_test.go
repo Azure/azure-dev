@@ -1754,29 +1754,6 @@ func TestValidateRegistryConnectionDefinition(t *testing.T) {
 	}
 }
 
-func TestHasConfiguredDockerOptions(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		options *azdext.DockerProjectOptions
-		want    bool
-	}{
-		{name: "nil"},
-		{name: "mapped zero value", options: &azdext.DockerProjectOptions{}},
-		{name: "remote build", options: &azdext.DockerProjectOptions{RemoteBuild: true}, want: true},
-		{name: "path", options: &azdext.DockerProjectOptions{Path: "Dockerfile"}, want: true},
-		{name: "build args", options: &azdext.DockerProjectOptions{BuildArgs: []string{"MODE=release"}}, want: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, test.want, hasConfiguredDockerOptions(test.options))
-		})
-	}
-}
-
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	t.Parallel()
 
@@ -1790,40 +1767,35 @@ func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 func TestShouldUsePreBuiltImage_LegacyInitImageUsesCompatibilityMarker(t *testing.T) {
 	t.Parallel()
 
-	promptStub := &stubPromptServer{selectedIndex: 0}
-	provider := &AgentServiceTargetProvider{
-		azdClient: newLegacyPreBuiltTestClient(t, promptStub),
-		env:       &azdext.Environment{Name: "test-env"},
-		serviceConfig: &azdext.ServiceConfig{
-			Docker: &azdext.DockerProjectOptions{RemoteBuild: true},
-		},
+	tests := []struct {
+		name   string
+		docker *azdext.DockerProjectOptions
+	}{
+		{name: "docker absent"},
+		{name: "mapped zero-value docker", docker: &azdext.DockerProjectOptions{}},
+		{name: "configured docker", docker: &azdext.DockerProjectOptions{RemoteBuild: true}},
 	}
 
-	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
-		Image: "registry.example.com/agent:v1",
-	})
-	require.NoError(t, err)
-	require.True(t, result)
-	require.Equal(t, int32(0), promptStub.selectCalls.Load())
-}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			promptStub := &stubPromptServer{selectedIndex: 0}
+			provider := &AgentServiceTargetProvider{
+				azdClient: newLegacyPreBuiltTestClient(t, promptStub),
+				env:       &azdext.Environment{Name: "test-env"},
+				serviceConfig: &azdext.ServiceConfig{
+					Docker: test.docker,
+				},
+			}
 
-func TestShouldUsePreBuiltImage_SkipACRDoesNotSelectHandAuthoredImage(t *testing.T) {
-	t.Parallel()
-
-	promptStub := &stubPromptServer{selectedIndex: 0}
-	provider := &AgentServiceTargetProvider{
-		azdClient: newLegacyPreBuiltTestClient(t, promptStub),
-		env:       &azdext.Environment{Name: "test-env"},
-		// Core maps an absent docker property to a non-nil zero-value message.
-		serviceConfig: &azdext.ServiceConfig{Docker: &azdext.DockerProjectOptions{}},
+			result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+				Image: "registry.example.com/agent:v1",
+			})
+			require.NoError(t, err)
+			require.True(t, result)
+			require.Equal(t, int32(0), promptStub.selectCalls.Load())
+		})
 	}
-
-	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
-		Image: "registry.example.com/agent:v1",
-	})
-	require.NoError(t, err)
-	require.False(t, result)
-	require.Equal(t, int32(1), promptStub.selectCalls.Load())
 }
 
 func TestShouldUsePreBuiltImage_RegistryConnectionForcesPreBuilt(t *testing.T) {

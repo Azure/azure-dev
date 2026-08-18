@@ -1853,13 +1853,11 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return false, nil
 	}
 
-	// Releases before docker.imagePassthrough represented init --image as a docker
-	// service plus AZD_AGENT_SKIP_ACR=true. Honor that exact legacy shape during
-	// the compatibility window without using the provisioning variable for new
-	// or hand-authored image configurations.
-	dockerOptions := p.serviceConfig.GetDocker()
-	if hasConfiguredDockerOptions(dockerOptions) &&
-		!DockerImagePassthrough(dockerOptions) &&
+	// Releases before docker.imagePassthrough represented init --image with a
+	// top-level image plus AZD_AGENT_SKIP_ACR=true. The docker property may be
+	// absent, so preserve that environment marker as the legacy compatibility
+	// contract. New projects use docker.imagePassthrough and do not enter this fallback.
+	if !DockerImagePassthrough(p.serviceConfig.GetDocker()) &&
 		p.shouldSkipACRForEnvironment(ctx) {
 		log.Printf("legacy pre-built image configuration detected: using configured image")
 		return true, nil
@@ -1884,21 +1882,6 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	}
 
 	return resp.Value != nil && choices[*resp.Value].Value == "prebuilt", nil
-}
-
-func hasConfiguredDockerOptions(options *azdext.DockerProjectOptions) bool {
-	return options != nil &&
-		(options.GetPath() != "" ||
-			options.GetContext() != "" ||
-			options.GetPlatform() != "" ||
-			options.GetTarget() != "" ||
-			options.GetRegistry() != "" ||
-			options.GetImage() != "" ||
-			options.GetTag() != "" ||
-			options.GetRemoteBuild() ||
-			len(options.GetBuildArgs()) > 0 ||
-			options.GetNetwork() != "" ||
-			DockerImagePassthrough(options))
 }
 
 func (p *AgentServiceTargetProvider) shouldSkipACRForEnvironment(ctx context.Context) bool {

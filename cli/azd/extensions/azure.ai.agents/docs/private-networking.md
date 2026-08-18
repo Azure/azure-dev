@@ -20,8 +20,6 @@ services:
     uses:
       - ai-project
     image: myprivacr.azurecr.io/agents/my-agent:v1
-    docker:
-      imagePassthrough: true
 
   ai-project:
     host: azure.ai.project
@@ -113,8 +111,6 @@ services:
     uses:
       - ai-project
     image: myprivacr.azurecr.io/agents/my-agent:v1
-    docker:
-      imagePassthrough: true
 
   ai-project:
     host: azure.ai.project
@@ -157,8 +153,6 @@ services:
     uses:
       - ai-project
     image: myprivacr.azurecr.io/agents/my-agent:v1
-    docker:
-      imagePassthrough: true
 
   ai-project:
     host: azure.ai.project

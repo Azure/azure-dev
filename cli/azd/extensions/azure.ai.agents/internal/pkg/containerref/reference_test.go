@@ -22,6 +22,12 @@ func TestIsFullyQualified(t *testing.T) {
 			image: "registry.example.com/agent@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			want:  true,
 		},
+		{
+			name: "tag and digest",
+			image: "registry.example.com/agent:v1@sha256:" +
+				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			want: true,
+		},
 		{name: "unqualified", image: "agent:v1", want: false},
 		{name: "URL scheme", image: "https://registry.example.com/agent:v1", want: false},
 		{name: "empty", image: "", want: false},

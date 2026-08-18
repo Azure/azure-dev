@@ -17,22 +17,26 @@ import (
 // rather than a window, and the run it produces is expensive and empty.
 const MaxLookbackHours = 24 * 365 * 10
 
-// ValidateSource refuses a source declaration a run could not carry out.
+// ValidateSource checks a source declaration and resolves the window it names.
 //
-// The window rules and the question of which fields the declared type even
-// reads, in one place, called by the configuration check and again when the
-// request is built. Two copies drifted apart on every axis they were not both
-// tested on, so which rules applied depended on which door the eval came
-// through.
-func ValidateSource(source *SourceDecl) error {
+// One definition of what a source may say, called by the configuration check
+// and again when the request is built. Two copies drifted apart on every axis
+// they were not both tested on, so which rules applied depended on which door
+// the eval came through.
+//
+// The window is returned as well as checked, because a rule about a window can
+// only be stated once the window is known, and the caller that sends the
+// request needs the same bounds the caller that validated it saw.
+//
+// A zero start or end means unbounded at that end.
+func ValidateSource(source *SourceDecl) (start, end time.Time, err error) {
 	if source == nil {
-		return nil
+		return time.Time{}, time.Time{}, nil
 	}
 	if err := validateSourceFields(source); err != nil {
-		return err
+		return time.Time{}, time.Time{}, err
 	}
-	_, _, err := ResolveTraceWindow(source)
-	return err
+	return resolveTraceWindow(source)
 }
 
 // validateSourceFields refuses fields the declared source type does not read.
@@ -44,21 +48,21 @@ func validateSourceFields(source *SourceDecl) error {
 	var inert []string
 	switch source.Type {
 	case SourceTypeTraces:
-		inert = setFields(
-			field{"response_ids", len(source.ResponseIDs) > 0},
-			field{"max_turns", source.MaxTurns != 0},
+		inert = namesOfSet(
+			sourceField{"response_ids", len(source.ResponseIDs) > 0},
+			sourceField{"max_turns", source.MaxTurns != 0},
 		)
 	case SourceTypeResponses:
 		if source.MaxTurns < 0 {
 			return messages.MaxTurnsUnusable(source.MaxTurns)
 		}
-		inert = setFields(
-			field{"start_time", source.StartTime != ""},
-			field{"end_time", source.EndTime != ""},
-			field{"lookback_hours", source.LookbackHours != 0},
-			field{"max_traces", source.MaxTraces != 0},
-			field{"agent_name", source.AgentName != ""},
-			field{"agent_version", source.AgentVersion != ""},
+		inert = namesOfSet(
+			sourceField{"start_time", source.StartTime != ""},
+			sourceField{"end_time", source.EndTime != ""},
+			sourceField{"lookback_hours", source.LookbackHours != 0},
+			sourceField{"max_traces", source.MaxTraces != 0},
+			sourceField{"agent_name", source.AgentName != ""},
+			sourceField{"agent_version", source.AgentVersion != ""},
 		)
 	default:
 		// An unsupported type is reported by the caller, which knows how to
@@ -71,12 +75,12 @@ func validateSourceFields(source *SourceDecl) error {
 	return messages.SourceFieldsNotRead(source.Type, inert)
 }
 
-type field struct {
+type sourceField struct {
 	name string
 	set  bool
 }
 
-func setFields(fields ...field) []string {
+func namesOfSet(fields ...sourceField) []string {
 	var names []string
 	for _, f := range fields {
 		if f.set {
@@ -86,23 +90,8 @@ func setFields(fields ...field) []string {
 	return names
 }
 
-// ResolveTraceWindow reads the span of traces an eval grades.
-//
-// One definition, called by the configuration check and again when the request
-// is built. Two copies drifted apart on every axis they were not both tested
-// on: the config refused a bound the request then dropped, and the request
-// accepted values the config had already refused, so which rules applied
-// depended on which door the eval came through.
-//
-// The window is resolved as well as checked, because a rule about a window can
-// only be stated once the window is known, and both callers need the answer.
-//
-// A zero start or end means unbounded at that end.
-func ResolveTraceWindow(source *SourceDecl) (start, end time.Time, err error) {
-	if source == nil {
-		return time.Time{}, time.Time{}, nil
-	}
-
+// resolveTraceWindow reads the span of traces an eval grades.
+func resolveTraceWindow(source *SourceDecl) (start, end time.Time, err error) {
 	// Parsed first, so a file that is wrong in two ways names the value that
 	// cannot be read at all rather than the pair it also got wrong.
 	start, err = traceBound("start_time", source.StartTime)
@@ -142,10 +131,9 @@ func ResolveTraceWindow(source *SourceDecl) (start, end time.Time, err error) {
 		start = from.Add(-time.Duration(source.LookbackHours) * time.Hour)
 		// Held to the same rule as a written bound. A lookback long enough to
 		// reach past the epoch lands on a start the wire then drops, which is
-		// the silence the rule exists to break however the bound was arrived at.
+		// the silence the rule exists to break however the bound was reached.
 		if start.Unix() <= 0 {
-			return time.Time{}, time.Time{}, messages.LookbackReachesTooFarBack(
-				source.LookbackHours)
+			return time.Time{}, time.Time{}, messages.LookbackReachesTooFarBack(source.LookbackHours)
 		}
 		return start, end, nil
 	}
@@ -165,16 +153,16 @@ func ResolveTraceWindow(source *SourceDecl) (start, end time.Time, err error) {
 // it would be dropped from the request without a word. The rest of the
 // pre-1970 half-line is refused with it because no trace was recorded there,
 // and one rule about the whole span is easier to state than a hole in it.
-func traceBound(field, value string) (time.Time, error) {
+func traceBound(name, value string) (time.Time, error) {
 	if value == "" {
 		return time.Time{}, nil
 	}
 	parsed, err := time.Parse(time.RFC3339, value)
 	if err != nil {
-		return time.Time{}, messages.TraceWindowNotATime(field, value)
+		return time.Time{}, messages.TraceWindowNotATime(name, value)
 	}
 	if parsed.Unix() <= 0 {
-		return time.Time{}, messages.TraceWindowBoundUnusable(field, value)
+		return time.Time{}, messages.TraceWindowBoundUnusable(name, value)
 	}
 	return parsed, nil
 }

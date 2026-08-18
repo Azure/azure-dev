@@ -78,11 +78,11 @@ func TestPinReusedTraceWindow_ClosesAWindowSoItCannotWiden(t *testing.T) {
 			assert.InDelta(t, time.Now().Unix(), ds.TraceSource.EndTime, 60)
 			assert.InDelta(t, int64(24*3600), ds.TraceSource.EndTime-ds.TraceSource.StartTime, 60)
 
-			// Reusing the result again changes nothing, so the span cannot
-			// creep run after run.
-			pinned := *ds.TraceSource
-			again := pinReusedTraceWindow(ds)
-			assert.Equal(t, pinned, *again.TraceSource)
+			// An already-closed window is repeated rather than re-pinned, so
+			// the span cannot creep run after run. Asserted by identity: two
+			// calls a microsecond apart write the same second, so comparing
+			// the values would pass with the guard deleted.
+			assert.Same(t, ds, pinReusedTraceWindow(ds))
 		})
 	}
 }

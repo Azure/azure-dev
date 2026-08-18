@@ -1631,7 +1631,7 @@ func GateNeedsATerminalRun(runID, status string) error {
 
 // InEvalAt says which declaration an error came from.
 //
-// The window rules are checked in one place and reported from two, because the
+// The source rules are checked in one place and reported from two, because the
 // same file is read when it is validated and again when a run is built. Only
 // the first of those has an index to name.
 func InEvalAt(i int, eval string, err error) error {
@@ -1710,6 +1710,12 @@ func MaxTracesUnusable(maxTraces int) error {
 
 // SourceFieldsNotRead reports fields the declared source type ignores.
 func SourceFieldsNotRead(sourceType string, fields []string) error {
+	if len(fields) == 1 {
+		return fmt.Errorf(
+			"source declares %s, which a %q source does not read: "+
+				"remove it, or change the type to one that does",
+			fields[0], sourceType)
+	}
 	return fmt.Errorf(
 		"source declares %s, which a %q source does not read: "+
 			"remove them, or change the type to one that does",
@@ -1957,9 +1963,12 @@ func SourceTypeRequired(index int, eval string) error {
 
 // SourceTypeUnsupported reports a source.type the extension has no path for.
 func SourceTypeUnsupported(index int, eval, got, traces, responses string) error {
-	return fmt.Errorf(
-		"evals[%d] (%s): source.type %q is not supported; use %q or %q",
-		index, eval, got, traces, responses)
+	return InEvalAt(index, eval, SourceTypeNotSupported(got, traces, responses))
+}
+
+// SourceTypeNotSupported reports the same, where there is no index to name.
+func SourceTypeNotSupported(got, traces, responses string) error {
+	return fmt.Errorf("source.type %q is not supported; use %q or %q", got, traces, responses)
 }
 
 // TracesSourceNeedsAgentName reports a trace source that does not say whose

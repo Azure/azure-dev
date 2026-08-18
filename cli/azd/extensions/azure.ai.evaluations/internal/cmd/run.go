@@ -405,8 +405,11 @@ const legacyTraceLookbackHours = 24 * 7
 // A run reached by id repeats whatever data source the last one sent, and a
 // trace window with a start and no end means "up to now". Replaying it a week
 // later grades a week more than the run it was copied from, and the run after
-// that more again, so the span grows without limit and nothing says so. Every
-// reused trace window therefore gets both ends written down.
+// that more again, so the span grows without limit and nothing says so.
+//
+// A window with no start at all is repeated as it stands: it says "everything",
+// which is what it said when it was recorded, and closing it would freeze a
+// declaration that never asked to be bounded.
 //
 // It is graded over the span it covers rather than the span it covered: the
 // declaration is where a window that should move with each run comes from, and
@@ -415,6 +418,9 @@ const legacyTraceLookbackHours = 24 * 7
 //
 // Pinning the end at now also excludes traces the service has not finished
 // ingesting, which an open end would have picked up on the next run.
+//
+// The argument is never modified: what the previous run sent is history, and a
+// caller that logs or emits it should see what was recorded.
 func pinReusedTraceWindow(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunDataSource {
 	switch {
 	case ds == nil:
@@ -422,11 +428,14 @@ func pinReusedTraceWindow(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunDataS
 	case ds.Type == eval_api.EvalRunDataSourceTypeTraces:
 		return upgradeLegacyTraceSource(ds)
 	case ds.Type == eval_api.EvalRunDataSourceTypeTracePreview:
-		if ds.TraceSource == nil || ds.TraceSource.EndTime != 0 {
+		if ds.TraceSource == nil || ds.TraceSource.EndTime != 0 || ds.TraceSource.StartTime == 0 {
 			return ds
 		}
-		ds.TraceSource.EndTime = time.Now().Unix()
-		return ds
+		pinned := *ds
+		filter := *ds.TraceSource
+		filter.EndTime = time.Now().Unix()
+		pinned.TraceSource = &filter
+		return &pinned
 	default:
 		return ds
 	}
@@ -443,12 +452,21 @@ func upgradeLegacyTraceSource(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunD
 		end = time.Unix(ds.EndTime, 0)
 	}
 	// The recorded values are whatever an older build sent, from before the
-	// bounds existed, so they are clamped rather than trusted: a lookback large
-	// enough to overflow the duration puts the start in the future, and the
-	// reattached run reads nothing.
+	// bounds existed, so they are clamped rather than trusted: a lookback beyond
+	// what a window may cover reaches back further than any trace was recorded,
+	// and the reattached run reads nothing.
 	hours := ds.LookbackHours
 	if hours <= 0 || hours > project.MaxLookbackHours {
 		hours = legacyTraceLookbackHours
+	}
+	start := end.Add(-time.Duration(hours) * time.Hour)
+	// A recorded end early enough to put the start at or before the epoch would
+	// send a bound the wire drops, or a negative one -- the same silence a
+	// declaration is refused for. Reaching back from now instead keeps the
+	// length of the window the run asked for.
+	if start.Unix() <= 0 {
+		end = time.Now()
+		start = end.Add(-time.Duration(hours) * time.Hour)
 	}
 	// A negative cap is no cap at all, and leaving it off means the service's
 	// own default of a thousand traces -- a bigger, costlier run than the one
@@ -461,8 +479,7 @@ func upgradeLegacyTraceSource(ds *eval_api.EvalRunDataSource) *eval_api.EvalRunD
 	// The old shape carried no version, so this pins nothing that was not
 	// pinned before; it stops the service choosing differently run to run only
 	// once the declaration names one.
-	return eval_api.NewTracePreviewDataSource(
-		ds.AgentName, "", end.Add(-time.Duration(hours)*time.Hour), end, maxTraces)
+	return eval_api.NewTracePreviewDataSource(ds.AgentName, "", start, end, maxTraces)
 }
 
 // buildRunDataSource binds the eval's rows to the run.
@@ -491,9 +508,8 @@ func (ec *evalContext) buildRunDataSource(
 			// Config validation rejects this first, but a run reached by id has no
 			// config to have been validated. Falling through would score the wrong
 			// rows and say the eval declared no source.
-			return nil, messages.SourceTypeUnsupported(
-				0, group.Name, group.Source.Type,
-				project.SourceTypeTraces, project.SourceTypeResponses)
+			return nil, messages.InEval(group.Name, messages.SourceTypeNotSupported(
+				group.Source.Type, project.SourceTypeTraces, project.SourceTypeResponses))
 		}
 	}
 
@@ -545,10 +561,12 @@ func (ec *evalContext) buildRunDataSource(
 // run invokes nothing.
 func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
 	agent := group.Source.AgentName
-	// Only an agent target names an agent. A model target names a deployment,
-	// and filtering spans by a deployment name matches nothing: the run comes
-	// back empty with no reason given.
-	if agent == "" && group.Target != nil && group.Target.Type == project.TargetTypeAgent {
+	// A model target names a deployment, and filtering spans by a deployment
+	// name matches nothing: the run comes back empty with no reason given.
+	// Anything else is read as an agent, which is how the dataset branch reads
+	// an untyped target too -- a config that deploys has to be one a run can
+	// send, and `target.type` is optional.
+	if agent == "" && group.Target != nil && group.Target.Type != project.TargetTypeModel {
 		agent = group.Target.Name
 	}
 	if agent == "" {
@@ -571,14 +589,9 @@ func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) 
 // traceWindow resolves the bounds of the span a trace run reads.
 //
 // The rules live in the project package, with the check the configuration runs,
-// so a source is judged the same way whether it is being validated or sent. The
-// two used to be separate and had drifted on six inputs, each accepted by one
-// and refused by the other.
+// so a source is judged the same way whichever door the eval came through.
 func traceWindow(evalName string, source *project.SourceDecl) (start, end time.Time, err error) {
-	if err := project.ValidateSource(source); err != nil {
-		return time.Time{}, time.Time{}, messages.InEval(evalName, err)
-	}
-	start, end, err = project.ResolveTraceWindow(source)
+	start, end, err = project.ValidateSource(source)
 	if err != nil {
 		return time.Time{}, time.Time{}, messages.InEval(evalName, err)
 	}
@@ -592,7 +605,7 @@ func responsesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, erro
 	}
 	// The same check the configuration runs, so a field this source does not
 	// read is refused here too rather than only on the way to a deploy.
-	if err := project.ValidateSource(group.Source); err != nil {
+	if _, _, err := project.ValidateSource(group.Source); err != nil {
 		return nil, messages.InEval(group.Name, err)
 	}
 	return eval_api.NewResponsesDataSource(group.Source.ResponseIDs, group.Source.MaxTurns), nil

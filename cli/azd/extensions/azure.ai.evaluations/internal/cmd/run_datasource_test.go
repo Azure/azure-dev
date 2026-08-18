@@ -110,14 +110,11 @@ func TestBuildRunDataSource_TracesCarriesAnExplicitWindow(t *testing.T) {
 	assert.Equal(t, int64(1785628800), ds.TraceSource.EndTime)
 }
 
-// A window nobody can read, or one that holds nothing, is refused here rather
-// than by a service that answers with no rows and no reason.
-//
 // Every input the configuration refuses has to be refused here too. The two
 // used to be separate checks and had drifted on six inputs, each accepted by
 // one door and refused by the other, so which rules applied depended on how the
 // eval was reached.
-func TestBuildRunDataSource_TracesRefusesEveryWindowTheConfigWould(t *testing.T) {
+func TestBuildRunDataSource_TracesRefusesEverySourceTheConfigWould(t *testing.T) {
 	ec := &evalContext{}
 	build := func(source *project.SourceDecl) error {
 		source.Type = project.SourceTypeTraces
@@ -148,6 +145,14 @@ func TestBuildRunDataSource_TracesRefusesEveryWindowTheConfigWould(t *testing.T)
 			project.SourceDecl{StartTime: "2026-08-02T00:00:00Z", EndTime: "2026-08-01T00:00:00Z"},
 			"holds no traces",
 		},
+		// Not a window rule. The run door used to accept and ignore these
+		// while the config refused them.
+		{"a turn cap traces do not read", project.SourceDecl{MaxTurns: 3}, "does not read"},
+		{
+			"response ids traces do not read",
+			project.SourceDecl{ResponseIDs: []string{"resp_1"}},
+			"does not read",
+		},
 	}
 
 	for _, tc := range cases {
@@ -162,21 +167,70 @@ func TestBuildRunDataSource_TracesRefusesEveryWindowTheConfigWould(t *testing.T)
 	}
 }
 
+// The responses door runs the same check. It reads no window, so a window on it
+// bounds nothing and only looks as though it does.
+func TestBuildRunDataSource_ResponsesRefusesFieldsItDoesNotRead(t *testing.T) {
+	ec := &evalContext{}
+
+	_, err := ec.buildRunDataSource(context.Background(), &project.Eval{
+		Name: "responses-eval",
+		Source: &project.SourceDecl{
+			Type:        project.SourceTypeResponses,
+			ResponseIDs: []string{"resp_1"},
+			// Present, so the missing-ids guard does not answer first.
+			LookbackHours: 24,
+		},
+	}, "", 0)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `eval "responses-eval"`)
+	assert.Contains(t, err.Error(), "lookback_hours")
+	assert.Contains(t, err.Error(), "does not read")
+}
+
 // agent_name under source: is a filter, but an eval that names a target and
 // leaves the filter off still means "this agent's traces".
 func TestBuildRunDataSource_TracesFallsBackToTargetName(t *testing.T) {
 	ec := &evalContext{}
+
+	for _, target := range []*project.Target{
+		{Type: project.TargetTypeAgent, Name: "support-agent"},
+		// `target.type` is optional, and config validation accepts the
+		// fallback on the name alone, so whatever it accepts a run has to be
+		// able to send. The dataset branch reads an untyped target as an agent
+		// too; requiring the type here made a config that deployed cleanly fail
+		// every run.
+		{Name: "support-agent"},
+	} {
+		group := &project.Eval{
+			Name:   "trace-eval",
+			Source: &project.SourceDecl{Type: project.SourceTypeTraces},
+			Target: target,
+		}
+
+		ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+
+		require.NoError(t, err)
+		require.NotNil(t, ds.TraceSource)
+		assert.Equal(t, "support-agent", ds.TraceSource.AgentName)
+	}
+}
+
+// A model target names a deployment, not an agent. Filtering spans by a
+// deployment name matches nothing, so the run would come back empty with no
+// reason given; saying so is more use.
+func TestBuildRunDataSource_TracesWillNotReadAModelTarget(t *testing.T) {
+	ec := &evalContext{}
 	group := &project.Eval{
 		Name:   "trace-eval",
 		Source: &project.SourceDecl{Type: project.SourceTypeTraces},
-		Target: &project.Target{Type: project.TargetTypeAgent, Name: "support-agent"},
+		Target: &project.Target{Type: project.TargetTypeModel, Name: "gpt-4o-mini"},
 	}
 
-	ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+	_, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
-	require.NoError(t, err)
-	require.NotNil(t, ds.TraceSource)
-	assert.Equal(t, "support-agent", ds.TraceSource.AgentName)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "agent_name")
 }
 
 // With neither, the run cannot say whose conversations to read, and saying so

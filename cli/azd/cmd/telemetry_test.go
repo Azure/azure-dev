@@ -8,7 +8,10 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
@@ -324,41 +327,47 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 	azdRoot, err := filepath.Abs("..")
 	require.NoError(t, err)
 
-	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
-			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
-		Dir:   azdRoot,
-		Tests: false,
+	// The guard is a repository-wide invariant, but go/packages only loads the
+	// files that the active GOOS and build tags select. A raw attribute added to
+	// platform-specific product code (for example a *_windows.go file) would slip
+	// past a scan that runs under a single GOOS, because Linux CI never compiles
+	// the Windows-only files. Scan under every shipped GOOS so the invariant covers
+	// all code that ships. The host GOOS is scanned strictly: a load/type-check
+	// error fails the test, because a package that does not type-check can silently
+	// hide a violation. The cross-compiled GOOS runs are best-effort — packages
+	// that need a cross C toolchain (cgo, e.g. pkg/oneauth) or are otherwise
+	// host-bound can legitimately fail to load off their own platform, so their
+	// load errors are tolerated while every file that does load is still scanned.
+	goosSet := map[string]bool{"linux": true, "windows": true, "darwin": true}
+	goosSet[runtime.GOOS] = true
+	targets := make([]string, 0, len(goosSet))
+	for goos := range goosSet {
+		targets = append(targets, goos)
 	}
-	pkgs, err := packages.Load(cfg, "./...")
-	require.NoError(t, err)
-	require.NotEmpty(t, pkgs, "no packages loaded from the cli/azd module")
+	sort.Strings(targets)
 
-	var (
-		violations []string
-		loadErrors []string
-	)
-	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			loadErrors = append(loadErrors, fmt.Sprintf("  %s: %s", pkg.PkgPath, e.Error()))
+	seen := map[string]bool{}
+	var violations []string
+	for _, goos := range targets {
+		strict := goos == runtime.GOOS
+		found, loadErrors := scanModuleForRawAttributes(azdRoot, goos, strict)
+
+		// A package that failed to type-check under the host GOOS would silently
+		// hide violations, so a load error there is a failure rather than a false
+		// pass. Cross-compiled runs tolerate load errors (see above).
+		if strict {
+			require.Empty(t, loadErrors,
+				"packages failed to load/type-check under GOOS=%s:\n%s",
+				goos, strings.Join(loadErrors, "\n"))
 		}
-		if pkg.TypesInfo == nil {
-			continue
-		}
-		for _, file := range pkg.Syntax {
-			filename := pkg.Fset.Position(file.Pos()).Filename
-			rel, relErr := filepath.Rel(azdRoot, filename)
-			if relErr != nil {
-				rel = filename
+		for _, v := range found {
+			if !seen[v] {
+				seen[v] = true
+				violations = append(violations, v)
 			}
-			rel = filepath.ToSlash(rel)
-			violations = append(violations, scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, pkg.PkgPath, rel)...)
 		}
 	}
-
-	// A package that failed to type-check would silently hide violations, so a
-	// load error is a failure rather than a false pass.
-	require.Empty(t, loadErrors, "packages failed to load/type-check:\n%s", strings.Join(loadErrors, "\n"))
+	sort.Strings(violations)
 
 	if len(violations) > 0 {
 		t.Errorf(
@@ -373,6 +382,58 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 	}
 }
 
+// scanModuleForRawAttributes loads the cli/azd module for the given GOOS and runs
+// the raw-attribute guard over every file that resolves with type information. It
+// returns the violation messages and, separately, any package load/type-check
+// errors so the caller can decide whether they are fatal (host GOOS) or tolerated
+// (cross-compiled GOOS). Cross-compiled runs disable cgo so a missing cross C
+// toolchain does not abort the load; the affected packages surface as tolerated
+// load errors instead.
+func scanModuleForRawAttributes(azdRoot, goos string, strict bool) (violations, loadErrors []string) {
+	env := os.Environ()
+	env = append(env, "GOOS="+goos)
+	if !strict {
+		env = append(env, "CGO_ENABLED=0")
+	}
+
+	cfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
+			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+		Dir:   azdRoot,
+		Tests: false,
+		Env:   env,
+	}
+	pkgs, err := packages.Load(cfg, "./...")
+	if err != nil {
+		return nil, []string{fmt.Sprintf("  GOOS=%s: %s", goos, err.Error())}
+	}
+	if len(pkgs) == 0 {
+		return nil, []string{fmt.Sprintf("  GOOS=%s: no packages loaded from the cli/azd module", goos)}
+	}
+
+	for _, pkg := range pkgs {
+		for _, e := range pkg.Errors {
+			loadErrors = append(loadErrors, fmt.Sprintf("  %s: %s", pkg.PkgPath, e.Error()))
+		}
+		if pkg.TypesInfo == nil {
+			continue
+		}
+		for _, file := range pkg.Syntax {
+			filename := pkg.Fset.Position(file.Pos()).Filename
+			rel, relErr := filepath.Rel(azdRoot, filename)
+			if relErr != nil {
+				rel = filename
+			}
+			rel = filepath.ToSlash(rel)
+			violations = append(
+				violations,
+				scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, pkg.PkgPath, rel)...,
+			)
+		}
+	}
+	return violations, loadErrors
+}
+
 // rawAttributePkgPath is the import path of the OpenTelemetry attribute package
 // whose constructors and Key methods bypass the fields.AttributeKey registry.
 const rawAttributePkgPath = "go.opentelemetry.io/otel/attribute"
@@ -381,8 +442,12 @@ const rawAttributePkgPath = "go.opentelemetry.io/otel/attribute"
 // go.opentelemetry.io/otel/attribute.Key named type. A struct that merely embeds
 // it — such as the sanctioned fields.AttributeKey — is a different named type and
 // returns false, which is what keeps the guard from flagging fields.SomeKey.String.
+// t is normalized with types.Unalias first so a type alias (e.g.
+// type K = attribute.Key), which go/types now models as *types.Alias, is matched
+// by the same identity check; the isRawAttributeKeyValueType and
+// isFieldsAttributeKeyType helpers do the same.
 func isRawAttributeKeyType(t types.Type) bool {
-	named, ok := t.(*types.Named)
+	named, ok := types.Unalias(t).(*types.Named)
 	if !ok {
 		return false
 	}
@@ -396,7 +461,7 @@ func isRawAttributeKeyType(t types.Type) bool {
 // directly with a key literal bypasses both the attribute constructors and the
 // fields registry, so the guard inspects these composite literals too.
 func isRawAttributeKeyValueType(t types.Type) bool {
-	named, ok := t.(*types.Named)
+	named, ok := types.Unalias(t).(*types.Named)
 	if !ok {
 		return false
 	}
@@ -414,6 +479,13 @@ const fieldsPkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing/field
 // keys that were already subject to this guard at their original build site).
 const baggagePkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
 
+// tracingPkgPath is the import path of the core telemetry package whose attribute
+// merge logic (attributes.go) legitimately re-emits an existing KeyValue's key via
+// a method call (kv.Key.String(...)). Only this plumbing is exempt from the raw
+// attribute.Key method rule for re-emission; a product package doing the same on a
+// caller-supplied KeyValue would emit a key the classifier never sees.
+const tracingPkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing"
+
 // isFieldsAttributeKeyType reports whether t is exactly the sanctioned
 // fields.AttributeKey named type. That wrapper is the only type the metadata
 // classifier discovers and reads Classification/Purpose/Endpoint from, so it is
@@ -421,7 +493,7 @@ const baggagePkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing/bagg
 // allowed. A bare attribute.Key, or any other struct that merely embeds
 // attribute.Key, produces a key the classifier cannot see and is a violation.
 func isFieldsAttributeKeyType(t types.Type) bool {
-	named, ok := t.(*types.Named)
+	named, ok := types.Unalias(t).(*types.Named)
 	if !ok {
 		return false
 	}
@@ -489,21 +561,34 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 	// isReemittedKeyValueKey reports whether expr is `<kv>.Key` where <kv> has type
 	// attribute.KeyValue — i.e. a method call like kv.Key.String(v) merely re-emits
 	// the key of a KeyValue that was already built (and, at its build site, already
-	// subject to this guard). The telemetry baggage plumbing in
+	// subject to this guard). The telemetry attribute-merge plumbing in
 	// internal/tracing legitimately rebuilds caller-supplied KeyValues with merged
-	// values this way; it introduces no new key literal, so it is not a violation.
+	// values this way; it introduces no new key literal. This predicate only
+	// recognizes the shape — the caller additionally gates it to the sanctioned
+	// plumbing packages so the same pattern in product code is still flagged.
 	isReemittedKeyValueKey := func(expr ast.Expr) bool {
 		sel, ok := expr.(*ast.SelectorExpr)
 		if !ok || sel.Sel.Name != "Key" {
 			return false
 		}
-		named, ok := info.TypeOf(sel.X).(*types.Named)
+		named, ok := types.Unalias(info.TypeOf(sel.X)).(*types.Named)
 		if !ok {
 			return false
 		}
 		obj := named.Obj()
 		return obj != nil && obj.Pkg() != nil &&
 			obj.Pkg().Path() == rawAttributePkgPath && obj.Name() == "KeyValue"
+	}
+
+	// isReemitPlumbingPkgPath reports whether p is a sanctioned telemetry-plumbing
+	// package allowed to re-emit an existing KeyValue's key through a method call
+	// (kv.Key.String(...)). Only internal/tracing's attribute merge legitimately
+	// does this; fields and baggage are included as the other sanctioned plumbing
+	// packages. Any other package calling kv.Key.String on a caller-supplied
+	// KeyValue would emit a key the classifier never discovers, so the re-emit
+	// exemption does not apply there and the call is flagged.
+	isReemitPlumbingPkgPath := func(p string) bool {
+		return p == tracingPkgPath || p == fieldsPkgPath || p == baggagePkgPath
 	}
 
 	// rawAttributeBuilderSelection reports whether sel selects a KeyValue-producing
@@ -513,7 +598,8 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 	// guard also covers a call written in method-expression form and a builder
 	// captured as a function value (builder := attribute.Key.String). A method
 	// value that only re-emits an existing KeyValue's key (kv.Key.String) is not a
-	// new key and returns false.
+	// new key and returns false, but only inside the sanctioned plumbing packages
+	// (see isReemitPlumbingPkgPath); elsewhere it is still a violation.
 	rawAttributeBuilderSelection := func(sel *ast.SelectorExpr) bool {
 		selection := info.Selections[sel]
 		if selection == nil {
@@ -533,7 +619,12 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 		if isFieldsAttributeKeyType(selection.Recv()) {
 			return false
 		}
-		if kind == types.MethodVal && isReemittedKeyValueKey(sel.X) {
+		// Re-emitting an existing KeyValue's key (kv.Key.String(...)) introduces no
+		// new key literal, but only the telemetry plumbing legitimately does this
+		// (internal/tracing's attribute merge). A product package re-emitting a
+		// caller-supplied KeyValue would emit a key the classifier never sees, so
+		// the exemption is gated to the sanctioned plumbing packages.
+		if kind == types.MethodVal && isReemitPlumbingPkgPath(pkgPath) && isReemittedKeyValueKey(sel.X) {
 			return false
 		}
 		return true
@@ -797,6 +888,33 @@ var _ = attribute.KeyValue{Key: rawKey, Value: attribute.StringValue("v")}
 			wantViolation: true,
 		},
 		{
+			name: "aliased attribute.KeyValue struct literal",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+type KV = attribute.KeyValue
+var _ = KV{Key: attribute.Key("raw.key"), Value: attribute.StringValue("v")}
+`,
+			wantViolation: true,
+		},
+		{
+			name: "aliased attribute.Key builder",
+			src: `package p
+import "go.opentelemetry.io/otel/attribute"
+type K = attribute.Key
+var _ = K("raw.key").String("v")
+`,
+			wantViolation: true,
+		},
+		{
+			name: "aliased fields.AttributeKey method call",
+			src: `package p
+import "github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+type FK = fields.AttributeKey
+func f(k FK) { _ = k.String("v") }
+`,
+			wantViolation: false,
+		},
+		{
 			name: "attribute.Key builder method expression call",
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
@@ -866,12 +984,12 @@ func f(c wrapper) { _ = c.Key.Bool(true) }
 			wantViolation: true,
 		},
 		{
-			name: "reemit method on KeyValue key field",
+			name: "reemit method on KeyValue key field outside plumbing packages",
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
 func f(kv attribute.KeyValue) { _ = kv.Key.String("v") }
 `,
-			wantViolation: false,
+			wantViolation: true,
 		},
 		{
 			name: "bare key conversion without value",

@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // mapHostError serializes a host-originated Go error into a gRPC status error for transport
@@ -36,27 +39,97 @@ func mapHostError(err error) error {
 
 	suggestionErr, hasSuggestion := errors.AsType[*internal.ErrorWithSuggestion](err)
 	isAuthErr := isAuthError(err)
-	if !hasSuggestion && !isAuthErr {
+	responseErr, hasResponseError := errors.AsType[*azcore.ResponseError](err)
+	existingStatus, hasExistingStatus := azdext.GRPCStatusFromError(err)
+	if !hasSuggestion && !isAuthErr && !hasResponseError {
 		return err
 	}
 
 	code := codes.Unknown
-	if st, ok := azdext.GRPCStatusFromError(err); ok {
-		code = st.Code()
+	if hasExistingStatus {
+		code = existingStatus.Code()
 	}
 	if isAuthErr {
 		code = codes.Unauthenticated
 	}
 
-	st := status.New(code, statusMessage(err, suggestionErr))
+	st := hostErrorStatus(existingStatus, hasExistingStatus, code, statusMessage(err, suggestionErr))
 	if isAuthErr {
 		st = withAuthErrorInfo(st, err)
 	}
 	if hasSuggestion {
 		st = withActionableErrorDetail(st, suggestionErr)
 	}
+	if hasResponseError && !hasServiceErrorDetail(st) {
+		st = withServiceErrorDetail(st, responseErr)
+	}
 
 	return st.Err()
+}
+
+func hostErrorStatus(
+	existingStatus *status.Status,
+	hasExistingStatus bool,
+	code codes.Code,
+	message string,
+) *status.Status {
+	if !hasExistingStatus {
+		return status.New(code, message)
+	}
+
+	statusProto := proto.Clone(existingStatus.Proto()).(*statuspb.Status)
+	statusProto.Code = int32(code) //nolint:gosec // gRPC status codes use the defined int32 range
+	statusProto.Message = message
+	return status.FromProto(statusProto)
+}
+
+func hasServiceErrorDetail(st *status.Status) bool {
+	if st == nil {
+		return false
+	}
+
+	for _, detail := range st.Details() {
+		if _, ok := detail.(*azdext.ServiceErrorDetail); ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+func withServiceErrorDetail(st *status.Status, responseErr *azcore.ResponseError) *status.Status {
+	if st == nil || responseErr == nil {
+		return st
+	}
+
+	detail := &azdext.ServiceErrorDetail{
+		ErrorCode:   responseErr.ErrorCode,
+		StatusCode:  int32(responseErr.StatusCode), //nolint:gosec // HTTP status codes fit in int32
+		ServiceName: responseErrorServiceName(responseErr),
+	}
+	withDetails, detailErr := st.WithDetails(detail)
+	if detailErr != nil {
+		log.Printf("failed to attach service error detail to gRPC status: %v", detailErr)
+		return st
+	}
+
+	return withDetails
+}
+
+func responseErrorServiceName(responseErr *azcore.ResponseError) string {
+	if responseErr == nil || responseErr.RawResponse == nil || responseErr.RawResponse.Request == nil {
+		return ""
+	}
+
+	request := responseErr.RawResponse.Request
+	if request.Host != "" {
+		return request.Host
+	}
+	if request.URL != nil {
+		return request.URL.Hostname()
+	}
+
+	return ""
 }
 
 // statusMessage returns the user-facing message that should populate status.Message.

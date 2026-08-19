@@ -363,6 +363,27 @@ func convertFloat64ToFloat32(f64 *float64) *float32 {
 	return &f32
 }
 
+// mapSessionConfiguration converts the author-facing session configuration into
+// the API shape, validating the idle-timeout bounds. It returns nil when the
+// author omitted session configuration so session_configuration is left out of
+// the request and the service applies its default.
+func mapSessionConfiguration(sc *SessionConfiguration) (*agent_api.SessionConfigurationAPI, error) {
+	if sc == nil || sc.IdleTimeoutSeconds == nil {
+		return nil, nil
+	}
+
+	idle := *sc.IdleTimeoutSeconds
+	if idle < MinSessionIdleTimeoutSeconds || idle > MaxSessionIdleTimeoutSeconds {
+		return nil, fmt.Errorf(
+			"session idle timeout must be between %d and %d seconds, got %d "+
+				"('sessionConfiguration.idleTimeoutSeconds' in azure.yaml, "+
+				"'session_configuration.idle_timeout_seconds' in agent.yaml)",
+			MinSessionIdleTimeoutSeconds, MaxSessionIdleTimeoutSeconds, idle)
+	}
+
+	return &agent_api.SessionConfigurationAPI{IdleTimeoutSeconds: idle}, nil
+}
+
 // CreateHostedAgentAPIRequest creates a CreateAgentRequest for hosted agents
 func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
 	imageURL := hostedAgent.Image
@@ -401,6 +422,13 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		}
 	}
 
+	// Map optional session configuration (validated); nil when omitted so the
+	// service applies its default.
+	sessionConfig, err := mapSessionConfiguration(hostedAgent.SessionConfiguration)
+	if err != nil {
+		return nil, err
+	}
+
 	// Code deploy path
 	if hostedAgent.CodeConfiguration != nil {
 		cmdPrefix := RuntimeCmdPrefix(hostedAgent.CodeConfiguration.Runtime)
@@ -428,6 +456,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 				EntryPoint:           entryPoint,
 				DependencyResolution: depRes,
 			},
+			SessionConfiguration: sessionConfig,
 		}
 
 		return createAgentAPIRequest(hostedAgent.AgentDefinition, codeDef,
@@ -451,6 +480,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		ContainerConfiguration: &agent_api.ContainerConfigurationAPI{
 			Image: imageURL,
 		},
+		SessionConfiguration: sessionConfig,
 	}
 
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,

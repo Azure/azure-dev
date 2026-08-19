@@ -138,6 +138,9 @@
     "codeConfiguration": {
       "$ref": "#/definitions/CodeConfiguration"
     },
+    "sessionConfiguration": {
+      "$ref": "#/definitions/SessionConfiguration"
+    },
     "policies": {
       "type": "array",
       "description": "Governance policies attached to the agent (e.g., Responsible AI).",
@@ -269,6 +272,19 @@
         "locale": { "type": "string", "description": "Optional Azure voice locale." }
       },
       "required": ["type", "name"],
+      "additionalProperties": false
+    },
+    "SessionConfiguration": {
+      "type": "object",
+      "description": "Optional hosted-agent session runtime settings. When omitted, the service applies its defaults (idle timeout 900 seconds).",
+      "properties": {
+        "idleTimeoutSeconds": {
+          "type": "integer",
+          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 300–3600 (inclusive). Defaults to 900 when omitted.",
+          "minimum": 300,
+          "maximum": 3600
+        }
+      },
       "additionalProperties": false
     },
     "Policy": {

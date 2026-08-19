@@ -104,6 +104,13 @@ func (c *OptimizeConfig) Validate() error {
 			*c.Options.MaxStalls)
 	}
 
+	if c.Options.MaxConcurrentAgentRuns != nil && *c.Options.MaxConcurrentAgentRuns < 1 {
+		return fmt.Errorf(
+			"options.max_concurrent_agent_runs must be >= 1 (got %d): "+
+				"set 'max_concurrent_agent_runs' under 'options:' in your config file",
+			*c.Options.MaxConcurrentAgentRuns)
+	}
+
 	return nil
 }
 
@@ -131,11 +138,12 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 		},
 		Evaluators: evaluatorRefs(c.Evaluators),
 		Options: optimize_api.OptimizeOptions{
-			EvalModel:         c.Options.EvalModel,
-			MaxCandidates:     c.Options.MaxCandidates,
-			OptimizationModel: c.Options.OptimizationModel,
-			EvaluationLevel:   c.Options.EvaluationLevel,
-			MaxStalls:         c.Options.MaxStalls,
+			EvalModel:              c.Options.EvalModel,
+			MaxCandidates:          c.Options.MaxCandidates,
+			OptimizationModel:      c.Options.OptimizationModel,
+			EvaluationLevel:        c.Options.EvaluationLevel,
+			MaxStalls:              c.Options.MaxStalls,
+			MaxConcurrentAgentRuns: c.Options.MaxConcurrentAgentRuns,
 		},
 	}
 
@@ -240,19 +248,22 @@ func datasetRefToAPI(ref *opt_eval.DatasetRef) (*optimize_api.Dataset, error) {
 }
 
 // evaluatorRefs converts a YAML evaluator list into API evaluator references,
-// preserving each evaluator's name and optional version.
+// preserving each evaluator's name, optional version, and initialization_parameters.
 func evaluatorRefs(list opt_eval.EvaluatorList) []optimize_api.EvaluatorRef {
 	if len(list) == 0 {
 		return nil
 	}
 	refs := make([]optimize_api.EvaluatorRef, 0, len(list))
 	for _, e := range list {
-		refs = append(refs, optimize_api.EvaluatorRef{Name: e.Name, Version: e.Version})
+		refs = append(refs, optimize_api.EvaluatorRef{
+			Name:                     e.Name,
+			Version:                  e.Version,
+			InitializationParameters: e.InitializationParameters,
+		})
 	}
 	return refs
 }
 
-// mergeEvaluators appends add to base, skipping entries whose name already
 // exists in base (case-sensitive). Order is preserved: base first, then any
 // new entries from add. Used to layer --evaluator flags on top of config
 // evaluators without dropping the config entries.

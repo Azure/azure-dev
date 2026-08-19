@@ -1729,3 +1729,148 @@ func TestMapRaiConfig(t *testing.T) {
 		t.Errorf("mapRaiConfig(p1) = %+v, want RaiPolicyName=p1", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Session configuration (idle timeout) mapping
+// ---------------------------------------------------------------------------
+
+func TestCreateHostedAgentAPIRequest_ContainerSessionConfiguration(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition:      AgentDefinition{Kind: AgentKindHosted, Name: "session-container"},
+		SessionConfiguration: &SessionConfiguration{IdleTimeoutSeconds: new(600)},
+	}
+
+	req, err := CreateHostedAgentAPIRequest(agent, &AgentBuildConfig{ImageURL: "img:latest"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if imgDef.SessionConfiguration == nil {
+		t.Fatal("expected SessionConfiguration to be set")
+	}
+	if imgDef.SessionConfiguration.IdleTimeoutSeconds != 600 {
+		t.Errorf("IdleTimeoutSeconds = %d, want 600", imgDef.SessionConfiguration.IdleTimeoutSeconds)
+	}
+
+	// Assert the wire payload so a wrong JSON tag can't slip through: the struct
+	// check above passes regardless of the tag, but the service reads the JSON.
+	data, err := json.Marshal(imgDef)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if !strings.Contains(string(data), `"session_configuration":{"idle_timeout_seconds":600}`) {
+		t.Errorf("wire payload missing session_configuration.idle_timeout_seconds, got %s", data)
+	}
+}
+
+func TestCreateAgentAPIRequest_CodeDeploySessionConfiguration(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindHosted, Name: "session-code"},
+		CodeConfiguration: &CodeConfiguration{
+			Runtime:    "python_3_12",
+			EntryPoint: "main.py",
+		},
+		SessionConfiguration: &SessionConfiguration{IdleTimeoutSeconds: new(1200)},
+	}
+
+	req, err := CreateHostedAgentAPIRequest(agent, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codeDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if codeDef.CodeConfiguration == nil {
+		t.Fatal("expected code deploy path")
+	}
+	if codeDef.SessionConfiguration == nil || codeDef.SessionConfiguration.IdleTimeoutSeconds != 1200 {
+		t.Errorf("SessionConfiguration = %+v, want IdleTimeoutSeconds=1200", codeDef.SessionConfiguration)
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_SessionConfigurationOmitted(t *testing.T) {
+	t.Parallel()
+	// Neither the whole block nor the idle timeout is set: session_configuration
+	// must be omitted so the service applies its default.
+	cases := map[string]*SessionConfiguration{
+		"nil block":        nil,
+		"nil idle timeout": {IdleTimeoutSeconds: nil},
+	}
+	for name, sc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			agent := ContainerAgent{
+				AgentDefinition:      AgentDefinition{Kind: AgentKindHosted, Name: "no-session"},
+				SessionConfiguration: sc,
+			}
+
+			req, err := CreateHostedAgentAPIRequest(agent, &AgentBuildConfig{ImageURL: "img:latest"})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+			if imgDef.SessionConfiguration != nil {
+				t.Errorf("expected SessionConfiguration to be nil, got %+v", imgDef.SessionConfiguration)
+			}
+
+			data, err := json.Marshal(imgDef)
+			if err != nil {
+				t.Fatalf("marshal error: %v", err)
+			}
+			if strings.Contains(string(data), "session_configuration") {
+				t.Errorf("session_configuration should be omitted from JSON, got %s", data)
+			}
+		})
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_SessionIdleTimeoutBoundaries(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		seconds int
+		wantErr bool
+	}{
+		{name: "min valid", seconds: MinSessionIdleTimeoutSeconds},
+		{name: "max valid", seconds: MaxSessionIdleTimeoutSeconds},
+		{name: "mid valid", seconds: 900},
+		{name: "below min", seconds: MinSessionIdleTimeoutSeconds - 1, wantErr: true},
+		{name: "above max", seconds: MaxSessionIdleTimeoutSeconds + 1, wantErr: true},
+		{name: "zero", seconds: 0, wantErr: true},
+		{name: "negative", seconds: -1, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			agent := ContainerAgent{
+				AgentDefinition: AgentDefinition{Kind: AgentKindHosted, Name: "boundary"},
+				SessionConfiguration: &SessionConfiguration{
+					IdleTimeoutSeconds: new(test.seconds),
+				},
+			}
+
+			req, err := CreateHostedAgentAPIRequest(agent, &AgentBuildConfig{ImageURL: "img:latest"})
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %d seconds, got none", test.seconds)
+				}
+				if !strings.Contains(err.Error(), "idleTimeoutSeconds") {
+					t.Errorf("error = %q, want it to mention idleTimeoutSeconds", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error for %d seconds: %v", test.seconds, err)
+			}
+
+			imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+			if imgDef.SessionConfiguration == nil ||
+				imgDef.SessionConfiguration.IdleTimeoutSeconds != test.seconds {
+				t.Errorf("IdleTimeoutSeconds = %+v, want %d", imgDef.SessionConfiguration, test.seconds)
+			}
+		})
+	}
+}

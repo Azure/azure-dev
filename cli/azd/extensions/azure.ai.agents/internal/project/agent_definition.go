@@ -134,6 +134,7 @@ type AgentDefinitionInline struct {
 	AgentCard            *agent_yaml.AgentCard             `json:"agentCard,omitempty"`
 	CodeConfiguration    *agent_yaml.CodeConfiguration     `json:"codeConfiguration,omitempty"`
 	Policies             []agent_yaml.Policy               `json:"policies,omitempty"`
+	SessionConfiguration *agent_yaml.SessionConfiguration  `json:"sessionConfiguration,omitempty"`
 
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
@@ -190,12 +191,13 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 // returned separately so the caller can place them on their respective homes.
 func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInline, *ContainerSettings, string) {
 	inline := AgentDefinitionInline{
-		AgentDefinition:   ca.AgentDefinition,
-		Protocols:         ca.Protocols,
-		AgentEndpoint:     ca.AgentEndpoint,
-		AgentCard:         ca.AgentCard,
-		CodeConfiguration: ca.CodeConfiguration,
-		Policies:          ca.Policies,
+		AgentDefinition:      ca.AgentDefinition,
+		Protocols:            ca.Protocols,
+		AgentEndpoint:        ca.AgentEndpoint,
+		AgentCard:            ca.AgentCard,
+		CodeConfiguration:    ca.CodeConfiguration,
+		Policies:             ca.Policies,
+		SessionConfiguration: ca.SessionConfiguration,
 	}
 
 	var container *ContainerSettings
@@ -237,6 +239,7 @@ func (d AgentDefinitionInline) toContainerAgent(
 		AgentCard:            d.AgentCard,
 		CodeConfiguration:    d.CodeConfiguration,
 		Policies:             d.Policies,
+		SessionConfiguration: d.SessionConfiguration,
 	}
 
 	if container != nil && container.Resources != nil {

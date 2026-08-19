@@ -67,6 +67,14 @@ func newGenerateCommand() *cobra.Command {
 			if flags.noWait && cmd.Flags().Changed("output-dir") {
 				return messages.OutputDirNeedsTheWait()
 			}
+			// One command builds two artifacts. --output-dir naming a file
+			// gives both of them the same path -- the extension is recognized
+			// for either kind -- and they are written concurrently, so two
+			// billed jobs would leave one file and a configuration claiming a
+			// dataset and an evaluator that are the same bytes.
+			if dataset && evaluator && project.OutputDirNamesAFile(flags.outputDir) {
+				return messages.OutputFileCannotHoldBothArtifacts(flags.outputDir)
+			}
 
 			if dataset {
 				for _, src := range from {

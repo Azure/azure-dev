@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -153,6 +154,18 @@ func newRunShowCommand() *cobra.Command {
 			gateOnStatus := wait
 			if wait {
 				run, err = ec.pollRun(ctx, evalID, run.ID, cmd.OutOrStdout(), isJSON(cmd))
+				if errors.Is(err, errWaitBudgetSpent) {
+					// The wait ran out; the run is still going server-side.
+					// `run start` answers this with a reattach line, and a gate
+					// with a refusal rather than a silent pass. Reattaching is
+					// what this command is, so it says the same things rather
+					// than surfacing the sentinel's own text.
+					if threshold.set {
+						return messages.GateOutlivedTheWait(run.ID, waitBudget)
+					}
+					fmt.Fprint(cmd.OutOrStdout(), messages.WaitBudgetSpent(run.ID, waitBudget))
+					return nil
+				}
 				if err != nil {
 					return err
 				}

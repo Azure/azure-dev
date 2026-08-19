@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -161,4 +162,42 @@ func TestWaitFalseMeansTheSameAsNoWait(t *testing.T) {
 		"--wait=false asks for the same thing --no-wait asks for")
 	assert.Equal(t, withNoWait.Error(), withWaitFalse.Error(),
 		"the two spellings must reach the same decision")
+}
+
+// One command builds two artifacts, so an --output-dir naming a file gives both
+// of them the same path. The extension is recognized for either kind and the
+// two jobs run concurrently, so two billed jobs would leave one file and a
+// configuration claiming a dataset and an evaluator that are the same bytes.
+func TestOneOutputFileForTwoArtifactsIsRefused(t *testing.T) {
+	for _, named := range []string{"both.jsonl", "both.json"} {
+		t.Run(named, func(t *testing.T) {
+			err := runGenerate(t, "--output-dir", filepath.Join(t.TempDir(), named))
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "--output-dir")
+			assert.Contains(t, err.Error(), "--dataset",
+				"the refusal has to name the way to generate one of them")
+		})
+	}
+}
+
+// Naming one artifact is what makes a file path unambiguous, so it stays
+// accepted.
+func TestOneOutputFileForOneArtifactIsAccepted(t *testing.T) {
+	err := runGenerate(t, "--dataset", "--dataset-name", "ds",
+		"--output-dir", filepath.Join(t.TempDir(), "rows.jsonl"))
+
+	if err != nil {
+		assert.NotContains(t, err.Error(), "names a file",
+			"one artifact can be written to one file")
+	}
+}
+
+// A directory is what both artifacts share without colliding.
+func TestADirectoryForTwoArtifactsIsAccepted(t *testing.T) {
+	err := runGenerate(t, "--output-dir", t.TempDir())
+
+	if err != nil {
+		assert.NotContains(t, err.Error(), "names a file")
+	}
 }

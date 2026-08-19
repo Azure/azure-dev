@@ -144,7 +144,7 @@ func (p *EvalServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	baseDir := serviceRelativeDir(serviceConfig)
+	baseDir := p.evalBaseDir(ctx, serviceConfig)
 
 	// 1. Datasets the configuration owns. Paths are kept so an eval that names
 	// one can derive its columns without reading the blob back.
@@ -206,6 +206,32 @@ func (p *EvalServiceTargetProvider) projectRoot(ctx context.Context) string {
 		return ""
 	}
 	return resp.GetProject().GetPath()
+}
+
+// evalBaseDir is the directory a declaration's `source:` resolves against.
+//
+// serviceRelativeDir answers relative to the project, because that is what the
+// service's `$ref` and relativePath are written relative to. Left there it was
+// resolved against this process's working directory instead, and azd neither
+// changes it nor reports the project through it: azure.yaml is found by walking
+// up from wherever the caller stood, and AZD_CWD carries the --cwd flag and
+// nothing else. So `azd up` from any subdirectory of the project reported every
+// dataset as not yet generated, and the remedy it offered would have billed a
+// generation job to rewrite a file already on disk.
+//
+// The same join is what agent_instructions.go does with the same helper.
+func (p *EvalServiceTargetProvider) evalBaseDir(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+) string {
+	relative := serviceRelativeDir(serviceConfig)
+	root := p.projectRoot(ctx)
+	if root == "" {
+		// azd could not name the project. Falling back to the relative path
+		// keeps the behaviour it had rather than resolving against nothing.
+		return relative
+	}
+	return filepath.Join(root, relative)
 }
 
 // describeResult reports whether a version was published or reused, so a
@@ -358,6 +384,12 @@ func FingerprintGroup(group Eval) (string, error) {
 	group.ID = ""
 	group.Name = ""
 	group.Description = ""
+
+	// max_samples caps the rows this CLI sends on a run. It never reaches the
+	// eval the service stores, so a run with a different cap is the same eval —
+	// and hashing it recreated the eval, orphaning every run recorded against
+	// the old id and leaving two identical definitions under one name.
+	group.MaxSamples = 0
 
 	data, err := json.Marshal(group)
 	if err != nil {

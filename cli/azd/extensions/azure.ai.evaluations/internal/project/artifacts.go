@@ -89,6 +89,12 @@ func ArtifactPath(baseDir, outputDir, resourceName, ext string) string {
 	return filepath.Join(candidate, resourceName+ext)
 }
 
+// OutputDirNamesAFile reports an --output-dir that names a file rather than a
+// directory, which is a thing only one artifact can be written to.
+func OutputDirNamesAFile(outputDir string) bool {
+	return looksLikeFile(outputDir, "")
+}
+
 // looksLikeFile treats a trailing recognized extension as an explicit file path.
 func looksLikeFile(p, ext string) bool {
 	got := strings.ToLower(filepath.Ext(p))

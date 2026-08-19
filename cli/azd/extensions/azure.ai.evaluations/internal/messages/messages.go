@@ -442,6 +442,18 @@ func OutputItemReason(reason string) string {
 	return fmt.Sprintf("  %s\n", reason)
 }
 
+// OutputFileCannotHoldBothArtifacts reports one --output-dir file for two
+// artifacts.
+//
+// Both jobs would resolve to it and both would write it, concurrently, and the
+// configuration would then name it as a dataset and as an evaluator.
+func OutputFileCannotHoldBothArtifacts(outputDir string) error {
+	return fmt.Errorf(
+		"--output-dir %q names a file, and this generates a dataset and an evaluator; "+
+			"name a directory, or add --dataset or --evaluator to generate one of them",
+		filepath.ToSlash(outputDir))
+}
+
 // UsingLastRun names the run a command chose when it was not given one.
 //
 // Written to stderr so it does not land in a redirected listing.

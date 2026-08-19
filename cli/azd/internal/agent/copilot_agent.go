@@ -853,9 +853,11 @@ func buildPermissionDescription(req copilot.PermissionRequest) string {
 
 	switch request := req.(type) {
 	case *copilot.PermissionRequestMCP:
-		if request.ToolTitle != "" {
-			parts = append(parts, request.ToolTitle)
-		}
+if request.ToolTitle != "" {
+	parts = append(parts, request.ToolTitle)
+} else if request.ToolDescription != "" {
+	parts = append(parts, request.ToolDescription)
+}
 	case *copilot.PermissionRequestCustomTool:
 		if request.ToolDescription != "" {
 			parts = append(parts, request.ToolDescription)

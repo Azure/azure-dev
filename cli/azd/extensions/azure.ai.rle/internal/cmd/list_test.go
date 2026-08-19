@@ -252,6 +252,38 @@ func TestListAllEnvironmentsStopsAtSafetyLimit(t *testing.T) {
 	}
 }
 
+func TestListAllEnvironmentsRejectsCursorCycles(t *testing.T) {
+	requestCount := 0
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		switch requestCount {
+		case 1:
+			_, _ = w.Write([]byte(`{"data":[{"id":"env-1","name":"echo_env"}],"last_id":"cursor-a","has_more":true}`))
+		case 2:
+			_, _ = w.Write([]byte(`{"data":[{"id":"env-2","name":"echo_env"}],"last_id":"cursor-b","has_more":true}`))
+		case 3:
+			_, _ = w.Write([]byte(`{"data":[{"id":"env-3","name":"echo_env"}],"last_id":"cursor-a","has_more":true}`))
+		default:
+			t.Fatalf("unexpected extra page request %d", requestCount)
+		}
+	}))
+	defer controlPlane.Close()
+
+	client := testRleClientForServer(t, controlPlane.URL)
+	_, err := listAllEnvironments(t.Context(), client)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_environment_list_cursor_invalid" {
+		t.Fatalf("expected cursor invalid code, got %q", localErr.Code)
+	}
+	if requestCount != 3 {
+		t.Fatalf("expected prompt cycle detection after three requests, got %d", requestCount)
+	}
+}
+
 func TestListAllEnvironmentsClassifiesRequestFailuresAsServiceErrors(t *testing.T) {
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
@@ -264,8 +296,8 @@ func TestListAllEnvironmentsClassifiesRequestFailuresAsServiceErrors(t *testing.
 	if !ok {
 		t.Fatalf("expected ServiceError, got %T: %v", err, err)
 	}
-	if serviceErr.ServiceName != "rle-control-plane" {
-		t.Fatalf("expected rle-control-plane service, got %q", serviceErr.ServiceName)
+	if serviceErr.ServiceName != "rle-service" {
+		t.Fatalf("expected rle-service, got %q", serviceErr.ServiceName)
 	}
 }
 
@@ -318,6 +350,7 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
+
 	}))
 	defer controlPlane.Close()
 	stubRleClientEndpoint(t, controlPlane.URL)
@@ -360,6 +393,42 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 		if strings.Contains(output.String(), unexpected) {
 			t.Fatalf("expected one consolidated table without %q, got %s", unexpected, output.String())
 		}
+	}
+}
+
+func TestResolveEnvironmentVersionsRejectsCursorCycles(t *testing.T) {
+	requestCount := 0
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		switch requestCount {
+		case 1:
+			_, _ = w.Write([]byte(`{"data":[{"environmentId":"env-1","version":"1.0.0"}],"last_id":"cursor-a","has_more":true}`))
+		case 2:
+			_, _ = w.Write([]byte(`{"data":[{"environmentId":"env-1","version":"1.1.0"}],"last_id":"cursor-b","has_more":true}`))
+		case 3:
+			_, _ = w.Write([]byte(`{"data":[{"environmentId":"env-1","version":"1.2.0"}],"last_id":"cursor-a","has_more":true}`))
+		default:
+			t.Fatalf("unexpected extra page request %d", requestCount)
+		}
+	}))
+	defer controlPlane.Close()
+
+	client := testRleClientForServer(t, controlPlane.URL)
+	_, err := resolveEnvironmentVersions(t.Context(), client, &environmentResource{
+		Id:      "env-1",
+		Name:    "echo_env",
+		Version: "1.2.0",
+	})
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_environment_version_cursor_invalid" {
+		t.Fatalf("expected version cursor invalid code, got %q", localErr.Code)
+	}
+	if requestCount != 3 {
+		t.Fatalf("expected prompt cycle detection after three requests, got %d", requestCount)
 	}
 }
 

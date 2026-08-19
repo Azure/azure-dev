@@ -1,6 +1,6 @@
 # Azure AI RLE extension for azd
 
-Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: init, build and run the environment container, test it through a playground UI or shell, and publish the environment image to the RLE control plane through your Foundry project endpoint.
+Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: init, build and run the environment container, test it through a playground UI or shell, and publish the environment image to the RLE service through your Foundry project endpoint.
 
 ## Prerequisites
 
@@ -47,11 +47,11 @@ azd ai rle version
 $env:AZD_AI_RLE_ENABLE = "true"
 ```
 
-Remote invocation accepts HTTPS OpenEnv URLs on the configured Foundry project origin or under the RLE-managed `hyena.infra.ai.azure.com` domain. Other origins, embedded credentials, insecure HTTP URLs, and custom ports are rejected.
+Remote invocation accepts HTTPS OpenEnv URLs only on the configured Foundry project origin. Other origins, embedded credentials, insecure HTTP URLs, and custom ports are rejected.
 
 ## Configure the Foundry project endpoint
 
-RLE control-plane APIs are called relative to the Foundry project endpoint. APIM maps the project endpoint request to the workspace-scoped RLE service internally, so the extension does not require a separate control-plane endpoint.
+RLE service APIs are called relative to the Foundry project endpoint. APIM maps each project request to the workspace-scoped service internally, so the extension does not require a separate RLE endpoint.
 
 Set the Foundry project endpoint once in the terminal where you run `publish`:
 
@@ -208,7 +208,7 @@ Remote invoke creates a temporary instance group and one instance through the pu
 - Saved state or explicit `--version`: create the group at `/rl_environments/<environmentName>/versions/<version>/instance_groups`.
 - Create and poll the instance under the resolved version at `/instance_groups/<groupId>/instances`.
 
-It opens a generic local playground that proxies authenticated OpenEnv operations to the environment and keeps the shell attached. When invoke exits, it deletes the temporary instance and then its group using cleanup contexts that are independent from Ctrl+C:
+After the instance is running, invoke waits for the authenticated OpenEnv `/health` endpoint before reporting the environment as ready. It includes the Foundry API version on every OpenEnv gateway request, opens a generic local playground that proxies those requests to the environment, and keeps the shell attached. When invoke exits, it deletes the temporary instance and then its group using cleanup contexts that are independent from Ctrl+C:
 
 ```powershell
 azd ai rle invoke --timeout 60
@@ -227,7 +227,7 @@ The unversioned instance-group response supplies the resolved latest version use
 azd ai rle invoke code_rl --version 2.1.0
 ```
 
-Cloud-only invocation does not create or modify `.azd-rle.json`. If the selected disk image is not ready, group creation fails before an instance is created.
+Cloud-only invocation does not create or modify `.azd-rle.json`. If the selected disk image is still being prepared, invoke retries group creation before returning a readiness timeout.
 
 ## Build and install from source
 

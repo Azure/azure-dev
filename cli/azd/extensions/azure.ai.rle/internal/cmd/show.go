@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -135,6 +136,9 @@ func (a *showAction) resolveTarget() (showResult, error) {
 	}
 	versions, err := resolveEnvironmentVersions(a.cmd.Context(), client, environment)
 	if err != nil {
+		if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+			return showResult{}, err
+		}
 		return showResult{}, serviceError(err)
 	}
 	return showResult{Environment: *environment, Versions: versions}, nil
@@ -148,6 +152,7 @@ func resolveEnvironmentVersions(
 	var history []environmentVersionResource
 	after := ""
 	complete := false
+	seenCursors := map[string]struct{}{}
 	for range environmentListMaxPages {
 		page, err := client.listEnvironmentVersions(ctx, current.Name, after, environmentListPageSize)
 		if err != nil {
@@ -158,10 +163,16 @@ func resolveEnvironmentVersions(
 			complete = true
 			break
 		}
-		if page.LastId == "" || page.LastId == after {
-			return nil, fmt.Errorf("environment version pagination did not return a new cursor")
+		after, err = nextPaginationCursor(seenCursors, page.LastId, func() error {
+			return &azdext.LocalError{
+				Message:  "Environment version pagination did not return a new cursor.",
+				Code:     "rle_environment_version_cursor_invalid",
+				Category: azdext.LocalErrorCategoryInternal,
+			}
+		})
+		if err != nil {
+			return nil, err
 		}
-		after = page.LastId
 	}
 	if !complete {
 		return nil, fmt.Errorf(

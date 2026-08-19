@@ -193,6 +193,25 @@ func TestServiceErrorSuggestionShowsFoundryProjectEndpoint(t *testing.T) {
 	}
 }
 
+func TestServiceErrorUsesServiceFailureSuggestion(t *testing.T) {
+	err := serviceError(newRleHTTPError(http.StatusInternalServerError, []byte(
+		`{"code":"SandboxCreationFailed","message":"The sandbox could not be created."}`,
+	)))
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	if !ok {
+		t.Fatalf("expected ServiceError, got %T", err)
+	}
+	if serviceErr.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", serviceErr.StatusCode)
+	}
+	if serviceErr.ErrorCode != "SandboxCreationFailed" {
+		t.Fatalf("expected service error code, got %q", serviceErr.ErrorCode)
+	}
+	if serviceErr.Suggestion != "Retry later. If the problem persists, check the RLE service status and logs." {
+		t.Fatalf("unexpected service failure suggestion: %q", serviceErr.Suggestion)
+	}
+}
+
 func TestResolvePublishStateUsesFoundryProjectEndpointEnvironment(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)

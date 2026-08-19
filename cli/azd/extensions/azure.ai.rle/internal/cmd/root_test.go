@@ -318,6 +318,14 @@ func TestInitNextStepsUseShellAppropriateSyntax(t *testing.T) {
 		{
 			name:       "PowerShell on Windows",
 			goos:       "windows",
+			shell:      "pwsh.exe",
+			expected:   `$env:FOUNDRY_PROJECT_ENDPOINT`,
+			unexpected: `export FOUNDRY_PROJECT_ENDPOINT`,
+		},
+		{
+			name:       "Windows PowerShell stays PowerShell",
+			goos:       "windows",
+			shell:      "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
 			expected:   `$env:FOUNDRY_PROJECT_ENDPOINT`,
 			unexpected: `export FOUNDRY_PROJECT_ENDPOINT`,
 		},
@@ -335,6 +343,13 @@ func TestInitNextStepsUseShellAppropriateSyntax(t *testing.T) {
 			expected:   `export FOUNDRY_PROJECT_ENDPOINT`,
 			unexpected: `$env:FOUNDRY_PROJECT_ENDPOINT`,
 		},
+		{
+			name:       "POSIX sh on Windows",
+			goos:       "windows",
+			shell:      "C:\\msys64\\usr\\bin\\sh.exe",
+			expected:   `export FOUNDRY_PROJECT_ENDPOINT`,
+			unexpected: `$env:FOUNDRY_PROJECT_ENDPOINT`,
+		},
 	}
 
 	for _, test := range tests {
@@ -343,7 +358,7 @@ func TestInitNextStepsUseShellAppropriateSyntax(t *testing.T) {
 			for _, expected := range []string{
 				"Run locally:",
 				"azd ai rle run",
-				"Publish to RLE when ready (optional):",
+				"Publish to RLE when ready:",
 				"azd ai rle publish",
 				test.expected,
 			} {

@@ -96,21 +96,82 @@ type instanceResource struct {
 type rleHTTPError struct {
 	statusCode int
 	body       string
+	details    *rleErrorBody
+}
+
+type rleErrorBody struct {
+	Code    string        `json:"code,omitempty"`
+	Message string        `json:"message,omitempty"`
+	Error   *rleErrorBody `json:"error,omitempty"`
 }
 
 func (e *rleHTTPError) Error() string {
-	return fmt.Sprintf("RLE control plane returned HTTP %d: %s", e.statusCode, strings.TrimSpace(e.body))
+	return fmt.Sprintf("RLE service returned HTTP %d: %s", e.statusCode, e.message())
+}
+
+func (e *rleHTTPError) code() string {
+	if e.details == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.details.primary().Code)
+}
+
+func (e *rleHTTPError) message() string {
+	if e.details != nil {
+		if message := strings.TrimSpace(e.details.primary().Message); message != "" {
+			return message
+		}
+	}
+	return strings.TrimSpace(e.body)
+}
+
+func newRleHTTPError(statusCode int, body []byte) *rleHTTPError {
+	result := &rleHTTPError{
+		statusCode: statusCode,
+		body:       string(body),
+	}
+	var details rleErrorBody
+	if err := json.Unmarshal(body, &details); err == nil {
+		if primary := details.primary(); primary.Code != "" || primary.Message != "" {
+			result.details = &details
+		}
+	}
+	return result
+}
+
+func (b *rleErrorBody) primary() *rleErrorBody {
+	current := b
+	for current != nil && current.Error != nil {
+		current = current.Error
+	}
+	if current == nil {
+		return &rleErrorBody{}
+	}
+	return current
 }
 
 func serviceError(err error) error {
-	return &azdext.ServiceError{
+	result := &azdext.ServiceError{
 		Message:     err.Error(),
-		ServiceName: "rle-control-plane",
+		ServiceName: "rle-service",
 		Suggestion: fmt.Sprintf(
 			"Ensure the Foundry project endpoint in %s is reachable and enabled for RLE.",
 			foundryProjectEndpointEnvVar,
 		),
 	}
+	if httpErr, ok := errors.AsType[*rleHTTPError](err); ok {
+		result.ErrorCode = httpErr.code()
+		result.StatusCode = httpErr.statusCode
+		switch {
+		case httpErr.statusCode == http.StatusUnauthorized || httpErr.statusCode == http.StatusForbidden:
+			result.Suggestion = "Verify your Azure sign-in and access to the Foundry project, then retry."
+		case httpErr.statusCode == http.StatusTooManyRequests:
+			result.Suggestion = "Wait for the RLE service retry window, then retry."
+		case httpErr.statusCode >= http.StatusInternalServerError:
+			result.Suggestion = "Retry later. If the problem persists, check the RLE service status and logs."
+		}
+	}
+	return result
 }
 
 func newRleClient(endpoint string) (*rleClient, error) {
@@ -342,7 +403,7 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 		return fmt.Errorf("create request: %w", err)
 	}
 	if !strings.EqualFold(req.URL.Scheme, "https") {
-		return errors.New("RLE control-plane authentication requires an HTTPS Foundry project endpoint")
+		return errors.New("RLE service authentication requires an HTTPS Foundry project endpoint")
 	}
 	authorization, err := c.authorizationHeader(ctx)
 	if err != nil {
@@ -355,7 +416,7 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("call RLE control plane %s: %w", c.baseUrl, err)
+		return fmt.Errorf("call RLE service %s: %w", c.baseUrl, err)
 	}
 	defer resp.Body.Close()
 
@@ -365,7 +426,7 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &rleHTTPError{statusCode: resp.StatusCode, body: string(respBody)}
+		return newRleHTTPError(resp.StatusCode, respBody)
 	}
 
 	if target == nil || len(respBody) == 0 {
@@ -387,4 +448,16 @@ func (c *rleClient) authorizationHeader(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return "Bearer " + token.Token, nil
+}
+
+func nextPaginationCursor(seen map[string]struct{}, lastID string, newCursorError func() error) (string, error) {
+	cursor := strings.TrimSpace(lastID)
+	if cursor == "" {
+		return "", newCursorError()
+	}
+	if _, exists := seen[cursor]; exists {
+		return "", newCursorError()
+	}
+	seen[cursor] = struct{}{}
+	return cursor, nil
 }

@@ -146,7 +146,7 @@ func (a *publishAction) Run() error {
 	body, err := json.MarshalIndent(environmentOutput{
 		EnvironmentId:          environment.Id,
 		EnvironmentVersion:     state.EnvironmentVersion,
-		Name:                   environment.Name,
+		EnvironmentName:        environment.Name,
 		FoundryProjectEndpoint: state.ProjectEndpoint,
 		AcrImage:               environment.AcrImagePath,
 		CreatedAt:              environment.CreatedAt,
@@ -236,7 +236,7 @@ func resolvePublishImage(state rleState) (string, error) {
 type environmentOutput struct {
 	EnvironmentId          string `json:"environmentId"`
 	EnvironmentVersion     string `json:"environmentVersion"`
-	Name                   string `json:"name"`
+	EnvironmentName        string `json:"environmentName"`
 	FoundryProjectEndpoint string `json:"foundryProjectEndpoint"`
 	AcrImage               string `json:"acrImage"`
 	CreatedAt              string `json:"createdAt"`

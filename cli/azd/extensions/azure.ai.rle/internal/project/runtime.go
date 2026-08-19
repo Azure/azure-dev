@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -145,7 +146,14 @@ func printShellHelp(output io.Writer) {
 }
 
 func WaitForHealth(baseUrl string, timeout time.Duration) error {
-	return WaitForHealthWithAuthorizationProvider(context.Background(), baseUrl, timeout, nil)
+	return waitForHealth(
+		context.Background(),
+		baseUrl,
+		timeout,
+		nil,
+		"rle_local_container_not_ready",
+		"Check the local container logs, then retry.",
+	)
 }
 
 // WaitForHealthWithAuthorizationProvider refreshes authorization for each health request.
@@ -155,11 +163,33 @@ func WaitForHealthWithAuthorizationProvider(
 	timeout time.Duration,
 	authorizationProvider AuthorizationProvider,
 ) error {
+	return waitForHealth(
+		ctx,
+		baseUrl,
+		timeout,
+		authorizationProvider,
+		"rle_remote_runtime_not_ready",
+		"Check the remote RLE instance status and OpenEnv service logs, then retry.",
+	)
+}
+
+func waitForHealth(
+	ctx context.Context,
+	baseUrl string,
+	timeout time.Duration,
+	authorizationProvider AuthorizationProvider,
+	errorCode string,
+	suggestion string,
+) error {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	client := &http.Client{Timeout: 2 * time.Second}
 	for time.Now().Before(deadline) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseUrl, "/")+"/health", nil)
+		healthUrl, err := RuntimeOperationURL(baseUrl, "health")
+		if err != nil {
+			return err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthUrl, nil)
 		if err != nil {
 			return err
 		}
@@ -168,12 +198,14 @@ func WaitForHealthWithAuthorizationProvider(
 		}
 		resp, err := client.Do(req) //nolint:gosec // Caller validates remote URLs; local run uses a loopback URL.
 		if err == nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
 				return nil
 			}
-			lastErr = fmt.Errorf("health returned HTTP %d", resp.StatusCode)
+			detail := readHealthErrorDetail(resp.Body)
+			_ = resp.Body.Close()
+			lastErr = fmt.Errorf("health returned HTTP %d%s", resp.StatusCode, detail)
 		} else {
 			lastErr = err
 		}
@@ -185,10 +217,41 @@ func WaitForHealthWithAuthorizationProvider(
 	}
 	return &azdext.LocalError{
 		Message:    fmt.Sprintf("Environment runtime endpoint did not become healthy at %s: %v", baseUrl, lastErr),
-		Code:       "rle_local_container_not_ready",
+		Code:       errorCode,
 		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: "Check the local container logs or remote RLE instance status, then retry.",
+		Suggestion: suggestion,
 	}
+}
+
+func RuntimeOperationURL(baseUrl string, operation string) (string, error) {
+	runtimeUrl, err := url.Parse(baseUrl)
+	if err != nil {
+		return "", fmt.Errorf("parse environment runtime URL: %w", err)
+	}
+	runtimeUrl.Path = strings.TrimRight(runtimeUrl.Path, "/") + "/" + operation
+	runtimeUrl.RawPath = ""
+	return runtimeUrl.String(), nil
+}
+
+func readHealthErrorDetail(body io.Reader) string {
+	const maxErrorDetailBytes = 4096
+
+	data, err := io.ReadAll(io.LimitReader(body, maxErrorDetailBytes+1))
+	if err != nil {
+		return ""
+	}
+	truncated := len(data) > maxErrorDetailBytes
+	if truncated {
+		data = data[:maxErrorDetailBytes]
+	}
+	detail := strings.TrimSpace(string(data))
+	if detail == "" {
+		return ""
+	}
+	if truncated {
+		detail += "..."
+	}
+	return ": " + detail
 }
 
 func call(
@@ -209,8 +272,11 @@ func call(
 		body = bytes.NewReader(requestBody)
 	}
 
-	url := strings.TrimRight(baseUrl, "/") + "/" + operation
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	requestUrl, err := RuntimeOperationURL(baseUrl, operation)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, requestUrl, body)
 	if err != nil {
 		return "", err
 	}
@@ -225,7 +291,7 @@ func call(
 	client := HTTPClient(flags.timeout)
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("call environment runtime %s %s: %w", method, url, err)
+		return "", fmt.Errorf("call environment runtime %s %s: %w", method, requestUrl, err)
 	}
 	defer resp.Body.Close()
 

@@ -87,6 +87,8 @@ func (a *localRunAction) Run() error {
 	defer func() {
 		if err := stopLocalContainer(a.cmd, state.EnvironmentName); err != nil {
 			_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to stop local container: %v\n", err)
+		} else {
+			_, _ = fmt.Fprintln(a.cmd.ErrOrStderr(), "Local runtime container stopped successfully.")
 		}
 	}()
 
@@ -243,7 +245,7 @@ func localPortSuggestion(port int) string {
 
 func stopLocalContainer(cmd *cobra.Command, environmentName string) error {
 	container := localContainerName(environmentName)
-	return project.RunDocker(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), "rm", "-f", container)
+	return project.RunDocker(cmd.Context(), io.Discard, cmd.ErrOrStderr(), "rm", "-f", container)
 }
 
 func loadLocalRunState(flags *localRunFlags, output io.Writer) (rleState, error) {

@@ -96,7 +96,7 @@ func initNextSteps(displayDir string, goos string, shell string) string {
 		projectEndpoint,
 		registryEndpoint,
 	)
-	if goos != "windows" || strings.Contains(strings.ToLower(shell), "sh") {
+	if goos != "windows" || isPOSIXShellExecutable(shell) {
 		setEnvironment = fmt.Sprintf(
 			"  export FOUNDRY_PROJECT_ENDPOINT=%q\n  export AZURE_CONTAINER_REGISTRY_ENDPOINT=%q\n",
 			projectEndpoint,
@@ -109,11 +109,29 @@ func initNextSteps(displayDir string, goos string, shell string) string {
 			"\nRun locally:\n"+
 			"  cd \"%s\"\n"+
 			"  azd ai rle run\n"+
-			"\nPublish to RLE when ready (optional):\n"+
+			"\nPublish to RLE when ready:\n"+
 			"%s"+
 			"  azd ai rle publish\n",
 		displayDir,
 		displayDir,
 		setEnvironment,
 	)
+}
+
+func isPOSIXShellExecutable(shell string) bool {
+	name := strings.ToLower(strings.TrimSpace(shell))
+	if name == "" {
+		return false
+	}
+	for _, separator := range []string{`\`, `/`} {
+		if index := strings.LastIndex(name, separator); index >= 0 {
+			name = name[index+1:]
+		}
+	}
+	switch name {
+	case "sh", "sh.exe", "bash", "bash.exe", "zsh", "zsh.exe", "dash", "dash.exe", "fish", "fish.exe":
+		return true
+	default:
+		return false
+	}
 }

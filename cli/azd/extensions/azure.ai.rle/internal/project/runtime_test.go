@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func TestRequestBodyWrapsAction(t *testing.T) {
@@ -120,6 +124,9 @@ func TestRunShellRefreshesAuthorizationForEachRequest(t *testing.T) {
 	var authorizations []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authorizations = append(authorizations, r.Header.Get("Authorization"))
+		if got := r.URL.Query().Get("api-version"); got != "test-version" {
+			t.Errorf("expected preserved API version, got %q", got)
+		}
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer server.Close()
@@ -131,13 +138,68 @@ func TestRunShellRefreshesAuthorizationForEachRequest(t *testing.T) {
 	}
 	input := strings.NewReader("health\nstate\nexit\n")
 	var output bytes.Buffer
-	if err := runShell(t.Context(), input, &output, server.URL, 30, authorizationProvider); err != nil {
+	if err := runShell(t.Context(), input, &output, server.URL+"?api-version=test-version", 30, authorizationProvider); err != nil {
 		t.Fatal(err)
 	}
 
 	expected := []string{"Bearer token-1", "Bearer token-2"}
 	if !slices.Equal(authorizations, expected) {
 		t.Fatalf("expected refreshed authorization headers %v, got %v", expected, authorizations)
+	}
+}
+
+func TestWaitForHealthReportsBoundedResponseDetail(t *testing.T) {
+	responseBody := `{"error":{"code":"BadRequest","message":"Missing required query parameter: api-version"}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, responseBody, http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	err := WaitForHealthWithAuthorizationProvider(t.Context(), server.URL, 10*time.Millisecond, nil)
+	if err == nil {
+		t.Fatal("expected health failure")
+	}
+	if !strings.Contains(err.Error(), responseBody) {
+		t.Fatalf("expected response detail in health error, got %v", err)
+	}
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T", err)
+	}
+	if localErr.Code != "rle_remote_runtime_not_ready" {
+		t.Fatalf("expected remote runtime error code, got %q", localErr.Code)
+	}
+	if localErr.Suggestion != "Check the remote RLE instance status and OpenEnv service logs, then retry." {
+		t.Fatalf("unexpected remote health suggestion: %q", localErr.Suggestion)
+	}
+}
+
+func TestWaitForHealthReportsLocalContainerSuggestion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	err := WaitForHealth(server.URL, 10*time.Millisecond)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T", err)
+	}
+	if localErr.Code != "rle_local_container_not_ready" {
+		t.Fatalf("expected local container error code, got %q", localErr.Code)
+	}
+	if localErr.Suggestion != "Check the local container logs, then retry." {
+		t.Fatalf("unexpected local health suggestion: %q", localErr.Suggestion)
+	}
+}
+
+func TestRuntimeOperationURLPreservesQuery(t *testing.T) {
+	runtimeUrl, err := RuntimeOperationURL("https://example.test/openenv?api-version=test-version", "health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtimeUrl != "https://example.test/openenv/health?api-version=test-version" {
+		t.Fatalf("unexpected runtime URL: %s", runtimeUrl)
 	}
 }
 

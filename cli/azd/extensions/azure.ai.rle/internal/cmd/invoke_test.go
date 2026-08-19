@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -43,6 +44,9 @@ func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
 	}
 
 	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("api-version"); got != foundryAPIVersion {
+			t.Errorf("expected OpenEnv API version %q, got %q", foundryAPIVersion, got)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/health":
@@ -101,7 +105,7 @@ func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
 	}
 	if !strings.Contains(
 		output.String(),
-		"Resources provisioned for the remote test were cleaned up successfully.",
+		"Remote runtime resources cleaned up successfully.",
 	) {
 		t.Fatalf("expected cleanup completion output, got %s", output.String())
 	}
@@ -112,78 +116,58 @@ func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
 }
 
 func TestValidateRemoteSandboxURLRequiresTrustedOrigin(t *testing.T) {
-	projectEndpoint := "https://account.services.ai.azure.com/api/projects/project-1"
 	tests := []struct {
-		name       string
-		sandboxUrl string
-		wantError  bool
+		name            string
+		projectEndpoint string
+		sandboxUrl      string
+		wantError       bool
 	}{
 		{
-			name:       "accepts RLE data proxy on project origin",
-			sandboxUrl: "https://account.services.ai.azure.com/rle/v1.0/subscriptions/sub/sandboxes/sandbox-1/openenv",
+			name:            "accepts RLE data proxy on project origin",
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+			sandboxUrl:      "https://account.services.ai.azure.com/rle/v1.0/subscriptions/sub/sandboxes/sandbox-1/openenv",
 		},
 		{
-			name:       "accepts regional Hyena runtime host",
-			sandboxUrl: "https://rle.westus2.hyena.infra.ai.azure.com/subscriptions/sub/sandboxes/sandbox-1/openenv",
+			name:            "rejects Hyena runtime host",
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+			sandboxUrl:      "https://rle.westus2.hyena.infra.ai.azure.com/subscriptions/sub/sandboxes/sandbox-1/openenv",
+			wantError:       true,
 		},
 		{
-			name:       "accepts uppercase Hyena runtime host",
-			sandboxUrl: "https://RLE.WESTUS2.HYENA.INFRA.AI.AZURE.COM/openenv",
+			name:            "rejects direct infrastructure host",
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+			sandboxUrl:      "https://sandbox.infra.ai.azure.com/openenv",
+			wantError:       true,
 		},
 		{
-			name:       "accepts Hyena runtime domain",
-			sandboxUrl: "https://hyena.infra.ai.azure.com/openenv",
+			name:            "rejects loopback host",
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+			sandboxUrl:      "http://127.0.0.1:8080/openenv",
+			wantError:       true,
 		},
 		{
-			name:       "rejects direct infrastructure host",
-			sandboxUrl: "https://sandbox.infra.ai.azure.com/openenv",
-			wantError:  true,
+			name:            "rejects different port",
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+			sandboxUrl:      "https://account.services.ai.azure.com:8443/openenv",
+			wantError:       true,
 		},
 		{
-			name:       "rejects Hyena lookalike suffix",
-			sandboxUrl: "https://rle.westus2.hyena.infra.ai.azure.com.attacker.example/openenv",
-			wantError:  true,
+			name:            "rejects matching custom port on project origin",
+			projectEndpoint: "https://account.services.ai.azure.com:8443/api/projects/project-1",
+			sandboxUrl:      "https://account.services.ai.azure.com:8443/openenv",
+			wantError:       true,
 		},
 		{
-			name:       "rejects Hyena lookalike prefix",
-			sandboxUrl: "https://hyena.infra.ai.azure.com.attacker.example/openenv",
-			wantError:  true,
-		},
-		{
-			name:       "rejects insecure Hyena runtime host",
-			sandboxUrl: "http://rle.westus2.hyena.infra.ai.azure.com/openenv",
-			wantError:  true,
-		},
-		{
-			name:       "rejects Hyena runtime host with custom port",
-			sandboxUrl: "https://rle.westus2.hyena.infra.ai.azure.com:8443/openenv",
-			wantError:  true,
-		},
-		{
-			name:       "rejects Hyena runtime host with embedded credentials",
-			sandboxUrl: "https://user@rle.westus2.hyena.infra.ai.azure.com/openenv",
-			wantError:  true,
-		},
-		{
-			name:       "rejects loopback host",
-			sandboxUrl: "http://127.0.0.1:8080/openenv",
-			wantError:  true,
-		},
-		{
-			name:       "rejects different port",
-			sandboxUrl: "https://account.services.ai.azure.com:8443/openenv",
-			wantError:  true,
-		},
-		{
-			name:       "rejects embedded credentials",
-			sandboxUrl: "https://user@account.services.ai.azure.com/openenv",
-			wantError:  true,
+			name:            "rejects embedded credentials",
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+			sandboxUrl:      "https://user@account.services.ai.azure.com/openenv",
+			wantError:       true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateRemoteSandboxURL(tt.sandboxUrl, projectEndpoint)
+			err := validateRemoteSandboxURL(tt.sandboxUrl, tt.projectEndpoint)
 			if tt.wantError && err == nil {
 				t.Fatalf("expected %q to be rejected", tt.sandboxUrl)
 			}
@@ -272,13 +256,13 @@ func TestCleanupRemoteRuntimeDeletesInstanceThenGroup(t *testing.T) {
 func TestWriteCleanupResultDoesNotExposeResourceDetails(t *testing.T) {
 	var output bytes.Buffer
 	writeCleanupResult(&output, nil)
-	if output.String() != "Resources provisioned for the remote test were cleaned up successfully.\n" {
+	if output.String() != "Remote runtime resources cleaned up successfully.\n" {
 		t.Fatalf("unexpected successful cleanup output: %q", output.String())
 	}
 
 	output.Reset()
 	writeCleanupResult(&output, errors.New("instance instance-1 in group group-1 failed"))
-	if output.String() != "Warning: cleanup could not be completed; resources may remain.\n" {
+	if output.String() != "Warning: remote runtime cleanup could not be completed; resources may remain.\n" {
 		t.Fatalf("unexpected failed cleanup output: %q", output.String())
 	}
 }
@@ -310,8 +294,12 @@ func TestInvokeRemoteFromStateDoesNotFallBackInstanceGroupsToLegacyPrefix(t *tes
 	command.SetOut(io.Discard)
 	command.SetErr(io.Discard)
 	err := command.Execute()
-	if _, ok := errors.AsType[*azdext.ServiceError](err); !ok {
-		t.Fatalf("expected ServiceError, got %T: %v", err, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_environment_version_not_found" {
+		t.Fatalf("expected version-not-found code, got %q", localErr.Code)
 	}
 	if requestCount != 1 {
 		t.Fatalf("expected one primary instance-group request, got %d", requestCount)
@@ -378,13 +366,17 @@ func TestInvokeRemoteByNameUsesLatestListedVersionWithoutLocalState(t *testing.T
 	}
 }
 
-func TestInvokeRemoteByNameSurfacesGroupCreationFailure(t *testing.T) {
+func TestInvokeRemoteByNameTimesOutWhileWaitingForEnvironmentReadiness(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(
 		foundryProjectEndpointEnvVar,
 		"https://account.services.ai.azure.com/api/projects/project-1",
 	)
+
+	oldRetryInterval := remoteReadinessRetryInterval
+	remoteReadinessRetryInterval = time.Millisecond
+	defer func() { remoteReadinessRetryInterval = oldRetryInterval }()
 
 	groupCreateCount := 0
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -402,18 +394,159 @@ func TestInvokeRemoteByNameSurfacesGroupCreationFailure(t *testing.T) {
 	command := newInvokeCommand()
 	command.SetArgs([]string{"code_rl"})
 	command.SetIn(strings.NewReader("exit\n"))
-	command.SetOut(io.Discard)
-	command.SetErr(io.Discard)
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
 	err := command.Execute()
-	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok {
-		t.Fatalf("expected ServiceError, got %T: %v", err, err)
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
 	}
-	if serviceErr.ServiceName != "rle-control-plane" {
-		t.Fatalf("expected rle-control-plane service, got %q", serviceErr.ServiceName)
+	if localErr.Code != "rle_environment_readiness_timeout" {
+		t.Fatalf("expected readiness timeout code, got %q", localErr.Code)
 	}
-	if groupCreateCount != 1 {
-		t.Fatalf("expected one authoritative group creation request, got %d", groupCreateCount)
+	if groupCreateCount != remoteReadinessRetryCount+1 {
+		t.Fatalf("expected %d readiness attempts, got %d", remoteReadinessRetryCount+1, groupCreateCount)
+	}
+	if !strings.Contains(
+		output.String(),
+		"The requested environment's disk image is not ready yet. Waiting 0 seconds before retrying (10/10) ...",
+	) {
+		t.Fatalf("expected readiness progress output, got %s", output.String())
+	}
+}
+
+func TestInvokeRemoteByNameRetriesEnvironmentReadinessUntilSuccess(t *testing.T) {
+	captureBrowserOpen(t)
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+
+	oldRetryInterval := remoteReadinessRetryInterval
+	remoteReadinessRetryInterval = time.Millisecond
+	defer func() { remoteReadinessRetryInterval = oldRetryInterval }()
+
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			_, _ = w.Write([]byte(`{"status":"healthy"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer envServer.Close()
+
+	groupCreateCount := 0
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/instance_groups":
+			groupCreateCount++
+			if groupCreateCount < 3 {
+				http.Error(w, `{"code":"EnvironmentNotReady","message":"The environment disk image is not ready."}`, http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"2.0.0","maxActiveInstances":1}`))
+		case r.Method == http.MethodPost &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
+			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+		case r.Method == http.MethodDelete &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"code_rl"})
+	command.SetIn(strings.NewReader("exit\n"))
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if groupCreateCount != 3 {
+		t.Fatalf("expected three group-creation attempts, got %d", groupCreateCount)
+	}
+	if !strings.Contains(
+		output.String(),
+		"The requested environment's disk image is not ready yet. Waiting 0 seconds before retrying (2/10) ...",
+	) {
+		t.Fatalf("expected readiness retry output, got %s", output.String())
+	}
+	if !strings.Contains(output.String(), "Environment code_rl version 2.0.0 ready") {
+		t.Fatalf("expected eventual success output, got %s", output.String())
+	}
+}
+
+func TestInvokeRemoteDoesNotReportReadyBeforeRuntimeHealthSucceeds(t *testing.T) {
+	captureBrowserOpen(t)
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+
+	oldHealthTimeout := remoteRuntimeHealthTimeout
+	remoteRuntimeHealthTimeout = 10 * time.Millisecond
+	defer func() { remoteRuntimeHealthTimeout = oldHealthTimeout }()
+
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":{"code":"RuntimeStarting","message":"Runtime is starting."}}`, http.StatusServiceUnavailable)
+	}))
+	defer envServer.Close()
+
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/instance_groups":
+			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"2.0.0","maxActiveInstances":1}`))
+		case r.Method == http.MethodPost &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
+			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+		case r.Method == http.MethodDelete &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"code_rl"})
+	command.SetIn(strings.NewReader("exit\n"))
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	err := command.Execute()
+	if err == nil {
+		t.Fatal("expected runtime health failure")
+	}
+	if !strings.Contains(output.String(), "Environment instance is running; waiting for OpenEnv runtime ...") {
+		t.Fatalf("expected runtime health wait output, got %s", output.String())
+	}
+	if strings.Contains(output.String(), "Environment code_rl version 2.0.0 ready") {
+		t.Fatalf("did not expect ready output before runtime health succeeded, got %s", output.String())
+	}
+	if !strings.Contains(err.Error(), "Runtime is starting.") {
+		t.Fatalf("expected runtime health response detail, got %v", err)
 	}
 }
 
@@ -507,8 +640,45 @@ func TestInvokeRemoteByNameClassifiesGroupFailuresAsServiceErrors(t *testing.T) 
 	if !ok {
 		t.Fatalf("expected ServiceError, got %T: %v", err, err)
 	}
-	if serviceErr.ServiceName != "rle-control-plane" {
-		t.Fatalf("expected rle-control-plane service, got %q", serviceErr.ServiceName)
+	if serviceErr.ServiceName != "rle-service" {
+		t.Fatalf("expected rle-service, got %q", serviceErr.ServiceName)
+	}
+}
+
+func TestInvokeRemoteByNameDoesNotRetryOtherBadRequests(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+
+	groupCreateCount := 0
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost ||
+			r.URL.Path != testFoundryProjectPath+"/rl_environments/code_rl/instance_groups" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		groupCreateCount++
+		http.Error(w, `{"code":"InvalidRequest","message":"the request is invalid"}`, http.StatusBadRequest)
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"code_rl"})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	err := command.Execute()
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	if !ok {
+		t.Fatalf("expected ServiceError, got %T: %v", err, err)
+	}
+	if groupCreateCount != 1 {
+		t.Fatalf("expected one bad-request attempt, got %d", groupCreateCount)
+	}
+	if !strings.Contains(serviceErr.Message, "the request is invalid") {
+		t.Fatalf("expected original bad-request message, got %q", serviceErr.Message)
 	}
 }
 
@@ -529,6 +699,7 @@ func TestInvokeRemoteByNameClassifiesVersionFailuresAsServiceErrors(t *testing.T
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
+
 	}))
 	defer controlPlane.Close()
 	stubRleClientEndpoint(t, controlPlane.URL)
@@ -542,8 +713,78 @@ func TestInvokeRemoteByNameClassifiesVersionFailuresAsServiceErrors(t *testing.T
 	if !ok {
 		t.Fatalf("expected ServiceError, got %T: %v", err, err)
 	}
-	if serviceErr.ServiceName != "rle-control-plane" {
-		t.Fatalf("expected rle-control-plane service, got %q", serviceErr.ServiceName)
+	if serviceErr.ServiceName != "rle-service" {
+		t.Fatalf("expected rle-service, got %q", serviceErr.ServiceName)
+	}
+}
+
+func TestInvokeRemoteByNameReportsMissingVersion(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet ||
+			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/code_rl/versions/9.9.9" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		http.NotFound(w, r)
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"code_rl", "--version", "9.9.9"})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	err := command.Execute()
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_environment_version_not_found" {
+		t.Fatalf("expected version-not-found code, got %q", localErr.Code)
+	}
+	if !strings.Contains(localErr.Suggestion, "azd ai rle show code_rl") {
+		t.Fatalf("unexpected version-not-found suggestion: %q", localErr.Suggestion)
+	}
+}
+
+func TestInvokeRemoteByNameReportsMissingEnvironment(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost ||
+			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/missing_env/instance_groups" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		http.NotFound(w, r)
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"missing_env"})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	err := command.Execute()
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_environment_not_found" {
+		t.Fatalf("expected environment-not-found code, got %q", localErr.Code)
+	}
+	if localErr.Suggestion != "Run azd ai rle list to see the available environments." {
+		t.Fatalf("unexpected environment-not-found suggestion: %q", localErr.Suggestion)
 	}
 }
 
@@ -670,10 +911,15 @@ func TestInvokeRemoteUsesAuthenticatedPlaygroundProxy(t *testing.T) {
 	if opened.Hostname() != "127.0.0.1" || opened.Path != "/web" {
 		t.Fatalf("expected browser to open the authenticated loopback proxy, got %q", *openedUrl)
 	}
+	if strings.TrimSpace(opened.Query().Get("token")) == "" {
+		t.Fatalf("expected browser bootstrap URL to include an authorization token, got %q", *openedUrl)
+	}
 }
 
 func TestRemotePlaygroundProxyForwardsToSandbox(t *testing.T) {
+	requestCount := 0
 	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/web":
@@ -695,12 +941,16 @@ func TestRemotePlaygroundProxyForwardsToSandbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stop()
-	if !strings.Contains(playgroundUrl, "127.0.0.1") || !strings.HasSuffix(playgroundUrl, "/web") {
+	if !strings.Contains(playgroundUrl, "127.0.0.1") || !strings.Contains(playgroundUrl, "/web?token=") {
 		t.Fatalf("expected local playground URL, got %q", playgroundUrl)
 	}
 
-	stateUrl := strings.TrimSuffix(playgroundUrl, "/web") + "/state"
-	resp, err := http.Get(stateUrl) //nolint:gosec // Test-only local proxy URL.
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar}
+	resp, err := client.Get(playgroundUrl) //nolint:gosec // Test-only local proxy URL.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -709,8 +959,33 @@ func TestRemotePlaygroundProxyForwardsToSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(string(body), "RLE Remote Console") {
+		t.Fatalf("expected playground HTML after token bootstrap, got %s", body)
+	}
+	if resp.Request.URL.RawQuery != "" {
+		t.Fatalf("expected bootstrap redirect to clear the token query, got %q", resp.Request.URL.String())
+	}
+
+	baseUrl := playgroundBaseURL(t, playgroundUrl)
+	request, err := http.NewRequest(http.MethodGet, baseUrl+"/state", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Origin", baseUrl)
+	resp, err = client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(body) != `{"step_count":3}` {
 		t.Fatalf("expected proxied state body, got %s", body)
+	}
+	if requestCount != 1 {
+		t.Fatalf("expected one authorized backend request, got %d", requestCount)
 	}
 }
 
@@ -737,9 +1012,14 @@ func TestRemotePlaygroundProxyRefreshesAuthorizationForEachRequest(t *testing.T)
 	}
 	defer stop()
 
-	stateUrl := strings.TrimSuffix(playgroundUrl, "/web") + "/state"
+	client, baseUrl, origin := newAuthorizedPlaygroundClient(t, playgroundUrl)
 	for range 2 {
-		resp, err := http.Get(stateUrl) //nolint:gosec // Test-only local proxy URL.
+		request, err := http.NewRequest(http.MethodGet, baseUrl+"/state", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Origin", origin)
+		resp, err := client.Do(request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -749,6 +1029,97 @@ func TestRemotePlaygroundProxyRefreshesAuthorizationForEachRequest(t *testing.T)
 	expected := []string{"Bearer token-1", "Bearer token-2"}
 	if !slices.Equal(authorizations, expected) {
 		t.Fatalf("expected refreshed authorization headers %v, got %v", expected, authorizations)
+	}
+}
+
+func TestRemotePlaygroundProxyRejectsUnauthorizedRequests(t *testing.T) {
+	backendRequests := 0
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendRequests++
+		_, _ = w.Write([]byte(`{"step_count":3}`))
+	}))
+	defer envServer.Close()
+
+	playgroundUrl, stop, err := remotePlaygroundUrlWithAuthorizationProvider(
+		t.Context(),
+		envServer.URL,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	baseUrl := playgroundBaseURL(t, playgroundUrl)
+	resp, err := http.Get(baseUrl + "/state") //nolint:gosec // Test-only local proxy URL.
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized status, got %d", resp.StatusCode)
+	}
+	if backendRequests != 0 {
+		t.Fatalf("expected no backend requests, got %d", backendRequests)
+	}
+}
+
+func TestRemotePlaygroundProxyRejectsInvalidHostAndOrigin(t *testing.T) {
+	backendRequests := 0
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendRequests++
+		_, _ = w.Write([]byte(`{"step_count":3}`))
+	}))
+	defer envServer.Close()
+
+	playgroundUrl, stop, err := remotePlaygroundUrlWithAuthorizationProvider(
+		t.Context(),
+		envServer.URL,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	client, baseUrl, origin := newAuthorizedPlaygroundClient(t, playgroundUrl)
+	for _, test := range []struct {
+		name         string
+		overrideHost string
+		origin       string
+	}{
+		{name: "bad host", overrideHost: "attacker.example"},
+		{name: "bad origin", origin: "http://attacker.example"},
+		{name: "good origin", origin: origin},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := http.NewRequest(http.MethodGet, baseUrl+"/state", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.overrideHost != "" {
+				request.Host = test.overrideHost
+			}
+			if test.origin != "" {
+				request.Header.Set("Origin", test.origin)
+			}
+			resp, err := client.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+
+			expectedStatus := http.StatusOK
+			if test.overrideHost != "" || test.origin == "http://attacker.example" {
+				expectedStatus = http.StatusForbidden
+			}
+			if resp.StatusCode != expectedStatus {
+				t.Fatalf("expected status %d, got %d", expectedStatus, resp.StatusCode)
+			}
+		})
+	}
+	if backendRequests != 1 {
+		t.Fatalf("expected exactly one authorized backend request, got %d", backendRequests)
 	}
 }
 
@@ -891,6 +1262,21 @@ func TestRequireDeployedEnvironmentRejectsMissingEnvironmentId(t *testing.T) {
 	}
 	if localErr.Code != "rle_environment_not_deployed" {
 		t.Fatalf("expected not deployed code, got %q", localErr.Code)
+	}
+}
+
+func TestRequireDeployedEnvironmentRejectsMissingEnvironmentVersion(t *testing.T) {
+	err := requireDeployedEnvironment(rleState{
+		EnvironmentName: "code_rl",
+		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+		EnvironmentId:   "env-1",
+	})
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T", err)
+	}
+	if localErr.Code != "rle_environment_version_missing" {
+		t.Fatalf("expected environment-version-missing code, got %q", localErr.Code)
 	}
 }
 
@@ -1042,6 +1428,61 @@ func TestInvokeRemoteUsesVersionSavedInState(t *testing.T) {
 	}
 }
 
+func TestInvokeRemoteRejectsMismatchedPinnedGroupVersionAndCleansUpRequestedRoute(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	if err := saveRleState(rleState{
+		EnvironmentName:    "code_rl",
+		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/project-1",
+		EnvironmentId:      "env-1",
+		EnvironmentVersion: "1.0.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	instanceCreateCount := 0
+	groupDeleteCount := 0
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"2.0.0","maxActiveInstances":1}`))
+		case r.Method == http.MethodPost &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
+			instanceCreateCount++
+			t.Fatalf("unexpected instance creation against mismatched version route")
+		case r.Method == http.MethodDelete &&
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
+			groupDeleteCount++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer controlPlane.Close()
+	useTestProjectEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	err := command.Execute()
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_instance_group_version_mismatch" {
+		t.Fatalf("expected version-mismatch code, got %q", localErr.Code)
+	}
+	if instanceCreateCount != 0 {
+		t.Fatalf("expected no instance creation, got %d", instanceCreateCount)
+	}
+	if groupDeleteCount != 1 {
+		t.Fatalf("expected cleanup to delete the group via the requested route, got %d", groupDeleteCount)
+	}
+}
+
 func TestRemoteInvokeDoesNotRetryInstanceGroupConflicts(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
@@ -1100,6 +1541,31 @@ func captureBrowserOpen(t *testing.T) *string {
 		ui.OpenBrowser = old
 	})
 	return &openedUrl
+}
+
+func newAuthorizedPlaygroundClient(t *testing.T, playgroundUrl string) (*http.Client, string, string) {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar}
+	resp, err := client.Get(playgroundUrl) //nolint:gosec // Test-only local proxy URL.
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	baseUrl := playgroundBaseURL(t, playgroundUrl)
+	return client, baseUrl, baseUrl
+}
+
+func playgroundBaseURL(t *testing.T, playgroundUrl string) string {
+	t.Helper()
+	parsed, err := url.Parse(playgroundUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 func useTestProjectEndpoint(t *testing.T, endpoint string) {

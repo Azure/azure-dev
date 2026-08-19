@@ -240,7 +240,7 @@ func (p *EvalServiceTargetProvider) evalBaseDir(
 // does this: joining one under the project produced <root>/C:/shared/evals,
 // which is the bug this fixes, reached from a different input. An empty root is
 // azd having failed to name the project, where the relative path is what the
-// behaviour used to be and is better than resolving against nothing.
+// extension did before and is better than resolving against nothing.
 func baseDirUnder(projectRoot string, serviceConfig *azdext.ServiceConfig) string {
 	relative := serviceRelativeDir(serviceConfig)
 	if filepath.IsAbs(relative) || projectRoot == "" {

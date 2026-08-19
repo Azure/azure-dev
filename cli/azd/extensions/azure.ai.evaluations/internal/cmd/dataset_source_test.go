@@ -66,6 +66,17 @@ func TestDatasetUploadSourceRefusesADirectoryWithNoJSONL(t *testing.T) {
 	assert.Contains(t, err.Error(), "no .jsonl file")
 }
 
+// A mistyped --from-file is the common way to get here, and the syscall that
+// discovered it says nothing to the person who mistyped it.
+func TestDatasetUploadSourceOnAMissingPath(t *testing.T) {
+	_, err := datasetUploadSource(filepath.Join(t.TempDir(), "nope.jsonl"))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not exist")
+	assert.NotContains(t, err.Error(), "GetFileAttributesEx")
+	assert.NotContains(t, err.Error(), "stat ")
+}
+
 // The service refuses a bad name with a 400 wrapping four levels of JSON, so
 // the guard exists to say it plainly. The sibling extension had it; this copy,
 // which serves the same commands under `azd ai eval dataset`, did not.

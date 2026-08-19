@@ -226,7 +226,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 			if err := ec.setEnvValue(ctx, envKeyEvalRunID, run.ID); err != nil {
 				// Persisting the run id is a convenience for later commands.
 				// Reported on stdout because azd does not surface an
-				// extension's stderr, and skipped outside a project.
+				// extension's stderr under `azd up`, which is where a deploy
+				// would lose it. Skipped outside a project.
 				if !errors.Is(err, errNoAzdEnvironment) && !isJSON(cmd) {
 					fmt.Fprint(out, messages.Warning(err))
 				}

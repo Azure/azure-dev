@@ -899,7 +899,13 @@ func JSONLNoRows(path string) error {
 }
 
 // ReadingFromFile reports a --from-file that would not stat.
+//
+// A path that is simply absent is reported as absent: the wrapped error is a
+// syscall name that says nothing to the person who mistyped it.
 func ReadingFromFile(path string, err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("--from-file %q does not exist", filepath.ToSlash(path))
+	}
 	return fmt.Errorf("reading --from-file %q: %w", filepath.ToSlash(path), err)
 }
 

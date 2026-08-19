@@ -544,27 +544,10 @@ func (s scaffold) withPath(step string) string {
 // argument.
 //
 // `--path "./team evals"` is the difference between a printed step that runs
-// and one that resolves ./team and reports the configuration missing. That is
-// the case worth getting right, and double quotes are what cmd, PowerShell,
-// bash and zsh all read the same way for a path containing spaces.
-//
-// A path containing $ or a backtick has no portable answer: double quotes stop
-// neither from expanding in bash, zsh or PowerShell, and single quotes -- which
-// would -- are literal only on the POSIX shells. Such a path is wrapped anyway,
-// because one argument that may expand still beats two that certainly break,
-// and this line is printed for a person to read rather than executed here.
-//
-// Backslashes are left alone: C:\Users\Me\My Evals has to come back out as
-// itself, and doubling them would be right for bash and wrong for the two
-// shells most likely to be reading a path that looks like that.
+// and one that resolves ./team and reports the configuration missing. The rule
+// lives in messages, beside the suggested commands that need the same thing.
 func quoteForShell(v string) string {
-	if v == "" {
-		return `""`
-	}
-	if !strings.ContainsAny(v, " \t\n\"'`$&|;<>()*?[]#~!") {
-		return v
-	}
-	return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"`
+	return messages.ShellArg(v)
 }
 
 // generateCommand builds a `generate` invocation that runs as printed.

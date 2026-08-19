@@ -464,15 +464,20 @@ func (r *evalReconciler) EnsureEval(
 	}
 
 	// Evals are immutable, so a change to the eval's own substance — evaluators,
-	// dataset, source, target, level — needs a new eval. Name and description are
-	// excluded from the digest and pushed in place instead.
+	// dataset, target, level — needs a new eval. Name and description are
+	// excluded from the digest and pushed in place instead, and so are
+	// max_samples and source:, which the run carries rather than the eval.
 	recreate := false
 	digest, err := project.FingerprintGroup(group)
 	if err != nil {
 		return "", false, err
 	}
+	definition, err := project.FingerprintDefinition(group)
+	if err != nil {
+		return "", false, err
+	}
 	key := project.FingerprintKey("eval", group.Name)
-	if prior := r.ec.getEnvValue(ctx, key); prior != "" && prior != digest {
+	if prior := r.ec.getEnvValue(ctx, key); prior != "" && prior != definition {
 		recreate = true
 	}
 
@@ -519,10 +524,11 @@ func (r *evalReconciler) EnsureEval(
 			// either of them can reach the service.
 			r.pushMutable(ctx, cached, group, remote)
 
-			// Record the digest on reuse as well, otherwise an eval deployed
+			// Record the definition on reuse as well, otherwise an eval deployed
 			// before fingerprinting existed never establishes a baseline and
-			// later edits go undetected.
-			r.ec.remember(ctx, key, digest)
+			// later edits go undetected. The identity digest is recorded beside
+			// it, which is what recognizes this declaration after a rename.
+			r.ec.remember(ctx, key, definition)
 			r.ec.remember(ctx, idKey("eval", group.Name), cached)
 			r.ec.remember(ctx, digestIDKey(digest), cached)
 			r.ec.remember(ctx, envKeyEvalID, cached)
@@ -534,7 +540,7 @@ func (r *evalReconciler) EnsureEval(
 	if err != nil {
 		return "", false, err
 	}
-	r.ec.remember(ctx, key, digest)
+	r.ec.remember(ctx, key, definition)
 	r.ec.remember(ctx, idKey("eval", group.Name), created.ID)
 	r.ec.remember(ctx, digestIDKey(digest), created.ID)
 	// EVAL_ID stays the last-deployed eval. Nothing reads it to decide which

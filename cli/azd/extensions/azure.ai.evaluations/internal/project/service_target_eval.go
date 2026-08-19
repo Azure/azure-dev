@@ -224,21 +224,22 @@ func (p *EvalServiceTargetProvider) evalBaseDir(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 ) string {
+	return baseDirUnder(p.projectRoot(ctx), serviceConfig)
+}
+
+// baseDirUnder places a service's directory under the project.
+//
+// azd does not re-root an absolute `$ref` or an absolute `project:`, so neither
+// does this: joining one under the project produced <root>/C:/shared/evals,
+// which is the bug this fixes, reached from a different input. An empty root is
+// azd having failed to name the project, where the relative path is what the
+// behaviour used to be and is better than resolving against nothing.
+func baseDirUnder(projectRoot string, serviceConfig *azdext.ServiceConfig) string {
 	relative := serviceRelativeDir(serviceConfig)
-	// azd does not re-root an absolute `$ref` or an absolute `project:`, so
-	// neither does this: joining one under the project produced
-	// <root>/C:/shared/evals, which is the bug this fixes, for a different
-	// input.
-	if filepath.IsAbs(relative) {
+	if filepath.IsAbs(relative) || projectRoot == "" {
 		return relative
 	}
-	root := p.projectRoot(ctx)
-	if root == "" {
-		// azd could not name the project. Falling back to the relative path
-		// keeps the behaviour it had rather than resolving against nothing.
-		return relative
-	}
-	return filepath.Join(root, relative)
+	return filepath.Join(projectRoot, relative)
 }
 
 // describeResult reports whether a version was published or reused, so a
@@ -385,22 +386,12 @@ func FingerprintGroup(group Eval) (string, error) {
 	// Only substance is hashed. The id is server-assigned; name and description
 	// are what UpdateEvalParametersBody reaches, so an edit confined to them is
 	// pushed in place and must not cost the eval its id and its run history.
-	// Dataset, evaluators, target and level are fixed at creation, so a change
-	// there is a new eval.
+	// Everything else — dataset, source, evaluators, target, level — is what
+	// makes this declaration the one it is.
 	name := group.Name
 	group.ID = ""
 	group.Name = ""
 	group.Description = ""
-
-	// max_samples and source: are applied per run, not at creation --
-	// CreateOpenAIEvalRequest carries neither, and buildEvalRequest reads
-	// neither. Hashing them recreated the eval for a change the stored eval
-	// cannot express: the declaration pointed at a new id, every run recorded
-	// before it became reachable only through the old one, and the service was
-	// left holding two identical definitions under one name. A source change
-	// that does alter the eval also changes `dataset`, which is hashed.
-	group.MaxSamples = 0
-	group.Source = nil
 
 	data, err := json.Marshal(group)
 	if err != nil {
@@ -408,6 +399,30 @@ func FingerprintGroup(group Eval) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// FingerprintDefinition hashes only what the service stores.
+//
+// max_samples and source: are applied per run, not at creation --
+// CreateOpenAIEvalRequest carries neither and buildEvalRequest reads neither.
+// Recreating the eval when one of them changes points the declaration at a new
+// id and leaves every run taken before it reachable only through the old one,
+// for an edit the stored eval cannot even express.
+//
+// Kept separate from FingerprintGroup rather than folded into it, because that
+// digest also answers "which eval was this declaration before it was renamed".
+// Two evals over the same dataset and evaluators that differ only in their
+// window are two evals, and one key for both hands the second the first one's
+// id -- so the second is never created, and the first is renamed to whichever
+// declaration came last.
+//
+// The cost is that renaming an eval and changing its window in one edit is read
+// as a new eval rather than a rename. That forks a history, which is the
+// conservative direction: the other way silently merges two.
+func FingerprintDefinition(group Eval) (string, error) {
+	group.MaxSamples = 0
+	group.Source = nil
+	return FingerprintGroup(group)
 }
 
 // FingerprintKey is the azd environment key holding an artifact's fingerprint.

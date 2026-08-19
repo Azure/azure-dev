@@ -64,14 +64,22 @@ func TestAnAbsoluteServiceRefIsNotJoinedUnderTheProject(t *testing.T) {
 	relative := serviceRelativeDir(svc)
 	require.True(t, filepath.IsAbs(relative), "the fixture has to exercise the absolute branch")
 
-	provider := &EvalServiceTargetProvider{}
-	assert.Equal(t, relative, provider.evalBaseDir(t.Context(), svc),
+	// A project root that is not empty, or evalBaseDir returns early on the
+	// fallback and the guard under test is never reached.
+	assert.Equal(t, relative,
+		baseDirUnder(filepath.Join(string(filepath.Separator), "work", "proj"), svc),
 		"an absolute ref names its own directory, wherever the project is")
+
+	// And a relative ref is still joined, which is what the guard must not undo.
+	relativeSvc := &azdext.ServiceConfig{Name: "evals", Host: "azure.ai.eval", RelativePath: "evals"}
+	root := filepath.Join(string(filepath.Separator), "work", "proj")
+	assert.Equal(t, filepath.Join(root, "evals"), baseDirUnder(root, relativeSvc))
 }
 
-// max_samples caps the rows the CLI sends on a run. It never reaches the eval
-// the service stores, so hashing it recreated the eval for a change the service
-// cannot see -- orphaning every run recorded against the old id.
+// max_samples and source: cap and window a run. Neither reaches the eval the
+// service stores, so recreating the eval for a change to either points the
+// declaration at a new id and leaves every run taken before it reachable only
+// through the old one.
 func TestARowCapDoesNotCostAnEvalItsRunHistory(t *testing.T) {
 	group := Eval{
 		Name:       "quality",
@@ -82,9 +90,9 @@ func TestARowCapDoesNotCostAnEvalItsRunHistory(t *testing.T) {
 	capped := group
 	capped.MaxSamples = 50
 
-	before, err := FingerprintGroup(group)
+	before, err := FingerprintDefinition(group)
 	require.NoError(t, err)
-	after, err := FingerprintGroup(capped)
+	after, err := FingerprintDefinition(capped)
 	require.NoError(t, err)
 
 	assert.Equal(t, before, after, "the eval the service holds did not change")
@@ -96,9 +104,9 @@ func TestARowCapDoesNotCostAnEvalItsRunHistory(t *testing.T) {
 	narrow := group
 	narrow.Source = &SourceDecl{Type: "traces", LookbackHours: 24}
 
-	wide, err := FingerprintGroup(widened)
+	wide, err := FingerprintDefinition(widened)
 	require.NoError(t, err)
-	tight, err := FingerprintGroup(narrow)
+	tight, err := FingerprintDefinition(narrow)
 	require.NoError(t, err)
 	assert.Equal(t, wide, tight, "a different lookback is the same eval")
 
@@ -106,7 +114,46 @@ func TestARowCapDoesNotCostAnEvalItsRunHistory(t *testing.T) {
 	// fingerprint is for.
 	retargeted := group
 	retargeted.Dataset = "regression-v2"
-	forked, err := FingerprintGroup(retargeted)
+	forked, err := FingerprintDefinition(retargeted)
 	require.NoError(t, err)
 	assert.NotEqual(t, before, forked, "a different dataset is a different eval")
+}
+
+// The identity digest is the other half, and it must keep them: it is also the
+// key a rename looks the eval up by, so two declarations differing only in
+// their window would share it -- the second would adopt the first one's id,
+// never be created, and rename the first to whichever came last in the file.
+func TestTwoEvalsDifferingOnlyInTheirWindowStayTwoEvals(t *testing.T) {
+	base := Eval{
+		Dataset:    "",
+		Evaluators: evalcore.EvaluatorList{{Evaluator: "builtin.relevance"}},
+	}
+
+	recent := base
+	recent.Name = "last-24h"
+	recent.Source = &SourceDecl{Type: "traces", AgentName: "chat", LookbackHours: 24}
+
+	weekly := base
+	weekly.Name = "last-7d"
+	weekly.Source = &SourceDecl{Type: "traces", AgentName: "billing", LookbackHours: 168}
+
+	first, err := FingerprintGroup(recent)
+	require.NoError(t, err)
+	second, err := FingerprintGroup(weekly)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, first, second,
+		"one key for both hands the second declaration the first one's eval")
+
+	capped := base
+	capped.Name = "sampled"
+	capped.MaxSamples = 20
+	uncapped := base
+	uncapped.Name = "full"
+
+	cappedDigest, err := FingerprintGroup(capped)
+	require.NoError(t, err)
+	uncappedDigest, err := FingerprintGroup(uncapped)
+	require.NoError(t, err)
+	assert.NotEqual(t, cappedDigest, uncappedDigest, "the same holds for a row cap")
 }

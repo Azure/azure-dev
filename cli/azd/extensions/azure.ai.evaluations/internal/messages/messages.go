@@ -991,7 +991,7 @@ func NoDatasets() string {
 // is the one thing only the caller knows, and is named outside the command.
 func NoDatasetVersions(dataset string) string {
 	return fmt.Sprintf("No versions of dataset %q. Publish one with "+
-		"`azd ai eval dataset create %s` and a --from-file path.\n", dataset, dataset)
+		"`azd ai eval dataset create %s` and a --from-file path.\n", dataset, shellArg(dataset))
 }
 
 // ResolvingLatestDatasetVersion reports a failure to find what "latest" means.
@@ -1014,7 +1014,8 @@ func DatasetNotFound(dataset string) error {
 func DatasetVersionNotFoundWithHint(dataset, version string) error {
 	return fmt.Errorf(
 		"no dataset %q at version %q in this project; "+
-			"`azd ai eval dataset versions list %s` shows the ones there are", dataset, version, dataset)
+			"`azd ai eval dataset versions list %s` shows the ones there are",
+		dataset, version, shellArg(dataset))
 }
 
 // DatasetVersionNotFound reports a dataset version there is nothing to delete at.
@@ -1057,7 +1058,7 @@ func DatasetNotGeneratedYet(dataset, path string) error {
 		"its rows %s have not been generated yet. "+
 			"Run `azd ai eval generate --dataset --dataset-name %s` to write them, "+
 			"or point the declaration at a .jsonl you already have",
-		filepath.ToSlash(path), dataset)
+		filepath.ToSlash(path), shellArg(dataset))
 }
 
 // DatasetNotLocalNorFound reports a source-less dataset the project rejected.
@@ -1213,7 +1214,7 @@ func EvaluatorNotGeneratedYet(evaluator, path string) error {
 		"its definition %s has not been generated yet. "+
 			"Run `azd ai eval generate --evaluator --evaluator-name %s` to write it, "+
 			"or drop the evaluator from azure.eval.yaml",
-		filepath.ToSlash(path), evaluator)
+		filepath.ToSlash(path), shellArg(evaluator))
 }
 
 // CheckingEvaluatorExists reports a failure to tell create from update.
@@ -2694,4 +2695,32 @@ func CouldNotReadAgentForModel(agent string, err error) string {
 			"deployment to default to; pass --generation-model\n", agent)
 	}
 	return fmt.Sprintf("  warning: could not read agent %q for its deployment: %v\n", agent, err)
+}
+
+// shellArg wraps a value a shell would otherwise read as more than one
+// argument.
+//
+// A suggested command is written to be pasted and run. A name the caller chose
+// -- `--name "my eval"` becomes the dataset's name -- turns
+// `--dataset-name my eval` into one flag and a stray positional argument, which
+// generate refuses without naming the cause.
+//
+// Double quotes are what cmd, PowerShell, bash and zsh all read the same way.
+// A value containing $ or a backtick has no portable answer and is wrapped
+// anyway: one argument that may expand still beats two that certainly break.
+// Backslashes are left alone, so a Windows path comes back out as itself.
+func shellArg(v string) string {
+	if v == "" {
+		return `""`
+	}
+	if !strings.ContainsAny(v, " \t\n\"'`$&|;<>()*?[]#~!") {
+		return v
+	}
+	return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"`
+}
+
+// ShellArg is shellArg for the command builders outside this package, so one
+// rule decides how every printed command quotes what it carries.
+func ShellArg(v string) string {
+	return shellArg(v)
 }

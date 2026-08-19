@@ -66,7 +66,7 @@ func AgentInstructionsFromProject(
 	}
 
 	configDir := filepath.Join(
-		proj.GetPath(), serviceRelativeDir(svc), agentConfigsDir, agentBaselineDir)
+		baseDirUnder(proj.GetPath(), svc), agentConfigsDir, agentBaselineDir)
 
 	data, err := os.ReadFile(filepath.Join(configDir, agentMetadataFile)) //nolint:gosec // under the project
 	if err != nil {

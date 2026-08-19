@@ -29,7 +29,10 @@ func TestRunShowKeepsTheRunThePollDidNotReturn(t *testing.T) {
 		"run show has to answer the budget rather than surface the sentinel")
 
 	branch := source[strings.Index(source, "errWaitBudgetSpent"):]
-	branch = branch[:strings.Index(branch, "gateOnStatus {")]
+	// Ended at the poll's own error check, so the window holds the budget branch
+	// and nothing after it. Ending it later swept in the command's ordinary
+	// `if isJSON(cmd)` block and the assertion below passed with the fix removed.
+	branch = branch[:strings.Index(branch, "if pollErr != nil")]
 
 	assert.NotContains(t, source, "run, err = ec.pollRun(",
 		"assigning poll's result over the run leaves nil to dereference")

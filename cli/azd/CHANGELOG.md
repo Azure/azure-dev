@@ -13,6 +13,7 @@
 ### Other Changes
 
 - [[#9474]](https://github.com/Azure/azure-dev/pull/9474) Improve extension auto-install to show the complete requirement set before prompting, explain why each extension is required, and resolve the full install plan before making changes.
+- [[#9598]](https://github.com/Azure/azure-dev/pull/9598) Fix telemetry for AKS skip reasons, container remote builds, and authentication cache-clear failures being emitted without data-classification metadata.
 
 ## 1.31.1 (2026-08-13)
 

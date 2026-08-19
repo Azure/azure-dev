@@ -248,6 +248,15 @@ func (c *DatasetClient) UploadVersion(
 	if uploadURI == "" {
 		return nil, messages.NoUploadURI()
 	}
+	// Checked here rather than at step 3, because the two come from different
+	// fields of the same response and only one of them is needed to write. A
+	// response carrying the SAS and no blobUri uploaded the bytes and then
+	// finalized against "/name.jsonl", leaving a blob nothing points at and a
+	// publish that failed for a reason the message did not name.
+	blobURI := pending.ResolvedBlobURI()
+	if blobURI == "" {
+		return nil, messages.NoBlobURI()
+	}
 
 	// Step 2: Upload the JSONL file to blob storage.
 	// One blob per dataset, which is what the container-listing fallback in
@@ -263,7 +272,7 @@ func (c *DatasetClient) UploadVersion(
 	}
 
 	// Step 3: Finalize the dataset version with the full blob URI.
-	dataURI := strings.TrimSuffix(pending.ResolvedBlobURI(), "/") + "/" + blobName
+	dataURI := strings.TrimSuffix(blobURI, "/") + "/" + blobName
 	return c.FinalizeDatasetVersion(ctx, name, newVersion, dataURI, apiVersion)
 }
 

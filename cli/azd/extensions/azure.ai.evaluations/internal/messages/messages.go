@@ -1132,6 +1132,15 @@ func NoUploadURI() error {
 	return errors.New("no upload SAS URI returned from startPendingUpload")
 }
 
+// NoBlobURI reports an accepted upload the service gave no way to finalize.
+//
+// Separate from NoUploadURI because they are different fields of the same
+// response: the SAS says where to write, the blob URI says what to register,
+// and a response can carry one without the other.
+func NoBlobURI() error {
+	return errors.New("no blob URI returned from startPendingUpload, so there is nothing to register the upload as")
+}
+
 // UploadingBlob reports the dataset content failing to upload.
 func UploadingBlob(err error) error {
 	return fmt.Errorf("uploading blob: %w", err)

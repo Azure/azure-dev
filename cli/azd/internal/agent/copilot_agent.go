@@ -1105,7 +1105,8 @@ func (a *CopilotAgent) promptPluginInstall(ctx context.Context, plugin pluginSpe
 	return *result, nil
 }
 
-func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context, options *initOptions) (modelID string, reasoningEffort string, err error) {
+func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context,
+	options *initOptions) (modelID string, reasoningEffort string, err error) {
 	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return "", "", err

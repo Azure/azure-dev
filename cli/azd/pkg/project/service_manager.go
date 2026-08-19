@@ -502,6 +502,9 @@ func (sm *serviceManager) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
+	if _, err := resolveImagePassthrough(serviceConfig, sm.env); err != nil {
+		return nil, err
+	}
 	if err := validatePublishOptions(serviceConfig, publishOptions); err != nil {
 		return nil, err
 	}
@@ -700,6 +703,10 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 
 // GetFrameworkService constructs a framework service from the underlying service configuration
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
+	if _, err := resolveImagePassthrough(serviceConfig, sm.env); err != nil {
+		return nil, err
+	}
+
 	var frameworkService FrameworkService
 
 	// Publishing from an existing image currently follows the same lifecycle as a docker project

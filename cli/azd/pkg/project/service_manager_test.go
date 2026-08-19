@@ -326,6 +326,7 @@ func Test_ServiceManager_Publish_RejectsImageOverrideForPassthrough(t *testing.T
 	env := environment.New("test")
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	serviceConfig.Image = osutil.NewExpandableString("private.example.com/team/agent:v1")
 	serviceConfig.Docker.ImagePassthrough = true
 
 	publishCalled := new(false)
@@ -343,6 +344,59 @@ func Test_ServiceManager_Publish_RejectsImageOverrideForPassthrough(t *testing.T
 	require.False(t, *publishCalled)
 }
 
+func Test_ServiceManager_Publish_ValidatesImagePassthroughConfiguration(t *testing.T) {
+	tests := []struct {
+		name          string
+		image         string
+		remoteBuild   bool
+		errorContains string
+	}{
+		{
+			name:          "missing configured image",
+			errorContains: "requires the service image property",
+		},
+		{
+			name:          "remote build conflict",
+			image:         "private.example.com/team/agent:v1",
+			remoteBuild:   true,
+			errorContains: "cannot be combined with docker.remoteBuild",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			setupMocksForServiceManager(mockContext)
+			env := environment.New("test")
+			sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+			serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+			serviceConfig.Image = osutil.NewExpandableString(tt.image)
+			serviceConfig.Docker.ImagePassthrough = true
+			serviceConfig.Docker.RemoteBuild = tt.remoteBuild
+
+			publishCalled := new(false)
+			ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
+			serviceContext := NewServiceContext()
+			require.NoError(t, serviceContext.Package.Add(&Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "other.example.com/team/agent:v2",
+				LocationKind: LocationKindLocal,
+			}))
+
+			_, err := sm.Publish(
+				ctx,
+				serviceConfig,
+				serviceContext,
+				async.NewProgress[ServiceProgress](),
+				&PublishOptions{},
+			)
+
+			require.ErrorContains(t, err, tt.errorContains)
+			require.False(t, *publishCalled)
+		})
+	}
+}
+
 func Test_ServiceManager_Publish_AcceptsDuplicateRemotePackageArtifactsForPassthrough(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
@@ -351,6 +405,7 @@ func Test_ServiceManager_Publish_AcceptsDuplicateRemotePackageArtifactsForPassth
 	})
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	serviceConfig.Image = osutil.NewExpandableString("private.example.com/team/agent:v1")
 	serviceConfig.Docker.ImagePassthrough = true
 
 	publishCalled := new(false)
@@ -433,6 +488,7 @@ func Test_ServiceManager_Publish_RejectsInvalidPackageOverrideForPassthrough(t *
 			env := environment.New("test")
 			sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 			serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+			serviceConfig.Image = osutil.NewExpandableString("private.example.com/team/agent:v1")
 			serviceConfig.Docker.ImagePassthrough = true
 
 			publishCalled := new(false)

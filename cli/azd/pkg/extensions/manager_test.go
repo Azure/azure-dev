@@ -496,6 +496,41 @@ func Test_MatchesVersionConstraint(t *testing.T) {
 	}
 }
 
+func Test_FindExtensions_MissingVersionReportsLatest(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	createRegistryMocks(mockContext)
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	matches, err := manager.FindExtensions(t.Context(), &FilterOptions{
+		Id:      "test.extension",
+		Version: "0.1.0",
+	})
+	require.Error(t, err)
+	require.Nil(t, matches)
+
+	var versionErr *ExtensionVersionNotFoundError
+	require.ErrorAs(t, err, &versionErr)
+	require.Equal(t, "test.extension", versionErr.ExtensionId)
+	require.Equal(t, "0.1.0", versionErr.Version)
+	require.Contains(
+		t,
+		err.Error(),
+		"extension 'test.extension' version '0.1.0' was not found; latest version is '3.1.0'",
+	)
+	require.Contains(
+		t,
+		versionErr.Suggestion(),
+		"azd extension install test.extension --version 3.1.0",
+	)
+}
+
 func TestResolveExtensionVersionNil(t *testing.T) {
 	version, err := ResolveExtensionVersion(nil, "", nil)
 

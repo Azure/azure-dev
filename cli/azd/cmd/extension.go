@@ -960,6 +960,9 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		extensionMatches, err := a.extensionManager.FindExtensions(ctx, filterOptions)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			if _, ok := errors.AsType[*extensions.ExtensionVersionNotFoundError](err); ok {
+				return nil, wrapDependencyError(err)
+			}
 			return nil, fmt.Errorf("failed to find extension: %w", err)
 		}
 
@@ -1240,18 +1243,18 @@ func (a *extensionInstallAction) confirmReplace(
 	return true, nil
 }
 
-// wrapDependencyError augments dependency resolution failures with actionable
-// guidance. Other errors pass through unchanged.
+// wrapDependencyError augments extension resolution failures with actionable
+// guidance when available. Other errors pass through unchanged.
 func wrapDependencyError(err error) error {
-	type dependencyErrorWithSuggestion interface {
+	type errorWithSuggestion interface {
 		error
 		Suggestion() string
 	}
 
-	if depErr, ok := errors.AsType[dependencyErrorWithSuggestion](err); ok {
+	if suggestionErr, ok := errors.AsType[errorWithSuggestion](err); ok {
 		return &internal.ErrorWithSuggestion{
-			Err:        depErr,
-			Suggestion: depErr.Suggestion(),
+			Err:        suggestionErr,
+			Suggestion: suggestionErr.Suggestion(),
 		}
 	}
 
@@ -2437,39 +2440,14 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		allMatchOptions.Source = a.flags.source
 	}
 
-	versionMismatchError := func() error {
-		if a.flags.version == "" || strings.EqualFold(a.flags.version, "latest") {
-			return nil
-		}
-
-		unversionedOptions := *allMatchOptions
-		unversionedOptions.Version = ""
-		unversionedMatches, err := a.extensionManager.FindExtensions(
-			ctx, &unversionedOptions,
-		)
-		if err != nil {
-			if isNetworkError(err) {
-				return fmt.Errorf(
-					"network error looking up extension %s "+
-						"(check your connection and retry): %w",
-					extensionId, err,
-				)
-			}
-			return fmt.Errorf(
-				"failed to find extension %s: %w", extensionId, err,
-			)
-		}
-
+	versionMismatchError := func(unversionedMatches []*extensions.ExtensionMetadata) error {
 		res := extensions.ResolveUpgradeSource(
 			installed, unversionedMatches, a.flags.source,
 		)
 		if res == nil {
-			if len(unversionedMatches) > 0 {
-				return upgradeSourceResolutionError(
-					extensionId, a.flags.source, installed.Source,
-				)
-			}
-			return nil
+			return upgradeSourceResolutionError(
+				extensionId, a.flags.source, installed.Source,
+			)
 		}
 		return upgradeVersionResolutionError(
 			extensionId, a.flags.version, res.NewSource,
@@ -2480,6 +2458,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		ctx, allMatchOptions,
 	)
 	if err != nil {
+		if versionErr, ok := errors.AsType[*extensions.ExtensionVersionNotFoundError](err); ok {
+			return fail(versionMismatchError(versionErr.Matches))
+		}
 		if isNetworkError(err) {
 			return fail(fmt.Errorf(
 				"network error looking up extension %s "+
@@ -2492,10 +2473,6 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		))
 	}
 	if len(matches) == 0 {
-		if err := versionMismatchError(); err != nil {
-			return fail(err)
-		}
-
 		// Explicit --source miss: neither the requested version nor any other
 		// version of the extension exists in that source.
 		if a.flags.source != "" && !a.flags.all {
@@ -2540,9 +2517,6 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			installed, matches, a.flags.source,
 		)
 		if res == nil {
-			if err := versionMismatchError(); err != nil {
-				return fail(err)
-			}
 			return fail(upgradeSourceResolutionError(
 				extensionId, a.flags.source, installed.Source,
 			))

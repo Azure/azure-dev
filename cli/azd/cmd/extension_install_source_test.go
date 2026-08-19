@@ -397,6 +397,37 @@ func TestResolveSourceLocation_NoPromptFileDirectsToSourceAdd(t *testing.T) {
 	}
 }
 
+func TestExtensionInstall_MissingVersionReportsLatest(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newBundleInstallTestAction(t)
+	registryPath := writeRegistryFile(t)
+	require.NoError(t, action.sourceManager.Add(t.Context(), "local-dev", &extensions.SourceConfig{
+		Name:     "local-dev",
+		Type:     extensions.SourceKindFile,
+		Location: registryPath,
+	}))
+	action.args = []string{"test.ext"}
+	action.flags.source = "local-dev"
+	action.flags.version = "0.1.0"
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(
+		t,
+		err.Error(),
+		"extension 'test.ext' version '0.1.0' was not found; latest version is '1.0.0'",
+	)
+
+	var errWithSuggestion *internal.ErrorWithSuggestion
+	require.ErrorAs(t, err, &errWithSuggestion)
+	require.Contains(
+		t,
+		errWithSuggestion.Suggestion,
+		"azd extension install test.ext --version 1.0.0 --source local-dev",
+	)
+}
+
 func newInstallSourceTestAction(t *testing.T) (*extensionInstallAction, *mocks.MockContext) {
 	t.Helper()
 

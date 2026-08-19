@@ -97,6 +97,80 @@ func (e *DependencyVersionNotFoundError) Suggestion() string {
 	)
 }
 
+// ExtensionVersionNotFoundError indicates an extension exists but does not have
+// a version matching the requested version filter.
+type ExtensionVersionNotFoundError struct {
+	// ExtensionId is the id of the extension without a matching version.
+	ExtensionId string
+	// Version is the requested version or constraint that could not be matched.
+	Version string
+	// Source is the requested source, if one was provided.
+	Source string
+	// Matches contains the extension metadata found without the version filter.
+	Matches []*ExtensionMetadata
+}
+
+func (e *ExtensionVersionNotFoundError) Error() string {
+	latestVersions := e.latestVersions()
+	if len(latestVersions) == 1 {
+		return fmt.Sprintf(
+			"extension '%s' version '%s' was not found; latest version is '%s'",
+			e.ExtensionId, e.Version, latestVersions[0].Version,
+		)
+	}
+
+	displayVersions := make([]string, 0, len(latestVersions))
+	for _, latest := range latestVersions {
+		displayVersions = append(displayVersions, fmt.Sprintf("%s: %s", latest.Source, latest.Version))
+	}
+
+	return fmt.Sprintf(
+		"extension '%s' version '%s' was not found; latest versions are %s",
+		e.ExtensionId, e.Version, strings.Join(displayVersions, ", "),
+	)
+}
+
+// Suggestion returns actionable guidance for installing an available version.
+func (e *ExtensionVersionNotFoundError) Suggestion() string {
+	latestVersions := e.latestVersions()
+	if len(latestVersions) == 1 {
+		latest := latestVersions[0]
+		command := fmt.Sprintf("azd extension install %s --version %s", e.ExtensionId, latest.Version)
+		source := e.Source
+		if source == "" && !strings.EqualFold(latest.Source, MainRegistryName) {
+			source = latest.Source
+		}
+		if source != "" {
+			command += fmt.Sprintf(" --source %s", source)
+		}
+
+		return fmt.Sprintf("Run '%s' to install the latest version.", command)
+	}
+
+	return "Specify the extension source using the --source flag, or choose an available version."
+}
+
+type extensionLatestVersion struct {
+	Source  string
+	Version string
+}
+
+func (e *ExtensionVersionNotFoundError) latestVersions() []extensionLatestVersion {
+	latestVersions := make([]extensionLatestVersion, 0, len(e.Matches))
+	for _, match := range e.Matches {
+		latestVersion := LatestVersion(match.Versions)
+		if latestVersion == nil {
+			continue
+		}
+		latestVersions = append(latestVersions, extensionLatestVersion{
+			Source:  match.Source,
+			Version: latestVersion.Version,
+		})
+	}
+
+	return latestVersions
+}
+
 // DependencyAzdVersionIncompatibleError indicates that dependency versions
 // satisfy the parent's constraint, but none support the running azd version.
 type DependencyAzdVersionIncompatibleError struct {
@@ -329,7 +403,7 @@ func createExtensionFilter(options *FilterOptions) extensionFilterPredicate {
 		}
 
 		// Check Version filter - extension must have at least one matching version.
-		if options.Version != "" && options.Version != "latest" {
+		if hasExplicitVersionFilter(options) {
 			hasVersion := slices.ContainsFunc(extension.Versions, func(version ExtensionVersion) bool {
 				return matchesVersionConstraint(options.Version, version.Version)
 			})
@@ -386,6 +460,10 @@ func createExtensionFilter(options *FilterOptions) extensionFilterPredicate {
 		// All criteria passed
 		return true
 	}
+}
+
+func hasExplicitVersionFilter(options *FilterOptions) bool {
+	return options.Version != "" && !strings.EqualFold(options.Version, "latest")
 }
 
 // Manager is responsible for managing extensions
@@ -523,6 +601,7 @@ func (m *Manager) UpdateInstalled(extension *Extension) error {
 
 func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([]*ExtensionMetadata, error) {
 	allExtensions := []*ExtensionMetadata{}
+	versionMismatches := []*ExtensionMetadata{}
 
 	if options == nil {
 		options = &FilterOptions{}
@@ -544,6 +623,12 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 
 	// Use the centralized extension filter
 	extensionFilter := createExtensionFilter(filterOptions)
+	var versionlessFilter extensionFilterPredicate
+	if filterOptions.Id != "" && hasExplicitVersionFilter(filterOptions) {
+		versionlessOptions := *filterOptions
+		versionlessOptions.Version = ""
+		versionlessFilter = createExtensionFilter(&versionlessOptions)
+	}
 
 	var sources []Source
 	var err error
@@ -573,6 +658,8 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 		for _, extension := range sourceExtensions {
 			if extensionFilter(extension) {
 				filteredExtensions = append(filteredExtensions, extension)
+			} else if versionlessFilter != nil && versionlessFilter(extension) {
+				versionMismatches = append(versionMismatches, extension)
 			}
 		}
 
@@ -586,6 +673,15 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 		})
 
 		allExtensions = append(allExtensions, filteredExtensions...)
+	}
+
+	if len(allExtensions) == 0 && len(versionMismatches) > 0 {
+		return nil, &ExtensionVersionNotFoundError{
+			ExtensionId: filterOptions.Id,
+			Version:     filterOptions.Version,
+			Source:      filterOptions.Source,
+			Matches:     versionMismatches,
+		}
 	}
 
 	return allExtensions, nil
@@ -714,26 +810,17 @@ func (m *Manager) installInternal(
 
 			dependencyMatches, err := m.FindExtensions(ctx, dependencyOptions)
 			if err != nil {
+				if _, ok := errors.AsType[*ExtensionVersionNotFoundError](err); ok {
+					return nil, &DependencyVersionNotFoundError{
+						DependencyId: dependency.Id,
+						ParentId:     extension.Id,
+						Constraint:   dependency.Version,
+					}
+				}
 				return nil, fmt.Errorf("failed to find dependency %s: %w", dependency.Id, err)
 			}
 
 			if len(dependencyMatches) == 0 {
-				if dependency.Version != "" && !strings.EqualFold(dependency.Version, "latest") {
-					unconstrainedOptions := *dependencyOptions
-					unconstrainedOptions.Version = ""
-					unconstrainedMatches, err := m.FindExtensions(ctx, &unconstrainedOptions)
-					if err != nil {
-						return nil, fmt.Errorf("failed to find dependency %s: %w", dependency.Id, err)
-					}
-					if len(unconstrainedMatches) > 0 {
-						return nil, &DependencyVersionNotFoundError{
-							DependencyId: dependency.Id,
-							ParentId:     extension.Id,
-							Constraint:   dependency.Version,
-						}
-					}
-				}
-
 				return nil, &DependencyNotFoundError{DependencyId: dependency.Id, ParentId: extension.Id}
 			}
 

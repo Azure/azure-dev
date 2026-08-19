@@ -38,7 +38,7 @@ func TestWritePortalLink_SilentWithoutAURL(t *testing.T) {
 	assert.Empty(t, buf.String())
 }
 
-// Colour is pinned off for the rest of the package, which leaves nothing
+// Color is pinned off for the rest of the package, which leaves nothing
 // exercising the branch that actually runs in a terminal. The escape codes have
 // to wrap the URL and nothing else: one leaking into the label, or past the
 // newline, follows the link into whatever a reader pastes it in.

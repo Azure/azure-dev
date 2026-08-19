@@ -81,7 +81,7 @@ func TestLiveRunCancel(t *testing.T) {
 	if err != nil {
 		// The service refuses to cancel a run that already left the cancellable
 		// window. That is a race this test starts but does not control, and it
-		// is the behaviour a separate case already pins, so there is nothing
+		// is the behavior a separate case already pins, so there is nothing
 		// left here to observe.
 		current, getErr := env.evalClient.GetOpenAIEvalRun(ctx, group.ID, run.ID)
 		require.NoError(t, getErr, "reading the run whose cancel was refused")

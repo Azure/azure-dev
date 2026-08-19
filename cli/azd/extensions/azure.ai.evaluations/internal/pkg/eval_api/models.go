@@ -317,7 +317,7 @@ const (
 	// a dataset. The service reads them from Application Insights, so the agent
 	// must be emitting gen_ai.input.messages / gen_ai.output.messages.
 	//
-	// Deprecated in favour of EvalRunDataSourceTypeTracePreview, which is the
+	// Deprecated in favor of EvalRunDataSourceTypeTracePreview, which is the
 	// only shape that carries an agent version. This one silently discards
 	// agent_version and start_time and re-imposes its own lookback.
 	EvalRunDataSourceTypeTraces EvalRunDataSourceType = "azure_ai_traces"

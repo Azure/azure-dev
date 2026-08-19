@@ -10,7 +10,7 @@ import (
 	"github.com/fatih/color"
 )
 
-// TestMain pins colour off for the whole package.
+// TestMain pins color off for the whole package.
 //
 // fatih/color decides once, at init, from whether the process's stdout is a
 // terminal -- not from the writer a renderer was handed. `go test` pipes

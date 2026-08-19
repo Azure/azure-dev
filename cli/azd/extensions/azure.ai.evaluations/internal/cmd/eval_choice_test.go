@@ -56,7 +56,7 @@ func TestSeveralEvalsErrorStillNamesEveryCandidate(t *testing.T) {
 	cmd := newEvalCreateCommand()
 	// Without this the picker reaches azdext.NewAzdClient and attempts a real
 	// RPC, which passes only because resolving an empty address fails fast.
-	// This test is about the message, not about network behaviour.
+	// This test is about the message, not about network behavior.
 	cmd.Flags().Bool("no-prompt", true, "")
 
 	_, err := cfg.Eval(chooseEval(cmd, cfg, ""))

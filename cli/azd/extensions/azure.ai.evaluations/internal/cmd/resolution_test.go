@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Precedence decides behaviour without announcing it, so a wrong answer here
+// Precedence decides behavior without announcing it, so a wrong answer here
 // is silent. options.max_samples was parsed and dropped once already, which is
 // what these lock down.
 func TestResolveMaxSamples_Precedence(t *testing.T) {

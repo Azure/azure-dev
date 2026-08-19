@@ -306,6 +306,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 | Field Key | Type | Values |
 |-----------|------|--------|
 | `auth.method` | string | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
+| `auth.cache_clear_failed` | string | `auth`, `subscriptions` — which cache failed to clear during the pre-login cleanup. Emitted on `auth login`. |
 </details>
 
 <details>
@@ -426,6 +427,15 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `container.remoteBuild.count` | measurement | Number of remote container builds performed |
+| `container.remotebuild` | bool | Whether a remote (ACR) build was requested (the configured preference) rather than a local build. |
+</details>
+
+<details>
+<summary><strong>AKS</strong></summary>
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `skip.reason` | string | Why AKS postprovision Kubernetes context setup was skipped. Bounded enum: `cluster_not_provisioned`. Emitted on `aks.postprovision.skip`. |
 </details>
 
 <details>
@@ -785,7 +795,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Execution Environment** | All events | `execution.environment` | Usage by environment, CI vs local |
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
-| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
+| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image`, `container.remotebuild` | Build method usage (local vs. remote ACR build), success rates |
 | **App Detection (Aspire polyglot)** | `aspire.apphost.unsupported` | `aspire.apphost.language` (`typescript`/`python`/`go`/`java`/`rust`) | How often an unsupported Aspire polyglot (non-C#) AppHost is encountered, by language. **Emitted only during app detection for `init` and fresh `up` (no existing `azure.yaml`)** — not for already-initialized projects, so absence does not mean zero unsupported AppHosts. |
 | **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.update`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy` | Install/update/uninstall success, update availability |
 

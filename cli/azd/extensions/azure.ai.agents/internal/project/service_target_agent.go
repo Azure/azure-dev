@@ -1590,7 +1590,9 @@ func digitalWorkerBotTransitionWarning(
 		return ""
 	}
 	return fmt.Sprintf(
-		"Warning: service %q changed to digital_worker and still has the azd-managed Azure Bot %q in resource group %q. Digital Worker deployment does not use this Bot; review it and delete the legacy Bot manually if it is no longer needed.",
+		"Warning: service %q changed to digital_worker and still has the azd-managed Azure Bot %q "+
+			"in resource group %q. Digital Worker deployment does not use this Bot; review it and "+
+			"delete the legacy Bot manually if it is no longer needed.",
 		serviceName,
 		botName,
 		resourceGroup,

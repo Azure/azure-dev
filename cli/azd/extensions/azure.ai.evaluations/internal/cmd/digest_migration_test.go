@@ -133,7 +133,7 @@ func TestADeclarationDoesNotAdoptAnEvalAnotherOneOwns(t *testing.T) {
 	}}
 	r, created := evalServiceReconciler(t, env, "eval_1")
 
-	r.ReserveDeclared(context.Background(), []string{"weekly", "nightly"})
+	r.ReserveDeclared(context.Background(), []project.Eval{newcomer, owner})
 	id, wasCreated, err := r.EnsureEval(context.Background(), newcomer, "")
 
 	require.NoError(t, err)
@@ -158,13 +158,44 @@ func TestARenamedEvalIsStillAdopted(t *testing.T) {
 	}}
 	r, created := evalServiceReconciler(t, env, "eval_1")
 
-	r.ReserveDeclared(context.Background(), []string{"evening"})
+	r.ReserveDeclared(context.Background(), []project.Eval{renamed})
 	id, wasCreated, err := r.EnsureEval(context.Background(), renamed, "")
 
 	require.NoError(t, err)
 	assert.Equal(t, "eval_1", id, "a rename keeps the id and the runs under it")
 	assert.False(t, wasCreated)
 	assert.Empty(t, *created)
+}
+
+// A declaration about to be recreated reserves nothing: it is abandoning that
+// eval, and holding it back refused the rename that legitimately continues it.
+func TestARenameIsStillAdoptedWhenTheOldNameIsRecycled(t *testing.T) {
+	original := windowedEval("morning", 24)
+	digest, err := project.FingerprintGroup(original)
+	require.NoError(t, err)
+	shipped, err := project.FingerprintDefinition(original)
+	require.NoError(t, err)
+
+	// The same commit renames it and gives the freed name to a different eval.
+	renamed := original
+	renamed.Name = "evening"
+	recycled := windowedEval("morning", 24)
+	recycled.Evaluators = evalcore.EvaluatorList{{Evaluator: "builtin.coherence"}}
+
+	env := &testEnvServer{values: map[string]string{
+		digestIDKey(digest):                       "eval_1",
+		idKey("eval", "morning"):                  "eval_1",
+		project.FingerprintKey("eval", "morning"): shipped,
+	}}
+	r, _ := evalServiceReconciler(t, env, "eval_1")
+
+	r.ReserveDeclared(context.Background(), []project.Eval{recycled, renamed})
+	id, wasCreated, err := r.EnsureEval(context.Background(), renamed, "")
+
+	require.NoError(t, err)
+	assert.Equal(t, "eval_1", id,
+		"the eval morning is abandoning is the one evening continues")
+	assert.False(t, wasCreated)
 }
 
 // The map is built on first use, because the reconciler is also constructed

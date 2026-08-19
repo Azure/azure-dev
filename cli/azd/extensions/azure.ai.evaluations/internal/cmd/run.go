@@ -205,7 +205,14 @@ func buildRunCommand(use, short string) *cobra.Command {
 			// no dataset, so it records none.
 			if group != nil && group.Dataset != "" && group.Source == nil {
 				metadata[metaDataset] = group.Dataset
-				if v := ec.getEnvValue(ctx, versionKey("dataset", group.Dataset)); v != "" {
+				// The version the rows came from, which is the pin when the
+				// declaration carries one. Reading only what the last deploy
+				// recorded stamped the run with a version it had not scored.
+				v := declaredDatasetVersion(configPath, group)
+				if v == "" {
+					v = ec.getEnvValue(ctx, versionKey("dataset", group.Dataset))
+				}
+				if v != "" {
 					metadata[metaDatasetVersion] = v
 				}
 			}

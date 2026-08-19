@@ -72,13 +72,54 @@ func TestNoPinIsReadWhenThereIsNothingToReadItFrom(t *testing.T) {
 
 // The deploy leaves the recorded version alone, so it keeps meaning "the
 // version this file's content published" and the drift check keeps working.
+//
+// Driven through EnsureDataset rather than asserted against the source, so
+// respelling the write does not slip past.
 func TestPinningDoesNotOverwriteTheVersionTheContentPublished(t *testing.T) {
-	body, err := os.ReadFile("reconciler.go")
+	dir := t.TempDir()
+	localPath := filepath.Join(dir, "golden.jsonl")
+	require.NoError(t, os.WriteFile(localPath, []byte("{\"query\":\"hi\"}\n"), 0o600))
+
+	digest, err := project.Fingerprint(localPath)
 	require.NoError(t, err)
 
-	assert.NotContains(t, string(body),
-		`r.ec.remember(ctx, versionKey("dataset", decl.Name), decl.Version)`,
-		"writing the pin here made removing it later read as drift")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/versions/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// assert, not require: this runs on the server's goroutine.
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "golden", "version": "1"}))
+	}))
+	t.Cleanup(srv.Close)
+
+	// The last deploy published version 2 from this same file. The author then
+	// pinned version 1 without touching it, so the digest still matches.
+	env := &testEnvServer{values: map[string]string{
+		project.FingerprintKey("dataset", "golden"): digest,
+		versionKey("dataset", "golden"):             "2",
+	}}
+	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
+		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
+	r := &evalReconciler{ec: &evalContext{
+		azdClient:     newTestAzdClient(t, env),
+		envName:       "test",
+		datasetClient: dataset_api.NewDatasetClientFromPipeline(srv.URL, pipeline),
+	}}
+
+	version, changed, err := r.EnsureDataset(
+		context.Background(),
+		project.DatasetDecl{Name: "golden", Version: "1"},
+		localPath,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, "1", version, "the pin is what the deploy reports")
+	assert.False(t, changed)
+	assert.Equal(t, "2", env.values[versionKey("dataset", "golden")],
+		"the recorded version still means what this file published, "+
+			"or removing the pin later reads as somebody publishing behind the config")
 }
 
 // And the pin is what the run downloads. Reading the declaration and then not

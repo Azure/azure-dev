@@ -55,19 +55,54 @@ func (r *evalReconciler) claim(id string) {
 	r.claimed[id] = true
 }
 
-// ReserveDeclared marks the evals these names already resolve to as spoken for.
+// ReserveDeclared marks the evals these declarations already resolve to as
+// spoken for.
 //
-// Claiming only as each declaration finishes makes adoption depend on file
+// Claiming only as each declaration finished made adoption depend on file
 // order: a declaration listed above the one that owns an eval would adopt it,
 // rename it, and end up sharing its runs. Reserving up front is the same guard
 // without the ordering. A name the environment holds no id for reserves
 // nothing, which is what leaves a genuine rename free to adopt.
-func (r *evalReconciler) ReserveDeclared(ctx context.Context, names []string) {
-	for _, name := range names {
-		if id := r.ec.getEnvValue(ctx, idKey("eval", name)); id != "" {
-			r.claim(id)
+//
+// A declaration that is going to be recreated reserves nothing either: it is
+// about to abandon that eval, and holding it back would refuse the rename that
+// legitimately continues it.
+func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.Eval) {
+	for i := range groups {
+		id := r.ec.getEnvValue(ctx, idKey("eval", groups[i].Name))
+		if id == "" {
+			continue
 		}
+		_, _, recreate, err := r.evalDigests(ctx, groups[i])
+		if err == nil && recreate {
+			continue
+		}
+		r.claim(id)
 	}
+}
+
+// evalDigests hashes a declaration both ways and says whether its substance
+// changed since the last deploy.
+//
+// digest identifies the declaration and keys the id a rename looks up.
+// definition is what the service stores, and is what the recreate comparison
+// is made against. The recorded baseline is the definition from the build that
+// split them on, and the full digest from every build before: equality with
+// either says the declaration is what was deployed.
+func (r *evalReconciler) evalDigests(
+	ctx context.Context,
+	group project.Eval,
+) (digest, definition string, recreate bool, err error) {
+	digest, err = project.FingerprintGroup(group)
+	if err != nil {
+		return "", "", false, err
+	}
+	definition, err = project.FingerprintDefinition(group)
+	if err != nil {
+		return "", "", false, err
+	}
+	prior := r.ec.getEnvValue(ctx, project.FingerprintKey("eval", group.Name))
+	return digest, definition, prior != "" && prior != definition && prior != digest, nil
 }
 
 // EnsureDataset registers a new version only when the local content changed.
@@ -504,25 +539,11 @@ func (r *evalReconciler) EnsureEval(
 	// dataset, target, level — needs a new eval. Name and description are
 	// excluded from the digest and pushed in place instead, and so are
 	// max_samples and source:, which the run carries rather than the eval.
-	recreate := false
-	digest, err := project.FingerprintGroup(group)
-	if err != nil {
-		return "", false, err
-	}
-	definition, err := project.FingerprintDefinition(group)
+	digest, definition, recreate, err := r.evalDigests(ctx, group)
 	if err != nil {
 		return "", false, err
 	}
 	key := project.FingerprintKey("eval", group.Name)
-	// Compared against both. The recorded baseline is the definition from this
-	// build on, and the full digest from every build before the two were split:
-	// reading only the definition made the first deploy after an upgrade recreate
-	// every eval carrying max_samples or source:, for a file nobody had touched,
-	// and orphaned the runs taken under it. Equality with either says the
-	// declaration is what was deployed.
-	if prior := r.ec.getEnvValue(ctx, key); prior != "" && prior != definition && prior != digest {
-		recreate = true
-	}
 
 	// Building the request is also what checks the declaration against the
 	// dataset's columns, so it happens before the reuse decision: a dataset can

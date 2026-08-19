@@ -34,6 +34,10 @@ type evalReconciler struct {
 	// eval -- and adopting it renames that eval and leaves the declaration that
 	// asked for it sharing the other one's runs.
 	claimed map[string]bool
+
+	// decided holds each declaration's digests, so reservation and
+	// reconciliation cannot answer the question differently.
+	decided map[string]evalDecision
 }
 
 var _ project.Reconciler = (*evalReconciler)(nil)
@@ -69,16 +73,66 @@ func (r *evalReconciler) claim(id string) {
 // legitimately continues it.
 func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.Eval) {
 	for i := range groups {
-		id := r.ec.getEnvValue(ctx, idKey("eval", groups[i].Name))
-		if id == "" {
+		decision, err := r.decide(ctx, groups[i])
+		if err != nil {
+			// Nothing decided, so nothing skipped. The error surfaces from
+			// EnsureEval, where it can fail the deploy.
 			continue
 		}
-		_, _, recreate, err := r.evalDigests(ctx, groups[i])
-		if err == nil && recreate {
+		id := r.ec.getEnvValue(ctx, idKey("eval", groups[i].Name))
+		if id == "" || decision.recreate {
 			continue
 		}
 		r.claim(id)
 	}
+}
+
+// evalDecision is what one declaration's digests settled.
+type evalDecision struct {
+	digest     string
+	definition string
+	recreate   bool
+}
+
+// decide hashes a declaration both ways and says whether its substance changed
+// since the last deploy, answering the same way every time it is asked.
+//
+// Remembered per name because two callers ask: reservation, before anything is
+// reconciled, and EnsureEval itself. The recorded baseline is read over gRPC
+// and a read that failed answers "", so asking twice let one transient failure
+// leave an eval unreserved and then reused -- two declarations on one id, which
+// is the collision reservation exists to stop.
+//
+// digest identifies the declaration and keys the id a rename looks up.
+// definition is what the service stores, and is what the recreate comparison is
+// made against. The recorded baseline is the definition from the build that
+// split them on, and the full digest from every build before: equality with
+// either says the declaration is what was deployed.
+func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDecision, error) {
+	if decided, ok := r.decided[group.Name]; ok {
+		return decided, nil
+	}
+
+	digest, err := project.FingerprintGroup(group)
+	if err != nil {
+		return evalDecision{}, err
+	}
+	definition, err := project.FingerprintDefinition(group)
+	if err != nil {
+		return evalDecision{}, err
+	}
+	prior := r.ec.getEnvValue(ctx, project.FingerprintKey("eval", group.Name))
+
+	decided := evalDecision{
+		digest:     digest,
+		definition: definition,
+		recreate:   prior != "" && prior != definition && prior != digest,
+	}
+	if r.decided == nil {
+		r.decided = map[string]evalDecision{}
+	}
+	r.decided[group.Name] = decided
+	return decided, nil
 }
 
 // evalDigests hashes a declaration both ways and says whether its substance
@@ -93,16 +147,11 @@ func (r *evalReconciler) evalDigests(
 	ctx context.Context,
 	group project.Eval,
 ) (digest, definition string, recreate bool, err error) {
-	digest, err = project.FingerprintGroup(group)
+	decided, err := r.decide(ctx, group)
 	if err != nil {
 		return "", "", false, err
 	}
-	definition, err = project.FingerprintDefinition(group)
-	if err != nil {
-		return "", "", false, err
-	}
-	prior := r.ec.getEnvValue(ctx, project.FingerprintKey("eval", group.Name))
-	return digest, definition, prior != "" && prior != definition && prior != digest, nil
+	return decided.digest, decided.definition, decided.recreate, nil
 }
 
 // EnsureDataset registers a new version only when the local content changed.

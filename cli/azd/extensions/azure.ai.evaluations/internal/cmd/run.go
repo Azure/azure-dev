@@ -205,14 +205,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 			// no dataset, so it records none.
 			if group != nil && group.Dataset != "" && group.Source == nil {
 				metadata[metaDataset] = group.Dataset
-				// The version the rows came from, which is the pin when the
-				// declaration carries one. Reading only what the last deploy
-				// recorded stamped the run with a version it had not scored.
-				v := declaredDatasetVersion(configPath, group)
-				if v == "" {
-					v = ec.getEnvValue(ctx, versionKey("dataset", group.Dataset))
-				}
-				if v != "" {
+				if v := ec.scoredDatasetVersion(ctx, group, configPath); v != "" {
 					metadata[metaDatasetVersion] = v
 				}
 			}
@@ -739,6 +732,27 @@ func declaredDatasetVersion(configPath string, group *project.Eval) string {
 		return ""
 	}
 	return decl.Version
+}
+
+// scoredDatasetVersion labels a run with the version its rows actually came
+// from.
+//
+// It has to follow the same branch the rows did. A declaration carrying both
+// `source:` and `version:` reads the file from disk, so the pin says nothing
+// about what was scored and the recorded version -- the one this file's content
+// published, which checkDatasetRegistered has already confirmed the rows match
+// -- is the honest label. Only a registered dataset is fetched at the pin.
+func (ec *evalContext) scoredDatasetVersion(
+	ctx context.Context,
+	group *project.Eval,
+	configPath string,
+) string {
+	if localDatasetPath(configPath, group) == "" {
+		if pinned := declaredDatasetVersion(configPath, group); pinned != "" {
+			return pinned
+		}
+	}
+	return ec.getEnvValue(ctx, versionKey("dataset", group.Dataset))
 }
 
 // datasetIsDeclared says whether the configuration's catalog holds the dataset

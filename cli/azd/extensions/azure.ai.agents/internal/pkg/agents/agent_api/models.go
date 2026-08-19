@@ -339,8 +339,12 @@ type VoiceInputConfig struct {
 // (single lowercase word, e.g. "alloy") or "azure_standard" for Azure Neural
 // voices (e.g. "en-US-Ava:DragonHDLatestNeural").
 type VoiceConfig struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
+	Type   string  `json:"type"`
+	Name   string  `json:"name"`
+	Style  *string `json:"style,omitempty"`
+	Pitch  *string `json:"pitch,omitempty"`
+	Rate   *string `json:"rate,omitempty"`
+	Locale *string `json:"locale,omitempty"`
 }
 
 // VoiceOutputConfig is the output (agent -> caller) audio configuration.

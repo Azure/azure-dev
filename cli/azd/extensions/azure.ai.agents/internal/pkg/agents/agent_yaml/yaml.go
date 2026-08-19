@@ -281,8 +281,12 @@ type VoiceTranscription struct {
 
 // VoiceConfig selects the output voice.
 type VoiceConfig struct {
-	Type string `json:"type" yaml:"type"`
-	Name string `json:"name" yaml:"name"`
+	Type   string  `json:"type" yaml:"type"`
+	Name   string  `json:"name" yaml:"name"`
+	Style  *string `json:"style,omitempty" yaml:"style,omitempty"`
+	Pitch  *string `json:"pitch,omitempty" yaml:"pitch,omitempty"`
+	Rate   *string `json:"rate,omitempty" yaml:"rate,omitempty"`
+	Locale *string `json:"locale,omitempty" yaml:"locale,omitempty"`
 }
 
 // ContainerResources represents the resource allocation for a containerized agent.

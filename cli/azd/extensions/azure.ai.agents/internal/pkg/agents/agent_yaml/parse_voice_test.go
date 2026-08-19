@@ -85,6 +85,7 @@ template:
       voice:
         type: azure_standard
         name: en-US-AvaNeural
+        style: cheerful
       speed: 1.1
   output_modalities: [audio, text]
   tools:
@@ -118,7 +119,8 @@ template:
 	if voiceAgent.Audio.Input.Transcription.Language == nil || *voiceAgent.Audio.Input.Transcription.Language != "en-US" {
 		t.Errorf("transcription = %+v", voiceAgent.Audio.Input.Transcription)
 	}
-	if voiceAgent.Audio.Output.Voice.Name != "en-US-AvaNeural" {
+	if voiceAgent.Audio.Output.Voice.Name != "en-US-AvaNeural" ||
+		voiceAgent.Audio.Output.Voice.Style == nil || *voiceAgent.Audio.Output.Voice.Style != "cheerful" {
 		t.Errorf("output voice = %+v", voiceAgent.Audio.Output.Voice)
 	}
 	if len(voiceAgent.OutputModalities) != 2 || voiceAgent.OutputModalities[1] != "text" {
@@ -227,5 +229,27 @@ audio:
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("expected error to contain %q, got: %v", want, err)
 		}
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoice_UnsupportedAudioFormat(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+audio:
+  input:
+    format:
+      type: audio/opus
+      rate: 24000
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil {
+		t.Fatal("expected unsupported audio format validation error")
+	}
+	if !strings.Contains(err.Error(), "audio/pcm") || !strings.Contains(err.Error(), "audio/pcmu") ||
+		!strings.Contains(err.Error(), "audio/pcma") {
+		t.Fatalf("expected supported audio formats in error, got: %v", err)
 	}
 }

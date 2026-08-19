@@ -585,7 +585,38 @@ func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceCon
 	if voiceType == "" {
 		return buildVoiceConfig(name)
 	}
-	return &agent_api.VoiceConfig{Type: voiceType, Name: name}
+	return &agent_api.VoiceConfig{
+		Type:   voiceType,
+		Name:   name,
+		Style:  voice.Style,
+		Pitch:  voice.Pitch,
+		Rate:   voice.Rate,
+		Locale: voice.Locale,
+	}
+}
+
+func mapVoiceStructuredInputs(inputs map[string]any) map[string]any {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(inputs))
+	for name, input := range inputs {
+		inputMap, ok := input.(map[string]any)
+		if !ok {
+			out[name] = input
+			continue
+		}
+
+		mapped := maps.Clone(inputMap)
+		if value, ok := mapped["defaultValue"]; ok {
+			if _, hasSnakeCase := mapped["default_value"]; !hasSnakeCase {
+				mapped["default_value"] = value
+			}
+			delete(mapped, "defaultValue")
+		}
+		out[name] = mapped
+	}
+	return out
 }
 
 // CreateVoiceAgentAPIRequest builds a CreateAgentRequest for a declarative
@@ -659,7 +690,7 @@ func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 		ModelType:        modelType,
 		Model:            modelID,
 		Instructions:     instructions,
-		StructuredInputs: voiceAgent.StructuredInputs,
+		StructuredInputs: mapVoiceStructuredInputs(voiceAgent.StructuredInputs),
 		Audio: &agent_api.VoiceAudioConfig{
 			Input: &agent_api.VoiceInputConfig{
 				Format:         inputFormat,

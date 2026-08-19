@@ -138,7 +138,10 @@ Details:
 Prompt voice agents keep their editable definition on the `azure.ai.agent`
 service entry in `azure.yaml`. A minimal managed model agent only needs `kind`,
 `model`, and `name`; advanced voice settings can be layered on the same service
-without changing hosted-agent projects.
+without changing hosted-agent projects. The shape below follows the prompt voice
+service contract used by the current samples and the Vienna implementation; azd
+keeps common fields strongly typed and passes extensible tool/avatar details to
+the service for final validation.
 
 ```yaml
 services:
@@ -179,6 +182,7 @@ services:
         voice:
           type: azure_standard
           name: en-US-AvaNeural
+          style: cheerful
         speed: 1.0
     outputModalities: [audio]
     store: true
@@ -205,7 +209,23 @@ Details:
   takes precedence over the shorthand `voice` field.
 - Missing `audio` fields keep azd defaults: PCM audio at 24 kHz, server VAD,
   `azure-speech` transcription, and the default Azure Neural voice.
-- `tools` and `avatar` are passed through to the prompt voice service so new
+- Supported `audio.format.type` values are `audio/pcm`, `audio/pcmu`, and
+  `audio/pcma`; `audio.output.speed` must be between `0.25` and `1.5`.
+- `turnDetection.type` supports `server_vad` with `threshold`,
+  `prefixPaddingMs`, `silenceDurationMs`, and `createResponse`, or
+  `semantic_vad` with `eagerness` (`auto`, `low`, `medium`, or `high`).
+- `outputModalities` well-known values are `audio`, `text`, `animation`, and
+  `avatar`. The service defaults to audio when omitted.
+- `structuredInputs` follows the prompt agent structured input shape:
+  `description`, `defaultValue`, `schema`, and `required`. azd converts
+  `defaultValue` to the service wire field `default_value` when deploying.
+- Direct voice tool types are `function`, `mcp`, `system`, and `toolbox`.
+  Server-side tools such as `web_search`, `azure_ai_search`, and `openapi` must
+  be packaged in a toolbox instead of listed directly on the voice agent.
+- `avatar` well-known fields are `type`, `character`, `style`, `customized`, and
+  `output_protocol`; `type` and `character` are required by the service when an
+  avatar is configured. Well-known avatar protocols are `webrtc` and `websocket`.
+- `tools` and `avatar` intentionally remain light pass-through blocks so new
   service-side capabilities can be adopted without adding azd command flags.
 - In deprecated standalone `agent.yaml` files the equivalent keys use snake_case,
   for example `model_type`, `structured_inputs`, `output_modalities`,

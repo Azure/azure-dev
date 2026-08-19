@@ -513,8 +513,11 @@ func validateVoiceAudioFormat(path string, format *VoiceAudioFormat) []string {
 		return nil
 	}
 	var errors []string
-	if strings.TrimSpace(format.Type) == "" {
+	formatType := strings.TrimSpace(format.Type)
+	if formatType == "" {
 		errors = append(errors, path+".type must not be blank")
+	} else if formatType != "audio/pcm" && formatType != "audio/pcmu" && formatType != "audio/pcma" {
+		errors = append(errors, path+".type must be 'audio/pcm', 'audio/pcmu', or 'audio/pcma'")
 	}
 	if format.Rate != nil && *format.Rate <= 0 {
 		errors = append(errors, path+".rate must be greater than 0")

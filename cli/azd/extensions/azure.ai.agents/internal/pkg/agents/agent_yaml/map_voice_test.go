@@ -186,6 +186,7 @@ func TestCreateVoiceAgentAPIRequest_AdvancedConfig(t *testing.T) {
 	prompt := "Contoso product names"
 	speed := 1.2
 	store := true
+	voiceStyle := "cheerful"
 	agent := VoiceAgent{
 		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "advanced-voice"},
 		Model:           &Model{Id: "gpt-realtime"},
@@ -207,7 +208,7 @@ func TestCreateVoiceAgentAPIRequest_AdvancedConfig(t *testing.T) {
 			},
 			Output: &VoiceAudioOutput{
 				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: &outRate},
-				Voice:  &VoiceConfig{Type: "azure_standard", Name: "en-US-AvaNeural"},
+				Voice:  &VoiceConfig{Type: "azure_standard", Name: "en-US-AvaNeural", Style: &voiceStyle},
 				Speed:  &speed,
 			},
 		},
@@ -222,8 +223,12 @@ func TestCreateVoiceAgentAPIRequest_AdvancedConfig(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	def := req.Definition.(agent_api.VoiceAgentDefinition)
-	if def.StructuredInputs["agent_persona"] == nil {
+	persona, ok := def.StructuredInputs["agent_persona"].(map[string]any)
+	if !ok {
 		t.Fatalf("structured inputs not mapped: %+v", def.StructuredInputs)
+	}
+	if persona["default_value"] != "Ada" || persona["defaultValue"] != nil {
+		t.Fatalf("structured input default not converted to service shape: %+v", persona)
 	}
 	if def.Audio.Input.Format.Type != "audio/pcmu" || *def.Audio.Input.Format.Rate != inRate {
 		t.Errorf("input format = %+v", def.Audio.Input.Format)
@@ -245,7 +250,8 @@ func TestCreateVoiceAgentAPIRequest_AdvancedConfig(t *testing.T) {
 	if def.Audio.Output.Format.Type != "audio/pcm" || *def.Audio.Output.Format.Rate != outRate {
 		t.Errorf("output format = %+v", def.Audio.Output.Format)
 	}
-	if def.Audio.Output.Voice.Type != "azure_standard" || def.Audio.Output.Voice.Name != "en-US-AvaNeural" {
+	if def.Audio.Output.Voice.Type != "azure_standard" || def.Audio.Output.Voice.Name != "en-US-AvaNeural" ||
+		def.Audio.Output.Voice.Style != &voiceStyle {
 		t.Errorf("voice = %+v", def.Audio.Output.Voice)
 	}
 	if def.Audio.Output.Speed != &speed {

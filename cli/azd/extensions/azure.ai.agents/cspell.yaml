@@ -11,6 +11,8 @@ words:
   # Voice (prompt-voice) agents
   - BYOM
   - Nanami
+  - pcma
+  - pcmu
   - webrtc
   # Azure region names
   - australiaeast

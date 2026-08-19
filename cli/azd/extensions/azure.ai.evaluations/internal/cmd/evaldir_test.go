@@ -333,6 +333,86 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 	}
 }
 
+// --path was quoted and the values beside it were not. --name is free-form and
+// becomes the dataset name, so `--name "my eval"` printed a step passing
+// `--dataset-name my` and a stray positional `eval`, which generate refuses
+// without naming the cause.
+func TestNextStepsQuoteEveryValueTheyCarry(t *testing.T) {
+	cases := []struct {
+		name string
+		plan scaffold
+		want string
+	}{
+		{
+			name: "the generated dataset name",
+			plan: scaffold{
+				eval:            &project.Eval{Name: "my eval"},
+				generateDataset: true,
+				datasetName:     "my eval",
+				target:          "support-agent",
+			},
+			want: `--dataset-name "my eval"`,
+		},
+		{
+			name: "the generated evaluator name",
+			plan: scaffold{
+				eval:           &project.Eval{Name: "an-eval"},
+				generateRubric: true,
+				rubricName:     "my rubric",
+				target:         "support-agent",
+			},
+			want: `--evaluator-name "my rubric"`,
+		},
+		{
+			name: "the target",
+			plan: scaffold{
+				eval:            &project.Eval{Name: "an-eval"},
+				generateDataset: true,
+				datasetName:     "ds",
+				target:          "Support Agent",
+			},
+			want: `--target "Support Agent"`,
+		},
+		{
+			name: "the generation model",
+			plan: scaffold{
+				eval:            &project.Eval{Name: "an-eval"},
+				generateDataset: true,
+				datasetName:     "ds",
+				judgeModel:      "gpt 4o",
+			},
+			want: `--generation-model "gpt 4o"`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			steps := tc.plan.nextSteps("azd ai eval create")
+			require.NotEmpty(t, steps)
+			assert.Contains(t, strings.Join(steps, "\n"), tc.want)
+		})
+	}
+}
+
+// An ordinary name is left alone, or every printed step gains quotes nobody
+// needs.
+func TestNextStepsLeaveOrdinaryValuesUnquoted(t *testing.T) {
+	plan := scaffold{
+		eval:            &project.Eval{Name: "an-eval"},
+		generateDataset: true,
+		datasetName:     "support-agent-dataset",
+		target:          "support-agent",
+		judgeModel:      "gpt-4.1-nano",
+	}
+
+	joined := strings.Join(plan.nextSteps("azd ai eval create"), "\n")
+
+	assert.Contains(t, joined, "--dataset-name support-agent-dataset")
+	assert.Contains(t, joined, "--target support-agent")
+	assert.Contains(t, joined, "--generation-model gpt-4.1-nano")
+	assert.NotContains(t, joined, `"`)
+}
+
 // Backslashes must survive: doubling them is right for bash and wrong for the
 // two shells most likely to be reading a path that looks like this.
 func TestQuoteForShellLeavesBackslashesAlone(t *testing.T) {

@@ -47,6 +47,28 @@ func TestAnAbsoluteSourceIsNotRerooted(t *testing.T) {
 		ResolveSource(filepath.Join(string(filepath.Separator), "work", "proj", "evals"), absolute))
 }
 
+// azd does not re-root an absolute `$ref` or an absolute `project:`, so neither
+// may the base a `source:` resolves against: joining one under the project
+// produced <root>/C:/shared/evals, which is the same failure the join was added
+// to fix, reached from a different input.
+func TestAnAbsoluteServiceRefIsNotJoinedUnderTheProject(t *testing.T) {
+	shared := filepath.Join(t.TempDir(), "shared", "evals")
+
+	svc := &azdext.ServiceConfig{Name: "evals", Host: "azure.ai.eval"}
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": filepath.ToSlash(filepath.Join(shared, "azure.eval.yaml")),
+	})
+	require.NoError(t, err)
+	svc.Config = props
+
+	relative := serviceRelativeDir(svc)
+	require.True(t, filepath.IsAbs(relative), "the fixture has to exercise the absolute branch")
+
+	provider := &EvalServiceTargetProvider{}
+	assert.Equal(t, relative, provider.evalBaseDir(t.Context(), svc),
+		"an absolute ref names its own directory, wherever the project is")
+}
+
 // max_samples caps the rows the CLI sends on a run. It never reaches the eval
 // the service stores, so hashing it recreated the eval for a change the service
 // cannot see -- orphaning every run recorded against the old id.
@@ -66,6 +88,19 @@ func TestARowCapDoesNotCostAnEvalItsRunHistory(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, before, after, "the eval the service holds did not change")
+
+	// source: is applied per run too. Its window and agent name reach the run's
+	// data source, never CreateOpenAIEvalRequest.
+	widened := group
+	widened.Source = &SourceDecl{Type: "traces", LookbackHours: 48}
+	narrow := group
+	narrow.Source = &SourceDecl{Type: "traces", LookbackHours: 24}
+
+	wide, err := FingerprintGroup(widened)
+	require.NoError(t, err)
+	tight, err := FingerprintGroup(narrow)
+	require.NoError(t, err)
+	assert.Equal(t, wide, tight, "a different lookback is the same eval")
 
 	// And a change the service can see still forks the eval, which is what the
 	// fingerprint is for.

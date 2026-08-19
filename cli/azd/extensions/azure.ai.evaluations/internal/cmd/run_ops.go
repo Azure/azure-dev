@@ -153,8 +153,10 @@ func newRunShowCommand() *cobra.Command {
 			// answer.
 			gateOnStatus := wait
 			if wait {
-				run, err = ec.pollRun(ctx, evalID, run.ID, cmd.OutOrStdout(), isJSON(cmd))
-				if errors.Is(err, errWaitBudgetSpent) {
+				// Into a second variable: pollRun answers the budget with a nil
+				// run, and the run read above is what still names it.
+				final, pollErr := ec.pollRun(ctx, evalID, run.ID, cmd.OutOrStdout(), isJSON(cmd))
+				if errors.Is(pollErr, errWaitBudgetSpent) {
 					// The wait ran out; the run is still going server-side.
 					// `run start` answers this with a reattach line, and a gate
 					// with a refusal rather than a silent pass. Reattaching is
@@ -163,12 +165,16 @@ func newRunShowCommand() *cobra.Command {
 					if threshold.set {
 						return messages.GateOutlivedTheWait(run.ID, waitBudget)
 					}
+					if isJSON(cmd) {
+						return emitJSON(cmd.OutOrStdout(), run)
+					}
 					fmt.Fprint(cmd.OutOrStdout(), messages.WaitBudgetSpent(run.ID, waitBudget))
 					return nil
 				}
-				if err != nil {
-					return err
+				if pollErr != nil {
+					return pollErr
 				}
+				run = final
 			}
 
 			// The spec puts --fail-on on the commands that wait. Gating a run

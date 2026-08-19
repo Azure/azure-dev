@@ -511,9 +511,9 @@ func (s scaffold) nextSteps(deployCmd string) []string {
 		// One command produces both, which is the whole point of the composite.
 		steps = append(steps, s.generateCommand(""))
 	case s.generateDataset:
-		steps = append(steps, s.generateCommand("--dataset --dataset-name "+s.datasetName))
+		steps = append(steps, s.generateCommand("--dataset --dataset-name "+quoteForShell(s.datasetName)))
 	case s.generateRubric:
-		steps = append(steps, s.generateCommand("--evaluator --evaluator-name "+s.rubricName))
+		steps = append(steps, s.generateCommand("--evaluator --evaluator-name "+quoteForShell(s.rubricName)))
 	}
 	if len(steps) == 0 {
 		// `azd up` reads azure.yaml, which already $refs the configuration
@@ -568,16 +568,21 @@ func quoteForShell(v string) string {
 }
 
 // generateCommand builds a `generate` invocation that runs as printed.
+//
+// Every interpolated value is quoted, not just the path: --name is free-form
+// and becomes the dataset name, and a target or a model deployment can carry a
+// space too. Unquoted, `--dataset-name my eval` passed `my` and left `eval` as
+// a positional argument that `generate` refuses without naming the cause.
 func (s scaffold) generateCommand(what string) string {
 	cmd := "azd ai eval generate"
 	if what != "" {
 		cmd += " " + what
 	}
 	if s.target != "" {
-		cmd += " --target " + s.target
+		cmd += " --target " + quoteForShell(s.target)
 	}
 	if s.judgeModel != "" {
-		cmd += " --generation-model " + s.judgeModel
+		cmd += " --generation-model " + quoteForShell(s.judgeModel)
 	}
 	return s.withPath(cmd)
 }

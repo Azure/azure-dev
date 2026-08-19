@@ -225,6 +225,13 @@ func (p *EvalServiceTargetProvider) evalBaseDir(
 	serviceConfig *azdext.ServiceConfig,
 ) string {
 	relative := serviceRelativeDir(serviceConfig)
+	// azd does not re-root an absolute `$ref` or an absolute `project:`, so
+	// neither does this: joining one under the project produced
+	// <root>/C:/shared/evals, which is the bug this fixes, for a different
+	// input.
+	if filepath.IsAbs(relative) {
+		return relative
+	}
 	root := p.projectRoot(ctx)
 	if root == "" {
 		// azd could not name the project. Falling back to the relative path
@@ -378,18 +385,22 @@ func FingerprintGroup(group Eval) (string, error) {
 	// Only substance is hashed. The id is server-assigned; name and description
 	// are what UpdateEvalParametersBody reaches, so an edit confined to them is
 	// pushed in place and must not cost the eval its id and its run history.
-	// Everything else — dataset, source, evaluators, target, level — is fixed at
-	// creation, so a change there is a new eval.
+	// Dataset, evaluators, target and level are fixed at creation, so a change
+	// there is a new eval.
 	name := group.Name
 	group.ID = ""
 	group.Name = ""
 	group.Description = ""
 
-	// max_samples caps the rows this CLI sends on a run. It never reaches the
-	// eval the service stores, so a run with a different cap is the same eval —
-	// and hashing it recreated the eval, orphaning every run recorded against
-	// the old id and leaving two identical definitions under one name.
+	// max_samples and source: are applied per run, not at creation --
+	// CreateOpenAIEvalRequest carries neither, and buildEvalRequest reads
+	// neither. Hashing them recreated the eval for a change the stored eval
+	// cannot express: the declaration pointed at a new id, every run recorded
+	// before it became reachable only through the old one, and the service was
+	// left holding two identical definitions under one name. A source change
+	// that does alter the eval also changes `dataset`, which is hashed.
 	group.MaxSamples = 0
+	group.Source = nil
 
 	data, err := json.Marshal(group)
 	if err != nil {

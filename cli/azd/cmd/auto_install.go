@@ -456,6 +456,7 @@ func tryAutoInstallExtensionVersion(
 			preInstalledIds,
 			"  ",
 			map[string]struct{}{extension.Id: {}},
+			extension.SourceCategoryOrUnknown(),
 		)
 	}
 	return true, nil

@@ -306,6 +306,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 | Field Key | Type | Values |
 |-----------|------|--------|
 | `auth.method` | string | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
+| `auth.cache_clear_failed` | string | Cache cleanup that failed: `auth` or `subscriptions` |
 </details>
 
 <details>
@@ -387,6 +388,14 @@ Set **only when an external command-line tool invocation fails**, during error c
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `provision.cancellation` | string | `none`, `leave_running`, `canceled`, `cancel_timed_out`, `cancel_timed_out_nested`, `cancel_raced_succeeded`, `cancel_raced_failed`, `cancel_raced_deleted`, `cancel_too_late`, `cancel_failed` |
+</details>
+
+<details>
+<summary><strong>AKS Postprovision</strong></summary>
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `skip.reason` | string | Reason AKS postprovision skipped Kubernetes context setup |
 </details>
 
 <details>

@@ -5,12 +5,13 @@
 ### Success
 
 ```
-Preflight passed — all 9 checks clean.
+Preflight passed — all 10 checks clean.
 
   ✓ gofmt
   ✓ go fix
   ✓ copyright
   ✓ lint
+  ✓ telemetry docs
   ✓ cspell
   ✓ cspell-misc
   ✓ build
@@ -29,6 +30,7 @@ Preflight passed after fixes.
   ✓ go fix (fixed: 2 modernizations applied)
   ✓ copyright (no issues)
   ✓ lint (fixed: 5 findings resolved)
+  ✓ telemetry docs (fixed: missing entries added)
   ✓ cspell (fixed: 1 word added to dictionary)
   ✓ cspell-misc (no issues)
   ✓ build (no issues)
@@ -42,12 +44,13 @@ Files modified: {list of changed files}
 ### Partial Success
 
 ```
-Preflight partially passed — {N} of 9 checks clean, {M} skipped.
+Preflight partially passed — {N} of 10 checks clean, {M} skipped.
 
   ✓ gofmt
   ✓ go fix
   ✓ copyright
   ✓ lint
+  ✓ telemetry docs
   ✓ cspell
   ✓ cspell-misc
   ✓ build

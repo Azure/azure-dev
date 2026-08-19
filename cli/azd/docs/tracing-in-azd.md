@@ -71,6 +71,26 @@ tracing.SetUsageAttributes(fields.EnvName.StringHashed(envName))
 
 This example sets a usage attribute to be included in the root command event.
 
+### 4. Update the telemetry documentation
+
+Add every new event and attribute key to both the
+[public telemetry reference](../../../docs/reference/telemetry-data.md) and
+the [metrics audit schema](../../../docs/specs/metrics-audit/telemetry-schema.md).
+For extension usage events, document the event and each fixed attribute in
+the extension's README or another Markdown file in the extension directory.
+
+Run the completeness checker from `cli/azd`:
+
+```bash
+go run ./tools/telemetrylint
+```
+
+The checker reads the event and field declarations, scans static
+`tracing.Start` and `attribute.*` literals, and checks static extension
+`ReportUsageRequest` values. It understands the documented `cmd.`, `mcp.`,
+and `vsrpc.` prefixes, but dynamic extension keys cannot be enumerated and
+must be documented by the extension author.
+
 ---
 
 ## Existing Event Taxonomy

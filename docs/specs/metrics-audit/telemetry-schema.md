@@ -3,6 +3,23 @@
 This document is the authoritative reference for all telemetry events, fields, classifications,
 and data pipeline details in the Azure Developer CLI (`azd`).
 
+## Documentation completeness check
+
+Run the repository-local checker from `cli/azd` before submitting telemetry changes:
+
+```bash
+go run ./tools/telemetrylint
+```
+
+The checker parses event constants in `internal/tracing/events/events.go`, field
+keys in `internal/tracing/fields/fields.go`, and static telemetry literals in
+production Go code. It also checks statically declared extension
+`ReportUsageRequest` events and attributes against Markdown files in the
+extension directory. Every core item must appear in both this schema and the
+[public telemetry reference](../../reference/telemetry-data.md). Dynamic
+`cmd.`, `mcp.`, and `vsrpc.` names are covered by their documented prefix;
+dynamic extension keys remain the responsibility of the extension author.
+
 ## Events
 
 Events are defined in `cli/azd/internal/tracing/events/events.go`. Each event is emitted as an
@@ -312,11 +329,13 @@ set on its own.
 
 ## Command-Specific Fields
 
-The following fields are defined in `fields.go`.
+The following fields are defined in `fields.go` or emitted as
+operation-specific attributes at their instrumentation site.
 
 | Field | OTel Key | Classification | Purpose | Values |
 |-------|----------|----------------|---------|--------|
 | Auth method | `auth.method` | SystemMetadata | FeatureInsight | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
+| Auth cache cleanup failure | `auth.cache_clear_failed` | SystemMetadata | PerformanceAndHealth | Cache cleanup that failed: `auth` or `subscriptions` |
 | Env count | `env.count` | SystemMetadata | FeatureInsight | **Measurement** — number of environments |
 | Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Built-in hook name (raw) or SHA-256 hash for extension/custom hooks. Known values: `prebuild`, `postbuild`, `predeploy`, `postdeploy`, `predown`, `postdown`, `prepackage`, `postpackage`, `preprovision`, `postprovision`, `prepublish`, `postpublish`, `prerestore`, `postrestore`, `preup`, `postup` |
 | Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service`, `layer` |
@@ -324,6 +343,13 @@ The following fields are defined in `fields.go`.
 | Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | Resolved provider display name after auto-detection: `GitHub`, `Azure DevOps` |
 | Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | Emitted only when `--auth-type` is set on `pipeline config`: `federated`, `client-credentials` |
 | Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | provision/up/down: sorted, de-duplicated string slice of resolved providers — `bicep`/`terraform`/`arm`/`pulumi` verbatim, `custom` for any other (extension) provider (raw name not emitted); multi-layer projects that combine providers record each distinct value (e.g. `["bicep","terraform"]`). `infra generate`/`synth`: the value read from azure.yaml's `infra.provider` directly as a single string (`bicep`/`terraform`/`arm`/`pulumi`, `auto` when unset, or `custom` for any other (extension) provider — raw name not emitted) |
+
+### Provider-specific fields
+
+| Field | OTel Key | Classification | Purpose | Values |
+|-------|----------|----------------|---------|--------|
+| Foundry network mode | `provision.network_mode` | SystemMetadata | FeatureInsight | `none`, `byo`, or `managed` |
+| AKS skip reason | `skip.reason` | SystemMetadata | FeatureInsight | Reason Kubernetes context setup was skipped |
 
 ### App Service Deploy
 

@@ -159,6 +159,7 @@ func Preflight() error {
 		checkGoFix
 		checkCopyright
 		checkLint
+		checkTelemetryDocs
 		checkCspell
 		checkCspellMisc
 		checkBuild
@@ -167,7 +168,7 @@ func Preflight() error {
 		numChecks
 	)
 	checkNames := [numChecks]string{
-		"gofmt", "go fix", "copyright", "lint",
+		"gofmt", "go fix", "copyright", "lint", "telemetry docs",
 		"cspell", "cspell-misc", "build", "test", "playback tests",
 	}
 
@@ -269,7 +270,22 @@ func Preflight() error {
 		printResult(checkLint)
 	})
 
-	// 5a. cspell (Go source)
+	// 5. Telemetry documentation
+	wg.Go(func() {
+		out, err := runCaptureAll(
+			azdDir, nil, "go", "run", "./tools/telemetrylint",
+		)
+		if err != nil {
+			results[checkTelemetryDocs] = checkResult{
+				"fail", err.Error(), out,
+			}
+		} else {
+			results[checkTelemetryDocs] = checkResult{"pass", "", out}
+		}
+		printResult(checkTelemetryDocs)
+	})
+
+	// 6a. cspell (Go source)
 	wg.Go(func() {
 		out, err := runCaptureAll(azdDir, nil,
 			"cspell", "lint", "**/*.go",
@@ -282,7 +298,7 @@ func Preflight() error {
 		printResult(checkCspell)
 	})
 
-	// 5b. cspell (misc/docs)
+	// 6b. cspell (misc/docs)
 	wg.Go(func() {
 		out, err := runCaptureAll(repoRoot, nil,
 			"cspell", "lint", "**/*",
@@ -295,7 +311,7 @@ func Preflight() error {
 		printResult(checkCspellMisc)
 	})
 
-	// 6. go build — compile all packages AND pre-build the azd + azd-record
+	// 7. go build — compile all packages AND pre-build the azd + azd-record
 	// binaries so that Wave 2 tests can skip auto-building. This lets unit
 	// tests and playback tests run in parallel safely.
 	wg.Go(func() {
@@ -351,7 +367,7 @@ func Preflight() error {
 		skipBuildEnv := []string{"CLI_TEST_SKIP_BUILD=true"}
 		var wg2 sync.WaitGroup
 
-		// 7. Unit tests
+		// 8. Unit tests
 		wg2.Go(func() {
 			if err := runStreamingWithEnv(
 				azdDir, skipBuildEnv,
@@ -364,7 +380,7 @@ func Preflight() error {
 			printResult(checkTest)
 		})
 
-		// 8. Playback tests
+		// 9. Playback tests
 		wg2.Go(func() {
 			if err := runFunctionalTests(azdDir, testRunOpts{
 				mode: "playback",

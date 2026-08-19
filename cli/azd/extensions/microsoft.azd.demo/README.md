@@ -138,6 +138,11 @@ The `telemetry` command demonstrates the telemetry service, which lets an extens
 
 The command reports a single `demo.telemetry.reported` event with two fixed, low-cardinality attributes and prints whether the host recorded it.
 
+The attributes are:
+
+- `demo.mode`: the fixed demo mode, currently `safe`
+- `demo.outcome`: whether the demo telemetry call was `accepted` or `dropped`
+
 This example shows two things:
 
 - **Every value is a fixed enum.** Resource names, paths, prompts, and anything a user typed are customer content and must never be sent.

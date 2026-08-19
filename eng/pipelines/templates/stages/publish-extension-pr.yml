@@ -1,0 +1,215 @@
+parameters:
+  - name: AzdExtensionId
+    type: string
+  - name: AzdExtensionDirectory
+    type: string
+  - name: SanitizedExtensionId
+    type: string
+
+stages:
+  - stage: PublishExtensionForPR
+    dependsOn: BuildAndTest
+    condition: >-
+      and(
+        succeeded(),
+        ne(variables['Skip.Release'], 'true'),
+        eq(variables['Build.Reason'], 'PullRequest')
+      )
+
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+
+    jobs:
+      - job: Pack_Bundle_For_PR
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
+
+          - pwsh: |
+              $binPath = '${{ parameters.AzdExtensionDirectory }}/bin'
+              if (Test-Path -LiteralPath $binPath) {
+                Remove-Item -LiteralPath $binPath -Recurse -Force
+              }
+              New-Item -ItemType Directory -Path $binPath -Force | Out-Null
+            displayName: Prepare bundle input directory
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Linux AMD64 artifact
+            inputs:
+              artifactName: ${{ parameters.SanitizedExtensionId }}-linux-amd64
+              targetPath: ${{ parameters.AzdExtensionDirectory }}/bin
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Linux ARM64 artifact
+            inputs:
+              artifactName: ${{ parameters.SanitizedExtensionId }}-linux-arm64
+              targetPath: ${{ parameters.AzdExtensionDirectory }}/bin
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download macOS AMD64 artifact
+            inputs:
+              artifactName: ${{ parameters.SanitizedExtensionId }}-darwin-amd64
+              targetPath: ${{ parameters.AzdExtensionDirectory }}/bin
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download macOS ARM64 artifact
+            inputs:
+              artifactName: ${{ parameters.SanitizedExtensionId }}-darwin-arm64
+              targetPath: ${{ parameters.AzdExtensionDirectory }}/bin
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Windows AMD64 artifact
+            inputs:
+              artifactName: ${{ parameters.SanitizedExtensionId }}-windows-amd64.exe
+              targetPath: ${{ parameters.AzdExtensionDirectory }}/bin
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Windows ARM64 artifact
+            inputs:
+              artifactName: ${{ parameters.SanitizedExtensionId }}-windows-arm64.exe
+              targetPath: ${{ parameters.AzdExtensionDirectory }}/bin
+
+          - bash: |
+              set -euo pipefail
+              chmod +x \
+                "${{ parameters.SanitizedExtensionId }}-linux-amd64" \
+                "${{ parameters.SanitizedExtensionId }}-linux-arm64" \
+                "${{ parameters.SanitizedExtensionId }}-darwin-amd64" \
+                "${{ parameters.SanitizedExtensionId }}-darwin-arm64"
+            workingDirectory: ${{ parameters.AzdExtensionDirectory }}/bin
+            displayName: Restore executable permissions
+
+          - pwsh: |
+              $manifestPath = '${{ parameters.AzdExtensionDirectory }}/extension.yaml'
+              $content = Get-Content -LiteralPath $manifestPath -Raw
+              $pattern = '(?m)^version:\s*.*$'
+              $matches = [regex]::Matches($content, $pattern)
+              if ($matches.Count -ne 1) {
+                throw "Expected exactly one top-level version field in $manifestPath, found $($matches.Count)."
+              }
+
+              $updated = [regex]::Replace($content, $pattern, 'version: $(EXT_VERSION)')
+              Set-Content -LiteralPath $manifestPath -Value $updated -NoNewline
+            displayName: Set bundle manifest version
+
+          - bash: |
+              set -euo pipefail
+              curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --verbose
+              azd version
+            displayName: Install azd
+
+          - bash: |
+              set -euo pipefail
+              azd ext install microsoft.azd.extensions --source azd
+            displayName: Install microsoft.azd.extensions
+
+          - bash: |
+              set -euo pipefail
+              azd x pack \
+                --bundle \
+                --output "$(Build.SourcesDirectory)/release/${{ parameters.SanitizedExtensionId }}.zip"
+            workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+            displayName: Create extension bundle
+
+        templateContext:
+          outputs:
+            - output: pipelineArtifact
+              path: $(Build.SourcesDirectory)/release
+              artifact: pr-bundle
+              condition: succeeded()
+              displayName: Upload PR bundle artifact
+
+      - deployment: Publish_For_PR
+        dependsOn: Pack_Bundle_For_PR
+        environment: none
+
+        pool:
+          name: azsdk-pool
+          image: ubuntu-22.04
+          os: linux
+
+        templateContext:
+          type: releaseJob
+          isProduction: false
+          inputs:
+            - input: pipelineArtifact
+              artifactName: pr-bundle
+              targetPath: release
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - pwsh: |
+                    $prNumber = '$(System.PullRequest.PullRequestNumber)'
+                    if ($env:PRNUMBEROVERRIDE) {
+                      $prNumber = $env:PRNUMBEROVERRIDE
+                    }
+                    Write-Host "##vso[task.setvariable variable=PRNumber]$prNumber"
+                  displayName: Set PR number
+
+                - template: /eng/pipelines/templates/steps/publish-extension-storage.yml
+                  parameters:
+                    PublishUploadLocations: pr/$(PRNumber)
+
+      - job: Comment_On_PR
+        dependsOn: Publish_For_PR
+
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - pwsh: |
+              $prNumber = '$(System.PullRequest.PullRequestNumber)'
+              if ($env:PRNUMBEROVERRIDE) {
+                $prNumber = $env:PRNUMBEROVERRIDE
+              }
+              Write-Host "##vso[task.setvariable variable=PRNumber]$prNumber"
+            displayName: Set PR number
+
+          - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
+
+          - pwsh: |
+              $bundleUrl = "$(publish-storage-static-host)/azd/extensions/pr/$(PRNumber)/" +
+                "${{ parameters.SanitizedExtensionId }}.zip"
+              $content = @"
+              <!-- #comment-ext-pr-${{ parameters.SanitizedExtensionId }} -->
+              ### ${{ parameters.AzdExtensionId }} PR build
+
+              > [!NOTE]
+              > This is an unsigned development build. Install it only if you trust this PR.
+
+              **Install the extension:**
+
+              ``````sh
+              azd ext install "$bundleUrl"
+              ``````
+
+              - **Version:** ``$(EXT_VERSION)``
+              - **Merge commit:** $(Build.SourceVersion)
+              "@
+
+              $file = New-TemporaryFile
+              Set-Content -LiteralPath $file -Value $content
+              Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+            displayName: Write PR comment
+
+          - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+
+          - template: /eng/pipelines/templates/steps/update-prcomment.yml
+            parameters:
+              PrNumber: $(PRNumber)
+              BodyFile: $(CommentBodyFile)
+              Tag: '<!-- #comment-ext-pr-${{ parameters.SanitizedExtensionId }} -->'
+              GitHubToken: $(GH_TOKEN)

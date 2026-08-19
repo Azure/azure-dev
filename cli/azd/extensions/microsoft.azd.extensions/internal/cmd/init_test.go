@@ -583,6 +583,8 @@ func TestCreateInternalExtensionScaffold(t *testing.T) {
 		filepath.Join(repoRoot, "eng", "pipelines", "release-ext-"+sanitizedId+".yml"),
 		"AzdExtensionId: azure.ai.example",
 		"SanitizedExtensionId: azure-ai-example",
+		"/eng/pipelines/templates/stages/publish-extension-pr.yml",
+		"/eng/scripts/Set-ExtensionVersionVariable.ps1",
 	)
 	assertFileContains(
 		t,

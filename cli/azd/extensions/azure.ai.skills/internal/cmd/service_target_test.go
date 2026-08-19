@@ -375,6 +375,17 @@ func TestPrepareSkillArchive_RejectsOversizedZip(t *testing.T) {
 	assert.Nil(t, archive)
 }
 
+func TestValidateSkillArchiveUploadSize_RejectsOversizedArchive(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateSkillArchiveUploadSize("skill.zip", skill_api.MaxUploadBytes))
+	require.ErrorContains(
+		t,
+		validateSkillArchiveUploadSize("skill.zip", skill_api.MaxUploadBytes+1),
+		"exceeds the 25 MB upload size limit",
+	)
+}
+
 func TestPrepareSkillArchive_RejectsNonRegularZip(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {

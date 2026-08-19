@@ -23,9 +23,7 @@ import (
 )
 
 const (
-	routinesAPIVersion    = "v1"
-	routinesPreviewHeader = "Foundry-Features"
-	routinesPreviewValue  = "Routines=V1Preview"
+	routinesAPIVersion = "v1"
 )
 
 const (
@@ -146,17 +144,12 @@ func (c *Client) routineRunsURL(routineName string, extraQuery ...string) string
 	return base
 }
 
-func addPreviewHeader(req *policy.Request) {
-	req.Raw().Header.Set(routinesPreviewHeader, routinesPreviewValue)
-}
-
 // GetRoutine retrieves a routine by name.
 func (c *Client) GetRoutine(ctx context.Context, name string) (*Routine, error) {
 	req, err := runtime.NewRequest(ctx, http.MethodGet, c.routineURL(name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	addPreviewHeader(req)
 
 	resp, err := c.readPipeline.Do(req)
 	if err != nil {
@@ -202,7 +195,6 @@ func (c *Client) getPage(ctx context.Context, pageURL string, out any) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	addPreviewHeader(req)
 
 	resp, err := c.readPipeline.Do(req)
 	if err != nil {
@@ -223,7 +215,6 @@ func (c *Client) PutRoutine(ctx context.Context, name string, body *Routine) (*R
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	addPreviewHeader(req)
 
 	if err := setJSONBody(req, body); err != nil {
 		return nil, err
@@ -252,7 +243,6 @@ func (c *Client) DeleteRoutine(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	addPreviewHeader(req)
 
 	resp, err := c.writePipeline.Do(req)
 	if err != nil {
@@ -284,7 +274,6 @@ func (c *Client) postRoutineAction(ctx context.Context, name, action string) (*R
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	addPreviewHeader(req)
 
 	resp, err := c.writePipeline.Do(req)
 	if err != nil {
@@ -313,7 +302,6 @@ func (c *Client) DispatchRoutineAsync(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	addPreviewHeader(req)
 
 	if payload != nil {
 		if err := setJSONBody(req, payload); err != nil {

@@ -182,7 +182,11 @@ func newRunShowCommand() *cobra.Command {
 			if err := emitDetail(out, []field{
 				{"Run", run.ID},
 				{"Name", run.Name},
-				{"Status", run.Status},
+				// emitDetail drops an empty value, and status is `omitempty` on
+				// the wire. Reporting the status is what this command is for, so
+				// a run the service sent none for says that rather than losing
+				// the row and reading as a renderer that forgot it.
+				{"Status", reportedStatus(run.Status)},
 				{"Results", summarizeCounts(run.ResultCounts)},
 			}); err != nil {
 				return err
@@ -214,6 +218,18 @@ func firstArg(args []string) string {
 		return args[0]
 	}
 	return ""
+}
+
+// reportedStatus names a status the service did not send.
+//
+// `status` is omitempty on the wire, and the detail view drops an empty value.
+// Saying the service reported none is information; dropping the row looks like
+// the renderer forgot it.
+func reportedStatus(status string) string {
+	if status == "" {
+		return "not reported"
+	}
+	return status
 }
 
 func newRunCancelCommand() *cobra.Command {

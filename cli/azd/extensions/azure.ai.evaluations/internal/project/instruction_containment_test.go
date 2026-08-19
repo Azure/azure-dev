@@ -5,6 +5,7 @@ package project
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -85,6 +86,42 @@ func TestGenerateRefusesInstructionsFromOutsideTheProject(t *testing.T) {
 		}
 
 		_, _, err := AgentInstructionsFromProject(agentService(t, project, "agent", ""), "agent")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "outside the project")
+		assert.NotContains(t, err.Error(), "a file the project does not contain")
+	})
+
+	// A junction is the Windows escape, and it is the cheaper of the two:
+	// mklink /J needs neither elevation nor Developer Mode, while the symlink
+	// above needs one of them. Go reads a junction as an irregular file rather
+	// than a link, so path resolution refuses it while the read walks through.
+	t.Run("reached through a directory junction", func(t *testing.T) {
+		if runtime.GOOS != "windows" {
+			t.Skip("junctions are a Windows reparse point")
+		}
+
+		root := t.TempDir()
+		outside := filepath.Join(root, "outside")
+		require.NoError(t, os.MkdirAll(outside, 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(outside, "instructions.md"),
+			[]byte("a file the project does not contain"), 0o600))
+
+		project := filepath.Join(root, "proj")
+		serviceDir := filepath.Join(project, "agent")
+		require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+		writeOptimizeConfig(t, serviceDir, "instruction_file: elsewhere/instructions.md\n", "")
+
+		// The pointer stays inside the project as written; the directory it
+		// names is the reparse point.
+		junction := filepath.Join(serviceDir, ".agent_configs", "baseline", "elsewhere")
+		//nolint:gosec // fixed arguments, both paths built by this test
+		out, err := exec.Command("cmd", "/c", "mklink", "/J", junction, outside).CombinedOutput()
+		if err != nil {
+			t.Skipf("could not create a junction: %v: %s", err, out)
+		}
+
+		_, _, err = AgentInstructionsFromProject(agentService(t, project, "agent", ""), "agent")
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "outside the project")

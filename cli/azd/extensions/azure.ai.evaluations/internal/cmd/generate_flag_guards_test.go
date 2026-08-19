@@ -146,3 +146,19 @@ func TestWaitAloneIsAccepted(t *testing.T) {
 			"--wait names the default, so it must not be refused")
 	}
 }
+
+// `--wait=false` is a legal pflag spelling and means what --no-wait means.
+// Parsed into a variable nobody reads, it was accepted and then did the
+// opposite of what it said: the command waited.
+func TestWaitFalseMeansTheSameAsNoWait(t *testing.T) {
+	withNoWait := runGenerate(t,
+		"--dataset", "--dataset-name", "ds", "--no-wait", "--output-dir", t.TempDir())
+	withWaitFalse := runGenerate(t,
+		"--dataset", "--dataset-name", "ds", "--wait=false", "--output-dir", t.TempDir())
+
+	require.Error(t, withNoWait, "the guard this compares against has to still fire")
+	require.Error(t, withWaitFalse,
+		"--wait=false asks for the same thing --no-wait asks for")
+	assert.Equal(t, withNoWait.Error(), withWaitFalse.Error(),
+		"the two spellings must reach the same decision")
+}

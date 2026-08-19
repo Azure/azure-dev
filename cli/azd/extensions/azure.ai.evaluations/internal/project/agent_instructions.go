@@ -4,6 +4,8 @@
 package project
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -106,7 +108,7 @@ func AgentInstructionsFromProject(
 // withinDir reports whether path resolves to somewhere inside root.
 //
 // Asked twice: once of the path as written, and once of what it resolves to.
-// The read that follows this check follows symlinks, so a link committed to the
+// The read that follows this check follows links, so a link committed to the
 // repository would otherwise satisfy the written form while naming a file the
 // project does not contain — the same escape `..` is refused for, needing no
 // more privilege to commit.
@@ -118,9 +120,14 @@ func withinDir(root, path string) bool {
 	realRoot, rootErr := filepath.EvalSymlinks(root)
 	realPath, pathErr := filepath.EvalSymlinks(path)
 	if rootErr != nil || pathErr != nil {
-		// Nothing to follow: a path that is not there yet leads nowhere, and
-		// the read below reports it as missing rather than as an escape.
-		return true
+		// Resolution failing is not the same as there being nothing to
+		// resolve. A Windows junction is the difference: Go reads it as an
+		// irregular file rather than a link, so EvalSymlinks refuses the path
+		// while the OS walks the read straight through it. Only a path that is
+		// genuinely absent is let past, and the read reports that as missing
+		// rather than as an escape.
+		_, lstatErr := os.Lstat(path)
+		return errors.Is(lstatErr, fs.ErrNotExist)
 	}
 	return liesWithin(realRoot, realPath)
 }

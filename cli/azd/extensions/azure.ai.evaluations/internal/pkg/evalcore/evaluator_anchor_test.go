@@ -4,6 +4,9 @@
 package evalcore
 
 import (
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -71,13 +74,16 @@ evaluators:
   - evaluator: builtin.relevance
     verison: 3
 `,
+		// The first entry is clean on purpose. Decoding stops at the first
+		// entry that fails, so a typo written into the anchor would satisfy
+		// this without the merge ever being read.
 		"inherited through a merge": `
 evaluators:
   - &base
     evaluator: builtin.relevance
-    verison: 3
   - <<: *base
     evaluator: builtin.coherence
+    verison: 3
 `,
 	}
 
@@ -89,6 +95,94 @@ evaluators:
 			assert.Contains(t, err.Error(), "verison", "the key they typed should be named")
 		})
 	}
+}
+
+// An entry that is itself an alias is the most natural thing an anchor is for.
+// It used to be refused before the alias was ever looked at, and refused with
+// yaml's own numeric kind: "must be a mapping, got 16".
+func TestAnEntryThatIsItselfAnAliasResolves(t *testing.T) {
+	list, err := decodeEvaluators(t, `
+anchors:
+  - &shared
+    evaluator: builtin.relevance
+    initialization_parameters:
+      deployment_name: gpt-4o
+evaluators:
+  - *shared
+  - evaluator: builtin.coherence
+`)
+
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+	assert.Equal(t, "builtin.relevance", list[0].Evaluator)
+	assert.Equal(t, map[string]any{"deployment_name": "gpt-4o"}, list[0].InitializationParameters)
+}
+
+// A kind the file cannot use is named in words. yaml.Kind is an unnamed uint32
+// with no String method, so %v printed the bit value.
+func TestARefusedEntryNamesTheShapeInWords(t *testing.T) {
+	_, err := decodeEvaluators(t, `
+evaluators:
+  - - evaluator: builtin.relevance
+`)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "a list")
+	assert.NotContains(t, err.Error(), "16", "the reader is not reading yaml's enum")
+}
+
+// The line a typo is reported on has to be a line the reader can look at.
+//
+// Expanding an alias makes the snippet longer than the entry it came from, so
+// an offset computed from the snippet lands further down the file -- on a
+// different, valid entry, or past the end.
+func TestAMisspeltKeyPointsAtTheEntryAndNotPastIt(t *testing.T) {
+	doc := `evaluators:
+  - evaluator: builtin.relevance
+    initialization_parameters: &judge
+      deployment_name: gpt-4o
+      api_version: "2026-01-01"
+      temperature: 0
+  - evaluator: builtin.coherence
+    initialization_parameters: *judge
+    verison: 3
+  - evaluator: builtin.fluency
+  - evaluator: builtin.groundedness
+  - evaluator: builtin.similarity
+`
+	_, err := decodeEvaluators(t, doc)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "verison")
+
+	reported := reportedLine(t, err)
+	assert.LessOrEqual(t, reported, len(strings.Split(doc, "\n")),
+		"a line past the end of the file is no help at all")
+	assert.Equal(t, 7, reported,
+		"the entry holding the typo begins on line 7; naming another entry accuses code that is fine")
+}
+
+// Without an alias the snippet is line-for-line with the file, so the exact
+// key keeps being named.
+func TestAMisspeltKeyWithoutAnAliasStillNamesItsOwnLine(t *testing.T) {
+	_, err := decodeEvaluators(t, `evaluators:
+  - evaluator: builtin.relevance
+  - evaluator: builtin.coherence
+    verison: 3
+`)
+
+	require.Error(t, err)
+	assert.Equal(t, 4, reportedLine(t, err), "the typo is on line 4")
+}
+
+// reportedLine reads the line number out of a decode error.
+func reportedLine(t *testing.T, err error) int {
+	t.Helper()
+	match := regexp.MustCompile(`line (\d+):`).FindStringSubmatch(err.Error())
+	require.Len(t, match, 2, "the error should name a line: %v", err)
+	n, convErr := strconv.Atoi(match[1])
+	require.NoError(t, convErr)
+	return n
 }
 
 // yaml permits an anchor holding its own alias. Expanding it has no end, so it

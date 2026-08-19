@@ -81,11 +81,21 @@ type EvaluatorList []EvaluatorRef
 
 func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.SequenceNode {
-		return messages.EvaluatorsMustBeSequence(value.Kind)
+		return messages.EvaluatorsMustBeSequence(nodeKindName(value.Kind))
 	}
 
 	result := make([]EvaluatorRef, 0, len(value.Content))
-	for _, node := range value.Content {
+	for _, entry := range value.Content {
+		// Resolved before the kind is read, so `- *base` -- an entry that is
+		// itself an alias, which is the most natural thing an anchor is for --
+		// is read as the mapping it names rather than refused for being an
+		// alias. Resolved once: doing it again inside the decode would find
+		// nothing left and report that nothing had expanded.
+		node, expanded, err := resolveAliases(entry, map[*yaml.Node]bool{})
+		if err != nil {
+			return err
+		}
+
 		switch node.Kind {
 		case yaml.ScalarNode:
 			var name string
@@ -94,7 +104,7 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 			}
 			return messages.BareEvaluatorEntry(name)
 		case yaml.MappingNode:
-			ref, err := decodeEvaluatorRef(node)
+			ref, err := decodeEvaluatorRef(node, entry.Line, expanded)
 			if err != nil {
 				return err
 			}
@@ -103,7 +113,7 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 			}
 			result = append(result, ref)
 		default:
-			return messages.EvaluatorEntryMustBeMapping(node.Kind)
+			return messages.EvaluatorEntryMustBeMapping(nodeKindName(node.Kind))
 		}
 	}
 
@@ -111,20 +121,41 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// decodeEvaluatorRef decodes one entry with the strictness the file promises.
+// nodeKindName names a yaml.Kind in the file's vocabulary.
+//
+// yaml.Kind is an unnamed uint32 with no String method, so a message built with
+// %v read "evaluator entry must be a mapping, got 16".
+func nodeKindName(kind yaml.Kind) string {
+	switch kind {
+	case yaml.DocumentNode:
+		return "a document"
+	case yaml.SequenceNode:
+		return "a list"
+	case yaml.MappingNode:
+		return "a mapping"
+	case yaml.ScalarNode:
+		return "a single value"
+	case yaml.AliasNode:
+		return "an alias"
+	default:
+		return "something else"
+	}
+}
+
+// decodeEvaluatorRef decodes one already-resolved entry with the strictness the
+// file promises.
 //
 // yaml.Node.Decode does not inherit KnownFields from the decoder that reached
 // it, so `verison:` inside an evaluator entry was dropped in silence while the
 // same typo one level up was named. Round-tripping the node through a strict
 // decoder restores it; the error keeps yaml's own "field X not found in type Y"
 // shape, which the caller rewrites into the file's vocabulary.
-func decodeEvaluatorRef(node *yaml.Node) (EvaluatorRef, error) {
-	resolved, err := resolveAliases(node, map[*yaml.Node]bool{})
-	if err != nil {
-		return EvaluatorRef{}, err
-	}
-
-	raw, err := yaml.Marshal(resolved)
+//
+// entryLine is where the entry begins in the file, and expanded says whether an
+// alias was replaced on the way here -- between them they decide how much of
+// the snippet's line numbering can be trusted back onto the file.
+func decodeEvaluatorRef(node *yaml.Node, entryLine int, expanded bool) (EvaluatorRef, error) {
+	raw, err := yaml.Marshal(node)
 	if err != nil {
 		return EvaluatorRef{}, messages.DecodingEvaluator(err)
 	}
@@ -134,12 +165,13 @@ func decodeEvaluatorRef(node *yaml.Node) (EvaluatorRef, error) {
 
 	var ref EvaluatorRef
 	if err := decoder.Decode(&ref); err != nil {
-		return EvaluatorRef{}, messages.DecodingEvaluator(rebaseYAMLLines(err, node.Line))
+		return EvaluatorRef{}, messages.DecodingEvaluator(rebaseYAMLLines(err, entryLine, expanded))
 	}
 	return ref, nil
 }
 
-// resolveAliases copies node with every alias replaced by what it names.
+// resolveAliases copies node with every alias replaced by what it names, and
+// reports whether it replaced any.
 //
 // The strict decode above re-serializes one entry, which lifts it out of the
 // document and away from the anchors its aliases point at: `*judge` defined on
@@ -149,14 +181,15 @@ func decodeEvaluatorRef(node *yaml.Node) (EvaluatorRef, error) {
 //
 // active holds the anchors being expanded on this path. yaml permits an anchor
 // that contains its own alias, which would otherwise expand forever.
-func resolveAliases(node *yaml.Node, active map[*yaml.Node]bool) (*yaml.Node, error) {
+func resolveAliases(node *yaml.Node, active map[*yaml.Node]bool) (*yaml.Node, bool, error) {
 	if node.Kind == yaml.AliasNode && node.Alias != nil {
 		if active[node.Alias] {
-			return nil, messages.EvaluatorAliasIsCircular(node.Value)
+			return nil, false, messages.EvaluatorAliasIsCircular(node.Value)
 		}
 		active[node.Alias] = true
 		defer delete(active, node.Alias)
-		return resolveAliases(node.Alias, active)
+		resolved, _, err := resolveAliases(node.Alias, active)
+		return resolved, true, err
 	}
 
 	// The anchor is dropped with the alias it fed: keeping it would emit the
@@ -164,14 +197,16 @@ func resolveAliases(node *yaml.Node, active map[*yaml.Node]bool) (*yaml.Node, er
 	copied := *node
 	copied.Anchor = ""
 	copied.Content = make([]*yaml.Node, len(node.Content))
+	expanded := false
 	for i, child := range node.Content {
-		resolvedChild, err := resolveAliases(child, active)
+		resolvedChild, childExpanded, err := resolveAliases(child, active)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		copied.Content[i] = resolvedChild
+		expanded = expanded || childExpanded
 	}
-	return &copied, nil
+	return &copied, expanded, nil
 }
 
 // yamlErrorLine matches the line number yaml puts on each unmarshal error.
@@ -179,16 +214,25 @@ var yamlErrorLine = regexp.MustCompile(`line (\d+):`)
 
 // rebaseYAMLLines moves line numbers from the extracted snippet back onto the
 // file, so the reader is pointed at the key they typed rather than at line 2.
-func rebaseYAMLLines(err error, startLine int) error {
-	if startLine <= 0 {
+//
+// Only line-for-line while the snippet is what the file holds. An alias expands
+// to more lines than the `*name` it replaced, so an offset computed from the
+// snippet lands somewhere further down the file -- on a valid, unrelated entry,
+// or past the end. Where anything expanded the whole entry is named instead:
+// less precise, and never a confident accusation against code that is fine.
+func rebaseYAMLLines(err error, entryLine int, expanded bool) error {
+	if entryLine <= 0 {
 		return err
 	}
 	return errors.New(yamlErrorLine.ReplaceAllStringFunc(err.Error(), func(m string) string {
+		if expanded {
+			return fmt.Sprintf("line %d:", entryLine)
+		}
 		n, convErr := strconv.Atoi(yamlErrorLine.FindStringSubmatch(m)[1])
 		if convErr != nil {
 			return m
 		}
-		return fmt.Sprintf("line %d:", startLine+n-1)
+		return fmt.Sprintf("line %d:", entryLine+n-1)
 	}))
 }
 

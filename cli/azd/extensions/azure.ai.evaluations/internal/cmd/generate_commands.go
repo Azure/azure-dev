@@ -57,12 +57,17 @@ func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
 		"Directory the generated artifact is written to.")
 	cmd.Flags().BoolVar(&f.noWait, "no-wait", false,
 		"Submit the job and return its id without polling.")
-	// Waiting is already the default, so --wait changes nothing. It is here
-	// because the spec documents the pair and a script that spells out what it
-	// wants should not be refused for saying the default out loud.
+	// Waiting is already the default, so --wait only changes anything when it is
+	// turned off. Parsed into a variable nobody reads, `--wait=false` -- a legal
+	// spelling -- would be accepted and then do the opposite of what it says.
 	var wait bool
 	cmd.Flags().BoolVar(&wait, "wait", true, "Block until the job finishes.")
 	cmd.MarkFlagsMutuallyExclusive("wait", "no-wait")
+	cmd.PreRun = func(*cobra.Command, []string) {
+		if !wait {
+			f.noWait = true
+		}
+	}
 	cmd.Flags().BoolVar(&f.force, "force", false,
 		"Overwrite an artifact file that already exists.")
 	cmd.Flags().StringVar(&f.endpoint, "project-endpoint", "", "Foundry project endpoint.")

@@ -1335,8 +1335,8 @@ func BareEvaluatorEntry(name string) error {
 }
 
 // EvaluatorsMustBeSequence reports an evaluators: block that is not a list.
-func EvaluatorsMustBeSequence(kind any) error {
-	return fmt.Errorf("evaluators must be a sequence, got %v", kind)
+func EvaluatorsMustBeSequence(kind string) error {
+	return fmt.Errorf("evaluators must be a list, got %s", kind)
 }
 
 // EvaluatorsMustBeList reports an evaluators: block that is not a JSON array.
@@ -1360,8 +1360,8 @@ func EvaluatorEntryMissingEvaluator() error {
 }
 
 // EvaluatorEntryMustBeMapping reports an entry that is neither map nor string.
-func EvaluatorEntryMustBeMapping(kind any) error {
-	return fmt.Errorf("evaluator entry must be a mapping, got %v", kind)
+func EvaluatorEntryMustBeMapping(kind string) error {
+	return fmt.Errorf("evaluator entry must be a mapping, got %s", kind)
 }
 
 // EvaluatorAliasIsCircular reports an anchor that contains its own alias.

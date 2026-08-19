@@ -232,11 +232,6 @@ func ErroredNotScored(errored int) string {
 	return fmt.Sprintf("(%d errored, not scored)", errored)
 }
 
-// ReportLink closes a run summary with the one link the run has.
-func ReportLink(url string) string {
-	return fmt.Sprintf("Report: %s\n", url)
-}
-
 // EvalNotDeployed reports an eval id the project does not hold.
 func EvalNotDeployed(evalID, deployCmd string) error {
 	return fmt.Errorf(
@@ -290,31 +285,6 @@ func EvalHasNoRuns(evalID string) error {
 // ReadingRun reports a failure to read the run the caller named.
 func ReadingRun(runID string, err error) error {
 	return fmt.Errorf("reading run %s: %w", runID, err)
-}
-
-// RunHeading opens the detail view of one run.
-func RunHeading(runID string) string {
-	return fmt.Sprintf("Run %s\n", runID)
-}
-
-// RunNameLine reports the run's name in the detail view.
-func RunNameLine(name string) string {
-	return fmt.Sprintf("  name    : %s\n", name)
-}
-
-// RunStatusDetail reports the run's status in the detail view.
-func RunStatusDetail(status string) string {
-	return fmt.Sprintf("  status  : %s\n", status)
-}
-
-// RunResultsLine reports the run's counts in the detail view.
-func RunResultsLine(counts string) string {
-	return fmt.Sprintf("  results : %s\n", counts)
-}
-
-// RunReportLine reports the run's one link in the detail view.
-func RunReportLine(url string) string {
-	return fmt.Sprintf("  report  : %s\n", url)
 }
 
 // CountsSummary renders a run's verdict counts on one line.
@@ -472,9 +442,20 @@ func OutputItemReason(reason string) string {
 	return fmt.Sprintf("  %s\n", reason)
 }
 
-// ReportLinkAfterRows closes a per-sample listing with the run's one link.
-func ReportLinkAfterRows(url string) string {
-	return fmt.Sprintf("\nReport: %s\n", url)
+// UsingLastRun names the run a command chose when it was not given one.
+//
+// Written to stderr so it does not land in a redirected listing.
+func UsingLastRun(runID string) string {
+	return fmt.Sprintf("Using last run: %s\n", runID)
+}
+
+// PortalLinkAfterRows closes a per-sample listing with the run's one link.
+//
+// Labelled the way every other view labels it: the run's report page is in the
+// portal, and a reader looking for the link should not have to know two words
+// for it.
+func PortalLinkAfterRows(url string) string {
+	return fmt.Sprintf("\nPortal: %s\n", url)
 }
 
 // ExportFormatUnsupported reports an --format the export command cannot write.

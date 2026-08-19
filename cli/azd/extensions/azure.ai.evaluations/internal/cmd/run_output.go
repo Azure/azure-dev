@@ -371,6 +371,7 @@ func (ec *evalContext) latestOrNamedRun(
 	if runID != "" {
 		run, err := ec.evalClient.GetOpenAIEvalRun(ctx, evalID, runID)
 		if err == nil {
+			ec.sayWhichRun(cmd, explicit, run.ID)
 			return run, nil
 		}
 		if explicit {
@@ -388,7 +389,21 @@ func (ec *evalContext) latestOrNamedRun(
 	if list == nil || len(list.Data) == 0 {
 		return nil, messages.EvalHasNoRuns(evalID)
 	}
+	ec.sayWhichRun(cmd, explicit, list.Data[0].ID)
 	return &list.Data[0], nil
+}
+
+// sayWhichRun names the run a command settled on for itself.
+//
+// The fallback is the reason these commands are usable without an id, and it
+// is also the reason a reader can be looking at a different run than they
+// think. Naming it costs one line and removes the doubt. A caller that named
+// the run already knows, and JSON is parsed rather than read.
+func (ec *evalContext) sayWhichRun(cmd *cobra.Command, explicit bool, runID string) {
+	if explicit || isJSON(cmd) {
+		return
+	}
+	fmt.Fprint(cmd.ErrOrStderr(), messages.UsingLastRun(runID))
 }
 
 // renderOutputItem is the detail view for one evaluated row.
@@ -618,7 +633,7 @@ func renderResults(
 	}
 
 	if url := runLink(run.ReportURL, run.PortalURL); url != "" {
-		fmt.Fprint(w, messages.ReportLinkAfterRows(color.CyanString(url)))
+		fmt.Fprint(w, messages.PortalLinkAfterRows(color.CyanString(url)))
 	}
 	return nil
 }

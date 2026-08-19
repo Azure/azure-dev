@@ -238,14 +238,36 @@ func TestGenerateFromTakesMoreThanOneSource(t *testing.T) {
 		"--from selects one or more sources, so it cannot be a single string")
 }
 
-// `--from` names sources; the set it accepts is the set the service has a path
-// for, and the help has to list exactly that set.
+// `--from` names sources; the set it offers is the set generate can build
+// from, and the help has to list exactly that set.
 func TestGenerateFromListsEverySource(t *testing.T) {
 	usage := find(t, "generate").Flags().Lookup("from").Usage
 
 	for _, source := range project.GenerateSources {
 		assert.Containsf(t, usage, source,
-			"--from accepts %q, so its help has to say so", source)
+			"--from offers %q, so its help has to say so", source)
+	}
+}
+
+// `file` is recognized so that asking for it earns the remedy rather than a
+// list of the others, but generate never builds from one. Advertising it would
+// offer a value the same command guarantees to refuse.
+func TestGenerateDoesNotOfferTheSourceItAlwaysRefuses(t *testing.T) {
+	usage := find(t, "generate").Flags().Lookup("from").Usage
+
+	assert.NotContains(t, usage, project.GenerateFromFile,
+		"--from file is refused, so the help must not list it")
+	assert.NoError(t, project.ValidateGenerateSource(project.GenerateFromFile),
+		"it is still recognized, so the refusal can name what to do instead")
+}
+
+// Waiting is already generate's default, so --wait changes nothing. A script
+// that spells out what it wants should not be refused for saying so.
+func TestGenerateTakesTheWaitFlagItDocuments(t *testing.T) {
+	flags := find(t, "generate").Flags()
+
+	for _, name := range []string{"wait", "no-wait"} {
+		assert.NotNilf(t, flags.Lookup(name), "generate must offer --%s", name)
 	}
 }
 

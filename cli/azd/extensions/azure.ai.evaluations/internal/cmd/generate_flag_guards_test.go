@@ -126,3 +126,23 @@ func TestOutputDirAloneIsStillAccepted(t *testing.T) {
 			"an output directory without --no-wait must not be refused")
 	}
 }
+
+// --wait says the default out loud, so it has to be accepted; asking for both
+// at once says two things and has to be refused, as it is on `run start`.
+func TestWaitAndNoWaitContradictEachOther(t *testing.T) {
+	err := runGenerate(t, "--dataset", "--dataset-name", "ds", "--wait", "--no-wait")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no-wait")
+	assert.Contains(t, err.Error(), "wait")
+}
+
+// And --wait on its own is not a refusal, whatever else the run goes on to do.
+func TestWaitAloneIsAccepted(t *testing.T) {
+	err := runGenerate(t, "--dataset", "--dataset-name", "ds", "--wait")
+
+	if err != nil {
+		assert.NotContains(t, err.Error(), "--wait",
+			"--wait names the default, so it must not be refused")
+	}
+}

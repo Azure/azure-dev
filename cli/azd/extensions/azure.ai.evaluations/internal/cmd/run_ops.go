@@ -11,7 +11,6 @@ import (
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -180,15 +179,15 @@ func newRunShowCommand() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprint(out, messages.RunHeading(run.ID))
-			fmt.Fprint(out, messages.RunNameLine(run.Name))
-			fmt.Fprint(out, messages.RunStatusDetail(run.Status))
-			if counts := summarizeCounts(run.ResultCounts); counts != "" {
-				fmt.Fprint(out, messages.RunResultsLine(counts))
+			if err := emitDetail(out, []field{
+				{"Run", run.ID},
+				{"Name", run.Name},
+				{"Status", run.Status},
+				{"Results", summarizeCounts(run.ResultCounts)},
+			}); err != nil {
+				return err
 			}
-			if url := runLink(run.ReportURL, run.PortalURL); url != "" {
-				fmt.Fprint(out, messages.RunReportLine(color.CyanString(url)))
-			}
+			writePortalLink(out, runLink(run.ReportURL, run.PortalURL))
 			if gateOnStatus {
 				if err := runCompleted(run); err != nil {
 					return err

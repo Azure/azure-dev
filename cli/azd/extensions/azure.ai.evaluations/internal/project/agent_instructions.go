@@ -105,9 +105,29 @@ func AgentInstructionsFromProject(
 
 // withinDir reports whether path resolves to somewhere inside root.
 //
-// Compared after cleaning both, so `..` segments are resolved before the
-// question is asked rather than matched as text.
+// Asked twice: once of the path as written, and once of what it resolves to.
+// The read that follows this check follows symlinks, so a link committed to the
+// repository would otherwise satisfy the written form while naming a file the
+// project does not contain — the same escape `..` is refused for, needing no
+// more privilege to commit.
 func withinDir(root, path string) bool {
+	if !liesWithin(root, path) {
+		return false
+	}
+
+	realRoot, rootErr := filepath.EvalSymlinks(root)
+	realPath, pathErr := filepath.EvalSymlinks(path)
+	if rootErr != nil || pathErr != nil {
+		// Nothing to follow: a path that is not there yet leads nowhere, and
+		// the read below reports it as missing rather than as an escape.
+		return true
+	}
+	return liesWithin(realRoot, realPath)
+}
+
+// liesWithin compares two paths as text, after cleaning both so that `..`
+// segments are resolved before the question is asked rather than matched.
+func liesWithin(root, path string) bool {
 	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
 	if err != nil {
 		return false

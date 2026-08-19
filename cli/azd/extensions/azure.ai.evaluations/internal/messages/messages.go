@@ -1377,6 +1377,13 @@ func EvaluatorEntryMustBeMapping(kind any) error {
 	return fmt.Errorf("evaluator entry must be a mapping, got %v", kind)
 }
 
+// EvaluatorAliasIsCircular reports an anchor that contains its own alias.
+//
+// Expanding it has no end, so it is named rather than followed.
+func EvaluatorAliasIsCircular(anchor string) error {
+	return fmt.Errorf("anchor %q refers to itself, so it cannot be expanded", anchor)
+}
+
 // ---------------------------------------------------------------------------
 // Deploy and reconcile
 // ---------------------------------------------------------------------------

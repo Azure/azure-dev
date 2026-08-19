@@ -119,7 +119,12 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 // decoder restores it; the error keeps yaml's own "field X not found in type Y"
 // shape, which the caller rewrites into the file's vocabulary.
 func decodeEvaluatorRef(node *yaml.Node) (EvaluatorRef, error) {
-	raw, err := yaml.Marshal(node)
+	resolved, err := resolveAliases(node, map[*yaml.Node]bool{})
+	if err != nil {
+		return EvaluatorRef{}, err
+	}
+
+	raw, err := yaml.Marshal(resolved)
 	if err != nil {
 		return EvaluatorRef{}, messages.DecodingEvaluator(err)
 	}
@@ -132,6 +137,41 @@ func decodeEvaluatorRef(node *yaml.Node) (EvaluatorRef, error) {
 		return EvaluatorRef{}, messages.DecodingEvaluator(rebaseYAMLLines(err, node.Line))
 	}
 	return ref, nil
+}
+
+// resolveAliases copies node with every alias replaced by what it names.
+//
+// The strict decode above re-serializes one entry, which lifts it out of the
+// document and away from the anchors its aliases point at: `*judge` defined on
+// a sibling entry, and `<<: *base`, decoded against an empty anchor table and
+// failed a file that had loaded before. Resolving first keeps both working
+// without giving up the strictness.
+//
+// active holds the anchors being expanded on this path. yaml permits an anchor
+// that contains its own alias, which would otherwise expand forever.
+func resolveAliases(node *yaml.Node, active map[*yaml.Node]bool) (*yaml.Node, error) {
+	if node.Kind == yaml.AliasNode && node.Alias != nil {
+		if active[node.Alias] {
+			return nil, messages.EvaluatorAliasIsCircular(node.Value)
+		}
+		active[node.Alias] = true
+		defer delete(active, node.Alias)
+		return resolveAliases(node.Alias, active)
+	}
+
+	// The anchor is dropped with the alias it fed: keeping it would emit the
+	// same name twice once two aliases resolve to it.
+	copied := *node
+	copied.Anchor = ""
+	copied.Content = make([]*yaml.Node, len(node.Content))
+	for i, child := range node.Content {
+		resolvedChild, err := resolveAliases(child, active)
+		if err != nil {
+			return nil, err
+		}
+		copied.Content[i] = resolvedChild
+	}
+	return &copied, nil
 }
 
 // yamlErrorLine matches the line number yaml puts on each unmarshal error.

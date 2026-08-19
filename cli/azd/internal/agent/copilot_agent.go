@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,6 +38,7 @@ import (
 type CopilotAgent struct {
 	// Dependencies
 	clientManager        *agentcopilot.CopilotClientManager
+	listModels           func(context.Context) ([]copilot.ModelInfo, error)
 	sessionConfigBuilder *agentcopilot.SessionConfigBuilder
 	cli                  *agentcopilot.CopilotCLI
 	consentManager       consent.ConsentManager
@@ -74,6 +76,11 @@ type cleanupTask struct {
 	fn   func() error
 }
 
+const (
+	selectAIModelMessage              = "Select AI model"
+	selectReasoningEffortLevelMessage = "Select reasoning effort level"
+)
+
 // Initialize handles first-run configuration (model/reasoning prompts), plugin install,
 // and Copilot client startup. If config already exists, returns current values without
 // prompting. Use WithForcePrompt() to always show prompts.
@@ -108,117 +115,15 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (resu
 	}
 
 	// Load current config
-	azdConfig, err := a.configManager.Load()
+	selectedModelID, selectedReasoningEffort, err := a.promptModelAndReasoning(ctx, options)
+
 	if err != nil {
 		return nil, err
-	}
-
-	existingModel, hasModel := azdConfig.GetString(agentcopilot.ConfigKeyModel)
-	existingEffort, hasEffort := azdConfig.GetString(agentcopilot.ConfigKeyReasoningEffort)
-
-	// Apply overrides
-	if a.modelOverride != "" {
-		existingModel = a.modelOverride
-		hasModel = true
-	}
-	if a.reasoningEffortOverride != "" {
-		existingEffort = a.reasoningEffortOverride
-		hasEffort = true
-	}
-
-	// If already configured and not forcing, return current config
-	if (hasModel || hasEffort) && !options.forcePrompt {
-		return &InitResult{
-			Model:           existingModel,
-			ReasoningEffort: existingEffort,
-			IsFirstRun:      false,
-		}, nil
-	}
-
-	// Prompt for reasoning effort
-	effortChoices := []*uxlib.SelectChoice{
-		{Value: "low", Label: "Low — fastest, lowest cost"},
-		{Value: "medium", Label: "Medium — balanced (recommended)"},
-		{Value: "high", Label: "High — more thorough, higher cost and premium requests"},
-	}
-
-	effortSelector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "Select reasoning effort level",
-		HelpMessage:     "Higher reasoning uses more premium requests and may cost more. You can change this later.",
-		Choices:         effortChoices,
-		SelectedIndex:   new(1),
-		DisplayNumbers:  new(true),
-		EnableFiltering: new(false),
-		DisplayCount:    3,
-	})
-
-	effortIdx, err := effortSelector.Ask(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if effortIdx == nil {
-		return nil, fmt.Errorf("reasoning effort selection cancelled")
-	}
-	selectedEffort := effortChoices[*effortIdx].Value
-
-	// Prompt for model selection — fetch available models dynamically
-	modelChoices := []*uxlib.SelectChoice{
-		{Value: "", Label: "Default model (recommended)"},
-	}
-
-	// Client already started — list models
-	models, modelsErr := a.clientManager.ListModels(ctx)
-	if modelsErr == nil {
-		for _, m := range models {
-			label := m.Name
-			if m.DefaultReasoningEffort != "" {
-				label += fmt.Sprintf(" (%s)", m.DefaultReasoningEffort)
-			}
-			if m.Billing != nil && m.Billing.Multiplier != nil {
-				label += fmt.Sprintf(" (%.0fx)", *m.Billing.Multiplier)
-			}
-			modelChoices = append(modelChoices, &uxlib.SelectChoice{
-				Value: m.ID,
-				Label: label,
-			})
-		}
-	}
-
-	modelSelector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "Select AI model",
-		HelpMessage:     "Premium models may use more requests. You can change this later.",
-		Choices:         modelChoices,
-		SelectedIndex:   new(0),
-		DisplayNumbers:  new(true),
-		EnableFiltering: new(true),
-		DisplayCount:    min(len(modelChoices), 10),
-	})
-
-	modelIdx, err := modelSelector.Ask(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if modelIdx == nil {
-		return nil, fmt.Errorf("model selection cancelled")
-	}
-	selectedModel := modelChoices[*modelIdx].Value
-
-	// Save to config
-	if err := azdConfig.Set(agentcopilot.ConfigKeyReasoningEffort, selectedEffort); err != nil {
-		return nil, fmt.Errorf("failed to save reasoning effort: %w", err)
-	}
-	if selectedModel != "" {
-		if err := azdConfig.Set(agentcopilot.ConfigKeyModel, selectedModel); err != nil {
-			return nil, fmt.Errorf("failed to save model: %w", err)
-		}
-	}
-	if err := a.configManager.Save(azdConfig); err != nil {
-		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
 	return &InitResult{
-		Model:           selectedModel,
-		ReasoningEffort: selectedEffort,
+		Model:           selectedModelID,
+		ReasoningEffort: selectedReasoningEffort,
 		IsFirstRun:      true,
 	}, nil
 }
@@ -1198,6 +1103,159 @@ func (a *CopilotAgent) promptPluginInstall(ctx context.Context, plugin pluginSpe
 	}
 
 	return *result, nil
+}
+
+func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context, options *initOptions) (modelID string, reasoningEffort string, err error) {
+	azdConfig, err := a.configManager.Load()
+	if err != nil {
+		return "", "", err
+	}
+
+	existingModel, hasModel := azdConfig.GetString(agentcopilot.ConfigKeyModel)
+	existingEffort, hasEffort := azdConfig.GetString(agentcopilot.ConfigKeyReasoningEffort)
+
+	// Apply overrides
+	if a.modelOverride != "" {
+		existingModel = a.modelOverride
+		hasModel = true
+	}
+
+	if a.reasoningEffortOverride != "" {
+		existingEffort = a.reasoningEffortOverride
+		hasEffort = true
+	}
+
+	// If already configured and not forcing, return current config
+	if (hasModel || hasEffort) && !options.forcePrompt {
+		return existingModel, existingEffort, nil
+	}
+
+	selectedModel, err := a.promptModel(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to select a model: %w", err)
+	}
+
+	modelID = ""
+
+	if selectedModel != nil {
+		modelID = selectedModel.ID
+		if err := azdConfig.Set(agentcopilot.ConfigKeyModel, selectedModel.ID); err != nil {
+			return "", "", fmt.Errorf("failed to save model: %w", err)
+		}
+
+		reasoningEffort, err = a.promptReasoningEffort(ctx, *selectedModel)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to select a reasoning effort: %w", err)
+		}
+		if reasoningEffort != "" {
+			if err := azdConfig.Set(agentcopilot.ConfigKeyReasoningEffort, reasoningEffort); err != nil {
+				return "", "", fmt.Errorf("failed to save reasoning effort: %w", err)
+			}
+		}
+	} else {
+		// ie, use the SDK/model default
+		reasoningEffort = ""
+	}
+
+	if err := azdConfig.Set(agentcopilot.ConfigKeyReasoningEffort, reasoningEffort); err != nil {
+		return "", "", fmt.Errorf("failed to save reasoning effort: %w", err)
+	}
+
+	if err := a.configManager.Save(azdConfig); err != nil {
+		return "", "", fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return modelID, reasoningEffort, nil
+}
+
+// promptModel prompts the user to select a coding model, also allowing the user to choose a
+// default. If the default is chosen, the return is (nil, nil), and the caller should let the
+// copilot SDK just determine the model on its own.
+//
+// NOTE: if the user does not choose a model this implies that they also are not choosing a
+// reasoning level - we have no way of knowing what the valid choices would be.
+func (a *CopilotAgent) promptModel(ctx context.Context) (*copilot.ModelInfo, error) {
+	modelChoices := []string{"Default model (recommended)"}
+
+	// Client already started — list models
+	models, modelsErr := a.listModels(ctx)
+
+	slices.SortFunc(models, func(a, b copilot.ModelInfo) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	if modelsErr == nil {
+		for _, m := range models {
+			label := m.Name
+
+			if m.Billing != nil && m.Billing.Multiplier != nil {
+				label += fmt.Sprintf(" (%.0fx)", *m.Billing.Multiplier)
+			}
+
+			modelChoices = append(modelChoices, label)
+		}
+	}
+
+	modelIdx, err := a.console.Select(ctx, input.ConsoleOptions{
+		Message:      selectAIModelMessage,
+		Help:         "Premium models may use more requests. You can change this later.",
+		Options:      modelChoices,
+		DefaultValue: modelChoices[0],
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if modelIdx == 0 {
+		// user chose the "default" model - we don't know anything about the model they've chosen
+		// (at the moment)
+		return nil, nil
+	}
+
+	return &models[modelIdx-1], nil
+}
+
+// promptReasoningEffort prompts the user to pick their model's reasoning effort. These are
+// direct from Copilot, which (sometimes) also includes a recommended reasoning effort, which we show
+// with a (recommended) suffix in the picker.
+//
+// NOTE: in some cases models do not support configuring the reasoning - we return ("", nil), and the caller
+// must handle that.
+func (a *CopilotAgent) promptReasoningEffort(ctx context.Context, selectedModel copilot.ModelInfo) (string, error) {
+	if len(selectedModel.SupportedReasoningEfforts) == 0 {
+		// some models, like mai-code-flash, do not support configuring reasoning
+		return "", nil
+	}
+
+	var effortChoices []string
+
+	// we'll default to whatever middle of the road reasoning effort there is
+	// if there isn't a specifically recommended default.
+	defaultIdx := len(selectedModel.SupportedReasoningEfforts) / 2
+
+	for i, m := range selectedModel.SupportedReasoningEfforts {
+		label := m
+
+		if selectedModel.DefaultReasoningEffort == m {
+			// this is the default
+			defaultIdx = i
+
+			label += " (recommended)"
+		}
+
+		effortChoices = append(effortChoices, label)
+	}
+
+	effortIdx, err := a.console.Select(ctx, input.ConsoleOptions{
+		Message:      selectReasoningEffortLevelMessage,
+		Help:         "Higher reasoning may cost more. You can change this later.",
+		Options:      effortChoices,
+		DefaultValue: effortChoices[defaultIdx],
+	})
+	if err != nil {
+		return "", err
+	}
+	return selectedModel.SupportedReasoningEfforts[effortIdx], nil
 }
 
 // FormatSessionTime formats a timestamp string into a human-friendly relative time display.

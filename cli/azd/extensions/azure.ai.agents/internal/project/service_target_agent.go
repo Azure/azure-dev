@@ -1376,13 +1376,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	// Voice agents (kind: prompt-voice) use a fundamentally different data-plane
-	// contract than hosted/workflow agents: a synchronous POST to /voice_agents
-	// that returns an AgentObject directly, with no version/polling model. Resolve
-	// the definition first — honoring the AGENT_DEFINITION_PATH override precedence
-	// so an override drives this dispatch just as it does the container path — and
-	// route voice to an isolated method so the container deploy path below stays
-	// byte-for-byte unchanged.
+	// Voice agents (kind: prompt-voice) use a different data-plane contract than
+	// hosted/workflow agents. Resolve the definition first — honoring the
+	// AGENT_DEFINITION_PATH override precedence so an override drives this dispatch
+	// just as it does the container path — and route voice to an isolated method so
+	// the container deploy path below stays byte-for-byte unchanged.
 	if isVoice {
 		return p.deployVoiceAgent(ctx, serviceConfig, voiceAgent, azdEnv, progress)
 	}

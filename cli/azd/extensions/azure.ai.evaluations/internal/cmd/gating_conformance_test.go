@@ -49,18 +49,26 @@ func TestRunCompletedSeparatesRegressionFromFailureToRun(t *testing.T) {
 	}
 }
 
-// pass-rate is passed/total, and the service puts errored and skipped rows
-// inside total. Were they outside it, a run with two passes and one error
-// would score a perfect rate -- exactly the broken evaluation a gate exists to
-// catch.
-func TestPassRateCountsErroredAndSkippedAgainstTheThreshold(t *testing.T) {
+// pass-rate is passed/(passed+failed): the share of the rows something actually
+// graded. Errored and skipped rows are outside it, because an infrastructure
+// failure is not a quality signal, and this is the figure the portal reports.
+//
+// The cost is real and deliberate: a run with two passes and thirteen errors
+// scores a perfect rate. `any-failure` is the gate that still counts those, and
+// a pass-rate gate warns when it judged only part of a run.
+func TestPassRateIsMeasuredOverTheRowsThatWereScored(t *testing.T) {
 	g, err := parseGate("pass-rate=0.8")
 	require.NoError(t, err)
 
-	// 2 passed of 3 total, the third errored: 66.7%, below 80%.
-	breach := g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 2, Errored: 1})
-	require.NotEmpty(t, breach, "an errored row is not a pass")
+	// 2 passed, 1 failed, 1 errored: 2 of 3 scored is 66.7%, below 80%.
+	breach := g.breach(&eval_api.EvalRunResultCounts{Total: 4, Passed: 2, Failed: 1, Errored: 1})
+	require.NotEmpty(t, breach, "a scored row that failed still counts")
 	assert.Contains(t, breach, "66.7%")
+
+	// The same run without the failure: everything scored, passed, so the
+	// errored row does not drag a quality number down on its own.
+	assert.Empty(t, g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 2, Errored: 1}),
+		"nothing graded the errored row, so it is not evidence of a regression")
 
 	assert.Empty(t, g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 3}))
 }

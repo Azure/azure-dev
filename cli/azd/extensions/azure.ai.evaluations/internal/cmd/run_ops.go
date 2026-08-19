@@ -392,11 +392,22 @@ func sampleCount(counts *eval_api.EvalRunResultCounts) string {
 	return strconv.Itoa(counts.Total)
 }
 
-// runPassRate is the same passed/total the gate uses, so a row a reader gates
-// on cannot disagree with the gate.
+// runPassRate is the same scored pass rate the gate uses, so a row a reader
+// gates on cannot disagree with the gate.
+//
+// The rate is followed by the rows it was measured over whenever that is fewer
+// than the run's samples. Without it the comparison view reads a run of two
+// passes and one errored row as SAMPLES 3, PASS RATE 100.0%, which is the one
+// place the scored denominator was not stated and so the one place a partly
+// errored run looked perfect.
 func runPassRate(counts *eval_api.EvalRunResultCounts) string {
-	if counts == nil || counts.Total == 0 {
+	rate, scored, ok := scoredPassRate(counts)
+	if !ok {
 		return ""
 	}
-	return formatRate(counts.Passed, counts.Total)
+	out := fmt.Sprintf("%.1f%%", rate*100)
+	if counts.Total > scored {
+		out += fmt.Sprintf(" (%d scored)", scored)
+	}
+	return out
 }

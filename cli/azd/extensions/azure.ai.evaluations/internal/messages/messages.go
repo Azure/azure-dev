@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 // Package messages holds every string this extension shows a user.
 //
 // One file, so the whole voice of the CLI can be reviewed in one sitting and a
@@ -52,7 +55,7 @@ func NoEvalToRun() error {
 // different: this one is answered by a dataset, not by a source block.
 func EvalHasNoDataset(eval string) error {
 	return fmt.Errorf(
-		"eval %q references no dataset and declares no source:. Add a dataset: to "+
+		"eval %q references no dataset and declares no source. Add a dataset: to "+
 			"score rows you supply, or a source: to score traces or stored responses",
 		eval)
 }
@@ -199,14 +202,19 @@ func RunFinishedWithStatus(runID, status string) error {
 	return fmt.Errorf("run %s finished with status %s", runID, status)
 }
 
-// OverallPassRate reports the share of samples that passed every evaluator.
+// OverallPassRate reports the share of the rows an evaluator scored that passed
+// every evaluator.
 //
-// The parenthetical is the bare fraction the spec prints. Spelling out "samples
-// passed every evaluator" on every run reads as a caveat on the number rather
-// than a definition of it; the doc comment above is where that belongs.
-func OverallPassRate(rate string, passed, total int) string {
-	return fmt.Sprintf("\nOverall pass rate: %s  (%d/%d)\n",
-		rate, passed, total)
+// The denominator is named rather than left as a bare fraction. Rows nothing
+// could grade are outside it, so a run that errored on most of its samples can
+// report a high rate, and "of N scored" is what stops that reading as a verdict
+// on the whole run. It is also the figure `--fail-on pass-rate` compares.
+func OverallPassRate(rate string, passed, scored, unscored int) string {
+	if unscored > 0 {
+		return fmt.Sprintf("\nOverall pass rate: %s  (%d of %d scored; %d not scored)\n",
+			rate, passed, scored, unscored)
+	}
+	return fmt.Sprintf("\nOverall pass rate: %s  (%d/%d)\n", rate, passed, scored)
 }
 
 // SamplesErrored reports rows the run could not score at all.
@@ -382,9 +390,35 @@ func NoRowsScored() string {
 	return "\nNo rows have been scored yet.\n"
 }
 
-// SamplesFailedAtLeastOne closes a --failed-only listing with its count.
-func SamplesFailedAtLeastOne(samples int) string {
-	return fmt.Sprintf("\n%d sample(s) failed at least one evaluator.\n", samples)
+// SamplesNeedingALook closes a --failed-only listing, holding the rows that
+// failed apart from the rows nothing managed to score.
+//
+// One count covering both contradicted the totals printed two lines above it,
+// which is what a reader compares it with: a run reporting 5 failed and 8
+// errored closed with "13 sample(s) failed at least one evaluator".
+func SamplesNeedingALook(failed, unscored int) string {
+	if unscored == 0 {
+		return fmt.Sprintf("\n%d sample(s) failed at least one evaluator.\n", failed)
+	}
+	if failed == 0 {
+		return fmt.Sprintf("\n%d sample(s) could not be scored.\n", unscored)
+	}
+	return fmt.Sprintf(
+		"\n%d sample(s) failed at least one evaluator, and %d could not be scored.\n",
+		failed, unscored)
+}
+
+// GateSawUnscoredRows warns that a pass-rate gate judged only part of the run.
+//
+// The rate excludes rows nothing could grade, so a run that errored on most of
+// its samples can clear a threshold on the few that survived. The gate is the
+// one place a pipeline is guaranteed to read, so it is said there rather than
+// left for someone to notice in the summary.
+func GateSawUnscoredRows(unscored, total int) error {
+	return fmt.Errorf(
+		"%d of %d samples were not scored, so the pass rate this gate read covers "+
+			"only the rest; use --fail-on any-failure to count them against the run",
+		unscored, total)
 }
 
 // GeneratedNameNotAFileName reports a generated artifact name that would not

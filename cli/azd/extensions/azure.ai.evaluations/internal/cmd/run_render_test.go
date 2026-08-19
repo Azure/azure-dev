@@ -46,9 +46,17 @@ func TestRenderResultsIsOneRowPerSample(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(text, "oi_2"),
 		"a sample that failed two evaluators must still be one row:\n%s", text)
 
-	for _, header := range []string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON"} {
+	for _, header := range []string{"ITEM", "SCORE", "EVALUATORS", "REASON"} {
 		assert.Containsf(t, text, header, "the listing lost its %s column", header)
 	}
+
+	// The old SAMPLE column numbered within the current filter, so the same
+	// sample carried a different number depending on the flags while reading
+	// like an identifier. ITEM carries the id `run output show` accepts.
+	assert.NotContains(t, text, "SAMPLE",
+		"a position that changes with the filter must not sit beside the id")
+	assert.NotContains(t, text, "FAILED EVALUATORS",
+		"the column also carries evaluators that returned no verdict, which did not fail")
 }
 
 // The failing row has to name every evaluator that failed it, because that is
@@ -64,6 +72,32 @@ func TestRenderResultsNamesEveryFailedEvaluator(t *testing.T) {
 		"the first failure's reason is what the row is looked at for")
 	assert.NotContains(t, text, "oi_1", "--failed-only must drop the passing sample")
 	assert.Contains(t, text, "1 sample(s) failed at least one evaluator.")
+}
+
+// The footer is read against the totals printed a few lines above it, so it
+// cannot count a row nothing scored as a row that failed. The reported run
+// closed "13 sample(s) failed at least one evaluator" over totals that said 5
+// failed and 8 errored.
+func TestFailedOnlyFooterHoldsUnscoredRowsApart(t *testing.T) {
+	items := []eval_api.OutputItem{
+		{ID: "oi_fail", Results: []eval_api.OutputResult{
+			{Name: "relevance", Passed: new(false), Score: 1, Reason: "Answered a different question."},
+		}},
+		// No verdict: the evaluator errored on this row rather than scoring it.
+		{ID: "oi_unscored", Results: []eval_api.OutputResult{{Name: "relevance"}}},
+	}
+
+	var out bytes.Buffer
+	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
+	require.NoError(t, renderResults(&out, run, items, true))
+
+	text := out.String()
+	assert.Contains(t, text, "1 sample(s) failed at least one evaluator, and 1 could not be scored.",
+		"the two have to be counted apart:\n%s", text)
+	assert.NotContains(t, text, "2 sample(s) failed",
+		"an unscored row is not a failing one")
+	assert.Contains(t, text, "(no verdict)",
+		"and the row itself has to say which evaluator returned nothing")
 }
 
 // The run summary carries pass and fail counts but no score, so the mean has

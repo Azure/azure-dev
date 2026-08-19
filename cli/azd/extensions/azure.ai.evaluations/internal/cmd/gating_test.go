@@ -51,19 +51,23 @@ func TestGateBreach(t *testing.T) {
 		require.NotEmpty(t, anyFailure.breach(&eval_api.EvalRunResultCounts{Total: 2, Passed: 1, Failed: 1}))
 	})
 
-	// Errored rows are inside the total, verified live, so they count against
-	// the threshold the same way a failing row does.
-	t.Run("errored rows count against the rate", func(t *testing.T) {
-		counts := &eval_api.EvalRunResultCounts{Total: 10, Passed: 8, Errored: 2}
-		require.Empty(t, eighty.breach(counts), "0.8 exactly meets a 0.8 threshold")
+	// Errored rows sit outside the rate: nothing graded them, so they are not
+	// evidence of a regression. `any-failure` is the gate that counts them.
+	t.Run("errored rows are outside the rate", func(t *testing.T) {
+		counts := &eval_api.EvalRunResultCounts{Total: 12, Passed: 8, Failed: 2, Errored: 2}
+		require.Equal(t, "", eighty.breach(counts), "8 of the 10 scored passed, which meets 0.8")
 
-		counts = &eval_api.EvalRunResultCounts{Total: 10, Passed: 7, Errored: 3}
-		require.NotEmpty(t, eighty.breach(counts))
+		counts = &eval_api.EvalRunResultCounts{Total: 13, Passed: 7, Failed: 3, Errored: 3}
+		require.NotEmpty(t, eighty.breach(counts), "7 of the 10 scored is under 0.8")
+
+		counts = &eval_api.EvalRunResultCounts{Total: 10, Passed: 8, Errored: 2}
+		require.Empty(t, eighty.breach(counts),
+			"everything that was scored passed, so the errored rows do not breach it")
 	})
 
 	// The wording is pinned because the hero scenario shows it verbatim.
 	t.Run("reads as a percentage", func(t *testing.T) {
-		counts := &eval_api.EvalRunResultCounts{Total: 1000, Passed: 764}
+		counts := &eval_api.EvalRunResultCounts{Total: 1000, Passed: 764, Failed: 236}
 		require.Equal(t,
 			"pass rate 76.4% is below the required 80.0%",
 			eighty.breach(counts))

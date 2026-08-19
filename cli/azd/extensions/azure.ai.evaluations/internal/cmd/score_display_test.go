@@ -78,7 +78,7 @@ func TestAGateBreachNeverReportsARateAsBelowItself(t *testing.T) {
 	gate, err := parseGate("pass-rate=0.8")
 	require.NoError(t, err)
 
-	breach := gate.breach(&eval_api.EvalRunResultCounts{Total: 10000, Passed: 7996})
+	breach := gate.breach(&eval_api.EvalRunResultCounts{Total: 10000, Passed: 7996, Failed: 2004})
 	require.NotEmpty(t, breach, "7996/10000 is under 0.8 and must breach")
 	assert.NotContains(t, breach, "80.0% is below the required 80.0%",
 		"a line saying a rate is below itself tells a reader nothing")
@@ -87,5 +87,5 @@ func TestAGateBreachNeverReportsARateAsBelowItself(t *testing.T) {
 	// The wording the spec shows is unchanged wherever rounding does not collide.
 	assert.Equal(t,
 		"pass rate 76.4% is below the required 80.0%",
-		gate.breach(&eval_api.EvalRunResultCounts{Total: 1000, Passed: 764}))
+		gate.breach(&eval_api.EvalRunResultCounts{Total: 1000, Passed: 764, Failed: 236}))
 }

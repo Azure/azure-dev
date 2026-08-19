@@ -67,8 +67,10 @@ func TestGatesStillJudgeRunsThatScoredSomething(t *testing.T) {
 
 	rate, err := parseGate("pass-rate=0.8")
 	require.NoError(t, err)
-	assert.Empty(t, rate.breach(&eval_api.EvalRunResultCounts{Total: 10, Passed: 9}))
-	assert.NotEmpty(t, rate.breach(&eval_api.EvalRunResultCounts{Total: 10, Passed: 7}))
+	// Spelled out with Failed rather than left to total, because the rate is
+	// measured over what was scored: passed plus failed.
+	assert.Empty(t, rate.breach(&eval_api.EvalRunResultCounts{Total: 10, Passed: 9, Failed: 1}))
+	assert.NotEmpty(t, rate.breach(&eval_api.EvalRunResultCounts{Total: 10, Passed: 7, Failed: 3}))
 
 	// Counts the service never sent are not a pass.
 	assert.NotEmpty(t, rate.breach(nil))

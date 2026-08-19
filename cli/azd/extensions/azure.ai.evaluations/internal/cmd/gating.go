@@ -67,13 +67,32 @@ func parseGate(spec string) (gate, error) {
 	return gate{set: true, passRate: value}, nil
 }
 
-// breach reports why the run missed the threshold, or empty when it met it.
+// scoredPassRate is the one definition of a run's pass rate: the share of the
+// rows an evaluator actually scored.
 //
-// Errored and skipped rows count against the pass rate, and they can: the
-// service puts them inside `total`, verified live on a run that reported
-// total=3 passed=2 errored=1. Were they outside it, a run with two passes and
-// one error would report total=2 and score a perfect rate, which is precisely
-// the broken evaluation a gate exists to catch.
+// Errored and skipped rows are outside the denominator because nothing graded
+// them, and an infrastructure failure is not a quality signal. This is what the
+// portal reports and what `--fail-on pass-rate` compares against, so the two
+// figures a reader sees two lines apart cannot disagree.
+//
+// ok is false when nothing was scored at all: a rate over no rows is not zero,
+// it is absent, and the caller has to say so rather than print it.
+//
+// The consequence is worth stating. A run where almost everything errored can
+// now report a high rate off the few rows that survived, so the count that did
+// not score is printed beside it.
+func scoredPassRate(counts *eval_api.EvalRunResultCounts) (rate float64, scored int, ok bool) {
+	if counts == nil {
+		return 0, 0, false
+	}
+	scored = counts.Passed + counts.Failed
+	if scored <= 0 {
+		return 0, 0, false
+	}
+	return float64(counts.Passed) / float64(scored), scored, true
+}
+
+// breach reports why the run missed the threshold, or empty when it met it.
 //
 // A run that scored nothing at all breaches every threshold rather than
 // dividing by zero — "no rows passed" is the honest reading of an empty result.
@@ -91,13 +110,19 @@ func (g gate) breach(counts *eval_api.EvalRunResultCounts) string {
 		return messages.GateNoRowsScored()
 	}
 	if g.anyFailure {
+		// Deliberately stricter than the rate: this counts a row nothing could
+		// grade against the run, because "everything passed" is not true of a
+		// run that failed to grade half of what it was given.
 		unpassed := counts.Total - counts.Passed
 		if unpassed > 0 {
 			return messages.GateSamplesDidNotPass(unpassed, counts.Total)
 		}
 		return ""
 	}
-	actual := float64(counts.Passed) / float64(counts.Total)
+	actual, _, ok := scoredPassRate(counts)
+	if !ok {
+		return messages.GateNoRowsScored()
+	}
 	if actual < g.passRate {
 		return messages.GatePassRateBelow(actual, g.passRate)
 	}
@@ -121,6 +146,18 @@ func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
 	if run == nil {
 		return
 	}
+	// Rows nothing could grade are outside the rate, so a run that errored on
+	// most of what it was given can clear a threshold on the few that survived.
+	// That is the cost of measuring quality over scored rows only, and the gate
+	// is where it has to be said: this is the line a pipeline log keeps.
+	if g.set && !g.anyFailure {
+		if c := run.ResultCounts; c != nil {
+			if _, scored, ok := scoredPassRate(c); ok && c.Total > scored {
+				fmt.Fprint(os.Stderr,
+					messages.Warning(messages.GateSawUnscoredRows(c.Total-scored, c.Total)))
+			}
+		}
+	}
 	reason := g.breach(run.ResultCounts)
 	if reason == "" {
 		return
@@ -135,5 +172,7 @@ func addFailOnFlag(cmd *cobra.Command, target *string) {
 	// writes a condition that never fires.
 	cmd.Flags().StringVar(target, "fail-on", "",
 		"Fail when the run misses this threshold: any-failure, or pass-rate=<0..1>. "+
+			"pass-rate is measured over the rows that were scored, so rows nothing "+
+			"could grade are outside it; any-failure counts them against the run. "+
 			"Exits 1.")
 }

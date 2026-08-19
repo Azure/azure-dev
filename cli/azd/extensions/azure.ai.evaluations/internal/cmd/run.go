@@ -992,7 +992,10 @@ func renderRun(
 	// evaluators is one sample to go and look at, and reporting it as two
 	// overstates how much is wrong.
 	if c := run.ResultCounts; c != nil && c.Total > 0 {
-		fmt.Fprint(out, messages.OverallPassRate(formatRate(c.Passed, c.Total), c.Passed, c.Total))
+		if rate, scored, ok := scoredPassRate(c); ok {
+			fmt.Fprint(out, messages.OverallPassRate(
+				fmt.Sprintf("%.1f%%", rate*100), c.Passed, scored, c.Total-scored))
+		}
 		if c.Errored > 0 {
 			fmt.Fprint(out, messages.SamplesErrored(c.Errored))
 		}

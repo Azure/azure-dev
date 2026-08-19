@@ -544,7 +544,8 @@ func renderResults(
 	} else {
 		fmt.Fprintln(w)
 		rows := make([][]string, 0, len(items))
-		for i, it := range items {
+		var rowsFailed, rowsUnscored int
+		for _, it := range items {
 			// One row per evaluated sample, not per verdict: a sample that
 			// failed three evaluators is one sample to go and look at, and
 			// listing it three times buries how much is actually wrong.
@@ -586,9 +587,17 @@ func renderResults(
 			if verdicts == "" {
 				verdicts = "-"
 			}
+			if len(failed) > 0 {
+				rowsFailed++
+			} else {
+				rowsUnscored++
+			}
+			// No position column. It numbered within the current filter, so the
+			// same sample carried a different number depending on the flags while
+			// reading like an identifier -- and ITEM already carries the id, which
+			// is what `run output show` accepts.
 			rows = append(rows, []string{
 				it.ID,
-				strconv.Itoa(i + 1),
 				meanScoreOf(it.Results),
 				truncate(verdicts, 40),
 				truncate(reason, 44),
@@ -597,12 +606,14 @@ func renderResults(
 		// Only the first failure's reason fits a cell; `run output show` has
 		// the rest.
 		if err := emitTable(w,
-			[]string{"ITEM", "SAMPLE", "SCORE", "FAILED EVALUATORS", "REASON"},
+			[]string{"ITEM", "SCORE", "EVALUATORS", "REASON"},
 			rows); err != nil {
 			return err
 		}
-		if n := len(rows); failedOnly && n > 0 {
-			fmt.Fprint(w, messages.SamplesFailedAtLeastOne(n))
+		// Counting unscored rows as failures put a number here that contradicted
+		// the totals two lines above, which is what a reader compares it with.
+		if failedOnly && len(rows) > 0 {
+			fmt.Fprint(w, messages.SamplesNeedingALook(rowsFailed, rowsUnscored))
 		}
 	}
 

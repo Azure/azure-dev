@@ -26,19 +26,34 @@ func TestRunListColumnsMatchTheScenario(t *testing.T) {
 		"the scenario compares 80.0% against 93.3%, so the row has to carry the rate")
 }
 
-// The rate is the gate's arithmetic: passed over total, with errored and
-// skipped inside the total. A row a reader gates on must not disagree with the
-// gate that acts on it.
+// The rate is the gate's arithmetic: passed over the rows that were scored,
+// with errored and skipped outside it. A row a reader gates on must not
+// disagree with the gate that acts on it.
+//
+// The list is the one view that shows a rate next to a sample count, so it also
+// carries how many rows the rate covers. Without that, two passes and one
+// errored row read as SAMPLES 3, PASS RATE 100.0%.
 func TestRunListPassRateAgreesWithTheGate(t *testing.T) {
-	counts := &eval_api.EvalRunResultCounts{Total: 3, Passed: 2, Errored: 1}
+	counts := &eval_api.EvalRunResultCounts{Total: 4, Passed: 2, Failed: 1, Errored: 1}
 
-	assert.Equal(t, "66.7%", runPassRate(counts),
-		"an errored row is not a pass, here or in the gate")
+	assert.Equal(t, "66.7% (3 scored)", runPassRate(counts),
+		"2 of the 3 rows that were scored passed, here and in the gate")
 
 	g, err := parseGate("pass-rate=0.8")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, g.breach(counts),
 		"the same counts that read 66.7% must breach an 80% threshold")
+
+	// The errored row is outside the rate rather than counted as a failure, and
+	// the cell says so rather than reading as a clean sweep of the run.
+	assert.Equal(t, "100.0% (2 scored)",
+		runPassRate(&eval_api.EvalRunResultCounts{Total: 3, Passed: 2, Errored: 1}),
+		"nothing graded the errored row, so it is not a miss, but the rate is not the whole run")
+
+	// Nothing unscored, nothing to qualify.
+	assert.Equal(t, "75.0%",
+		runPassRate(&eval_api.EvalRunResultCounts{Total: 4, Passed: 3, Failed: 1}),
+		"every row was scored, so the bare rate is the whole story")
 }
 
 // A run that has not scored yet has no rate to show. An empty cell says that;

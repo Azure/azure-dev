@@ -668,6 +668,44 @@ func TestAdoptServiceConfigIgnoresNilAndKeepsResolvedState(t *testing.T) {
 	require.False(t, provider.serviceConfigResolved)
 }
 
+func TestResolveVoiceAgentAPIMode_DefaultsToLegacy(t *testing.T) {
+	t.Setenv(voiceAgentAPIEnvKey, "")
+	mode, err := resolveVoiceAgentAPIMode(map[string]string{})
+	require.NoError(t, err)
+	require.Equal(t, voiceAgentAPIModeLegacy, mode)
+}
+
+func TestResolveVoiceAgentAPIMode_EnvValues(t *testing.T) {
+	t.Setenv(voiceAgentAPIEnvKey, "unified_flat")
+	mode, err := resolveVoiceAgentAPIMode(map[string]string{})
+	require.NoError(t, err)
+	require.Equal(t, voiceAgentAPIModeUnifiedFlat, mode)
+
+	mode, err = resolveVoiceAgentAPIMode(map[string]string{voiceAgentAPIEnvKey: "unified"})
+	require.NoError(t, err)
+	require.Equal(t, voiceAgentAPIModeUnified, mode)
+}
+
+func TestResolveVoiceAgentAPIMode_Invalid(t *testing.T) {
+	_, err := resolveVoiceAgentAPIMode(map[string]string{voiceAgentAPIEnvKey: "future"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), voiceAgentAPIEnvKey)
+}
+
+func TestVoiceAgentEndpoint_ByMode(t *testing.T) {
+	projectEndpoint := "https://proj.services.ai.azure.com/api/projects/p/"
+	require.Equal(
+		t,
+		"https://proj.services.ai.azure.com/api/projects/p/voice_agents/my-agent",
+		voiceAgentEndpoint(projectEndpoint, "my-agent", voiceAgentAPIModeLegacy),
+	)
+	require.Equal(
+		t,
+		"https://proj.services.ai.azure.com/api/projects/p/agents/my-agent/endpoint/protocols/voice",
+		voiceAgentEndpoint(projectEndpoint, "my-agent", voiceAgentAPIModeUnified),
+	)
+}
+
 func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
 

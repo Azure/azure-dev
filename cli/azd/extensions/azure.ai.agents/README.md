@@ -133,6 +133,34 @@ Details:
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
 
+## Prompt voice agent API mode
+
+Prompt voice agents (`kind: prompt-voice`) use the legacy `/voice_agents` API by
+default while the unified `/agents` voice API rolls out across regions. To run
+regression tests against the unified API, set `AZURE_VOICE_AGENT_API` before
+`azd deploy`:
+
+```bash
+# Default: legacy /voice_agents API
+azd env set AZURE_VOICE_AGENT_API legacy
+
+# Unified /agents API using the current object-shaped audio.output.voice payload
+azd env set AZURE_VOICE_AGENT_API unified
+
+# Unified /agents API using the TiP/spec flat audio.output.voice payload
+azd env set AZURE_VOICE_AGENT_API unified-flat
+```
+
+Details:
+
+- `legacy` remains the default and preserves existing behavior.
+- `unified` and `unified-flat` create voice agents through `/agents`; repeat
+  deploys update the existing agent and create a new version through
+  `/agents/{name}` when the agent name is already present in the azd environment.
+- `unified-flat` is intended for TiP/new-service validation. Non-TiP regions may
+  still require `legacy` or `unified` until the flat output shape is fully
+  rolled out.
+
 ## Session idle timeout
 
 A hosted agent's runtime session sandbox is suspended by Foundry after a period

@@ -172,6 +172,56 @@ func TestCreateVoiceAgentAPIRequest_Overrides(t *testing.T) {
 	}
 }
 
+func TestCreateVoiceAgentAPIRequestFlat_UsesFlatOutputShape(t *testing.T) {
+	t.Parallel()
+	voice := "alloy"
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-flat"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Voice:           &voice,
+	}
+
+	req, err := CreateVoiceAgentAPIRequestFlat(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
+	if def.Audio.Output.Voice != "alloy" {
+		t.Errorf("Voice = %q, want alloy", def.Audio.Output.Voice)
+	}
+	if def.Audio.Output.VoiceType != "openai" {
+		t.Errorf("VoiceType = %q, want openai", def.Audio.Output.VoiceType)
+	}
+	if def.Audio.Output.VoiceLocale != "" {
+		t.Errorf("VoiceLocale = %q, want empty", def.Audio.Output.VoiceLocale)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequestFlat_AzureVoiceLocale(t *testing.T) {
+	t.Parallel()
+	voice := "en-US-Ava:DragonHDLatestNeural"
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-flat"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Voice:           &voice,
+	}
+
+	req, err := CreateVoiceAgentAPIRequestFlat(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
+	if def.Audio.Output.Voice != voice {
+		t.Errorf("Voice = %q, want %q", def.Audio.Output.Voice, voice)
+	}
+	if def.Audio.Output.VoiceType != "azure-standard" {
+		t.Errorf("VoiceType = %q, want azure-standard", def.Audio.Output.VoiceType)
+	}
+	if def.Audio.Output.VoiceLocale != "en-US" {
+		t.Errorf("VoiceLocale = %q, want en-US", def.Audio.Output.VoiceLocale)
+	}
+}
+
 // TestCreateVoiceAgentAPIRequest_ExplicitManaged verifies that explicitly
 // setting model_type: managed is accepted (idempotent with the default).
 func TestCreateVoiceAgentAPIRequest_ExplicitManaged(t *testing.T) {

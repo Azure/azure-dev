@@ -350,10 +350,26 @@ type VoiceOutputConfig struct {
 	Voice  *VoiceConfig      `json:"voice,omitempty"`
 }
 
+// VoiceOutputConfigFlat is the newer Voice Live output shape used by the
+// unified /agents voice API in TiP. Older regions still accept/return the
+// object-shaped VoiceOutputConfig above.
+type VoiceOutputConfigFlat struct {
+	Format      *VoiceAudioFormat `json:"format,omitempty"`
+	Voice       string            `json:"voice,omitempty"`
+	VoiceType   string            `json:"voice_type,omitempty"`
+	VoiceLocale string            `json:"voice_locale,omitempty"`
+}
+
 // VoiceAudioConfig bundles the input and output audio configuration.
 type VoiceAudioConfig struct {
 	Input  *VoiceInputConfig  `json:"input,omitempty"`
 	Output *VoiceOutputConfig `json:"output,omitempty"`
+}
+
+// VoiceAudioConfigFlat bundles voice audio config with the flat output shape.
+type VoiceAudioConfigFlat struct {
+	Input  *VoiceInputConfig      `json:"input,omitempty"`
+	Output *VoiceOutputConfigFlat `json:"output,omitempty"`
 }
 
 // VoiceAgentDefinition is the data-plane definition body POSTed to the
@@ -367,6 +383,19 @@ type VoiceAgentDefinition struct {
 	Audio            *VoiceAudioConfig `json:"audio,omitempty"`
 	OutputModalities []string          `json:"output_modalities,omitempty"`
 	Store            *bool             `json:"store,omitempty"`
+}
+
+// VoiceAgentDefinitionFlat is the voice definition shape aligned with the
+// unified /agents TiP API, where audio.output.voice is a string and the voice
+// provider details are sibling fields.
+type VoiceAgentDefinitionFlat struct {
+	AgentDefinition
+	ModelType        VoiceModelType        `json:"model_type"`
+	Model            string                `json:"model"`
+	Instructions     string                `json:"instructions,omitempty"`
+	Audio            *VoiceAudioConfigFlat `json:"audio,omitempty"`
+	OutputModalities []string              `json:"output_modalities,omitempty"`
+	Store            *bool                 `json:"store,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version

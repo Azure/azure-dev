@@ -209,6 +209,23 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 	}
 
+	// Create publish options from flags
+	publishOptions := &project.PublishOptions{
+		Image: pa.flags.To,
+	}
+
+	if err := pa.projectManager.Initialize(ctx, pa.projectConfig); err != nil {
+		return nil, err
+	}
+
+	stableServices, err := pa.importManager.ServiceStableFiltered(ctx, pa.projectConfig, targetServiceName, pa.env.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateImagePassthroughPublishFlags(stableServices, pa.flags); err != nil {
+		return nil, err
+	}
+
 	if pa.flags.FromPackage != "" {
 		if parsedImage, err := docker.ParseContainerImage(pa.flags.FromPackage); err == nil && parsedImage.Registry != "" {
 			return nil, &internal.ErrorWithSuggestion{
@@ -218,15 +235,6 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				Suggestion: "Use '--to' flag to specify a publish target for remote images.",
 			}
 		}
-	}
-
-	// Create publish options from flags
-	publishOptions := &project.PublishOptions{
-		Image: pa.flags.To,
-	}
-
-	if err := pa.projectManager.Initialize(ctx, pa.projectConfig); err != nil {
-		return nil, err
 	}
 
 	if err := pa.projectManager.EnsureServiceTargetTools(ctx, pa.projectConfig, func(svc *project.ServiceConfig) bool {
@@ -242,16 +250,12 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	startTime := time.Now()
 
-	stableServices, err := pa.importManager.ServiceStableFiltered(ctx, pa.projectConfig, targetServiceName, pa.env.Getenv)
-	if err != nil {
-		return nil, err
-	}
-
 	projectEventArgs := project.ProjectLifecycleEventArgs{
 		Project: pa.projectConfig,
 	}
 
 	publishResults := map[string]*project.ServicePublishResult{}
+	passthroughServiceCount := 0
 
 	err = pa.projectConfig.Invoke(ctx, project.ProjectEventPublish, projectEventArgs, func() error {
 		for _, svc := range stableServices {
@@ -352,7 +356,13 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				}
 			}
 
-			pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
+			if svc.Docker.ImagePassthrough {
+				passthroughServiceCount++
+				stepMessage = fmt.Sprintf("Publishing service %s (using existing remote image)", svc.Name)
+				pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			} else {
+				pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
+			}
 
 			publishResults[svc.Name] = publishResult
 			pa.console.MessageUxItem(ctx, publishResult.Artifacts)
@@ -376,12 +386,41 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 	}
 
+	resultHeader := fmt.Sprintf("Your application was published in %s.", ux.DurationAsText(since(startTime)))
+	if passthroughServiceCount == len(publishResults) && passthroughServiceCount > 0 {
+		resultHeader = "No images were published. Existing remote images are configured for deployment."
+	} else if passthroughServiceCount > 0 {
+		resultHeader += " Existing remote images were used for image passthrough services."
+	}
+
 	return &actions.ActionResult{
-		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your application was published in %s.",
-				ux.DurationAsText(since(startTime))),
-		},
+		Message: &actions.ResultMessage{Header: resultHeader},
 	}, nil
+}
+
+func validateImagePassthroughPublishFlags(services []*project.ServiceConfig, flags *PublishFlags) error {
+	for _, svc := range services {
+		if !svc.Docker.ImagePassthrough {
+			continue
+		}
+		if flags.FromPackage != "" {
+			return fmt.Errorf(
+				"--from-package is not supported by azd publish for image passthrough service %q; "+
+					"use azd deploy %s --from-package <remote-image> to override its image",
+				svc.Name,
+				svc.Name,
+			)
+		}
+		if flags.To != "" {
+			return fmt.Errorf(
+				"--to is not supported by azd publish for image passthrough service %q; "+
+					"disable docker.imagePassthrough to publish the image",
+				svc.Name,
+			)
+		}
+	}
+
+	return nil
 }
 
 // supportsPublish checks if the service host supports publishing.

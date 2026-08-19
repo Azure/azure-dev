@@ -1316,6 +1316,13 @@ func TestResolveImagePassthrough(t *testing.T) {
 			errContains: "requires the service image property",
 		},
 		{
+			name:        "requires fully qualified remote service image",
+			image:       "team/agent:v1",
+			docker:      DockerProjectOptions{ImagePassthrough: true},
+			wantErr:     true,
+			errContains: "fully qualified remote container image",
+		},
+		{
 			name:  "conflicts with remote build",
 			image: "private.example.com/team/agent:v1",
 			docker: DockerProjectOptions{
@@ -1355,6 +1362,8 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		image                   string
 		project                 string
 		packagePath             string
+		packageKind             ArtifactKind
+		packageLocationKind     LocationKind
 		imageHash               string
 		sourceImage             string
 		targetImage             string
@@ -1366,6 +1375,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		expectDockerTagCalled   bool
 		expectDockerPushCalled  bool
 		expectError             bool
+		expectedError           string
 	}{
 		{
 			name:                    "Source code and registry",
@@ -1453,9 +1463,41 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectError:             true,
 		},
 		{
-			name:                    "Image passthrough rejects package image override",
+			name:                    "Image passthrough uses remote package image override",
 			image:                   "private.example.com/team/agent:v1",
 			packagePath:             "other.example.com/team/agent:v2",
+			packageKind:             ArtifactKindContainer,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage:     "other.example.com/team/agent:v2",
+		},
+		{
+			name:  "Image passthrough preserves tag and digest package override",
+			image: "private.example.com/team/agent:v1",
+			packagePath: "other.example.com/team/agent:v2@sha256:" +
+				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			packageKind:             ArtifactKindContainer,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage: "other.example.com/team/agent:v2@sha256:" +
+				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		},
+		{
+			name:                    "Image passthrough rejects local package image override",
+			image:                   "private.example.com/team/agent:v1",
+			packagePath:             "team/agent:v2",
+			packageKind:             ArtifactKindContainer,
+			packageLocationKind:     LocationKindLocal,
 			imagePassthrough:        true,
 			publishOptions:          &PublishOptions{},
 			expectDockerLoginCalled: false,
@@ -1463,6 +1505,37 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectDockerTagCalled:   false,
 			expectDockerPushCalled:  false,
 			expectError:             true,
+			expectedError:           "fully qualified remote container image",
+		},
+		{
+			name:                    "Image passthrough rejects archive package override",
+			image:                   "private.example.com/team/agent:v1",
+			packagePath:             "agent.zip",
+			packageKind:             ArtifactKindArchive,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectError:             true,
+			expectedError:           "does not support archive artifacts",
+		},
+		{
+			name:                    "Image passthrough rejects directory package override",
+			image:                   "private.example.com/team/agent:v1",
+			packagePath:             "agent",
+			packageKind:             ArtifactKindDirectory,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectError:             true,
+			expectedError:           "does not support directory artifacts",
 		},
 		{
 			name:                    "With publish options overwrite",
@@ -1567,24 +1640,29 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			serviceConfig.Docker.Registry = tt.registry
 			serviceConfig.Docker.ImagePassthrough = tt.imagePassthrough
 
-			packageOutput := &ServicePackageResult{
-				Artifacts: ArtifactCollection{
-					{
-						Kind:         ArtifactKindContainer,
-						Location:     tt.packagePath,
-						LocationKind: LocationKindLocal,
-						Metadata: map[string]string{
-							"imageHash":   tt.imageHash,
-							"sourceImage": tt.sourceImage,
-							"targetImage": tt.targetImage,
-						},
+			packageArtifacts := ArtifactCollection{}
+			if tt.packagePath != "" || tt.imageHash != "" || tt.sourceImage != "" || tt.targetImage != "" {
+				packageKind := tt.packageKind
+				if packageKind == "" {
+					packageKind = ArtifactKindContainer
+				}
+				packageLocationKind := tt.packageLocationKind
+				if packageLocationKind == "" {
+					packageLocationKind = LocationKindLocal
+				}
+				packageArtifacts = append(packageArtifacts, &Artifact{
+					Kind:         packageKind,
+					Location:     tt.packagePath,
+					LocationKind: packageLocationKind,
+					Metadata: map[string]string{
+						"imageHash":   tt.imageHash,
+						"sourceImage": tt.sourceImage,
+						"targetImage": tt.targetImage,
 					},
-				},
+				})
 			}
 
-			serviceContext := &ServiceContext{
-				Package: packageOutput.Artifacts,
-			}
+			serviceContext := &ServiceContext{Package: packageArtifacts}
 
 			publishResult, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
@@ -1596,6 +1674,9 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err)
+				if tt.expectedError != "" {
+					require.ErrorContains(t, err, tt.expectedError)
+				}
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, publishResult)

@@ -343,10 +343,12 @@ func Test_ServiceManager_Publish_RejectsImageOverrideForPassthrough(t *testing.T
 	require.False(t, *publishCalled)
 }
 
-func Test_ServiceManager_Publish_RejectsPackageOverrideForPassthrough(t *testing.T) {
+func Test_ServiceManager_Publish_AcceptsRemotePackageOverrideForPassthrough(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
-	env := environment.New("test")
+	env := environment.NewWithValues("test", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 	serviceConfig.Docker.ImagePassthrough = true
@@ -368,8 +370,89 @@ func Test_ServiceManager_Publish_RejectsPackageOverrideForPassthrough(t *testing
 		&PublishOptions{},
 	)
 
-	require.ErrorContains(t, err, "docker.imagePassthrough cannot be combined with a package image override")
-	require.False(t, *publishCalled)
+	require.NoError(t, err)
+	require.True(t, *publishCalled)
+}
+
+func Test_ServiceManager_Publish_RejectsInvalidPackageOverrideForPassthrough(t *testing.T) {
+	tests := []struct {
+		name               string
+		artifact           *Artifact
+		additionalArtifact *Artifact
+		errorContains      string
+	}{
+		{
+			name: "local container image",
+			artifact: &Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "team/agent:v2",
+				LocationKind: LocationKindLocal,
+			},
+			errorContains: "fully qualified remote container image",
+		},
+		{
+			name: "archive",
+			artifact: &Artifact{
+				Kind:         ArtifactKindArchive,
+				Location:     "agent.zip",
+				LocationKind: LocationKindLocal,
+			},
+			errorContains: "does not support archive artifacts",
+		},
+		{
+			name: "directory",
+			artifact: &Artifact{
+				Kind:         ArtifactKindDirectory,
+				Location:     "agent",
+				LocationKind: LocationKindLocal,
+			},
+			errorContains: "does not support directory artifacts",
+		},
+		{
+			name: "multiple artifacts",
+			artifact: &Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "other.example.com/team/agent:v2",
+				LocationKind: LocationKindLocal,
+			},
+			additionalArtifact: &Artifact{
+				Kind:         ArtifactKindArchive,
+				Location:     "agent.zip",
+				LocationKind: LocationKindLocal,
+			},
+			errorContains: "supports exactly one --from-package artifact",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			setupMocksForServiceManager(mockContext)
+			env := environment.New("test")
+			sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+			serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+			serviceConfig.Docker.ImagePassthrough = true
+
+			publishCalled := new(false)
+			ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
+			serviceContext := NewServiceContext()
+			require.NoError(t, serviceContext.Package.Add(tt.artifact))
+			if tt.additionalArtifact != nil {
+				require.NoError(t, serviceContext.Package.Add(tt.additionalArtifact))
+			}
+
+			_, err := sm.Publish(
+				ctx,
+				serviceConfig,
+				serviceContext,
+				async.NewProgress[ServiceProgress](),
+				&PublishOptions{},
+			)
+
+			require.ErrorContains(t, err, tt.errorContains)
+			require.False(t, *publishCalled)
+		})
+	}
 }
 
 func Test_ServiceManager_GetFrameworkService(t *testing.T) {

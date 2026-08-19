@@ -1338,7 +1338,7 @@
                 "imagePassthrough": {
                     "type": "boolean",
                     "title": "Optional. Whether to use the service image as the final remote artifact",
-                    "description": "If set to true, azd passes the service image to the target unchanged without building, pulling, tagging, copying, or publishing it. Requires the service image property and cannot be combined with docker.remoteBuild."
+                    "description": "If set to true, azd uses the service image as an existing remote image without building, pulling, tagging, copying, or publishing it. A fully qualified remote image passed to azd deploy --from-package overrides the service image for that deployment and is also passed through unchanged; local images, archives, and directories are not supported as overrides. azd publish --from-package and azd publish --to are not supported for passthrough services. Requires the service image property to contain a fully qualified remote image and cannot be combined with docker.remoteBuild."
                 }
             }
         },

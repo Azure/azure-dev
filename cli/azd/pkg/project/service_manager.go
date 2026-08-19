@@ -509,7 +509,7 @@ func (sm *serviceManager) Publish(
 	if serviceContext == nil {
 		serviceContext = NewServiceContext()
 	}
-	if err := validateImagePassthroughPackage(serviceConfig, serviceContext); err != nil {
+	if _, _, err := imagePassthroughPackageOverride(serviceConfig, serviceContext); err != nil {
 		return nil, err
 	}
 

@@ -421,8 +421,50 @@ func Test_appServiceTarget_Publish(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, result.Artifacts, 1)
 		require.Equal(t, image, result.Artifacts[0].Location)
-		require.Equal(t, "true", result.Artifacts[0].Metadata["imagePassthrough"])
+		require.Equal(t, "true", result.Artifacts[0].Metadata[MetadataKeyImagePassthrough])
 		require.Equal(t, image, env.GetServiceProperty("web", "IMAGE_NAME"))
+	})
+
+	t.Run("ContainerDeploy_ImagePassthroughFromPackageOverride", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		env := environment.New("test")
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+		serviceConfig := &ServiceConfig{
+			Name:     "web",
+			Language: ServiceLanguageDocker,
+			Image:    osutil.NewExpandableString("private.example.com/team/agent:v1"),
+			Docker:   DockerProjectOptions{ImagePassthrough: true},
+		}
+		const overrideImage = "other.example.com/team/agent:v2"
+		serviceContext := NewServiceContext()
+		require.NoError(t, serviceContext.Package.Add(&Artifact{
+			Kind:         ArtifactKindContainer,
+			Location:     overrideImage,
+			LocationKind: LocationKindLocal,
+		}))
+		targetResource := environment.NewTargetResource(
+			"SUB_ID", "RG_ID", "WEB_APP_NAME", string(azapi.AzureResourceTypeWebSite),
+		)
+		target := &appServiceTarget{
+			env:             env,
+			envManager:      envManager,
+			containerHelper: &ContainerHelper{},
+		}
+
+		result, err := target.Publish(
+			*mockContext.Context,
+			serviceConfig,
+			serviceContext,
+			targetResource,
+			async.NewNoopProgress[ServiceProgress](),
+			&PublishOptions{},
+		)
+		require.NoError(t, err)
+		require.Len(t, result.Artifacts, 1)
+		require.Equal(t, overrideImage, result.Artifacts[0].Location)
+		require.Equal(t, "true", result.Artifacts[0].Metadata[MetadataKeyImagePassthrough])
+		require.Equal(t, overrideImage, env.GetServiceProperty("web", "IMAGE_NAME"))
 	})
 }
 

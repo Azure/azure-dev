@@ -275,8 +275,8 @@ func resolveImagePassthrough(
 		return "", fmt.Errorf("docker.imagePassthrough requires the service image property")
 	}
 
-	if _, err := reference.Parse(image); err != nil {
-		return "", fmt.Errorf("parsing passthrough image: %w", err)
+	if _, err := reference.ParseNamed(image); err != nil {
+		return "", fmt.Errorf("passthrough image must be a fully qualified remote container image: %w", err)
 	}
 
 	// Passthrough preserves the expanded reference exactly, including tag and digest combinations.
@@ -289,9 +289,9 @@ func imagePassthroughArtifact(image string) *Artifact {
 		Location:     image,
 		LocationKind: LocationKindRemote,
 		Metadata: map[string]string{
-			"imagePassthrough": "true",
-			"remoteImage":      image,
-			"sourceImage":      image,
+			MetadataKeyImagePassthrough: "true",
+			"remoteImage":               image,
+			"sourceImage":               image,
 		},
 	}
 }
@@ -676,17 +676,40 @@ func validatePublishOptions(serviceConfig *ServiceConfig, options *PublishOption
 	return nil
 }
 
-func validateImagePassthroughPackage(serviceConfig *ServiceConfig, serviceContext *ServiceContext) error {
-	if !serviceConfig.Docker.ImagePassthrough || serviceContext == nil {
-		return nil
+func imagePassthroughPackageOverride(
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+) (string, bool, error) {
+	if !serviceConfig.Docker.ImagePassthrough || serviceContext == nil || len(serviceContext.Package) == 0 {
+		return "", false, nil
 	}
 
-	artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer))
-	if found && artifact.Location != "" && artifact.Metadata["imagePassthrough"] != "true" {
-		return fmt.Errorf("docker.imagePassthrough cannot be combined with a package image override")
+	if len(serviceContext.Package) != 1 {
+		return "", false, fmt.Errorf(
+			"docker.imagePassthrough supports exactly one --from-package artifact, got %d",
+			len(serviceContext.Package),
+		)
 	}
 
-	return nil
+	artifact := serviceContext.Package[0]
+	if artifact.Kind != ArtifactKindContainer {
+		return "", false, fmt.Errorf(
+			"docker.imagePassthrough does not support %s artifacts from --from-package; "+
+				"use a fully qualified remote container image",
+			artifact.Kind,
+		)
+	}
+
+	if _, err := reference.ParseNamed(artifact.Location); err != nil {
+		return "", false, fmt.Errorf(
+			"docker.imagePassthrough requires --from-package to be a fully qualified remote container image: %w",
+			err,
+		)
+	}
+
+	// The package artifact is the per-run input selected by --from-package. Its location wins over
+	// the service image while imagePassthrough continues to control how the selected image is handled.
+	return artifact.Location, true, nil
 }
 
 // Publish pushes an image to a remote server and returns the fully qualified remote image name.
@@ -710,7 +733,11 @@ func (ch *ContainerHelper) Publish(
 	if err := validatePublishOptions(serviceConfig, options); err != nil {
 		return nil, err
 	}
-	if err := validateImagePassthroughPackage(serviceConfig, serviceContext); err != nil {
+	passthroughOverride, hasPassthroughOverride, err := imagePassthroughPackageOverride(
+		serviceConfig,
+		serviceContext,
+	)
+	if err != nil {
 		return nil, err
 	}
 
@@ -721,7 +748,11 @@ func (ch *ContainerHelper) Publish(
 	}
 
 	if serviceConfig.Docker.ImagePassthrough {
-		remoteImage, err = resolveImagePassthrough(serviceConfig, env)
+		if hasPassthroughOverride {
+			remoteImage = passthroughOverride
+		} else {
+			remoteImage, err = resolveImagePassthrough(serviceConfig, env)
+		}
 	} else if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
 		if err != nil {
@@ -752,7 +783,7 @@ func (ch *ContainerHelper) Publish(
 	// Create publish artifact with remote image reference
 	metadata := map[string]string{"remoteImage": remoteImage}
 	if serviceConfig.Docker.ImagePassthrough {
-		metadata["imagePassthrough"] = "true"
+		metadata[MetadataKeyImagePassthrough] = "true"
 	}
 	publishArtifact := &Artifact{
 		Kind:         ArtifactKindContainer,

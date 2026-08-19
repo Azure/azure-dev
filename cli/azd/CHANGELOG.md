@@ -1,14 +1,18 @@
 # Release History
 
-## 1.32.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.31.2 (2026-08-19)
 
 ### Bugs Fixed
 
+- [[#9489]](https://github.com/Azure/azure-dev/pull/9489) Fix App Service deployments hanging when deployment status stops changing by completing with a warning after a five-minute inactivity timeout.
+- [[#9490]](https://github.com/Azure/azure-dev/pull/9490) Fix Bicep refresh, down, and provision-state lookup using another project's deployment history by preferring project-tagged deployments.
+- [[#9504]](https://github.com/Azure/azure-dev/pull/9504) Fix GitHub Copilot desktop terminals being incorrectly detected as Copilot CLI agent sessions, which could incorrectly enable no-prompt behavior in interactive terminals. Thanks @gimenete for the contribution!
+- [[#9537]](https://github.com/Azure/azure-dev/pull/9537) Fix extension dependency resolution to fall back to the official `azd` registry when the parent extension source has no compatible version.
+- [[#9613]](https://github.com/Azure/azure-dev/pull/9613) Fix extension-hosted Azure service errors losing HTTP status and provider error details across the gRPC boundary.
+
 ### Other Changes
+
+- [[#9474]](https://github.com/Azure/azure-dev/pull/9474) Improve extension auto-install to show the complete requirement set before prompting, explain why each extension is required, and resolve the full install plan before making changes.
 
 ## 1.31.1 (2026-08-13)
 

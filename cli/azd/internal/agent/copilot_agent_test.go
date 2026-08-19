@@ -20,6 +20,30 @@ import (
 )
 
 func TestCopilotAgentPromptModelAndReasoning(t *testing.T) {
+	t.Run("ModelConfigurationAlreadyInConfig", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		userConfig := config.NewEmptyConfig()
+
+		require.NoError(t, userConfig.Set(agentcopilot.ConfigKeyModel, "configured-model"))
+		require.NoError(t, userConfig.Set(agentcopilot.ConfigKeyReasoningEffort, "configured-effort"))
+
+		mockContext.ConfigManager.WithConfig(userConfig)
+
+		// IsFirstRun is reported in a few ways - via telemetry and via RPC to extensions
+		// It gets set to true if we end up prompting the user to enter in model details
+		agent := &CopilotAgent{
+			console:       mockContext.Console,
+			configManager: config.NewUserConfigManager(mockContext.ConfigManager),
+		}
+
+		result, err := agent.promptModelAndReasoning(t.Context(), &initOptions{})
+
+		require.NoError(t, err)
+		assert.Equal(t, "configured-model", result.Model)
+		assert.Equal(t, "configured-effort", result.ReasoningEffort)
+		assert.False(t, result.IsFirstRun, "user already had configuration stored")
+	})
+
 	t.Run("ModelWithoutReasoningLevels", func(t *testing.T) {
 		args := copilotAgentTestArgs{
 			ExpectedModelID:         "model-with-no-reasoning",
@@ -192,11 +216,12 @@ func runCopilotAgentTest(
 		}
 	}
 
-	modelID, reasoningEffort, err := agent.promptModelAndReasoning(t.Context(), &initOptions{})
+	result, err := agent.promptModelAndReasoning(t.Context(), &initOptions{})
 	require.NoError(t, err)
 
-	require.Equal(t, args.ExpectedModelID, modelID)
-	require.Equal(t, args.ExpectedReasoningEffort, reasoningEffort)
+	require.Equal(t, args.ExpectedModelID, result.Model)
+	require.Equal(t, args.ExpectedReasoningEffort, result.ReasoningEffort)
+	require.True(t, result.IsFirstRun)
 
 	// quick check -what we're returning here matches what's stored in the configuration
 	userConfig, err := configManager.Load()
@@ -204,7 +229,7 @@ func runCopilotAgentTest(
 
 	storedModelID, hasModel := userConfig.GetString(agentcopilot.ConfigKeyModel)
 	require.True(t, hasModel)
-	assert.Equal(t, modelID, storedModelID)
+	assert.Equal(t, result.Model, storedModelID)
 
 	if args.ExpectedReasoningEffort == "" {
 		storedReasoningEffort, hasEffort := userConfig.GetString(agentcopilot.ConfigKeyReasoningEffort)

@@ -114,18 +114,7 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (resu
 		return nil, err
 	}
 
-	// Load current config
-	selectedModelID, selectedReasoningEffort, err := a.promptModelAndReasoning(ctx, options)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &InitResult{
-		Model:           selectedModelID,
-		ReasoningEffort: selectedReasoningEffort,
-		IsFirstRun:      true,
-	}, nil
+	return a.promptModelAndReasoning(ctx, options)
 }
 
 // SelectSession shows a UX picker with previous sessions for the current directory.
@@ -1105,11 +1094,10 @@ func (a *CopilotAgent) promptPluginInstall(ctx context.Context, plugin pluginSpe
 	return *result, nil
 }
 
-func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context,
-	options *initOptions) (modelID string, reasoningEffort string, err error) {
+func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context, options *initOptions) (*InitResult, error) {
 	azdConfig, err := a.configManager.Load()
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
 	existingModel, hasModel := azdConfig.GetString(agentcopilot.ConfigKeyModel)
@@ -1128,45 +1116,50 @@ func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context,
 
 	// If already configured and not forcing, return current config
 	if (hasModel || hasEffort) && !options.forcePrompt {
-		return existingModel, existingEffort, nil
+		return &InitResult{
+			Model:           existingModel,
+			ReasoningEffort: existingEffort,
+			IsFirstRun:      false,
+		}, nil
 	}
 
 	selectedModel, err := a.promptModel(ctx)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to select a model: %w", err)
+		return nil, fmt.Errorf("failed to select a model: %w", err)
 	}
 
-	modelID = ""
+	modelID := ""
+	reasoningEffort := ""
 
 	if selectedModel != nil {
 		modelID = selectedModel.ID
 		if err := azdConfig.Set(agentcopilot.ConfigKeyModel, selectedModel.ID); err != nil {
-			return "", "", fmt.Errorf("failed to save model: %w", err)
+			return nil, fmt.Errorf("failed to save model: %w", err)
 		}
 
 		reasoningEffort, err = a.promptReasoningEffort(ctx, *selectedModel)
 		if err != nil {
-			return "", "", fmt.Errorf("failed to select a reasoning effort: %w", err)
+			return nil, fmt.Errorf("failed to select a reasoning effort: %w", err)
 		}
-		if reasoningEffort != "" {
-			if err := azdConfig.Set(agentcopilot.ConfigKeyReasoningEffort, reasoningEffort); err != nil {
-				return "", "", fmt.Errorf("failed to save reasoning effort: %w", err)
-			}
-		}
+
 	} else {
 		// ie, use the SDK/model default
 		reasoningEffort = ""
 	}
 
 	if err := azdConfig.Set(agentcopilot.ConfigKeyReasoningEffort, reasoningEffort); err != nil {
-		return "", "", fmt.Errorf("failed to save reasoning effort: %w", err)
+		return nil, fmt.Errorf("failed to save reasoning effort: %w", err)
 	}
 
 	if err := a.configManager.Save(azdConfig); err != nil {
-		return "", "", fmt.Errorf("failed to save config: %w", err)
+		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
-	return modelID, reasoningEffort, nil
+	return &InitResult{
+		Model:           modelID,
+		ReasoningEffort: reasoningEffort,
+		IsFirstRun:      true,
+	}, nil
 }
 
 // promptModel prompts the user to select a coding model, also allowing the user to choose a

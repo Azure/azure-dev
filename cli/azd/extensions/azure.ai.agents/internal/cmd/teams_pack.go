@@ -112,7 +112,11 @@ func resolveTeamsPackContext(
 		return nil, err
 	}
 
-	ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+	effectiveSvc, err := resolveEffectiveAgentServiceConfig(svc, proj.Path)
+	if err != nil {
+		return nil, err
+	}
+	ca, isHosted, _, err := project.LoadAgentDefinition(effectiveSvc, proj.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +129,7 @@ func resolveTeamsPackContext(
 		)
 	}
 
-	serviceTargetConfig, err := project.LoadServiceTargetAgentConfig(svc)
+	serviceTargetConfig, err := project.LoadServiceTargetAgentConfig(effectiveSvc)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,

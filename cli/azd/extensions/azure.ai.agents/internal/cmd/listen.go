@@ -480,16 +480,31 @@ func resolveServiceActivityProfile(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (project.ActivityProfile, error) {
-	agent, isHosted, _, err := project.LoadAgentDefinition(svc, projectRoot)
+	effectiveSvc, err := resolveEffectiveAgentServiceConfig(svc, projectRoot)
+	if err != nil {
+		return project.ActivityProfile{}, err
+	}
+	agent, isHosted, _, err := project.LoadAgentDefinition(effectiveSvc, projectRoot)
 	if err != nil || !isHosted {
 		return project.ActivityProfile{}, err
 	}
 
-	config, err := project.LoadServiceTargetAgentConfig(svc)
+	config, err := project.LoadServiceTargetAgentConfig(effectiveSvc)
 	if err != nil {
 		return project.ActivityProfile{}, err
 	}
 	return project.ResolveActivityProfileWithSettings(agent, config.Activity)
+}
+
+func resolveEffectiveAgentServiceConfig(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*azdext.ServiceConfig, error) {
+	effectiveSvc := *svc
+	if err := project.ResolveServiceConfigInPlace(&effectiveSvc, projectRoot); err != nil {
+		return nil, err
+	}
+	return &effectiveSvc, nil
 }
 
 // postdownHandler cleans up config store entries (sessions, conversations) for agent services

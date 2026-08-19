@@ -125,6 +125,43 @@ func TestResolveServiceActivityProfileUsesConfiguredUseCase(t *testing.T) {
 	}
 }
 
+func TestResolveServiceActivityProfileUsesConfiguredUseCaseFromFileRef(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	definitionPath := filepath.Join(dir, "agent.yaml")
+	referenced := strings.Join([]string{
+		"kind: hosted",
+		"name: activity-agent",
+		"protocols:",
+		"  - protocol: activity",
+		"    version: 2.0.0",
+		"activity:",
+		"  useCase: digital_worker",
+		"  publish:",
+		"    publishAsAutopilot: true",
+		"    publishScope: tenant",
+		"    agenticUserTemplate:",
+		"      id: digitalWorkerTemplate",
+		"      file: agenticUserTemplateManifest.json",
+		"      schemaVersion: 0.1.0-preview",
+		"      communicationProtocol: activityProtocol",
+	}, "\n")
+	require.NoError(t, os.WriteFile(definitionPath, []byte(referenced), 0600))
+
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./agent.yaml"})
+	require.NoError(t, err)
+
+	profile, err := resolveServiceActivityProfile(&azdext.ServiceConfig{
+		Name:                 "activity-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}, dir)
+	require.NoError(t, err)
+	require.True(t, profile.IsActivity)
+	require.Equal(t, project.ActivityUseCaseDigitalWorker, profile.UseCase)
+}
+
 func TestTeamsSetupGuideContent(t *testing.T) {
 	const msaAppID = "11111111-2222-3333-4444-555555555555"
 

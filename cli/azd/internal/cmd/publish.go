@@ -303,7 +303,7 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				}
 			} else {
 				//  --from-package not set, automatically package the application
-				packageResult, err := async.RunWithProgress(
+				_, err := async.RunWithProgress(
 					func(packageProgress project.ServiceProgress) {
 						progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 						pa.console.ShowSpinner(ctx, progressMessage, input.Step)
@@ -314,12 +314,6 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				)
 
 				if err != nil {
-					pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-					return err
-				}
-
-				// Append package artifacts
-				if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
 					pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 					return err
 				}

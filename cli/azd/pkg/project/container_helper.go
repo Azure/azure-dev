@@ -275,7 +275,7 @@ func resolveImagePassthrough(
 		return "", fmt.Errorf("docker.imagePassthrough requires the service image property")
 	}
 
-	if _, err := reference.ParseNamed(image); err != nil {
+	if err := validateFullyQualifiedRemoteContainerImage(image); err != nil {
 		return "", fmt.Errorf("passthrough image must be a fully qualified remote container image: %w", err)
 	}
 
@@ -676,6 +676,26 @@ func validatePublishOptions(serviceConfig *ServiceConfig, options *PublishOption
 	return nil
 }
 
+func validateFullyQualifiedRemoteContainerImage(image string) error {
+	parsed, err := reference.Parse(image)
+	if err != nil {
+		return err
+	}
+
+	named, ok := parsed.(reference.Named)
+	if !ok {
+		return fmt.Errorf("image reference does not include a repository name")
+	}
+
+	registry := reference.Domain(named)
+	if registry == "" ||
+		(!strings.Contains(registry, ".") && !strings.Contains(registry, ":") && registry != "localhost") {
+		return fmt.Errorf("image reference does not include an explicit registry")
+	}
+
+	return nil
+}
+
 func imagePassthroughPackageOverride(
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
@@ -684,32 +704,49 @@ func imagePassthroughPackageOverride(
 		return "", false, nil
 	}
 
-	if len(serviceContext.Package) != 1 {
-		return "", false, fmt.Errorf(
-			"docker.imagePassthrough supports exactly one --from-package artifact, got %d",
-			len(serviceContext.Package),
-		)
+	var packageImage string
+	for _, artifact := range serviceContext.Package {
+		if artifact == nil {
+			return "", false, fmt.Errorf("docker.imagePassthrough does not support a nil package artifact")
+		}
+
+		switch artifact.Kind {
+		case ArtifactKindContainer:
+			if err := validateFullyQualifiedRemoteContainerImage(artifact.Location); err != nil {
+				return "", false, fmt.Errorf(
+					"docker.imagePassthrough requires --from-package to be a fully qualified remote container image: %w",
+					err,
+				)
+			}
+			if packageImage != "" && artifact.Location != packageImage {
+				return "", false, fmt.Errorf(
+					"docker.imagePassthrough package contains multiple distinct remote container images",
+				)
+			}
+			packageImage = artifact.Location
+		case ArtifactKindConfig:
+			// Targets may add supplementary configuration alongside the container image.
+		case ArtifactKindArchive, ArtifactKindDirectory:
+			return "", false, fmt.Errorf(
+				"docker.imagePassthrough does not support %s artifacts from --from-package; "+
+					"use a fully qualified remote container image",
+				artifact.Kind,
+			)
+		default:
+			return "", false, fmt.Errorf(
+				"docker.imagePassthrough does not support %s package artifacts",
+				artifact.Kind,
+			)
+		}
 	}
 
-	artifact := serviceContext.Package[0]
-	if artifact.Kind != ArtifactKindContainer {
-		return "", false, fmt.Errorf(
-			"docker.imagePassthrough does not support %s artifacts from --from-package; "+
-				"use a fully qualified remote container image",
-			artifact.Kind,
-		)
-	}
-
-	if _, err := reference.ParseNamed(artifact.Location); err != nil {
-		return "", false, fmt.Errorf(
-			"docker.imagePassthrough requires --from-package to be a fully qualified remote container image: %w",
-			err,
-		)
+	if packageImage == "" {
+		return "", false, fmt.Errorf("docker.imagePassthrough package does not contain a container image")
 	}
 
 	// The package artifact is the per-run input selected by --from-package. Its location wins over
 	// the service image while imagePassthrough continues to control how the selected image is handled.
-	return artifact.Location, true, nil
+	return packageImage, true, nil
 }
 
 // Publish pushes an image to a remote server and returns the fully qualified remote image name.

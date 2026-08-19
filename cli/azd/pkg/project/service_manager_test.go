@@ -343,7 +343,7 @@ func Test_ServiceManager_Publish_RejectsImageOverrideForPassthrough(t *testing.T
 	require.False(t, *publishCalled)
 }
 
-func Test_ServiceManager_Publish_AcceptsRemotePackageOverrideForPassthrough(t *testing.T) {
+func Test_ServiceManager_Publish_AcceptsDuplicateRemotePackageArtifactsForPassthrough(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.NewWithValues("test", map[string]string{
@@ -356,11 +356,13 @@ func Test_ServiceManager_Publish_AcceptsRemotePackageOverrideForPassthrough(t *t
 	publishCalled := new(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
 	serviceContext := NewServiceContext()
-	require.NoError(t, serviceContext.Package.Add(&Artifact{
-		Kind:         ArtifactKindContainer,
-		Location:     "other.example.com/team/agent:v2",
-		LocationKind: LocationKindLocal,
-	}))
+	for range 2 {
+		require.NoError(t, serviceContext.Package.Add(&Artifact{
+			Kind:         ArtifactKindContainer,
+			Location:     "other.example.com/team/agent:v2",
+			LocationKind: LocationKindLocal,
+		}))
+	}
 
 	_, err := sm.Publish(
 		ctx,
@@ -420,7 +422,7 @@ func Test_ServiceManager_Publish_RejectsInvalidPackageOverrideForPassthrough(t *
 				Location:     "agent.zip",
 				LocationKind: LocationKindLocal,
 			},
-			errorContains: "supports exactly one --from-package artifact",
+			errorContains: "does not support archive artifacts",
 		},
 	}
 

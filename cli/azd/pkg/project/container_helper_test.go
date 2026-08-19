@@ -1301,6 +1301,12 @@ func TestResolveImagePassthrough(t *testing.T) {
 			want:   "private.example.com/team/agent:v1",
 		},
 		{
+			name:   "accepts explicit Docker Hub registry without library namespace",
+			image:  "docker.io/nginx:latest",
+			docker: DockerProjectOptions{ImagePassthrough: true},
+			want:   "docker.io/nginx:latest",
+		},
+		{
 			name: "preserves tag and digest",
 			image: "${PRIVATE_REGISTRY}/team/agent:v1@sha256:" +
 				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -1364,6 +1370,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		packagePath             string
 		packageKind             ArtifactKind
 		packageLocationKind     LocationKind
+		additionalArtifacts     ArtifactCollection
 		imageHash               string
 		sourceImage             string
 		targetImage             string
@@ -1475,6 +1482,59 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectDockerTagCalled:   false,
 			expectDockerPushCalled:  false,
 			expectedRemoteImage:     "other.example.com/team/agent:v2",
+		},
+		{
+			name:                    "Image passthrough accepts explicit Docker Hub package override",
+			image:                   "private.example.com/team/agent:v1",
+			packagePath:             "docker.io/nginx:latest",
+			packageKind:             ArtifactKindContainer,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage:     "docker.io/nginx:latest",
+		},
+		{
+			name:                "Image passthrough deduplicates package artifacts",
+			image:               "private.example.com/team/agent:v1",
+			packagePath:         "private.example.com/team/agent:v1",
+			packageKind:         ArtifactKindContainer,
+			packageLocationKind: LocationKindRemote,
+			additionalArtifacts: ArtifactCollection{&Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "private.example.com/team/agent:v1",
+				LocationKind: LocationKindRemote,
+			}},
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage:     "private.example.com/team/agent:v1",
+		},
+		{
+			name:                "Image passthrough rejects distinct package images",
+			image:               "private.example.com/team/agent:v1",
+			packagePath:         "private.example.com/team/agent:v1",
+			packageKind:         ArtifactKindContainer,
+			packageLocationKind: LocationKindRemote,
+			additionalArtifacts: ArtifactCollection{&Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "other.example.com/team/agent:v2",
+				LocationKind: LocationKindLocal,
+			}},
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectError:             true,
+			expectedError:           "multiple distinct remote container images",
 		},
 		{
 			name:  "Image passthrough preserves tag and digest package override",
@@ -1662,6 +1722,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 				})
 			}
 
+			packageArtifacts = append(packageArtifacts, tt.additionalArtifacts...)
 			serviceContext := &ServiceContext{Package: packageArtifacts}
 
 			publishResult, err := logProgress(

@@ -91,20 +91,6 @@ func TestWritePublishResultGuidance(t *testing.T) {
 			wantApprovalLink: true,
 		},
 		{
-			name:            "digital worker shared",
-			scope:           "shared",
-			isDigitalWorker: true,
-			contains: []string{
-				"Published Digital Worker",
-				"Install link: " + deepLink,
-				"may submit an activation request",
-				"Admin approval: " + tenantAgentApprovalURL,
-				"reopen the install link",
-			},
-			wantDeepLink:     true,
-			wantApprovalLink: true,
-		},
-		{
 			name:            "digital worker tenant",
 			scope:           "tenant",
 			isDigitalWorker: true,
@@ -182,12 +168,45 @@ func TestResolvePublishScopeExplicitFlagOverridesDigitalWorkerConfig(t *testing.
 	t.Parallel()
 
 	scope, err := resolvePublishScope(
+		&publishFlags{scope: "tenant", scopeSet: true},
+		digitalWorkerPackContext("shared"),
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "tenant", scope.flag)
+}
+
+func TestResolvePublishScopeRejectsSharedForDigitalWorkerFromFlag(t *testing.T) {
+	t.Parallel()
+
+	_, err := resolvePublishScope(
 		&publishFlags{scope: "shared", scopeSet: true},
 		digitalWorkerPackContext("tenant"),
 	)
 
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "digital_worker publish does not support \"shared\" scope")
+}
+
+func TestResolvePublishScopeRejectsSharedForDigitalWorkerFromConfig(t *testing.T) {
+	t.Parallel()
+
+	_, err := resolvePublishScope(&publishFlags{}, digitalWorkerPackContext("shared"))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "digital_worker publish does not support \"shared\" scope")
+}
+
+func TestResolvePublishScopeDefaultsDigitalWorkerToTenantWhenConfigMissing(t *testing.T) {
+	t.Parallel()
+
+	scope, err := resolvePublishScope(&publishFlags{}, &teamsPackContext{
+		activityProfile:  project.ActivityProfile{UseCase: project.ActivityUseCaseDigitalWorker},
+		activitySettings: &project.ActivitySettings{},
+	})
+
 	require.NoError(t, err)
-	require.Equal(t, "shared", scope.flag)
+	require.Equal(t, "tenant", scope.flag)
 }
 
 func TestBuildTeamsAppPackageRequestPublishMetadataPrecedence(t *testing.T) {

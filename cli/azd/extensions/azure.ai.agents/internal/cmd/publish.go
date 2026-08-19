@@ -54,8 +54,10 @@ Scopes:
   tenant    organization-wide catalog (requires IT-admin approval)
 
 For a digital worker, an explicit '--scope' overrides
-'activity.publish.publishScope' in azure.yaml. When '--scope' is omitted, the
-azure.yaml value is used. Simple activity agents default to 'shared'.
+'activity.publish.publishScope' in azure.yaml. Digital Worker publish supports
+tenant scope only (also accepts alias: org). When '--scope' is omitted, the
+azure.yaml value is used; if no value is configured, tenant is used.
+Simple activity agents default to 'shared'.
 
 'personal' is not supported here: per-user install is a Teams client action, not a
 store publish. For local testing, run 'azd ai agent pack' and sideload with
@@ -67,8 +69,8 @@ failure rather than silently skipped.`,
 		Example: `  # Publish using the configured digital-worker scope (or shared for simple activity)
   azd ai agent publish
 
-  # Explicitly override the configured scope for a specific agent
-  azd ai agent publish my-agent --scope shared
+	# Explicitly override the configured scope for a specific agent
+	azd ai agent publish my-agent --scope tenant
 
   # Publish organization-wide (requires IT-admin approval)
   azd ai agent publish --scope tenant`,
@@ -163,6 +165,8 @@ func resolvePublishScope(flags *publishFlags, packCtx *teamsPackContext) (teamsP
 	if !flags.scopeSet {
 		if publish := digitalWorkerPublishConfig(packCtx); publish != nil && strings.TrimSpace(publish.PublishScope) != "" {
 			scopeValue = publish.PublishScope
+		} else if packCtx.activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
+			scopeValue = "tenant"
 		} else {
 			scopeValue = "shared"
 		}
@@ -179,7 +183,24 @@ func resolvePublishScope(flags *publishFlags, packCtx *teamsPackContext) (teamsP
 	if err := validatePublishScope(scope); err != nil {
 		return teamsPackScope{}, err
 	}
+	if err := validateDigitalWorkerPublishScope(packCtx.activityProfile.UseCase, scope); err != nil {
+		return teamsPackScope{}, err
+	}
 	return scope, nil
+}
+
+func validateDigitalWorkerPublishScope(useCase project.ActivityUseCase, scope teamsPackScope) error {
+	if useCase != project.ActivityUseCaseDigitalWorker {
+		return nil
+	}
+	if scope.flag == "tenant" {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidPublishScope,
+		fmt.Sprintf("digital_worker publish does not support %q scope", scope.flag),
+		"digital_worker supports tenant scope only; use --scope tenant (alias: org) or set activity.publish.publishScope: tenant in azure.yaml",
+	)
 }
 
 func digitalWorkerPublishConfig(packCtx *teamsPackContext) *project.DigitalWorkerPublishConfig {
@@ -236,13 +257,6 @@ func writePublishResult(
 	fmt.Fprintf(w, "  Teams App ID: %s\n", result.TeamsAppID)
 
 	switch {
-	case isDigitalWorker && scope.flag == "shared":
-		fmt.Fprintf(w, "  Install link: %s\n", deepLink)
-		fmt.Fprintln(w, "Open or share the install link to add the Digital Worker in Teams.")
-		fmt.Fprintln(w, "The first attempt to create an instance may submit an activation request if the "+
-			"Digital Worker template is not yet active in the tenant.")
-		fmt.Fprintf(w, "  Admin approval: %s\n", tenantAgentApprovalURL)
-		fmt.Fprintln(w, "After approval, reopen the install link to create your personal instance.")
 	case isDigitalWorker && scope.flag == "tenant":
 		fmt.Fprintln(w, "The Digital Worker was submitted for tenant administration and may require approval "+
 			"and template activation before users can create instances.")

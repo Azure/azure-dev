@@ -250,6 +250,7 @@ else
         ' "$DOTNET_METADATA"
     ) || true
 
+    DOTNET_SHA512=${DOTNET_SHA512,,}
     if [[ ! "$DOTNET_URL" =~ ^https:// ]] || [[ ! "$DOTNET_SHA512" =~ ^[0-9a-f]{128}$ ]]; then
         echo "ERROR: Could not resolve the official .NET SDK asset for" \
             "$DOTNET_SDK_VERSION $DOTNET_RID." >&2

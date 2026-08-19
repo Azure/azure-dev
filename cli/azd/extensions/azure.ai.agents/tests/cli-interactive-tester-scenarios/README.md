@@ -547,6 +547,10 @@ tmux session, **sequentially and fail-fast** unless a hook sets
 `continue_on_error: true`. Each entry is a string or a mapping with `run`
 (required), `cwd` (defaults to the scenario `cwd`, created if missing), `env`,
 `continue_on_error` (default `false`), `timeout` (default **120s**), and `name`.
+After a tester session starts, its worker always calls `finish_session` and then
+attempts declared post hooks, even if a product goal fails. Hook failures are
+reported separately and make the scenario fail without hiding the original
+product finding.
 
 How they're used here:
 
@@ -564,22 +568,28 @@ How they're used here:
   rate-limited. Run `gh auth login` first (see [Authentication](#authentication)).
 - **`pre` idempotent setup (Tier 2)** — `2.00-setup-deploy-shared-agent` first runs
   `azd down --force --purge` if a project exists at the current run's
-  `{shared_agent_name}` path, then clears only that project directory. Other run
-  directories under `~/working/azd-agents-shared` are left intact. The down hook
-  uses `timeout: 900` and `continue_on_error: true`.
+  `{shared_agent_name}` path, then clears only that project directory. A failed
+  teardown aborts setup and preserves the project state for recovery. Other run
+  directories under `~/working/azd-agents-shared` are left intact. The hook uses
+  `timeout: 900`.
 - **`pre` precondition guard (Tier 2 reuse)** — `2.01-`…`2.18` print a clear "run
   2.00-setup first" warning if the shared agent isn't deployed (non-fatal).
-- **`post` cleanup** — `2.99-teardown-down` clears the current run's
-  `{shared_agent_name}` project directory after the in-session `azd down`
-  completes, leaving other run directories intact.
+- **`post` cleanup (Tier 1b)** — every deploy-verification scenario runs
+  `azd down --force --purge` with `timeout: 900` after its tester session,
+  including when product verification fails.
+- **Success-gated cleanup (Tier 2)** — `2.99-teardown-down` removes the current
+  run's `{shared_agent_name}` project directory only after the in-session
+  `azd down` succeeds. Failed teardown retains the directory for recovery.
 
 ## Fixtures
 
-`fixtures/from-code/` holds a minimal Python agent source tree (`app.py` +
-`requirements.txt`) that satisfies the extension's existing-code detection
-(it looks for `requirements.txt` or any `.py`, and defaults the entry point to
-`app.py`). The existing-code scenarios copy it into the working dir via a `pre`
-hook, then select "Use the code in the current directory" at the init prompt.
+`fixtures/from-code/` holds a minimal runnable Agent Framework Responses server
+(`app.py` + `requirements.txt`). It satisfies the extension's existing-code
+detection (which looks for `requirements.txt` or any `.py` and defaults the
+entry point to `app.py`) and remains responsive after deployment so Tier 1b can
+verify `azd ai agent invoke`. The existing-code scenarios copy it into the
+working dir via a `pre` hook, then select "Use the code in the current
+directory" at the init prompt.
 
 The hook references the fixture via the `{fixtures_dir}` session variable, which
 the orchestrator auto-derives from the scenarios directory path:
@@ -602,12 +612,16 @@ be run back to back in any order within a tier:
 - Tier 0/1 stateful scenarios **pre-wipe** their own `cwd`. Cleanup is pre-wipe
   **only** (no `post` delete), so the generated scaffold stays on disk for
   inspection after a run while the next run still starts clean.
+- Tier 1b scenarios preserve the Tier 1 scaffold but use an always-run `post`
+  hook to down their isolated Azure resources. Cleanup failure is a separate
+  scenario failure and leaves the local environment available for recovery.
 - The current Tier 2 run's `{shared_agent_name}` project dir is reset by
   `2.00-setup`'s `pre` hook, which **downs a deployed project at that exact path
-  first** (this also sidesteps the resource-name hash collision behind
+  first** and aborts without deleting local state if teardown fails (this also
+  sidesteps the resource-name hash collision behind
   [#8360](https://github.com/Azure/azure-dev/issues/8360)). Other run directories
-  are preserved. `2.99-teardown-down` additionally clears the current run's
-  project dir in a `post` hook.
+  are preserved. After a successful teardown, `2.99-teardown-down` clears only
+  the current run's project directory as its final interactive step.
 - Read-only scenarios (`version`, `--help`, `sample list`) run in `/tmp`, hold no
   state, and declare no hooks.
 

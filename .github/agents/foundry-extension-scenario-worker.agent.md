@@ -69,8 +69,9 @@ Your caller gives you everything you need — do not go looking for it yourself:
    `load_scenario` → (if present) `run_pre_hooks` → `start_session` (with `run_name`,
    `output_dir`, `session_id`, and `instance_id` if given) → drive the `goals:` with
    `send_action` / `select` / screenshots → `finish_session` → (if present) `run_post_hooks`.
-   Always `finish_session` for every session you start. Screenshot key steps on a best-effort
-   basis and `report_finding` for any confusing UX, error, or doc mismatch.
+   Treat `finish_session` and `run_post_hooks` as a finally-style path: run them after every
+   started session even when a product goal fails. Screenshot key steps on a best-effort basis
+   and `report_finding` for any confusing UX, error, or doc mismatch.
 
 ## Verdict rules (fail-loud — do not soften)
 
@@ -103,6 +104,10 @@ Apply the spec's execution rules; the essentials:
 - **Never work around a broken environment.** Wrong binary, file-locking, missing tool, path
   failure → **FAIL** with an infrastructure finding and return. You have no `edit`/`shell`
   tools by design: do not attempt to install, replace, or modify anything.
+- **Post-hook cleanup is fail-visible.** Always run declared post hooks after finishing a
+  started session, regardless of the product verdict. A post-hook failure makes the scenario
+  **FAIL** and must be listed as a separate cleanup finding. If product verification also
+  failed, preserve both findings; cleanup failure must not replace the original failure.
 
 ## What you return
 
@@ -113,14 +118,15 @@ prose preamble:
 scenario:   <stem>            e.g. 1.04-init-from-code
 tier:       <0 | 1 | 1b | 2>
 verdict:    <✅ PASS | ❌ FAIL | ⏭️ SKIPPED | ⚠️ PASS-with-finding>
-duration:   <Hh Mm Ss>        (— for SKIPPED; start_session → finish_session incl. hooks)
-findings:   <one bullet per report_finding, or "none">
+duration:   <Hh Mm Ss>        (— for SKIPPED; scenario start through post hooks)
+findings:   <one bullet per report_finding or hook failure, or "none">
 report_dir: <output_dir>/<run_name>/    (tester HTML + screenshots)
 ```
 
 ## Exit criteria
 
 - Exactly one scenario was driven to a single verdict (or SKIPPED before starting), every
-  session you started was `finish_session`- d, and the structured block above was returned.
+  session you started was `finish_session`-d, every declared post hook was attempted, and the
+  structured block above was returned.
 - You made **no** decisions about other scenarios or the overall run, and you did **not**
   modify the environment, edit any file, or run any host command.

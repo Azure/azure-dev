@@ -4,8 +4,8 @@
 # first — it leaves a complete scaffold on disk that this scenario deploys.
 #
 # This scenario does NOT re-run init. It reuses the Tier 1 scaffold directly,
-# provisions infrastructure, deploys the agent, verifies it's accessible and
-# responsive, then cleans up with `azd down`.
+# provisions infrastructure, deploys the agent, and verifies it's accessible and
+# responsive. An always-run post hook cleans up with `azd down`.
 name: "deploy-from-azure-yaml-url"
 command: "azd provision"
 cwd: "~/working/azd-agents-t1-from-url-{instance}/agent-framework-agent-basic-responses"
@@ -30,12 +30,16 @@ pre:
     cwd: "~/working"
     name: "assert tier 1 scaffold is complete"
 
+post:
+  - run: "azd down --force --purge"
+    cwd: "~/working/azd-agents-t1-from-url-{instance}/agent-framework-agent-basic-responses"
+    name: "tear down scenario Azure resources"
+    timeout: 900
+
 goals:
   - "Wait for 'azd provision' to complete. This creates the Azure infrastructure (Foundry project, model deployment, resource group) defined by the Tier 1 scaffold."
   - "After provision succeeds, run 'azd deploy' and wait for it to complete. This deploys the agent to the provisioned Foundry project."
   - "Run 'azd ai agent show' and verify the agent is accessible — confirm it reports an agent name and endpoint URL."
   - "Run `azd ai agent invoke \"Hello, are you there?\"` and confirm the agent responds with a non-empty reply containing no authentication or endpoint errors. This validates the agent is functional, not just deployed."
   - "Take a screenshot of the successful provision, deploy, show, and invoke output."
-  - "Run 'azd down --force --purge' to tear down all Azure resources created by this scenario."
-  - "Confirm the teardown succeeds (exit 0)."
-  - "Report a finding if provision, deploy, show, invoke, or teardown fails. A failure here means the Tier 1 init scaffold passed validation but cannot actually deploy or run — this is a real regression."
+  - "Report a finding if provision, deploy, show, or invoke fails. A failure here means the Tier 1 init scaffold passed validation but cannot actually deploy or run — this is a real regression. Azure cleanup runs separately as an always-run post hook."

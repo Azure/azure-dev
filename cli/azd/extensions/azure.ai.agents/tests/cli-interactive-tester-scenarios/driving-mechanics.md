@@ -67,11 +67,15 @@ For each selected scenario:
 2. If it has `pre` hooks: `run_pre_hooks(path=…, session_vars=…)`. Hooks run host-side,
    sequentially, fail-fast (unless a hook sets `continue_on_error: true`).
 3. `start_session(scenario_path=…, session_vars=…, run_name=<scenario-stem>, output_dir=<wsl .reports path>)`.
-4. Drive the scenario's `goals:` with `send_action` / `select` / best-effort screenshots, then
+4. Drive the scenario's `goals:` with `send_action` / `select` / best-effort screenshots.
+   Whether the goals pass or fail, enter the finally-style cleanup path and call
    `finish_session` (this releases ports and generates the HTML report).
-5. If it has `post` hooks: `run_post_hooks(path=…, session_vars=…)`.
+5. If it has `post` hooks, always call
+   `run_post_hooks(path=…, session_vars=…)` after `finish_session`, even when a product goal
+   failed. A post-hook failure is a separate cleanup finding and makes the scenario FAIL. If
+   product verification also failed, preserve both findings.
 
-Always `finish_session` for every session you start.
+Always `finish_session` and attempt declared post hooks for every session you start.
 
 ---
 
@@ -101,6 +105,10 @@ operational form of the README's **authoring contract** — see
 - **Never retry a failed scenario.** On failure (command error, unexpected output, non-zero
   exit) report the finding and move on. Do **not** re-run hoping for a different result unless
   the scenario's `goals:` explicitly instruct a retry — retrying masks flakiness.
+- **Always run post-hook cleanup and report it independently.** Product failure stops further
+  product driving, not cleanup. Finish the tester session, run every declared post hook, and
+  record cleanup failure separately. A failed cleanup makes the scenario FAIL; when product
+  verification also failed, report both rather than replacing the original finding.
 - **Screenshot capture is non-blocking and is never retried.** A screenshot is supporting
   evidence, not product behavior. If a screenshot call errors or times out, immediately file a
   `report_finding` with category `observation`, including the capture error and which expected

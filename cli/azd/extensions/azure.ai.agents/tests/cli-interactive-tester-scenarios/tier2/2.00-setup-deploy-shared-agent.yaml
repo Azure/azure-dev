@@ -24,19 +24,23 @@ env:
 
 # Idempotent setup: if this run's project path already contains a project, tear
 # down its Azure resources FIRST, then clear only that project directory for a
-# fresh deploy. Other run directories under azd-agents-shared are left intact.
-# The down step gets a long timeout and continues on error (there may be nothing
-# to tear down). Re-using a clean path also avoids the resource-name hash collision
-# in issue #8360.
+# fresh deploy. A failed teardown aborts setup and preserves the project state
+# for recovery. Other run directories under azd-agents-shared are left intact.
+# Re-using a clean path also avoids the resource-name hash collision in issue
+# #8360.
 pre:
-  - run: "if [ -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml ]; then (cd ~/working/azd-agents-shared/{shared_agent_name} && azd down --force --purge); fi"
+  - run: |
+      PROJECT=~/working/azd-agents-shared/{shared_agent_name}
+      if [ -f "$PROJECT/azure.yaml" ]; then
+        (cd "$PROJECT" && azd down --force --purge) || {
+          echo "ERROR: Could not tear down the existing project. State retained at $PROJECT."
+          exit 1
+        }
+      fi
+      rm -rf -- "$PROJECT"
     cwd: "~/working/azd-agents-shared"
-    name: "tear down any leftover deployed agent"
-    continue_on_error: true
+    name: "tear down and clear the current run project"
     timeout: 900
-  - run: "rm -rf ~/working/azd-agents-shared/{shared_agent_name}"
-    cwd: "~/working"
-    name: "clear the current run project dir"
 
 goals:
   - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with '{prefix}-' (e.g. '{shared_agent_name}'). Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."

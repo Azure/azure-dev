@@ -149,14 +149,18 @@ Field references (do not restate these — link to them):
 
 4. **Make it idempotent with hooks.** For a stateful scenario add a `pre` hook that `rm -rf`s
    its own `cwd` (and, if it needs source code, a second hook that seeds a fixture from
-   `{fixtures_dir}` — see `tier1/1.04-init-from-code.yaml`). Tier 2 setup additionally downs any
-   leftover deployed project first. Prefer **pre-wipe only** (no `post` delete) so the scaffold
-   stays on disk for inspection. Use `continue_on_error` / a longer `timeout` only where an
-   existing scenario shows it's needed (e.g. the Tier 2 down hook).
+   `{fixtures_dir}` — see `tier1/1.04-init-from-code.yaml`). Prefer **pre-wipe only** for
+   local-only scenarios so the scaffold stays on disk for inspection. Tier 1b scenarios that
+   provision paid resources require an always-run `post` hook with a suitable timeout for
+   `azd down --force --purge`. Tier 2 setup additionally downs a project at its current-run
+   path before removing that directory; teardown failure must abort setup and preserve state
+   for recovery. Do not use `continue_on_error` when cleanup failure would orphan resources.
 
 5. **Add a fixture only if required.** If the flow needs pre-existing source (the "use the code
    in the current directory" path), add the minimal tree under `fixtures/<name>/` and seed it via
-   the hook. Keep fixtures minimal — just enough to satisfy detection.
+   the hook. Keep fixtures minimal, but make them runnable when a later scenario deploys and
+   invokes the generated scaffold; detection-only placeholders are not sufficient for
+   deploy-verification prerequisites.
 
 6. **Set `requires:` if it depends on another scenario.** Tier 1b deploy-verify scenarios point
    `requires:` at the Tier 1 init scenario whose scaffold they deploy (a **relative path from

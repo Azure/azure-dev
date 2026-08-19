@@ -27,6 +27,13 @@ import (
 // deploy half of the provider; the provider owns ordering, this owns the calls.
 type evalReconciler struct {
 	ec *evalContext
+
+	// claimed holds the evals this deploy has already settled, so a second
+	// declaration cannot adopt one. Substance keys are never removed from the
+	// environment, so one left behind by an earlier edit still points at a live
+	// eval -- and adopting it renames that eval and leaves the declaration that
+	// asked for it sharing the other one's runs.
+	claimed map[string]bool
 }
 
 var _ project.Reconciler = (*evalReconciler)(nil)
@@ -37,6 +44,15 @@ func newEvalReconciler(ctx context.Context) (project.Reconciler, error) {
 		return nil, err
 	}
 	return &evalReconciler{ec: ec}, nil
+}
+
+// claim records an eval this deploy has settled on. Built lazily, because the
+// reconciler is also constructed literally in a few places.
+func (r *evalReconciler) claim(id string) {
+	if r.claimed == nil {
+		r.claimed = map[string]bool{}
+	}
+	r.claimed[id] = true
 }
 
 // EnsureDataset registers a new version only when the local content changed.
@@ -113,6 +129,10 @@ func (r *evalReconciler) EnsureDataset(
 				); err != nil && dataset_api.IsNotFound(err) {
 					return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
 				}
+				// Recorded here too. Returning the pin without writing it left
+				// the deploy reporting one version and the run downloading the
+				// one recorded before the pin was added.
+				r.ec.remember(ctx, versionKey("dataset", decl.Name), decl.Version)
 				return decl.Version, false, nil
 			}
 			if err := r.checkDatasetDrift(ctx, decl.Name, version); err != nil {
@@ -460,6 +480,7 @@ func (r *evalReconciler) EnsureEval(
 	datasetPath string,
 ) (string, bool, error) {
 	if group.ID != "" {
+		r.claim(group.ID)
 		return group.ID, false, nil
 	}
 
@@ -477,7 +498,13 @@ func (r *evalReconciler) EnsureEval(
 		return "", false, err
 	}
 	key := project.FingerprintKey("eval", group.Name)
-	if prior := r.ec.getEnvValue(ctx, key); prior != "" && prior != definition {
+	// Compared against both. The recorded baseline is the definition from this
+	// build on, and the full digest from every build before the two were split:
+	// reading only the definition made the first deploy after an upgrade recreate
+	// every eval carrying max_samples or source:, for a file nobody had touched,
+	// and orphaned the runs taken under it. Equality with either says the
+	// declaration is what was deployed.
+	if prior := r.ec.getEnvValue(ctx, key); prior != "" && prior != definition && prior != digest {
 		recreate = true
 	}
 
@@ -532,6 +559,7 @@ func (r *evalReconciler) EnsureEval(
 			r.ec.remember(ctx, idKey("eval", group.Name), cached)
 			r.ec.remember(ctx, digestIDKey(digest), cached)
 			r.ec.remember(ctx, envKeyEvalID, cached)
+			r.claim(cached)
 			return cached, false, nil
 		}
 	}
@@ -548,6 +576,7 @@ func (r *evalReconciler) EnsureEval(
 	// which declaration it belongs to; it is here for anything outside this
 	// extension that wants the id of what was just deployed.
 	r.ec.remember(ctx, envKeyEvalID, created.ID)
+	r.claim(created.ID)
 	return created.ID, true, nil
 }
 
@@ -563,6 +592,12 @@ func (r *evalReconciler) adoptRenamed(
 ) (string, error) {
 	id := r.ec.getEnvValue(ctx, digestIDKey(digest))
 	if id == "" {
+		return "", nil
+	}
+	if r.claimed[id] {
+		// Another declaration in this same file already settled on it. Adopting
+		// it here would rename that eval and leave both declarations sharing
+		// one id and one run history, which is worse than creating a second.
 		return "", nil
 	}
 	remote, err := r.ec.evalClient.GetOpenAIEval(ctx, id)

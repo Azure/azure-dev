@@ -65,8 +65,8 @@ func AgentInstructionsFromProject(
 		return "", "", err
 	}
 
-	configDir := filepath.Join(
-		baseDirUnder(proj.GetPath(), svc), agentConfigsDir, agentBaselineDir)
+	serviceRoot := baseDirUnder(proj.GetPath(), svc)
+	configDir := filepath.Join(serviceRoot, agentConfigsDir, agentBaselineDir)
 
 	data, err := os.ReadFile(filepath.Join(configDir, agentMetadataFile)) //nolint:gosec // under the project
 	if err != nil {
@@ -90,7 +90,17 @@ func AgentInstructionsFromProject(
 	// The pointer comes out of the checkout, so it carries the checkout's
 	// trust. Left alone, an absolute path or one climbing out with `..` reads a
 	// file the project does not contain and sends it on as agent instructions.
-	if !withinDir(proj.GetPath(), instructionPath) {
+	//
+	// Contained to the project, so any layout inside it a writer chooses still
+	// resolves -- unless the service itself is declared outside the project,
+	// which azd supports through an absolute `project:`. The project is then no
+	// boundary for it at all, and its own directory is the one the metadata was
+	// read from.
+	root := proj.GetPath()
+	if root == "" || !liesWithin(root, serviceRoot) {
+		root = serviceRoot
+	}
+	if !withinDir(root, instructionPath) {
 		return "", "", messages.InstructionFileOutsideProject(
 			filepath.Join(configDir, agentMetadataFile), meta.InstructionFile)
 	}

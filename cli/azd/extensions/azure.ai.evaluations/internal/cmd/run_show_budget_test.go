@@ -27,6 +27,8 @@ func TestRunShowKeepsTheRunThePollDidNotReturn(t *testing.T) {
 
 	require.Contains(t, source, "errWaitBudgetSpent",
 		"run show has to answer the budget rather than surface the sentinel")
+	require.Contains(t, source, "if pollErr != nil",
+		"the window below ends here; renaming it must fail rather than panic")
 
 	branch := source[strings.Index(source, "errWaitBudgetSpent"):]
 	// Ended at the poll's own error check, so the window holds the budget branch

@@ -14,7 +14,7 @@ import (
 
 const sasSecret = "REDACT_ME_SECRET"
 
-// These tests pin the premise as well as the behaviour: url.URL.Redacted is the
+// These tests pin the premise as well as the behavior: url.URL.Redacted is the
 // call that looks correct and leaks, so if someone reaches for it again the
 // first assertion explains why they should not.
 func TestURLDropsTheSASSignature(t *testing.T) {

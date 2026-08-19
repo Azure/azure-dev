@@ -735,22 +735,29 @@ func declaredDatasetVersion(configPath string, group *project.Eval) string {
 }
 
 // scoredDatasetVersion labels a run with the version its rows actually came
-// from.
+// from, or with nothing when that cannot be said.
 //
 // It has to follow the same branch the rows did. A declaration carrying both
 // `source:` and `version:` reads the file from disk, so the pin says nothing
-// about what was scored and the recorded version -- the one this file's content
-// published, which checkDatasetRegistered has already confirmed the rows match
-// -- is the honest label. Only a registered dataset is fetched at the pin.
+// about what was scored. The recorded version is the honest label there only
+// once a fingerprint exists to tie the file to it -- that is what
+// checkDatasetRegistered confirms, and it also declines when there is none. A
+// dataset that was registered and has since gained a `source:` has a recorded
+// version and no fingerprint, and stamping the run with it would assert a
+// provenance the rows no longer have.
 func (ec *evalContext) scoredDatasetVersion(
 	ctx context.Context,
 	group *project.Eval,
 	configPath string,
 ) string {
-	if localDatasetPath(configPath, group) == "" {
-		if pinned := declaredDatasetVersion(configPath, group); pinned != "" {
-			return pinned
+	if localDatasetPath(configPath, group) != "" {
+		if ec.getEnvValue(ctx, project.FingerprintKey("dataset", group.Dataset)) == "" {
+			return ""
 		}
+		return ec.getEnvValue(ctx, versionKey("dataset", group.Dataset))
+	}
+	if pinned := declaredDatasetVersion(configPath, group); pinned != "" {
+		return pinned
 	}
 	return ec.getEnvValue(ctx, versionKey("dataset", group.Dataset))
 }

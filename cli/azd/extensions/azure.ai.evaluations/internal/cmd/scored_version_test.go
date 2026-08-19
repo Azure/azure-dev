@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaieval/internal/project"
@@ -49,7 +50,8 @@ evals:
 // confirmed the rows match it.
 func TestARunOverALocalFileIsLabelledWithWhatTheFilePublished(t *testing.T) {
 	env := &testEnvServer{values: map[string]string{
-		versionKey("dataset", "golden"): "2",
+		versionKey("dataset", "golden"):             "2",
+		project.FingerprintKey("dataset", "golden"): "a digest of the file",
 	}}
 	ec := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
 	group := &project.Eval{Name: "quality", Dataset: "golden"}
@@ -59,6 +61,23 @@ func TestARunOverALocalFileIsLabelledWithWhatTheFilePublished(t *testing.T) {
 
 	assert.Equal(t, "2", labelled,
 		"the rows came off disk, so the pin is not what was scored")
+}
+
+// And with no fingerprint there is nothing tying the file to that version. A
+// dataset that was registered and has since gained a `source:` has a recorded
+// version and no fingerprint, and the rows are whatever the file now holds.
+func TestALocalFileWithNoFingerprintIsLabelledWithNothing(t *testing.T) {
+	env := &testEnvServer{values: map[string]string{
+		versionKey("dataset", "golden"): "3",
+	}}
+	ec := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
+	group := &project.Eval{Name: "quality", Dataset: "golden"}
+
+	labelled := ec.scoredDatasetVersion(
+		context.Background(), group, writeCatalog(t, "golden.jsonl", ""))
+
+	assert.Empty(t, labelled,
+		"no version is better than one the rows are not from")
 }
 
 // A registered dataset is fetched at the pin, so the pin is the honest label.
@@ -78,7 +97,8 @@ func TestARunOverARegisteredDatasetIsLabelledWithThePin(t *testing.T) {
 // With no pin either way, the recorded version answers.
 func TestWithoutAPinTheRecordedVersionIsTheLabel(t *testing.T) {
 	env := &testEnvServer{values: map[string]string{
-		versionKey("dataset", "golden"): "2",
+		versionKey("dataset", "golden"):             "2",
+		project.FingerprintKey("dataset", "golden"): "a digest of the file",
 	}}
 	ec := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
 	group := &project.Eval{Name: "quality", Dataset: "golden"}
@@ -114,4 +134,18 @@ func TestTheRecreateDecisionIsMadeOncePerDeploy(t *testing.T) {
 	second, err := r.decide(context.Background(), group)
 	require.NoError(t, err)
 	assert.Equal(t, first, second, "the decision must not change under it")
+}
+
+// Both askers have to read the same memo, or the two can still disagree.
+func TestEnsureEvalAsksTheSameMemoReservationDid(t *testing.T) {
+	body, err := os.ReadFile("reconciler.go")
+	require.NoError(t, err)
+	source := string(body)
+
+	assert.Contains(t, source, "r.evalDigests(ctx, group)",
+		"EnsureEval has to go through the memo rather than hashing again")
+	assert.Contains(t, source, "decided, err := r.decide(ctx, group)",
+		"and evalDigests is what reads it")
+	assert.Equal(t, 1, strings.Count(source, "project.FingerprintKey(\"eval\", group.Name))"),
+		"one read of the baseline, or a transient failure flips the decision")
 }

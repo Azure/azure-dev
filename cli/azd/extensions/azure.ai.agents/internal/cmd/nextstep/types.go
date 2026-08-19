@@ -91,29 +91,32 @@ type State struct {
 	// MissingManualVars names ${...} references that map to user-supplied
 	// variables which are not set in the azd environment.
 	//
-	// Toolbox-derived endpoint variables (`TOOLBOX_<NAME>_MCP_ENDPOINT`
-	// keys that correspond to a manifest-declared toolbox) are
-	// partitioned out into MissingToolboxEndpoints — they are
-	// azd-managed outputs of `azd provision`, not operator-supplied,
-	// and routing them to `azd env set` is misleading.
+	// Toolbox endpoint variables are tracked separately in
+	// MissingToolboxEndpoints because azd manages them rather than
+	// the operator.
 	MissingManualVars []string
 
-	// MissingToolboxEndpoints lists manifest-declared toolboxes whose
-	// azd-injected TOOLBOX_<NAME>_MCP_ENDPOINT variable is unset in the
-	// active azd environment. AssembleState partitions these out of
-	// MissingManualVars because they are produced by
-	// `azd provision` (listen.go::registerToolboxEnvVars), not by the
-	// user — the right remediation is `azd provision` (which creates
-	// the toolbox in the Foundry project on first run and sets the
-	// derived env var), not `azd env set`.
+	// MissingToolboxEndpoints lists collected toolboxes whose
+	// TOOLBOX_<NAME>_MCP_ENDPOINT variable is unset in the active
+	// azd environment. `azd deploy` produces split services, while
+	// legacy manifest toolboxes keep their existing remediation.
 	//
-	// Each entry carries the manifest's resource Name and the owning
-	// ServiceName so the resolver and doctor checks can render
-	// per-service guidance. The Detail field is unused (toolbox
-	// endpoints have no kind-specific identifier beyond Name) but the
-	// shared ResourceRef shape keeps the renderer code uniform with
-	// state.Toolboxes / state.ModelRefs / state.Connections.
+	// Each entry includes the resource Name and owning ServiceName so
+	// resolvers and Doctor checks can show the right guidance. The
+	// shared ResourceRef type keeps resource rendering consistent.
 	MissingToolboxEndpoints []ResourceRef
+
+	// ToolboxEndpointErrors contains endpoint probe failures from state
+	// assembly. Doctor reports these errors without probing again.
+	ToolboxEndpointErrors []string
+
+	// ToolboxDependencyErrors contains invalid active-agent toolbox
+	// dependency conditions.
+	ToolboxDependencyErrors []string
+
+	// ToolboxEndpointsChecked is true after assembly probes every
+	// active toolbox endpoint.
+	ToolboxEndpointsChecked bool
 
 	// UnresolvedPlaceholders names {{NAME}} Mustache-style placeholders
 	// still present inside an agent configuration environment
@@ -155,13 +158,11 @@ type State struct {
 	// prepend a `cd <folder>` suggestion to the Next: block.
 	CreatedFolderDisplay string
 
-	// HasModels, HasToolboxes, HasConnections are aggregate flags
-	// derived from each azure.ai.agent service's agent.manifest.yaml
-	// (when present). They are true when at least one resource of the
-	// matching kind is declared across all services. Doctor checks that
-	// only make sense in the presence of these resources gate-skip
-	// themselves on the matching Has* flag; resolvers can use them to
-	// tailor remediation suggestions.
+	// HasModels, HasToolboxes, and HasConnections are aggregate flags.
+	// They describe resources. Models and connections come from
+	// agent manifests. Toolboxes include split services and manifest
+	// resources. Doctor checks skip when no matching resource exists,
+	// while resolvers can tailor remediation.
 	//
 	// All three flags are false when the manifest file is missing,
 	// malformed, or declares no resources — the walker is deliberately
@@ -171,12 +172,10 @@ type State struct {
 	HasToolboxes   bool
 	HasConnections bool
 
-	// ModelRefs, Toolboxes, Connections list every resource of the
-	// matching kind found across all services' agent.manifest.yaml
-	// files. Entries are sorted by Name (ties broken by ServiceName)
-	// and deduplicated on (ServiceName, Name) so callers can render
-	// them deterministically. The slices are nil when the matching
-	// Has* flag is false.
+	// ModelRefs, Toolboxes, and Connections list collected resources.
+	// ModelRefs and Connections still come from manifests. Entries are
+	// sorted by Name, then ServiceName, so callers can render them
+	// deterministically.
 	ModelRefs   []ResourceRef
 	Toolboxes   []ResourceRef
 	Connections []ResourceRef
@@ -191,18 +190,13 @@ type State struct {
 // boundary. Add fields here only when a doctor check or resolver
 // branch needs them.
 type ResourceRef struct {
-	// Name is the resource's manifest-declared name (the `name:`
-	// field on the manifest's `resources[]` entry). Doctor checks
-	// match by this name when looking up Foundry deployments /
-	// connections / toolboxes.
+	// Name is the configured resource name. Doctor checks use it to find
+	// deployments, connections, and toolboxes.
 	Name string
 
-	// ServiceName is the azd service that declared the resource (the
-	// service entry under `services:` in azure.yaml whose
-	// agent.manifest.yaml contains this entry). When the same logical
-	// resource is declared by multiple services they appear as
-	// separate entries — doctor checks key on (ServiceName, Name) so
-	// per-service failures are surfaced individually.
+	// ServiceName is the azd service that declared the resource. If
+	// multiple services declare the same logical resource, each entry
+	// keeps its own service name.
 	ServiceName string
 
 	// Detail carries a kind-specific identifier:
@@ -212,7 +206,25 @@ type ResourceRef struct {
 	// Doctor remediation messages render Detail verbatim, so changes
 	// here must match the doctor-message contract.
 	Detail string
+
+	// ToolboxSource records how this toolbox was discovered.
+	ToolboxSource ToolboxSource
 }
+
+// ToolboxSource identifies the source used to discover a toolbox.
+type ToolboxSource int
+
+const (
+	// ToolboxSourceUnknown is the zero value.
+	ToolboxSourceUnknown ToolboxSource = iota
+	// ToolboxSourceBundled is a toolbox declared by an agent service.
+	ToolboxSourceBundled
+	// ToolboxSourceSplit is a standalone azure.ai.toolbox service.
+	ToolboxSourceSplit
+	// ToolboxSourceLegacyManifest is a toolbox declared in an agent
+	// manifest.
+	ToolboxSourceLegacyManifest
+)
 
 // ServiceState mirrors one entry from the project's services map, plus a
 // deployment marker derived from azd environment variables. IsDeployed is

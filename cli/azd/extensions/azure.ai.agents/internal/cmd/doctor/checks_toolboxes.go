@@ -26,9 +26,8 @@ import (
 type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err error)
 
 // newCheckToolboxes produces Check `local.toolboxes` (P5.1 C14).
-// For each `ToolboxResource` declared in any service's
-// `agent.manifest.yaml` (collected by the C2 manifest walker), the
-// check verifies that the canonical
+// The check examines each toolbox collected during next-step state
+// assembly and verifies that its canonical
 // `TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT` env var is set to a
 // non-empty value in the active azd environment.
 //
@@ -44,7 +43,7 @@ type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err
 //     skips in this state, so the toolbox check would falsely Pass.
 //   - `local.azure-yaml` / `local.agent-service-detected` failed →
 //     no services to walk; walker output is unreliable.
-//   - state.HasToolboxes == false → no manifest toolbox declarations;
+//   - state.HasToolboxes == false: there are no toolbox declarations;
 //     the check has nothing to verify.
 //
 // # Why this check is not gated on `remote.auth` /
@@ -69,7 +68,7 @@ type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err
 func newCheckToolboxes(deps Dependencies) Check {
 	return Check{
 		ID:     "local.toolboxes",
-		Name:   "Manifest toolboxes have endpoint env vars set",
+		Name:   "Configured toolboxes have endpoint env vars set",
 		Remote: false,
 		Fn: func(ctx context.Context, _ Options, prior []Result) Result {
 			if deps.AzdClient == nil {
@@ -94,13 +93,7 @@ func newCheckToolboxes(deps Dependencies) Check {
 				}
 			}
 
-			assembler := deps.assembleState
-			if assembler == nil {
-				assembler = func(c context.Context, client *azdext.AzdClient) (*nextstep.State, []error) {
-					return nextstep.AssembleState(c, client)
-				}
-			}
-			state, errs := assembler(ctx, deps.AzdClient)
+			state, errs := deps.AssembleAgentState(ctx)
 			if state == nil {
 				// AssembleState always returns a non-nil State even when errs
 				// is non-empty (state.go), but defend against a future contract
@@ -116,21 +109,150 @@ func newCheckToolboxes(deps Dependencies) Check {
 					Suggestion: "Re-run `azd ai agent doctor`; the state assembly returned nil unexpectedly.",
 				}
 			}
+			if len(state.ToolboxDependencyErrors) > 0 {
+				issues := slices.Clone(state.ToolboxDependencyErrors)
+				slices.Sort(issues)
+				return Result{
+					Status: StatusFail,
+					Message: fmt.Sprintf(
+						"configured toolbox dependencies are invalid: %s",
+						strings.Join(issues, "; ")),
+					Suggestion: "Update azure.yaml so each agent uses an enabled " +
+						"toolbox service, then re-run `azd ai agent doctor`.",
+					Details: map[string]any{
+						"toolboxDependencyErrors": issues,
+					},
+				}
+			}
+			if state.ToolboxEndpointsChecked &&
+				len(state.ToolboxEndpointErrors) > 0 {
+				return Result{
+					Status: StatusFail,
+					Message: fmt.Sprintf(
+						"could not read toolbox endpoint values: %s",
+						strings.Join(state.ToolboxEndpointErrors, "; ")),
+					Suggestion: "Verify the active azd environment is accessible, then re-run " +
+						"`azd ai agent doctor`.",
+					Details: map[string]any{
+						"toolboxEndpointErrors": state.ToolboxEndpointErrors,
+					},
+				}
+			}
 			if !state.HasToolboxes {
 				return Result{
 					Status:  StatusSkip,
-					Message: "skipped: no toolbox resources declared in any service's agent.manifest.yaml.",
+					Message: "skipped: no configured toolbox resources were found.",
 				}
 			}
 
+			if state.ToolboxEndpointsChecked {
+				return classifyToolboxState(state.Toolboxes, state.MissingToolboxEndpoints)
+			}
+
+			// Keep this fallback for callers that build partial states.
+			// Normal assembly sets ToolboxEndpointsChecked, so production
+			// code does not use this lookup.
 			lookup := deps.lookupToolboxEnv
 			if lookup == nil {
 				lookup = makeRealToolboxEnvLookup(deps.AzdClient)
 			}
-
 			return classifyToolboxEndpoints(ctx, state.Toolboxes, lookup)
 		},
 	}
+}
+
+func classifyToolboxState(
+	toolboxes, missing []nextstep.ResourceRef,
+) Result {
+	missingKeys := make(map[string]struct{}, len(missing))
+	missingUnique := make([]nextstep.ResourceRef, 0, len(missing))
+	for _, toolbox := range missing {
+		key := envkey.ToolboxMCPEndpoint(toolbox.Name)
+		if _, duplicate := missingKeys[key]; duplicate {
+			continue
+		}
+		missingKeys[key] = struct{}{}
+		missingUnique = append(missingUnique, toolbox)
+	}
+	seen := make(map[string]struct{}, len(toolboxes))
+	matched := 0
+	for _, toolbox := range toolboxes {
+		key := envkey.ToolboxMCPEndpoint(toolbox.Name)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		if _, ok := missingKeys[key]; !ok {
+			matched++
+		}
+	}
+	return classifyToolboxResults(missingUnique, matched)
+}
+
+func classifyToolboxResults(
+	missing []nextstep.ResourceRef,
+	matched int,
+) Result {
+	if len(missing) == 0 {
+		return Result{
+			Status:  StatusPass,
+			Message: fmt.Sprintf("all %d declared toolbox(es) have an MCP endpoint set.", matched),
+			Details: map[string]any{"matchedCount": matched},
+		}
+	}
+
+	slices.SortFunc(missing, func(a, b nextstep.ResourceRef) int {
+		if a.Name != b.Name {
+			return strings.Compare(a.Name, b.Name)
+		}
+		return strings.Compare(a.ServiceName, b.ServiceName)
+	})
+	var names []string
+	hasSplit := false
+	hasLegacy := false
+	for _, toolbox := range missing {
+		names = append(names, fmt.Sprintf("%s (env %s, service %s)",
+			toolbox.Name, envkey.ToolboxMCPEndpoint(toolbox.Name), toolbox.ServiceName))
+		hasSplit = hasSplit || toolbox.ToolboxSource == nextstep.ToolboxSourceSplit
+		hasLegacy = hasLegacy || toolbox.ToolboxSource != nextstep.ToolboxSourceSplit
+	}
+	suggestion := "Run `azd provision` to materialize toolbox infrastructure, or " +
+		"`azd env set <ENV_VAR> <endpoint>` to point at an existing toolbox."
+	switch {
+	case hasSplit && hasLegacy:
+		suggestion = "Run `azd deploy` for split toolbox services and `azd provision` " +
+			"for legacy toolbox resources, or set an existing endpoint."
+	case hasSplit:
+		suggestion = "Run `azd deploy` to materialize split toolbox services."
+	}
+	return Result{
+		Status: StatusFail,
+		Message: fmt.Sprintf("%d declared toolbox(es) have no MCP endpoint set in the azd environment: %s",
+			len(missing), strings.Join(names, ", ")),
+		Suggestion: suggestion,
+		Details: map[string]any{
+			"missingToolboxes": toolboxLookupDetails(missing),
+			"matchedCount":     matched,
+		},
+	}
+}
+
+type toolboxLookup struct {
+	Name        string `json:"name"`
+	ServiceName string `json:"service"`
+	EnvVar      string `json:"envVar"`
+}
+
+func toolboxLookupDetails(toolboxes []nextstep.ResourceRef) []toolboxLookup {
+	details := make([]toolboxLookup, 0, len(toolboxes))
+	for _, toolbox := range toolboxes {
+		details = append(details, toolboxLookup{
+			Name:        toolbox.Name,
+			ServiceName: toolbox.ServiceName,
+			EnvVar:      envkey.ToolboxMCPEndpoint(toolbox.Name),
+		})
+	}
+	return details
 }
 
 // normalizeToolboxName / toolboxEndpointKey have been replaced by the
@@ -152,12 +274,6 @@ func classifyToolboxEndpoints(
 	toolboxes []nextstep.ResourceRef,
 	lookup toolboxEnvLookupFn,
 ) Result {
-	type toolboxLookup struct {
-		Name        string `json:"name"`
-		ServiceName string `json:"service"`
-		EnvVar      string `json:"envVar"`
-	}
-
 	seen := make(map[string]struct{}, len(toolboxes))
 	var missing []toolboxLookup
 	matched := 0

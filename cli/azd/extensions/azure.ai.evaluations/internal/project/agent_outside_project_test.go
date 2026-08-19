@@ -49,7 +49,12 @@ func TestAnAgentOutsideTheProjectStillCannotReachFurtherOut(t *testing.T) {
 
 	elsewhere := filepath.Join(root, "shared", "agent")
 	require.NoError(t, os.MkdirAll(elsewhere, 0o750))
-	writeOptimizeConfig(t, elsewhere, "instruction_file: ../../../secret.md\n", "")
+	// Four levels up from .agent_configs/baseline, so the pointer names a file
+	// that really is there: a traversal to nothing would be refused by the read
+	// whether or not containment refused it first.
+	writeOptimizeConfig(t, elsewhere, "instruction_file: ../../../../secret.md\n", "")
+	require.FileExists(t,
+		filepath.Join(elsewhere, ".agent_configs", "baseline", "..", "..", "..", "..", "secret.md"))
 
 	svc := &azdext.ServiceConfig{Name: "agent", Host: AgentHost, RelativePath: elsewhere}
 	proj := &azdext.ProjectConfig{Path: project, Services: map[string]*azdext.ServiceConfig{"agent": svc}}

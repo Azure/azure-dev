@@ -44,6 +44,10 @@ type Reconciler interface {
 	// dataset backing the group, or empty when it is already registered; it lets
 	// the reconciler bind criteria to the columns that actually exist.
 	EnsureEval(ctx context.Context, group Eval, datasetPath string) (id string, created bool, err error)
+	// ReserveDeclared marks the evals these names already resolve to as spoken
+	// for, so no other declaration adopts one. Called once before reconciling,
+	// because adoption otherwise depends on the order the file lists them in.
+	ReserveDeclared(ctx context.Context, names []string)
 }
 
 // EvalServiceTargetProvider deploys eval resources during `azd up`. azd owns
@@ -182,6 +186,12 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// resolve to. An evaluator tracking latest that publishes a new version
 	// leaves every eval that runs it alone, which is what keeps a rubric edit
 	// comparable against the runs before it.
+	declared := make([]string, 0, len(cfg.Evals))
+	for i := range cfg.Evals {
+		declared = append(declared, cfg.Evals[i].Name)
+	}
+	reconciler.ReserveDeclared(ctx, declared)
+
 	for i := range cfg.Evals {
 		eval := cfg.Evals[i]
 		report(progress, messages.ReconcilingEval(eval.Name))

@@ -55,6 +55,21 @@ func (r *evalReconciler) claim(id string) {
 	r.claimed[id] = true
 }
 
+// ReserveDeclared marks the evals these names already resolve to as spoken for.
+//
+// Claiming only as each declaration finishes makes adoption depend on file
+// order: a declaration listed above the one that owns an eval would adopt it,
+// rename it, and end up sharing its runs. Reserving up front is the same guard
+// without the ordering. A name the environment holds no id for reserves
+// nothing, which is what leaves a genuine rename free to adopt.
+func (r *evalReconciler) ReserveDeclared(ctx context.Context, names []string) {
+	for _, name := range names {
+		if id := r.ec.getEnvValue(ctx, idKey("eval", name)); id != "" {
+			r.claim(id)
+		}
+	}
+}
+
 // EnsureDataset registers a new version only when the local content changed.
 //
 // The dataset API exposes no content hash, so comparing against the service
@@ -129,10 +144,11 @@ func (r *evalReconciler) EnsureDataset(
 				); err != nil && dataset_api.IsNotFound(err) {
 					return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
 				}
-				// Recorded here too. Returning the pin without writing it left
-				// the deploy reporting one version and the run downloading the
-				// one recorded before the pin was added.
-				r.ec.remember(ctx, versionKey("dataset", decl.Name), decl.Version)
+				// Deliberately not recorded. The key means "the version this file's
+				// content published", which is what the drift check compares
+				// against: writing the pin here made removing it later read as
+				// somebody having published behind the configuration's back, and
+				// failed the deploy. The run reads the pin from the declaration.
 				return decl.Version, false, nil
 			}
 			if err := r.checkDatasetDrift(ctx, decl.Name, version); err != nil {

@@ -561,7 +561,8 @@ func (ec *evalContext) buildRunDataSource(
 	// name is rejected with "invalid data source file ids".
 	localPath := localDatasetPath(configPath, group)
 	if localPath == "" {
-		items, err := ec.readRegisteredDataset(ctx, group.Dataset, maxSamples)
+		items, err := ec.readRegisteredDataset(
+			ctx, group.Dataset, declaredDatasetVersion(configPath, group), maxSamples)
 		if err != nil {
 			return nil, err
 		}
@@ -638,9 +639,15 @@ func responsesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, erro
 func (ec *evalContext) readRegisteredDataset(
 	ctx context.Context,
 	name string,
+	pinned string,
 	maxSamples int,
 ) ([]map[string]any, error) {
-	version := ec.getEnvValue(ctx, versionKey("dataset", name))
+	// The declaration wins: it is the author saying which rows to score, and it
+	// is right whether or not there is an azd environment to have recorded one.
+	version := pinned
+	if version == "" {
+		version = ec.getEnvValue(ctx, versionKey("dataset", name))
+	}
 	if version == "" {
 		versions, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
 		if err != nil {
@@ -703,6 +710,28 @@ func localDatasetPath(configPath string, group *project.Eval) string {
 		return decl.Source
 	}
 	return filepath.Join(filepath.Dir(configPath), decl.Source)
+}
+
+// declaredDatasetVersion is the `version:` the catalog pins this dataset to.
+//
+// A pin is the author saying which rows to score, and it is read from the
+// declaration rather than from the environment: the recorded version means the
+// one the file's content published, which is what the deploy's drift check
+// compares against, and overwriting it with a pin made removing the pin later
+// read as somebody publishing behind the configuration's back.
+func declaredDatasetVersion(configPath string, group *project.Eval) string {
+	if group == nil || configPath == "" {
+		return ""
+	}
+	cfg, err := project.LoadEvalConfig(configPath)
+	if err != nil || cfg == nil {
+		return ""
+	}
+	decl, ok := cfg.DatasetDeclaration(group.Dataset)
+	if !ok {
+		return ""
+	}
+	return decl.Version
 }
 
 // datasetIsDeclared says whether the configuration's catalog holds the dataset

@@ -4,18 +4,26 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// evalWithWindow is a trace-backed declaration, which is the shape where the
-// two digests differ.
-func evalWithWindow(name string, lookback int) project.Eval {
+// windowedEval is a trace-backed declaration, which is the shape where the
+// identity and definition digests differ.
+func windowedEval(name string, lookback int) project.Eval {
 	return project.Eval{
 		Name:       name,
 		Source:     &project.SourceDecl{Type: "traces", AgentName: "support-agent", LookbackHours: lookback},
@@ -23,50 +31,140 @@ func evalWithWindow(name string, lookback int) project.Eval {
 	}
 }
 
+// evalServiceReconciler answers every eval read with the given id and records
+// what was sent, so EnsureEval can be driven without a service.
+func evalServiceReconciler(t *testing.T, env *testEnvServer, existingID string) (*evalReconciler, *[]string) {
+	t.Helper()
+
+	var created []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// A create posts to the collection; an update posts to one eval, which
+		// is how the mutable half of a declaration is pushed.
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/evals") {
+			created = append(created, r.URL.Path)
+			// assert, not require: this runs on the server's goroutine.
+			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"id": "eval_new"}))
+			return
+		}
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"id": existingID, "name": "whatever"}))
+	}))
+	t.Cleanup(srv.Close)
+
+	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
+		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
+	return &evalReconciler{ec: &evalContext{
+		azdClient:  newTestAzdClient(t, env),
+		envName:    "test",
+		evalClient: eval_api.NewEvalClientFromPipeline(srv.URL, pipeline),
+	}}, &created
+}
+
 // Environments written before the digest was split hold the full digest under
-// the recreate key. Comparing only against the definition made the first deploy
-// after an upgrade recreate every eval carrying max_samples or source:, for a
-// file nobody had touched, and left the runs taken under the old one
-// unreachable.
+// the recreate key. Reading only the definition made the first deploy after an
+// upgrade recreate every eval carrying max_samples or source:, for a file
+// nobody had touched, and left the runs taken under it unreachable.
 func TestAnEnvironmentFromBeforeTheSplitIsNotReadAsAChange(t *testing.T) {
-	group := evalWithWindow("nightly", 24)
+	group := windowedEval("nightly", 24)
 
 	shipped, err := project.FingerprintGroup(group)
 	require.NoError(t, err)
 	definition, err := project.FingerprintDefinition(group)
 	require.NoError(t, err)
-
 	require.NotEqual(t, shipped, definition,
 		"the fixture has to be a declaration where the two digests differ")
 
-	// What EnsureEval asks of the recorded baseline.
-	unchanged := func(prior string) bool {
-		return !(prior != "" && prior != definition && prior != shipped)
-	}
+	env := &testEnvServer{values: map[string]string{
+		// What a build from before the split recorded, plus the id it created.
+		project.FingerprintKey("eval", "nightly"): shipped,
+		idKey("eval", "nightly"):                  "eval_1",
+	}}
+	r, created := evalServiceReconciler(t, env, "eval_1")
 
-	assert.True(t, unchanged(shipped), "a baseline written by an earlier build is not a change")
-	assert.True(t, unchanged(definition), "nor is one written by this build")
-	assert.True(t, unchanged(""), "nor is no baseline at all")
+	id, wasCreated, err := r.EnsureEval(context.Background(), group, "")
 
-	// And a real edit is still a change.
-	edited := group
-	edited.Evaluators = evalcore.EvaluatorList{{Evaluator: "builtin.coherence"}}
-	editedDefinition, err := project.FingerprintDefinition(edited)
 	require.NoError(t, err)
-	assert.False(t, unchanged(editedDefinition), "a different evaluator has to recreate the eval")
+	assert.Equal(t, "eval_1", id, "the eval already deployed is the one to keep")
+	assert.False(t, wasCreated, "nothing in the file changed")
+	assert.Empty(t, *created, "an upgrade must not recreate an eval nobody edited")
+	assert.Equal(t, definition, env.values[project.FingerprintKey("eval", "nightly")],
+		"and the baseline moves to the definition, so the next deploy compares like with like")
 }
 
-// Substance keys are never removed, so one left by an earlier edit still points
-// at a live eval. A later declaration that happens to hash to it would adopt
-// that eval, rename it, and end up sharing its runs -- so an eval this deploy
-// already settled on cannot be adopted again.
-func TestAnEvalAlreadySettledOnIsNotAdoptedTwice(t *testing.T) {
-	r := &evalReconciler{}
+// A real edit still recreates, or the escape hatch above would have disabled
+// change detection.
+func TestAnEditedEvalIsStillRecreated(t *testing.T) {
+	group := windowedEval("nightly", 24)
+	shipped, err := project.FingerprintGroup(group)
+	require.NoError(t, err)
 
-	r.claim("eval_1")
+	edited := group
+	edited.Evaluators = evalcore.EvaluatorList{{Evaluator: "builtin.coherence"}}
 
-	assert.True(t, r.claimed["eval_1"])
-	assert.False(t, r.claimed["eval_2"], "only what this deploy settled on is claimed")
+	env := &testEnvServer{values: map[string]string{
+		project.FingerprintKey("eval", "nightly"): shipped,
+		idKey("eval", "nightly"):                  "eval_1",
+	}}
+	r, created := evalServiceReconciler(t, env, "eval_1")
+
+	id, wasCreated, err := r.EnsureEval(context.Background(), edited, "")
+
+	require.NoError(t, err)
+	assert.Equal(t, "eval_new", id)
+	assert.True(t, wasCreated)
+	assert.Len(t, *created, 1, "a different evaluator is a different eval")
+}
+
+// Substance keys are never removed, so one left by an earlier window edit still
+// points at a live eval. A second declaration hashing to it must not adopt it,
+// whichever order the file lists the two in -- claiming only as each
+// declaration finished made the outcome depend on that order.
+func TestADeclarationDoesNotAdoptAnEvalAnotherOneOwns(t *testing.T) {
+	owner := windowedEval("nightly", 24)
+	ownerDigest, err := project.FingerprintGroup(owner)
+	require.NoError(t, err)
+
+	// The newcomer is listed first and hashes to the same substance.
+	newcomer := windowedEval("weekly", 24)
+
+	env := &testEnvServer{values: map[string]string{
+		digestIDKey(ownerDigest): "eval_1",
+		idKey("eval", "nightly"): "eval_1",
+	}}
+	r, created := evalServiceReconciler(t, env, "eval_1")
+
+	r.ReserveDeclared(context.Background(), []string{"weekly", "nightly"})
+	id, wasCreated, err := r.EnsureEval(context.Background(), newcomer, "")
+
+	require.NoError(t, err)
+	assert.True(t, wasCreated, "the second declaration is a second eval")
+	assert.NotEqual(t, "eval_1", id, "adopting it would rename the eval nightly owns")
+	assert.Len(t, *created, 1)
+}
+
+// And a genuine rename still adopts: the old name is gone from the file, so
+// nothing reserves the eval it used to be called.
+func TestARenamedEvalIsStillAdopted(t *testing.T) {
+	group := windowedEval("nightly", 24)
+	digest, err := project.FingerprintGroup(group)
+	require.NoError(t, err)
+
+	renamed := group
+	renamed.Name = "evening"
+
+	env := &testEnvServer{values: map[string]string{
+		digestIDKey(digest):      "eval_1",
+		idKey("eval", "nightly"): "eval_1",
+	}}
+	r, created := evalServiceReconciler(t, env, "eval_1")
+
+	r.ReserveDeclared(context.Background(), []string{"evening"})
+	id, wasCreated, err := r.EnsureEval(context.Background(), renamed, "")
+
+	require.NoError(t, err)
+	assert.Equal(t, "eval_1", id, "a rename keeps the id and the runs under it")
+	assert.False(t, wasCreated)
+	assert.Empty(t, *created)
 }
 
 // The map is built on first use, because the reconciler is also constructed

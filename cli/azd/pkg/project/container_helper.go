@@ -705,6 +705,7 @@ func imagePassthroughPackageOverride(
 	}
 
 	var packageImage string
+	containerArtifacts := []*Artifact{}
 	for _, artifact := range serviceContext.Package {
 		if artifact == nil {
 			return "", false, fmt.Errorf("docker.imagePassthrough does not support a nil package artifact")
@@ -724,6 +725,7 @@ func imagePassthroughPackageOverride(
 				)
 			}
 			packageImage = artifact.Location
+			containerArtifacts = append(containerArtifacts, artifact)
 		case ArtifactKindConfig:
 			// Targets may add supplementary configuration alongside the container image.
 		case ArtifactKindArchive, ArtifactKindDirectory:
@@ -742,6 +744,16 @@ func imagePassthroughPackageOverride(
 
 	if packageImage == "" {
 		return "", false, fmt.Errorf("docker.imagePassthrough package does not contain a container image")
+	}
+
+	for _, artifact := range containerArtifacts {
+		artifact.LocationKind = LocationKindRemote
+		if artifact.Metadata == nil {
+			artifact.Metadata = map[string]string{}
+		}
+		artifact.Metadata[MetadataKeyImagePassthrough] = "true"
+		artifact.Metadata["remoteImage"] = packageImage
+		artifact.Metadata["sourceImage"] = packageImage
 	}
 
 	// The package artifact is the per-run input selected by --from-package. Its location wins over

@@ -535,6 +535,11 @@ func (sm *serviceManager) Publish(
 		}
 	}
 
+	// Package can add target-specific artifacts, so validate the completed collection before dispatch.
+	if _, _, err := imagePassthroughPackageOverride(serviceConfig, serviceContext); err != nil {
+		return nil, err
+	}
+
 	serviceTarget, err := sm.cachedServiceTarget(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting service target: %w", err)

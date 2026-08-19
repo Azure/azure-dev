@@ -80,7 +80,7 @@ func NewPublishFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func NewPublishCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish <service>",
-		Short: "Publish a service to a container registry.",
+		Short: "Publish a service image or reuse an existing passthrough image.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd
@@ -465,9 +465,9 @@ func determineArtifactKind(fromPackage string) project.ArtifactKind {
 
 func GetCmdPublishHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Publish a service to a container registry.",
+		"Publish a service image or reuse an existing passthrough image.",
 		[]string{
-			formatHelpNote("Supports Container App services only."),
+			formatHelpNote("Supports Container Apps, AKS, and extension-provided service targets."),
 			formatHelpNote(
 				//nolint:lll
 				"Target registry set by AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable, docker.registry in azure.yaml, or '--to' flag.",
@@ -475,6 +475,10 @@ func GetCmdPublishHelpDescription(*cobra.Command) string {
 			formatHelpNote(
 				//nolint:lll
 				"Use '--from-package' to publish an existing container image, otherwise azd automatically packages the container image before publishing.",
+			),
+			formatHelpNote(
+				//nolint:lll
+				"For services with docker.imagePassthrough enabled, azd reuses the configured remote image without publishing it; '--from-package' and '--to' are not supported.",
 			),
 		})
 }

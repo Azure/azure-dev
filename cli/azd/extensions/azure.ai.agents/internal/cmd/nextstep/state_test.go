@@ -183,6 +183,65 @@ func TestAssembleState_DisabledAgentDoesNotCollectSplitToolbox(t *testing.T) {
 	require.Equal(t, 0, src.calls["dev/TOOLBOX_TOOLS_MCP_ENDPOINT"])
 }
 
+func TestAssembleState_AgentConditionFiltersManualVarsWithoutSplitToolbox(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		condition *structpb.Value
+		wantVars  []string
+		wantCalls int
+	}{
+		{
+			name:      "disabled agent",
+			condition: structpb.NewBoolValue(false),
+		},
+		{
+			name:      "enabled agent",
+			wantVars:  []string{"MANUAL_VALUE"},
+			wantCalls: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			agent := newAgentService(t, map[string]any{
+				"kind": "hostedAgent",
+				"environmentVariables": []any{
+					map[string]any{
+						"name":  "MANUAL_VALUE",
+						"value": "${MANUAL_VALUE}",
+					},
+				},
+			})
+			agent.Name = "agent"
+
+			src := &fakeSource{
+				envName: "dev",
+				configValues: map[string]*structpb.Value{
+					"agent/condition": tt.condition,
+				},
+				calls: make(map[string]int),
+				project: &azdext.ProjectConfig{
+					Path: t.TempDir(),
+					Services: map[string]*azdext.ServiceConfig{
+						"agent": agent,
+					},
+				},
+			}
+
+			state, errs := assembleState(t.Context(), src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantVars, state.MissingManualVars)
+			require.Equal(t, tt.wantCalls, src.calls["dev/MANUAL_VALUE"])
+		})
+	}
+}
+
 func TestAssembleState_SplitToolboxEndpointErrorIsSurfaced(t *testing.T) {
 	t.Parallel()
 

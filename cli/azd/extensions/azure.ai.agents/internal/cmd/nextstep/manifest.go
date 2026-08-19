@@ -315,12 +315,22 @@ func splitToolboxDependencies(
 			}
 			dependencies = append(dependencies, service)
 		}
-		if len(dependencies) == 0 {
-			continue
-		}
 
 		enabled, err := isServiceEnabled(ctx, src, envName, serviceName)
 		if err != nil {
+			if len(dependencies) == 0 {
+				*errs = append(
+					*errs,
+					fmt.Errorf(
+						"agent service %q deployment condition: %w",
+						agentName,
+						err,
+					),
+				)
+				excludedAgents[agentName] = struct{}{}
+				excludedAgents[serviceName] = struct{}{}
+				continue
+			}
 			names := make([]string, 0, len(dependencies))
 			for _, service := range dependencies {
 				names = appendUnique(names, service.ref.ServiceName)
@@ -351,6 +361,9 @@ func splitToolboxDependencies(
 		if !enabled {
 			excludedAgents[agentName] = struct{}{}
 			excludedAgents[serviceName] = struct{}{}
+			continue
+		}
+		if len(dependencies) == 0 {
 			continue
 		}
 

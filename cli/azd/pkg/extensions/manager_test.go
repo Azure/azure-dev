@@ -710,8 +710,10 @@ func Test_ResolveDependency_SourceFallback(t *testing.T) {
 		name        string
 		local       *ExtensionMetadata
 		main        *ExtensionMetadata
+		azdVersion  *semver.Version
 		wantSource  string
 		wantVersion bool
+		wantAzd     bool
 		wantMissing bool
 	}{
 		{
@@ -723,6 +725,25 @@ func Test_ResolveDependency_SourceFallback(t *testing.T) {
 					{Version: "2.0.0"},
 				},
 			},
+			wantSource: MainRegistryName,
+		},
+		{
+			name: "falls back when parent source requires newer azd",
+			local: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: parent.Source,
+				Versions: []ExtensionVersion{
+					{Version: "2.1.0", RequiredAzdVersion: ">=2.0.0"},
+				},
+			},
+			main: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: MainRegistryName,
+				Versions: []ExtensionVersion{
+					{Version: "2.0.0"},
+				},
+			},
+			azdVersion: semver.MustParse("1.0.0"),
 			wantSource: MainRegistryName,
 		},
 		{
@@ -780,6 +801,25 @@ func Test_ResolveDependency_SourceFallback(t *testing.T) {
 			wantVersion: true,
 		},
 		{
+			name: "reports azd incompatibility across both sources",
+			local: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: parent.Source,
+				Versions: []ExtensionVersion{
+					{Version: "2.1.0", RequiredAzdVersion: ">=2.0.0"},
+				},
+			},
+			main: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: MainRegistryName,
+				Versions: []ExtensionVersion{
+					{Version: "2.0.0", RequiredAzdVersion: ">=3.0.0"},
+				},
+			},
+			azdVersion: semver.MustParse("1.0.0"),
+			wantAzd:    true,
+		},
+		{
 			name:        "reports missing from both sources",
 			wantMissing: true,
 		},
@@ -804,10 +844,12 @@ func Test_ResolveDependency_SourceFallback(t *testing.T) {
 				})
 			}
 
-			resolved, err := manager.ResolveDependency(t.Context(), parent, dependency)
+			resolved, err := manager.resolveDependency(t.Context(), parent, dependency, true, test.azdVersion)
 			switch {
 			case test.wantVersion:
 				require.ErrorAs(t, err, new(*DependencyVersionNotFoundError))
+			case test.wantAzd:
+				require.ErrorAs(t, err, new(*DependencyAzdVersionIncompatibleError))
 			case test.wantMissing:
 				require.ErrorAs(t, err, new(*DependencyNotFoundError))
 			default:
@@ -919,6 +961,60 @@ func Test_Install_PackDependency_FallsBackToMainRegistry(t *testing.T) {
 	installed, err := manager.GetInstalled(FilterOptions{Id: child.Id})
 	require.NoError(t, err)
 	require.Equal(t, MainRegistryName, installed.Source)
+}
+
+func Test_Install_PackDependency_FallsBackWhenParentSourceRequiresNewerAzd(t *testing.T) {
+	t.Parallel()
+
+	parent := &ExtensionMetadata{
+		Id:     "test.pack",
+		Source: "local",
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.child", Version: ">=1.5.0"}},
+		}},
+	}
+	localChild := &ExtensionMetadata{
+		Id:     "test.child",
+		Source: parent.Source,
+		Versions: []ExtensionVersion{{
+			Version:            "2.0.0",
+			RequiredAzdVersion: ">=2.0.0",
+			Dependencies:       []ExtensionDependency{{Id: "test.leaf", Version: "1.0.0"}},
+		}},
+	}
+	mainChild := &ExtensionMetadata{
+		Id:     "test.child",
+		Source: MainRegistryName,
+		Versions: []ExtensionVersion{{
+			Version:      "1.5.0",
+			Dependencies: []ExtensionDependency{{Id: "test.leaf", Version: "1.0.0"}},
+		}},
+	}
+
+	manager := newTestManager(t)
+	manager.sources = []Source{
+		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent, localChild}},
+		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{mainChild}},
+	}
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		"test.leaf": {
+			Id:      "test.leaf",
+			Version: "1.0.0",
+			Source:  MainRegistryName,
+		},
+	}))
+	manager.installed = nil
+
+	_, err := manager.InstallWithOptions(t.Context(), parent, InstallOptions{
+		AzdVersion: semver.MustParse("1.0.0"),
+	})
+	require.NoError(t, err)
+
+	installed, err := manager.GetInstalled(FilterOptions{Id: mainChild.Id})
+	require.NoError(t, err)
+	require.Equal(t, MainRegistryName, installed.Source)
+	require.Equal(t, "1.5.0", installed.Version)
 }
 
 func Test_Install_PackDependency_BundleDoesNotFallback(t *testing.T) {
@@ -2811,6 +2907,69 @@ func Test_Upgrade_DependencyUpgrade_FallsBackToMainRegistry(t *testing.T) {
 	require.Equal(t, UpgradeStatusUpgraded, depUpgrades[0].Status)
 	require.Equal(t, MainRegistryName, depUpgrades[0].ToSource)
 	require.Equal(t, "2.0.0", depUpgrades[0].ToVersion)
+}
+
+func Test_Upgrade_DependencyUpgrade_FallsBackWhenParentSourceRequiresNewerAzd(t *testing.T) {
+	t.Parallel()
+
+	parent := &ExtensionMetadata{
+		Id:     "test.pack",
+		Source: "local",
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.child", Version: ">=1.5.0"}},
+		}},
+	}
+	localChild := &ExtensionMetadata{
+		Id:     "test.child",
+		Source: parent.Source,
+		Versions: []ExtensionVersion{{
+			Version:            "2.0.0",
+			RequiredAzdVersion: ">=2.0.0",
+			Dependencies:       []ExtensionDependency{{Id: "test.leaf", Version: "1.0.0"}},
+		}},
+	}
+	mainChild := &ExtensionMetadata{
+		Id:     "test.child",
+		Source: MainRegistryName,
+		Versions: []ExtensionVersion{{
+			Version:      "1.5.0",
+			Dependencies: []ExtensionDependency{{Id: "test.leaf", Version: "1.0.0"}},
+		}},
+	}
+
+	manager := newTestManager(t)
+	manager.sources = []Source{
+		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent, localChild}},
+		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{mainChild}},
+	}
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		"test.child": {
+			Id:      "test.child",
+			Version: "1.0.0",
+			Source:  parent.Source,
+		},
+		"test.leaf": {
+			Id:      "test.leaf",
+			Version: "1.0.0",
+			Source:  MainRegistryName,
+		},
+	}))
+	manager.installed = nil
+
+	_, depUpgrades, err := manager.ReconcileDependencies(
+		t.Context(),
+		parent,
+		UpgradeOptions{
+			UpgradeDependencies: true,
+			AzdVersion:          semver.MustParse("1.0.0"),
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, UpgradeStatusUpgraded, depUpgrades[0].Status)
+	require.Equal(t, MainRegistryName, depUpgrades[0].ToSource)
+	require.Equal(t, "1.5.0", depUpgrades[0].ToVersion)
 }
 
 func Test_Upgrade_DependencyUpgrade_BundleIsolationPropagatesToNestedDependencies(t *testing.T) {

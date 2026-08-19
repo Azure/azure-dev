@@ -172,7 +172,7 @@ func (m *Manager) ResolveDependency(
 	parent *ExtensionMetadata,
 	dependency ExtensionDependency,
 ) (*ExtensionMetadata, error) {
-	return m.resolveDependency(ctx, parent, dependency, true)
+	return m.resolveDependency(ctx, parent, dependency, true, nil)
 }
 
 func (m *Manager) resolveDependency(
@@ -180,6 +180,7 @@ func (m *Manager) resolveDependency(
 	parent *ExtensionMetadata,
 	dependency ExtensionDependency,
 	allowMainRegistryFallback bool,
+	azdVersion *semver.Version,
 ) (*ExtensionMetadata, error) {
 	parentSource := parent.Source
 	if parentSource == "" {
@@ -192,6 +193,7 @@ func (m *Manager) resolveDependency(
 	}
 
 	foundWithoutMatchingVersion := false
+	var incompatibleVersion *ExtensionVersion
 	for _, source := range sources {
 		matches, err := m.FindExtensions(ctx, &FilterOptions{
 			Id:     dependency.Id,
@@ -211,10 +213,24 @@ func (m *Manager) resolveDependency(
 			continue
 		}
 
-		if bestSatisfyingVersion(dependency.Version, matches[0].Versions) != nil {
+		publishedVersion := bestSatisfyingVersion(dependency.Version, matches[0].Versions)
+		if publishedVersion == nil {
+			foundWithoutMatchingVersion = true
+			continue
+		}
+		if bestSatisfyingVersionForAzd(dependency.Version, matches[0].Versions, azdVersion) != nil {
 			return matches[0], nil
 		}
-		foundWithoutMatchingVersion = true
+		incompatibleVersion = publishedVersion
+	}
+
+	if incompatibleVersion != nil {
+		return nil, &DependencyAzdVersionIncompatibleError{
+			DependencyId:       dependency.Id,
+			ParentId:           parent.Id,
+			Constraint:         dependency.Version,
+			RequiredAzdVersion: incompatibleVersion.RequiredAzdVersion,
+		}
 	}
 
 	if foundWithoutMatchingVersion {
@@ -774,6 +790,7 @@ func (m *Manager) installInternal(
 				extension,
 				dependency,
 				!opts.SkipMainRegistryDependencyFallback,
+				opts.AzdVersion,
 			)
 			if err != nil {
 				return nil, err
@@ -1128,6 +1145,7 @@ func (m *Manager) evaluateDependencyChanges(
 			parentExtension,
 			dep,
 			!opts.SkipMainRegistryDependencyFallback,
+			opts.AzdVersion,
 		)
 		if findErr != nil {
 			// Without registry data, only fail if the installed version violates the constraint.

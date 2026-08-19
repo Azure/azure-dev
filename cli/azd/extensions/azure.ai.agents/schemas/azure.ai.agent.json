@@ -181,7 +181,7 @@
       "type": "object",
       "properties": {
         "publishAsAutopilot": { "type": "boolean" },
-        "publishScope": { "type": "string", "enum": ["shared", "tenant"] },
+        "publishScope": { "type": "string", "enum": ["tenant"] },
         "canRespondWithoutMention": { "type": "boolean" },
         "appVersion": { "type": "string", "minLength": 1 },
         "agentDisplayName": { "type": "string", "minLength": 1 },

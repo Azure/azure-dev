@@ -1366,6 +1366,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 		)
 	}
 
+	if warning := digitalWorkerBotTransitionWarning(serviceConfig.Name, activityProfile, azdEnv); warning != "" {
+		fmt.Fprintln(os.Stderr, warning)
+	}
 	progress("Validating service dependencies")
 	if err := validateFoundryDependencies(
 		ctx, serviceConfig, serviceTargetConfig, p.projectServices, azdEnv, p.dependencyEnabled,
@@ -1570,6 +1573,28 @@ func activityBotOwnership(
 	}
 	value := tags[botservice.OwnershipTag]
 	return value != nil && strings.EqualFold(*value, botservice.OwnershipTagValue), tags
+}
+
+func digitalWorkerBotTransitionWarning(
+	serviceName string,
+	activityProfile ActivityProfile,
+	azdEnv map[string]string,
+) string {
+	if activityProfile.UseCase != ActivityUseCaseDigitalWorker {
+		return ""
+	}
+	botName := strings.TrimSpace(azdEnv[envkey.AgentBotName(serviceName)])
+	resourceGroup := strings.TrimSpace(azdEnv[envkey.AgentBotResourceGroup(serviceName)])
+	owned := strings.EqualFold(strings.TrimSpace(azdEnv[envkey.AgentBotOwned(serviceName)]), "true")
+	if botName == "" || resourceGroup == "" || !owned {
+		return ""
+	}
+	return fmt.Sprintf(
+		"Warning: service %q changed to digital_worker and still has the azd-managed Azure Bot %q in resource group %q. Digital Worker deployment does not use this Bot; review it and delete the legacy Bot manually if it is no longer needed.",
+		serviceName,
+		botName,
+		resourceGroup,
+	)
 }
 
 // provisionMemoryStores creates any Foundry memory stores declared in the service target

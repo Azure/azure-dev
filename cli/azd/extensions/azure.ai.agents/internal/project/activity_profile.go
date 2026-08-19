@@ -93,6 +93,11 @@ func ResolveActivityProfileWithSettings(
 		if strings.TrimSpace(settings.Publish.PublishScope) == "" {
 			return ActivityProfile{}, fmt.Errorf("activity.publish.publishScope is required for digital_worker")
 		}
+		if !strings.EqualFold(strings.TrimSpace(settings.Publish.PublishScope), "tenant") {
+			return ActivityProfile{}, fmt.Errorf(
+				"activity.publish.publishScope must be tenant for digital_worker (shared is not supported)",
+			)
+		}
 		template := settings.Publish.AgenticUserTemplate
 		if template == nil {
 			return ActivityProfile{}, fmt.Errorf("activity.publish.agenticUserTemplate is required for digital_worker")

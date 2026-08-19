@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -148,6 +149,23 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 		require.ErrorContains(t, err, "agenticUserTemplate")
 	})
 
+	t.Run("digital worker requires tenant publish scope", func(t *testing.T) {
+		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			UseCase: ActivityUseCaseDigitalWorker,
+			Publish: &DigitalWorkerPublishConfig{
+				PublishAsAutopilot: true,
+				PublishScope:       "shared",
+				AgenticUserTemplate: &AgenticUserTemplateConfig{
+					ID:                    "digitalWorkerTemplate",
+					File:                  "agenticUserTemplateManifest.json",
+					SchemaVersion:         "0.1.0-preview",
+					CommunicationProtocol: "activityProtocol",
+				},
+			},
+		})
+		require.ErrorContains(t, err, "publishScope must be tenant")
+	})
+
 	t.Run("digital worker requires activity protocol", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(agent_yaml.ContainerAgent{}, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,
@@ -164,6 +182,28 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 		})
 		require.ErrorContains(t, err, "Activity-protocol")
 	})
+}
+
+func TestDigitalWorkerBotTransitionWarning(t *testing.T) {
+	t.Parallel()
+
+	serviceName := "worker"
+	profile := ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
+	env := map[string]string{
+		envkey.AgentBotName(serviceName):          "legacy-bot",
+		envkey.AgentBotResourceGroup(serviceName): "legacy-rg",
+		envkey.AgentBotOwned(serviceName):         "true",
+	}
+
+	warning := digitalWorkerBotTransitionWarning(serviceName, profile, env)
+	require.Contains(t, warning, `service "worker" changed to digital_worker`)
+	require.Contains(t, warning, `Azure Bot "legacy-bot"`)
+	require.Contains(t, warning, `resource group "legacy-rg"`)
+	require.Contains(t, warning, "delete the legacy Bot manually")
+
+	require.Empty(t, digitalWorkerBotTransitionWarning(serviceName, ActivityProfile{
+		UseCase: ActivityUseCaseSimple,
+	}, env))
 }
 
 // TestActivityDeclarationSurvivesInitRoundTrip locks the behavior that

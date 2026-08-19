@@ -159,7 +159,7 @@
             "required": ["publish"],
             "properties": {
               "publish": {
-                "required": ["publishAsAutopilot", "publishScope", "agenticUserTemplate"]
+                "required": ["publishAsAutopilot", "agenticUserTemplate"]
               }
             }
           }

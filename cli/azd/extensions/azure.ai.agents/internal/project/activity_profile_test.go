@@ -130,6 +130,23 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
 	})
 
+	t.Run("digital worker defaults omitted publish scope", func(t *testing.T) {
+		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			UseCase: ActivityUseCaseDigitalWorker,
+			Publish: &DigitalWorkerPublishConfig{
+				PublishAsAutopilot: true,
+				AgenticUserTemplate: &AgenticUserTemplateConfig{
+					ID:                    "digitalWorkerTemplate",
+					File:                  "agenticUserTemplateManifest.json",
+					SchemaVersion:         "0.1.0-preview",
+					CommunicationProtocol: "activityProtocol",
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
+	})
+
 	t.Run("digital worker requires autopilot publish", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,

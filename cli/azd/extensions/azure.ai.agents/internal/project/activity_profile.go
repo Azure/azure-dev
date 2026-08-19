@@ -90,10 +90,8 @@ func ResolveActivityProfileWithSettings(
 		if !settings.Publish.PublishAsAutopilot {
 			return ActivityProfile{}, fmt.Errorf("activity.publish.publishAsAutopilot must be true for digital_worker")
 		}
-		if strings.TrimSpace(settings.Publish.PublishScope) == "" {
-			return ActivityProfile{}, fmt.Errorf("activity.publish.publishScope is required for digital_worker")
-		}
-		if !strings.EqualFold(strings.TrimSpace(settings.Publish.PublishScope), "tenant") {
+		publishScope := strings.TrimSpace(settings.Publish.PublishScope)
+		if publishScope != "" && !strings.EqualFold(publishScope, "tenant") {
 			return ActivityProfile{}, fmt.Errorf(
 				"activity.publish.publishScope must be tenant for digital_worker (shared is not supported)",
 			)

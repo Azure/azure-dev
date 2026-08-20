@@ -61,7 +61,7 @@
         },
         "file": {
           "type": "string",
-          "description": "Path to a local .jsonl whose rows are uploaded on deploy, relative to this file. Deliberately not a $ref: the rows are a data artifact to publish, not a definition to splice in, and a .jsonl is neither YAML nor JSON. Omit to use a dataset already registered under this name."
+          "description": "Path to a local .jsonl whose rows are uploaded on deploy, resolved against the evaluation configuration -- also when this entry arrived through a $ref, because a spliced path is not rebased to the file it was written in. Deliberately not a $ref: the rows are a data artifact to publish, not a definition to splice in, and a .jsonl is neither YAML nor JSON. Omit to use a dataset already registered under this name."
         },
         "version": {
           "type": "string",
@@ -80,7 +80,7 @@
         },
         "source": {
           "type": "string",
-          "description": "Path to a local .json rubric -- a list of weighted scoring dimensions -- relative to this file. Published on deploy and fingerprinted locally so a later deploy can tell an edit here from a version published elsewhere."
+          "description": "Path to a local .json rubric -- a list of weighted scoring dimensions -- resolved against the evaluation configuration, also when this entry arrived through a $ref, because a spliced path is not rebased; an entry pulled in from its own file should carry the rubric under definition instead. Published on deploy and fingerprinted locally so a later deploy can tell an edit here from a version published elsewhere."
         },
         "definition": {
           "type": "object",
@@ -107,6 +107,11 @@
           "$comment": "A rubric is named or written out, never both.",
           "if": { "required": ["definition"] },
           "then": { "properties": { "source": false } }
+        },
+        {
+          "$comment": "A version pins one already registered, so there is nothing local to publish alongside it. Both shapes are refused when the configuration is read; stating them here is what makes the editor agree.",
+          "if": { "required": ["version"] },
+          "then": { "properties": { "source": false, "definition": false } }
         }
       ]
     },

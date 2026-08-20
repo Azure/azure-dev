@@ -66,21 +66,29 @@ func addEvaluatorToCatalog(cmd *cobra.Command, evalDir string, ref *project.Arti
 	})
 }
 
-// checkNameNotBehindAnInclude refuses a name whose entry lives in another file.
+// checkCatalogEntryIsEditable refuses a name this command cannot rewrite in
+// place without corrupting the entry.
 //
-// Two shapes reach this. A pure `$ref` has no name here at all, so the duplicate
-// scan had nothing to match on and appended a second entry with the same name --
-// a collision that surfaced only on the next resolving read. A `$ref` carrying
-// an overlay `name` does match, and updating it in place writes `source:` beside
-// the directive, so resolution then produces a rubric and a source and the
-// configuration is rejected for declaring it twice. Neither is editable here.
+// Three shapes reach this. A pure `$ref` has no name here at all, so the
+// duplicate scan had nothing to match on and appended a second entry with the
+// same name -- a collision that surfaced only on the next resolving read. A
+// `$ref` carrying an overlay `name` does match, and updating it in place writes
+// `source:` beside the directive, so resolution then produces a rubric and a
+// source and the configuration is rejected for declaring it twice. An entry
+// already carrying its rubric under `definition:` fails that same way with no
+// include involved, because recording the generated file leaves both in one
+// entry -- and it fails after the generation job has been billed and the file
+// written, which is why it is refused here rather than left to the next read.
 //
 // A configuration that will not resolve is left to the commands that resolve it:
 // failing a generate over an unrelated broken include would be its own surprise.
-func checkNameNotBehindAnInclude(evalDir string, asWritten *project.EvalConfig, kind, name string) error {
-	if ref, ok := catalogEntryRef(asWritten, kind, name); ok {
-		if ref != "" {
+func checkCatalogEntryIsEditable(evalDir string, asWritten *project.EvalConfig, kind, name string) error {
+	if entry, ok := catalogEntryShapeOf(asWritten, kind, name); ok {
+		switch {
+		case entry.ref != "":
 			return messages.CatalogNameBehindAnInclude(kind, name)
+		case entry.inlineRubric:
+			return messages.EvaluatorRubricWrittenInPlace(name)
 		}
 		return nil
 	}
@@ -88,28 +96,38 @@ func checkNameNotBehindAnInclude(evalDir string, asWritten *project.EvalConfig, 
 	if err != nil || resolved == nil {
 		return nil
 	}
-	if _, ok := catalogEntryRef(resolved, kind, name); ok {
+	if _, ok := catalogEntryShapeOf(resolved, kind, name); ok {
 		return messages.CatalogNameBehindAnInclude(kind, name)
 	}
 	return nil
 }
 
-// catalogEntryRef returns the include this entry was written as, and whether the
+// catalogEntryShape is how an entry was written, for deciding whether this
+// command may rewrite it.
+type catalogEntryShape struct {
+	// ref is the `$ref` directive the entry carries, empty when it is written
+	// out here.
+	ref string
+	// inlineRubric is an evaluator holding its rubric under `definition:`.
+	inlineRubric bool
+}
+
+// catalogEntryShapeOf returns how the entry was written, and whether the
 // configuration names it at all.
-func catalogEntryRef(cfg *project.EvalConfig, kind, name string) (string, bool) {
+func catalogEntryShapeOf(cfg *project.EvalConfig, kind, name string) (catalogEntryShape, bool) {
 	if cfg == nil {
-		return "", false
+		return catalogEntryShape{}, false
 	}
 	if kind == "dataset" {
 		if decl, ok := cfg.DatasetDeclaration(name); ok {
-			return decl.Ref, true
+			return catalogEntryShape{ref: decl.Ref}, true
 		}
-		return "", false
+		return catalogEntryShape{}, false
 	}
 	if decl, ok := cfg.EvaluatorDeclaration(name); ok {
-		return decl.Ref, true
+		return catalogEntryShape{ref: decl.Ref, inlineRubric: decl.Definition != nil}, true
 	}
-	return "", false
+	return catalogEntryShape{}, false
 }
 
 // updateCatalog applies a change to the configuration and writes it back.
@@ -142,7 +160,7 @@ func updateCatalog(
 	if created {
 		cfg = &project.EvalConfig{}
 	}
-	if err := checkNameNotBehindAnInclude(evalDir, cfg, kind, ref.Name); err != nil {
+	if err := checkCatalogEntryIsEditable(evalDir, cfg, kind, ref.Name); err != nil {
 		return err
 	}
 	if !apply(cfg) {

@@ -1432,13 +1432,30 @@ func RefNeedsAProjectRoot(service string) error {
 
 // CatalogNameBehindAnInclude reports a name declared through a `$ref`, which
 // this command cannot edit in place.
+//
+// One message for two shapes, so the cause is stated as what they share: the
+// entry lives in the referenced file. Naming only the duplicate-on-resolve case
+// would misdescribe an overlay `name`, which collides with nothing and instead
+// ends up declaring the rubric twice.
 func CatalogNameBehindAnInclude(kind, name string) error {
 	return fmt.Errorf(
-		"%s %q is already declared through a `$ref`, so this command cannot update "+
-			"it here: adding a second entry would collide with the first only after "+
-			"the include is resolved. Edit the referenced file, or generate under a "+
-			"different name",
+		"%s %q is declared in a file pulled in with `$ref`, so this command cannot "+
+			"update it here: an entry written beside the directive takes effect only "+
+			"once the include is resolved, and not as it reads. Edit the referenced "+
+			"file, or generate under a different name",
 		kind, name)
+}
+
+// EvaluatorRubricWrittenInPlace reports an evaluator whose rubric is already
+// written out under `definition:`, so there is nowhere to record a generated
+// file without declaring the rubric twice.
+func EvaluatorRubricWrittenInPlace(name string) error {
+	return fmt.Errorf(
+		"evaluator %q already carries its rubric under `definition:`, so this "+
+			"command cannot record a generated file against it: an entry holding "+
+			"both a `definition:` and a `source:` is refused on the next read. Edit "+
+			"the rubric in place, or generate under a different name",
+		name)
 }
 
 // ReadingServiceConfig reports the service entry failing to serialize.

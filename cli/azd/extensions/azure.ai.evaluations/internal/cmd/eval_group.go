@@ -118,7 +118,7 @@ func newEvalCreateCommand() *cobra.Command {
 			for _, ref := range eval.Evaluators {
 				decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator)
 				// A built-in, or one already registered, has nothing local to publish.
-				if !ok || (decl.Source == "" && decl.Definition == nil) {
+				if !ok || !decl.CarriesItsRubric() {
 					continue
 				}
 				// A rubric written out in the configuration has no file to read.

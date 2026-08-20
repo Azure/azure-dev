@@ -159,7 +159,7 @@
             "required": ["publish"],
             "properties": {
               "publish": {
-                "required": ["publishAsAutopilot", "agenticUserTemplate"]
+                "required": ["agenticUserTemplate"]
               }
             }
           }
@@ -180,7 +180,6 @@
     "DigitalWorkerPublishConfig": {
       "type": "object",
       "properties": {
-        "publishAsAutopilot": { "type": "boolean" },
         "publishScope": { "type": "string", "enum": ["tenant"] },
         "canRespondWithoutMention": { "type": "boolean" },
         "appVersion": { "type": "string", "minLength": 1 },

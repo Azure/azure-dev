@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -407,6 +408,8 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	activityProfile, profileErr := resolveServiceActivityProfile(svc, args.Project.Path)
 	if profileErr != nil {
 		log.Printf("postdeploy: skipping Teams setup for %s: %v", svc.Name, profileErr)
+	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
+		warnLegacySimpleTeamsArtifacts(args.Project, svc)
 	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseSimple {
 		serviceKey := toServiceKey(svc.Name)
 		agentName, nameErr := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
@@ -505,6 +508,31 @@ func resolveAgentServiceConfigWithProjectOverrides(
 		return nil, err
 	}
 	return &resolvedSvc, nil
+}
+
+func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.ServiceConfig) {
+	if proj == nil || svc == nil {
+		return
+	}
+	artifactDir := filepath.Join(proj.GetPath(), svc.GetRelativePath())
+	artifacts := []string{teamsAppPackageFile, teamsAppPackageMarkerFile, teamsSetupGuideFile}
+	found := make([]string, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		if _, err := os.Stat(filepath.Join(artifactDir, artifact)); err == nil {
+			found = append(found, artifact)
+		}
+	}
+	if len(found) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+		"WARNING: digital worker service %q still has legacy simple-agent Teams artifacts in %q (%s). "+
+			"This transition can leave stale appPackage.zip and TEAMS_APP_SETUP.md files behind. "+
+			"review and remove them manually before retrying the Teams setup flow.\n",
+		svc.GetName(),
+		svc.GetRelativePath(),
+		strings.Join(found, ", "),
+	))
 }
 
 // postdownHandler cleans up config store entries (sessions, conversations) for agent services

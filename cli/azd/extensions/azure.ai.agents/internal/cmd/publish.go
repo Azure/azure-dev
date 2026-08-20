@@ -43,36 +43,29 @@ func newPublishCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish [name]",
 		Short: "Publish an activity agent as a Teams app to the Microsoft 365 store.",
-		Long: `Publish a deployed Activity (Teams) agent as a Teams app.
-
-The Microsoft 365 service builds the Teams app package server-side (the same package
-'azd ai agent pack' produces) and publishes it to the Microsoft 365 store under the
-requested scope, then returns the published title id and Teams app id.
-
-Scopes:
-	shared    shareable-link distribution (no tenant-admin approval required)
-  tenant    organization-wide catalog (requires IT-admin approval)
-
-If `--scope` is specified, it overrides `activity.publish.publishScope` in
-`azure.yaml`. When omitted, azd uses the value from `azure.yaml`; if no value is
-configured, Digital Workers default to `tenant` and simple activity agents default
-to `shared`. Digital Worker publish supports tenant scope only (alias: `org`).
-
-`personal` is not supported here: per-user install is a Teams client action, not a
-store publish. For local testing, run `azd ai agent pack` and sideload with
-`atk install --scope personal`.
-
-This command requires the agent to have been deployed first ('azd deploy'). Any
-failure (tenant policy, permissions, service outage) is reported as a command
-failure rather than silently skipped.`,
-		Example: `  # Publish using the configured digital-worker scope (or shared for simple activity)
-  azd ai agent publish
-
-	# Explicitly override the configured scope for a specific agent
-	azd ai agent publish my-agent --scope tenant
-
-  # Publish organization-wide (requires IT-admin approval)
-  azd ai agent publish --scope tenant`,
+		Long: "Publish a deployed Activity (Teams) agent as a Teams app.\n\n" +
+			"The Microsoft 365 service builds the Teams app package server-side (the same package\n" +
+			"'azd ai agent pack' produces) and publishes it to the Microsoft 365 store under the\n" +
+			"requested scope, then returns the published title id and Teams app id.\n\n" +
+			"Scopes:\n" +
+			"  shared    shareable-link distribution (no tenant-admin approval required)\n" +
+			"  tenant    organization-wide catalog (requires IT-admin approval)\n\n" +
+			"If --scope is specified, it overrides activity.publish.publishScope in azure.yaml.\n" +
+			"When omitted, azd uses the value from azure.yaml; if no value is configured,\n" +
+			"Digital Workers default to tenant and simple activity agents default to shared.\n" +
+			"Digital Worker publish supports tenant scope only (alias: org).\n\n" +
+			"personal is not supported here: per-user install is a Teams client action, not a\n" +
+			"store publish. For local testing, run azd ai agent pack and sideload with\n" +
+			"atk install --scope personal.\n\n" +
+			"This command requires the agent to have been deployed first ('azd deploy'). Any\n" +
+			"failure (tenant policy, permissions, service outage) is reported as a command\n" +
+			"failure rather than silently skipped.",
+		Example: "  # Publish using the configured digital-worker scope (or shared for simple activity)\n" +
+			"  azd ai agent publish\n\n" +
+			"  # Explicitly override the configured scope for a specific agent\n" +
+			"  azd ai agent publish my-agent --scope tenant\n\n" +
+			"  # Publish organization-wide (requires IT-admin approval)\n" +
+			"  azd ai agent publish --scope tenant",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {

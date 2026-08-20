@@ -87,9 +87,10 @@ func ResolveActivityProfileWithSettings(
 		if settings.Publish == nil {
 			return ActivityProfile{}, fmt.Errorf("activity.publish is required for digital_worker")
 		}
-		if !settings.Publish.PublishAsAutopilot {
-			return ActivityProfile{}, fmt.Errorf("activity.publish.publishAsAutopilot must be true for digital_worker")
-		}
+		// publishAsAutopilot is a derived runtime requirement for the digital_worker
+		// use case. It is inferred automatically and should not be treated as a
+		// user-configurable Azure YAML knob.
+		settings.Publish.PublishAsAutopilot = true
 		publishScope := strings.TrimSpace(settings.Publish.PublishScope)
 		if publishScope != "" && !strings.EqualFold(publishScope, "tenant") {
 			return ActivityProfile{}, fmt.Errorf(

@@ -33,7 +33,6 @@ services:
     activity:
       useCase: digital_worker
       publish:
-        publishAsAutopilot: true
         publishScope: tenant
         agentDisplayName: My Digital Worker
         agenticUserTemplate:
@@ -43,9 +42,10 @@ services:
           communicationProtocol: activityProtocol
 ```
 
-`digital_worker` requires `publishAsAutopilot`, `publishScope`, and an
-`agenticUserTemplate` with `id`, `file`, `schemaVersion`, and
-`communicationProtocol`. The Agent Identity Blueprint ID is generated during
+`digital_worker` requires `publishScope` and an `agenticUserTemplate` with
+`id`, `file`, `schemaVersion`, and `communicationProtocol`. The publish request
+sets `publishAsAutopilot` automatically to `true` for this use case; users do not
+need to declare it in YAML. The Agent Identity Blueprint ID is generated during
 deployment and added to the publish request automatically.
 
 ```bash

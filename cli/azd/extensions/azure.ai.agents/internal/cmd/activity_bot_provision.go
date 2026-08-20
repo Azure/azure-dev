@@ -19,6 +19,17 @@ import (
 // provisionActivityBotNames resolves and persists Activity Bot names during
 // provision when the deployment scope is already known. Deploy resolves the
 // final bot name again using the deployed agent identity as the source of truth.
+func shouldProvisionActivityBot(service *azdext.ServiceConfig, projectRoot string) (bool, error) {
+	profile, err := resolveServiceActivityProfile(service, projectRoot)
+	if err != nil {
+		return false, err
+	}
+	if !profile.IsActivity {
+		return false, nil
+	}
+	return profile.UseCase == project.ActivityUseCaseSimple, nil
+}
+
 func provisionActivityBotNames(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -46,8 +57,13 @@ func provisionActivityBotNames(
 		if service.GetHost() != AiAgentHost {
 			continue
 		}
+		shouldProvision, err := shouldProvisionActivityBot(service, args.Project.Path)
+		if err != nil || !shouldProvision {
+			continue
+		}
+
 		agent, hosted, _, err := project.LoadAgentDefinition(service, args.Project.Path)
-		if err != nil || !hosted || !project.ResolveActivityProfile(agent).IsActivity {
+		if err != nil || !hosted {
 			continue
 		}
 

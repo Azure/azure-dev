@@ -147,12 +147,22 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
 	})
 
-	t.Run("digital worker requires autopilot publish", func(t *testing.T) {
-		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+	t.Run("digital worker infers autopilot publish", func(t *testing.T) {
+		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &DigitalWorkerPublishConfig{PublishScope: "tenant"},
+			Publish: &DigitalWorkerPublishConfig{
+				PublishScope: "tenant",
+				AgenticUserTemplate: &AgenticUserTemplateConfig{
+					ID:                    "digitalWorkerTemplate",
+					File:                  "agenticUserTemplateManifest.json",
+					SchemaVersion:         "0.1.0-preview",
+					CommunicationProtocol: "activityProtocol",
+				},
+			},
 		})
-		require.ErrorContains(t, err, "publishAsAutopilot")
+		require.NoError(t, err)
+		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
+		require.True(t, profile.IsActivity)
 	})
 
 	t.Run("digital worker requires agentic user template", func(t *testing.T) {

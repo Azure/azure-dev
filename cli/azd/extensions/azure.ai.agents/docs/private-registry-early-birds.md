@@ -6,8 +6,8 @@
 
 This guide covers two scenarios:
 
-1. Initialize a new local azd project with an existing Foundry project and registry connection.
-2. Add a private-image agent and a sibling registry connection to an existing local azd project.
+1. **Greenfield:** initialize a new local azd project with a private registry.
+2. **Brownfield:** add a private-registry agent to an existing local azd project.
 
 The examples are registry-neutral. Replace every placeholder with values for your Foundry project and registry. Do not
 commit credentials or environment files.
@@ -17,8 +17,8 @@ commit credentials or environment files.
 - Git and Go 1.26.4.
 - Azure access to create, deploy, invoke, and delete agents on a Foundry project.
 - A private image supported by a Foundry registry connection.
-- For scenario 1, an existing registry connection on the Foundry project.
-- For scenario 2, the connection target, metadata, and credential values required by your registry.
+- Permission to create a connection on the Foundry project.
+- The connection target, metadata, and credential values required by your registry.
 
 ### Brief JFrog OIDC setup
 
@@ -101,15 +101,47 @@ Expected versions:
 In every new shell, set `EARLY_BIRDS_ROOT` and `AZD_CONFIG_DIR`, prepend `$EARLY_BIRDS_ROOT/bin` to `PATH`, and run
 `hash -r` before using `azd`.
 
-## Scenario 1: initialize a new local azd project
+## Greenfield: initialize a new azd project with a private registry
 
-This scenario starts in an empty directory. The Foundry project and registry connection must already exist.
+This scenario starts in an empty directory. Create the Foundry connection through ARM before running init. The
+`azd ai connection` command is intended for an existing azd project, so it cannot resolve project context yet.
 
 ```bash
-export PROJECT_ID='/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>'
-export REGISTRY_CONNECTION='<existing-connection-name-or-id>'
+export SUBSCRIPTION_ID='<subscription-id>'
+export PROJECT_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>"
+export CONNECTION_NAME='<unique-connection-name>'
+export REGISTRY_URL='https://<registry-host>'
+export REGISTRY_AUDIENCE='<entra-application-client-id>'
+export REGISTRY_TOKEN_ENDPOINT='/access/api/v1/oidc/token'
+export REGISTRY_PROVIDER='<jfrog-oidc-provider-name>'
 export IMAGE='<registry-host>/<repository>/<image>:<tag>'
 export AGENT_NAME='<unique-agent-name>'
+
+cat > connection.json <<EOF
+{
+  "properties": {
+    "category": "CustomKeys",
+    "target": "$REGISTRY_URL",
+    "authType": "CustomKeys",
+    "credentials": {
+      "keys": {
+        "audience": "$REGISTRY_AUDIENCE",
+        "tokenEndpoint": "$REGISTRY_TOKEN_ENDPOINT",
+        "body.provider_name": "$REGISTRY_PROVIDER"
+      }
+    },
+    "metadata": {
+      "type": "registry_connection",
+      "mode": "oauth_token_exchange"
+    }
+  }
+}
+EOF
+
+az account set --subscription "$SUBSCRIPTION_ID"
+az rest --method put \
+  --url "https://management.azure.com${PROJECT_ID}/connections/${CONNECTION_NAME}?api-version=2025-04-01-preview" \
+  --body @connection.json
 
 mkdir -p "$EARLY_BIRDS_ROOT/.early-birds/greenfield"
 cd "$EARLY_BIRDS_ROOT/.early-birds/greenfield"
@@ -118,7 +150,7 @@ azd ai agent init --no-prompt \
   --agent-name "$AGENT_NAME" \
   --image "$IMAGE" \
   --project-id "$PROJECT_ID" \
-  --registry-connection "$REGISTRY_CONNECTION" \
+  --registry-connection "$CONNECTION_NAME" \
   --protocol invocations
 
 cd "$AGENT_NAME"
@@ -136,13 +168,30 @@ The generated agent service should contain:
 image: <registry-host>/<repository>/<image>:<tag>
 docker:
   imagePassthrough: true
-registryConnectionId: <existing-connection-name-or-id>
+registryConnectionId: <unique-connection-name>
 ```
 
-## Scenario 2: add a declarative agent and sibling connection
+## Brownfield: add a private-registry agent to an existing azd project
 
-This scenario starts with an existing local azd project. Add services like the following to its `azure.yaml`. Use a
-unique connection and agent name.
+This scenario starts with an existing local azd project, so use the friendlier connection command. Run it from the
+project directory, then add the agent service to `azure.yaml`.
+
+```bash
+cd '<existing-azd-project-directory>'
+export PROJECT_ENDPOINT='https://<account>.services.ai.azure.com/api/projects/<project>'
+
+azd ai connection create private-registry \
+  --project-endpoint "$PROJECT_ENDPOINT" \
+  --kind custom-keys \
+  --target 'https://<registry-host>' \
+  --auth-type custom-keys \
+  --custom-key 'audience=<entra-application-client-id>' \
+  --custom-key 'tokenEndpoint=/access/api/v1/oidc/token' \
+  --custom-key 'body.provider_name=<jfrog-oidc-provider-name>' \
+  --metadata 'type=registry_connection' \
+  --metadata 'mode=oauth_token_exchange' \
+  --no-prompt
+```
 
 ```yaml
 infra:
@@ -153,40 +202,23 @@ services:
     host: azure.ai.project
     endpoint: https://<account>.services.ai.azure.com/api/projects/<project>
 
-  private-registry-connection:
-    host: azure.ai.connection
-    uses:
-      - existing-foundry-project
-    category: CustomKeys
-    target: ${REGISTRY_URL}
-    authType: CustomKeys
-    credentials:
-      keys:
-        audience: ${REGISTRY_AUDIENCE}
-        tokenEndpoint: ${REGISTRY_TOKEN_ENDPOINT}
-        body.provider_name: ${REGISTRY_PROVIDER}
-    metadata:
-      type: registry_connection
-      mode: oauth_token_exchange
-
   private-registry-agent:
     host: azure.ai.agent
     uses:
       - existing-foundry-project
-      - private-registry-connection
     kind: hosted
     name: private-registry-agent
     image: registry.example.com/team/agent:v1
     docker:
       imagePassthrough: true
-    registryConnectionId: private-registry-connection
+    registryConnectionId: private-registry
     protocols:
       - protocol: invocations
         version: 1.0.0
 ```
 
-Replace `registry.example.com/team/agent:v1` and the static service names with unique values for your test. Then set the
-project and registry values in a dedicated azd environment, provision, and deploy:
+Replace `registry.example.com/team/agent:v1` and the agent service name with unique values for your test. Then set the
+project values in a dedicated azd environment, provision, and deploy:
 
 ```bash
 cd '<existing-azd-project-directory>'
@@ -201,10 +233,6 @@ azd env set AZURE_AI_ACCOUNT_NAME '<account>'
 azd env set AZURE_AI_PROJECT_NAME '<project>'
 azd env set FOUNDRY_PROJECT_ENDPOINT 'https://<account>.services.ai.azure.com/api/projects/<project>'
 azd env set USE_EXISTING_AI_PROJECT true
-azd env set REGISTRY_URL 'https://<registry-host>'
-azd env set REGISTRY_AUDIENCE '<registry-audience>'
-azd env set REGISTRY_TOKEN_ENDPOINT '<registry-token-endpoint>'
-azd env set REGISTRY_PROVIDER '<registry-provider-name>'
 
 azd provision --no-prompt
 azd deploy --no-prompt

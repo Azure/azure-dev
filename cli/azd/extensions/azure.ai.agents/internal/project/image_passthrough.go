@@ -3,8 +3,6 @@
 
 package project
 
-// cSpell:ignore protowire
-
 import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/protobuf/encoding/protowire"

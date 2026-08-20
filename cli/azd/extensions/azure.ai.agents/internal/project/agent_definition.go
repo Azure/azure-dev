@@ -14,6 +14,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
+	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 
@@ -770,7 +771,7 @@ func agentDefinitionFromStruct(
 		return agent_yaml.ContainerAgent{}, false, err
 	}
 
-	if ca.Image != "" && !containerImageRefRe.MatchString(ca.Image) {
+	if ca.Image != "" && !containerref.IsValid(ca.Image) {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid container image reference in agent service config: %q", ca.Image),
@@ -876,7 +877,7 @@ func parseContainerAgentYAML(data []byte) (agent_yaml.ContainerAgent, bool, erro
 		)
 	}
 
-	if agentDef.Image != "" && !containerImageRefRe.MatchString(agentDef.Image) {
+	if agentDef.Image != "" && !containerref.IsValid(agentDef.Image) {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),

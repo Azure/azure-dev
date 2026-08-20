@@ -3,8 +3,6 @@
 
 package project
 
-// cSpell:ignore containerref
-
 import (
 	"archive/zip"
 	"bytes"
@@ -184,12 +182,6 @@ type AgentServiceTargetProvider struct {
 const (
 	preBuiltImageArtifactSourceKey = "azure.ai.agents.imageSource"
 	preBuiltImageArtifactSource    = "agent.yaml"
-)
-
-// containerImageRefRe is a basic pattern for container image references:
-// [registry/]repository[:tag|@digest]
-var containerImageRefRe = regexp.MustCompile(
-	`^[a-zA-Z0-9]([a-zA-Z0-9._-]*/)*[a-zA-Z0-9][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+|@sha256:[0-9a-fA-F]{64})?$`,
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance

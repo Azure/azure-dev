@@ -4,19 +4,36 @@
 // Package containerref validates container image references used by hosted agents.
 package containerref
 
-// cSpell:ignore containerref
+import (
+	"strings"
 
-import "regexp"
-
-var fullyQualifiedReference = regexp.MustCompile(
-	`^(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?::[0-9]+)?|` +
-		`localhost(?::[0-9]+)?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:[0-9]+)/` +
-		`[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*` +
-		`(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*` +
-		`(?::[\w][\w.-]{0,127})?(?:@sha256:[0-9a-fA-F]{64})?$`,
+	"github.com/distribution/reference"
 )
 
-// IsFullyQualified reports whether image contains an explicit registry host and repository.
+// IsValid reports whether image is a syntactically valid named container image reference.
+func IsValid(image string) bool {
+	_, ok := parseNamed(image)
+	return ok
+}
+
+// IsFullyQualified reports whether image is valid and contains an explicit registry host and repository.
 func IsFullyQualified(image string) bool {
-	return fullyQualifiedReference.MatchString(image)
+	named, ok := parseNamed(image)
+	if !ok {
+		return false
+	}
+
+	registry := reference.Domain(named)
+	return registry != "" &&
+		(strings.Contains(registry, ".") || strings.Contains(registry, ":") || registry == "localhost")
+}
+
+func parseNamed(image string) (reference.Named, bool) {
+	parsed, err := reference.Parse(image)
+	if err != nil {
+		return nil, false
+	}
+
+	named, ok := parsed.(reference.Named)
+	return named, ok
 }

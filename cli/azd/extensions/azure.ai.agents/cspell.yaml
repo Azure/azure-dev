@@ -55,6 +55,7 @@ words:
   - azuresdk
   - bicepless
   - CLIENTSECRET
+  - containerref
   - curr
   - dataagent
   - envkey
@@ -79,6 +80,7 @@ words:
   - projectconfig
   - projectpkg
   - protocolversionrecord
+  - protowire
   - Qdrant
   - schedulerun
   - Toolsets

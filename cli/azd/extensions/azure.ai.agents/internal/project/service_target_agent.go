@@ -2218,7 +2218,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	apiMode, err := resolveVoiceAgentAPIMode(azdEnv)
 	if err != nil {
 		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
+			exterrors.CodeInvalidParameter,
 			err.Error(),
 			fmt.Sprintf("set %s to legacy, unified, or unified-flat", voiceAgentAPIEnvKey),
 		)
@@ -2341,8 +2341,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentWithMode(
 		return agentObject, exterrors.OpUpdateAgent, err
 	}
 	if getErr != nil {
-		var respErr *azcore.ResponseError
-		if !errors.As(getErr, &respErr) || respErr.StatusCode != http.StatusNotFound {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
 			return nil, exterrors.OpCreateAgent, getErr
 		}
 	}

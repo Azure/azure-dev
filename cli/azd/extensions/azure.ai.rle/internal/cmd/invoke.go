@@ -225,9 +225,6 @@ func (a *remoteInvokeAction) resolveTarget() (rleState, *rleClient, error) {
 	if err != nil {
 		return rleState{}, nil, serviceError(err)
 	}
-	if err := requireReadyEnvironment(versionedEnvironment, environmentName); err != nil {
-		return rleState{}, nil, err
-	}
 	if responseName := strings.TrimSpace(versionedEnvironment.Name); responseName != "" && responseName != environmentName {
 		return rleState{}, nil, unexpectedEnvironmentVersionIdentity(
 			environmentName,
@@ -276,18 +273,17 @@ func unexpectedEnvironmentVersionIdentity(
 }
 
 const (
-	instanceStatusRunning           = "Running"
-	instanceStatusFailed            = "Failed"
-	diskImageConversionStatusReady  = "Ready"
-	diskImageConversionStatusFailed = "Failed"
-	remoteReadinessRetryCount       = 10
-	playgroundSessionCookie         = "azd-rle-playground-session"
+	instanceStatusRunning     = "Running"
+	instanceStatusFailed      = "Failed"
+	instanceStatusDeleted     = "Deleted"
+	remoteReadinessRetryCount = 10
+	playgroundSessionCookie   = "azd-rle-playground-session"
 )
 
 var (
 	remoteInstanceCreateTimeout  = 300 * time.Second
 	remoteInstancePollInterval   = 2 * time.Second
-	remoteReadinessRetryInterval = 5 * time.Second
+	remoteReadinessRetryInterval = 10 * time.Second
 	remoteRuntimeHealthTimeout   = 60 * time.Second
 )
 
@@ -311,34 +307,8 @@ func createRemoteRuntime(
 		group:        group,
 		routeVersion: state.runtimeRouteVersion,
 	}
-	if strings.TrimSpace(group.Id) == "" {
-		return runtime, &azdext.LocalError{
-			Message:    "RLE service did not return an instance group id.",
-			Code:       "rle_instance_group_id_missing",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Check the RLE service instance group response, then retry.",
-		}
-	}
-	if strings.TrimSpace(group.EnvironmentVersion) == "" {
-		return runtime, &azdext.LocalError{
-			Message:    "RLE service did not return the resolved environment version.",
-			Code:       "rle_instance_group_version_missing",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Check the RLE service instance group response, then retry.",
-		}
-	}
-	if requestedVersion := strings.TrimSpace(state.runtimeRouteVersion); requestedVersion != "" &&
-		group.EnvironmentVersion != requestedVersion {
-		return runtime, &azdext.LocalError{
-			Message: fmt.Sprintf(
-				"RLE service returned environment version %q for requested version %q.",
-				group.EnvironmentVersion,
-				requestedVersion,
-			),
-			Code:       "rle_instance_group_version_mismatch",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Check the RLE service instance group response, then retry.",
-		}
+	if err := validateInstanceGroupIdentity(state, group); err != nil {
+		return runtime, err
 	}
 
 	instance, err := client.createInstance(ctx, state.EnvironmentName, group.EnvironmentVersion, group.Id)
@@ -359,6 +329,52 @@ func createRemoteRuntime(
 		runtime.instance = readyInstance
 	}
 	return runtime, err
+}
+
+func validateInstanceGroupIdentity(state rleState, group *instanceGroupResource) error {
+	if strings.TrimSpace(group.Id) == "" {
+		return &azdext.LocalError{
+			Message:    "RLE service did not return an instance group id.",
+			Code:       "rle_instance_group_id_missing",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Check the RLE service instance group response, then retry.",
+		}
+	}
+	if responseName := strings.TrimSpace(group.EnvironmentName); responseName != "" &&
+		responseName != state.EnvironmentName {
+		return &azdext.LocalError{
+			Message: fmt.Sprintf(
+				"RLE service returned environment %q for requested environment %q.",
+				responseName,
+				state.EnvironmentName,
+			),
+			Code:       "rle_instance_group_environment_mismatch",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Check the RLE service instance group response, then retry.",
+		}
+	}
+	if strings.TrimSpace(group.EnvironmentVersion) == "" {
+		return &azdext.LocalError{
+			Message:    "RLE service did not return the resolved environment version.",
+			Code:       "rle_instance_group_version_missing",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Check the RLE service instance group response, then retry.",
+		}
+	}
+	if requestedVersion := strings.TrimSpace(state.runtimeRouteVersion); requestedVersion != "" &&
+		group.EnvironmentVersion != requestedVersion {
+		return &azdext.LocalError{
+			Message: fmt.Sprintf(
+				"RLE service returned environment version %q for requested version %q.",
+				group.EnvironmentVersion,
+				requestedVersion,
+			),
+			Code:       "rle_instance_group_version_mismatch",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Check the RLE service instance group response, then retry.",
+		}
+	}
+	return nil
 }
 
 func createRemoteInstanceGroup(
@@ -430,6 +446,13 @@ func waitForRemoteInstance(
 					firstNonEmpty(instance.Error, "unknown error"),
 				),
 				Code:     "rle_instance_start_failed",
+				Category: azdext.LocalErrorCategoryUser,
+			}
+		}
+		if instance.Status == instanceStatusDeleted {
+			return nil, &azdext.LocalError{
+				Message:  "Environment instance was deleted before it became ready.",
+				Code:     "rle_instance_start_deleted",
 				Category: azdext.LocalErrorCategoryUser,
 			}
 		}
@@ -518,7 +541,10 @@ func writeCleanupResult(writer io.Writer, err error) {
 		_, _ = fmt.Fprintln(writer, "Warning: remote runtime cleanup could not be completed; resources may remain.")
 		return
 	}
-	_, _ = fmt.Fprintln(writer, "Remote runtime resources cleaned up successfully.")
+	_, _ = fmt.Fprintln(
+		writer,
+		"Temporary remote runtime resources cleaned up successfully. Local environment files and state were unchanged.",
+	)
 }
 
 func remotePlaygroundUrlWithAuthorizationProvider(

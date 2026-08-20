@@ -148,7 +148,7 @@ func TestRunShellRefreshesAuthorizationForEachRequest(t *testing.T) {
 	}
 }
 
-func TestWaitForHealthReportsBoundedResponseDetail(t *testing.T) {
+func TestWaitForHealthReportsRemoteResponseDetail(t *testing.T) {
 	responseBody := `{"error":{"code":"BadRequest","message":"Missing required query parameter: api-version"}}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, responseBody, http.StatusBadRequest)

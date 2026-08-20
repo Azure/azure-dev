@@ -33,47 +33,31 @@ func TestSaveRleStateWritesEnvironmentName(t *testing.T) {
 	}
 }
 
-func TestLoadRleStateAcceptsLegacyName(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-
-	if err := os.WriteFile(
-		rleStateFile,
-		[]byte(`{"name":"legacy_env","projectEndpoint":"https://example.test/project"}`),
-		0600,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	state, err := loadRleState()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.EnvironmentName != "legacy_env" {
-		t.Fatalf("expected legacy environment name, got %q", state.EnvironmentName)
-	}
-	if state.ProjectEndpoint != "https://example.test/project" {
-		t.Fatalf("expected project endpoint, got %q", state.ProjectEndpoint)
-	}
-}
-
-func TestLoadRleStatePrefersEnvironmentName(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-
-	if err := os.WriteFile(
-		rleStateFile,
-		[]byte(`{"environmentName":"current_env","name":"legacy_env"}`),
-		0600,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	state, err := loadRleState()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.EnvironmentName != "current_env" {
-		t.Fatalf("expected current environment name, got %q", state.EnvironmentName)
+func TestRleStateUnmarshalNameCompatibility(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		payload  string
+		expected string
+	}{
+		{
+			name:     "accepts legacy name",
+			payload:  `{"name":"legacy_env"}`,
+			expected: "legacy_env",
+		},
+		{
+			name:     "prefers environment name",
+			payload:  `{"environmentName":"current_env","name":"legacy_env"}`,
+			expected: "current_env",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var state rleState
+			if err := json.Unmarshal([]byte(test.payload), &state); err != nil {
+				t.Fatal(err)
+			}
+			if state.EnvironmentName != test.expected {
+				t.Fatalf("expected %q, got %q", test.expected, state.EnvironmentName)
+			}
+		})
 	}
 }

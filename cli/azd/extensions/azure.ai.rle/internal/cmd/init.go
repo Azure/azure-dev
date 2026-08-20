@@ -96,7 +96,13 @@ func initNextSteps(displayDir string, goos string, shell string) string {
 		projectEndpoint,
 		registryEndpoint,
 	)
-	if goos != "windows" || isPOSIXShellExecutable(shell) {
+	usePOSIXSyntax := goos != "windows"
+	if isPowerShellExecutable(shell) {
+		usePOSIXSyntax = false
+	} else if isPOSIXShellExecutable(shell) {
+		usePOSIXSyntax = true
+	}
+	if usePOSIXSyntax {
 		setEnvironment = fmt.Sprintf(
 			"  export FOUNDRY_PROJECT_ENDPOINT=%q\n  export AZURE_CONTAINER_REGISTRY_ENDPOINT=%q\n",
 			projectEndpoint,
@@ -118,20 +124,33 @@ func initNextSteps(displayDir string, goos string, shell string) string {
 	)
 }
 
+func isPowerShellExecutable(shell string) bool {
+	switch executableName(shell) {
+	case "pwsh", "pwsh.exe", "powershell", "powershell.exe":
+		return true
+	default:
+		return false
+	}
+}
+
 func isPOSIXShellExecutable(shell string) bool {
+	switch executableName(shell) {
+	case "sh", "sh.exe", "bash", "bash.exe", "zsh", "zsh.exe", "dash", "dash.exe", "fish", "fish.exe":
+		return true
+	default:
+		return false
+	}
+}
+
+func executableName(shell string) string {
 	name := strings.ToLower(strings.TrimSpace(shell))
 	if name == "" {
-		return false
+		return ""
 	}
 	for _, separator := range []string{`\`, `/`} {
 		if index := strings.LastIndex(name, separator); index >= 0 {
 			name = name[index+1:]
 		}
 	}
-	switch name {
-	case "sh", "sh.exe", "bash", "bash.exe", "zsh", "zsh.exe", "dash", "dash.exe", "fish", "fish.exe":
-		return true
-	default:
-		return false
-	}
+	return name
 }

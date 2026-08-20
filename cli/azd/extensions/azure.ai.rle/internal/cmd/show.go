@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -175,9 +174,9 @@ func resolveEnvironmentVersions(
 		}
 	}
 	if !complete {
-		return nil, fmt.Errorf(
-			"environment version list exceeded the %d-item safety limit",
-			environmentListPageSize*environmentListMaxPages,
+		return nil, paginationSafetyLimitError(
+			"Environment version list",
+			"rle_environment_version_list_safety_limit",
 		)
 	}
 	if len(history) == 0 {

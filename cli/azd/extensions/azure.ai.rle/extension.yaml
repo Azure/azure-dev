@@ -11,7 +11,7 @@ tags:
   - ai
   - rle
 usage: azd ai rle <command> [options]
-version: 0.4.0-preview
+version: 0.3.0-preview
 examples:
   - name: init
     description: Copy the OpenEnv echo sample into a local RLE environment.

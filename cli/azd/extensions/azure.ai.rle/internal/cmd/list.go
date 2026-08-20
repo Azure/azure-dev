@@ -114,11 +114,7 @@ func listAllEnvironments(ctx context.Context, client *rleClient) ([]environmentR
 			return nil, err
 		}
 	}
-	return nil, &azdext.LocalError{
-		Message:  fmt.Sprintf("Environment list exceeded the %d-item safety limit.", environmentListPageSize*environmentListMaxPages),
-		Code:     "rle_environment_list_safety_limit",
-		Category: azdext.LocalErrorCategoryInternal,
-	}
+	return nil, paginationSafetyLimitError("Environment list", "rle_environment_list_safety_limit")
 }
 
 func resolveEnvironmentListProjectEndpoint() (string, error) {

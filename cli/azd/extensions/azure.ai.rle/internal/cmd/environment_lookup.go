@@ -49,24 +49,3 @@ func environmentVersionNotFoundError(environmentName string, version string) err
 		),
 	}
 }
-
-func requireReadyEnvironment(environment *environmentResource, environmentName string) error {
-	if environment.DiskImageConversionStatus != diskImageConversionStatusReady {
-		return &azdext.LocalError{
-			Message: fmt.Sprintf(
-				"Environment %q disk image status is %q, expected %q.",
-				environmentName,
-				environment.DiskImageConversionStatus,
-				diskImageConversionStatusReady,
-			),
-			Code:     "rle_disk_image_not_ready",
-			Category: azdext.LocalErrorCategoryUser,
-			Suggestion: fmt.Sprintf(
-				"Run azd ai rle show %s to inspect the environment details and version history.",
-				environmentName,
-			),
-		}
-	}
-
-	return nil
-}

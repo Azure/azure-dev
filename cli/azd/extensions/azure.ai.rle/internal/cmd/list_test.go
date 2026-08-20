@@ -432,6 +432,33 @@ func TestResolveEnvironmentVersionsRejectsCursorCycles(t *testing.T) {
 	}
 }
 
+func TestResolveEnvironmentVersionsStopsAtSafetyLimit(t *testing.T) {
+	requestCount := 0
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if err := json.NewEncoder(w).Encode(listEnvironmentVersionsResponse{
+			LastId:  fmt.Sprintf("cursor-%d", requestCount),
+			HasMore: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer controlPlane.Close()
+
+	client := testRleClientForServer(t, controlPlane.URL)
+	_, err := resolveEnvironmentVersions(t.Context(), client, &environmentResource{Name: "echo_env"})
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_environment_version_list_safety_limit" {
+		t.Fatalf("expected version-list safety-limit code, got %q", localErr.Code)
+	}
+	if requestCount != environmentListMaxPages {
+		t.Fatalf("expected %d pages, got %d", environmentListMaxPages, requestCount)
+	}
+}
+
 func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)

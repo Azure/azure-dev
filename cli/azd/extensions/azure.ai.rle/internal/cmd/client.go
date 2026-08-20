@@ -461,3 +461,15 @@ func nextPaginationCursor(seen map[string]struct{}, lastID string, newCursorErro
 	seen[cursor] = struct{}{}
 	return cursor, nil
 }
+
+func paginationSafetyLimitError(resourceName string, code string) error {
+	return &azdext.LocalError{
+		Message: fmt.Sprintf(
+			"%s exceeded the %d-item safety limit.",
+			resourceName,
+			environmentListPageSize*environmentListMaxPages,
+		),
+		Code:     code,
+		Category: azdext.LocalErrorCategoryInternal,
+	}
+}

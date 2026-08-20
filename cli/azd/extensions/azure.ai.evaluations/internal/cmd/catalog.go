@@ -28,16 +28,16 @@ func addDatasetToCatalog(cmd *cobra.Command, evalDir string, ref *project.Artifa
 			if cfg.Datasets[i].Name == ref.Name {
 				// Regeneration overwrites the file in place, so the entry only
 				// changes when the artifact moved.
-				if cfg.Datasets[i].Source == ref.Source {
+				if cfg.Datasets[i].File == ref.Source {
 					return false
 				}
-				cfg.Datasets[i].Source = ref.Source
+				cfg.Datasets[i].File = ref.Source
 				return true
 			}
 		}
 		cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{
-			Name:   ref.Name,
-			Source: ref.Source,
+			Name: ref.Name,
+			File: ref.Source,
 		})
 		return true
 	})
@@ -88,7 +88,7 @@ func updateCatalog(
 	}
 	defer unlock()
 
-	cfg, err := project.OpenEvalConfig(evalDir)
+	cfg, err := project.OpenEvalConfigForEdit(evalDir)
 	if err != nil {
 		return err
 	}

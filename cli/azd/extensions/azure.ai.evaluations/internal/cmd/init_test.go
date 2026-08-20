@@ -370,7 +370,7 @@ func TestScaffold_DatasetReferenceForms(t *testing.T) {
 		})
 		decl, ok := cfg.DatasetDeclaration("golden")
 		require.True(t, ok)
-		require.Equal(t, "../tests/golden.jsonl", decl.Source,
+		require.Equal(t, "../tests/golden.jsonl", decl.File,
 			"a dataset outside the eval dir must be reached with ..")
 		require.Equal(t, "golden", plan.eval.Dataset)
 		require.False(t, plan.generateDataset,
@@ -383,7 +383,7 @@ func TestScaffold_DatasetReferenceForms(t *testing.T) {
 		})
 		decl, ok := cfg.DatasetDeclaration("prod-sample")
 		require.True(t, ok)
-		require.Empty(t, decl.Source, "a registered dataset must not get a local source")
+		require.Empty(t, decl.File, "a registered dataset must not get a local source")
 		require.Equal(t, "prod-sample", plan.eval.Dataset)
 		require.False(t, plan.generateDataset)
 	})
@@ -396,7 +396,7 @@ func TestScaffold_DatasetReferenceForms(t *testing.T) {
 			"the dataset is named after the eval")
 		decl, ok := cfg.DatasetDeclaration("support-agent-smoke")
 		require.True(t, ok)
-		require.Contains(t, decl.Source, "support-agent-smoke.jsonl")
+		require.Contains(t, decl.File, "support-agent-smoke.jsonl")
 		require.True(t, plan.generateDataset)
 	})
 }

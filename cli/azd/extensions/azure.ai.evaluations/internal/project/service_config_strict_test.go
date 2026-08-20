@@ -45,7 +45,7 @@ func TestEvalConfigFromServiceRejectsAMistypedKey(t *testing.T) {
 // the door on the authoring style it is meant to serve.
 func TestEvalConfigFromServiceAcceptsADeclaredConfig(t *testing.T) {
 	svc := serviceWith(t, map[string]any{
-		"datasets": []any{map[string]any{"name": "golden", "source": "./datasets/golden.jsonl"}},
+		"datasets": []any{map[string]any{"name": "golden", "file": "./datasets/golden.jsonl"}},
 		"evals": []any{map[string]any{
 			"name":             "support-agent-eval",
 			"dataset":          "golden",

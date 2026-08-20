@@ -82,11 +82,59 @@ func TestEvalDirCascadeAnswersInOrder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := evalDirCascade(tc.flag, func() (string, error) {
 				return tc.recorded, nil
-			})
+			}, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// azure.yaml's `$ref` is read, not only written.
+//
+// The recorded path lives in the azd environment, and an azd environment is not
+// in the repository. Check the project out somewhere else and that level is
+// empty, so a configuration the project declares under ./config was reported
+// missing by every command while `azd up` deployed it from the same `$ref`.
+func TestEvalDirCascadeReadsTheDeclaredRef(t *testing.T) {
+	got, err := evalDirCascade("",
+		func() (string, error) { return "", nil },
+		func() string { return "config" })
+
+	require.NoError(t, err)
+	assert.Equal(t, "config", got)
+}
+
+// The recorded path is what `--path` wrote on this machine, so it answers over
+// a declaration that may predate it.
+func TestEvalDirCascadePrefersTheRecordedPathOverTheDeclaredRef(t *testing.T) {
+	got, err := evalDirCascade("",
+		func() (string, error) { return "quality", nil },
+		func() string { return "config" })
+
+	require.NoError(t, err)
+	assert.Equal(t, "quality", got)
+}
+
+// Outside an azd project there is no azure.yaml to read, which is ordinary.
+func TestEvalDirCascadeFallsBackWhenNothingIsDeclared(t *testing.T) {
+	got, err := evalDirCascade("",
+		func() (string, error) { return "", nil },
+		func() string { return "" })
+
+	require.NoError(t, err)
+	assert.Equal(t, project.DefaultEvalDir, got)
+}
+
+// A --path that was given is the answer on its own, so neither level is asked.
+func TestEvalDirCascadeSkipsBothLookupsWhenPathWasGiven(t *testing.T) {
+	var declaredAsked int
+	got, err := evalDirCascade("./given",
+		func() (string, error) { return "recorded", nil },
+		func() string { declaredAsked++; return "config" })
+
+	require.NoError(t, err)
+	assert.Equal(t, "./given", got)
+	assert.Equal(t, 0, declaredAsked, "a --path that was given should not cost a round trip")
 }
 
 // A read that failed is not a project that recorded nothing. Defaulting on it
@@ -95,7 +143,7 @@ func TestEvalDirCascadeAnswersInOrder(t *testing.T) {
 func TestEvalDirCascadeDoesNotDefaultOnAFailedRead(t *testing.T) {
 	boom := errors.New("the environment could not be read")
 
-	got, err := evalDirCascade("", func() (string, error) { return "", boom })
+	got, err := evalDirCascade("", func() (string, error) { return "", boom }, nil)
 
 	require.ErrorIs(t, err, boom)
 	assert.Empty(t, got, "a failed read must not answer with the default")
@@ -106,7 +154,7 @@ func TestEvalDirCascadeDoesNotDefaultOnAFailedRead(t *testing.T) {
 func TestEvalDirCascadeIgnoresAFailedReadWhenPathWasGiven(t *testing.T) {
 	got, err := evalDirCascade("./given", func() (string, error) {
 		return "", errors.New("the environment could not be read")
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "./given", got)
@@ -118,7 +166,7 @@ func TestEvalDirCascadeAsksForTheRecordedPathOnce(t *testing.T) {
 	got, err := evalDirCascade("", func() (string, error) {
 		asked++
 		return "", nil
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, project.DefaultEvalDir, got)
@@ -128,7 +176,7 @@ func TestEvalDirCascadeAsksForTheRecordedPathOnce(t *testing.T) {
 	_, err = evalDirCascade("./given", func() (string, error) {
 		asked++
 		return "", nil
-	})
+	}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 0, asked, "a --path that was given should not cost a round trip")
 }

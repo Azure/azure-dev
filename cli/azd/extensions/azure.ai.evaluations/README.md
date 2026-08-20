@@ -23,30 +23,31 @@ services:
   evals:
     host: azure.ai.eval
     uses: [ai-project]
-    $ref: ./evals/azure.yaml
+    $ref: ./evals/azure.eval.yaml
 ```
 
 ```yaml
-# evals/azure.yaml
+# evals/azure.eval.yaml
 datasets:
   - name: support-golden
-    source: ./datasets/support-golden.jsonl
+    file: ./datasets/support-golden.jsonl
 
 evaluators:
   - name: support-quality
     source: ./evaluators/support-quality.json
 
-evalGroups:
+evals:
   - name: support-quality
     dataset: support-golden
+    evaluation_level: turn
     evaluators:
-      - builtin.task_adherence
-      - support-quality
+      - evaluator: builtin.task_adherence
+        initialization_parameters:
+          model: gpt-4.1-nano
+      - evaluator: support-quality
     target:
       type: agent
       name: support-agent
-    options:
-      eval_model: gpt-4.1-nano
 ```
 
 `azd up` reconciles **datasets → evaluators → eval groups**, in that order,
@@ -64,7 +65,7 @@ keys you authored — the service adds `data_schema`, `init_parameters` and
 `metrics` of its own.
 
 Eval groups are immutable, so a change to a group's evaluators, target or
-options creates a new group and a new id. The id is cached in the azd
+sampling creates a new group and a new id. The id is cached in the azd
 environment so repeat runs stay comparable.
 
 ## Commands

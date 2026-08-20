@@ -71,7 +71,7 @@ func TestEvalConfigFromServiceReadsInlineConfig(t *testing.T) {
 		Name: "support-agent-evals",
 		AdditionalProperties: propsFrom(t, map[string]any{
 			"datasets": []any{
-				map[string]any{"name": "golden", "source": "./datasets/golden.jsonl"},
+				map[string]any{"name": "golden", "file": "./datasets/golden.jsonl"},
 			},
 			"evals": []any{
 				map[string]any{

@@ -361,18 +361,32 @@ func (r *evalReconciler) latestDatasetVersion(ctx context.Context, name string) 
 // EnsureEvaluator publishes a new version when the local definition differs
 // from what the service holds.
 //
-// The two kinds of evaluator are told apart by the source's extension: `.py`
-// is code, anything else is a rubric. They also detect change differently. A
-// rubric definition comes back inline, so it is compared directly; a code
-// definition's source is not read back in a form worth comparing, so a
-// fingerprint of the script is kept in the azd environment, the same way
-// datasets work.
+// A definition reaches this three ways: written in the configuration, named as
+// a file, or neither -- in which case the evaluator has to already exist on the
+// service. The first two are the same publish once the rubric is in hand; they
+// differ only in what there is to hash.
 func (r *evalReconciler) EnsureEvaluator(
 	ctx context.Context,
 	decl project.EvaluatorDecl,
 	localPath string,
 ) (string, bool, error) {
-	if localPath == "" {
+	var body json.RawMessage
+	var digest string
+
+	switch {
+	case decl.Definition != nil:
+		// Also how a `$ref` to a rubric file arrives: resolution has already
+		// spliced the file's keys in, so there is nothing left to read.
+		raw, err := json.Marshal(decl.Definition)
+		if err != nil {
+			return "", false, messages.EvaluatorProblem(decl.Name, err)
+		}
+		if body, err = normalizeRubricBody(decl.Name, raw); err != nil {
+			return "", false, messages.EvaluatorProblem(decl.Name, err)
+		}
+		digest = project.FingerprintBytes(body)
+
+	case localPath == "":
 		raw, err := r.ec.evalClient.GetEvaluatorRaw(
 			ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
 		)
@@ -380,34 +394,34 @@ func (r *evalReconciler) EnsureEvaluator(
 			return "", false, messages.EvaluatorNotLocalNorFound(decl.Name, err)
 		}
 		return versionFromRaw(raw, decl.Version), false, nil
-	}
 
-	if _, err := os.Stat(localPath); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", false, messages.EvaluatorNotGeneratedYet(decl.Name, localPath)
+	default:
+		if _, err := os.Stat(localPath); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return "", false, messages.EvaluatorNotGeneratedYet(decl.Name, localPath)
+			}
+			return "", false, messages.EvaluatorSource(localPath, err)
 		}
-		return "", false, messages.EvaluatorSource(localPath, err)
+
+		raw, err := project.ReadFileNoBOM(localPath)
+		if err != nil {
+			return "", false, messages.EvaluatorSource(localPath, err)
+		}
+
+		if body, err = normalizeRubricBody(decl.Name, raw); err != nil {
+			return "", false, messages.EvaluatorProblem(decl.Name, err)
+		}
+
+		if digest, err = project.Fingerprint(localPath); err != nil {
+			return "", false, messages.EvaluatorSource(localPath, err)
+		}
 	}
 
-	raw, err := project.ReadFileNoBOM(localPath)
-	if err != nil {
-		return "", false, messages.EvaluatorSource(localPath, err)
-	}
-
-	body, err := normalizeRubricBody(decl.Name, raw)
-	if err != nil {
-		return "", false, messages.EvaluatorProblem(decl.Name, err)
-	}
-
-	// The author's own file decides whether there is anything to publish.
+	// The author's own definition decides whether there is anything to publish.
 	// Comparing against the service cannot: it enriches a definition with
 	// fields nobody authored, so sameDefinition only looks for authored keys on
 	// the service and a key the author *deleted* — a pass_threshold, say — is
 	// still there to be found, and the deletion never publishes.
-	digest, err := project.Fingerprint(localPath)
-	if err != nil {
-		return "", false, messages.EvaluatorSource(localPath, err)
-	}
 	digestKey := project.FingerprintKey("evaluator", decl.Name)
 	prior := r.ec.getEnvValue(ctx, digestKey)
 	authorEdited := prior != "" && prior != digest

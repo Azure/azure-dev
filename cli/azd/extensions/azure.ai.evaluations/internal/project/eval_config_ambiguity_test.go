@@ -17,7 +17,7 @@ func writeFile(t *testing.T, dir, name, body string) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600))
 }
 
-const oneEvalConfig = "datasets:\n  - name: d\n    source: ./d.jsonl\n"
+const oneEvalConfig = "datasets:\n  - name: d\n    file: ./d.jsonl\n"
 
 // azure.yaml references one configuration by name. With both files present the
 // CLI would edit whichever it preferred while azd up deployed whichever the
@@ -54,7 +54,7 @@ func TestSaveEvalConfig_WritesBackToTheLegacyFile(t *testing.T) {
 	writeFile(t, dir, LegacyEvalConfigBase, oneEvalConfig)
 
 	require.NoError(t, SaveEvalConfig(dir, &EvalConfig{
-		Datasets: []DatasetDecl{{Name: "d", Source: "./d.jsonl"}},
+		Datasets: []DatasetDecl{{Name: "d", File: "./d.jsonl"}},
 	}))
 
 	assert.FileExists(t, filepath.Join(dir, LegacyEvalConfigBase))
@@ -77,7 +77,7 @@ func TestSaveEvalConfig_WritesTheCurrentNameWhenThereIsNoFile(t *testing.T) {
 func TestValidate_RefusesATargetWithNoName(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, EvalConfigBase,
-		"datasets:\n  - name: d\n    source: ./d.jsonl\n"+
+		"datasets:\n  - name: d\n    file: ./d.jsonl\n"+
 			"evals:\n  - name: e\n    dataset: d\n"+
 			"    target:\n      type: agent\n"+
 			"    evaluators:\n      - evaluator: builtin.relevance\n")

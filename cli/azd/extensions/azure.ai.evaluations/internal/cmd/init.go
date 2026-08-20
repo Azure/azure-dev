@@ -137,7 +137,7 @@ func newInitCommand() *cobra.Command {
 			// reporting it as created would claim a file it only added to.
 			_, configExistedErr := os.Stat(configPath)
 			configExisted := configExistedErr == nil
-			cfg, err := project.OpenEvalConfig(path)
+			cfg, err := project.OpenEvalConfigForEdit(path)
 			if err != nil {
 				return err
 			}
@@ -181,7 +181,7 @@ func newInitCommand() *cobra.Command {
 			}
 			defer unlockConfig()
 
-			cfg, err = project.OpenEvalConfig(path)
+			cfg, err = project.OpenEvalConfigForEdit(path)
 			if err != nil {
 				return err
 			}
@@ -196,10 +196,13 @@ func newInitCommand() *cobra.Command {
 				cfg.RemoveEval(evalName)
 			}
 
-			if err := os.MkdirAll(filepath.Join(path, project.DefaultDatasetsDir), 0o750); err != nil {
+			// The location may be the file azure.yaml names rather than the
+			// directory holding it, and artifacts sit beside the configuration.
+			evalDir := project.EvalDirOf(path)
+			if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultDatasetsDir), 0o750); err != nil {
 				return messages.CreatingDatasetsDir(err)
 			}
-			if err := os.MkdirAll(filepath.Join(path, project.DefaultEvaluatorsDir), 0o750); err != nil {
+			if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultEvaluatorsDir), 0o750); err != nil {
 				return messages.CreatingEvaluatorsDir(err)
 			}
 
@@ -236,8 +239,8 @@ func newInitCommand() *cobra.Command {
 					"eval":          evalName,
 					"evalConfig":    configPath,
 					"service":       serviceName,
-					"datasetsDir":   filepath.Join(path, project.DefaultDatasetsDir),
-					"evaluatorsDir": filepath.Join(path, project.DefaultEvaluatorsDir),
+					"datasetsDir":   filepath.Join(evalDir, project.DefaultDatasetsDir),
+					"evaluatorsDir": filepath.Join(evalDir, project.DefaultEvaluatorsDir),
 					"rootConfig":    rootWiring,
 					"target":        target,
 					"source":        source,
@@ -401,7 +404,7 @@ func planScaffold(in scaffoldInput) scaffold {
 		}
 		eval.Dataset = datasetName
 		out.datasetName = datasetName
-		addDatasetDecl(cfg, project.DatasetDecl{Name: datasetName, Source: datasetSource})
+		addDatasetDecl(cfg, project.DatasetDecl{Name: datasetName, File: datasetSource})
 	}
 
 	// Every evaluator carries the judge deployment, because that is where the

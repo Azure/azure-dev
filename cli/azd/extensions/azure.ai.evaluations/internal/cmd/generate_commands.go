@@ -90,7 +90,7 @@ func resolvePlan(f *generateFlags, name string, defaultOutputDir string) (genera
 		Agent:       firstNonEmpty(f.target, declaredTarget(f.path)),
 		Model:       f.model,
 		Instruction: instruction,
-		BaseDir:     f.path,
+		BaseDir:     project.EvalDirOf(f.path),
 		OutputDir:   firstNonEmpty(f.outputDir, "./"+defaultOutputDir),
 	}
 	if plan.Model == "" && plan.Agent == "" {

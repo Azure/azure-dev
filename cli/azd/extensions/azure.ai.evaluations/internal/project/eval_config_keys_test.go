@@ -41,7 +41,7 @@ func TestExplainUnknownKeys_LeavesOtherErrors(t *testing.T) {
 func TestKeysOfTypeCoversTheDeclarations(t *testing.T) {
 	assert.Contains(t, keysOfType("project.Eval"), "evaluators")
 	assert.Contains(t, keysOfType("project.EvalConfig"), "datasets")
-	assert.Contains(t, keysOfType("project.DatasetDecl"), "source")
+	assert.Contains(t, keysOfType("project.DatasetDecl"), "file")
 	assert.Empty(t, keysOfType("project.Unknown"))
 }
 

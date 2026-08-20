@@ -16,6 +16,7 @@ import (
 
 	"azureaieval/internal/messages"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -39,14 +40,39 @@ const EvalConfigBase = "azure.eval.yaml"
 // not silently grow a second configuration beside it.
 const LegacyEvalConfigBase = "eval.yaml"
 
-// EvalConfigPath is the configuration file inside an eval directory. It is
-// exported for error messages and for the azure.yaml $ref; readers should
-// prefer OpenEvalConfig.
-func EvalConfigPath(evalDir string) string {
-	return filepath.Join(evalDir, EvalConfigBase)
+// EvalConfigPath is the configuration file at a location. It is exported for
+// error messages and for the azure.yaml $ref; readers should prefer
+// OpenEvalConfig.
+//
+// A location is normally the eval directory, and the file inside it is named by
+// convention. It may also be the file itself, because azure.yaml's `$ref` names
+// one by name rather than by directory: a project is free to declare
+// `./config/nightly.yaml`, and looking for `azure.eval.yaml` beside it would
+// report the configuration missing while `azd up` deployed it.
+func EvalConfigPath(location string) string {
+	if namesAFile(location) {
+		return location
+	}
+	return filepath.Join(location, EvalConfigBase)
 }
 
-// ResolveEvalConfigPath is the configuration this directory actually holds:
+// EvalDirOf is the directory a location's relative paths resolve against.
+func EvalDirOf(location string) string {
+	if namesAFile(location) {
+		return filepath.Dir(location)
+	}
+	return location
+}
+
+// namesAFile reports whether a location is the configuration file rather than
+// the directory holding it. A path that does not exist is read as a directory,
+// which is what `init` is given before it writes anything.
+func namesAFile(location string) bool {
+	info, err := os.Stat(location)
+	return err == nil && !info.IsDir()
+}
+
+// ResolveEvalConfigPath is the configuration this location actually holds:
 // the current name, or the legacy one when that is the only file there.
 //
 // It refuses a directory holding both, rather than leaving that to the caller.
@@ -55,21 +81,24 @@ func EvalConfigPath(evalDir string) string {
 // while `run`, `init` and `generate` all refused. Returning an error is what
 // makes the guard unavoidable: there is no longer a way to ask this question
 // and not be told.
-func ResolveEvalConfigPath(evalDir string) (string, error) {
-	if err := checkOneConfig(evalDir); err != nil {
+func ResolveEvalConfigPath(location string) (string, error) {
+	if err := checkOneConfig(location); err != nil {
 		return "", err
 	}
-	return resolvedConfigPath(evalDir), nil
+	return resolvedConfigPath(location), nil
 }
 
 // resolvedConfigPath is the naming rule on its own, for the two functions that
 // have already applied the guard.
-func resolvedConfigPath(evalDir string) string {
-	current := EvalConfigPath(evalDir)
+func resolvedConfigPath(location string) string {
+	if namesAFile(location) {
+		return location
+	}
+	current := EvalConfigPath(location)
 	if _, err := os.Stat(current); err == nil {
 		return current
 	}
-	legacy := filepath.Join(evalDir, LegacyEvalConfigBase)
+	legacy := filepath.Join(location, LegacyEvalConfigBase)
 	if _, err := os.Stat(legacy); err == nil {
 		return legacy
 	}
@@ -80,10 +109,14 @@ func resolvedConfigPath(evalDir string) string {
 //
 // Preferring one silently is the dangerous answer: `azure.yaml` `$ref`s a
 // single file by name, so the CLI would edit one configuration while `azd up`
-// deployed the other, and nothing would say so.
-func checkOneConfig(evalDir string) error {
-	current := EvalConfigPath(evalDir)
-	legacy := filepath.Join(evalDir, LegacyEvalConfigBase)
+// deployed the other, and nothing would say so. A location that already names
+// the file has nothing to disambiguate.
+func checkOneConfig(location string) error {
+	if namesAFile(location) {
+		return nil
+	}
+	current := EvalConfigPath(location)
+	legacy := filepath.Join(location, LegacyEvalConfigBase)
 	if _, err := os.Stat(current); err != nil {
 		return nil
 	}
@@ -93,34 +126,174 @@ func checkOneConfig(evalDir string) error {
 	return messages.AmbiguousEvalConfig(current, legacy)
 }
 
-// OpenEvalConfig reads the configuration under evalDir.
+// OpenEvalConfig reads the configuration at a location, with `$ref` includes
+// resolved. This is the reader for commands that *use* the configuration.
 //
 // A missing file returns (nil, nil): generate runs before init, so "no
 // configuration yet" is an ordinary state rather than a failure.
-func OpenEvalConfig(evalDir string) (*EvalConfig, error) {
-	if err := checkOneConfig(evalDir); err != nil {
+//
+// Commands that write the configuration back must use OpenEvalConfigForEdit
+// instead. Resolution and editing do not mix: what comes back here is the
+// configuration with every include spliced in, and saving that replaces the
+// author's `$ref` with its content.
+func OpenEvalConfig(location string) (*EvalConfig, error) {
+	return openEvalConfig(location, true)
+}
+
+// OpenEvalConfigForEdit reads the configuration exactly as written, leaving
+// `$ref` directives alone.
+//
+// `init` and `generate` read, modify and write the same file. Handing them a
+// resolved configuration and saving the result inlined the author's includes,
+// orphaned the files they named, and left the paths inside those files
+// resolving against the wrong directory -- a `source: ./quality.json` written
+// beside `evaluators/quality.yaml` came back pointing at the project root.
+// None of it was reported, because from the writer's point of view it had
+// simply saved what it read.
+func OpenEvalConfigForEdit(location string) (*EvalConfig, error) {
+	return openEvalConfig(location, false)
+}
+
+func openEvalConfig(location string, resolve bool) (*EvalConfig, error) {
+	if err := checkOneConfig(location); err != nil {
 		return nil, err
 	}
-	cfg, err := LoadEvalConfig(resolvedConfigPath(evalDir))
+	cfg, err := loadEvalConfig(resolvedConfigPath(location), resolve)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	return cfg, err
 }
 
-// LoadEvalConfig reads a configuration from an explicit path. The path is used
-// verbatim, relative to the process working directory — never re-rooted.
+// LoadEvalConfig reads a configuration from an explicit path, with `$ref`
+// includes resolved. The path is used verbatim, relative to the process working
+// directory — never re-rooted.
 //
 // Decoded strictly: a key this extension does not know is a typo, and reading
 // it as nothing leaves a configuration that looks fine and fails later
 // somewhere else. `agent:` written under `target:` instead of `type:`/`name:`
 // used to produce an empty target and a run that complained about the target.
 func LoadEvalConfig(path string) (*EvalConfig, error) {
+	return loadEvalConfig(path, true)
+}
+
+func loadEvalConfig(path string, resolve bool) (*EvalConfig, error) {
 	data, err := ReadFileNoBOM(path)
 	if err != nil {
 		return nil, messages.ReadingEvalConfig(path, err)
 	}
+	if resolve {
+		data, err = resolveConfigRefs(data, filepath.Dir(path), path)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return DecodeEvalConfig(data, path)
+}
+
+// resolveConfigRefs expands `$ref` includes before the strict decode.
+//
+// Core owns the resolver but does not run it for us: it hands each extension
+// the entry with `$ref` still in it. The service target has always called it,
+// and this path did not, so `azd up` accepted an include that every CLI command
+// then refused as an unknown key — the same file meaning two different things
+// depending on which command opened it.
+//
+// A configuration with no `$ref` is returned untouched rather than round-tripped
+// through a map, so the overwhelmingly common case keeps the decoder's own line
+// numbers in its diagnostics.
+func resolveConfigRefs(data []byte, baseDir, name string) ([]byte, error) {
+	if !bytes.Contains(data, []byte("$ref")) {
+		return data, nil
+	}
+
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, messages.ParsingEvalConfig(name, err)
+	}
+	if raw == nil {
+		return data, nil
+	}
+
+	resolved, err := resolveEvalRefs(raw, baseDir)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := yaml.Marshal(resolved)
+	if err != nil {
+		return nil, messages.ParsingEvalConfig(name, err)
+	}
+	return out, nil
+}
+
+// resolveEvalRefs is the one place `$ref` is resolved, so the CLI and `azd up`
+// cannot disagree about what an include means.
+//
+// They read the configuration by different routes -- off disk, and out of the
+// service entry -- and each used to resolve for itself. Every rule then had to
+// be added twice, and twice it was not: an include `azd up` accepted and every
+// CLI command refused, and later the reverse. Callers differ in how they obtain
+// the map and what they do with it; everything between is here.
+func resolveEvalRefs(values map[string]any, baseDir string) (map[string]any, error) {
+	resolved, err := foundry.ResolveFileRefs(values, baseDir)
+	if err != nil {
+		return nil, messages.ResolvingServiceRefs(err)
+	}
+	// `$ref` is a directive rather than configuration, and the strict decoder
+	// would report the leftover as a mistyped key.
+	delete(resolved, "$ref")
+	nestSplicedRubrics(resolved)
+	return resolved, nil
+}
+
+// evaluatorDeclKeys are the keys an evaluator entry declares in its own right.
+// Anything else at entry level was spliced in by a `$ref`.
+var evaluatorDeclKeys = map[string]bool{
+	"$ref": true, "name": true, "source": true, "version": true, "definition": true,
+}
+
+// nestSplicedRubrics moves a rubric that a `$ref` spliced in at entry level
+// down under `definition`.
+//
+// `$ref` splices the referenced file's top-level keys into the entry, and a
+// rubric file is a bare `{type, dimensions}` -- the shape `generate` downloads
+// from the service -- so its keys land beside `name` and the strict decoder
+// rejects them. Moving them is what lets a `$ref` name a rubric.
+//
+// `dimensions` is what marks the leftovers as a rubric rather than a typo, and
+// it is the same key normalizeRubricBody insists on before it will treat a
+// document as a definition. Without that gate this would be a catch-all by
+// another name, filing a misspelled `name` as rubric content and publishing it
+// to the service instead of reporting it.
+//
+// Structural rather than positional on purpose: an earlier version marked
+// entries by index before resolution, which cannot see the evaluators inside a
+// config that is itself behind a `$ref` -- the layout the README documents.
+func nestSplicedRubrics(resolved map[string]any) {
+	entries, _ := resolved["evaluators"].([]any)
+	for _, entry := range entries {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		// A file already shaped `{name, definition}` needs no rescue, and
+		// merging into it would guess at which one the author meant.
+		if _, has := m["definition"]; has {
+			continue
+		}
+		if _, isRubric := m["dimensions"]; !isRubric {
+			continue
+		}
+		rubric := map[string]any{}
+		for key, value := range m {
+			if !evaluatorDeclKeys[key] {
+				rubric[key] = value
+				delete(m, key)
+			}
+		}
+		m["definition"] = rubric
+	}
 }
 
 // DecodeEvalConfig is the one strict decoder, so every route into a

@@ -16,7 +16,7 @@ import (
 const sampleEvalConfig = `
 datasets:
   - name: support-golden
-    source: ./datasets/support-golden.jsonl
+    file: ./datasets/support-golden.jsonl
     version: "1"
   - name: prod-registered
 
@@ -64,7 +64,7 @@ func TestLoadEvalConfig_ParsesAllSections(t *testing.T) {
 
 	require.Len(t, cfg.Datasets, 2)
 	require.Equal(t, "support-golden", cfg.Datasets[0].Name)
-	require.Equal(t, "./datasets/support-golden.jsonl", cfg.Datasets[0].Source)
+	require.Equal(t, "./datasets/support-golden.jsonl", cfg.Datasets[0].File)
 	require.Equal(t, "1", cfg.Datasets[0].Version)
 
 	require.Len(t, cfg.Evaluators, 1)
@@ -159,7 +159,7 @@ func TestDeclarationLookups(t *testing.T) {
 
 	ds, ok := cfg.DatasetDeclaration("support-golden")
 	require.True(t, ok)
-	require.Equal(t, "./datasets/support-golden.jsonl", ds.Source)
+	require.Equal(t, "./datasets/support-golden.jsonl", ds.File)
 
 	_, ok = cfg.DatasetDeclaration("missing")
 	require.False(t, ok)
@@ -193,7 +193,7 @@ func TestOpenEvalConfig_MissingIsNotAnError(t *testing.T) {
 func TestSaveEvalConfig_CreatesTheDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "evals")
 	require.NoError(t, SaveEvalConfig(dir, &EvalConfig{
-		Datasets: []DatasetDecl{{Name: "generated", Source: "./datasets/generated.jsonl"}},
+		Datasets: []DatasetDecl{{Name: "generated", File: "./datasets/generated.jsonl"}},
 	}))
 
 	cfg, err := OpenEvalConfig(dir)
@@ -311,7 +311,7 @@ func TestValidate_Rejects(t *testing.T) {
 		},
 		{
 			name:    "dataset without a name",
-			body:    "datasets:\n  - source: ./d.jsonl\n" + oneEval,
+			body:    "datasets:\n  - file: ./d.jsonl\n" + oneEval,
 			wantErr: "'name' is required",
 		},
 		{
@@ -328,6 +328,18 @@ func TestValidate_Rejects(t *testing.T) {
 			name:    "version pinned alongside a source",
 			body:    "evaluators:\n  - name: q\n    source: ./q.json\n    version: \"3\"\n" + oneEval,
 			wantErr: "cannot be set with `source`",
+		},
+		{
+			name: "rubric both named and written out",
+			body: "evaluators:\n  - name: q\n    source: ./q.json\n" +
+				"    definition:\n      dimensions: []\n" + oneEval,
+			wantErr: "both give the rubric",
+		},
+		{
+			name: "version pinned alongside a definition",
+			body: "evaluators:\n  - name: q\n    version: \"3\"\n" +
+				"    definition:\n      dimensions: []\n" + oneEval,
+			wantErr: "cannot be set with `definition`",
 		},
 		{
 			name: "no evals",

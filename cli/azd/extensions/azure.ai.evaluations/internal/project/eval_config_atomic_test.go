@@ -30,7 +30,7 @@ func TestSaveEvalConfigNeverExposesAHalfWrittenFile(t *testing.T) {
 	path := filepath.Join(dir, "azure.eval.yaml")
 
 	full := &EvalConfig{
-		Datasets: []DatasetDecl{{Name: "golden", Source: "./datasets/golden.jsonl"}},
+		Datasets: []DatasetDecl{{Name: "golden", File: "./datasets/golden.jsonl"}},
 		Evals: []Eval{
 			{Name: "first", EvaluationLevel: "turn"},
 			{Name: "second", EvaluationLevel: "turn"},

@@ -17,7 +17,7 @@ import (
 // the opposite of what a cap asks for, and with nothing said about it.
 func TestNegativeMaxSamplesIsRefused(t *testing.T) {
 	cfg := &EvalConfig{
-		Datasets: []DatasetDecl{{Name: "golden", Source: "./datasets/golden.jsonl"}},
+		Datasets: []DatasetDecl{{Name: "golden", File: "./datasets/golden.jsonl"}},
 		Evals: []Eval{{
 			Name:            "support-quality",
 			Dataset:         "golden",
@@ -38,7 +38,7 @@ func TestNegativeMaxSamplesIsRefused(t *testing.T) {
 // Zero is how a config says "send every row", and has to keep working.
 func TestUnsetMaxSamplesIsStillAllowed(t *testing.T) {
 	cfg := &EvalConfig{
-		Datasets: []DatasetDecl{{Name: "golden", Source: "./datasets/golden.jsonl"}},
+		Datasets: []DatasetDecl{{Name: "golden", File: "./datasets/golden.jsonl"}},
 		Evals: []Eval{{
 			Name:            "support-quality",
 			Dataset:         "golden",

@@ -74,7 +74,7 @@ func newEvalCreateCommand() *cobra.Command {
 			baseDir := filepath.Dir(path)
 			datasetPath := ""
 			if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
-				datasetPath = project.ResolveSource(baseDir, decl.Source)
+				datasetPath = project.ResolveSource(baseDir, decl.File)
 			}
 
 			reconciler := &evalReconciler{ec: ec}

@@ -29,7 +29,7 @@ func TestEvalConfigRoundTripKeepsWhatTheAuthorWrote(t *testing.T) {
       - evaluator: builtin.task_adherence
 datasets:
   - name: golden
-    source: ./datasets/golden.jsonl
+    file: ./datasets/golden.jsonl
 `
 	require.NoError(t, os.WriteFile(path, []byte(authored), 0o600))
 
@@ -77,7 +77,7 @@ func TestEvalConfigAcceptsEveryKeyItWrites(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(path, []byte(`datasets:
   - name: golden
-    source: ./datasets/golden.jsonl
+    file: ./datasets/golden.jsonl
     version: "2"
 evaluators:
   - name: quality

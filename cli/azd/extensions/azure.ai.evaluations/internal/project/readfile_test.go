@@ -59,7 +59,7 @@ func TestLoadEvalConfig_AcceptsAByteOrderMark(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, EvalConfigBase)
 	body := append([]byte{0xEF, 0xBB, 0xBF},
-		[]byte("datasets:\n  - name: d\n    source: ./d.jsonl\n")...)
+		[]byte("datasets:\n  - name: d\n    file: ./d.jsonl\n")...)
 	require.NoError(t, os.WriteFile(path, body, 0o600))
 
 	cfg, err := LoadEvalConfig(path)

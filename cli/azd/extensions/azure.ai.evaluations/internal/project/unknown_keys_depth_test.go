@@ -41,9 +41,9 @@ func TestUnknownKeysAreNamedAtEveryDepth(t *testing.T) {
 		},
 		{
 			where:  "inside a dataset declaration",
-			body:   "datasets:\n  - name: golden\n    sourse: ./rows.jsonl\n",
-			key:    "sourse",
-			nearer: "source",
+			body:   "datasets:\n  - name: golden\n    fil: ./rows.jsonl\n",
+			key:    "fil",
+			nearer: "file",
 			line:   "line 3",
 		},
 	}

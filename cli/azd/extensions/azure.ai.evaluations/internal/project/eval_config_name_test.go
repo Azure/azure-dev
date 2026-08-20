@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const minimalConfig = "datasets:\n  - name: golden\n    source: ./datasets/golden.jsonl\n"
+const minimalConfig = "datasets:\n  - name: golden\n    file: ./datasets/golden.jsonl\n"
 
 // The file is named for azd, the way azure.yaml is.
 func TestEvalConfigPath_IsTheAzdPrefixedName(t *testing.T) {
@@ -44,7 +44,7 @@ func TestSaveEvalConfig_WritesBackOverALegacyFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(legacy, []byte(minimalConfig), 0o600))
 
 	require.NoError(t, SaveEvalConfig(dir, &EvalConfig{
-		Datasets: []DatasetDecl{{Name: "added", Source: "./datasets/added.jsonl"}},
+		Datasets: []DatasetDecl{{Name: "added", File: "./datasets/added.jsonl"}},
 	}))
 
 	body, err := os.ReadFile(legacy)

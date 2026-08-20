@@ -2005,6 +2005,27 @@ func EvaluatorVersionWithSource(index int, evaluator string) error {
 			"on the project", index, evaluator)
 }
 
+// EvaluatorVersionWithDefinition reports the same pin against a rubric written
+// out in the configuration rather than named as a file.
+func EvaluatorVersionWithDefinition(index int, evaluator string) error {
+	return fmt.Errorf(
+		"evaluators[%d] (%s): `version` cannot be set with `definition`, because "+
+			"the service assigns the version when it publishes. Drop `version` to "+
+			"publish this rubric, or drop `definition` to reference a version "+
+			"already on the project", index, evaluator)
+}
+
+// EvaluatorRubricDeclaredTwice reports a rubric both named and written out.
+//
+// Publishing uses the written one, so leaving this to the schema alone would
+// mean the file quietly never got read.
+func EvaluatorRubricDeclaredTwice(index int, evaluator string) error {
+	return fmt.Errorf(
+		"evaluators[%d] (%s): `source` and `definition` both give the rubric; "+
+			"declare one. Keep `definition` to publish what is written here, or "+
+			"keep `source` to publish the file it names", index, evaluator)
+}
+
 // DatasetAndSourceDeclareTheSameThing reports it where there is no index.
 func DatasetAndSourceDeclareTheSameThing() error {
 	return errors.New("`dataset` and `source` both say where rows come from; declare one")

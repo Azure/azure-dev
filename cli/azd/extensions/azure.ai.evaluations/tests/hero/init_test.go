@@ -383,6 +383,6 @@ func TestHeroInitSuppliedDatasetIsNotGenerated(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join(dir, "evals", "azure.eval.yaml"))
 	require.NoError(t, err)
 	require.Contains(t, string(body), "dataset: prod-golden")
-	require.NotContains(t, string(body), "source:",
+	require.NotContains(t, string(body), "file:",
 		"a registered dataset has nothing to upload")
 }

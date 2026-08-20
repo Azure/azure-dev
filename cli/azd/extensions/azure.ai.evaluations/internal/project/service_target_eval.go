@@ -15,7 +15,6 @@ import (
 	"azureaieval/internal/messages"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -154,14 +153,14 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// 1. Datasets the configuration owns. Paths are kept so an eval that names
 	// one can derive its columns without reading the blob back.
 	//
-	// A declaration with no `source:` is included rather than skipped: it names
+	// A declaration with no `file:` is included rather than skipped: it names
 	// a dataset that is already registered, and reconciling it is what confirms
 	// it is really there and settles which version a `version:` pin selected.
 	// Skipping it would leave a misspelled name to surface as a failed run.
 	datasetPaths := map[string]string{}
 	for _, decl := range cfg.Datasets {
 		report(progress, messages.ReconcilingDataset(decl.Name))
-		localPath := ResolveSource(baseDir, decl.Source)
+		localPath := ResolveSource(baseDir, decl.File)
 		datasetPaths[decl.Name] = localPath
 		version, changed, err := reconciler.EnsureDataset(ctx, decl, localPath)
 		if err != nil {
@@ -291,9 +290,9 @@ func EvalConfigFromService(svc *azdext.ServiceConfig, projectRoot string) (*Eval
 
 	values := props.AsMap()
 	if projectRoot != "" {
-		resolved, err := foundry.ResolveFileRefs(values, projectRoot)
+		resolved, err := resolveEvalRefs(values, projectRoot)
 		if err != nil {
-			return nil, messages.ResolvingServiceRefs(err)
+			return nil, err
 		}
 		values = resolved
 	}
@@ -380,6 +379,13 @@ func Fingerprint(path string) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// FingerprintBytes hashes content that was never a file, which is how a rubric
+// written in the configuration gets the change detection a rubric file has.
+func FingerprintBytes(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // FingerprintGroup hashes an eval's own declaration.

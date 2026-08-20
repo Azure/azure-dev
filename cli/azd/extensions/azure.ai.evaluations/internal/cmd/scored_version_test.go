@@ -16,16 +16,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeCatalog writes a configuration whose dataset carries the given source
-// and version, either of which may be empty.
-func writeCatalog(t *testing.T, source, version string) string {
+// writeCatalog writes a configuration whose dataset carries the given file and
+// version, either of which may be empty.
+func writeCatalog(t *testing.T, file, version string) string {
 	t.Helper()
 
 	dir := t.TempDir()
 	entry := "  - name: golden"
-	if source != "" {
-		require.NoError(t, os.WriteFile(filepath.Join(dir, source), []byte("{\"query\":\"hi\"}\n"), 0o600))
-		entry += "\n    source: ./" + source
+	if file != "" {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte("{\"query\":\"hi\"}\n"), 0o600))
+		entry += "\n    file: ./" + file
 	}
 	if version != "" {
 		entry += "\n    version: \"" + version + "\""
@@ -44,7 +44,7 @@ evals:
 
 // The label a run carries has to follow the same branch its rows did.
 //
-// A declaration with both `source:` and `version:` reads the file from disk, so
+// A declaration with both `file:` and `version:` reads the file from disk, so
 // the pin says nothing about what was scored: the recorded version is the one
 // this file's content published, and checkDatasetRegistered has already
 // confirmed the rows match it.
@@ -64,7 +64,7 @@ func TestARunOverALocalFileIsLabelledWithWhatTheFilePublished(t *testing.T) {
 }
 
 // And with no fingerprint there is nothing tying the file to that version. A
-// dataset that was registered and has since gained a `source:` has a recorded
+// dataset that was registered and has since gained a `file:` has a recorded
 // version and no fingerprint, and the rows are whatever the file now holds.
 func TestALocalFileWithNoFingerprintIsLabelledWithNothing(t *testing.T) {
 	env := &testEnvServer{values: map[string]string{

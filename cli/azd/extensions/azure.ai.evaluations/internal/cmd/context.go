@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"azureaieval/internal/foundry/projectctx"
@@ -417,12 +418,21 @@ const (
 //
 //  1. --path
 //  2. the path `init` recorded in the azd environment
-//  3. ./evals
+//  3. the `$ref` on the `azure.ai.eval` service in azure.yaml
+//  4. ./evals
 //
-// The middle level is what stops `--path` from having to be repeated on every
-// later command. Without it, `init --path ./quality` wrote a configuration that
-// `run` then looked for under ./evals and reported as missing -- while
-// azure.yaml's $ref pointed at it correctly the whole time.
+// The middle levels are what stop `--path` from having to be repeated on every
+// later command. Without the recorded one, `init --path ./quality` wrote a
+// configuration that `run` then looked for under ./evals and reported as
+// missing -- while azure.yaml's $ref pointed at it correctly the whole time.
+//
+// That $ref is now read rather than only written, which is what makes the rule
+// survive a fresh clone. The recorded path lives in the azd environment, and an
+// azd environment is not in the repository: check the project out somewhere
+// else and level 2 is empty, so a configuration the project declares perfectly
+// well under ./config was reported missing by every command while `azd up`
+// deployed it. Reading the declaration is also what keeps one answer to "where
+// is the configuration" instead of one for deploy and one for everything else.
 //
 // This is the whole rule, and every command that reads the configuration goes
 // through it. Stating it here and applying it on only some paths is how
@@ -432,10 +442,17 @@ const (
 //
 // recorded tells absence apart from failure, and the two get different
 // answers. A project with no azd environment has genuinely recorded nothing,
-// so ./evals is right. An azd that could not be asked has said nothing at all,
-// and defaulting on that would write the second configuration all over again --
-// this time for a reason nobody could reproduce.
-func evalDirCascade(flagValue string, recorded func() (string, error)) (string, error) {
+// so the next level is right. An azd that could not be asked has said nothing
+// at all, and defaulting on that would write the second configuration all over
+// again -- this time for a reason nobody could reproduce.
+//
+// declared is best-effort by contrast: outside an azd project there is no
+// azure.yaml to read, which is ordinary rather than a failure.
+func evalDirCascade(
+	flagValue string,
+	recorded func() (string, error),
+	declared func() string,
+) (string, error) {
 	if flagValue != "" {
 		return flagValue, nil
 	}
@@ -446,7 +463,46 @@ func evalDirCascade(flagValue string, recorded func() (string, error)) (string, 
 	if path != "" {
 		return path, nil
 	}
+	if declared != nil {
+		if dir := declared(); dir != "" {
+			return dir, nil
+		}
+	}
 	return project.DefaultEvalDir, nil
+}
+
+// declaredEvalConfig reads the location azure.yaml's `$ref` points at.
+//
+// The service entry is the project's own statement of where its evaluation
+// configuration lives, and `azd up` has always deployed from it. The full path
+// is returned rather than its directory: the `$ref` names a file, and a project
+// declaring `./config/nightly.yaml` means that file, not whatever
+// `azure.eval.yaml` happens to sit beside it.
+//
+// Returns empty outside an azd project, or when nothing declares the eval host.
+func declaredEvalConfig(ctx context.Context, azdClient *azdext.AzdClient) string {
+	if azdClient == nil {
+		return ""
+	}
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return ""
+	}
+	for _, svc := range resp.GetProject().GetServices() {
+		if svc.GetHost() != project.EvalHost {
+			continue
+		}
+		props := svc.GetAdditionalProperties()
+		if props == nil {
+			continue
+		}
+		ref, _ := props.AsMap()["$ref"].(string)
+		if ref == "" {
+			continue
+		}
+		return filepath.Clean(filepath.FromSlash(ref))
+	}
+	return ""
 }
 
 // evalDir is the cascade for a command that already holds an azd connection.
@@ -456,6 +512,8 @@ func (ec *evalContext) evalDir(ctx context.Context, flagValue string) (string, e
 			return "", nil
 		}
 		return readRecordedEvalPath(ctx, ec.azdClient, ec.envName)
+	}, func() string {
+		return declaredEvalConfig(ctx, ec.azdClient)
 	})
 }
 
@@ -494,6 +552,13 @@ func resolveEvalDir(ctx context.Context, flagValue string) (string, error) {
 			return "", nil
 		}
 		return readRecordedEvalPath(ctx, azdClient, env.GetEnvironment().GetName())
+	}, func() string {
+		azdClient, err := azdext.NewAzdClient()
+		if err != nil {
+			return ""
+		}
+		defer azdClient.Close()
+		return declaredEvalConfig(ctx, azdClient)
 	})
 }
 

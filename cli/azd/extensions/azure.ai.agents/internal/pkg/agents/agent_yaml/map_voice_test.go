@@ -10,8 +10,6 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 // ---------------------------------------------------------------------------
 // isOpenAIVoice / buildVoiceConfig
 // ---------------------------------------------------------------------------
@@ -283,10 +281,13 @@ func TestCreateVoiceAgentAPIRequestFlat_AdvancedSettingsWireShape(t *testing.T) 
 	pitch := "+0Hz"
 	rate := "+0%"
 	volume := "+0%"
+	instructions := "You are {{persona}}, a concise voice assistant."
+	language := "en-US"
+	prompt := "Contoso terms"
 	agent := VoiceAgent{
 		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-advanced"},
 		Model:           &Model{Id: "gpt-realtime"},
-		Instructions:    ptr("You are {{persona}}, a concise voice assistant."),
+		Instructions:    &instructions,
 		StructuredInputs: map[string]any{
 			"persona": map[string]any{"description": "Assistant persona", "defaultValue": "Ada"},
 		},
@@ -305,13 +306,13 @@ func TestCreateVoiceAgentAPIRequestFlat_AdvancedSettingsWireShape(t *testing.T) 
 					Languages:         []string{"en-US"},
 					AutoTruncate:      &autoTruncate,
 				},
-				Transcription: &VoiceTranscription{Model: "whisper-1", Language: ptr("en-US"), Prompt: ptr("Contoso terms")},
+				Transcription: &VoiceTranscription{Model: "whisper-1", Language: &language, Prompt: &prompt},
 			},
 			Output: &VoiceAudioOutput{
 				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: &outRate},
 				Voice: &VoiceConfig{
 					Type: "azure_standard", Name: "en-US-AvaNeural", Style: &style,
-					Pitch: &pitch, Rate: &rate, Locale: ptr("en-US"), Volume: &volume,
+					Pitch: &pitch, Rate: &rate, Locale: &language, Volume: &volume,
 				},
 				Speed: &speed,
 			},

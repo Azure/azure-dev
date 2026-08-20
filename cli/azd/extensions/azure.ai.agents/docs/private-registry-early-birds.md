@@ -20,6 +20,33 @@ commit credentials or environment files.
 - For scenario 1, an existing registry connection on the Foundry project.
 - For scenario 2, the connection target, metadata, and credential values required by your registry.
 
+### Brief JFrog OIDC setup
+
+Skip this section if the registry connection already works. The feature does not configure JFrog or Entra ID for you.
+
+1. Get the Foundry project's managed identity and tenant:
+
+   ```bash
+   export PROJECT_ID='/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>'
+   export PROJECT_PRINCIPAL_ID=$(az resource show --ids "$PROJECT_ID" \
+     --api-version 2025-06-01 --query identity.principalId -o tsv)
+   export PROJECT_TENANT_ID=$(az resource show --ids "$PROJECT_ID" \
+     --api-version 2025-06-01 --query identity.tenantId -o tsv)
+   ```
+
+2. Create or select an Entra application to use as the token audience. Record its application (client) ID.
+3. Create a JFrog OIDC integration with provider type **Azure**, issuer
+   `https://sts.windows.net/<tenant-id>/`, the Entra application ID, and a unique provider name.
+4. Add a JFrog identity mapping whose `oid` claim equals `PROJECT_PRINCIPAL_ID`. Map it to a dedicated JFrog user or
+   group with read access only to the required Docker repository; do not use an administrator identity.
+5. Create the Foundry project connection with the registry URL and these `CustomKeys` values:
+   - `audience`: the Entra application ID
+   - `tokenEndpoint`: `/access/api/v1/oidc/token`
+   - `body.provider_name`: the JFrog OIDC provider name
+
+Set connection metadata `type: registry_connection` and `mode: oauth_token_exchange`. Scenario 2 below shows the full
+connection shape.
+
 ## Build matching azd core and extension binaries
 
 Use an isolated azd configuration so this test does not replace extensions or authentication in your normal azd
@@ -41,26 +68,27 @@ AZD_COMMIT=$(git -C "$EARLY_BIRDS_ROOT" rev-parse HEAD)
 go build \
   -ldflags="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=$AZD_VERSION (commit $AZD_COMMIT)'" \
   -o "$EARLY_BIRDS_ROOT/bin/azd"
-export AZD_EARLY_BIRDS="$EARLY_BIRDS_ROOT/bin/azd"
 export PATH="$EARLY_BIRDS_ROOT/bin:$PATH"
+hash -r
 
-"$AZD_EARLY_BIRDS" version
-"$AZD_EARLY_BIRDS" auth login
-"$AZD_EARLY_BIRDS" ext install microsoft.azd.extensions --source azd --no-prompt
-"$AZD_EARLY_BIRDS" ext install azure.ai.inspector --source azd --no-prompt
+command -v azd
+azd version
+azd auth login
+azd ext install microsoft.azd.extensions --source azd --no-prompt
+azd ext install azure.ai.inspector --source azd --no-prompt
 
 cd "$EARLY_BIRDS_ROOT/cli/azd/extensions/azure.ai.projects"
-"$AZD_EARLY_BIRDS" x build
-"$AZD_EARLY_BIRDS" x pack
-"$AZD_EARLY_BIRDS" x publish
-"$AZD_EARLY_BIRDS" ext install azure.ai.projects --source local --force --no-prompt
+azd x build
+azd x pack
+azd x publish
+azd ext install azure.ai.projects --source local --force --no-prompt
 
 cd "$EARLY_BIRDS_ROOT/cli/azd/extensions/azure.ai.agents"
-"$AZD_EARLY_BIRDS" x build
-"$AZD_EARLY_BIRDS" x pack
-"$AZD_EARLY_BIRDS" x publish
-"$AZD_EARLY_BIRDS" ext install azure.ai.agents --source local --force --no-prompt
-"$AZD_EARLY_BIRDS" ext list
+azd x build
+azd x pack
+azd x publish
+azd ext install azure.ai.agents --source local --force --no-prompt
+azd ext list
 ```
 
 Expected versions:
@@ -70,7 +98,8 @@ Expected versions:
 - `azure.ai.agents` reports `1.0.0-beta.10` and is installed from the local build.
 - The agents extension's temporary `replace` directive compiles it against core from this checkout.
 
-Keep `AZD_CONFIG_DIR` and `AZD_EARLY_BIRDS` set in every shell used below.
+In every new shell, set `EARLY_BIRDS_ROOT` and `AZD_CONFIG_DIR`, prepend `$EARLY_BIRDS_ROOT/bin` to `PATH`, and run
+`hash -r` before using `azd`.
 
 ## Scenario 1: initialize a new local azd project
 
@@ -85,7 +114,7 @@ export AGENT_NAME='<unique-agent-name>'
 mkdir -p "$EARLY_BIRDS_ROOT/.early-birds/greenfield"
 cd "$EARLY_BIRDS_ROOT/.early-birds/greenfield"
 
-"$AZD_EARLY_BIRDS" ai agent init --no-prompt \
+azd ai agent init --no-prompt \
   --agent-name "$AGENT_NAME" \
   --image "$IMAGE" \
   --project-id "$PROJECT_ID" \
@@ -93,9 +122,9 @@ cd "$EARLY_BIRDS_ROOT/.early-birds/greenfield"
   --protocol invocations
 
 cd "$AGENT_NAME"
-"$AZD_EARLY_BIRDS" deploy --no-prompt
+azd deploy --no-prompt
 printf '{"message":"Hello from the private registry early-birds test"}\n' > request.json
-"$AZD_EARLY_BIRDS" ai agent invoke "$AGENT_NAME" \
+azd ai agent invoke "$AGENT_NAME" \
   --protocol invocations \
   --new-session \
   --input-file request.json
@@ -162,25 +191,25 @@ project and registry values in a dedicated azd environment, provision, and deplo
 ```bash
 cd '<existing-azd-project-directory>'
 
-"$AZD_EARLY_BIRDS" env new '<unique-environment-name>' --no-prompt
-"$AZD_EARLY_BIRDS" env set AZURE_SUBSCRIPTION_ID '<subscription-id>'
-"$AZD_EARLY_BIRDS" env set AZURE_TENANT_ID '<tenant-id>'
-"$AZD_EARLY_BIRDS" env set AZURE_LOCATION '<azure-region>'
-"$AZD_EARLY_BIRDS" env set AZURE_RESOURCE_GROUP '<existing-resource-group>'
-"$AZD_EARLY_BIRDS" env set AZURE_AI_PROJECT_ID '<foundry-project-resource-id>'
-"$AZD_EARLY_BIRDS" env set AZURE_AI_ACCOUNT_NAME '<account>'
-"$AZD_EARLY_BIRDS" env set AZURE_AI_PROJECT_NAME '<project>'
-"$AZD_EARLY_BIRDS" env set FOUNDRY_PROJECT_ENDPOINT 'https://<account>.services.ai.azure.com/api/projects/<project>'
-"$AZD_EARLY_BIRDS" env set USE_EXISTING_AI_PROJECT true
-"$AZD_EARLY_BIRDS" env set REGISTRY_URL 'https://<registry-host>'
-"$AZD_EARLY_BIRDS" env set REGISTRY_AUDIENCE '<registry-audience>'
-"$AZD_EARLY_BIRDS" env set REGISTRY_TOKEN_ENDPOINT '<registry-token-endpoint>'
-"$AZD_EARLY_BIRDS" env set REGISTRY_PROVIDER '<registry-provider-name>'
+azd env new '<unique-environment-name>' --no-prompt
+azd env set AZURE_SUBSCRIPTION_ID '<subscription-id>'
+azd env set AZURE_TENANT_ID '<tenant-id>'
+azd env set AZURE_LOCATION '<azure-region>'
+azd env set AZURE_RESOURCE_GROUP '<existing-resource-group>'
+azd env set AZURE_AI_PROJECT_ID '<foundry-project-resource-id>'
+azd env set AZURE_AI_ACCOUNT_NAME '<account>'
+azd env set AZURE_AI_PROJECT_NAME '<project>'
+azd env set FOUNDRY_PROJECT_ENDPOINT 'https://<account>.services.ai.azure.com/api/projects/<project>'
+azd env set USE_EXISTING_AI_PROJECT true
+azd env set REGISTRY_URL 'https://<registry-host>'
+azd env set REGISTRY_AUDIENCE '<registry-audience>'
+azd env set REGISTRY_TOKEN_ENDPOINT '<registry-token-endpoint>'
+azd env set REGISTRY_PROVIDER '<registry-provider-name>'
 
-"$AZD_EARLY_BIRDS" provision --no-prompt
-"$AZD_EARLY_BIRDS" deploy --no-prompt
+azd provision --no-prompt
+azd deploy --no-prompt
 printf '{"message":"Hello from the declarative private registry test"}\n' > request.json
-"$AZD_EARLY_BIRDS" ai agent invoke 'private-registry-agent' \
+azd ai agent invoke 'private-registry-agent' \
   --protocol invocations \
   --new-session \
   --input-file request.json

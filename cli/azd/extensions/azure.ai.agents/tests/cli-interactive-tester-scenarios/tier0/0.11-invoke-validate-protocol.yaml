@@ -17,7 +17,7 @@ pre:
 
 goals:
   - "Run invoke with '--protocol bogus' and a prompt string."
-  - "Confirm it exits non-zero immediately with a clear 'unsupported protocol' message that lists the supported protocols (responses, invocations)."
+  - "Confirm it exits non-zero immediately with a clear 'unsupported protocol' message that lists the supported protocols (responses, invocations, a2a)."
   - "Confirm it does NOT make a network call, prompt, or hang."
   - "Take a screenshot of the error output."
   - "Report a finding if it hangs, makes a network call before validating, or the error does not name the supported protocols."

@@ -62,11 +62,15 @@ func TestEvalConfigFromServiceAcceptsADeclaredConfig(t *testing.T) {
 	assert.Equal(t, "golden", cfg.Datasets[0].Name)
 }
 
-// `$ref` is a directive rather than configuration. ResolveFileRefs replaces it
-// with the file's content, but it survives when resolution was skipped, and a
-// strict decoder would then refuse a config for carrying the very thing that
-// pointed at it.
-func TestEvalConfigFromServiceIgnoresTheRefDirective(t *testing.T) {
+// An include reached without a project directory is refused rather than
+// discarded.
+//
+// Resolution was skipped when there was nowhere to resolve against, and the
+// directive was then deleted so the strict decoder would not trip on it. This
+// fixture shows the cost: a service mixing an include with inline content
+// deployed only the inline half, and the failure surfaced as a missing eval
+// rather than as the include nobody could read.
+func TestARefWithoutAProjectRootIsRefused(t *testing.T) {
 	svc := serviceWith(t, map[string]any{
 		"$ref": "./evals/azure.eval.yaml",
 		"evals": []any{map[string]any{
@@ -75,8 +79,8 @@ func TestEvalConfigFromServiceIgnoresTheRefDirective(t *testing.T) {
 		}},
 	})
 
-	cfg, err := EvalConfigFromService(svc, "")
+	_, err := EvalConfigFromService(svc, "")
 
-	require.NoError(t, err)
-	require.Len(t, cfg.Evals, 1)
+	require.Error(t, err, "half a configuration is not a configuration")
+	assert.Contains(t, err.Error(), "$ref")
 }

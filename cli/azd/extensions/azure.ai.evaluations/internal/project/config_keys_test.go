@@ -51,11 +51,12 @@ func TestEvalConfigKeys(t *testing.T) {
 		"the top-level shape is the spec's configuration model")
 }
 
-// An eval names what it evaluates, what it reads, and how to grade it.
+// An eval names what it evaluates, what it reads, and how to grade it, or is
+// pulled in whole with `$ref`.
 func TestEvalKeys(t *testing.T) {
 	assert.ElementsMatch(t,
 		[]string{
-			"name", "id", "description", "dataset", "source",
+			"$ref", "name", "id", "description", "dataset", "source",
 			"evaluation_level", "max_samples", "evaluators", "target",
 		},
 		yamlKeys(t, Eval{}))
@@ -87,7 +88,8 @@ func TestSourceDeclKeys(t *testing.T) {
 // and saves the file writes the author's include back out instead of inlining
 // it.
 func TestCatalogKeys(t *testing.T) {
-	assert.ElementsMatch(t, []string{"name", "file", "version"}, yamlKeys(t, DatasetDecl{}))
+	assert.ElementsMatch(t,
+		[]string{"$ref", "name", "file", "version"}, yamlKeys(t, DatasetDecl{}))
 	assert.ElementsMatch(t,
 		[]string{"$ref", "name", "source", "version", "definition"},
 		yamlKeys(t, EvaluatorDecl{}))

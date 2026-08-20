@@ -53,8 +53,20 @@ evals:
 `azd up` reconciles **datasets → evaluators → eval groups**, in that order,
 because a group references the versions the first two resolve to.
 
-Relative paths inside a `$ref`'d file resolve against **that file's**
+Relative paths inside the `$ref`'d configuration resolve against **that file's**
 directory, so `./datasets/x.jsonl` above means `evals/datasets/x.jsonl`.
+
+That holds for the configuration as a whole. It does **not** hold for a `$ref`
+on a single catalog entry: azd rebases only the path keys it owns, so a relative
+`source:` written inside `evals/evaluators/quality.yaml` still resolves against
+`azure.eval.yaml` and will not be found. An entry pulled in from its own file
+should carry the rubric under `definition:` rather than point at a second file:
+
+```yaml
+evaluators:
+  - $ref: ./evaluators/quality.json    # the rubric itself, not a pointer to one
+    name: quality
+```
 
 ### Repeated deploys do not create redundant versions
 

@@ -1057,7 +1057,10 @@ func DatasetNotGeneratedYet(dataset, path string) error {
 	return fmt.Errorf(
 		"its rows %s have not been generated yet. "+
 			"Run `azd ai eval generate --dataset --dataset-name %s` to write them, "+
-			"or point the declaration at a .jsonl you already have",
+			"or point the declaration at a .jsonl you already have. "+
+			"If this entry came from a `$ref`, note that a relative `file:` inside "+
+			"the referenced file resolves against azure.eval.yaml rather than against "+
+			"that file -- write the path relative to the configuration instead",
 		filepath.ToSlash(path), shellArg(dataset))
 }
 
@@ -1222,7 +1225,10 @@ func EvaluatorNotGeneratedYet(evaluator, path string) error {
 	return fmt.Errorf(
 		"its definition %s has not been generated yet. "+
 			"Run `azd ai eval generate --evaluator --evaluator-name %s` to write it, "+
-			"or drop the evaluator from azure.eval.yaml",
+			"or drop the evaluator from azure.eval.yaml. "+
+			"If this entry came from a `$ref`, note that a relative `source:` inside "+
+			"the referenced file resolves against azure.eval.yaml rather than against "+
+			"that file -- carry the rubric under `definition:` instead",
 		filepath.ToSlash(path), shellArg(evaluator))
 }
 
@@ -1412,6 +1418,27 @@ func ServiceCarriesNoConfig(service string) error {
 // ResolvingServiceRefs reports a $ref that could not be followed.
 func ResolvingServiceRefs(err error) error {
 	return fmt.Errorf("resolving $ref in the eval service configuration: %w", err)
+}
+
+// RefNeedsAProjectRoot reports an include reached without a directory to
+// resolve it against.
+func RefNeedsAProjectRoot(service string) error {
+	return fmt.Errorf(
+		"service %q uses `$ref`, but the project directory could not be determined, "+
+			"so the referenced file cannot be found. Run from inside the azd project, "+
+			"or inline the configuration this service points at",
+		service)
+}
+
+// CatalogNameBehindAnInclude reports a name declared through a `$ref`, which
+// this command cannot edit in place.
+func CatalogNameBehindAnInclude(kind, name string) error {
+	return fmt.Errorf(
+		"%s %q is already declared through a `$ref`, so this command cannot update "+
+			"it here: adding a second entry would collide with the first only after "+
+			"the include is resolved. Edit the referenced file, or generate under a "+
+			"different name",
+		kind, name)
 }
 
 // ReadingServiceConfig reports the service entry failing to serialize.

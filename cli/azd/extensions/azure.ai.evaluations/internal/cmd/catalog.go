@@ -66,6 +66,52 @@ func addEvaluatorToCatalog(cmd *cobra.Command, evalDir string, ref *project.Arti
 	})
 }
 
+// checkNameNotBehindAnInclude refuses a name whose entry lives in another file.
+//
+// Two shapes reach this. A pure `$ref` has no name here at all, so the duplicate
+// scan had nothing to match on and appended a second entry with the same name --
+// a collision that surfaced only on the next resolving read. A `$ref` carrying
+// an overlay `name` does match, and updating it in place writes `source:` beside
+// the directive, so resolution then produces a rubric and a source and the
+// configuration is rejected for declaring it twice. Neither is editable here.
+//
+// A configuration that will not resolve is left to the commands that resolve it:
+// failing a generate over an unrelated broken include would be its own surprise.
+func checkNameNotBehindAnInclude(evalDir string, asWritten *project.EvalConfig, kind, name string) error {
+	if ref, ok := catalogEntryRef(asWritten, kind, name); ok {
+		if ref != "" {
+			return messages.CatalogNameBehindAnInclude(kind, name)
+		}
+		return nil
+	}
+	resolved, err := project.OpenEvalConfig(evalDir)
+	if err != nil || resolved == nil {
+		return nil
+	}
+	if _, ok := catalogEntryRef(resolved, kind, name); ok {
+		return messages.CatalogNameBehindAnInclude(kind, name)
+	}
+	return nil
+}
+
+// catalogEntryRef returns the include this entry was written as, and whether the
+// configuration names it at all.
+func catalogEntryRef(cfg *project.EvalConfig, kind, name string) (string, bool) {
+	if cfg == nil {
+		return "", false
+	}
+	if kind == "dataset" {
+		if decl, ok := cfg.DatasetDeclaration(name); ok {
+			return decl.Ref, true
+		}
+		return "", false
+	}
+	if decl, ok := cfg.EvaluatorDeclaration(name); ok {
+		return decl.Ref, true
+	}
+	return "", false
+}
+
 // updateCatalog applies a change to the configuration and writes it back.
 //
 // A missing configuration is created holding only the catalog. `generate` runs
@@ -95,6 +141,9 @@ func updateCatalog(
 	created := cfg == nil
 	if created {
 		cfg = &project.EvalConfig{}
+	}
+	if err := checkNameNotBehindAnInclude(evalDir, cfg, kind, ref.Name); err != nil {
+		return err
 	}
 	if !apply(cfg) {
 		return nil

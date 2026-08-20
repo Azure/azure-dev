@@ -29,11 +29,18 @@ type EvalConfig struct {
 // DatasetDecl is a catalog entry. A local File is uploaded on deploy; without
 // one the name must already resolve to a registered dataset.
 //
-// Deliberately not a `$ref`: that directive replaces a definition with one
-// loaded from a YAML or JSON file, and these rows are an artifact to publish.
-// A `.jsonl` is neither, so there would be nothing to splice.
+// Deliberately no `$ref` in place of `file`: that directive replaces a
+// definition with one loaded from a YAML or JSON file, and these rows are an
+// artifact to publish. A `.jsonl` is neither, so there would be nothing to
+// splice.
+//
+// Ref is the directive an author may still write to load this whole entry from
+// its own file. Core resolves it on every node, so the commands that use the
+// configuration never see it -- but the ones that read, modify and save do, and
+// modelling it is what keeps them from refusing a file `azd up` accepts.
 type DatasetDecl struct {
-	Name    string `yaml:"name"              json:"name"`
+	Ref     string `yaml:"$ref,omitempty"    json:"$ref,omitempty"`
+	Name    string `yaml:"name,omitempty"    json:"name,omitempty"`
 	File    string `yaml:"file,omitempty"    json:"file,omitempty"`
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 }
@@ -70,7 +77,8 @@ type EvaluatorDecl struct {
 // from a source such as production traces. Target is what gets invoked, and is
 // a separate axis — an eval can read traces and invoke nothing.
 type Eval struct {
-	Name            string                 `yaml:"name"                        json:"name"`
+	Ref             string                 `yaml:"$ref,omitempty"              json:"$ref,omitempty"`
+	Name            string                 `yaml:"name,omitempty"              json:"name,omitempty"`
 	ID              string                 `yaml:"id,omitempty"                json:"id,omitempty"`
 	Description     string                 `yaml:"description,omitempty"       json:"description,omitempty"`
 	Dataset         string                 `yaml:"dataset,omitempty"           json:"dataset,omitempty"`

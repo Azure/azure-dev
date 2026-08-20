@@ -8,8 +8,13 @@
   "properties": {
     "datasets": {
       "type": "array",
-      "description": "Catalog of named datasets. An entry with a file is uploaded on deploy; without one the name must already resolve to a registered dataset.",
-      "items": { "$ref": "#/definitions/DatasetDecl" }
+      "description": "Catalog of named datasets. An entry with a file is uploaded on deploy; without one the name must already resolve to a registered dataset. An entry may instead be a $ref to a file holding the declaration.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/DatasetDecl" },
+          { "$ref": "#/definitions/FileRef" }
+        ]
+      }
     },
     "evaluators": {
       "type": "array",
@@ -23,8 +28,13 @@
     },
     "evals": {
       "type": "array",
-      "description": "The evaluations defined over the catalogs. A list, because one target is normally gated by more than one evaluation.",
-      "items": { "$ref": "#/definitions/Eval" }
+      "description": "The evaluations defined over the catalogs. A list, because one target is normally gated by more than one evaluation. An entry may instead be a $ref to a file holding the eval.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/Eval" },
+          { "$ref": "#/definitions/FileRef" }
+        ]
+      }
     }
   },
   "definitions": {

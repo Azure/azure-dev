@@ -299,6 +299,13 @@ func EvalConfigFromService(svc *azdext.ServiceConfig, projectRoot string) (*Eval
 			return nil, err
 		}
 		values = resolved
+	} else if containsRefDirective(values) {
+		// Without a project root there is nothing to resolve paths against, and
+		// deleting the directive below would deploy a silently truncated
+		// configuration: an entry that mixes inline content with an include
+		// loses only the included half, and the failure then names a missing
+		// eval rather than the include nobody could read.
+		return nil, messages.RefNeedsAProjectRoot(svc.GetName())
 	}
 
 	// `$ref` is a directive, not configuration: ResolveFileRefs has already

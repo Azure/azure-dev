@@ -14,7 +14,7 @@ commit credentials or environment files.
 
 ## Prerequisites
 
-- Git and Go 1.26.4.
+- Git and Go 1.26.4 or later. Version 1.26.4 is the minimum toolchain pinned and tested by this branch.
 - Azure access to create, deploy, invoke, and delete agents on a Foundry project.
 - A private image supported by a Foundry registry connection.
 - Permission to create a connection on the Foundry project.

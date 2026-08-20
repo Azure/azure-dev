@@ -164,6 +164,16 @@ func TestResolvePublishScopeDefaultsSimpleActivityToShared(t *testing.T) {
 	require.Equal(t, "shared", scope.flag)
 }
 
+func TestResolvePublishScopeUsesSimpleActivityConfigWhenFlagOmitted(t *testing.T) {
+	t.Parallel()
+
+	packCtx := activityPackContext(project.ActivityUseCaseSimple, "tenant")
+	scope, err := resolvePublishScope(&publishFlags{}, packCtx)
+
+	require.NoError(t, err)
+	require.Equal(t, "tenant", scope.flag)
+}
+
 func TestResolvePublishScopeExplicitFlagOverridesDigitalWorkerConfig(t *testing.T) {
 	t.Parallel()
 
@@ -230,11 +240,40 @@ func TestBuildTeamsAppPackageRequestPublishMetadataPrecedence(t *testing.T) {
 	require.Equal(t, "Flag Digital Worker", explicit.AgentDisplayName)
 }
 
+func TestBuildTeamsAppPackageRequestUsesPublishMetadataForSimpleActivity(t *testing.T) {
+	t.Parallel()
+
+	configured := buildTeamsAppPackageRequest("", teamsAppRequestOptions{
+		publish: activityPublishConfig(activityPackContext(project.ActivityUseCaseSimple, "shared")),
+	})
+	require.Equal(t, "2.3.4", configured.AppVersion)
+	require.Equal(t, "Configured Activity agent", configured.AgentDisplayName)
+	require.Equal(t, "Shared", configured.PublishScope)
+
+	explicit := buildTeamsAppPackageRequest("", teamsAppRequestOptions{
+		displayName: "CLI Activity agent",
+		appVersion:  "9.8.7",
+		scope:       teamsPackScope{flag: "tenant", api: "Tenant"},
+		publish:     activityPublishConfig(activityPackContext(project.ActivityUseCaseSimple, "shared")),
+	})
+	require.Equal(t, "9.8.7", explicit.AppVersion)
+	require.Equal(t, "CLI Activity agent", explicit.AgentDisplayName)
+	require.Equal(t, "Tenant", explicit.PublishScope)
+}
+
 func digitalWorkerPackContext(publishScope string) *teamsPackContext {
+	return activityPackContext(project.ActivityUseCaseDigitalWorker, publishScope)
+}
+
+func activityPackContext(useCase project.ActivityUseCase, publishScope string) *teamsPackContext {
 	return &teamsPackContext{
-		activityProfile: project.ActivityProfile{UseCase: project.ActivityUseCaseDigitalWorker},
+		activityProfile: project.ActivityProfile{UseCase: useCase},
 		activitySettings: &project.ActivitySettings{
-			Publish: &project.DigitalWorkerPublishConfig{PublishScope: publishScope},
+			Publish: &project.DigitalWorkerPublishConfig{
+				PublishScope:     publishScope,
+				AppVersion:       "2.3.4",
+				AgentDisplayName: "Configured Activity agent",
+			},
 		},
 	}
 }

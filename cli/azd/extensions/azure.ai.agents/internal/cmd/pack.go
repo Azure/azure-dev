@@ -66,12 +66,12 @@ permissions, service outage) is reported as a command failure.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.scope, "scope", "personal",
+	cmd.Flags().StringVar(&flags.scope, "scope", "",
 		fmt.Sprintf("Publish scope for the package (%s)", joinScopeHelp()))
 	cmd.Flags().StringVar(&flags.displayName, "display-name", "",
-		"Display name for the Teams app (defaults to the agent name)")
-	cmd.Flags().StringVar(&flags.appVersion, "app-version", "1.0.0",
-		"Version stamped into the Teams app manifest")
+		"Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.")
+	cmd.Flags().StringVar(&flags.appVersion, "app-version", "",
+		"Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.")
 	cmd.Flags().StringVar(&flags.outputDir, "output-dir", "",
 		"Directory to write appPackage.zip to (defaults to the agent source directory)")
 
@@ -84,11 +84,6 @@ type PackAction struct {
 }
 
 func (a *PackAction) Run(ctx context.Context) error {
-	scope, err := resolveTeamsPackScope(a.flags.scope)
-	if err != nil {
-		return err
-	}
-
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return fmt.Errorf("failed to create azd client: %w", err)
@@ -107,15 +102,17 @@ func (a *PackAction) Run(ctx context.Context) error {
 		)
 	}
 
-	displayName := a.flags.displayName
-	if displayName == "" {
-		displayName = packCtx.agentName
+	scope, err := resolvePackScope(a.flags.scope, packCtx)
+	if err != nil {
+		return err
 	}
 
 	request := buildTeamsAppPackageRequest(packCtx.botArmID, teamsAppRequestOptions{
 		scope:       scope,
-		displayName: displayName,
+		agentName:   packCtx.agentName,
+		displayName: a.flags.displayName,
 		appVersion:  a.flags.appVersion,
+		publish:     activityPublishConfig(packCtx),
 	})
 
 	outputPath, err := a.resolveOutputPath(packCtx)
@@ -125,7 +122,7 @@ func (a *PackAction) Run(ctx context.Context) error {
 
 	fmt.Printf(
 		"Packing Teams app %q for agent %q (scope: %s)...\n",
-		displayName,
+		request.AgentDisplayName,
 		packCtx.agentName,
 		scope.flag,
 	)

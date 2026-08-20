@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const tenantAgentApprovalURL = "https://admin.cloud.microsoft/?#/agents/all/requested"
+const tenantAgentApprovalURL = "https://aka.ms/m365agentadmin"
 
 var teamsPublishScopes = []teamsPackScope{
 	{flag: "shared", api: "Shared", summary: "shareable link distribution (no tenant-admin approval required)"},
@@ -53,15 +53,14 @@ Scopes:
 	shared    shareable-link distribution (no tenant-admin approval required)
   tenant    organization-wide catalog (requires IT-admin approval)
 
-For a digital worker, an explicit '--scope' overrides
-'activity.publish.publishScope' in azure.yaml. Digital Worker publish supports
-tenant scope only (also accepts alias: org). When '--scope' is omitted, the
-azure.yaml value is used; if no value is configured, tenant is used.
-Simple activity agents default to 'shared'.
+If `--scope` is specified, it overrides `activity.publish.publishScope` in
+`azure.yaml`. When omitted, azd uses the value from `azure.yaml`; if no value is
+configured, Digital Workers default to `tenant` and simple activity agents default
+to `shared`. Digital Worker publish supports tenant scope only (alias: `org`).
 
-'personal' is not supported here: per-user install is a Teams client action, not a
-store publish. For local testing, run 'azd ai agent pack' and sideload with
-'atk install --scope personal'.
+`personal` is not supported here: per-user install is a Teams client action, not a
+store publish. For local testing, run `azd ai agent pack` and sideload with
+`atk install --scope personal`.
 
 This command requires the agent to have been deployed first ('azd deploy'). Any
 failure (tenant policy, permissions, service outage) is reported as a command
@@ -90,11 +89,11 @@ failure rather than silently skipped.`,
 	}
 
 	cmd.Flags().StringVar(&flags.scope, "scope", "",
-		fmt.Sprintf("Publish scope (%s)", joinScopesHelp(teamsPublishScopes)))
+		fmt.Sprintf("Microsoft 365 publish scope (%s; Digital Workers require tenant)", joinScopesHelp(teamsPublishScopes)))
 	cmd.Flags().StringVar(&flags.displayName, "display-name", "",
-		"Display name for the Teams app (defaults to the agent name)")
+		"Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.")
 	cmd.Flags().StringVar(&flags.appVersion, "app-version", "",
-		"Version stamped into the Teams app manifest (defaults to the configured value or 1.0.0)")
+		"Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.")
 
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
@@ -133,7 +132,7 @@ func (a *PublishAction) Run(ctx context.Context) error {
 		displayName:       a.flags.displayName,
 		appVersion:        a.flags.appVersion,
 		blueprintClientID: packCtx.blueprintClientID,
-		publish:           digitalWorkerPublishConfig(packCtx),
+		publish:           activityPublishConfig(packCtx),
 	})
 
 	if a.flags.output != "json" {
@@ -163,7 +162,7 @@ func (a *PublishAction) Run(ctx context.Context) error {
 func resolvePublishScope(flags *publishFlags, packCtx *teamsPackContext) (teamsPackScope, error) {
 	scopeValue := flags.scope
 	if !flags.scopeSet {
-		if publish := digitalWorkerPublishConfig(packCtx); publish != nil && strings.TrimSpace(publish.PublishScope) != "" {
+		if publish := activityPublishConfig(packCtx); publish != nil && strings.TrimSpace(publish.PublishScope) != "" {
 			scopeValue = publish.PublishScope
 		} else if packCtx.activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
 			scopeValue = "tenant"
@@ -203,11 +202,23 @@ func validateDigitalWorkerPublishScope(useCase project.ActivityUseCase, scope te
 	)
 }
 
-func digitalWorkerPublishConfig(packCtx *teamsPackContext) *project.DigitalWorkerPublishConfig {
-	if packCtx.activityProfile.UseCase != project.ActivityUseCaseDigitalWorker || packCtx.activitySettings == nil {
+func activityPublishConfig(packCtx *teamsPackContext) *project.DigitalWorkerPublishConfig {
+	if packCtx.activitySettings == nil {
 		return nil
 	}
 	return packCtx.activitySettings.Publish
+}
+
+func resolvePackScope(value string, packCtx *teamsPackContext) (teamsPackScope, error) {
+	scopeValue := strings.TrimSpace(value)
+	if scopeValue == "" {
+		if publish := activityPublishConfig(packCtx); publish != nil && strings.TrimSpace(publish.PublishScope) != "" {
+			scopeValue = publish.PublishScope
+		} else {
+			scopeValue = "personal"
+		}
+	}
+	return resolveTeamsPackScope(scopeValue)
 }
 
 func microsoft365APIVersion(packCtx *teamsPackContext) string {

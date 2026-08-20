@@ -112,7 +112,7 @@ func resolveTeamsPackContext(
 		return nil, err
 	}
 
-	effectiveSvc, err := resolveEffectiveAgentServiceConfig(svc, proj.Path)
+	effectiveSvc, err := resolveAgentServiceConfigWithProjectOverrides(svc, proj.Path)
 	if err != nil {
 		return nil, err
 	}

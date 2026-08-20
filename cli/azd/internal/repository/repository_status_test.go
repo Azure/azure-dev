@@ -144,7 +144,7 @@ func TestInitializerConfirmArchivedTemplate(t *testing.T) {
 	t.Run("ArchivedRepositoryAccepted", func(t *testing.T) {
 		console := mockinput.NewMockConsole()
 		console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			require.Equal(t, "Do you want to continue using this archived template?", options.Message)
+			require.Equal(t, "Continue using this archived template?", options.Message)
 			require.Equal(t, false, options.DefaultValue)
 			return true
 		}).Respond(true)
@@ -157,8 +157,9 @@ func TestInitializerConfirmArchivedTemplate(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Contains(t, console.Output()[0], "WARNING:")
-		require.Contains(t, console.Output()[0], "no longer actively maintained")
+		require.Contains(t, console.Output()[0], "archived and no longer maintained")
 		require.Contains(t, console.Output()[1], "security patches")
+		require.NotContains(t, console.Output()[1], "support")
 	})
 
 	t.Run("ArchivedRepositoryDeclined", func(t *testing.T) {

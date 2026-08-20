@@ -687,7 +687,7 @@ func TestAddToProjectPreBuiltImageEnablesPassthrough(t *testing.T) {
 			require.NotNil(t, agentService)
 			require.Equal(t, image, agentService.GetImage())
 			require.Equal(t, "docker", agentService.GetLanguage())
-			require.True(t, project.DockerImagePassthrough(agentService.GetDocker()))
+			require.True(t, agentService.GetDocker().GetImagePassthrough())
 			require.False(t, agentService.GetDocker().GetRemoteBuild())
 			require.NotNil(t, agentService.GetAdditionalProperties())
 			require.Empty(t, agentService.GetEnvironment())

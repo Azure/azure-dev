@@ -6,8 +6,6 @@ package cmd
 import (
 	"testing"
 
-	"azureaiagent/internal/project"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,7 +34,7 @@ func TestDockerProjectOptionsForHostedContainer(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			options := dockerProjectOptionsForHostedContainer(test.image, test.networkInjected)
-			require.Equal(t, test.wantPassthrough, project.DockerImagePassthrough(options))
+			require.Equal(t, test.wantPassthrough, options.GetImagePassthrough())
 			require.Equal(t, test.wantRemoteBuild, options.GetRemoteBuild())
 		})
 	}

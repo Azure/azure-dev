@@ -80,7 +80,6 @@ words:
   - projectconfig
   - projectpkg
   - protocolversionrecord
-  - protowire
   - Qdrant
   - schedulerun
   - Toolsets

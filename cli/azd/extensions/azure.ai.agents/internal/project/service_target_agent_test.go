@@ -623,9 +623,9 @@ func TestInitializeValidatesRegistryConnectionLifecycle(t *testing.T) {
 
 			var dockerOptions *azdext.DockerProjectOptions
 			if test.docker || test.passthrough || test.remoteBuild {
-				dockerOptions = &azdext.DockerProjectOptions{RemoteBuild: test.remoteBuild}
-				if test.passthrough {
-					EnableDockerImagePassthrough(dockerOptions)
+				dockerOptions = &azdext.DockerProjectOptions{
+					RemoteBuild:      test.remoteBuild,
+					ImagePassthrough: test.passthrough,
 				}
 			}
 			provider := &AgentServiceTargetProvider{}
@@ -2141,8 +2141,7 @@ func TestPackage_DelegatesImagePassthroughToCore(t *testing.T) {
 
 			containerStub := &stubContainerServer{packageImage: image}
 			promptStub := &stubPromptServer{selectedIndex: 0}
-			dockerOptions := &azdext.DockerProjectOptions{}
-			EnableDockerImagePassthrough(dockerOptions)
+			dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
 			provider := &AgentServiceTargetProvider{
 				azdClient:           newServiceTargetTestClient(t, containerStub, promptStub),
 				agentDefinitionPath: agentPath,
@@ -2174,8 +2173,7 @@ func TestPackage_ReusesCoreImagePassthroughArtifact(t *testing.T) {
 	dir := t.TempDir()
 	agentPath := writeHostedAgentYAMLWithImage(t, dir, image)
 	containerStub := &stubContainerServer{packageImage: image}
-	dockerOptions := &azdext.DockerProjectOptions{}
-	EnableDockerImagePassthrough(dockerOptions)
+	dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
 	provider := &AgentServiceTargetProvider{
 		azdClient:           newContainerTestClient(t, containerStub),
 		agentDefinitionPath: agentPath,
@@ -2216,8 +2214,7 @@ code_configuration:
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("print('hello')\n"), 0o600))
 
 	containerStub := &stubContainerServer{}
-	dockerOptions := &azdext.DockerProjectOptions{}
-	EnableDockerImagePassthrough(dockerOptions)
+	dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
 	provider := &AgentServiceTargetProvider{
 		azdClient:           newContainerTestClient(t, containerStub),
 		agentDefinitionPath: agentPath,
@@ -2310,8 +2307,7 @@ func TestPublish_DelegatesImagePassthroughToCore(t *testing.T) {
 	dir := t.TempDir()
 	agentPath := writeHostedAgentYAMLWithImage(t, dir, image)
 	containerStub := &stubContainerServer{publishImage: image}
-	dockerOptions := &azdext.DockerProjectOptions{}
-	EnableDockerImagePassthrough(dockerOptions)
+	dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
 	provider := &AgentServiceTargetProvider{
 		azdClient:           newContainerTestClient(t, containerStub),
 		agentDefinitionPath: agentPath,

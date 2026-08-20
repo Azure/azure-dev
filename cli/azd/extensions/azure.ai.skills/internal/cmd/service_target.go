@@ -503,7 +503,7 @@ func hasParentTraversal(p string) bool {
 
 func isInstructionFilePath(instructions string) bool {
 	value := strings.TrimSpace(instructions)
-	if strings.ContainsAny(value, "\r\n") {
+	if strings.ContainsAny(value, " \t\r\n") {
 		return false
 	}
 	switch strings.ToLower(filepath.Ext(value)) {

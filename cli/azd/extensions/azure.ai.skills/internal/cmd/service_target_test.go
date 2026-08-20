@@ -228,6 +228,15 @@ func TestResolveSkillInstructions_MultilineBodyEndingInFileExtensionIsInline(t *
 	assert.Equal(t, instructions, got)
 }
 
+func TestResolveSkillInstructions_SingleLineBodyEndingInFileExtensionIsInline(t *testing.T) {
+	t.Parallel()
+
+	instructions := "Follow README.md"
+	got, err := resolveSkillInstructions("", &azdext.ServiceConfig{Name: "inline"}, instructions)
+	require.NoError(t, err)
+	assert.Equal(t, instructions, got)
+}
+
 func TestResolveSkillInstructions_FilePath(t *testing.T) {
 	t.Parallel()
 

@@ -85,6 +85,7 @@ services:
   support-agent:
     host: azure.ai.agent
     kind: hosted
+    name: support-agent
     project: ./agents/support-agent
     image: ghcr.io/example/support-agent:latest
     uses:

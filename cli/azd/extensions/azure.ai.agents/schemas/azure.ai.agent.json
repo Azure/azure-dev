@@ -144,7 +144,7 @@
       }
     },
     {
-      "$comment": "Digital Workers require a Microsoft 365 publish configuration and the agentic-user template that carries the persisted blueprint identity.",
+      "$comment": "The activity.publish block is shared publish metadata for Activity use cases (including simple). Digital Worker adds stricter requirements: publish must exist, publishScope must be tenant, and agenticUserTemplate is required to carry the persisted blueprint identity.",
       "if": {
         "properties": {
           "activity": {
@@ -176,10 +176,13 @@
   "definitions": {
     "ActivitySettings": {
       "type": "object",
-      "description": "Activity-protocol Teams configuration. Digital Workers require the publish settings below.",
+      "description": "Activity-protocol Teams configuration. The publish block is shared metadata for Activity use cases; digital_worker applies additional constraints via allOf.",
       "properties": {
         "useCase": { "type": "string", "enum": ["simple", "digital_worker"] },
-        "publish": { "$ref": "#/definitions/ActivityPublishConfig" }
+        "publish": {
+          "$ref": "#/definitions/ActivityPublishConfig",
+          "description": "Shared Microsoft 365 app publish metadata used by Activity use cases. For digital_worker, publishScope=tenant and agenticUserTemplate are required."
+        }
       },
       "additionalProperties": false
     },

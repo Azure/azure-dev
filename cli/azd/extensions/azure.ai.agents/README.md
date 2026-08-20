@@ -42,23 +42,26 @@ services:
           communicationProtocol: activityProtocol
 ```
 
-`digital_worker` requires an `agenticUserTemplate` with `id`, `file`,
-`schemaVersion`, and `communicationProtocol`. `publishScope` defaults to `tenant`
-for Digital Workers; when set explicitly for `digital_worker`, it must be
-`tenant`. The publish request sets `publishAsAutopilot` automatically to `true`
-for this use case; users do not need to declare it in YAML. The Agent Identity
-Blueprint ID is generated during deployment and added to the publish request
-automatically.
+The `activity.publish` block is shared Microsoft 365 app publish metadata for
+Activity use cases (including `simple`). For `digital_worker`, azd enforces
+additional constraints: `publish` must be present, `publishScope` must be
+`tenant`, and `agenticUserTemplate` must include `id`, `file`,
+`schemaVersion`, and `communicationProtocol`. The publish request sets
+`publishAsAutopilot` automatically to `true` for this use case; users do not
+need to declare it in YAML. The Agent Identity Blueprint ID is generated during
+deployment and added to the publish request automatically.
 
 ```bash
 azd deploy
 azd ai agent publish
 ```
 
-For simple Activity agents, `publishScope` accepts `shared` or `tenant`; an
-explicit `azd ai agent publish --scope <scope>` overrides the configured value.
-Use `--display-name` and `--app-version` to override the corresponding
-configured publish metadata for one command invocation.
+For `simple` Activity agents, `publishScope` accepts `shared` or `tenant`. For
+`digital_worker`, `publishScope` is always `tenant`.
+An explicit `azd ai agent publish --scope <scope>` overrides the configured
+value where allowed by the use case. Use `--display-name` and `--app-version`
+to override the corresponding configured publish metadata for one command
+invocation.
 
 The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
 move it, which is what you need when running two agents side by side or when a

@@ -173,7 +173,11 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// ones need no publish.
 	for _, decl := range cfg.CustomEvaluators() {
 		report(progress, messages.ReconcilingEvaluator(decl.Name))
-		localPath := ResolveSource(baseDir, decl.Source)
+		// A rubric written out in the configuration has no file to read.
+		localPath := ""
+		if decl.Source != "" {
+			localPath = ResolveSource(baseDir, decl.Source)
+		}
 		version, changed, err := reconciler.EnsureEvaluator(ctx, decl, localPath)
 		if err != nil {
 			return nil, messages.EvaluatorProblem(decl.Name, err)

@@ -24,7 +24,10 @@ func TestRefsAreResolvedInOnePlace(t *testing.T) {
 	const resolver = "resolveEvalRefs"
 
 	callers := map[string][]int{}
-	require.NoError(t, filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+	// The whole extension, not this package: both current routes already live
+	// here, so the plausible place for a second caller is internal/cmd, where a
+	// command wanting resolution would reach for the helper directly.
+	require.NoError(t, filepath.WalkDir("../..", func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}

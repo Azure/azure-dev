@@ -207,12 +207,13 @@ func (c *EvalConfig) EvaluatorDeclaration(name string) (*EvaluatorDecl, bool) {
 	return nil, false
 }
 
-// CustomEvaluators are the catalog entries this configuration owns — the ones
-// carrying a local source, published before the evals that name them.
+// CustomEvaluators are the catalog entries this configuration owns -- the ones
+// carrying a rubric, either as a local source or written out under
+// `definition`, published before the evals that name them.
 func (c *EvalConfig) CustomEvaluators() []EvaluatorDecl {
 	var owned []EvaluatorDecl
 	for _, decl := range c.Evaluators {
-		if decl.Source == "" {
+		if decl.Source == "" && decl.Definition == nil {
 			continue
 		}
 		owned = append(owned, decl)

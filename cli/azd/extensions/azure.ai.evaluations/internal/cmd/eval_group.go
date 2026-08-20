@@ -118,10 +118,14 @@ func newEvalCreateCommand() *cobra.Command {
 			for _, ref := range eval.Evaluators {
 				decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator)
 				// A built-in, or one already registered, has nothing local to publish.
-				if !ok || decl.Source == "" {
+				if !ok || (decl.Source == "" && decl.Definition == nil) {
 					continue
 				}
-				local := project.ResolveSource(baseDir, decl.Source)
+				// A rubric written out in the configuration has no file to read.
+				local := ""
+				if decl.Source != "" {
+					local = project.ResolveSource(baseDir, decl.Source)
+				}
 				version, changed, err := reconciler.EnsureEvaluator(ctx, *decl, local)
 				if err != nil {
 					return messages.EvaluatorProblem(decl.Name, err)

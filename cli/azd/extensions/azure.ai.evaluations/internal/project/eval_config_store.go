@@ -236,6 +236,13 @@ func resolveConfigRefs(data []byte, baseDir, name string) ([]byte, error) {
 // CLI command refused, and later the reverse. Callers differ in how they obtain
 // the map and what they do with it; everything between is here.
 func resolveEvalRefs(values map[string]any, baseDir string) (map[string]any, error) {
+	// Read before resolution, which removes the directive. Both routes gate the
+	// rescue on it so they cannot disagree: without it, the CLI's no-`$ref` fast
+	// path would skip nesting while the deploy path still applied it, and a
+	// hand-written entry carrying rubric keys would deploy and then be refused
+	// by every command that reads it.
+	spliced := containsRefDirective(values)
+
 	resolved, err := foundry.ResolveFileRefs(values, baseDir)
 	if err != nil {
 		return nil, messages.ResolvingServiceRefs(err)
@@ -243,9 +250,40 @@ func resolveEvalRefs(values map[string]any, baseDir string) (map[string]any, err
 	// `$ref` is a directive rather than configuration, and the strict decoder
 	// would report the leftover as a mistyped key.
 	delete(resolved, "$ref")
-	nestSplicedRubrics(resolved)
+	if spliced {
+		nestSplicedRubrics(resolved)
+	}
 	return resolved, nil
 }
+
+// containsRefDirective reports whether the document uses `$ref` anywhere.
+//
+// Structural rather than a text scan: the byte "$ref" also appears in comments
+// and in prose values, and letting those decide whether an unrelated entry is
+// rescued would make one entry's meaning depend on another's wording.
+func containsRefDirective(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		if _, ok := typed[refDirective]; ok {
+			return true
+		}
+		for _, child := range typed {
+			if containsRefDirective(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if containsRefDirective(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// refDirective is the include key azd core owns.
+const refDirective = "$ref"
 
 // evaluatorDeclKeys are the keys an evaluator entry declares in its own right.
 // Anything else at entry level was spliced in by a `$ref`.

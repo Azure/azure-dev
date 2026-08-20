@@ -168,8 +168,12 @@ evals:
 	assert.Len(t, cfg.Evaluators[0].Definition["dimensions"], 1)
 }
 
-// The rescue above is scoped to entries written as a `$ref`, so a misspelling
-// in a hand-written entry is still an error rather than rubric content.
+// A configuration that uses no `$ref` is never rescued, so a misspelling in a
+// hand-written entry is reported rather than filed away.
+//
+// The `dimensions` gate is what separates the rescue from a catch-all, and it is
+// exercised in nested_ref_rubric_test.go; this pins the other half, that a
+// document nobody spliced into is left strictly alone.
 func TestAMisspelledEvaluatorKeyIsStillRejected(t *testing.T) {
 	dir := t.TempDir()
 

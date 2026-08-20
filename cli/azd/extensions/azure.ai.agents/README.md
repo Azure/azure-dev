@@ -1,5 +1,10 @@
 # Azure Developer CLI (azd) Agents Extension
 
+> [!CAUTION]
+> This temporary branch is for early testing of private non-ACR registry connections. It is unsupported and may be
+> removed after the feature ships. Follow the [early-birds build and usage guide](docs/private-registry-early-birds.md)
+> to build matching azd core and extension binaries from this checkout.
+
 ## Running Local Agents
 
 `azd ai agent run` starts the selected agent locally and, by default, opens the

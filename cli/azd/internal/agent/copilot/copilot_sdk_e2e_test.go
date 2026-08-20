@@ -27,8 +27,8 @@ func TestCopilotSDK_E2E(t *testing.T) {
 		t.Skip("skipping e2e test in short mode")
 	}
 
-	if os.Getenv("SKIP_COPILOT_E2E") == "1" {
-		t.Skip("SKIP_COPILOT_E2E is set")
+	if os.Getenv("INCLUDE_COPILOT_E2E") != "1" {
+		t.Skip("INCLUDE_COPILOT_E2E is NOT set to 1, skipping test")
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)

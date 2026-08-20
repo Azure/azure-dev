@@ -103,6 +103,63 @@ func TestUploadNextVersionWalksPastAStaleListing(t *testing.T) {
 		"the version just refused is proof it exists, so the next one is tried")
 }
 
+// A declared version is the version published, not one to count from.
+//
+// `--version` used to reach the incrementing path, so `--version 7.0` published
+// 8.0 while `version: 7.0` in configuration published 7.0 -- one word, two
+// answers, decided by where it was written.
+func TestUploadVersionPublishesTheVersionDeclared(t *testing.T) {
+	server := &uploadServer{taken: map[string]bool{}, listing: []string{"1.0", "2.0"}}
+	httpServer := func() *httptest.Server {
+		var s *httptest.Server
+		s = httptest.NewServer(server.handler(t, func() string { return s.URL }))
+		return s
+	}()
+	t.Cleanup(httpServer.Close)
+
+	client := NewDatasetClientFromPipeline(
+		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "rows.jsonl"), []byte("{\"query\":\"q\"}\n"), 0o600))
+
+	ds, err := client.UploadVersion(context.Background(), "ds", "7.0", dir, "2025-11-15-preview")
+	require.NoError(t, err)
+	assert.Equal(t, "7.0", ds.Version, "the version asked for is the version written")
+	assert.Equal(t, []string{"7.0"}, server.attempts,
+		"a declared version is published as given, not counted from")
+}
+
+// A declared version the service already holds is refused rather than stepped
+// past.
+//
+// The conflict walk exists because the listing lags behind a publish, which
+// makes it right for a version the CLI derived. Applying it to one an author
+// named would publish a version they did not ask for, and report success.
+func TestUploadVersionDoesNotWalkPastAConflict(t *testing.T) {
+	server := &uploadServer{taken: map[string]bool{"7.0": true}, listing: []string{"7.0"}}
+	httpServer := func() *httptest.Server {
+		var s *httptest.Server
+		s = httptest.NewServer(server.handler(t, func() string { return s.URL }))
+		return s
+	}()
+	t.Cleanup(httpServer.Close)
+
+	client := NewDatasetClientFromPipeline(
+		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "rows.jsonl"), []byte("{\"query\":\"q\"}\n"), 0o600))
+
+	_, err := client.UploadVersion(context.Background(), "ds", "7.0", dir, "2025-11-15-preview")
+	require.Error(t, err, "the version the author named is taken, and that is theirs to resolve")
+	assert.True(t, IsVersionConflict(err), "the refusal has to read as a conflict")
+	assert.Equal(t, []string{"7.0"}, server.attempts,
+		"nothing beyond the declared version is attempted")
+}
+
 // When the listing has caught up and is further ahead than the refused
 // version, it is the better answer: it skips versions somebody else published.
 func TestUploadNextVersionPrefersACaughtUpListing(t *testing.T) {

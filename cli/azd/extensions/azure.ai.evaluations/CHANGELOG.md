@@ -22,6 +22,8 @@ First release of the Foundry evaluations extension.
   declaration changes.
 - Atomic commands for every operation: `dataset`, `evaluator`, `run` and
   `run output` subcommands, all supporting `-o json` and `--no-prompt`.
+- `dataset --version` names the version to publish, on `create` and `update`
+  alike, and means the same thing as `version:` in the configuration.
 - Testing criteria are shaped from each evaluator's published contract, so
   evaluators requiring inputs beyond the agent shape — `ground_truth`,
   `context`, `instruction_id_list` — work by binding them to dataset columns.

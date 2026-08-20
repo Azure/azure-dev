@@ -154,9 +154,12 @@ azd env set AZURE_VOICE_AGENT_API unified-flat
 Details:
 
 - `legacy` remains the default and preserves existing behavior.
-- `unified` and `unified-flat` create voice agents through `/agents`; repeat
-  deploys update the existing agent and create a new version through
-  `/agents/{name}` when the agent name is already present in the azd environment.
+- `unified` and `unified-flat` check `/agents/{name}` remotely before deploying:
+  `404` creates through `/agents`, while `200` updates through `/agents/{name}`.
+- Unified modes write `AGENT_<SERVICE>_VERSION` and store the callable voice
+  WebSocket endpoint as `wss://.../agents/{name}/endpoint/protocols/voice?api-version=v1`.
+- `legacy` clears any stale `AGENT_<SERVICE>_VERSION` value and preserves the
+  existing `/voice_agents/{name}` endpoint marker.
 - `unified-flat` is intended for TiP/new-service validation. Non-TiP regions may
   still require `legacy` or `unified` until the flat output shape is fully
   rolled out.

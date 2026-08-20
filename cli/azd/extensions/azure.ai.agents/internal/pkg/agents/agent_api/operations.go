@@ -245,6 +245,49 @@ func (c *AgentClient) CreateVoiceAgent(
 	return c.doVoiceJSONAgentRequest(ctx, http.MethodPost, url, request, overriddenHost)
 }
 
+// GetVoiceAgentUnified retrieves a voice agent through the unified /agents
+// endpoint with the voice preview opt-in header. Use this instead of GetAgent
+// when deciding whether to create or update a prompt voice agent.
+func (c *AgentClient) GetVoiceAgentUnified(
+	ctx context.Context,
+	agentName string,
+	apiVersion string,
+	overriddenHost string,
+) (*AgentObject, error) {
+	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", voiceAgentsPreviewFeature)
+	if overriddenHost != "" {
+		req.Raw().Header.Set("x-ms-overridden-host", overriddenHost)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var agent AgentObject
+	if err := json.Unmarshal(body, &agent); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &agent, nil
+}
+
 // CreateVoiceAgentUnified creates a voice agent through the unified /agents
 // collection. This path is opt-in while regional rollout is still in progress.
 func (c *AgentClient) CreateVoiceAgentUnified(

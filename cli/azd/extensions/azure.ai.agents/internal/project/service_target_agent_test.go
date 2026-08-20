@@ -701,8 +701,20 @@ func TestVoiceAgentEndpoint_ByMode(t *testing.T) {
 	)
 	require.Equal(
 		t,
-		"https://proj.services.ai.azure.com/api/projects/p/agents/my-agent/endpoint/protocols/voice",
+		"wss://proj.services.ai.azure.com/api/projects/p/agents/my-agent/endpoint/protocols/voice?api-version=v1",
 		voiceAgentEndpoint(projectEndpoint, "my-agent", voiceAgentAPIModeUnified),
+	)
+}
+
+func TestBuildVoiceWSProtocolURL(t *testing.T) {
+	got := buildVoiceWSProtocolURL(
+		"https://acct.services.ai.azure.com/api/projects/proj/",
+		"voice-agent",
+	)
+	require.Equal(
+		t,
+		"wss://acct.services.ai.azure.com/api/projects/proj/agents/voice-agent/endpoint/protocols/voice?api-version=v1",
+		got,
 	)
 }
 

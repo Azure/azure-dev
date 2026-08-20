@@ -130,6 +130,19 @@ func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 	)
 }
 
+func buildVoiceWSProtocolURL(projectEndpoint, agentName string) string {
+	projectEndpoint = strings.TrimSpace(projectEndpoint)
+	u, err := url.Parse(projectEndpoint)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"wss://%s%s/agents/%s/endpoint/protocols/voice?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
+	)
+}
+
 // ProtocolEnvSuffix pairs a user-facing label with the env var suffix
 // used in AGENT_{KEY}_{SUFFIX}_ENDPOINT variables.
 type ProtocolEnvSuffix struct {
@@ -2238,11 +2251,11 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	agentClient := agent_api.NewAgentClient(projectEndpoint, p.credential)
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
-	agentObject, err := p.deployVoiceAgentWithMode(
-		ctx, agentClient, request, apiMode, serviceKey, azdEnv, progress,
+	agentObject, deployOp, err := p.deployVoiceAgentWithMode(
+		ctx, agentClient, request, apiMode, azdEnv, progress,
 	)
 	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+		return nil, exterrors.ServiceFromAzure(err, deployOp)
 	}
 
 	fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
@@ -2250,8 +2263,14 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	// Persist NAME first and ENDPOINT last. ENDPOINT is used as the voice deploy
 	// completion marker by other commands, so avoid writing it before NAME.
 	baseEndpoint := voiceAgentEndpoint(projectEndpoint, agentObject.Name, apiMode)
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	versionValue := ""
+	if apiMode != voiceAgentAPIModeLegacy {
+		versionValue = agentObject.Versions.Latest.Version
+	}
 	for _, envVar := range []struct{ key, value string }{
 		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
+		{versionKey, versionValue},
 		{fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey), baseEndpoint},
 	} {
 		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -2282,28 +2301,39 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentWithMode(
 	agentClient *agent_api.AgentClient,
 	request *agent_api.CreateAgentRequest,
 	apiMode voiceAgentAPIMode,
-	serviceKey string,
 	azdEnv map[string]string,
 	progress azdext.ProgressReporter,
-) (*agent_api.AgentObject, error) {
+) (*agent_api.AgentObject, string, error) {
 	overriddenHost := azdEnv[voiceOverriddenHostEnvKey]
 	if apiMode == voiceAgentAPIModeLegacy {
 		progress("Creating voice agent using legacy API")
-		return agentClient.CreateVoiceAgent(ctx, request, agent_api.AgentEndpointAPIVersion, overriddenHost)
+		agentObject, err := agentClient.CreateVoiceAgent(ctx, request, agent_api.AgentEndpointAPIVersion, overriddenHost)
+		return agentObject, exterrors.OpCreateAgent, err
 	}
 
-	if existingName := strings.TrimSpace(azdEnv[fmt.Sprintf("AGENT_%s_NAME", serviceKey)]); existingName != "" {
+	remoteAgent, getErr := agentClient.GetVoiceAgentUnified(
+		ctx, request.Name, agent_api.AgentEndpointAPIVersion, overriddenHost,
+	)
+	if getErr == nil && remoteAgent != nil {
 		progress("Updating voice agent using unified API")
 		updateRequest := &agent_api.UpdateAgentRequest{
 			CreateAgentVersionRequest: request.CreateAgentVersionRequest,
 		}
-		return agentClient.UpdateVoiceAgentUnified(
-			ctx, existingName, updateRequest, agent_api.AgentEndpointAPIVersion, overriddenHost,
+		agentObject, err := agentClient.UpdateVoiceAgentUnified(
+			ctx, request.Name, updateRequest, agent_api.AgentEndpointAPIVersion, overriddenHost,
 		)
+		return agentObject, exterrors.OpUpdateAgent, err
+	}
+	if getErr != nil {
+		var respErr *azcore.ResponseError
+		if !errors.As(getErr, &respErr) || respErr.StatusCode != http.StatusNotFound {
+			return nil, exterrors.OpCreateAgent, getErr
+		}
 	}
 
 	progress("Creating voice agent using unified API")
-	return agentClient.CreateVoiceAgentUnified(ctx, request, agent_api.AgentEndpointAPIVersion, overriddenHost)
+	agentObject, err := agentClient.CreateVoiceAgentUnified(ctx, request, agent_api.AgentEndpointAPIVersion, overriddenHost)
+	return agentObject, exterrors.OpCreateAgent, err
 }
 
 func voiceAgentEndpoint(projectEndpoint string, agentName string, apiMode voiceAgentAPIMode) string {
@@ -2311,7 +2341,7 @@ func voiceAgentEndpoint(projectEndpoint string, agentName string, apiMode voiceA
 	if apiMode == voiceAgentAPIModeLegacy {
 		return fmt.Sprintf("%s/voice_agents/%s", trimmedEndpoint, agentName)
 	}
-	return fmt.Sprintf("%s/agents/%s/endpoint/protocols/voice", trimmedEndpoint, agentName)
+	return buildVoiceWSProtocolURL(trimmedEndpoint, agentName)
 }
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,

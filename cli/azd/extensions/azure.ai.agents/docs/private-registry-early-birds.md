@@ -47,8 +47,13 @@ export PATH="$EARLY_BIRDS_ROOT/bin:$PATH"
 "$AZD_EARLY_BIRDS" version
 "$AZD_EARLY_BIRDS" auth login
 "$AZD_EARLY_BIRDS" ext install microsoft.azd.extensions --source azd --no-prompt
-"$AZD_EARLY_BIRDS" ext install azure.ai.projects --source azd --no-prompt
 "$AZD_EARLY_BIRDS" ext install azure.ai.inspector --source azd --no-prompt
+
+cd "$EARLY_BIRDS_ROOT/cli/azd/extensions/azure.ai.projects"
+"$AZD_EARLY_BIRDS" x build
+"$AZD_EARLY_BIRDS" x pack
+"$AZD_EARLY_BIRDS" x publish
+"$AZD_EARLY_BIRDS" ext install azure.ai.projects --source local --force --no-prompt
 
 cd "$EARLY_BIRDS_ROOT/cli/azd/extensions/azure.ai.agents"
 "$AZD_EARLY_BIRDS" x build
@@ -61,8 +66,9 @@ cd "$EARLY_BIRDS_ROOT/cli/azd/extensions/azure.ai.agents"
 Expected versions:
 
 - azd core reports `1.32.0-beta.1` and the branch commit.
+- `azure.ai.projects` reports `1.0.0-beta.6` and is installed from the local build.
 - `azure.ai.agents` reports `1.0.0-beta.10` and is installed from the local build.
-- The extension's temporary `replace` directive compiles it against core from this checkout.
+- The agents extension's temporary `replace` directive compiles it against core from this checkout.
 
 Keep `AZD_CONFIG_DIR` and `AZD_EARLY_BIRDS` set in every shell used below.
 
@@ -116,7 +122,7 @@ infra:
 services:
   existing-foundry-project:
     host: azure.ai.project
-    endpoint: ${FOUNDRY_PROJECT_ENDPOINT}
+    endpoint: https://<account>.services.ai.azure.com/api/projects/<project>
 
   private-registry-connection:
     host: azure.ai.connection
@@ -156,8 +162,16 @@ project and registry values in a dedicated azd environment, provision, and deplo
 ```bash
 cd '<existing-azd-project-directory>'
 
-"$AZD_EARLY_BIRDS" env new '<unique-environment-name>'
+"$AZD_EARLY_BIRDS" env new '<unique-environment-name>' --no-prompt
+"$AZD_EARLY_BIRDS" env set AZURE_SUBSCRIPTION_ID '<subscription-id>'
+"$AZD_EARLY_BIRDS" env set AZURE_TENANT_ID '<tenant-id>'
+"$AZD_EARLY_BIRDS" env set AZURE_LOCATION '<azure-region>'
+"$AZD_EARLY_BIRDS" env set AZURE_RESOURCE_GROUP '<existing-resource-group>'
+"$AZD_EARLY_BIRDS" env set AZURE_AI_PROJECT_ID '<foundry-project-resource-id>'
+"$AZD_EARLY_BIRDS" env set AZURE_AI_ACCOUNT_NAME '<account>'
+"$AZD_EARLY_BIRDS" env set AZURE_AI_PROJECT_NAME '<project>'
 "$AZD_EARLY_BIRDS" env set FOUNDRY_PROJECT_ENDPOINT 'https://<account>.services.ai.azure.com/api/projects/<project>'
+"$AZD_EARLY_BIRDS" env set USE_EXISTING_AI_PROJECT true
 "$AZD_EARLY_BIRDS" env set REGISTRY_URL 'https://<registry-host>'
 "$AZD_EARLY_BIRDS" env set REGISTRY_AUDIENCE '<registry-audience>'
 "$AZD_EARLY_BIRDS" env set REGISTRY_TOKEN_ENDPOINT '<registry-token-endpoint>'

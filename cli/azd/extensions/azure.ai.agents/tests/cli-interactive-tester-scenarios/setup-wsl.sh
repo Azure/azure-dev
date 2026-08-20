@@ -19,7 +19,7 @@
 #   1. Installs the Go version pinned by cli/azd/go.mod when needed
 #   2. Installs the .NET SDK pinned by dotnet-sdk.version when needed
 #   3. Builds azd core for the native Linux architecture -> /usr/local/bin/azd
-#   4. Ensures the azd extensions dev kit (microsoft.azd.extensions) is installed
+#   4. Ensures the azd extensions dev kit supports bundle packaging
 #   5. Builds + packages + installs the azure.ai.agents extension from source
 #   6. Verifies the dev version is running
 
@@ -72,6 +72,12 @@ else
     echo "ERROR: curl or wget is required to download the pinned Go and .NET toolchains." >&2
     exit 1
 fi
+
+has_bundle_capable_dev_kit() {
+    local pack_help
+    pack_help=$(azd x pack --help 2>/dev/null) || return 1
+    grep -q -- "--bundle" <<<"$pack_help"
+}
 
 if ! sudo -n true 2>/dev/null; then
     echo "NOTE: sudo access is needed to install Go, .NET, and azd under /usr/local."
@@ -288,12 +294,9 @@ echo ""
 # --- Step 3: Build azd core ---
 echo "▸ Building azd core ($EXPECTED_GO_PLATFORM)..."
 
-COMMIT=$(cd "$REPO_ROOT" && git rev-parse HEAD 2>/dev/null || echo "0000000000000000000000000000000000000000")
-VERSION="0.0.0-dev.0"
-LDFLAGS="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=${VERSION} (commit ${COMMIT})'"
+EXPECTED_AZD_VERSION="0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
 
 (cd "$AZD_DIR" && GOOS=linux GOARCH="$GO_ARCH" go build \
-    -ldflags="$LDFLAGS" \
     -o "$TEMP_DIR/azd-dev-build" \
     .)
 
@@ -302,15 +305,19 @@ sudo install -m 755 "$TEMP_DIR/azd-dev-build" /usr/local/bin/azd
 echo "  ✓ Installed /usr/local/bin/azd"
 echo ""
 
-# --- Step 4: Ensure microsoft.azd.extensions is available ---
-echo "▸ Checking for azd extensions dev kit (microsoft.azd.extensions)..."
+# --- Step 4: Ensure microsoft.azd.extensions supports bundle packaging ---
+echo "▸ Checking azd extensions dev kit bundle support (microsoft.azd.extensions)..."
 
-if azd x version &>/dev/null; then
-    echo "  ✓ microsoft.azd.extensions is already installed"
+if has_bundle_capable_dev_kit; then
+    echo "  ✓ microsoft.azd.extensions supports bundle packaging"
 else
-    echo "  → Installing microsoft.azd.extensions from registry..."
-    azd extension install microsoft.azd.extensions --force --no-prompt
-    echo "  ✓ Installed microsoft.azd.extensions"
+    echo "  → Installing or upgrading microsoft.azd.extensions from registry..."
+    azd extension install microsoft.azd.extensions --source azd --force --no-prompt
+    if ! has_bundle_capable_dev_kit; then
+        echo "ERROR: microsoft.azd.extensions does not support 'azd x pack --bundle' after installation." >&2
+        exit 1
+    fi
+    echo "  ✓ Installed a bundle-capable microsoft.azd.extensions"
 fi
 echo ""
 
@@ -349,8 +356,8 @@ echo "▸ Verifying installation..."
 AZD_VER=$(azd version 2>&1 | head -1)
 echo "  azd version: $AZD_VER"
 
-if ! echo "$AZD_VER" | grep -q "$VERSION"; then
-    echo "ERROR: azd version does not contain expected dev version '$VERSION'" >&2
+if ! echo "$AZD_VER" | grep -Fq "$EXPECTED_AZD_VERSION"; then
+    echo "ERROR: azd version does not contain expected dev version '$EXPECTED_AZD_VERSION'" >&2
     echo "  Got: $AZD_VER" >&2
     echo "  This suggests the dev build was not installed correctly." >&2
     exit 1

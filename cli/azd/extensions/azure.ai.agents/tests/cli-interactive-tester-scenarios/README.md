@@ -112,7 +112,8 @@ This script:
    the matching official WSL architecture build from Microsoft's release metadata, verifies its
    SHA-512 checksum, and installs it under `/usr/local/dotnet`
 3. Builds `azd` core for the native WSL architecture → `/usr/local/bin/azd`
-4. Ensures the extensions dev kit (`microsoft.azd.extensions`) is installed
+4. Ensures the extensions dev kit (`microsoft.azd.extensions`) supports
+   `azd x pack --bundle`, installing or upgrading it when needed
 5. Builds, packages, and installs the `azure.ai.agents` extension from source
    using `azd x build` → `azd x pack --bundle` → `azd extension install`
 6. Verifies azd, the extension, and the pinned .NET SDK report expected versions

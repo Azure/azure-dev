@@ -207,7 +207,7 @@ func validateRegistryConnectionServiceConfig(serviceConfig *azdext.ServiceConfig
 	}
 
 	dockerOptions := serviceConfig.GetDocker()
-	if !DockerImagePassthrough(dockerOptions) {
+	if !dockerOptions.GetImagePassthrough() {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"registryConnectionId requires docker.imagePassthrough: true",
@@ -741,7 +741,7 @@ func (p *AgentServiceTargetProvider) Package(
 
 	// Core image passthrough owns the artifact lifecycle for all pre-built images,
 	// whether the source registry is public or accessed through a Foundry connection.
-	if DockerImagePassthrough(serviceConfig.GetDocker()) {
+	if serviceConfig.GetDocker().GetImagePassthrough() {
 		// The core Docker framework packages before this target and adds its artifact
 		// to the shared context. Do not return it again from the target.
 		if findImagePassthroughArtifact(serviceContext.Package) != nil {
@@ -1902,7 +1902,7 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	// top-level image plus AZD_AGENT_SKIP_ACR=true. The docker property may be
 	// absent, so preserve that environment marker as the legacy compatibility
 	// contract. New projects use docker.imagePassthrough and do not enter this fallback.
-	if !DockerImagePassthrough(p.serviceConfig.GetDocker()) &&
+	if !p.serviceConfig.GetDocker().GetImagePassthrough() &&
 		p.shouldSkipACRForEnvironment(ctx) {
 		log.Printf("legacy pre-built image configuration detected: using configured image")
 		return true, nil

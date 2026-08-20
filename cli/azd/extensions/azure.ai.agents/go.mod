@@ -12,7 +12,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.3.0-beta.3
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
-	github.com/azure/azure-dev/cli/azd v1.28.0
+	github.com/azure/azure-dev/cli/azd v1.32.0-beta.1
 	github.com/braydonk/yaml v0.9.0
 	github.com/distribution/reference v0.6.0
 	github.com/drone/envsubst v1.0.3 // indirect

@@ -6,8 +6,6 @@ package cmd
 import (
 	"strings"
 
-	"azureaiagent/internal/project"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -28,7 +26,7 @@ func dockerProjectOptionsForHostedContainer(image string, networkInjected bool) 
 	config := resolveHostedContainerDockerConfig(image, networkInjected)
 	options := &azdext.DockerProjectOptions{RemoteBuild: config.remoteBuild}
 	if config.imagePassthrough {
-		project.EnableDockerImagePassthrough(options)
+		options.ImagePassthrough = true
 	}
 	return options
 }

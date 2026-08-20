@@ -1109,7 +1109,13 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 	// (resolveTemplate skips the loadOnDiskTemplate call when
 	// onDiskSource is already set; this lets the test exercise the
 	// merge logic in isolation.)
-	armFromDisk := map[string]any{"$schema": "ondisk", "contentVersion": "1.0.0.0"}
+	armFromDisk := map[string]any{
+		"$schema": "ondisk", "contentVersion": "1.0.0.0",
+		"parameters": map[string]any{
+			"location":           map[string]any{"type": "string"},
+			"foundryProjectName": map[string]any{"type": "string"},
+		},
+	}
 	p := &FoundryProvisioningProvider{
 		projectPath: dir,
 		envName:     "dev",
@@ -1146,7 +1152,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 		"user-supplied parameter wins over host-derived")
 	// User-only key is present.
 	require.Contains(t, got.parameters, "userOnly")
-	// Host-derived key (not in user params) still flows through.
+	// Host-derived key (declared by the template, not in user params) still flows through.
 	require.Contains(t, got.parameters, "foundryProjectName",
 		"host-derived parameter fills gap when user file doesn't declare it")
 	// Synthesizer-derived key is ABSENT: per the design decision,
@@ -1298,17 +1304,6 @@ func TestProjectNameFromEndpoint(t *testing.T) {
 	assert.Equal(t, "", projectNameFromEndpoint(""))
 }
 
-func TestBrownfieldOutputs(t *testing.T) {
-	t.Parallel()
-	outputs := brownfieldOutputs("https://acct.services.ai.azure.com/api/projects/my-project")
-	require.Contains(t, outputs, "FOUNDRY_PROJECT_ENDPOINT")
-	assert.Equal(t,
-		"https://acct.services.ai.azure.com/api/projects/my-project",
-		outputs["FOUNDRY_PROJECT_ENDPOINT"].Value)
-	require.Contains(t, outputs, "AZURE_AI_PROJECT_NAME")
-	assert.Equal(t, "my-project", outputs["AZURE_AI_PROJECT_NAME"].Value)
-}
-
 func TestDefaultResourceGroupName(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "rg-dev", defaultResourceGroupName("dev"))
@@ -1371,6 +1366,21 @@ func TestNormalizeOutputs_LayerClearsStaleResourceGroupOwnership(t *testing.T) {
 	got := p.normalizeOutputs(nil)
 	require.Contains(t, got, envKeyFoundryRGOwner)
 	assert.Equal(t, "", got[envKeyFoundryRGOwner].Value)
+}
+
+func TestNormalizeOutputs_ExistingProjectCreateTracksSupportingResourceGroup(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		brownfieldEndpoint: "https://acct.services.ai.azure.com/api/projects/project",
+		existingAcrMode:    "create",
+		foundryRGOwnerID:   "/subscriptions/sub/resourceGroups/rg-foundry",
+	}
+	got := p.normalizeOutputs(map[string]*azdext.ProvisioningOutputParameter{
+		envKeyResourceGroup: {Type: "string", Value: "root-rg"},
+		envKeyFoundryRG:     {Type: "string", Value: "rg-foundry"},
+	})
+	assert.Contains(t, got, envKeyResourceGroup)
+	assert.Equal(t, p.foundryRGOwnerID, got[envKeyFoundryRGOwner].Value)
 }
 
 func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {

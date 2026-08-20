@@ -1,0 +1,711 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "2790182356829884385"
+    }
+  },
+  "definitions": {
+    "deploymentType": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "model": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "sku": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "capacity": {
+              "type": "int"
+            }
+          }
+        }
+      }
+    },
+    "connectionType": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "authType": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "nullable": true
+        }
+      }
+    }
+  },
+  "parameters": {
+    "projectResourceId": {
+      "type": "string"
+    },
+    "resourceGroupName": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "resourceTokenSalt": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {}
+    },
+    "deployments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/deploymentType"
+      },
+      "defaultValue": []
+    },
+    "acrMode": {
+      "type": "string",
+      "defaultValue": "none",
+      "allowedValues": [
+        "none",
+        "create",
+        "reuse-connect",
+        "already-connected"
+      ]
+    },
+    "existingAcrResourceId": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "existingAcrEndpoint": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "existingAcrConnectionName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "acrPullAssigned": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "projectEndpoint": {
+      "type": "string"
+    },
+    "connections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/connectionType"
+      },
+      "defaultValue": []
+    },
+    "connectionCredentials": {
+      "type": "secureObject",
+      "defaultValue": {}
+    }
+  },
+  "variables": {
+    "projectIdParts": "[split(parameters('projectResourceId'), '/')]",
+    "projectSubscriptionId": "[variables('projectIdParts')[2]]",
+    "projectResourceGroupName": "[variables('projectIdParts')[4]]",
+    "accountName": "[variables('projectIdParts')[8]]",
+    "projectName": "[variables('projectIdParts')[10]]",
+    "tokenSeed": "[format('{0}{1}{2}', subscription().subscriptionId, parameters('resourceGroupName'), parameters('resourceTokenSalt'))]",
+    "acrName": "[format('cr{0}', toLower(uniqueString(variables('tokenSeed'))))]",
+    "createAcr": "[equals(parameters('acrMode'), 'create')]",
+    "reuseAcr": "[or(equals(parameters('acrMode'), 'reuse-connect'), equals(parameters('acrMode'), 'already-connected'))]",
+    "createAcrConnection": "[or(equals(parameters('acrMode'), 'create'), equals(parameters('acrMode'), 'reuse-connect'))]",
+    "effectiveAcrName": "[if(variables('createAcr'), variables('acrName'), if(variables('reuseAcr'), last(split(parameters('existingAcrResourceId'), '/')), ''))]"
+  },
+  "resources": {
+    "foundryAccount::project": {
+      "existing": true,
+      "type": "Microsoft.CognitiveServices/accounts/projects",
+      "apiVersion": "2025-04-01-preview",
+      "subscriptionId": "[variables('projectSubscriptionId')]",
+      "resourceGroup": "[variables('projectResourceGroupName')]",
+      "name": "[format('{0}/{1}', variables('accountName'), variables('projectName'))]"
+    },
+    "adjunctResourceGroup": {
+      "condition": "[variables('createAcr')]",
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[parameters('resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]"
+    },
+    "foundryAccount": {
+      "existing": true,
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2025-04-01-preview",
+      "subscriptionId": "[variables('projectSubscriptionId')]",
+      "resourceGroup": "[variables('projectResourceGroupName')]",
+      "name": "[variables('accountName')]"
+    },
+    "newContainerRegistry": {
+      "condition": "[variables('createAcr')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "container-registry",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "mode": {
+            "value": "create"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "registryName": {
+            "value": "[variables('acrName')]"
+          },
+          "projectPrincipalId": {
+            "value": "[reference('foundryAccount::project', '2025-04-01-preview', 'full').identity.principalId]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "544637247330827061"
+            }
+          },
+          "parameters": {
+            "mode": {
+              "type": "string",
+              "allowedValues": [
+                "create",
+                "reuse-connect"
+              ]
+            },
+            "location": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            },
+            "registryName": {
+              "type": "string"
+            },
+            "projectPrincipalId": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
+          },
+          "resources": [
+            {
+              "condition": "[equals(parameters('mode'), 'create')]",
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('registryName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Premium"
+              },
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "adminUserEnabled": false,
+                "publicNetworkAccess": "Enabled",
+                "zoneRedundancy": "Disabled"
+              }
+            },
+            {
+              "condition": "[equals(parameters('mode'), 'create')]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('projectPrincipalId'), variables('acrPullRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('projectPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[variables('acrPullRoleId')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]"
+              ]
+            },
+            {
+              "condition": "[equals(parameters('mode'), 'reuse-connect')]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('projectPrincipalId'), variables('acrPullRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('projectPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[variables('acrPullRoleId')]"
+              }
+            }
+          ],
+          "outputs": {
+            "endpoint": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'create'), reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer, reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer)]"
+            },
+            "resourceId": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'create'), resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "adjunctResourceGroup",
+        "foundryAccount::project"
+      ]
+    },
+    "existingContainerRegistry": {
+      "condition": "[and(equals(parameters('acrMode'), 'reuse-connect'), not(parameters('acrPullAssigned')))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "container-registry",
+      "subscriptionId": "[split(parameters('existingAcrResourceId'), '/')[2]]",
+      "resourceGroup": "[split(parameters('existingAcrResourceId'), '/')[4]]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "mode": {
+            "value": "reuse-connect"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "registryName": {
+            "value": "[variables('effectiveAcrName')]"
+          },
+          "projectPrincipalId": {
+            "value": "[reference('foundryAccount::project', '2025-04-01-preview', 'full').identity.principalId]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "544637247330827061"
+            }
+          },
+          "parameters": {
+            "mode": {
+              "type": "string",
+              "allowedValues": [
+                "create",
+                "reuse-connect"
+              ]
+            },
+            "location": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            },
+            "registryName": {
+              "type": "string"
+            },
+            "projectPrincipalId": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
+          },
+          "resources": [
+            {
+              "condition": "[equals(parameters('mode'), 'create')]",
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('registryName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Premium"
+              },
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "adminUserEnabled": false,
+                "publicNetworkAccess": "Enabled",
+                "zoneRedundancy": "Disabled"
+              }
+            },
+            {
+              "condition": "[equals(parameters('mode'), 'create')]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('projectPrincipalId'), variables('acrPullRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('projectPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[variables('acrPullRoleId')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]"
+              ]
+            },
+            {
+              "condition": "[equals(parameters('mode'), 'reuse-connect')]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('projectPrincipalId'), variables('acrPullRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('projectPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[variables('acrPullRoleId')]"
+              }
+            }
+          ],
+          "outputs": {
+            "endpoint": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'create'), reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer, reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer)]"
+            },
+            "resourceId": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'create'), resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "foundryAccount::project"
+      ]
+    },
+    "projectResources": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "foundry-project-resources",
+      "subscriptionId": "[variables('projectSubscriptionId')]",
+      "resourceGroup": "[variables('projectResourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "accountName": {
+            "value": "[variables('accountName')]"
+          },
+          "projectName": {
+            "value": "[variables('projectName')]"
+          },
+          "deployments": {
+            "value": "[parameters('deployments')]"
+          },
+          "connections": {
+            "value": "[parameters('connections')]"
+          },
+          "connectionCredentials": {
+            "value": "[parameters('connectionCredentials')]"
+          },
+          "acrName": {
+            "value": "[variables('effectiveAcrName')]"
+          },
+          "acrEndpoint": "[if(variables('createAcr'), createObject('value', reference('newContainerRegistry').outputs.endpoint.value), if(and(equals(parameters('acrMode'), 'reuse-connect'), not(parameters('acrPullAssigned'))), createObject('value', reference('existingContainerRegistry').outputs.endpoint.value), createObject('value', parameters('existingAcrEndpoint'))))]",
+          "acrResourceId": "[if(variables('createAcr'), createObject('value', reference('newContainerRegistry').outputs.resourceId.value), if(and(equals(parameters('acrMode'), 'reuse-connect'), not(parameters('acrPullAssigned'))), createObject('value', reference('existingContainerRegistry').outputs.resourceId.value), createObject('value', parameters('existingAcrResourceId'))))]",
+          "createAcrConnection": {
+            "value": "[variables('createAcrConnection')]"
+          },
+          "existingAcrConnectionName": {
+            "value": "[parameters('existingAcrConnectionName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "13015898647040372786"
+            }
+          },
+          "definitions": {
+            "deploymentType": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "format": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "sku": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "capacity": {
+                      "type": "int"
+                    }
+                  }
+                }
+              }
+            },
+            "connectionType": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "authType": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "type": "object",
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "parameters": {
+            "accountName": {
+              "type": "string"
+            },
+            "projectName": {
+              "type": "string"
+            },
+            "deployments": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/deploymentType"
+              },
+              "defaultValue": []
+            },
+            "connections": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/connectionType"
+              },
+              "defaultValue": []
+            },
+            "connectionCredentials": {
+              "type": "secureObject",
+              "defaultValue": {}
+            },
+            "acrName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "acrEndpoint": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "acrResourceId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "createAcrConnection": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "existingAcrConnectionName": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "resources": {
+            "foundryAccountPreview::project": {
+              "existing": true,
+              "type": "Microsoft.CognitiveServices/accounts/projects",
+              "apiVersion": "2025-04-01-preview",
+              "name": "[format('{0}/{1}', parameters('accountName'), parameters('projectName'))]"
+            },
+            "foundryAccount": {
+              "existing": true,
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2025-06-01",
+              "name": "[parameters('accountName')]"
+            },
+            "modelDeployments": {
+              "copy": {
+                "name": "modelDeployments",
+                "count": "[length(parameters('deployments'))]",
+                "mode": "serial",
+                "batchSize": 1
+              },
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2025-06-01",
+              "name": "[format('{0}/{1}', parameters('accountName'), parameters('deployments')[copyIndex()].name)]",
+              "properties": {
+                "model": "[parameters('deployments')[copyIndex()].model]"
+              },
+              "sku": "[parameters('deployments')[copyIndex()].sku]"
+            },
+            "foundryAccountPreview": {
+              "existing": true,
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2025-04-01-preview",
+              "name": "[parameters('accountName')]"
+            },
+            "acrConnection": {
+              "condition": "[parameters('createAcrConnection')]",
+              "type": "Microsoft.CognitiveServices/accounts/projects/connections",
+              "apiVersion": "2025-04-01-preview",
+              "name": "[format('{0}/{1}/{2}', parameters('accountName'), parameters('projectName'), format('{0}-conn', parameters('acrName')))]",
+              "properties": {
+                "category": "ContainerRegistry",
+                "target": "[parameters('acrEndpoint')]",
+                "authType": "ManagedIdentity",
+                "credentials": {
+                  "clientId": "[reference('foundryAccountPreview::project', '2025-04-01-preview', 'full').identity.principalId]",
+                  "resourceId": "[parameters('acrResourceId')]"
+                },
+                "isSharedToAll": true,
+                "metadata": {
+                  "ResourceId": "[parameters('acrResourceId')]"
+                }
+              },
+              "dependsOn": [
+                "foundryAccountPreview::project"
+              ]
+            },
+            "projectConnections": {
+              "copy": {
+                "name": "projectConnections",
+                "count": "[length(parameters('connections'))]"
+              },
+              "type": "Microsoft.CognitiveServices/accounts/projects/connections",
+              "apiVersion": "2025-04-01-preview",
+              "name": "[format('{0}/{1}/{2}', parameters('accountName'), parameters('projectName'), parameters('connections')[copyIndex()].name)]",
+              "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
+            }
+          },
+          "outputs": {
+            "acrConnectionName": {
+              "type": "string",
+              "value": "[if(parameters('createAcrConnection'), format('{0}-conn', parameters('acrName')), parameters('existingAcrConnectionName'))]"
+            },
+            "connectionNames": {
+              "type": "string",
+              "value": "[join(map(parameters('connections'), lambda('c', lambdaVariables('c').name)), ',')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "existingContainerRegistry",
+        "newContainerRegistry"
+      ]
+    }
+  },
+  "outputs": {
+    "AZURE_AI_PROJECT_ID": {
+      "type": "string",
+      "value": "[parameters('projectResourceId')]"
+    },
+    "AZURE_AI_ACCOUNT_NAME": {
+      "type": "string",
+      "value": "[variables('accountName')]"
+    },
+    "AZURE_AI_PROJECT_NAME": {
+      "type": "string",
+      "value": "[variables('projectName')]"
+    },
+    "AZURE_OPENAI_ENDPOINT": {
+      "type": "string",
+      "value": "[format('https://{0}.openai.azure.com/', variables('accountName'))]"
+    },
+    "FOUNDRY_PROJECT_ENDPOINT": {
+      "type": "string",
+      "value": "[parameters('projectEndpoint')]"
+    },
+    "AZURE_FOUNDRY_RESOURCE_GROUP": {
+      "type": "string",
+      "value": "[if(variables('createAcr'), parameters('resourceGroupName'), '')]"
+    },
+    "AZURE_CONTAINER_REGISTRY_ENDPOINT": {
+      "type": "string",
+      "value": "[if(equals(parameters('acrMode'), 'none'), '', if(variables('createAcr'), reference('newContainerRegistry').outputs.endpoint.value, if(and(equals(parameters('acrMode'), 'reuse-connect'), not(parameters('acrPullAssigned'))), reference('existingContainerRegistry').outputs.endpoint.value, parameters('existingAcrEndpoint'))))]"
+    },
+    "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {
+      "type": "string",
+      "value": "[if(equals(parameters('acrMode'), 'none'), '', if(variables('createAcr'), reference('newContainerRegistry').outputs.resourceId.value, if(and(equals(parameters('acrMode'), 'reuse-connect'), not(parameters('acrPullAssigned'))), reference('existingContainerRegistry').outputs.resourceId.value, parameters('existingAcrResourceId'))))]"
+    },
+    "AZURE_AI_PROJECT_ACR_CONNECTION_NAME": {
+      "type": "string",
+      "value": "[reference('projectResources').outputs.acrConnectionName.value]"
+    },
+    "AZURE_AI_PROJECT_CONNECTION_NAMES": {
+      "type": "string",
+      "value": "[reference('projectResources').outputs.connectionNames.value]"
+    },
+    "AZD_FOUNDRY_ACR_MODE": {
+      "type": "string",
+      "value": "[parameters('acrMode')]"
+    }
+  }
+}

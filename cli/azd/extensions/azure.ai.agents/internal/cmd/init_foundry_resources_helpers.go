@@ -15,6 +15,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -37,6 +38,7 @@ type FoundryProjectInfo struct {
 	// NetworkInjected is true when the owning Foundry account has VNET network
 	// injection (agent scenario); used to disable remote build.
 	NetworkInjected bool
+	PrincipalId     string
 }
 
 // Endpoint returns the Foundry project data-plane endpoint derived from the
@@ -176,6 +178,9 @@ func updateFoundryProjectInfo(project *FoundryProjectInfo, resource *armcognitiv
 
 	if resource.Location != nil {
 		project.Location = *resource.Location
+	}
+	if resource.Identity != nil && resource.Identity.PrincipalID != nil {
+		project.PrincipalId = *resource.Identity.PrincipalID
 	}
 }
 
@@ -373,6 +378,39 @@ func listAcrResourceIds(
 	return resourceIds, nil
 }
 
+const acrPullRoleDefinitionID = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+
+func hasAcrPullAssignment(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	resourceID string,
+	principalID string,
+) (bool, error) {
+	subscriptionID := extractSubscriptionId(resourceID)
+	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, credential, azure.NewArmClientOptions())
+	if err != nil {
+		return false, fmt.Errorf("create role assignments client: %w", err)
+	}
+	filter := fmt.Sprintf("assignedTo('%s')", principalID)
+	pager := client.NewListForScopePager(resourceID, &armauthorization.RoleAssignmentsClientListForScopeOptions{
+		Filter: &filter,
+	})
+	roleSuffix := "/roleDefinitions/" + acrPullRoleDefinitionID
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return false, fmt.Errorf("list ACR role assignments: %w", err)
+		}
+		for _, assignment := range page.Value {
+			if assignment.Properties != nil && assignment.Properties.RoleDefinitionID != nil &&
+				strings.HasSuffix(*assignment.Properties.RoleDefinitionID, roleSuffix) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers
 // ACR and AppInsights connections. This is the shared implementation used by both init flows.
 // When skipACR is true, ACR connection discovery and configuration is skipped (used for code deploy).
@@ -426,7 +464,7 @@ func configureFoundryProjectEnv(
 		// The provisioning provider owns ACR/AppInsights for a new project, but a
 		// container agent on an existing project needs a registry it won't create.
 		if skipACR {
-			return nil
+			return setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "none")
 		}
 		return configureExistingProjectAcr(ctx, azdClient, credential, envName, project, subscriptionId)
 	}
@@ -467,6 +505,8 @@ func configureFoundryProjectEnv(
 		if err := configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections); err != nil {
 			return err
 		}
+	} else if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "none"); err != nil {
+		return err
 	}
 
 	if err := configureAppInsightsConnection(ctx, azdClient, envName, appInsightsConnections); err != nil {
@@ -506,7 +546,8 @@ func configureExistingProjectAcr(
 		}
 	}
 
-	return configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections)
+	return configureAcrConnectionWithPrincipal(
+		ctx, azdClient, credential, envName, subscriptionId, acrConnections, project.PrincipalId)
 }
 
 // configureAcrConnection handles ACR connection selection and env var setting.
@@ -518,8 +559,21 @@ func configureAcrConnection(
 	subscriptionId string,
 	acrConnections []azure.Connection,
 ) error {
+	return configureAcrConnectionWithPrincipal(ctx, azdClient, credential, envName, subscriptionId, acrConnections, "")
+}
+
+func configureAcrConnectionWithPrincipal(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	credential azcore.TokenCredential,
+	envName string,
+	subscriptionId string,
+	acrConnections []azure.Connection,
+	projectPrincipalID string,
+) error {
 	return configureAcrConnectionWithRegistryLoader(
 		ctx, azdClient, credential, envName, subscriptionId, acrConnections, listAcrResourceIds,
+		projectPrincipalID,
 	)
 }
 
@@ -538,6 +592,7 @@ func configureAcrConnectionWithRegistryLoader(
 	subscriptionId string,
 	acrConnections []azure.Connection,
 	loadRegistries acrRegistryLoader,
+	projectPrincipalIDs ...string,
 ) error {
 	resourceIds, err := loadRegistries(ctx, credential, subscriptionId)
 	if err != nil {
@@ -597,8 +652,21 @@ func configureAcrConnectionWithRegistryLoader(
 			if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME", ""); err != nil {
 				return err
 			}
+			assigned := false
+			if len(projectPrincipalIDs) > 0 && projectPrincipalIDs[0] != "" {
+				assigned, err = hasAcrPullAssignment(ctx, credential, resourceId, projectPrincipalIDs[0])
+				if err != nil {
+					return fmt.Errorf("check existing AcrPull assignment: %w", err)
+				}
+			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", fmt.Sprint(assigned)); err != nil {
+				return err
+			}
 			if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
+			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "reuse-connect"); err != nil {
+				return err
 			}
 		} else {
 			for _, key := range []string{
@@ -612,6 +680,12 @@ func configureAcrConnectionWithRegistryLoader(
 			}
 			if err := updatePendingACRSignal(ctx, azdClient, envName, false); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
+			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "create"); err != nil {
+				return err
+			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", "false"); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -680,6 +754,12 @@ func configureAcrConnectionWithRegistryLoader(
 	}
 	if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
 		log.Printf("warning: failed to update acr provision signal: %v", err)
+	}
+	if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "already-connected"); err != nil {
+		return err
+	}
+	if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", "true"); err != nil {
+		return err
 	}
 
 	return nil

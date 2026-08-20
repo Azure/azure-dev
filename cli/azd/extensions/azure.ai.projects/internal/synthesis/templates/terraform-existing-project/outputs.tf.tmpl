@@ -1,0 +1,42 @@
+output "AZURE_AI_PROJECT_ID" {
+  value = local.normalized_project_id
+}
+
+output "AZURE_AI_ACCOUNT_NAME" {
+  value = local.foundry_account_name
+}
+
+output "AZURE_AI_PROJECT_NAME" {
+  value = local.foundry_project_name
+}
+
+output "AZURE_OPENAI_ENDPOINT" {
+  value = "https://${local.foundry_account_name}.openai.azure.com/"
+}
+
+output "FOUNDRY_PROJECT_ENDPOINT" {
+  value = var.project_endpoint
+}
+
+output "AZURE_AI_PROJECT_CONNECTION_NAMES" {
+  value = join(",", [for c in azapi_resource.connection : c.name])
+}
+output "AZURE_FOUNDRY_RESOURCE_GROUP" {
+  value = {{ if eq .AcrMode "create" }}var.resource_group_name{{ else }}""{{ end }}
+}
+
+output "AZURE_CONTAINER_REGISTRY_ENDPOINT" {
+  value = {{ if eq .AcrMode "create" }}azurerm_container_registry.this.login_server{{ else if eq .AcrMode "none" }}""{{ else }}var.existing_acr_endpoint{{ end }}
+}
+
+output "AZURE_CONTAINER_REGISTRY_RESOURCE_ID" {
+  value = {{ if eq .AcrMode "create" }}azurerm_container_registry.this.id{{ else if eq .AcrMode "none" }}""{{ else }}var.existing_acr_resource_id{{ end }}
+}
+
+output "AZURE_AI_PROJECT_ACR_CONNECTION_NAME" {
+  value = {{ if eq .AcrMode "already-connected" }}var.existing_acr_connection_name{{ else if eq .AcrMode "none" }}""{{ else }}azapi_resource.acr_connection.name{{ end }}
+}
+
+output "AZD_FOUNDRY_ACR_MODE" {
+  value = "{{ .AcrMode }}"
+}

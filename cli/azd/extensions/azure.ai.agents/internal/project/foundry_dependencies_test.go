@@ -386,15 +386,6 @@ func TestValidateFoundryDependenciesRejectsCrossProjectMarkers(t *testing.T) {
 			detail: "TOOLBOX_DEP_PROJECT_ENDPOINT",
 		},
 		{
-			name: "connection", host: foundryConnectionHost,
-			env: map[string]string{
-				"FOUNDRY_PROJECT_ENDPOINT":          "https://current",
-				"AZURE_AI_PROJECT_CONNECTION_NAMES": "dep",
-				envkey.ConnectionProjectEndpoint:    "https://old",
-			},
-			detail: envkey.ConnectionProjectEndpoint,
-		},
-		{
 			name: "agent", host: foundryAgentHost,
 			env: map[string]string{
 				"FOUNDRY_PROJECT_ENDPOINT": "https://current",

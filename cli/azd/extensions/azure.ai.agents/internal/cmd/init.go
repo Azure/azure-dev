@@ -1226,6 +1226,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
     --image myacr.azurecr.io/agents/my-agent:v1`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
+			}
+			defer azdClient.Close()
+
 			flags.noPrompt = extCtx.NoPrompt
 			if flags.env == "" {
 				flags.env = extCtx.Environment
@@ -1278,18 +1285,22 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
-					return ejectInfra(gate.projectRoot, infraProvider)
+					var env map[string]string
+					needsEnv, err := infraEjectNeedsEnvironment(gate.projectRoot)
+					if err != nil {
+						return err
+					}
+					if needsEnv {
+						env, err = readInfraEjectEnvironment(ctx, azdClient)
+						if err != nil {
+							return err
+						}
+					}
+					return ejectInfra(gate.projectRoot, infraProvider, env)
 				}
 			}
 
-			ctx := azdext.WithAccessToken(cmd.Context())
 			flags.agentNameExplicit = cmd.Flags().Changed("agent-name")
-
-			azdClient, err := azdext.NewAzdClient()
-			if err != nil {
-				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
-			}
-			defer azdClient.Close()
 
 			if err := checkAiModelServiceAvailable(ctx, azdClient); err != nil {
 				return err
@@ -1503,7 +1514,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						); err != nil {
 							return err
 						}
-						return ejectInfraAfterInit(infraProvider)
+						return ejectInfraAfterInit(ctx, infraProvider, azdClient)
 					}
 				}
 			}
@@ -1552,7 +1563,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if err := runReuseDefinition(ctx, flags, azdClient, httpClient, checkDir, existing); err != nil {
 							return err
 						}
-						return ejectInfraAfterInit(infraProvider)
+						return ejectInfraAfterInit(ctx, infraProvider, azdClient)
 					}
 				}
 			}
@@ -1597,7 +1608,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 								}
 								return err
 							}
-							return ejectInfraAfterInit(infraProvider)
+							return ejectInfraAfterInit(ctx, infraProvider, azdClient)
 						}
 						return missingAgentServiceError(flags.manifestPointer)
 					}
@@ -1867,7 +1878,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// wrote azure.yaml, chain the eject step. Skip silently when init
 			// didn't produce a foundry-bearing azure.yaml (cancelled or
 			// non-foundry flow) to avoid a confusing "nothing to eject" error.
-			return ejectInfraAfterInit(infraProvider)
+			return ejectInfraAfterInit(ctx, infraProvider, azdClient)
 		},
 	}
 

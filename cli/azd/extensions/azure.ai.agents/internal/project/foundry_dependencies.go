@@ -301,13 +301,6 @@ func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[
 	if !found {
 		return "connection is not listed in AZURE_AI_PROJECT_CONNECTION_NAMES"
 	}
-	// Older project extensions published connection names without a scope marker.
-	if strings.TrimSpace(env[envkey.ConnectionProjectEndpoint]) == "" {
-		return ""
-	}
-	if !sameProjectEndpoint(env[envkey.ConnectionProjectEndpoint], env["FOUNDRY_PROJECT_ENDPOINT"]) {
-		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
-	}
 	return ""
 }
 

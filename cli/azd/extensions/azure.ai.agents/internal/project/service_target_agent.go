@@ -2257,6 +2257,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, deployOp)
 	}
+	if err := validateVoiceAgentDeployResponse(agentObject, apiMode); err != nil {
+		return nil, err
+	}
 
 	fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
 
@@ -2294,6 +2297,19 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}}
 
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
+}
+
+func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject, apiMode voiceAgentAPIMode) error {
+	if agentObject == nil {
+		return fmt.Errorf("malformed voice agent service response: missing agent object")
+	}
+	if strings.TrimSpace(agentObject.Name) == "" {
+		return fmt.Errorf("malformed voice agent service response: missing agent name")
+	}
+	if apiMode != voiceAgentAPIModeLegacy && strings.TrimSpace(agentObject.Versions.Latest.Version) == "" {
+		return fmt.Errorf("malformed voice agent service response: missing latest agent version")
+	}
+	return nil
 }
 
 func (p *AgentServiceTargetProvider) deployVoiceAgentWithMode(

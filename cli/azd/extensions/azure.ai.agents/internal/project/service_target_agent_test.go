@@ -718,6 +718,36 @@ func TestBuildVoiceWSProtocolURL(t *testing.T) {
 	)
 }
 
+func TestValidateVoiceAgentDeployResponse(t *testing.T) {
+	t.Run("legacy requires name only", func(t *testing.T) {
+		err := validateVoiceAgentDeployResponse(
+			&agent_api.AgentObject{Name: "voice-agent"},
+			voiceAgentAPIModeLegacy,
+		)
+		require.NoError(t, err)
+	})
+
+	t.Run("unified requires latest version", func(t *testing.T) {
+		agent := &agent_api.AgentObject{Name: "voice-agent"}
+		agent.Versions.Latest.Version = "1"
+		err := validateVoiceAgentDeployResponse(agent, voiceAgentAPIModeUnifiedFlat)
+		require.NoError(t, err)
+	})
+
+	t.Run("missing name rejected", func(t *testing.T) {
+		err := validateVoiceAgentDeployResponse(&agent_api.AgentObject{}, voiceAgentAPIModeLegacy)
+		require.ErrorContains(t, err, "missing agent name")
+	})
+
+	t.Run("unified missing version rejected", func(t *testing.T) {
+		err := validateVoiceAgentDeployResponse(
+			&agent_api.AgentObject{Name: "voice-agent"},
+			voiceAgentAPIModeUnified,
+		)
+		require.ErrorContains(t, err, "missing latest agent version")
+	})
+}
+
 func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
 

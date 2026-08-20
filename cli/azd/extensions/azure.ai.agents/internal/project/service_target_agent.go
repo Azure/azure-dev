@@ -2223,6 +2223,13 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 			fmt.Sprintf("set %s to legacy, unified, or unified-flat", voiceAgentAPIEnvKey),
 		)
 	}
+	if hasAdvancedVoiceConfig(va) && apiMode != voiceAgentAPIModeUnifiedFlat {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"advanced prompt-voice settings require the unified flat voice API mode",
+			fmt.Sprintf("set %s to unified-flat", voiceAgentAPIEnvKey),
+		)
+	}
 
 	var request *agent_api.CreateAgentRequest
 	if apiMode == voiceAgentAPIModeUnifiedFlat {
@@ -2297,6 +2304,20 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}}
 
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
+}
+
+func hasAdvancedVoiceConfig(va agent_yaml.VoiceAgent) bool {
+	return len(va.StructuredInputs) > 0 ||
+		va.Audio != nil ||
+		len(va.OutputModalities) > 0 ||
+		len(va.Tools) > 0 ||
+		len(va.Avatar) > 0 ||
+		len(va.Greeting) > 0 ||
+		len(va.Handoff) > 0 ||
+		va.ToolChoice != nil ||
+		va.ParallelToolCalls != nil ||
+		va.MaxOutputTokens != nil ||
+		len(va.Include) > 0
 }
 
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject, apiMode voiceAgentAPIMode) error {

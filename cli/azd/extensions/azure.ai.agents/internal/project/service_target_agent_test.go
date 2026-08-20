@@ -775,6 +775,14 @@ func TestShouldUpdateVoiceAgent(t *testing.T) {
 	})
 }
 
+func TestHasAdvancedVoiceConfig(t *testing.T) {
+	store := false
+	require.False(t, hasAdvancedVoiceConfig(agent_yaml.VoiceAgent{}))
+	require.False(t, hasAdvancedVoiceConfig(agent_yaml.VoiceAgent{Store: &store}))
+	require.True(t, hasAdvancedVoiceConfig(agent_yaml.VoiceAgent{Audio: &agent_yaml.VoiceAudio{}}))
+	require.True(t, hasAdvancedVoiceConfig(agent_yaml.VoiceAgent{Tools: []map[string]any{{"type": "system"}}}))
+}
+
 func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
 

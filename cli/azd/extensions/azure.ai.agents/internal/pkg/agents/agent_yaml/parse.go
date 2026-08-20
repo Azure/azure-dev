@@ -460,6 +460,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 							"template.model_type '%s' is not supported; use '%s' or '%s'",
 							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
 					}
+					errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to VoiceAgent: %v", err))
 				}
@@ -477,6 +478,74 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 	}
 
 	return nil
+}
+
+func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
+	var errors []string
+	for i, modality := range agent.OutputModalities {
+		if strings.TrimSpace(modality) == "" {
+			errors = append(errors, fmt.Sprintf("template.output_modalities[%d] must not be blank", i))
+		}
+	}
+
+	if agent.Audio == nil {
+		return errors
+	}
+	if agent.Audio.Input != nil {
+		errors = append(errors, validateVoiceAudioFormat("template.audio.input.format", agent.Audio.Input.Format)...)
+		if nr := agent.Audio.Input.NoiseReduction; nr != nil && strings.TrimSpace(nr.Type) == "" {
+			errors = append(errors, "template.audio.input.noise_reduction.type must not be blank")
+		}
+		if td := agent.Audio.Input.TurnDetection; td != nil {
+			if strings.TrimSpace(td.Type) == "" {
+				errors = append(errors, "template.audio.input.turn_detection.type must not be blank")
+			}
+			if td.Threshold != nil && (*td.Threshold < 0 || *td.Threshold > 1) {
+				errors = append(errors, "template.audio.input.turn_detection.threshold must be between 0 and 1")
+			}
+			if td.PrefixPaddingMs != nil && *td.PrefixPaddingMs < 0 {
+				errors = append(errors, "template.audio.input.turn_detection.prefix_padding_ms must be >= 0")
+			}
+			if td.SilenceDurationMs != nil && *td.SilenceDurationMs < 0 {
+				errors = append(errors, "template.audio.input.turn_detection.silence_duration_ms must be >= 0")
+			}
+			if td.SpeechDurationMs != nil && *td.SpeechDurationMs < 0 {
+				errors = append(errors, "template.audio.input.turn_detection.speech_duration_ms must be >= 0")
+			}
+		}
+	}
+	if agent.Audio.Output != nil {
+		errors = append(errors, validateVoiceAudioFormat("template.audio.output.format", agent.Audio.Output.Format)...)
+		if voice := agent.Audio.Output.Voice; voice != nil {
+			if strings.TrimSpace(voice.Type) == "" {
+				errors = append(errors, "template.audio.output.voice.type must not be blank")
+			}
+			if strings.TrimSpace(voice.Name) == "" {
+				errors = append(errors, "template.audio.output.voice.name must not be blank")
+			}
+		}
+		if speed := agent.Audio.Output.Speed; speed != nil && (*speed < 0.25 || *speed > 1.5) {
+			errors = append(errors, "template.audio.output.speed must be between 0.25 and 1.5")
+		}
+	}
+	return errors
+}
+
+func validateVoiceAudioFormat(path string, format *VoiceAudioFormat) []string {
+	if format == nil {
+		return nil
+	}
+	var errors []string
+	formatType := strings.TrimSpace(format.Type)
+	if formatType == "" {
+		errors = append(errors, path+".type must not be blank")
+	} else if formatType != "audio/pcm" && formatType != "audio/pcmu" && formatType != "audio/pcma" {
+		errors = append(errors, path+".type must be 'audio/pcm', 'audio/pcmu', or 'audio/pcma'")
+	}
+	if format.Rate != nil && *format.Rate <= 0 {
+		errors = append(errors, path+".rate must be greater than 0")
+	}
+	return errors
 }
 
 // Validate that the agent name matches the expected deployable format

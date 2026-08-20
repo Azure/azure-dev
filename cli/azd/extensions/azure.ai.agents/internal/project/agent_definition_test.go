@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -401,6 +402,30 @@ func TestAgentDefinition_ImageRidesOnCoreServiceField(t *testing.T) {
 	require.Empty(t, gotNoImage.Image)
 }
 
+func TestAgentDefinitionFromService_ValidImages(t *testing.T) {
+	props, err := AgentDefinitionToServiceProperties(sampleContainerAgent(), nil)
+	require.NoError(t, err)
+
+	images := []string{
+		"localhost:5000/agent:v1",
+		"[2001:db8::1]:5000/team/agent:v1",
+		"registry.example.com/agent:v1@sha256:" + strings.Repeat("a", 64),
+	}
+	for _, image := range images {
+		t.Run(image, func(t *testing.T) {
+			svc := &azdext.ServiceConfig{
+				Name:                 "basic-agent",
+				Host:                 "azure.ai.agent",
+				Image:                image,
+				AdditionalProperties: props,
+			}
+			got, _, _, _, err := AgentDefinitionFromService(svc)
+			require.NoError(t, err)
+			require.Equal(t, image, got.Image)
+		})
+	}
+}
+
 // TestAgentDefinitionFromService_InvalidImage verifies the image reference (from
 // the core service field) is still validated for the inline shape.
 func TestAgentDefinitionFromService_InvalidImage(t *testing.T) {
@@ -542,7 +567,8 @@ func TestLoadAgentDefinition_ToolboxServiceReference(t *testing.T) {
 // fallback used during the migration window.
 func TestLoadAgentDefinition_DiskFallback(t *testing.T) {
 	dir := t.TempDir()
-	yaml := "kind: hosted\nname: disk-agent\nregistryConnectionId: private-registry\n" +
+	image := "registry.example.com/agent:v1@sha256:" + strings.Repeat("a", 64)
+	yaml := "kind: hosted\nname: disk-agent\nimage: " + image + "\nregistryConnectionId: private-registry\n" +
 		"protocols:\n  - protocol: responses\n    version: \"1.0.0\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0o600))
 
@@ -553,6 +579,7 @@ func TestLoadAgentDefinition_DiskFallback(t *testing.T) {
 	require.Equal(t, AgentDefinitionSourceDisk, source)
 	require.True(t, source.IsLegacy())
 	require.Equal(t, "disk-agent", got.Name)
+	require.Equal(t, image, got.Image)
 	require.Equal(t, "private-registry", got.RegistryConnectionID)
 }
 

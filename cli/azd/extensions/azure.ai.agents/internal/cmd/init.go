@@ -3,8 +3,6 @@
 
 package cmd
 
-// cSpell:ignore containerref
-
 import (
 	"context"
 	"crypto/rand"

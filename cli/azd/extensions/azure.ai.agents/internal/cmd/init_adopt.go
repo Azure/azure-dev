@@ -1049,14 +1049,14 @@ func runInitFromAzureYaml(
 	// resolved deploy mode: a container agent on an existing project
 	// needs AZURE_CONTAINER_REGISTRY_ENDPOINT set here, while a code
 	// agent (or a user-supplied --image) does not.
-	needsACR, err := applyDeployModeToAdoptedProject(ctx, flags, azdClient)
+	projectNeedsACR, err := applyDeployModeToAdoptedProject(ctx, flags, azdClient)
 	if err != nil {
 		return err
 	}
 
 	// Only source-container deploys require an ACR. Code deploy and pre-built
 	// images skip it.
-	skipACR := !needsACR
+	skipACR := !projectNeedsACR
 	// The adopt path only supports hosted agents today. Hosted-region filtering
 	// is independent from ACR setup; prompt-voice has its own region/onboarding
 	// constraints and does not flow through this path.
@@ -1582,11 +1582,11 @@ func applyDeployModeToAdoptedProject(
 		return false, nil
 	}
 
-	// Apply configuration to each agent service, tracking whether any source
-	// container requires an ACR.
-	needsACR := false
+	// Apply configuration to each agent service, tracking whether the project
+	// contains any source container that requires an ACR.
+	projectNeedsACR := false
 	for _, agent := range agentServices {
-		requiresACR, err := applyDeployModeToService(
+		serviceNeedsACR, err := applyDeployModeToService(
 			ctx,
 			flags,
 			azdClient,
@@ -1597,11 +1597,9 @@ func applyDeployModeToAdoptedProject(
 		if err != nil {
 			return false, err
 		}
-		if requiresACR {
-			needsACR = true
-		}
+		projectNeedsACR = projectNeedsACR || serviceNeedsACR
 	}
-	return needsACR, nil
+	return projectNeedsACR, nil
 }
 
 // applyDeployModeToService applies deploy-mode configuration to a

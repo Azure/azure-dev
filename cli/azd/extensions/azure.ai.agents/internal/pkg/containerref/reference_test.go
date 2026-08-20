@@ -3,41 +3,76 @@
 
 package containerref
 
-// cSpell:ignore containerref
+import (
+	"strings"
+	"testing"
+)
 
-import "testing"
-
-func TestIsFullyQualified(t *testing.T) {
+func TestImageReferences(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		image string
-		want  bool
+		name               string
+		image              string
+		wantValid          bool
+		wantFullyQualified bool
 	}{
-		{name: "registry and tag", image: "registry.example.com/team/agent:v1", want: true},
-		{name: "localhost and port", image: "localhost:5000/agent:latest", want: true},
 		{
-			name:  "digest",
-			image: "registry.example.com/agent@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			want:  true,
+			name:               "registry and tag",
+			image:              "registry.example.com/team/agent:v1",
+			wantValid:          true,
+			wantFullyQualified: true,
 		},
 		{
-			name: "tag and digest",
-			image: "registry.example.com/agent:v1@sha256:" +
-				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			want: true,
+			name:               "registry port",
+			image:              "registry:5000/team/agent:v1",
+			wantValid:          true,
+			wantFullyQualified: true,
 		},
-		{name: "unqualified", image: "agent:v1", want: false},
-		{name: "URL scheme", image: "https://registry.example.com/agent:v1", want: false},
-		{name: "empty", image: "", want: false},
+		{
+			name:               "localhost and port",
+			image:              "localhost:5000/agent:latest",
+			wantValid:          true,
+			wantFullyQualified: true,
+		},
+		{
+			name:               "IPv6 registry",
+			image:              "[2001:db8::1]:5000/team/agent:v1",
+			wantValid:          true,
+			wantFullyQualified: true,
+		},
+		{
+			name:               "digest",
+			image:              "registry.example.com/agent@sha256:" + strings.Repeat("a", 64),
+			wantValid:          true,
+			wantFullyQualified: true,
+		},
+		{
+			name:               "tag and digest",
+			image:              "registry.example.com/agent:v1@sha256:" + strings.Repeat("a", 64),
+			wantValid:          true,
+			wantFullyQualified: true,
+		},
+		{name: "unqualified path", image: "team/agent:v1", wantValid: true},
+		{name: "unqualified", image: "agent:v1", wantValid: true},
+		{name: "URL scheme", image: "https://registry.example.com/agent:v1"},
+		{name: "uppercase repository", image: "registry.example.com/Team/agent:v1"},
+		{name: "empty"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if got := IsFullyQualified(test.image); got != test.want {
-				t.Errorf("IsFullyQualified(%q) = %t, want %t", test.image, got, test.want)
+			if got := IsValid(test.image); got != test.wantValid {
+				t.Errorf("IsValid(%q) = %t, want %t", test.image, got, test.wantValid)
+			}
+			if got := IsFullyQualified(test.image); got != test.wantFullyQualified {
+				t.Errorf(
+					"IsFullyQualified(%q) = %t, want %t",
+					test.image,
+					got,
+					test.wantFullyQualified,
+				)
 			}
 		})
 	}

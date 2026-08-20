@@ -279,7 +279,7 @@ func portableSkillArchiveReference(serviceRoot, source string) (string, error) {
 		)
 	}
 
-return filepath.ToSlash(resolvedRelative), nil
+	return filepath.ToSlash(resolvedRelative), nil
 }
 
 func pathEscapesBase(relative string) bool {

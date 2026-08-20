@@ -112,6 +112,7 @@ func (a *PackAction) Run(ctx context.Context) error {
 	request := buildTeamsAppPackageRequest(packCtx.botArmID, teamsAppRequestOptions{
 		scope:       scope,
 		agentName:   packCtx.agentName,
+		useCase:     packCtx.activityProfile.UseCase,
 		displayName: a.flags.displayName,
 		appVersion:  a.flags.appVersion,
 		publish:     activityPublishConfig(packCtx),

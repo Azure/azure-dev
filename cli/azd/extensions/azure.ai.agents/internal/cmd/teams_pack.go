@@ -265,6 +265,7 @@ func teamsBotArmID(subscriptionID, defaultResourceGroup, botName, botResourceGro
 type teamsAppRequestOptions struct {
 	scope             teamsPackScope
 	agentName         string
+	useCase           project.ActivityUseCase
 	displayName       string
 	appVersion        string
 	blueprintClientID string
@@ -322,9 +323,11 @@ func buildTeamsAppPackageRequest(
 		CanRespondWithoutMention: true,
 	}
 	if publish != nil {
-		request.PublishAsAutopilot = publish.PublishAsAutopilot
-		request.UseAgenticUserTemplate = publish.AgenticUserTemplate != nil
-		if publish.AgenticUserTemplate != nil {
+		if opts.useCase == project.ActivityUseCaseDigitalWorker {
+			request.PublishAsAutopilot = publish.PublishAsAutopilot
+			request.UseAgenticUserTemplate = publish.AgenticUserTemplate != nil
+		}
+		if opts.useCase == project.ActivityUseCaseDigitalWorker && publish.AgenticUserTemplate != nil {
 			request.AgenticUserTemplate = &agent_api.AgenticUserTemplate{
 				ID:                       publish.AgenticUserTemplate.ID,
 				File:                     publish.AgenticUserTemplate.File,

@@ -106,6 +106,7 @@ func TestBuildTeamsAppPackageRequest_DigitalWorkerUsesPublishMetadata(t *testing
 	req := buildTeamsAppPackageRequest("/subscriptions/s/bot", teamsAppRequestOptions{
 		scope:             scope,
 		displayName:       "CLI Overridden",
+		useCase:           project.ActivityUseCaseDigitalWorker,
 		appVersion:        "",
 		blueprintClientID: "blueprint-client-id",
 		publish:           publish,

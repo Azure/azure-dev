@@ -249,6 +249,9 @@ func TestBuildTeamsAppPackageRequestUsesPublishMetadataForSimpleActivity(t *test
 	require.Equal(t, "2.3.4", configured.AppVersion)
 	require.Equal(t, "Configured Activity agent", configured.AgentDisplayName)
 	require.Equal(t, "Shared", configured.PublishScope)
+	require.False(t, configured.PublishAsAutopilot)
+	require.False(t, configured.UseAgenticUserTemplate)
+	require.Nil(t, configured.AgenticUserTemplate)
 
 	explicit := buildTeamsAppPackageRequest("", teamsAppRequestOptions{
 		displayName: "CLI Activity agent",
@@ -259,6 +262,9 @@ func TestBuildTeamsAppPackageRequestUsesPublishMetadataForSimpleActivity(t *test
 	require.Equal(t, "9.8.7", explicit.AppVersion)
 	require.Equal(t, "CLI Activity agent", explicit.AgentDisplayName)
 	require.Equal(t, "Tenant", explicit.PublishScope)
+	require.False(t, explicit.PublishAsAutopilot)
+	require.False(t, explicit.UseAgenticUserTemplate)
+	require.Nil(t, explicit.AgenticUserTemplate)
 }
 
 func digitalWorkerPackContext(publishScope string) *teamsPackContext {
@@ -270,9 +276,16 @@ func activityPackContext(useCase project.ActivityUseCase, publishScope string) *
 		activityProfile: project.ActivityProfile{UseCase: useCase},
 		activitySettings: &project.ActivitySettings{
 			Publish: &project.DigitalWorkerPublishConfig{
-				PublishScope:     publishScope,
-				AppVersion:       "2.3.4",
-				AgentDisplayName: "Configured Activity agent",
+				PublishAsAutopilot: true,
+				PublishScope:       publishScope,
+				AppVersion:         "2.3.4",
+				AgentDisplayName:   "Configured Activity agent",
+				AgenticUserTemplate: &project.AgenticUserTemplateConfig{
+					ID:                    "digitalWorkerTemplate",
+					File:                  "agenticUserTemplateManifest.json",
+					SchemaVersion:         "0.1.0-preview",
+					CommunicationProtocol: "activityProtocol",
+				},
 			},
 		},
 	}

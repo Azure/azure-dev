@@ -162,6 +162,9 @@
             "required": ["publish"],
             "properties": {
               "publish": {
+                "properties": {
+                  "publishScope": { "const": "tenant" }
+                },
                 "required": ["agenticUserTemplate"]
               }
             }
@@ -183,7 +186,7 @@
     "DigitalWorkerPublishConfig": {
       "type": "object",
       "properties": {
-        "publishScope": { "type": "string", "enum": ["tenant"] },
+        "publishScope": { "type": "string", "enum": ["shared", "tenant"] },
         "canRespondWithoutMention": { "type": "boolean" },
         "appVersion": { "type": "string", "minLength": 1 },
         "agentDisplayName": { "type": "string", "minLength": 1 },

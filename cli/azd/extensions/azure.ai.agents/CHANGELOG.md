@@ -1,5 +1,19 @@
 # Release History
 
+## 1.0.0-beta.11 (2026-08-20)
+
+### Features Added
+
+- [[#9444]](https://github.com/Azure/azure-dev/pull/9444) Add the `max_concurrent_agent_runs` optimize YAML option to run agent evaluations in parallel.
+- [[#9472]](https://github.com/Azure/azure-dev/pull/9472) Add `initialization_parameters` to evaluator configuration in optimize YAML files.
+- [[#9612]](https://github.com/Azure/azure-dev/pull/9612) Support `sessionConfiguration.idleTimeoutSeconds` for hosted agent services in `azure.yaml`.
+
+### Bugs Fixed
+
+- [[#9563]](https://github.com/Azure/azure-dev/pull/9563) Fix Doctor and next-step guidance for toolboxes declared as standalone `azure.ai.toolbox` services.
+- [[#9600]](https://github.com/Azure/azure-dev/pull/9600) Report local agent process failures instead of reporting that the agent stopped successfully.
+- [[#9636]](https://github.com/Azure/azure-dev/pull/9636) Preserve actionable structured errors returned through nested azd host calls.
+
 ## 1.0.0-beta.10 (2026-08-13)
 
 ### Features Added

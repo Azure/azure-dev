@@ -179,11 +179,11 @@
       "description": "Activity-protocol Teams configuration. Digital Workers require the publish settings below.",
       "properties": {
         "useCase": { "type": "string", "enum": ["simple", "digital_worker"] },
-        "publish": { "$ref": "#/definitions/DigitalWorkerPublishConfig" }
+        "publish": { "$ref": "#/definitions/ActivityPublishConfig" }
       },
       "additionalProperties": false
     },
-    "DigitalWorkerPublishConfig": {
+    "ActivityPublishConfig": {
       "type": "object",
       "properties": {
         "publishScope": { "type": "string", "enum": ["shared", "tenant"] },

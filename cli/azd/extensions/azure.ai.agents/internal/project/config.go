@@ -58,13 +58,14 @@ type ServiceTargetAgentConfig struct {
 
 // ActivitySettings configures the Teams hosting model for an Activity-protocol agent.
 type ActivitySettings struct {
-	UseCase ActivityUseCase             `json:"useCase,omitempty"`
-	Publish *DigitalWorkerPublishConfig `json:"publish,omitempty"`
+	UseCase ActivityUseCase        `json:"useCase,omitempty"`
+	Publish *ActivityPublishConfig `json:"publish,omitempty"`
 }
 
-// DigitalWorkerPublishConfig carries the V3 Microsoft 365 publish inputs that
-// deploy persists for a later publish command. Deploy does not publish the app.
-type DigitalWorkerPublishConfig struct {
+// ActivityPublishConfig carries Activity-protocol Teams package/publish metadata.
+// Digital Worker-only fields are applied only when the resolved use case is
+// digital_worker.
+type ActivityPublishConfig struct {
 	PublishAsAutopilot       bool                       `json:"publishAsAutopilot,omitempty"`
 	PublishScope             string                     `json:"publishScope,omitempty"`
 	CanRespondWithoutMention *bool                      `json:"canRespondWithoutMention,omitempty"`

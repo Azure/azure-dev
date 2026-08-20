@@ -114,7 +114,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	t.Run("digital worker resolves", func(t *testing.T) {
 		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &DigitalWorkerPublishConfig{
+			Publish: &ActivityPublishConfig{
 				PublishAsAutopilot: true,
 				PublishScope:       "tenant",
 				AgenticUserTemplate: &AgenticUserTemplateConfig{
@@ -133,7 +133,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	t.Run("digital worker defaults omitted publish scope", func(t *testing.T) {
 		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &DigitalWorkerPublishConfig{
+			Publish: &ActivityPublishConfig{
 				PublishAsAutopilot: true,
 				AgenticUserTemplate: &AgenticUserTemplateConfig{
 					ID:                    "digitalWorkerTemplate",
@@ -150,7 +150,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	t.Run("digital worker infers autopilot publish", func(t *testing.T) {
 		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &DigitalWorkerPublishConfig{
+			Publish: &ActivityPublishConfig{
 				PublishScope: "tenant",
 				AgenticUserTemplate: &AgenticUserTemplateConfig{
 					ID:                    "digitalWorkerTemplate",
@@ -168,7 +168,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	t.Run("digital worker requires agentic user template", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &DigitalWorkerPublishConfig{
+			Publish: &ActivityPublishConfig{
 				PublishAsAutopilot: true,
 				PublishScope:       "tenant",
 			},
@@ -179,7 +179,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	t.Run("digital worker requires tenant publish scope", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &DigitalWorkerPublishConfig{
+			Publish: &ActivityPublishConfig{
 				PublishAsAutopilot: true,
 				PublishScope:       "shared",
 				AgenticUserTemplate: &AgenticUserTemplateConfig{
@@ -196,7 +196,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	t.Run("digital worker requires activity protocol", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(agent_yaml.ContainerAgent{}, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &DigitalWorkerPublishConfig{
+			Publish: &ActivityPublishConfig{
 				PublishAsAutopilot: true,
 				PublishScope:       "tenant",
 				AgenticUserTemplate: &AgenticUserTemplateConfig{

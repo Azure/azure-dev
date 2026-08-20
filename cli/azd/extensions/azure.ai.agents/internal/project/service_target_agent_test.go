@@ -1086,7 +1086,7 @@ func TestRegisterAgentEnvironmentVariables_PersistsDigitalWorkerBlueprintClientI
 		azdClient: newEnvTestClient(t, envStub),
 		env:       &azdext.Environment{Name: "test-env"},
 	}
-	publish := &DigitalWorkerPublishConfig{
+	publish := &ActivityPublishConfig{
 		PublishAsAutopilot: true,
 		PublishScope:       "tenant",
 	}

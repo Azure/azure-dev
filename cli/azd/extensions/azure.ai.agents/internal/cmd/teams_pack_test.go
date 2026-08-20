@@ -84,7 +84,7 @@ func TestBuildTeamsAppPackageRequest_DigitalWorkerUsesPublishMetadata(t *testing
 		t.Fatal(err)
 	}
 	canRespond := true
-	publish := &project.DigitalWorkerPublishConfig{
+	publish := &project.ActivityPublishConfig{
 		PublishAsAutopilot:       true,
 		PublishScope:             "tenant",
 		CanRespondWithoutMention: &canRespond,

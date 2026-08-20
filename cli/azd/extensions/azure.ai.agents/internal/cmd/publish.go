@@ -199,7 +199,7 @@ func validateDigitalWorkerPublishScope(useCase project.ActivityUseCase, scope te
 	)
 }
 
-func activityPublishConfig(packCtx *teamsPackContext) *project.DigitalWorkerPublishConfig {
+func activityPublishConfig(packCtx *teamsPackContext) *project.ActivityPublishConfig {
 	if packCtx.activitySettings == nil {
 		return nil
 	}

@@ -269,7 +269,7 @@ type teamsAppRequestOptions struct {
 	displayName       string
 	appVersion        string
 	blueprintClientID string
-	publish           *project.DigitalWorkerPublishConfig
+	publish           *project.ActivityPublishConfig
 }
 
 // buildTeamsAppPackageRequest assembles the Microsoft 365 request body shared by

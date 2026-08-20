@@ -222,7 +222,7 @@ func TestResolvePublishScopeDefaultsDigitalWorkerToTenantWhenConfigMissing(t *te
 func TestBuildTeamsAppPackageRequestPublishMetadataPrecedence(t *testing.T) {
 	t.Parallel()
 
-	publish := &project.DigitalWorkerPublishConfig{
+	publish := &project.ActivityPublishConfig{
 		AppVersion:       "2.3.4",
 		AgentDisplayName: "Configured Digital Worker",
 	}
@@ -275,7 +275,7 @@ func activityPackContext(useCase project.ActivityUseCase, publishScope string) *
 	return &teamsPackContext{
 		activityProfile: project.ActivityProfile{UseCase: useCase},
 		activitySettings: &project.ActivitySettings{
-			Publish: &project.DigitalWorkerPublishConfig{
+			Publish: &project.ActivityPublishConfig{
 				PublishAsAutopilot: true,
 				PublishScope:       publishScope,
 				AppVersion:         "2.3.4",

@@ -1133,10 +1133,18 @@ func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context, options *ini
 
 	if selectedModel != nil {
 		modelID = selectedModel.ID
-		if err := azdConfig.Set(agentcopilot.ConfigKeyModel, selectedModel.ID); err != nil {
-			return nil, fmt.Errorf("failed to save model: %w", err)
-		}
+	} else {
+		// the user choosing "use default" (which is why selectedModel == nil) _is_ a choice, and
+		// we should reflect that by storing the empty model so we'll pass an empty model when creating
+		// the copilot session.
+		modelID = ""
+	}
 
+	if err := azdConfig.Set(agentcopilot.ConfigKeyModel, modelID); err != nil {
+		return nil, fmt.Errorf("failed to save model: %w", err)
+	}
+
+	if selectedModel != nil {
 		reasoningEffort, err = a.promptReasoningEffort(ctx, *selectedModel)
 		if err != nil {
 			return nil, fmt.Errorf("failed to select a reasoning effort: %w", err)

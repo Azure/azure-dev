@@ -21,27 +21,32 @@ import (
 
 func TestCopilotAgentPromptModelAndReasoning(t *testing.T) {
 	t.Run("ModelConfigurationAlreadyInConfig", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(t.Context())
-		userConfig := config.NewEmptyConfig()
+		runCopilotAgentTest(t, copilotAgentTestArgs{
+			Models: []copilot.ModelInfo{{
+				ID:   "configured-model",
+				Name: "Configured model",
+			}},
 
-		require.NoError(t, userConfig.Set(agentcopilot.ConfigKeyModel, "configured-model"))
-		require.NoError(t, userConfig.Set(agentcopilot.ConfigKeyReasoningEffort, "configured-effort"))
+			// stored config values
+			ExpectedModelID:         "configured-model",
+			ExpectedReasoningEffort: "configured-effort",
 
-		mockContext.ConfigManager.WithConfig(userConfig)
+			// without 'forcePrompt' we'll just returned the already stored config values
+			ExistingModelID:         "configured-model",
+			ExistingReasoningEffort: "configured-effort",
+		})
+	})
 
-		// IsFirstRun is reported in a few ways - via telemetry and via RPC to extensions
-		// It gets set to true if we end up prompting the user to enter in model details
-		agent := &CopilotAgent{
-			console:       mockContext.Console,
-			configManager: config.NewUserConfigManager(mockContext.ConfigManager),
-		}
-
-		result, err := agent.promptModelAndReasoning(t.Context(), &initOptions{})
-
-		require.NoError(t, err)
-		assert.Equal(t, "configured-model", result.Model)
-		assert.Equal(t, "configured-effort", result.ReasoningEffort)
-		assert.False(t, result.IsFirstRun, "user already had configuration stored")
+	t.Run("ForcePromptDefaultClearsExistingConfiguration", func(t *testing.T) {
+		runCopilotAgentTest(t, copilotAgentTestArgs{
+			Models: []copilot.ModelInfo{{
+				ID:   "configured-model",
+				Name: "Configured model",
+			}},
+			ExistingModelID:         "configured-model",
+			ExistingReasoningEffort: "configured-effort",
+			ForcePrompt:             true,
+		})
 	})
 
 	t.Run("ModelWithoutReasoningLevels", func(t *testing.T) {
@@ -136,9 +141,27 @@ func TestCopilotAgentPromptModelAndReasoning(t *testing.T) {
 }
 
 type copilotAgentTestArgs struct {
-	Models                  []copilot.ModelInfo
-	ExpectedModelID         string
+	Models []copilot.ModelInfo
+
+	// ExpectedModelID is what we expect the model ID to be after the user prompts have completed.
+	// (this will also be checked in the user config).
+	ExpectedModelID string
+
+	// ExpectedReasoningEffort is what we expect the reasoning effort to be after the user prompts have completed.
+	// (this will also be checked in the user config).
 	ExpectedReasoningEffort string
+
+	// ExistingModelID is a model ID that's already saved in the user config
+	// (as if they'd already gone through the prompting workflow)
+	ExistingModelID string
+
+	// ExistingReasoningEffort is the reasoning effort that's already saved in
+	// the user config (as if they'd already gone through the prompting workflow)
+	ExistingReasoningEffort string
+
+	// ForcePrompt toggles the 'forcePrompt' option in copilot agent to _always_ prompt the user
+	// even if something is already stored.
+	ForcePrompt bool
 }
 
 func runCopilotAgentTest(
@@ -156,20 +179,36 @@ func runCopilotAgentTest(
 			return strings.Compare(a.Name, b.Name)
 		})
 
-		for i, m := range args.Models {
-			if m.ID == args.ExpectedModelID {
-				// small hack - the models are shifted by 1, since the first model in the
-				// select-list is "Default model", which basically bypasses any configuration
-				// and let's copilot choose.
-				modelIdx = i + 1
-				model = m
-				break
+		if args.ExpectedModelID == "" {
+			modelIdx = 0 // ie (the 'default' model choice in our select-prompt)
+		} else {
+			for i, m := range args.Models {
+				if m.ID == args.ExpectedModelID {
+					// small hack - the models are shifted by 1, since the first model in the
+					// select-list is "Default model", which basically bypasses any configuration
+					// and let's copilot choose.
+					modelIdx = i + 1
+					model = m
+					break
+				}
 			}
+
+			require.NotEqual(t, -1, modelIdx, "model ID you passed for the test isn't in your list of models")
 		}
 
-		require.NotEqual(t, -1, modelIdx, "model ID you passed for the test isn't in your list of models")
-
 		mockContext := mocks.NewMockContext(t.Context())
+		userConfig := config.NewEmptyConfig()
+
+		if args.ExistingModelID != "" {
+			require.NoError(t, userConfig.Set(agentcopilot.ConfigKeyModel, args.ExistingModelID))
+		}
+
+		if args.ExistingReasoningEffort != "" {
+			require.NoError(t, userConfig.Set(agentcopilot.ConfigKeyReasoningEffort, args.ExistingReasoningEffort))
+		}
+
+		mockContext.ConfigManager.WithConfig(userConfig)
+
 		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 			return options.Message == selectAIModelMessage
 		}).Respond(modelIdx)
@@ -216,12 +255,14 @@ func runCopilotAgentTest(
 		}
 	}
 
-	result, err := agent.promptModelAndReasoning(t.Context(), &initOptions{})
+	result, err := agent.promptModelAndReasoning(t.Context(), &initOptions{forcePrompt: args.ForcePrompt})
 	require.NoError(t, err)
 
 	require.Equal(t, args.ExpectedModelID, result.Model)
 	require.Equal(t, args.ExpectedReasoningEffort, result.ReasoningEffort)
-	require.True(t, result.IsFirstRun)
+
+	hasExistingConfig := args.ExistingModelID != "" || args.ExistingReasoningEffort != ""
+	assert.Equal(t, !hasExistingConfig || args.ForcePrompt, result.IsFirstRun)
 
 	// quick check -what we're returning here matches what's stored in the configuration
 	userConfig, err := configManager.Load()

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"syscall"
 	"time"
 
@@ -273,11 +274,7 @@ func containsRefDirective(value any) bool {
 			}
 		}
 	case []any:
-		for _, child := range typed {
-			if containsRefDirective(child) {
-				return true
-			}
-		}
+		return slices.ContainsFunc(typed, containsRefDirective)
 	}
 	return false
 }

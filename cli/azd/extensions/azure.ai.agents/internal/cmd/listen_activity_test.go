@@ -171,8 +171,8 @@ func TestShouldProvisionActivityBotUsesCanonicalUseCaseResolution(t *testing.T) 
 			Name: "activity-agent",
 			Host: AiAgentHost,
 			AdditionalProperties: mustStruct(t, map[string]any{
-				"kind": "hosted",
-				"name": "activity-agent",
+				"kind":      "hosted",
+				"name":      "activity-agent",
 				"protocols": []any{map[string]any{"protocol": "activity", "version": "2.0.0"}},
 			}),
 		}, t.TempDir())
@@ -204,8 +204,8 @@ func TestShouldProvisionActivityBotUsesCanonicalUseCaseResolution(t *testing.T) 
 		require.NoError(t, os.WriteFile(definitionPath, []byte(definition), 0600))
 
 		shouldProvision, err := shouldProvisionActivityBot(&azdext.ServiceConfig{
-			Name: "activity-agent",
-			Host: AiAgentHost,
+			Name:                 "activity-agent",
+			Host:                 AiAgentHost,
 			AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./agent.yaml"}),
 		}, dir)
 		require.NoError(t, err)

@@ -36,16 +36,25 @@ export AZURE_DEV_COLLECT_TELEMETRY=no
 mkdir -p "$EARLY_BIRDS_ROOT/bin" "$AZD_CONFIG_DIR"
 
 cd "$EARLY_BIRDS_ROOT/cli/azd"
-go build -o "$EARLY_BIRDS_ROOT/bin/azd"
+AZD_VERSION=$(tr -d '\r\n' < "$EARLY_BIRDS_ROOT/cli/version.txt")
+AZD_COMMIT=$(git -C "$EARLY_BIRDS_ROOT" rev-parse HEAD)
+go build \
+  -ldflags="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=$AZD_VERSION (commit $AZD_COMMIT)'" \
+  -o "$EARLY_BIRDS_ROOT/bin/azd"
 export AZD_EARLY_BIRDS="$EARLY_BIRDS_ROOT/bin/azd"
+export PATH="$EARLY_BIRDS_ROOT/bin:$PATH"
 
 "$AZD_EARLY_BIRDS" version
 "$AZD_EARLY_BIRDS" auth login
-"$AZD_EARLY_BIRDS" ext install microsoft.azd.extensions --no-prompt
-"$AZD_EARLY_BIRDS" ext install azure.ai.projects --no-prompt
+"$AZD_EARLY_BIRDS" ext install microsoft.azd.extensions --source azd --no-prompt
+"$AZD_EARLY_BIRDS" ext install azure.ai.projects --source azd --no-prompt
+"$AZD_EARLY_BIRDS" ext install azure.ai.inspector --source azd --no-prompt
 
 cd "$EARLY_BIRDS_ROOT/cli/azd/extensions/azure.ai.agents"
 "$AZD_EARLY_BIRDS" x build
+"$AZD_EARLY_BIRDS" x pack
+"$AZD_EARLY_BIRDS" x publish
+"$AZD_EARLY_BIRDS" ext install azure.ai.agents --source local --force --no-prompt
 "$AZD_EARLY_BIRDS" ext list
 ```
 
@@ -74,8 +83,10 @@ cd "$EARLY_BIRDS_ROOT/.early-birds/greenfield"
   --agent-name "$AGENT_NAME" \
   --image "$IMAGE" \
   --project-id "$PROJECT_ID" \
-  --registry-connection "$REGISTRY_CONNECTION"
+  --registry-connection "$REGISTRY_CONNECTION" \
+  --protocol invocations
 
+cd "$AGENT_NAME"
 "$AZD_EARLY_BIRDS" deploy --no-prompt
 printf '{"message":"Hello from the private registry early-birds test"}\n' > request.json
 "$AZD_EARLY_BIRDS" ai agent invoke "$AGENT_NAME" \

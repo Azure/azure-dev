@@ -3127,7 +3127,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
 	const pollInterval = 10 * time.Second
-	const pollTimeout = 5 * time.Minute
+	const pollTimeout = 10 * time.Minute
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)

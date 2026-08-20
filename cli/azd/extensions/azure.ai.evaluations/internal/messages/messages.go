@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
 // Package messages holds every string this extension shows a user.
@@ -983,8 +983,8 @@ func NoDatasets() string {
 
 // NoDatasetVersions reports a name whose versions listed nothing.
 //
-// Listing a name that does not exist is not an error ΓÇö a delete is checked for
-// idempotence this way ΓÇö so this has to read as an answer about that name
+// Listing a name that does not exist is not an error — a delete is checked for
+// idempotence this way — so this has to read as an answer about that name
 // rather than as a report about the project, which holds other datasets.
 //
 // The suggested command carries no placeholder, so it pastes and runs; the file
@@ -1432,13 +1432,30 @@ func RefNeedsAProjectRoot(service string) error {
 
 // CatalogNameBehindAnInclude reports a name declared through a `$ref`, which
 // this command cannot edit in place.
+//
+// One message for two shapes, so the cause is stated as what they share: the
+// entry lives in the referenced file. Naming only the duplicate-on-resolve case
+// would misdescribe an overlay `name`, which collides with nothing and instead
+// ends up declaring the rubric twice.
 func CatalogNameBehindAnInclude(kind, name string) error {
 	return fmt.Errorf(
-		"%s %q is already declared through a `$ref`, so this command cannot update "+
-			"it here: adding a second entry would collide with the first only after "+
-			"the include is resolved. Edit the referenced file, or generate under a "+
-			"different name",
+		"%s %q is declared in a file pulled in with `$ref`, so this command cannot "+
+			"update it here: an entry written beside the directive takes effect only "+
+			"once the include is resolved, and not as it reads. Edit the referenced "+
+			"file, or generate under a different name",
 		kind, name)
+}
+
+// EvaluatorRubricWrittenInPlace reports an evaluator whose rubric is already
+// written out under `definition:`, so there is nowhere to record a generated
+// file without declaring the rubric twice.
+func EvaluatorRubricWrittenInPlace(name string) error {
+	return fmt.Errorf(
+		"evaluator %q already carries its rubric under `definition:`, so this "+
+			"command cannot record a generated file against it: an entry holding "+
+			"both a `definition:` and a `source:` is refused on the next read. Edit "+
+			"the rubric in place, or generate under a different name",
+		name)
 }
 
 // ReadingServiceConfig reports the service entry failing to serialize.
@@ -2173,7 +2190,7 @@ func ReadingEvalConfig(path string, err error) error {
 // either command.
 //
 // Still unwraps to fs.ErrNotExist, because callers that tolerate an absent
-// configuration ΓÇö OpenEvalConfig, and the reference resolution above it ΓÇö decide
+// configuration — OpenEvalConfig, and the reference resolution above it — decide
 // that by asking, and a nicer sentence that stopped answering would turn every
 // one of those into a failure.
 func noEvalConfig(path string) error {
@@ -2433,7 +2450,7 @@ func ProjectContextRead(err error) error {
 // Progress markers from the azd style guide, so the extension's lines sit
 // alongside core's without a second vocabulary.
 const (
-	doneMark    = "(Γ£ô) Done:"    // finished successfully
+	doneMark    = "(✓) Done:"    // finished successfully
 	skippedMark = "(-) Skipped:" // intentionally not done, not a failure
 	failedMark  = "(x) Failed:"  // the step did not complete
 )

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
 package project
@@ -124,8 +124,8 @@ func (p *EvalServiceTargetProvider) Publish(
 	return &azdext.ServicePublishResult{}, nil
 }
 
-// Deploy reconciles the eval configuration in a fixed order ΓÇö datasets, then
-// evaluators, then evals ΓÇö because a group references the versions the
+// Deploy reconciles the eval configuration in a fixed order — datasets, then
+// evaluators, then evals — because a group references the versions the
 // first two resolve to. It fails fast; the next `azd up` resumes from wherever
 // it stopped.
 func (p *EvalServiceTargetProvider) Deploy(
@@ -135,7 +135,13 @@ func (p *EvalServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	cfg, err := EvalConfigFromService(serviceConfig, p.projectRoot(ctx))
+	// Asked once and reused: a second call could fail where the first
+	// succeeded, and the empty root that comes back is indistinguishable from a
+	// project that has none. The include guard below would have passed while
+	// artifact paths quietly resolved against this process's directory instead.
+	projectRoot := p.projectRoot(ctx)
+
+	cfg, err := EvalConfigFromService(serviceConfig, projectRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +154,7 @@ func (p *EvalServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	baseDir := p.evalBaseDir(ctx, serviceConfig)
+	baseDir := baseDirUnder(projectRoot, serviceConfig)
 
 	// 1. Datasets the configuration owns. Paths are kept so an eval that names
 	// one can derive its columns without reading the blob back.
@@ -218,7 +224,8 @@ func (p *EvalServiceTargetProvider) projectRoot(ctx context.Context) string {
 	return resp.GetProject().GetPath()
 }
 
-// evalBaseDir is the directory a declaration's `source:` resolves against.
+// baseDirUnder places a service's directory under the project -- the directory
+// a declaration's `source:` resolves against.
 //
 // serviceRelativeDir answers relative to the project, because that is what the
 // service's `$ref` and relativePath are written relative to. Left there it was
@@ -230,14 +237,6 @@ func (p *EvalServiceTargetProvider) projectRoot(ctx context.Context) string {
 // generation job to rewrite a file already on disk.
 //
 // The same join is what agent_instructions.go does with the same helper.
-func (p *EvalServiceTargetProvider) evalBaseDir(
-	ctx context.Context,
-	serviceConfig *azdext.ServiceConfig,
-) string {
-	return baseDirUnder(p.projectRoot(ctx), serviceConfig)
-}
-
-// baseDirUnder places a service's directory under the project.
 //
 // azd does not re-root an absolute `$ref` or an absolute `project:`, so neither
 // does this: joining one under the project produced <root>/C:/shared/evals,
@@ -281,7 +280,7 @@ func report(progress azdext.ProgressReporter, message string) {
 // service entry. azd captures unknown keys into AdditionalProperties and hands
 // them to the extension untouched.
 //
-// azd core deliberately does not resolve `$ref` includes for extensions ΓÇö it
+// azd core deliberately does not resolve `$ref` includes for extensions — it
 // strips the ServiceConfig fields it owns and leaves `$ref` at the top of the
 // map for the owning extension to resolve. Without this call a service written
 // as `host: azure.ai.eval` + `$ref: ./evals/azure.yaml` deploys nothing at all,
@@ -382,7 +381,7 @@ func ResolveSource(baseDir, source string) string {
 //
 // The dataset API returns no content hash or etag, so comparing against the
 // service would mean downloading the blob on every deploy. Every artifact this
-// applies to ΓÇö a dataset, a rubric, an evaluator script ΓÇö is a single file.
+// applies to — a dataset, a rubric, an evaluator script — is a single file.
 func Fingerprint(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -410,7 +409,7 @@ func FingerprintGroup(group Eval) (string, error) {
 	// Only substance is hashed. The id is server-assigned; name and description
 	// are what UpdateEvalParametersBody reaches, so an edit confined to them is
 	// pushed in place and must not cost the eval its id and its run history.
-	// Everything else ΓÇö dataset, source, evaluators, target, level ΓÇö is what
+	// Everything else — dataset, source, evaluators, target, level — is what
 	// makes this declaration the one it is.
 	name := group.Name
 	group.ID = ""

@@ -1,4 +1,4 @@
-﻿# Azure Developer CLI (azd) Evaluations Extension
+# Azure Developer CLI (azd) Evaluations Extension
 
 Define Foundry evaluations alongside your agent in `azure.yaml`, deploy them
 with `azd up`, and run them from the terminal.
@@ -50,7 +50,7 @@ evals:
       name: support-agent
 ```
 
-`azd up` reconciles **datasets ΓåÆ evaluators ΓåÆ eval groups**, in that order,
+`azd up` reconciles **datasets → evaluators → eval groups**, in that order,
 because a group references the versions the first two resolve to.
 
 Relative paths inside the `$ref`'d configuration resolve against **that file's**
@@ -60,7 +60,9 @@ That holds for the configuration as a whole. It does **not** hold for a `$ref`
 on a single catalog entry: azd rebases only the path keys it owns, so a relative
 `source:` written inside `evals/evaluators/quality.yaml` still resolves against
 `azure.eval.yaml` and will not be found. An entry pulled in from its own file
-should carry the rubric under `definition:` rather than point at a second file:
+should carry the rubric rather than point at a second file — either written out
+under `definition:`, or as a `$ref` straight at the rubric, whose keys are
+spliced in and become that `definition:`:
 
 ```yaml
 evaluators:
@@ -68,12 +70,17 @@ evaluators:
     name: quality
 ```
 
+An entry declared this way is read and deployed normally, but it lives in the
+referenced file, so `azd ai eval generate` will not update it in place and says
+so rather than writing a second declaration of the same rubric beside the
+directive. Edit the referenced file, or generate under a different name.
+
 ### Repeated deploys do not create redundant versions
 
 Datasets are fingerprinted locally, because the dataset API exposes no content
 hash and comparing against the service would mean downloading the blob on every
 deploy. Evaluator definitions are compared against the service, but only on the
-keys you authored ΓÇö the service adds `data_schema`, `init_parameters` and
+keys you authored — the service adds `data_schema`, `init_parameters` and
 `metrics` of its own.
 
 Eval groups are immutable, so a change to a group's evaluators, target or
@@ -84,11 +91,11 @@ environment so repeat runs stay comparable.
 
 | Group | Commands |
 |---|---|
-| `azd ai eval` | `init` ┬╖ `generate` ┬╖ `run` |
-| `azd ai eval dataset` | `create` ┬╖ `list` ┬╖ `show` ┬╖ `update` ┬╖ `delete` |
-| `azd ai eval evaluator` | `upload` ┬╖ `list` ┬╖ `show` ┬╖ `update` ┬╖ `delete` ┬╖ `builtins` |
-| `azd ai eval run` | `start` ┬╖ `list` ┬╖ `show` ┬╖ `cancel` |
-| `azd ai eval results` | `show` ┬╖ `export` |
+| `azd ai eval` | `init` · `generate` · `run` |
+| `azd ai eval dataset` | `create` · `list` · `show` · `update` · `delete` |
+| `azd ai eval evaluator` | `upload` · `list` · `show` · `update` · `delete` · `builtins` |
+| `azd ai eval run` | `start` · `list` · `show` · `cancel` |
+| `azd ai eval results` | `show` · `export` |
 
 `create` and `update` both publish a new immutable version; the server
 auto-increments and nothing mutates in place.
@@ -98,7 +105,7 @@ usable from CI.
 
 ## Evaluators
 
-Built-ins need no declaration ΓÇö reference them as `builtin.<name>` and list
+Built-ins need no declaration — reference them as `builtin.<name>` and list
 them with `azd ai eval evaluator builtins`.
 
 Evaluators do not share an input contract, so the CLI reads each one's
@@ -182,13 +189,13 @@ it to a dated log file rather than the terminal.
 
 Both are files the azd extensions team owns, so they are not changed here:
 
-- [ ] **`cli/azd/extensions/registry.json`** ΓÇö add the `azure.ai.evaluations`
+- [ ] **`cli/azd/extensions/registry.json`** — add the `azure.ai.evaluations`
   entry. Until it exists `azd extension install azure.ai.evaluations` cannot
   resolve, so the extension is only reachable through `azd x pack` +
   `azd x publish` into the local source registry.
-- [ ] **`.github/CODEOWNERS`** ΓÇö add `/cli/azd/extensions/azure.ai.evaluations/`.
+- [ ] **`.github/CODEOWNERS`** — add `/cli/azd/extensions/azure.ai.evaluations/`.
   Every sibling Foundry extension has an entry; without one, PRs here get no
   reviewer routing.
-- [ ] **`microsoft.foundry/extension.yaml`** ΓÇö add the dependency, but only
+- [ ] **`microsoft.foundry/extension.yaml`** — add the dependency, but only
   after the registry entry lands. Declaring a dependency that cannot resolve
   breaks installing the bundle.

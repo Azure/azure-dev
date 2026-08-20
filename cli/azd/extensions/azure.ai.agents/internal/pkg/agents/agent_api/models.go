@@ -241,7 +241,8 @@ type CodeConfigurationAPI struct {
 // ContainerConfigurationAPI represents the container_configuration block in the API request.
 // Used for container deploy mode to specify the pre-built container image.
 type ContainerConfigurationAPI struct {
-	Image string `json:"image"`
+	Image                string `json:"image"`
+	RegistryConnectionID string `json:"registry_connection_id,omitempty"`
 }
 
 // HostedAgentDefinition represents a hosted agent that can be either container-based

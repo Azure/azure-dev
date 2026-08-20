@@ -50,6 +50,45 @@ func (p *FoundryProjectInfo) Endpoint() string {
 	return fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", p.AccountName, p.ProjectName)
 }
 
+type foundryConnectionsLoader func(
+	context.Context,
+	azcore.TokenCredential,
+	string,
+	string,
+) ([]azure.Connection, error)
+
+func listFoundryProjectConnections(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	accountName string,
+	projectName string,
+) ([]azure.Connection, error) {
+	client, err := azure.NewFoundryProjectsClient(accountName, projectName, credential)
+	if err != nil {
+		return nil, fmt.Errorf("creating Foundry projects client: %w", err)
+	}
+	return client.GetAllConnections(ctx)
+}
+
+func verifyFoundryProjectConnection(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	project FoundryProjectInfo,
+	connectionRef string,
+	load foundryConnectionsLoader,
+) error {
+	connections, err := load(ctx, credential, project.AccountName, project.ProjectName)
+	if err != nil {
+		return fmt.Errorf("listing connections on project %q: %w", project.ProjectName, err)
+	}
+	for _, connection := range connections {
+		if connection.Name == connectionRef || connection.ID == connectionRef {
+			return nil
+		}
+	}
+	return fmt.Errorf("connection %q was not found on project %q", connectionRef, project.ProjectName)
+}
+
 // FoundryDeploymentInfo holds information about an existing model deployment in a Foundry project.
 type FoundryDeploymentInfo struct {
 	Name        string

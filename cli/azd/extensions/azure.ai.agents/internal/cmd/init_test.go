@@ -250,6 +250,104 @@ func TestValidateImageFlag(t *testing.T) {
 	}
 }
 
+func TestValidateRegistryConnectionFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		connection   string
+		image        string
+		hasManifest  bool
+		deployMode   string
+		kind         string
+		wantContains string
+	}{
+		{name: "unset"},
+		{name: "generic registry image", connection: "private-registry", image: "registry.example.com/org/agent:v1"},
+		{name: "manifest image deferred", connection: "private-registry", hasManifest: true},
+		{name: "missing image", connection: "private-registry", wantContains: "requires --image"},
+		{
+			name: "code deploy", connection: "private-registry", image: "registry.example.com/agent:v1",
+			deployMode: "code", wantContains: "code",
+		},
+		{
+			name: "managed kind", connection: "private-registry", image: "registry.example.com/agent:v1",
+			kind: "prompt-voice", wantContains: "hosted container",
+		},
+		{name: "whitespace", connection: "  ", image: "registry.example.com/agent:v1", wantContains: "cannot be empty"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateRegistryConnectionFlag(
+				tt.connection, tt.image, tt.hasManifest, tt.deployMode, tt.kind,
+			)
+			if tt.wantContains == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantContains)
+		})
+	}
+}
+
+func TestApplyAndValidateRegistryConnection(t *testing.T) {
+	t.Parallel()
+
+	manifest := func(image, connection string) *agent_yaml.AgentManifest {
+		return &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{
+			Image: image, RegistryConnectionID: connection,
+		}}
+	}
+
+	t.Run("flag overrides manifest and preserves arbitrary registry", func(t *testing.T) {
+		t.Parallel()
+		agentManifest := manifest("registry.example.com/org/agent:v1", "manifest-connection")
+		action := &InitAction{flags: &initFlags{registryConnection: "flag-connection"}}
+		require.NoError(t, action.applyAndValidateRegistryConnection(agentManifest))
+		require.Equal(t, "flag-connection", action.flags.registryConnection)
+		require.Equal(t, "flag-connection",
+			agentManifest.Template.(agent_yaml.ContainerAgent).RegistryConnectionID)
+	})
+
+	t.Run("manifest connection is preserved", func(t *testing.T) {
+		t.Parallel()
+		agentManifest := manifest("registry.example.com/org/agent:v1", "manifest-connection")
+		action := &InitAction{flags: &initFlags{}}
+		require.NoError(t, action.applyAndValidateRegistryConnection(agentManifest))
+		require.Equal(t, "manifest-connection", action.flags.registryConnection)
+	})
+
+	t.Run("missing image is rejected", func(t *testing.T) {
+		t.Parallel()
+		action := &InitAction{flags: &initFlags{registryConnection: "private-registry"}}
+		require.ErrorContains(t,
+			action.applyAndValidateRegistryConnection(manifest("", "")),
+			"requires a pre-built image")
+	})
+
+	t.Run("code deploy is rejected", func(t *testing.T) {
+		t.Parallel()
+		action := &InitAction{
+			flags:        &initFlags{registryConnection: "private-registry"},
+			isCodeDeploy: true,
+		}
+		require.ErrorContains(t,
+			action.applyAndValidateRegistryConnection(manifest("registry.example.com/agent:v1", "")),
+			"code deploy")
+	})
+}
+
+func TestInitCommandRegistersRegistryConnectionFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInitCommand(&azdext.ExtensionContext{})
+	flag := cmd.Flags().Lookup("registry-connection")
+	require.NotNil(t, flag)
+	require.Equal(t, "", flag.DefValue)
+}
+
 func TestPreBuiltImageForInit(t *testing.T) {
 	t.Parallel()
 
@@ -298,11 +396,13 @@ func TestSkipACR(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		isCodeDeploy bool
-		image        string
-		isVoiceAgent bool
-		want         bool
+		name               string
+		isCodeDeploy       bool
+		image              string
+		registryConnection string
+		usesPreBuiltImage  bool
+		isVoiceAgent       bool
+		want               bool
 	}{
 		{
 			name:         "code deploy skips ACR",
@@ -321,6 +421,16 @@ func TestSkipACR(t *testing.T) {
 			isCodeDeploy: true,
 			image:        "myacr.azurecr.io/agent:v1",
 			want:         true,
+		},
+		{
+			name:               "registry connection skips ACR",
+			registryConnection: "private-registry",
+			want:               true,
+		},
+		{
+			name:              "manifest image skips ACR",
+			usesPreBuiltImage: true,
+			want:              true,
 		},
 		{
 			name:         "voice agent skips ACR",
@@ -342,9 +452,13 @@ func TestSkipACR(t *testing.T) {
 			t.Parallel()
 
 			action := &InitAction{
-				isCodeDeploy: tt.isCodeDeploy,
-				isVoiceAgent: tt.isVoiceAgent,
-				flags:        &initFlags{image: tt.image},
+				isCodeDeploy:      tt.isCodeDeploy,
+				usesPreBuiltImage: tt.usesPreBuiltImage,
+				isVoiceAgent:      tt.isVoiceAgent,
+				flags: &initFlags{
+					image:              tt.image,
+					registryConnection: tt.registryConnection,
+				},
 			}
 
 			require.Equal(t, tt.want, action.skipACR())
@@ -359,14 +473,18 @@ func TestIsHostedAgent(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		isCodeDeploy bool
-		image        string
-		isVoiceAgent bool
-		want         bool
+		name               string
+		isCodeDeploy       bool
+		image              string
+		registryConnection string
+		usesPreBuiltImage  bool
+		isVoiceAgent       bool
+		want               bool
 	}{
 		{name: "code deploy is hosted", isCodeDeploy: true, want: true},
 		{name: "image is hosted", image: "myacr.azurecr.io/agent:v1", want: true},
+		{name: "registry connection is hosted", registryConnection: "private-registry", want: true},
+		{name: "manifest image is hosted", usesPreBuiltImage: true, want: true},
 		{name: "voice is not hosted", isVoiceAgent: true, want: false},
 		{name: "plain container is not hosted", want: false},
 	}
@@ -376,9 +494,13 @@ func TestIsHostedAgent(t *testing.T) {
 			t.Parallel()
 
 			action := &InitAction{
-				isCodeDeploy: tt.isCodeDeploy,
-				isVoiceAgent: tt.isVoiceAgent,
-				flags:        &initFlags{image: tt.image},
+				isCodeDeploy:      tt.isCodeDeploy,
+				usesPreBuiltImage: tt.usesPreBuiltImage,
+				isVoiceAgent:      tt.isVoiceAgent,
+				flags: &initFlags{
+					image:              tt.image,
+					registryConnection: tt.registryConnection,
+				},
 			}
 
 			require.Equal(t, tt.want, action.isHostedAgent())
@@ -501,64 +623,90 @@ func TestSynthesizeImageManifestFile_AcceptsActivityProtocol(t *testing.T) {
 	}, containerAgent.Protocols)
 }
 
-func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
-	const image = "myacr.azurecr.io/agents/my-agent:v1"
-	server := &recordingProjectServer{}
-	client := newProjectRecorderClient(t, server)
-	action := &InitAction{
-		azdClient:           client,
-		environment:         &azdext.Environment{Name: "test-env"},
-		flags:               &initFlags{image: image, noPrompt: true},
-		serviceNameOverride: "my-agent",
-	}
-	description := "Hosted container agent using a pre-built image"
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind:        agent_yaml.AgentKindHosted,
-				Name:        "my-agent",
-				Description: &description,
-			},
-			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "2.0.0"},
-			},
-			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-				{Name: "LOG_LEVEL", Value: "info"},
-			},
-		},
+func TestAddToProjectPreBuiltImageEnablesPassthrough(t *testing.T) {
+	const image = "registry.example.com/agents/my-agent:v1"
+	tests := []struct {
+		name               string
+		flagImage          string
+		manifestImage      string
+		registryConnection string
+	}{
+		{name: "BYO image flag", flagImage: image},
+		{name: "manifest BYO image", manifestImage: image},
+		{name: "private registry image", flagImage: image, registryConnection: "production-registry"},
 	}
 
-	output, err := captureStdout(t, func() error {
-		return action.addToProject(t.Context(), "src/my-agent", manifest)
-	})
-	require.NoError(t, err)
-	require.Contains(t, output, "\nAdded agent 'my-agent' to azure.yaml.\n")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+			action := &InitAction{
+				azdClient:   client,
+				environment: &azdext.Environment{Name: "test-env"},
+				flags: &initFlags{
+					image:              test.flagImage,
+					registryConnection: test.registryConnection,
+					noPrompt:           true,
+				},
+				serviceNameOverride: "my-agent",
+			}
+			description := "Hosted container agent using a pre-built image"
+			manifest := &agent_yaml.AgentManifest{
+				Template: agent_yaml.ContainerAgent{
+					AgentDefinition: agent_yaml.AgentDefinition{
+						Kind:        agent_yaml.AgentKindHosted,
+						Name:        "my-agent",
+						Description: &description,
+					},
+					Image: test.manifestImage,
+					Protocols: []agent_yaml.ProtocolVersionRecord{
+						{Protocol: "responses", Version: "2.0.0"},
+					},
+					EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+						{Name: "LOG_LEVEL", Value: "info"},
+					},
+				},
+			}
 
-	server.mu.Lock()
-	defer server.mu.Unlock()
+			output, err := captureStdout(t, func() error {
+				return action.addToProject(t.Context(), "src/my-agent", manifest)
+			})
+			require.NoError(t, err)
+			require.Contains(t, output, "\nAdded agent 'my-agent' to azure.yaml.\n")
 
-	var agentService *azdext.ServiceConfig
-	for _, service := range server.added {
-		if service.GetName() == "my-agent" {
-			agentService = service
-			break
-		}
+			server.mu.Lock()
+			defer server.mu.Unlock()
+
+			var agentService *azdext.ServiceConfig
+			for _, service := range server.added {
+				if service.GetName() == "my-agent" {
+					agentService = service
+					break
+				}
+			}
+			require.NotNil(t, agentService)
+			require.Equal(t, image, agentService.GetImage())
+			require.Equal(t, "docker", agentService.GetLanguage())
+			require.True(t, agentService.GetDocker().GetImagePassthrough())
+			require.False(t, agentService.GetDocker().GetRemoteBuild())
+			require.NotNil(t, agentService.GetAdditionalProperties())
+			require.Empty(t, agentService.GetEnvironment())
+			require.Equal(t, map[string]any{"LOG_LEVEL": "info"}, server.env["my-agent"])
+
+			properties := agentService.GetAdditionalProperties().GetFields()
+			_, hasInlineImage := properties["image"]
+			require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
+			if test.registryConnection == "" {
+				require.NotContains(t, properties, "registryConnectionId")
+			} else {
+				require.Equal(t, test.registryConnection, properties["registryConnectionId"].GetStringValue())
+				require.NotContains(t, agentService.GetUses(), test.registryConnection,
+					"an external connection must not be added to uses")
+			}
+			_, hasInlineEnvironment := properties["environmentVariables"]
+			require.False(t, hasInlineEnvironment)
+		})
 	}
-	require.NotNil(t, agentService)
-	require.Equal(t, image, agentService.GetImage())
-	require.Equal(t, "docker", agentService.GetLanguage())
-	require.NotNil(t, agentService.GetDocker())
-	require.NotNil(t, agentService.GetAdditionalProperties())
-	require.Empty(t, agentService.GetEnvironment())
-	require.Equal(t, map[string]any{
-		"LOG_LEVEL": "info",
-	}, server.env["my-agent"])
-
-	_, hasInlineImage := agentService.GetAdditionalProperties().GetFields()["image"]
-	require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
-	_, hasInlineEnvironment := agentService.GetAdditionalProperties().
-		GetFields()["environmentVariables"]
-	require.False(t, hasInlineEnvironment)
 }
 
 func TestValidateInitAgentName(t *testing.T) {
@@ -3033,6 +3181,22 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			name:    "container deploy without runtime/entry-point passes",
 			flags:   initFlags{noPrompt: true, deployMode: "container"},
 			wantErr: false,
+		},
+		{
+			name: "registry connection with pre-built image passes",
+			flags: initFlags{
+				noPrompt: true, deployMode: "container",
+				image: "registry.example.com/agent:v1", registryConnection: "private-registry",
+			},
+		},
+		{
+			name: "registry connection with code deploy fails",
+			flags: initFlags{
+				noPrompt: true, deployMode: "code", runtime: "python_3_13", entryPoint: "app.py",
+				registryConnection: "private-registry", manifestPointer: "agent.yaml",
+			},
+			wantErr:        true,
+			wantErrContain: "registry-connection",
 		},
 		{
 			name:    "code deploy without noPrompt skips validation",

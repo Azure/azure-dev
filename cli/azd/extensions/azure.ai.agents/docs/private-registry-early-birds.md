@@ -54,7 +54,7 @@ installation.
 
 ```bash
 git clone --branch m5i/private-registry-early-birds \
-  https://github.com/m5i-work/azure-dev.git azure-dev-private-registry
+  https://github.com/Azure/azure-dev.git azure-dev-private-registry
 cd azure-dev-private-registry
 
 export EARLY_BIRDS_ROOT="$PWD"

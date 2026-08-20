@@ -227,12 +227,12 @@ func (i *Initializer) confirmArchivedTemplate(ctx context.Context, templateURL s
 	i.console.Message(
 		ctx,
 		output.WithWarningFormat(
-			"WARNING: This template repository is archived and is no longer actively maintained.",
+			"WARNING: This template repository is archived and no longer maintained.",
 		),
 	)
 	i.console.Message(
 		ctx,
-		"It may not receive dependency updates, compatibility fixes, security patches, or support.\n",
+		"It may not receive dependency updates, compatibility fixes, or security patches.\n",
 	)
 
 	if i.console.IsNoPromptMode() {
@@ -243,7 +243,7 @@ func (i *Initializer) confirmArchivedTemplate(ctx context.Context, templateURL s
 	}
 
 	confirmed, err := i.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Do you want to continue using this archived template?",
+		Message:      "Continue using this archived template?",
 		DefaultValue: false,
 	})
 	if err != nil {

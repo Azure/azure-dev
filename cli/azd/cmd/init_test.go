@@ -159,7 +159,7 @@ func TestInitArchivedTemplateDeclinedCleansCreatedDirectory(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Console.SetTerminal(true)
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-		return options.Message == "Do you want to continue using this archived template?" &&
+		return options.Message == "Continue using this archived template?" &&
 			options.DefaultValue == false
 	}).Respond(false)
 
@@ -186,7 +186,8 @@ func TestInitArchivedTemplateDeclinedCleansCreatedDirectory(t *testing.T) {
 	result, err := action.Run(t.Context())
 
 	require.NoError(t, err)
-	require.Equal(t, "Init cancelled.", result.Message.Header)
+	require.Nil(t, result)
+	require.Contains(t, strings.Join(mockContext.Console.Output(), "\n"), "CANCELLED: Initialization stopped.")
 	require.NoDirExists(t, targetDir)
 }
 

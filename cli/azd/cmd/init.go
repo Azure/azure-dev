@@ -427,7 +427,8 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 		if err != nil {
 			if errors.Is(err, repository.ErrArchivedTemplateDeclined) {
 				cleanupProjectDir = true
-				return initCancelledResult(), nil
+				i.console.Message(ctx, output.WithWarningFormat("CANCELLED: Initialization stopped."))
+				return nil, nil
 			}
 			return nil, err
 		}

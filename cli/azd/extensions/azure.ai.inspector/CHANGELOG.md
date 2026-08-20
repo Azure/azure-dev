@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.4 (2026-08-20)
+
+### Features Added
+
+- [[#9652]](https://github.com/Azure/azure-dev/pull/9652) Refresh the embedded Agent Inspector UI with response overviews, reasoning details, approval handling, and response metrics.
+
 ## 1.0.0-beta.3 (2026-08-06)
 
 ### Other Changes

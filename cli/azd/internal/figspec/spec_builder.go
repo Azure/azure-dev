@@ -250,7 +250,10 @@ func (sb *SpecBuilder) generateFlagArgs(flag *pflag.Flag, ctx *FlagContext) []Ar
 		return nil
 	}
 
-	arg := Arg{Name: flag.Name}
+	arg := Arg{
+		Name:       flag.Name,
+		IsOptional: flag.NoOptDefVal != "",
+	}
 
 	// Apply customizations (name, description)
 	if sb.flagArgsProvider != nil {

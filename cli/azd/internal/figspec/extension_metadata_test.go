@@ -268,6 +268,7 @@ func TestConvertExtensionFlag(t *testing.T) {
 		wantRepeatable  bool
 		wantDangerous   bool
 		wantArgsCount   int
+		wantArgOptional bool
 		wantSuggestions []string
 	}{
 		{
@@ -301,6 +302,19 @@ func TestConvertExtensionFlag(t *testing.T) {
 			wantDangerous:   false,
 			wantArgsCount:   1,
 			wantSuggestions: []string{"json", "table", "yaml"},
+		},
+		{
+			name: "flag with optional value",
+			flag: extensions.Flag{
+				Name:          "infra",
+				Description:   "Infrastructure provider",
+				Type:          "string",
+				ValueOptional: true,
+			},
+			wantName:        []string{"--infra"},
+			wantDesc:        "Infrastructure provider",
+			wantArgsCount:   1,
+			wantArgOptional: true,
 		},
 		{
 			name: "required flag",
@@ -361,8 +375,11 @@ func TestConvertExtensionFlag(t *testing.T) {
 			require.Equal(t, tt.wantDangerous, result.IsDangerous)
 			require.Len(t, result.Args, tt.wantArgsCount)
 
-			if tt.wantArgsCount > 0 && tt.wantSuggestions != nil {
-				require.Equal(t, tt.wantSuggestions, result.Args[0].Suggestions)
+			if tt.wantArgsCount > 0 {
+				require.Equal(t, tt.wantArgOptional, result.Args[0].IsOptional)
+				if tt.wantSuggestions != nil {
+					require.Equal(t, tt.wantSuggestions, result.Args[0].Suggestions)
+				}
 			}
 		})
 	}

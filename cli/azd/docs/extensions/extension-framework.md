@@ -350,7 +350,7 @@ The metadata JSON includes:
   - `usage`: Usage template string
   - `examples`: Example usages with description and command
   - `args`: Positional arguments with name, description, required flag
-  - `flags`: Command flags with name, shorthand, type, default, validValues
+  - `flags`: Command flags with name, shorthand, type, default, and validValues. `valueOptional` marks a value-taking flag that can be used without an explicit value.
   - `subcommands`: Nested subcommand definitions
   - `hidden`, `aliases`, `deprecated`: Optional command metadata
 - **`configuration`**: Optional configuration schemas:

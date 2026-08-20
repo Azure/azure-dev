@@ -155,6 +155,67 @@ func TestRunShellRefreshesAuthorizationForEachRequest(t *testing.T) {
 	}
 }
 
+func TestHTTPClientDoesNotFollowRedirects(t *testing.T) {
+	redirectedRequests := 0
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirectedRequests++
+		http.Error(w, "unexpected redirected request", http.StatusInternalServerError)
+	}))
+	defer redirectTarget.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+	}))
+	defer server.Close()
+
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer secret")
+	response, err := HTTPClient(30).Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusFound {
+		t.Fatalf("expected redirect response, got HTTP %d", response.StatusCode)
+	}
+	if redirectedRequests != 0 {
+		t.Fatalf("expected no redirected requests, got %d", redirectedRequests)
+	}
+}
+
+func TestWaitForHealthDoesNotFollowRedirects(t *testing.T) {
+	redirectedRequests := 0
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirectedRequests++
+		http.Error(w, "unexpected redirected health request", http.StatusInternalServerError)
+	}))
+	defer redirectTarget.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+	}))
+	defer server.Close()
+
+	err := WaitForHealthWithAuthorizationProvider(
+		t.Context(),
+		server.URL,
+		10*time.Millisecond,
+		func(context.Context) (string, error) {
+			return "Bearer secret", nil
+		},
+	)
+	if err == nil {
+		t.Fatal("expected redirected health response to fail")
+	}
+	if redirectedRequests != 0 {
+		t.Fatalf("expected no redirected health requests, got %d", redirectedRequests)
+	}
+}
+
 func TestWaitForHealthReportsRemoteResponseDetail(t *testing.T) {
 	responseBody := `{"error":{"code":"BadRequest","message":"Missing required query parameter: api-version"}}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

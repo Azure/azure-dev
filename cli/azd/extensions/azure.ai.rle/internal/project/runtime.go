@@ -183,7 +183,7 @@ func waitForHealth(
 ) error {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
-	client := &http.Client{Timeout: 2 * time.Second}
+	client := HTTPClient(2)
 	for time.Now().Before(deadline) {
 		healthUrl, err := RuntimeOperationURL(baseUrl, "health")
 		if err != nil {
@@ -329,10 +329,16 @@ func setAuthorization(req *http.Request, authorizationProvider AuthorizationProv
 }
 
 func HTTPClient(timeoutSeconds int) *http.Client {
-	if timeoutSeconds <= 0 {
-		return &http.Client{}
+	client := &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
-	return &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}
+	if timeoutSeconds <= 0 {
+		return client
+	}
+	client.Timeout = time.Duration(timeoutSeconds) * time.Second
+	return client
 }
 
 func requestBody(operation string, flags *callOptions) ([]byte, error) {

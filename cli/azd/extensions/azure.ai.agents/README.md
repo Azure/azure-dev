@@ -133,6 +133,104 @@ Details:
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
 
+## Prompt voice agent configuration
+
+Prompt voice agents keep their editable definition on the `azure.ai.agent`
+service entry in `azure.yaml`. A minimal managed model agent only needs `kind`,
+`model`, and `name`; advanced voice settings can be layered on the same service
+without changing hosted-agent projects. The shape below follows the prompt voice
+service contract used by the current samples and the Vienna implementation; azd
+keeps common fields strongly typed and passes extensible tool/avatar details to
+the service for final validation.
+
+```yaml
+services:
+  voice-agent:
+    host: azure.ai.agent
+    project: src/voice-agent
+    kind: prompt-voice
+    name: voice-agent
+    modelType: managed # or self_deployed for BYOM
+    model:
+      id: gpt-realtime
+    instructions: You are {{agent_persona}}, a concise support agent.
+    structuredInputs:
+      agent_persona:
+        type: string
+        defaultValue: Ada
+    audio:
+      input:
+        format:
+          type: audio/pcm
+          rate: 24000
+        noiseReduction:
+          type: near_field
+        turnDetection:
+          type: server_vad
+          threshold: 0.5
+          prefixPaddingMs: 300
+          silenceDurationMs: 500
+          createResponse: true
+        transcription:
+          model: whisper-1
+          language: en-US
+          prompt: Contoso product names
+      output:
+        format:
+          type: audio/pcm
+          rate: 24000
+        voice:
+          type: azure_standard
+          name: en-US-AvaNeural
+          style: cheerful
+        speed: 1.0
+    outputModalities: [audio]
+    store: true
+    tools:
+      - type: system
+        name: end_conversation
+      - type: function
+        name: get_weather
+        description: Get weather for a city
+        parameters:
+          type: object
+          properties: {}
+    avatar:
+      type: video-avatar
+      character: lisa
+      style: casual-sitting
+      output_protocol: webrtc
+```
+
+Details:
+
+- Existing simple fields continue to work: `instructions`, `voice`, and `store`
+  are shorthand for the common settings. If `audio.output.voice` is present, it
+  takes precedence over the shorthand `voice` field.
+- Missing `audio` fields keep azd defaults: PCM audio at 24 kHz, server VAD,
+  `azure-speech` transcription, and the default Azure Neural voice.
+- Supported `audio.format.type` values are `audio/pcm`, `audio/pcmu`, and
+  `audio/pcma`; `audio.output.speed` must be between `0.25` and `1.5`.
+- `turnDetection.type` supports `server_vad` with `threshold`,
+  `prefixPaddingMs`, `silenceDurationMs`, and `createResponse`, or
+  `semantic_vad` with `eagerness` (`auto`, `low`, `medium`, or `high`).
+- `outputModalities` well-known values are `audio`, `text`, `animation`, and
+  `avatar`. The service defaults to audio when omitted.
+- `structuredInputs` follows the prompt agent structured input shape:
+  `description`, `defaultValue`, `schema`, and `required`. azd converts
+  `defaultValue` to the service wire field `default_value` when deploying.
+- Direct voice tool types are `function`, `mcp`, `system`, and `toolbox`.
+  Server-side tools such as `web_search`, `azure_ai_search`, and `openapi` must
+  be packaged in a toolbox instead of listed directly on the voice agent.
+- `avatar` well-known fields are `type`, `character`, `style`, `customized`, and
+  `output_protocol`; `type` and `character` are required by the service when an
+  avatar is configured. Well-known avatar protocols are `webrtc` and `websocket`.
+- `tools` and `avatar` intentionally remain light pass-through blocks so new
+  service-side capabilities can be adopted without adding azd command flags.
+- In deprecated standalone `agent.yaml` files the equivalent keys use snake_case,
+  for example `model_type`, `structured_inputs`, `output_modalities`,
+  `turn_detection`, and `prefix_padding_ms`.
+
 ## Session idle timeout
 
 A hosted agent's runtime session sandbox is suspended by Foundry after a period

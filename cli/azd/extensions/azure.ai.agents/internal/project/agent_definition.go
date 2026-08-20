@@ -138,35 +138,50 @@ type AgentDefinitionInline struct {
 
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
-	ModelType    agent_yaml.VoiceModelType `json:"modelType,omitempty"`
-	Model        *agent_yaml.Model         `json:"model,omitempty"`
-	Instructions *string                   `json:"instructions,omitempty"`
-	Voice        *string                   `json:"voice,omitempty"`
-	Store        *bool                     `json:"store,omitempty"`
+	ModelType        agent_yaml.VoiceModelType `json:"modelType,omitempty"`
+	Model            *agent_yaml.Model         `json:"model,omitempty"`
+	Instructions     *string                   `json:"instructions,omitempty"`
+	Voice            *string                   `json:"voice,omitempty"`
+	StructuredInputs map[string]any            `json:"structuredInputs,omitempty"`
+	Audio            *agent_yaml.VoiceAudio    `json:"audio,omitempty"`
+	OutputModalities []string                  `json:"outputModalities,omitempty"`
+	Store            *bool                     `json:"store,omitempty"`
+	Tools            []map[string]any          `json:"tools,omitempty"`
+	Avatar           map[string]any            `json:"avatar,omitempty"`
 }
 
 // voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
 // written to azure.yaml. Voice agents carry no container/image/code config.
 func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInline {
 	return AgentDefinitionInline{
-		AgentDefinition: va.AgentDefinition,
-		ModelType:       va.ModelType,
-		Model:           va.Model,
-		Instructions:    va.Instructions,
-		Voice:           va.Voice,
-		Store:           va.Store,
+		AgentDefinition:  va.AgentDefinition,
+		ModelType:        va.ModelType,
+		Model:            va.Model,
+		Instructions:     va.Instructions,
+		Voice:            va.Voice,
+		StructuredInputs: va.StructuredInputs,
+		Audio:            va.Audio,
+		OutputModalities: va.OutputModalities,
+		Store:            va.Store,
+		Tools:            va.Tools,
+		Avatar:           va.Avatar,
 	}
 }
 
 // toVoiceAgent rebuilds an agent_yaml.VoiceAgent from the inline definition.
 func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 	return agent_yaml.VoiceAgent{
-		AgentDefinition: d.AgentDefinition,
-		ModelType:       d.ModelType,
-		Model:           d.Model,
-		Instructions:    d.Instructions,
-		Voice:           d.Voice,
-		Store:           d.Store,
+		AgentDefinition:  d.AgentDefinition,
+		ModelType:        d.ModelType,
+		Model:            d.Model,
+		Instructions:     d.Instructions,
+		Voice:            d.Voice,
+		StructuredInputs: d.StructuredInputs,
+		Audio:            d.Audio,
+		OutputModalities: d.OutputModalities,
+		Store:            d.Store,
+		Tools:            d.Tools,
+		Avatar:           d.Avatar,
 	}
 }
 

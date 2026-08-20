@@ -68,9 +68,40 @@
       "type": "string",
       "description": "Voice agent (kind: prompt-voice) output voice name (e.g. 'en-US-Ava:DragonHDLatestNeural' for an Azure Neural voice, or 'alloy' for an OpenAI realtime voice)."
     },
+    "structuredInputs": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) structured prompt inputs used by templated instructions and tool argument bindings. Each value follows the prompt agent StructuredInputDefinition shape: description, defaultValue, schema, required.",
+      "additionalProperties": true
+    },
+    "audio": {
+      "$ref": "#/definitions/VoiceAudio"
+    },
+    "outputModalities": {
+      "type": "array",
+      "description": "Voice agent (kind: prompt-voice) output modalities. Well-known values are audio, text, animation, and avatar; the service may add extension values.",
+      "items": { "type": "string", "minLength": 1 }
+    },
     "store": {
       "type": "boolean",
       "description": "Voice agent (kind: prompt-voice) server-side logging toggle (transcript + per-turn audio). Defaults to false when omitted."
+    },
+    "tools": {
+      "type": "array",
+      "description": "Voice agent (kind: prompt-voice) tools. Directly supported voice tool types are function, mcp, system, and toolbox. Server-side tools such as web_search, azure_ai_search, and openapi must be packaged in a toolbox.",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "avatar": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) avatar output configuration.",
+      "properties": {
+        "type": { "type": "string", "description": "Avatar type. Well-known values are video-avatar and photo-avatar; the service may support extension values." },
+        "character": { "type": "string", "description": "Avatar character identifier, such as lisa. Required by the service when avatar is configured." },
+        "style": { "type": "string", "description": "Avatar style, such as casual-sitting." },
+        "customized": { "type": "boolean", "description": "Whether a customized avatar is used." },
+        "output_protocol": { "type": "string", "description": "Avatar video output protocol. Well-known values are webrtc and websocket." }
+      },
+      "required": ["type", "character"],
+      "additionalProperties": true
     },
     "name": {
       "type": "string",
@@ -161,6 +192,86 @@
         "dependencyResolution": { "type": "string", "description": "Dependency resolution mode (e.g., 'bundled', 'remote_build')." }
       },
       "required": ["runtime", "entryPoint"],
+      "additionalProperties": false
+    },
+    "VoiceAudio": {
+      "type": "object",
+      "description": "Prompt voice input and output audio configuration, matching the Voice Live / OpenAI Realtime session schema where supported. Missing fields keep azd defaults.",
+      "properties": {
+        "input": { "$ref": "#/definitions/VoiceAudioInput" },
+        "output": { "$ref": "#/definitions/VoiceAudioOutput" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioInput": {
+      "type": "object",
+      "properties": {
+        "format": { "$ref": "#/definitions/VoiceAudioFormat" },
+        "noiseReduction": { "$ref": "#/definitions/VoiceNoiseReduction" },
+        "turnDetection": { "$ref": "#/definitions/VoiceTurnDetection" },
+        "transcription": { "$ref": "#/definitions/VoiceTranscription" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioOutput": {
+      "type": "object",
+      "properties": {
+        "format": { "$ref": "#/definitions/VoiceAudioFormat" },
+        "voice": { "$ref": "#/definitions/VoiceConfig" },
+        "speed": { "type": "number", "minimum": 0.25, "maximum": 1.5, "description": "Output speech speed multiplier. The service accepts 0.25 through 1.5 and defaults to 1 when omitted." }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioFormat": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["audio/pcm", "audio/pcmu", "audio/pcma"], "description": "Audio format type. Supported values are audio/pcm, audio/pcmu, and audio/pcma." },
+        "rate": { "type": "integer", "minimum": 1, "description": "Sample rate in Hz when applicable. Use 24000 for PCM examples; omit for telephony G.711 formats when the service defaults are sufficient." }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceNoiseReduction": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Noise reduction type. Well-known values are near_field, far_field, and azure_deep_noise_suppression." }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceTurnDetection": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Turn detection type. server_vad uses threshold/padding/silence settings; semantic_vad uses eagerness." },
+        "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "prefixPaddingMs": { "type": "integer", "minimum": 0 },
+        "silenceDurationMs": { "type": "integer", "minimum": 0 },
+        "createResponse": { "type": "boolean" },
+        "eagerness": { "type": "string", "description": "Semantic VAD eagerness. Well-known values are auto, low, medium, and high." }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceTranscription": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string", "description": "Transcription model, such as azure-speech or whisper-1." },
+        "language": { "type": "string", "description": "Expected input language as a BCP-47 code, such as en-US. Auto-detected when omitted." },
+        "prompt": { "type": "string", "description": "Optional transcription prompt for domain terms or spelling hints." }
+      },
+      "additionalProperties": false
+    },
+    "VoiceConfig": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Voice provider type, such as openai or azure_standard." },
+        "name": { "type": "string", "description": "Voice name. Examples: alloy for OpenAI realtime voices, en-US-AvaNeural for Azure voices." },
+        "style": { "type": "string", "description": "Optional Azure voice style, such as cheerful." },
+        "pitch": { "type": "string", "description": "Optional Azure voice pitch adjustment." },
+        "rate": { "type": "string", "description": "Optional Azure voice speaking rate adjustment." },
+        "locale": { "type": "string", "description": "Optional Azure voice locale." }
+      },
+      "required": ["type", "name"],
       "additionalProperties": false
     },
     "SessionConfiguration": {

@@ -2,10 +2,11 @@
 name: foundry-extension-scenario-pr-regression
 license: MIT
 metadata:
-  version: "2.0"
+  version: "2.1"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or mapping rules.
   # 2.0: renamed from agent-scenario-tests; execution mechanics moved to the scenarios'
   # driving-mechanics.md; per-scenario driving delegated to the foundry-extension-scenario-worker agent.
+  # 2.1: close Tier 2 selections over setup/teardown and use run-unique scenario identities.
 description: >-
   **WORKFLOW SKILL** — Runs the azure.ai.agents extension's cli-interactive-tester
   scenarios locally as a **PR-scoped** regression check. Resolves the current branch's PR,
@@ -90,7 +91,7 @@ and reporting — not driving.
 - The impacted scenario set was derived from the PR diff and **confirmed by the user**
   (including an explicit cost acknowledgement before any Tier 1b or Tier 2 run).
 - Every selected scenario was driven to completion with a recorded PASS/FAIL/SKIPPED, duration,
-  and any findings, and a `FINAL-REPORT.md` was written under `.reports/<run-timestamp>/`.
+  and any findings, and a `FINAL-REPORT.md` was written under `.reports/<run-id>/`.
 - Scenarios with a `requires:` field whose prerequisite did not PASS are marked ⏭️ SKIPPED
   (not FAIL) with a clear reason.
 - A results comment was posted on the PR (unless the user opted out), and any Tier 1b/Tier 2

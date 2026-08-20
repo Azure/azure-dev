@@ -12,8 +12,8 @@
 # so test resources are easy to identify and clean up. Use lowercase and
 # hyphens — some fields normalize the value (sanitizeAgentName lowercases
 # and replaces invalid characters), and a clean prefix avoids surprises.
-# Concurrent runs of the same Tier 1 scenario automatically suffix this
-# with -{instance} to keep parallel resource names distinct.
+# Every Tier 1 scenario automatically suffixes this with its run-unique
+# -{instance} value, keeping both distinct scenarios and concurrent sweeps apart.
 prefix: "your-alias"
 
 # REQUIRED. Display name of the Azure subscription to select when scenarios

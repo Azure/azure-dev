@@ -2,12 +2,13 @@
 name: foundry-extension-scenario-authoring
 license: MIT
 metadata:
-  version: "1.1"
+  version: "1.2"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or authoring rules.
   # 1.0: initial authoring + validation skill for the azure.ai.agents cli-interactive-tester
   # scenarios. Taxonomy (tiers/tags/profile/hooks/fixtures/requires) is single-sourced in the
   # scenarios README; this skill adds the authoring procedure and a no-execution validation loop.
   # 1.1: require deterministic input for every executed invoke command.
+  # 1.2: document the run-scoped identity placeholders supplied by orchestration.
 description: >-
   **WORKFLOW SKILL** — Authors and validates cli-interactive-tester **scenarios** for the
   azure.ai.agents extension: writes a new goal-based scenario YAML (or edits an existing one) so
@@ -112,8 +113,8 @@ Field references (do not restate these — link to them):
   [README § Tags](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#tags).
 - **`requires:`** — cross-scenario prerequisites (Tier 1b → Tier 1):
   [README § The `requires:` field](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#the-requires-field).
-- **Profile placeholders** (`{prefix}`, `{subscription}`, `{region}`, `{model}`, `{tenant}`,
-  `{shared_agent_name}`, `{fixtures_dir}`, `{instance}`):
+- **Profile/session placeholders** (`{prefix}`, `{subscription}`, `{region}`, `{model}`,
+  `{tenant}`, `{run_id}`, `{shared_agent_name}`, `{fixtures_dir}`, `{instance}`):
   [README § Profile / overrides](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#profile--overrides).
 - **Pre/post hooks** — semantics (host-side, sequential, fail-fast), fields, and the reset /
   fixture-seed / auth-guard patterns:

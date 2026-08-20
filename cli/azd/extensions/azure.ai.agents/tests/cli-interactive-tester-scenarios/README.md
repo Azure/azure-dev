@@ -28,12 +28,14 @@ and tell it what you want; it routes to a run skill and fans the work out to
   it uses the **`foundry-extension-scenario-suite-run`** skill.
 
 The orchestrator (or the run skill) **loads both profile files, merges them (local overrides
-shared), derives `shared_agent_name = {prefix}-{shared_agent_suffix}-{ts}` (where `{ts}` is a
-compact timestamp like `MMDDHHmm`, e.g. `07141038`), and passes the merged map as
+shared), generates one run ID with seconds plus a short random suffix, derives
+`shared_agent_name = {prefix}-{shared_agent_suffix}-{run_id}`, and passes a per-scenario map as
 `session_vars` on every `load_scenario`, `run_pre_hooks`, `start_session`, and
-`run_post_hooks` call** — the scenario YAMLs reference those values via `{prefix}`,
-`{subscription}`, `{region}`, `{model}`, `{tenant}` (optional), and `{shared_agent_name}`
-placeholders. The step-by-step driving rules those agents follow live in
+`run_post_hooks` call**. For parallel-safe scenarios that map also includes the assigned
+`instance`, matching the `instance_id` passed to hooks and sessions. The scenario YAMLs
+reference those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{tenant}`
+(optional), `{shared_agent_name}`, and `{instance}` placeholders. The step-by-step driving
+rules those agents follow live in
 [`driving-mechanics.md`](./driving-mechanics.md).
 
 Most scenarios here declare **`pre:` hooks** (host-side setup such as resetting
@@ -49,7 +51,9 @@ gates, validates the recipe on one scenario, fans Tier 0/1 out in parallel waves
 after its Tier 1 prerequisites pass, runs Tier 2 serially, and writes a final report.
 
 For a **subset** (e.g. "just the `init` scenarios" or "everything in Tier 0") name the subset
-instead — the `foundry-extension-scenario-suite-run` skill filters by `tags:` via `list_scenarios`. See
+instead — the `foundry-extension-scenario-suite-run` skill filters by `tags:` via
+`list_scenarios`. If any Tier 2 scenario matches, the concrete plan automatically adds
+`2.00-setup` and `2.99-teardown` so filtered runs retain their full resource lifecycle. See
 [Tags](#tags) for the taxonomy.
 
 ## Paths run inside WSL (on Windows)
@@ -70,14 +74,14 @@ Implications:
 - The `cwd` convention is three-way by design: ephemeral `/tmp` for read-only
   scenarios that touch no project (`version`, `--help`, `sample list`); a unique
   `~/working/azd-agents-*-{instance}` dir per `init`/`doctor` scenario for
-  isolation (the `{instance}` suffix keeps concurrent runs of the same scenario
-  apart — see [Parallel-readiness](#parallel-readiness--port-allocation)); and a
+  isolation (the run-scoped `{instance}` suffix keeps distinct scenarios and concurrent
+  sweeps apart — see [Parallel-readiness](#parallel-readiness--port-allocation)); and a
   single shared `~/working/azd-agents-shared` dir for all Tier 2 scenarios so they
   operate on the same deployed agent. `2.00-setup` runs `init` in that shared dir,
   which scaffolds the project into a subdirectory named after the agent, so the
   deployed project actually lives in `~/working/azd-agents-shared/{shared_agent_name}`
-  (where `{shared_agent_name} = {prefix}-{shared_agent_suffix}` from your
-  [profile](#profile--overrides), e.g. `alice-basic-responses`); the reuse and
+  (where `{shared_agent_name} = {prefix}-{shared_agent_suffix}-{run_id}` from your
+  [profile](#profile--overrides), e.g. `alice-basic-responses-0714103842-a1b2c3`); the reuse and
   teardown scenarios run with that subdirectory as their `cwd`.
 
 On macOS/Linux these are simply native paths (no WSL involved).
@@ -190,17 +194,18 @@ The tester can run **N concurrent instances of the same scenario** and can
 **allocate free TCP ports** per run. Scenarios here are authored to take
 advantage of both where it's safe.
 
-- **`{instance}` substitution.** `start_session(..., instance_id="1")` exposes
-  `{instance}` for substitution into `command`, `cwd`, `env`, hook fields, and
-  `goals`. It **defaults to `"main"`** when `instance_id` is omitted, so a single
-  run is unchanged (dirs/names just end in `-main`).
+- **`{instance}` substitution.** The orchestrator derives a safe value from the scenario key
+  and sweep run ID (for example, `t101-0714103842-a1b2c3`). It supplies that value as both
+  `session_vars.instance` and `instance_id` to expose `{instance}` consistently in `command`,
+  `cwd`, `env`, hook fields, and `goals`. Although the tester defaults to `"main"` when omitted,
+  parallel-safe fleet scenarios must not rely on that default.
 - **Which scenarios are parallel-ready:**
   - **Tier 0 work-dir scenarios** (`doctor`, picker, validate) and **all Tier 1
     `init` scenarios** suffix their `cwd` (and hook paths) with `-{instance}`, so
-    concurrent instances get isolated working directories.
+    distinct scenarios and concurrent sweeps get isolated working directories.
   - **Tier 1 resource names** are suffixed with `-{instance}` too (via the
-    RESOURCE NAMING goal and the `--agent-name` flag), so parallel instances
-    don't collide on Azure resource names.
+    RESOURCE NAMING goal and the `--agent-name` flag), so parallel workers do not collide on
+    Azure resource names. Each Tier 1b verifier reuses its prerequisite's exact instance.
   - **`2.12-run-local-and-invoke-local`** declares `allocate_ports: [agent]` and
     binds `azd ai agent run`/`invoke --local` to `--port {agent}`. A port pool is
     shared across every `start_session` with the same `scenario_path`, so the
@@ -497,7 +502,9 @@ Variables exposed to scenarios via `session_vars`:
 | `{region}` | `profile.yaml` | `East US 2` | |
 | `{model}` | `profile.yaml` | `gpt-5.4-mini` | cheap/fast for tests |
 | `{shared_agent_suffix}` | `profile.yaml` | `basic-responses` | |
-| `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}-{ts}` | Tier 2 subdirectory name — orchestrator must compute (with `{ts}` = `MMDDHHmm` compact timestamp) and pass alongside the others. The timestamp isolates concurrent runs. |
+| `{run_id}` | derived by orchestrator | 10-digit month/day/hour/minute/second timestamp plus 6 lowercase hexadecimal characters | Generated once per sweep and reused for artifacts, sessions, and resource identity. |
+| `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}-{run_id}` | Tier 2 subdirectory and agent name. Seconds plus the random suffix isolate concurrent runs. |
+| `{instance}` | derived per scenario | `<scenario-key>-{run_id}` | Tier 0/Tier 1 parallel-safe identity; Tier 1b reuses its prerequisite's exact value. |
 | `{fixtures_dir}` | derived by orchestrator | `<scenarios-dir>/fixtures` | Tester-side absolute path to the `fixtures/` subdirectory (WSL-translated on Windows, native on Linux/macOS); used by pre-hooks to seed test fixture files |
 
 **Bootstrap (one-time per checkout):**
@@ -507,14 +514,14 @@ cp profile.local.yaml.example profile.local.yaml
 # edit profile.local.yaml — set `prefix` (lowercase, hyphen-friendly) and `subscription`
 ```
 
-The orchestrator must load both files, merge (local overrides shared), derive
-`shared_agent_name` (= `{prefix}-{shared_agent_suffix}-{ts}` where `{ts}` is a
-compact `MMDDHHmm` timestamp) and `fixtures_dir` (= the tester-side absolute path
-of the `fixtures/` subdirectory — WSL-translated on Windows, native on
-Linux/macOS), and pass the merged map as `session_vars=` on every
-`load_scenario` / `run_pre_hooks` / `start_session` / `run_post_hooks` call.
-Failing to thread `session_vars` leaves `{prefix}` etc. unresolved in goals and
-the run will execute against literal placeholder strings.
+The orchestrator must load both files, merge local overrides over shared defaults, generate
+one `run_id`, and derive `shared_agent_name` and `fixtures_dir` (the tester-side absolute path
+of the `fixtures/` subdirectory — WSL-translated on Windows, native on Linux/macOS). For each
+parallel-safe scenario it adds the assigned `instance` to a per-scenario copy of that map.
+It passes the map as `session_vars=` on every `load_scenario` / `run_pre_hooks` /
+`start_session` / `run_post_hooks` call and passes the matching `instance_id` to every hook or
+session tool that accepts it. Failing to thread either value can render and execute different
+paths or leave literal placeholders unresolved.
 
 Every `{name}`-shaped token in a scenario command, path, hook, or goal is
 interpreted as a placeholder. Embedded shell syntax must not accidentally use
@@ -529,8 +536,8 @@ profile/session variable.
 - **Resource naming**: every newly created Azure resource (Foundry
   project/account, azd environment, agent, model deployment, resource group) is
   named with the `{prefix}-` value from your profile (and, in parallel-ready
-  Tier 1 scenarios, a `-{instance}` suffix) so test resources are easy to
-  identify, keep distinct across concurrent runs, and clean up. Note that some
+  Tier 1 scenarios, a run-scoped `-{instance}` suffix) so test resources are easy to
+  identify, keep distinct across scenarios and concurrent runs, and clean up. Note that some
   fields lowercase the value and replace invalid characters with hyphens — that
   normalization is expected (see `sanitizeAgentName` in the extension).
 - `command:` invokes the installed extension as `azd ai agent …`.

@@ -38,23 +38,38 @@ the user exactly what to fix — do **not** try to work around it.
 ### Profiles
 
 The scenarios use `{prefix}`, `{subscription}`, `{region}`, `{model}`, and
-`{shared_agent_name}` placeholders, plus an optional `tenant` session value.
+`{shared_agent_name}` placeholders, plus optional `tenant` and per-scenario `instance`
+session values.
 Tenant-aware goals deliberately avoid a literal `{tenant}` placeholder so a
 missing optional value does not prevent a scenario from loading. You must:
 
 1. Read both `profile.yaml` (checked-in defaults) and `profile.local.yaml` (developer
    overrides) and **merge them, local overriding shared**.
-2. Derive `shared_agent_name = "{prefix}-{shared_agent_suffix}-{ts}"` where `{ts}` is
-   a compact timestamp of the form `MMDDHHmm` (e.g. `07141038`). This isolates
-   concurrent runs so two agents on the same machine don't collide on Azure resource
-   names or working directories.
-3. Derive `fixtures_dir` = the tester-side absolute path of the `fixtures/` subdirectory
+2. Generate one `run_id` for the whole sweep from a 10-digit
+   month/day/hour/minute/second timestamp plus 6 lowercase hexadecimal characters (for
+   example, `0714103842-a1b2c3`).
+   Generate it once and reuse it across every scenario; seconds plus the random suffix
+   isolate concurrent sweeps that start at nearly the same time.
+3. Derive `shared_agent_name = "{prefix}-{shared_agent_suffix}-{run_id}"`. Tier 2
+   scenarios use this value as both their Azure agent name and shared working-directory
+   key. Retain it for recovery if a run is interrupted.
+4. Derive `fixtures_dir` = the tester-side absolute path of the `fixtures/` subdirectory
    inside the scenarios directory. On Windows (where the tester runs inside WSL) this is
    the WSL-translated path (e.g. `/mnt/c/Repos/azure-dev/.../fixtures`); on native
    Linux/macOS it is the regular absolute path. Apply the same path-style logic used for
    scenario paths (see `driving-mechanics.md` § Path style (Windows → WSL)).
    Scenario pre-hooks use `{fixtures_dir}` to locate test fixture files.
-4. Pass the merged map (including `shared_agent_name` and `fixtures_dir`) as `session_vars`
-   on **every** `load_scenario`, `run_pre_hooks`, `start_session`, and `run_post_hooks`
-   call. Omitting it leaves placeholders unresolved and the run executes against literal
-   `{prefix}` strings.
+5. Use `<run_id>` for the report directory and as the unique component of every worker
+   `session_id`.
+6. For each Tier 0 / Tier 1 parallel-safe scenario, derive a safe scenario key from its
+   numeric stem (for example, `t101` for `1.01`) and set
+   `instance = "<scenario-key>-<run_id>"`. Use only lowercase letters, digits, and
+   hyphens. A Tier 1b scenario must reuse the exact `instance` assigned to its
+   `requires:` prerequisite so it finds that scaffold. When running the same scenario
+   multiple times, append a distinct ordinal to each copy.
+7. Give each worker a per-scenario copy of the merged map. Include `run_id`,
+   `shared_agent_name`, and `fixtures_dir`, plus `instance` when applicable, and pass
+   that map unchanged as `session_vars` on **every** `load_scenario`, `run_pre_hooks`,
+   `start_session`, and `run_post_hooks` call. Also pass the same value as `instance_id`
+   to each hook/session tool that accepts it. Omitting or changing either value can
+   render different paths at load and execution time.

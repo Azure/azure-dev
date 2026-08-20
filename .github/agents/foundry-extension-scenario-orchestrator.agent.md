@@ -48,10 +48,11 @@ a broad sweep before proceeding.
 Run these in order regardless of which skill selected the scenarios. Each references a single
 source — read it, don't restate it.
 
-1. **Prerequisites.** Verify MCP server availability, `profile.local.yaml`, and derive the
-   merged `session_vars` (profile merge + `shared_agent_name` + `fixtures_dir`) per
+1. **Prerequisites.** Verify MCP server availability and `profile.local.yaml`; generate the
+   single sweep `run_id`; and derive the base `session_vars` (profile merge +
+   `shared_agent_name` + `fixtures_dir` + `run_id`) per
    `.github/skills/foundry-extension-scenario-pr-regression/references/prerequisites.md`. Thread `session_vars`
-   unchanged through every worker.
+   through every worker after adding that scenario's assigned `instance` where applicable.
 2. **`azd` binary gate (mandatory).** Ensure a verified native-Linux `azd` dev build is
    installed before any scenario runs, per
    `.github/skills/foundry-extension-scenario-pr-regression/references/workflow.md` § Step 1b (Windows/WSL:
@@ -63,7 +64,8 @@ source — read it, don't restate it.
    a worker.
 3. **Cost / consent gate.** List the plan grouped by tier. Tier 0 is free; Tier 1 needs
    `az login`; **Tier 1b and Tier 2 provision real Azure resources** and require an *explicit*
-   cost acknowledgement before running. If the user declines, drop the cost-incurring tiers.
+   cost acknowledgement before running. Before showing this plan, close any Tier 2 selection
+   over `2.00-setup` and `2.99-teardown`. If the user declines, drop the cost-incurring tiers.
 4. **Recipe validation (mandatory).** Before fanning out, drive one fast Tier 0 scenario
    (e.g. `0.01-version`) end-to-end — spawn a single `foundry-extension-scenario-worker` and wait. If it fails
    with an infrastructure error, **stop the whole run** and fix the environment (re-run the
@@ -77,27 +79,27 @@ You don't drive scenarios yourself; you spawn one **`foundry-extension-scenario-
 `agent` tool) and honor the ordering and parallelism in that spec:
 
 - **Tier 0 / Tier 1** (`parallel-safe`): fan out in small waves (4–6 at a time), each worker
-  with a distinct `session_id` suffixed with a Unix-epoch timestamp. No `instance_id` for
-  distinct scenarios.
+  with a distinct `session_id` containing the run ID and the assigned scenario-specific
+  `instance` / `instance_id`.
 - **`requires:` gating is yours.** You hold the run's results, so before dispatching any
   scenario with a `requires:` field, look up the prerequisite's verdict **in this run** and
   tell the worker whether it passed. If it did not pass (or wasn't run), mark the scenario
   ⏭️ SKIPPED and don't spawn a worker.
 - **Tier 1b** (`verify-deploy`, ⚠️ cost): only after all Tier 1 workers finish and only for
-  scenarios whose `requires:` prerequisite PASSED; then fan out concurrently.
+  scenarios whose `requires:` prerequisite PASSED; then fan out concurrently using the exact
+  instance ID assigned to each prerequisite.
 - **Tier 2** (`serial-only`, ⚠️ cost): never parallelize — `2.00-setup` first, then
   `2.01…2.18` serially, `2.18-delete` before teardown, `2.99-teardown-down` last. Launch
   cost-incurring workers conservatively (background workers are typically not cancellable
   mid-run; a stop can't recall an in-flight `azd provision`).
 
-Give each worker its inputs (scenario path in the correct style, `session_vars`, `run_name`,
-`output_dir` under a single `<run-timestamp>`, `session_id`, `instance_id` if fanning the same
-scenario out N times, and its prerequisite status). Collect each worker's returned verdict
-block.
+Give each worker its inputs (scenario path in the correct style, per-scenario `session_vars`,
+`run_name`, `output_dir` under the single `<run-id>`, `session_id`, assigned `instance_id` when
+applicable, and its prerequisite status). Collect each worker's returned verdict block.
 
 ## Reporting handoff
 
-Aggregate every worker's verdict into `.reports/<run-timestamp>/FINAL-REPORT.md` and, for a PR
+Aggregate every worker's verdict into `.reports/<run-id>/FINAL-REPORT.md` and, for a PR
 run, post the PR comment — per
 `.github/skills/foundry-extension-scenario-pr-regression/references/reporting.md`. Never soften a real regression
 to make the table green. If a Tier 2 run started but was interrupted before `2.99-teardown`,

@@ -62,18 +62,25 @@ For each selected scenario:
    - Prerequisite **PASSED** → proceed (step 1+).
    - Prerequisite **FAILED / not run / SKIPPED** → record this scenario as ⏭️ **SKIPPED** with
      reason `prerequisite <path> did not pass` and move on.
-1. `load_scenario(path=<wsl path>, session_vars=<merged profile>)` — also reports whether the
-   scenario declares `pre` / `post` hooks.
-2. If it has `pre` hooks: `run_pre_hooks(path=…, session_vars=…)`. Hooks run host-side,
-   sequentially, fail-fast (unless a hook sets `continue_on_error: true`).
-3. `start_session(scenario_path=…, session_vars=…, run_name=<scenario-stem>, output_dir=<wsl .reports path>)`.
+1. `load_scenario(path=<wsl path>, session_vars=<per-scenario map>)` — also reports whether the
+   scenario declares `pre` / `post` hooks. For parallel-safe scenarios the map includes the
+   assigned `instance`.
+2. If it has `pre` hooks:
+   `run_pre_hooks(path=…, session_vars=…, instance_id=<assigned instance>)`. Hooks run
+   host-side, sequentially, fail-fast (unless a hook sets `continue_on_error: true`).
+3. `start_session(scenario_path=…, session_vars=…, instance_id=<assigned instance>,
+   run_name=<scenario-stem>, output_dir=<wsl .reports path>)`.
 4. Drive the scenario's `goals:` with `send_action` / `select` / best-effort screenshots.
    Whether the goals pass or fail, enter the finally-style cleanup path and call
    `finish_session` (this releases ports and generates the HTML report).
 5. If it has `post` hooks, always call
-   `run_post_hooks(path=…, session_vars=…)` after `finish_session`, even when a product goal
-   failed. A post-hook failure is a separate cleanup finding and makes the scenario FAIL. If
-   product verification also failed, preserve both findings.
+   `run_post_hooks(path=…, session_vars=…, instance_id=<assigned instance>)` after
+   `finish_session`, even when a product goal failed. A post-hook failure is a separate cleanup
+   finding and makes the scenario FAIL. If product verification also failed, preserve both
+   findings.
+
+Use the same `instance` value in `session_vars` and `instance_id` on every tool that accepts
+it. Tier 2 has no assigned instance and omits `instance_id`.
 
 Always `finish_session` and attempt declared post hooks for every session you start.
 
@@ -152,23 +159,25 @@ Concurrency primitive: **parallel background sub-agents, one scenario per sub-ag
   `0.01-version`). If it fails with an infrastructure error, **stop the whole run** and fix the
   environment — do not fan out into a fleet of failures.
 - **Tier 0 / Tier 1** (`parallel-safe`): fan out in **small waves (4–6 at a time)**, rolling
-  forward. Give each sub-agent a distinct, descriptive `session_id` **suffixed with a Unix-epoch
-  timestamp** (e.g. `fleet-1.04-init-from-code-1752434100`) to avoid collisions when multiple
-  agent sessions drive the tester concurrently. **No `instance_id` needed** — each scenario's
-  `cwd` already isolates itself via `{instance}`, which defaults to `"main"`.
+  forward. Give each scenario a safe instance ID formed from its numeric scenario key and the
+  sweep run ID (for example, `t104-0714103842-a1b2c3`) and include that identity in its
+  descriptive `session_id`. Pass the instance both in `session_vars` and as `instance_id`;
+  never let distinct scenarios fall back to `"main"`.
 - **Tier 1b** (`parallel-safe`, `verify-deploy`, ⚠️ Azure cost): runs **after all Tier 1
   scenarios complete**. Each declares a `requires:` field pointing at the Tier 1 scaffold it
   deploys — only run it if that prerequisite **PASSED**; otherwise ⏭️ SKIP. Once prerequisites
-  are confirmed, fan out Tier 1b concurrently (independent Azure environments). Needs the same
-  cost acknowledgement as Tier 2.
+  are confirmed, fan out Tier 1b concurrently (independent Azure environments), reusing the
+  exact instance ID assigned to each Tier 1 prerequisite. Needs the same cost acknowledgement
+  as Tier 2.
 - **Tier 2** (`serial-only`, ⚠️ Azure cost): **never parallelize.** Run
   `2.00-setup-deploy-shared-agent` **first**, then `2.01-`…`2.18-` **serially** (they share one
   deployed agent and mutate shared session/file/endpoint state), `2.18-delete` before teardown,
   then `2.99-teardown-down` **last**. Tier 2 uses **no `instance_id`** (it would break the
   shared-agent assumption).
-- **Same scenario N times in parallel:** pass `instance_id="1"`, `"2"`, … per `start_session`
-  call; reuse the same `instance_id` for paired `run`/`invoke` sessions of one scenario. Only
-  scenarios authored for it support this (Tier 0 work-dir scenarios, all Tier 1 `init`
+- **Same scenario N times in parallel:** append a distinct ordinal to the scenario's normal
+  run-scoped instance ID and use it for that copy's `session_vars.instance`, hooks, and every
+  `start_session` call. Reuse the same value for paired `run`/`invoke` sessions of one scenario.
+  Only scenarios authored for it support this (Tier 0 work-dir scenarios, all Tier 1 `init`
   scenarios, and `2.12` for its allocated `{agent}` port).
 
 ### Keep waves small
@@ -198,9 +207,9 @@ Every sub-agent spawned for a wave must obey:
   `agent_YYYYMMDD_HHMMSS`, which is hard to cross-reference. For scenarios that start two
   sessions (`2.12-run-local-and-invoke-local`), suffix a role tag (`…-run`, `…-invoke`).
 - **`output_dir`** on every `start_session`, pointing at the WSL path of
-  `<scenarios-dir>/.reports/<run-timestamp>/tester-reports`. Pick **one** `<run-timestamp>`
-  (form `YYYYMMDD-HHMMSS`) per suite run and **reuse it across every session**, so all scenarios
-  from one run group under a single folder.
+  `<scenarios-dir>/.reports/<run-id>/tester-reports`. Generate **one** `<run-id>` per the shared
+  prerequisites and **reuse it across every session**, so artifacts, worker sessions, and Azure
+  resources from one run remain correlated and isolated.
 - **Screenshot key steps on a best-effort basis** and file `report_finding` for any confusing
   UX, error, or doc mismatch. A screenshot error or timeout follows the non-blocking observation
   policy above and must identify the evidence that could not be captured.
@@ -210,4 +219,4 @@ Every sub-agent spawned for a wave must obey:
   SKIPPED scenarios include the reason (e.g. `prerequisite tier1/1.01-init-template-python.yaml
   did not pass`).
 - The driving agent writes the final cross-scenario summary to
-  `.reports/<run-timestamp>/FINAL-REPORT.md` (the `.reports/` tree is git-ignored).
+  `.reports/<run-id>/FINAL-REPORT.md` (the `.reports/` tree is git-ignored).

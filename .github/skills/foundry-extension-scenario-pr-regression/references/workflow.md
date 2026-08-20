@@ -93,6 +93,12 @@ gh pr view --json number,url,headRefName,baseRefName,title
 
    `list_scenarios` filtering is **OR across tags, case-sensitive, exact match**.
 
+4. If the result contains **any Tier 2 scenario**, add
+   `tier2/2.00-setup-deploy-shared-agent.yaml` and
+   `tier2/2.99-teardown-down.yaml` to the concrete plan, deduplicating them if already
+   selected. This lifecycle closure happens before cost confirmation so the user sees and
+   approves the exact set that will create and tear down resources.
+
 ### Step 4 — Confirm the plan (cost gate)
 
 Show the user the concrete scenario list grouped by tier, plus estimated cost/auth needs,
@@ -104,8 +110,8 @@ and confirm via `ask_user` before running:
   ("Tier 1b/2 provisions real Azure resources and incurs cost — proceed?"). If the user
   declines, drop cost-incurring tiers and run only Tier 0/1.
 
-Pick one `<run-timestamp>` of the form `YYYYMMDD-HHMMSS` for the whole run. All artifacts go
-under `<scenarios-dir>/.reports/<run-timestamp>/`.
+Generate one `<run-id>` per `prerequisites.md` and reuse it for the whole run. All artifacts go
+under `<scenarios-dir>/.reports/<run-id>/`.
 
 ### Step 5 — Run the scenarios
 
@@ -120,13 +126,14 @@ mandatory validation step, then honor ordering:
    do not fan out into a fleet of failures. Fix the environment issue (re-run Step 1b on
    Windows, rebuild on native Linux) and start over.
 
-2. **Tier 0 / Tier 1** are `parallel-safe` — they may be run concurrently (small waves), each
-   with its own `cwd` (no `instance_id` needed for distinct scenarios).
+2. **Tier 0 / Tier 1** are `parallel-safe` — they may be run concurrently (small waves). Give
+   each worker the scenario-specific `instance` / `instance_id` derived from the run ID.
 3. **Tier 1b** (`verify-deploy`) is `parallel-safe` but **depends on Tier 1**: wait for all
    Tier 1 scenarios to complete, then check each Tier 1b scenario's `requires:` field. Only
    run it if the prerequisite PASSED; otherwise mark it ⏭️ SKIPPED. Once prerequisites are
-   confirmed, fan out Tier 1b scenarios concurrently. Tier 1b requires cost acknowledgement
-   (same as Tier 2) since it provisions Azure resources.
+   confirmed, fan out Tier 1b scenarios concurrently using the exact instance ID assigned to
+   each prerequisite. Tier 1b requires cost acknowledgement (same as Tier 2) since it
+   provisions Azure resources.
 4. **Tier 2** is `serial-only` and order-dependent: `2.00-setup-deploy-shared-agent` **first**,
    then the targeted `2.01-`…`2.18-` scenarios **serially**, then `2.99-teardown-down` **last**.
 
@@ -135,7 +142,7 @@ entries.
 
 ### Step 6 — Report
 
-Aggregate results into `.reports/<run-timestamp>/FINAL-REPORT.md` and post a PR comment per
+Aggregate results into `.reports/<run-id>/FINAL-REPORT.md` and post a PR comment per
 `reporting.md`. If a Tier 2 run started but was interrupted before `2.99-teardown`, run
 `2.99-teardown-down` (or `2.00-setup`'s down hook) so no resources are orphaned, then report.
 

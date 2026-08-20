@@ -4,10 +4,10 @@ Two outputs: a local `FINAL-REPORT.md` artifact and a PR comment.
 
 ## FINAL-REPORT.md
 
-Write to `<scenarios-dir>/.reports/<run-timestamp>/FINAL-REPORT.md` (the `.reports/` tree is
+Write to `<scenarios-dir>/.reports/<run-id>/FINAL-REPORT.md` (the `.reports/` tree is
 git-ignored). Include:
 
-- Run header: timestamp, PR number/URL, branch, base ref, the derived tag set, and the
+- Run header: run ID, PR number/URL, branch, base ref, the derived tag set, and the
   tiers actually run.
 - A per-tier table of scenarios with columns: `Scenario | Tier | Result | Duration | Findings`.
 - A short "Coverage gaps" section listing any changed command(s) with no scenario (from
@@ -22,7 +22,7 @@ formatting). Keep it scannable — full detail lives in the artifact. Suggested 
 ```markdown
 ## 🧪 Agent scenario regression check
 
-**Branch:** `<headRef>` → `<baseRef>` · **Run:** `<run-timestamp>`
+**Branch:** `<headRef>` → `<baseRef>` · **Run:** `<run-id>`
 **Impacted tags:** `cmd:init`, `cmd:invoke` · **Tiers run:** 0, 1, 1b, 2
 
 | Scenario | Tier | Result | Duration |

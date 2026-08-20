@@ -2,11 +2,13 @@
 name: foundry-extension-scenario-suite-run
 license: MIT
 metadata:
-  version: "1.0"
+  version: "1.1"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or selection rules.
   # 1.0: initial split from the scenarios README's fleet prompt; full / tag / tier sweep that is
   # NOT tied to a PR diff. Per-scenario driving is delegated to the foundry-extension-scenario-worker agent and
   # specified once in the scenarios' driving-mechanics.md.
+  # 1.1: close filtered Tier 2 selections over setup/teardown and assign run-unique
+  # per-scenario instances.
 description: >-
   **WORKFLOW SKILL** — Runs the azure.ai.agents extension's cli-interactive-tester scenarios as
   a **full or tag/tier-filtered sweep** that is *not* tied to a PR diff. Discovers scenarios via
@@ -75,8 +77,8 @@ PR-regression flow and are single-sourced there. Follow
 [`../foundry-extension-scenario-pr-regression/references/prerequisites.md`](../foundry-extension-scenario-pr-regression/references/prerequisites.md)
 (repo path `.github/skills/foundry-extension-scenario-pr-regression/references/prerequisites.md`) before doing
 anything else. In particular: verify the tester MCP server and `profile.local.yaml`, and derive
-the merged `session_vars` (profile merge + `shared_agent_name` + `fixtures_dir`) that must be
-threaded, unchanged, through every scenario.
+the base `session_vars` (profile merge + `run_id` + `shared_agent_name` + `fixtures_dir`) and
+per-scenario `instance` values that must be threaded consistently through every scenario.
 
 The mandatory **`azd` binary build/verify gate** and **recipe validation** are shared gates the
 **foundry-extension-scenario-orchestrator** owns (see the `foundry-extension-scenario-orchestrator` agent and
@@ -109,8 +111,12 @@ ask via `ask_user` before enumerating.
 list_scenarios(root="<scenarios-dir>", tags=[<filter>, ...])   # omit tags for the whole suite
 ```
 
-Group the returned scenarios by tier (0 / 1 / 1b / 2). This grouping drives both the cost gate
-and the run order.
+Group the returned scenarios by tier (0 / 1 / 1b / 2). If the result contains **any Tier 2
+scenario**, add `tier2/2.00-setup-deploy-shared-agent.yaml` and
+`tier2/2.99-teardown-down.yaml` to the concrete set, deduplicating them if already present.
+This lifecycle closure is mandatory even when a tag filter such as `cmd:invoke` did not match
+the setup/teardown files directly. The expanded grouping drives both the cost gate and run
+order.
 
 ### Step 3 — Confirm the plan (cost gate)
 
@@ -123,8 +129,8 @@ running:
   ("Tier 1b/2 provisions real Azure resources and incurs cost — proceed?"). If the user
   declines, drop the cost-incurring tiers and run only what remains.
 
-Pick one `<run-timestamp>` of the form `YYYYMMDD-HHMMSS` for the whole sweep. All artifacts go
-under `<scenarios-dir>/.reports/<run-timestamp>/`.
+Generate one `<run-id>` per the shared prerequisites and reuse it for the whole sweep. All
+artifacts go under `<scenarios-dir>/.reports/<run-id>/`.
 
 ### Step 4 — Run the scenarios
 
@@ -134,11 +140,11 @@ each scenario out to a **foundry-extension-scenario-worker** agent, one scenario
 1. **Recipe validation (mandatory).** Run one fast Tier 0 scenario (e.g. `0.01-version`)
    synchronously before fanning out. If it fails with an infrastructure error, **stop the whole
    run** and fix the environment — do not fan out into a fleet of failures.
-2. **Tier 0 / Tier 1** (`parallel-safe`): fan out in small waves (4–6 at a time), each worker
-   with its own `cwd` (no `instance_id` for distinct scenarios).
+2. **Tier 0 / Tier 1** (`parallel-safe`): fan out in small waves (4–6 at a time). Give each
+   worker the scenario-specific `instance` / `instance_id` derived in the prerequisites.
 3. **Tier 1b** (`verify-deploy`, ⚠️ cost): only after all Tier 1 workers finish, and only for
    scenarios whose `requires:` prerequisite **PASSED** this run (otherwise ⏭️ SKIPPED); then fan
-   out concurrently.
+   out concurrently. Reuse each prerequisite Tier 1 scenario's exact instance ID.
 4. **Tier 2** (`serial-only`, ⚠️ cost): never parallelize — `2.00-setup-deploy-shared-agent`
    **first**, then `2.01-`…`2.18-` **serially**, `2.18-delete` before teardown, then
    `2.99-teardown-down` **last**.
@@ -149,7 +155,7 @@ passed. Collect each worker's returned verdict block.
 
 ### Step 5 — Report
 
-Aggregate every worker's verdict into `.reports/<run-timestamp>/FINAL-REPORT.md` (see
+Aggregate every worker's verdict into `.reports/<run-id>/FINAL-REPORT.md` (see
 **Reporting** below). Post a PR comment **only** if the user explicitly asked to tie this sweep
 to a PR; a suite run is not PR-scoped by default. If a Tier 2 run started but was interrupted
 before `2.99-teardown`, run `2.99-teardown-down` (or `2.00-setup`'s down hook) so no Azure
@@ -191,5 +197,5 @@ Never soften a real regression to make the table green.
   fan-out.
 - Every selected scenario was driven to a recorded PASS / FAIL / ⏭️ SKIPPED with duration and
   findings; scenarios with a `requires:` prerequisite that did not PASS are ⏭️ SKIPPED (not FAIL).
-- A `FINAL-REPORT.md` was written under `.reports/<run-timestamp>/`, and any Tier 1b / Tier 2 run
+- A `FINAL-REPORT.md` was written under `.reports/<run-id>/`, and any Tier 1b / Tier 2 run
   was followed by appropriate teardown so no Azure resources are left running.

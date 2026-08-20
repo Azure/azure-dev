@@ -48,14 +48,16 @@ Your caller gives you everything you need — do not go looking for it yourself:
 
 - **`scenario_path`** — the scenario YAML, already in the correct path style (WSL `/mnt/c/…`
   on Windows, native absolute path otherwise).
-- **`session_vars`** — the merged profile map (`prefix`, `subscription`, `region`, `model`,
-  optional `tenant`, `shared_agent_name`, `fixtures_dir`). Pass it **unchanged** on every
-  `load_scenario` / `run_pre_hooks` / `start_session` / `run_post_hooks` call.
+- **`session_vars`** — the per-scenario map (`prefix`, `subscription`, `region`, `model`,
+  optional `tenant`, `run_id`, `shared_agent_name`, `fixtures_dir`, and `instance` when
+  applicable). Pass it **unchanged** on every `load_scenario` / `run_pre_hooks` /
+  `start_session` / `run_post_hooks` call.
 - **`run_name`** — the scenario stem (e.g. `1.04-init-from-code`); role-suffixed for
   two-session scenarios.
-- **`output_dir`** — the WSL/native path of `.reports/<run-timestamp>/tester-reports`.
-- **`session_id`** — a unique id (already timestamp-suffixed for fleet safety), plus an
-  optional **`instance_id`** when the caller is fanning the *same* scenario out N times.
+- **`output_dir`** — the WSL/native path of `.reports/<run-id>/tester-reports`.
+- **`session_id`** — a unique id containing the sweep run ID, plus the assigned
+  **`instance_id`** for Tier 0 / Tier 1 / Tier 1b parallel-safe scenarios. Tier 1b receives
+  the exact instance used by its Tier 1 prerequisite. Tier 2 receives no `instance_id`.
 - **Prerequisite status** — if the scenario declares `requires:`, the caller tells you whether
   that prerequisite **PASSED** in the current run. Requires-gating is a run-level decision the
   caller owns; you only act on what you are told (see below).
@@ -69,6 +71,9 @@ Your caller gives you everything you need — do not go looking for it yourself:
    `load_scenario` → (if present) `run_pre_hooks` → `start_session` (with `run_name`,
    `output_dir`, `session_id`, and `instance_id` if given) → drive the `goals:` with
    `send_action` / `select` / screenshots → `finish_session` → (if present) `run_post_hooks`.
+   Pass the same `instance_id` to `run_pre_hooks`, every `start_session`, and
+   `run_post_hooks`; `session_vars.instance` must match it so `load_scenario` renders the same
+   paths and goals that the hooks and session execute.
    Treat `finish_session` and `run_post_hooks` as a finally-style path: run them after every
    started session even when a product goal fails. Screenshot key steps on a best-effort basis
    and `report_finding` for any confusing UX, error, or doc mismatch.

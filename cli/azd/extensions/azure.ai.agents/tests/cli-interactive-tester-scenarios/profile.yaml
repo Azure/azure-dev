@@ -5,8 +5,9 @@
 # from profile.local.yaml.example.
 #
 # The driving agent loads both files (local overrides this one), validates
-# that the required keys are present, derives `shared_agent_name` =
-# "<prefix>-<shared_agent_suffix>", and then passes the merged map as
+# that the required keys are present, generates one run ID, derives
+# `shared_agent_name` = "<prefix>-<shared_agent_suffix>-<run_id>", and then passes
+# a per-scenario copy of the merged map (including `instance` where applicable) as
 # `session_vars` to EVERY MCP tool call (load_scenario, run_pre_hooks,
 # start_session, run_post_hooks) — see the "Profile / overrides" section
 # of README.md.

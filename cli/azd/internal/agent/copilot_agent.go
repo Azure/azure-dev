@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
+	"github.com/github/copilot-sdk/go/rpc"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
@@ -174,8 +174,8 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (resu
 			if m.DefaultReasoningEffort != "" {
 				label += fmt.Sprintf(" (%s)", m.DefaultReasoningEffort)
 			}
-			if m.Billing != nil {
-				label += fmt.Sprintf(" (%.0fx)", m.Billing.Multiplier)
+			if m.Billing != nil && m.Billing.Multiplier != nil {
+				label += fmt.Sprintf(" (%.0fx)", *m.Billing.Multiplier)
 			}
 			modelChoices = append(modelChoices, &uxlib.SelectChoice{
 				Value: m.ID,
@@ -239,7 +239,7 @@ func (a *CopilotAgent) SelectSession(ctx context.Context) (*SessionMetadata, err
 	})
 
 	for _, s := range sessions {
-		timeStr := FormatSessionTime(s.ModifiedTime)
+		timeStr := FormatSessionTime(s.ModifiedTime.Format(time.RFC3339))
 		summary := ""
 		if s.Summary != nil && *s.Summary != "" {
 			summary = strings.Join(strings.Fields(*s.Summary), " ")
@@ -288,7 +288,7 @@ func (a *CopilotAgent) ListSessions(ctx context.Context, cwd string) ([]SessionM
 	}
 
 	return a.clientManager.Client().ListSessions(ctx, &copilot.SessionListFilter{
-		Cwd: cwd,
+		WorkingDirectory: cwd,
 	})
 }
 
@@ -468,7 +468,7 @@ func (a *CopilotAgent) GetMessages(ctx context.Context) ([]SessionEvent, error) 
 		return nil, fmt.Errorf("no active session")
 	}
 
-	return a.session.GetMessages(ctx)
+	return a.session.GetEvents(ctx)
 }
 
 // collectFileChanges stops the watcher, collects its changes, and appends them
@@ -712,19 +712,19 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 // through the consent manager for unified access control.
 func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 	return func(req copilot.PermissionRequest, inv copilot.PermissionInvocation) (
-		copilot.PermissionRequestResult, error,
+		rpc.PermissionDecision, error,
 	) {
 		// In headless mode, auto-approve all permission requests
 		if a.headless {
-			log.Printf("[copilot] PermissionRequest (headless auto-approve): kind=%s", req.Kind)
+			log.Printf("[copilot] PermissionRequest (headless auto-approve): kind=%s", req.Kind())
 			a.consentApprovedCount++
-			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindApproved}, nil
+			return &rpc.PermissionDecisionApproveOnce{}, nil
 		}
 
 		server, tool, readOnly := permissionToConsentTarget(req)
 		toolID := fmt.Sprintf("%s/%s", server, tool)
 
-		log.Printf("[copilot] PermissionRequest: kind=%s target=%s", req.Kind, toolID)
+		log.Printf("[copilot] PermissionRequest: kind=%s target=%s", req.Kind(), toolID)
 
 		consentReq := consent.ConsentRequest{
 			ToolID:     toolID,
@@ -739,12 +739,12 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 		if err != nil {
 			log.Printf("[copilot] Consent check error for %s: %v, denying", toolID, err)
 			a.consentDeniedCount++
-			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindUserNotAvailable}, nil
+			return &rpc.PermissionDecisionUserNotAvailable{}, nil
 		}
 
 		if decision.Allowed {
 			a.consentApprovedCount++
-			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindApproved}, nil
+			return &rpc.PermissionDecisionApproveOnce{}, nil
 		}
 
 		if decision.RequiresPrompt {
@@ -767,40 +767,51 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 				if errors.Is(promptErr, consent.ErrToolExecutionSkipped) {
 					// Skip — deny this tool but let the agent continue
 					a.consentDeniedCount++
-					return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
+					return &rpc.PermissionDecisionReject{}, nil
 				}
 				if errors.Is(promptErr, consent.ErrToolExecutionDenied) {
 					// Deny — block and exit the interaction
 					a.consentDeniedCount++
-					return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
+					return &rpc.PermissionDecisionReject{}, nil
 				}
 				log.Printf("[copilot] Consent grant error for %s: %v", toolID, promptErr)
 				a.consentDeniedCount++
-				return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindUserNotAvailable}, nil
+				return &rpc.PermissionDecisionUserNotAvailable{}, nil
 			}
 			a.consentApprovedCount++
-			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindApproved}, nil
+			return &rpc.PermissionDecisionApproveOnce{ApprovedInteractively: new(true)}, nil
 		}
 
 		a.consentDeniedCount++
-		return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
+		return &rpc.PermissionDecisionReject{}, nil
 	}
 }
 
 // permissionToConsentTarget maps a PermissionRequest to consent server/tool/readOnly.
 func permissionToConsentTarget(req copilot.PermissionRequest) (server, tool string, readOnly bool) {
-	switch req.Kind {
-	case copilot.PermissionRequestKindMcp:
+	switch request := req.(type) {
+	case *copilot.PermissionRequestMCP:
 		server = "copilot"
-		if req.ServerName != nil {
-			server = *req.ServerName
+		if request.ServerName != "" {
+			server = request.ServerName
 		}
 		tool = "unknown"
-		if req.ToolName != nil {
-			tool = *req.ToolName
+		if request.ToolName != "" {
+			tool = request.ToolName
 		}
-		readOnly = req.ReadOnly != nil && *req.ReadOnly
+		readOnly = request.ReadOnly
+		return server, tool, readOnly
 
+	case *copilot.PermissionRequestCustomTool:
+		server = "copilot"
+		tool = request.ToolName
+		if tool == "" {
+			tool = "custom-tool"
+		}
+		return server, tool, false
+	}
+
+	switch req.Kind() {
 	case copilot.PermissionRequestKindShell:
 		server = "copilot"
 		tool = "shell"
@@ -826,17 +837,9 @@ func permissionToConsentTarget(req copilot.PermissionRequest) (server, tool stri
 		tool = "memory"
 		readOnly = false
 
-	case copilot.PermissionRequestKindCustomTool:
-		server = "copilot"
-		tool = "custom-tool"
-		if req.ToolName != nil {
-			tool = *req.ToolName
-		}
-		readOnly = false
-
 	default:
 		server = "copilot"
-		tool = string(req.Kind)
+		tool = string(req.Kind())
 		readOnly = false
 	}
 
@@ -848,45 +851,50 @@ func permissionToConsentTarget(req copilot.PermissionRequest) (server, tool stri
 func buildPermissionDescription(req copilot.PermissionRequest) string {
 	var parts []string
 
-	// Tool title/description
-	if req.ToolTitle != nil && *req.ToolTitle != "" {
-		parts = append(parts, *req.ToolTitle)
-	} else if req.ToolDescription != nil && *req.ToolDescription != "" {
-		parts = append(parts, *req.ToolDescription)
-	}
-
-	// Intention — what the agent wants to do
-	if req.Intention != nil && *req.Intention != "" {
-		parts = append(parts, fmt.Sprintf("Intent: %s", *req.Intention))
-	}
-
-	// Context-specific details
-	switch req.Kind {
-	case copilot.PermissionRequestKindShell:
-		if req.FullCommandText != nil && *req.FullCommandText != "" {
-			parts = append(parts, fmt.Sprintf("Command: %s", *req.FullCommandText))
+	switch request := req.(type) {
+	case *copilot.PermissionRequestMCP:
+		if request.ToolTitle != "" {
+			parts = append(parts, request.ToolTitle)
 		}
-	case copilot.PermissionRequestKindWrite:
-		if req.FileName != nil && *req.FileName != "" {
-			parts = append(parts, fmt.Sprintf("File: %s", *req.FileName))
+	case *copilot.PermissionRequestCustomTool:
+		if request.ToolDescription != "" {
+			parts = append(parts, request.ToolDescription)
 		}
-	case copilot.PermissionRequestKindRead:
-		if req.Path != nil && *req.Path != "" {
-			parts = append(parts, fmt.Sprintf("Path: %s", *req.Path))
+	case *copilot.PermissionRequestShell:
+		if request.Intention != "" {
+			parts = append(parts, fmt.Sprintf("Intent: %s", request.Intention))
 		}
-	case copilot.PermissionRequestKindURL:
-		if req.URL != nil && *req.URL != "" {
-			parts = append(parts, fmt.Sprintf("URL: %s", *req.URL))
+		if request.FullCommandText != "" {
+			parts = append(parts, fmt.Sprintf("Command: %s", request.FullCommandText))
 		}
-	case copilot.PermissionRequestKindMemory:
-		if req.Subject != nil && *req.Subject != "" {
-			parts = append(parts, fmt.Sprintf("Subject: %s", *req.Subject))
+		if request.Warning != nil && *request.Warning != "" {
+			parts = append(parts, fmt.Sprintf("⚠ %s", *request.Warning))
 		}
-	}
-
-	// Warning from the SDK
-	if req.Warning != nil && *req.Warning != "" {
-		parts = append(parts, fmt.Sprintf("⚠ %s", *req.Warning))
+	case *copilot.PermissionRequestWrite:
+		if request.Intention != "" {
+			parts = append(parts, fmt.Sprintf("Intent: %s", request.Intention))
+		}
+		if request.FileName != "" {
+			parts = append(parts, fmt.Sprintf("File: %s", request.FileName))
+		}
+	case *copilot.PermissionRequestRead:
+		if request.Intention != "" {
+			parts = append(parts, fmt.Sprintf("Intent: %s", request.Intention))
+		}
+		if request.Path != "" {
+			parts = append(parts, fmt.Sprintf("Path: %s", request.Path))
+		}
+	case *copilot.PermissionRequestURL:
+		if request.Intention != "" {
+			parts = append(parts, fmt.Sprintf("Intent: %s", request.Intention))
+		}
+		if request.URL != "" {
+			parts = append(parts, fmt.Sprintf("URL: %s", request.URL))
+		}
+	case *copilot.PermissionRequestMemory:
+		if request.Subject != nil && *request.Subject != "" {
+			parts = append(parts, fmt.Sprintf("Subject: %s", *request.Subject))
+		}
 	}
 
 	if len(parts) == 0 {
@@ -898,43 +906,42 @@ func buildPermissionDescription(req copilot.PermissionRequest) string {
 
 // permissionDisplayName returns a user-friendly display name for the consent prompt.
 func permissionDisplayName(req copilot.PermissionRequest) string {
-	switch req.Kind {
-	case copilot.PermissionRequestKindShell:
-		if req.FullCommandText != nil && *req.FullCommandText != "" {
-			cmd := *req.FullCommandText
+	switch request := req.(type) {
+	case *copilot.PermissionRequestShell:
+		if request.FullCommandText != "" {
+			cmd := request.FullCommandText
 			if len(cmd) > 80 {
 				cmd = cmd[:77] + "..."
 			}
 			return fmt.Sprintf("shell command: %s", cmd)
 		}
 		return "shell command"
-	case copilot.PermissionRequestKindWrite:
-		if req.FileName != nil && *req.FileName != "" {
-			return fmt.Sprintf("write to %s", relativePath(*req.FileName))
+	case *copilot.PermissionRequestWrite:
+		if request.FileName != "" {
+			return fmt.Sprintf("write to %s", relativePath(request.FileName))
 		}
 		return "file write"
-	case copilot.PermissionRequestKindRead:
-		if req.Path != nil && *req.Path != "" {
-			return fmt.Sprintf("read %s", relativePath(*req.Path))
+	case *copilot.PermissionRequestRead:
+		if request.Path != "" {
+			return fmt.Sprintf("read %s", relativePath(request.Path))
 		}
 		return "file read"
-	case copilot.PermissionRequestKindURL:
-		if req.URL != nil && *req.URL != "" {
-			u := *req.URL
+	case *copilot.PermissionRequestURL:
+		if request.URL != "" {
+			u := request.URL
 			if len(u) > 60 {
 				u = u[:57] + "..."
 			}
 			return fmt.Sprintf("fetch %s", u)
 		}
 		return "URL access"
-	case copilot.PermissionRequestKindMcp:
-		name := "tool"
-		if req.ToolName != nil {
-			name = *req.ToolName
+	case *copilot.PermissionRequestMCP:
+		if request.ToolName != "" {
+			return request.ToolName
 		}
-		return name
+		return "tool"
 	default:
-		return string(req.Kind)
+		return string(req.Kind())
 	}
 }
 
@@ -1130,15 +1137,6 @@ func (a *CopilotAgent) ensureAuthenticated(ctx context.Context) error {
 func (a *CopilotAgent) ensurePlugins(ctx context.Context) {
 	// Skip plugin management in headless mode — plugins are managed externally
 	if a.headless {
-		return
-	}
-
-	// Plugin management requires "copilot" CLI in PATH (the npm-installed version).
-	if _, err := exec.LookPath("copilot"); err != nil {
-		log.Printf("[copilot] 'copilot' CLI not found in PATH — skipping plugin management")
-		a.console.Message(ctx, output.WithWarningFormat(
-			"The GitHub Copilot CLI is not installed. Some features may be limited.\n"+
-				"Install it with: npm install -g @github/copilot"))
 		return
 	}
 

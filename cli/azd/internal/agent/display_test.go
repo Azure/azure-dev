@@ -107,14 +107,13 @@ func TestGetUsageMetrics(t *testing.T) {
 		idleCh: make(chan struct{}, 1),
 	}
 
-	inputTokens1 := float64(1000)
-	outputTokens1 := float64(500)
+	inputTokens1 := int64(1000)
+	outputTokens1 := int64(500)
 	cost1 := float64(1.0)
-	duration1 := float64(5000)
+	duration1 := int64(5000)
 
 	// Simulate usage events
 	d.HandleEvent(copilot.SessionEvent{
-		Type: copilot.SessionEventTypeAssistantUsage,
 		Data: &copilot.AssistantUsageData{
 			InputTokens:  &inputTokens1,
 			OutputTokens: &outputTokens1,
@@ -124,13 +123,12 @@ func TestGetUsageMetrics(t *testing.T) {
 		},
 	})
 
-	inputTokens2 := float64(2000)
-	outputTokens2 := float64(800)
+	inputTokens2 := int64(2000)
+	outputTokens2 := int64(800)
 	cost2 := float64(1.0)
-	duration2 := float64(3000)
+	duration2 := int64(3000)
 
 	d.HandleEvent(copilot.SessionEvent{
-		Type: copilot.SessionEventTypeAssistantUsage,
 		Data: &copilot.AssistantUsageData{
 			InputTokens:  &inputTokens2,
 			OutputTokens: &outputTokens2,

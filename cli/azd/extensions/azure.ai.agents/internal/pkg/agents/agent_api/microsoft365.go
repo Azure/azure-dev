@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -156,11 +155,6 @@ func (c *AgentClient) PublishTeamsApp(
 	if err := runtime.MarshalAsJSON(req, request); err != nil {
 		return nil, fmt.Errorf("failed to marshal Teams app publish request: %w", err)
 	}
-	requestBody, err := json.MarshalIndent(request, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("failed to format Teams app publish request for logging: %w", err)
-	}
-	log.Printf("[debug] Microsoft 365 publish API request: POST %s\nBody:\n%s", url, requestBody)
 	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview,AgentEndpoints=V1Preview")
 
 	resp, err := c.pipeline.Do(req)

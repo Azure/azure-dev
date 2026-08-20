@@ -176,6 +176,18 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 		require.ErrorContains(t, err, "agenticUserTemplate")
 	})
 
+	t.Run("digital worker missing template fields reports first field deterministically", func(t *testing.T) {
+		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			UseCase: ActivityUseCaseDigitalWorker,
+			Publish: &ActivityPublishConfig{
+				PublishAsAutopilot:  true,
+				PublishScope:        "tenant",
+				AgenticUserTemplate: &AgenticUserTemplateConfig{},
+			},
+		})
+		require.ErrorContains(t, err, "activity.publish.agenticUserTemplate.id")
+	})
+
 	t.Run("digital worker requires tenant publish scope", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
 			UseCase: ActivityUseCaseDigitalWorker,

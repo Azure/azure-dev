@@ -88,6 +88,7 @@ func TestWritePublishResultGuidance(t *testing.T) {
 				"Admin approval: " + tenantAgentApprovalURL,
 			},
 			notContains:      []string{"Install link", "create instances"},
+			wantDeepLink:     true,
 			wantApprovalLink: true,
 		},
 		{
@@ -101,6 +102,7 @@ func TestWritePublishResultGuidance(t *testing.T) {
 				"create their personal instances",
 			},
 			notContains:      []string{"Install link"},
+			wantDeepLink:     true,
 			wantApprovalLink: true,
 		},
 	}

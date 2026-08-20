@@ -241,12 +241,10 @@ func writePublishResult(
 			"teamsAppId":  result.TeamsAppID,
 			"scope":       scope.flag,
 			"displayName": displayName,
+			"deepLink":    deepLink,
 		}
 		if scope.flag == "tenant" || isDigitalWorker {
 			payload["approvalLink"] = tenantAgentApprovalURL
-		}
-		if scope.flag != "tenant" {
-			payload["deepLink"] = deepLink
 		}
 		data, jsonErr := json.MarshalIndent(payload, "", "  ")
 		if jsonErr != nil {

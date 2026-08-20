@@ -2083,6 +2083,7 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		agentVersion.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+		activityProfile,
 		protocols,
 	)
 
@@ -2762,12 +2763,13 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 	agentVersion string,
 	projectResourceID string,
 	projectEndpoint string,
+	activityProfile ActivityProfile,
 	protocols []agent_yaml.ProtocolVersionRecord,
 ) []*azdext.Artifact {
 	artifacts := []*azdext.Artifact{}
 
-	// Add playground URL
-	if projectResourceID != "" {
+	// Add playground URL only for non-Activity agents.
+	if !activityProfile.IsActivity && projectResourceID != "" {
 		playgroundUrl, err := AgentPlaygroundURL(projectResourceID, agentName, agentVersion)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to generate agent playground link")

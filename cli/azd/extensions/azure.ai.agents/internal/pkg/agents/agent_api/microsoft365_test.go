@@ -4,10 +4,8 @@
 package agent_api
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"testing"
 
@@ -104,11 +102,6 @@ func TestPublishTeamsApp_Success(t *testing.T) {
 }
 
 func TestPublishTeamsApp_DigitalWorkerRequest(t *testing.T) {
-	var logs bytes.Buffer
-	previousLogWriter := log.Writer()
-	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(previousLogWriter) })
-
 	client, transport := newCaptureClient(
 		http.StatusOK,
 		`{"titleId":"T_123","teamsAppId":"app-456"}`,
@@ -143,13 +136,6 @@ func TestPublishTeamsApp_DigitalWorkerRequest(t *testing.T) {
 	require.Equal(t, request, sent)
 	require.Empty(t, sent.BotServiceArmID)
 	require.Equal(t, "blueprint-client-id", sent.AgenticUserTemplate.AgentIdentityBlueprintID)
-	require.Contains(
-		t,
-		logs.String(),
-		"POST https://test.example.com/api/projects/proj/agents/my-agent/microsoft365/publish?api-version=2025-11-15-preview",
-	)
-	require.Contains(t, logs.String(), `"PublishScope": "Tenant"`)
-	require.Contains(t, logs.String(), `"AgentIdentityBlueprintId": "blueprint-client-id"`)
 }
 
 func TestPublishTeamsApp_ErrorStatus(t *testing.T) {

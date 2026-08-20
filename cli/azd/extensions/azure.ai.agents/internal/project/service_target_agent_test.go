@@ -1359,6 +1359,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 		"test-agent", "1.0.0",
 		"", // no project resource ID — skip playground
 		ep,
+		ActivityProfile{},
 		protocols,
 	)
 
@@ -1394,6 +1395,7 @@ func TestDeployArtifacts_ResponsesProtocol(t *testing.T) {
 		"prompt-agent", "2.0.0",
 		"", // no project resource ID — skip playground
 		ep,
+		ActivityProfile{},
 		protocols,
 	)
 
@@ -1414,9 +1416,33 @@ func TestDeployArtifacts_EmptyProtocols_NoEndpoints(t *testing.T) {
 	artifacts := p.deployArtifacts(
 		"agent", "1.0.0",
 		"", "https://ep.azure.com",
+		ActivityProfile{},
 		nil,
 	)
 	require.Empty(t, artifacts)
+}
+
+func TestDeployArtifacts_ActivityAgent_SkipsPlaygroundPortalLink(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	const ep = "https://myproject.services.ai.azure.com"
+
+	protocols := []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "1.0.0"},
+	}
+
+	artifacts := p.deployArtifacts(
+		"activity-agent", "1.0.0",
+		"/subscriptions/123/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj",
+		ep,
+		ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple},
+		protocols,
+	)
+
+	require.Len(t, artifacts, 1)
+	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
+	require.NotContains(t, artifacts[0].Location, "/build/agents/")
 }
 
 // TestPackage_NoEarlyFailureWithoutACR is a regression test ensuring that

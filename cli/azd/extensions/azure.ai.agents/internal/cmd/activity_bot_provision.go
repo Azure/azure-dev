@@ -58,7 +58,10 @@ func provisionActivityBotNames(
 			continue
 		}
 		shouldProvision, err := shouldProvisionActivityBot(service, args.Project.Path)
-		if err != nil || !shouldProvision {
+		if err != nil {
+			return fmt.Errorf("resolving activity bot provisioning for service %q: %w", service.Name, err)
+		}
+		if !shouldProvision {
 			continue
 		}
 

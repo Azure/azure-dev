@@ -101,15 +101,20 @@ func ResolveActivityProfileWithSettings(
 		if template == nil {
 			return ActivityProfile{}, fmt.Errorf("activity.publish.agenticUserTemplate is required for digital_worker")
 		}
-		for field, value := range map[string]string{
-			"id":                    template.ID,
-			"file":                  template.File,
-			"schemaVersion":         template.SchemaVersion,
-			"communicationProtocol": template.CommunicationProtocol,
-		} {
+		requiredTemplateFields := []struct {
+			name  string
+			value string
+		}{
+			{name: "id", value: template.ID},
+			{name: "file", value: template.File},
+			{name: "schemaVersion", value: template.SchemaVersion},
+			{name: "communicationProtocol", value: template.CommunicationProtocol},
+		}
+		for _, field := range requiredTemplateFields {
+			value := field.value
 			if strings.TrimSpace(value) == "" {
 				return ActivityProfile{}, fmt.Errorf(
-					"activity.publish.agenticUserTemplate.%s is required for digital_worker", field,
+					"activity.publish.agenticUserTemplate.%s is required for digital_worker", field.name,
 				)
 			}
 		}

@@ -84,9 +84,11 @@ func newPublishCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd.Flags().StringVar(&flags.scope, "scope", "",
 		fmt.Sprintf("Microsoft 365 publish scope (%s; Digital Workers require tenant)", joinScopesHelp(teamsPublishScopes)))
 	cmd.Flags().StringVar(&flags.displayName, "display-name", "",
-		"Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.")
+		"Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName "+
+			"in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.")
 	cmd.Flags().StringVar(&flags.appVersion, "app-version", "",
-		"Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.")
+		"Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion "+
+			"in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.")
 
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
@@ -191,7 +193,8 @@ func validateDigitalWorkerPublishScope(useCase project.ActivityUseCase, scope te
 	return exterrors.Validation(
 		exterrors.CodeInvalidPublishScope,
 		fmt.Sprintf("digital_worker publish does not support %q scope", scope.flag),
-		"digital_worker supports tenant scope only; use --scope tenant (alias: org) or set activity.publish.publishScope: tenant in azure.yaml",
+		"digital_worker supports tenant scope only; use --scope tenant (alias: org) "+
+			"or set activity.publish.publishScope: tenant in azure.yaml",
 	)
 }
 

@@ -69,9 +69,11 @@ permissions, service outage) is reported as a command failure.`,
 	cmd.Flags().StringVar(&flags.scope, "scope", "",
 		fmt.Sprintf("Publish scope for the package (%s)", joinScopeHelp()))
 	cmd.Flags().StringVar(&flags.displayName, "display-name", "",
-		"Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.")
+		"Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName "+
+			"in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.")
 	cmd.Flags().StringVar(&flags.appVersion, "app-version", "",
-		"Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.")
+		"Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion "+
+			"in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.")
 	cmd.Flags().StringVar(&flags.outputDir, "output-dir", "",
 		"Directory to write appPackage.zip to (defaults to the agent source directory)")
 

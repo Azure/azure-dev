@@ -90,9 +90,57 @@ const (
 	AgentEventHandlerDestinationTypeEvals AgentEventHandlerDestinationType = "evals"
 )
 
+// RaiInvocationContentType identifies how the invocations request or response body is encoded,
+// which determines how the content-safety proxy extracts the text it moderates.
+type RaiInvocationContentType string
+
+const (
+	// RaiInvocationContentTypeJSON extracts text from a JSON body using JSONPath expressions.
+	RaiInvocationContentTypeJSON RaiInvocationContentType = "json"
+	// RaiInvocationContentTypeText treats the whole body as the text to moderate.
+	RaiInvocationContentTypeText RaiInvocationContentType = "text"
+)
+
+// RaiInvocationMode declares the response shapes the agent container is able to produce.
+// It is not an "input and output" switch: at runtime the proxy inspects the actual response
+// Content-Type and runs exactly one output gate.
+type RaiInvocationMode string
+
+const (
+	// RaiInvocationModeNonStreaming declares the agent only returns buffered (non-SSE) responses.
+	RaiInvocationModeNonStreaming RaiInvocationMode = "non_streaming"
+	// RaiInvocationModeStreaming declares the agent only returns server-sent event streams.
+	RaiInvocationModeStreaming RaiInvocationMode = "streaming"
+	// RaiInvocationModeBoth declares the agent may return either shape depending on the request.
+	RaiInvocationModeBoth RaiInvocationMode = "both"
+)
+
+// SseTextSelector locates the text to moderate inside a single server-sent event frame.
+type SseTextSelector struct {
+	// EventType is the SSE event name the selector applies to.
+	EventType string `json:"event_type"`
+	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
+	TextField string `json:"text_field,omitempty"`
+}
+
+// InvocationsModeration configures how the content-safety proxy extracts text from
+// invocations-protocol requests and responses so it can be submitted to the RAI policy.
+// Without it a RAI policy attached to an invocations agent has nothing to moderate.
+type InvocationsModeration struct {
+	InputContentType  RaiInvocationContentType `json:"input_content_type,omitempty"`
+	OutputContentType RaiInvocationContentType `json:"output_content_type,omitempty"`
+	ResponseMode      RaiInvocationMode        `json:"response_mode"`
+	InputPaths        []string                 `json:"input_paths,omitempty"`
+	OutputPaths       []string                 `json:"output_paths,omitempty"`
+	StreamSelectors   []SseTextSelector        `json:"stream_selectors,omitempty"`
+}
+
 // RaiConfig represents configuration for Responsible AI content filtering
 type RaiConfig struct {
 	RaiPolicyName string `json:"rai_policy_name"`
+	// InvocationsModeration is optional and only meaningful for agents that expose the
+	// invocations protocol.
+	InvocationsModeration *InvocationsModeration `json:"invocations_moderation,omitempty"`
 }
 
 // AgentDefinition is the base definition for all agent types

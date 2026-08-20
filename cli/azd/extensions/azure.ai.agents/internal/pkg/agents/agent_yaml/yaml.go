@@ -240,6 +240,25 @@ type CodeConfiguration struct {
 // default as `azd ai agent init --dep-resolution`).
 const DefaultDependencyResolution = "remote_build"
 
+// Session idle-timeout bounds (in seconds) for a hosted agent, matching the
+// upstream HostedAgentDefinition.session_configuration.idle_timeout_seconds
+// contract. When omitted, the service applies its own default.
+const (
+	// MinSessionIdleTimeoutSeconds is the smallest accepted idle timeout.
+	MinSessionIdleTimeoutSeconds = 300
+	// MaxSessionIdleTimeoutSeconds is the largest accepted idle timeout.
+	MaxSessionIdleTimeoutSeconds = 3600
+)
+
+// SessionConfiguration configures the runtime session behavior of a hosted agent.
+type SessionConfiguration struct {
+	// IdleTimeoutSeconds is the idle duration, in seconds, before a session's
+	// sandbox is suspended. Valid range is 300–3600 (inclusive). When nil,
+	// session_configuration is omitted from the request and the service default
+	// (900 seconds) applies.
+	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty" yaml:"idle_timeout_seconds,omitempty"`
+}
+
 // PolicyType identifies the kind of governance policy attached to a hosted agent.
 type PolicyType string
 
@@ -278,6 +297,7 @@ type ContainerAgent struct {
 	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agent_card,omitempty"`
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
+	SessionConfiguration *SessionConfiguration   `json:"sessionConfiguration,omitempty" yaml:"session_configuration,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

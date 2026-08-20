@@ -190,6 +190,13 @@ not emitted by azd spans.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Remote build count | `container.remoteBuild.count` | SystemMetadata | FeatureInsight | **Measurement** |
+| Publish remote build | `container.remotebuild` | SystemMetadata | FeatureInsight | Bool — whether a remote (ACR) build was requested (the configured `Docker.RemoteBuild` preference) rather than a local build. Not hashed; not a measurement. |
+
+### AKS
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Skip reason | `skip.reason` | SystemMetadata | FeatureInsight | Bounded enum (`cluster_not_provisioned`); never raw error text. Emitted on `aks.postprovision.skip`. Not hashed; not a measurement. |
 
 ### JSON-RPC
 
@@ -317,6 +324,7 @@ The following fields are defined in `fields.go`.
 | Field | OTel Key | Classification | Purpose | Values |
 |-------|----------|----------------|---------|--------|
 | Auth method | `auth.method` | SystemMetadata | FeatureInsight | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
+| Auth cache-clear failed | `auth.cache_clear_failed` | SystemMetadata | PerformanceAndHealth | Fixed enum (`auth`, `subscriptions`) identifying which cache failed to clear during the pre-login cleanup. Emitted on the `auth login` usage event. Not hashed; not a measurement. |
 | Env count | `env.count` | SystemMetadata | FeatureInsight | **Measurement** — number of environments |
 | Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Built-in hook name (raw) or SHA-256 hash for extension/custom hooks. Known values: `prebuild`, `postbuild`, `predeploy`, `postdeploy`, `predown`, `postdown`, `prepackage`, `postpackage`, `preprovision`, `postprovision`, `prepublish`, `postpublish`, `prerestore`, `postrestore`, `preup`, `postup` |
 | Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service`, `layer` |
@@ -420,7 +428,7 @@ Telemetry for the `infra.layers[]` parallel provisioning feature, emitted from `
 
 ## Data Classifications
 
-Classifications are defined in `internal/telemetry/fields/fields.go` and control how data
+Classifications are defined in `cli/azd/internal/tracing/fields/fields.go` and control how data
 is stored, retained, and who may access it.
 
 | Classification | Description |
@@ -483,3 +491,44 @@ Fields that are hashed:
 3. **Queue**: Envelopes are written to disk under `~/.azd/telemetry/`.
 4. **Upload**: The `azd telemetry upload` command (run as a background process) reads the queue and sends data to Azure Monitor.
 5. **Analysis**: Data flows into Kusto tables for dashboarding and analysis via LENS jobs and cooked tables.
+
+## GDPR Data-Catalog Classification
+
+Runtime emission (above) is separate from **classification**. The GDPR data catalog is kept in
+sync by an external metadata tool that **statically scans the telemetry source** — it does not read this document or observe live telemetry, so it can only classify a property that is declared where the scan looks: an exported `fields.AttributeKey`. A raw `attribute.String("my.key", v)` at a call site is invisible to the scan, so its catalog row stays **Unclassified / `Complete=false`**. This is enforced in-repo by `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`).
+
+### Field (attribute) discovery contract
+
+For a field to be discovered and classified it must be:
+
+- an **exported**, **package-level** `var` (not a `const`, not function-local, not unexported), and
+- typed exactly **`AttributeKey`** (the struct declared in `fields.go`).
+
+The scanner reads these `AttributeKey` members:
+
+| `AttributeKey` member | What the classifier reads |
+|-----------------------|---------------------------|
+| `Key` | The dotted OTel key (a string literal, `attribute.Key("…")`, or a string const). |
+| `Classification` | One of the six [Data Classifications](#data-classifications). |
+| `Purpose` | One or more [Purposes](#purposes). |
+| `Endpoint` | Optional identifier-type tag; set only when the value is a known endpoint identifier. |
+| `IsMeasurement` | `true` for numeric values (routed to the Measurements column); `false` (default) for Properties. |
+
+`Classification` and `Purpose` must be written as **bare identifiers from the `fields` package**
+(e.g. `Classification: SystemMetadata`) — the scanner reads the identifier name, so a qualified
+`fields.SystemMetadata` reference from another package would not be recognized. Keep all
+`AttributeKey` definitions inside the `fields` package. Fields are registered as **common
+properties** that apply across events (the scan does not tie an attribute to a specific event).
+
+### Event discovery contract
+
+For an event to be discovered its constant must be:
+
+- an **exported** `const` with a **string** value in the `events` package, and
+- named with a Go identifier that **contains the substring `Event`** (e.g. `PackBuildEvent`). A
+  constant whose identifier omits `Event` is silently skipped even if it is emitted at runtime.
+
+An identifier that **ends with `Prefix`** (e.g. `CommandEventPrefix`) registers a **prefix group**:
+any emitted event name starting with that prefix is classified under it. Every other event constant
+registers an exact event name. (Note: this `Event`/`Prefix` rule is about the Go **identifier**; the
+string **value** still follows the `prefix.noun.verb` naming convention.)

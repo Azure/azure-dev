@@ -30,6 +30,7 @@ type JobDefinition struct {
 	Resources             *ResourceDefinition          `yaml:"resources"`
 	InstanceCount         int                          `yaml:"instance_count"`
 	GPUCount              int                          `yaml:"gpu_count"`
+	Priority              string                       `yaml:"priority"`
 	EnvironmentVariables  map[string]string            `yaml:"environment_variables"`
 	Identity              string                       `yaml:"identity"`
 	StorageConnectionName string                       `yaml:"storage_connection_name"`
@@ -78,12 +79,12 @@ type ServiceDefinition struct {
 }
 
 // ResourceDefinition represents the compute resource configuration in a YAML job definition.
+// Only instance_count is honored; instance_type, slaTier, priority and the AISuperComputer
+// properties block have been removed — the service now infers the SKU from the compute
+// cluster, priority is a top-level job field, and users specify partial GPU allocations
+// via the top-level gpu_count field (GPU clusters only).
 type ResourceDefinition struct {
-	InstanceCount int            `yaml:"instance_count"`
-	InstanceType  string         `yaml:"instance_type"`
-	ShmSize       string         `yaml:"shm_size"`
-	DockerArgs    string         `yaml:"docker_args"`
-	Properties    map[string]any `yaml:"properties"`
+	InstanceCount int `yaml:"instance_count"`
 }
 
 // InputDefinition represents an input in the YAML job definition.

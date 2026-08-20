@@ -178,6 +178,38 @@ Details:
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
 
+## Session idle timeout
+
+A hosted agent's runtime session sandbox is suspended by Foundry after a period
+of inactivity. The default is 900 seconds. Override it with
+`sessionConfiguration.idleTimeoutSeconds` on the `azure.ai.agent` service entry
+in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    sessionConfiguration:
+      idleTimeoutSeconds: 300
+```
+
+`sessionConfiguration` applies to both deploy modes — container images and code
+deploys (`codeConfiguration`) alike. It is optional; when omitted, the setting
+is left out of the service request and Foundry applies its default (900
+seconds).
+
+Details:
+
+- `idleTimeoutSeconds` must be between **300 and 3600** seconds (inclusive).
+  Values outside that range are rejected at deploy time and by schema
+  validation.
+- In the deprecated on-disk `agent.yaml` shape the keys are snake_case
+  (`session_configuration.idle_timeout_seconds`). In `azure.yaml` they are
+  camelCase, like the other inline agent properties.
+
 ## Session carry-over across deploys
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and

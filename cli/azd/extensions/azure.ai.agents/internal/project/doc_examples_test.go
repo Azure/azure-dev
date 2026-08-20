@@ -792,6 +792,39 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "session idle timeout min valid",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 300}
+			},
+		},
+		{
+			name: "session idle timeout max valid",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3600}
+			},
+		},
+		{
+			name: "session idle timeout below min",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 299}
+			},
+			wantErr: true,
+		},
+		{
+			name: "session idle timeout above max",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3601}
+			},
+			wantErr: true,
+		},
+		{
+			name: "session idle timeout unknown property",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutMinutes": 5}
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, test := range tests {

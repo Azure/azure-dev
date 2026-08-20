@@ -48,9 +48,7 @@ var (
 )
 
 // DependencyNotFoundError indicates that a required dependency of an extension
-// could not be located in the same source as its parent. azd does not perform
-// cross-source dependency resolution during install, so the dependency must be
-// available in the parent's source or already installed.
+// could not be located in the parent source or the main azd registry.
 type DependencyNotFoundError struct {
 	// DependencyId is the id of the dependency that could not be resolved.
 	DependencyId string
@@ -91,8 +89,8 @@ func (e *DependencyVersionNotFoundError) Error() string {
 // Suggestion returns actionable guidance for resolving the dependency constraint.
 func (e *DependencyVersionNotFoundError) Suggestion() string {
 	return fmt.Sprintf(
-		"Install a version of %s that satisfies constraint %q, publish one to the same source as %s, "+
-			"or update %s's dependency constraint, then retry.",
+		"Install a version of %s that satisfies constraint %q before retrying, include a compatible version "+
+			"with %s, or update %s's dependency constraint.",
 		e.DependencyId, e.Constraint, e.ParentId, e.ParentId,
 	)
 }
@@ -165,6 +163,84 @@ func dependencySources(matches []*ExtensionMetadata) []string {
 		}
 	}
 	return slices.Sorted(maps.Keys(seen))
+}
+
+// ResolveDependency selects metadata for a dependency, preferring the parent
+// extension's source and falling back to the main azd registry.
+func (m *Manager) ResolveDependency(
+	ctx context.Context,
+	parent *ExtensionMetadata,
+	dependency ExtensionDependency,
+) (*ExtensionMetadata, error) {
+	return m.resolveDependency(ctx, parent, dependency, true, nil)
+}
+
+func (m *Manager) resolveDependency(
+	ctx context.Context,
+	parent *ExtensionMetadata,
+	dependency ExtensionDependency,
+	allowMainRegistryFallback bool,
+	azdVersion *semver.Version,
+) (*ExtensionMetadata, error) {
+	parentSource := parent.Source
+	if parentSource == "" {
+		parentSource = MainRegistryName
+	}
+
+	sources := []string{parentSource}
+	if allowMainRegistryFallback && !strings.EqualFold(parentSource, MainRegistryName) {
+		sources = append(sources, MainRegistryName)
+	}
+
+	foundWithoutMatchingVersion := false
+	var incompatibleVersion *ExtensionVersion
+	for _, source := range sources {
+		matches, err := m.FindExtensions(ctx, &FilterOptions{
+			Id:     dependency.Id,
+			Source: source,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to find dependency %s: %w", dependency.Id, err)
+		}
+		if len(matches) > 1 {
+			return nil, &DependencyAmbiguousSourceError{
+				DependencyId: dependency.Id,
+				ParentId:     parent.Id,
+				Sources:      dependencySources(matches),
+			}
+		}
+		if len(matches) == 0 {
+			continue
+		}
+
+		publishedVersion := bestSatisfyingVersion(dependency.Version, matches[0].Versions)
+		if publishedVersion == nil {
+			foundWithoutMatchingVersion = true
+			continue
+		}
+		if bestSatisfyingVersionForAzd(dependency.Version, matches[0].Versions, azdVersion) != nil {
+			return matches[0], nil
+		}
+		incompatibleVersion = publishedVersion
+	}
+
+	if incompatibleVersion != nil {
+		return nil, &DependencyAzdVersionIncompatibleError{
+			DependencyId:       dependency.Id,
+			ParentId:           parent.Id,
+			Constraint:         dependency.Version,
+			RequiredAzdVersion: incompatibleVersion.RequiredAzdVersion,
+		}
+	}
+
+	if foundWithoutMatchingVersion {
+		return nil, &DependencyVersionNotFoundError{
+			DependencyId: dependency.Id,
+			ParentId:     parent.Id,
+			Constraint:   dependency.Version,
+		}
+	}
+	return nil, &DependencyNotFoundError{DependencyId: dependency.Id, ParentId: parent.Id}
 }
 
 // FilterOptions is used to filter, lookup, and list extensions with various criteria
@@ -619,6 +695,10 @@ type InstallOptions struct {
 	// extension's own binary (e.g. generating command snapshots) and cannot
 	// guarantee that the registry's dependency graph is internally consistent.
 	SkipDependencies bool
+	// SkipMainRegistryDependencyFallback prevents dependencies missing from the
+	// parent source from falling back to the main azd registry. Self-contained
+	// bundle installs use this to remain isolated from network sources.
+	SkipMainRegistryDependencyFallback bool
 }
 
 // InstallWithOptions installs an extension using the supplied options.
@@ -705,51 +785,21 @@ func (m *Manager) installInternal(
 				continue
 			}
 
-			// Find the dependency extension metadata first
-			dependencyOptions := &FilterOptions{
-				Id:      dependency.Id,
-				Version: dependency.Version,
-				Source:  extension.Source, // Use same source as parent extension
-			}
-
-			dependencyMatches, err := m.FindExtensions(ctx, dependencyOptions)
+			dependencyMetadata, err := m.resolveDependency(
+				ctx,
+				extension,
+				dependency,
+				!opts.SkipMainRegistryDependencyFallback,
+				opts.AzdVersion,
+			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to find dependency %s: %w", dependency.Id, err)
+				return nil, err
 			}
-
-			if len(dependencyMatches) == 0 {
-				if dependency.Version != "" && !strings.EqualFold(dependency.Version, "latest") {
-					unconstrainedOptions := *dependencyOptions
-					unconstrainedOptions.Version = ""
-					unconstrainedMatches, err := m.FindExtensions(ctx, &unconstrainedOptions)
-					if err != nil {
-						return nil, fmt.Errorf("failed to find dependency %s: %w", dependency.Id, err)
-					}
-					if len(unconstrainedMatches) > 0 {
-						return nil, &DependencyVersionNotFoundError{
-							DependencyId: dependency.Id,
-							ParentId:     extension.Id,
-							Constraint:   dependency.Version,
-						}
-					}
-				}
-
-				return nil, &DependencyNotFoundError{DependencyId: dependency.Id, ParentId: extension.Id}
-			}
-
-			if len(dependencyMatches) > 1 {
-				return nil, &DependencyAmbiguousSourceError{
-					DependencyId: dependency.Id,
-					ParentId:     extension.Id,
-					Sources:      dependencySources(dependencyMatches),
-				}
-			}
-
-			dependencyMetadata := dependencyMatches[0]
 
 			dependencyOpts := InstallOptions{
-				VersionPreference: dependency.Version,
-				AzdVersion:        opts.AzdVersion,
+				VersionPreference:                  dependency.Version,
+				AzdVersion:                         opts.AzdVersion,
+				SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
 			}
 			if _, err := m.installInternal(ctx, dependencyMetadata, dependencyOpts, false, visited); err != nil {
 				if !errors.Is(err, ErrExtensionInstalled) {
@@ -948,6 +998,9 @@ type UpgradeOptions struct {
 	// upgrade performs, so `--no-dependencies` behaves the same whether the
 	// extension is being installed fresh or over an existing install.
 	SkipDependencies bool
+	// SkipMainRegistryDependencyFallback mirrors the InstallOptions behavior for
+	// the reinstall performed during upgrade.
+	SkipMainRegistryDependencyFallback bool
 }
 
 // DefaultUpgradeOptions returns UpgradeOptions with dependency upgrades enabled.
@@ -1013,9 +1066,10 @@ func (m *Manager) upgradeInternal(
 	// Skip the installed-dependency constraint check: the previous parent has just been
 	// uninstalled and any stale dependency will be reconciled by evaluateDependencyChanges below.
 	extensionVersion, err := m.installInternal(ctx, extension, InstallOptions{
-		VersionPreference: opts.VersionPreference,
-		AzdVersion:        opts.AzdVersion,
-		SkipDependencies:  opts.SkipDependencies,
+		VersionPreference:                  opts.VersionPreference,
+		AzdVersion:                         opts.AzdVersion,
+		SkipDependencies:                   opts.SkipDependencies,
+		SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
 	}, true, map[string]struct{}{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to install extension: %w", err)
@@ -1084,12 +1138,23 @@ func (m *Manager) evaluateDependencyChanges(
 		// upgrades, skips, or fails.
 		visited[dep.Id] = struct{}{}
 
-		// Dependency upgrades use upgrade-to-best-match semantics.
-		childMetadata, findErr := m.findDependencyChild(ctx, parentExtension, dep.Id)
+		// Dependency upgrades use the same parent-source then main-registry
+		// resolution policy as fresh dependency installs.
+		childMetadata, findErr := m.resolveDependency(
+			ctx,
+			parentExtension,
+			dep,
+			!opts.SkipMainRegistryDependencyFallback,
+			opts.AzdVersion,
+		)
 		if findErr != nil {
 			// Without registry data, only fail if the installed version violates the constraint.
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				continue
+			}
+			var suggestion string
+			if suggestionErr, ok := findErr.(interface{ Suggestion() string }); ok {
+				suggestion = suggestionErr.Suggestion()
 			}
 			results = append(results, UpgradeResult{
 				ExtensionId:        dep.Id,
@@ -1098,6 +1163,7 @@ func (m *Manager) evaluateDependencyChanges(
 				FromSource:         installed.Source,
 				FromSourceCategory: installed.SourceCategoryOrUnknown(),
 				Error:              findErr,
+				Suggestion:         suggestion,
 			})
 			continue
 		}
@@ -1208,9 +1274,10 @@ func (m *Manager) evaluateDependencyChanges(
 		)
 
 		childOpts := UpgradeOptions{
-			VersionPreference:   dep.Version,
-			UpgradeDependencies: opts.UpgradeDependencies,
-			AzdVersion:          opts.AzdVersion,
+			VersionPreference:                  dep.Version,
+			UpgradeDependencies:                opts.UpgradeDependencies,
+			AzdVersion:                         opts.AzdVersion,
+			SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
 		}
 
 		childVersion, nested, upErr := m.upgradeInternal(childCtx, childMetadata, childOpts, visited)
@@ -1234,39 +1301,6 @@ func (m *Manager) evaluateDependencyChanges(
 	}
 
 	return results
-}
-
-// findDependencyChild locates the child extension metadata to use for a
-// dependency upgrade. It prefers the parent's source but falls back to any
-// source if the child is not present in the parent's source.
-func (m *Manager) findDependencyChild(
-	ctx context.Context,
-	parent *ExtensionMetadata,
-	childId string,
-) (*ExtensionMetadata, error) {
-	opts := &FilterOptions{Id: childId, Source: parent.Source}
-	matches, err := m.FindExtensions(ctx, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find dependency %s: %w", childId, err)
-	}
-	if len(matches) == 0 {
-		// Fall back to any source
-		matches, err = m.FindExtensions(ctx, &FilterOptions{Id: childId})
-		if err != nil {
-			return nil, fmt.Errorf("failed to find dependency %s: %w", childId, err)
-		}
-	}
-	if len(matches) == 0 {
-		return nil, fmt.Errorf("dependency %s not found in any registry", childId)
-	}
-	if len(matches) > 1 {
-		return nil, &DependencyAmbiguousSourceError{
-			DependencyId: childId,
-			ParentId:     parent.Id,
-			Sources:      dependencySources(matches),
-		}
-	}
-	return matches[0], nil
 }
 
 // Helper function to find the artifact for the current OS
@@ -1397,7 +1431,16 @@ func (tm *Manager) ReloadUserConfig() error {
 
 func (tm *Manager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {
 	if tm.sources != nil {
-		return tm.sources, nil
+		if filter == nil {
+			return tm.sources, nil
+		}
+		return slices.Collect(func(yield func(Source) bool) {
+			for _, source := range tm.sources {
+				if filter(&SourceConfig{Name: source.Name()}) && !yield(source) {
+					return
+				}
+			}
+		}), nil
 	}
 	configs, err := tm.sourceManager.List(ctx)
 	if err != nil {
@@ -1409,6 +1452,9 @@ func (tm *Manager) getSources(ctx context.Context, filter sourceFilterPredicate)
 		return nil, fmt.Errorf("failed initializing extension sources: %w", err)
 	}
 
+	if filter != nil {
+		return sources, nil
+	}
 	tm.sources = sources
 
 	return tm.sources, nil

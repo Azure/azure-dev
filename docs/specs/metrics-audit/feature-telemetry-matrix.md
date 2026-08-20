@@ -43,7 +43,7 @@ These commands emit attributes or events beyond the global middleware span.
 | Command | Subcommands | Global Span | Command-Specific Attrs | Feature Events | Notes |
 |---------|-------------|:-----------:|:----------------------:|:--------------:|-------|
 | **Auth** | | | | | |
-| `auth login` | — | ✅ | ✅ | ❌ | `auth.method` (browser, device-code, service-principal-secret, etc.) |
+| `auth login` | — | ✅ | ✅ | ❌ | `auth.method` (browser, device-code, service-principal-secret, etc.); `auth.cache_clear_failed` (which credential cache failed to clear during pre-login cleanup) |
 | `auth logout` | — | ✅ | ❌ | ❌ | Global telemetry sufficient — no command-specific attributes emitted |
 | `auth status` | — | ✅ | ❌ | ❌ | Global telemetry sufficient — simple pass/fail check |
 | `auth token` | — | ✅ | ❌ | ❌ | Global telemetry sufficient |
@@ -116,6 +116,7 @@ command-specific telemetry fields provide analytical value beyond the command na
 | Field | OTel Key | Commands | Justification |
 |-------|----------|----------|---------------|
 | Auth method | `auth.method` | `auth login`, `auth logout` | Distinguishes authentication flow type (browser, device-code, SP, federated, etc.) |
+| Auth cache-clear failed | `auth.cache_clear_failed` | `auth login` | Identifies which credential cache failed to clear during the pre-login cleanup (`auth` / `subscriptions`) |
 | Env count | `env.count` | `env list` | Measurement — number of environments is a quantitative metric |
 | Hooks name | `hooks.name` | `hooks run` | Identifies which hook script ran (hashed — user-defined name) |
 | Hooks type | `hooks.type` | `hooks run` | Distinguishes project / service / **layer** hooks |
@@ -161,9 +162,9 @@ reserved field contracts.
 | **ARM deployment client** | `provision` (any Bicep flow) | `arm.deploy.subscription`, `arm.deploy.resourcegroup`, `arm.stack.deploy.subscription`, `arm.stack.deploy.resourcegroup`, `arm.whatif.subscription`, `arm.whatif.resourcegroup`, `arm.validate.subscription`, `arm.validate.resourcegroup` | ARM operation status + duration | Per-call instrumentation in the ARM client; covers regular + stack deployments at both scopes |
 | **Multi-layer provision** | `provision` (when `infra.layers[]` is configured in `azure.yaml`) | (none — enriches the `provision` span) | `provision.layer.count`, `provision.layer.max_parallel`, `provision.layer.safe_fallback_count`, `provision.layer.explicit_dependson_count` | All four are integer measurements emitted from `internal/cmd/provision_graph.go`; no per-layer duration or outcome attribute is emitted |
 | **Execution graph (scheduler)** | `up`, `provision`, `deploy`, `package`, `publish`, `down` | `exegraph.run`, `exegraph.step` | `exegraph.step.count`, `exegraph.max_concurrency`, `exegraph.error_policy`, `exegraph.step.name` (hashed), `exegraph.step.deps` (hashed slice), `exegraph.step.tags` (raw — hardcoded literals only), `exegraph.step.timeout_s` | Step names embed user-defined service / layer names from `azure.yaml`; both `name` and `deps` use `fields.StringHashed` / `fields.StringSliceHashed` |
-| **Container lifecycle** | `package`, `deploy` (container service targets) | `container.credentials`, `container.publish`, `container.remotebuild` | `container.publish` sets `container.remotebuild` (bool) only; `container.credentials` and `container.remotebuild` set no attributes (span status carries success/failure and duration) | The hashed `pack.builder.image` / `pack.builder.tag` attributes are emitted on the separate `tools.pack.build` span, not the `container.*` spans |
+| **Container lifecycle** | `package`, `deploy` (container service targets) | `container.credentials`, `container.publish`, `container.remotebuild` | `container.publish` sets a `container.remotebuild` property (bool) only; the `container.credentials` and `container.remotebuild` events set no attributes (span status carries success/failure and duration) | The hashed `pack.builder.image` / `pack.builder.tag` attributes are emitted on the separate `tools.pack.build` span, not the `container.*` spans |
 | **App Service deploy** | `deploy`, `publish` (App Service targets) | `deploy.appservice.zip` | `deploy.appservice.linux` (bool), `deploy.appservice.attempt` (retry attempt number) | Zip-deploy path only; outcome / duration are carried by the span status and span timing, not by dedicated attributes |
-| **AKS service target** | `provision` (AKS preprovision/postprovision) | `aks.postprovision.skip` | Skip reason | Recorded when cluster is not yet available for context setup |
+| **AKS service target** | `provision` (AKS preprovision/postprovision) | `aks.postprovision.skip` | `skip.reason` (bounded enum — `cluster_not_provisioned`) | Recorded when cluster is not yet available for context setup |
 | **Agent troubleshoot middleware** | Triggered on command failure when troubleshooting is engaged | `agent.troubleshoot` | Error chain attributes, hashed error fields | Emitted from `cmd/middleware/error.go` |
 | **Up-graph performance** | `up` (graph execution) | (none — enriches the `up` command span) | `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` | Emitted from `internal/cmd/up_graph.go` after the graph completes; provision/deploy durations set only when those phases run |
 | **VS RPC** | `vs-server` long-running session | `vsrpc.*` (event prefix) | Per-RPC attributes documented in `telemetry-schema.md` | Long-running RPC server for VS integration |

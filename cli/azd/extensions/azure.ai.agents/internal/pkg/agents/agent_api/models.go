@@ -244,6 +244,16 @@ type ContainerConfigurationAPI struct {
 	Image string `json:"image"`
 }
 
+// SessionConfigurationAPI represents the session_configuration block in the API request.
+// It controls hosted-agent session runtime behavior; when omitted the service applies
+// its own defaults.
+type SessionConfigurationAPI struct {
+	// IdleTimeoutSeconds maps to session_configuration.idle_timeout_seconds. Valid
+	// range is 300–3600 (inclusive). When the field is unset the whole
+	// session_configuration block is omitted and the service default (900) applies.
+	IdleTimeoutSeconds int `json:"idle_timeout_seconds"`
+}
+
 // HostedAgentDefinition represents a hosted agent that can be either container-based
 // (with ContainerConfiguration) or code-based (with CodeConfiguration).
 // Both deploy modes now use "protocol_versions" in the serialized JSON.
@@ -255,6 +265,7 @@ type HostedAgentDefinition struct {
 	EnvironmentVariables   map[string]string          `json:"environment_variables,omitempty"`
 	ContainerConfiguration *ContainerConfigurationAPI `json:"container_configuration,omitempty"` // container deploy only
 	CodeConfiguration      *CodeConfigurationAPI      `json:"code_configuration,omitempty"`      // code deploy only
+	SessionConfiguration   *SessionConfigurationAPI   `json:"session_configuration,omitempty"`   // optional session tuning
 	Image                  string                     `json:"image,omitempty"`                   // deprecated: for backward compat deserialization only
 }
 

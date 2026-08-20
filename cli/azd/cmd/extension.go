@@ -1063,10 +1063,11 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 			extensionVersion, _, err = a.extensionManager.Upgrade(
 				ctx, compatibleExtension, extensions.UpgradeOptions{
-					VersionPreference:   a.flags.version,
-					UpgradeDependencies: !a.flags.noDependencies,
-					SkipDependencies:    a.flags.noDependencies,
-					AzdVersion:          azdVersion,
+					VersionPreference:                  a.flags.version,
+					UpgradeDependencies:                !a.flags.noDependencies,
+					SkipDependencies:                   a.flags.noDependencies,
+					AzdVersion:                         azdVersion,
+					SkipMainRegistryDependencyFallback: a.bundleSourceName != "",
 				},
 			)
 			if err != nil {
@@ -1084,9 +1085,10 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 				ctx,
 				compatibleExtension,
 				extensions.InstallOptions{
-					VersionPreference: a.flags.version,
-					AzdVersion:        azdVersion,
-					SkipDependencies:  a.flags.noDependencies,
+					VersionPreference:                  a.flags.version,
+					AzdVersion:                         azdVersion,
+					SkipDependencies:                   a.flags.noDependencies,
+					SkipMainRegistryDependencyFallback: a.bundleSourceName != "",
 				},
 			)
 			if err != nil {
@@ -1106,6 +1108,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 				preInstalledIds,
 				"  ",
 				map[string]struct{}{compatibleExtension.Id: {}},
+				compatibleExtension.SourceCategoryOrUnknown(),
 			)
 		}
 
@@ -3261,6 +3264,7 @@ func displayInstalledDependencies(
 	preInstalledIds map[string]struct{},
 	indent string,
 	visited map[string]struct{},
+	parentSourceCategory extensions.SourceCategory,
 ) {
 	for _, dep := range deps {
 		if _, seen := visited[dep.Id]; seen {
@@ -3282,12 +3286,18 @@ func displayInstalledDependencies(
 				output.WithGrayFormat("(%s, already installed)", installed.Version),
 			))
 		} else {
+			sourceSuffix := ""
+			if installed.SourceCategoryOrUnknown() == extensions.SourceCategoryAzd &&
+				parentSourceCategory != extensions.SourceCategoryAzd {
+				sourceSuffix = fmt.Sprintf(" from %s", extensions.MainRegistryName)
+			}
 			console.Message(ctx, fmt.Sprintf(
-				"%s%s Installing %s dependency %s",
+				"%s%s Installing %s dependency %s%s",
 				indent,
 				output.WithSuccessFormat("(\u2713) Done:"),
 				output.WithHighLightFormat(installed.Id),
 				output.WithGrayFormat("(%s)", installed.Version),
+				sourceSuffix,
 			))
 		}
 
@@ -3303,6 +3313,7 @@ func displayInstalledDependencies(
 				displayInstalledDependencies(
 					ctx, console, manager, v.Dependencies,
 					preInstalledIds, indent, visited,
+					installed.SourceCategoryOrUnknown(),
 				)
 				break
 			}

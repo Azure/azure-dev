@@ -279,20 +279,31 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
 
 **1. Code**
 
-- **Field** — define an `AttributeKey` in `cli/azd/internal/tracing/fields/fields.go` (this file
-  holds the field/key definitions; within the same package `features.go` holds feature-name
-  attribute values and `domains.go` the Azure host-domain table). Every field MUST set a
-  `Classification` (e.g. `SystemMetadata`, `OrganizationalIdentifiableInformation`,
-  `EndUserPseudonymizedInformation`; never emit `CustomerContent`) and a `Purpose`
-  (`FeatureInsight` / `BusinessInsight` / `PerformanceAndHealth`).
+- **Field** — define an **exported, package-level** `AttributeKey` var in
+  `cli/azd/internal/tracing/fields/fields.go` (this file holds the field/key definitions; within the
+  same package `features.go` holds feature-name attribute values and `domains.go` the Azure
+  host-domain table). Every field MUST set a `Classification` (e.g. `SystemMetadata`,
+  `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`; never emit
+  `CustomerContent`) and a `Purpose` (`FeatureInsight` / `BusinessInsight` /
+  `PerformanceAndHealth`); the classifier also reads the optional `Endpoint` and `IsMeasurement`
+  members.
 - **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
-  `prefix.noun.verb` naming convention.
+  `prefix.noun.verb` value convention. It must be an exported string `const` whose Go identifier
+  contains `Event` (end it with `Prefix` for a prefix-match group) so the classifier
+  discovers it.
 - **Emit** at the call site via `tracing.Start` (spans/events) plus `tracing.SetUsageAttributes`
-  or `span.SetAttributes` (attributes).
+  or `span.SetAttributes` (attributes). Always pass a `fields.AttributeKey` method
+  (e.g. `fields.MyKey.String(v)` / `.Bool(v)` / `.Int(v)`) — never a raw
+  `attribute.String("my.key", v)`. The GDPR classifier discovers fields by statically scanning
+  the `fields` package for exported `AttributeKey` vars; a raw literal key is invisible to it, so the
+  property reaches App Insights but its data-catalog row stays Unclassified / `Complete=false`. Enforced by
+  `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`); dynamic
+  `ext.*` keys are the only sanctioned exception.
 - **Hash user-derived values** with `fields.StringHashed` / `fields.StringSliceHashed`
   (`cli/azd/internal/tracing/fields/key.go`). Hash anything that embeds a user-chosen name, path,
   repo URL, or project / env / service / layer identifier (e.g. `exegraph.step.name`, `hooks.name`).
-  Emit raw only for fixed enums or compile-time literals.
+  Emit raw only for fixed enums or compile-time literals (the key itself must
+  still be a `fields.AttributeKey`, per **Emit** above).
 
 **2. Documentation — keep all of these in sync**
 
@@ -417,6 +428,13 @@ Tools follow `server.ServerTool` interface from `github.com/mark3labs/mcp-go/ser
 Go module version tags (`cli/azd/vX.Y.Z`) are created alongside each CLI release tag (`azure-dev-cli_X.Y.Z`). Extension developers should use semver references in `go.mod` instead of pseudo-versions. See `docs/sdk-versioning.md` for details.
 
 When cutting a release, `eng/scripts/Update-CliVersion.ps1` automatically updates both `cli/version.txt` and `pkg/azdext/version.go` to keep versions in sync.
+
+### Go Dependency Version Synchronization
+
+`cli/azd/go.mod` is the source of truth for dependencies directly shared by core and first-party Go extensions.
+Run `mage checkDependencyVersions` to validate alignment or `mage syncDependencyVersions` to update unapproved
+mismatches. Temporary exceptions must be exact, issue-linked entries in `dependency-versions.json`. See
+`docs/dependency-version-sync.md` for the policy and workflow.
 
 ## Extensions
 

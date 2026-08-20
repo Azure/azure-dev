@@ -44,7 +44,11 @@ type Distribution struct {
 	WorkerNodeAdditionalArgs string `json:"workerNodeAdditionalArgs,omitempty"`
 }
 
-// ResourceConfig represents compute resource specifications.
+// ResourceConfig represents compute resource specifications on the wire.
+// On submit, callers only need to set InstanceCount — the service infers the
+// SKU (InstanceType, slaTier, and other properties) from the compute cluster.
+// On Get Job the service echoes what it inferred, so all fields are available
+// on the read path.
 type ResourceConfig struct {
 	InstanceCount int            `json:"instanceCount,omitempty"`
 	InstanceType  string         `json:"instanceType,omitempty"`

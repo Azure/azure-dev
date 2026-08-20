@@ -38,6 +38,7 @@ import (
 const (
 	agentInspectorExtensionID     = "azure.ai.inspector"
 	agentInspectorReadyPollPeriod = 250 * time.Millisecond
+	windowsControlCExitCode       = 0xC000013A
 	// defaultInspectorUIPort mirrors the default UI port of the
 	// azure.ai.inspector extension. The inspector extension remains the source
 	// of truth for the actual default: when --inspector-port is unset we do not
@@ -364,11 +365,12 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 
 	err = proc.Wait()
 	close(done)
+	wasCanceled := ctx.Err() != nil || isAgentProcessCanceled(err)
 	cancel()
 	<-nextDone
 
 	// Suppress the noisy "signal: interrupt" error on Ctrl+C
-	if ctx.Err() != nil {
+	if wasCanceled {
 		fmt.Println("Agent stopped.")
 		return nil
 	}
@@ -377,6 +379,22 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		return fmt.Errorf("agent exited: %w", err)
 	}
 	return nil
+}
+
+func isAgentProcessCanceled(err error) bool {
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	if !ok {
+		return false
+	}
+
+	if waitStatus, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+		switch waitStatus.Signal() {
+		case syscall.SIGINT, syscall.SIGTERM:
+			return true
+		}
+	}
+
+	return uint32(exitErr.ExitCode()) == windowsControlCExitCode //nolint:gosec // preserve the Windows exit code bit pattern
 }
 
 func handleInspectorAutoLaunch(

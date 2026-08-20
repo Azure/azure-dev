@@ -15,7 +15,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // foundryConnectionsProbeTimeout caps the per-project connections
@@ -114,13 +113,7 @@ func newCheckConnections(deps Dependencies) Check {
 				}
 			}
 
-			assembler := deps.assembleState
-			if assembler == nil {
-				assembler = func(c context.Context, client *azdext.AzdClient) (*nextstep.State, []error) {
-					return nextstep.AssembleState(c, client)
-				}
-			}
-			state, errs := assembler(ctx, deps.AzdClient)
+			state, errs := deps.AssembleAgentState(ctx)
 			if state == nil {
 				cause := "unknown error"
 				if len(errs) > 0 {

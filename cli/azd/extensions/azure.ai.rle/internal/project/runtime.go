@@ -301,7 +301,11 @@ func call(
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", &azdext.LocalError{
-			Message:  fmt.Sprintf("Environment runtime endpoint returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data))),
+			Message: fmt.Sprintf(
+				"Environment runtime endpoint returned HTTP %d: %s",
+				resp.StatusCode,
+				strings.TrimSpace(string(data)),
+			),
 			Code:     "rle_open_env_call_failed",
 			Category: azdext.LocalErrorCategoryUser,
 		}

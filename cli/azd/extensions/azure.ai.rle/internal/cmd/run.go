@@ -256,7 +256,11 @@ func loadLocalRunState(flags *localRunFlags, output io.Writer) (rleState, error)
 			return rleState{}, err
 		}
 		state = defaultRleState(defaultSourceName(flags.source))
-		if _, err := fmt.Fprintf(output, "No %s found; using current folder as the RLE source.\n", rleStateFile); err != nil {
+		if _, err := fmt.Fprintf(
+			output,
+			"No %s found; using current folder as the RLE source.\n",
+			rleStateFile,
+		); err != nil {
 			return rleState{}, err
 		}
 		if err := saveRleState(state); err != nil {

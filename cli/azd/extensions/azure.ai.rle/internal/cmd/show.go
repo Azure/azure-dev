@@ -110,10 +110,11 @@ func (a *showAction) resolveTarget() (showResult, error) {
 		projectEndpoint = strings.TrimSpace(state.ProjectEndpoint)
 		if projectEndpoint == "" {
 			return showResult{}, &azdext.LocalError{
-				Message:    "The saved RLE environment does not include a Foundry project endpoint.",
-				Code:       "rle_project_required",
-				Category:   azdext.LocalErrorCategoryUser,
-				Suggestion: "Run azd ai rle publish first, or provide an environment name with FOUNDRY_PROJECT_ENDPOINT set.",
+				Message:  "The saved RLE environment does not include a Foundry project endpoint.",
+				Code:     "rle_project_required",
+				Category: azdext.LocalErrorCategoryUser,
+				Suggestion: "Run azd ai rle publish first, or provide an environment name " +
+					"with FOUNDRY_PROJECT_ENDPOINT set.",
 			}
 		}
 	}

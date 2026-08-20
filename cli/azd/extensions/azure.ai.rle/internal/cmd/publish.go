@@ -69,10 +69,13 @@ func (a *publishAction) Run() error {
 
 	if state.ProjectEndpoint == "" {
 		return &azdext.LocalError{
-			Message:    "Foundry project endpoint is required for publish.",
-			Code:       "rle_project_required",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: fmt.Sprintf("Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.", foundryProjectEndpointEnvVar),
+			Message:  "Foundry project endpoint is required for publish.",
+			Code:     "rle_project_required",
+			Category: azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf(
+				"Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.",
+				foundryProjectEndpointEnvVar,
+			),
 		}
 	}
 
@@ -88,10 +91,16 @@ func (a *publishAction) Run() error {
 			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run publish again.",
 		}
 	}
-	if err := project.BuildRuntimeImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image, project.BuildOptions{
-		Source:     ".",
-		Dockerfile: a.flags.dockerfile,
-	}); err != nil {
+	if err := project.BuildRuntimeImage(
+		a.cmd.Context(),
+		a.cmd.OutOrStdout(),
+		a.cmd.ErrOrStderr(),
+		image,
+		project.BuildOptions{
+			Source:     ".",
+			Dockerfile: a.flags.dockerfile,
+		},
+	); err != nil {
 		return err
 	}
 	if err := project.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {

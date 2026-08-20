@@ -64,12 +64,19 @@ func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/v1/instance_groups":
-			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"v1","maxActiveInstances":1}`))
+			_, _ = w.Write([]byte(
+				`{"id":"group-1","environmentName":"code_rl",` +
+					`"environmentVersion":"v1","maxActiveInstances":1}`,
+			))
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/v1/instance_groups/group-1/instances":
-			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+			_, _ = w.Write([]byte(
+				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
+					strconv.Quote(envServer.URL) + `}`,
+			))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/v1/instance_groups/group-1/instances/instance-1":
+			r.URL.Path == testFoundryProjectPath+
+				"/rl_environments/code_rl/versions/v1/instance_groups/group-1/instances/instance-1":
 			instanceDeleted = true
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete &&
@@ -154,6 +161,15 @@ func TestValidateRemoteSandboxURLRequiresTrustedOrigin(t *testing.T) {
 			}
 		})
 	}
+
+	secret := "secret-value"
+	err := validateRemoteSandboxURL(
+		"https://user:"+secret+"@account.services.ai.azure.com/openenv",
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("expected embedded credentials to be rejected without disclosure, got %v", err)
+	}
 }
 
 func TestCleanupRemoteRuntimeDeletesInstanceThenGroup(t *testing.T) {
@@ -221,7 +237,8 @@ func TestCleanupRemoteRuntimeDeletesInstanceThenGroup(t *testing.T) {
 				t.Fatalf("expected error=%t, got %v", tt.wantError, err)
 			}
 			expected := []string{
-				"DELETE /api/projects/project-1/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1",
+				"DELETE /api/projects/project-1/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/" +
+					"instances/instance-1",
 				"DELETE /api/projects/project-1/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1",
 			}
 			if !slices.Equal(requests, expected) {
@@ -234,8 +251,7 @@ func TestCleanupRemoteRuntimeDeletesInstanceThenGroup(t *testing.T) {
 func TestWriteCleanupResultDoesNotExposeResourceDetails(t *testing.T) {
 	var output bytes.Buffer
 	writeCleanupResult(&output, nil)
-	if output.String() !=
-		"Temporary remote runtime resources cleaned up successfully. Local environment files and state were unchanged.\n" {
+	if output.String() != "Remote runtime resources cleaned up successfully.\n" {
 		t.Fatalf("unexpected successful cleanup output: %q", output.String())
 	}
 
@@ -311,12 +327,19 @@ func TestInvokeRemoteByNameUsesLatestListedVersionWithoutLocalState(t *testing.T
 		switch {
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/instance_groups":
-			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"2.0.0","maxActiveInstances":1}`))
+			_, _ = w.Write([]byte(
+				`{"id":"group-1","environmentName":"code_rl",` +
+					`"environmentVersion":"2.0.0","maxActiveInstances":1}`,
+			))
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
-			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+			_, _ = w.Write([]byte(
+				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
+					strconv.Quote(envServer.URL) + `}`,
+			))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
+			r.URL.Path == testFoundryProjectPath+
+				"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1":
@@ -365,7 +388,11 @@ func TestInvokeRemoteByNameTimesOutWhileWaitingForEnvironmentReadiness(t *testin
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		groupCreateCount++
-		http.Error(w, `{"code":"EnvironmentNotReady","message":"The environment disk image is not ready."}`, http.StatusBadRequest)
+		http.Error(
+			w,
+			`{"code":"EnvironmentNotReady","message":"The environment disk image is not ready."}`,
+			http.StatusBadRequest,
+		)
 	}))
 	defer controlPlane.Close()
 	stubRleClientEndpoint(t, controlPlane.URL)
@@ -426,15 +453,26 @@ func TestInvokeRemoteByNameRetriesEnvironmentReadinessUntilSuccess(t *testing.T)
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/instance_groups":
 			groupCreateCount++
 			if groupCreateCount < 3 {
-				http.Error(w, `{"code":"EnvironmentNotReady","message":"The environment disk image is not ready."}`, http.StatusBadRequest)
+				http.Error(
+					w,
+					`{"code":"EnvironmentNotReady","message":"The environment disk image is not ready."}`,
+					http.StatusBadRequest,
+				)
 				return
 			}
-			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"2.0.0","maxActiveInstances":1}`))
+			_, _ = w.Write([]byte(
+				`{"id":"group-1","environmentName":"code_rl",` +
+					`"environmentVersion":"2.0.0","maxActiveInstances":1}`,
+			))
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
-			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+			_, _ = w.Write([]byte(
+				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
+					strconv.Quote(envServer.URL) + `}`,
+			))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
+			r.URL.Path == testFoundryProjectPath+
+				"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1":
@@ -491,12 +529,19 @@ func TestInvokeRemoteDoesNotReportReadyBeforeRuntimeHealthSucceeds(t *testing.T)
 		switch {
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/instance_groups":
-			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"2.0.0","maxActiveInstances":1}`))
+			_, _ = w.Write([]byte(
+				`{"id":"group-1","environmentName":"code_rl",` +
+					`"environmentVersion":"2.0.0","maxActiveInstances":1}`,
+			))
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
-			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+			_, _ = w.Write([]byte(
+				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
+					strconv.Quote(envServer.URL) + `}`,
+			))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
+			r.URL.Path == testFoundryProjectPath+
+				"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1":
@@ -572,12 +617,19 @@ func TestInvokeRemoteByNameUsesExplicitVersionInstanceRoutes(t *testing.T) {
 				)
 				return
 			}
-			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"1.0.0","maxActiveInstances":1}`))
+			_, _ = w.Write([]byte(
+				`{"id":"group-1","environmentName":"code_rl",` +
+					`"environmentVersion":"1.0.0","maxActiveInstances":1}`,
+			))
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances":
-			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+			_, _ = w.Write([]byte(
+				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
+					strconv.Quote(envServer.URL) + `}`,
+			))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
+			r.URL.Path == testFoundryProjectPath+
+				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
@@ -836,13 +888,20 @@ func TestInvokeRemoteUsesAuthenticatedPlaygroundProxy(t *testing.T) {
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"1.0.0","maxActiveInstances":1}`))
+			_, _ = w.Write([]byte(
+				`{"id":"group-1","environmentName":"code_rl",` +
+					`"environmentVersion":"1.0.0","maxActiveInstances":1}`,
+			))
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+			_, _ = w.Write([]byte(
+				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
+					strconv.Quote(envServer.URL) + `}`,
+			))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
+			r.URL.Path == testFoundryProjectPath+
+				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
@@ -1115,18 +1174,26 @@ func TestInvokeRemotePollsStoppedInstanceUntilRunning(t *testing.T) {
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"1.0.0","maxActiveInstances":1}`))
+			_, _ = w.Write([]byte(
+				`{"id":"group-1","environmentName":"code_rl",` +
+					`"environmentVersion":"1.0.0","maxActiveInstances":1}`,
+			))
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Stopped"}`))
 		case r.Method == http.MethodGet &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
+			r.URL.Path == testFoundryProjectPath+
+				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
 			getCount++
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+			_, _ = w.Write([]byte(
+				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
+					strconv.Quote(envServer.URL) + `}`,
+			))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
+			r.URL.Path == testFoundryProjectPath+
+				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
@@ -1193,13 +1260,20 @@ func TestInvokeRemoteFailsWhenInstanceFails(t *testing.T) {
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"1.0.0","maxActiveInstances":1}`))
+			_, _ = w.Write([]byte(
+				`{"id":"group-1","environmentName":"code_rl",` +
+					`"environmentVersion":"1.0.0","maxActiveInstances":1}`,
+			))
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Failed","error":"image pull failed"}`))
+			_, _ = w.Write([]byte(
+				`{"instanceId":"instance-1","instanceGroupId":"group-1",` +
+					`"status":"Failed","error":"image pull failed"}`,
+			))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
+			r.URL.Path == testFoundryProjectPath+
+				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
 			instanceDeleted = true
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete &&
@@ -1231,7 +1305,9 @@ func TestInvokeRemoteFailsWhenInstanceFails(t *testing.T) {
 }
 
 func TestRequireDeployedEnvironmentRejectsMissingEnvironmentId(t *testing.T) {
-	err := requireDeployedEnvironment(rleState{ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1"})
+	err := requireDeployedEnvironment(rleState{
+		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+	})
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok {
 		t.Fatalf("expected LocalError, got %T", err)
@@ -1263,7 +1339,8 @@ func TestLocalContainerNamesUseEnvironmentName(t *testing.T) {
 }
 
 func TestEnsurePortAvailableRejectsBoundPort(t *testing.T) {
-	listener, err := net.Listen("tcp", ":0") //nolint:gosec // test intentionally binds an ephemeral port on all interfaces to verify conflict detection.
+	// This test intentionally binds an ephemeral port on all interfaces to verify conflict detection.
+	listener, err := net.Listen("tcp", ":0") //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1353,7 +1430,10 @@ func TestInvokeRemoteRejectsMismatchedPinnedGroupVersionAndCleansUpRequestedRout
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"group-1","environmentName":"code_rl","environmentVersion":"2.0.0","maxActiveInstances":1}`))
+			_, _ = w.Write([]byte(
+				`{"id":"group-1","environmentName":"code_rl",` +
+					`"environmentVersion":"2.0.0","maxActiveInstances":1}`,
+			))
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
 			instanceCreateCount++

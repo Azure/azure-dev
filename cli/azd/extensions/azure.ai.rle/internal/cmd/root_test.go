@@ -253,7 +253,8 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	}
 
 	sessionDir := filepath.Join(tempDir, "echo_env")
-	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec // test reads the state file from its own temporary session directory.
+	// The test reads state from its own temporary session directory.
+	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +295,8 @@ func TestInitUsesPositionalNameForDefaultSample(t *testing.T) {
 	}
 
 	sessionDir := filepath.Join(tempDir, "code_rl")
-	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec // test reads the state file from its own temporary session directory.
+	// The test reads state from its own temporary session directory.
+	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}

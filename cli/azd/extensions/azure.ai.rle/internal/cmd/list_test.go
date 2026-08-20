@@ -320,7 +320,8 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 				"diskImageConversionStatus":"Ready",
 				"updatedAtUtc":"2026-07-30T05:00:00Z"
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions/1.2.0":
+		case r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions/1.2.0":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
 				"id":"env-1",
@@ -329,16 +330,28 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 				"diskImageConversionStatus":"Ready",
 				"updatedAtUtc":"2026-07-30T05:00:00Z"
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions":
+		case r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
 				"data": [
-					{"environmentId":"env-1","version":"1.0.0","createdAtUtc":"2026-07-28T05:00:00Z","acrImagePath":"registry/echo:1.0.0"},
-					{"environmentId":"env-1","version":"1.2.0","createdAtUtc":"2026-07-30T05:00:00Z","acrImagePath":"registry/echo:1.2.0"}
+					{
+						"environmentId":"env-1",
+						"version":"1.0.0",
+						"createdAtUtc":"2026-07-28T05:00:00Z",
+						"acrImagePath":"registry/echo:1.0.0"
+					},
+					{
+						"environmentId":"env-1",
+						"version":"1.2.0",
+						"createdAtUtc":"2026-07-30T05:00:00Z",
+						"acrImagePath":"registry/echo:1.2.0"
+					}
 				],
 				"has_more": false
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions/1.0.0":
+		case r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions/1.0.0":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
 				"id":"env-1",
@@ -403,11 +416,20 @@ func TestResolveEnvironmentVersionsRejectsCursorCycles(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch requestCount {
 		case 1:
-			_, _ = w.Write([]byte(`{"data":[{"environmentId":"env-1","version":"1.0.0"}],"last_id":"cursor-a","has_more":true}`))
+			_, _ = w.Write([]byte(
+				`{"data":[{"environmentId":"env-1","version":"1.0.0"}],` +
+					`"last_id":"cursor-a","has_more":true}`,
+			))
 		case 2:
-			_, _ = w.Write([]byte(`{"data":[{"environmentId":"env-1","version":"1.1.0"}],"last_id":"cursor-b","has_more":true}`))
+			_, _ = w.Write([]byte(
+				`{"data":[{"environmentId":"env-1","version":"1.1.0"}],` +
+					`"last_id":"cursor-b","has_more":true}`,
+			))
 		case 3:
-			_, _ = w.Write([]byte(`{"data":[{"environmentId":"env-1","version":"1.2.0"}],"last_id":"cursor-a","has_more":true}`))
+			_, _ = w.Write([]byte(
+				`{"data":[{"environmentId":"env-1","version":"1.2.0"}],` +
+					`"last_id":"cursor-a","has_more":true}`,
+			))
 		default:
 			t.Fatalf("unexpected extra page request %d", requestCount)
 		}
@@ -483,7 +505,8 @@ func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
 				"version":"1.2.0",
 				"diskImageConversionStatus":"Ready"
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions":
+		case r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"data":[],"has_more":false}`))
 		default:

@@ -138,7 +138,14 @@ func TestRunShellRefreshesAuthorizationForEachRequest(t *testing.T) {
 	}
 	input := strings.NewReader("health\nstate\nexit\n")
 	var output bytes.Buffer
-	if err := runShell(t.Context(), input, &output, server.URL+"?api-version=test-version", 30, authorizationProvider); err != nil {
+	if err := runShell(
+		t.Context(),
+		input,
+		&output,
+		server.URL+"?api-version=test-version",
+		30,
+		authorizationProvider,
+	); err != nil {
 		t.Fatal(err)
 	}
 

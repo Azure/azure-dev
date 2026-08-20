@@ -406,7 +406,8 @@ func createRemoteInstanceGroup(
 		if output != nil {
 			_, _ = fmt.Fprintf(
 				output,
-				"The requested environment's disk image is not ready yet. Waiting %.0f seconds before retrying (%d/%d) ...\n",
+				"The requested environment's disk image is not ready yet. "+
+					"Waiting %.0f seconds before retrying (%d/%d) ...\n",
 				remoteReadinessRetryInterval.Seconds(),
 				attempt+1,
 				remoteReadinessRetryCount,
@@ -541,10 +542,7 @@ func writeCleanupResult(writer io.Writer, err error) {
 		_, _ = fmt.Fprintln(writer, "Warning: remote runtime cleanup could not be completed; resources may remain.")
 		return
 	}
-	_, _ = fmt.Fprintln(
-		writer,
-		"Temporary remote runtime resources cleaned up successfully. Local environment files and state were unchanged.",
-	)
+	_, _ = fmt.Fprintln(writer, "Remote runtime resources cleaned up successfully.")
 }
 
 func remotePlaygroundUrlWithAuthorizationProvider(
@@ -578,9 +576,8 @@ func remotePlaygroundUrlWithAuthorizationProvider(
 		_ = server.Shutdown(shutdownCtx)
 	}()
 	go func() {
-		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			// The shell remains usable even if the optional local UI proxy exits.
-		}
+		// The shell remains usable if the optional local UI proxy exits.
+		_ = server.Serve(listener)
 	}()
 
 	stop := func() {
@@ -639,7 +636,7 @@ func authorizeLoopbackPlaygroundRequest(w http.ResponseWriter, r *http.Request, 
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return false
 			}
-			http.SetCookie(w, &http.Cookie{
+			http.SetCookie(w, &http.Cookie{ //nolint:gosec // Loopback HTTP cannot use Secure; other safeguards are set.
 				Name:     playgroundSessionCookie,
 				Value:    sessionToken,
 				Path:     "/",
@@ -653,7 +650,12 @@ func authorizeLoopbackPlaygroundRequest(w http.ResponseWriter, r *http.Request, 
 			if target.Path == "" {
 				target.Path = "/web"
 			}
-			http.Redirect(w, r, target.String(), http.StatusSeeOther)
+			http.Redirect( //nolint:gosec // target is derived only from this loopback request with its token removed.
+				w,
+				r,
+				target.String(),
+				http.StatusSeeOther,
+			)
 			return false
 		}
 	}
@@ -701,7 +703,8 @@ func proxyOpenEnvToSandbox(
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	target, err := http.NewRequestWithContext(r.Context(), r.Method, targetUrl, r.Body) //nolint:gosec // sandboxUrl is the active RLE sandbox URL; operation is restricted above.
+	// sandboxUrl is the active RLE sandbox URL; operation is restricted above.
+	target, err := http.NewRequestWithContext(r.Context(), r.Method, targetUrl, r.Body) //nolint:gosec
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -718,7 +721,8 @@ func proxyOpenEnvToSandbox(
 	if contentType := r.Header.Get("Content-Type"); contentType != "" {
 		target.Header.Set("Content-Type", contentType)
 	}
-	resp, err := project.HTTPClient(60).Do(target) //nolint:gosec // local UI proxy intentionally forwards only fixed OpenEnv operations to the active sandbox.
+	// The local UI proxy forwards only fixed OpenEnv operations to the active sandbox.
+	resp, err := project.HTTPClient(60).Do(target) //nolint:gosec
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -759,7 +763,7 @@ func validateRemoteSandboxURL(sandboxUrl string, projectEndpoint string) error {
 		strings.EqualFold(sandbox.Host, projectUrl.Host)
 	if sandbox.User != nil || !isTrustedProjectOrigin {
 		return &azdext.LocalError{
-			Message:    fmt.Sprintf("RLE returned an untrusted sandbox URL: %s", sandboxUrl),
+			Message:    "RLE returned an untrusted sandbox URL.",
 			Code:       "rle_sandbox_url_untrusted",
 			Category:   azdext.LocalErrorCategoryInternal,
 			Suggestion: "Check the RLE service runtime response, then retry.",

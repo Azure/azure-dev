@@ -125,9 +125,21 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 				return err
 			}
 
-			ds, err := ec.datasetClient.UploadNextVersion(
-				ctx, name, version, localDir, ProjectEndpointAPIVersion,
-			)
+			// A declared version is the version to publish, never one to count
+			// from, so it is written exactly as given. Only an omitted version is
+			// derived, and only that path walks past a conflict: a version the
+			// author named and the service already holds is theirs to resolve,
+			// and stepping past it would publish one they did not ask for.
+			var ds *dataset_api.Dataset
+			if version != "" {
+				ds, err = ec.datasetClient.UploadVersion(
+					ctx, name, version, localDir, ProjectEndpointAPIVersion,
+				)
+			} else {
+				ds, err = ec.datasetClient.UploadNextVersion(
+					ctx, name, "", localDir, ProjectEndpointAPIVersion,
+				)
+			}
 			if err != nil {
 				return messages.RegisteringDataset(name, err)
 			}
@@ -153,14 +165,8 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 
 	cmd.Flags().StringVar(&fromFile, "from-file", "",
 		"Path to a .jsonl file, or a directory containing one.")
-	// Only on update. create publishes a first version, and the upload derives
-	// the next version from whatever this holds, so `create --version 4.0`
-	// would publish 5.0 -- and leave the existence probe, which looks for the
-	// versions a first publish can carry, unable to find what it wrote.
-	if verb == "update" {
-		cmd.Flags().StringVar(&version, "version", "",
-			"Current version to increment from. Omit to increment from the latest registered version.")
-	}
+	cmd.Flags().StringVar(&version, "version", "",
+		"Version to publish. Omit to publish the next version after the latest registered.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

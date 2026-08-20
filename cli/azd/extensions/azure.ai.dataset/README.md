@@ -22,6 +22,11 @@ than inside `azure.ai.evaluations`.
 | `azd ai dataset delete <name>` | Delete a dataset version |
 | `azd ai dataset versions list <name>` | List a dataset's versions |
 
+`--version` names the version to publish, on `create` and `update` alike. Omit
+it and the next version after the latest registered one is published; a version
+the service already holds is refused rather than stepped past, because a version
+you named is one you meant.
+
 ## Generating a dataset
 
 Generation is `azd ai eval generate`, in `azure.ai.evaluations`, and stays

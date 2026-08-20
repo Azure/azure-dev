@@ -9,7 +9,8 @@ First release of the Foundry datasets extension.
 - Register and manage Foundry datasets from the terminal: `create`, `update`,
   `list`, `show`, `delete`, and `versions list`.
 - Publishes a local `.jsonl` file or folder as a versioned dataset, picking the
-  next version from what the project already carries.
+  next version from what the project already carries. `--version` publishes at
+  exactly that version instead, on `create` and `update` alike.
 - Validates before sending: a malformed row, an empty dataset, a name the
   service will not take, and a folder that could mean more than one dataset are
   each refused locally.

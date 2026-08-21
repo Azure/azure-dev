@@ -51,7 +51,8 @@ Your caller gives you everything you need — do not go looking for it yourself:
 - **`session_vars`** — the per-scenario map (`prefix`, `subscription`, `region`, `model`,
   optional `tenant`, `run_id`, `shared_agent_name`, `fixtures_dir`, and `instance` when
   applicable). Pass it **unchanged** on every `load_scenario` / `run_pre_hooks` /
-  `start_session` / `run_post_hooks` call.
+  `start_session` / `run_post_hooks` call. Tier 1b also receives
+  `prerequisite_scaffold_dir`, the verified absolute path returned by its Tier 1 prerequisite.
 - **`run_name`** — the scenario stem (e.g. `1.04-init-from-code`); role-suffixed for
   two-session scenarios.
 - **`output_dir`** — the WSL/native path of `.reports/<run-id>/tester-reports`.
@@ -61,6 +62,9 @@ Your caller gives you everything you need — do not go looking for it yourself:
 - **Prerequisite status** — if the scenario declares `requires:`, the caller tells you whether
   that prerequisite **PASSED** in the current run. Requires-gating is a run-level decision the
   caller owns; you only act on what you are told (see below).
+- **`produces`** — the optional raw `produces:` value read from the scenario YAML by the caller.
+  Do not try to read custom orchestration metadata through `load_scenario`; it is intentionally
+  ignored by the tester.
 
 ## Procedure
 
@@ -70,13 +74,19 @@ Your caller gives you everything you need — do not go looking for it yourself:
 2. Otherwise drive the scenario through the tester following the per-scenario loop in the spec:
    `load_scenario` → (if present) `run_pre_hooks` → `start_session` (with `run_name`,
    `output_dir`, `session_id`, and `instance_id` if given) → drive the `goals:` with
-   `send_action` / `select` / screenshots → `finish_session` → (if present) `run_post_hooks`.
+   `send_action` / `select` / screenshots → verify `produces` when declared → `finish_session`
+   → (if present) `run_post_hooks`.
    Pass the same `instance_id` to `run_pre_hooks`, every `start_session`, and
    `run_post_hooks`; `session_vars.instance` must match it so `load_scenario` renders the same
    paths and goals that the hooks and session execute.
    Treat `finish_session` and `run_post_hooks` as a finally-style path: run them after every
    started session even when a product goal fails. Screenshot key steps on a best-effort basis
    and `report_finding` for any confusing UX, error, or doc mismatch.
+3. When the caller supplied `produces` and the product goals succeeded, render it with the same
+   `session_vars`, resolve it to an absolute path, and verify through the tester session before
+   finishing that it is a directory containing both `azure.yaml` and `.azure/`. A missing or
+   invalid produced scaffold is a scenario failure. Return the verified absolute path as
+   `scaffold_dir`.
 
 ## Verdict rules (fail-loud — do not soften)
 
@@ -113,6 +123,8 @@ Apply the spec's execution rules; the essentials:
   started session, regardless of the product verdict. A post-hook failure makes the scenario
   **FAIL** and must be listed as a separate cleanup finding. If product verification also
   failed, preserve both findings; cleanup failure must not replace the original failure.
+- **A producer cannot pass without its output.** A scenario that declares `produces` may return
+  PASS only after its rendered directory has been verified and captured as `scaffold_dir`.
 
 ## What you return
 
@@ -126,6 +138,7 @@ verdict:    <✅ PASS | ❌ FAIL | ⏭️ SKIPPED | ⚠️ PASS-with-finding>
 duration:   <Hh Mm Ss>        (— for SKIPPED; scenario start through post hooks)
 findings:   <one bullet per report_finding or hook failure, or "none">
 report_dir: <output_dir>/<run_name>/    (tester HTML + screenshots)
+scaffold_dir: <absolute verified produced scaffold directory | —>
 ```
 
 ## Exit criteria

@@ -9,13 +9,13 @@
 # container-deploy path end-to-end.
 name: "deploy-deploy-mode-container"
 command: "azd provision"
-cwd: "~/working/azd-agents-t1-container-deploy-{instance}"
+cwd: "{prerequisite_scaffold_dir}"
 tags: ["tier:1b", "cmd:provision", "cmd:deploy", "verify-deploy", "parallel-safe"]
 requires: "tier1/1.07-init-deploy-mode-container.yaml"
 
 pre:
   - run: |
-      SCAFFOLD=~/working/azd-agents-t1-container-deploy-{instance}
+      SCAFFOLD="{prerequisite_scaffold_dir}"
       if [ ! -f "$SCAFFOLD/azure.yaml" ]; then
         echo "ERROR: Scaffold not found. Run tier1/1.07-init-deploy-mode-container first."
         exit 1
@@ -33,7 +33,7 @@ pre:
 
 post:
   - run: "azd down --force --purge"
-    cwd: "~/working/azd-agents-t1-container-deploy-{instance}"
+    cwd: "{prerequisite_scaffold_dir}"
     name: "tear down scenario Azure resources"
     timeout: 900
 

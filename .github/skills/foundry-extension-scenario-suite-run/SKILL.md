@@ -123,6 +123,9 @@ Build the concrete set before grouping or confirmation:
    `tier2/2.99-teardown-down.yaml` to the concrete set, deduplicating them if already present.
    This lifecycle closure is mandatory even when a tag filter such as `cmd:invoke` did not
    match the setup/teardown files directly.
+3. Read and retain each selected scenario's optional top-level `produces` value so it can be
+   passed directly to that scenario's worker. The tester's `load_scenario` summary does not
+   expose orchestrator-only fields.
 
 Group the dependency- and lifecycle-closed set by tier (0 / 1 / 1b / 2). The expanded grouping
 drives both the cost gate and run order.
@@ -154,7 +157,11 @@ each scenario out to a **foundry-extension-scenario-worker** agent, one scenario
    worker the scenario-specific `instance` / `instance_id` derived in the prerequisites.
 3. **Tier 1b** (`verify-deploy`, ⚠️ cost): only after all Tier 1 workers finish, and only for
    scenarios whose `requires:` prerequisite **PASSED** this run (otherwise ⏭️ SKIPPED); then fan
-   out concurrently. Reuse each prerequisite Tier 1 scenario's exact instance ID.
+   out concurrently. Reuse each prerequisite Tier 1 scenario's exact instance ID. The
+   prerequisite PASS must include its verified absolute `scaffold_dir`; add that exact value to
+   the dependent's `session_vars` as `prerequisite_scaffold_dir`. Never reconstruct the
+   directory from template, agent, or instance names. A producer PASS without `scaffold_dir` is
+   invalid and its dependent is skipped.
 4. **Tier 2** (`serial-only`, ⚠️ cost): never parallelize — `2.00-setup-deploy-shared-agent`
    **first**, then `2.01-`…`2.18-` **serially**, `2.18-delete` before teardown, then
    `2.99-teardown-down` **last**.

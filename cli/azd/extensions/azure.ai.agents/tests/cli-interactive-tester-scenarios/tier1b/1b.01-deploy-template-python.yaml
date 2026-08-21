@@ -10,13 +10,13 @@
 # only destroys THIS scenario's infra and cannot affect other parallel runs.
 name: "verify-template-python"
 command: "azd provision"
-cwd: "~/working/azd-agents-t1-python-{instance}/{prefix}-t1-python-{instance}"
+cwd: "{prerequisite_scaffold_dir}"
 tags: ["tier:1b", "cmd:provision", "cmd:deploy", "verify-deploy", "parallel-safe"]
 requires: "tier1/1.01-init-template-python.yaml"
 
 pre:
   - run: |
-      SCAFFOLD=~/working/azd-agents-t1-python-{instance}/{prefix}-t1-python-{instance}
+      SCAFFOLD="{prerequisite_scaffold_dir}"
       if [ ! -f "$SCAFFOLD/azure.yaml" ]; then
         echo "ERROR: Scaffold not found. Run tier1/1.01-init-template-python first."
         exit 1
@@ -34,7 +34,7 @@ pre:
 
 post:
   - run: "azd down --force --purge"
-    cwd: "~/working/azd-agents-t1-python-{instance}/{prefix}-t1-python-{instance}"
+    cwd: "{prerequisite_scaffold_dir}"
     name: "tear down scenario Azure resources"
     timeout: 900
 

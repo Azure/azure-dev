@@ -38,8 +38,8 @@ the user exactly what to fix — do **not** try to work around it.
 ### Profiles
 
 The scenarios use `{prefix}`, `{subscription}`, `{region}`, `{model}`, and
-`{shared_agent_name}` placeholders, plus optional `tenant` and per-scenario `instance`
-session values.
+`{shared_agent_name}` placeholders, plus optional `tenant`, per-scenario `instance`, and
+Tier 1b `prerequisite_scaffold_dir` session values.
 Tenant-aware goals deliberately avoid a literal `{tenant}` placeholder so a
 missing optional value does not prevent a scenario from loading. You must:
 
@@ -73,3 +73,9 @@ missing optional value does not prevent a scenario from loading. You must:
    `start_session`, and `run_post_hooks` call. Also pass the same value as `instance_id`
    to each hook/session tool that accepts it. Omitting or changing either value can
    render different paths at load and execution time.
+8. A Tier 1 producer declares its output through the scenario YAML's top-level `produces`
+   field. The worker renders that field with the producer's `session_vars`, verifies the
+   scaffold, resolves it to an absolute path, and returns it as `scaffold_dir`. Before
+   dispatching the declared Tier 1b dependent, add that exact path to its per-scenario map as
+   `prerequisite_scaffold_dir`. Never reconstruct the path from `instance`, agent names, or
+   template directory conventions.

@@ -56,12 +56,19 @@ broken, the run **stops** — the agent does not fix it.
 
 For each selected scenario:
 
+The orchestrator reads and retains the scenario YAML's optional top-level `produces` value
+during plan construction and passes that raw value to the worker. `load_scenario` intentionally
+does not expose unknown orchestrator-only fields.
+
 0. **Check `requires:`** — if the scenario declares a `requires:` field (a relative path from
    the scenarios root, e.g. `tier1/1.01-init-template-python.yaml`), look up the
    prerequisite's result **in the current run**:
-   - Prerequisite **PASSED** → proceed (step 1+).
+   - Prerequisite **PASSED** → if it returned `scaffold_dir`, add that exact absolute path to
+     this scenario's `session_vars` as `prerequisite_scaffold_dir`, then proceed (step 1+).
    - Prerequisite **FAILED / not run / SKIPPED** → record this scenario as ⏭️ **SKIPPED** with
      reason `prerequisite <path> did not pass` and move on.
+   - Prerequisite declares `produces` but its PASS result has no verified `scaffold_dir` →
+     treat the producer result as invalid and SKIP this scenario. Never guess its output path.
 1. `load_scenario(path=<wsl path>, session_vars=<per-scenario map>)` — also reports whether the
    scenario declares `pre` / `post` hooks. For parallel-safe scenarios the map includes the
    assigned `instance`.
@@ -71,9 +78,13 @@ For each selected scenario:
 3. `start_session(scenario_path=…, session_vars=…, instance_id=<assigned instance>,
    run_name=<scenario-stem>, output_dir=<wsl .reports path>)`.
 4. Drive the scenario's `goals:` with `send_action` / `select` / best-effort screenshots.
-   Whether the goals pass or fail, enter the finally-style cleanup path and call
+5. If the worker received `produces` and its product goals succeeded, render that path with the
+   same `session_vars`, resolve it to an absolute path, and verify through the tester session
+   that it is a directory containing `azure.yaml` and `.azure/`. Retain the verified path as
+   `scaffold_dir`. A missing or invalid scaffold fails the producer.
+6. Whether the goals pass or fail, enter the finally-style cleanup path and call
    `finish_session` (this releases ports and generates the HTML report).
-5. If it has `post` hooks, always call
+7. If it has `post` hooks, always call
    `run_post_hooks(path=…, session_vars=…, instance_id=<assigned instance>)` after
    `finish_session`, even when a product goal failed. A post-hook failure is a separate cleanup
    finding and makes the scenario FAIL. If product verification also failed, preserve both
@@ -165,10 +176,12 @@ Concurrency primitive: **parallel background sub-agents, one scenario per sub-ag
   never let distinct scenarios fall back to `"main"`.
 - **Tier 1b** (`parallel-safe`, `verify-deploy`, ⚠️ Azure cost): runs **after all Tier 1
   scenarios complete**. Each declares a `requires:` field pointing at the Tier 1 scaffold it
-  deploys — only run it if that prerequisite **PASSED**; otherwise ⏭️ SKIP. Once prerequisites
-  are confirmed, fan out Tier 1b concurrently (independent Azure environments), reusing the
-  exact instance ID assigned to each Tier 1 prerequisite. Needs the same cost acknowledgement
-  as Tier 2.
+  deploys — only run it if that prerequisite **PASSED** and returned a verified
+  `scaffold_dir`; otherwise ⏭️ SKIP. Add that exact path to the dependent's `session_vars` as
+  `prerequisite_scaffold_dir`. Once prerequisites are confirmed, fan out Tier 1b concurrently
+  (independent Azure environments), reusing the exact instance ID assigned to each Tier 1
+  prerequisite. Never reconstruct the scaffold path. Needs the same cost acknowledgement as
+  Tier 2.
 - **Tier 2** (`serial-only`, ⚠️ Azure cost): **never parallelize.** Run
   `2.00-setup-deploy-shared-agent` **first**, then `2.01-`…`2.18-` **serially** (they share one
   deployed agent and mutate shared session/file/endpoint state), `2.18-delete` before teardown,
@@ -216,6 +229,7 @@ Every sub-agent spawned for a wave must obey:
 - **Record per scenario** for the report: scenario stem, tier, **PASS / FAIL / ⏭️ SKIPPED**,
   wall-clock **duration** (`start_session` → `finish_session`, including hooks; formatted
   `Hh Mm Ss`, e.g. `3m 21s`, `1h 04m 12s`; `—` for SKIPPED), and any `report_finding` text.
+  Include `scaffold_dir` for producers and `—` for scenarios that declare no output.
   SKIPPED scenarios include the reason (e.g. `prerequisite tier1/1.01-init-template-python.yaml
   did not pass`).
 - The driving agent writes the final cross-scenario summary to

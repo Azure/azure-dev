@@ -13,6 +13,7 @@ name: "init-from-azure-yaml-url"
 command: "azd ai agent init -m https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/azure.yaml"
 cwd: "~/working/azd-agents-t1-from-url-{instance}"
 tags: ["tier:1", "cmd:init", "parallel-safe"]
+produces: "~/working/azd-agents-t1-from-url-{instance}/agent-framework-agent-basic-responses"
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
@@ -29,8 +30,8 @@ pre:
 
 goals:
   - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with '{prefix}-' and suffixed with this run's instance id '-{instance}' (e.g. '{prefix}-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
-  - "When prompted for the AGENT NAME, set it to EXACTLY '{prefix}-t1-from-url-{instance}' (clear any pre-filled default first, then type it). The downloaded project directory keeps the manifest's deterministic name, 'agent-framework-agent-basic-responses'; the Foundry agent name does not rename that local directory."
   - "Wait for the tool to fetch and parse the azure.yaml from the provided URL."
+  - "No agent-name prompt should appear. Unified azure.yaml adoption retains the manifest-defined agent identity and project directory unless --agent-name is supplied explicitly. Report a finding if an agent-name prompt appears."
   - "If asked to select an Azure AI Foundry project, choose to create a new one and name it with the '{prefix}-' prefix."
   - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."
@@ -38,6 +39,6 @@ goals:
   - "When asked to select a model, choose '{model}' (or accept the sample's model if one is pinned)."
   - "Accept the defaults for any remaining model prompts (version, SKU, capacity). If prompted for a model deployment name, use a '{prefix}-'-prefixed name."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
-  - "Verify the scaffold: confirm agent-framework-agent-basic-responses/azure.yaml exists and reflects the sample's agent definition."
+  - "Verify the scaffold at agent-framework-agent-basic-responses/: confirm azure.yaml exists and reflects the sample's agent definition."
   - "Take a screenshot of the completed init output."
   - "STOP here — do NOT run 'azd provision'. Report a finding if the URL fails to download/parse, or if any field is dropped during scaffold."

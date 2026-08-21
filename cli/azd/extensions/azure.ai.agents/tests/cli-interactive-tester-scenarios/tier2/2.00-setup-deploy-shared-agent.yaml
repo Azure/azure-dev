@@ -15,7 +15,7 @@
 # (no deploy-mode prompt appears). The resulting agent is code-based, which
 # means `code download` will succeed against it.
 name: "setup-deploy-shared-agent"
-command: "azd ai agent init"
+command: "azd ai agent init --agent-name {shared_agent_name}"
 cwd: "~/working/azd-agents-shared"
 tags: ["tier:2", "cmd:init", "cmd:provision", "cmd:deploy", "serial-only"]
 
@@ -47,7 +47,7 @@ goals:
   - "When asked how to initialize, select 'Start new from a template'."
   - "Select Python as the language."
   - "Select the 'Basic Responses' template from the list."
-  - "When prompted for the AGENT NAME, set it to EXACTLY '{shared_agent_name}' (clear any pre-filled default first, then type it). This exact name is REQUIRED: init scaffolds the project into a subdirectory named after the agent, and the targeted reuse scenarios depend on that subdirectory being named '{shared_agent_name}'."
+  - "No agent-name prompt should appear because --agent-name was supplied explicitly. The resulting agent identity and project subdirectory must both be exactly '{shared_agent_name}'. Report a finding if the wizard asks for the agent name."
   - "If asked to select an Azure AI Foundry project, create a new one and name it with the '{prefix}-' prefix."
   - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."

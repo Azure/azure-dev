@@ -86,10 +86,14 @@ You don't drive scenarios yourself; you spawn one **`foundry-extension-scenario-
 - **`requires:` gating is yours.** You hold the run's results, so before dispatching any
   scenario with a `requires:` field, look up the prerequisite's verdict **in this run** and
   tell the worker whether it passed. If it did not pass (or wasn't run), mark the scenario
-  ⏭️ SKIPPED and don't spawn a worker.
+  ⏭️ SKIPPED and don't spawn a worker. A Tier 1 producer that declares `produces` satisfies
+  this gate only when its PASS result includes a verified absolute `scaffold_dir`. Add that
+  exact path to its Tier 1b dependent's `session_vars` as `prerequisite_scaffold_dir`; never
+  reconstruct it from names or the shared instance. Treat a producer PASS without this path
+  as an invalid producer result and skip the dependent.
 - **Tier 1b** (`verify-deploy`, ⚠️ cost): only after all Tier 1 workers finish and only for
   scenarios whose `requires:` prerequisite PASSED; then fan out concurrently using the exact
-  instance ID assigned to each prerequisite.
+  instance ID and `scaffold_dir` returned by each prerequisite.
 - **Tier 2** (`serial-only`, ⚠️ cost): never parallelize — `2.00-setup` first, then
   `2.01…2.18` serially, `2.18-delete` before teardown, `2.99-teardown-down` last. Launch
   cost-incurring workers conservatively (background workers are typically not cancellable
@@ -97,7 +101,9 @@ You don't drive scenarios yourself; you spawn one **`foundry-extension-scenario-
 
 Give each worker its inputs (scenario path in the correct style, per-scenario `session_vars`,
 `run_name`, `output_dir` under the single `<run-id>`, `session_id`, assigned `instance_id` when
-applicable, and its prerequisite status). Collect each worker's returned verdict block.
+applicable, its prerequisite status, and the scenario YAML's raw optional `produces` value).
+Collect each worker's returned verdict block. Read `produces` during plan construction; do not
+expect `load_scenario` to return unknown orchestrator-only fields.
 
 ## Reporting handoff
 

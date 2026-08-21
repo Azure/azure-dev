@@ -107,6 +107,10 @@ gh pr view --json number,url,headRefName,baseRefName,title
    selected. This lifecycle closure happens before cost confirmation so the user sees and
    approves the exact set that will create and tear down resources.
 
+6. Read and retain each selected scenario's optional top-level `produces` value so it can be
+   passed directly to that scenario's worker. The tester's `load_scenario` summary does not
+   expose orchestrator-only fields.
+
 ### Step 4 — Confirm the plan (cost gate)
 
 Show the user the concrete scenario list grouped by tier, plus estimated cost/auth needs,
@@ -141,8 +145,11 @@ mandatory validation step, then honor ordering:
    Tier 1 scenarios to complete, then check each Tier 1b scenario's `requires:` field. Only
    run it if the prerequisite PASSED; otherwise mark it ⏭️ SKIPPED. Once prerequisites are
    confirmed, fan out Tier 1b scenarios concurrently using the exact instance ID assigned to
-   each prerequisite. Tier 1b requires cost acknowledgement (same as Tier 2) since it
-   provisions Azure resources.
+   each prerequisite. The prerequisite PASS must also include its verified absolute
+   `scaffold_dir`; add that exact value to the dependent's `session_vars` as
+   `prerequisite_scaffold_dir`. Never reconstruct the path from scenario or agent naming. A
+   producer PASS without `scaffold_dir` is invalid and its dependent is skipped. Tier 1b
+   requires cost acknowledgement (same as Tier 2) since it provisions Azure resources.
 4. **Tier 2** is `serial-only` and order-dependent: `2.00-setup-deploy-shared-agent` **first**,
    then the targeted `2.01-`…`2.18-` scenarios **serially**, then `2.99-teardown-down` **last**.
 

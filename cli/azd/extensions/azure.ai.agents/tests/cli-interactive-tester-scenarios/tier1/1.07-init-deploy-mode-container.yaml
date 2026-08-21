@@ -10,6 +10,7 @@ name: "init-deploy-mode-container"
 command: "azd ai agent init --deploy-mode container"
 cwd: "~/working/azd-agents-t1-container-deploy-{instance}"
 tags: ["tier:1", "cmd:init", "parallel-safe"]
+produces: "~/working/azd-agents-t1-container-deploy-{instance}"
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"

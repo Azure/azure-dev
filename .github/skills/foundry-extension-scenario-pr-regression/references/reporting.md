@@ -48,9 +48,9 @@ Rules:
 
 - Use ✅ PASS / ❌ FAIL / ⏭️ SKIPPED (and ⚠️ for a scenario that completed but raised a
   non-fatal finding).
-- **SKIPPED** means the scenario's `requires:` prerequisite did not PASS — include the reason
-  in the Findings section (e.g. "prerequisite `tier1/1.01-…` failed"). SKIPPED scenarios
-  have no duration (`—`).
+- **SKIPPED** means the scenario's `requires:` prerequisite did not satisfy its gate — include
+  the reason in the Findings section (e.g. "prerequisite `tier1/1.01-…` failed" or "prerequisite
+  did not return a verified `scaffold_dir`"). SKIPPED scenarios have no duration (`—`).
 - **Never** soften a real regression to make the table green. A scenario that failed because
   of the PR's change is a FAIL — report it and recommend fixing the code, not the scenario.
 - If the user opted out of posting (or there's no PR), write only the artifact and print the

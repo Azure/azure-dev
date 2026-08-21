@@ -345,18 +345,18 @@ Each scenario declares a `requires:` field pointing to the Tier 1 scenario
 whose scaffold it deploys. The orchestrator **must** check this: if the
 prerequisite didn't PASS in the current run, the Tier 1b scenario is SKIPPED.
 
-The scaffold path depends on the init flow and is explicit in each Tier 1b
-scenario:
+### Producer/consumer scaffold handoff
 
-- Template flows (`1.01`, `1.02`) create a nested directory named for the requested agent.
-- Manifest URL flows (`1.03`, `1.05`) retain the downloaded project's directory,
-  `agent-framework-agent-basic-responses`; `--agent-name` changes the Foundry agent identity,
-  not that local directory.
-- Current-directory flows (`1.04`, `1.06`, `1.07`) write the scaffold directly into their
-  seeded working directory.
+Every Tier 1 producer declares its generated project directory through a top-level
+`produces:` field. After its goals pass, the worker renders that path, verifies that it
+contains `azure.yaml` and `.azure/`, resolves it to an absolute path, and returns it as
+`scaffold_dir`.
 
-Tier 1b intentionally does not search for `azure.yaml`: an upstream layout change fails the
-producer/consumer contract clearly instead of deploying an arbitrary directory.
+The orchestrator passes that exact path to the declared Tier 1b dependent as
+`{prerequisite_scaffold_dir}`. The consumer uses it for `cwd`, precondition checks, and
+cleanup. It neither searches for `azure.yaml` nor reconstructs a path from agent or template
+names. A producer PASS without a verified `scaffold_dir` is invalid and the dependent is
+skipped.
 
 | File | Verifies | Requires |
 |------|----------|----------|
@@ -469,7 +469,7 @@ requires: "tier1/1.01-init-template-python.yaml"
 - The `requires:` value is always a **relative path** from the scenarios root
   (e.g. `tier1/1.01-init-template-python.yaml`, not an absolute path).
 - The cli-interactive-tester MCP server ignores unknown top-level YAML keys,
-  so `requires:` is purely orchestrator-side logic — it doesn't affect
+  so `requires:` and `produces:` are purely orchestrator-side logic — they don't affect
   `load_scenario` or session behavior.
 
 **When to use:** Tier 1b verify-deploy scenarios use `requires:` to express
@@ -508,6 +508,7 @@ Variables exposed to scenarios via `session_vars`:
 | `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}-{run_id}` | Tier 2 subdirectory and agent name. Seconds plus the random suffix isolate concurrent runs. |
 | `{instance}` | derived per scenario | `<scenario-key>-{run_id}` | Tier 0/Tier 1 parallel-safe identity; Tier 1b reuses its prerequisite's exact value. |
 | `{fixtures_dir}` | derived by orchestrator | `<scenarios-dir>/fixtures` | Tester-side absolute path to the `fixtures/` subdirectory (WSL-translated on Windows, native on Linux/macOS); used by pre-hooks to seed test fixture files |
+| `{prerequisite_scaffold_dir}` | returned by Tier 1 worker | verified absolute `produces:` path | Tier 1b only; exact scaffold directory from its declared prerequisite. |
 
 **Bootstrap (one-time per checkout):**
 
@@ -520,6 +521,8 @@ The orchestrator must load both files, merge local overrides over shared default
 one `run_id`, and derive `shared_agent_name` and `fixtures_dir` (the tester-side absolute path
 of the `fixtures/` subdirectory — WSL-translated on Windows, native on Linux/macOS). For each
 parallel-safe scenario it adds the assigned `instance` to a per-scenario copy of that map.
+For Tier 1b it also adds the exact `scaffold_dir` returned by the prerequisite as
+`prerequisite_scaffold_dir`.
 It passes the map as `session_vars=` on every `load_scenario` / `run_pre_hooks` /
 `start_session` / `run_post_hooks` call and passes the matching `instance_id` to every hook or
 session tool that accepts it. Failing to thread either value can render and execute different
@@ -622,9 +625,10 @@ be run back to back in any order within a tier:
 - Tier 0/1 stateful scenarios **pre-wipe** their own `cwd`. Cleanup is pre-wipe
   **only** (no `post` delete), so the generated scaffold stays on disk for
   inspection after a run while the next run still starts clean.
-- Tier 1b scenarios preserve the Tier 1 scaffold but use an always-run `post`
-  hook to down their isolated Azure resources. Cleanup failure is a separate
-  scenario failure and leaves the local environment available for recovery.
+- Tier 1b scenarios use the prerequisite worker's verified `scaffold_dir` and preserve that
+  Tier 1 scaffold, but use an always-run `post` hook to down their isolated Azure resources.
+  Cleanup failure is a separate scenario failure and leaves the local environment available
+  for recovery.
 - The current Tier 2 run's `{shared_agent_name}` project dir is reset by
   `2.00-setup`'s `pre` hook, which **downs a deployed project at that exact path
   first** and aborts without deleting local state if teardown fails (this also

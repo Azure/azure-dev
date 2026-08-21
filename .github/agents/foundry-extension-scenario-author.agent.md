@@ -3,7 +3,7 @@ name: foundry-extension-scenario-author
 description: >-
   Front door for AUTHORING the azure.ai.agents cli-interactive-tester scenarios. Writes a new
   goal-based scenario YAML (or fixes an existing one) so it follows the framework's tier / tag /
-  hook / fixtures / requires conventions and the goals-are-the-contract judging rules, then
+  hook / fixtures / requires / produces conventions and the goals-are-the-contract judging rules, then
   lint-validates it statically. Generative and repo-writing, but it never RUNS a scenario and
   never provisions Azure resources — running is the foundry-extension-scenario-orchestrator / foundry-extension-scenario-suite-run /
   foundry-extension-scenario-worker path. Deliberately human-selected (never auto-run).
@@ -31,11 +31,11 @@ Authoring is a defined procedure. Load and follow the **`foundry-extension-scena
 - the **authoring contract** (goals are a literal, checkable spec — single-sourced in the
   scenarios README's "How scenarios are judged" section),
 - the **scenario anatomy** (annotated YAML skeleton) and the field references (tiers, tags,
-  `requires:`, profile placeholders, hooks, fixtures, idempotency, conventions),
+  `requires:`, `produces:`, profile placeholders, hooks, fixtures, idempotency, conventions),
 - the **authoring procedure** (pick tier / placement, write `command` + `cwd`, add idempotency
-  hooks, seed fixtures, set `tags` / `requires`, write `goals`),
+  hooks, seed fixtures, set `tags` / `requires` / `produces`, write `goals`),
 - the **static validation loop** (tag lint via `list_scenarios`, YAML shape, `requires:` /
-  fixture / placeholder resolution) — **no execution**.
+  `produces:` / fixture / placeholder resolution) — **no execution**.
 
 Don't restate the taxonomy from memory — read the skill and the sections it links to so the
 scenario matches the current conventions.
@@ -55,9 +55,10 @@ scenario matches the current conventions.
 
 - A single-command scenario YAML was authored (or corrected) in the correct `tierN/` directory,
   following the `foundry-extension-scenario-authoring` skill: compliant `tags:`, appropriate `cwd` + idempotency
-  hooks, any needed fixture / `requires:`, and `goals:` written as a literal, checkable contract.
+  hooks, any needed fixture / `requires:` / `produces:`, and `goals:` written as a literal,
+  checkable contract.
 - The skill's static validation loop passed (`list_scenarios` lists the file under all its tags —
-  not `tags: []`, the YAML parses, and every `requires:` / fixture / placeholder reference
-  resolves).
+  not `tags: []`, the YAML parses, and every `requires:` / `produces:` / fixture / placeholder
+  reference resolves).
 - **No scenario was executed** and no Azure resources were created; any run-to-confirm was handed
   off to the run path with a cost note.

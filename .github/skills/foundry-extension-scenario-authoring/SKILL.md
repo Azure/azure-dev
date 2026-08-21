@@ -89,6 +89,7 @@ command: "azd ai agent <subcommand> …"   # the installed extension entry point
 cwd: "~/working/azd-agents-<slug>-{instance}"   # see cwd + idempotency below; /tmp for read-only
 tags: ["tier:N", "cmd:<name>", "parallel-safe"] # REQUIRED — see the Tags taxonomy
 requires: "tier1/1.0X-….yaml"            # optional; only when this scenario needs another to PASS first
+produces: "~/working/azd-agents-…-{instance}/generated-agent" # optional producer output
 env:                                      # optional; init scenarios disable agent auto-detect
   AZD_DISABLE_AGENT_DETECT: "1"
 allocate_ports: [agent]                   # optional; only for scenarios that bind a port (e.g. 2.12)
@@ -113,6 +114,8 @@ Field references (do not restate these — link to them):
   [README § Tags](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#tags).
 - **`requires:`** — cross-scenario prerequisites (Tier 1b → Tier 1):
   [README § The `requires:` field](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#the-requires-field).
+- **`produces:`** — the verified Tier 1 scaffold handed to Tier 1b:
+  [README § Producer/consumer scaffold handoff](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#producerconsumer-scaffold-handoff).
 - **Profile/session placeholders** (`{prefix}`, `{subscription}`, `{region}`, `{model}`,
   `{tenant}`, `{run_id}`, `{shared_agent_name}`, `{fixtures_dir}`, `{instance}`):
   [README § Profile / overrides](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#profile--overrides).
@@ -163,10 +166,12 @@ Field references (do not restate these — link to them):
    invokes the generated scaffold; detection-only placeholders are not sufficient for
    deploy-verification prerequisites.
 
-6. **Set `requires:` if it depends on another scenario.** Tier 1b deploy-verify scenarios point
-   `requires:` at the Tier 1 init scenario whose scaffold they deploy (a **relative path from
-   the scenarios root**). Don't use `requires:` to sequence independent scenarios — it's a hard
-   prerequisite, not an ordering hint.
+6. **Declare producer/consumer handoff when required.** A Tier 1 scenario whose scaffold is
+   deployed by Tier 1b sets `produces:` to the exact generated project directory. Its Tier 1b
+   consumer points `requires:` at that Tier 1 scenario (a **relative path from the scenarios
+   root**) and uses `{prerequisite_scaffold_dir}` for `cwd` and every scaffold hook path. Never
+   duplicate the producer's path in the consumer. Don't use `requires:` to sequence independent
+   scenarios — it is a hard prerequisite, not an ordering hint.
 
 7. **Write the `tags:` list.** At minimum: one `tier:N`, at least one `cmd:*`, and exactly one of
    `parallel-safe` / `serial-only` (Tier 0/1/1b → `parallel-safe`; Tier 2 → `serial-only`). Add
@@ -197,16 +202,17 @@ Validate **statically** — never `start_session`, never drive the scenario, nev
    `tags:` field is missing or malformed — fix it. (`list_scenarios` uses a real YAML parser, so
    this also catches YAML syntax errors in the file.)
 2. **YAML shape.** Re-read the file and confirm required fields (`name`, `command`, `cwd`,
-   `tags`, `goals`) are present and well-formed, and that `goals` is a non-empty list of strings.
+   `tags`, `goals`) are present and well-formed, that `goals` is a non-empty list of strings,
+   and that any Tier 1 producer declares the exact scaffold directory in `produces:`.
 3. **`requires:` resolves.** If `requires:` is set, confirm the referenced path exists relative
    to the scenarios root and points at the intended prerequisite.
 4. **Fixture / hook paths resolve.** If a `pre` hook seeds a fixture, confirm the referenced
    `fixtures/<name>/` tree exists and the hook uses `{fixtures_dir}` (not a hardcoded path).
 5. **Placeholders only reference known variables.** Every `{name}`-shaped token in `command` /
    `cwd` / hooks / goals is processed as a placeholder and must be a profile placeholder or
-   `{instance}`. This includes embedded shell syntax: format an awk action as `{ print }`, not
-   `{print}`, so it cannot be mistaken for an unknown placeholder. Reject every unknown
-   brace-delimited token during static validation.
+   `{instance}` or, for Tier 1b, `{prerequisite_scaffold_dir}`. This includes embedded shell
+   syntax: format an awk action as `{ print }`, not `{print}`, so it cannot be mistaken for an
+   unknown placeholder. Reject every unknown brace-delimited token during static validation.
 6. **Invoke input is explicit.** For every goal or `command` that executes
    `azd ai agent invoke`, confirm the literal command includes a positional message or an
    intentional `--input-file` whose contents are defined by the scenario. Command-list and help

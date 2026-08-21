@@ -899,7 +899,7 @@ services:
 		for _, condition := range []string{"1.0", "01", "0x1"} {
 			t.Run(condition, func(t *testing.T) {
 				res, err := Synthesize(Input{
-					RawAzureYAML: []byte(fmt.Sprintf(yamlTemplate, condition)),
+					RawAzureYAML: fmt.Appendf(nil, yamlTemplate, condition),
 					ServiceName:  "my-project",
 					AcceptedHosts: []string{
 						"azure.ai.project",

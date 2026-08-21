@@ -502,8 +502,18 @@ func (sm *serviceManager) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
+	if _, err := resolveImagePassthrough(serviceConfig, sm.env); err != nil {
+		return nil, err
+	}
+	if err := validatePublishOptions(serviceConfig, publishOptions); err != nil {
+		return nil, err
+	}
+
 	if serviceContext == nil {
 		serviceContext = NewServiceContext()
+	}
+	if _, _, err := imagePassthroughPackageOverride(serviceConfig, serviceContext); err != nil {
+		return nil, err
 	}
 
 	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventPublish)
@@ -523,6 +533,11 @@ func (sm *serviceManager) Publish(
 		if _, err := sm.Package(ctx, serviceConfig, serviceContext, progress, &PackageOptions{}); err != nil {
 			return nil, err
 		}
+	}
+
+	// Package can add target-specific artifacts, so validate the completed collection before dispatch.
+	if _, _, err := imagePassthroughPackageOverride(serviceConfig, serviceContext); err != nil {
+		return nil, err
 	}
 
 	serviceTarget, err := sm.cachedServiceTarget(ctx, serviceConfig)
@@ -693,6 +708,10 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 
 // GetFrameworkService constructs a framework service from the underlying service configuration
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
+	if _, err := resolveImagePassthrough(serviceConfig, sm.env); err != nil {
+		return nil, err
+	}
+
 	var frameworkService FrameworkService
 
 	// Publishing from an existing image currently follows the same lifecycle as a docker project

@@ -6451,7 +6451,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['publish'],
-			description: 'Publish a service to a container registry.',
+			description: 'Publish a service image or reuse an existing passthrough image.',
 			options: [
 				{
 					name: ['--all'],

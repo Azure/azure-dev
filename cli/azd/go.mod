@@ -41,6 +41,7 @@ require (
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/cli/browser v1.3.0
 	github.com/denormal/go-gitignore v0.0.0-20180930084346-ae8ad1d07817
+	github.com/distribution/reference v0.6.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.18.0
 	github.com/fsnotify/fsnotify v1.9.0
@@ -130,6 +131,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
+	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/otiai10/mint v1.6.3 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect

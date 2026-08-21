@@ -1565,7 +1565,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectDockerTagCalled:   false,
 			expectDockerPushCalled:  false,
 			expectError:             true,
-			expectedError:           "fully qualified remote container image",
+			expectedError:           "requires package container artifacts",
 		},
 		{
 			name:                    "Image passthrough rejects archive package override",
@@ -1580,7 +1580,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectDockerTagCalled:   false,
 			expectDockerPushCalled:  false,
 			expectError:             true,
-			expectedError:           "does not support archive artifacts",
+			expectedError:           "does not support archive package artifacts",
 		},
 		{
 			name:                    "Image passthrough rejects directory package override",
@@ -1595,7 +1595,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectDockerTagCalled:   false,
 			expectDockerPushCalled:  false,
 			expectError:             true,
-			expectedError:           "does not support directory artifacts",
+			expectedError:           "does not support directory package artifacts",
 		},
 		{
 			name:                    "With publish options overwrite",

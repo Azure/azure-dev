@@ -472,7 +472,7 @@ func Test_ServiceManager_Publish_ValidatesArtifactsAddedDuringPackage(t *testing
 		&PublishOptions{},
 	)
 
-	require.ErrorContains(t, err, "does not support archive artifacts")
+	require.ErrorContains(t, err, "does not support archive package artifacts")
 	require.True(t, *packageCalled)
 	require.False(t, *publishCalled)
 }
@@ -538,7 +538,7 @@ func Test_ServiceManager_Publish_RejectsInvalidPackageOverrideForPassthrough(t *
 				Location:     "team/agent:v2",
 				LocationKind: LocationKindLocal,
 			},
-			errorContains: "fully qualified remote container image",
+			errorContains: "requires package container artifacts",
 		},
 		{
 			name: "archive",
@@ -547,7 +547,7 @@ func Test_ServiceManager_Publish_RejectsInvalidPackageOverrideForPassthrough(t *
 				Location:     "agent.zip",
 				LocationKind: LocationKindLocal,
 			},
-			errorContains: "does not support archive artifacts",
+			errorContains: "does not support archive package artifacts",
 		},
 		{
 			name: "directory",
@@ -556,7 +556,7 @@ func Test_ServiceManager_Publish_RejectsInvalidPackageOverrideForPassthrough(t *
 				Location:     "agent",
 				LocationKind: LocationKindLocal,
 			},
-			errorContains: "does not support directory artifacts",
+			errorContains: "does not support directory package artifacts",
 		},
 		{
 			name: "multiple artifacts",
@@ -570,7 +570,7 @@ func Test_ServiceManager_Publish_RejectsInvalidPackageOverrideForPassthrough(t *
 				Location:     "agent.zip",
 				LocationKind: LocationKindLocal,
 			},
-			errorContains: "does not support archive artifacts",
+			errorContains: "does not support archive package artifacts",
 		},
 	}
 

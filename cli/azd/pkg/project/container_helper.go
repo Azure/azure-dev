@@ -715,7 +715,8 @@ func imagePassthroughPackageOverride(
 		case ArtifactKindContainer:
 			if err := validateFullyQualifiedRemoteContainerImage(artifact.Location); err != nil {
 				return "", false, fmt.Errorf(
-					"docker.imagePassthrough requires --from-package to be a fully qualified remote container image: %w",
+					"docker.imagePassthrough requires package container artifacts to use "+
+						"a fully qualified remote container image: %w",
 					err,
 				)
 			}
@@ -730,7 +731,7 @@ func imagePassthroughPackageOverride(
 			// Targets may add supplementary configuration alongside the container image.
 		case ArtifactKindArchive, ArtifactKindDirectory:
 			return "", false, fmt.Errorf(
-				"docker.imagePassthrough does not support %s artifacts from --from-package; "+
+				"docker.imagePassthrough does not support %s package artifacts; "+
 					"use a fully qualified remote container image",
 				artifact.Kind,
 			)

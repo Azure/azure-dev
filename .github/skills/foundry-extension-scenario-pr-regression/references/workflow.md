@@ -130,8 +130,8 @@ under `<scenarios-dir>/.reports/<run-id>/`.
 
 Drive each selected scenario per the executor spec
 `cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/driving-mechanics.md`
-— fan each scenario out to a **foundry-extension-scenario-worker** agent (one scenario per worker). Start with a
-mandatory validation step, then honor ordering:
+— fan each scenario out to a **foundry-extension-scenario-worker** agent (one scenario per
+worker). Start with a mandatory validation step, then schedule by readiness:
 
 1. **Recipe validation (mandatory).** Run one Tier 0 scenario synchronously before fanning
    out. Pick a fast, non-interactive scenario (e.g. `0.01-version`). If it fails with an
@@ -139,19 +139,25 @@ mandatory validation step, then honor ordering:
    do not fan out into a fleet of failures. Fix the environment issue (re-run Step 1b on
    Windows, rebuild on native Linux) and start over.
 
-2. **Tier 0 / Tier 1** are `parallel-safe` — they may be run concurrently (small waves). Give
-   each worker the scenario-specific `instance` / `instance_id` derived from the run ID.
-3. **Tier 1b** (`verify-deploy`) is `parallel-safe` but **depends on Tier 1**: wait for all
-   Tier 1 scenarios to complete, then check each Tier 1b scenario's `requires:` field. Only
-   run it if the prerequisite PASSED; otherwise mark it ⏭️ SKIPPED. Once prerequisites are
-   confirmed, fan out Tier 1b scenarios concurrently using the exact instance ID assigned to
-   each prerequisite. The prerequisite PASS must also include its verified absolute
+2. **Adaptive rolling pool.** Choose a safe target parallelism from the selected workload,
+   available model/tool capacity, and Azure side effects. Launch ready Tier 0 / Tier 1 /
+   Tier 1b scenarios up to that capacity. As each worker completes, immediately process its
+   result and refill available capacity without waiting for unrelated workers. Give Tier 0 /
+   Tier 1 workers the scenario-specific `instance` / `instance_id` derived from the run ID.
+3. **Tier 1b** (`verify-deploy`) is `parallel-safe` but depends only on its declared Tier 1
+   producer. Make it ready immediately when that producer PASSES; do not wait for all Tier 1
+   scenarios. Reuse the producer's exact instance ID. Its PASS must include a verified absolute
    `scaffold_dir`; add that exact value to the dependent's `session_vars` as
    `prerequisite_scaffold_dir`. Never reconstruct the path from scenario or agent naming. A
-   producer PASS without `scaffold_dir` is invalid and its dependent is skipped. Tier 1b
-   requires cost acknowledgement (same as Tier 2) since it provisions Azure resources.
-4. **Tier 2** is `serial-only` and order-dependent: `2.00-setup-deploy-shared-agent` **first**,
-   then the targeted `2.01-`…`2.18-` scenarios **serially**, then `2.99-teardown-down` **last**.
+   producer failure or PASS without `scaffold_dir` skips only its dependent. Tier 1b requires
+   cost acknowledgement (same as Tier 2) since it provisions Azure resources.
+4. **Tier 2** is an independent `serial-only` lane that starts after recipe validation even
+   while other tiers are running. Never run more than one Tier 2 scenario:
+   `2.00-setup-deploy-shared-agent` **first**, then the targeted `2.01-`…`2.18-` scenarios
+   **serially**, then `2.99-teardown-down` **last**. Setup must PASS before functional
+   scenarios run; otherwise skip them and proceed to cleanup/recovery. Each functional
+   completion unlocks only its successor, and teardown follows the final attempted functional
+   scenario regardless of verdict.
 
 Record per scenario: PASS/FAIL, wall-clock duration (`Hh Mm Ss`), and any `report_finding`
 entries.

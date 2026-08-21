@@ -73,16 +73,23 @@ source — read it, don't restate it.
    with an infrastructure error, **stop the whole run** and fix the environment (re-run the
    binary gate); do not fan out into a fleet of failures.
 
-## Execution — fan out to workers
+## Execution — schedule workers
 
 The rules for *how* a scenario is driven live once in the executor spec
 **`cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/driving-mechanics.md`**.
 You don't drive scenarios yourself; you spawn one **`foundry-extension-scenario-worker`** per scenario (via the
-`agent` tool) and honor the ordering and parallelism in that spec:
+`agent` tool) and honor the readiness and parallelism rules in that spec:
 
-- **Tier 0 / Tier 1** (`parallel-safe`): fan out in small waves (4–6 at a time), each worker
-  with a distinct `session_id` containing the run ID and the assigned scenario-specific
-  `instance` / `instance_id`.
+- **Use an adaptive rolling pool for parallel-safe work.** Determine a safe target parallelism
+  from the selected workload, available model/tool capacity, and the Azure side effects of
+  currently ready scenarios. Do not hard-code a worker count and do not dispatch in batches.
+  Launch ready Tier 0 / Tier 1 / Tier 1b workers up to the chosen capacity. Whenever any worker
+  sends a completion notification, record its result, update readiness, and immediately fill
+  every available slot while ready work remains; never poll or wait for unrelated active
+  workers to finish.
+- **Tier 0 / Tier 1** are immediately eligible for the rolling pool, each with a distinct
+  `session_id` containing the run ID and the assigned scenario-specific `instance` /
+  `instance_id`.
 - **`requires:` gating is yours.** You hold the run's results, so before dispatching any
   scenario with a `requires:` field, look up the prerequisite's verdict **in this run** and
   tell the worker whether it passed. If it did not pass (or wasn't run), mark the scenario
@@ -91,19 +98,27 @@ You don't drive scenarios yourself; you spawn one **`foundry-extension-scenario-
   exact path to its Tier 1b dependent's `session_vars` as `prerequisite_scaffold_dir`; never
   reconstruct it from names or the shared instance. Treat a producer PASS without this path
   as an invalid producer result and skip the dependent.
-- **Tier 1b** (`verify-deploy`, ⚠️ cost): only after all Tier 1 workers finish and only for
-  scenarios whose `requires:` prerequisite PASSED; then fan out concurrently using the exact
-  instance ID and `scaffold_dir` returned by each prerequisite.
-- **Tier 2** (`serial-only`, ⚠️ cost): never parallelize — `2.00-setup` first, then
-  `2.01…2.18` serially, `2.18-delete` before teardown, `2.99-teardown-down` last. Launch
-  cost-incurring workers conservatively (background workers are typically not cancellable
-  mid-run; a stop can't recall an in-flight `azd provision`).
+- **Tier 1b** (`verify-deploy`, ⚠️ cost): each scenario becomes eligible immediately when its
+  own `requires:` producer PASSES with a valid `scaffold_dir`; it does not wait for any other
+  Tier 1 scenario. Reuse that producer's exact instance ID and scaffold path.
+- **Tier 2** (`serial-only`, ⚠️ cost): after the shared gates pass, start its serial lane even
+  while Tier 0 / Tier 1 / Tier 1b workers are active. Never run more than one Tier 2 worker:
+  `2.00-setup` first, then `2.01…2.18` serially, `2.18-delete` before teardown, and
+  `2.99-teardown-down` last. Setup must PASS before any functional Tier 2 scenario runs;
+  otherwise skip those scenarios and proceed to cleanup/recovery. Each functional completion
+  unlocks only its next selected Tier 2 scenario, and teardown follows the final attempted
+  functional scenario regardless of its verdict. Consider the active Tier 2 worker when
+  choosing safe overall parallelism, and launch cost-incurring workers conservatively because
+  an in-flight provision cannot be recalled.
 
 Give each worker its inputs (scenario path in the correct style, per-scenario `session_vars`,
 `run_name`, `output_dir` under the single `<run-id>`, `session_id`, assigned `instance_id` when
 applicable, its prerequisite status, and the scenario YAML's raw optional `produces` value).
 Collect each worker's returned verdict block. Read `produces` during plan construction; do not
 expect `load_scenario` to return unknown orchestrator-only fields.
+
+Finish scheduling only when no worker is running, no scenario is ready, and every blocked
+scenario has either become ready or been marked SKIPPED from its prerequisite result.
 
 ## Reporting handoff
 

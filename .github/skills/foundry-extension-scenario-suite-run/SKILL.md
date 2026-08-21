@@ -12,7 +12,7 @@ metadata:
 description: >-
   **WORKFLOW SKILL** — Runs the azure.ai.agents extension's cli-interactive-tester scenarios as
   a **full or tag/tier-filtered sweep** that is *not* tied to a PR diff. Discovers scenarios via
-  list_scenarios, gates Azure cost, and fans them out to foundry-extension-scenario-worker agents in tier order,
+  list_scenarios, gates Azure cost, and schedules them through adaptive rolling concurrency,
   then writes an aggregate report. Typically dispatched by the foundry-extension-scenario-orchestrator agent, but
   can trigger directly.
 
@@ -52,7 +52,7 @@ or a tier like `tier:0`). It:
 
 1. Resolves the sweep's **tag/tier filter** from the user's request (or runs everything).
 2. Enumerates the matching scenarios via `list_scenarios`.
-3. Gates Azure cost (Tier 1b / Tier 2), then drives the scenarios in the correct order.
+3. Gates Azure cost (Tier 1b / Tier 2), then drives scenarios as their dependencies become ready.
 4. Writes an aggregate `FINAL-REPORT.md` (no PR comment unless the user asks).
 
 It is cost- and side-effect-aware: Tier 0 is free/offline, Tier 1 needs Azure auth but
@@ -94,7 +94,7 @@ runs standalone, perform those same gates first — do not run any scenario agai
 Translate the user's request into a `list_scenarios` filter:
 
 - **Whole suite** ("run everything", "run all scenarios") → no tag filter (enumerate all), but
-  still honor tier ordering and the cost gate below.
+  still honor dependency ordering and the cost gate below.
 - **By command** ("all `init` scenarios") → `tags=["cmd:init"]`.
 - **By trait** ("the `parallel-safe` set", "smoke test") → the matching trait tag(s), e.g.
   `tags=["parallel-safe"]`.
@@ -128,7 +128,7 @@ Build the concrete set before grouping or confirmation:
    expose orchestrator-only fields.
 
 Group the dependency- and lifecycle-closed set by tier (0 / 1 / 1b / 2). The expanded grouping
-drives both the cost gate and run order.
+drives the cost gate and plan display; dependencies and lane state drive execution readiness.
 
 ### Step 3 — Confirm the plan (cost gate)
 
@@ -148,27 +148,36 @@ artifacts go under `<scenarios-dir>/.reports/<run-id>/`.
 ### Step 4 — Run the scenarios
 
 Drive each selected scenario per the executor spec (see **Execution mechanics** below) — fan
-each scenario out to a **foundry-extension-scenario-worker** agent, one scenario per worker, honoring ordering:
+each scenario out to a **foundry-extension-scenario-worker** agent, one scenario per worker,
+using a readiness scheduler:
 
 1. **Recipe validation (mandatory).** Run one fast Tier 0 scenario (e.g. `0.01-version`)
    synchronously before fanning out. If it fails with an infrastructure error, **stop the whole
    run** and fix the environment — do not fan out into a fleet of failures.
-2. **Tier 0 / Tier 1** (`parallel-safe`): fan out in small waves (4–6 at a time). Give each
-   worker the scenario-specific `instance` / `instance_id` derived in the prerequisites.
-3. **Tier 1b** (`verify-deploy`, ⚠️ cost): only after all Tier 1 workers finish, and only for
-   scenarios whose `requires:` prerequisite **PASSED** this run (otherwise ⏭️ SKIPPED); then fan
-   out concurrently. Reuse each prerequisite Tier 1 scenario's exact instance ID. The
-   prerequisite PASS must include its verified absolute `scaffold_dir`; add that exact value to
-   the dependent's `session_vars` as `prerequisite_scaffold_dir`. Never reconstruct the
-   directory from template, agent, or instance names. A producer PASS without `scaffold_dir` is
-   invalid and its dependent is skipped.
-4. **Tier 2** (`serial-only`, ⚠️ cost): never parallelize — `2.00-setup-deploy-shared-agent`
-   **first**, then `2.01-`…`2.18-` **serially**, `2.18-delete` before teardown, then
-   `2.99-teardown-down` **last**.
+2. **Adaptive rolling pool.** Choose a safe target parallelism from the selected workload,
+   available model/tool capacity, and Azure side effects. Launch ready Tier 0 / Tier 1 /
+   Tier 1b scenarios up to that capacity. When any worker finishes, immediately process its
+   result and launch enough ready work to refill available capacity; never wait for a batch.
+   Give Tier 0 / Tier 1 workers the scenario-specific `instance` / `instance_id` derived in the
+   prerequisites.
+3. **Tier 1b** (`verify-deploy`, ⚠️ cost): a scenario becomes ready as soon as its own
+   `requires:` prerequisite **PASSES** this run; it does not wait for unrelated Tier 1 workers.
+   Reuse the prerequisite's exact instance ID. Its PASS must include a verified absolute
+   `scaffold_dir`; add that exact value to the dependent's `session_vars` as
+   `prerequisite_scaffold_dir`. Never reconstruct the directory from template, agent, or
+   instance names. A producer failure or PASS without `scaffold_dir` skips only its dependent.
+4. **Tier 2** (`serial-only`, ⚠️ cost): start this lane after recipe validation even while the
+   rolling pool is active. Never run more than one Tier 2 scenario:
+   `2.00-setup-deploy-shared-agent` **first**, then `2.01-`…`2.18-` **serially**,
+   `2.18-delete` before teardown, and `2.99-teardown-down` **last**. Setup must PASS before
+   functional scenarios run; otherwise skip them and proceed to cleanup/recovery. Each
+   functional completion unlocks only the next selected Tier 2 scenario, and teardown follows
+   the final attempted functional scenario regardless of verdict.
 
 `requires:` gating is a run-level decision: before dispatching a scenario that declares
 `requires:`, look up the prerequisite's verdict **in this run** and tell the worker whether it
-passed. Collect each worker's returned verdict block.
+passed. Collect each completion as it arrives, update the ready/running/blocked state, and
+continue until every scenario has completed or been skipped.
 
 ### Step 5 — Report
 

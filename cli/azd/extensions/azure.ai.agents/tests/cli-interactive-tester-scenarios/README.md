@@ -47,8 +47,9 @@ See [Pre/post hooks](#prepost-hooks) below.
 To run **everything**, select the `foundry-extension-scenario-orchestrator` agent and state your intent and
 cost consent, e.g. *"Run the full scenario suite across all tiers; I accept the Tier 1b /
 Tier 2 Azure cost."* It discovers the scenarios, enforces the prerequisite and `azd`-binary
-gates, validates the recipe on one scenario, fans Tier 0/1 out in parallel waves, runs Tier 1b
-after its Tier 1 prerequisites pass, runs Tier 2 serially, and writes a final report.
+gates, validates the recipe on one scenario, keeps an adaptive rolling pool of parallel-safe
+work active, unlocks each Tier 1b scenario when its own Tier 1 prerequisite passes, runs Tier 2
+serially alongside the other tiers, and writes a final report.
 
 For a **subset** (e.g. "just the `init` scenarios" or "everything in Tier 0") name the subset
 instead — the `foundry-extension-scenario-suite-run` skill filters by `tags:` via
@@ -220,18 +221,20 @@ advantage of both where it's safe.
   **not** parameterized with `{instance}` (doing so would break the shared-agent
   assumption) and should be run serially.
 
-How the executor actually fans these out (per-instance `session_id`s, wave sizes, tier
-ordering) is specified in [`driving-mechanics.md`](./driving-mechanics.md) § Parallelism &
-ordering — this section only documents which scenarios are *authored* to support concurrency.
+How the executor actually schedules these (per-instance `session_id`s, adaptive concurrency,
+dependency readiness, and the Tier 2 serial lane) is specified in
+[`driving-mechanics.md`](./driving-mechanics.md) § Parallelism & ordering — this section only
+documents which scenarios are *authored* to support concurrency.
 
 ## Orchestrating a fleet run
 
-Fleet orchestration — fan-out primitives, per-`session_id` timestamps, wave sizes, Tier 1b /
-Tier 2 ordering, and the operational guardrails (validate the recipe first, launch
-cost-incurring waves conservatively, keep waves small) — is the executor's job and is
-specified once in [`driving-mechanics.md`](./driving-mechanics.md) § Parallelism & ordering. In
-practice you don't orchestrate by hand: the `foundry-extension-scenario-orchestrator` agent runs that flow and
-spawns one `foundry-extension-scenario-worker` per scenario.
+Fleet orchestration — fan-out primitives, per-`session_id` timestamps, adaptive rolling
+parallelism, dependency readiness, the Tier 2 serial lane, and the operational guardrails
+(validate the recipe first and launch cost-incurring work conservatively) — is the executor's
+job and is specified once in [`driving-mechanics.md`](./driving-mechanics.md) § Parallelism &
+ordering. In practice you don't orchestrate by hand: the
+`foundry-extension-scenario-orchestrator` agent runs that flow and spawns one
+`foundry-extension-scenario-worker` per scenario.
 
 ## How scenarios are judged (authoring contract)
 

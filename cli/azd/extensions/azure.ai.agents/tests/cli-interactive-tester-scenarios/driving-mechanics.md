@@ -169,41 +169,49 @@ Concurrency primitive: **parallel background sub-agents, one scenario per sub-ag
   `start_session` → one `send_action` round-trips for a single fast Tier 0 scenario (e.g.
   `0.01-version`). If it fails with an infrastructure error, **stop the whole run** and fix the
   environment — do not fan out into a fleet of failures.
-- **Tier 0 / Tier 1** (`parallel-safe`): fan out in **small waves (4–6 at a time)**, rolling
-  forward. Give each scenario a safe instance ID formed from its numeric scenario key and the
-  sweep run ID (for example, `t104-0714103842-a1b2c3`) and include that identity in its
-  descriptive `session_id`. Pass the instance both in `session_vars` and as `instance_id`;
-  never let distinct scenarios fall back to `"main"`.
-- **Tier 1b** (`parallel-safe`, `verify-deploy`, ⚠️ Azure cost): runs **after all Tier 1
-  scenarios complete**. Each declares a `requires:` field pointing at the Tier 1 scaffold it
-  deploys — only run it if that prerequisite **PASSED** and returned a verified
-  `scaffold_dir`; otherwise ⏭️ SKIP. Add that exact path to the dependent's `session_vars` as
-  `prerequisite_scaffold_dir`. Once prerequisites are confirmed, fan out Tier 1b concurrently
-  (independent Azure environments), reusing the exact instance ID assigned to each Tier 1
-  prerequisite. Never reconstruct the scaffold path. Needs the same cost acknowledgement as
-  Tier 2.
-- **Tier 2** (`serial-only`, ⚠️ Azure cost): **never parallelize.** Run
-  `2.00-setup-deploy-shared-agent` **first**, then `2.01-`…`2.18-` **serially** (they share one
-  deployed agent and mutate shared session/file/endpoint state), `2.18-delete` before teardown,
-  then `2.99-teardown-down` **last**. Tier 2 uses **no `instance_id`** (it would break the
-  shared-agent assumption).
+- **Use an adaptive rolling pool.** The orchestrator chooses safe parallelism from the selected
+  workload, available model/tool capacity, and Azure side effects; there is no fixed worker
+  count. It launches ready Tier 0 / Tier 1 / Tier 1b workers up to that capacity. On every
+  completion notification, it records the result, updates readiness, and immediately fills
+  available capacity while ready work remains. It never waits for a batch of peers.
+- **Tier 0 / Tier 1** (`parallel-safe`) are initially ready. Give each scenario a safe instance
+  ID formed from its numeric scenario key and the sweep run ID (for example,
+  `t104-0714103842-a1b2c3`) and include that identity in its descriptive `session_id`. Pass the
+  instance both in `session_vars` and as `instance_id`; never let distinct scenarios fall back
+  to `"main"`.
+- **Tier 1b** (`parallel-safe`, `verify-deploy`, ⚠️ Azure cost) depends only on its declared
+  Tier 1 producer. When that producer PASSES with a verified `scaffold_dir`, immediately add
+  that exact path to the dependent's `session_vars` as `prerequisite_scaffold_dir` and make the
+  dependent ready, reusing the producer's exact instance ID. A producer failure or invalid
+  PASS skips only that dependent. Do not wait for unrelated Tier 1 scenarios and never
+  reconstruct the scaffold path.
+- **Tier 2** (`serial-only`, ⚠️ Azure cost) uses an independent serial lane that may overlap the
+  rolling pool after recipe validation. Run `2.00-setup-deploy-shared-agent` **first**, then
+  `2.01-`…`2.18-` **serially** (they share one deployed agent and mutate shared session/file/
+  endpoint state), `2.18-delete` before teardown, then `2.99-teardown-down` **last**. Never run
+  more than one Tier 2 worker. Setup must PASS before functional scenarios run; otherwise skip
+  them and proceed to cleanup/recovery. Each functional completion makes only its successor
+  ready, and teardown follows the final attempted functional scenario regardless of verdict.
+  Tier 2 uses **no `instance_id`**.
 - **Same scenario N times in parallel:** append a distinct ordinal to the scenario's normal
   run-scoped instance ID and use it for that copy's `session_vars.instance`, hooks, and every
   `start_session` call. Only Tier 0 work-dir scenarios and Tier 1 `init` scenarios support this.
   Tier 2 remains serial and never receives an instance ID; `2.12` prefixes its paired session
   IDs with `run-` / `invoke-` and includes `{run_id}` to isolate them from other sweeps.
 
-### Keep waves small
+### Choose safe parallelism
 
 The wall-clock bottleneck is per-agent LLM time and per-account model concurrency, not the MCP
-server (which is per-`session_id`-parallel by design). Launching 4–6 sub-agents at a time and
-rolling forward typically finishes a sweep faster than launching everything at once. Background
-sub-agents are typically **not cancellable mid-run** — for Tier 1b/Tier 2 Azure side effects,
-launch conservatively (a stop request can't recall an in-flight `azd provision`).
+server (which is per-`session_id`-parallel by design). Choose enough concurrency to keep
+available capacity busy without overwhelming the model, tester, or Azure account. Re-evaluate
+the target as the ready workload changes; expensive Tier 1b work and an active Tier 2 lane may
+justify lower overall concurrency than offline work. Background sub-agents are typically **not
+cancellable mid-run** — launch cost-incurring work conservatively because a stop request cannot
+recall an in-flight `azd provision`.
 
 ### Fleet sub-agent rules
 
-Every sub-agent spawned for a wave must obey:
+Every spawned sub-agent must obey:
 
 - **Do not modify the environment** (see [Environment integrity](#environment-integrity-never-work-around-a-broken-environment)).
 - **Infrastructure errors → FAIL and return.** Fail the scenario with an infrastructure finding

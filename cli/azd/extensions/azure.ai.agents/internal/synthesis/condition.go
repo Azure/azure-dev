@@ -11,9 +11,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 )
 
-// evaluateCondition matches foundry.EvaluateCondition. Extensions
-// pin a published azd module, so they cannot import new core
-// helpers until that module is bumped.
+// evaluateCondition matches project.ServiceConfig.IsEnabled.
+// Extensions pin a published azd module, so they cannot import
+// newer core helpers until that module is bumped.
 func evaluateCondition(
 	value any,
 	getenv func(string) string,

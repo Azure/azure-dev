@@ -101,6 +101,43 @@ func TestPublishTeamsApp_Success(t *testing.T) {
 	require.Equal(t, request, sent)
 }
 
+func TestPublishTeamsApp_DigitalWorkerRequest(t *testing.T) {
+	client, transport := newCaptureClient(
+		http.StatusOK,
+		`{"titleId":"T_123","teamsAppId":"app-456"}`,
+	)
+	request := TeamsAppPackageRequest{
+		PublishAsAutopilot:     true,
+		UseAgenticUserTemplate: true,
+		AgenticUserTemplate: &AgenticUserTemplate{
+			ID:                       "digitalWorkerTemplate",
+			File:                     "agenticUserTemplateManifest.json",
+			SchemaVersion:            "0.1.0-preview",
+			AgentIdentityBlueprintID: "blueprint-client-id",
+			CommunicationProtocol:    "activityProtocol",
+		},
+		PublishScope:     "Tenant",
+		AgentDisplayName: "my-agent",
+		AppVersion:       "1.0.0",
+	}
+
+	_, err := client.PublishTeamsApp(
+		t.Context(), "my-agent", request, Microsoft365DigitalWorkerAPIVersion,
+	)
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 1)
+	got := transport.requests[0]
+	require.Equal(t, Microsoft365DigitalWorkerAPIVersion, got.URL.Query().Get("api-version"))
+
+	bodyBytes, err := io.ReadAll(got.Body)
+	require.NoError(t, err)
+	var sent TeamsAppPackageRequest
+	require.NoError(t, json.Unmarshal(bodyBytes, &sent))
+	require.Equal(t, request, sent)
+	require.Empty(t, sent.BotServiceArmID)
+	require.Equal(t, "blueprint-client-id", sent.AgenticUserTemplate.AgentIdentityBlueprintID)
+}
+
 func TestPublishTeamsApp_ErrorStatus(t *testing.T) {
 	client, _ := newCaptureClient(http.StatusForbidden, `{"error":{"code":"Forbidden","message":"no publish"}}`)
 

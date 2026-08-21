@@ -1344,7 +1344,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 	activityBotName := ""
 	activityBotResourceGroup := ""
 	activityBotOwned := false
-	isActivityAgent := ResolveActivityProfile(agentDef).IsActivity
 
 	serviceTargetConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -1358,7 +1357,18 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if serviceTargetConfig != nil {
 		fmt.Println("Loaded custom service target configuration")
 	}
+	activityProfile, err := ResolveActivityProfileWithSettings(agentDef, serviceTargetConfig.Activity)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid Activity configuration: %s", err),
+			"check the activity configuration in azure.yaml",
+		)
+	}
 
+	if warning := digitalWorkerBotTransitionWarning(serviceConfig.Name, activityProfile, azdEnv); warning != "" {
+		fmt.Fprintln(os.Stderr, warning)
+	}
 	progress("Validating service dependencies")
 	if err := validateFoundryDependencies(
 		ctx, serviceConfig, serviceTargetConfig, p.projectServices, azdEnv, p.dependencyEnabled,
@@ -1432,7 +1442,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	if isActivityAgent {
+	if activityProfile.IsActivity && activityProfile.UseCase == ActivityUseCaseSimple {
 		identity := result.agentVersion.InstanceIdentity
 		if identity == nil || identity.ClientID == "" {
 			return nil, exterrors.Dependency(
@@ -1544,6 +1554,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 		activityBotName,
 		activityBotResourceGroup,
 		activityBotOwned,
+		activityProfile,
+		serviceTargetConfig.Activity,
 	)
 }
 
@@ -1561,6 +1573,30 @@ func activityBotOwnership(
 	}
 	value := tags[botservice.OwnershipTag]
 	return value != nil && strings.EqualFold(*value, botservice.OwnershipTagValue), tags
+}
+
+func digitalWorkerBotTransitionWarning(
+	serviceName string,
+	activityProfile ActivityProfile,
+	azdEnv map[string]string,
+) string {
+	if activityProfile.UseCase != ActivityUseCaseDigitalWorker {
+		return ""
+	}
+	botName := strings.TrimSpace(azdEnv[envkey.AgentBotName(serviceName)])
+	resourceGroup := strings.TrimSpace(azdEnv[envkey.AgentBotResourceGroup(serviceName)])
+	owned := strings.EqualFold(strings.TrimSpace(azdEnv[envkey.AgentBotOwned(serviceName)]), "true")
+	if botName == "" || resourceGroup == "" || !owned {
+		return ""
+	}
+	return fmt.Sprintf(
+		"Warning: service %q changed to digital_worker and still has the azd-managed Azure Bot %q "+
+			"in resource group %q. Digital Worker deployment does not use this Bot; review it and "+
+			"delete the legacy Bot manually if it is no longer needed.",
+		serviceName,
+		botName,
+		resourceGroup,
+	)
 }
 
 // provisionMemoryStores creates any Foundry memory stores declared in the service target
@@ -2021,6 +2057,8 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 	activityBotName string,
 	activityBotResourceGroup string,
 	activityBotOwned bool,
+	activityProfile ActivityProfile,
+	activitySettings *ActivitySettings,
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Registering agent environment variables")
 
@@ -2033,6 +2071,8 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		activityBotName,
 		activityBotResourceGroup,
 		activityBotOwned,
+		activityProfile,
+		activitySettings,
 	)
 	if err != nil {
 		return nil, err
@@ -2043,6 +2083,7 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		agentVersion.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+		activityProfile,
 		protocols,
 	)
 
@@ -2722,12 +2763,13 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 	agentVersion string,
 	projectResourceID string,
 	projectEndpoint string,
+	activityProfile ActivityProfile,
 	protocols []agent_yaml.ProtocolVersionRecord,
 ) []*azdext.Artifact {
 	artifacts := []*azdext.Artifact{}
 
-	// Add playground URL
-	if projectResourceID != "" {
+	// Add playground URL only for non-Activity agents.
+	if !activityProfile.IsActivity && projectResourceID != "" {
 		playgroundUrl, err := AgentPlaygroundURL(projectResourceID, agentName, agentVersion)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to generate agent playground link")
@@ -3177,6 +3219,8 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	activityBotName string,
 	activityBotResourceGroup string,
 	activityBotOwned bool,
+	activityProfile ActivityProfile,
+	activitySettings *ActivitySettings,
 ) error {
 	if agentVersionResponse.Name == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
@@ -3239,6 +3283,21 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 				Value:   strconv.FormatBool(activityBotOwned),
 			},
 		)
+	}
+	if activityProfile.UseCase == ActivityUseCaseDigitalWorker {
+		if activitySettings == nil || activitySettings.Publish == nil {
+			return fmt.Errorf("Digital Worker publish configuration is missing")
+		}
+		blueprint := agentVersionResponse.Blueprint
+		if blueprint == nil || strings.TrimSpace(blueprint.ClientID) == "" {
+			return fmt.Errorf("Digital Worker agent version is missing Blueprint client ID")
+		}
+
+		envVars = append(envVars, azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     envkey.AgentBlueprintClientID(serviceConfig.Name),
+			Value:   blueprint.ClientID,
+		})
 	}
 
 	for i := range envVars {

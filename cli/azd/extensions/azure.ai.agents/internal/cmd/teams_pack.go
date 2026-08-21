@@ -84,11 +84,14 @@ func teamsPackScopeFlags() []string {
 // loudly when the agent is missing, is not an activity agent, or has not been
 // deployed yet.
 type teamsPackContext struct {
-	proj        *azdext.ProjectConfig
-	svc         *azdext.ServiceConfig
-	agentName   string
-	botArmID    string
-	agentClient *agent_api.AgentClient
+	proj              *azdext.ProjectConfig
+	svc               *azdext.ServiceConfig
+	agentName         string
+	botArmID          string
+	blueprintClientID string
+	agentClient       *agent_api.AgentClient
+	activityProfile   project.ActivityProfile
+	activitySettings  *project.ActivitySettings
 }
 
 // resolveTeamsPackContext resolves the target activity agent and derives the Azure
@@ -109,7 +112,11 @@ func resolveTeamsPackContext(
 		return nil, err
 	}
 
-	ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+	effectiveSvc, err := resolveAgentServiceConfigWithProjectOverrides(svc, proj.Path)
+	if err != nil {
+		return nil, err
+	}
+	ca, isHosted, _, err := project.LoadAgentDefinition(effectiveSvc, proj.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +126,23 @@ func resolveTeamsPackContext(
 			fmt.Sprintf("agent service %q is not an Activity (Teams) agent", svc.Name),
 			"'azd ai agent pack' and 'azd ai agent publish' only apply to hosted agents that "+
 				"speak the Activity protocol; check the agent's protocols in azure.yaml",
+		)
+	}
+
+	serviceTargetConfig, err := project.LoadServiceTargetAgentConfig(effectiveSvc)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("failed to parse service target config: %s", err),
+			"check the activity configuration in azure.yaml",
+		)
+	}
+	activityProfile, err := project.ResolveActivityProfileWithSettings(ca, serviceTargetConfig.Activity)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid Activity configuration: %s", err),
+			"check the activity configuration in azure.yaml",
 		)
 	}
 
@@ -156,28 +180,45 @@ func resolveTeamsPackContext(
 		)
 	}
 
-	subscriptionID, err := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
-	if err != nil {
-		return nil, err
-	}
-	resourceGroup, err := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
-	if err != nil {
-		return nil, err
-	}
-	botName, err := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
-	if err != nil {
-		return nil, exterrors.Dependency(
-			exterrors.CodeAgentNotDeployed,
-			fmt.Sprintf("agent %q has no recorded Teams bot name in environment %q", agentName, envName),
-			"run 'azd deploy' first; the Teams bot name is recorded during deploy and is required "+
-				"before packaging or publishing",
+	botArmID := ""
+	blueprintClientID := ""
+	if activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
+		blueprintClientID, err = readEnvValue(
+			ctx, azdClient, envName, envkey.AgentBlueprintClientID(svc.Name),
 		)
-	}
-	botResourceGroup := readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name))
-
-	botArmID, err := teamsBotArmID(subscriptionID, resourceGroup, botName, botResourceGroup)
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeAgentNotDeployed,
+				fmt.Sprintf("agent %q has no recorded blueprint client ID in environment %q", agentName, envName),
+				"run 'azd deploy' first; the blueprint client ID is required before "+
+					"publishing a digital_worker agent",
+			)
+		}
+	} else {
+		subscriptionID, readErr := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
+		if readErr != nil {
+			return nil, readErr
+		}
+		resourceGroup, readErr := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
+		if readErr != nil {
+			return nil, readErr
+		}
+		botName, readErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
+		if readErr != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeAgentNotDeployed,
+				fmt.Sprintf("agent %q has no recorded Teams bot name in environment %q", agentName, envName),
+				"run 'azd deploy' first; the Teams bot name is recorded during deploy and is required "+
+					"before packaging or publishing",
+			)
+		}
+		botResourceGroup := readOptionalEnvValue(
+			ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name),
+		)
+		botArmID, err = teamsBotArmID(subscriptionID, resourceGroup, botName, botResourceGroup)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	endpoint, err := resolveAgentEndpoint(ctx, "", "")
@@ -190,11 +231,14 @@ func resolveTeamsPackContext(
 	}
 
 	return &teamsPackContext{
-		proj:        proj,
-		svc:         svc,
-		agentName:   agentName,
-		botArmID:    botArmID,
-		agentClient: agent_api.NewAgentClient(endpoint, credential),
+		proj:              proj,
+		svc:               svc,
+		agentName:         agentName,
+		botArmID:          botArmID,
+		blueprintClientID: blueprintClientID,
+		agentClient:       agent_api.NewAgentClient(endpoint, credential),
+		activityProfile:   activityProfile,
+		activitySettings:  serviceTargetConfig.Activity,
 	}, nil
 }
 
@@ -219,9 +263,13 @@ func teamsBotArmID(subscriptionID, defaultResourceGroup, botName, botResourceGro
 // app package/publish request. Zero-value fields fall back to sensible defaults
 // derived from the agent name.
 type teamsAppRequestOptions struct {
-	scope       teamsPackScope
-	displayName string
-	appVersion  string
+	scope             teamsPackScope
+	agentName         string
+	useCase           project.ActivityUseCase
+	displayName       string
+	appVersion        string
+	blueprintClientID string
+	publish           *project.ActivityPublishConfig
 }
 
 // buildTeamsAppPackageRequest assembles the Microsoft 365 request body shared by
@@ -235,10 +283,33 @@ func buildTeamsAppPackageRequest(
 ) agent_api.TeamsAppPackageRequest {
 	displayName := strings.TrimSpace(opts.displayName)
 	appVersion := strings.TrimSpace(opts.appVersion)
+	publish := opts.publish
+	if publish != nil {
+		if displayName == "" {
+			displayName = strings.TrimSpace(publish.AgentDisplayName)
+		}
+		if appVersion == "" {
+			appVersion = strings.TrimSpace(publish.AppVersion)
+		}
+		if strings.TrimSpace(publish.PublishScope) != "" {
+			if scope, err := resolveTeamsPackScope(publish.PublishScope); err == nil {
+				if strings.TrimSpace(opts.scope.api) == "" {
+					opts.scope = scope
+				}
+			}
+		}
+	}
 	if appVersion == "" {
 		appVersion = "1.0.0"
 	}
-	return agent_api.TeamsAppPackageRequest{
+	if displayName == "" {
+		displayName = strings.TrimSpace(opts.agentName)
+	}
+	if displayName == "" {
+		displayName = "Agent"
+	}
+
+	request := agent_api.TeamsAppPackageRequest{
 		BotServiceArmID:          botArmID,
 		PublishScope:             opts.scope.api,
 		AgentDisplayName:         displayName,
@@ -251,6 +322,46 @@ func buildTeamsAppPackageRequest(
 		TermsOfUseURL:            "https://learn.microsoft.com/azure/ai-foundry/",
 		CanRespondWithoutMention: true,
 	}
+	if publish != nil {
+		if opts.useCase == project.ActivityUseCaseDigitalWorker {
+			request.PublishAsAutopilot = publish.PublishAsAutopilot
+			request.UseAgenticUserTemplate = publish.AgenticUserTemplate != nil
+		}
+		if opts.useCase == project.ActivityUseCaseDigitalWorker && publish.AgenticUserTemplate != nil {
+			request.AgenticUserTemplate = &agent_api.AgenticUserTemplate{
+				ID:                       publish.AgenticUserTemplate.ID,
+				File:                     publish.AgenticUserTemplate.File,
+				SchemaVersion:            publish.AgenticUserTemplate.SchemaVersion,
+				AgentIdentityBlueprintID: opts.blueprintClientID,
+				CommunicationProtocol:    publish.AgenticUserTemplate.CommunicationProtocol,
+			}
+		}
+		if request.AgentDisplayName == "" && strings.TrimSpace(publish.AgentDisplayName) != "" {
+			request.AgentDisplayName = publish.AgentDisplayName
+		}
+		if strings.TrimSpace(publish.ShortDescription) != "" {
+			request.ShortDescription = publish.ShortDescription
+		}
+		if strings.TrimSpace(publish.FullDescription) != "" {
+			request.FullDescription = publish.FullDescription
+		}
+		if strings.TrimSpace(publish.DeveloperName) != "" {
+			request.DeveloperName = publish.DeveloperName
+		}
+		if strings.TrimSpace(publish.DeveloperWebsiteURL) != "" {
+			request.DeveloperWebsiteURL = publish.DeveloperWebsiteURL
+		}
+		if strings.TrimSpace(publish.PrivacyURL) != "" {
+			request.PrivacyURL = publish.PrivacyURL
+		}
+		if strings.TrimSpace(publish.TermsOfUseURL) != "" {
+			request.TermsOfUseURL = publish.TermsOfUseURL
+		}
+		if publish.CanRespondWithoutMention != nil {
+			request.CanRespondWithoutMention = *publish.CanRespondWithoutMention
+		}
+	}
+	return request
 }
 
 // teamsAppDeepLink returns the Teams v2 launcher link for a Microsoft Organization

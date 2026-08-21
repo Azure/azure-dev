@@ -13,6 +13,56 @@ Use `--no-inspector` to run only the local agent process:
 azd ai agent run --no-inspector
 ```
 
+## Publishing a Digital Worker
+
+An Activity-protocol hosted agent can be published as a Microsoft 365 Digital
+Worker. Declare the Digital Worker settings on the `azure.ai.agent` service in
+`azure.yaml`, deploy the agent, and then publish it:
+
+```yaml
+services:
+  my-digital-worker:
+    host: azure.ai.agent
+    project: src/my-digital-worker
+    language: python
+    kind: hosted
+    name: my-digital-worker
+    protocols:
+      - protocol: activity
+        version: 2.0.0
+    activity:
+      useCase: digital_worker
+      publish:
+        publishScope: tenant
+        agentDisplayName: My Digital Worker
+        agenticUserTemplate:
+          id: digitalWorkerTemplate
+          file: agenticUserTemplateManifest.json
+          schemaVersion: 0.1.0-preview
+          communicationProtocol: activityProtocol
+```
+
+The `activity.publish` block is shared Microsoft 365 app publish metadata for
+Activity use cases (including `simple`). For `digital_worker`, azd enforces
+additional constraints: `publish` must be present, `publishScope` must be
+`tenant`, and `agenticUserTemplate` must include `id`, `file`,
+`schemaVersion`, and `communicationProtocol`. The publish request sets
+`publishAsAutopilot` automatically to `true` for this use case; users do not
+need to declare it in YAML. The Agent Identity Blueprint ID is generated during
+deployment and added to the publish request automatically.
+
+```bash
+azd deploy
+azd ai agent publish
+```
+
+For `simple` Activity agents, `publishScope` accepts `shared` or `tenant`. For
+`digital_worker`, `publishScope` is always `tenant`.
+An explicit `azd ai agent publish --scope <scope>` overrides the configured
+value where allowed by the use case. Use `--display-name` and `--app-version`
+to override the corresponding configured publish metadata for one command
+invocation.
+
 The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
 move it, which is what you need when running two agents side by side or when a
 stale process still holds the default port:

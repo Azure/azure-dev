@@ -19,6 +19,20 @@ import (
 // APIs and currently expose only "v1".
 const Microsoft365APIVersion = "v1"
 
+// Microsoft365DigitalWorkerAPIVersion is the project data-plane API version
+// used by the Digital Worker publish flow.
+const Microsoft365DigitalWorkerAPIVersion = "2025-11-15-preview"
+
+// AgenticUserTemplate identifies the agentic-user manifest embedded in a
+// Digital Worker Teams app package.
+type AgenticUserTemplate struct {
+	ID                       string `json:"Id"`
+	File                     string `json:"File"`
+	SchemaVersion            string `json:"SchemaVersion"`
+	AgentIdentityBlueprintID string `json:"AgentIdentityBlueprintId"`
+	CommunicationProtocol    string `json:"CommunicationProtocol"`
+}
+
 // TeamsAppPackageRequest is the body for the Microsoft 365 "zip" endpoint. The
 // agent is resolved server-side from the agent name in the route, so the body
 // only carries display metadata and the publish scope. Field casing matches the
@@ -29,19 +43,20 @@ const Microsoft365APIVersion = "v1"
 // UseAgenticUserTemplate are false. PublishScope "Personal" produces a package
 // intended for per-user sideload (no Teams admin required).
 type TeamsAppPackageRequest struct {
-	PublishAsAutopilot       bool   `json:"PublishAsAutopilot"`
-	BotServiceArmID          string `json:"BotServiceArmId"`
-	UseAgenticUserTemplate   bool   `json:"useAgenticUserTemplate"`
-	PublishScope             string `json:"PublishScope"`
-	AgentDisplayName         string `json:"AgentDisplayName"`
-	AppVersion               string `json:"AppVersion"`
-	ShortDescription         string `json:"ShortDescription"`
-	FullDescription          string `json:"FullDescription"`
-	DeveloperName            string `json:"DeveloperName"`
-	DeveloperWebsiteURL      string `json:"DeveloperWebsiteUrl"`
-	PrivacyURL               string `json:"PrivacyUrl"`
-	TermsOfUseURL            string `json:"TermsOfUseUrl"`
-	CanRespondWithoutMention bool   `json:"CanRespondWithoutMention"`
+	PublishAsAutopilot       bool                 `json:"PublishAsAutopilot"`
+	BotServiceArmID          string               `json:"BotServiceArmId"`
+	UseAgenticUserTemplate   bool                 `json:"useAgenticUserTemplate"`
+	AgenticUserTemplate      *AgenticUserTemplate `json:"agenticUserTemplate,omitempty"`
+	PublishScope             string               `json:"PublishScope"`
+	AgentDisplayName         string               `json:"AgentDisplayName"`
+	AppVersion               string               `json:"AppVersion"`
+	ShortDescription         string               `json:"ShortDescription"`
+	FullDescription          string               `json:"FullDescription"`
+	DeveloperName            string               `json:"DeveloperName"`
+	DeveloperWebsiteURL      string               `json:"DeveloperWebsiteUrl"`
+	PrivacyURL               string               `json:"PrivacyUrl"`
+	TermsOfUseURL            string               `json:"TermsOfUseUrl"`
+	CanRespondWithoutMention bool                 `json:"CanRespondWithoutMention"`
 }
 
 // DownloadTeamsAppPackage calls the Microsoft 365 "zip" endpoint and returns the

@@ -872,6 +872,8 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 		"",
 		"",
 		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -935,6 +937,8 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 		"",
 		"",
 		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -960,6 +964,8 @@ func TestRegisterAgentEnvironmentVariables_PersistsActivityBotName(t *testing.T)
 		"published-bot",
 		"bot-rg",
 		true,
+		ActivityProfile{},
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, "published-bot", envStub.values[envkey.AgentBotName("my-svc")])
@@ -992,6 +998,8 @@ func TestRegisterAgentEnvironmentVariables_PersistsInstanceIdentity(t *testing.T
 		"",
 		"",
 		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(
@@ -1151,6 +1159,8 @@ func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
 		"",
 		"",
 		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent name is empty")
@@ -1176,9 +1186,49 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 		"",
 		"",
 		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent version is empty")
+}
+
+func TestRegisterAgentEnvironmentVariables_PersistsDigitalWorkerBlueprintClientID(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newEnvTestClient(t, envStub),
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+	publish := &ActivityPublishConfig{
+		PublishAsAutopilot: true,
+		PublishScope:       "tenant",
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		&azdext.ServiceConfig{Name: "my-svc"},
+		&agent_api.AgentVersionObject{
+			Name:    "my-agent",
+			Version: "1.0.0",
+			Blueprint: &agent_api.BlueprintInfo{
+				ClientID: "blueprint-client-id",
+			},
+		},
+		nil,
+		"",
+		"",
+		false,
+		ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
+		&ActivitySettings{UseCase: ActivityUseCaseDigitalWorker, Publish: publish},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "blueprint-client-id", envStub.values[envkey.AgentBlueprintClientID("my-svc")])
+	require.Empty(t, envStub.values[envkey.AgentBotName("my-svc")])
+	require.Empty(t, envStub.values[envkey.AgentBotResourceGroup("my-svc")])
+	require.Empty(t, envStub.values[envkey.AgentBotOwned("my-svc")])
 }
 
 func TestDisplayableProtocolFor(t *testing.T) {
@@ -1424,6 +1474,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 		"test-agent", "1.0.0",
 		"", // no project resource ID — skip playground
 		ep,
+		ActivityProfile{},
 		protocols,
 	)
 
@@ -1459,6 +1510,7 @@ func TestDeployArtifacts_ResponsesProtocol(t *testing.T) {
 		"prompt-agent", "2.0.0",
 		"", // no project resource ID — skip playground
 		ep,
+		ActivityProfile{},
 		protocols,
 	)
 
@@ -1479,9 +1531,33 @@ func TestDeployArtifacts_EmptyProtocols_NoEndpoints(t *testing.T) {
 	artifacts := p.deployArtifacts(
 		"agent", "1.0.0",
 		"", "https://ep.azure.com",
+		ActivityProfile{},
 		nil,
 	)
 	require.Empty(t, artifacts)
+}
+
+func TestDeployArtifacts_ActivityAgent_SkipsPlaygroundPortalLink(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	const ep = "https://myproject.services.ai.azure.com"
+
+	protocols := []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "1.0.0"},
+	}
+
+	artifacts := p.deployArtifacts(
+		"activity-agent", "1.0.0",
+		"/subscriptions/123/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj",
+		ep,
+		ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple},
+		protocols,
+	)
+
+	require.Len(t, artifacts, 1)
+	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
+	require.NotContains(t, artifacts[0].Location, "/build/agents/")
 }
 
 // TestPackage_NoEarlyFailureWithoutACR is a regression test ensuring that

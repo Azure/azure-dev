@@ -154,7 +154,18 @@ func newCheckConnections(deps Dependencies) Check {
 				projectIDReader = readProjectResourceID
 			}
 			projectID, err := projectIDReader(ctx, deps.AzdClient)
-			if err != nil || projectID == "" {
+			if err != nil {
+				return Result{
+					Status: StatusSkip,
+					Message: fmt.Sprintf(
+						"skipped: could not read %s from the current azd "+
+							"environment (%s).",
+						projectIDVar, err),
+					Suggestion: "Retry `azd ai agent doctor`. If the error " +
+						"persists, verify the selected azd environment.",
+				}
+			}
+			if projectID == "" {
 				return Result{
 					Status: StatusSkip,
 					Message: fmt.Sprintf(
@@ -209,18 +220,43 @@ func newCheckConnections(deps Dependencies) Check {
 // normalizes casing on round-trip.
 func parseAccountProjectFromProjectID(projectID string) (account, project string, err error) {
 	parts := strings.Split(projectID, "/")
-	for i := 0; i+1 < len(parts); i++ {
-		switch strings.ToLower(parts[i]) {
-		case "accounts":
-			account = parts[i+1]
-		case "projects":
-			project = parts[i+1]
+	if len(parts) != 11 || parts[0] != "" {
+		return "", "", fmt.Errorf(
+			"invalid Foundry project resource ID %q",
+			projectID,
+		)
+	}
+
+	markers := map[int]string{
+		1: "subscriptions",
+		3: "resourceGroups",
+		5: "providers",
+		7: "accounts",
+		9: "projects",
+	}
+	for index, marker := range markers {
+		if !strings.EqualFold(parts[index], marker) {
+			return "", "", fmt.Errorf(
+				"invalid Foundry project resource ID %q",
+				projectID,
+			)
 		}
 	}
-	if account == "" || project == "" {
-		return "", "", fmt.Errorf("missing account / project in %q", projectID)
+	if !strings.EqualFold(parts[6], "Microsoft.CognitiveServices") {
+		return "", "", fmt.Errorf(
+			"invalid Foundry project resource ID %q",
+			projectID,
+		)
 	}
-	return account, project, nil
+	for _, index := range []int{2, 4, 6, 8, 10} {
+		if strings.TrimSpace(parts[index]) == "" {
+			return "", "", fmt.Errorf(
+				"invalid Foundry project resource ID %q",
+				projectID,
+			)
+		}
+	}
+	return parts[8], parts[10], nil
 }
 
 // classifyConnections produces the Pass/Fail Result by joining the

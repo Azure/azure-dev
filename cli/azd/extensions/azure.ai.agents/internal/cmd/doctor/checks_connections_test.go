@@ -166,11 +166,40 @@ func TestCheckConnections_SkipsWhenProjectIDUnset(t *testing.T) {
 	}
 	deps := Dependencies{
 		assembleState:           fixedAssembler(state),
-		readProjectResourceIDFn: fixedProjectIDReader("", errors.New("not set")),
+		readProjectResourceIDFn: fixedProjectIDReader("", nil),
 	}
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusSkip, res.Status)
 	require.Contains(t, res.Message, "AZURE_AI_PROJECT_ID")
+}
+
+func TestCheckConnections_SkipsWhenProjectIDReadFails(t *testing.T) {
+	t.Parallel()
+	state := &nextstep.State{
+		HasConnections: true,
+		Connections: []nextstep.ResourceRef{
+			{Name: "blob-storage", ServiceName: "chat"},
+		},
+	}
+	var probeCalls int
+	deps := Dependencies{
+		assembleState: fixedAssembler(state),
+		readProjectResourceIDFn: fixedProjectIDReader(
+			"", errors.New("environment service unavailable"),
+		),
+		probeFoundryConnections: func(
+			_ context.Context, _, _ string,
+		) ([]string, error) {
+			probeCalls++
+			return nil, nil
+		},
+	}
+	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
+	require.Equal(t, StatusSkip, res.Status)
+	require.Contains(t, res.Message, "could not read AZURE_AI_PROJECT_ID")
+	require.Contains(t, res.Message, "environment service unavailable")
+	require.NotContains(t, res.Message, "is not set")
+	require.Equal(t, 0, probeCalls)
 }
 
 func TestCheckConnections_SkipsWhenProjectIDUnparsable(t *testing.T) {
@@ -181,13 +210,25 @@ func TestCheckConnections_SkipsWhenProjectIDUnparsable(t *testing.T) {
 			{Name: "blob-storage", ServiceName: "chat"},
 		},
 	}
+	var probeCalls int
 	deps := Dependencies{
-		assembleState:           fixedAssembler(state),
-		readProjectResourceIDFn: fixedProjectIDReader("garbage", nil),
+		assembleState: fixedAssembler(state),
+		readProjectResourceIDFn: fixedProjectIDReader(
+			"/subscriptions/sub/resourceGroups/rg/providers/Other.Provider/"+
+				"accounts/acct/projects/proj",
+			nil,
+		),
+		probeFoundryConnections: func(
+			_ context.Context, _, _ string,
+		) ([]string, error) {
+			probeCalls++
+			return nil, nil
+		},
 	}
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusSkip, res.Status)
 	require.Contains(t, res.Message, "could not parse account / project")
+	require.Equal(t, 0, probeCalls)
 }
 
 func TestCheckConnections_SkipsWhenProbeErrors(t *testing.T) {
@@ -331,7 +372,7 @@ func TestParseAccountProjectFromProjectID(t *testing.T) {
 		{
 			name: "mixed-case segment markers",
 			input: "/SUBSCRIPTIONS/sub-1/RESOURCEGROUPS/rg-1" +
-				"/providers/Microsoft.CognitiveServices/ACCOUNTS/acct-2/PROJECTS/p-2",
+				"/PROVIDERS/MICROSOFT.COGNITIVESERVICES/ACCOUNTS/acct-2/PROJECTS/p-2",
 			wantAccount: "acct-2",
 			wantProject: "p-2",
 		},
@@ -348,6 +389,16 @@ func TestParseAccountProjectFromProjectID(t *testing.T) {
 		{
 			name:      "garbage input",
 			input:     "not-a-resource-id",
+			wantError: true,
+		},
+		{
+			name:      "account and project without ARM path",
+			input:     "accounts/acct/projects/proj",
+			wantError: true,
+		},
+		{
+			name:      "extra resource segment",
+			input:     validProjectResourceID + "/child",
 			wantError: true,
 		},
 	}

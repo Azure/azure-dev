@@ -470,6 +470,9 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.version` | string | Extension version |
 | `extension.event` | string | Extension-chosen event name on an `ext.usage` span |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
+| `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
+| `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
+| `ext.outcome` | string | Agent Inspector funnel-stage outcome: currently `succeeded` (`inspector.funnel.stage`) |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
 | `extension.installed.source.category` | string[] | Installed extension source categories (`id@category`) |
 | `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |
@@ -498,6 +501,13 @@ the recorded values to that privacy review. A report from any other install
 source succeeds but records nothing, as does any report past the limit of 100
 spans per `azd` invocation. This is a configuration-based admission check, not
 a cryptographic provenance guarantee.
+
+Reviewed first-party extension usage events currently include:
+
+| Extension | `extension.event` | Trigger | Dynamic attributes |
+|-----------|-------------------|---------|--------------------|
+| `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
+| `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage=ui_ready`; `ext.outcome=succeeded`; this does not indicate agent connection |
 
 Source-category fields are classified from the configured source type and location, not the user-defined source name.
 Raw source names, URLs, paths, and hosts are not emitted in those fields.

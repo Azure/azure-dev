@@ -15,6 +15,7 @@ import (
 
 	"azureaiinspector/internal/inspector"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/cli/browser"
 	"github.com/spf13/cobra"
 )
@@ -98,6 +99,9 @@ func runInspector(ctx context.Context, flags *inspectorFlags) error {
 		}
 	}
 
+	reportUsage, closeTelemetry := newUsageReporter(ctx)
+	defer closeTelemetry()
+
 	srv := inspector.New(inspector.Config{
 		Port:           flags.inspectorPort,
 		AgentPort:      flags.port,
@@ -106,6 +110,7 @@ func runInspector(ctx context.Context, flags *inspectorFlags) error {
 		ConversationID: flags.conversationID,
 		SSESink:        sseSink,
 		Silent:         flags.silent,
+		ReportUsage:    reportUsage,
 	})
 
 	url := srv.URL()
@@ -135,6 +140,31 @@ func runInspector(ctx context.Context, flags *inspectorFlags) error {
 	}()
 
 	return srv.Start(ctx, ready)
+}
+
+func newUsageReporter(ctx context.Context) (inspector.ReportUsageFunc, func()) {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		log.Printf("inspector: failed to create telemetry client: %v", err)
+		return nil, func() {}
+	}
+
+	return usageReporter(ctx, azdClient.Telemetry()), azdClient.Close
+}
+
+func usageReporter(ctx context.Context, telemetry azdext.TelemetryServiceClient) inspector.ReportUsageFunc {
+	// Capture the command context because WebSocket request contexts do not carry
+	// the azd access token or parent trace metadata needed by ReportUsage.
+	reportUsage := func(eventName string, attributes map[string]string) {
+		if _, err := telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{
+			EventName:  eventName,
+			Attributes: attributes,
+		}); err != nil {
+			log.Printf("inspector: failed to report %s: %v", eventName, err)
+		}
+	}
+
+	return reportUsage
 }
 
 // injectSSEEvents wraps the local agentserver SSE stream so it matches the

@@ -40,6 +40,21 @@ azd ai inspector launch --session-id <uuid> --conversation-id <uuid>
 | `--session-id` | _(SPA mints UUID)_ | Optional explicit session ID for the SPA. |
 | `--conversation-id` | _(SPA mints UUID)_ | Optional explicit conversation ID for the SPA. |
 
+## Telemetry
+
+When the SPA sends `setViewReady` after mounting, the extension reports this
+best-effort usage event through azd:
+
+```text
+extension.event = inspector.funnel.stage
+ext.stage = ui_ready
+ext.outcome = succeeded
+```
+
+The event means the Inspector UI loaded. It does not mean that the UI connected
+to the agent or sent a request. No ports, URLs, IDs, prompts, or responses are
+included.
+
 ## Local Development
 
 ### Prerequisites

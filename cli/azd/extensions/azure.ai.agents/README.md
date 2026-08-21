@@ -83,6 +83,20 @@ effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
 than the Agent Inspector, and `--port 8087` on its own collides with the
 inspector's own default UI port.
 
+### Local client route telemetry
+
+When installed from the official registry, the extension reports the
+`local_client.route.selected` usage event after `azd ai agent run` resolves the
+service and protocol profile. Its `ext.route` attribute is exactly one of:
+
+- `inspector` for a non-activity agent;
+- `playground` for an activity-protocol agent; or
+- `suppressed` when `--no-client` or the deprecated `--no-inspector` is set.
+
+The event is emitted before checking client availability, starting the local
+agent, or launching a client. It records route selection, not successful client
+launch.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the

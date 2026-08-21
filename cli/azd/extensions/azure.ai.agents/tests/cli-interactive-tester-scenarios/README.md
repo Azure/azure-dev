@@ -52,9 +52,11 @@ after its Tier 1 prerequisites pass, runs Tier 2 serially, and writes a final re
 
 For a **subset** (e.g. "just the `init` scenarios" or "everything in Tier 0") name the subset
 instead — the `foundry-extension-scenario-suite-run` skill filters by `tags:` via
-`list_scenarios`. If any Tier 2 scenario matches, the concrete plan automatically adds
-`2.00-setup` and `2.99-teardown` so filtered runs retain their full resource lifecycle. See
-[Tags](#tags) for the taxonomy.
+`list_scenarios`. The concrete plan automatically adds every selected scenario's `requires:`
+prerequisites; for example, a `verify-deploy` filter also adds the Tier 1 scenarios that create
+the scaffolds. If any Tier 2 scenario matches, the plan also adds `2.00-setup` and
+`2.99-teardown` so filtered runs retain their full resource lifecycle. See [Tags](#tags) for
+the taxonomy.
 
 ## Paths run inside WSL (on Windows)
 

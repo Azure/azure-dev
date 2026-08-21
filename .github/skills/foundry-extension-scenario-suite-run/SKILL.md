@@ -111,12 +111,21 @@ ask via `ask_user` before enumerating.
 list_scenarios(root="<scenarios-dir>", tags=[<filter>, ...])   # omit tags for the whole suite
 ```
 
-Group the returned scenarios by tier (0 / 1 / 1b / 2). If the result contains **any Tier 2
-scenario**, add `tier2/2.00-setup-deploy-shared-agent.yaml` and
-`tier2/2.99-teardown-down.yaml` to the concrete set, deduplicating them if already present.
-This lifecycle closure is mandatory even when a tag filter such as `cmd:invoke` did not match
-the setup/teardown files directly. The expanded grouping drives both the cost gate and run
-order.
+Build the concrete set before grouping or confirmation:
+
+1. Inspect every selected scenario's `requires:` field. Recursively add each referenced
+   prerequisite scenario, deduplicating paths, until the dependency graph is closed. A
+   `verify-deploy` filter therefore adds the matching Tier 1 producers that create its
+   scaffolds. If a referenced scenario does not exist, stop with a plan-construction error
+   rather than scheduling a dependent that can only be skipped.
+2. If the expanded set contains **any Tier 2 scenario**, add
+   `tier2/2.00-setup-deploy-shared-agent.yaml` and
+   `tier2/2.99-teardown-down.yaml` to the concrete set, deduplicating them if already present.
+   This lifecycle closure is mandatory even when a tag filter such as `cmd:invoke` did not
+   match the setup/teardown files directly.
+
+Group the dependency- and lifecycle-closed set by tier (0 / 1 / 1b / 2). The expanded grouping
+drives both the cost gate and run order.
 
 ### Step 3 — Confirm the plan (cost gate)
 
@@ -127,7 +136,8 @@ running:
 - If the set includes **Tier 1**, confirm `az login` is done.
 - If the set includes **Tier 1b** or **Tier 2**, require an **explicit cost acknowledgement**
   ("Tier 1b/2 provisions real Azure resources and incurs cost — proceed?"). If the user
-  declines, drop the cost-incurring tiers and run only what remains.
+  declines, drop the cost-incurring tiers and any prerequisite scenarios added solely for
+  those dropped dependents; retain scenarios that matched the user's original filter.
 
 Generate one `<run-id>` per the shared prerequisites and reuse it for the whole sweep. All
 artifacts go under `<scenarios-dir>/.reports/<run-id>/`.
@@ -191,8 +201,9 @@ Never soften a real regression to make the table green.
 ## Exit criteria
 
 - The tag/tier filter was resolved from the user's request (or confirmed as a whole-suite run),
-  and the concrete scenario set was **confirmed by the user** — including an explicit cost
-  acknowledgement before any Tier 1b or Tier 2 run.
+  every selected scenario's `requires:` dependency graph was added to the concrete set, and
+  that set was **confirmed by the user** — including an explicit cost acknowledgement before
+  any Tier 1b or Tier 2 run.
 - The shared gates (prerequisites, `azd` binary verify, recipe validation) passed before any
   fan-out.
 - Every selected scenario was driven to a recorded PASS / FAIL / ⏭️ SKIPPED with duration and

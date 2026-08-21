@@ -96,7 +96,12 @@ gh pr view --json number,url,headRefName,baseRefName,title
    returned rows locally to the tiers approved in Step 4. Never add tier tags to the same
    query to simulate an AND filter. Broad whole-tier coverage is a separate tier-only query.
 
-4. If the result contains **any Tier 2 scenario**, add
+4. Inspect every retained scenario's `requires:` field and recursively add its referenced
+   prerequisites to the concrete plan, deduplicating paths. If a referenced scenario does not
+   exist, stop with a plan-construction error rather than scheduling a dependent that can only
+   be skipped.
+
+5. If the dependency-closed result contains **any Tier 2 scenario**, add
    `tier2/2.00-setup-deploy-shared-agent.yaml` and
    `tier2/2.99-teardown-down.yaml` to the concrete plan, deduplicating them if already
    selected. This lifecycle closure happens before cost confirmation so the user sees and
@@ -111,7 +116,8 @@ and confirm via `ask_user` before running:
 - If the set includes **Tier 1**, confirm `az login` is done.
 - If the set includes **Tier 1b** or **Tier 2**, require an **explicit cost acknowledgement**
   ("Tier 1b/2 provisions real Azure resources and incurs cost — proceed?"). If the user
-  declines, drop cost-incurring tiers and run only Tier 0/1.
+  declines, drop cost-incurring tiers and prerequisites added solely for those dropped
+  dependents; retain Tier 0/1 scenarios selected independently by the impact mapping.
 
 Generate one `<run-id>` per `prerequisites.md` and reuse it for the whole run. All artifacts go
 under `<scenarios-dir>/.reports/<run-id>/`.

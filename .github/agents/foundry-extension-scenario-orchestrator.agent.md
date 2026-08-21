@@ -64,8 +64,10 @@ source — read it, don't restate it.
    a worker.
 3. **Cost / consent gate.** List the plan grouped by tier. Tier 0 is free; Tier 1 needs
    `az login`; **Tier 1b and Tier 2 provision real Azure resources** and require an *explicit*
-   cost acknowledgement before running. Before showing this plan, close any Tier 2 selection
-   over `2.00-setup` and `2.99-teardown`. If the user declines, drop the cost-incurring tiers.
+   cost acknowledgement before running. Before showing this plan, recursively add every
+   selected scenario's `requires:` prerequisites, then close any Tier 2 selection over
+   `2.00-setup` and `2.99-teardown`. If the user declines, drop the cost-incurring tiers and
+   prerequisites added solely for those dropped dependents.
 4. **Recipe validation (mandatory).** Before fanning out, drive one fast Tier 0 scenario
    (e.g. `0.01-version`) end-to-end — spawn a single `foundry-extension-scenario-worker` and wait. If it fails
    with an infrastructure error, **stop the whole run** and fix the environment (re-run the

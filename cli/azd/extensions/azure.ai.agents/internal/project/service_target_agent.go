@@ -2330,7 +2330,11 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentWithMode(
 	remoteAgent, getErr := agentClient.GetVoiceAgentUnified(
 		ctx, request.Name, agent_api.AgentEndpointAPIVersion, overriddenHost,
 	)
-	if getErr == nil && remoteAgent != nil {
+	shouldUpdate, decisionErr := shouldUpdateVoiceAgent(remoteAgent, getErr)
+	if decisionErr != nil {
+		return nil, exterrors.OpCreateAgent, decisionErr
+	}
+	if shouldUpdate {
 		progress("Updating voice agent using unified API")
 		updateRequest := &agent_api.UpdateAgentRequest{
 			CreateAgentVersionRequest: request.CreateAgentVersionRequest,
@@ -2340,15 +2344,20 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentWithMode(
 		)
 		return agentObject, exterrors.OpUpdateAgent, err
 	}
-	if getErr != nil {
-		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
-			return nil, exterrors.OpCreateAgent, getErr
-		}
-	}
 
 	progress("Creating voice agent using unified API")
 	agentObject, err := agentClient.CreateVoiceAgentUnified(ctx, request, agent_api.AgentEndpointAPIVersion, overriddenHost)
 	return agentObject, exterrors.OpCreateAgent, err
+}
+
+func shouldUpdateVoiceAgent(remoteAgent *agent_api.AgentObject, getErr error) (bool, error) {
+	if getErr == nil {
+		return remoteAgent != nil, nil
+	}
+	if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); ok && respErr.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	return false, getErr
 }
 
 func voiceAgentEndpoint(projectEndpoint string, agentName string, apiMode voiceAgentAPIMode) string {

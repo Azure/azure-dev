@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -745,6 +746,32 @@ func TestValidateVoiceAgentDeployResponse(t *testing.T) {
 			voiceAgentAPIModeUnified,
 		)
 		require.ErrorContains(t, err, "missing latest agent version")
+	})
+}
+
+func TestShouldUpdateVoiceAgent(t *testing.T) {
+	t.Run("remote found updates", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(&agent_api.AgentObject{Name: "voice"}, nil)
+		require.NoError(t, err)
+		require.True(t, update)
+	})
+
+	t.Run("remote nil creates", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(nil, nil)
+		require.NoError(t, err)
+		require.False(t, update)
+	})
+
+	t.Run("not found creates", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(nil, &azcore.ResponseError{StatusCode: http.StatusNotFound})
+		require.NoError(t, err)
+		require.False(t, update)
+	})
+
+	t.Run("other get error returns error", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(nil, &azcore.ResponseError{StatusCode: http.StatusInternalServerError})
+		require.Error(t, err)
+		require.False(t, update)
 	})
 }
 

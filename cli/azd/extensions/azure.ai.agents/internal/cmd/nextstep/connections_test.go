@@ -509,3 +509,51 @@ resources:
 	require.Len(t, state.Connections, 1)
 	assert.Equal(t, "ApiKey | https://bundled.example", state.Connections[0].Detail)
 }
+
+func TestAssembleState_BundledLegacyConfigFallback(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "empty project root"},
+		{name: "project root", path: t.TempDir()},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			agent := newAgentService(t, map[string]any{
+				"resumeSessionOnDeploy": true,
+			})
+			agent.Config = mustStruct(t, map[string]any{
+				"kind": "hostedAgent",
+				"connections": []any{
+					map[string]any{
+						"name":     "legacy-bundled",
+						"category": "ApiKey",
+						"target":   "https://legacy.example",
+					},
+				},
+			})
+
+			src := &fakeSource{
+				envName: "dev",
+				project: &azdext.ProjectConfig{
+					Path: test.path,
+					Services: map[string]*azdext.ServiceConfig{
+						"echo": agent,
+					},
+				},
+			}
+
+			state, errs := assembleState(t.Context(), src)
+			require.Empty(t, errs)
+			require.Len(t, state.Connections, 1)
+			assert.Equal(t, "legacy-bundled", state.Connections[0].Name)
+			assert.Equal(t, "ApiKey | https://legacy.example",
+				state.Connections[0].Detail)
+		})
+	}
+}

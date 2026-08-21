@@ -354,20 +354,29 @@ func resolveAgentDefinition(
 			continue
 		}
 		raw := candidate.props.AsMap()
-		if projectRoot == "" {
-			return raw, nil
+		resolved := raw
+		if projectRoot != "" {
+			var err error
+			resolved, err = foundry.ResolveFileRefs(raw, projectRoot)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"resolve %s: %w",
+					candidate.name,
+					err,
+				)
+			}
 		}
-		resolved, err := foundry.ResolveFileRefs(raw, projectRoot)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"resolve %s: %w",
-				candidate.name,
-				err,
-			)
+		if !mapHasKind(resolved) {
+			continue
 		}
 		return resolved, nil
 	}
 	return nil, nil
+}
+
+func mapHasKind(values map[string]any) bool {
+	kind, ok := values["kind"].(string)
+	return ok && strings.TrimSpace(kind) != ""
 }
 
 func decodeJSONMap(values map[string]any, out any) error {

@@ -1,13 +1,5 @@
 # Release History
 
-## 1.0.0-beta.12 (Unreleased)
-
-### Bugs Fixed
-
-- Suggest `azd provision` after init writes standalone
-  `azure.ai.connection` services, based on the services actually emitted;
-  successful provision clears the pending signal.
-
 ## 1.0.0-beta.11 (2026-08-20)
 
 ### Features Added

@@ -131,4 +131,5 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = {{ if eq .AcrMode "create" }}c
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = {{ if eq .AcrMode "create" }}containerRegistry.outputs.resourceId{{ else if or (eq .AcrMode "reuse-connect") (eq .AcrMode "already-connected") }}existingAcrResourceId{{ else }}''{{ end }}
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = projectResources.outputs.acrConnectionName
 output AZURE_AI_PROJECT_CONNECTION_NAMES string = projectResources.outputs.connectionNames
+output AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT string = projectEndpoint
 output AZD_FOUNDRY_ACR_MODE string = '{{ .AcrMode }}'

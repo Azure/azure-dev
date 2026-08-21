@@ -170,6 +170,28 @@ services:
 		assert.False(t, called, "resource group lookup must not run for a brownfield project")
 	})
 
+	t.Run("checks brownfield adjunct resource group in create mode", func(t *testing.T) {
+		proj := &validateStubProjectServer{project: &azdext.ProjectConfig{
+			Path:  writeAzureYAML(t, "https://acct.services.ai.azure.com/api/projects/p"),
+			Infra: &azdext.InfraOptions{Provider: FoundryProviderName},
+		}}
+		env := &validateStubEnvServer{envName: "rgloc-test", get: map[string]string{
+			"AZD_FOUNDRY_ACR_MODE": "create",
+			envKeyFoundryRG:        "rg-adjunct",
+		}}
+		client := newValidateTestClient(t, proj, env)
+
+		c := &ResourceGroupLocationCheck{azdClient: client}
+		c.resourceGroupLocation = func(_ context.Context, _, resourceGroup string) (string, bool, error) {
+			assert.Equal(t, "rg-adjunct", resourceGroup)
+			return "eastus", true, nil
+		}
+
+		resp, err := c.Validate(t.Context(), provisionContext(sub, "westus2", "rg-x"), &azdext.ValidationCheckRequest{})
+		require.NoError(t, err)
+		require.Len(t, resp.Results, 1)
+	})
+
 	t.Run("skips brownfield project from azure.yml", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.WriteFile(

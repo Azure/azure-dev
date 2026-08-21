@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "3583723529212877840"
+      "templateHash": "6633403746269170516"
     }
   },
   "definitions": {
@@ -1668,6 +1668,10 @@
     "AZURE_AI_PROJECT_CONNECTION_NAMES": {
       "type": "string",
       "value": "[reference('resources').outputs.AZURE_AI_PROJECT_CONNECTION_NAMES.value]"
+    },
+    "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": {
+      "type": "string",
+      "value": "[reference('resources').outputs.FOUNDRY_PROJECT_ENDPOINT.value]"
     },
     "AZURE_FOUNDRY_NETWORK_MODE": {
       "type": "string",

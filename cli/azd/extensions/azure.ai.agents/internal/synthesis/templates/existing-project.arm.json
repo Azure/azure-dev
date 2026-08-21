@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "2790182356829884385"
+      "templateHash": "11013753549236288148"
     }
   },
   "definitions": {
@@ -702,6 +702,10 @@
     "AZURE_AI_PROJECT_CONNECTION_NAMES": {
       "type": "string",
       "value": "[reference('projectResources').outputs.connectionNames.value]"
+    },
+    "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": {
+      "type": "string",
+      "value": "[parameters('projectEndpoint')]"
     },
     "AZD_FOUNDRY_ACR_MODE": {
       "type": "string",

@@ -78,8 +78,7 @@ group is not removed.
 
 For an existing-project Bicep eject, the account and project resource group are
 never created by the generated template. Teardown can remove adjunct resources
-and project children created by that template, but does not own or delete the
-reused account or project.
+created by that template, but does not own or delete the reused account or project.
 
 ## Existing container registries
 

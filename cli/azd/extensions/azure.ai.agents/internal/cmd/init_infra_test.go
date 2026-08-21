@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -949,6 +950,31 @@ services:
 	assert.Contains(t, string(raw), "provider: microsoft.foundry")
 }
 
+func TestValidateExistingProjectEjectEnvironment(t *testing.T) {
+	t.Parallel()
+	endpoint := "https://account.services.ai.azure.com/api/projects/project"
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	require.NoError(t, validateExistingProjectEjectEnvironment(endpoint, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+		"AZURE_AI_PROJECT_ID":      resourceID,
+	}))
+
+	for _, values := range []map[string]string{
+		{"AZURE_AI_PROJECT_ID": resourceID},
+		{"FOUNDRY_PROJECT_ENDPOINT": endpoint},
+		{"FOUNDRY_PROJECT_ENDPOINT": "https://account.services.ai.azure.com/api/projects/other"},
+		{"FOUNDRY_PROJECT_ENDPOINT": endpoint, "AZURE_AI_PROJECT_ID": "/accounts/account/projects/project"},
+		{"AZURE_AI_PROJECT_ID": strings.TrimSuffix(resourceID, "/project") + "/other"},
+	} {
+		err := validateExistingProjectEjectEnvironment(endpoint, values)
+		require.Error(t, err)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+	}
+}
+
 func TestEjectInfra_ExistingProjectBicepSelectsAcrModule(t *testing.T) {
 	t.Parallel()
 
@@ -1001,8 +1027,12 @@ services:
 			t.Parallel()
 			dir := t.TempDir()
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), projectYAML)
+			env := maps.Clone(tt.env)
+			env["FOUNDRY_PROJECT_ENDPOINT"] = "https://acct.services.ai.azure.com/api/projects/p1"
+			env["AZURE_AI_PROJECT_ID"] = "/subscriptions/sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/acct/projects/p1"
 
-			require.NoError(t, ejectInfra(dir, "bicep", tt.env))
+			require.NoError(t, ejectInfra(dir, "bicep", env))
 			main, err := os.ReadFile(filepath.Join(dir, "infra", "main.bicep")) //nolint:gosec
 			require.NoError(t, err)
 			assert.Contains(t, string(main), "output AZD_FOUNDRY_ACR_MODE string = '"+tt.wantMode+"'")
@@ -1072,6 +1102,10 @@ services:
 			t.Parallel()
 			dir := t.TempDir()
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), projectYAML)
+			env := maps.Clone(env)
+			env["FOUNDRY_PROJECT_ENDPOINT"] = "https://acct.services.ai.azure.com/api/projects/p1"
+			env["AZURE_AI_PROJECT_ID"] = "/subscriptions/sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/acct/projects/p1"
 			require.NoError(t, ejectInfra(dir, "bicep", env))
 
 			out := filepath.Join(t.TempDir(), "main.json")

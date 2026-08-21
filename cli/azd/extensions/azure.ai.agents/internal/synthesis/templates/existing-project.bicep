@@ -136,4 +136,5 @@ output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = acrMode == 'none'
   : effectiveAcrResourceId
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = projectResources.outputs.acrConnectionName
 output AZURE_AI_PROJECT_CONNECTION_NAMES string = projectResources.outputs.connectionNames
+output AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT string = projectEndpoint
 output AZD_FOUNDRY_ACR_MODE string = acrMode

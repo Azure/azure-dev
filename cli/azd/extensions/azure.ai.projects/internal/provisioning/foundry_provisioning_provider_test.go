@@ -1304,6 +1304,77 @@ func TestProjectNameFromEndpoint(t *testing.T) {
 	assert.Equal(t, "", projectNameFromEndpoint(""))
 }
 
+func TestExistingProjectEndpointIdentity(t *testing.T) {
+	t.Parallel()
+	account, project := existingProjectEndpointIdentity(
+		"https://Account.services.ai.azure.com/api/projects/MyProject/",
+	)
+	assert.Equal(t, "account", account)
+	assert.Equal(t, "MyProject", project)
+}
+
+func TestPlannedOutputsMatchSelectedTemplate(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name      string
+		provider  FoundryProvisioningProvider
+		want      string
+		doNotWant string
+	}{
+		{
+			name:      "greenfield",
+			want:      "AZURE_FOUNDRY_NETWORK_MODE",
+			doNotWant: "AZD_FOUNDRY_ACR_MODE",
+		},
+		{
+			name: "existing project",
+			provider: FoundryProvisioningProvider{
+				brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			},
+			want:      "AZD_FOUNDRY_ACR_MODE",
+			doNotWant: "AZURE_FOUNDRY_NETWORK_MODE",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			outputs, err := tt.provider.PlannedOutputs(t.Context())
+			require.NoError(t, err)
+			names := make([]string, 0, len(outputs))
+			for _, output := range outputs {
+				names = append(names, output.Name)
+			}
+			assert.Contains(t, names, tt.want)
+			assert.NotContains(t, names, tt.doNotWant)
+			assert.Contains(t, names, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
+		})
+	}
+}
+
+func TestDestroyPreservesExistingProjectBindings(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		brownfieldEndpoint:            "https://account.services.ai.azure.com/api/projects/project",
+		existingProjectConnectionOnly: true,
+	}
+	result, err := p.Destroy(
+		t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true},
+		func(string) {},
+	)
+	require.NoError(t, err)
+	assert.Empty(t, result.InvalidatedEnvKeys)
+}
+
+func TestDestroyResultForExistingProjectOnlyClearsAdjunctState(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+	}
+	result := p.destroyResult()
+	assert.NotContains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_ID")
+	assert.NotContains(t, result.InvalidatedEnvKeys, "FOUNDRY_PROJECT_ENDPOINT")
+	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+}
+
 func TestDefaultResourceGroupName(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "rg-dev", defaultResourceGroupName("dev"))

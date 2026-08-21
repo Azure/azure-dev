@@ -548,6 +548,11 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		)
 	}
 	existingProject := endpoint != ""
+	if existingProject && len(environments) > 0 {
+		if err := validateExistingProjectEjectEnvironment(endpoint, environments[0]); err != nil {
+			return err
+		}
+	}
 
 	layerProvider := foundryLayerProvider(provider)
 	plan, err := planInfraEject(projectRoot, rawYAML, provider, layerProvider)
@@ -2126,6 +2131,72 @@ func readInfraEjectEnvironment(ctx context.Context, azdClient *azdext.AzdClient)
 		result[item.Key] = item.Value
 	}
 	return result, nil
+}
+
+func validateExistingProjectEjectEnvironment(endpoint string, values map[string]string) error {
+	envEndpoint := strings.TrimSpace(values["FOUNDRY_PROJECT_ENDPOINT"])
+	if envEndpoint == "" || !sameFoundryProject(endpoint, envEndpoint) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"FOUNDRY_PROJECT_ENDPOINT does not match the existing project configured in azure.yaml",
+			"re-run `azd ai agent init` against the configured existing project",
+		)
+	}
+
+	account, projectName := foundryEndpointIdentity(endpoint)
+	idAccount, idProject := foundryResourceIDIdentity(values["AZURE_AI_PROJECT_ID"])
+	if idAccount == "" || !strings.EqualFold(account, idAccount) || !strings.EqualFold(projectName, idProject) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"AZURE_AI_PROJECT_ID does not match the existing project configured in azure.yaml",
+			"re-run `azd ai agent init` against the configured existing project",
+		)
+	}
+	return nil
+}
+
+func sameFoundryProject(a, b string) bool {
+	aAccount, aProject := foundryEndpointIdentity(a)
+	bAccount, bProject := foundryEndpointIdentity(b)
+	return aAccount != "" && aProject != "" &&
+		strings.EqualFold(aAccount, bAccount) && strings.EqualFold(aProject, bProject)
+}
+
+func foundryEndpointIdentity(endpoint string) (string, string) {
+	const projectSegment = "/projects/"
+	value := strings.TrimSpace(endpoint)
+	hostStart := strings.Index(value, "://")
+	if hostStart < 0 {
+		return "", ""
+	}
+	hostAndPath := value[hostStart+3:]
+	pathStart := strings.Index(hostAndPath, "/")
+	if pathStart < 0 {
+		return "", ""
+	}
+	host := strings.ToLower(hostAndPath[:pathStart])
+	const hostSuffix = ".services.ai.azure.com"
+	if !strings.HasSuffix(host, hostSuffix) {
+		return "", ""
+	}
+	path := hostAndPath[pathStart:]
+	projectStart := strings.Index(strings.ToLower(path), projectSegment)
+	if projectStart < 0 {
+		return "", ""
+	}
+	projectName := strings.Split(strings.Trim(path[projectStart+len(projectSegment):], "/"), "/")[0]
+	return strings.TrimSuffix(host, hostSuffix), projectName
+}
+
+func foundryResourceIDIdentity(resourceID string) (string, string) {
+	parts := strings.Split(strings.Trim(strings.TrimSpace(resourceID), "/"), "/")
+	if len(parts) != 10 || !strings.EqualFold(parts[0], "subscriptions") ||
+		!strings.EqualFold(parts[2], "resourceGroups") || !strings.EqualFold(parts[4], "providers") ||
+		!strings.EqualFold(parts[5], "Microsoft.CognitiveServices") || !strings.EqualFold(parts[6], "accounts") ||
+		!strings.EqualFold(parts[8], "projects") {
+		return "", ""
+	}
+	return parts[7], parts[9]
 }
 
 func resolveInfraEjectAcrMode(params map[string]any, values map[string]string) (infraEjectAcrMode, error) {

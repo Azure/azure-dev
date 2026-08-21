@@ -66,17 +66,32 @@ type toolboxAttachment struct {
 	ConnectionName string
 }
 
-// toolboxBuilder registers skills into a toolbox version (primary path) or
-// resolves an existing toolbox (reference path), returning the toolbox MCP url
-// and the project connection that fronts it. The seam keeps the graph node
-// unit-testable without a live endpoint.
+// toolboxBuilder resolves an existing toolbox named by an explicit `toolbox:`
+// reference, returning the toolbox MCP url and the project connection that
+// fronts it. The seam keeps the graph node unit-testable without a live
+// endpoint.
+//
+// There is deliberately no "create a toolbox" operation here. Every harnessed
+// agent already has a system toolbox that the service creates, versions and
+// deletes with the agent, and whose name customers never supply.
 type toolboxBuilder interface {
-	// EnsureToolbox registers the skills into a toolbox named toolboxName and
-	// returns its MCP url and backing project connection.
-	EnsureToolbox(ctx context.Context, toolboxName string, skills []skillBundle) (toolboxAttachment, error)
 	// ResolveToolbox returns the MCP url and backing project connection of an
 	// existing toolbox version.
 	ResolveToolbox(ctx context.Context, ref toolboxRef) (toolboxAttachment, error)
+}
+
+// skillAttacher publishes skill bundles for a harness-less prompt agent, which
+// reaches them through a shell tool instead of a toolbox. It returns the
+// registered skill names. Same seam purpose as toolboxBuilder.
+type skillAttacher interface {
+	AttachSkills(ctx context.Context, skills []skillBundle) ([]string, error)
+}
+
+// harnessSkillPublisher publishes skill bundles for a harnessed agent. It
+// returns the resolved name and version of each, because a harness skill
+// reference has to pin a version.
+type harnessSkillPublisher interface {
+	PublishSkills(ctx context.Context, skills []skillBundle) ([]publishedSkill, error)
 }
 
 // scanSkillsDir returns the skill bundles under <agentDir>/skills, one per
@@ -107,9 +122,18 @@ func scanSkillsDir(agentDir string) ([]skillBundle, error) {
 			continue
 		}
 		bundleDir := filepath.Join(dir, name)
-		info, statErr := os.Stat(bundleDir)
+		// Lstat, not Stat: a symlinked bundle would let a cloned agent project
+		// package and upload files from anywhere on the developer's machine.
+		info, statErr := os.Lstat(bundleDir)
 		if statErr != nil {
 			return nil, fmt.Errorf("stat %q: %w", bundleDir, statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("skill bundle %q is a symbolic link", name),
+				"replace the link with the skill folder itself; symlinks are not packaged",
+			)
 		}
 		if !info.IsDir() {
 			continue
@@ -202,16 +226,22 @@ func extractFrontmatter(content string) (frontmatterResult, error) {
 	// Drop the opening delimiter line.
 	rest := trimmed[len("---"):]
 	rest = strings.TrimLeft(rest, "\r\n")
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
+	before, after, ok := strings.Cut(rest, "\n---")
+	if !ok {
 		return frontmatterResult{}, fmt.Errorf("unterminated frontmatter block")
 	}
-	front := rest[:end]
-	// The body starts after the closing `---` line.
-	after := rest[end+len("\n---"):]
-	after = strings.TrimPrefix(after, "-")   // tolerate longer --- fences
-	after = strings.TrimLeft(after, "-\r\n") // consume the rest of the fence line
-	return frontmatterResult{frontmatter: front, body: strings.TrimLeft(after, "\r\n")}, nil
+	front := before
+	// The body starts after the closing `---` line. Consume only the remainder of
+	// that fence line (extra dashes from a longer `-----` fence plus trailing
+	// whitespace) and stop at its newline. A cut set mixing "-" with newlines
+	// would cross into the body and strip the leading dash from a `- bullet` or
+	// a `---` break on the body's first line.
+	if nl := strings.IndexByte(after, '\n'); nl >= 0 {
+		after = after[nl+1:]
+	} else {
+		after = ""
+	}
+	return frontmatterResult{frontmatter: front, body: after}, nil
 }
 
 // injectMcpTool ensures the agent's tools include an mcp tool for the given
@@ -255,26 +285,65 @@ func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, connect
 	managed.Tools = append(managed.Tools, mcpTool)
 }
 
-// toolboxNode builds the skill/toolbox graph node. When ref is non-nil the
-// existing toolbox is attached by reference; otherwise the skill bundles are
-// registered into a new toolbox version. Returns nil when there is nothing to
-// attach (no skills and no reference).
-func toolboxNode(
+// promptSkillShellToolType is the tool a harness-less prompt agent uses to run
+// its skills. A skill bundle is files plus a script, so the agent needs shell
+// execution to invoke one; a managed agent gets the equivalent from its harness
+// sandbox and reaches skills through a toolbox instead.
+const promptSkillShellToolType = "shell"
+
+// injectShellTool ensures the agent's tools include a shell tool, so published
+// skills are actually runnable. An existing shell tool is left in place. The
+// definition is mutated in place.
+func injectShellTool(managed *agent_yaml.PromptAgent) {
+	if managed == nil {
+		return
+	}
+	for _, raw := range managed.Tools {
+		tool, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if fmt.Sprintf("%v", tool["type"]) == promptSkillShellToolType {
+			return
+		}
+	}
+	managed.Tools = append(managed.Tools, map[string]any{
+		"type": promptSkillShellToolType,
+	})
+}
+
+// skillsShellNode builds the skills graph node for a *harness-less* prompt
+// agent: bundles are published as skill versions, referenced by name on the
+// definition, and made runnable by a shell tool.
+//
+// This is the counterpart to toolboxNode, which serves managed agents. The two
+// are mutually exclusive — a toolbox is only reachable from inside a harness
+// sandbox, and a shell tool is rejected by a harness — so the caller picks one
+// based on whether a harness is named.
+func skillsShellNode(
 	g *promptGraph,
 	skills []skillBundle,
 	ref *agent_yaml.ToolboxReference,
-	newBuilder func() (toolboxBuilder, error),
+	newAttacher func() (skillAttacher, error),
 ) *promptNode {
 	if len(skills) == 0 && ref == nil {
 		return nil
 	}
 	return &promptNode{
-		Kind: nodeToolbox,
+		Kind: nodeSkill,
 		ID:   promptSkillsDirName,
 		Validate: func() error {
-			// SKILL.md parsing already validated name/description/body in
-			// scanSkillsDir. Version is optional (service-assigned), so nothing
-			// further to check per-skill here.
+			// A toolbox is provisioned and reached through the harness sandbox.
+			// Without a harness there is nothing to reach it from, so accepting
+			// the reference would deploy an agent whose skills never run.
+			if ref != nil {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"toolbox: is only available to an agent that names a harness",
+					"add 'harness: github-copilot' to agent.yaml, or remove 'toolbox:' and put the "+
+						"skills in a skills/ folder next to agent.yaml",
+				)
+			}
 			for _, s := range skills {
 				if strings.TrimSpace(s.Meta.Instructions) == "" {
 					return exterrors.Validation(
@@ -284,7 +353,107 @@ func toolboxNode(
 					)
 				}
 			}
-			if ref != nil && strings.TrimSpace(ref.Name) == "" {
+			return nil
+		},
+		Resolve: func(ctx context.Context) error {
+			attacher, err := newAttacher()
+			if err != nil {
+				return err
+			}
+			names, err := attacher.AttachSkills(ctx, skills)
+			if err != nil {
+				return err
+			}
+			for _, name := range names {
+				if !slices.Contains(g.managed.Skills, name) {
+					g.managed.Skills = append(g.managed.Skills, name)
+				}
+			}
+			injectShellTool(g.managed)
+			return nil
+		},
+	}
+}
+
+// skillsHarnessNode builds the skills graph node for a *harnessed* prompt
+// agent: bundles are published as skill versions and pinned onto the harness,
+// which provisions them into the sandbox that starts up to run the agent.
+//
+// This is the counterpart to skillsShellNode, which serves harness-less agents.
+// Nothing is attached as a tool here — a skill is not a tool, and the harness
+// loads its pinned skills when the environment starts.
+func skillsHarnessNode(
+	g *promptGraph,
+	skills []skillBundle,
+	newPublisher func() (harnessSkillPublisher, error),
+) *promptNode {
+	if len(skills) == 0 {
+		return nil
+	}
+	return &promptNode{
+		Kind: nodeSkill,
+		ID:   promptSkillsDirName,
+		Validate: func() error {
+			for _, s := range skills {
+				if strings.TrimSpace(s.Meta.Instructions) == "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidAgentManifest,
+						fmt.Sprintf("skill %q has no instructions (empty SKILL.md body)", s.Dir),
+						"add Markdown content below the frontmatter in the skill's SKILL.md",
+					)
+				}
+			}
+			return nil
+		},
+		Resolve: func(ctx context.Context) error {
+			publisher, err := newPublisher()
+			if err != nil {
+				return err
+			}
+			published, err := publisher.PublishSkills(ctx, skills)
+			if err != nil {
+				return err
+			}
+			for _, s := range published {
+				if slices.ContainsFunc(g.managed.HarnessSkills, func(existing agent_yaml.HarnessSkillRef) bool {
+					return existing.Name == s.Name
+				}) {
+					continue
+				}
+				// Always pin the version that was just published, even when the
+				// author did not pin one in SKILL.md. The service returns a 500
+				// for a skill reference with no version, so "follow the default"
+				// is not an option the wire format actually offers.
+				g.managed.HarnessSkills = append(g.managed.HarnessSkills, agent_yaml.HarnessSkillRef{
+					Name:    s.Name,
+					Version: s.Version,
+				})
+			}
+			return nil
+		},
+	}
+}
+
+// toolboxNode attaches an existing shared toolbox by reference, as an mcp tool.
+//
+// It is reachable only from an explicit `toolbox:` block in agent.yaml. Skills
+// no longer travel this path: every harnessed agent already gets a system
+// toolbox whose name, version, endpoint and lifecycle the service owns, so azd
+// creating a second toolbox of its own to carry skills both duplicated that and
+// left the skills invisible as skills.
+func toolboxNode(
+	g *promptGraph,
+	ref *agent_yaml.ToolboxReference,
+	newBuilder func() (toolboxBuilder, error),
+) *promptNode {
+	if ref == nil {
+		return nil
+	}
+	return &promptNode{
+		Kind: nodeToolbox,
+		ID:   ref.Name,
+		Validate: func() error {
+			if strings.TrimSpace(ref.Name) == "" {
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
 					"toolbox reference is missing a name",
@@ -298,33 +467,22 @@ func toolboxNode(
 			if err != nil {
 				return err
 			}
-
-			var (
-				attachment toolboxAttachment
-				label      string
-			)
-			if ref != nil {
-				label = ref.Name
-				attachment, err = builder.ResolveToolbox(ctx, toolboxRef{Name: ref.Name, Version: ref.Version})
-			} else {
-				label = g.managed.Name
-				attachment, err = builder.EnsureToolbox(ctx, g.managed.Name, skills)
-			}
+			attachment, err := builder.ResolveToolbox(ctx, toolboxRef{Name: ref.Name, Version: ref.Version})
 			if err != nil {
 				return err
 			}
 
 			g.bindings[toolboxMcpURLBindingKey] = attachment.McpURL
-			injectMcpTool(g.managed, label, attachment.McpURL, attachment.ConnectionName)
+			injectMcpTool(g.managed, ref.Name, attachment.McpURL, attachment.ConnectionName)
 			return nil
 		},
 	}
 }
 
-// foundryToolboxBuilder is the live toolboxBuilder backed by the Foundry skill
-// and toolbox data-plane endpoints.
+// foundryToolboxBuilder is the live toolboxBuilder backed by the Foundry
+// toolbox data-plane endpoints. It holds no skills client: skills are published
+// and pinned on the harness, never registered into a toolbox.
 type foundryToolboxBuilder struct {
-	skills          *azure.FoundrySkillsClient
 	toolboxes       *azure.FoundryToolboxClient
 	connections     *azure.FoundryConnectionsARMClient
 	resourceGroup   string
@@ -333,15 +491,27 @@ type foundryToolboxBuilder struct {
 	projectEndpoint string
 }
 
-// EnsureToolbox registers each skill bundle at its pinned version, creates a
-// toolbox version referencing them, and returns the toolbox MCP url plus the
-// project connection that fronts it.
-func (b *foundryToolboxBuilder) EnsureToolbox(
-	ctx context.Context, toolboxName string, skills []skillBundle,
-) (toolboxAttachment, error) {
-	// Skills are attached to a toolbox via a separate `skills` array of skill
-	// references (distinct from `tools`), per the Foundry Skills API.
-	skillRefs := make([]map[string]any, 0, len(skills))
+// publishedSkill is a skill bundle after it has been registered as a skill
+// version on the project.
+type publishedSkill struct {
+	Name    string
+	Version string
+	// Pinned records that the author fixed a version in SKILL.md frontmatter,
+	// rather than following the skill's default_version.
+	Pinned bool
+}
+
+// publishSkillBundles uploads and promotes each skill bundle, returning the
+// registered name and version of each.
+//
+// This is shared by both prompt-agent flavors — a harnessed agent and a
+// harness-less one differ in how skills are *reached*, not in how they are
+// published. It takes the skills client directly so neither path has to hold a
+// toolbox client it would not use.
+func publishSkillBundles(
+	ctx context.Context, client *azure.FoundrySkillsClient, skills []skillBundle,
+) ([]publishedSkill, error) {
+	published := make([]publishedSkill, 0, len(skills))
 	for _, s := range skills {
 		// Upload every file in the bundle (SKILL.md plus any references/,
 		// assets/, or other supporting files), not just SKILL.md. The service
@@ -350,12 +520,12 @@ func (b *foundryToolboxBuilder) EnsureToolbox(
 		// SKILL.md's body.
 		files, err := readSkillBundleFiles(s.Path)
 		if err != nil {
-			return toolboxAttachment{}, err
+			return nil, err
 		}
 
-		version, err := b.skills.CreateSkillVersionFromFiles(ctx, s.Meta.Name, files)
+		version, err := client.CreateSkillVersionFromFiles(ctx, s.Meta.Name, files)
 		if err != nil {
-			return toolboxAttachment{}, fmt.Errorf("registering skill %q: %w", s.Meta.Name, err)
+			return nil, fmt.Errorf("registering skill %q: %w", s.Meta.Name, err)
 		}
 
 		// Creating a version does NOT make it the skill's default_version —
@@ -365,43 +535,59 @@ func (b *foundryToolboxBuilder) EnsureToolbox(
 		// reference) never surfaces, making the update look like it didn't
 		// happen. Promote every newly created version to default so the
 		// latest deploy is always what's active.
-		if err := b.skills.PromoteSkillVersion(ctx, version.Name, version.Version); err != nil {
-			return toolboxAttachment{}, fmt.Errorf("promoting skill %q to version %s: %w", s.Meta.Name, version.Version, err)
+		if err := client.PromoteSkillVersion(ctx, version.Name, version.Version); err != nil {
+			return nil, fmt.Errorf("promoting skill %q to version %s: %w", s.Meta.Name, version.Version, err)
 		}
 
-		ref := map[string]any{
-			"type": "skill_reference",
-			"name": version.Name,
-		}
-		// Pin the reference to the created version only when the author pinned a
-		// version; otherwise follow the skill's default_version.
-		if strings.TrimSpace(s.Meta.Version) != "" {
-			ref["version"] = version.Version
-		}
-		skillRefs = append(skillRefs, ref)
+		published = append(published, publishedSkill{
+			Name:    version.Name,
+			Version: version.Version,
+			Pinned:  strings.TrimSpace(s.Meta.Version) != "",
+		})
 	}
+	return published, nil
+}
 
-	created, err := b.toolboxes.CreateToolboxVersion(ctx, toolboxName, &azure.CreateToolboxVersionRequest{
-		Tools:  []map[string]any{},
-		Skills: skillRefs,
-	})
+// foundrySkillPublisher is the live publisher for both prompt-agent flavors. It
+// holds only the skills client: neither path creates a toolbox, a toolbox
+// version or a project connection. A harness-less agent runs its skills through
+// a shell tool, and a harnessed agent has them provisioned into its sandbox.
+type foundrySkillPublisher struct {
+	skills *azure.FoundrySkillsClient
+}
+
+// AttachSkills publishes the bundles and returns their registered names.
+func (p *foundrySkillPublisher) AttachSkills(ctx context.Context, skills []skillBundle) ([]string, error) {
+	published, err := publishSkillBundles(ctx, p.skills, skills)
 	if err != nil {
-		return toolboxAttachment{}, fmt.Errorf("creating toolbox version: %w", err)
+		return nil, err
 	}
+	names := make([]string, 0, len(published))
+	for _, s := range published {
+		names = append(names, s.Name)
+	}
+	return names, nil
+}
 
-	// Same reasoning as the skill promotion above: creating a toolbox version
-	// doesn't promote it, so the toolbox consumer endpoint (and the portal)
-	// would keep serving the previous version's tool/skill set otherwise.
-	if err := b.toolboxes.PromoteToolboxVersion(ctx, toolboxName, created.Version); err != nil {
-		return toolboxAttachment{}, fmt.Errorf("promoting toolbox %q to version %s: %w", toolboxName, created.Version, err)
-	}
+// PublishSkills publishes the bundles and returns their name and version.
+func (p *foundrySkillPublisher) PublishSkills(
+	ctx context.Context, skills []skillBundle,
+) ([]publishedSkill, error) {
+	return publishSkillBundles(ctx, p.skills, skills)
+}
 
-	mcpURL := b.mcpURL(created.Name, created.Version)
-	connName, err := b.ensureToolboxConnection(ctx, created.Name, mcpURL)
-	if err != nil {
-		return toolboxAttachment{}, err
+// newFoundrySkillPublisher constructs the live publisher from prompt settings.
+func newFoundrySkillPublisher(settings *PromptAgentSettings) (*foundrySkillPublisher, error) {
+	if settings == nil || strings.TrimSpace(settings.ProjectEndpoint) == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"a Foundry project endpoint is required to register skills",
+			"run `azd up` to provision a Foundry project, or remove the skills/ folder",
+		)
 	}
-	return toolboxAttachment{McpURL: mcpURL, ConnectionName: connName}, nil
+	return &foundrySkillPublisher{
+		skills: azure.NewFoundrySkillsClient(settings.ProjectEndpoint, promptCredential()),
+	}, nil
 }
 
 // ResolveToolbox confirms an existing toolbox and returns its MCP url plus the
@@ -500,6 +686,15 @@ func readSkillBundleFiles(bundleDir string) (map[string][]byte, error) {
 		if d.IsDir() {
 			return nil
 		}
+		// WalkDir does not follow symlinks, but os.ReadFile does. Reject links
+		// outright so a bundle cannot exfiltrate arbitrary local files.
+		if d.Type()&os.ModeSymlink != 0 {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("skill bundle file %q is a symbolic link", path),
+				"replace the link with the file itself; symlinks are not packaged",
+			)
+		}
 		content, readErr := os.ReadFile(path) //nolint:gosec // path derived from the agent's skills/ folder
 		if readErr != nil {
 			return readErr
@@ -525,8 +720,8 @@ func newFoundryToolboxBuilder(settings *PromptAgentSettings) (toolboxBuilder, er
 	if settings == nil || strings.TrimSpace(settings.ProjectEndpoint) == "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			"a Foundry project endpoint is required to register skills / resolve a toolbox",
-			"run `azd up` to provision a Foundry project, or remove the skills/ folder",
+			"a Foundry project endpoint is required to resolve a toolbox",
+			"run `azd up` to provision a Foundry project, or remove the 'toolbox:' block from agent.yaml",
 		)
 	}
 	cred := promptCredential()
@@ -547,7 +742,6 @@ func newFoundryToolboxBuilder(settings *PromptAgentSettings) (toolboxBuilder, er
 		}
 	}
 	return &foundryToolboxBuilder{
-		skills:          azure.NewFoundrySkillsClient(settings.ProjectEndpoint, cred),
 		toolboxes:       azure.NewFoundryToolboxClient(settings.ProjectEndpoint, cred),
 		connections:     connections,
 		resourceGroup:   settings.ResourceGroup,

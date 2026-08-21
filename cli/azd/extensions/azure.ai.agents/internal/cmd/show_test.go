@@ -402,15 +402,15 @@ func TestResolveNextStepFromStatus_NonActiveBranches(t *testing.T) {
 }
 
 func TestDisplayHarness(t *testing.T) {
-	assert.Equal(t, "GitHub Copilot (ghcp)", displayHarness("ghcp"))
+	assert.Equal(t, "GitHub Copilot (github-copilot)", displayHarness("github-copilot"))
 	assert.Equal(t, "custom-harness", displayHarness("custom-harness"))
 }
 
 func TestPromptDefinitionMap(t *testing.T) {
 	version := agent_api.AgentVersionObject{
-		Definition: map[string]any{"harness": "ghcp"},
+		Definition: map[string]any{"harness": "github-copilot"},
 	}
-	assert.Equal(t, "ghcp", stringFromMap(promptDefinitionMap(version), "harness"))
+	assert.Equal(t, "github-copilot", stringFromMap(promptDefinitionMap(version), "harness"))
 
 	// Non-map definition yields nil, and stringFromMap tolerates nil.
 	assert.Nil(t, promptDefinitionMap(agent_api.AgentVersionObject{Definition: "not-a-map"}))

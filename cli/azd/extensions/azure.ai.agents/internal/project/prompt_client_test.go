@@ -4,9 +4,12 @@
 package project
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestDefaultPromptAgentSettings_PublicDefaults asserts the defaults point at
@@ -105,6 +108,75 @@ func TestPromptAgentSettings_ApplyEnvOverrides(t *testing.T) {
 	if s.EffectiveModelEndpoint() != "https://model-override" {
 		t.Errorf("ModelEndpoint override: got %q", s.EffectiveModelEndpoint())
 	}
+}
+
+// TestExpandPromptAgentSettings asserts the ${VAR} references `azd ai agent
+// init` writes into the promptAgent block resolve against the azd environment,
+// that unset references collapse to "" (so overlay leaves the defaults in
+// place), and that literal values are passed through untouched.
+func TestExpandPromptAgentSettings(t *testing.T) {
+	// Not parallel: the unset case pins the referenced variables to empty via
+	// t.Setenv so a developer who exports them locally still sees the unset
+	// behavior (expansion falls back to the process environment).
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/p1"
+	refs := &PromptAgentSettings{
+		BaseURL:         "${AZD_MANAGED_AGENT_BASE_URL}",
+		SubscriptionID:  "${AZURE_SUBSCRIPTION_ID}",
+		ResourceGroup:   "${AZURE_RESOURCE_GROUP}",
+		Workspace:       "${AZURE_AI_WORKSPACE}",
+		ProjectEndpoint: "${AZURE_AI_PROJECT_ENDPOINT}",
+	}
+
+	t.Run("resolves references from the azd environment", func(t *testing.T) {
+		got, err := expandPromptAgentSettings(refs, map[string]string{
+			"AZD_MANAGED_AGENT_BASE_URL": "https://harness.example",
+			"AZURE_SUBSCRIPTION_ID":      "sub-1",
+			"AZURE_RESOURCE_GROUP":       "rg-1",
+			"AZURE_AI_WORKSPACE":         "acct@p1@AML",
+			"AZURE_AI_PROJECT_ENDPOINT":  endpoint,
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://harness.example", got.BaseURL)
+		assert.Equal(t, "sub-1", got.SubscriptionID)
+		assert.Equal(t, "rg-1", got.ResourceGroup)
+		assert.Equal(t, "acct@p1@AML", got.Workspace)
+		assert.Equal(t, endpoint, got.ProjectEndpoint)
+	})
+
+	t.Run("unset references fall back to the defaults", func(t *testing.T) {
+		for _, name := range []string{
+			"AZD_MANAGED_AGENT_BASE_URL",
+			"AZURE_SUBSCRIPTION_ID",
+			"AZURE_RESOURCE_GROUP",
+			"AZURE_AI_WORKSPACE",
+			"AZURE_AI_PROJECT_ENDPOINT",
+		} {
+			t.Setenv(name, "")
+		}
+
+		got, err := expandPromptAgentSettings(refs, nil)
+		require.NoError(t, err)
+		assert.Empty(t, got.BaseURL)
+		assert.Empty(t, got.Workspace)
+
+		// overlay must not blank the defaults with the empty expansions.
+		settings := DefaultPromptAgentSettings()
+		settings.overlay(got)
+		assert.Equal(t, DefaultPromptBaseURL, settings.BaseURL)
+		assert.Equal(t, DefaultPromptWorkspace, settings.Workspace)
+	})
+
+	t.Run("literal values are preserved", func(t *testing.T) {
+		got, err := expandPromptAgentSettings(&PromptAgentSettings{
+			BaseURL:   "https://literal.example",
+			Workspace: "acct@p1@AML",
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://literal.example", got.BaseURL)
+		assert.Equal(t, "acct@p1@AML", got.Workspace)
+	})
 }
 
 // TestNewPromptAgentClient_BuildsClient asserts a client builds from valid
@@ -293,7 +365,7 @@ func TestOverlayPromptSettingsFromProjectResourceID(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error")
 				}
-				localErr, ok := err.(*azdext.LocalError)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
 				if !ok {
 					t.Fatalf("expected *azdext.LocalError, got %T", err)
 				}
@@ -366,6 +438,46 @@ func TestResolvePromptTargetFromEnv_ProjectEndpoint(t *testing.T) {
 		}
 		if s.ProjectEndpoint != "https://config-acct.services.ai.azure.com/api/projects/config-proj" {
 			t.Errorf("ProjectEndpoint should keep config value, got %q", s.ProjectEndpoint)
+		}
+	})
+
+	// A greenfield `azd up` provisions the project through the microsoft.foundry
+	// provider, which writes FOUNDRY_PROJECT_ENDPOINT (not the older
+	// AZURE_AI_PROJECT_ENDPOINT). Without this fallback the deploy drops to the
+	// legacy workspace-rooted harness route and gets a 404.
+	t.Run("falls back to FOUNDRY_PROJECT_ENDPOINT", func(t *testing.T) {
+		s := DefaultPromptAgentSettings()
+		env := map[string]string{
+			"AZURE_AI_PROJECT_NAME":    "proj-1",
+			"FOUNDRY_PROJECT_ENDPOINT": "https://acct-1.services.ai.azure.com/api/projects/proj-1",
+		}
+		applied, err := ResolvePromptTargetFromEnv(&s, env)
+		if err != nil {
+			t.Fatalf("ResolvePromptTargetFromEnv: %v", err)
+		}
+		if !applied {
+			t.Fatalf("expected project-scoped target to be applied")
+		}
+		if s.ProjectEndpoint != "https://acct-1.services.ai.azure.com/api/projects/proj-1" {
+			t.Errorf("ProjectEndpoint: got %q", s.ProjectEndpoint)
+		}
+		if s.EffectiveAPIVersion() != ProjectEndpointAPIVersion {
+			t.Errorf("APIVersion: got %q, want %q", s.EffectiveAPIVersion(), ProjectEndpointAPIVersion)
+		}
+	})
+
+	t.Run("AZURE_AI_PROJECT_ENDPOINT wins over FOUNDRY_PROJECT_ENDPOINT", func(t *testing.T) {
+		s := DefaultPromptAgentSettings()
+		env := map[string]string{
+			"AZURE_AI_PROJECT_NAME":     "proj-1",
+			"AZURE_AI_PROJECT_ENDPOINT": "https://azure-acct.services.ai.azure.com/api/projects/proj-1",
+			"FOUNDRY_PROJECT_ENDPOINT":  "https://foundry-acct.services.ai.azure.com/api/projects/proj-1",
+		}
+		if _, err := ResolvePromptTargetFromEnv(&s, env); err != nil {
+			t.Fatalf("ResolvePromptTargetFromEnv: %v", err)
+		}
+		if s.ProjectEndpoint != "https://azure-acct.services.ai.azure.com/api/projects/proj-1" {
+			t.Errorf("ProjectEndpoint: got %q", s.ProjectEndpoint)
 		}
 	})
 }

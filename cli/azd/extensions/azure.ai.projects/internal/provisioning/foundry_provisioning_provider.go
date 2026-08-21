@@ -179,6 +179,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			rawYAML,
 			projectPath,
 			svcName,
+			p.networkEnvMap(ctx),
 		)
 		if endpointErr != nil {
 			return exterrors.Validation(
@@ -237,6 +238,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			rawYAML,
 			projectPath,
 			svcName,
+			p.networkEnvMap(ctx),
 		)
 		if endpointErr != nil {
 			return exterrors.Validation(
@@ -296,20 +298,30 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 		log.Printf("[debug] foundry provider: no azd client; network ${VAR} uses process env only")
 		return nil
 	}
-	envClient := p.azdClient.Environment()
+	return azdEnvMap(ctx, p.azdClient)
+}
+
+// azdEnvMap returns a best-effort name -> value map of the current azd
+// environment. On any failure it returns nil and callers fall back to the
+// process environment.
+func azdEnvMap(ctx context.Context, azdClient *azdext.AzdClient) map[string]string {
+	if azdClient == nil {
+		return nil
+	}
+	envClient := azdClient.Environment()
 	if envClient == nil {
-		log.Printf("[debug] foundry provider: no environment client; network ${VAR} uses process env only")
+		log.Printf("[debug] foundry provider: no environment client; ${VAR} uses process env only")
 		return nil
 	}
 	curr, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil || curr.GetEnvironment() == nil {
 		log.Printf("[debug] foundry provider: no current azd environment (%v); "+
-			"network ${VAR} uses process env only", err)
+			"${VAR} uses process env only", err)
 		return nil
 	}
 	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: curr.GetEnvironment().GetName()})
 	if err != nil {
-		log.Printf("[debug] foundry provider: GetValues failed (%s); network ${VAR} uses process env only", err)
+		log.Printf("[debug] foundry provider: GetValues failed (%s); ${VAR} uses process env only", err)
 		return nil
 	}
 	out := make(map[string]string, len(resp.GetKeyValues()))
@@ -373,10 +385,18 @@ func (p *FoundryProvisioningProvider) onDiskTemplatePresent() bool {
 		fileExistsAt(filepath.Join(infraDir, onDiskBicepFile))
 }
 
+// foundryServiceEndpointAtRoot returns the endpoint: declared on a Foundry
+// project service, with ${VAR} references resolved from env (falling back to
+// the process environment). Callers must pass the azd environment: the endpoint
+// is normally written as ${AZURE_AI_PROJECT_ENDPOINT}, and every brownfield
+// consumer parses the account and project names out of this value, so returning
+// the raw reference would build an ARM template with empty name segments.
+// An endpoint whose variables are all unset resolves to "" (greenfield).
 func foundryServiceEndpointAtRoot(
 	rawYAML []byte,
 	projectRoot string,
 	svcName string,
+	env map[string]string,
 ) (string, error) {
 	type svc struct {
 		Endpoint string `yaml:"endpoint,omitempty"`
@@ -410,7 +430,21 @@ func foundryServiceEndpointAtRoot(
 	if err := yaml.Unmarshal(data, &service); err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(service.Endpoint), nil
+	endpoint := strings.TrimSpace(service.Endpoint)
+	if endpoint == "" {
+		return "", nil
+	}
+	expanded, err := foundry.ExpandEnv(endpoint, func(name string) string {
+		if v, ok := env[name]; ok {
+			return v
+		}
+		v, _ := os.LookupEnv(name)
+		return v
+	})
+	if err != nil {
+		return "", fmt.Errorf("expand endpoint: %w", err)
+	}
+	return strings.TrimSpace(expanded), nil
 }
 
 // resolveEnvName resolves just the active azd environment name. The brownfield

@@ -33,9 +33,48 @@ const (
 	// aiProjectServiceName is the stable azure.yaml service key used for the
 	// single azure.ai.project service. A stable name keeps repeated inits
 	// idempotent (AddService overwrites by name) so there is one project
-	// service per project, matching the unified Foundry config design.
+	// service per project, matching the unified Foundry config design. It is
+	// deliberately generic rather than derived from the Foundry project name so
+	// azure.yaml carries no tenant-specific identifiers and can be copied
+	// between projects unchanged.
 	aiProjectServiceName = "ai-project"
+
+	// projectEndpointEnvVar carries the concrete Foundry project endpoint in the
+	// azd environment. azure.yaml references it instead of embedding the URL so
+	// the project stays portable: set it to reuse an existing project, leave it
+	// unset to have `azd provision` create a new one.
+	projectEndpointEnvVar = "AZURE_AI_PROJECT_ENDPOINT"
+
+	// projectEndpointRef is the portable reference written as endpoint: on the
+	// azure.ai.project service. Synthesize expands it before deciding
+	// brownfield vs greenfield, so an unset variable resolves to "" (greenfield).
+	projectEndpointRef = "${" + projectEndpointEnvVar + "}"
+
+	// projectWorkspaceEnvVar carries the AML workspace name backing the Foundry
+	// project (<account>@<project>@AML). The managed control plane's agent
+	// routes are workspace-scoped, so the promptAgent block references it
+	// instead of embedding the tenant-specific name in azure.yaml.
+	projectWorkspaceEnvVar = "AZURE_AI_WORKSPACE"
 )
+
+// promptAgentEnvRefs returns the promptAgent block `azd ai agent init` writes
+// into azure.yaml. Every field is a ${VAR} reference rather than a literal, so
+// the file carries no subscription, resource group, or workspace of its own and
+// can be copied between Foundry projects unchanged: `azd up` in a new
+// environment resolves each field from that environment.
+//
+// The deploy path expands these references against the azd environment and
+// falls back to the built-in defaults for any variable that is unset, so a
+// project cloned without an environment still initializes.
+func promptAgentEnvRefs() *project.PromptAgentSettings {
+	return &project.PromptAgentSettings{
+		BaseURL:         "${" + project.PromptBaseURLEnvVar + "}",
+		SubscriptionID:  "${AZURE_SUBSCRIPTION_ID}",
+		ResourceGroup:   "${AZURE_RESOURCE_GROUP}",
+		Workspace:       "${" + projectWorkspaceEnvVar + "}",
+		ProjectEndpoint: projectEndpointRef,
+	}
+}
 
 // emitResourceServices writes the Foundry resource sibling services that the
 // agent depends on (one azure.ai.project carrying the model deployments, one
@@ -46,15 +85,12 @@ const (
 // projectEndpoint, when non-empty, is written as endpoint: on the project
 // service to mark an existing (brownfield) Foundry project so provision
 // connects to it instead of creating a new one. It is empty for new projects.
-//
-// projectName, when known, is the Foundry project name used to derive the
-// project service key (so azure.yaml reads like the real project). It falls back
-// to aiProjectServiceName when unknown or colliding. See resolveProjectServiceKey.
+// Callers pass projectEndpointRef (not a literal URL) so azure.yaml stays
+// portable; see recordFoundryProjectEnv.
 func emitResourceServices(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	agentServiceName string,
-	projectName string,
 	projectEndpoint string,
 	deployments []project.Deployment,
 	connections []project.Connection,
@@ -95,7 +131,7 @@ func emitResourceServices(
 	if err != nil {
 		return fmt.Errorf("marshaling project service config: %w", err)
 	}
-	projectServiceName := resolveProjectServiceKey(ctx, azdClient, projectName, agentServiceName)
+	projectServiceName := resolveProjectServiceKey(ctx, azdClient)
 	if err := reserveServiceName(usedNames, projectServiceName, "project service"); err != nil {
 		return err
 	}
@@ -171,25 +207,19 @@ func emitResourceServices(
 //     project. This keeps repeated inits idempotent (azd's extension API has no
 //     remove-service call, so a changed key would leave a second project service
 //     behind, which the provisioning provider rejects).
-//  2. Otherwise derive the key from the Foundry project name when it is known and
-//     does not collide with the agent service name, so azure.yaml reads like the
-//     real project.
-//  3. Otherwise fall back to the stable "ai-project" default.
+//  2. Otherwise use the generic "ai-project" key.
 //
-// The key is not load-bearing: the provider and collectors find the project
-// service by host (azure.ai.project), and the generated uses: edges reference
-// whatever key this returns.
+// The key is deliberately not derived from the Foundry project name: a
+// tenant-specific key makes azure.yaml non-portable, and the key is not
+// load-bearing anyway -- the provider and collectors find the project service by
+// host (azure.ai.project), and the generated uses: edges reference whatever key
+// this returns.
 func resolveProjectServiceKey(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
-	projectName string,
-	agentServiceName string,
 ) string {
 	if existing := existingProjectServiceKey(ctx, azdClient); existing != "" {
 		return existing
-	}
-	if key := sanitizeServiceName(projectName); key != "" && key != agentServiceName {
-		return key
 	}
 	return aiProjectServiceName
 }
@@ -216,41 +246,50 @@ func existingProjectServiceKey(ctx context.Context, azdClient *azdext.AzdClient)
 	return keys[0]
 }
 
-// projectNameHint returns the Foundry project name to derive the project service
-// key from: the selected existing project's name, else the AZURE_AI_PROJECT_NAME
-// azd environment value when concretely set (not a ${...} placeholder), else "".
-func projectNameHint(
+// recordFoundryProjectEnv stores the concrete Foundry project coordinates that
+// azure.yaml only references by name -- the data-plane endpoint and the backing
+// AML workspace -- in the azd environment, and returns the portable ${VAR}
+// reference to write as endpoint: on the project service.
+//
+// A nil or incomplete project (the "create a new project" path) writes nothing
+// and returns "", leaving the project service greenfield.
+func recordFoundryProjectEnv(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	envName string,
-	selected *FoundryProjectInfo,
-) string {
-	if selected != nil && selected.ProjectName != "" {
-		return selected.ProjectName
+	foundryProject *FoundryProjectInfo,
+) (string, error) {
+	endpoint := strings.TrimSpace(foundryProject.Endpoint())
+	if endpoint == "" {
+		return "", nil
 	}
-	v, err := getEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_NAME")
-	if err != nil || strings.HasPrefix(strings.TrimSpace(v), "${") {
-		return ""
+	if err := setEnvValue(ctx, azdClient, envName, projectEndpointEnvVar, endpoint); err != nil {
+		return "", fmt.Errorf("recording %s: %w", projectEndpointEnvVar, err)
 	}
-	return v
+	// Managed agent CRUD routes are workspace-scoped; for Foundry projects the
+	// backing AML workspace name is <account>@<project>@AML.
+	workspace := fmt.Sprintf("%s@%s@AML", foundryProject.AccountName, foundryProject.ProjectName)
+	if err := setEnvValue(ctx, azdClient, envName, projectWorkspaceEnvVar, workspace); err != nil {
+		return "", fmt.Errorf("recording %s: %w", projectWorkspaceEnvVar, err)
+	}
+	return projectEndpointRef, nil
 }
 
-// stampProjectEndpoint writes the selected project's endpoint onto the existing
-// azure.ai.project service in azure.yaml. This is a no-op when the project is
-// nil, has no endpoint, or when no ai-project service exists yet.
-func stampProjectEndpoint(ctx context.Context, azdClient *azdext.AzdClient, selectedProject *FoundryProjectInfo) error {
-	if selectedProject == nil {
-		return nil
-	}
-	endpoint := selectedProject.Endpoint()
-	if endpoint == "" {
+// stampProjectEndpoint writes endpointRef as endpoint: on the existing
+// azure.ai.project service in azure.yaml. Callers pass the portable
+// ${AZURE_AI_PROJECT_ENDPOINT} reference returned by recordFoundryProjectEnv, not
+// a literal URL. This is a no-op when endpointRef is empty (a new project) or
+// when no azure.ai.project service exists yet.
+func stampProjectEndpoint(ctx context.Context, azdClient *azdext.AzdClient, endpointRef string) error {
+	endpointRef = strings.TrimSpace(endpointRef)
+	if endpointRef == "" {
 		return nil
 	}
 	projectSvcKey := existingProjectServiceKey(ctx, azdClient)
 	if projectSvcKey == "" {
 		return nil
 	}
-	endpointVal, err := structpb.NewValue(endpoint)
+	endpointVal, err := structpb.NewValue(endpointRef)
 	if err != nil {
 		return fmt.Errorf("encoding project endpoint: %w", err)
 	}

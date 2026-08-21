@@ -411,6 +411,8 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								errors = append(errors, fmt.Sprintf(
 									"policies[%d] of type '%s' requires a policy name (rai_policy_name)",
 									i, policy.Type))
+							} else if err := ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
+								errors = append(errors, fmt.Sprintf("policies[%d]: %v", i, err))
 							}
 						case "":
 							errors = append(errors, fmt.Sprintf(
@@ -444,13 +446,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					if strings.TrimSpace(agent.Model) == "" {
 						errors = append(errors, "template.model is required for prompt agents")
 					}
-					// Instructions are intentionally NOT required inline here:
-					// prompt agents may supply them via a sibling instructions.md
-					// file (the deploy engine reads it when the inline value is
-					// empty). The deploy-time graph validation enforces that
-					// instructions are present from one source or the other, so a
-					// truly instruction-less agent is still rejected — just with a
-					// clearer, convention-aware message.
+					if strings.TrimSpace(agent.Instructions) == "" {
+						errors = append(errors, "template.instructions is required for prompt agents")
+					}
 					for i, policy := range agent.Policies {
 						switch policy.Type {
 						case PolicyTypeRai:
@@ -458,6 +456,8 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								errors = append(errors, fmt.Sprintf(
 									"policies[%d] of type '%s' requires a policy name (rai_policy_name)",
 									i, policy.Type))
+							} else if err := ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
+								errors = append(errors, fmt.Sprintf("policies[%d]: %v", i, err))
 							}
 						case "":
 							errors = append(errors, fmt.Sprintf(

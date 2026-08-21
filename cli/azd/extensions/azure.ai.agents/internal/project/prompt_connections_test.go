@@ -59,18 +59,7 @@ func TestResolveConnectionAction_Rung3_AutoFillTarget(t *testing.T) {
 	}
 }
 
-func TestResolveConnectionAction_Rung4_ProvisionOptIn(t *testing.T) {
-	decl := agent_yaml.PromptConnection{Name: "search-conn", Category: "CognitiveSearch", Provision: true}
-	action, _, err := resolveConnectionAction(decl, map[string]string{}, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if action != connActionProvision {
-		t.Errorf("action: got %v, want provision", action)
-	}
-}
-
-func TestResolveConnectionAction_Rung4_FailFastNoOptIn(t *testing.T) {
+func TestResolveConnectionAction_Rung4_FailFast(t *testing.T) {
 	decl := agent_yaml.PromptConnection{Name: "search-conn", Category: "CognitiveSearch"}
 	action, _, err := resolveConnectionAction(decl, map[string]string{}, nil)
 	if err == nil {

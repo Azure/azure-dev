@@ -424,7 +424,7 @@ func TestEmitResourceServices_AlwaysEmitsProjectService(t *testing.T) {
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
 
-	err := emitResourceServices(t.Context(), client, "myagent", "", "", nil, nil, nil)
+	err := emitResourceServices(t.Context(), client, "myagent", "", nil, nil, nil)
 	require.NoError(t, err)
 
 	server.mu.Lock()
@@ -446,7 +446,7 @@ func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 	client := newProjectRecorderClient(t, server)
 
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey"}}
-	err := emitResourceServices(t.Context(), client, "myagent", "", "", nil, conns, nil)
+	err := emitResourceServices(t.Context(), client, "myagent", "", nil, conns, nil)
 	require.NoError(t, err)
 
 	server.mu.Lock()
@@ -479,7 +479,7 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 		Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
 	}}
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey", Target: "https://example", AuthType: "ApiKey"}}
-	require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", "", deployments, conns, nil))
+	require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", deployments, conns, nil))
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
@@ -512,17 +512,17 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 // TestEmitResourceServices_WritesEndpointForExistingProject verifies that a
 // non-empty projectEndpoint is written as endpoint: on the ai-project service
 // (the brownfield signal provision reads to reuse the project) and that an
-// empty endpoint (new project) leaves the field unset.
+// empty endpoint (new project) leaves the field unset. Callers pass the
+// portable ${AZURE_AI_PROJECT_ENDPOINT} reference, never a literal URL.
 func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 	t.Parallel()
-
-	const endpoint = "https://acct.services.ai.azure.com/api/projects/proj"
 
 	t.Run("existing project writes endpoint", func(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", endpoint, nil, nil, nil))
+		require.NoError(t, emitResourceServices(
+			t.Context(), client, "myagent", projectEndpointRef, nil, nil, nil))
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
@@ -531,14 +531,17 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 		projSvc := server.added[0]
 		require.Equal(t, aiProjectServiceName, projSvc.Name)
 		require.NotNil(t, projSvc.AdditionalProperties)
-		assert.Equal(t, endpoint, projSvc.AdditionalProperties.Fields["endpoint"].GetStringValue())
+		assert.Equal(t,
+			"${AZURE_AI_PROJECT_ENDPOINT}",
+			projSvc.AdditionalProperties.Fields["endpoint"].GetStringValue(),
+		)
 	})
 
 	t.Run("new project omits endpoint", func(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", "", nil, nil, nil))
+		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", nil, nil, nil))
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
@@ -553,23 +556,23 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 }
 
 // TestEmitResourceServices_ProjectServiceKey verifies how the azure.ai.project
-// service key is resolved: reuse an existing key, else derive from the project
-// name, else fall back to "ai-project".
+// service key is resolved: reuse an existing key, else the generic "ai-project".
+// The key is never derived from the Foundry project name -- azure.yaml must not
+// carry tenant-specific identifiers.
 func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 	t.Parallel()
 
-	t.Run("derives key from project name", func(t *testing.T) {
+	t.Run("uses the generic key for a new project", func(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "my-foundry-proj", "", nil, nil, nil))
+		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", nil, nil, nil))
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
 		require.Len(t, server.added, 1)
-		assert.Equal(t, "my-foundry-proj", server.added[0].Name)
-		assert.Equal(t, []string{"my-foundry-proj"}, server.uses["myagent"])
+		assert.Equal(t, aiProjectServiceName, server.added[0].Name)
+		assert.Equal(t, []string{aiProjectServiceName}, server.uses["myagent"])
 	})
 
 	t.Run("reuses existing project service key", func(t *testing.T) {
@@ -580,75 +583,13 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 		}
 		client := newProjectRecorderClient(t, server)
 
-		// A different project name is supplied, but the existing key wins so a
-		// repeated init does not create a second project service.
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "a-new-name", "", nil, nil, nil))
+		// The existing key wins so a repeated init does not create a second
+		// project service.
+		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", nil, nil, nil))
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
 		require.Len(t, server.added, 1)
 		assert.Equal(t, "old-project-key", server.added[0].Name)
-	})
-
-	t.Run("falls back when project name collides with agent", func(t *testing.T) {
-		server := &recordingProjectServer{}
-		client := newProjectRecorderClient(t, server)
-
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "my agent", "", nil, nil, nil))
-
-		server.mu.Lock()
-		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		// "my agent" sanitizes to "myagent" == agent key, so it falls back.
-		assert.Equal(t, aiProjectServiceName, server.added[0].Name)
-	})
-
-	t.Run("falls back when project name unknown", func(t *testing.T) {
-		server := &recordingProjectServer{}
-		client := newProjectRecorderClient(t, server)
-
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "", "", nil, nil, nil))
-
-		server.mu.Lock()
-		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		assert.Equal(t, aiProjectServiceName, server.added[0].Name)
-	})
-}
-
-// TestProjectNameHint verifies the project-name hint resolution: a selected
-// existing project's name wins, else AZURE_AI_PROJECT_NAME when concretely set,
-// else "" (unknown).
-func TestProjectNameHint(t *testing.T) {
-	t.Parallel()
-	const envName = "dev"
-
-	newClient := func(t *testing.T, vals map[string]string) *azdext.AzdClient {
-		env := &testEnvironmentServiceServer{values: map[string]map[string]string{envName: vals}}
-		return newTestAzdClient(t, env, &testWorkflowServiceServer{})
-	}
-
-	t.Run("selected project name wins", func(t *testing.T) {
-		client := newClient(t, map[string]string{"AZURE_AI_PROJECT_NAME": "from-env"})
-		got := projectNameHint(t.Context(), client, envName, &FoundryProjectInfo{ProjectName: "from-selected"})
-		assert.Equal(t, "from-selected", got)
-	})
-
-	t.Run("falls back to env when no selection", func(t *testing.T) {
-		client := newClient(t, map[string]string{"AZURE_AI_PROJECT_NAME": "from-env"})
-		assert.Equal(t, "from-env", projectNameHint(t.Context(), client, envName, nil))
-	})
-
-	t.Run("placeholder env value yields empty", func(t *testing.T) {
-		client := newClient(t, map[string]string{"AZURE_AI_PROJECT_NAME": "${AZURE_AI_PROJECT_NAME}"})
-		assert.Equal(t, "", projectNameHint(t.Context(), client, envName, nil))
-	})
-
-	t.Run("missing env value yields empty", func(t *testing.T) {
-		client := newClient(t, map[string]string{})
-		assert.Equal(t, "", projectNameHint(t.Context(), client, envName, nil))
 	})
 }

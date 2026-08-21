@@ -7,10 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -50,7 +50,16 @@ func (p *AgentServiceTargetProvider) isPromptAgentService() bool {
 
 // promptAgentSettings extracts and validates the prompt-agent harness settings
 // from the service config, applying environment-variable overrides.
-func (p *AgentServiceTargetProvider) promptAgentSettings() (*PromptAgentSettings, error) {
+//
+// `azd ai agent init` writes every promptAgent field as a ${VAR} reference so
+// azure.yaml stays portable, so the block is expanded against env (the azd
+// environment, falling back to the process environment) before it is layered
+// over the defaults. A reference whose variable is unset expands to "" and
+// therefore leaves the corresponding default in place, which is what lets a
+// project be cloned into an environment that has not been provisioned yet.
+// Projects that carry literal values keep working -- expansion leaves a string
+// with no ${...} in it untouched.
+func (p *AgentServiceTargetProvider) promptAgentSettings(env map[string]string) (*PromptAgentSettings, error) {
 	var cfg ServiceTargetAgentConfig
 	if err := UnmarshalStruct(p.serviceConfig.Config, &cfg); err != nil {
 		return nil, exterrors.Validation(
@@ -59,25 +68,84 @@ func (p *AgentServiceTargetProvider) promptAgentSettings() (*PromptAgentSettings
 			"check the service configuration in azure.yaml",
 		)
 	}
-	if cfg.PromptAgent == nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			"service config is missing the promptAgent block",
-			"re-run `azd ai agent init` to scaffold the prompt agent service",
-		)
-	}
-	cfg.PromptAgent.ApplyEnvOverrides()
-	if err := cfg.PromptAgent.Validate(); err != nil {
+	configured, err := expandPromptAgentSettings(cfg.PromptAgent, env)
+	if err != nil {
 		return nil, err
 	}
-	return cfg.PromptAgent, nil
+	settings := DefaultPromptAgentSettings()
+	settings.overlay(configured)
+	settings.ApplyEnvOverrides()
+	if err := settings.Validate(); err != nil {
+		return nil, err
+	}
+	return &settings, nil
+}
+
+// expandPromptAgentSettings returns a copy of src with ${VAR} references in
+// every field resolved against env, falling back to the process environment for
+// variables the azd environment does not define. A nil src returns nil.
+func expandPromptAgentSettings(
+	src *PromptAgentSettings,
+	env map[string]string,
+) (*PromptAgentSettings, error) {
+	if src == nil {
+		return nil, nil
+	}
+	lookup := func(name string) string {
+		if v, ok := env[name]; ok {
+			return v
+		}
+		v, _ := os.LookupEnv(name)
+		return v
+	}
+	expanded := *src
+	for name, field := range map[string]*string{
+		"baseUrl":         &expanded.BaseURL,
+		"subscriptionId":  &expanded.SubscriptionID,
+		"resourceGroup":   &expanded.ResourceGroup,
+		"workspace":       &expanded.Workspace,
+		"projectEndpoint": &expanded.ProjectEndpoint,
+		"apiVersion":      &expanded.APIVersion,
+		"modelEndpoint":   &expanded.ModelEndpoint,
+	} {
+		value, err := ExpandEnv(strings.TrimSpace(*field), lookup)
+		if err != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("failed to expand promptAgent.%s: %s", name, err),
+				"check the ${VAR} references in the promptAgent block in azure.yaml",
+			)
+		}
+		*field = strings.TrimSpace(value)
+	}
+	return &expanded, nil
+}
+
+// resolvedPromptAgentSettings returns the prompt-agent settings with the same
+// azd environment-derived target resolution deployPromptAgent applies. Read-only
+// callers (Endpoints, GetTargetResource) must use this rather than
+// promptAgentSettings: a non-guided init stores a placeholder
+// subscription/resource-group/workspace tuple in azure.yaml and only the azd
+// environment knows the real Foundry target, so the raw settings would report
+// `test-rg`/`test-ws` even after a successful deploy.
+func (p *AgentServiceTargetProvider) resolvedPromptAgentSettings(
+	ctx context.Context,
+) (*PromptAgentSettings, error) {
+	env, err := p.azdEnvValues(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading the azd environment: %w", err)
+	}
+	settings, err := p.promptAgentSettings(env)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := ResolvePromptTargetFromEnv(settings, env); err != nil {
+		return nil, err
+	}
+	return settings, nil
 }
 
 // loadPromptAgentDefinition reads the agent.yaml as a bare PromptAgent.
-//
-// Convention: when the YAML omits inline `instructions:`, a sibling
-// `instructions.md` (next to agent.yaml) is used as the agent's instructions.
-// Inline `instructions:` always takes precedence over the file.
 func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.PromptAgent, error) {
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
@@ -106,21 +174,8 @@ func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.Pro
 		)
 	}
 
-	// Convention: fall back to a sibling instructions.md when instructions are
-	// not declared inline. Inline instructions win.
-	if strings.TrimSpace(promptDef.Instructions) == "" {
-		instructionsPath := filepath.Join(filepath.Dir(p.agentDefinitionPath), promptInstructionsFileName)
-		if content, readErr := os.ReadFile(instructionsPath); readErr == nil {
-			promptDef.Instructions = string(content)
-		}
-	}
-
 	return promptDef, nil
 }
-
-// promptInstructionsFileName is the conventional sidecar file whose contents
-// become the prompt agent's instructions when none are declared inline.
-const promptInstructionsFileName = "instructions.md"
 
 // containerOnlyPromptFields lists agent.yaml keys that are only meaningful for
 // hosted (container) agents and are therefore rejected for kind: prompt.
@@ -170,11 +225,16 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	progress azdext.ProgressReporter,
-) (*azdext.ServiceDeployResult, error) {
+) (result *azdext.ServiceDeployResult, err error) {
+	// Convert an unexpected panic into a deploy error. Deploy handlers are
+	// expected to return errors to azd; re-panicking would tear down the whole
+	// extension process and azd would surface a transport failure instead of an
+	// actionable deploy error.
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "panic in deployPromptAgent: %v\n%s\n", r, debug.Stack())
-			panic(r)
+			log.Printf("panic in deployPromptAgent: %v\n%s", r, debug.Stack())
+			result = nil
+			err = fmt.Errorf("unexpected error deploying prompt agent: %v", r)
 		}
 	}()
 
@@ -183,7 +243,20 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		return nil, err
 	}
 
-	settings, err := p.promptAgentSettings()
+	// The azd environment is read before the settings because azure.yaml states
+	// the promptAgent block as ${VAR} references that resolve against it.
+	//
+	// A failed env read is fatal: skipping it would also skip
+	// ResolvePromptTargetFromEnv and its AZURE_AI_PROJECT_ID validation, leaving
+	// the placeholder tuple in place so the create call goes out against a
+	// workspace that never existed and the user sees WorkspaceNotFound instead of
+	// the real cause.
+	env, err := p.azdEnvValues(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading the azd environment: %w", err)
+	}
+
+	settings, err := p.promptAgentSettings(env)
 	if err != nil {
 		return nil, err
 	}
@@ -194,58 +267,55 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	// project, and the deploy targets it. The overlay is a no-op unless the azd
 	// environment actually holds a resolved project (AZURE_AI_PROJECT_NAME),
 	// so the local-dev fake tuple is preserved when no project was provisioned.
+
 	projectScopedTarget := false
-	if env, envErr := p.azdEnvValues(ctx); envErr == nil {
-		mappedFromProjectID, mapErr := ResolvePromptTargetFromEnv(settings, env)
-		if mapErr != nil {
-			return nil, mapErr
-		}
-		projectScopedTarget = mappedFromProjectID
-		if projectScopedTarget {
-			fmt.Fprintf(
-				os.Stderr,
-				"Resolved managed prompt target from AZURE_AI_PROJECT_ID: subscription=%q resourceGroup=%q workspace=%q.\n",
-				settings.SubscriptionID,
-				settings.ResourceGroup,
-				settings.Workspace,
-			)
-		}
+	mappedFromProjectID, mapErr := ResolvePromptTargetFromEnv(settings, env)
+	if mapErr != nil {
+		return nil, mapErr
+	}
+	projectScopedTarget = mappedFromProjectID
+	if projectScopedTarget {
+		fmt.Fprintf(
+			os.Stderr,
+			"Resolved managed prompt target from AZURE_AI_PROJECT_ID: subscription=%q resourceGroup=%q workspace=%q.\n",
+			settings.SubscriptionID,
+			settings.ResourceGroup,
+			settings.Workspace,
+		)
+	}
 
-		// When the service already has an explicit non-placeholder workspace,
-		// trust it and avoid the RG-wide discovery path entirely.
-		workspaceKnown := strings.TrimSpace(settings.Workspace) != "" &&
-			settings.Workspace != DefaultPromptWorkspace
+	// When the service already has an explicit non-placeholder workspace,
+	// trust it and avoid the RG-wide discovery path entirely.
+	workspaceKnown := strings.TrimSpace(settings.Workspace) != "" &&
+		settings.Workspace != DefaultPromptWorkspace
 
-		if !workspaceKnown && !projectScopedTarget {
-			if ws, ok := p.resolvePromptWorkspaceFromAzure(ctx, settings, env); ok {
-				if !strings.EqualFold(ws, settings.Workspace) {
-					fmt.Fprintf(os.Stderr, "Resolved prompt workspace to %q (was %q).\n", ws, settings.Workspace)
-					settings.Workspace = ws
-				}
-			} else {
-				// No AML workspace found — provision one. The managed harness API
-				// requires Microsoft.MachineLearningServices/workspaces/{name} to exist.
-				if progress != nil {
-					progress(fmt.Sprintf("Workspace %q not found; provisioning an AML workspace now", settings.Workspace))
-				}
-				if createErr := ensurePromptWorkspaceExists(ctx, settings, env, progress); createErr != nil {
-					fmt.Fprintf(os.Stderr, "Warning: AML workspace provisioning failed: %v\n", createErr)
-				}
+	if !workspaceKnown && !projectScopedTarget {
+		if ws, ok := p.resolvePromptWorkspaceFromAzure(ctx, settings, env); ok {
+			if !strings.EqualFold(ws, settings.Workspace) {
+				fmt.Fprintf(os.Stderr, "Resolved prompt workspace to %q (was %q).\n", ws, settings.Workspace)
+				settings.Workspace = ws
 			}
-		} else if workspaceKnown && !projectScopedTarget {
+		} else {
 			// No AML workspace found — provision one. The managed harness API
-			// Keep the explicit workspace from azure.yaml / env and skip discovery.
-			fmt.Fprintf(os.Stderr, "Using configured prompt workspace %q.\n", settings.Workspace)
+			// requires Microsoft.MachineLearningServices/workspaces/{name} to exist.
+			if progress != nil {
+				progress(fmt.Sprintf("Workspace %q not found; provisioning an AML workspace now", settings.Workspace))
+			}
+			if createErr := ensurePromptWorkspaceExists(ctx, settings, env, progress); createErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: AML workspace provisioning failed: %v\n", createErr)
+			}
 		}
+	} else if workspaceKnown && !projectScopedTarget {
+		// Keep the explicit workspace from azure.yaml / env and skip discovery.
+		fmt.Fprintf(os.Stderr, "Using configured prompt workspace %q.\n", settings.Workspace)
 	}
 
 	// Resolve the prompt agent's dependency graph. This validates the whole
 	// graph (model + instructions, and — as later stages land — folders,
 	// connections, and skills) and resolves convention-based dependencies,
-	// enriching the definition before the create request is built. Env values
-	// are best-effort; a nil map simply means nothing to overlay.
-	graphEnv, _ := p.azdEnvValues(ctx)
-	if err := p.resolvePromptAgentGraph(ctx, &managed, settings, graphEnv, progress); err != nil {
+	// enriching the definition before the create request is built.
+	bindings, err := p.resolvePromptAgentGraph(ctx, &managed, settings, env, progress)
+	if err != nil {
 		return nil, err
 	}
 
@@ -296,7 +366,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		fmt.Fprintf(os.Stderr, "Prompt agent %q version %s is already active.\n", request.Name, latest.Version)
 	}
 
-	if err := p.registerPromptAgentEnvVars(ctx, serviceConfig, request.Name, latest.Version, settings); err != nil {
+	if err := p.registerPromptAgentEnvVars(ctx, serviceConfig, request.Name, latest.Version, settings, bindings); err != nil {
 		return nil, err
 	}
 
@@ -311,6 +381,20 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 // (https://<account>.services.ai.azure.com/api/projects/<project>/agents?api-version=v1).
 const ProjectEndpointAPIVersion = "v1"
 
+// promptProjectEndpointEnvKeys lists the azd environment keys that may carry
+// the Foundry project data-plane endpoint, in precedence order.
+//
+// FOUNDRY_PROJECT_ENDPOINT is what the microsoft.foundry provisioning provider
+// and `azd ai agent init` write today; AZURE_AI_PROJECT_ENDPOINT is the older
+// name still emitted by hand-authored infra/ templates. Both must be honored:
+// reading only the latter leaves ProjectEndpoint empty after a greenfield
+// provision, and the deploy then falls back to the legacy workspace-rooted
+// harness route, which 404s because a Foundry project is not an AML workspace.
+var promptProjectEndpointEnvKeys = []string{
+	"AZURE_AI_PROJECT_ENDPOINT",
+	"FOUNDRY_PROJECT_ENDPOINT",
+}
+
 // ResolvePromptTargetFromEnv applies azd environment-derived overrides to the
 // prompt settings so both deploy and the lifecycle commands (show/invoke/list/
 // delete) target the same managed agent route.
@@ -318,10 +402,10 @@ const ProjectEndpointAPIVersion = "v1"
 // It resolves the Foundry project data-plane endpoint
 // (https://<account>.services.ai.azure.com/api/projects/<project>), preferring
 // the value already on the settings (set via interactive init) and otherwise
-// falling back to AZURE_AI_PROJECT_ENDPOINT in the azd environment (covers
-// --no-prompt and the provisioned-project path). When a project endpoint is
-// available it becomes the authoritative routing target, the api-version is
-// normalized to v1, and the model endpoint is derived from the account host.
+// falling back to the azd environment (covers --no-prompt and the provisioned-
+// project path). When a project endpoint is available it becomes the
+// authoritative routing target, the api-version is normalized to v1, and the
+// model endpoint is derived from the account host.
 //
 // It returns true when a project-scoped target was resolved.
 func ResolvePromptTargetFromEnv(settings *PromptAgentSettings, env map[string]string) (bool, error) {
@@ -337,8 +421,11 @@ func ResolvePromptTargetFromEnv(settings *PromptAgentSettings, env map[string]st
 	// Prefer the config-supplied project endpoint (interactive init); otherwise
 	// read it from the azd environment (--no-prompt / provisioned project).
 	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
-		if pe := strings.TrimSpace(env["AZURE_AI_PROJECT_ENDPOINT"]); pe != "" {
-			settings.ProjectEndpoint = pe
+		for _, key := range promptProjectEndpointEnvKeys {
+			if pe := strings.TrimSpace(env[key]); pe != "" {
+				settings.ProjectEndpoint = pe
+				break
+			}
 		}
 	}
 
@@ -478,11 +565,14 @@ func (p *AgentServiceTargetProvider) waitForPromptAgentActive(
 // registerPromptAgentEnvVars stores the deployed prompt agent's identity and
 // harness invocation endpoint in the azd environment, mirroring the hosted
 // AGENT_{KEY}_* convention so downstream commands (show/invoke) resolve.
+// bindings carries ids resolved by the deploy graph that must survive into the
+// next deploy (currently the vector store id).
 func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	agentName, version string,
 	settings *PromptAgentSettings,
+	bindings map[string]any,
 ) error {
 	if agentName == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
@@ -494,6 +584,12 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey):     agentName,
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey):  version,
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey): endpoint,
+	}
+	if storeID, ok := bindings[vectorStoreBindingKey].(string); ok && strings.TrimSpace(storeID) != "" {
+		envVars[fmt.Sprintf("AGENT_%s_VECTOR_STORE_ID", serviceKey)] = storeID
+	}
+	if storeName, ok := bindings[memoryStoreBindingKey].(string); ok && strings.TrimSpace(storeName) != "" {
+		envVars[fmt.Sprintf("AGENT_%s_MEMORY_STORE_NAME", serviceKey)] = storeName
 	}
 
 	for key, value := range envVars {
@@ -530,7 +626,14 @@ func promptAgentResponsesEndpoint(settings *PromptAgentSettings) string {
 // azdEnvValues returns the current azd environment as a key/value map. Used to
 // overlay provisioned Foundry project values onto the prompt settings at
 // deploy time.
+//
+// It calls ensureEnv first: the prompt-agent branches of Endpoints and
+// GetTargetResource return before ensureDeployContext runs, so p.env would
+// otherwise still be nil and dereferencing it would panic the handler.
 func (p *AgentServiceTargetProvider) azdEnvValues(ctx context.Context) (map[string]string, error) {
+	if err := p.ensureEnv(ctx); err != nil {
+		return nil, err
+	}
 	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: p.env.Name,
 	})

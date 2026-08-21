@@ -7,11 +7,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -19,8 +23,10 @@ import (
 )
 
 // promptFilesDirName is the conventional folder whose documents are uploaded to
-// a vector store backing the agent's file_search tool.
-const promptFilesDirName = "files"
+// a vector store backing the agent's file_search tool. The name says what the
+// folder is for -- these documents become vector-store assets -- rather than the
+// generic "files", which reads like miscellaneous project content.
+const promptFilesDirName = "vector-assets"
 
 // vectorStoreBindingKey is the graph binding under which the resolved vector
 // store id is published for later nodes / observability.
@@ -45,9 +51,9 @@ type vectorStoreBuilder interface {
 	) (storeID string, err error)
 }
 
-// scanFilesDir returns the documents under <agentDir>/files, sorted by name.
-// Dotfiles and subdirectories are ignored. A missing or empty folder returns
-// (nil, nil) so the caller contributes no file_search tool.
+// scanFilesDir returns the documents under <agentDir>/vector-assets, sorted by
+// name. Dotfiles and subdirectories are ignored. A missing or empty folder
+// returns (nil, nil) so the caller contributes no file_search tool.
 func scanFilesDir(agentDir string) ([]fileEntry, error) {
 	if strings.TrimSpace(agentDir) == "" {
 		return nil, nil
@@ -59,12 +65,12 @@ func scanFilesDir(agentDir string) ([]fileEntry, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("opening files directory %q: %w", dir, err)
+		return nil, fmt.Errorf("opening vector asset directory %q: %w", dir, err)
 	}
 	names, err := f.Readdirnames(-1)
 	_ = f.Close()
 	if err != nil {
-		return nil, fmt.Errorf("reading files directory %q: %w", dir, err)
+		return nil, fmt.Errorf("reading vector asset directory %q: %w", dir, err)
 	}
 
 	var entries []fileEntry
@@ -73,14 +79,24 @@ func scanFilesDir(agentDir string) ([]fileEntry, error) {
 			continue
 		}
 		full := filepath.Join(dir, name)
-		info, statErr := os.Stat(full)
+		// Lstat, not Stat: os.ReadFile follows symlinks, so a link planted under
+		// vector-assets/ in a cloned agent project would upload whatever it points
+		// at (local credentials, keys) to the user's Foundry project.
+		info, statErr := os.Lstat(full)
 		if statErr != nil {
 			return nil, fmt.Errorf("stat %q: %w", full, statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("%q in the %s/ folder is a symbolic link", name, promptFilesDirName),
+				"replace the link with the file itself; symlinks are not uploaded",
+			)
 		}
 		if info.IsDir() {
 			continue
 		}
-		content, readErr := os.ReadFile(full) //nolint:gosec // path derived from the agent's files/ folder
+		content, readErr := os.ReadFile(full) //nolint:gosec // path derived from the agent's vector-assets/ folder
 		if readErr != nil {
 			return nil, fmt.Errorf("reading %q: %w", full, readErr)
 		}
@@ -168,7 +184,7 @@ func fileStoreNode(
 				if len(f.Content) == 0 {
 					return exterrors.Validation(
 						exterrors.CodeInvalidAgentManifest,
-						fmt.Sprintf("file %q in the files/ folder is empty", f.Name),
+						fmt.Sprintf("file %q in the %s/ folder is empty", f.Name, promptFilesDirName),
 						"remove empty files or add content before deploying",
 					)
 				}
@@ -203,12 +219,52 @@ type foundryVectorStoreBuilder struct {
 }
 
 // EnsureVectorStore uploads any not-yet-uploaded files and creates a vector
-// store from the resulting file ids. When reuseStoreID is set it is returned
-// as-is after ensuring uploads (add-only update); otherwise a new store is
-// created and its id returned.
+// store from the resulting file ids. When reuseStoreID is set the files are
+// attached to that store (add-only update) and its id is returned, so
+// re-deploying an agent does not orphan the previous store and every file
+// object it referenced. A reuse id that no longer resolves falls back to
+// creating a replacement store.
 func (b *foundryVectorStoreBuilder) EnsureVectorStore(
 	ctx context.Context, name, reuseStoreID string, files []fileEntry,
 ) (string, error) {
+	fileIDs, err := b.resolveFileIDs(ctx, files)
+	if err != nil {
+		return "", err
+	}
+
+	if storeID := strings.TrimSpace(reuseStoreID); storeID != "" {
+		// Add-only update. Returning the id without attaching the file ids would
+		// upload every new document and leave it permanently unsearchable.
+		var attachErr error
+		for _, id := range fileIDs {
+			if attachErr = b.client.AddVectorStoreFile(ctx, storeID, id); attachErr != nil {
+				break
+			}
+		}
+		if attachErr == nil {
+			return storeID, nil
+		}
+		// The recorded store no longer exists (deleted out of band, or the agent
+		// moved projects). Fall through and mint a replacement rather than
+		// failing every subsequent deploy. Any other failure is real.
+		if respErr, ok := errors.AsType[*azcore.ResponseError](attachErr); !ok ||
+			respErr.StatusCode != http.StatusNotFound {
+			return "", fmt.Errorf("updating vector store %q: %w", storeID, attachErr)
+		}
+	}
+
+	store, err := b.client.CreateVectorStore(ctx, name, fileIDs)
+	if err != nil {
+		return "", fmt.Errorf("creating vector store: %w", err)
+	}
+	return store.Id, nil
+}
+
+// resolveFileIDs returns the Foundry file id for every entry, uploading only
+// the ones whose content hash has not already been seen in this deploy.
+func (b *foundryVectorStoreBuilder) resolveFileIDs(
+	ctx context.Context, files []fileEntry,
+) ([]string, error) {
 	if b.uploaded == nil {
 		b.uploaded = map[string]string{}
 	}
@@ -220,21 +276,12 @@ func (b *foundryVectorStoreBuilder) EnsureVectorStore(
 		}
 		obj, err := b.client.UploadFile(ctx, f.Name, f.Content, "assistants")
 		if err != nil {
-			return "", fmt.Errorf("uploading %q: %w", f.Name, err)
+			return nil, fmt.Errorf("uploading %q: %w", f.Name, err)
 		}
 		b.uploaded[f.Hash] = obj.Id
 		fileIDs = append(fileIDs, obj.Id)
 	}
-
-	if strings.TrimSpace(reuseStoreID) != "" {
-		return reuseStoreID, nil
-	}
-
-	store, err := b.client.CreateVectorStore(ctx, name, fileIDs)
-	if err != nil {
-		return "", fmt.Errorf("creating vector store: %w", err)
-	}
-	return store.Id, nil
+	return fileIDs, nil
 }
 
 // newFoundryVectorStoreBuilder constructs the live builder from prompt settings.
@@ -244,7 +291,7 @@ func newFoundryVectorStoreBuilder(settings *PromptAgentSettings) (vectorStoreBui
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"a Foundry project endpoint is required to upload files for file_search",
-			"run `azd up` to provision a Foundry project, or remove the files/ folder",
+			"run `azd up` to provision a Foundry project, or remove the "+promptFilesDirName+"/ folder",
 		)
 	}
 	return &foundryVectorStoreBuilder{

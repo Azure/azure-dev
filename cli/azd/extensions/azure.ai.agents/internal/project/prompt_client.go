@@ -55,23 +55,39 @@ const DefaultPromptAPIVersion = "2025-05-15-preview"
 // DefaultPromptModelEndpoint is the model gateway the harness calls to reach
 // the LLM. It is sent on invoke (Responses) requests via the x-model-endpoint
 // header.
+//
+// This is a private development resource and is only a last-resort fallback:
+// EffectiveModelEndpoint prefers the user's own resolved Foundry project
+// endpoint, which is the correct gateway for anyone outside the dev
+// subscription. Do not rely on this constant being reachable.
 const DefaultPromptModelEndpoint = "https://va-dev-fdp-resource.services.ai.azure.com"
 
 // PromptAgentSettings captures the harness connection details for a prompt
 // (kind=managed) agent. It is stored in the azure.yaml service config block
 // (ServiceTargetAgentConfig.PromptAgent) and resolved at deploy/invoke time.
+//
+// `azd ai agent init` writes every field as a ${VAR} reference rather than a
+// literal, so azure.yaml carries no subscription, resource group, or workspace
+// of its own and can be copied between Foundry projects unchanged. Deploy
+// expands the references against the azd environment and falls back to the
+// built-in defaults for any variable that is unset.
+//
+// Every field is omitempty so a field with nothing to say is left out entirely.
+// Persisting empty strings would put a shape into azure.yaml that carries no
+// information but looks like configuration a developer must fill in, and
+// overlay() treats an empty value as "not configured" in either case.
 type PromptAgentSettings struct {
-	// BaseURL is the harness origin (scheme + host [+ port]). Required.
-	BaseURL string `json:"baseUrl"`
+	// BaseURL is the harness origin (scheme + host [+ port]).
+	BaseURL string `json:"baseUrl,omitempty"`
 
 	// SubscriptionID is the Azure subscription containing the workspace.
-	SubscriptionID string `json:"subscriptionId"`
+	SubscriptionID string `json:"subscriptionId,omitempty"`
 
 	// ResourceGroup is the Azure resource group containing the workspace.
-	ResourceGroup string `json:"resourceGroup"`
+	ResourceGroup string `json:"resourceGroup,omitempty"`
 
 	// Workspace is the Azure ML / Foundry workspace name.
-	Workspace string `json:"workspace"`
+	Workspace string `json:"workspace,omitempty"`
 
 	// ProjectEndpoint is the Foundry project data-plane root
 	// (https://<account>.services.ai.azure.com/api/projects/<project>). When set,
@@ -102,6 +118,32 @@ func DefaultPromptAgentSettings() PromptAgentSettings {
 		Workspace:      DefaultPromptWorkspace,
 		APIVersion:     DefaultPromptAPIVersion,
 		ModelEndpoint:  DefaultPromptModelEndpoint,
+	}
+}
+
+// overlay copies every non-empty field of src onto s, leaving s's existing
+// value in place where src is empty. It lets a partially populated (or empty)
+// promptAgent block in azure.yaml layer over DefaultPromptAgentSettings without
+// blanking the defaults.
+func (s *PromptAgentSettings) overlay(src *PromptAgentSettings) {
+	if s == nil || src == nil {
+		return
+	}
+	for _, f := range []struct {
+		dst *string
+		src string
+	}{
+		{&s.BaseURL, src.BaseURL},
+		{&s.SubscriptionID, src.SubscriptionID},
+		{&s.ResourceGroup, src.ResourceGroup},
+		{&s.Workspace, src.Workspace},
+		{&s.ProjectEndpoint, src.ProjectEndpoint},
+		{&s.APIVersion, src.APIVersion},
+		{&s.ModelEndpoint, src.ModelEndpoint},
+	} {
+		if v := strings.TrimSpace(f.src); v != "" {
+			*f.dst = v
+		}
 	}
 }
 
@@ -146,13 +188,30 @@ func (s *PromptAgentSettings) EffectiveAPIVersion() string {
 	return strings.TrimSpace(s.APIVersion)
 }
 
-// EffectiveModelEndpoint returns the configured model endpoint, falling back
-// to the package-level default when empty.
+// EffectiveModelEndpoint returns the model gateway to advertise to the
+// harness. An explicitly configured ModelEndpoint wins. Otherwise the resolved
+// Foundry project endpoint is used, because the model deployments this agent
+// references live in the user's own project — falling straight through to the
+// shared development default would send every user's traffic at a resource
+// they cannot access.
 func (s *PromptAgentSettings) EffectiveModelEndpoint() string {
-	if s == nil || strings.TrimSpace(s.ModelEndpoint) == "" {
+	if s == nil {
 		return DefaultPromptModelEndpoint
 	}
-	return s.ModelEndpoint
+	if v := strings.TrimSpace(s.ModelEndpoint); v != "" && v != DefaultPromptModelEndpoint {
+		return v
+	}
+	if pe := strings.TrimSpace(s.ProjectEndpoint); pe != "" {
+		// Trim the /api/projects/<name> suffix: the model gateway is the
+		// account origin, not the project-scoped data-plane route.
+		if u, err := url.Parse(pe); err == nil && u.Scheme != "" && u.Host != "" {
+			return u.Scheme + "://" + u.Host
+		}
+	}
+	if strings.TrimSpace(s.ModelEndpoint) != "" {
+		return s.ModelEndpoint
+	}
+	return DefaultPromptModelEndpoint
 }
 
 // ApplyEnvOverrides updates any non-empty environment variables into the

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,48 +21,217 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/fatih/color"
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
+// promptAgentManifestFileName is the manifest filename `init` scaffolds. It is
+// also written into azure.yaml as the service's `manifest:` value, so the link
+// between the service and its manifest is visible in the project file rather
+// than implied by a filename azd happens to look for.
+const promptAgentManifestFileName = "agent.yaml"
+
+// promptAgentManifest is a prompt-agent definition supplied through
+// `--manifest` (or a positional template pointer), pre-loaded so runInitManaged
+// can seed the scaffold from it instead of prompting for each field.
+//
+// sourceDir is the directory the manifest was read from. When the manifest is
+// local, a sibling instructions file is used as the agent's instructions, which
+// keeps a template's authoring layout intact instead of collapsing it to the
+// default stub.
+type promptAgentManifest struct {
+	definition agent_yaml.PromptAgent
+	sourceDir  string
+}
+
+// agentName returns the manifest's agent name, trimmed. Empty when unset.
+func (m *promptAgentManifest) agentName() string {
+	if m == nil {
+		return ""
+	}
+	return strings.TrimSpace(m.definition.Name)
+}
+
+// model returns the manifest's model deployment name, trimmed. Empty when unset.
+func (m *promptAgentManifest) model() string {
+	if m == nil {
+		return ""
+	}
+	return strings.TrimSpace(m.definition.Model)
+}
+
+// description returns the manifest's description, trimmed. Empty when unset.
+func (m *promptAgentManifest) description() string {
+	if m == nil || m.definition.Description == nil {
+		return ""
+	}
+	return strings.TrimSpace(*m.definition.Description)
+}
+
+// instructions returns the manifest's inline instructions.
+func (m *promptAgentManifest) instructions() string {
+	if m == nil {
+		return ""
+	}
+	return strings.TrimSpace(m.definition.Instructions)
+}
+
+// looksLikePromptAgentManifest reports whether the given YAML content is a
+// prompt-agent manifest (`kind: prompt`) rather than a hosted/workflow agent
+// manifest or a unified azure.yaml.
+//
+// It deliberately inspects only the top-level `kind` so a manifest that is
+// otherwise malformed still routes to the prompt flow and fails there with a
+// prompt-specific error, instead of being silently handed to the hosted flow.
+func looksLikePromptAgentManifest(content []byte) bool {
+	var top map[string]any
+	if err := yaml.Unmarshal(content, &top); err != nil {
+		return false
+	}
+	kind, ok := top["kind"].(string)
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(kind), string(agent_yaml.AgentKindPrompt))
+}
+
+// loadPromptAgentManifest parses prompt-agent manifest content into the seed
+// runInitManaged scaffolds from. sourceDir is the directory the content came
+// from and may be empty for a remote pointer.
+func loadPromptAgentManifest(content []byte, sourceDir string) (*promptAgentManifest, error) {
+	var definition agent_yaml.PromptAgent
+	if err := yaml.Unmarshal(content, &definition); err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("manifest is not a valid prompt agent: %s", err),
+			"fix the manifest to match the prompt agent schema (kind: prompt, name, model)",
+		)
+	}
+	if !strings.EqualFold(string(definition.Kind), string(agent_yaml.AgentKindPrompt)) {
+		return nil, exterrors.Validation(
+			exterrors.CodeUnsupportedAgentKind,
+			fmt.Sprintf("manifest declares kind %q, expected prompt", definition.Kind),
+			"use kind: prompt for prompt and managed agents",
+		)
+	}
+	return &promptAgentManifest{definition: definition, sourceDir: sourceDir}, nil
+}
+
+// loadPromptManifestFromPointer inspects `--manifest` (or the positional
+// template pointer it was resolved into) and returns the parsed prompt-agent
+// manifest when it declares `kind: prompt`.
+//
+// It returns (nil, nil) when no pointer was supplied, when the pointer cannot
+// be read, or when the content is not a prompt-agent manifest — all of which
+// mean "not my flow", leaving the hosted and unified-azure.yaml paths to handle
+// it exactly as before. Only a pointer that is unambiguously a prompt agent but
+// fails to parse surfaces an error.
+func loadPromptManifestFromPointer(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	flags *initFlags,
+	httpClient *http.Client,
+) (*promptAgentManifest, error) {
+	pointer := strings.TrimSpace(flags.manifestPointer)
+	if pointer == "" {
+		return nil, nil
+	}
+
+	content, ok := readManifestContentForInitDetection(ctx, azdClient, pointer, httpClient)
+	if !ok || !looksLikePromptAgentManifest(content) {
+		return nil, nil
+	}
+
+	// A sibling instructions.md is only reachable for a local pointer; for a
+	// remote one the manifest must carry its instructions inline.
+	sourceDir := ""
+	if isLocalFilePath(pointer) {
+		if abs, err := filepath.Abs(pointer); err == nil {
+			sourceDir = filepath.Dir(abs)
+		}
+	}
+
+	return loadPromptAgentManifest(content, sourceDir)
+}
+
+// resolveManifestInitHarness resolves the harness for a prompt-agent manifest
+// adopted without an explicit --kind. An explicit --harness always wins;
+// otherwise the manifest's own harness is honored, so a template that declares
+// `harness: github-copilot` scaffolds a managed agent and one that declares none
+// scaffolds a plain prompt agent.
+func resolveManifestInitHarness(harnessFlag, manifestHarness string) (string, error) {
+	if strings.TrimSpace(harnessFlag) != "" {
+		return resolveInitHarness(harnessFlag, AgentKindChoicePrompt)
+	}
+	return resolveInitHarness(manifestHarness, AgentKindChoicePrompt)
+}
+
 // runInitManaged is the entry point for `azd ai agent init` when the user has
-// selected the "prompt" (kind=managed) agent kind. It produces a first-class
-// azd project so prompt agents follow the same `azd up` / `azd deploy`
-// lifecycle as hosted agents:
+// selected one of the prompt agent kinds. It produces a first-class azd project
+// so prompt agents follow the same `azd up` / `azd deploy` lifecycle as hosted
+// agents:
 //
 //  1. Scaffolds (or reuses) an azd project + infra via ensureProject — the
 //     same azd-ai-starter-basic template the hosted flow uses.
-//  2. Writes an agent.yaml (kind=managed) into the service directory.
+//  2. Writes an agent.yaml (kind: prompt) into the service directory.
 //  3. Adds an azure.yaml service entry (Host=azure.ai.agent) whose config
 //     carries the harness connection details in a promptAgent block.
 //
-// The harness create/invoke/delete then happen through the service-target
-// provider during `azd deploy` / `azd up`, exactly like hosted agents — no
-// bespoke standalone deploy command or sidecar config file.
+// The create/invoke/delete then happen through the service-target provider
+// during `azd deploy` / `azd up`, exactly like hosted agents — no bespoke
+// standalone deploy command or sidecar config file.
+//
+// harness selects the prompt agent flavor. An empty harness scaffolds a plain
+// prompt agent that Foundry runs directly; a non-empty harness
+// ("github-copilot")
+// scaffolds a managed agent whose Brain+Hand sandbox the platform provisions.
+//
+// manifest, when non-nil, seeds the agent name, description, model, and
+// instructions from a supplied template so `--manifest` works for both prompt
+// flavors. Explicit flags always win over manifest values.
 func runInitManaged(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
+	harness string,
+	manifest *promptAgentManifest,
 ) error {
+	// Fail before anything is written when non-interactive mode is missing an
+	// input that has no deterministic fallback. ensureProject below creates a
+	// project folder and azd environment, so a late failure would strand a
+	// half-scaffolded project with no services: entry.
+	if err := validateManagedNoPromptInputs(flags, manifest); err != nil {
+		return err
+	}
+
 	// Prompt for the conceptual agent details first: name and description.
-	agentName, err := promptManagedAgentName(ctx, azdClient, flags)
+	agentName, err := promptManagedAgentName(ctx, azdClient, flags, manifest)
 	if err != nil {
 		return err
 	}
 
-	description, err := promptManagedAgentDescription(ctx, azdClient, flags)
+	description, err := promptManagedAgentDescription(ctx, azdClient, flags, manifest)
 	if err != nil {
 		return err
+	}
+
+	// Treat a manifest's model as if it had been passed as --model so the whole
+	// downstream resolution (catalog lookup, region availability, quota, SKU)
+	// targets the template's model rather than the generic default.
+	if strings.TrimSpace(flags.model) == "" && strings.TrimSpace(flags.modelDeployment) == "" {
+		flags.model = manifest.model()
 	}
 
 	// The harness base URL is where the agent runtime lives (env-overridable).
 	// Independently of that, the prompt-agent init experience mirrors hosted:
-	// in interactive mode we always walk subscription -> Foundry project ->
-	// model so the workspace tuple and model endpoint come from a real project.
-	// --no-prompt skips the interactive Azure resolution and uses flags/env.
+	// we always walk subscription -> Foundry project -> model so the workspace
+	// tuple and model endpoint come from a real project. In --no-prompt the
+	// same walk runs unattended, resolving each step from flags and the azd
+	// environment (AZURE_SUBSCRIPTION_ID, AZURE_LOCATION, --project-id,
+	// --model-deployment, --model) instead of prompting.
 	settings := project.DefaultPromptAgentSettings()
 	if envBaseURL := strings.TrimSpace(os.Getenv(project.PromptBaseURLEnvVar)); envBaseURL != "" {
 		settings.BaseURL = envBaseURL
 	}
-	useGuidedFoundry := !flags.noPrompt
 
 	// Decide where the project lives and where the agent.yaml goes within it.
 	// When an azd project already exists in the cwd we add the agent as a new
@@ -86,6 +256,14 @@ func runInitManaged(
 		serviceRelPath = "."
 	}
 
+	// Resolve the instructions before ensureProject changes the working
+	// directory: a manifest-supplied instructions.md is read relative to the
+	// manifest, which may be a path relative to the original cwd.
+	instructions, err := promptManagedAgentInstructions(ctx, azdClient, flags, manifest)
+	if err != nil {
+		return err
+	}
+
 	// Scaffold or locate the azd project + infra. On a fresh scaffold this
 	// downloads the starter template and chdirs into the new project folder.
 	if _, err := ensureProject(ctx, flags, azdClient, projectTargetDir); err != nil {
@@ -104,31 +282,23 @@ func runInitManaged(
 
 	// Resolve the model deployment. The guided path walks subscription ->
 	// Foundry project -> model (version/SKU/capacity/name) and returns a full
-	// deployment to provision and reference; otherwise we use the curated/custom
-	// model prompt (or --model in --no-prompt mode).
-	var (
-		model      string
-		deployment *project.Deployment
-	)
-	if useGuidedFoundry {
-		deployment, err = resolvePromptHarnessTarget(ctx, azdClient, flags, env, &settings)
-		if err != nil {
-			return err
-		}
-		if deployment != nil {
-			model = deployment.Name
-		}
-	}
-	if strings.TrimSpace(model) == "" {
-		model, err = promptManagedAgentModel(ctx, azdClient, flags)
-		if err != nil {
-			return err
-		}
-	}
-
-	instructions, err := promptManagedAgentInstructions(ctx, azdClient, flags)
+	// deployment to provision and reference. It runs in both interactive and
+	// non-interactive mode so the harness target is always configured; without
+	// it a --no-prompt scaffold would carry only placeholder routing values and
+	// `azd up` would fail to find a Foundry project.
+	var model string
+	deployment, foundryProject, err := resolvePromptHarnessTarget(ctx, azdClient, flags, env, &settings)
 	if err != nil {
 		return err
+	}
+	if deployment != nil {
+		model = deployment.Name
+	}
+	if strings.TrimSpace(model) == "" {
+		model, err = promptManagedAgentModel(ctx, azdClient, flags, manifest)
+		if err != nil {
+			return err
+		}
 	}
 
 	// cwd is now the project root. Create the service directory when nested.
@@ -144,9 +314,25 @@ func runInitManaged(
 			Kind: agent_yaml.AgentKindPrompt,
 		},
 		Model: model,
-		// Instructions are written to a sibling instructions.md by the
-		// convention scaffolding below, so they are omitted inline here. The
-		// deploy engine reads instructions.md when no inline value is present.
+		// An empty harness is omitted from agent.yaml entirely, which is what
+		// distinguishes a plain prompt agent from a managed (harnessed) one.
+		Harness: harness,
+		// Instructions are inline, matching the prompt-agent API schema.
+		Instructions: promptScaffoldInstructions(instructions),
+	}
+	// Carry the authored parts of a supplied manifest through to the scaffold.
+	// Tools, skills, connections, and the toolbox reference are the reason a
+	// user supplies a template at all; dropping them would silently produce a
+	// bare agent that does not match the template they asked for.
+	if manifest != nil {
+		promptAgent.Skills = manifest.definition.Skills
+		promptAgent.Tools = manifest.definition.Tools
+		promptAgent.ToolChoice = manifest.definition.ToolChoice
+		promptAgent.StructuredInputs = manifest.definition.StructuredInputs
+		promptAgent.Policies = manifest.definition.Policies
+		promptAgent.Connections = manifest.definition.Connections
+		promptAgent.Toolbox = manifest.definition.Toolbox
+		promptAgent.Memory = manifest.definition.Memory
 	}
 	if strings.TrimSpace(description) != "" {
 		desc := strings.TrimSpace(description)
@@ -156,14 +342,34 @@ func runInitManaged(
 		return err
 	}
 
-	// Scaffold the convention-based authoring layout (instructions.md + an
-	// empty skills/ folder) so the deploy engine's folder conventions are
+	// Scaffold the convention-based authoring layout (empty skills/ and
+	// vector-assets/ folders) so the deploy engine's folder conventions are
 	// discoverable from a fresh init.
-	if err := scaffoldPromptConventionFolders(serviceRelPath, instructions); err != nil {
+	if err := scaffoldPromptConventionFolders(serviceRelPath); err != nil {
 		return err
 	}
 
-	if err := addPromptAgentService(ctx, azdClient, agentName, serviceRelPath, &settings, deployment); err != nil {
+	if err := addPromptAgentService(ctx, azdClient, agentName, serviceRelPath); err != nil {
+		return err
+	}
+
+	// Model deployments live on a sibling azure.ai.project service, not on the
+	// agent service, so a prompt agent's azure.yaml has the same shape as a
+	// hosted agent's. emitResourceServices also wires the agent's uses: list so
+	// `azd provision` creates the project (and its deployments) first.
+	var deployments []project.Deployment
+	if deployment != nil {
+		deployments = []project.Deployment{*deployment}
+	}
+	endpointRef, err := recordFoundryProjectEnv(ctx, azdClient, env.Name, foundryProject)
+	if err != nil {
+		return err
+	}
+	if err := emitResourceServices(
+		ctx, azdClient, agentName,
+		endpointRef,
+		deployments, nil, nil,
+	); err != nil {
 		return err
 	}
 
@@ -175,39 +381,64 @@ func runInitManaged(
 		}
 	}
 
-	printManagedInitSummary(agentName, model, serviceRelPath, projectTargetDir, existingProject, &settings)
+	printManagedInitSummary(agentName, model, harness, serviceRelPath, projectTargetDir, existingProject, &settings)
 	return nil
 }
 
 // addPromptAgentService registers the prompt agent as an azure.yaml service
 // entry with Host=azure.ai.agent and a promptAgent config block. Unlike hosted
-// agents there is no Docker/Language — the harness owns the runtime. When a
-// resolved model deployment is supplied it is recorded under the service config
-// so `azd provision` creates it (via AI_PROJECT_DEPLOYMENTS), mirroring hosted.
+// agents there is no Docker/Language — the harness owns the runtime.
+//
+// Model deployments are deliberately NOT recorded here: they belong to the
+// sibling azure.ai.project service that emitPromptResourceServices writes, the
+// same shape hosted agents use.
+// addPromptAgentService registers the prompt agent as an azure.yaml service
+// entry with Host=azure.ai.agent. Unlike hosted agents there is no
+// Docker/Language -- the harness owns the runtime.
+//
+// The config: block carries a promptAgent entry whose every field is a ${VAR}
+// reference (see promptAgentEnvRefs). Its presence is the structural marker
+// that distinguishes a prompt agent from a hosted one -- `azd ai agent init`
+// writes no explicit kind: into the service config, and both the deploy provider
+// and the provisioning synthesizer key off this block. Writing references rather
+// than literals keeps the shape of the configuration visible while leaving the
+// tenant-specific values in the azd environment, so the project can be copied to
+// another subscription and deployed unchanged.
+//
+// Model deployments are deliberately NOT recorded here: they belong to the
+// sibling azure.ai.project service that emitResourceServices writes, the
+// same shape hosted agents use.
 func addPromptAgentService(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	agentName, serviceRelPath string,
-	settings *project.PromptAgentSettings,
-	deployment *project.Deployment,
 ) error {
 	agentConfig := project.ServiceTargetAgentConfig{
-		PromptAgent: settings,
-	}
-	if deployment != nil {
-		agentConfig.Deployments = []project.Deployment{*deployment}
+		PromptAgent: promptAgentEnvRefs(),
 	}
 	configStruct, err := project.MarshalStruct(&agentConfig)
 	if err != nil {
 		return fmt.Errorf("marshaling prompt agent service config: %w", err)
 	}
 
+	// Name the manifest explicitly on the service entry. Deploy would find
+	// agent.yaml by convention anyway, but writing it makes the service -> manifest
+	// edge readable in azure.yaml and gives the developer one line to edit when
+	// they want a different filename.
+	serviceProps, err := structpb.NewStruct(map[string]any{
+		project.AgentManifestServiceKey: promptAgentManifestFileName,
+	})
+	if err != nil {
+		return fmt.Errorf("marshaling prompt agent service properties: %w", err)
+	}
+
 	req := &azdext.AddServiceRequest{
 		Service: &azdext.ServiceConfig{
-			Name:         agentName,
-			RelativePath: serviceRelPath,
-			Host:         AiAgentHost,
-			Config:       configStruct,
+			Name:                 agentName,
+			RelativePath:         serviceRelPath,
+			Host:                 AiAgentHost,
+			Config:               configStruct,
+			AdditionalProperties: serviceProps,
 		},
 	}
 	if _, err := azdClient.Project().AddService(ctx, req); err != nil {
@@ -216,30 +447,72 @@ func addPromptAgentService(
 	return nil
 }
 
+// validateManagedNoPromptInputs rejects a non-interactive invocation that is
+// missing an input with no deterministic fallback, before runInitManaged writes
+// anything to disk.
+//
+// The individual prompt helpers below also guard on flags.noPrompt, but they run
+// at different points in the flow — the model resolution in particular happens
+// after ensureProject has already created a project folder and azd environment.
+// Checking everything up front keeps a failed --no-prompt init from leaving a
+// partially scaffolded project behind.
+func validateManagedNoPromptInputs(flags *initFlags, manifest *promptAgentManifest) error {
+	if !flags.noPrompt {
+		return nil
+	}
+	if strings.TrimSpace(flags.agentName) == "" && manifest.agentName() == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--agent-name is required in non-interactive mode for prompt agents",
+			"pass --agent-name <name>, or supply a manifest with --manifest that declares name:",
+		)
+	}
+	if strings.TrimSpace(flags.model) == "" &&
+		strings.TrimSpace(flags.modelDeployment) == "" &&
+		manifest.model() == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--model or --model-deployment is required in non-interactive mode for prompt agents",
+			"pass --model <model-name> to deploy a new model, --model-deployment <name> to reuse an "+
+				"existing deployment, or supply a manifest with --manifest that declares model:",
+		)
+	}
+	return nil
+}
+
 // promptManagedAgentName asks for the agent's name. The name is the Foundry
 // agent identity and (for a fresh project) the project folder name. It matches
 // the hosted flow's message, help text, and validation so the two flows feel
-// the same.
+// the same. A manifest-supplied name seeds the interactive default and is used
+// outright when --agent-name is absent in non-interactive mode.
 func promptManagedAgentName(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
+	manifest *promptAgentManifest,
 ) (string, error) {
 	if strings.TrimSpace(flags.agentName) != "" {
 		return validateInitAgentName(flags.agentName)
 	}
+	defaultName := manifest.agentName()
 	if flags.noPrompt {
+		if defaultName != "" {
+			return validateInitAgentName(defaultName)
+		}
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-name is required in non-interactive mode for prompt agents",
-			"pass --agent-name <name> on the command line",
+			"pass --agent-name <name>, or supply a manifest with --manifest that declares name:",
 		)
+	}
+	if defaultName == "" {
+		defaultName = "my-prompt-agent"
 	}
 
 	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:      "Enter a name for your agent",
-			DefaultValue: "my-prompt-agent",
+			DefaultValue: defaultName,
 			HelpMessage: "Foundry agents are unique by name within a project. " +
 				"Reusing a name creates a new version of the existing agent.",
 		},
@@ -252,30 +525,32 @@ func promptManagedAgentName(
 	}
 	name := strings.TrimSpace(resp.Value)
 	if name == "" {
-		name = "my-prompt-agent"
+		name = defaultName
 	}
 	return validateInitAgentName(name)
 }
 
 // promptManagedAgentDescription asks for an optional human-readable
 // description, mirroring the hosted flow. Blank is allowed. In --no-prompt
-// mode the --description flag value (or empty) is used.
+// mode the --description flag value (or the manifest's, or empty) is used.
 func promptManagedAgentDescription(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
+	manifest *promptAgentManifest,
 ) (string, error) {
 	if strings.TrimSpace(flags.description) != "" {
 		return strings.TrimSpace(flags.description), nil
 	}
+	defaultDescription := manifest.description()
 	if flags.noPrompt {
-		return "", nil
+		return defaultDescription, nil
 	}
 
 	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:        "Enter a description for your agent (optional)",
-			DefaultValue:   "",
+			DefaultValue:   defaultDescription,
 			Required:       false,
 			IgnoreHintKeys: true,
 			HelpMessage:    "A short summary of what this agent does. Written to agent.yaml and shown in Foundry.",
@@ -305,20 +580,32 @@ var promptManagedAgentModelChoices = []string{
 // promptManagedAgentModel asks which model deployment the agent should call.
 // Unlike a bare text field, it offers a curated list of common models plus a
 // "custom" escape hatch — a guided experience closer to the hosted model
-// selection. The --model flag (or --no-prompt) bypasses the prompt.
+// selection. --model-deployment, --model, a manifest model, or --no-prompt all
+// bypass the prompt.
+//
+// This is only reached when the guided Foundry resolution did not produce a
+// deployment (for example when the target project could not be resolved), so it
+// records the model name without provisioning anything.
 func promptManagedAgentModel(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
+	manifest *promptAgentManifest,
 ) (string, error) {
+	if strings.TrimSpace(flags.modelDeployment) != "" {
+		return strings.TrimSpace(flags.modelDeployment), nil
+	}
 	if strings.TrimSpace(flags.model) != "" {
 		return strings.TrimSpace(flags.model), nil
+	}
+	if manifestModel := manifest.model(); manifestModel != "" {
+		return manifestModel, nil
 	}
 	if flags.noPrompt {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"--model is required in non-interactive mode for prompt agents",
-			"pass --model <deployment-name> on the command line",
+			"--model or --model-deployment is required in non-interactive mode for prompt agents",
+			"pass --model <model-name> or --model-deployment <deployment-name> on the command line",
 		)
 	}
 
@@ -376,12 +663,19 @@ func promptManagedAgentModel(
 }
 
 // promptManagedAgentInstructions asks for the agent's system instructions.
-// In no-prompt mode it returns a stub the user can edit later.
+// A manifest's instructions (inline, or a sibling instructions.md) are used
+// verbatim — a template author already wrote them, so re-prompting would only
+// invite the user to overwrite them by accident. Otherwise, in no-prompt mode
+// it returns a stub the user can edit later.
 func promptManagedAgentInstructions(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
+	manifest *promptAgentManifest,
 ) (string, error) {
+	if manifestInstructions := manifest.instructions(); manifestInstructions != "" {
+		return manifestInstructions, nil
+	}
 	if flags.noPrompt {
 		return "You are a helpful AI assistant. Replace these instructions before deploying.", nil
 	}
@@ -426,7 +720,7 @@ func writePromptAgentYAML(targetDir string, promptAgent *agent_yaml.PromptAgent)
 		return fmt.Errorf("preparing agent.yaml file contents: %w", err)
 	}
 
-	filePath := filepath.Join(targetDir, "agent.yaml")
+	filePath := filepath.Join(targetDir, promptAgentManifestFileName)
 	if err := os.WriteFile(filePath, buf.Bytes(), osutil.PermissionFile); err != nil {
 		return fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
@@ -434,32 +728,31 @@ func writePromptAgentYAML(targetDir string, promptAgent *agent_yaml.PromptAgent)
 	return nil
 }
 
+// promptScaffoldInstructions returns the instructions to write inline into a
+// scaffolded agent.yaml, falling back to a neutral default so a freshly
+// initialized agent is deployable without editing.
+func promptScaffoldInstructions(instructions string) string {
+	if trimmed := strings.TrimSpace(instructions); trimmed != "" {
+		return trimmed
+	}
+	return "You are a helpful AI assistant."
+}
+
 // scaffoldPromptConventionFolders writes the convention-based authoring layout
 // next to agent.yaml so the deploy engine's folder conventions are discoverable
 // from a fresh init:
 //
-//   - instructions.md — the agent's instructions (deploy uses this when the
-//     agent.yaml has no inline instructions).
-//   - skills/         — add one subfolder per skill (each with a SKILL.md).
+//   - skills/        — add one subfolder per skill (each with a SKILL.md).
+//   - vector-assets/ — drop documents here to ground the agent; deploy uploads
+//     them to a vector store and attaches a file_search tool.
 //
 // The empty folders are kept with a .gitkeep placeholder. The deploy scanners
-// ignore dotfiles, so .gitkeep never contributes content. An existing
-// instructions.md is never overwritten so re-running init preserves edits.
-func scaffoldPromptConventionFolders(targetDir, instructions string) error {
-	if strings.TrimSpace(instructions) == "" {
-		instructions = "You are a helpful AI assistant."
-	}
-
-	instructionsPath := filepath.Join(targetDir, "instructions.md")
-	if !fileExists(instructionsPath) {
-		content := strings.TrimRight(instructions, "\n") + "\n"
-		if err := os.WriteFile(instructionsPath, []byte(content), osutil.PermissionFile); err != nil {
-			return fmt.Errorf("writing instructions.md: %w", err)
-		}
-		log.Printf("Wrote instructions.md at %s", instructionsPath)
-	}
-
-	for _, sub := range []string{"skills"} {
+// ignore dotfiles, so .gitkeep never contributes content.
+//
+// Instructions are not scaffolded here: they are written inline into
+// agent.yaml, matching the prompt-agent API schema.
+func scaffoldPromptConventionFolders(targetDir string) error {
+	for _, sub := range []string{"skills", "vector-assets"} {
 		dir := filepath.Join(targetDir, sub)
 		if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {
 			return fmt.Errorf("creating %s folder: %w", sub, err)
@@ -476,7 +769,7 @@ func scaffoldPromptConventionFolders(targetDir, instructions string) error {
 
 // printManagedInitSummary prints a concise summary plus next-step hint.
 func printManagedInitSummary(
-	agentName, model, serviceRelPath, projectTargetDir string,
+	agentName, model, harness, serviceRelPath, projectTargetDir string,
 	existingProject bool,
 	settings *project.PromptAgentSettings,
 ) {
@@ -489,6 +782,9 @@ func printManagedInitSummary(
 	fmt.Printf("  Agent file:    %s\n", agentFile)
 	fmt.Printf("  Model:         %s\n", model)
 	fmt.Printf("  Service entry: added to azure.yaml (host: %s)\n", AiAgentHost)
+	if harness != "" {
+		fmt.Printf("  Harness:       %s\n", harness)
+	}
 	fmt.Printf("  Harness URL:   %s\n", settings.BaseURL)
 	// Surface the resolved Foundry target when it isn't the local-dev default
 	// (i.e. the guided subscription -> project -> model path ran).
@@ -506,8 +802,9 @@ func printManagedInitSummary(
 	}
 	fmt.Println()
 	fmt.Println("Authoring layout (edit these to add capabilities):")
-	fmt.Printf("  %sinstructions.md  the agent's instructions\n", dirPrefix)
-	fmt.Printf("  %sskills/          add a subfolder per skill (each with a SKILL.md)\n", dirPrefix)
+	fmt.Printf("  %s%-16s the agent's instructions\n", dirPrefix, "agent.yaml")
+	fmt.Printf("  %s%-16s add a subfolder per skill (each with a SKILL.md)\n", dirPrefix, "skills/")
+	fmt.Printf("  %s%-16s drop documents here to ground the agent\n", dirPrefix, "vector-assets/")
 
 	fmt.Println()
 	fmt.Println("Next steps:")

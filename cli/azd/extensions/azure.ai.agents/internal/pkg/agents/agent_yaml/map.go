@@ -457,12 +457,62 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 }
 
 // CreatePromptAgentAPIRequest converts a PromptAgent YAML definition into the
+// mapHarness builds the `harness` block, or returns nil for a plain prompt
+// agent so the field is omitted entirely.
+//
+// The harness is serialized as an object rather than the bare string it used to
+// be, because that is the only shape with somewhere to put skills. The type
+// value itself is passed through verbatim: azd does not maintain an allowlist
+// of harness names, so a harness the service gains later needs no change here.
+//
+// Author-declared skill names are folded in alongside the ones the deploy graph
+// published from the skills/ folder, and are matched by name so a manifest entry
+// naming a folder-published skill does not produce a duplicate reference.
+func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
+	harnessType := strings.TrimSpace(promptAgent.Harness)
+	if harnessType == "" {
+		return nil
+	}
+
+	harness := &agent_api.ManagedAgentHarness{Type: harnessType}
+	seen := make(map[string]struct{}, len(promptAgent.HarnessSkills))
+	for _, skill := range promptAgent.HarnessSkills {
+		name := strings.TrimSpace(skill.Name)
+		if name == "" {
+			continue
+		}
+		seen[name] = struct{}{}
+		harness.Skills = append(harness.Skills, agent_api.HarnessSkillReference{
+			Name:    name,
+			Version: strings.TrimSpace(skill.Version),
+		})
+	}
+	for _, name := range promptAgent.Skills {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		// No version: this name came from the manifest, not from a publish, so
+		// azd has nothing to pin it to and defers to the service's default.
+		harness.Skills = append(harness.Skills, agent_api.HarnessSkillReference{Name: name})
+	}
+	return harness
+}
+
 // API CreateAgentRequest expected by the Foundry prompt-agent endpoint.
 //
 // Prompt agents are simpler than hosted agents — the customer only declares
-// model + instructions (plus optional skills/policies). The platform manages
-// the Brain+Hand sandbox, so no image/cpu/memory fields are required from the
-// customer for the minimum case.
+// model + instructions (plus optional skills/policies), so no image/cpu/memory
+// fields are required from the customer for the minimum case.
+//
+// The agent's Harness is omitted entirely when empty: a harness-less prompt
+// agent is run directly by Foundry, while a managed agent names its harness
+// (e.g. "github-copilot") and the platform provisions a Brain+Hand sandbox for
+// it.
 func CreatePromptAgentAPIRequest(
 	promptAgent PromptAgent,
 	buildConfig *AgentBuildConfig,
@@ -473,6 +523,24 @@ func CreatePromptAgentAPIRequest(
 	if strings.TrimSpace(promptAgent.Instructions) == "" {
 		return nil, fmt.Errorf("prompt agent requires non-empty instructions")
 	}
+	if err := promptAgent.ValidateHarness(); err != nil {
+		return nil, err
+	}
+	if err := promptAgent.ValidateHarnessFeatures(); err != nil {
+		return nil, err
+	}
+	if err := promptAgent.ValidateTools(); err != nil {
+		return nil, err
+	}
+	if err := promptAgent.ValidateHarnessFields(); err != nil {
+		return nil, err
+	}
+	if err := promptAgent.ValidateHarnessTools(); err != nil {
+		return nil, err
+	}
+	if err := promptAgent.ValidatePolicies(); err != nil {
+		return nil, err
+	}
 
 	promptDef := agent_api.ManagedAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
@@ -480,11 +548,15 @@ func CreatePromptAgentAPIRequest(
 			RaiConfig: mapRaiConfig(promptAgent.Policies),
 		},
 		Model:        promptAgent.Model,
-		Harness:      agent_api.ManagedAgentHarnessGitHubCopilot,
+		Harness:      mapHarness(promptAgent),
 		Instructions: promptAgent.Instructions,
 	}
 
-	if len(promptAgent.Skills) > 0 {
+	// Skills split on the harness. A harnessed agent carries them inside the
+	// harness block, where the service provisions them into the sandbox that
+	// runs them. A harness-less agent has no sandbox, so its skills stay on the
+	// definition-level field.
+	if promptDef.Harness == nil && len(promptAgent.Skills) > 0 {
 		promptDef.Skills = append([]string(nil), promptAgent.Skills...)
 	}
 
@@ -501,6 +573,18 @@ func CreatePromptAgentAPIRequest(
 	if len(promptAgent.StructuredInputs) > 0 {
 		promptDef.StructuredInputs = promptAgent.StructuredInputs
 	}
+
+	// Sampling and response-shape controls. Copied as pointers/any so an
+	// explicit zero (temperature: 0) survives as a zero rather than collapsing
+	// into "unset" and silently picking up the service default.
+	promptDef.Temperature = promptAgent.Temperature
+	promptDef.TopP = promptAgent.TopP
+	promptDef.Text = promptAgent.Text
+	promptDef.Reasoning = promptAgent.Reasoning
+
+	// promptAgent.Memory is deliberately NOT copied here: the API has no memory
+	// field. The deploy engine provisions the store and injects a
+	// memory_search_preview entry into Tools, which the block above forwards.
 
 	// Build-time environment variables (if supplied) get carried into the
 	// managed environment block so the Hand sandbox can read them.

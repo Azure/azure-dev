@@ -18,10 +18,12 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/fatih/color"
 )
 
 const agentTemplatesURL = "https://aka.ms/foundry-agents-samples"
@@ -99,9 +101,10 @@ const (
 )
 
 // agentKindChoice represents the discriminator the user picks at the very
-// start of `azd ai agent init`. It selects between the two supported agent
-// runtimes: hosted (today's container/code-deploy flow) and prompt (the
-// Foundry Brain+Hand harness, currently powered by GitHub Copilot / GHCP).
+// start of `azd ai agent init`. It selects between the supported agent
+// runtimes: hosted (the container/code-deploy flow), prompt (a plain Foundry
+// prompt agent with no harness), and managed (a prompt agent driven by the
+// Foundry Brain+Hand harness, currently powered by GitHub Copilot).
 type agentKindChoice string
 
 const (
@@ -109,19 +112,68 @@ const (
 	// supplies code or a container image and the platform runs it on Azure
 	// Container Apps.
 	AgentKindChoiceHosted agentKindChoice = "hosted"
-	// AgentKindChoicePrompt is the "prompt" agent path — the customer declares
-	// model + instructions and the Foundry harness (GHCP) runs Brain+Hand on
-	// demand. The scaffolded agent.yaml uses kind: prompt (see
-	// agent_yaml.AgentKindPrompt), matching this choice value exactly.
+	// AgentKindChoicePrompt is the plain "prompt" agent path — the customer
+	// declares model + instructions and Foundry runs the agent directly, with
+	// no harness and no sandbox to provision. The scaffolded agent.yaml uses
+	// kind: prompt (see agent_yaml.AgentKindPrompt) and omits `harness`.
 	AgentKindChoicePrompt agentKindChoice = "prompt"
-	// AgentKindChoiceManaged is a backward-compatible alias for
-	// AgentKindChoicePrompt accepted on the --kind flag. Prefer "prompt".
+	// AgentKindChoiceManaged is the managed-agent path — a prompt agent that
+	// additionally names an execution harness (GitHub Copilot), so Foundry
+	// provisions a Brain+Hand sandbox for it. The scaffolded agent.yaml still
+	// uses kind: prompt; the only difference is `harness: github-copilot`.
 	AgentKindChoiceManaged agentKindChoice = "managed"
 )
 
+// harnessForKindChoice returns the agent.yaml `harness` value implied by a kind
+// choice. Managed agents run on the GitHub Copilot harness; plain prompt agents
+// have none, so the field is omitted from agent.yaml and the create request.
+func harnessForKindChoice(choice agentKindChoice) string {
+	if choice == AgentKindChoiceManaged {
+		return agent_api.ManagedAgentHarnessGitHubCopilot
+	}
+	return ""
+}
+
+// harnessNone is the --harness value that explicitly opts out of a harness,
+// letting `--kind managed --harness none` degrade to a plain prompt agent.
+const harnessNone = "none"
+
+// resolveInitHarness resolves the harness written to the scaffolded agent.yaml.
+// An explicit --harness value always wins over the harness implied by the kind
+// choice, so `--kind prompt --harness github-copilot` and `--kind managed` are
+// equivalent.
+func resolveInitHarness(harnessFlag string, choice agentKindChoice) (string, error) {
+	harness := strings.ToLower(strings.TrimSpace(harnessFlag))
+	switch harness {
+	case "":
+		return harnessForKindChoice(choice), nil
+	case harnessNone:
+		return "", nil
+	case agent_api.ManagedAgentHarnessGitHubCopilot:
+		return agent_api.ManagedAgentHarnessGitHubCopilot, nil
+	case agent_api.ManagedAgentHarnessGitHubCopilotRemoved:
+		// Named separately from the generic "unknown value" case so the error
+		// tells the user what to type instead of only what is allowed.
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"--harness %q is no longer accepted",
+				agent_api.ManagedAgentHarnessGitHubCopilotRemoved,
+			),
+			fmt.Sprintf("use --harness %s instead", agent_api.ManagedAgentHarnessGitHubCopilot),
+		)
+	default:
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("unknown --harness value %q", harnessFlag),
+			fmt.Sprintf("supported values are: %s, %s", agent_api.ManagedAgentHarnessGitHubCopilot, harnessNone),
+		)
+	}
+}
+
 // promptAgentKind asks the user which agent kind to initialize. In no-prompt
-// mode it returns AgentKindChoiceHosted to preserve today's behaviour for CI
-// callers that do not yet know about the new kind. The selection is the very
+// mode it returns AgentKindChoiceHosted to preserve today's behavior for CI
+// callers that do not yet know about the new kinds. The selection is the very
 // first interactive prompt in `azd ai agent init` and routes the rest of the
 // init flow.
 func promptAgentKind(
@@ -135,19 +187,25 @@ func promptAgentKind(
 
 	choices := []*azdext.SelectChoice{
 		{
-			Label: "Hosted agent  — bring your own code or container (deployed to Azure Container Apps)",
+			Label: "Hosted agent — Bring your own code or framework",
 			Value: string(AgentKindChoiceHosted),
 		},
 		{
-			Label: "Prompt agent  — model + instructions only (Foundry runs Brain+Hand; Harness: GHCP)",
+			Label: "Prompt agent (no code, Foundry-managed) — " +
+				"Configure a model, instructions, and tools",
 			Value: string(AgentKindChoicePrompt),
+		},
+		{
+			Label: "Prompt agent with GitHub Copilot harness (preview) — " +
+				"Configure a model, instructions, tools, and skills",
+			Value: string(AgentKindChoiceManaged),
 		},
 	}
 	defaultIndex := int32(0)
 
 	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message:       "What kind of agent do you want to initialize?",
+			Message:       "What type of agent do you want to initialize?",
 			Choices:       choices,
 			SelectedIndex: &defaultIndex,
 		},
@@ -159,7 +217,34 @@ func promptAgentKind(
 		return "", fmt.Errorf("failed to prompt for agent kind: %w", err)
 	}
 
-	return agentKindChoice(choices[*resp.Value].Value), nil
+	choice := agentKindChoice(choices[*resp.Value].Value)
+	warnPromptAgentPreview(os.Stdout, choice)
+	return choice, nil
+}
+
+// warnPromptAgentPreview tells the user that prompt-agent support in azd is
+// still in preview. The harnessed option already carries "(preview)" in its
+// label, so only the plain prompt agent needs the callout; without it that
+// option reads as generally available next to the hosted one.
+//
+// This warns rather than blocks: preview is a stability signal, not a gate.
+func warnPromptAgentPreview(writer io.Writer, choice agentKindChoice) {
+	if choice != AgentKindChoicePrompt {
+		return
+	}
+
+	// Each segment is colored independently. Nesting output.WithBold inside
+	// output.WithWarningFormat would emit a reset mid-string, dropping the
+	// surrounding yellow and switching the foreground to white from there on.
+	emphasis := color.New(color.FgYellow, color.Bold)
+
+	fmt.Fprintf(writer, "%s%s%s",
+		output.WithWarningFormat("\n(!) Prompt agents are a "),
+		emphasis.Sprint("preview feature of the azd CLI experience"),
+		output.WithWarningFormat(
+			". The authoring layout and commands may change in a future release.\n\n",
+		),
+	)
 }
 
 // promptInitMode asks the user whether to use existing code or start from a template.

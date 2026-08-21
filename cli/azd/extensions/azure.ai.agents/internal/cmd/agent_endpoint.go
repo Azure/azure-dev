@@ -167,7 +167,16 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		apiVersion = values[0]
 	}
 
-	projectEndpoint := fmt.Sprintf("https://%s/api/projects/%s", host, projectSegment)
+	// Rebuild the project-scoped endpoint. On the override path preserve the
+	// caller's scheme and host:port verbatim: forcing https and dropping the port
+	// would rewrite an `http://localhost:5000` override to `https://localhost/...`
+	// and never reach the local backend the override exists to target. This
+	// mirrors what validateProjectEndpoint does in project_endpoint.go.
+	scheme, authority := "https", host
+	if bypass {
+		scheme, authority = strings.ToLower(u.Scheme), u.Host
+	}
+	projectEndpoint := fmt.Sprintf("%s://%s/api/projects/%s", scheme, authority, projectSegment)
 
 	return &parsedAgentEndpoint{
 		ProjectEndpoint: projectEndpoint,

@@ -79,7 +79,8 @@ func TestPromptAgent_YAMLRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if roundTripped.Model != original.Model {
-		t.Errorf("model: got %q, want %q", roundTripped.Model, original.Model)
+		t.Errorf("model: got %q, want %q",
+			roundTripped.Model, original.Model)
 	}
 	if roundTripped.Instructions != original.Instructions {
 		t.Errorf("instructions: got %q, want %q", roundTripped.Instructions, original.Instructions)
@@ -90,9 +91,8 @@ func TestPromptAgent_YAMLRoundTrip(t *testing.T) {
 }
 
 // TestValidateAgentDefinition_Prompt_RequiresModelAndInstructions ensures the
-// validator requires a model for prompt agents. Instructions are intentionally
-// not required inline (they may come from a sibling instructions.md), so an
-// agent.yaml without inline instructions must still validate here.
+// validator requires both a model deployment and inline instructions for prompt
+// agents — the two fields the prompt-agent API cannot default.
 func TestValidateAgentDefinition_Prompt_RequiresModelAndInstructions(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -111,13 +111,14 @@ instructions: ok
 			shouldError: true,
 		},
 		{
-			name: "missing inline instructions is allowed (may come from instructions.md)",
+			name: "missing instructions",
 			yamlContent: `
 name: n
 kind: prompt
 model: gpt-4.1-mini
 `,
-			shouldError: false,
+			wantSubstr:  "instructions",
+			shouldError: true,
 		},
 		{
 			name: "valid",
@@ -149,38 +150,147 @@ instructions: Be helpful.
 	}
 }
 
-// TestCreatePromptAgentAPIRequest_SetsHarness verifies the prompt create
-// request carries the GitHub Copilot harness identifier in the definition.
-func TestCreatePromptAgentAPIRequest_SetsHarness(t *testing.T) {
-	promptDef := PromptAgent{
-		AgentDefinition: AgentDefinition{
-			Kind: AgentKindPrompt,
-			Name: "my-agent",
+// TestCreatePromptAgentAPIRequest_Harness verifies the prompt create request
+// carries the agent's harness verbatim, and that a plain (harness-less) prompt
+// agent omits the field entirely rather than defaulting to a harness.
+func TestCreatePromptAgentAPIRequest_Harness(t *testing.T) {
+	tests := []struct {
+		name        string
+		harness     string
+		wantHarness string
+		wantJSON    bool
+	}{
+		{
+			name:        "managed agent keeps the GitHub Copilot harness",
+			harness:     agent_api.ManagedAgentHarnessGitHubCopilot,
+			wantHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			wantJSON:    true,
 		},
-		Model:        "gpt-4.1-mini",
-		Instructions: "Be helpful.",
+		{
+			name:        "plain prompt agent has no harness",
+			harness:     "",
+			wantHarness: "",
+			wantJSON:    false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			promptDef := PromptAgent{
+				AgentDefinition: AgentDefinition{
+					Kind: AgentKindPrompt,
+					Name: "my-agent",
+				},
+				Model:        "gpt-4.1-mini",
+				Harness:      tc.harness,
+				Instructions: "Be helpful.",
+			}
+
+			req, err := CreatePromptAgentAPIRequest(promptDef, nil)
+			if err != nil {
+				t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
+			}
+
+			def, ok := req.Definition.(agent_api.ManagedAgentDefinition)
+			if !ok {
+				t.Fatalf("definition: got %T, want agent_api.ManagedAgentDefinition", req.Definition)
+			}
+			gotHarness := ""
+			if def.Harness != nil {
+				gotHarness = def.Harness.Type
+			}
+			if gotHarness != tc.wantHarness {
+				t.Errorf("harness: got %q, want %q", gotHarness, tc.wantHarness)
+			}
+
+			data, err := json.Marshal(req)
+			if err != nil {
+				t.Fatalf("marshal request: %v", err)
+			}
+			gotJSON := strings.Contains(string(data), `"harness":`)
+			if gotJSON != tc.wantJSON {
+				t.Errorf("serialized harness field present = %v, want %v:\n%s", gotJSON, tc.wantJSON, data)
+			}
+		})
+	}
+}
+
+// TestCreatePromptAgentAPIRequest_HarnessSkills pins where skills land on the
+// wire. A harnessed agent carries them inside the harness block as versioned
+// references, because a skill is instructions plus scripts that only the
+// harness sandbox can execute. Nothing about a skill becomes a tool, and no
+// toolbox is involved: the harness already has a service-owned system toolbox
+// whose name and lifecycle the customer does not manage.
+func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
+	promptDef := PromptAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
+		Model:           "gpt-4.1-mini",
+		Instructions:    "Be helpful.",
+		Harness:         agent_api.ManagedAgentHarnessGitHubCopilot,
+		Skills:          []string{"duplicate-check"},
+		HarnessSkills: []HarnessSkillRef{
+			{Name: "duplicate-check", Version: "3"},
+			{Name: "severity-triage", Version: "1"},
+		},
 	}
 
 	req, err := CreatePromptAgentAPIRequest(promptDef, nil)
 	if err != nil {
 		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
 	}
-
 	def, ok := req.Definition.(agent_api.ManagedAgentDefinition)
 	if !ok {
 		t.Fatalf("definition: got %T, want agent_api.ManagedAgentDefinition", req.Definition)
 	}
-	if def.Harness != agent_api.ManagedAgentHarnessGitHubCopilot {
-		t.Errorf("harness: got %q, want %q", def.Harness, agent_api.ManagedAgentHarnessGitHubCopilot)
+
+	if def.Harness == nil {
+		t.Fatal("expected a harness block")
+	}
+	want := []agent_api.HarnessSkillReference{
+		{Name: "duplicate-check", Version: "3"},
+		{Name: "severity-triage", Version: "1"},
+	}
+	if len(def.Harness.Skills) != len(want) {
+		t.Fatalf("harness skills: got %+v, want %+v", def.Harness.Skills, want)
+	}
+	for i, w := range want {
+		if def.Harness.Skills[i] != w {
+			t.Errorf("harness skill %d: got %+v, want %+v", i, def.Harness.Skills[i], w)
+		}
+	}
+	if len(def.Skills) != 0 {
+		t.Errorf("harnessed skills must not appear on the definition-level field, got %+v", def.Skills)
+	}
+	if len(def.Tools) != 0 {
+		t.Errorf("a skill must not become a tool, got %+v", def.Tools)
+	}
+}
+
+// TestCreatePromptAgentAPIRequest_HarnessLessSkills covers the other half of
+// the split: with no harness there is no sandbox to provision skills into, so
+// the authored names stay on the definition-level field.
+func TestCreatePromptAgentAPIRequest_HarnessLessSkills(t *testing.T) {
+	promptDef := PromptAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
+		Model:           "gpt-4.1-mini",
+		Instructions:    "Be helpful.",
+		Skills:          []string{"severity-triage"},
 	}
 
-	// The serialized body must include "harness":"ghcp".
-	data, err := json.Marshal(req)
+	req, err := CreatePromptAgentAPIRequest(promptDef, nil)
 	if err != nil {
-		t.Fatalf("marshal request: %v", err)
+		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
 	}
-	if !strings.Contains(string(data), `"harness":"ghcp"`) {
-		t.Errorf("serialized request missing harness field:\n%s", data)
+	def, ok := req.Definition.(agent_api.ManagedAgentDefinition)
+	if !ok {
+		t.Fatalf("definition: got %T, want agent_api.ManagedAgentDefinition", req.Definition)
+	}
+
+	if def.Harness != nil {
+		t.Errorf("expected no harness block, got %+v", def.Harness)
+	}
+	if len(def.Skills) != 1 || def.Skills[0] != "severity-triage" {
+		t.Errorf("definition skills: got %+v, want [severity-triage]", def.Skills)
 	}
 }
 

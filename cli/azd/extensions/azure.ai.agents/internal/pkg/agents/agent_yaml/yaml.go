@@ -246,25 +246,62 @@ type ContainerAgent struct {
 }
 
 // PromptAgent represents a Foundry "prompt" agent — a PES (Prompt Execution
-// Service) backed agent whose Brain+Hand sandbox is provisioned by the
-// platform on demand. The customer declares the model and instructions; the
+// Service) backed agent. The customer declares the model and instructions; the
 // platform manages the runtime, lifecycle, and orchestration.
 //
 // Unlike ContainerAgent, the customer does not provide a container image or
-// code; the only required fields are Model and Instructions.
+// code; the only required fields are ModelDeploymentName and Instructions.
+//
+// The optional Harness field selects between the two prompt-agent flavors:
+//   - Harness empty — a plain prompt agent. Foundry runs model + instructions
+//   - tools directly; there is no sandbox to provision.
+//   - Harness set (e.g. "github-copilot") — a managed agent whose Brain+Hand
+//     sandbox is provisioned by the platform on demand and driven by the named
+//     harness.
+//
+// HarnessSkillRef is a published skill pinned onto a harnessed agent, resolved
+// to the version that was actually uploaded. The version is carried explicitly
+// because the service rejects a skill reference that omits it.
+type HarnessSkillRef struct {
+	Name    string
+	Version string
+}
+
 type PromptAgent struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
 
-	// Model is the model deployment name to use for this agent (e.g. "gpt-4.1-mini").
+	// Model is the name of the model deployment the agent runs on (e.g.
+	// "gpt-4.1-mini") — not a model id. It must match a deployment declared
+	// under the sibling azure.ai.project service in azure.yaml, which
+	// `azd provision` creates.
+	//
+	// The key is `model` in both YAML and JSON, matching the field name the
+	// Foundry prompt-agent API expects on the wire.
 	Model string `json:"model" yaml:"model"`
 
-	// Instructions is the system/developer message inserted into the model's context.
-	// It may be omitted here when supplied by a sibling instructions.md file
-	// (the deploy engine falls back to that convention); inline always wins.
+	// Harness names the execution harness the platform runs the agent on, for
+	// example agent_api.ManagedAgentHarnessGitHubCopilot ("github-copilot").
+	// Leave it empty for a plain prompt agent with no harness; the field is then
+	// omitted from the create request entirely.
+	Harness string `json:"harness,omitempty" yaml:"harness,omitempty"`
+
+	// Instructions is the system/developer message inserted into the model's
+	// context. It is declared inline, matching the prompt-agent API schema.
 	Instructions string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 
 	// Skills is an optional list of Foundry skill names attached to the agent.
 	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
+
+	// HarnessSkills carries the skills a harnessed agent runs, resolved to the
+	// exact versions that were published. It is populated by the deploy graph
+	// from the agent's skills/ folder, never authored, and is therefore excluded
+	// from both YAML and JSON.
+	//
+	// It exists separately from Skills because the two land in different places
+	// on the wire: a harnessed agent's skills nest under `harness`, where the
+	// service provisions them into the sandbox, while the definition-level
+	// `skills` field only ever applies to a harness-less agent.
+	HarnessSkills []HarnessSkillRef `json:"-" yaml:"-"`
 
 	// Tools is an optional list of tool definitions attached to the agent.
 	// Entries are passed through verbatim to the Foundry prompt-agent API, so
@@ -281,12 +318,42 @@ type PromptAgent struct {
 	// "required", "none", or a specific tool object). Passed through verbatim.
 	ToolChoice any `json:"tool_choice,omitempty" yaml:"tool_choice,omitempty"`
 
+	// Temperature is the sampling temperature. Pointer so an explicit 0 (fully
+	// deterministic) is distinguishable from "not set", which would otherwise
+	// silently become the service default.
+	Temperature *float64 `json:"temperature,omitempty" yaml:"temperature,omitempty"`
+
+	// TopP is the nucleus-sampling cutoff. Pointer for the same reason as
+	// Temperature. The API accepts both; setting both is usually a mistake.
+	TopP *float64 `json:"top_p,omitempty" yaml:"top_p,omitempty"`
+
+	// Text configures the model's text response, most commonly the structured
+	// output format (e.g. text.format.type: json_schema). Passed through
+	// verbatim rather than modeled, since the shape is the API's to define.
+	Text any `json:"text,omitempty" yaml:"text,omitempty"`
+
+	// Reasoning configures reasoning-model behavior (e.g. reasoning.effort).
+	// Only meaningful on models that support it; passed through verbatim.
+	Reasoning any `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
+
 	// StructuredInputs declares typed inputs the agent accepts per invocation.
 	// Passed through verbatim to the API.
 	StructuredInputs map[string]any `json:"structured_inputs,omitempty" yaml:"structured_inputs,omitempty"`
 
-	// Policies is an optional list of governance policies (e.g. RAI).
+	// Policies is an optional list of governance policies (e.g. RAI). This is
+	// how the "guardrails" capability is expressed: a rai_policy entry becomes
+	// the definition's rai_config, which is the only guardrail carrier the
+	// prompt-agent API has.
 	Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
+
+	// Memory declares a Foundry memory store the agent recalls from. Unlike
+	// Tools this is NOT passed through: the prompt-agent API has no `memory`
+	// field. azd provisions the named store during deploy and then injects a
+	// memory_search_preview entry into Tools, which is the actual wire carrier.
+	//
+	// It is json:"-" for exactly that reason — emitting it would send a field
+	// the API does not define.
+	Memory *PromptMemory `json:"-" yaml:"memory,omitempty"`
 
 	// Connections declares project connections that the agent's tools depend on.
 	// The deploy engine resolves each connection through the resolution ladder
@@ -300,6 +367,62 @@ type PromptAgent struct {
 	// as an mcp tool instead of registering skills from the skills/ folder.
 	Toolbox *ToolboxReference `json:"toolbox,omitempty" yaml:"toolbox,omitempty"`
 }
+
+// PromptMemory declares the Foundry memory store a prompt agent recalls from.
+//
+// Memory is a two-part feature: a memory store is a project-level resource that
+// must exist before the agent references it, and the agent reaches it through a
+// memory_search_preview tool. Authors declare it once here and azd does both —
+// it ensures the store exists at deploy time and injects the tool entry.
+type PromptMemory struct {
+	// Store is the memory store name. Required. azd creates the store if it
+	// does not already exist and reuses it if it does.
+	Store string `json:"store" yaml:"store"`
+
+	// Description is an optional human-readable description recorded on the
+	// store when azd creates it.
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+
+	// ChatModel and EmbeddingModel are the model deployment names the store
+	// uses to summarize conversations and to embed memories. Both are required
+	// to create a store; they are ignored when the store already exists.
+	ChatModel      string `json:"chat_model,omitempty" yaml:"chat_model,omitempty"`
+	EmbeddingModel string `json:"embedding_model,omitempty" yaml:"embedding_model,omitempty"`
+
+	// Scope namespaces memories so they are isolated per user (or per tenant,
+	// session, etc.). Defaults to DefaultMemoryScope, which resolves the caller's
+	// object ID from the request auth header at runtime.
+	Scope string `json:"scope,omitempty" yaml:"scope,omitempty"`
+
+	// UpdateDelay is how many seconds of conversation inactivity to wait before
+	// extracting memories. Nil leaves the service default (300s) in place. Set
+	// it low only for demos — a short delay extracts on nearly every turn.
+	UpdateDelay *int `json:"update_delay,omitempty" yaml:"update_delay,omitempty"`
+
+	// MaxMemories caps how many memories a single search returns. Nil leaves
+	// the service default in place.
+	MaxMemories *int `json:"max_memories,omitempty" yaml:"max_memories,omitempty"`
+
+	// Options toggles which memory kinds the store extracts.
+	Options *PromptMemoryOptions `json:"options,omitempty" yaml:"options,omitempty"`
+}
+
+// PromptMemoryOptions toggles the extraction behaviors of a memory store. All
+// fields are pointers so an unset toggle leaves the service default rather than
+// forcing false.
+type PromptMemoryOptions struct {
+	ChatSummaryEnabled      *bool  `json:"chat_summary_enabled,omitempty" yaml:"chat_summary_enabled,omitempty"`
+	UserProfileEnabled      *bool  `json:"user_profile_enabled,omitempty" yaml:"user_profile_enabled,omitempty"`
+	ProceduralMemoryEnabled *bool  `json:"procedural_memory_enabled,omitempty" yaml:"procedural_memory_enabled,omitempty"`
+	DefaultTTLSeconds       *int   `json:"default_ttl_seconds,omitempty" yaml:"default_ttl_seconds,omitempty"`
+	UserProfileDetails      string `json:"user_profile_details,omitempty" yaml:"user_profile_details,omitempty"`
+}
+
+// DefaultMemoryScope isolates memories per calling user. Foundry substitutes
+// the object ID from the request's auth header, so a shared agent does not leak
+// one user's memories to another. Authors can override it with a fixed string
+// when they want a shared or per-tenant namespace instead.
+const DefaultMemoryScope = "{{$userId}}"
 
 // ToolboxReference points at an existing Foundry toolbox version so a prompt
 // agent can consume it without the deploy engine registering local skills.
@@ -337,11 +460,6 @@ type PromptConnection struct {
 
 	// Metadata is optional additional connection metadata.
 	Metadata map[string]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-
-	// Provision opts into the deploy engine creating the backing Azure resource
-	// (via an emitted Bicep module) when no existing connection or target can be
-	// resolved. Defaults to false (fail fast with guidance).
-	Provision bool `json:"provision,omitempty" yaml:"provision,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

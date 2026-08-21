@@ -6,7 +6,6 @@ package project
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -40,7 +39,7 @@ func deploymentNode(
 			if strings.ContainsAny(model, " /\\") {
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
-					fmt.Sprintf("model %q is not a valid deployment name", model),
+					fmt.Sprintf("model deployment name %q is not valid", model),
 					"set 'model' to a model deployment name (e.g. gpt-4.1-mini)",
 				)
 			}
@@ -68,8 +67,8 @@ func deploymentNode(
 
 // provisionedDeploymentResolver is the live deploymentResolver. Model
 // deployments for prompt agents are provisioned by azd infra (recorded at init
-// and applied during `azd provision`), so at deploy time the deployment is
-// assumed present. This resolver therefore treats every model as existing and
+// and applied during `azd provision`), so at deploy time the deployment must
+// already exist. This resolver therefore reports every model as existing and
 // never issues a data-plane create, but keeps the seam so the graph can enforce
 // the create-if-missing contract in tests and future live wiring.
 type provisionedDeploymentResolver struct{}
@@ -79,10 +78,12 @@ func (provisionedDeploymentResolver) Exists(context.Context, string) (bool, erro
 }
 
 func (provisionedDeploymentResolver) Create(_ context.Context, modelName string) error {
-	// Should not be reached given Exists always returns true; guard defensively
-	// with an actionable message rather than a silent no-op.
-	fmt.Fprintf(os.Stderr,
-		"Model deployment %q was not found. Provision it with `azd provision` "+
-			"(deployments are declared in azure.yaml).\n", modelName)
-	return nil
+	// Unreachable while Exists reports true, but returning nil here would let
+	// the deploy graph continue as though the deployment had been created and
+	// wire the agent to a model that does not exist. Fail fast instead.
+	return exterrors.Validation(
+		exterrors.CodeInvalidAgentManifest,
+		fmt.Sprintf("model deployment %q was not found", modelName),
+		"run `azd provision` to create it (model deployments are declared in azure.yaml)",
+	)
 }

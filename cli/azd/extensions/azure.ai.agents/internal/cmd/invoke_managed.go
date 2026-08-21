@@ -138,6 +138,10 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 // The returned string is the response id parsed from the stream's lifecycle
 // events (when present), which the caller persists so the next invoke can
 // chain via `previous_response_id` for multi-turn memory.
+//
+// Terminal failure events (`error`, `response.failed`, `response.incomplete`)
+// return an error. Reporting success with no output would make a failed
+// invocation indistinguishable from an empty answer and exit 0 in CI.
 func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 	scanner := bufio.NewScanner(r)
 	// SSE data lines can be large (full JSON payloads); raise the buffer cap
@@ -146,6 +150,7 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 
 	var event string
 	var responseID string
+	var streamErr error
 	wroteText := false
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -154,7 +159,8 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 			event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 		case strings.HasPrefix(line, "data:"):
 			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if event == "response.output_text.delta" {
+			switch {
+			case event == "response.output_text.delta":
 				var payload struct {
 					Delta string `json:"delta"`
 				}
@@ -162,7 +168,11 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 					fmt.Fprint(w, payload.Delta)
 					wroteText = true
 				}
-			} else if strings.HasPrefix(event, "response.") {
+			case event == "error" || event == "response.failed" || event == "response.incomplete":
+				if streamErr == nil {
+					streamErr = managedStreamFailure(event, data)
+				}
+			case strings.HasPrefix(event, "response."):
 				// Capture the response id from any lifecycle event that carries
 				// it (e.g. response.created, response.completed). The last one
 				// seen wins so the persisted id reflects the completed turn.
@@ -183,5 +193,45 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 	if wroteText {
 		fmt.Fprintln(w)
 	}
-	return responseID, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return responseID, err
+	}
+	return responseID, streamErr
+}
+
+// managedStreamFailure builds an error from a terminal SSE event, preferring
+// the service-supplied message over the raw payload.
+func managedStreamFailure(event, data string) error {
+	var payload struct {
+		Message string `json:"message"`
+		Error   struct {
+			Message string `json:"message"`
+			Code    string `json:"code"`
+		} `json:"error"`
+		Response struct {
+			IncompleteDetails struct {
+				Reason string `json:"reason"`
+			} `json:"incomplete_details"`
+			Error struct {
+				Message string `json:"message"`
+				Code    string `json:"code"`
+			} `json:"error"`
+		} `json:"response"`
+	}
+	_ = json.Unmarshal([]byte(data), &payload)
+
+	for _, candidate := range []string{
+		payload.Error.Message,
+		payload.Response.Error.Message,
+		payload.Message,
+		payload.Response.IncompleteDetails.Reason,
+	} {
+		if strings.TrimSpace(candidate) != "" {
+			return fmt.Errorf("%s: %s", event, candidate)
+		}
+	}
+	if strings.TrimSpace(data) != "" {
+		return fmt.Errorf("%s: %s", event, data)
+	}
+	return fmt.Errorf("the agent run ended with %q and produced no response", event)
 }

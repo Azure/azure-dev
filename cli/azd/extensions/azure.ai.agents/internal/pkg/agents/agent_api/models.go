@@ -307,21 +307,81 @@ type ManagedEnvironment struct {
 // ManagedAgentHarnessGitHubCopilot is the execution harness identifier sent in
 // the managed agent definition's `harness` field to run the agent on the
 // GitHub Copilot harness.
-const ManagedAgentHarnessGitHubCopilot = "ghcp"
+const ManagedAgentHarnessGitHubCopilot = "github-copilot"
 
-// ManagedAgentDefinition represents a Foundry "managed" agent backed by the
-// Prompt Execution Service (PES). Managed agents declare a model + instructions
-// and optionally tools, skills, and environment overrides. The platform
-// provisions Brain+Hand sandboxes on demand to execute the agent.
+// ManagedAgentHarnessGitHubCopilotRemoved is the abbreviated spelling this
+// harness used previously. It is retained only so validation can name the
+// replacement when it encounters an old manifest; it is never sent on the wire
+// and never accepted as input.
+const ManagedAgentHarnessGitHubCopilotRemoved = "ghcp"
+
+// HarnessSkillReference pins one published Foundry skill onto a harnessed
+// agent's definition.
+//
+// Version is not optional in practice. The API contract says an omitted version
+// resolves to the skill's current default, but the service currently returns a
+// 500 for a reference without one, so callers must supply the version they
+// published. Skills are published before the agent version is created, so the
+// version is always known by then.
+type HarnessSkillReference struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
+
+// ManagedAgentHarness is the `harness` block of a managed agent definition.
+//
+// Skills hang off the harness rather than off the definition because a skill is
+// instructions plus scripts and assets: it needs the harness execution
+// environment to run at all. Foundry provisions each pinned skill into the
+// sandbox when it starts. A definition-level `skills` field would imply that a
+// prompt agent with no harness could execute one, which it cannot -- the
+// service accepts that field but never resolves it, so a name written there is
+// silently inert (including a name that matches no skill at all).
+type ManagedAgentHarness struct {
+	Type   string                  `json:"type"`
+	Skills []HarnessSkillReference `json:"skills,omitempty"`
+}
+
+// UnmarshalJSON accepts either the object form or the bare string form the
+// harness was originally sent as, so definitions read back from agents created
+// by earlier versions of azd still decode.
+func (h *ManagedAgentHarness) UnmarshalJSON(data []byte) error {
+	var asString string
+	if err := json.Unmarshal(data, &asString); err == nil {
+		h.Type = asString
+		h.Skills = nil
+		return nil
+	}
+	type harnessAlias ManagedAgentHarness
+	var alias harnessAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*h = ManagedAgentHarness(alias)
+	return nil
+}
+
+// ManagedAgentDefinition represents a Foundry "managed" agent — a prompt agent
+// that names an execution harness. Managed agents declare a model plus
+// instructions and optionally tools, skills, and environment overrides. The
+// platform provisions Brain+Hand sandboxes on demand to execute the agent.
 type ManagedAgentDefinition struct {
 	AgentDefinition
 	Model string `json:"model"`
 	// Harness identifies the execution harness the platform should use to run
-	// the managed agent (e.g. "ghcp" for the GitHub Copilot harness).
-	Harness          string              `json:"harness,omitempty"`
-	Instructions     string              `json:"instructions,omitempty"`
-	Tools            []any               `json:"tools,omitempty"`
-	ToolChoice       any                 `json:"tool_choice,omitempty"`
+	// the managed agent, and carries the skills provisioned into it. Nil for a
+	// plain prompt agent, which Foundry runs directly.
+	Harness      *ManagedAgentHarness `json:"harness,omitempty"`
+	Instructions string               `json:"instructions,omitempty"`
+	Tools        []any                `json:"tools,omitempty"`
+	ToolChoice   any                  `json:"tool_choice,omitempty"`
+	Temperature  *float64             `json:"temperature,omitempty"`
+	TopP         *float64             `json:"top_p,omitempty"`
+	Text         any                  `json:"text,omitempty"`
+	Reasoning    any                  `json:"reasoning,omitempty"`
+	// Skills is the definition-level skill list. It applies only to a
+	// harness-less prompt agent; a harnessed agent carries its skills on
+	// Harness.Skills instead.
 	Skills           []string            `json:"skills,omitempty"`
 	StructuredInputs map[string]any      `json:"structured_inputs,omitempty"`
 	Environment      *ManagedEnvironment `json:"environment,omitempty"`

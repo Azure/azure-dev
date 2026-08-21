@@ -48,6 +48,9 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return postdeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
+		WithProjectEventHandler("predown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return predownHandler(ctx, azdClient, args)
+		}).
 		WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postdownHandler(ctx, azdClient, args)
 		})
@@ -280,13 +283,19 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		return err
 	}
 
-	if err := prepareContainerSettings(
-		ctx,
-		azdClient,
-		svc,
-		args.Project.Path,
-	); err != nil {
-		return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+	// Prompt (kind=managed) agents have no container settings — the harness owns
+	// the runtime. Without this guard SetAgentContainerSettings writes default
+	// memory/cpu onto the service and persists them into azure.yaml for an agent
+	// azd does not host.
+	if _, isPrompt := promptSettingsFromService(svc); !isPrompt {
+		if err := prepareContainerSettings(
+			ctx,
+			azdClient,
+			svc,
+			args.Project.Path,
+		); err != nil {
+			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+		}
 	}
 	if err := envUpdate(
 		ctx,
@@ -519,13 +528,6 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 			continue
 		}
 
-		// Prompt (kind=managed) agents are removed from the harness on down so
-		// `azd down` fully tears down the agent alongside the infrastructure.
-		// Best-effort: a harness failure is logged but does not block down.
-		if settings, isPrompt := promptSettingsFromService(svc); isPrompt {
-			deletePromptAgentOnDown(ctx, svc, settings)
-		}
-
 		if cleanupAgentSessionState(ctx, azdClient, envName, svc.Name) {
 			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
 		}
@@ -538,6 +540,33 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 	return nil
 }
 
+// predownHandler removes prompt (kind=managed) agents from the harness before
+// `azd down` tears the infrastructure away. It deliberately runs at predown
+// rather than postdown: the Foundry project/workspace that provides the harness
+// route is already gone by postdown, so the delete would report success while
+// leaving the agent behind.
+//
+// Best-effort throughout — a harness failure is logged but never blocks down.
+func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	envValues, envErr := promptEnvValues(ctx, azdClient)
+	if envErr != nil {
+		log.Printf("predown: failed to read the azd environment: %v", envErr)
+	}
+
+	for _, svc := range args.Project.Services {
+		if svc.Host != AiAgentHost {
+			continue
+		}
+		settings, isPrompt := promptSettingsFromService(svc)
+		if !isPrompt {
+			continue
+		}
+		deletePromptAgentOnDown(ctx, svc, settings, args.Project.Path, envValues)
+	}
+
+	return nil
+}
+
 // deletePromptAgentOnDown best-effort deletes a prompt agent from the harness
 // during `azd down`. Failures are logged, never returned — teardown of the
 // project should not be blocked by a harness hiccup.
@@ -545,22 +574,38 @@ func deletePromptAgentOnDown(
 	ctx context.Context,
 	svc *azdext.ServiceConfig,
 	settings *project.PromptAgentSettings,
+	projectPath string,
+	envValues map[string]string,
 ) {
 	settings.ApplyEnvOverrides()
 	if err := settings.Validate(); err != nil {
-		log.Printf("postdown: skipping harness delete for %q: %v", svc.Name, err)
+		log.Printf("predown: skipping harness delete for %q: %v", svc.Name, err)
 		return
 	}
+	// Apply the same azd environment-derived target resolution deploy and the
+	// other lifecycle commands use. Without it a non-guided project keeps the
+	// placeholder workspace tuple from azure.yaml and the delete is routed at a
+	// workspace that never existed.
+	if envValues != nil {
+		if _, mapErr := project.ResolvePromptTargetFromEnv(settings, envValues); mapErr != nil {
+			log.Printf("predown: skipping harness delete for %q: %v", svc.Name, mapErr)
+			return
+		}
+	}
+	// Delete by the agent.yaml name — the identity every other prompt lifecycle
+	// path uses. The azure.yaml service key only matches when agent.yaml omits
+	// `name:`, which is true for scaffolded projects but not for renamed agents.
+	agentName := promptAgentNameForService(svc, projectPath)
 	client, err := project.NewPromptAgentClient(settings)
 	if err != nil {
-		log.Printf("postdown: failed to build harness client for %q: %v", svc.Name, err)
+		log.Printf("predown: failed to build harness client for %q: %v", svc.Name, err)
 		return
 	}
-	if _, err := client.DeleteAgent(ctx, svc.Name, settings.EffectiveAPIVersion(), true); err != nil {
-		log.Printf("postdown: failed to delete prompt agent %q from harness: %v", svc.Name, err)
+	if _, err := client.DeleteAgent(ctx, agentName, settings.EffectiveAPIVersion(), true); err != nil {
+		log.Printf("predown: failed to delete prompt agent %q from harness: %v", agentName, err)
 		return
 	}
-	fmt.Printf("Deleted prompt agent %q from the harness\n", svc.Name)
+	fmt.Printf("Deleted prompt agent %q from the harness\n", agentName)
 }
 
 // cleanupAgentSessionState removes saved session and conversation IDs for a

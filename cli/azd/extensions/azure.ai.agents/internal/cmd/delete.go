@@ -104,7 +104,12 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 	// rather than calling the Foundry agent-delete path that would fail.
 	if pctx, isPrompt, pErr := resolvePromptAgentService(
 		ctx, azdClient, a.flags.name, a.flags.noPrompt,
-	); pErr == nil && isPrompt {
+	); pErr != nil {
+		// Match `show`: a failure to resolve is a real error. Falling through to
+		// the hosted path would run the Foundry agent-delete flow against a
+		// prompt agent and report a misleading "agent not found".
+		return pErr
+	} else if isPrompt {
 		return a.runPromptDelete(ctx, azdClient, pctx)
 	}
 
@@ -237,6 +242,7 @@ func (a *DeleteAction) cleanupEnvVars(ctx context.Context, azdClient *azdext.Azd
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+		fmt.Sprintf("AGENT_%s_VECTOR_STORE_ID", serviceKey),
 	}
 
 	for _, key := range keys {
@@ -342,6 +348,15 @@ func (a *DeleteAction) runPromptDelete(
 	if err != nil {
 		return classifyDeleteError(err, agentName)
 	}
+
+	// Same post-delete cleanup as the hosted path: without it the stale
+	// AGENT_{KEY}_* values keep `show`/`invoke` pointed at an agent that no
+	// longer exists. Session state must be cleared first since it reads
+	// AGENT_{KEY}_ENDPOINT.
+	if envResp, envErr := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); envErr == nil {
+		cleanupAgentSessionState(ctx, azdClient, envResp.Environment.Name, pctx.ServiceName)
+	}
+	a.cleanupEnvVars(ctx, azdClient, pctx.ServiceName)
 
 	switch a.flags.output {
 	case "json":

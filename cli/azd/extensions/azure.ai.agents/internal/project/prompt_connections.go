@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
+	"regexp"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -15,6 +17,49 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
+
+// credentialPlaceholderPattern matches a whole-value ${ENV_VAR} reference in a
+// connection credential.
+var credentialPlaceholderPattern = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`)
+
+// expandCredentialPlaceholders returns a copy of credentials with any
+// whole-value ${ENV_VAR} string replaced by that variable's value. An unset
+// variable is an error: passing the literal placeholder to the service would
+// silently store an unusable secret. Non-string and non-placeholder values are
+// copied through unchanged.
+func expandCredentialPlaceholders(
+	connectionName string, credentials map[string]any,
+) (map[string]any, error) {
+	if len(credentials) == 0 {
+		return credentials, nil
+	}
+	out := make(map[string]any, len(credentials))
+	for key, value := range credentials {
+		str, isString := value.(string)
+		if !isString {
+			out[key] = value
+			continue
+		}
+		match := credentialPlaceholderPattern.FindStringSubmatch(strings.TrimSpace(str))
+		if match == nil {
+			out[key] = value
+			continue
+		}
+		resolved, ok := os.LookupEnv(match[1])
+		if !ok || resolved == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf(
+					"connection %q credential %q references environment variable %q, which is not set",
+					connectionName, key, match[1],
+				),
+				fmt.Sprintf("set %s in the environment before running `azd deploy`", match[1]),
+			)
+		}
+		out[key] = resolved
+	}
+	return out, nil
+}
 
 // connectionAction is the resolution outcome for a single declared connection.
 type connectionAction int
@@ -26,11 +71,8 @@ const (
 	// connActionCreate means the connection is created against a known target
 	// (ladder rung 2, with the target possibly auto-filled at rung 3).
 	connActionCreate
-	// connActionProvision means the backing resource must be provisioned first
-	// (ladder rung 4, opt-in via Provision).
-	connActionProvision
 	// connActionFailFast means nothing could be resolved and the user must act
-	// (ladder rung 4, no opt-in).
+	// (ladder rung 4).
 	connActionFailFast
 )
 
@@ -73,7 +115,7 @@ func targetFromEnv(name string, env map[string]string) string {
 		if !ok || strings.TrimSpace(raw) == "" {
 			continue
 		}
-		for _, pair := range strings.Split(raw, ";") {
+		for pair := range strings.SplitSeq(raw, ";") {
 			pair = strings.TrimSpace(pair)
 			eq := strings.IndexByte(pair, '=')
 			if eq <= 0 {
@@ -124,16 +166,17 @@ func resolveConnectionAction(
 		return connActionCreate, resolved, nil
 	}
 
-	// Rung 4: no target — provision if opted in, else fail fast.
-	if decl.Provision {
-		return connActionProvision, resolved, nil
-	}
+	// Rung 4: no target and nothing to derive one from. azd connects an agent to
+	// a resource; it does not create the resource, so this is where the author
+	// has to act.
 	return connActionFailFast, resolved, exterrors.Validation(
 		exterrors.CodeInvalidAgentManifest,
 		fmt.Sprintf(
 			"connection %q has no existing connection and no resolvable target", decl.Name,
 		),
-		"set connections["+decl.Name+"].target, or set provision: true to create the backing resource",
+		"provision the backing resource with infrastructure (Bicep/Terraform) and set "+
+			"connections[].target on the entry named "+decl.Name+" to its endpoint, or create "+
+			"the connection in the Foundry portal under that name",
 	)
 }
 
@@ -197,7 +240,7 @@ func connectionsNode(
 				switch action {
 				case connActionUseExisting:
 					// Nothing to create.
-				case connActionCreate, connActionProvision:
+				case connActionCreate:
 					id, createErr := resolver.Create(ctx, resolved)
 					if createErr != nil {
 						return fmt.Errorf("creating connection %q: %w", resolved.Name, createErr)
@@ -209,7 +252,7 @@ func connectionsNode(
 					return exterrors.Validation(
 						exterrors.CodeInvalidAgentManifest,
 						fmt.Sprintf("connection %q could not be resolved", resolved.Name),
-						"declare a target or set provision: true",
+						"set connections[].target to the backing resource's endpoint",
 					)
 				}
 			}
@@ -293,14 +336,21 @@ func (r *foundryConnectionResolver) Existing(ctx context.Context) (map[string]st
 }
 
 // Create creates a connection from the declaration, defaulting to Entra auth.
+// ${ENV_VAR} placeholders in credentials are expanded from the process
+// environment first; sending them through literally would store the text
+// "${MY_KEY}" as the secret and fail at first use.
 func (r *foundryConnectionResolver) Create(
 	ctx context.Context, decl agent_yaml.PromptConnection,
 ) (string, error) {
+	credentials, err := expandCredentialPlaceholders(decl.Name, decl.Credentials)
+	if err != nil {
+		return "", err
+	}
 	created, err := r.client.CreateConnection(ctx, decl.Name, &azure.CreateConnectionRequest{
 		Category:    decl.Category,
 		Target:      decl.Target,
 		AuthType:    decl.AuthType, // empty defaults to AAD in the client
-		Credentials: decl.Credentials,
+		Credentials: credentials,
 		Metadata:    decl.Metadata,
 	})
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -181,6 +182,47 @@ func (c *FoundryFilesClient) CreateVectorStore(
 		return nil, err
 	}
 	return &result, nil
+}
+
+// addVectorStoreFileRequest is the body for attaching a file to a vector store.
+type addVectorStoreFileRequest struct {
+	FileId string `json:"file_id"`
+}
+
+// AddVectorStoreFile attaches an already-uploaded file to an existing vector
+// store. It is used on the reuse path so re-deploying an agent updates the
+// store it already has instead of creating a new one. Attaching a file the
+// store already holds is a no-op on the service.
+func (c *FoundryFilesClient) AddVectorStoreFile(ctx context.Context, storeID, fileID string) error {
+	payload, err := json.Marshal(addVectorStoreFileRequest{FileId: fileID})
+	if err != nil {
+		return fmt.Errorf("marshaling request: %w", err)
+	}
+
+	targetURL := fmt.Sprintf(
+		"%s/openai/%s/vector_stores/%s/files",
+		c.endpoint, filesAPIPathVersion, url.PathEscape(storeID),
+	)
+	req, err := runtime.NewRequest(ctx, http.MethodPost, targetURL)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	if err := req.SetBody(
+		streaming.NopCloser(bytes.NewReader(payload)),
+		"application/json",
+	); err != nil {
+		return fmt.Errorf("setting request body: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return runtime.NewResponseError(resp)
+	}
+	return nil
 }
 
 // decodeJSON reads and unmarshals a JSON response body.

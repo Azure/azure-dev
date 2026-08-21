@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -71,6 +72,19 @@ type ManagedAgentClientOptions struct {
 	Scopes []string
 }
 
+// isLoopbackHost reports whether host names the local machine, and is used to
+// decide whether bearer credentials may be sent over plaintext http. Only a
+// literal loopback address (or "localhost") qualifies; anything resolvable to
+// another machine must use TLS.
+func isLoopbackHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // NewManagedAgentClient builds a ManagedAgentClient from the given options.
 // Returns an error when BaseURL or RoutePrefix is malformed.
 func NewManagedAgentClient(opts ManagedAgentClientOptions) (*ManagedAgentClient, error) {
@@ -105,10 +119,20 @@ func NewManagedAgentClient(opts ManagedAgentClientOptions) (*ManagedAgentClient,
 		// The local managed-harness is served over plain HTTP
 		// (http://localhost:5000) but still validates a bearer token. azcore
 		// refuses to attach credentials to non-TLS endpoints unless this is
-		// explicitly opted into, so allow it when (and only when) the base URL
-		// is http — production https endpoints keep the default protection.
+		// explicitly opted into. Gate that opt-in on the *host*, not the scheme:
+		// a shared dev backend, a typo, or a stray config value pointing at
+		// http://some-host would otherwise put an Entra token scoped to
+		// https://ai.azure.com/.default on the wire in the clear, where it can be
+		// captured and replayed.
 		var bearerOpts *policy.BearerTokenOptions
 		if parsed.Scheme == "http" {
+			if !isLoopbackHost(parsed.Hostname()) {
+				return nil, fmt.Errorf(
+					"ManagedAgentClient: refusing to send Azure credentials over plaintext http to %q; "+
+						"use https, or target a loopback address for local development",
+					parsed.Host,
+				)
+			}
 			bearerOpts = &policy.BearerTokenOptions{
 				InsecureAllowCredentialWithHTTP: true,
 			}

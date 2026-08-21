@@ -39,9 +39,9 @@ func writeFilesDir(t *testing.T, files map[string]string) string {
 	if files == nil {
 		return dir
 	}
-	filesDir := filepath.Join(dir, "files")
+	filesDir := filepath.Join(dir, promptFilesDirName)
 	if err := os.MkdirAll(filesDir, 0o750); err != nil {
-		t.Fatalf("mkdir files: %v", err)
+		t.Fatalf("mkdir %s: %v", promptFilesDirName, err)
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(filesDir, name), []byte(content), 0o600); err != nil {
@@ -52,14 +52,14 @@ func writeFilesDir(t *testing.T, files map[string]string) string {
 }
 
 func TestScanFilesDir_Empty(t *testing.T) {
-	// Absent files/ folder.
+	// Absent vector-assets/ folder.
 	dir := writeFilesDir(t, nil)
 	entries, err := scanFilesDir(dir)
 	if err != nil {
 		t.Fatalf("scanFilesDir: %v", err)
 	}
 	if entries != nil {
-		t.Errorf("expected nil entries for missing files/, got %d", len(entries))
+		t.Errorf("expected nil entries for missing %s/, got %d", promptFilesDirName, len(entries))
 	}
 }
 
@@ -217,11 +217,11 @@ func TestFoundryVectorStoreBuilder_DedupesByHash(t *testing.T) {
 		{Name: "a.md", Hash: "h1", Content: []byte("a")},
 		{Name: "b.md", Hash: "h1", Content: []byte("a")},
 	}
-	storeID, err := b.EnsureVectorStore(context.Background(), "agent", "vs-existing", files)
+	ids, err := b.resolveFileIDs(context.Background(), files)
 	if err != nil {
-		t.Fatalf("EnsureVectorStore: %v", err)
+		t.Fatalf("resolveFileIDs: %v", err)
 	}
-	if storeID != "vs-existing" {
-		t.Errorf("store id: got %q, want reused vs-existing", storeID)
+	if len(ids) != 2 || ids[0] != "file-1" || ids[1] != "file-1" {
+		t.Errorf("file ids: got %v, want both file-1", ids)
 	}
 }

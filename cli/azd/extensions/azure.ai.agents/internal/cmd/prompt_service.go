@@ -109,6 +109,30 @@ func resolvePromptAgentService(
 	return pctx, true, nil
 }
 
+// promptAgentNameForService returns the harness agent identity for a prompt
+// service: the `name` declared in its agent.yaml, falling back to the
+// azure.yaml service key when agent.yaml is absent or declares no name. It is
+// the lightweight counterpart of promptServiceContext.AgentName for callers
+// (like the down handlers) that only have a ServiceConfig.
+func promptAgentNameForService(svc *azdext.ServiceConfig, projectPath string) string {
+	if svc == nil {
+		return ""
+	}
+	dir, err := paths.JoinAllowRoot(projectPath, svc.RelativePath)
+	if err != nil {
+		return svc.Name
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "agent.yaml"))
+	if err != nil {
+		return svc.Name
+	}
+	var def agent_yaml.PromptAgent
+	if err := yaml.Unmarshal(data, &def); err != nil || strings.TrimSpace(def.Name) == "" {
+		return svc.Name
+	}
+	return def.Name
+}
+
 // AgentName returns the harness agent identity for the resolved service.
 func (p *promptServiceContext) AgentName() string {
 	if p.Agent.Name != "" {

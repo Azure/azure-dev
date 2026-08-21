@@ -255,8 +255,8 @@ func printPromptShowTable(agent *agent_api.AgentObject, settings *projectpkg.Pro
 	def := promptDefinitionMap(latest)
 
 	// Harness is the execution harness the platform runs the agent on, taken
-	// from the deployed definition's `harness` field (e.g. "ghcp"). The
-	// previous implementation printed settings.BaseURL here, which is the
+	// from the deployed definition's `harness` field (e.g. "github-copilot").
+	// The previous implementation printed settings.BaseURL here, which is the
 	// harness *API base URL*, not the harness itself.
 	if harness := stringFromMap(def, "harness"); harness != "" {
 		fmt.Fprintf(w, "Harness:\t%s\n", displayHarness(harness))

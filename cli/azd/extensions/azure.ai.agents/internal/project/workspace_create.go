@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -156,6 +157,11 @@ func ensureStorageAccountForWorkspace(
 	)
 	if _, err := client.GetByID(ctx, resourceID, storageAPIVersion, nil); err == nil {
 		return resourceID, nil // already exists
+	} else if respErr, ok := errors.AsType[*azcore.ResponseError](err); !ok ||
+		respErr.StatusCode != http.StatusNotFound {
+		// Only a 404 means "absent". Auth, throttling and transient network
+		// failures must not fall through to a create that masks the real cause.
+		return "", fmt.Errorf("checking storage account %q: %w", name, err)
 	}
 	skuName := "Standard_LRS"
 	kind := "StorageV2"
@@ -163,7 +169,7 @@ func ensureStorageAccountForWorkspace(
 		Location: &location,
 		Kind:     &kind,
 		SKU:      &armresources.SKU{Name: &skuName},
-		Properties: map[string]interface{}{
+		Properties: map[string]any{
 			"supportsHttpsTrafficOnly": true,
 			"accessTier":               "Hot",
 		},
@@ -194,13 +200,17 @@ func ensureKeyVaultForWorkspace(
 	)
 	if _, err := client.GetByID(ctx, resourceID, keyVaultAPIVersion, nil); err == nil {
 		return resourceID, nil // already exists
+	} else if respErr, ok := errors.AsType[*azcore.ResponseError](err); !ok ||
+		respErr.StatusCode != http.StatusNotFound {
+		// Only a 404 means "absent" — see ensureStorageAccountForWorkspace.
+		return "", fmt.Errorf("checking key vault %q: %w", name, err)
 	}
 	body := armresources.GenericResource{
 		Location: &location,
-		Properties: map[string]interface{}{
-			"sku":              map[string]interface{}{"family": "A", "name": "standard"},
+		Properties: map[string]any{
+			"sku":              map[string]any{"family": "A", "name": "standard"},
 			"tenantId":         tenantID,
-			"accessPolicies":   []interface{}{},
+			"accessPolicies":   []any{},
 			"enableSoftDelete": true,
 		},
 	}
@@ -226,7 +236,7 @@ func createAMLWorkspace(
 	body := armresources.GenericResource{
 		Location: &location,
 		Identity: &armresources.Identity{Type: &identityType},
-		Properties: map[string]interface{}{
+		Properties: map[string]any{
 			"storageAccount": storageID,
 			"keyVault":       kvID,
 		},

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,8 +12,108 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"github.com/stretchr/testify/require"
 )
+
+func TestResolveInitHarness(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		harnessFlag string
+		choice      agentKindChoice
+		expected    string
+		expectErr   bool
+	}{
+		{
+			name:     "prompt kind has no harness",
+			choice:   AgentKindChoicePrompt,
+			expected: "",
+		},
+		{
+			name:     "managed kind implies the github-copilot harness",
+			choice:   AgentKindChoiceManaged,
+			expected: agent_api.ManagedAgentHarnessGitHubCopilot,
+		},
+		{
+			name:        "explicit harness overrides prompt kind",
+			harnessFlag: "GitHub-Copilot",
+			choice:      AgentKindChoicePrompt,
+			expected:    agent_api.ManagedAgentHarnessGitHubCopilot,
+		},
+		{
+			// The old abbreviation is rejected rather than silently upgraded so
+			// the user learns the new spelling instead of keeping a value the
+			// service no longer knows.
+			name:        "removed ghcp spelling is rejected",
+			harnessFlag: "ghcp",
+			choice:      AgentKindChoicePrompt,
+			expectErr:   true,
+		},
+		{
+			name:        "none opts out of the managed harness",
+			harnessFlag: " none ",
+			choice:      AgentKindChoiceManaged,
+			expected:    "",
+		},
+		{
+			name:        "unknown harness is rejected",
+			harnessFlag: "bogus",
+			choice:      AgentKindChoicePrompt,
+			expectErr:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			harness, err := resolveInitHarness(tc.harnessFlag, tc.choice)
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, harness)
+		})
+	}
+}
+
+// TestWarnPromptAgentPreview verifies the preview callout fires for the plain
+// prompt agent and stays silent for the other kinds. The harnessed option
+// already says "(preview)" in its label, and hosted agents are GA.
+func TestWarnPromptAgentPreview(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		choice   agentKindChoice
+		wantWarn bool
+	}{
+		{name: "prompt agent warns", choice: AgentKindChoicePrompt, wantWarn: true},
+		{name: "managed agent stays quiet", choice: AgentKindChoiceManaged},
+		{name: "hosted agent stays quiet", choice: AgentKindChoiceHosted},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			buf := &bytes.Buffer{}
+			warnPromptAgentPreview(buf, tc.choice)
+
+			if !tc.wantWarn {
+				require.Empty(t, buf.String())
+				return
+			}
+			// The emphasized phrase is a separately colored segment, so assert
+			// it survives concatenation intact rather than being split.
+			require.Contains(t, buf.String(), "preview feature of the azd CLI experience")
+		})
+	}
+}
 
 func TestEffectiveType(t *testing.T) {
 	t.Parallel()

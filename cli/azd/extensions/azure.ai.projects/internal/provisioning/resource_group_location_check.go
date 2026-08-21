@@ -285,6 +285,7 @@ func (c *ResourceGroupLocationCheck) isBrownfieldFoundryProject(ctx context.Cont
 		rawYAML,
 		projectPath,
 		svcName,
+		azdEnvMap(ctx, c.azdClient),
 	)
 	return err == nil && endpoint != ""
 }

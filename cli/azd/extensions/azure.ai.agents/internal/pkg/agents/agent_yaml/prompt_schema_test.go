@@ -27,7 +27,6 @@ connections:
     authType: ApiKey
     credentials:
       key: ${SEARCH_API_KEY}
-    provision: true
 `)
 
 	var promptDef PromptAgent
@@ -47,7 +46,7 @@ connections:
 	}
 
 	second := promptDef.Connections[1]
-	if second.AuthType != "ApiKey" || !second.Provision {
+	if second.AuthType != "ApiKey" {
 		t.Errorf("second connection: got %+v", second)
 	}
 	if second.Credentials["key"] != "${SEARCH_API_KEY}" {

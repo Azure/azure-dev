@@ -77,11 +77,16 @@ type initFlags struct {
 	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
 	// `azd config reset`, and `azd infra generate`.
 	force bool
-	// kind, when set, explicitly selects the agent runtime ("hosted" or
-	// "managed") and bypasses the interactive kind prompt. This is primarily
-	// for non-interactive callers (--no-prompt) and automation; interactive
-	// users get the kind prompt when this is empty.
+	// kind, when set, explicitly selects the agent runtime ("hosted",
+	// "prompt", or "managed") and bypasses the interactive kind prompt. This is
+	// primarily for non-interactive callers (--no-prompt) and automation;
+	// interactive users get the kind prompt when this is empty.
 	kind string
+	// harness, when set, names the execution harness written to the scaffolded
+	// prompt agent.yaml (only "github-copilot" is supported today). It overrides
+	// the harness implied by --kind, so `--kind prompt --harness github-copilot`
+	// is equivalent to `--kind managed`. Ignored for hosted agents.
+	harness string
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
@@ -1065,7 +1070,9 @@ When -m points at a sample's unified azure.yaml (a project manifest that
 declares services with host: azure.ai.project / azure.ai.agent / ...), that
 azure.yaml is adopted as the project manifest and its referenced files are
 placed at the project root. When -m points at an agent manifest instead, the
-project's azure.yaml is generated from it.
+project's azure.yaml is generated from it. An agent manifest that declares
+kind: prompt scaffolds a prompt agent (or a managed agent when it also declares
+harness: github-copilot), carrying over its model, instructions, skills, and tools.
 
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
@@ -1092,6 +1099,16 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   # Non-interactive code deploy (CI/CD)
   azd ai agent init --no-prompt --project-id "<resource-id>" \
     --deploy-mode code --runtime python_3_13 --entry-point app.py
+
+  # Non-interactive prompt agent against an existing Foundry project
+  azd ai agent init --no-prompt --kind prompt --agent-name my-agent \
+    --project-id "<resource-id>" --model-deployment gpt-4.1-mini
+
+  # Non-interactive managed agent that provisions a new Foundry project and model
+  azd ai agent init --no-prompt --kind managed --agent-name my-agent --model gpt-4.1-mini
+
+  # Non-interactive prompt agent from a prompt agent template
+  azd ai agent init --no-prompt -m ./agent.yaml --project-id "<resource-id>"
 
   # Bring your own pre-built image (no template/language selection, Dockerfile, or ACR setup)
   azd ai agent init --no-prompt --agent-name my-agent \
@@ -1182,23 +1199,56 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// otherwise-blank invocation can branch into the prompt-agent flow.
 			//
 			// An explicit --kind flag always wins: it bypasses both the prompt
-			// and the hosted-signal gating so automation can select the
-			// prompt-agent runtime non-interactively. "managed" is accepted as
-			// a backward-compatible alias for "prompt".
-			if flags.kind != "" {
-				switch agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind))) {
-				case AgentKindChoicePrompt, AgentKindChoiceManaged:
-					return runInitManaged(ctx, flags, azdClient)
-				case AgentKindChoiceHosted:
-					// Fall through to the hosted flow below.
-				default:
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("unknown --kind value %q", flags.kind),
-						"supported values are: hosted, prompt",
-					)
+			// and the hosted-signal gating so automation can select a
+			// prompt-agent runtime non-interactively. Both prompt kinds share the
+			// same init flow and the same agent.yaml `kind: prompt`; they differ
+			// only in the harness written to the manifest.
+			//
+			// A supplied --manifest (or positional template) that declares
+			// `kind: prompt` also routes here, with or without --kind, so a
+			// prompt-agent template scaffolds a prompt agent instead of being
+			// mis-handled by the hosted generator. `--kind hosted` opts out of
+			// that peek entirely so the hosted path never pays for an extra
+			// fetch of a remote pointer.
+			requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
+			if flags.kind != "" &&
+				requestedKind != AgentKindChoiceHosted &&
+				requestedKind != AgentKindChoicePrompt &&
+				requestedKind != AgentKindChoiceManaged {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					fmt.Sprintf("unknown --kind value %q", flags.kind),
+					"supported values are: hosted, prompt, managed",
+				)
+			}
+
+			var promptManifest *promptAgentManifest
+			if requestedKind != AgentKindChoiceHosted {
+				promptManifest, err = loadPromptManifestFromPointer(ctx, azdClient, flags, httpClient)
+				if err != nil {
+					return err
 				}
-			} else {
+			}
+
+			switch {
+			case requestedKind == AgentKindChoicePrompt || requestedKind == AgentKindChoiceManaged:
+				harness, harnessErr := resolveInitHarness(flags.harness, requestedKind)
+				if harnessErr != nil {
+					return harnessErr
+				}
+				return runInitManaged(ctx, flags, azdClient, harness, promptManifest)
+			case promptManifest != nil:
+				// No --kind: the manifest's own harness decides the flavor, so a
+				// `harness: github-copilot` template scaffolds a managed agent and a
+				// harness-less one a plain prompt agent. --harness still wins.
+				harness, harnessErr := resolveManifestInitHarness(
+					flags.harness, promptManifest.definition.Harness,
+				)
+				if harnessErr != nil {
+					return harnessErr
+				}
+				return runInitManaged(ctx, flags, azdClient, harness, promptManifest)
+			case flags.kind == "":
 				hostedSignalsPresent := userProvidedManifest ||
 					flags.src != "" ||
 					flags.deployMode != "" ||
@@ -1210,7 +1260,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return kindErr
 					}
 					if kindChoice == AgentKindChoicePrompt || kindChoice == AgentKindChoiceManaged {
-						return runInitManaged(ctx, flags, azdClient)
+						harness, harnessErr := resolveInitHarness(flags.harness, kindChoice)
+						if harnessErr != nil {
+							return harnessErr
+						}
+						return runInitManaged(ctx, flags, azdClient, harness, nil)
 					}
 				}
 			}
@@ -1596,7 +1650,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided")
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
-		"Path or URI to an agent manifest, or to a sample's unified azure.yaml to adopt as the project manifest")
+		"Path or URI to an agent manifest (hosted or 'kind: prompt'), or to a sample's unified azure.yaml to adopt as the project manifest")
 
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
 		"Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.")
@@ -1633,9 +1687,15 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Required together with --no-prompt when init would otherwise need confirmation.")
 
 	cmd.Flags().StringVar(&flags.kind, "kind", "",
-		"Agent runtime to initialize: 'hosted' (bring your own code/container) or 'prompt' "+
-			"(model + instructions; Foundry runs Brain+Hand, Harness: GHCP). When omitted, you are "+
-			"prompted interactively.")
+		"Agent runtime to initialize: 'hosted' (bring your own code/container), 'prompt' "+
+			"(model + instructions; Foundry runs the agent directly, no harness), or 'managed' "+
+			"(a prompt agent that additionally runs on the GitHub Copilot Brain+Hand harness). When omitted, "+
+			"the kind is taken from --manifest when it declares one, otherwise you are prompted "+
+			"interactively. With --no-prompt, 'prompt' and 'managed' require --agent-name and "+
+			"either --model or --model-deployment (unless supplied by --manifest).")
+	cmd.Flags().StringVar(&flags.harness, "harness", "",
+		"Execution harness for a prompt agent: 'github-copilot' (GitHub Copilot Brain+Hand) or 'none'. "+
+			"Overrides the harness implied by --kind. Ignored for hosted agents.")
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml into ./infra/. "+
 			"A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets "+
@@ -3024,11 +3084,17 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	// Emit the sibling Foundry resource services (project + deployments,
 	// connections, toolboxes) and wire the agent's uses: to them. A selected
-	// existing project contributes its endpoint so provision reuses it.
+	// existing project contributes its endpoint so provision reuses it. The
+	// endpoint itself lives in the azd environment; azure.yaml only references it.
+	endpointRef, err := recordFoundryProjectEnv(
+		ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject,
+	)
+	if err != nil {
+		return err
+	}
 	if err := emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
-		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
-		a.selectedFoundryProject.Endpoint(),
+		endpointRef,
 		resourceDeployments, resourceConnections, resourceToolboxes,
 	); err != nil {
 		return err

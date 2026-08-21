@@ -241,7 +241,6 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	// their entire deploy target in the service config, so skip the
 	// subscription/tenant/credential resolution the hosted path needs.
 	if serviceIsPromptAgent(p.serviceConfig) {
-		fmt.Fprintf(os.Stderr, "Project path: %s, Service path: %s\n", proj.Project.Path, fullPath)
 		return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath)
 	}
 
@@ -331,6 +330,32 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 		return nil
 	}
 
+	// Explicit reference: `manifest:` on the service entry names the agent
+	// definition file. It wins over both the inline shape and the agent.yaml
+	// convention, so a developer who wants to name the file something else --
+	// or keep several manifests side by side in one folder -- can say so in
+	// azure.yaml instead of relying on a filename azd hardcodes.
+	if declared := declaredAgentManifest(p.serviceConfig); declared != "" {
+		resolved, err := resolveDeclaredManifestPath(projectPath, servicePath, declared, p.serviceConfig.Name)
+		if err != nil {
+			return err
+		}
+		if _, statErr := os.Stat(resolved); statErr != nil {
+			// A declared-but-missing manifest is a typo, not an opt-out.
+			// Falling back to the convention here would deploy a different
+			// manifest than the one azure.yaml names.
+			return exterrors.Dependency(
+				exterrors.CodeAgentDefinitionNotFound,
+				fmt.Sprintf("agent manifest %q declared by service %q does not exist", declared, p.serviceConfig.Name),
+				"correct the manifest: path in azure.yaml, or remove it to use the default agent.yaml",
+			)
+		}
+		p.agentDefinitionPath = resolved
+		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(resolved))
+		p.deployContextReady = true
+		return nil
+	}
+
 	// Unified shape: the agent definition is carried inline on the service entry,
 	// so no on-disk agent.yaml is required.
 	if _, _, found, _, defErr := AgentDefinitionFromResolvedService(
@@ -378,8 +403,91 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 	return exterrors.Dependency(
 		exterrors.CodeAgentDefinitionNotFound,
 		fmt.Sprintf("agent definition file not found: no agent.yaml or agent.yml found in %s", fullPath),
-		"add an agent.yaml/agent.yml file to the service directory or set AGENT_DEFINITION_PATH",
+		"add an agent.yaml/agent.yml file to the service directory, "+
+			"declare manifest: <file> on the service in azure.yaml, or set AGENT_DEFINITION_PATH",
 	)
+}
+
+// AgentManifestServiceKey is the azure.yaml service key that points at the
+// agent manifest file, relative to the service's project directory.
+const AgentManifestServiceKey = "manifest"
+
+// declaredAgentManifest returns the manifest path declared on the service entry
+// in azure.yaml, or "" when the service relies on the agent.yaml convention.
+//
+// Service-level properties are checked before the nested config block so the
+// unified shape wins, matching how the inline agent definition is resolved.
+func declaredAgentManifest(svc *azdext.ServiceConfig) string {
+	if svc == nil {
+		return ""
+	}
+	for _, props := range []*structpb.Struct{svc.GetAdditionalProperties(), svc.GetConfig()} {
+		if props == nil {
+			continue
+		}
+		value, ok := props.GetFields()[AgentManifestServiceKey]
+		if !ok {
+			continue
+		}
+		if declared := strings.TrimSpace(value.GetStringValue()); declared != "" {
+			return declared
+		}
+	}
+	return ""
+}
+
+// resolveDeclaredManifestPath resolves a `manifest:` value against the service
+// directory and confines it there.
+//
+// Confinement is to the *service* directory rather than the project root: a
+// manifest is part of one service's source, and letting it reach across into a
+// sibling service's folder makes the two services silently share state that
+// neither declares.
+func resolveDeclaredManifestPath(projectPath, servicePath, declared, serviceName string) (string, error) {
+	if filepath.IsAbs(declared) || strings.HasPrefix(declared, "/") || strings.HasPrefix(declared, `\`) {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("manifest %q on service %q must be a relative path", declared, serviceName),
+			"use a path relative to the service's project directory (e.g. manifest: agents/triage.yaml)",
+		)
+	}
+
+	serviceDir, err := paths.JoinAllowRoot(projectPath, servicePath)
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid project path for service %q: %s", serviceName, err),
+			"update azure.yaml so the service's project directory stays within the project",
+		)
+	}
+
+	resolved, err := paths.JoinAllowRoot(projectPath, servicePath, filepath.FromSlash(declared))
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid manifest path %q on service %q: %s", declared, serviceName, err),
+			"update azure.yaml so the manifest stays within the service's project directory",
+		)
+	}
+
+	rel, err := filepath.Rel(serviceDir, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("manifest %q on service %q resolves outside the service directory", declared, serviceName),
+			"point manifest: at a file inside the service's project directory",
+		)
+	}
+
+	if ext := strings.ToLower(filepath.Ext(resolved)); ext != ".yaml" && ext != ".yml" {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("manifest %q on service %q must be a YAML file (.yaml or .yml)", declared, serviceName),
+			"point manifest: at a .yaml or .yml file",
+		)
+	}
+
+	return resolved, nil
 }
 
 // ensureEnv lazily populates p.env from the azd host. Idempotent and cheap
@@ -414,9 +522,10 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
 	// Prompt agents expose a single workspace-rooted Responses endpoint on the
-	// harness. Build it from the service config rather than azd env vars.
+	// harness. Build it from the service config, resolved against the azd
+	// environment so `azd show` reports the same target deploy published.
 	if p.isPromptAgentService() {
-		settings, err := p.promptAgentSettings()
+		settings, err := p.resolvedPromptAgentSettings(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -494,9 +603,11 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	// Prompt agents target the managed harness, not an ARM Foundry project.
 	// Synthesize a target resource from the harness workspace tuple so core
 	// azd has something to display without resolving a CognitiveServices
-	// project that does not exist for this flow.
+	// project that does not exist for this flow. Resolve against the azd
+	// environment first so non-guided projects do not display the placeholder
+	// tuple stored in azure.yaml.
 	if p.isPromptAgentService() {
-		settings, err := p.promptAgentSettings()
+		settings, err := p.resolvedPromptAgentSettings(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1088,9 +1199,14 @@ func (p *AgentServiceTargetProvider) Deploy(
 ) (*azdext.ServiceDeployResult, error) {
 	// Prompt agents are created on the managed harness, not the Foundry
 	// service. Dispatch to the dedicated harness deploy path before any
-	// ARM/Foundry resolution the hosted path requires.
+	// ARM/Foundry resolution the hosted path requires. The deploy context still
+	// has to be resolved first: deployPromptAgent loads agent.yaml through
+	// p.agentDefinitionPath, which is empty until ensureDeployContext runs.
 	if p.isPromptAgentService() {
-		return p.deployPromptAgent(ctx, serviceConfig, progress)
+		if err := p.ensureDeployContext(ctx); err != nil {
+			return nil, err
+		}
+		return p.deployPromptAgent(ctx, p.serviceConfig, progress)
 	}
 
 	if err := p.ensureDeployContext(ctx); err != nil {
@@ -1291,61 +1407,26 @@ func validateMemoryStores(stores []MemoryStore) error {
 	return nil
 }
 
-// memoryStoreDefinitionDrift returns a human-readable list of the fields where the declared
-// definition diverges from the live store. Only fields the user explicitly declared are
-// compared, so unset options (which fall back to service defaults) never report false drift.
-func memoryStoreDefinitionDrift(declared, live azure.MemoryStoreDefinition) []string {
-	var drift []string
-
-	if declared.ChatModel != live.ChatModel {
-		drift = append(drift, fmt.Sprintf("chatModel (declared %q, current %q)",
-			declared.ChatModel, live.ChatModel))
-	}
-	if declared.EmbeddingModel != live.EmbeddingModel {
-		drift = append(drift, fmt.Sprintf("embeddingModel (declared %q, current %q)",
-			declared.EmbeddingModel, live.EmbeddingModel))
-	}
-
-	if declared.Options == nil {
-		return drift
-	}
-
-	var liveOpts azure.MemoryStoreOptions
-	if live.Options != nil {
-		liveOpts = *live.Options
-	}
-
-	if boolPtrDiffers(declared.Options.ChatSummaryEnabled, liveOpts.ChatSummaryEnabled) {
-		drift = append(drift, fmt.Sprintf("options.chatSummaryEnabled (declared %v)",
-			*declared.Options.ChatSummaryEnabled))
-	}
-	if boolPtrDiffers(declared.Options.UserProfileEnabled, liveOpts.UserProfileEnabled) {
-		drift = append(drift, fmt.Sprintf("options.userProfileEnabled (declared %v)",
-			*declared.Options.UserProfileEnabled))
-	}
-	if boolPtrDiffers(declared.Options.ProceduralMemoryEnabled, liveOpts.ProceduralMemoryEnabled) {
-		drift = append(drift, fmt.Sprintf("options.proceduralMemoryEnabled (declared %v)",
-			*declared.Options.ProceduralMemoryEnabled))
-	}
-	if declared.Options.DefaultTTLSeconds != nil &&
-		(liveOpts.DefaultTTLSeconds == nil || *declared.Options.DefaultTTLSeconds != *liveOpts.DefaultTTLSeconds) {
-		drift = append(drift, fmt.Sprintf("options.defaultTtlSeconds (declared %d)",
-			*declared.Options.DefaultTTLSeconds))
-	}
-	if declared.Options.UserProfileDetails != "" &&
-		declared.Options.UserProfileDetails != liveOpts.UserProfileDetails {
-		drift = append(drift, "options.userProfileDetails")
-	}
-
-	return drift
+// azureYamlMemoryStoreLabels maps the wire field paths reported by
+// diffMemoryStoreDefinition to the camelCase keys used under an agent service's
+// memoryStores: list, so a drift warning names the key as authored.
+var azureYamlMemoryStoreLabels = map[string]string{
+	"chat_model":                        "chatModel",
+	"embedding_model":                   "embeddingModel",
+	"options.chat_summary_enabled":      "options.chatSummaryEnabled",
+	"options.user_profile_enabled":      "options.userProfileEnabled",
+	"options.procedural_memory_enabled": "options.proceduralMemoryEnabled",
+	"options.default_ttl_seconds":       "options.defaultTtlSeconds",
+	"options.user_profile_details":      "options.userProfileDetails",
 }
 
-// boolPtrDiffers reports whether a declared bool pointer is set and differs from the live value.
-func boolPtrDiffers(declared, live *bool) bool {
-	if declared == nil {
-		return false
-	}
-	return live == nil || *declared != *live
+// memoryStoreDefinitionDrift returns a human-readable list of the fields where the declared
+// definition diverges from the live store, named with the azure.yaml keys.
+func memoryStoreDefinitionDrift(declared, live azure.MemoryStoreDefinition) []string {
+	return describeMemoryStoreDrift(
+		diffMemoryStoreDefinition(declared, live),
+		azureYamlMemoryStoreLabels,
+	)
 }
 
 // writeMemoryStoreDriftWarning warns that azure.yaml changes were not applied to an existing store.
@@ -1360,29 +1441,19 @@ func writeMemoryStoreDriftWarning(name string, drift []string) {
 
 // mapMemoryStoreOptions converts the azure.yaml memory store options into the API request shape.
 // It returns nil when no options are configured (or all fields are unset) so the service applies
-// its own defaults, rather than sending an empty options object that the service might treat
-// differently from an omitted one.
+// its own defaults.
 func mapMemoryStoreOptions(options *MemoryStoreOptions) *azure.MemoryStoreOptions {
-	if options == nil || memoryStoreOptionsEmpty(options) {
+	if options == nil {
 		return nil
 	}
 
-	return &azure.MemoryStoreOptions{
+	return memoryStoreOptionsOrNil(&azure.MemoryStoreOptions{
 		ChatSummaryEnabled:      options.ChatSummaryEnabled,
 		UserProfileEnabled:      options.UserProfileEnabled,
 		ProceduralMemoryEnabled: options.ProceduralMemoryEnabled,
 		DefaultTTLSeconds:       options.DefaultTtlSeconds,
 		UserProfileDetails:      options.UserProfileDetails,
-	}
-}
-
-// memoryStoreOptionsEmpty reports whether every memory store option field is unset.
-func memoryStoreOptionsEmpty(options *MemoryStoreOptions) bool {
-	return options.ChatSummaryEnabled == nil &&
-		options.UserProfileEnabled == nil &&
-		options.ProceduralMemoryEnabled == nil &&
-		options.DefaultTtlSeconds == nil &&
-		options.UserProfileDetails == ""
+	})
 }
 
 // shouldUsePreBuiltImage determines whether to use a pre-built image.

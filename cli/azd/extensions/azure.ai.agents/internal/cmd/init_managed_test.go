@@ -12,21 +12,12 @@ import (
 func TestScaffoldPromptConventionFolders_CreatesLayout(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := scaffoldPromptConventionFolders(dir, "You are a triage assistant."); err != nil {
+	if err := scaffoldPromptConventionFolders(dir); err != nil {
 		t.Fatalf("scaffoldPromptConventionFolders: %v", err)
 	}
 
-	// instructions.md carries the provided instructions.
-	content, err := os.ReadFile(filepath.Join(dir, "instructions.md"))
-	if err != nil {
-		t.Fatalf("read instructions.md: %v", err)
-	}
-	if string(content) != "You are a triage assistant.\n" {
-		t.Errorf("instructions.md content: got %q", string(content))
-	}
-
-	// skills/ exists with a .gitkeep placeholder.
-	for _, sub := range []string{"skills"} {
+	// skills/ and vector-assets/ exist with a .gitkeep placeholder.
+	for _, sub := range []string{"skills", "vector-assets"} {
 		info, statErr := os.Stat(filepath.Join(dir, sub))
 		if statErr != nil || !info.IsDir() {
 			t.Errorf("%s/ should be a directory: %v", sub, statErr)
@@ -35,44 +26,15 @@ func TestScaffoldPromptConventionFolders_CreatesLayout(t *testing.T) {
 			t.Errorf("%s/.gitkeep should exist: %v", sub, keepErr)
 		}
 	}
-
-	// files/ is intentionally not scaffolded: file search is not supported for
-	// managed (prompt) agents.
-	if _, statErr := os.Stat(filepath.Join(dir, "files")); !os.IsNotExist(statErr) {
-		t.Errorf("files/ should not be created, got stat err: %v", statErr)
-	}
 }
 
-func TestScaffoldPromptConventionFolders_DefaultInstructions(t *testing.T) {
-	dir := t.TempDir()
-	if err := scaffoldPromptConventionFolders(dir, "   "); err != nil {
-		t.Fatalf("scaffoldPromptConventionFolders: %v", err)
+// Instructions are written inline into agent.yaml, so a scaffold with nothing
+// authored still produces a deployable agent rather than an empty prompt.
+func TestPromptScaffoldInstructions_DefaultsWhenBlank(t *testing.T) {
+	if got := promptScaffoldInstructions("   "); got != "You are a helpful AI assistant." {
+		t.Errorf("default instructions: got %q", got)
 	}
-	content, err := os.ReadFile(filepath.Join(dir, "instructions.md"))
-	if err != nil {
-		t.Fatalf("read instructions.md: %v", err)
-	}
-	if string(content) != "You are a helpful AI assistant.\n" {
-		t.Errorf("default instructions: got %q", string(content))
-	}
-}
-
-func TestScaffoldPromptConventionFolders_DoesNotOverwriteInstructions(t *testing.T) {
-	dir := t.TempDir()
-	existing := "MY EDITED INSTRUCTIONS\n"
-	if err := os.WriteFile(filepath.Join(dir, "instructions.md"), []byte(existing), 0o600); err != nil {
-		t.Fatalf("seed instructions.md: %v", err)
-	}
-
-	if err := scaffoldPromptConventionFolders(dir, "should be ignored"); err != nil {
-		t.Fatalf("scaffoldPromptConventionFolders: %v", err)
-	}
-
-	content, err := os.ReadFile(filepath.Join(dir, "instructions.md"))
-	if err != nil {
-		t.Fatalf("read instructions.md: %v", err)
-	}
-	if string(content) != existing {
-		t.Errorf("existing instructions.md should be preserved, got %q", string(content))
+	if got := promptScaffoldInstructions(" authored \n"); got != "authored" {
+		t.Errorf("authored instructions: got %q", got)
 	}
 }

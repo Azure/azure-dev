@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 
@@ -45,6 +46,7 @@ const (
 	pendingReasonModelDeployment = "model_deployment"
 	pendingReasonACR             = "acr"
 	pendingReasonAppInsights     = "app_insights"
+	pendingReasonConnection      = "connection"
 )
 
 // parsePendingProvisionReasons splits the comma-separated env-var
@@ -105,6 +107,31 @@ func addPendingProvisionReason(
 		}
 		return append(slices.Clone(curr), reason)
 	})
+}
+
+// recordPendingConnectionProvision records a pending
+// connection reason after init writes at least one service.
+// Write failures are warnings so init is not rolled back.
+func recordPendingConnectionProvision(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	emitted int,
+) {
+	if emitted <= 0 {
+		return
+	}
+	if _, err := addPendingProvisionReason(
+		ctx,
+		azdClient,
+		envName,
+		pendingReasonConnection,
+	); err != nil {
+		log.Printf(
+			"warning: could not record pending connection provision: %v",
+			err,
+		)
+	}
 }
 
 // removePendingProvisionReason drops a reason tag from the

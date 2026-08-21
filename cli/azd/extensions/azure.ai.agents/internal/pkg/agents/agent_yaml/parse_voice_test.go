@@ -118,3 +118,24 @@ model_type: unsupported
 		t.Fatalf("expected invalid model_type error, got: %v", err)
 	}
 }
+func TestValidateAgentDefinition_PromptVoice_InvalidIncludeTranscriptionModel(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+audio:
+  input:
+    transcription:
+      model: whisper-1
+include:
+  - item.input_audio_transcription.phrases
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil {
+		t.Fatal("expected include/transcription validation error")
+	}
+	if !strings.Contains(err.Error(), "azure-speech") || !strings.Contains(err.Error(), "azure-fast-transcription") {
+		t.Fatalf("expected transcription model guidance in error, got: %v", err)
+	}
+}

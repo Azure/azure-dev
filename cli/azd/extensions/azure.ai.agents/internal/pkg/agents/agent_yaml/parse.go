@@ -489,8 +489,9 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	}
 
 	if agent.Audio == nil {
-		return errors
+		return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, "")...)
 	}
+	transcriptionModel := ""
 	if agent.Audio.Input != nil {
 		errors = append(errors, validateVoiceAudioFormat("template.audio.input.format", agent.Audio.Input.Format)...)
 		if nr := agent.Audio.Input.NoiseReduction; nr != nil && strings.TrimSpace(nr.Type) == "" {
@@ -513,6 +514,9 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 				errors = append(errors, "template.audio.input.turn_detection.speech_duration_ms must be >= 0")
 			}
 		}
+		if agent.Audio.Input.Transcription != nil {
+			transcriptionModel = agent.Audio.Input.Transcription.Model
+		}
 	}
 	if agent.Audio.Output != nil {
 		errors = append(errors, validateVoiceAudioFormat("template.audio.output.format", agent.Audio.Output.Format)...)
@@ -528,7 +532,23 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 			errors = append(errors, "template.audio.output.speed must be between 0.25 and 1.5")
 		}
 	}
-	return errors
+	return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, transcriptionModel)...)
+}
+
+func validateVoiceIncludeTranscriptionCompatibility(agent VoiceAgent, transcriptionModel string) []string {
+	if !slices.Contains(agent.Include, "item.input_audio_transcription.phrases") {
+		return nil
+	}
+	model := strings.TrimSpace(transcriptionModel)
+	if model == "" {
+		model = defaultVoiceInputTranscriptionModel
+	}
+	if model == "azure-speech" || model == "azure-fast-transcription" {
+		return nil
+	}
+	return []string{
+		"template.include item.input_audio_transcription.phrases requires template.audio.input.transcription.model to be azure-speech or azure-fast-transcription",
+	}
 }
 
 func validateVoiceAudioFormat(path string, format *VoiceAudioFormat) []string {

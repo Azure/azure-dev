@@ -683,6 +683,7 @@ services:
 		scopes, err := ConnectionEnvironmentScopes(
 			[]byte(scopesYAML),
 			"",
+			nil,
 		)
 		require.NoError(t, err)
 		assert.Equal(t, map[string]bool{
@@ -753,6 +754,118 @@ services:
 		assert.Equal(t, "", c.Target)
 		keys := getKeys(t, c)
 		assert.Equal(t, "", keys["x-api-key"])
+	})
+
+	t.Run("disabled condition is omitted from ARM params", func(t *testing.T) {
+		const conditionedYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  enabled-conn:
+    host: azure.ai.connection
+    category: ApiKey
+    target: https://enabled.example
+  disabled-conn:
+    host: azure.ai.connection
+    condition: false
+    category: ApiKey
+    target: ${MISSING_TARGET}
+    env:
+      KEY: ${MISSING_KEY}
+  env-gated:
+    host: azure.ai.connection
+    condition: ${ENABLE_CONNECTION}
+    category: RemoteTool
+    target: https://gated.example
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(conditionedYAML),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			Env: map[string]string{
+				"ENABLE_CONNECTION": "false",
+			},
+		})
+		require.NoError(t, err)
+		names := resultConnectionNames(t, res)
+		assert.Equal(t, []string{"enabled-conn"}, names)
+
+		scopes, err := ConnectionEnvironmentScopes(
+			[]byte(conditionedYAML),
+			"",
+			map[string]string{"ENABLE_CONNECTION": "false"},
+		)
+		require.NoError(t, err)
+		assert.Empty(t, scopes)
+	})
+
+	t.Run("eject still evaluates condition", func(t *testing.T) {
+		const ejectYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  live-conn:
+    host: azure.ai.connection
+    condition: true
+    category: ApiKey
+    target: ${LIVE_URL}
+  skipped-conn:
+    host: azure.ai.connection
+    condition: false
+    category: ApiKey
+    target: ${SKIP_URL}
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:    []byte(ejectYAML),
+			ServiceName:     "my-project",
+			AcceptedHosts:   []string{"azure.ai.project"},
+			PreserveVarRefs: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"live-conn"}, resultConnectionNames(t, res))
+		c := getConn(t, res)
+		assert.Equal(t, "${LIVE_URL}", c.Target)
+	})
+
+	t.Run("disabled connection skips missing payload $ref", func(t *testing.T) {
+		const skippedRefYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  skipped-conn:
+    host: azure.ai.connection
+    condition: false
+    $ref: ./missing-connection.yaml
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(skippedRefYAML),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			ProjectRoot:   t.TempDir(),
+		})
+		require.NoError(t, err)
+		assert.Empty(t, resultConnectionNames(t, res))
+	})
+
+	t.Run("invalid condition fails synthesis", func(t *testing.T) {
+		const invalidYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  bad-conn:
+    host: azure.ai.connection
+    condition:
+      nested: true
+    category: ApiKey
+    target: https://example
+`
+		_, err := Synthesize(Input{
+			RawAzureYAML:  []byte(invalidYAML),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "condition")
 	})
 }
 
@@ -830,6 +943,33 @@ services:
 	t.Run("empty raw errors", func(t *testing.T) {
 		_, err := BrownfieldConnections(nil, nil, nil, "")
 		require.Error(t, err)
+	})
+
+	t.Run("omits disabled connections", func(t *testing.T) {
+		const conditioned = `
+services:
+  my-project:
+    host: azure.ai.project
+    endpoint: https://existing.services.ai.azure.com/api/projects/p1
+  live-conn:
+    host: azure.ai.connection
+    category: ApiKey
+    target: https://live.example
+  skipped-conn:
+    host: azure.ai.connection
+    condition: false
+    category: ApiKey
+    target: https://skipped.example
+`
+		conns, err := BrownfieldConnections(
+			[]byte(conditioned),
+			nil,
+			nil,
+			"",
+		)
+		require.NoError(t, err)
+		require.Len(t, conns, 1)
+		assert.Equal(t, "live-conn", conns[0].Name)
 	})
 }
 
@@ -1072,6 +1212,16 @@ func resultConnections(t *testing.T, result *Result) []Connection {
 	credentials, ok := result.Parameters["connectionCredentials"].(map[string]map[string]any)
 	require.True(t, ok, "connectionCredentials param should be a credential map")
 	return JoinConnectionCredentials(connections, credentials)
+}
+
+func resultConnectionNames(t *testing.T, result *Result) []string {
+	t.Helper()
+	connections := resultConnections(t, result)
+	names := make([]string, len(connections))
+	for i, connection := range connections {
+		names[i] = connection.Name
+	}
+	return names
 }
 
 func TestBrownfieldServiceResolversResolveRefs(t *testing.T) {

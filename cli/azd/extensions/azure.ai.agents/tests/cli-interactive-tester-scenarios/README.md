@@ -209,8 +209,8 @@ advantage of both where it's safe.
   - **`2.12-run-local-and-invoke-local`** declares `allocate_ports: [agent]` and
     binds `azd ai agent run`/`invoke --local` to `--port {agent}`. A port pool is
     shared across every `start_session` with the same `scenario_path`, so the
-    `run` and `invoke` sessions find each other; parallel local runs each get a
-    distinct port instead of colliding on the default `8088`.
+    run and invoke sessions find each other without using `instance_id`. Their
+    session IDs use the sweep-wide `{run_id}` instead.
 - **Single-instance by design:** the **Tier 2 reuse scenarios** (`2.01-`…`2.18-`),
   plus `2.00-setup` and `2.99-teardown`, all share the one deployed agent under
   `~/working/azd-agents-shared` (the project itself lives in the

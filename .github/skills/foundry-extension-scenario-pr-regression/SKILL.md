@@ -2,11 +2,10 @@
 name: foundry-extension-scenario-pr-regression
 license: MIT
 metadata:
-  version: "2.1"
+  version: "2.0"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or mapping rules.
   # 2.0: renamed from agent-scenario-tests; execution mechanics moved to the scenarios'
   # driving-mechanics.md; per-scenario driving delegated to the foundry-extension-scenario-worker agent.
-  # 2.1: close Tier 2 selections over setup/teardown and use run-unique scenario identities.
 description: >-
   **WORKFLOW SKILL** — Runs the azure.ai.agents extension's cli-interactive-tester
   scenarios locally as a **PR-scoped** regression check. Resolves the current branch's PR,

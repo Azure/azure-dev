@@ -88,10 +88,13 @@ gh pr view --json number,url,headRefName,baseRefName,title
 3. Enumerate matching scenarios via the tester:
 
    ```text
-   list_scenarios(root="<scenarios-dir>", tags=[<cmd:* tags>, ...])
+   list_scenarios(root="<scenarios-dir>", tags=[<cmd:* tags>])
    ```
 
-   `list_scenarios` filtering is **OR across tags, case-sensitive, exact match**.
+   `list_scenarios` filtering is **OR across tags, case-sensitive, exact match**. For
+   command-scoped coverage, query with the derived `cmd:*` tags only and then filter the
+   returned rows locally to the tiers approved in Step 4. Never add tier tags to the same
+   query to simulate an AND filter. Broad whole-tier coverage is a separate tier-only query.
 
 4. If the result contains **any Tier 2 scenario**, add
    `tier2/2.00-setup-deploy-shared-agent.yaml` and

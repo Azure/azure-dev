@@ -176,9 +176,9 @@ Concurrency primitive: **parallel background sub-agents, one scenario per sub-ag
   shared-agent assumption).
 - **Same scenario N times in parallel:** append a distinct ordinal to the scenario's normal
   run-scoped instance ID and use it for that copy's `session_vars.instance`, hooks, and every
-  `start_session` call. Reuse the same value for paired `run`/`invoke` sessions of one scenario.
-  Only scenarios authored for it support this (Tier 0 work-dir scenarios, all Tier 1 `init`
-  scenarios, and `2.12` for its allocated `{agent}` port).
+  `start_session` call. Only Tier 0 work-dir scenarios and Tier 1 `init` scenarios support this.
+  Tier 2 remains serial and never receives an instance ID; `2.12` prefixes its paired session
+  IDs with `run-` / `invoke-` and includes `{run_id}` to isolate them from other sweeps.
 
 ### Keep waves small
 

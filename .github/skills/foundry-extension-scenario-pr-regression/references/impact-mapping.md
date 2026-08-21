@@ -74,10 +74,16 @@ From the impacted `cmd:*` set, decide the **highest tier to offer**:
 
 ## 5. Translate tags → run list
 
-Combine the derived `cmd:*` tags with the chosen tier tags and call
-`list_scenarios(tags=[...])`. Example: an `invoke.go` change approved for Tier 2 →
-`list_scenarios(tags=["cmd:invoke"])`, then keep the Tier 0/1 results plus the Tier 2
-`2.*-invoke-*` scenarios, prefixed by `2.00-setup` and suffixed by `2.99-teardown`.
+Call `list_scenarios(tags=[...])` with the derived `cmd:*` tags only, then filter the returned
+rows locally to the tiers the user approved. Do **not** combine command and tier tags in one
+call: `list_scenarios` uses OR semantics, so `["cmd:invoke", "tier:2"]` would select every
+invoke scenario **and** every Tier 2 scenario.
+
+Example: for an `invoke.go` change approved through Tier 2, call
+`list_scenarios(tags=["cmd:invoke"])`, keep only matching rows in the approved Tier 0/1/2
+scope, then add `2.00-setup` and `2.99-teardown` around the retained Tier 2 invoke scenarios.
+When a broad cross-cutting rule explicitly calls for a whole tier rather than command-specific
+coverage, query that tier tag separately.
 
 For **Tier 1b** (`verify-deploy`): when `cmd:init` is impacted and the user approves
 cost-incurring tiers, include `list_scenarios(tags=["verify-deploy"])`. These scenarios

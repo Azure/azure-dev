@@ -6,6 +6,7 @@ package agent_yaml
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -388,19 +389,30 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				errors = append(errors, fmt.Sprintf("template.name not in valid format: %v", err))
 			}
 
+			// Only hosted agents carry policies to the service, so a moderation block on any
+			// other kind would be dropped silently instead of enforced.
+			if agentDef.Kind != AgentKindHosted {
+				errors = append(errors,
+					validateInvocationsModerationKind(templateBytes, agentDef.Kind)...)
+			}
+
 			switch AgentKind(agentDef.Kind) {
 			case AgentKindHosted:
 				var agent ContainerAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					raiPolicyCount := 0
 					for i, policy := range agent.Policies {
 						switch policy.Type {
 						case PolicyTypeRai:
+							raiPolicyCount++
 							if policy.RaiPolicyName == "" {
 								errors = append(errors, fmt.Sprintf(
 									"policies[%d] of type '%s' requires a policy name "+
 										"('raiPolicyName' in azure.yaml, 'rai_policy_name' in agent.yaml)",
 									i, policy.Type))
 							}
+							errors = append(errors,
+								validateInvocationsModeration(i, policy.InvocationsModeration, agent.Protocols)...)
 						case "":
 							errors = append(errors, fmt.Sprintf(
 								"policies[%d] requires a type", i))
@@ -409,6 +421,14 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"policies[%d] has an unsupported type '%s' (supported: %s)",
 								i, policy.Type, PolicyTypeRai))
 						}
+					}
+					// rai_config carries a single policy on the wire, so only the first
+					// rai_policy would ever reach the service. Reject the ambiguity rather
+					// than silently dropping the rest.
+					if raiPolicyCount > 1 {
+						errors = append(errors, fmt.Sprintf(
+							"policies declares %d policies of type '%s', but only one is supported",
+							raiPolicyCount, PolicyTypeRai))
 					}
 					// TODO: Do we need this?
 					// if len(agent.Models) == 0 {
@@ -473,4 +493,169 @@ func ValidateAgentName(name string) error {
 	}
 
 	return nil
+}
+
+// validateInvocationsModerationKind reports invocationsModeration blocks declared on a
+// non-hosted agent. Only ContainerAgent carries policies through to the service, so such a
+// block would be dropped silently rather than enforced. It reads a minimal envelope because
+// the kind-specific structs for the other kinds have no policies field at all.
+//
+// The policies are decoded as raw maps rather than into [Policy] because the two authoring
+// surfaces spell the key differently: a standalone agent.yaml uses the snake_case YAML tags,
+// while an inline azure.yaml service is validated from the raw property map and therefore
+// still carries the camelCase keys the user authored. Decoding into [Policy] would only ever
+// match the snake_case spelling and let every inline definition bypass this check.
+func validateInvocationsModerationKind(templateBytes []byte, kind AgentKind) []string {
+	var envelope struct {
+		Policies []map[string]any `json:"policies,omitempty" yaml:"policies,omitempty"`
+	}
+	if err := yaml.Unmarshal(templateBytes, &envelope); err != nil {
+		// A malformed document is reported by the kind-specific parse instead.
+		return nil
+	}
+
+	var errors []string
+	for i, policy := range envelope.Policies {
+		if !hasInvocationsModeration(policy) {
+			continue
+		}
+		errors = append(errors, fmt.Sprintf(
+			"policies[%d] invocationsModeration is only supported for '%s' agents, got kind '%s'",
+			i, AgentKindHosted, kind))
+	}
+	return errors
+}
+
+// hasInvocationsModeration reports whether a raw policy map declares a moderation block under
+// either the camelCase (azure.yaml) or snake_case (agent.yaml) spelling.
+func hasInvocationsModeration(policy map[string]any) bool {
+	for _, key := range []string{"invocationsModeration", "invocations_moderation"} {
+		if value, ok := policy[key]; ok && value != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// validateInvocationsModeration checks a policy's invocations-moderation block against the
+// same structural rules the Agents service applies at create time, so a misconfiguration is
+// caught locally instead of surfacing later as an opaque 'invalid_payload' response.
+//
+// It deliberately does not compile the JSONPath expressions; malformed paths are still
+// reported by the service.
+func validateInvocationsModeration(
+	index int,
+	moderation *InvocationsModeration,
+	protocols []ProtocolVersionRecord,
+) []string {
+	if moderation == nil {
+		return nil
+	}
+
+	prefix := fmt.Sprintf("policies[%d] invocationsModeration", index)
+	var errors []string
+
+	// The rest of the block is meaningless on an agent that never serves the invocations
+	// path, so report only the root cause rather than cascading field-level errors.
+	if !exposesInvocationsProtocol(protocols) {
+		return []string{fmt.Sprintf(
+			"%s is only supported for agents that expose the '%s' protocol; "+
+				"add it to 'protocols' or remove the moderation block",
+			prefix, InvocationsProtocol)}
+	}
+
+	inputContentType, err := resolveInvocationContentType(moderation.InputContentType)
+	if err != nil {
+		errors = append(errors, fmt.Sprintf("%s.inputContentType %v", prefix, err))
+	}
+
+	outputContentType, err := resolveInvocationContentType(moderation.OutputContentType)
+	if err != nil {
+		errors = append(errors, fmt.Sprintf("%s.outputContentType %v", prefix, err))
+	}
+
+	allowsNonStreaming, allowsStreaming, err := resolveInvocationResponseMode(moderation.ResponseMode)
+	if err != nil {
+		errors = append(errors, fmt.Sprintf("%s.responseMode %v", prefix, err))
+	}
+
+	if inputContentType == InvocationContentTypeJSON && len(moderation.InputPaths) == 0 {
+		errors = append(errors, fmt.Sprintf(
+			"%s.inputPaths is required when inputContentType is '%s'",
+			prefix, InvocationContentTypeJSON))
+	}
+
+	if allowsNonStreaming && outputContentType == InvocationContentTypeJSON &&
+		len(moderation.OutputPaths) == 0 {
+		errors = append(errors, fmt.Sprintf(
+			"%s.outputPaths is required when responseMode includes non-streaming "+
+				"and outputContentType is '%s'",
+			prefix, InvocationContentTypeJSON))
+	}
+
+	if allowsStreaming && outputContentType == InvocationContentTypeJSON &&
+		len(moderation.StreamSelectors) == 0 {
+		errors = append(errors, fmt.Sprintf(
+			"%s.streamSelectors is required when responseMode includes streaming "+
+				"and outputContentType is '%s'",
+			prefix, InvocationContentTypeJSON))
+	}
+
+	for i, selector := range moderation.StreamSelectors {
+		if strings.TrimSpace(selector.EventType) == "" {
+			errors = append(errors, fmt.Sprintf(
+				"%s.streamSelectors[%d].eventType is required and must be non-empty", prefix, i))
+		}
+	}
+
+	return errors
+}
+
+// resolveInvocationContentType normalizes an optional content type, defaulting to JSON.
+// An unrecognized value yields an empty type alongside the error so callers naturally skip
+// the downstream rules that depend on it instead of reporting cascading failures. Suppressing
+// those rules is deliberate: the corrected value determines whether paths are required at all,
+// so guessing one here would risk demanding paths a 'text' agent never needs.
+func resolveInvocationContentType(value string) (string, error) {
+	switch value {
+	case "":
+		return InvocationContentTypeJSON, nil
+	case InvocationContentTypeJSON, InvocationContentTypeText:
+		return value, nil
+	default:
+		return "", fmt.Errorf("must be '%s' or '%s', got '%s'",
+			InvocationContentTypeJSON, InvocationContentTypeText, value)
+	}
+}
+
+// resolveInvocationResponseMode reports which output gates a response mode arms. Mode "both"
+// arms both, but the proxy still runs exactly one gate per response, chosen from the actual
+// response Content-Type.
+func resolveInvocationResponseMode(value string) (allowsNonStreaming bool, allowsStreaming bool, err error) {
+	switch value {
+	case "":
+		return false, false, fmt.Errorf("is required (one of '%s', '%s', '%s')",
+			InvocationResponseModeNonStreaming,
+			InvocationResponseModeStreaming,
+			InvocationResponseModeBoth)
+	case InvocationResponseModeNonStreaming:
+		return true, false, nil
+	case InvocationResponseModeStreaming:
+		return false, true, nil
+	case InvocationResponseModeBoth:
+		return true, true, nil
+	default:
+		return false, false, fmt.Errorf("must be one of '%s', '%s', '%s', got '%s'",
+			InvocationResponseModeNonStreaming,
+			InvocationResponseModeStreaming,
+			InvocationResponseModeBoth,
+			value)
+	}
+}
+
+// exposesInvocationsProtocol reports whether the agent declares the HTTP invocations protocol.
+func exposesInvocationsProtocol(protocols []ProtocolVersionRecord) bool {
+	return slices.ContainsFunc(protocols, func(record ProtocolVersionRecord) bool {
+		return record.Protocol == InvocationsProtocol
+	})
 }

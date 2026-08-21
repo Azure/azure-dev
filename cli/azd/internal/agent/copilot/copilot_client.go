@@ -53,14 +53,14 @@ func (m *CopilotClientManager) Start(ctx context.Context) error {
 
 	// Resolve CLI path: explicit option > managed CopilotCLI (downloads if needed)
 	if m.options.CLIPath != "" {
-		clientOpts.CLIPath = m.options.CLIPath
+		clientOpts.Connection = copilot.StdioConnection{Path: m.options.CLIPath}
 		log.Printf("[copilot-client] Using explicit CLI path: %s", m.options.CLIPath)
 	} else if m.cli != nil {
 		cliPath, err := m.cli.Path(ctx)
 		if err != nil {
 			return fmt.Errorf("resolving copilot CLI: %w", err)
 		}
-		clientOpts.CLIPath = cliPath
+		clientOpts.Connection = copilot.StdioConnection{Path: cliPath}
 		log.Printf("[copilot-client] Using managed CLI: %s", cliPath)
 	}
 
@@ -74,7 +74,7 @@ func (m *CopilotClientManager) Start(ctx context.Context) error {
 			DisplayTitle, err,
 		)
 	}
-	log.Printf("[copilot-client] Started successfully (state=%s)", m.client.State())
+	log.Printf("[copilot-client] Started successfully")
 	return nil
 }
 
@@ -107,9 +107,4 @@ func (m *CopilotClientManager) ListModels(ctx context.Context) ([]copilot.ModelI
 		return nil, fmt.Errorf("failed to list %s models: %w", DisplayTitle, err)
 	}
 	return models, nil
-}
-
-// State returns the current connection state of the client.
-func (m *CopilotClientManager) State() copilot.ConnectionState {
-	return m.client.State()
 }

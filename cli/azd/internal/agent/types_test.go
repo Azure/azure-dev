@@ -164,92 +164,79 @@ func TestFormatSessionTime(t *testing.T) {
 }
 
 func TestPermissionToConsentTarget(t *testing.T) {
-	strPtr := func(s string) *string { return &s }
-	boolPtr := func(b bool) *bool { return &b }
-
 	tests := []struct {
 		name         string
-		kind         copilot.PermissionRequestKind
-		serverName   *string
-		toolName     *string
-		readOnly     *bool
+		request      copilot.PermissionRequest
 		wantServer   string
 		wantTool     string
 		wantReadOnly bool
 	}{
 		{
 			name:         "MCP tool with server",
-			kind:         copilot.PermissionRequestKindMcp,
-			serverName:   strPtr("azure"),
-			toolName:     strPtr("azd_plan_init"),
-			readOnly:     boolPtr(false),
+			request:      &copilot.PermissionRequestMCP{ServerName: "azure", ToolName: "azd_plan_init"},
 			wantServer:   "azure",
 			wantTool:     "azd_plan_init",
 			wantReadOnly: false,
 		},
 		{
 			name:         "MCP read-only tool",
-			kind:         copilot.PermissionRequestKindMcp,
-			serverName:   strPtr("azure"),
-			toolName:     strPtr("list_resources"),
-			readOnly:     boolPtr(true),
+			request:      &copilot.PermissionRequestMCP{ServerName: "azure", ToolName: "list_resources", ReadOnly: true},
 			wantServer:   "azure",
 			wantTool:     "list_resources",
 			wantReadOnly: true,
 		},
 		{
 			name:         "MCP with nil server/tool",
-			kind:         copilot.PermissionRequestKindMcp,
+			request:      &copilot.PermissionRequestMCP{},
 			wantServer:   "copilot",
 			wantTool:     "unknown",
 			wantReadOnly: false,
 		},
 		{
 			name:         "Shell command",
-			kind:         copilot.PermissionRequestKindShell,
+			request:      &copilot.PermissionRequestShell{},
 			wantServer:   "copilot",
 			wantTool:     "shell",
 			wantReadOnly: false,
 		},
 		{
 			name:         "File write",
-			kind:         copilot.PermissionRequestKindWrite,
+			request:      &copilot.PermissionRequestWrite{},
 			wantServer:   "copilot",
 			wantTool:     "write",
 			wantReadOnly: false,
 		},
 		{
 			name:         "File read",
-			kind:         copilot.PermissionRequestKindRead,
+			request:      &copilot.PermissionRequestRead{},
 			wantServer:   "copilot",
 			wantTool:     "read",
 			wantReadOnly: true,
 		},
 		{
 			name:         "URL fetch",
-			kind:         copilot.PermissionRequestKindURL,
+			request:      &copilot.PermissionRequestURL{},
 			wantServer:   "copilot",
 			wantTool:     "url",
 			wantReadOnly: true,
 		},
 		{
 			name:         "Memory storage",
-			kind:         copilot.PermissionRequestKindMemory,
+			request:      &copilot.PermissionRequestMemory{},
 			wantServer:   "copilot",
 			wantTool:     "memory",
 			wantReadOnly: false,
 		},
 		{
 			name:         "Custom tool with name",
-			kind:         copilot.PermissionRequestKindCustomTool,
-			toolName:     strPtr("my-tool"),
+			request:      &copilot.PermissionRequestCustomTool{ToolName: "my-tool"},
 			wantServer:   "copilot",
 			wantTool:     "my-tool",
 			wantReadOnly: false,
 		},
 		{
 			name:         "Custom tool without name",
-			kind:         copilot.PermissionRequestKindCustomTool,
+			request:      &copilot.PermissionRequestCustomTool{},
 			wantServer:   "copilot",
 			wantTool:     "custom-tool",
 			wantReadOnly: false,
@@ -258,14 +245,7 @@ func TestPermissionToConsentTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := copilot.PermissionRequest{
-				Kind:       tt.kind,
-				ServerName: tt.serverName,
-				ToolName:   tt.toolName,
-				ReadOnly:   tt.readOnly,
-			}
-
-			server, tool, readOnly := permissionToConsentTarget(req)
+			server, tool, readOnly := permissionToConsentTarget(tt.request)
 			require.Equal(t, tt.wantServer, server)
 			require.Equal(t, tt.wantTool, tool)
 			require.Equal(t, tt.wantReadOnly, readOnly)

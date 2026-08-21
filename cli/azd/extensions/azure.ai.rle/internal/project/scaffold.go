@@ -145,6 +145,7 @@ func copyDirectory(sourceDir string, destDir string) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(targetPath, data, info.Mode().Perm()) //nolint:gosec // target path is derived from walking the trusted source sample and preserves source file mode.
+		// targetPath is derived from the trusted source sample walk.
+		return os.WriteFile(targetPath, data, info.Mode().Perm()) //nolint:gosec
 	})
 }

@@ -6,6 +6,7 @@ package agent_yaml
 import (
 	"encoding/json"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1727,6 +1728,154 @@ func TestMapRaiConfig(t *testing.T) {
 	got := mapRaiConfig([]Policy{{Type: PolicyTypeRai, RaiPolicyName: "p1"}})
 	if got == nil || got.RaiPolicyName != "p1" {
 		t.Errorf("mapRaiConfig(p1) = %+v, want RaiPolicyName=p1", got)
+	}
+}
+
+func TestMapRaiConfig_WithInvocationsModeration(t *testing.T) {
+	t.Parallel()
+
+	got := mapRaiConfig([]Policy{{
+		Type:          PolicyTypeRai,
+		RaiPolicyName: "p1",
+		InvocationsModeration: &InvocationsModeration{
+			InputContentType:  InvocationContentTypeJSON,
+			OutputContentType: InvocationContentTypeJSON,
+			ResponseMode:      InvocationResponseModeBoth,
+			InputPaths:        []string{"$.input"},
+			OutputPaths:       []string{"$.output"},
+			StreamSelectors: []SseTextSelector{
+				{EventType: "response.output_text.delta", TextField: "$.delta"},
+			},
+		},
+	}})
+
+	if got == nil {
+		t.Fatal("mapRaiConfig returned nil")
+	}
+	moderation := got.InvocationsModeration
+	if moderation == nil {
+		t.Fatal("InvocationsModeration is nil")
+	}
+	if moderation.InputContentType != agent_api.RaiInvocationContentTypeJSON {
+		t.Errorf("InputContentType = %q, want %q",
+			moderation.InputContentType, agent_api.RaiInvocationContentTypeJSON)
+	}
+	if moderation.OutputContentType != agent_api.RaiInvocationContentTypeJSON {
+		t.Errorf("OutputContentType = %q, want %q",
+			moderation.OutputContentType, agent_api.RaiInvocationContentTypeJSON)
+	}
+	if moderation.ResponseMode != agent_api.RaiInvocationModeBoth {
+		t.Errorf("ResponseMode = %q, want %q", moderation.ResponseMode, agent_api.RaiInvocationModeBoth)
+	}
+	if !slices.Equal(moderation.InputPaths, []string{"$.input"}) {
+		t.Errorf("InputPaths = %v, want [$.input]", moderation.InputPaths)
+	}
+	if !slices.Equal(moderation.OutputPaths, []string{"$.output"}) {
+		t.Errorf("OutputPaths = %v, want [$.output]", moderation.OutputPaths)
+	}
+	if len(moderation.StreamSelectors) != 1 {
+		t.Fatalf("len(StreamSelectors) = %d, want 1", len(moderation.StreamSelectors))
+	}
+	if moderation.StreamSelectors[0].EventType != "response.output_text.delta" {
+		t.Errorf("StreamSelectors[0].EventType = %q, want response.output_text.delta",
+			moderation.StreamSelectors[0].EventType)
+	}
+	if moderation.StreamSelectors[0].TextField != "$.delta" {
+		t.Errorf("StreamSelectors[0].TextField = %q, want $.delta",
+			moderation.StreamSelectors[0].TextField)
+	}
+}
+
+func TestMapRaiConfig_WithoutInvocationsModeration(t *testing.T) {
+	t.Parallel()
+
+	got := mapRaiConfig([]Policy{{Type: PolicyTypeRai, RaiPolicyName: "p1"}})
+	if got == nil {
+		t.Fatal("mapRaiConfig returned nil")
+	}
+	if got.InvocationsModeration != nil {
+		t.Errorf("InvocationsModeration = %+v, want nil", got.InvocationsModeration)
+	}
+
+	// Agents that do not configure moderation must serialize exactly as they did before the
+	// field existed, so existing deployments are unaffected.
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(encoded) != `{"rai_policy_name":"p1"}` {
+		t.Errorf("serialized rai_config = %s, want {\"rai_policy_name\":\"p1\"}", encoded)
+	}
+}
+
+func TestMapRaiConfig_InvocationsModerationSlicesAreCopied(t *testing.T) {
+	t.Parallel()
+
+	inputPaths := []string{"$.input"}
+	policies := []Policy{{
+		Type:          PolicyTypeRai,
+		RaiPolicyName: "p1",
+		InvocationsModeration: &InvocationsModeration{
+			ResponseMode: InvocationResponseModeNonStreaming,
+			InputPaths:   inputPaths,
+		},
+	}}
+
+	got := mapRaiConfig(policies)
+	inputPaths[0] = "$.mutated"
+
+	if got.InvocationsModeration.InputPaths[0] != "$.input" {
+		t.Errorf("mapped InputPaths aliases the source slice: got %q",
+			got.InvocationsModeration.InputPaths[0])
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_WithInvocationsModeration(t *testing.T) {
+	t.Parallel()
+
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "rai-agent",
+		},
+		Protocols: []ProtocolVersionRecord{{Protocol: InvocationsProtocol, Version: "1.0.0"}},
+		Policies: []Policy{{
+			Type:          PolicyTypeRai,
+			RaiPolicyName: "/subscriptions/x/raiPolicies/p",
+			InvocationsModeration: &InvocationsModeration{
+				ResponseMode: InvocationResponseModeNonStreaming,
+				InputPaths:   []string{"$.input"},
+				OutputPaths:  []string{"$.output"},
+			},
+		}},
+	}
+
+	req, err := CreateHostedAgentAPIRequest(agent, &AgentBuildConfig{ImageURL: "img:latest"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	definition, ok := req.Definition.(agent_api.HostedAgentDefinition)
+	if !ok {
+		t.Fatalf("unexpected definition type %T", req.Definition)
+	}
+	if definition.RaiConfig == nil || definition.RaiConfig.InvocationsModeration == nil {
+		t.Fatalf("expected invocations moderation on the request, got %+v", definition.RaiConfig)
+	}
+
+	encoded, err := json.Marshal(definition.RaiConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{
+		`"invocations_moderation"`,
+		`"response_mode":"non_streaming"`,
+		`"input_paths":["$.input"]`,
+		`"output_paths":["$.output"]`,
+	} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("serialized rai_config %s missing %s", encoded, want)
+		}
 	}
 }
 

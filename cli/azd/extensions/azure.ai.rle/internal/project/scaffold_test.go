@@ -38,7 +38,8 @@ func TestCopyDirectorySkipsSymlinksAndPreservesFileMode(t *testing.T) {
 	sourceDir := t.TempDir()
 	destDir := t.TempDir()
 	scriptPath := filepath.Join(sourceDir, "run.sh")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\n"), 0700); err != nil { //nolint:gosec // test fixture needs an executable bit to verify mode preservation.
+	// The fixture needs an executable bit to verify mode preservation.
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\n"), 0700); err != nil { //nolint:gosec
 		t.Fatal(err)
 	}
 	if err := os.Symlink(scriptPath, filepath.Join(sourceDir, "linked-run.sh")); err != nil {

@@ -5,11 +5,14 @@ package cmd
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -32,6 +35,8 @@ type remoteInvokeAction struct {
 	flags           *remoteInvokeFlags
 	environmentName string
 }
+
+var validateSandboxURL = validateRemoteSandboxURL
 
 func newInvokeCommand() *cobra.Command {
 	flags := &remoteInvokeFlags{
@@ -85,40 +90,68 @@ func (a *remoteInvokeAction) Run() error {
 	ctx, stopSignals := signal.NotifyContext(a.cmd.Context(), os.Interrupt)
 	defer stopSignals()
 
-	if _, err := fmt.Fprintf(
-		a.cmd.OutOrStdout(),
-		"Creating sandbox for environment %s version %s ...\n",
-		state.Name,
-		state.EnvironmentVersion,
-	); err != nil {
+	runtimeTarget := fmt.Sprintf("environment %s using the latest version", state.EnvironmentName)
+	if state.runtimeRouteVersion != "" {
+		runtimeTarget = fmt.Sprintf("environment %s version %s", state.EnvironmentName, state.runtimeRouteVersion)
+	}
+	if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Creating runtime for %s ...\n", runtimeTarget); err != nil {
 		return err
 	}
 
-	sandbox, err := leaseRemoteSandbox(ctx, a.cmd.OutOrStdout(), client, state, a.environmentName == "")
+	runtime, err := createRemoteRuntime(ctx, client, state, a.cmd.OutOrStdout())
+	if runtime != nil {
+		defer func() {
+			writeCleanupResult(a.cmd.ErrOrStderr(), cleanupRemoteRuntime(client, state.EnvironmentName, runtime))
+		}()
+	}
 	if err != nil {
 		if _, ok := errors.AsType[*azdext.LocalError](err); ok {
 			return err
 		}
+		if isRleNotFound(err) {
+			if state.runtimeRouteVersion != "" {
+				return environmentVersionNotFoundError(state.EnvironmentName, state.runtimeRouteVersion)
+			}
+			return environmentNotFoundError(state.EnvironmentName)
+		}
 		return serviceError(err)
 	}
-	defer func() {
-		if err := releaseRemoteSandbox(client, state, sandbox.Id); err != nil {
-			_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to release sandbox %s: %v\n", sandbox.Id, err)
-		}
-	}()
 
-	sandboxUrl := strings.TrimRight(sandbox.BaseUrl, "/")
-	if _, err := fmt.Fprintf(
+	instanceUrl := strings.TrimRight(runtime.instance.BaseUrl, "/")
+	if err := validateSandboxURL(instanceUrl, state.ProjectEndpoint); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(
 		a.cmd.OutOrStdout(),
-		"Sandbox %s ready\n",
-		sandbox.Id,
+		"Environment instance is running; waiting for OpenEnv runtime ...",
 	); err != nil {
 		return err
 	}
-	if err := project.WaitForHealth(sandboxUrl, 60*time.Second); err != nil {
+	instanceUrl, err = withFoundryAPIVersion(instanceUrl)
+	if err != nil {
 		return err
 	}
-	playgroundUrl, stopPlayground, err := remotePlaygroundUrl(ctx, sandboxUrl)
+	if err := project.WaitForHealthWithAuthorizationProvider(
+		ctx,
+		instanceUrl,
+		remoteRuntimeHealthTimeout,
+		client.authorizationHeader,
+	); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(
+		a.cmd.OutOrStdout(),
+		"Environment %s version %s ready\n",
+		state.EnvironmentName,
+		runtime.group.EnvironmentVersion,
+	); err != nil {
+		return err
+	}
+	playgroundUrl, stopPlayground, err := remotePlaygroundUrlWithAuthorizationProvider(
+		ctx,
+		instanceUrl,
+		client.authorizationHeader,
+	)
 	if err != nil {
 		return err
 	}
@@ -126,7 +159,14 @@ func (a *remoteInvokeAction) Run() error {
 	if err := ui.OpenBrowser(playgroundUrl); err != nil {
 		_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to open playground UI: %v\n", err)
 	}
-	return project.RunShellWithContext(ctx, a.cmd.InOrStdin(), a.cmd.OutOrStdout(), sandboxUrl, a.flags.timeout)
+	return project.RunShellWithContextAndAuthorizationProvider(
+		ctx,
+		a.cmd.InOrStdin(),
+		a.cmd.OutOrStdout(),
+		instanceUrl,
+		a.flags.timeout,
+		client.authorizationHeader,
+	)
 }
 
 func (a *remoteInvokeAction) resolveTarget() (rleState, *rleClient, error) {
@@ -156,6 +196,7 @@ func (a *remoteInvokeAction) resolveTarget() (rleState, *rleClient, error) {
 		if err := requireDeployedEnvironment(state); err != nil {
 			return rleState{}, nil, err
 		}
+		state.runtimeRouteVersion = state.EnvironmentVersion
 		client, err := createRleClient(state.ProjectEndpoint)
 		return state, client, err
 	}
@@ -169,248 +210,363 @@ func (a *remoteInvokeAction) resolveTarget() (rleState, *rleClient, error) {
 	if err != nil {
 		return rleState{}, nil, err
 	}
-	environment, err := resolveLatestEnvironmentByName(a.cmd.Context(), client, environmentName)
-	if err != nil {
-		return rleState{}, nil, err
-	}
 
 	if requestedVersion == "" {
-		if err := requireReadyEnvironment(environment, environmentName); err != nil {
-			return rleState{}, nil, err
-		}
 		return rleState{
-			Name:               environment.Name,
-			ProjectEndpoint:    projectEndpoint,
-			EnvironmentId:      environment.Id,
-			EnvironmentVersion: environment.Version,
+			EnvironmentName: environmentName,
+			ProjectEndpoint: projectEndpoint,
 		}, client, nil
 	}
 
 	versionedEnvironment, err := client.getEnvironmentVersion(a.cmd.Context(), environmentName, requestedVersion)
+	if isRleNotFound(err) {
+		return rleState{}, nil, environmentVersionNotFoundError(environmentName, requestedVersion)
+	}
 	if err != nil {
 		return rleState{}, nil, serviceError(err)
 	}
-	if err := requireReadyEnvironment(versionedEnvironment, environmentName); err != nil {
-		return rleState{}, nil, err
+	if responseName := strings.TrimSpace(versionedEnvironment.Name); responseName != "" && responseName != environmentName {
+		return rleState{}, nil, unexpectedEnvironmentVersionIdentity(
+			environmentName,
+			requestedVersion,
+			responseName,
+			versionedEnvironment.Version,
+		)
+	}
+	if responseVersion := strings.TrimSpace(versionedEnvironment.Version); responseVersion != "" &&
+		responseVersion != requestedVersion {
+		return rleState{}, nil, unexpectedEnvironmentVersionIdentity(
+			environmentName,
+			requestedVersion,
+			versionedEnvironment.Name,
+			responseVersion,
+		)
 	}
 	return rleState{
-		Name:               versionedEnvironment.Name,
-		ProjectEndpoint:    projectEndpoint,
-		EnvironmentId:      versionedEnvironment.Id,
-		EnvironmentVersion: versionedEnvironment.Version,
+		EnvironmentName:     environmentName,
+		ProjectEndpoint:     projectEndpoint,
+		EnvironmentId:       versionedEnvironment.Id,
+		EnvironmentVersion:  requestedVersion,
+		runtimeRouteVersion: requestedVersion,
 	}, client, nil
 
 }
 
+func unexpectedEnvironmentVersionIdentity(
+	requestedName string,
+	requestedVersion string,
+	responseName string,
+	responseVersion string,
+) error {
+	return &azdext.LocalError{
+		Message: fmt.Sprintf(
+			"RLE service returned environment %q version %q for requested environment %q version %q.",
+			responseName,
+			responseVersion,
+			requestedName,
+			requestedVersion,
+		),
+		Code:       "rle_environment_version_mismatch",
+		Category:   azdext.LocalErrorCategoryInternal,
+		Suggestion: "Retry the command. If the problem persists, report the mismatched RLE response.",
+	}
+}
+
 const (
-	sandboxStatusRunning            = "Running"
-	sandboxStatusFailed             = "Failed"
-	diskImageConversionStatusReady  = "Ready"
-	diskImageConversionStatusFailed = "Failed"
+	instanceStatusRunning     = "Running"
+	instanceStatusFailed      = "Failed"
+	instanceStatusDeleted     = "Deleted"
+	remoteReadinessRetryCount = 10
+	playgroundSessionCookie   = "azd-rle-playground-session"
 )
 
 var (
-	remoteSandboxCreateTimeout   = 300 * time.Second
-	remoteSandboxPollInterval    = 2 * time.Second
-	remoteImageConversionTimeout = 15 * time.Minute
-	remoteImagePollInterval      = 5 * time.Second
+	remoteInstanceCreateTimeout  = 300 * time.Second
+	remoteInstancePollInterval   = 2 * time.Second
+	remoteReadinessRetryInterval = 10 * time.Second
+	remoteRuntimeHealthTimeout   = 60 * time.Second
 )
 
-func leaseRemoteSandbox(
-	ctx context.Context,
-	output io.Writer,
-	client *rleClient,
-	state rleState,
-	waitForImage bool,
-) (*sandboxResource, error) {
-	if waitForImage {
-		if err := waitForEnvironmentImage(ctx, output, client, state); err != nil {
-			return nil, err
-		}
-	}
-
-	sandbox, err := client.createSandbox(ctx, state.EnvironmentId, sandboxCreateRequest{
-		Version: state.EnvironmentVersion,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(sandbox.Id) == "" {
-		return nil, &azdext.LocalError{
-			Message:    "Control plane did not return a sandbox id.",
-			Code:       "rle_sandbox_id_missing",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Check the RLE control plane sandbox response, then retry.",
-		}
-	}
-	readySandbox, err := waitForRemoteSandbox(ctx, client, state.EnvironmentId, sandbox)
-	if err != nil {
-		if releaseErr := releaseRemoteSandbox(client, state, sandbox.Id); releaseErr != nil {
-			return nil, fmt.Errorf("%w; additionally failed to release sandbox %s: %w", err, sandbox.Id, releaseErr)
-		}
-		return nil, err
-	}
-	return readySandbox, nil
+type remoteRuntime struct {
+	group        *instanceGroupResource
+	instance     *instanceResource
+	routeVersion string
 }
 
-func waitForEnvironmentImage(
+func createRemoteRuntime(
 	ctx context.Context,
-	output io.Writer,
 	client *rleClient,
 	state rleState,
-) error {
-	if strings.TrimSpace(state.Name) == "" || strings.TrimSpace(state.EnvironmentVersion) == "" {
-		return nil
+	output io.Writer,
+) (*remoteRuntime, error) {
+	group, err := createRemoteInstanceGroup(ctx, client, state, output)
+	if err != nil {
+		return nil, err
+	}
+	runtime := &remoteRuntime{
+		group:        group,
+		routeVersion: state.runtimeRouteVersion,
+	}
+	if err := validateInstanceGroupIdentity(state, group); err != nil {
+		return runtime, err
 	}
 
-	deadline := time.Now().Add(remoteImageConversionTimeout)
-	for {
-		environment, err := client.getEnvironmentVersion(ctx, state.Name, state.EnvironmentVersion)
-		if err != nil {
-			return err
+	instance, err := client.createInstance(ctx, state.EnvironmentName, group.EnvironmentVersion, group.Id)
+	if err != nil {
+		return runtime, err
+	}
+	runtime.instance = instance
+	if strings.TrimSpace(instance.InstanceId) == "" {
+		return runtime, &azdext.LocalError{
+			Message:    "RLE service did not return an instance id.",
+			Code:       "rle_instance_id_missing",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Check the RLE service instance response, then retry.",
 		}
+	}
+	readyInstance, err := waitForRemoteInstance(ctx, client, state.EnvironmentName, group, instance)
+	if readyInstance != nil {
+		runtime.instance = readyInstance
+	}
+	return runtime, err
+}
 
-		switch environment.DiskImageConversionStatus {
-		case diskImageConversionStatusReady:
-			return nil
-		case diskImageConversionStatusFailed:
-			return &azdext.LocalError{
+func validateInstanceGroupIdentity(state rleState, group *instanceGroupResource) error {
+	if strings.TrimSpace(group.Id) == "" {
+		return &azdext.LocalError{
+			Message:    "RLE service did not return an instance group id.",
+			Code:       "rle_instance_group_id_missing",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Check the RLE service instance group response, then retry.",
+		}
+	}
+	if responseName := strings.TrimSpace(group.EnvironmentName); responseName != "" &&
+		responseName != state.EnvironmentName {
+		return &azdext.LocalError{
+			Message: fmt.Sprintf(
+				"RLE service returned environment %q for requested environment %q.",
+				responseName,
+				state.EnvironmentName,
+			),
+			Code:       "rle_instance_group_environment_mismatch",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Check the RLE service instance group response, then retry.",
+		}
+	}
+	if strings.TrimSpace(group.EnvironmentVersion) == "" {
+		return &azdext.LocalError{
+			Message:    "RLE service did not return the resolved environment version.",
+			Code:       "rle_instance_group_version_missing",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Check the RLE service instance group response, then retry.",
+		}
+	}
+	if requestedVersion := strings.TrimSpace(state.runtimeRouteVersion); requestedVersion != "" &&
+		group.EnvironmentVersion != requestedVersion {
+		return &azdext.LocalError{
+			Message: fmt.Sprintf(
+				"RLE service returned environment version %q for requested version %q.",
+				group.EnvironmentVersion,
+				requestedVersion,
+			),
+			Code:       "rle_instance_group_version_mismatch",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Check the RLE service instance group response, then retry.",
+		}
+	}
+	return nil
+}
+
+func createRemoteInstanceGroup(
+	ctx context.Context,
+	client *rleClient,
+	state rleState,
+	output io.Writer,
+) (*instanceGroupResource, error) {
+	for attempt := 0; ; attempt++ {
+		group, err := client.createInstanceGroup(ctx, state.EnvironmentName, state.runtimeRouteVersion)
+		if !isEnvironmentNotReadyError(err) {
+			return group, err
+		}
+		if attempt >= remoteReadinessRetryCount {
+			return nil, &azdext.LocalError{
 				Message: fmt.Sprintf(
-					"Environment '%s' version '%s' disk image conversion failed: %s",
-					state.Name,
-					state.EnvironmentVersion,
-					firstNonEmpty(environment.DiskImageConversionError, "unknown error"),
+					"Environment %q was not ready after %d retries while creating the runtime.",
+					state.EnvironmentName,
+					remoteReadinessRetryCount,
 				),
-				Code:     "rle_disk_image_conversion_failed",
+				Code:     "rle_environment_readiness_timeout",
 				Category: azdext.LocalErrorCategoryUser,
-			}
-		}
-
-		if time.Now().After(deadline) {
-			return &azdext.LocalError{
-				Message: fmt.Sprintf(
-					"Environment '%s' version '%s' disk image was not ready after %.0f minutes (last status: %s).",
-					state.Name,
-					state.EnvironmentVersion,
-					remoteImageConversionTimeout.Minutes(),
-					firstNonEmpty(environment.DiskImageConversionStatus, "unknown"),
+				Suggestion: fmt.Sprintf(
+					"Run azd ai rle show %s to inspect the disk image status, then retry.",
+					state.EnvironmentName,
 				),
-				Code:       "rle_disk_image_conversion_timeout",
-				Category:   azdext.LocalErrorCategoryUser,
-				Suggestion: "Check the environment disk image conversion status, then retry invoke.",
 			}
 		}
-
-		if _, msgErr := fmt.Fprintf(
-			output,
-			"Preparing environment disk image (status: %s); waiting %.0f seconds ...\n",
-			firstNonEmpty(environment.DiskImageConversionStatus, "unknown"),
-			remoteImagePollInterval.Seconds(),
-		); msgErr != nil {
-			return msgErr
+		if output != nil {
+			_, _ = fmt.Fprintf(
+				output,
+				"The requested environment's disk image is not ready yet. "+
+					"Waiting %.0f seconds before retrying (%d/%d) ...\n",
+				remoteReadinessRetryInterval.Seconds(),
+				attempt+1,
+				remoteReadinessRetryCount,
+			)
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(remoteImagePollInterval):
+			return nil, ctx.Err()
+		case <-time.After(remoteReadinessRetryInterval):
 		}
 	}
 }
 
-func waitForRemoteSandbox(
+func isEnvironmentNotReadyError(err error) bool {
+	httpErr, ok := errors.AsType[*rleHTTPError](err)
+	return ok && httpErr.statusCode == http.StatusBadRequest && httpErr.code() == "EnvironmentNotReady"
+}
+
+func isRleNotFound(err error) bool {
+	httpErr, ok := errors.AsType[*rleHTTPError](err)
+	return ok && httpErr.statusCode == http.StatusNotFound
+}
+
+func waitForRemoteInstance(
 	ctx context.Context,
 	client *rleClient,
-	environmentId string,
-	sandbox *sandboxResource,
-) (*sandboxResource, error) {
-	deadline := time.Now().Add(remoteSandboxCreateTimeout)
+	environmentName string,
+	group *instanceGroupResource,
+	instance *instanceResource,
+) (*instanceResource, error) {
+	deadline := time.Now().Add(remoteInstanceCreateTimeout)
 	for {
-		if sandbox.Status == sandboxStatusFailed {
+		if instance.Status == instanceStatusFailed {
 			return nil, &azdext.LocalError{
 				Message: fmt.Sprintf(
-					"Sandbox %s failed to start: %s",
-					sandbox.Id,
-					firstNonEmpty(sandbox.Error, "unknown error"),
+					"Environment instance failed to start: %s",
+					firstNonEmpty(instance.Error, "unknown error"),
 				),
-				Code:     "rle_sandbox_start_failed",
+				Code:     "rle_instance_start_failed",
 				Category: azdext.LocalErrorCategoryUser,
 			}
 		}
-		if sandbox.Status == sandboxStatusRunning {
-			if strings.TrimSpace(sandbox.BaseUrl) == "" {
+		if instance.Status == instanceStatusDeleted {
+			return nil, &azdext.LocalError{
+				Message:  "Environment instance was deleted before it became ready.",
+				Code:     "rle_instance_start_deleted",
+				Category: azdext.LocalErrorCategoryUser,
+			}
+		}
+		if instance.Status == instanceStatusRunning {
+			if strings.TrimSpace(instance.BaseUrl) == "" {
 				return nil, &azdext.LocalError{
-					Message:    fmt.Sprintf("Sandbox %s is Running but did not report a data-plane URL.", sandbox.Id),
-					Code:       "rle_sandbox_url_missing",
+					Message:    "Environment instance is Running but did not report a data-plane URL.",
+					Code:       "rle_instance_url_missing",
 					Category:   azdext.LocalErrorCategoryInternal,
-					Suggestion: "Check the RLE control plane sandbox response, then retry.",
+					Suggestion: "Check the RLE service instance response, then retry.",
 				}
 			}
-			return sandbox, nil
+			return instance, nil
 		}
 		if time.Now().After(deadline) {
 			return nil, &azdext.LocalError{
 				Message: fmt.Sprintf(
-					"Sandbox %s was not ready after %.0f seconds (last status: %s).",
-					sandbox.Id,
-					remoteSandboxCreateTimeout.Seconds(),
-					firstNonEmpty(sandbox.Status, "unknown"),
+					"Environment instance was not ready after %.0f seconds (last status: %s).",
+					remoteInstanceCreateTimeout.Seconds(),
+					firstNonEmpty(instance.Status, "unknown"),
 				),
-				Code:       "rle_sandbox_start_timeout",
+				Code:       "rle_instance_start_timeout",
 				Category:   azdext.LocalErrorCategoryUser,
-				Suggestion: "Check the RLE control plane sandbox status, then retry.",
+				Suggestion: "Check the RLE service instance status, then retry.",
 			}
 		}
 
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(remoteSandboxPollInterval):
+		case <-time.After(remoteInstancePollInterval):
 		}
 
-		updated, err := client.getSandbox(ctx, environmentId, sandbox.Id)
+		updated, err := client.getInstance(
+			ctx,
+			environmentName,
+			group.EnvironmentVersion,
+			group.Id,
+			instance.InstanceId,
+		)
 		if err != nil {
 			return nil, err
 		}
-		sandbox = updated
+		instance = updated
 	}
 }
 
-func releaseRemoteSandbox(client *rleClient, state rleState, sandboxId string) error {
+func cleanupRemoteRuntime(client *rleClient, environmentName string, runtime *remoteRuntime) error {
+	if runtime == nil || runtime.group == nil || strings.TrimSpace(runtime.group.Id) == "" {
+		return errors.New("cleanup requires an instance group id")
+	}
+	environmentVersion := firstNonEmpty(runtime.routeVersion, runtime.group.EnvironmentVersion)
+
+	var instanceErr error
+	if runtime.instance != nil && strings.TrimSpace(runtime.instance.InstanceId) != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		instanceErr = client.deleteInstance(
+			ctx,
+			environmentName,
+			environmentVersion,
+			runtime.group.Id,
+			runtime.instance.InstanceId,
+		)
+		cancel()
+		if isRleNotFound(instanceErr) {
+			instanceErr = nil
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	return client.deleteSandbox(ctx, state.EnvironmentId, sandboxId)
-}
-
-func remotePlaygroundUrl(ctx context.Context, sandboxUrl string) (string, func(), error) {
-	if remoteSandboxHasWeb(ctx, sandboxUrl) {
-		return strings.TrimRight(sandboxUrl, "/") + "/web", func() {}, nil
+	groupErr := client.deleteInstanceGroup(
+		ctx,
+		environmentName,
+		environmentVersion,
+		runtime.group.Id,
+	)
+	if isRleNotFound(groupErr) {
+		groupErr = nil
 	}
-	return startRemotePlaygroundProxy(ctx, sandboxUrl)
+	return errors.Join(instanceErr, groupErr)
 }
 
-func remoteSandboxHasWeb(ctx context.Context, sandboxUrl string) bool {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(sandboxUrl, "/")+"/web", nil)
+func writeCleanupResult(writer io.Writer, err error) {
 	if err != nil {
-		return false
+		_, _ = fmt.Fprintln(writer, "Warning: remote runtime cleanup could not be completed; resources may remain.")
+		return
 	}
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode >= 200 && resp.StatusCode < 400
+	_, _ = fmt.Fprintln(writer, "Remote runtime resources cleaned up successfully.")
 }
 
-func startRemotePlaygroundProxy(ctx context.Context, sandboxUrl string) (string, func(), error) {
+func remotePlaygroundUrlWithAuthorizationProvider(
+	ctx context.Context,
+	sandboxUrl string,
+	authorizationProvider project.AuthorizationProvider,
+) (string, func(), error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", func() {}, err
 	}
+	sessionToken, err := newPlaygroundSessionToken()
+	if err != nil {
+		_ = listener.Close()
+		return "", func() {}, err
+	}
 
 	server := &http.Server{
-		Handler:           remotePlaygroundHandler(strings.TrimRight(sandboxUrl, "/")),
+		Handler: remotePlaygroundHandler(
+			strings.TrimRight(sandboxUrl, "/"),
+			authorizationProvider,
+			listener.Addr().String(),
+			sessionToken,
+		),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -420,9 +576,8 @@ func startRemotePlaygroundProxy(ctx context.Context, sandboxUrl string) (string,
 		_ = server.Shutdown(shutdownCtx)
 	}()
 	go func() {
-		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			// The shell remains usable even if the optional local UI proxy exits.
-		}
+		// The shell remains usable if the optional local UI proxy exits.
+		_ = server.Serve(listener)
 	}()
 
 	stop := func() {
@@ -430,23 +585,102 @@ func startRemotePlaygroundProxy(ctx context.Context, sandboxUrl string) (string,
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 	}
-	return "http://" + listener.Addr().String() + "/web", stop, nil
+	return "http://" + listener.Addr().String() + "/web?token=" + url.QueryEscape(sessionToken), stop, nil
 }
 
-func remotePlaygroundHandler(sandboxUrl string) http.Handler {
+func remotePlaygroundHandler(
+	sandboxUrl string,
+	authorizationProvider project.AuthorizationProvider,
+	expectedHost string,
+	sessionToken string,
+) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if !validateLoopbackPlaygroundRequest(w, r, expectedHost) {
+			return
+		}
+		if !authorizeLoopbackPlaygroundRequest(w, r, sessionToken) {
+			return
+		}
 		if r.URL.Path == "/" || r.URL.Path == "/web" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = io.WriteString(w, ui.RemotePlaygroundHTML)
 			return
 		}
-		proxyOpenEnvToSandbox(w, r, sandboxUrl)
+		proxyOpenEnvToSandbox(w, r, sandboxUrl, authorizationProvider)
 	})
 	return mux
 }
 
-func proxyOpenEnvToSandbox(w http.ResponseWriter, r *http.Request, sandboxUrl string) {
+func validateLoopbackPlaygroundRequest(w http.ResponseWriter, r *http.Request, expectedHost string) bool {
+	if !strings.EqualFold(r.Host, expectedHost) {
+		http.Error(w, "invalid host", http.StatusForbidden)
+		return false
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	originUrl, err := url.Parse(origin)
+	if err != nil || !strings.EqualFold(originUrl.Scheme, "http") || !strings.EqualFold(originUrl.Host, expectedHost) {
+		http.Error(w, "invalid origin", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+func authorizeLoopbackPlaygroundRequest(w http.ResponseWriter, r *http.Request, sessionToken string) bool {
+	if r.Method == http.MethodGet && (r.URL.Path == "/" || r.URL.Path == "/web") {
+		if token := strings.TrimSpace(r.URL.Query().Get("token")); token != "" {
+			if token != sessionToken {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return false
+			}
+			http.SetCookie(w, &http.Cookie{ //nolint:gosec // Loopback HTTP cannot use Secure; other safeguards are set.
+				Name:     playgroundSessionCookie,
+				Value:    sessionToken,
+				Path:     "/",
+				HttpOnly: true,
+				SameSite: http.SameSiteStrictMode,
+			})
+			target := *r.URL
+			values := target.Query()
+			values.Del("token")
+			target.RawQuery = values.Encode()
+			if target.Path == "" {
+				target.Path = "/web"
+			}
+			http.Redirect( //nolint:gosec // target is derived only from this loopback request with its token removed.
+				w,
+				r,
+				target.String(),
+				http.StatusSeeOther,
+			)
+			return false
+		}
+	}
+	cookie, err := r.Cookie(playgroundSessionCookie)
+	if err != nil || cookie.Value != sessionToken {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+func newPlaygroundSessionToken() (string, error) {
+	token := make([]byte, 32)
+	if _, err := rand.Read(token); err != nil {
+		return "", fmt.Errorf("create playground session token: %w", err)
+	}
+	return hex.EncodeToString(token), nil
+}
+
+func proxyOpenEnvToSandbox(
+	w http.ResponseWriter,
+	r *http.Request,
+	sandboxUrl string,
+	authorizationProvider project.AuthorizationProvider,
+) {
 	operation := strings.Trim(r.URL.Path, "/")
 	switch operation {
 	case "health", "state", "metadata", "schema":
@@ -464,16 +698,31 @@ func proxyOpenEnvToSandbox(w http.ResponseWriter, r *http.Request, sandboxUrl st
 		return
 	}
 
-	target, err := http.NewRequestWithContext(r.Context(), r.Method, sandboxUrl+"/"+operation, r.Body) //nolint:gosec // sandboxUrl is the active RLE sandbox URL; operation is restricted above.
+	targetUrl, err := project.RuntimeOperationURL(sandboxUrl, operation)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// sandboxUrl is the active RLE sandbox URL; operation is restricted above.
+	target, err := http.NewRequestWithContext(r.Context(), r.Method, targetUrl, r.Body) //nolint:gosec
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	target.Header.Set("Accept", "application/json")
+	if authorizationProvider != nil {
+		authorization, err := authorizationProvider(r.Context())
+		if err != nil {
+			http.Error(w, "failed to authenticate to environment runtime", http.StatusBadGateway)
+			return
+		}
+		target.Header.Set("Authorization", authorization)
+	}
 	if contentType := r.Header.Get("Content-Type"); contentType != "" {
 		target.Header.Set("Content-Type", contentType)
 	}
-	resp, err := project.HTTPClient(60).Do(target) //nolint:gosec // local UI proxy intentionally forwards only fixed OpenEnv operations to the active sandbox.
+	// The local UI proxy forwards only fixed OpenEnv operations to the active sandbox.
+	resp, err := project.HTTPClient(60).Do(target) //nolint:gosec
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -485,6 +734,42 @@ func proxyOpenEnvToSandbox(w http.ResponseWriter, r *http.Request, sandboxUrl st
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+func withFoundryAPIVersion(runtimeUrl string) (string, error) {
+	parsedUrl, err := url.Parse(runtimeUrl)
+	if err != nil {
+		return "", fmt.Errorf("parse environment runtime URL: %w", err)
+	}
+	query := parsedUrl.Query()
+	query.Set("api-version", foundryAPIVersion)
+	parsedUrl.RawQuery = query.Encode()
+	return parsedUrl.String(), nil
+}
+
+func validateRemoteSandboxURL(sandboxUrl string, projectEndpoint string) error {
+	sandbox, err := url.Parse(sandboxUrl)
+	if err != nil {
+		return fmt.Errorf("parse sandbox URL: %w", err)
+	}
+	projectUrl, err := url.Parse(projectEndpoint)
+	if err != nil {
+		return fmt.Errorf("parse Foundry project endpoint: %w", err)
+	}
+
+	isTrustedProjectOrigin := strings.EqualFold(sandbox.Scheme, "https") &&
+		sandbox.Port() == "" &&
+		strings.EqualFold(sandbox.Scheme, projectUrl.Scheme) &&
+		strings.EqualFold(sandbox.Host, projectUrl.Host)
+	if sandbox.User != nil || !isTrustedProjectOrigin {
+		return &azdext.LocalError{
+			Message:    "RLE returned an untrusted sandbox URL.",
+			Code:       "rle_sandbox_url_untrusted",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Check the RLE service runtime response, then retry.",
+		}
+	}
+	return nil
 }
 
 func requireDeployedEnvironment(state rleState) error {
@@ -502,6 +787,22 @@ func requireDeployedEnvironment(state rleState) error {
 			Code:       "rle_environment_not_deployed",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: "Run azd ai rle publish from this environment folder first.",
+		}
+	}
+	if strings.TrimSpace(state.EnvironmentName) == "" {
+		return &azdext.LocalError{
+			Message:    "The deployed RLE environment does not include a name.",
+			Code:       "rle_environment_name_missing",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Run azd ai rle publish again to refresh the local deployment state.",
+		}
+	}
+	if strings.TrimSpace(state.EnvironmentVersion) == "" {
+		return &azdext.LocalError{
+			Message:    "The deployed RLE environment does not include a version.",
+			Code:       "rle_environment_version_missing",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Run azd ai rle publish again to refresh the local deployment state.",
 		}
 	}
 	return nil

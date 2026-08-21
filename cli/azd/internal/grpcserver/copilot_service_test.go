@@ -418,12 +418,10 @@ func TestCopilotService_GetMessages_ValidSession(t *testing.T) {
 	}, nil)
 	mockAgent.On("GetMessages", mock.Anything).Return([]agent.SessionEvent{
 		{
-			Type:      copilot.SessionEventTypeAssistantMessage,
 			Timestamp: now,
 			Data:      &copilot.AssistantMessageData{Content: content},
 		},
 		{
-			Type:      copilot.SessionEventTypeToolExecutionStart,
 			Timestamp: now.Add(time.Second),
 			Data:      &copilot.ToolExecutionStartData{ToolName: toolName},
 		},
@@ -471,20 +469,18 @@ func TestCopilotService_GetMessages_RoundTrip(t *testing.T) {
 	// Build realistic SDK events with multiple data fields
 	content := "I'll create the infrastructure files for your app."
 	model := "gpt-4o"
-	inputTokens := float64(500)
-	outputTokens := float64(200)
+	inputTokens := int64(500)
+	outputTokens := int64(200)
 	toolName := "write"
 
 	originalEvents := []agent.SessionEvent{
 		{
 			ID:        "evt-1",
-			Type:      copilot.SessionEventTypeAssistantMessage,
 			Timestamp: time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC),
 			Data:      &copilot.AssistantMessageData{Content: content},
 		},
 		{
 			ID:        "evt-2",
-			Type:      copilot.SessionEventTypeAssistantUsage,
 			Timestamp: time.Date(2026, 3, 18, 12, 0, 1, 0, time.UTC),
 			Data: &copilot.AssistantUsageData{
 				Model:        model,
@@ -494,7 +490,6 @@ func TestCopilotService_GetMessages_RoundTrip(t *testing.T) {
 		},
 		{
 			ID:        "evt-3",
-			Type:      copilot.SessionEventTypeToolExecutionStart,
 			Timestamp: time.Date(2026, 3, 18, 12, 0, 2, 0, time.UTC),
 			Data: &copilot.ToolExecutionStartData{
 				ToolName: toolName,
@@ -525,14 +520,14 @@ func TestCopilotService_GetMessages_RoundTrip(t *testing.T) {
 		require.NoError(t, err, "failed to unmarshal to map for event %d", i)
 
 		// Verify the round-tripped data matches the original
-		switch originalEvents[i].Type {
+		switch originalEvents[i].Type() {
 		case copilot.SessionEventTypeAssistantMessage:
 			require.Equal(t, content, roundTripped["content"])
 
 		case copilot.SessionEventTypeAssistantUsage:
 			require.Equal(t, model, roundTripped["model"])
-			require.Equal(t, inputTokens, roundTripped["inputTokens"])
-			require.Equal(t, outputTokens, roundTripped["outputTokens"])
+			require.EqualValues(t, inputTokens, roundTripped["inputTokens"])
+			require.EqualValues(t, outputTokens, roundTripped["outputTokens"])
 
 		case copilot.SessionEventTypeToolExecutionStart:
 			require.Equal(t, toolName, roundTripped["toolName"])
@@ -547,8 +542,8 @@ func TestCopilotService_ListSessions_Success(t *testing.T) {
 
 	factory.On("Create", mock.Anything, mock.Anything).Return(mockAgent, nil)
 	mockAgent.On("ListSessions", mock.Anything, mock.AnythingOfType("string")).Return([]agent.SessionMetadata{
-		{SessionID: "s1", ModifiedTime: "2024-01-01T00:00:00Z", Summary: new("Summary 1")},
-		{SessionID: "s2", ModifiedTime: "2024-01-02T00:00:00Z", Summary: nil},
+		{SessionID: "s1", ModifiedTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Summary: new("Summary 1")},
+		{SessionID: "s2", ModifiedTime: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), Summary: nil},
 	}, nil)
 	mockAgent.On("Stop").Return(nil)
 
@@ -812,7 +807,7 @@ func TestCopilotService_GetMessages_WithSession(t *testing.T) {
 		Usage:     agent.UsageMetrics{},
 	}, nil)
 	mockAgent.On("GetMessages", mock.Anything).Return([]agent.SessionEvent{
-		{Type: "message"},
+		{Data: &copilot.AssistantMessageData{}},
 	}, nil)
 
 	svc := NewCopilotService(factory)

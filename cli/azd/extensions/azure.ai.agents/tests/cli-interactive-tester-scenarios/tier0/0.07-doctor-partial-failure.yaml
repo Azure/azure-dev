@@ -1,0 +1,32 @@
+# Tier 0 (offline) — `doctor` partial-failure path (mixed PASS + FAIL).
+#
+# Seeds a minimal name-only azure.yaml so the local checks produce a MIX of
+# results: the grpc-extension and azure-yaml checks PASS, but later checks
+# (e.g. environment-selected) FAIL, and remote checks are skipped. This must
+# yield exit code 1 (at least one failure) with a clean, readable report —
+# exercising the partial-failure path that the empty-dir scenario does not.
+name: "doctor-partial-failure"
+command: "azd ai agent doctor"
+cwd: "~/working/azd-agents-doctor-partial-{instance}"
+tags: ["tier:0", "cmd:doctor", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+# Seed a name-only azure.yaml: enough for the azure-yaml check to PASS while
+# downstream checks (no environment selected, no agent service) FAIL.
+pre:
+  - run: "rm -rf ~/working/azd-agents-doctor-partial-{instance}"
+    cwd: "~/working"
+    name: "reset to an empty working dir"
+  - run: "mkdir -p ~/working/azd-agents-doctor-partial-{instance} && printf 'name: azd-agents-doctor-partial\\n' > ~/working/azd-agents-doctor-partial-{instance}/azure.yaml"
+    cwd: "~/working"
+    name: "seed a minimal name-only azure.yaml"
+
+goals:
+  - "Run doctor in a directory containing only a minimal name-only azure.yaml. Wait for the check report to render."
+  - "Confirm the report shows a MIX of results: at least one check PASSES (e.g. the azd project/azure.yaml check) AND at least one check FAILS (e.g. no environment selected / no agent service detected)."
+  - "Confirm the command exits with code 1 (failure) — NOT 0 and NOT 2 (2 would mean all checks were skipped)."
+  - "Confirm the report renders cleanly with no panic or Go stack trace, and that failing checks include actionable remediation hints."
+  - "Take a screenshot of the doctor report."
+  - "Report a finding if doctor crashes, if a partial failure incorrectly reports exit 0 or 2, or if failing checks lack remediation guidance."

@@ -1130,6 +1130,7 @@ func writeExistingProjectBicepTemplates(
 			fmt.Sprintf("render existing-project Bicep template: %s", err))
 	}
 	entrypointPath := filepath.Join(infraDir, module+".bicep")
+	//nolint:gosec // G306: ejected Bicep sources are intended to be human-readable
 	if err := os.WriteFile(entrypointPath, rendered.Bytes(), 0o644); err != nil {
 		return nil, infraInstallError("write existing-project Bicep entrypoint", err)
 	}
@@ -1162,9 +1163,11 @@ func writeExistingProjectBicepTemplates(
 				fmt.Sprintf("render container registry Bicep template: %s", err))
 		}
 		registryPath := filepath.Join(infraDir, "modules", "container-registry.bicep")
+		//nolint:gosec // G301: ejected infra directories must be readable/traversable by IDEs, Git, and CI
 		if err := os.MkdirAll(filepath.Dir(registryPath), 0o755); err != nil {
 			return nil, infraInstallError("create existing-project Bicep module directory", err)
 		}
+		//nolint:gosec // G306: ejected Bicep sources are intended to be human-readable
 		if err := os.WriteFile(registryPath, registry.Bytes(), 0o644); err != nil {
 			return nil, infraInstallError("write container registry Bicep module", err)
 		}
@@ -2165,11 +2168,10 @@ func sameFoundryProject(a, b string) bool {
 func foundryEndpointIdentity(endpoint string) (string, string) {
 	const projectSegment = "/projects/"
 	value := strings.TrimSpace(endpoint)
-	hostStart := strings.Index(value, "://")
-	if hostStart < 0 {
+	_, hostAndPath, ok := strings.Cut(value, "://")
+	if !ok {
 		return "", ""
 	}
-	hostAndPath := value[hostStart+3:]
 	pathStart := strings.Index(hostAndPath, "/")
 	if pathStart < 0 {
 		return "", ""

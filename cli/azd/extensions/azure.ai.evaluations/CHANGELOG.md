@@ -1,6 +1,38 @@
 # Release History
 
-## 1.0.17-beta (Unreleased)
+## 1.0.18-beta (2026-08-21)
+
+### Bugs Fixed
+
+- An evaluator carrying its rubric under `definition:`, rather than naming a
+  file, is now published. Both publish loops selected on `source:` alone, and
+  because a written-out rubric leaves `source:` empty they skipped it silently:
+  the eval was created bound to an evaluator the service had never been told
+  about. The two loops now share one test for what this configuration owns.
+- `generate` no longer corrupts a catalog entry it cannot rewrite in place. An
+  entry reached through `$ref`, one already carrying its rubric under
+  `definition:`, and one pinned to a registered `version:` are each refused with
+  an explanation, instead of being written back holding two declarations of the
+  same rubric and failing on the next read.
+- A `$ref` on one entry no longer changes what another entry means. The rescue
+  that moves a spliced rubric under `definition:` was switched on for the whole
+  file, so a directive on an unrelated dataset turned a mistyped `dimensions:`
+  into rubric content and published it. It is now decided per entry.
+- The project directory is read once during a deploy. A second read could fail
+  where the first succeeded, leaving artifact paths resolved against the
+  extension's own working directory.
+- An include reached without a project directory is refused rather than
+  silently discarded.
+
+### Other Changes
+
+- `$ref` is modelled on datasets and evals as well as evaluators, so a
+  configuration that deploys can also be opened by the commands that edit it.
+- Schema descriptions for `file:` and `source:` now say that a path is resolved
+  against the evaluation configuration even when the entry arrived through a
+  `$ref`, and point at `definition:` for an entry kept in its own file.
+
+## 1.0.17-beta (2026-08-20)
 
 First release of the Foundry evaluations extension.
 

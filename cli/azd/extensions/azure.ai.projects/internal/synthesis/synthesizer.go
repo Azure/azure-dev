@@ -901,20 +901,22 @@ func serviceNodeEnabled(
 	return evaluateCondition(value, lookup)
 }
 
-func serviceConditionValue(node yaml.Node) (any, bool, error) {
+func serviceConditionValue(node yaml.Node) (string, bool, error) {
 	var fields map[string]yaml.Node
 	if err := node.Decode(&fields); err != nil {
-		return nil, false, nil
+		return "", false, nil
 	}
 	cond, ok := fields["condition"]
 	if !ok {
-		return nil, false, nil
+		return "", false, nil
 	}
-	var value any
-	if err := cond.Decode(&value); err != nil {
-		return nil, true, fmt.Errorf("decode condition: %w", err)
+	if cond.Kind != yaml.ScalarNode {
+		return "", true, fmt.Errorf("condition must be a scalar")
 	}
-	return value, true, nil
+	if cond.Tag == "!!null" {
+		return "", true, nil
+	}
+	return cond.Value, true, nil
 }
 
 func projectConditionLookup(env map[string]string) func(string) string {

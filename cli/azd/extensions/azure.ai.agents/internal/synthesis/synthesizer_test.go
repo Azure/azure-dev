@@ -6,6 +6,7 @@ package synthesis
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -683,6 +684,31 @@ services:
 		})
 		require.NoError(t, err)
 		assert.Empty(t, resultConnections(t, res))
+	})
+
+	t.Run("numeric condition preserves YAML text", func(t *testing.T) {
+		const yamlTemplate = `
+services:
+  my-project:
+    host: azure.ai.project
+  numeric-conn:
+    host: azure.ai.connection
+    condition: %s
+    target: https://example
+`
+		for _, condition := range []string{"1.0", "01", "0x1"} {
+			t.Run(condition, func(t *testing.T) {
+				res, err := Synthesize(Input{
+					RawAzureYAML: []byte(fmt.Sprintf(yamlTemplate, condition)),
+					ServiceName:  "my-project",
+					AcceptedHosts: []string{
+						"azure.ai.project",
+					},
+				})
+				require.NoError(t, err)
+				assert.Empty(t, resultConnections(t, res))
+			})
+		}
 	})
 
 	t.Run("root false skips missing payload ref", func(t *testing.T) {

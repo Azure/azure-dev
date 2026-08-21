@@ -48,6 +48,7 @@ type Initializer struct {
 	dotnetCli      *dotnet.Cli
 	features       *alpha.FeatureManager
 	lazyEnvManager *lazy.Lazy[environment.Manager]
+	statusChecker  RepositoryStatusChecker
 }
 
 func NewInitializer(
@@ -66,6 +67,25 @@ func NewInitializer(
 	}
 }
 
+// NewInitializerWithRepositoryStatusChecker creates an initializer that checks repository metadata before cloning.
+func NewInitializerWithRepositoryStatusChecker(
+	console input.Console,
+	gitCli *git.Cli,
+	dotnetCli *dotnet.Cli,
+	features *alpha.FeatureManager,
+	lazyEnvManager *lazy.Lazy[environment.Manager],
+	statusChecker RepositoryStatusChecker,
+) *Initializer {
+	initializer := NewInitializer(console, gitCli, dotnetCli, features, lazyEnvManager)
+	initializer.statusChecker = statusChecker
+	return initializer
+}
+
+var (
+	// ErrArchivedTemplateDeclined indicates that the user chose not to initialize from an archived repository.
+	ErrArchivedTemplateDeclined = errors.New("archived template repository declined by user")
+)
+
 // Initializes a local repository in the project directory from a remote repository or local template directory.
 //
 // A confirmation prompt is displayed for any existing files to be overwritten.
@@ -75,18 +95,6 @@ func (i *Initializer) Initialize(
 	template *templates.Template,
 	templateBranch string) error {
 	var err error
-
-	staging, err := os.MkdirTemp("", "az-dev-template")
-
-	if err != nil {
-		return fmt.Errorf("creating temp folder: %w", err)
-	}
-
-	// Attempt to remove the temporary directory we cloned the template into, but don't fail the
-	// overall operation if we can't.
-	defer func() {
-		_ = os.RemoveAll(staging)
-	}()
 
 	target := azdCtx.ProjectDirectory()
 
@@ -106,6 +114,21 @@ func (i *Initializer) Initialize(
 				target, templateUrl)
 		}
 	}
+
+	if err := i.confirmArchivedTemplate(ctx, templateUrl); err != nil {
+		return err
+	}
+
+	staging, err := os.MkdirTemp("", "az-dev-template")
+	if err != nil {
+		return fmt.Errorf("creating temp folder: %w", err)
+	}
+
+	// Attempt to remove the temporary directory we cloned the template into, but don't fail the
+	// overall operation if we can't.
+	defer func() {
+		_ = os.RemoveAll(staging)
+	}()
 
 	var stepMessage string
 	if templates.IsLocalPath(templateUrl) {
@@ -179,6 +202,55 @@ func (i *Initializer) Initialize(
 	err = i.gitInitialize(ctx, target, filesWithExecPerms, isEmpty)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (i *Initializer) confirmArchivedTemplate(ctx context.Context, templateURL string) error {
+	if i.statusChecker == nil {
+		return nil
+	}
+
+	status, err := i.statusChecker.Check(ctx, templateURL)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		log.Printf("unable to verify template repository archive status: %v", err)
+		return nil
+	}
+	if status == nil || !status.Archived {
+		return nil
+	}
+
+	i.console.Message(
+		ctx,
+		output.WithWarningFormat(
+			"WARNING: This template repository is archived and no longer maintained.",
+		),
+	)
+	i.console.Message(
+		ctx,
+		"It may not receive dependency updates, compatibility fixes, or security patches.\n",
+	)
+
+	if i.console.IsNoPromptMode() {
+		return fmt.Errorf(
+			"template repository %s is archived and requires confirmation; rerun without --no-prompt",
+			templateURL,
+		)
+	}
+
+	confirmed, err := i.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      "Continue using this archived template?",
+		DefaultValue: false,
+	})
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		return ErrArchivedTemplateDeclined
 	}
 
 	return nil

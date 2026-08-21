@@ -20,6 +20,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -152,6 +153,48 @@ func TestInitNoPromptRequiresMode(t *testing.T) {
 				"should not return InitNoPromptError when --template and --environment are both set")
 		}
 	})
+}
+
+func TestInitArchivedTemplateDeclinedCleansCreatedDirectory(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Console.SetTerminal(true)
+	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		return options.Message == "Continue using this archived template?" &&
+			options.DefaultValue == false
+	}).Respond(false)
+
+	flags := &initFlags{
+		templatePath: "Azure-Samples/todo-csharp-sql-swa-func",
+		global:       &internal.GlobalCommandOptions{},
+	}
+	flags.EnvironmentName = "archive-test"
+
+	action := setupInitAction(t, mockContext, flags)
+	action.repoInitializer = repository.NewInitializerWithRepositoryStatusChecker(
+		mockContext.Console,
+		action.gitCli,
+		nil,
+		nil,
+		nil,
+		archivedRepositoryStatusChecker{},
+	)
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	targetDir := filepath.Join(wd, "todo-csharp-sql-swa-func")
+
+	result, err := action.Run(t.Context())
+
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.Contains(t, strings.Join(mockContext.Console.Output(), "\n"), "CANCELLED: Initialization stopped.")
+	require.NoDirExists(t, targetDir)
+}
+
+type archivedRepositoryStatusChecker struct{}
+
+func (archivedRepositoryStatusChecker) Check(context.Context, string) (*repository.RepositoryStatus, error) {
+	return &repository.RepositoryStatus{Archived: true}, nil
 }
 
 func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {

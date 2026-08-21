@@ -35,6 +35,6 @@ Dependency synchronization does not cover indirect dependencies or extension man
 
 Registry updates and any resulting test snapshot updates should be handled in a follow-up PR, separate from the initial extension scaffolding.
 
-Check that the author plans to follow up with a member of the azd core team to register the release YAML as a new Azure DevOps pipeline under `azure-dev/extensions` and verify its access to the shared release infrastructure.
+For an executable extension with a release YAML, check that the author plans to follow up with a member of the azd core team to register it as a new Azure DevOps pipeline under `azure-dev/extensions` and verify its access to the shared release infrastructure.
 
 A contributor with repository permissions should create a matching `ext-*` GitHub label for issue tracking.

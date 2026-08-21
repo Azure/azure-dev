@@ -1,6 +1,6 @@
 # Release History
 
-## 1.0.0-beta.17 (Unreleased)
+## 1.0.0-beta.17 (2026-08-20)
 
 First release of the Foundry datasets extension.
 

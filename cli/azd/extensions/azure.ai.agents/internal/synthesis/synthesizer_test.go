@@ -705,6 +705,25 @@ services:
 		assert.Empty(t, resultConnections(t, res))
 	})
 
+	t.Run("ref-only false skips missing payload ref", func(t *testing.T) {
+		const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  skipped-conn:
+    condition: false
+    $ref: ./missing-connection.yaml
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(yaml),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			ProjectRoot:   t.TempDir(),
+		})
+		require.NoError(t, err)
+		assert.Empty(t, resultConnections(t, res))
+	})
+
 	t.Run("root condition wins over payload condition", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.WriteFile(

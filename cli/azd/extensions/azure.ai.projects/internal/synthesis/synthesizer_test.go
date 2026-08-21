@@ -847,6 +847,25 @@ services:
 		assert.Empty(t, resultConnectionNames(t, res))
 	})
 
+	t.Run("ref-only disabled connection skips missing payload $ref", func(t *testing.T) {
+		const skippedRefYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  skipped-conn:
+    condition: false
+    $ref: ./missing-connection.yaml
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(skippedRefYAML),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			ProjectRoot:   t.TempDir(),
+		})
+		require.NoError(t, err)
+		assert.Empty(t, resultConnectionNames(t, res))
+	})
+
 	t.Run("whitespace condition disables connection", func(t *testing.T) {
 		const whitespaceYAML = `
 services:

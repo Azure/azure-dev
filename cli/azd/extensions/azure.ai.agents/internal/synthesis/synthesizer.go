@@ -282,6 +282,7 @@ func Synthesize(in Input) (*Result, error) {
 		root.Services,
 		svc,
 		in.ProjectRoot,
+		in.Env,
 	)
 	if err != nil {
 		return nil, err
@@ -607,14 +608,28 @@ func deriveIncludeAcr(
 	services map[string]yaml.Node,
 	svc projectService,
 	projectRoot string,
+	env map[string]string,
 ) (bool, error) {
 	if slices.ContainsFunc(svc.Agents, agentNeedsAcr) {
 		return true, nil
 	}
 
+	lookup := projectConditionLookup(env)
 	for serviceName, node := range services {
+		// A ref-only connection has no host to filter yet.
+		skip, err := skipDisabledConnectionWithoutRef(node, lookup)
+		if err != nil {
+			return false, fmt.Errorf(
+				"services.%s.condition: %w",
+				serviceName,
+				err,
+			)
+		}
+		if skip {
+			continue
+		}
+
 		var matches bool
-		var err error
 		node, matches, err = serviceForHost(
 			node,
 			projectRoot,

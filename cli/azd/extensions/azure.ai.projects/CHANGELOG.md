@@ -1,11 +1,5 @@
 # Release History
 
-## 1.0.0-beta.7 (Unreleased)
-
-### Bugs Fixed
-
-- Honor `condition` on `azure.ai.connection` services during Foundry project provisioning so disabled connections are not created or updated.
-
 ## 1.0.0-beta.6 (2026-08-13)
 
 ### Features Added

@@ -664,6 +664,106 @@ services:
 	})
 }
 
+func TestSynthesize_ConnectionConditions(t *testing.T) {
+	t.Run("whitespace condition disables connection", func(t *testing.T) {
+		const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  whitespace-conn:
+    host: azure.ai.connection
+    condition: "  "
+    target: ${MISSING_TARGET}
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(yaml),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			Env:           map[string]string{},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, resultConnections(t, res))
+	})
+
+	t.Run("root false skips missing payload ref", func(t *testing.T) {
+		const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  skipped-conn:
+    host: azure.ai.connection
+    condition: false
+    $ref: ./missing-connection.yaml
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(yaml),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			ProjectRoot:   t.TempDir(),
+		})
+		require.NoError(t, err)
+		assert.Empty(t, resultConnections(t, res))
+	})
+
+	t.Run("root condition wins over payload condition", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "connection.yaml"),
+			[]byte(`host: azure.ai.connection
+condition: false
+category: ApiKey
+target: https://example
+`),
+			0o600,
+		))
+		raw := []byte(`services:
+  my-project:
+    host: azure.ai.project
+  root-conditioned:
+    host: azure.ai.connection
+    condition: true
+    $ref: ./connection.yaml
+`)
+
+		res, err := Synthesize(Input{
+			RawAzureYAML:  raw,
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			ProjectRoot:   root,
+		})
+		require.NoError(t, err)
+		assert.Len(t, resultConnections(t, res), 1)
+	})
+
+	t.Run("ref-only condition returns configuration error", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "connection.yaml"),
+			[]byte(`host: azure.ai.connection
+condition: false
+category: ApiKey
+target: https://example
+`),
+			0o600,
+		))
+		raw := []byte(`services:
+  my-project:
+    host: azure.ai.project
+  ref-only:
+    $ref: ./connection.yaml
+`)
+
+		_, err := Synthesize(Input{
+			RawAzureYAML:  raw,
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			ProjectRoot:   root,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "put condition beside host in azure.yaml")
+	})
+}
+
 func TestSynthesizeConnectionsAtRootResolvesFileRef(t *testing.T) {
 	t.Parallel()
 

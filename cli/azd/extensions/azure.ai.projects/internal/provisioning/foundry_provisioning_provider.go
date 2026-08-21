@@ -302,10 +302,13 @@ func (p *FoundryProvisioningProvider) Initialize(
 	onDisk := p.onDiskTemplatePresent()
 	if !onDisk {
 		// Validate embedded config before any interactive prompts.
+		// Pass the current env so connection conditions evaluate
+		// even when payload ${VAR} refs are preserved.
 		_, validationErr := synthesis.Synthesize(synthesis.Input{
 			RawAzureYAML:    rawYAML,
 			ServiceName:     svcName,
 			AcceptedHosts:   FoundryProvisioningServiceHosts,
+			Env:             p.networkEnvMap(ctx),
 			PreserveVarRefs: true,
 			ProjectRoot:     projectRoot,
 		})
@@ -313,19 +316,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
 			return foundrySynthesisError(svcName, validationErr)
 		}
-	}
-
-	p.connectionEnvironmentScopes, err =
-		synthesis.ConnectionEnvironmentScopes(rawYAML, projectRoot)
-	if err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf(
-				"read Foundry connection service configuration: %s",
-				err,
-			),
-			"fix the connection service configuration in azure.yaml",
-		)
 	}
 
 	// Resolve the environment before reading service values. azd core
@@ -340,6 +330,23 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 	if err != nil {
 		return err
+	}
+
+	p.connectionEnvironmentScopes, err =
+		synthesis.ConnectionEnvironmentScopes(
+			rawYAML,
+			projectRoot,
+			p.networkEnvMap(ctx),
+		)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf(
+				"read Foundry connection service configuration: %s",
+				err,
+			),
+			"fix the connection service configuration in azure.yaml",
+		)
 	}
 
 	p.serviceEnvironments, err = p.projectServiceEnvironments(ctx)

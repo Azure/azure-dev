@@ -51,4 +51,6 @@ const (
 	OpCognitiveAccountPurge     = "cognitive_account_purge"
 	OpCognitiveDeploymentList   = "cognitive_deployment_list"
 	OpCognitiveDeploymentDelete = "cognitive_deployment_delete"
+	OpProjectConnectionDelete   = "project_connection_delete"
+	OpProjectConnectionGet      = "project_connection_get"
 )

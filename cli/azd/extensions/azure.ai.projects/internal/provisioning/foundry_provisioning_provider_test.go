@@ -1313,6 +1313,19 @@ func TestExistingProjectEndpointIdentity(t *testing.T) {
 	assert.Equal(t, "MyProject", project)
 }
 
+func TestSameExistingProjectEndpoint(t *testing.T) {
+	t.Parallel()
+	endpoint := "https://Account.services.ai.azure.com/api/projects/MyProject/"
+	assert.True(t, sameExistingProjectEndpoint(
+		endpoint,
+		"https://account.services.ai.azure.com/projects/myproject",
+	))
+	assert.False(t, sameExistingProjectEndpoint(
+		endpoint,
+		"https://account.services.ai.azure.com/api/projects/other",
+	))
+}
+
 func TestPlannedOutputsMatchSelectedTemplate(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {

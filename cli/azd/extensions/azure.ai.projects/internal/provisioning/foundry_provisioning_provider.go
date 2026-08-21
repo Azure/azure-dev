@@ -485,6 +485,17 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.C
 			"re-run `azd ai agent init` against the configured existing project",
 		)
 	}
+	envEndpoint, err := p.envValue(ctx, "FOUNDRY_PROJECT_ENDPOINT")
+	if err != nil {
+		return fmt.Errorf("read FOUNDRY_PROJECT_ENDPOINT: %w", err)
+	}
+	if envEndpoint == "" || !sameExistingProjectEndpoint(p.brownfieldEndpoint, envEndpoint) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"FOUNDRY_PROJECT_ENDPOINT does not match the existing project configured in azure.yaml",
+			"re-run `azd ai agent init` against the configured existing project",
+		)
+	}
 	inputs := []struct {
 		key   string
 		value *string
@@ -843,6 +854,13 @@ func existingProjectEndpointIdentity(endpoint string) (string, string) {
 		return "", ""
 	}
 	return strings.TrimSuffix(host, hostSuffix), projectNameFromEndpoint(endpoint)
+}
+
+func sameExistingProjectEndpoint(a, b string) bool {
+	aAccount, aProject := existingProjectEndpointIdentity(a)
+	bAccount, bProject := existingProjectEndpointIdentity(b)
+	return aAccount != "" && aProject != "" &&
+		strings.EqualFold(aAccount, bAccount) && strings.EqualFold(aProject, bProject)
 }
 
 // resolveEnv pulls the env values the provider needs from azd-core. It does
@@ -1552,6 +1570,11 @@ func (p *FoundryProvisioningProvider) Destroy(
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
+	if p.brownfieldEndpoint != "" {
+		if err := p.deleteExistingProjectAcrConnection(ctx, progress); err != nil {
+			return nil, err
+		}
+	}
 	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
 	if err != nil {
 		return nil, exterrors.Internal(
@@ -1615,6 +1638,92 @@ func (p *FoundryProvisioningProvider) Destroy(
 	return p.destroyResult(), nil
 }
 
+func (p *FoundryProvisioningProvider) deleteExistingProjectAcrConnection(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+) error {
+	acrID, err := arm.ParseResourceID(p.existingAcrResourceID)
+	if err != nil || acrID.ResourceType.String() != "Microsoft.ContainerRegistry/registries" ||
+		!strings.EqualFold(acrID.SubscriptionID, p.subID) ||
+		!strings.EqualFold(acrID.ResourceGroupName, p.rgName) || acrID.Name == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID does not identify a registry in the azd-owned resource group",
+			"re-run `azd provision` to restore the create-mode registry state",
+		)
+	}
+	expectedConnectionName := acrID.Name + "-conn"
+	connectionName := strings.TrimSpace(p.existingAcrConnectionName)
+	if connectionName != "" && !strings.EqualFold(connectionName, expectedConnectionName) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"AZURE_AI_PROJECT_ACR_CONNECTION_NAME does not match the azd-created container registry",
+			"re-run `azd provision` to restore the create-mode registry connection state",
+		)
+	}
+	connectionName = expectedConnectionName
+	projectID, err := arm.ParseResourceID(p.existingProjectID)
+	if err != nil || projectID.Parent == nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"AZURE_AI_PROJECT_ID is not a valid Foundry project resource ID",
+			"re-run `azd ai agent init` against the configured existing project",
+		)
+	}
+	client, err := armcognitiveservices.NewProjectConnectionsClient(projectID.SubscriptionID, p.credential, nil)
+	if err != nil {
+		return exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("create Foundry project connections client: %s", err),
+		)
+	}
+	connection, err := client.Get(
+		ctx,
+		projectID.ResourceGroupName,
+		projectID.Parent.Name,
+		projectID.Name,
+		connectionName,
+		nil,
+	)
+	if err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		return exterrors.ServiceFromAzure(err, exterrors.OpProjectConnectionGet)
+	}
+	properties := connection.Properties.GetConnectionPropertiesV2()
+	resourceID := ""
+	if properties != nil && properties.Metadata != nil && properties.Metadata["ResourceId"] != nil {
+		resourceID = *properties.Metadata["ResourceId"]
+	}
+	if properties == nil || properties.Category == nil ||
+		*properties.Category != armcognitiveservices.ConnectionCategoryContainerRegistry ||
+		properties.AuthType == nil ||
+		*properties.AuthType != armcognitiveservices.ConnectionAuthTypeManagedIdentity ||
+		properties.Target == nil ||
+		!strings.EqualFold(strings.TrimSpace(*properties.Target), strings.TrimSpace(p.existingAcrEndpoint)) ||
+		!strings.EqualFold(strings.TrimSpace(resourceID), acrID.String()) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("Foundry project connection %q no longer references the azd-created registry", connectionName),
+			"remove or rename the replacement connection, then retry cleanup",
+		)
+	}
+	progress(fmt.Sprintf("Deleting Foundry project connection %s...", connectionName))
+	_, err = client.Delete(
+		ctx,
+		projectID.ResourceGroupName,
+		projectID.Parent.Name,
+		projectID.Name,
+		connectionName,
+		nil,
+	)
+	if err != nil && !isNotFound(err) {
+		return exterrors.ServiceFromAzure(err, exterrors.OpProjectConnectionDelete)
+	}
+	return nil
+}
+
 func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestroyResult {
 	if p.brownfieldEndpoint != "" {
 		return &azdext.ProvisioningDestroyResult{InvalidatedEnvKeys: []string{
@@ -1644,11 +1753,14 @@ func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestro
 // A user cancellation (Ctrl-C) or an explicit "no" both return (false, nil) so
 // the caller reports a clean cancellation rather than an error.
 func (p *FoundryProvisioningProvider) confirmDestroy(ctx context.Context) (bool, error) {
+	target := fmt.Sprintf("resource group %q and all resources inside it", p.rgName)
+	if p.brownfieldEndpoint != "" {
+		target += " plus its Container Registry connection inside the existing Foundry project"
+	}
 	forceRequired := exterrors.Validation(
 		exterrors.CodeDestroyRequiresForce,
-		fmt.Sprintf("microsoft.foundry destroy will delete resource group %q "+
-			"and all resources inside it; no interactive prompt is available, "+
-			"so --force is required", p.rgName),
+		fmt.Sprintf("microsoft.foundry destroy will delete %s; no interactive prompt is available, "+
+			"so --force is required", target),
 		"re-run with `azd down --force` (add `--purge` to also purge "+
 			"soft-deleted Cognitive Services accounts)",
 	)
@@ -1660,8 +1772,7 @@ func (p *FoundryProvisioningProvider) confirmDestroy(ctx context.Context) (bool,
 	resp, err := p.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message: fmt.Sprintf(
-				"microsoft.foundry will delete resource group %q and all resources "+
-					"inside it. Are you sure you want to continue?", p.rgName),
+				"microsoft.foundry will delete %s. Are you sure you want to continue?", target),
 			DefaultValue: new(false),
 		},
 	})

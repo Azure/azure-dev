@@ -91,13 +91,54 @@ func TestCheckConnections_SkipsCascadeFromUpstream(t *testing.T) {
 
 func TestCheckConnections_SkipsWhenNoManifestConnections(t *testing.T) {
 	t.Parallel()
+	var probeCalls int
 	deps := Dependencies{
-		assembleState:           fixedAssembler(&nextstep.State{HasConnections: false}),
-		probeFoundryConnections: fixedConnectionsProbe(nil, nil, nil),
+		assembleState: fixedAssembler(&nextstep.State{HasConnections: false}),
+		probeFoundryConnections: func(
+			_ context.Context, _, _ string,
+		) ([]string, error) {
+			probeCalls++
+			return nil, nil
+		},
 	}
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusSkip, res.Status)
-	require.Contains(t, res.Message, "no connection resources declared")
+	require.Contains(t, res.Message, "no enabled connection services")
+	require.Contains(t, res.Message, "legacy connection resources found")
+	require.Equal(t, 0, probeCalls)
+}
+
+func TestCheckConnections_FailsOnLoadErrorsBeforeSkip(t *testing.T) {
+	t.Parallel()
+	var probeCalls int
+	deps := Dependencies{
+		assembleState: fixedAssembler(&nextstep.State{
+			HasConnections: false,
+			ConnectionLoadErrors: []string{
+				`connection service "bad-conn" has condition in its resolved $ref; ` +
+					`put condition beside host in azure.yaml`,
+			},
+		}),
+		probeFoundryConnections: func(
+			_ context.Context, _, _ string,
+		) ([]string, error) {
+			probeCalls++
+			return nil, nil
+		},
+	}
+	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
+	require.Equal(t, StatusFail, res.Status)
+	require.Equal(t, 0, probeCalls)
+	require.Contains(t, res.Message, "failed to load configured connections")
+	require.Contains(t, res.Message, `connection service "bad-conn"`)
+	require.Contains(t, res.Message, "put condition beside host in azure.yaml")
+	require.Contains(t, res.Suggestion, "Fix azure.yaml")
+	require.Contains(t, res.Suggestion, "azd ai agent doctor")
+	require.NotContains(t, res.Suggestion, "azd deploy")
+	require.Equal(t, []string{
+		`connection service "bad-conn" has condition in its resolved $ref; ` +
+			`put condition beside host in azure.yaml`,
+	}, res.Details["loadErrors"])
 }
 
 func TestCheckConnections_FailsWhenAssemblerReturnsNilState(t *testing.T) {
@@ -220,11 +261,13 @@ func TestCheckConnections_FailsWithMissing(t *testing.T) {
 	}
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusFail, res.Status)
-	require.Contains(t, res.Message, "2 connection(s)")
+	require.Contains(t, res.Message, "2 configured connection(s)")
 	require.Contains(t, res.Message, "openai-default [AzureOpenAI | https://openai.test] (service chat)")
 	require.Contains(t, res.Message, "search-conn [CognitiveSearch | search.test] (service search)")
 	require.NotContains(t, res.Message, "blob-storage")
 	require.Contains(t, res.Suggestion, "azd provision")
+	require.NotContains(t, res.Suggestion, "azd deploy")
+	require.Contains(t, res.Suggestion, "configured connection services")
 	require.EqualValues(t, 1, res.Details["matchedCount"])
 }
 
@@ -243,7 +286,7 @@ func TestCheckConnections_FailsWhenAllMissing(t *testing.T) {
 	}
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusFail, res.Status)
-	require.Contains(t, res.Message, "1 connection(s)")
+	require.Contains(t, res.Message, "1 configured connection(s)")
 	require.Contains(t, res.Message, "blob-storage (service chat)")
 }
 

@@ -68,7 +68,6 @@ func populateManifestResources(projectPath string, state *State) {
 
 	models := map[resourceKey]ResourceRef{}
 	toolboxes := map[resourceKey]ResourceRef{}
-	connections := map[resourceKey]ResourceRef{}
 
 	for _, svc := range state.Services {
 		data := readManifestBytes(projectPath, svc.RelativePath)
@@ -107,29 +106,14 @@ func populateManifestResources(projectPath string, state *State) {
 					ServiceName:   svc.Name,
 					ToolboxSource: ToolboxSourceLegacyManifest,
 				}
-			case agent_yaml.ConnectionResource:
-				if r.Name == "" {
-					continue
-				}
-				k := resourceKey{service: svc.Name, name: r.Name}
-				if _, dup := connections[k]; dup {
-					continue
-				}
-				connections[k] = ResourceRef{
-					Name:        r.Name,
-					ServiceName: svc.Name,
-					Detail:      connectionDetail(r),
-				}
 			}
 		}
 	}
 
 	state.ModelRefs = sortedResourceRefs(models)
 	state.Toolboxes = sortedResourceRefs(toolboxes)
-	state.Connections = sortedResourceRefs(connections)
 	state.HasModels = len(state.ModelRefs) > 0
 	state.HasToolboxes = len(state.Toolboxes) > 0
-	state.HasConnections = len(state.Connections) > 0
 }
 
 // populateSplitToolboxes adds active toolbox dependencies to state.
@@ -424,8 +408,10 @@ func readManifestBytes(projectPath, relativePath string) []byte {
 // to whichever side is populated so we never emit a useless
 // " | " separator with both halves blank.
 func connectionDetail(r agent_yaml.ConnectionResource) string {
-	category := string(r.Category)
-	target := r.Target
+	return formatConnectionDetail(string(r.Category), r.Target)
+}
+
+func formatConnectionDetail(category, target string) string {
 	switch {
 	case category != "" && target != "":
 		return category + " | " + target

@@ -35,13 +35,13 @@ type foundryConnectionsProbeFn func(
 	accountName, projectName string,
 ) ([]string, error)
 
-// newCheckConnections produces Check `remote.connections` (P5.1
-// C15). For each `ConnectionResource` declared in any service's
-// `agent.manifest.yaml` (collected by the C2 manifest walker), the
-// check queries the Foundry project's connection list and verifies a
-// connection with the matching name exists. The check Passes when
-// every manifest-declared connection has a corresponding entry;
-// Fails when one or more are missing.
+// newCheckConnections produces Check `remote.connections`. For each
+// enabled connection collected from unified azure.yaml services or
+// compatible sources, the check queries the Foundry project's
+// connection list and verifies a connection with the matching name
+// exists. The check Passes when every configured connection has a
+// corresponding entry; Fails when one or more are missing or when
+// connection configuration cannot be loaded.
 //
 // # Skip cascade
 //
@@ -55,26 +55,27 @@ type foundryConnectionsProbeFn func(
 //     let the auth check own the diagnosis.
 //   - `remote.foundry-endpoint` failed → same root cause, same
 //     remediation.
-//   - state.HasConnections == false → no manifest connection
-//     declarations; the check has nothing to verify. Surface as
-//     Skip with a short explanation rather than a vacuous Pass.
+//   - state.ConnectionLoadErrors set → configuration could not be
+//     read. Fail without probing so a bad $ref is not Skip.
+//   - state.HasConnections == false → no enabled connection
+//     services or legacy resources; Skip rather than a vacuous Pass.
 //   - `AZURE_AI_PROJECT_ID` not set / cannot be parsed → can not
 //     derive the account + project to probe. Skip cleanly; the
 //     rbac check already emits the canonical `azd env set` fix.
 //
 // # Classification
 //
-//   - Every manifest connection matches a Foundry connection name →
-//     Pass with the matched count.
+//   - Every configured connection matches a Foundry connection
+//     name → Pass with the matched count.
 //   - One or more missing → Fail with the missing names listed in
 //     the Message and structured under `Details["missingConnections"]`
-//     (each entry carries Name, ServiceName, Detail — the manifest's
-//     "<Category> | <Target>" identifier surfaced by the C2 walker).
+//     (each entry carries Name, ServiceName, Detail — the
+//     "<Category> | <Target>" identifier from collected state).
 //   - Probe error → Skip with the underlying error verbatim.
 func newCheckConnections(deps Dependencies) Check {
 	return Check{
 		ID:     "remote.connections",
-		Name:   "Manifest connections exist on Foundry project",
+		Name:   "Configured connections exist on Foundry project",
 		Remote: true,
 		Fn: func(ctx context.Context, _ Options, prior []Result) Result {
 			if deps.AzdClient == nil {
@@ -125,10 +126,26 @@ func newCheckConnections(deps Dependencies) Check {
 					Suggestion: "Re-run `azd ai agent doctor`; the state assembly returned nil unexpectedly.",
 				}
 			}
+			if len(state.ConnectionLoadErrors) > 0 {
+				return Result{
+					Status: StatusFail,
+					Message: fmt.Sprintf(
+						"failed to load configured connections: %s",
+						strings.Join(state.ConnectionLoadErrors, "; "),
+					),
+					Suggestion: "Fix azure.yaml, its $ref files, or the " +
+						"legacy agent.manifest.yaml, then retry " +
+						"`azd ai agent doctor`.",
+					Details: map[string]any{
+						"loadErrors": state.ConnectionLoadErrors,
+					},
+				}
+			}
 			if !state.HasConnections {
 				return Result{
-					Status:  StatusSkip,
-					Message: "skipped: no connection resources declared in any service's agent.manifest.yaml.",
+					Status: StatusSkip,
+					Message: "skipped: no enabled connection services " +
+						"or legacy connection resources found.",
 				}
 			}
 
@@ -281,11 +298,12 @@ func classifyConnections(
 	return Result{
 		Status: StatusFail,
 		Message: fmt.Sprintf(
-			"%d connection(s) referenced by agent.manifest.yaml are missing on project %s: %s",
+			"%d configured connection(s) are missing on project %s: %s",
 			len(missing), project, sb.String()),
-		Suggestion: "Run `azd provision` to create the missing connection(s), " +
-			"or update the agent.manifest.yaml `resources[].name` entries to " +
-			"match connections that already exist on the Foundry project.",
+		Suggestion: "Run `azd provision` to create or reconcile the " +
+			"missing connection(s), or update the configured connection " +
+			"services or legacy manifest resources to match connections " +
+			"that already exist on the Foundry project.",
 		Details: map[string]any{
 			"missingConnections": missing,
 			"matchedCount":       matched,

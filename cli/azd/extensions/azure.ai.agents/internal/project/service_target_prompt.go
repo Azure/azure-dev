@@ -68,12 +68,29 @@ func (p *AgentServiceTargetProvider) promptAgentSettings(env map[string]string) 
 			"check the service configuration in azure.yaml",
 		)
 	}
-	configured, err := expandPromptAgentSettings(cfg.PromptAgent, env)
+	return ResolvePromptAgentSettings(cfg.PromptAgent, env)
+}
+
+// ResolvePromptAgentSettings turns a raw promptAgent block from azure.yaml into
+// settings that can address the harness: ${VAR} references are expanded against
+// env, the result is layered over the defaults, process-environment overrides
+// are applied, and the whole is validated.
+//
+// Every caller that talks to the harness must go through this. The block is
+// written with ${...} references so azure.yaml stays portable, which means the
+// raw config carries literal "${AZURE_AI_PROJECT_ENDPOINT}" strings — usable as
+// a URL only after expansion. Skipping this step fails at the point of use with
+// a message about a malformed URL rather than a missing variable.
+func ResolvePromptAgentSettings(
+	configured *PromptAgentSettings,
+	env map[string]string,
+) (*PromptAgentSettings, error) {
+	expanded, err := expandPromptAgentSettings(configured, env)
 	if err != nil {
 		return nil, err
 	}
 	settings := DefaultPromptAgentSettings()
-	settings.overlay(configured)
+	settings.overlay(expanded)
 	settings.ApplyEnvOverrides()
 	if err := settings.Validate(); err != nil {
 		return nil, err

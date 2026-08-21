@@ -179,6 +179,54 @@ func TestExpandPromptAgentSettings(t *testing.T) {
 	})
 }
 
+// TestResolvePromptAgentSettings asserts the shared resolution deploy and the
+// lifecycle commands (show/invoke/list/delete) both run: ${VAR} references are
+// expanded before anything consumes them, and unset fields fall back to the
+// package defaults. The projectEndpoint case is a regression guard — leaving it
+// unexpanded surfaced as `projectEndpoint "${AZURE_AI_PROJECT_ENDPOINT}" is not
+// a valid absolute URL` once the client tried to split it.
+func TestResolvePromptAgentSettings(t *testing.T) {
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/p1"
+
+	t.Run("expands references and applies defaults", func(t *testing.T) {
+		got, err := ResolvePromptAgentSettings(&PromptAgentSettings{
+			SubscriptionID:  "${AZURE_SUBSCRIPTION_ID}",
+			ResourceGroup:   "${AZURE_RESOURCE_GROUP}",
+			ProjectEndpoint: "${AZURE_AI_PROJECT_ENDPOINT}",
+		}, map[string]string{
+			"AZURE_SUBSCRIPTION_ID":     "sub-1",
+			"AZURE_RESOURCE_GROUP":      "rg-1",
+			"AZURE_AI_PROJECT_ENDPOINT": endpoint,
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, endpoint, got.ProjectEndpoint)
+		assert.Equal(t, "sub-1", got.SubscriptionID)
+		assert.Equal(t, "rg-1", got.ResourceGroup)
+		// Not configured, so the defaults must survive the overlay.
+		assert.Equal(t, DefaultPromptBaseURL, got.BaseURL)
+		assert.Equal(t, DefaultPromptWorkspace, got.Workspace)
+		assert.Equal(t, DefaultPromptAPIVersion, got.EffectiveAPIVersion())
+	})
+
+	t.Run("literal values are preserved", func(t *testing.T) {
+		got, err := ResolvePromptAgentSettings(&PromptAgentSettings{
+			ProjectEndpoint: endpoint,
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, endpoint, got.ProjectEndpoint)
+	})
+
+	t.Run("nil config yields the defaults", func(t *testing.T) {
+		got, err := ResolvePromptAgentSettings(nil, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, DefaultPromptBaseURL, got.BaseURL)
+		assert.Equal(t, DefaultPromptWorkspace, got.Workspace)
+	})
+}
+
 // TestNewPromptAgentClient_BuildsClient asserts a client builds from valid
 // settings (no-auth path to avoid requiring an Azure login in tests).
 func TestNewPromptAgentClient_BuildsClient(t *testing.T) {

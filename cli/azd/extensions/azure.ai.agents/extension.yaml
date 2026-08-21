@@ -5,8 +5,13 @@ displayName: Foundry agents (Beta)
 description: Ship agents with Microsoft Foundry from your terminal. (Beta)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 0.1.46-preview
-requiredAzdVersion: ">1.25.2"
+version: 0.1.50-preview
+# Must be >= the requiredAzdVersion of every dependency below. azure.ai.projects
+# ~1.0.0-beta.3 owns the microsoft.foundry provisioning provider and requires
+# azd >= 1.27.1; a lower floor here lets azd install this extension and then
+# silently resolve a provider-less azure.ai.projects, so `azd up` fails with
+# "no concrete found for: provisioning.Provider".
+requiredAzdVersion: ">=1.27.1"
 dependencies:
   - id: azure.ai.inspector
     version: "~1.0.0-beta.1"

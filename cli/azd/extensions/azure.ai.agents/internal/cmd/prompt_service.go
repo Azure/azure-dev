@@ -65,10 +65,21 @@ func resolvePromptAgentService(
 	if !ok {
 		return nil, false, nil
 	}
-	settings.ApplyEnvOverrides()
-	if err := settings.Validate(); err != nil {
+
+	// Resolve the block exactly as deploy does. azure.yaml carries ${VAR}
+	// references so the project stays portable, so the raw config holds literal
+	// "${AZURE_AI_PROJECT_ENDPOINT}" strings; without expansion these commands
+	// fail with "is not a valid absolute URL" instead of reaching the harness.
+	// The azd environment is best-effort — when it cannot be read, expansion
+	// falls back to the process environment and unset references collapse to the
+	// defaults, which is what lets these commands run in a project that has not
+	// been provisioned yet.
+	envValues, envErr := promptEnvValues(ctx, azdClient)
+	resolved, err := project.ResolvePromptAgentSettings(settings, envValues)
+	if err != nil {
 		return nil, false, err
 	}
+	settings = resolved
 
 	// Apply the same azd environment-derived target resolution that deploy uses
 	// so lifecycle commands (show/invoke/list/delete) hit the identical managed
@@ -76,7 +87,7 @@ func resolvePromptAgentService(
 	// this, these commands resolve promptAgent.workspace from azure.yaml verbatim
 	// and query a non-existent workspace, yielding an HTML 404 the client cannot
 	// parse.
-	if envValues, envErr := promptEnvValues(ctx, azdClient); envErr == nil {
+	if envErr == nil {
 		if _, mapErr := project.ResolvePromptTargetFromEnv(settings, envValues); mapErr != nil {
 			return nil, false, mapErr
 		}

@@ -109,9 +109,9 @@ func addPendingProvisionReason(
 	})
 }
 
-// recordPendingConnectionProvision records a pending
-// connection reason after init writes at least one service.
-// Write failures are warnings so init is not rolled back.
+// recordPendingConnectionProvision marks connections that need
+// provision after init writes a connection service.
+// A signal write failure only produces a warning.
 func recordPendingConnectionProvision(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

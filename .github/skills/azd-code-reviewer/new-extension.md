@@ -27,7 +27,7 @@ For Go extensions, check:
 - the Go version matches `cli/azd/go.mod`
 - `go.mod` has no local `replace` directives or azd SDK pseudo-versions
 - direct dependencies shared with core use the core version, unless `cli/azd/dependency-versions.json` records an exact, issue-linked temporary exception
-- the azd SDK version agrees with `requiredAzdVersion`
+- `requiredAzdVersion` reflects the earliest azd release compatible with the core APIs and behavior the extension uses
 
 Dependency synchronization does not cover indirect dependencies or extension manifest dependencies. Confirm manifest dependencies can be satisfied in the intended registry before publication, and track unresolved prerequisites in the manual handoff.
 

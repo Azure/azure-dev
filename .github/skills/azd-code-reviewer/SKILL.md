@@ -30,7 +30,7 @@ Use whatever PR metadata, diff, and changed-file list the harness provides. In a
 
 ### Step 2: Detect review cases
 
-If the PR introduces a new top-level directory under `cli/azd/extensions/`, load [new-extension.md](new-extension.md) and apply its onboarding review. Treat a directory as new when the changed-file metadata marks it as added, or when the PR adds its manifest, module, and entry point together.
+If added files are under a top-level path in `cli/azd/extensions/` that did not exist before the PR, load [new-extension.md](new-extension.md) and apply its onboarding review. An added `extension.yaml` is enough to trigger the new-extension review because a dependency-only extension pack may have no module or entry point.
 
 ### Step 3: Apply review lenses
 

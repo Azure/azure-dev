@@ -886,7 +886,7 @@ func (a *InitFromCodeAction) addToProject(
 	// Emit the sibling azure.ai.project service carrying the model deployments
 	// and wire the agent's uses: to it. A selected existing project contributes
 	// its endpoint so provision reuses it instead of creating a new project.
-	if err := emitResourceServices(
+	if _, err := emitResourceServices(
 		ctx, a.azdClient, agentServiceName,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
 		a.selectedFoundryProject.Endpoint(),

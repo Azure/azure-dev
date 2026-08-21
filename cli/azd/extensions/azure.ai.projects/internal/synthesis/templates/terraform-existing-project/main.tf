@@ -6,21 +6,10 @@ locals {
   foundry_project_name    = local.project_id_parts[10]
   foundry_account_id      = join("/", slice(local.project_id_parts, 0, 9))
   normalized_project_id   = join("/", local.project_id_parts)
-}
-
-# The account and project are intentionally not Terraform resources. Only
-# declared child resources are placed in state and owned by this module.
-resource "azapi_resource" "model_deployment" {
-  for_each = { for d in var.deployments : d.name => d }
-
-  type      = "Microsoft.CognitiveServices/accounts/deployments@2025-06-01"
-  name      = each.value.name
-  parent_id = local.foundry_account_id
-
-  body = {
-    properties = {
-      model = each.value.model
-    }
-    sku = each.value.sku
-  }
+  project_endpoint_matches = regexall(
+    "(?i)^https://([^.]+)\\.services\\.ai\\.azure\\.com/(?:api/)?projects/([^/?#]+)/?$",
+    var.project_endpoint,
+  )
+  project_endpoint_account = length(local.project_endpoint_matches) == 1 ? local.project_endpoint_matches[0][0] : ""
+  project_endpoint_project = length(local.project_endpoint_matches) == 1 ? local.project_endpoint_matches[0][1] : ""
 }

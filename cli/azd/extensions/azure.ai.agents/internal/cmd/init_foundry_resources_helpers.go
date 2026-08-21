@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -594,6 +595,14 @@ func configureAcrConnectionWithRegistryLoader(
 	loadRegistries acrRegistryLoader,
 	projectPrincipalIDs ...string,
 ) error {
+	previousValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+	if err != nil {
+		return fmt.Errorf("reading existing ACR ownership state: %w", err)
+	}
+	previous := make(map[string]string, len(previousValues.KeyValues))
+	for _, value := range previousValues.KeyValues {
+		previous[value.Key] = strings.TrimSpace(value.Value)
+	}
 	resourceIds, err := loadRegistries(ctx, credential, subscriptionId)
 	if err != nil {
 		return fmt.Errorf("listing container registries for connection validation: %w", err)
@@ -758,11 +767,41 @@ func configureAcrConnectionWithRegistryLoader(
 	if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "already-connected"); err != nil {
 		return err
 	}
+	if shouldPreserveCreatedAcrMode(previous, *selectedConnection) {
+		if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "create"); err != nil {
+			return err
+		}
+	}
 	if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", "true"); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func shouldPreserveCreatedAcrMode(previous map[string]string, selected validatedAcrConnection) bool {
+	if previous["AZD_FOUNDRY_ACR_MODE"] != "create" {
+		return false
+	}
+	resourceID := strings.TrimSuffix(strings.TrimSpace(selected.resourceId), "/")
+	previousResourceID := strings.TrimSuffix(previous["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"], "/")
+	if resourceID == "" || !strings.EqualFold(resourceID, previousResourceID) {
+		return false
+	}
+	registry, err := arm.ParseResourceID(resourceID)
+	if err != nil || registry.ResourceType.String() != "Microsoft.ContainerRegistry/registries" {
+		return false
+	}
+	if !resourceGroupIDMatches(
+		previous["AZD_FOUNDRY_RESOURCE_GROUP_ID"], registry.SubscriptionID, registry.ResourceGroupName) {
+		return false
+	}
+	return registry.Name != "" && strings.EqualFold(selected.connection.Name, registry.Name+"-conn")
+}
+
+func resourceGroupIDMatches(resourceID, subscriptionID, resourceGroup string) bool {
+	wanted := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroup)
+	return resourceID != "" && strings.EqualFold(strings.TrimSuffix(resourceID, "/"), wanted)
 }
 
 // tracingOverviewURL points to an overview of agent tracing/telemetry behavior.

@@ -30,7 +30,7 @@ var templatesFS embed.FS
 //
 // container-registry.tf is copied only when an agent uses docker:; outputs.tf is generated
 // from outputs.tf.tmpl (text/template) so the ACR outputs reference the
-// registry resources only when acr.tf is present. main.tfvars.json is likewise
+// registry resources only when container-registry.tf is present. main.tfvars.json is likewise
 // generated at eject time.
 //
 //go:embed templates/terraform/*.tf

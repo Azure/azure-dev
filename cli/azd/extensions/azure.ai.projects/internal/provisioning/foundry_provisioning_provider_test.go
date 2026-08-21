@@ -4,6 +4,7 @@
 package provisioning
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -728,6 +730,27 @@ func TestResolveLayerResourceGroupOwnership(t *testing.T) {
 		"changing to an absent group may establish ownership after creation")
 }
 
+func TestPersistCreatedResourceGroupOwnership(t *testing.T) {
+	t.Parallel()
+	env := &resolveEnvStubEnvServer{envName: "dev", get: map[string]string{}}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	p := &FoundryProvisioningProvider{
+		azdClient:  client,
+		credential: &azidentity.AzureDeveloperCLICredential{},
+		envName:    "dev",
+		subID:      "sub",
+		rgName:     "rg-foundry",
+		resourceGroupState: func(context.Context) (map[string]*string, bool, error) {
+			return map[string]*string{"azd-env-name": new("dev")}, true, nil
+		},
+	}
+
+	require.NoError(t, p.persistCreatedResourceGroupOwnership(t.Context()))
+	want := "/subscriptions/sub/resourceGroups/rg-foundry"
+	assert.Equal(t, want, p.foundryRGOwnerID)
+	assert.Equal(t, want, env.set[envKeyFoundryRGOwner])
+}
+
 func TestValidateFoundryProviderLayers(t *testing.T) {
 	require.NoError(t, validateFoundryProviderLayers([]byte(`infra:
   provider: bicep
@@ -1427,6 +1450,22 @@ func TestWithTenantOutput(t *testing.T) {
 		})
 		assert.Equal(t, "from-template", out[envKeyTenantID].Value)
 	})
+}
+
+func TestConnectionOnlyOutputsPreserveExistingTenant(t *testing.T) {
+	t.Parallel()
+	env := &resolveEnvStubEnvServer{envName: "dev", get: map[string]string{envKeyTenantID: "tenant-123"}}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	p := &FoundryProvisioningProvider{
+		azdClient:          client,
+		envName:            "dev",
+		foundryName:        "project",
+		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+	}
+
+	require.NoError(t, p.resolveConnectionOnlyTenant(t.Context()))
+	outputs := p.existingProjectConnectionOutputs()
+	assert.Equal(t, "tenant-123", outputs[envKeyTenantID].Value)
 }
 
 func TestNormalizeOutputs_LayerOmitsRootResourceGroup(t *testing.T) {

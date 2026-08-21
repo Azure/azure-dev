@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -598,6 +599,17 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		if err != nil {
 			return err
 		}
+		if provider == project.TerraformProviderName && acrMode == infraEjectAcrCreate &&
+			(strings.TrimSpace(values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]) != "" ||
+				strings.TrimSpace(values["AZURE_CONTAINER_REGISTRY_ENDPOINT"]) != "" ||
+				strings.TrimSpace(values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]) != "" ||
+				strings.TrimSpace(values["AZD_FOUNDRY_RESOURCE_GROUP_ID"]) != "") {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"Terraform eject cannot adopt the container registry previously created by microsoft.foundry",
+				"run `azd down` before ejecting Terraform, or keep Bicep/microsoft.foundry for the existing resources",
+			)
+		}
 	}
 	if provider == project.TerraformProviderName {
 		// Private networking is Bicep-only today: the Terraform module has no
@@ -750,7 +762,7 @@ func ejectExistingProjectBicep(
 // ejectTerraform writes the embedded Terraform module plus the generated
 // tfvars file into infraDir.
 //
-// acr.tf is written only when an agent uses docker: (includeAcr). outputs.tf is
+// container-registry.tf is written only when an agent uses docker: (includeAcr). outputs.tf is
 // generated to match: the ACR outputs are included only when acr.tf is present,
 // and omitted entirely otherwise.
 func ejectTerraform(
@@ -801,6 +813,12 @@ func ejectExistingProjectTerraform(
 	if err != nil {
 		return nil, err
 	}
+	deploymentsArtifact, err := writeExistingProjectTerraformDeployments(
+		infraDir, artifactRoot, params)
+	if err != nil {
+		return nil, err
+	}
+	written = append(written, deploymentsArtifact)
 	markerArtifact, err := writeFoundryTerraformMarker(infraDir, artifactRoot)
 	if err != nil {
 		return nil, err
@@ -825,6 +843,57 @@ func ejectExistingProjectTerraform(
 		return nil, err
 	}
 	return append(written, tfvarsArtifact), nil
+}
+
+func writeExistingProjectTerraformDeployments(
+	infraDir string,
+	artifactRoot string,
+	params map[string]any,
+) (ejectArtifact, error) {
+	deployments, ok := params["deployments"].([]synthesis.Deployment)
+	if !ok {
+		return ejectArtifact{}, exterrors.Internal(
+			exterrors.CodeInfraEjectWriteFailed,
+			fmt.Sprintf("deployments parameter has unexpected type %T", params["deployments"]),
+		)
+	}
+
+	var contents strings.Builder
+	contents.WriteString("# Model deployments are serialized because Cognitive Services throttles concurrent updates.\n")
+	resourceNames := make([]string, len(deployments))
+	for i, deployment := range deployments {
+		resourceNames[i] = fmt.Sprintf("model_deployment_%x", sha256.Sum256([]byte(deployment.Name)))[:33]
+	}
+	for i := range deployments {
+		if i > 0 {
+			contents.WriteString("\n")
+		}
+		fmt.Fprintf(&contents, "resource \"azapi_resource\" %q {\n", resourceNames[i])
+		fmt.Fprintf(&contents, "  type      = \"Microsoft.CognitiveServices/accounts/deployments@2025-06-01\"\n")
+		fmt.Fprintf(&contents, "  name      = var.deployments[%d].name\n", i)
+		contents.WriteString("  parent_id = local.foundry_account_id\n\n")
+		contents.WriteString("  body = {\n")
+		fmt.Fprintf(&contents, "    properties = { model = var.deployments[%d].model }\n", i)
+		fmt.Fprintf(&contents, "    sku        = var.deployments[%d].sku\n", i)
+		contents.WriteString("  }\n")
+		if i > 0 {
+			fmt.Fprintf(&contents, "\n  depends_on = [azapi_resource.%s]\n", resourceNames[i-1])
+		}
+		contents.WriteString("}\n")
+	}
+
+	dst := filepath.Join(infraDir, "model-deployments.tf")
+	//nolint:gosec // G306: ejected Terraform sources are intended to be human-readable
+	if err := os.WriteFile(dst, []byte(contents.String()), 0o644); err != nil {
+		return ejectArtifact{}, exterrors.Internal(
+			exterrors.CodeInfraEjectWriteFailed,
+			fmt.Sprintf("write model-deployments.tf: %s", err),
+		)
+	}
+	return ejectArtifact{
+		relPath: filepath.ToSlash(filepath.Join(artifactRoot, "model-deployments.tf")),
+		bytes:   contents.Len(),
+	}, nil
 }
 
 func writeFoundryTerraformMarker(infraDir, artifactRoot string) (ejectArtifact, error) {
@@ -1349,6 +1418,9 @@ func mergeStagedInfra(stageDir string, plan *infraEjectPlan) (func(), error) {
 			return err
 		}
 		dst := filepath.Join(plan.targetDir, rel)
+		if err := rejectSymlinkedParents(plan.targetDir, filepath.Dir(dst)); err != nil {
+			return err
+		}
 		if _, err := os.Lstat(dst); err == nil {
 			return ejectExistsError(filepath.ToSlash(filepath.Join(plan.targetPath, rel)))
 		} else if !errors.Is(err, fs.ErrNotExist) {
@@ -1381,6 +1453,40 @@ func mergeStagedInfra(stageDir string, plan *infraEjectPlan) (func(), error) {
 		createdFiles = append(createdFiles, file.dst)
 	}
 	return rollback, nil
+}
+
+func rejectSymlinkedParents(root, parent string) error {
+	rootInfo, err := os.Lstat(root)
+	if err == nil && rootInfo.Mode()&os.ModeSymlink != 0 {
+		return invalidInfraForEject(fmt.Sprintf("infrastructure destination root %q is a symbolic link", root))
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("inspect infrastructure destination root %s: %w", root, err)
+	}
+	rel, err := filepath.Rel(root, parent)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return invalidInfraForEject(fmt.Sprintf("infrastructure destination %q escapes its target directory", parent))
+	}
+	current := root
+	for _, component := range strings.FieldsFunc(rel, func(r rune) bool { return r == '/' || r == '\\' }) {
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("inspect infrastructure destination parent %s: %w", current, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return invalidInfraForEject(
+				fmt.Sprintf("infrastructure destination parent %q is a symbolic link", current),
+			)
+		}
+		if !info.IsDir() {
+			return invalidInfraForEject(fmt.Sprintf("infrastructure destination parent %q is not a directory", current))
+		}
+	}
+	return nil
 }
 
 func infraInstallError(action string, err error) error {
@@ -1819,7 +1925,7 @@ func writeParametersFile(
 // submodules) and returns the files written. On any error it removes the
 // partial infraDir.
 //
-// acr.tf is copied only when includeAcr is true (an agent uses docker:);
+// container-registry.tf is copied only when includeAcr is true (an agent uses docker:);
 // otherwise it is omitted and outputs.tf carries no ACR outputs.
 //
 // Files that are not verbatim copies are skipped here and produced elsewhere:
@@ -1866,7 +1972,7 @@ func writeEmbeddedTerraformTemplates(
 		if !strings.HasSuffix(name, ".tf") {
 			continue
 		}
-		// acr.tf is omitted unless an agent uses docker:.
+		// container-registry.tf is omitted unless an agent uses docker:.
 		if name == "container-registry.tf" && !includeAcr {
 			continue
 		}

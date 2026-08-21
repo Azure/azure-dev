@@ -16,6 +16,14 @@ output "AZURE_OPENAI_ENDPOINT" {
 
 output "FOUNDRY_PROJECT_ENDPOINT" {
   value = var.project_endpoint
+
+  precondition {
+    condition = (
+      lower(local.project_endpoint_account) == lower(local.foundry_account_name) &&
+      lower(local.project_endpoint_project) == lower(local.foundry_project_name)
+    )
+    error_message = "project_endpoint must identify the same Foundry project as project_resource_id."
+  }
 }
 
 output "AZURE_AI_PROJECT_CONNECTION_NAMES" {

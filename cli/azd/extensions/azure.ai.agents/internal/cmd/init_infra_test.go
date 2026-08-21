@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -791,6 +792,47 @@ services:
 	assert.Equal(t, "keep me\n", string(readme))
 }
 
+func TestEjectInfra_RefusesSymlinkedMergeParent(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	outside := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+	target := filepath.Join(dir, "infra", "foundry")
+	require.NoError(t, os.MkdirAll(target, 0o750))
+	mustWriteFile(t, filepath.Join(target, "README.md"), "keep me\n")
+	if err := os.Symlink(outside, filepath.Join(target, "modules")); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "symbolic link")
+	assert.NoFileExists(t, filepath.Join(outside, "foundry-project.bicep"))
+}
+
+func TestRejectSymlinkedParentsRejectsRoot(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	outside := t.TempDir()
+	root := filepath.Join(parent, "foundry")
+	if err := os.Symlink(outside, root); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+
+	err := rejectSymlinkedParents(root, filepath.Join(root, "modules"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "destination root")
+}
+
 func TestEjectInfra_RefusesGeneratedFileConflictWithoutUpdatingAzureYaml(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -1058,9 +1100,9 @@ services:
 
 func TestEjectInfra_ExistingProjectBicepModesCompile(t *testing.T) {
 	t.Parallel()
-	az, err := exec.LookPath("az")
-	if err != nil {
-		t.Skip("Azure CLI not found; skipping generated Bicep compilation")
+	bicep := lookupInstalledBicep()
+	if bicep == "" {
+		t.Skip("Bicep CLI not found; skipping generated Bicep compilation")
 	}
 
 	const projectYAML = `name: my-project
@@ -1109,12 +1151,29 @@ services:
 			require.NoError(t, ejectInfra(dir, "bicep", env))
 
 			out := filepath.Join(t.TempDir(), "main.json")
-			cmd := exec.CommandContext(t.Context(), az, "bicep", "build", "--file",
+			cmd := exec.CommandContext(t.Context(), bicep, "build",
 				filepath.Join(dir, "infra", "main.bicep"), "--outfile", out)
 			output, err := cmd.CombinedOutput()
 			require.NoErrorf(t, err, "generated %s Bicep failed to compile: %s", mode, output)
 		})
 	}
+}
+
+func lookupInstalledBicep() string {
+	if path, err := exec.LookPath("bicep"); err == nil {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	for _, name := range []string{"bicep", "bicep.exe"} {
+		path := filepath.Join(home, ".azure", "bin", name)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
 }
 
 func TestEjectInfra_ExistingProjectAddsBicepLayerBesideExistingInfra(t *testing.T) {
@@ -1173,7 +1232,8 @@ services:
 	require.NoError(t, err)
 
 	for _, name := range []string{
-		"provider.tf", "variables.tf", "main.tf", "connections.tf", "container-registry.tf", "outputs.tf", "main.tfvars.json",
+		"provider.tf", "variables.tf", "main.tf", "model-deployments.tf", "connections.tf",
+		"container-registry.tf", "outputs.tf", "main.tfvars.json",
 	} {
 		assert.FileExists(t, filepath.Join(dir, "infra", name))
 	}
@@ -1181,7 +1241,11 @@ services:
 	require.NoError(t, err)
 	assert.NotContains(t, string(main), `resource "azapi_resource" "foundry_account"`)
 	assert.NotContains(t, string(main), `resource "azapi_resource" "project"`)
-	assert.Contains(t, string(main), `resource "azapi_resource" "model_deployment"`)
+	assert.NotContains(t, string(main), `resource "azapi_resource" "model_deployment"`)
+	assert.Contains(t, string(main), "project_endpoint_matches")
+	deployments, err := os.ReadFile(filepath.Join(dir, "infra", "model-deployments.tf")) //nolint:gosec
+	require.NoError(t, err)
+	assert.NotContains(t, string(deployments), `resource "azapi_resource"`)
 
 	tfvars, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec
 	require.NoError(t, err)
@@ -1193,6 +1257,7 @@ services:
 	require.NoError(t, err)
 	assert.Contains(t, string(outputs), `value = "create"`)
 	assert.NotContains(t, string(outputs), "var.acr_mode")
+	assert.Contains(t, string(outputs), "project_endpoint must identify the same Foundry project")
 
 	variables, err := os.ReadFile(filepath.Join(dir, "infra", "variables.tf")) //nolint:gosec
 	require.NoError(t, err)
@@ -1243,6 +1308,62 @@ services:
 	tfvars, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec
 	require.NoError(t, err)
 	assert.NotContains(t, string(tfvars), `"acr_mode"`)
+}
+
+func TestEjectInfra_ExistingProjectTerraformSerializesDeployments(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p1
+    deployments:
+      - name: first
+        model: { name: first-model, format: OpenAI, version: "1" }
+        sku: { name: GlobalStandard, capacity: 1 }
+      - name: second
+        model: { name: second-model, format: OpenAI, version: "1" }
+        sku: { name: GlobalStandard, capacity: 1 }
+`)
+
+	require.NoError(t, ejectInfra(dir, "terraform"))
+	data, err := os.ReadFile(filepath.Join(dir, "infra", "model-deployments.tf")) //nolint:gosec
+	require.NoError(t, err)
+	contents := string(data)
+	firstResource := fmt.Sprintf("model_deployment_%x", sha256.Sum256([]byte("first")))[:33]
+	secondResource := fmt.Sprintf("model_deployment_%x", sha256.Sum256([]byte("second")))[:33]
+	assert.Contains(t, contents, fmt.Sprintf(`resource "azapi_resource" %q`, firstResource))
+	assert.Contains(t, contents, fmt.Sprintf(`resource "azapi_resource" %q`, secondResource))
+	assert.Contains(t, contents, fmt.Sprintf("depends_on = [azapi_resource.%s]", firstResource))
+}
+
+func TestEjectInfra_ExistingProjectTerraformRejectsProvisionedCreateMode(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p1
+  agent:
+    host: azure.ai.agent
+    uses: [project]
+    docker: { path: Dockerfile }
+`)
+	env := map[string]string{
+		"AZD_FOUNDRY_ACR_MODE":     "create",
+		"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/p1",
+		"AZURE_AI_PROJECT_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/acct/projects/p1",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/owned/providers/" +
+			"Microsoft.ContainerRegistry/registries/registry",
+	}
+
+	err := ejectInfra(dir, "terraform", env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot adopt")
+	assert.NoDirExists(t, filepath.Join(dir, "infra"))
 }
 
 func TestResolveInfraEjectAcrMode(t *testing.T) {

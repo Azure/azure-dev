@@ -104,6 +104,7 @@ type FoundryProvisioningProvider struct {
 	existingAcrConnectionName     string
 	existingAcrPullAssigned       bool
 	resourceTokenSalt             string
+	resourceGroupState            func(context.Context) (map[string]*string, bool, error)
 
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
@@ -1146,6 +1147,9 @@ func (p *FoundryProvisioningProvider) State(
 	options *azdext.ProvisioningStateOptions,
 ) (*azdext.ProvisioningStateResult, error) {
 	if p.existingProjectConnectionOnly {
+		if err := p.resolveConnectionOnlyTenant(ctx); err != nil {
+			return nil, err
+		}
 		return &azdext.ProvisioningStateResult{State: &azdext.ProvisioningState{
 			Outputs: p.existingProjectConnectionOutputs(),
 		}}, nil
@@ -1185,6 +1189,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
 	if p.existingProjectConnectionOnly {
+		if err := p.resolveConnectionOnlyTenant(ctx); err != nil {
+			return nil, err
+		}
 		progress("Using existing Foundry project")
 		return &azdext.ProvisioningDeployResult{Deployment: &azdext.ProvisioningDeployment{
 			Outputs: p.existingProjectConnectionOutputs(),
@@ -1243,6 +1250,11 @@ func (p *FoundryProvisioningProvider) Deploy(
 
 	resp, err := pollWithProgress(ctx, poller, progress, "Foundry deployment in progress")
 	if err != nil {
+		if trackSupportingResourceGroup && !resourceGroupExisted {
+			if ownershipErr := p.persistCreatedResourceGroupOwnership(ctx); ownershipErr != nil {
+				log.Printf("[debug] recover Foundry resource-group ownership after deployment failure: %v", ownershipErr)
+			}
+		}
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
 	}
 
@@ -1250,6 +1262,11 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if trackSupportingResourceGroup {
 		p.foundryRGOwnerID = resolveLayerResourceGroupOwnership(
 			p.foundryRGOwnerID, p.subID, p.rgName, resourceGroupExisted, resp.Properties)
+		if p.foundryRGOwnerID == "" && !resourceGroupExisted {
+			if err := p.persistCreatedResourceGroupOwnership(ctx); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return &azdext.ProvisioningDeployResult{
@@ -1261,10 +1278,35 @@ func (p *FoundryProvisioningProvider) Deploy(
 }
 
 func (p *FoundryProvisioningProvider) existingProjectConnectionOutputs() map[string]*azdext.ProvisioningOutputParameter {
-	return map[string]*azdext.ProvisioningOutputParameter{
+	return p.withTenantOutput(map[string]*azdext.ProvisioningOutputParameter{
 		"AZURE_AI_PROJECT_NAME":    {Type: "string", Value: p.foundryName},
 		"FOUNDRY_PROJECT_ENDPOINT": {Type: "string", Value: p.brownfieldEndpoint},
+	})
+}
+
+func (p *FoundryProvisioningProvider) resolveConnectionOnlyTenant(ctx context.Context) error {
+	subscriptionID, err := p.envValue(ctx, envKeySubscriptionID)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", envKeySubscriptionID, err)
 	}
+	if subscriptionID == "" {
+		tenantID, err := p.envValue(ctx, envKeyTenantID)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", envKeyTenantID, err)
+		}
+		p.tenantID = tenantID
+		return nil
+	}
+	tenant, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{SubscriptionId: subscriptionID})
+	if err != nil {
+		return exterrors.Auth(
+			exterrors.CodeTenantLookupFailed,
+			fmt.Sprintf("look up tenant for subscription %s: %s", subscriptionID, err),
+			"run 'azd auth login' and verify access to the subscription",
+		)
+	}
+	p.tenantID = tenant.TenantId
+	return nil
 }
 
 // envValue reads a single value from the active azd environment, trimmed.
@@ -2316,21 +2358,51 @@ func resolveLayerResourceGroupOwnership(
 }
 
 func (p *FoundryProvisioningProvider) resourceGroupExists(ctx context.Context) (bool, error) {
+	_, found, err := p.lookupResourceGroupState(ctx)
+	return found, err
+}
+
+func (p *FoundryProvisioningProvider) lookupResourceGroupState(
+	ctx context.Context,
+) (map[string]*string, bool, error) {
+	if p.resourceGroupState != nil {
+		return p.resourceGroupState(ctx)
+	}
 	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
 	if err != nil {
-		return false, exterrors.Internal(
+		return nil, false, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
 			fmt.Sprintf("create armresources client for resource-group existence check: %s", err),
 		)
 	}
-	_, err = factory.NewResourceGroupsClient().Get(ctx, p.rgName, nil)
+	resp, err := factory.NewResourceGroupsClient().Get(ctx, p.rgName, nil)
 	if err == nil {
-		return true, nil
+		return resp.Tags, true, nil
 	}
 	if isNotFound(err) {
-		return false, nil
+		return nil, false, nil
 	}
-	return false, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupGet)
+	return nil, false, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupGet)
+}
+
+func (p *FoundryProvisioningProvider) persistCreatedResourceGroupOwnership(ctx context.Context) error {
+	recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := p.ensureCredential(recoveryCtx); err != nil {
+		return err
+	}
+	tags, found, err := p.lookupResourceGroupState(recoveryCtx)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	if err := verifyLayerResourceGroupTags(tags, p.envName, p.rgName); err != nil {
+		return err
+	}
+	p.foundryRGOwnerID = fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", p.subID, p.rgName)
+	return p.setEnv(recoveryCtx, envKeyFoundryRGOwner, p.foundryRGOwnerID)
 }
 
 func (p *FoundryProvisioningProvider) verifyLayerResourceGroupAzureOwnership(ctx context.Context) error {

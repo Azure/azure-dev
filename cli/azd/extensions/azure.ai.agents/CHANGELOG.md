@@ -1,11 +1,5 @@
 # Release History
 
-## 1.0.0-beta.12 (Unreleased)
-
-### Bugs Fixed
-
-- Diagnose unified, bundled, and legacy connection services in Doctor and next-step.
-
 ## 1.0.0-beta.11 (2026-08-20)
 
 ### Features Added

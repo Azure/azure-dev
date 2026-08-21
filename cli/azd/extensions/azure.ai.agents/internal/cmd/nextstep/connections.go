@@ -180,10 +180,11 @@ func collectBundledConnections(
 		}
 		enabled, err := isServiceEnabled(ctx, src, envName, serviceName)
 		if err != nil {
-			*errs = append(
-				*errs,
-				fmt.Errorf(
-					"agent service %q deployment condition: %w",
+			recordConnectionLoadError(
+				state,
+				errs,
+				fmt.Sprintf(
+					"agent service %q deployment condition: %v",
 					serviceName,
 					err,
 				),
@@ -259,6 +260,15 @@ func collectManifestConnections(
 		}
 		enabled, err := isServiceEnabled(ctx, src, envName, serviceName)
 		if err != nil {
+			recordConnectionLoadError(
+				state,
+				errs,
+				fmt.Sprintf(
+					"agent service %q deployment condition: %v",
+					serviceName,
+					err,
+				),
+			)
 			continue
 		}
 		if !enabled {
@@ -368,6 +378,9 @@ func recordConnectionLoadError(
 	errs *[]error,
 	issue string,
 ) {
+	if slices.Contains(state.ConnectionLoadErrors, issue) {
+		return
+	}
 	state.ConnectionLoadErrors = append(
 		state.ConnectionLoadErrors,
 		issue,

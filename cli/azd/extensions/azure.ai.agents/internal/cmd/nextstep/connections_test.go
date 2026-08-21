@@ -146,6 +146,81 @@ func TestAssembleState_InvalidConnectionConditionIsLoadError(t *testing.T) {
 	assert.Contains(t, state.ConnectionLoadErrors[0], "invalid deployment condition")
 }
 
+func TestAssembleState_InvalidBundledAgentConditionIsLoadError(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		configValues: map[string]*structpb.Value{
+			"agent/condition": structpb.NewStringValue("${"),
+		},
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": {
+					Name: "agent",
+					Host: agentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "hostedAgent",
+						"connections": []any{
+							map[string]any{
+								"name":     "search",
+								"category": "ApiKey",
+								"target":   "https://search.example",
+							},
+						},
+					}),
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.NotEmpty(t, errs)
+	require.False(t, state.HasConnections)
+	require.Len(t, state.ConnectionLoadErrors, 1)
+	assert.Contains(t, state.ConnectionLoadErrors[0], `agent service "agent"`)
+	assert.Contains(t, state.ConnectionLoadErrors[0], "deployment condition")
+}
+
+func TestAssembleState_InvalidManifestAgentConditionIsLoadError(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeManifest(t, root, "src/echo", `
+template:
+  kind: containerAgent
+  name: echo
+resources:
+  - name: search
+    kind: connection
+    category: ApiKey
+    target: https://search.example
+`)
+	src := &fakeSource{
+		envName: "dev",
+		configValues: map[string]*structpb.Value{
+			"echo/condition": structpb.NewStringValue("${"),
+		},
+		project: &azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {
+					Name:         "echo",
+					Host:         agentHost,
+					RelativePath: "src/echo",
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.NotEmpty(t, errs)
+	require.False(t, state.HasConnections)
+	require.Len(t, state.ConnectionLoadErrors, 1)
+	assert.Contains(t, state.ConnectionLoadErrors[0], `agent service "echo"`)
+	assert.Contains(t, state.ConnectionLoadErrors[0], "deployment condition")
+}
+
 func TestAssembleState_ActiveConnectionRefErrorIsLoadError(t *testing.T) {
 	t.Parallel()
 

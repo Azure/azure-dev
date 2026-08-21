@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	environmentListPageSize = 200
+	environmentListPageSize = 100
 	environmentListMaxPages = 100
 )
 
@@ -92,22 +92,29 @@ func (a *listAction) Run() error {
 
 func listAllEnvironments(ctx context.Context, client *rleClient) ([]environmentResource, error) {
 	var environments []environmentResource
-	for pageNumber := range environmentListMaxPages {
-		skip := pageNumber * environmentListPageSize
-		page, err := client.listEnvironments(ctx, skip, environmentListPageSize)
+	after := ""
+	seenCursors := map[string]struct{}{}
+	for range environmentListMaxPages {
+		page, err := client.listEnvironments(ctx, after, environmentListPageSize)
 		if err != nil {
 			return nil, serviceError(err)
 		}
-		environments = append(environments, page.Value...)
-		if len(page.Value) < environmentListPageSize {
+		environments = append(environments, page.Data...)
+		if !page.HasMore {
 			return environments, nil
 		}
+		after, err = nextPaginationCursor(seenCursors, page.LastId, func() error {
+			return &azdext.LocalError{
+				Message:  "Environment list pagination did not return a new cursor.",
+				Code:     "rle_environment_list_cursor_invalid",
+				Category: azdext.LocalErrorCategoryInternal,
+			}
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
-	return nil, &azdext.LocalError{
-		Message:  fmt.Sprintf("Environment list exceeded the %d-item safety limit.", environmentListPageSize*environmentListMaxPages),
-		Code:     "rle_environment_list_safety_limit",
-		Category: azdext.LocalErrorCategoryInternal,
-	}
+	return nil, paginationSafetyLimitError("Environment list", "rle_environment_list_safety_limit")
 }
 
 func resolveEnvironmentListProjectEndpoint() (string, error) {

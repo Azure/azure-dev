@@ -393,6 +393,11 @@ func tryAutoInstallForPartialNamespace(
 type extensionAutoInstallManager interface {
 	FindExtensions(ctx context.Context, options *extensions.FilterOptions) ([]*extensions.ExtensionMetadata, error)
 	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
+	ResolveDependency(
+		ctx context.Context,
+		parent *extensions.ExtensionMetadata,
+		dependency extensions.ExtensionDependency,
+	) (*extensions.ExtensionMetadata, error)
 	Install(
 		ctx context.Context,
 		extension *extensions.ExtensionMetadata,
@@ -451,6 +456,7 @@ func tryAutoInstallExtensionVersion(
 			preInstalledIds,
 			"  ",
 			map[string]struct{}{extension.Id: {}},
+			extension.SourceCategoryOrUnknown(),
 		)
 	}
 	return true, nil

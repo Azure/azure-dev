@@ -11,24 +11,24 @@
 /cli/installer/                             @danieljurek @vhvb1989 @tg-msft @RickWinter
 
 # ── CLI extensions registry and test snapshots - anyone added to this can approve extension publishing, provided they pass the `ext-registry-check` workflow.
-/cli/azd/extensions/registry.json           @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @trrwilson
-/cli/azd/extensions/registry.dev.json       @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @trrwilson
-/cli/azd/cmd/testdata/TestFigSpec.ts        @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @trrwilson
+/cli/azd/extensions/registry.json           @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @trrwilson  @m5i-work @v1212
+/cli/azd/extensions/registry.dev.json       @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @trrwilson  @m5i-work @v1212
+/cli/azd/cmd/testdata/TestFigSpec.ts        @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @trrwilson  @m5i-work @v1212
 
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
-/cli/azd/extensions/azure.ai.agents/        @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
-/cli/azd/test/functional/ai_agents/         @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
-/cli/azd/extensions/azure.ai.connections/   @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
+/cli/azd/extensions/azure.ai.agents/        @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/test/functional/ai_agents/         @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.connections/   @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
 /cli/azd/extensions/azure.ai.finetune/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.inspector/     @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @anchenyi @XiaofuHuang
 /cli/azd/extensions/azure.ai.models/        @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
-/cli/azd/extensions/azure.ai.projects/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
-/cli/azd/extensions/azure.ai.rle/           @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
-/cli/azd/extensions/azure.ai.routines/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
-/cli/azd/extensions/azure.ai.skills/        @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
-/cli/azd/extensions/azure.ai.toolboxes/     @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
+/cli/azd/extensions/azure.ai.projects/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.rle/           @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.routines/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.skills/        @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.toolboxes/     @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
 /cli/azd/extensions/azure.ai.training/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
-/cli/azd/extensions/microsoft.foundry/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
+/cli/azd/extensions/microsoft.foundry/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
 
 # ── Extensions ────────────────────────────────────────────────────────────────
 /ext/                                       @vhvb1989 @tg-msft @RickWinter

@@ -164,6 +164,72 @@ Details:
   still require `legacy` or `unified` until the flat output shape is fully
   rolled out.
 
+### Moderating invocations-protocol traffic
+
+For agents that expose the `invocations` protocol, the RAI policy alone is not
+enough: the content-safety proxy needs to be told **where the text lives** in the
+request and response bodies. Without that it has nothing to submit to the policy,
+so no content is actually screened. Supply an `invocationsModeration` block on the
+`rai_policy` entry:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    protocols:
+      - protocol: invocations
+        version: "1.0.0"
+    policies:
+      - type: rai_policy
+        raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
+        invocationsModeration:
+          responseMode: both
+          inputContentType: json
+          outputContentType: json
+          inputPaths:
+            - $.input
+          outputPaths:
+            - $.output
+          streamSelectors:
+            - eventType: response.output_text.delta
+              textField: $.delta
+```
+
+Fields:
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `responseMode` | yes | `non_streaming`, `streaming`, or `both`. |
+| `inputContentType` | no | `json` (default) or `text`. |
+| `outputContentType` | no | `json` (default) or `text`. |
+| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
+| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the buffered response text. |
+| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. |
+
+`invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
+includes `invocations`. Declaring it elsewhere — on another agent kind, or on an
+`invocations_ws`-only agent, which does not go through the content-safety HTTP
+proxy — fails validation rather than silently deploying a policy that never runs.
+
+> **Understanding `responseMode`:** it declares which response *shapes* the
+> container can produce, **not** "input and output". Input is always moderated.
+> For the output side the proxy inspects the actual response `Content-Type` and
+> runs exactly one gate: the SSE gate for `text/event-stream`, the buffered gate
+> otherwise. Use `both` only for containers that genuinely answer both ways —
+> if a response arrives in a shape `responseMode` did not declare, the request
+> fails closed rather than skipping moderation.
+
+Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
+the whole body is then moderated and no paths are needed for that direction.
+
+As with `raiPolicyName`, the deprecated on-disk `agent.yaml` shape uses snake_case
+keys throughout this block (`invocations_moderation`, `response_mode`,
+`input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
+(`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
+
 ## Session idle timeout
 
 A hosted agent's runtime session sandbox is suspended by Foundry after a period

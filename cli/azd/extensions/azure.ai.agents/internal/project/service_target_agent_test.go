@@ -2255,6 +2255,52 @@ func TestPublish_PreservesHostServiceDetails(t *testing.T) {
 	require.Equal(t, "management.azure.com", serviceErr.ServiceName)
 }
 
+func TestPublish_PreservesRelayedHostServiceError(t *testing.T) {
+	t.Parallel()
+
+	source := &azdext.ServiceError{
+		Message:     "could not get Foundry project",
+		ErrorCode:   "get_foundry_project.AuthorizationFailed",
+		StatusCode:  403,
+		ServiceName: "management.azure.com",
+		Suggestion:  "request the required role",
+	}
+	st, err := status.New(codes.Unknown, "container publish failed").WithDetails(azdext.WrapError(source))
+	require.NoError(t, err)
+
+	publishErr := publishWithContainerError(t, st.Err())
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](publishErr)
+	require.True(t, ok)
+	require.Equal(t, source.Message, serviceErr.Message)
+	require.Equal(t, source.ErrorCode, serviceErr.ErrorCode)
+	require.Equal(t, source.StatusCode, serviceErr.StatusCode)
+	require.Equal(t, source.ServiceName, serviceErr.ServiceName)
+	require.Equal(t, source.Suggestion, serviceErr.Suggestion)
+}
+
+func TestPublish_PreservesRelayedHostLocalError(t *testing.T) {
+	t.Parallel()
+
+	source := &azdext.LocalError{
+		Message:    "invalid Foundry project resource ID",
+		Code:       "invalid_ai_project_id",
+		Category:   azdext.LocalErrorCategoryValidation,
+		Suggestion: "verify AZURE_AI_PROJECT_ID",
+	}
+	st, err := status.New(codes.Unknown, "container publish failed").WithDetails(azdext.WrapError(source))
+	require.NoError(t, err)
+
+	publishErr := publishWithContainerError(t, st.Err())
+
+	localErr, ok := errors.AsType[*azdext.LocalError](publishErr)
+	require.True(t, ok)
+	require.Equal(t, source.Message, localErr.Message)
+	require.Equal(t, source.Code, localErr.Code)
+	require.Equal(t, source.Category, localErr.Category)
+	require.Equal(t, source.Suggestion, localErr.Suggestion)
+}
+
 func publishWithContainerError(t *testing.T, publishErr error) error {
 	t.Helper()
 

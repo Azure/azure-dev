@@ -83,6 +83,87 @@ func TestRleClientRefusesAuthenticationOverHTTP(t *testing.T) {
 	}
 }
 
+func TestRleClientPreservesEnvironmentRequest(t *testing.T) {
+	client := newRleClientWithCredential(
+		"https://account.services.ai.azure.com/api/projects/project",
+		&testTokenCredential{},
+	)
+	client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != http.MethodPost {
+			t.Fatalf("expected POST, got %s", request.Method)
+		}
+		if request.URL.RawQuery != "after=cursor&api-version=2025-11-15-preview" {
+			t.Fatalf("expected unchanged query and API version, got %q", request.URL.RawQuery)
+		}
+		if string(body) != `{"value":"same-body"}` {
+			t.Fatalf("expected unchanged request body, got %s", body)
+		}
+
+		expectedPath := environmentCollectionPath + "/echo/versions/1.0.0"
+		if request.URL.Path != "/api/projects/project"+expectedPath {
+			t.Fatalf("expected path %q, got %q", expectedPath, request.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusCreated,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	err := client.do(
+		t.Context(),
+		http.MethodPost,
+		environmentCollectionPath+"/echo/versions/1.0.0?after=cursor",
+		map[string]string{"value": "same-body"},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateInstanceGroupUsesPublicVersionedRoute(t *testing.T) {
+	client := newRleClientWithCredential(
+		"https://account.services.ai.azure.com/api/projects/project",
+		&testTokenCredential{},
+	)
+	client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Method != http.MethodPost {
+			t.Fatalf("expected POST, got %s", request.Method)
+		}
+		expectedPath := "/api/projects/project/rl_environments/code_rl/versions/1.0.0/instance_groups"
+		if request.URL.Path != expectedPath {
+			t.Fatalf("expected path %q, got %q", expectedPath, request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != `{"maxActiveInstances":1}` {
+			t.Fatalf("expected one-instance group request, got %s", body)
+		}
+		return &http.Response{
+			StatusCode: http.StatusCreated,
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"group-1","environmentName":"code_rl","environmentVersion":"1.0.0","maxActiveInstances":1}`,
+			)),
+			Header: make(http.Header),
+		}, nil
+	})
+
+	group, err := client.createInstanceGroup(t.Context(), "code_rl", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if group.Id != "group-1" || group.EnvironmentVersion != "1.0.0" {
+		t.Fatalf("unexpected instance group: %#v", group)
+	}
+}
+
 func TestNewRleClientRejectsUntrustedEndpoint(t *testing.T) {
 	_, err := newRleClient("https://attacker.example/api/projects/project-1")
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -96,8 +177,8 @@ func TestNewRleClientRejectsUntrustedEndpoint(t *testing.T) {
 
 func TestServiceErrorSuggestionShowsFoundryProjectEndpoint(t *testing.T) {
 	err := serviceError(errors.New("dial tcp failed"))
-	var serviceErr *azdext.ServiceError
-	if !errors.As(err, &serviceErr) {
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	if !ok {
 		t.Fatalf("expected ServiceError, got %T", err)
 	}
 
@@ -109,6 +190,25 @@ func TestServiceErrorSuggestionShowsFoundryProjectEndpoint(t *testing.T) {
 		if !strings.Contains(serviceErr.Suggestion, expected) {
 			t.Fatalf("expected suggestion to contain %q, got %q", expected, serviceErr.Suggestion)
 		}
+	}
+}
+
+func TestServiceErrorUsesServiceFailureSuggestion(t *testing.T) {
+	err := serviceError(newRleHTTPError(http.StatusInternalServerError, []byte(
+		`{"code":"SandboxCreationFailed","message":"The sandbox could not be created."}`,
+	)))
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	if !ok {
+		t.Fatalf("expected ServiceError, got %T", err)
+	}
+	if serviceErr.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", serviceErr.StatusCode)
+	}
+	if serviceErr.ErrorCode != "SandboxCreationFailed" {
+		t.Fatalf("expected service error code, got %q", serviceErr.ErrorCode)
+	}
+	if serviceErr.Suggestion != "Retry later. If the problem persists, check the RLE service status and logs." {
+		t.Fatalf("unexpected service failure suggestion: %q", serviceErr.Suggestion)
 	}
 }
 
@@ -133,7 +233,7 @@ func TestResolvePublishStateUsesSavedProjectEndpointFallback(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	if err := saveRleState(rleState{
-		Name:            "saved-env",
+		EnvironmentName: "saved-env",
 		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/saved-project",
 	}); err != nil {
 		t.Fatal(err)

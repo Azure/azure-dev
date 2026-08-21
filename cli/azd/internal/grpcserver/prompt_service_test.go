@@ -1493,7 +1493,6 @@ func TestConvertSessionEvent_BasicFields(t *testing.T) {
 	t.Parallel()
 	ts := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
 	event := agent.SessionEvent{
-		Type:      copilot.SessionEventTypeAssistantMessage,
 		Timestamp: ts,
 		Data:      &copilot.AssistantMessageData{Content: "hello"},
 	}
@@ -1505,7 +1504,6 @@ func TestConvertSessionEvent_BasicFields(t *testing.T) {
 func TestConvertSessionEvent_WithToolStart(t *testing.T) {
 	t.Parallel()
 	event := agent.SessionEvent{
-		Type:      copilot.SessionEventTypeToolExecutionStart,
 		Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Data: &copilot.ToolExecutionStartData{
 			ToolName:   "read_file",
@@ -1520,9 +1518,8 @@ func TestConvertSessionEvent_WithToolStart(t *testing.T) {
 
 func TestConvertSessionEvent_WithUsageData(t *testing.T) {
 	t.Parallel()
-	inputTokens := float64(500)
+	inputTokens := int64(500)
 	event := agent.SessionEvent{
-		Type:      copilot.SessionEventTypeAssistantUsage,
 		Timestamp: time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC),
 		Data: &copilot.AssistantUsageData{
 			Model:       "gpt-4o",

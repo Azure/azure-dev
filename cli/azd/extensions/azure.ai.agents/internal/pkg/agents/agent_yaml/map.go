@@ -8,6 +8,7 @@ import (
 	"maps"
 	"math"
 	"regexp"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -91,10 +92,39 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 func mapRaiConfig(policies []Policy) *agent_api.RaiConfig {
 	for _, policy := range policies {
 		if policy.Type == PolicyTypeRai && policy.RaiPolicyName != "" {
-			return &agent_api.RaiConfig{RaiPolicyName: policy.RaiPolicyName}
+			return &agent_api.RaiConfig{
+				RaiPolicyName:         policy.RaiPolicyName,
+				InvocationsModeration: mapInvocationsModeration(policy.InvocationsModeration),
+			}
 		}
 	}
 	return nil
+}
+
+// mapInvocationsModeration translates the YAML invocations-moderation block into its
+// data-plane representation. It returns nil when the block is absent so agents that do not
+// configure it serialize exactly as before.
+func mapInvocationsModeration(moderation *InvocationsModeration) *agent_api.InvocationsModeration {
+	if moderation == nil {
+		return nil
+	}
+
+	mapped := &agent_api.InvocationsModeration{
+		InputContentType:  agent_api.RaiInvocationContentType(moderation.InputContentType),
+		OutputContentType: agent_api.RaiInvocationContentType(moderation.OutputContentType),
+		ResponseMode:      agent_api.RaiInvocationMode(moderation.ResponseMode),
+		InputPaths:        slices.Clone(moderation.InputPaths),
+		OutputPaths:       slices.Clone(moderation.OutputPaths),
+	}
+
+	for _, selector := range moderation.StreamSelectors {
+		mapped.StreamSelectors = append(mapped.StreamSelectors, agent_api.SseTextSelector{
+			EventType: selector.EventType,
+			TextField: selector.TextField,
+		})
+	}
+
+	return mapped
 }
 
 // MapEndpointAndCard maps YAML-layer endpoint and card fields to API model types

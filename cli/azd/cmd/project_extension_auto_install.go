@@ -351,18 +351,11 @@ func resolveExtensionDependencies(
 			continue
 		}
 
-		matches, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
-			Id:      dependency.Id,
-			Version: dependency.Version,
-			Source:  parent.Source,
-		})
-		// More than one match means several sources publish the dependency, which installation
-		// rejects as ambiguous rather than choosing between them.
-		if err != nil || len(matches) != 1 {
+		dependencyExtension, err := extensionManager.ResolveDependency(ctx, parent, dependency)
+		if err != nil {
 			continue
 		}
 
-		dependencyExtension := matches[0]
 		version, err := extensions.ResolveExtensionVersion(dependencyExtension, dependency.Version, nil)
 		if err != nil {
 			continue

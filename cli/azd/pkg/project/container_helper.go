@@ -41,7 +41,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/benbjohnson/clock"
 	"github.com/sethvargo/go-retry"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -624,8 +623,10 @@ func (ch *ContainerHelper) Publish(
 ) (_ *ServicePublishResult, err error) {
 	ctx, span := tracing.Start(ctx, events.ContainerPublishEvent)
 	defer func() { span.EndWithStatus(err) }()
+	// Record the user-configured remote-build preference (serviceConfig.Docker.RemoteBuild),
+	// which already carries the requested true/false value.
 	span.SetAttributes(
-		attribute.Bool("container.remotebuild", serviceConfig.Docker.RemoteBuild),
+		fields.ContainerRemoteBuildKey.Bool(serviceConfig.Docker.RemoteBuild),
 	)
 
 	var remoteImage string

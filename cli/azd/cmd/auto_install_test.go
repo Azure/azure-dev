@@ -88,6 +88,35 @@ func (m *fakeExtensionAutoInstallManager) GetInstalled(
 	return nil, fmt.Errorf("extension not installed")
 }
 
+func (m *fakeExtensionAutoInstallManager) ResolveDependency(
+	ctx context.Context,
+	parent *extensions.ExtensionMetadata,
+	dependency extensions.ExtensionDependency,
+) (*extensions.ExtensionMetadata, error) {
+	parentSource := parent.Source
+	if parentSource == "" {
+		parentSource = extensions.MainRegistryName
+	}
+	sources := []string{parentSource}
+	if !strings.EqualFold(parentSource, extensions.MainRegistryName) {
+		sources = append(sources, extensions.MainRegistryName)
+	}
+	for _, source := range sources {
+		matches, err := m.FindExtensions(ctx, &extensions.FilterOptions{
+			Id:      dependency.Id,
+			Version: dependency.Version,
+			Source:  source,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(matches) == 1 {
+			return matches[0], nil
+		}
+	}
+	return nil, fmt.Errorf("dependency not found")
+}
+
 func (m *fakeExtensionAutoInstallManager) Install(
 	_ context.Context,
 	extension *extensions.ExtensionMetadata,
@@ -1872,6 +1901,22 @@ func TestResolveExtensionRequirementDependencies(t *testing.T) {
 		t.Parallel()
 
 		resolved := resolve(newManager([]extensions.ExtensionDependency{{Id: "demo.b"}}))
+
+		assert.Equal(t, []string{"demo.b", "demo.c"}, slices.Sorted(maps.Keys(resolved)))
+		assert.True(t, resolvedDependencyProvidesProvider(
+			resolved["demo.c"],
+			extensions.ServiceTargetProviderCapability,
+			"demo",
+		))
+	})
+
+	t.Run("resolves dependencies from main registry fallback", func(t *testing.T) {
+		t.Parallel()
+
+		manager := newManager([]extensions.ExtensionDependency{{Id: "demo.b"}})
+		manager.available[0].Source = "local"
+
+		resolved := resolve(manager)
 
 		assert.Equal(t, []string{"demo.b", "demo.c"}, slices.Sorted(maps.Keys(resolved)))
 		assert.True(t, resolvedDependencyProvidesProvider(

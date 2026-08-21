@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"syscall"
 	"time"
 
@@ -236,12 +237,12 @@ func resolveConfigRefs(data []byte, baseDir, name string) ([]byte, error) {
 // CLI command refused, and later the reverse. Callers differ in how they obtain
 // the map and what they do with it; everything between is here.
 func resolveEvalRefs(values map[string]any, baseDir string) (map[string]any, error) {
-	// Read before resolution, which removes the directive. Both routes gate the
-	// rescue on it so they cannot disagree: without it, the CLI's no-`$ref` fast
-	// path would skip nesting while the deploy path still applied it, and a
-	// hand-written entry carrying rubric keys would deploy and then be refused
-	// by every command that reads it.
-	spliced := containsRefDirective(values)
+	// Read before resolution, which consumes the directive. Both routes gate the
+	// rescue on the same answer so they cannot disagree: without it, the CLI's
+	// no-`$ref` fast path would skip nesting while the deploy path still applied
+	// it, and a hand-written entry carrying rubric keys would deploy and then be
+	// refused by every command that reads it.
+	spliced, visible := splicedEvaluators(values)
 
 	resolved, err := foundry.ResolveFileRefs(values, baseDir)
 	if err != nil {
@@ -250,10 +251,39 @@ func resolveEvalRefs(values map[string]any, baseDir string) (map[string]any, err
 	// `$ref` is a directive rather than configuration, and the strict decoder
 	// would report the leftover as a mistyped key.
 	delete(resolved, "$ref")
-	if spliced {
-		nestSplicedRubrics(resolved)
-	}
+	nestSplicedRubrics(resolved, spliced, visible)
 	return resolved, nil
+}
+
+// splicedEvaluators reports which evaluator entries carry an include of their
+// own, and whether the list could be read at all.
+//
+// Entry level rather than document level. Asking only whether the document used
+// `$ref` anywhere made one entry's meaning depend on another's: a directive on
+// an unrelated dataset switched the rescue on for the whole file, so a
+// hand-written `dimensions:` -- a mistake the strict decoder exists to report --
+// was filed as rubric content and published instead. The same evaluator was
+// then refused or accepted according to a neighbour.
+func splicedEvaluators(values map[string]any) (map[int]bool, bool) {
+	entries, ok := values["evaluators"].([]any)
+	if !ok {
+		// The configuration is itself behind a `$ref`, so its entries do not
+		// exist yet and nothing here was hand-written to protect.
+		return nil, false
+	}
+	spliced := map[int]bool{}
+	for i, entry := range entries {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, has := m[refDirective]; has {
+			spliced[i] = true
+		}
+	}
+	// Position survives resolution: entries are replaced in place, never added
+	// or dropped.
+	return spliced, true
 }
 
 // containsRefDirective reports whether the document uses `$ref` anywhere.
@@ -273,11 +303,7 @@ func containsRefDirective(value any) bool {
 			}
 		}
 	case []any:
-		for _, child := range typed {
-			if containsRefDirective(child) {
-				return true
-			}
-		}
+		return slices.ContainsFunc(typed, containsRefDirective)
 	}
 	return false
 }
@@ -299,18 +325,22 @@ var evaluatorDeclKeys = map[string]bool{
 // from the service -- so its keys land beside `name` and the strict decoder
 // rejects them. Moving them is what lets a `$ref` name a rubric.
 //
-// `dimensions` is what marks the leftovers as a rubric rather than a typo, and
-// it is the same key normalizeRubricBody insists on before it will treat a
-// document as a definition. Without that gate this would be a catch-all by
-// another name, filing a misspelled `name` as rubric content and publishing it
-// to the service instead of reporting it.
+// Only the entries that carried a directive are touched. `dimensions` then
+// marks the leftovers as a rubric rather than a typo, and it is the same key
+// normalizeRubricBody insists on before it will treat a document as a
+// definition. Without both gates this is a catch-all by another name, filing a
+// misspelled `name` as rubric content and publishing it to the service instead
+// of reporting it.
 //
-// Structural rather than positional on purpose: an earlier version marked
-// entries by index before resolution, which cannot see the evaluators inside a
-// config that is itself behind a `$ref` -- the layout the README documents.
-func nestSplicedRubrics(resolved map[string]any) {
+// visible is false when the configuration is itself behind a `$ref`, where the
+// entries only exist after resolution and there is nothing written here to tell
+// them apart from. That is the layout the README documents.
+func nestSplicedRubrics(resolved map[string]any, spliced map[int]bool, visible bool) {
 	entries, _ := resolved["evaluators"].([]any)
-	for _, entry := range entries {
+	for i, entry := range entries {
+		if visible && !spliced[i] {
+			continue
+		}
 		m, ok := entry.(map[string]any)
 		if !ok {
 			continue

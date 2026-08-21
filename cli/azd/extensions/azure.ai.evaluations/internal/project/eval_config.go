@@ -215,13 +215,27 @@ func (c *EvalConfig) EvaluatorDeclaration(name string) (*EvaluatorDecl, bool) {
 	return nil, false
 }
 
+// CarriesItsRubric reports whether this configuration owns the evaluator and
+// has to publish it, rather than referring to a built-in or to one already
+// registered under this name.
+//
+// Both fields have to be tested, and this is the only place that should test
+// them. Validation forbids declaring the rubric twice, so `definition` implies
+// an empty `source`: a selector written as `source == ""` reads as "nothing
+// local to publish" but silently drops every evaluator carrying its rubric
+// inline. That shipped once already -- the eval was created bound to an
+// evaluator the service had never been told about.
+func (d EvaluatorDecl) CarriesItsRubric() bool {
+	return d.Source != "" || d.Definition != nil
+}
+
 // CustomEvaluators are the catalog entries this configuration owns -- the ones
 // carrying a rubric, either as a local source or written out under
 // `definition`, published before the evals that name them.
 func (c *EvalConfig) CustomEvaluators() []EvaluatorDecl {
 	var owned []EvaluatorDecl
 	for _, decl := range c.Evaluators {
-		if decl.Source == "" && decl.Definition == nil {
+		if !decl.CarriesItsRubric() {
 			continue
 		}
 		owned = append(owned, decl)

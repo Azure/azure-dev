@@ -175,6 +175,43 @@ evaluators:
 	require.NoError(t, checkCatalogEntryIsEditable(dir, cfg, "dataset", "golden"))
 }
 
+// An evaluator pinned to a registered version is refused, for the same reason
+// an inline rubric is: there is nowhere to record the generated file.
+//
+// A pin says the rubric already lives in the service. Writing `source:` beside
+// it leaves the entry claiming both, which the next read rejects -- again after
+// the job has been billed and the file written.
+func TestGenerateRefusesAnEvaluatorPinnedToAVersion(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, project.EvalConfigBase), []byte(`
+evaluators:
+  - name: quality
+    version: "3"
+`), 0o600))
+
+	err := checkCatalogEntryIsEditable(
+		dir, mustOpenForEdit(t, dir), "evaluator", "quality")
+
+	require.Error(t, err, "a pin and a file in one entry is refused on the next read")
+	assert.Contains(t, err.Error(), "quality")
+	assert.Contains(t, err.Error(), "version", "the reader has to be told what is already there")
+}
+
+// A dataset may carry a file and a version together -- the version says which
+// one to publish -- so the pin must not make it uneditable.
+func TestGenerateStillUpdatesAVersionedDataset(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, project.EvalConfigBase), []byte(`
+datasets:
+  - name: golden
+    file: ./datasets/golden.jsonl
+    version: "4"
+`), 0o600))
+
+	require.NoError(t, checkCatalogEntryIsEditable(
+		dir, mustOpenForEdit(t, dir), "dataset", "golden"))
+}
+
 func mustOpenForEdit(t *testing.T, dir string) *project.EvalConfig {
 	t.Helper()
 	cfg, err := project.OpenEvalConfigForEdit(dir)

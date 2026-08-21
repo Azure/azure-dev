@@ -69,16 +69,17 @@ func addEvaluatorToCatalog(cmd *cobra.Command, evalDir string, ref *project.Arti
 // checkCatalogEntryIsEditable refuses a name this command cannot rewrite in
 // place without corrupting the entry.
 //
-// Three shapes reach this. A pure `$ref` has no name here at all, so the
+// Four shapes reach this. A pure `$ref` has no name here at all, so the
 // duplicate scan had nothing to match on and appended a second entry with the
 // same name -- a collision that surfaced only on the next resolving read. A
 // `$ref` carrying an overlay `name` does match, and updating it in place writes
 // `source:` beside the directive, so resolution then produces a rubric and a
 // source and the configuration is rejected for declaring it twice. An entry
-// already carrying its rubric under `definition:` fails that same way with no
-// include involved, because recording the generated file leaves both in one
-// entry -- and it fails after the generation job has been billed and the file
-// written, which is why it is refused here rather than left to the next read.
+// already carrying its rubric under `definition:`, and an entry pinned to a
+// registered `version:`, both fail the same way with no include involved:
+// recording the generated file leaves two rubrics, or a pin and a file, in one
+// entry. Each of those is refused on the next read -- after the generation job
+// has been billed and the file written, which is why they are refused here.
 //
 // A configuration that will not resolve is left to the commands that resolve it:
 // failing a generate over an unrelated broken include would be its own surprise.
@@ -89,6 +90,8 @@ func checkCatalogEntryIsEditable(evalDir string, asWritten *project.EvalConfig, 
 			return messages.CatalogNameBehindAnInclude(kind, name)
 		case entry.inlineRubric:
 			return messages.EvaluatorRubricWrittenInPlace(name)
+		case entry.pinned:
+			return messages.EvaluatorPinnedToAVersion(name)
 		}
 		return nil
 	}
@@ -110,6 +113,9 @@ type catalogEntryShape struct {
 	ref string
 	// inlineRubric is an evaluator holding its rubric under `definition:`.
 	inlineRubric bool
+	// pinned is an evaluator naming a registered `version:`. A dataset may hold
+	// a file and a version together; an evaluator may not.
+	pinned bool
 }
 
 // catalogEntryShapeOf returns how the entry was written, and whether the
@@ -125,7 +131,11 @@ func catalogEntryShapeOf(cfg *project.EvalConfig, kind, name string) (catalogEnt
 		return catalogEntryShape{}, false
 	}
 	if decl, ok := cfg.EvaluatorDeclaration(name); ok {
-		return catalogEntryShape{ref: decl.Ref, inlineRubric: decl.Definition != nil}, true
+		return catalogEntryShape{
+			ref:          decl.Ref,
+			inlineRubric: decl.Definition != nil,
+			pinned:       decl.Version != "",
+		}, true
 	}
 	return catalogEntryShape{}, false
 }

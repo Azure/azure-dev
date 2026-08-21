@@ -1458,6 +1458,17 @@ func EvaluatorRubricWrittenInPlace(name string) error {
 		name)
 }
 
+// EvaluatorPinnedToAVersion reports an evaluator pinned to a registered
+// version, which leaves nowhere to record a generated file.
+func EvaluatorPinnedToAVersion(name string) error {
+	return fmt.Errorf(
+		"evaluator %q is pinned to a registered `version:`, so this command cannot "+
+			"record a generated file against it: an entry holding both a `version:` "+
+			"and a `source:` is refused on the next read. Remove the pin to publish "+
+			"from a file, or generate under a different name",
+		name)
+}
+
 // ReadingServiceConfig reports the service entry failing to serialize.
 func ReadingServiceConfig(err error) error {
 	return fmt.Errorf("reading the eval service configuration: %w", err)

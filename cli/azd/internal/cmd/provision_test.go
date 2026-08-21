@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -29,10 +30,18 @@ import (
 // mockProjectManager implements project.ProjectManager for testing.
 type mockProjectManager struct {
 	mock.Mock
+
+	initializedServices  []*project.ServiceConfig
+	ensureAllToolsFilter project.ServiceFilterPredicate
 }
 
 func (m *mockProjectManager) Initialize(ctx context.Context, projectConfig *project.ProjectConfig) error {
 	return m.Called(ctx, projectConfig).Error(0)
+}
+
+func (m *mockProjectManager) InitializeServices(ctx context.Context, services []*project.ServiceConfig) error {
+	m.initializedServices = services
+	return m.Called(ctx, services).Error(0)
 }
 
 func (m *mockProjectManager) InitializeFrameworks(
@@ -45,8 +54,9 @@ func (m *mockProjectManager) InitializeFrameworks(
 }
 
 func (m *mockProjectManager) EnsureAllTools(
-	ctx context.Context, projectConfig *project.ProjectConfig, _ project.ServiceFilterPredicate,
+	ctx context.Context, projectConfig *project.ProjectConfig, filter project.ServiceFilterPredicate,
 ) error {
+	m.ensureAllToolsFilter = filter
 	return m.Called(ctx, projectConfig).Error(0)
 }
 
@@ -155,7 +165,7 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 	)
 
 	pm := &mockProjectManager{}
-	pm.On("Initialize", mock.Anything, mock.Anything).Return(nil)
+	pm.On("InitializeServices", mock.Anything, mock.Anything).Return(nil)
 	pm.On("EnsureAllTools", mock.Anything, mock.Anything).Return(nil)
 
 	projectConfig := &project.ProjectConfig{
@@ -166,6 +176,18 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 			Path:     "infra",
 			Module:   "main",
 		},
+	}
+	connection := &project.ServiceConfig{
+		Name:      "connection",
+		Host:      project.ServiceTargetKind("azure.ai.connection"),
+		Project:   projectConfig,
+		Condition: osutil.NewExpandableString("false"),
+		AdditionalProperties: map[string]any{
+			"$ref": "missing-connection.yaml",
+		},
+	}
+	projectConfig.Services = map[string]*project.ServiceConfig{
+		connection.Name: connection,
 	}
 	projectConfig.EventDispatcher = ext.NewEventDispatcher[project.ProjectLifecycleEventArgs](
 		project.ProjectEvents...,
@@ -197,4 +219,7 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 
 	// Verify project manager was called (action didn't exit prematurely)
 	pm.AssertExpectations(t)
+	require.Empty(t, pm.initializedServices)
+	require.NotNil(t, pm.ensureAllToolsFilter)
+	require.False(t, pm.ensureAllToolsFilter(connection))
 }

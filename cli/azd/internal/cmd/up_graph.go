@@ -808,12 +808,12 @@ func (u *UpGraphAction) initializeServices(ctx context.Context) ([]*project.Serv
 		return nil, fmt.Errorf("enumerating services: %w", err)
 	}
 
-	if err := u.projectManager.Initialize(ctx, u.projectConfig); err != nil {
+	if err := u.projectManager.InitializeServices(ctx, stableServices); err != nil {
 		return nil, fmt.Errorf("initializing project: %w", err)
 	}
 
 	if err := u.projectManager.EnsureServiceTargetTools(
-		ctx, u.projectConfig, func(_ *project.ServiceConfig) bool { return true },
+		ctx, u.projectConfig, selectedServiceFilter(stableServices),
 	); err != nil {
 		return nil, fmt.Errorf("ensuring service tools: %w", err)
 	}

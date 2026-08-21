@@ -47,6 +47,9 @@ type ProjectManager interface {
 	// handlers to participate in the lifecycle of an azd project
 	Initialize(ctx context.Context, projectConfig *ProjectConfig) error
 
+	// InitializeServices initializes the supplied services.
+	InitializeServices(ctx context.Context, services []*ServiceConfig) error
+
 	// InitializeFrameworks initializes only the framework service for each service in the project,
 	// best-effort: unlike Initialize, it never resolves service targets, and a per-service failure
 	// is skipped rather than fatal. It exists for read-only flows such as `env refresh`, which
@@ -118,14 +121,18 @@ func (pm *projectManager) Initialize(ctx context.Context, projectConfig *Project
 		return err
 	}
 
-	serviceTargets := make([]string, 0, len(servicesStable))
-	for _, svc := range servicesStable {
+	return pm.InitializeServices(ctx, servicesStable)
+}
+
+func (pm *projectManager) InitializeServices(ctx context.Context, services []*ServiceConfig) error {
+	serviceTargets := make([]string, 0, len(services))
+	for _, svc := range services {
 		serviceTargets = append(serviceTargets, string(svc.Host))
 	}
 
 	tracing.SetUsageAttributes(fields.ProjectServiceTargetsKey.StringSlice(serviceTargets))
 
-	for _, svc := range servicesStable {
+	for _, svc := range services {
 		if err := pm.serviceManager.Initialize(ctx, svc); err != nil {
 			return fmt.Errorf("initializing service '%s', %w", svc.Name, err)
 		}

@@ -4,6 +4,7 @@
 package foundry
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,6 +42,17 @@ func TestEvaluateCondition(t *testing.T) {
 		{name: "literal 0", value: "0", want: false},
 		{name: "int 1", value: 1, want: true},
 		{name: "int 0", value: 0, want: false},
+		{name: "json number 1", value: json.Number("1"), want: true},
+		{name: "int8 1", value: int8(1), want: true},
+		{name: "int16 1", value: int16(1), want: true},
+		{name: "int32 1", value: int32(1), want: true},
+		{name: "int64 1", value: int64(1), want: true},
+		{name: "uint 1", value: uint(1), want: true},
+		{name: "uint8 1", value: uint8(1), want: true},
+		{name: "uint16 1", value: uint16(1), want: true},
+		{name: "uint32 1", value: uint32(1), want: true},
+		{name: "uint64 1", value: uint64(1), want: true},
+		{name: "float32 1", value: float32(1), want: true},
 		{name: "float 1", value: 1.0, want: true},
 		{
 			name:   "expanded true",
@@ -65,6 +77,11 @@ func TestEvaluateCondition(t *testing.T) {
 			value:  "${MISSING}",
 			getenv: lookup,
 			want:   false,
+		},
+		{
+			name:  "nil environment lookup",
+			value: "${MISSING}",
+			want:  false,
 		},
 		{
 			name:    "map is invalid",

@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -140,6 +141,7 @@ type fakeServiceManager struct {
 	initErr                    error
 	initFrameworkErr           error
 	initFrameworkErrForService map[string]error
+	initializedServices        []string
 }
 
 func (f *fakeServiceManager) GetRequiredTools(
@@ -149,6 +151,7 @@ func (f *fakeServiceManager) GetRequiredTools(
 }
 
 func (f *fakeServiceManager) Initialize(ctx context.Context, sc *ServiceConfig) error {
+	f.initializedServices = append(f.initializedServices, sc.Name)
 	return f.initErr
 }
 
@@ -302,6 +305,56 @@ func Test_projectManager_Initialize(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "initializing service 'api'")
 	})
+}
+
+func Test_projectManager_InitializeServices_RespectsRootConditions(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition string
+		wantInit  bool
+	}{
+		{name: "RootFalse", condition: "false"},
+		{name: "Whitespace", condition: " "},
+		{name: "RootAbsent", wantInit: true},
+		{name: "RootTrue", condition: "true", wantInit: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectConfig := &ProjectConfig{
+				Path:     t.TempDir(),
+				Services: map[string]*ServiceConfig{},
+			}
+			serviceConfig := &ServiceConfig{
+				Name:      "connection",
+				Host:      ServiceTargetKind("azure.ai.connection"),
+				Project:   projectConfig,
+				Condition: osutil.NewExpandableString(tt.condition),
+				AdditionalProperties: map[string]any{
+					"$ref": "missing-connection.yaml",
+				},
+			}
+			projectConfig.Services[serviceConfig.Name] = serviceConfig
+
+			serviceManager := &fakeServiceManager{frameworkSvc: &noOpProject{}}
+			projectManager := &projectManager{
+				importManager:  NewImportManager(nil),
+				serviceManager: serviceManager,
+			}
+
+			services, err := projectManager.importManager.ServiceStableFiltered(
+				t.Context(), projectConfig, "", func(string) string { return "" },
+			)
+			require.NoError(t, err)
+			require.NoError(t, projectManager.InitializeServices(t.Context(), services))
+
+			if tt.wantInit {
+				assert.Equal(t, []string{"connection"}, serviceManager.initializedServices)
+			} else {
+				assert.Empty(t, serviceManager.initializedServices)
+			}
+		})
+	}
 }
 
 func Test_projectManager_InitializeFrameworks(t *testing.T) {

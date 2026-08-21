@@ -249,6 +249,11 @@ func (m *mockDeployProjectManager) Initialize(ctx context.Context, projectConfig
 	return args.Error(0)
 }
 
+func (m *mockDeployProjectManager) InitializeServices(ctx context.Context, services []*project.ServiceConfig) error {
+	args := m.Called(services)
+	return args.Error(0)
+}
+
 func (m *mockDeployProjectManager) InitializeFrameworks(
 	ctx context.Context, projectConfig *project.ProjectConfig,
 ) ([]*project.ServiceConfig, []project.ServiceFrameworkInitFailure, error) {

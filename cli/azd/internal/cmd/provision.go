@@ -230,14 +230,6 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	startTime := time.Now()
 
-	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
-		return nil, err
-	}
-
-	if err := p.projectManager.EnsureAllTools(ctx, p.projectConfig, nil); err != nil {
-		return nil, err
-	}
-
 	// Apply --subscription and --location flags to the environment before provisioning
 	envChanged := false
 	if p.flags.subscription != "" {
@@ -268,6 +260,19 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if err := p.envManager.Save(ctx, p.env); err != nil {
 			return nil, fmt.Errorf("saving environment: %w", err)
 		}
+	}
+
+	services, err := p.importManager.ServiceStableFiltered(ctx, p.projectConfig, "", p.env.Getenv)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := p.projectManager.InitializeServices(ctx, services); err != nil {
+		return nil, err
+	}
+
+	if err := p.projectManager.EnsureAllTools(ctx, p.projectConfig, selectedServiceFilter(services)); err != nil {
+		return nil, err
 	}
 
 	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
@@ -309,6 +314,18 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// UX — environment details banner, JSON state dumps, and OpenAI /
 	// Responsible AI error wrappers.
 	return p.provisionLayersGraph(ctx, layers, startTime, previewMode)
+}
+
+func selectedServiceFilter(services []*project.ServiceConfig) project.ServiceFilterPredicate {
+	serviceNames := make(map[string]struct{}, len(services))
+	for _, service := range services {
+		serviceNames[service.Name] = struct{}{}
+	}
+
+	return func(service *project.ServiceConfig) bool {
+		_, ok := serviceNames[service.Name]
+		return ok
+	}
 }
 
 // deployResultToUx creates the ux element to display from a provision preview

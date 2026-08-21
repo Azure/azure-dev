@@ -315,6 +315,10 @@ func (m *mockProjectManager) Initialize(ctx context.Context, projectConfig *proj
 	return m.Called(ctx, projectConfig).Error(0)
 }
 
+func (m *mockProjectManager) InitializeServices(ctx context.Context, services []*project.ServiceConfig) error {
+	return m.Called(ctx, services).Error(0)
+}
+
 func (m *mockProjectManager) InitializeFrameworks(
 	ctx context.Context, projectConfig *project.ProjectConfig,
 ) ([]*project.ServiceConfig, []project.ServiceFrameworkInitFailure, error) {

@@ -204,6 +204,53 @@ func TestRemovePendingProvisionReason(t *testing.T) {
 	})
 }
 
+func TestRecordPendingConnectionProvision(t *testing.T) {
+	t.Parallel()
+
+	t.Run("emitted writes connection reason", func(t *testing.T) {
+		t.Parallel()
+
+		envServer := &testEnvironmentServiceServer{
+			environments: map[string]*azdext.Environment{"test-env": {Name: "test-env"}},
+		}
+		azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+		recordPendingConnectionProvision(
+			context.Background(), azdClient, "test-env", 1)
+		require.Equal(t, pendingReasonConnection, envServer.values["test-env"][pendingProvisionEnvVar])
+	})
+
+	t.Run("zero emitted is no-op", func(t *testing.T) {
+		t.Parallel()
+
+		envServer := &testEnvironmentServiceServer{
+			environments: map[string]*azdext.Environment{"test-env": {Name: "test-env"}},
+		}
+		azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+		recordPendingConnectionProvision(
+			context.Background(), azdClient, "test-env", 0)
+		_, hit := envServer.values["test-env"][pendingProvisionEnvVar]
+		require.False(t, hit)
+	})
+
+	t.Run("sorts with existing reasons", func(t *testing.T) {
+		t.Parallel()
+
+		envServer := &testEnvironmentServiceServer{
+			environments: map[string]*azdext.Environment{"test-env": {Name: "test-env"}},
+			values: map[string]map[string]string{
+				"test-env": {pendingProvisionEnvVar: "project"},
+			},
+		}
+		azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+		recordPendingConnectionProvision(
+			context.Background(), azdClient, "test-env", 2)
+		require.Equal(t, "connection,project", envServer.values["test-env"][pendingProvisionEnvVar])
+	})
+}
+
 func TestClearPendingProvisionReasons(t *testing.T) {
 	t.Parallel()
 

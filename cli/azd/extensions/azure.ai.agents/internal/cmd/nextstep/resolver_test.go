@@ -105,6 +105,15 @@ func TestResolveAfterInit(t *testing.T) {
 			wantTrailing:   "azd deploy",
 		},
 		{
+			name: "new connection in existing project → provision",
+			state: &State{
+				HasProjectEndpoint:      true,
+				PendingProvisionReasons: []string{"connection"},
+			},
+			wantPrimaryHas: "azd provision",
+			wantTrailing:   "azd deploy",
+		},
+		{
 			// Multiple pending reasons collected during init —
 			// e.g. user left ACR blank and configured a new model.
 			// Still single `azd provision` suggestion (resolver

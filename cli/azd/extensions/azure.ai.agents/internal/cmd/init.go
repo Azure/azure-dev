@@ -3412,14 +3412,21 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// Emit the sibling Foundry resource services (project + deployments,
 	// connections, toolboxes) and wire the agent's uses: to them. A selected
 	// existing project contributes its endpoint so provision reuses it.
-	if err := emitResourceServices(
+	emittedConnections, err := emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
 		a.selectedFoundryProject.Endpoint(),
 		resourceDeployments, resourceConnections, resourceToolboxes,
-	); err != nil {
+	)
+	if err != nil {
 		return err
 	}
+	recordPendingConnectionProvision(
+		ctx,
+		a.azdClient,
+		a.environment.Name,
+		emittedConnections,
+	)
 
 	printAgentAddedMessage(agentDef.Name)
 
@@ -3491,7 +3498,7 @@ func (a *InitAction) addVoiceAgentToProject(
 	// project. Voice init emits no deployment/connection/toolbox siblings; managed
 	// models are service-hosted, and BYOM model deployments are referenced from
 	// azure.yaml and must already exist.
-	if err := emitResourceServices(
+	if _, err := emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
 		a.selectedFoundryProject.Endpoint(),

@@ -272,9 +272,9 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 |-----------|------|-------------|
 | `service.host` | string | Azure service host |
 | `service.name` | string | Azure service name (on service call spans) |
-| `service.statusCode` | measurement | HTTP status code |
+| `service.statusCode` | measurement or string | Numeric HTTP/service status code; AAD authentication errors use a string OAuth status such as `invalid_grant` |
 | `service.method` | string | HTTP method |
-| `service.errorCode` | measurement | Service-specific error code |
+| `service.errorCode` | string | Service-specific error code; some ARM deployment errors encode structured JSON |
 | `service.correlationId` | string | Azure correlation ID |
 
 ### Tool Invocation Attributes (External CLI Tools)
@@ -574,7 +574,7 @@ The first-run middleware is not currently registered, so these fields are not em
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `exegraph.step.count` | measurement | Total steps in graph |
-| `exegraph.max_concurrency` | string | Effective concurrency limit |
+| `exegraph.max_concurrency` | measurement | Effective concurrency limit |
 | `exegraph.error_policy` | string | `fail_fast` or `continue_on_error` |
 | `exegraph.step.name` | string | Step name. **SHA-256 hashed** — embeds user-defined service/layer names from `azure.yaml` |
 | `exegraph.step.deps` | string[] | Step dependencies (other step names). **SHA-256 hashed** for the same reason |
@@ -618,7 +618,7 @@ The first-run middleware is not currently registered, so these fields are not em
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `agent.fix.attempts` | string | Number of fix attempts |
+| `agent.fix.attempts` | measurement | Number of fix attempts |
 </details>
 
 ### Execution Environments

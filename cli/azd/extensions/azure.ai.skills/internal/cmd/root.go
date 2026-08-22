@@ -21,8 +21,8 @@ at runtime — from your terminal.
 
 Skills carry either inline JSON (description + Markdown instructions) or a
 packaged ZIP archive bundling SKILL.md plus any sibling assets. Use this
-command group to create, update, show, list, download, and delete skills in
-a Foundry project.`,
+command group to compose skills into azure.yaml or create, update, show, list,
+download, and delete skills in a Foundry project.`,
 	})
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true
@@ -49,6 +49,7 @@ a Foundry project.`,
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 	rootCmd.AddCommand(newContextCommand())
 
+	rootCmd.AddCommand(newAddCommand(extCtx))
 	rootCmd.AddCommand(newCreateCommand(extCtx))
 	rootCmd.AddCommand(newUpdateCommand(extCtx))
 	rootCmd.AddCommand(newShowCommand(extCtx))

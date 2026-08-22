@@ -41,6 +41,24 @@ func TestTelemetryEventConstants(t *testing.T) {
 // rejected by TestNoRawTelemetryAttributes (below).
 func TestTelemetryFieldConstants(t *testing.T) {
 	t.Parallel()
+	t.Run("ResourceFields", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			key             fields.AttributeKey
+			expectedName    string
+			expectedPurpose fields.Purpose
+		}{
+			{fields.ServiceNameKey, "service.name", fields.PerformanceAndHealth},
+			{fields.ServiceVersionKey, "service.version", fields.FeatureInsight},
+			{fields.OSTypeKey, "os.type", fields.FeatureInsight},
+		}
+		for _, tt := range tests {
+			require.Equal(t, tt.expectedName, string(tt.key.Key))
+			require.Equal(t, fields.SystemMetadata, tt.key.Classification)
+			require.Equal(t, tt.expectedPurpose, tt.key.Purpose)
+		}
+	})
+
 	// Auth command telemetry fields
 	t.Run("AuthFields", func(t *testing.T) {
 		t.Parallel()

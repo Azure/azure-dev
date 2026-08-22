@@ -146,11 +146,11 @@
     {
       "$comment": "codeConfiguration, policies, protocols, agentEndpoint and sessionConfiguration are hosted-agent-only: load/deploy conversion drops them for every other kind, so accepting them elsewhere validates configuration that silently has no effect. Reject them up front, matching the runtime check in ValidateAgentDefinition.",
       "if": {
+        "required": ["kind"],
         "not": {
           "properties": {
             "kind": { "const": "hosted" }
-          },
-          "required": ["kind"]
+          }
         }
       },
       "then": {

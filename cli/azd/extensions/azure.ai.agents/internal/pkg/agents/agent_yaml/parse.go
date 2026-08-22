@@ -47,7 +47,44 @@ func LoadAndValidateAgentManifest(manifestYamlContent []byte) (*AgentManifest, e
 		return nil, err
 	}
 
+	// The remarshal above reflects the typed conversion, which drops
+	// hosted-only fields before ValidateAgentDefinition can see them, so
+	// check the raw template too (#9623).
+	var rawManifest map[string]any
+	if err := yaml.Unmarshal(manifestYamlContent, &rawManifest); err == nil {
+		if tmpl, ok := rawManifest["template"].(map[string]any); ok {
+			if rawBytes, err := yaml.Marshal(tmpl); err == nil {
+				if err := ValidateHostedOnlyFields(rawBytes); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
 	return &manifest, nil
+}
+
+// ValidateHostedOnlyFields reports hosted-only fields present on a non-hosted
+// agent definition. The input may be YAML or JSON bytes (YAML is a superset),
+// and the raw keys are inspected so empty or partial values are also reported.
+func ValidateHostedOnlyFields(templateBytes []byte) error {
+	var agentDef AgentDefinition
+	if err := yaml.Unmarshal(templateBytes, &agentDef); err != nil {
+		return nil // not our error to report; shape errors surface elsewhere
+	}
+	if agentDef.Kind == AgentKindHosted || !IsValidAgentKind(agentDef.Kind) {
+		return nil
+	}
+	errs := validateNoHostedOnlyFields(templateBytes, agentDef.Kind)
+	if len(errs) == 0 {
+		return nil
+	}
+	var msg strings.Builder
+	msg.WriteString("validation failed:")
+	for _, err := range errs {
+		msg.WriteString(fmt.Sprintf("\n  - %s", err))
+	}
+	return fmt.Errorf("%s", msg.String())
 }
 
 // Returns a specific agent definition based on the "kind" field in the template

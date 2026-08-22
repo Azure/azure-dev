@@ -1177,6 +1177,11 @@ func resolveVars(s string, env map[string]string) (string, error) {
 	return out, nil
 }
 
+// ResolveEnvironmentValue expands environment references.
+func ResolveEnvironmentValue(value string, env map[string]string) (string, error) {
+	return resolveVars(value, env)
+}
+
 // normalizeSubscription accepts a bare GUID or a /subscriptions/<guid>[/...]
 // path and returns the bare GUID.
 func normalizeSubscription(s string) (string, error) {

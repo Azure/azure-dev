@@ -131,17 +131,17 @@ not emitted by azd spans.
 |-------|----------|----------------|---------|-------|
 | Service host | `service.host` | SystemMetadata | PerformanceAndHealth | |
 | Service name | `service.name` | SystemMetadata | PerformanceAndHealth | |
-| Status code | `service.statusCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
+| Status code | `service.statusCode` | SystemMetadata | PerformanceAndHealth | **Measurement or string** — numeric HTTP/service status codes are measurements; AAD authentication errors emit string OAuth statuses such as `invalid_grant` |
 | Method | `service.method` | SystemMetadata | PerformanceAndHealth | |
-| Error code | `service.errorCode` | SystemMetadata | PerformanceAndHealth | **Measurement**; ARM deployment errors encode JSON objects with `error.code` and `error.arm.frame_index` |
+| Error code | `service.errorCode` | SystemMetadata | PerformanceAndHealth | String; ARM deployment errors encode JSON objects with `error.code` and `error.arm.frame_index` |
 | Correlation ID | `service.correlationId` | SystemMetadata | PerformanceAndHealth | |
 
 ### Tool Attributes
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Tool name | `tool.name` | SystemMetadata | FeatureInsight |
-| Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth |
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Tool name | `tool.name` | SystemMetadata | PerformanceAndHealth | |
+| Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 
 ### Performance
 
@@ -208,9 +208,9 @@ not emitted by azd spans.
 
 ### Agent
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Fix attempts | `agent.fix.attempts` | SystemMetadata | PerformanceAndHealth |
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Fix attempts | `agent.fix.attempts` | SystemMetadata | FeatureInsight | **Measurement** |
 
 ### Extensions
 
@@ -415,7 +415,7 @@ The execution graph powers the parallel `up` / `provision` / `deploy` engine.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Step count | `exegraph.step.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of steps in the graph |
-| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | Effective concurrency limit used for the run |
+| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — effective concurrency limit used for the run |
 | Error policy | `exegraph.error_policy` | SystemMetadata | PerformanceAndHealth | `fail_fast` or `continue_on_error` |
 | Step name | `exegraph.step.name` | SystemMetadata | PerformanceAndHealth | **Hashed** via `fields.StringHashed` — step names embed user-chosen service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
 | Step deps | `exegraph.step.deps` | SystemMetadata | PerformanceAndHealth | **Hashed slice** via `fields.StringSliceHashed` — each entry is another step name that embeds user-chosen identifiers |

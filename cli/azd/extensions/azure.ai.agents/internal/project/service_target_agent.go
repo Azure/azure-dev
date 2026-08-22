@@ -130,6 +130,19 @@ func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 	)
 }
 
+func buildVoiceWSProtocolURL(projectEndpoint, agentName string) string {
+	projectEndpoint = strings.TrimSpace(projectEndpoint)
+	u, err := url.Parse(projectEndpoint)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"wss://%s%s/agents/%s/endpoint/protocols/voice?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
+	)
+}
+
 // ProtocolEnvSuffix pairs a user-facing label with the env var suffix
 // used in AGENT_{KEY}_{SUFFIX}_ENDPOINT variables.
 type ProtocolEnvSuffix struct {
@@ -1386,13 +1399,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	// Voice agents (kind: prompt-voice) use a fundamentally different data-plane
-	// contract than hosted/workflow agents: a synchronous POST to /voice_agents
-	// that returns an AgentObject directly, with no version/polling model. Resolve
-	// the definition first — honoring the AGENT_DEFINITION_PATH override precedence
-	// so an override drives this dispatch just as it does the container path — and
-	// route voice to an isolated method so the container deploy path below stays
-	// byte-for-byte unchanged.
+	// Voice agents (kind: prompt-voice) use a different data-plane contract than
+	// hosted/workflow agents. Resolve the definition first — honoring the
+	// AGENT_DEFINITION_PATH override precedence so an override drives this dispatch
+	// just as it does the container path — and route voice to an isolated method so
+	// the container deploy path below stays byte-for-byte unchanged.
 	if isVoice {
 		return p.deployVoiceAgent(ctx, serviceConfig, voiceAgent, azdEnv, progress)
 	}
@@ -2192,12 +2203,50 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 //nolint:gosec // env var key name, not a credential
 const voiceOverriddenHostEnvKey = "AZURE_VOICE_OVERRIDDEN_HOST"
 
+// voiceAgentAPIEnvKey controls which voice deployment API azd uses. It defaults
+// to the legacy /voice_agents path while the unified API rolls out regionally.
+// Supported values:
+//   - legacy: POST /voice_agents with object-shaped audio.output.voice
+//   - unified: POST /agents or /agents/{name} with object-shaped audio.output.voice
+//   - unified-flat: POST /agents or /agents/{name} with flat audio.output.voice
+//
+//nolint:gosec // env var key name, not a credential
+const voiceAgentAPIEnvKey = "AZURE_VOICE_AGENT_API"
+
+type voiceAgentAPIMode string
+
+const (
+	voiceAgentAPIModeLegacy      voiceAgentAPIMode = "legacy"
+	voiceAgentAPIModeUnified     voiceAgentAPIMode = "unified"
+	voiceAgentAPIModeUnifiedFlat voiceAgentAPIMode = "unified-flat"
+)
+
+func resolveVoiceAgentAPIMode(azdEnv map[string]string) (voiceAgentAPIMode, error) {
+	mode := strings.TrimSpace(azdEnv[voiceAgentAPIEnvKey])
+	if mode == "" {
+		mode = strings.TrimSpace(os.Getenv(voiceAgentAPIEnvKey))
+	}
+	mode = strings.ToLower(strings.ReplaceAll(mode, "_", "-"))
+	if mode == "" {
+		return voiceAgentAPIModeLegacy, nil
+	}
+	switch voiceAgentAPIMode(mode) {
+	case voiceAgentAPIModeLegacy, voiceAgentAPIModeUnified, voiceAgentAPIModeUnifiedFlat:
+		return voiceAgentAPIMode(mode), nil
+	default:
+		return "", fmt.Errorf(
+			"%s must be one of %q, %q, or %q",
+			voiceAgentAPIEnvKey, voiceAgentAPIModeLegacy, voiceAgentAPIModeUnified, voiceAgentAPIModeUnifiedFlat,
+		)
+	}
+}
+
 // deployVoiceAgent deploys a declarative (managed) voice agent (kind:
-// prompt-voice) to the Foundry service. Unlike hosted agents, voice agents are
-// created synchronously via a single POST to /voice_agents that returns the
-// created AgentObject directly — there is no container build, no agent-version
-// object, and no active-state polling. This method is intentionally isolated
-// from the container deploy path so the two contracts never entangle.
+// prompt-voice) to the Foundry service. The legacy /voice_agents API remains
+// the default while unified /agents rolls out regionally; AZURE_VOICE_AGENT_API
+// can opt into unified modes for regression and TiP validation. This method is
+// intentionally isolated from the container deploy path so the two contracts
+// never entangle.
 func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
@@ -2207,7 +2256,28 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Deploying voice agent")
 
-	request, err := agent_yaml.CreateVoiceAgentAPIRequest(va)
+	apiMode, err := resolveVoiceAgentAPIMode(azdEnv)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			err.Error(),
+			fmt.Sprintf("set %s to legacy, unified, or unified-flat", voiceAgentAPIEnvKey),
+		)
+	}
+	if hasAdvancedVoiceConfig(va) && apiMode != voiceAgentAPIModeUnifiedFlat {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"advanced prompt-voice settings require the unified flat voice API mode",
+			fmt.Sprintf("set %s to unified-flat", voiceAgentAPIEnvKey),
+		)
+	}
+
+	var request *agent_api.CreateAgentRequest
+	if apiMode == voiceAgentAPIModeUnifiedFlat {
+		request, err = agent_yaml.CreateVoiceAgentAPIRequestFlat(va)
+	} else {
+		request, err = agent_yaml.CreateVoiceAgentAPIRequest(va)
+	}
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -2228,24 +2298,30 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 
 	agentClient := agent_api.NewAgentClient(projectEndpoint, p.credential)
 
-	progress("Creating voice agent")
-	agentObject, err := agentClient.CreateVoiceAgent(
-		ctx, request, agent_api.AgentEndpointAPIVersion, azdEnv[voiceOverriddenHostEnvKey],
+	serviceKey := p.getServiceKey(serviceConfig.Name)
+	agentObject, deployOp, err := p.deployVoiceAgentWithMode(
+		ctx, agentClient, request, apiMode, azdEnv, progress,
 	)
 	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+		return nil, exterrors.ServiceFromAzure(err, deployOp)
+	}
+	if err := validateVoiceAgentDeployResponse(agentObject, apiMode); err != nil {
+		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "Voice agent '%s' created successfully!\n", agentObject.Name)
+	fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
 
 	// Persist NAME first and ENDPOINT last. ENDPOINT is used as the voice deploy
 	// completion marker by other commands, so avoid writing it before NAME.
-	serviceKey := p.getServiceKey(serviceConfig.Name)
-	baseEndpoint := fmt.Sprintf(
-		"%s/voice_agents/%s", strings.TrimRight(projectEndpoint, "/"), agentObject.Name,
-	)
+	baseEndpoint := voiceAgentEndpoint(projectEndpoint, agentObject.Name, apiMode)
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	versionValue := ""
+	if apiMode != voiceAgentAPIModeLegacy {
+		versionValue = agentObject.Versions.Latest.Version
+	}
 	for _, envVar := range []struct{ key, value string }{
 		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
+		{versionKey, versionValue},
 		{fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey), baseEndpoint},
 	} {
 		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -2269,6 +2345,89 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}}
 
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
+}
+
+func hasAdvancedVoiceConfig(va agent_yaml.VoiceAgent) bool {
+	return len(va.StructuredInputs) > 0 ||
+		va.Audio != nil ||
+		len(va.OutputModalities) > 0 ||
+		len(va.Tools) > 0 ||
+		len(va.Avatar) > 0 ||
+		len(va.Greeting) > 0 ||
+		len(va.Handoff) > 0 ||
+		va.ToolChoice != nil ||
+		va.ParallelToolCalls != nil ||
+		va.MaxOutputTokens != nil ||
+		len(va.Include) > 0
+}
+
+func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject, apiMode voiceAgentAPIMode) error {
+	if agentObject == nil {
+		return fmt.Errorf("malformed voice agent service response: missing agent object")
+	}
+	if strings.TrimSpace(agentObject.Name) == "" {
+		return fmt.Errorf("malformed voice agent service response: missing agent name")
+	}
+	if apiMode != voiceAgentAPIModeLegacy && strings.TrimSpace(agentObject.Versions.Latest.Version) == "" {
+		return fmt.Errorf("malformed voice agent service response: missing latest agent version")
+	}
+	return nil
+}
+
+func (p *AgentServiceTargetProvider) deployVoiceAgentWithMode(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	request *agent_api.CreateAgentRequest,
+	apiMode voiceAgentAPIMode,
+	azdEnv map[string]string,
+	progress azdext.ProgressReporter,
+) (*agent_api.AgentObject, string, error) {
+	overriddenHost := azdEnv[voiceOverriddenHostEnvKey]
+	if apiMode == voiceAgentAPIModeLegacy {
+		progress("Creating voice agent using legacy API")
+		agentObject, err := agentClient.CreateVoiceAgent(ctx, request, agent_api.AgentEndpointAPIVersion, overriddenHost)
+		return agentObject, exterrors.OpCreateAgent, err
+	}
+
+	remoteAgent, getErr := agentClient.GetVoiceAgentUnified(
+		ctx, request.Name, agent_api.AgentEndpointAPIVersion, overriddenHost,
+	)
+	shouldUpdate, decisionErr := shouldUpdateVoiceAgent(remoteAgent, getErr)
+	if decisionErr != nil {
+		return nil, exterrors.OpCreateAgent, decisionErr
+	}
+	if shouldUpdate {
+		progress("Updating voice agent using unified API")
+		updateRequest := &agent_api.UpdateAgentRequest{
+			CreateAgentVersionRequest: request.CreateAgentVersionRequest,
+		}
+		agentObject, err := agentClient.UpdateVoiceAgentUnified(
+			ctx, request.Name, updateRequest, agent_api.AgentEndpointAPIVersion, overriddenHost,
+		)
+		return agentObject, exterrors.OpUpdateAgent, err
+	}
+
+	progress("Creating voice agent using unified API")
+	agentObject, err := agentClient.CreateVoiceAgentUnified(ctx, request, agent_api.AgentEndpointAPIVersion, overriddenHost)
+	return agentObject, exterrors.OpCreateAgent, err
+}
+
+func shouldUpdateVoiceAgent(remoteAgent *agent_api.AgentObject, getErr error) (bool, error) {
+	if getErr == nil {
+		return remoteAgent != nil, nil
+	}
+	if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); ok && respErr.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	return false, getErr
+}
+
+func voiceAgentEndpoint(projectEndpoint string, agentName string, apiMode voiceAgentAPIMode) string {
+	trimmedEndpoint := strings.TrimRight(projectEndpoint, "/")
+	if apiMode == voiceAgentAPIModeLegacy {
+		return fmt.Sprintf("%s/voice_agents/%s", trimmedEndpoint, agentName)
+	}
+	return buildVoiceWSProtocolURL(trimmedEndpoint, agentName)
 }
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,

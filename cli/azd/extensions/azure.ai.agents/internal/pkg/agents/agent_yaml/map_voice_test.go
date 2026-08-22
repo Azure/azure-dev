@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"encoding/json"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -117,7 +118,8 @@ func TestCreateVoiceAgentAPIRequest_Defaults(t *testing.T) {
 		t.Fatalf("Audio pipeline not populated: %+v", def.Audio)
 	}
 	in := def.Audio.Input
-	if in.Format == nil || in.Format.Type != defaultVoiceAudioType || in.Format.Rate != defaultVoiceAudioRate {
+	if in.Format == nil || in.Format.Type != defaultVoiceAudioType || in.Format.Rate == nil ||
+		*in.Format.Rate != defaultVoiceAudioRate {
 		t.Errorf("input format = %+v", in.Format)
 	}
 	if in.TurnDetection == nil || in.TurnDetection.Type != defaultVoiceTurnDetectionType {
@@ -127,7 +129,8 @@ func TestCreateVoiceAgentAPIRequest_Defaults(t *testing.T) {
 		t.Errorf("transcription = %+v", in.Transcription)
 	}
 	out := def.Audio.Output
-	if out.Format == nil || out.Format.Type != defaultVoiceAudioType || out.Format.Rate != defaultVoiceAudioRate {
+	if out.Format == nil || out.Format.Type != defaultVoiceAudioType || out.Format.Rate == nil ||
+		*out.Format.Rate != defaultVoiceAudioRate {
 		t.Errorf("output format = %+v", out.Format)
 	}
 	// Default voice is the DragonHD Azure Neural voice.
@@ -169,6 +172,193 @@ func TestCreateVoiceAgentAPIRequest_Overrides(t *testing.T) {
 	}
 	if def.Store == nil || !*def.Store {
 		t.Errorf("Store = %v, want true", def.Store)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequestFlat_UsesFlatOutputShape(t *testing.T) {
+	t.Parallel()
+	voice := "alloy"
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-flat"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Voice:           &voice,
+	}
+
+	req, err := CreateVoiceAgentAPIRequestFlat(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
+	if def.Audio.Output.Voice != "alloy" {
+		t.Errorf("Voice = %q, want alloy", def.Audio.Output.Voice)
+	}
+	if def.Audio.Output.VoiceType != "openai" {
+		t.Errorf("VoiceType = %q, want openai", def.Audio.Output.VoiceType)
+	}
+	if def.Audio.Output.VoiceLocale != "" {
+		t.Errorf("VoiceLocale = %q, want empty", def.Audio.Output.VoiceLocale)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequestFlat_AzureVoiceLocale(t *testing.T) {
+	t.Parallel()
+	voice := "en-US-Ava:DragonHDLatestNeural"
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-flat"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Voice:           &voice,
+	}
+
+	req, err := CreateVoiceAgentAPIRequestFlat(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
+	if def.Audio.Output.Voice != voice {
+		t.Errorf("Voice = %q, want %q", def.Audio.Output.Voice, voice)
+	}
+	if def.Audio.Output.VoiceType != "azure-standard" {
+		t.Errorf("VoiceType = %q, want azure-standard", def.Audio.Output.VoiceType)
+	}
+	if def.Audio.Output.VoiceLocale != "en-US" {
+		t.Errorf("VoiceLocale = %q, want en-US", def.Audio.Output.VoiceLocale)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequestFlat_MarshalWireShape(t *testing.T) {
+	t.Parallel()
+	voice := "en-US-Ava:DragonHDLatestNeural"
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-flat"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Voice:           &voice,
+	}
+
+	req, err := CreateVoiceAgentAPIRequestFlat(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	var wire map[string]any
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	definition := wire["definition"].(map[string]any)
+	audio := definition["audio"].(map[string]any)
+	output := audio["output"].(map[string]any)
+
+	if got, ok := output["voice"].(string); !ok || got != voice {
+		t.Fatalf("audio.output.voice = %#v, want string %q", output["voice"], voice)
+	}
+	if got := output["voice_type"]; got != "azure-standard" {
+		t.Fatalf("audio.output.voice_type = %#v, want azure-standard", got)
+	}
+	if got := output["voice_locale"]; got != "en-US" {
+		t.Fatalf("audio.output.voice_locale = %#v, want en-US", got)
+	}
+	if _, exists := output["type"]; exists {
+		t.Fatalf("audio.output.type should not be present in flat wire shape: %#v", output)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequestFlat_AdvancedSettingsWireShape(t *testing.T) {
+	t.Parallel()
+	inRate := 16000
+	outRate := 24000
+	threshold := 0.6
+	speechDurationMs := 120
+	createResponse := true
+	removeFillerWords := true
+	interruptResponse := true
+	autoTruncate := true
+	speed := 1.1
+	parallelToolCalls := true
+	style := "cheerful"
+	pitch := "+0Hz"
+	rate := "+0%"
+	volume := "+0%"
+	instructions := "You are {{persona}}, a concise voice assistant."
+	language := "en-US"
+	prompt := "Contoso terms"
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-advanced"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Instructions:    &instructions,
+		StructuredInputs: map[string]any{
+			"persona": map[string]any{"description": "Assistant persona", "defaultValue": "Ada"},
+		},
+		Audio: &VoiceAudio{
+			Input: &VoiceAudioInput{
+				Format:           &VoiceAudioFormat{Type: "audio/pcmu", Rate: &inRate},
+				NoiseReduction:   &VoiceNoiseReduction{Type: "near_field"},
+				EchoCancellation: map[string]any{"type": "server_echo_cancellation", "channels": 1},
+				TurnDetection: &VoiceTurnDetection{
+					Type:              "azure_semantic_vad",
+					Threshold:         &threshold,
+					SpeechDurationMs:  &speechDurationMs,
+					CreateResponse:    &createResponse,
+					RemoveFillerWords: &removeFillerWords,
+					InterruptResponse: &interruptResponse,
+					Languages:         []string{"en-US"},
+					AutoTruncate:      &autoTruncate,
+				},
+				Transcription: &VoiceTranscription{Model: "whisper-1", Language: &language, Prompt: &prompt},
+			},
+			Output: &VoiceAudioOutput{
+				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: &outRate},
+				Voice: &VoiceConfig{
+					Type: "azure_standard", Name: "en-US-AvaNeural", Style: &style,
+					Pitch: &pitch, Rate: &rate, Locale: &language, Volume: &volume,
+				},
+				Speed: &speed,
+			},
+		},
+		OutputModalities:  []string{"audio", "text"},
+		Tools:             []map[string]any{{"type": "system", "name": "end_conversation"}},
+		Avatar:            map[string]any{"type": "video_avatar", "character": "lisa", "output_protocol": "webrtc"},
+		Greeting:          map[string]any{"type": "template", "text": "Hello {{persona}}"},
+		ToolChoice:        "auto",
+		ParallelToolCalls: &parallelToolCalls,
+		MaxOutputTokens:   "inf",
+		Include:           []string{"item.input_audio_transcription.phrases"},
+	}
+
+	req, err := CreateVoiceAgentAPIRequestFlat(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	var wire map[string]any
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	def := wire["definition"].(map[string]any)
+	input := def["audio"].(map[string]any)["input"].(map[string]any)
+	output := def["audio"].(map[string]any)["output"].(map[string]any)
+	structured := def["structured_inputs"].(map[string]any)["persona"].(map[string]any)
+
+	if structured["default_value"] != "Ada" || structured["defaultValue"] != nil {
+		t.Fatalf("structured input default was not mapped to wire shape: %#v", structured)
+	}
+	if output["voice"] != "en-US-AvaNeural" || output["voice_type"] != "azure-standard" || output["style"] != style {
+		t.Fatalf("output voice flat shape not mapped: %#v", output)
+	}
+	if input["echo_cancellation"].(map[string]any)["type"] != "server_echo_cancellation" {
+		t.Fatalf("echo cancellation not mapped: %#v", input["echo_cancellation"])
+	}
+	if def["tool_choice"] != "auto" || def["max_output_tokens"] != "inf" {
+		t.Fatalf("response options not mapped: %#v", def)
+	}
+	if len(def["tools"].([]any)) != 1 || def["avatar"].(map[string]any)["character"] != "lisa" {
+		t.Fatalf("tools/avatar not mapped: %#v", def)
 	}
 }
 

@@ -107,6 +107,12 @@ func (s *stubEnvironmentService) SetValue(
 	return nil, nil
 }
 
+func (s *stubEnvironmentService) UnsetValue(
+	_ context.Context, _ *UnsetEnvRequest, _ ...grpc.CallOption,
+) (*EmptyResponse, error) {
+	return nil, nil
+}
+
 func (s *stubEnvironmentService) GetConfig(
 	_ context.Context, _ *GetConfigRequest, _ ...grpc.CallOption,
 ) (*GetConfigResponse, error) {

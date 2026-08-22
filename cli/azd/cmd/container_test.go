@@ -498,6 +498,48 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 	})
 }
 
+func TestMergeWorkflowArgs_StepFlagsShadowInheritedGlobals(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		stepArgs   []string
+		globalArgs []string
+		expected   []string
+	}{
+		{
+			name:       "equals syntax",
+			stepArgs:   []string{"deploy", "--output=none"},
+			globalArgs: []string{"--output=json", "--debug=true"},
+			expected:   []string{"deploy", "--output=none", "--debug=true"},
+		},
+		{
+			name:       "separate value syntax",
+			stepArgs:   []string{"deploy", "--output", "none"},
+			globalArgs: []string{"--output", "json", "--debug=true"},
+			expected:   []string{"deploy", "--output", "none", "--debug=true"},
+		},
+		{
+			name:       "environment remains step scoped",
+			stepArgs:   []string{"env", "set", "KEY", "VALUE", "--environment=child"},
+			globalArgs: []string{"--environment=parent", "--output=json"},
+			expected:   []string{"env", "set", "KEY", "VALUE", "--environment=child", "--output=json"},
+		},
+		{
+			name:       "environment is inherited when not overridden",
+			stepArgs:   []string{"deploy"},
+			globalArgs: []string{"--environment=parent", "--output=json"},
+			expected:   []string{"deploy", "--environment=parent", "--output=json"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, mergeWorkflowArgs(tt.stepArgs, tt.globalArgs))
+		})
+	}
+}
+
 func Test_NewRootCmd_ReregistrationReplacesProjectConfig(t *testing.T) {
 	// This test proves the regression from PR #7171: when workflowCmdAdapter called
 	// NewRootCmd (with full registration) for each workflow step, registerCommonDependencies

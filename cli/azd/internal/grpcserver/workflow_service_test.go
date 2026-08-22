@@ -16,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
@@ -113,6 +114,79 @@ func Test_WorkflowService_Run_Success(t *testing.T) {
 		require.Equal(t, codes.AlreadyExists, status.Code(err))
 		require.Nil(t, resp)
 	})
+}
+
+func Test_WorkflowService_Run_PreservesStructuredErrorDetail(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	expectedErr := &azdext.ServiceError{
+		Message:     "request failed",
+		ErrorCode:   "RequestFailed",
+		StatusCode:  422,
+		ServiceName: "example.azure.com",
+		Suggestion:  "Check the request and try again",
+		Links: []errorhandler.ErrorLink{{
+			URL:   "https://aka.ms/request-failed",
+			Title: "Request failure help",
+		}},
+	}
+	testRunner := &TestWorkflowRunner{}
+	testRunner.On("ExecuteContext", mock.Anything, mock.Anything).Return(expectedErr)
+	service := NewWorkflowService(workflow.NewRunner(testRunner, mockContext.Console))
+
+	_, err := service.Run(*mockContext.Context, validWorkflowRequest())
+
+	require.Error(t, err)
+	require.Equal(t, codes.Internal, status.Code(err))
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Len(t, st.Details(), 1)
+	detail, ok := st.Details()[0].(*azdext.WorkflowErrorDetail)
+	require.True(t, ok)
+	require.NotNil(t, detail.GetError())
+	require.Equal(t, "request failed", detail.GetError().GetMessage())
+	require.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_SERVICE, detail.GetError().GetOrigin())
+	require.Equal(t, "Check the request and try again", detail.GetError().GetSuggestion())
+	require.Equal(t, "https://aka.ms/request-failed", detail.GetError().GetLinks()[0].GetUrl())
+	require.Equal(t, "Request failure help", detail.GetError().GetLinks()[0].GetTitle())
+	require.Equal(t, "RequestFailed", detail.GetError().GetServiceError().GetErrorCode())
+	require.Equal(t, int32(422), detail.GetError().GetServiceError().GetStatusCode())
+	require.Equal(t, "example.azure.com", detail.GetError().GetServiceError().GetServiceName())
+}
+
+func Test_WorkflowService_Run_ContextErrorsUseStandardCodes(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		code codes.Code
+	}{
+		{name: "Canceled", err: context.Canceled, code: codes.Canceled},
+		{name: "DeadlineExceeded", err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			testRunner := &TestWorkflowRunner{}
+			testRunner.On("ExecuteContext", mock.Anything, mock.Anything).Return(fmt.Errorf("step failed: %w", tt.err))
+			service := NewWorkflowService(workflow.NewRunner(testRunner, mockContext.Console))
+
+			_, err := service.Run(*mockContext.Context, validWorkflowRequest())
+
+			require.Error(t, err)
+			require.Equal(t, tt.code, status.Code(err))
+		})
+	}
+}
+
+func validWorkflowRequest() *azdext.RunWorkflowRequest {
+	return &azdext.RunWorkflowRequest{
+		Workflow: &azdext.Workflow{
+			Name: "testWorkflow",
+			Steps: []*azdext.WorkflowStep{{
+				Command: &azdext.WorkflowCommand{Args: []string{"provision"}},
+			}},
+		},
+	}
 }
 
 // Updated TestWorkflowRunner using testify/mock.

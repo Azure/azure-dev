@@ -215,6 +215,34 @@ func ActionableErrorDetailFromStatus(st *status.Status) *ActionableErrorDetail {
 	return nil
 }
 
+// WorkflowErrorDetailFromError extracts a delegated workflow error detail from
+// a gRPC status error, including errors wrapped with additional context.
+func WorkflowErrorDetailFromError(err error) *WorkflowErrorDetail {
+	st, ok := GRPCStatusFromError(err)
+	if !ok {
+		return nil
+	}
+
+	for _, detail := range st.Details() {
+		if workflow, ok := detail.(*WorkflowErrorDetail); ok {
+			return workflow
+		}
+	}
+
+	return nil
+}
+
+// UnwrapWorkflowError extracts and converts a delegated workflow error from a
+// gRPC status error. It returns nil when the error has no workflow detail.
+func UnwrapWorkflowError(err error) error {
+	detail := WorkflowErrorDetailFromError(err)
+	if detail == nil {
+		return nil
+	}
+
+	return UnwrapError(detail.GetError())
+}
+
 func authLocalErrorCode(st *status.Status) string {
 	switch AuthErrorReason(st) {
 	case AuthErrorReasonNotLoggedIn:

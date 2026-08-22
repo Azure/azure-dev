@@ -2798,6 +2798,42 @@ func TestProjectService_UnsetServiceConfig_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestProjectService_UnsetServiceConfig_DottedServiceName(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, `name: test-project
+services:
+  my.agent:
+    host: azure.ai.agent
+    endpoint: https://example.test
+    custom:
+      endpoint: https://custom.example.test
+`)
+
+	_, err := svc.UnsetServiceConfig(t.Context(), &azdext.UnsetServiceConfigRequest{
+		ServiceName: "my.agent",
+		Path:        "endpoint",
+	})
+	require.NoError(t, err)
+
+	projectSvc := svc.(*projectService)
+	azdContext, err := projectSvc.lazyAzdContext.GetValue()
+	require.NoError(t, err)
+	cfg, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	services, ok := cfg.Raw()["services"].(map[string]any)
+	require.True(t, ok)
+	serviceConfig, ok := services["my.agent"].(map[string]any)
+	require.True(t, ok)
+	_, found := config.NewConfig(serviceConfig).Get("endpoint")
+	require.False(t, found)
+	customEndpoint, found := config.NewConfig(serviceConfig).Get("custom.endpoint")
+	require.True(t, found)
+	require.Equal(t, "https://custom.example.test", customEndpoint)
+	_, found = services["my"]
+	require.False(t, found)
+}
+
 func TestProjectService_AddService_HappyPath(t *testing.T) {
 	t.Parallel()
 	svc := newProjectServiceWithYaml(t, "name: test-project\n")

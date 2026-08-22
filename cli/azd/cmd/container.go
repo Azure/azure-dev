@@ -1055,9 +1055,7 @@ type workflowCmdAdapter struct {
 // ExecuteContext implements workflow.AzdCommandRunner.
 // It rebuilds the cobra command tree on each call to ensure a clean slate,
 // preventing "context canceled" errors from stale command state during retries.
-// Global flags from the original process invocation are appended to the step args
-// so that persistent flags (e.g., --trace-log-file) are properly parsed and visible
-// to telemetry middleware on the fresh command tree.
+// Inherited flags are merged into step args without overriding step flags.
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) error {
 	// Cancel the child context when the step completes so that any event handlers
 	// registered during this step (e.g. by service target Initialize methods) are
@@ -1068,12 +1066,63 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 	rootCmd := w.newCommand()
 	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
 	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).
-	mergedArgs := append(slices.Clone(args), w.globalArgs...)
+	mergedArgs := mergeWorkflowArgs(args, w.globalArgs)
 	if mergedArgs == nil {
 		mergedArgs = []string{}
 	}
 	rootCmd.SetArgs(mergedArgs)
 	return rootCmd.ExecuteContext(childCtx)
+}
+
+// mergeWorkflowArgs combines step and inherited flags. Step flags take
+// precedence for both --name=value and --name value syntax.
+func mergeWorkflowArgs(stepArgs, globalArgs []string) []string {
+	stepFlags := make(map[string]struct{})
+	for _, arg := range stepArgs {
+		if arg == "--" {
+			break
+		}
+
+		if name, ok := longFlagName(arg); ok {
+			stepFlags[name] = struct{}{}
+		}
+	}
+
+	merged := slices.Clone(stepArgs)
+	for i := 0; i < len(globalArgs); {
+		arg := globalArgs[i]
+		name, ok := longFlagName(arg)
+		end := i + 1
+		if ok && !strings.Contains(arg, "=") && end < len(globalArgs) &&
+			!strings.HasPrefix(globalArgs[end], "-") {
+			end++
+		}
+
+		if !ok {
+			merged = append(merged, globalArgs[i:end]...)
+		} else if _, shadowed := stepFlags[name]; !shadowed {
+			merged = append(merged, globalArgs[i:end]...)
+		}
+		i = end
+	}
+
+	return merged
+}
+
+func longFlagName(arg string) (string, bool) {
+	if !strings.HasPrefix(arg, "--") || len(arg) == 2 {
+		return "", false
+	}
+
+	name := strings.TrimPrefix(arg, "--")
+	if equal := strings.IndexByte(name, '='); equal >= 0 {
+		name = name[:equal]
+	}
+	if name == "" {
+		return "", false
+	}
+
+	return name, true
 }
 
 // extractGlobalArgs extracts global flag arguments from the process command line.

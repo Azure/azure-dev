@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -41,10 +42,24 @@ func (s *workflowService) Run(ctx context.Context, request *azdext.RunWorkflowRe
 	}
 
 	if err := s.runner.Run(ctx, azdWorkflow); err != nil {
-		if errors.Is(err, environment.ErrExists) {
-			return nil, status.Errorf(codes.AlreadyExists, "failed to run workflow: %v", err)
+		code := codes.Internal
+		switch {
+		case errors.Is(err, context.Canceled):
+			code = codes.Canceled
+		case errors.Is(err, context.DeadlineExceeded):
+			code = codes.DeadlineExceeded
+		case errors.Is(err, environment.ErrExists):
+			code = codes.AlreadyExists
 		}
-		return nil, status.Errorf(codes.Internal, "failed to run workflow: %v", err)
+
+		st, statusErr := status.New(code, fmt.Sprintf("failed to run workflow: %v", err)).
+			WithDetails(&azdext.WorkflowErrorDetail{
+				Error: azdext.WrapError(err),
+			})
+		if statusErr != nil {
+			return nil, statusErr
+		}
+		return nil, st.Err()
 	}
 
 	return &azdext.EmptyResponse{}, nil

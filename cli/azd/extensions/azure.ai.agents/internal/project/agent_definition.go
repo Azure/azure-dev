@@ -4,7 +4,6 @@
 package project
 
 import (
-	"google.golang.org/protobuf/encoding/protojson"
 	"fmt"
 	"maps"
 	"os"
@@ -22,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/braydonk/yaml"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 

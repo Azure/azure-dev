@@ -701,13 +701,18 @@ func exposesInvocationsProtocol(protocols []ProtocolVersionRecord) bool {
 
 // hostedOnlyAgentFields are dropped by load/deploy conversion for every
 // non-hosted agent kind, so their presence validates configuration that
-// silently has no effect.
+// silently has no effect. The service-property spelling is camelCase; the
+// standalone agent.yaml authoring spelling is snake_case for three of the
+// five fields (yaml.go ContainerAgent tags), so both are checked.
 var hostedOnlyAgentFields = []string{
 	"codeConfiguration",
+	"code_configuration",
 	"policies",
 	"protocols",
 	"agentEndpoint",
+	"agent_endpoint",
 	"sessionConfiguration",
+	"session_configuration",
 }
 
 // validateNoHostedOnlyFields rejects hosted-only fields on non-hosted agent

@@ -147,6 +147,24 @@ model:
 	}
 }
 
+// TestValidateAgentDefinition_HostedOnlySnakeCaseRejectedOnPromptVoice covers
+// the standalone agent.yaml authoring spellings (yaml.go ContainerAgent tags).
+func TestValidateAgentDefinition_HostedOnlySnakeCaseRejectedOnPromptVoice(t *testing.T) {
+	for _, field := range []string{"code_configuration", "agent_endpoint", "session_configuration"} {
+		yamlContent := []byte(fmt.Sprintf(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+%s: {}
+`, field))
+		err := ValidateAgentDefinition(yamlContent)
+		if err == nil || !strings.Contains(err.Error(), "is only supported for 'hosted' agents") {
+			t.Fatalf("expected '%s' rejection error, got: %v", field, err)
+		}
+	}
+}
+
 // TestValidateAgentDefinition_HostedFieldsStillAllowedOnHosted pins that the
 // new checks don't fire for the hosted kind.
 func TestValidateAgentDefinition_HostedFieldsStillAllowedOnHosted(t *testing.T) {

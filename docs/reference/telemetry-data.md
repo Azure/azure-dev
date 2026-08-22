@@ -268,14 +268,17 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 
 ### Service Attributes (Azure API Calls)
 
+These attributes are emitted as classified error details. `MapError` prefixes their declared
+`service.*` keys with `error.`, so the table lists the runtime keys used in queries.
+
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `service.host` | string | Azure service host |
-| `service.name` | string | Azure service name (on service call spans) |
-| `service.statusCode` | measurement or string | Numeric HTTP/service status code; AAD authentication errors use a string OAuth status such as `invalid_grant` |
-| `service.method` | string | HTTP method |
-| `service.errorCode` | string | Service-specific error code; some ARM deployment errors encode structured JSON |
-| `service.correlationId` | string | Azure correlation ID |
+| `error.service.host` | string | Azure service host |
+| `error.service.name` | string | Azure service name associated with the failure |
+| `error.service.statusCode` | measurement or string | Numeric HTTP/service status code; AAD authentication errors use a string OAuth status such as `invalid_grant` |
+| `error.service.method` | string | HTTP method |
+| `error.service.errorCode` | string | Service-specific error code; some ARM deployment errors encode structured JSON |
+| `error.service.correlationId` | string | Azure correlation ID |
 
 ### Tool Invocation Attributes (External CLI Tools)
 
@@ -767,7 +770,7 @@ Many failed commands produce the catch-all result code `internal.errors_errorStr
 
 **To investigate these errors:**
 1. Check `error.chain.types` (if available) for the full error type chain
-2. Correlate with `service.errorCode` or `service.statusCode` for Azure API failures
+2. Correlate with `error.service.errorCode` or `error.service.statusCode` for Azure API failures
 3. Look at surrounding span context (same `OperationId`) for additional detail
 
 ### Hashed Fields and Template Joins

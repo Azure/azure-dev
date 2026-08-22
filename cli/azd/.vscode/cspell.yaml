@@ -494,6 +494,9 @@ overrides:
     words:
       - forbidigo
       - Logf
+  - filename: extensions/azure.ai.dataset/README.md
+    words:
+      - CODEOWNERS
   - filename: .golangci.yaml
     words:
       - forbidigo

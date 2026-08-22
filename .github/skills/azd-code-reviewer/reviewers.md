@@ -315,8 +315,8 @@ If there are no {domain}-specific concerns, contribute no findings.
 
 When applying the Observability Expert lens to telemetry field changes:
 
-- Verify every new exported, package-level `fields.AttributeKey` sets non-empty `Classification`
-  and `Purpose` metadata.
+- Verify every new or modified exported, package-level `fields.AttributeKey` sets non-empty
+  `Classification` and `Purpose` metadata.
 - Compare each runtime key string with existing `AttributeKey` declarations. A telemetry key must be
   declared exactly once; reuse its canonical declaration instead of adding an alias or duplicate,
   including when `fields.ErrorKey` later prefixes the emitted key with `error.`.

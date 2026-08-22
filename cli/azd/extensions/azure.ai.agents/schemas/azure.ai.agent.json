@@ -144,6 +144,28 @@
       }
     },
     {
+      "$comment": "codeConfiguration, policies, protocols, agentEndpoint and sessionConfiguration are hosted-agent-only: load/deploy conversion drops them for every other kind, so accepting them elsewhere validates configuration that silently has no effect. Reject them up front, matching the runtime check in ValidateAgentDefinition.",
+      "if": {
+        "required": ["kind"],
+        "not": {
+          "properties": {
+            "kind": { "const": "hosted" }
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["codeConfiguration"] },
+            { "required": ["policies"] },
+            { "required": ["protocols"] },
+            { "required": ["agentEndpoint"] },
+            { "required": ["sessionConfiguration"] }
+          ]
+        }
+      }
+    },
+    {
       "$comment": "The activity.publish block is shared publish metadata for Activity use cases (including simple). Digital Worker adds stricter requirements: publish must exist, publishScope must be tenant, and agenticUserTemplate is required to carry the persisted blueprint identity.",
       "if": {
         "properties": {

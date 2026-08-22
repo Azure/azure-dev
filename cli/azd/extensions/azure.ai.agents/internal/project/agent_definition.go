@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/braydonk/yaml"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -1069,6 +1070,19 @@ func VoiceAgentFromResolvedService(
 				"re-run `azd ai agent init` to regenerate the agent service entry",
 			)
 		}
+
+		// toVoiceAgent drops hosted-only fields; check the raw definition so
+		// they are rejected instead of silently ignored (#9623).
+		if rawBytes, err := protojson.Marshal(resolved); err == nil {
+			if err := agent_yaml.ValidateHostedOnlyFields(rawBytes); err != nil {
+				return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("voice agent service config is not valid: %s", err),
+					"remove hosted-only fields or set kind to 'hosted'",
+				)
+			}
+		}
+
 		return inline.toVoiceAgent(), true, nil
 	}
 

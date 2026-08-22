@@ -394,6 +394,8 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			if agentDef.Kind != AgentKindHosted {
 				errors = append(errors,
 					validateInvocationsModerationKind(templateBytes, agentDef.Kind)...)
+				errors = append(errors,
+					validateNoHostedOnlyFields(templateBytes, agentDef.Kind)...)
 			}
 
 			switch AgentKind(agentDef.Kind) {
@@ -658,4 +660,35 @@ func exposesInvocationsProtocol(protocols []ProtocolVersionRecord) bool {
 	return slices.ContainsFunc(protocols, func(record ProtocolVersionRecord) bool {
 		return record.Protocol == InvocationsProtocol
 	})
+}
+
+// hostedOnlyAgentFields are dropped by load/deploy conversion for every
+// non-hosted agent kind, so their presence validates configuration that
+// silently has no effect.
+var hostedOnlyAgentFields = []string{
+	"codeConfiguration",
+	"policies",
+	"protocols",
+	"agentEndpoint",
+	"sessionConfiguration",
+}
+
+// validateNoHostedOnlyFields rejects hosted-only fields on non-hosted agent
+// kinds. The template is inspected as raw keys so that empty or partial
+// values (which would unmarshal to zero fields) are still reported.
+func validateNoHostedOnlyFields(templateBytes []byte, kind AgentKind) []string {
+	var root map[string]any
+	if err := yaml.Unmarshal(templateBytes, &root); err != nil {
+		return nil
+	}
+
+	var errs []string
+	for _, field := range hostedOnlyAgentFields {
+		if _, ok := root[field]; ok {
+			errs = append(errs, fmt.Sprintf(
+				"'%s' is only supported for '%s' agents and is ignored for kind '%s'",
+				field, AgentKindHosted, kind))
+		}
+	}
+	return errs
 }

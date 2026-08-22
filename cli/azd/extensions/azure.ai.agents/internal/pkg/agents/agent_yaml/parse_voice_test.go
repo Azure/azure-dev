@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -116,5 +117,50 @@ model_type: unsupported
 	err := ValidateAgentDefinition(yamlContent)
 	if err == nil || !strings.Contains(err.Error(), "model_type 'unsupported' is not supported") {
 		t.Fatalf("expected invalid model_type error, got: %v", err)
+	}
+}
+
+// TestValidateAgentDefinition_HostedOnlyFieldsRejectedOnPromptVoice rejects
+// hosted-agent-only properties on non-hosted kinds (#9623): load/deploy
+// conversion drops them, so accepting them would validate configuration
+// that silently has no effect.
+func TestValidateAgentDefinition_HostedOnlyFieldsRejectedOnPromptVoice(t *testing.T) {
+	hostedOnly := []string{
+		"codeConfiguration",
+		"policies",
+		"protocols",
+		"agentEndpoint",
+		"sessionConfiguration",
+	}
+	for _, field := range hostedOnly {
+		yamlContent := []byte(fmt.Sprintf(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+%s: {}
+`, field))
+		err := ValidateAgentDefinition(yamlContent)
+		if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("'%s' is only supported for 'hosted' agents", field)) {
+			t.Fatalf("expected '%s' rejection error, got: %v", field, err)
+		}
+	}
+}
+
+// TestValidateAgentDefinition_HostedFieldsStillAllowedOnHosted pins that the
+// new checks don't fire for the hosted kind.
+func TestValidateAgentDefinition_HostedFieldsStillAllowedOnHosted(t *testing.T) {
+	yamlContent := []byte(`
+kind: hosted
+name: hosted-agent
+codeConfiguration:
+  directory: src
+protocols: []
+agentEndpoint: https://example.com
+sessionConfiguration:
+  idleTimeoutSeconds: 300
+`)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected valid, got error: %v", err)
 	}
 }

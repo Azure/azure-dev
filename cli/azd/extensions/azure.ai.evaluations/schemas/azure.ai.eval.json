@@ -1,0 +1,264 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.evaluations/schemas/azure.ai.eval.json",
+  "title": "Azure AI Foundry evaluation service",
+  "description": "Service-level configuration for a host: azure.ai.eval entry. The service key is the evaluation configuration name. The body is normally supplied with $ref to an evals/azure.eval.yaml holding the dataset and evaluator catalogs and every eval defined over them; relative paths inside that file resolve against the file's own directory.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "datasets": {
+      "type": "array",
+      "description": "Catalog of named datasets. An entry with a file is uploaded on deploy; without one the name must already resolve to a registered dataset. An entry may instead be a $ref to a file holding the declaration.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/DatasetDecl" },
+          { "$ref": "#/definitions/FileRef" }
+        ]
+      }
+    },
+    "evaluators": {
+      "type": "array",
+      "description": "Catalog of named custom evaluators. An entry is a declaration, or a $ref to a file holding one. Built-in evaluators are referenced straight from an eval and are never declared here.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/EvaluatorDecl" },
+          { "$ref": "#/definitions/FileRef" }
+        ]
+      }
+    },
+    "evals": {
+      "type": "array",
+      "description": "The evaluations defined over the catalogs. A list, because one target is normally gated by more than one evaluation. An entry may instead be a $ref to a file holding the eval.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/Eval" },
+          { "$ref": "#/definitions/FileRef" }
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "FileRef": {
+      "type": "object",
+      "required": ["$ref"],
+      "additionalProperties": true,
+      "description": "Replace an inline definition with a reference to an external YAML or JSON file. Sibling properties on the same object act as overlay overrides on top of the loaded file. Cloned rather than referenced across extensions, following azure.ai.projects.",
+      "properties": {
+        "$ref": {
+          "type": "string",
+          "description": "Path to a YAML or JSON file containing the definition. Relative paths resolve from the file containing this $ref. Absolute paths are also accepted; remote URLs are not supported."
+        }
+      }
+    },
+    "DatasetDecl": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name the dataset is registered under. Letters, digits, dashes and underscores, up to 255 characters."
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to a local .jsonl whose rows are uploaded on deploy, resolved against the evaluation configuration -- also when this entry arrived through a $ref, because a spliced path is not rebased to the file it was written in. Deliberately not a $ref: the rows are a data artifact to publish, not a definition to splice in, and a .jsonl is neither YAML nor JSON. Omit to use a dataset already registered under this name."
+        },
+        "version": {
+          "type": "string",
+          "description": "Pin to an already-registered version. Omit to publish and track the newest."
+        }
+      }
+    },
+    "EvaluatorDecl": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name the evaluator is registered under. Letters, digits, dashes and underscores, up to 255 characters."
+        },
+        "source": {
+          "type": "string",
+          "description": "Path to a local .json rubric -- a list of weighted scoring dimensions -- resolved against the evaluation configuration, also when this entry arrived through a $ref, because a spliced path is not rebased; an entry pulled in from its own file should carry the rubric under definition instead. Published on deploy and fingerprinted locally so a later deploy can tell an edit here from a version published elsewhere."
+        },
+        "definition": {
+          "type": "object",
+          "description": "The rubric written out here instead of named as a file. This is also what a $ref to a rubric file becomes once it is resolved. Its keys belong to the evaluator service, so they are not constrained here.",
+          "required": ["dimensions"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Defaults to rubric when omitted."
+            },
+            "dimensions": {
+              "type": "array",
+              "description": "The weighted scoring dimensions the evaluator grades on."
+            }
+          }
+        },
+        "version": {
+          "type": "string",
+          "description": "Pin to an already-registered version. Omit to publish and track the newest."
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "A rubric is named or written out, never both.",
+          "if": { "required": ["definition"] },
+          "then": { "properties": { "source": false } }
+        },
+        {
+          "$comment": "A version pins one already registered, so there is nothing local to publish alongside it. Both shapes are refused when the configuration is read; stating them here is what makes the editor agree.",
+          "if": { "required": ["version"] },
+          "then": { "properties": { "source": false, "definition": false } }
+        }
+      ]
+    },
+    "Eval": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "description": "One evaluation. dataset and source are alternatives for where rows come from; target is a separate axis and means what gets invoked, so an eval can read traces and invoke nothing.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the eval. The azd environment records the created eval id under it, which is what --eval resolves."
+        },
+        "id": {
+          "type": "string",
+          "description": "An existing eval id, for an eval created outside this configuration."
+        },
+        "description": { "type": "string" },
+        "dataset": {
+          "type": "string",
+          "description": "Name of an entry in datasets[]. Mutually exclusive with source."
+        },
+        "source": {
+          "$ref": "#/definitions/SourceDecl",
+          "description": "Where rows come from when they are not a catalog dataset. Mutually exclusive with dataset."
+        },
+        "evaluation_level": {
+          "type": "string",
+          "enum": ["turn", "conversation"],
+          "description": "Whether each row is graded as a single turn or a whole conversation. The service default is turn."
+        },
+        "max_samples": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cap on rows graded per run."
+        },
+        "evaluators": {
+          "type": "array",
+          "description": "The evaluators this eval grades with. Entries are either builtin.<name> or a name declared in evaluators[].",
+          "items": { "$ref": "#/definitions/EvaluatorRef" }
+        },
+        "target": {
+          "$ref": "#/definitions/Target",
+          "description": "What the run invokes to produce the responses being graded. Omit to grade the responses already present in the rows."
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "Rows come from a catalog dataset or from a source, never both.",
+          "if": { "required": ["dataset"] },
+          "then": { "properties": { "source": false } }
+        }
+      ]
+    },
+    "SourceDecl": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["traces", "responses"],
+          "description": "traces reads recorded spans from the project's Application Insights; responses reads named response ids."
+        },
+        "lookback_hours": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 87600,
+          "description": "How far back the trace window reaches from its end, capped at ten years (project.MaxLookbackHours). Zero means unset. Only for type: traces."
+        },
+        "max_traces": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cap on traces read. Only for type: traces. Removing it restores the service default."
+        },
+        "agent_name": {
+          "type": "string",
+          "description": "Name of the agent whose traces are read. Only for type: traces."
+        },
+        "agent_version": {
+          "type": "string",
+          "description": "Pin the traces to one agent version."
+        },
+        "response_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Explicit response ids to grade. Only for type: responses."
+        },
+        "max_turns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cap on turns taken from each conversation."
+        },
+        "start_time": {
+          "type": "string",
+          "description": "Start of the window, RFC 3339. With end_time this pins an absolute window instead of a lookback."
+        },
+        "end_time": {
+          "type": "string",
+          "description": "End of the window, RFC 3339."
+        }
+      }
+    },
+    "EvaluatorRef": {
+      "type": "object",
+      "required": ["evaluator"],
+      "additionalProperties": false,
+      "properties": {
+        "evaluator": {
+          "type": "string",
+          "description": "builtin.<name> for a built-in, or the name of an entry in evaluators[]."
+        },
+        "name": {
+          "type": "string",
+          "description": "Label for this evaluator within the eval, when the same evaluator is used more than once."
+        },
+        "version": {
+          "type": "string",
+          "description": "Pin this eval to one evaluator version, so a later publish does not change what it grades."
+        },
+        "initialization_parameters": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Passed to the evaluator when the run starts; model names the judge deployment."
+        },
+        "data_mapping": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Binds the evaluator's required inputs to dataset columns, for inputs beyond the agent shape such as ground_truth or context."
+        }
+      }
+    },
+    "Target": {
+      "type": "object",
+      "required": ["type", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["agent", "model"],
+          "description": "What kind of thing is invoked."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the agent service or the model deployment to invoke."
+        }
+      }
+    }
+  }
+}

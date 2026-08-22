@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+# The same configuration written inline, which is what the $ref form resolves to.
+name: support-agent-app
+
+services:
+  support-agent-evals:
+    host: azure.ai.eval
+    uses: [ai-project, support-agent]
+
+    datasets:
+      - name: support-agent-regression
+        file: ./datasets/support-agent-regression.jsonl
+      - name: prod-golden
+        file: ./datasets/prod-golden.jsonl
+        version: "2"
+
+    evaluators:
+      - name: support-agent-quality
+        source: ./evaluators/support-agent-quality.json
+      # Or pulled in from its own file, the way agents and projects do it.
+      - $ref: ./evaluators/tone.yaml
+        name: tone
+      # Or written out here, which is also what a $ref to a rubric resolves to.
+      - name: brevity
+        definition:
+          type: rubric
+          dimensions:
+            - name: length
+              weight: 1
+              description: Answers the question without restating it.
+
+    evals:
+      - name: support-agent-regression-eval
+        dataset: support-agent-regression
+        evaluation_level: turn
+        max_samples: 50
+        evaluators:
+          - evaluator: builtin.task_adherence
+            initialization_parameters:
+              model: gpt-5.6-luna
+          - evaluator: support-agent-quality
+            version: "2"
+            data_mapping:
+              ground_truth: "{{item.expected}}"
+        target:
+          type: agent
+          name: support-agent
+
+      - name: support-agent-trace-eval
+        source:
+          type: traces
+          agent_name: support-agent
+          lookback_hours: 24
+          max_traces: 20
+        evaluators:
+          - evaluator: builtin.task_adherence
+            initialization_parameters:
+              model: gpt-5.6-luna

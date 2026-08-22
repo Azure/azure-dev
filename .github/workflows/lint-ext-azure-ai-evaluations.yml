@@ -1,0 +1,28 @@
+name: ext-azure-ai-evaluations-ci
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.ai.evaluations/**"
+      - ".github/workflows/lint-ext-azure-ai-evaluations.yml"
+      - ".github/workflows/verify-ext-providers.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write # required by reusable workflow lint-go.yml
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-go.yml
+    with:
+      working-directory: cli/azd/extensions/azure.ai.evaluations
+
+  verify-providers:
+    uses: ./.github/workflows/verify-ext-providers.yml
+    with:
+      working-directory: cli/azd/extensions/azure.ai.evaluations

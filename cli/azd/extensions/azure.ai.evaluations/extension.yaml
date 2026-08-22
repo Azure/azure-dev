@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: azure.ai.evaluations
+namespace: ai.eval
+displayName: Foundry evaluations (Beta)
+description: Define and run Foundry evaluations from your terminal. (Beta)
+usage: azd ai eval <command> [options]
+# NOTE: Make sure version.txt is in sync with this version.
+version: 1.0.18-beta
+requiredAzdVersion: ">=1.27.1"
+language: go
+capabilities:
+  - custom-commands
+  - service-target-provider
+  - metadata
+providers:
+  - name: azure.ai.eval
+    type: service-target
+    description: Deploys evaluation datasets, evaluators, and eval groups to Foundry
+examples:
+  - name: init
+    description: Scaffold evaluation config for an agent.
+    usage: azd ai eval init
+  - name: run
+    description: Run an evaluation and summarize the results.
+    usage: azd ai eval run

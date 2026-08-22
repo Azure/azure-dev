@@ -221,6 +221,14 @@ A bundle can also be installed directly from an `https` URL, so a preview or int
 azd extension install https://example.com/builds/my-ext_1.0.0.zip
 ```
 
+Short links and other bundle URLs without a `.zip` suffix are also supported:
+
+```bash
+azd extension install https://aka.ms/azd-extension-bundle-example
+```
+
+`azd` downloads the URL and validates the content by extracting it as a bundle, so the URL path itself does not need to identify a ZIP file.
+
 The install flow treats the bundle as an **installer, not a registry** — nothing about the bundle persists as a configured source once installation finishes:
 
 1. **Download** (URLs only) the bundle to a temporary file. Download failures — an unreachable host or a non-`200` response — are reported as such, separately from a `.zip` that turns out not to be a valid bundle. From here on, remote and local bundles follow the exact same path.

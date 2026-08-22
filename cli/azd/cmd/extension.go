@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -101,9 +100,10 @@ confirming first for a URL) and then installs from it. If the location is alread
 registered, azd reuses that source.
 
 You can also pass a self-contained extension bundle (.zip), either as a local
-path or an https URL: azd downloads (when remote) and extracts it, then installs
-the bundled extension. Bundled extensions aren't tracked for updates; reinstall
-from a newer bundle to update.`,
+path or an https URL (including a short link without a .zip suffix): azd
+downloads (when remote) and extracts it, then installs the bundled extension.
+Bundled extensions aren't tracked for updates; reinstall from a newer bundle to
+update.`,
 		},
 		ActionResolver: newExtensionInstallAction,
 		FlagsResolver:  newExtensionInstallFlags,
@@ -1262,7 +1262,7 @@ func wrapDependencyError(err error) error {
 }
 
 // isBundleArg reports whether the provided arguments represent a single
-// self-contained extension bundle (.zip), either as a local path that exists on
+// self-contained extension bundle, either as a local .zip path that exists on
 // disk or as an HTTP or HTTPS URL.
 func isBundleArg(args []string) bool {
 	if len(args) != 1 {
@@ -1281,23 +1281,14 @@ func isBundleArg(args []string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// isRemoteBundleArg reports whether the value is an HTTP or HTTPS URL pointing at a
-// self-contained extension bundle (.zip). Detection is intentionally lexical so
-// malformed URLs still reach generic URL validation instead of being displayed as
-// extension IDs.
+// isRemoteBundleArg reports whether the value is an HTTP or HTTPS URL that should
+// be treated as a remote bundle candidate. The URL does not need a .zip suffix
+// because short links commonly omit it. Download and extraction validate the
+// actual content.
 func isRemoteBundleArg(value string) bool {
 	lowerValue := strings.ToLower(value)
-	if !strings.HasPrefix(lowerValue, "http://") &&
-		!strings.HasPrefix(lowerValue, "https://") {
-		return false
-	}
-
-	pathEnd := len(value)
-	if index := strings.IndexAny(value, "?#"); index >= 0 {
-		pathEnd = index
-	}
-
-	return strings.EqualFold(path.Ext(value[:pathEnd]), ".zip")
+	return strings.HasPrefix(lowerValue, "http://") ||
+		strings.HasPrefix(lowerValue, "https://")
 }
 
 // prepareBundleInstall resolves the bundle (downloading it first when the

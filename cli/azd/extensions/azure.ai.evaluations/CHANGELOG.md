@@ -1,5 +1,24 @@
 # Release History
 
+## 1.0.19-beta (2026-08-24)
+
+### Bugs Fixed
+
+- `generate` and `init` now edit the configuration instead of rewriting it.
+  They read it into memory, changed a field and wrote the whole thing back,
+  which deleted every comment in the file and changed its indentation. Only the
+  entries they add are written now; everything else comes back as it was.
+- A `$ref` on an eval's `source:`, on its `target:`, or on an item of its
+  `evaluators:` list is now accepted by every command. It deployed, then failed
+  the moment `generate` or `init` read the same file.
+- A deploy that cannot determine the project directory now fails with an
+  explanation. It continued, resolving every relative path against whatever
+  directory the command was started from, which could publish a same-named
+  dataset from the wrong place.
+- A listing the service cannot finish now reports an error instead of returning
+  the rows gathered so far. A truncated catalog was indistinguishable from a
+  complete one, and these rows decide whether a name is ambiguous.
+
 ## 1.0.18-beta (2026-08-21)
 
 ### Bugs Fixed

@@ -467,6 +467,11 @@ func (c *EvalClient) ListOpenAIEvals(ctx context.Context, limit int) (*OpenAIEva
 // decided from these rows, so a second page nobody asked for turns a refusal
 // into a wrong choice. fetch reports how many rows it added and the cursor it
 // was given, so the two listings share this loop instead of a third copy.
+//
+// The two ways of not finishing therefore return an error rather than the rows
+// gathered so far. Logging them was as good as saying nothing, since log is
+// pointed at io.Discard without --debug, and a caller cannot tell a partial
+// catalog from a complete one.
 func collectPages(
 	limit int,
 	fetch func(query map[string]string) (added int, hasMore bool, lastID string, err error),
@@ -500,14 +505,16 @@ func collectPages(
 			return nil
 		}
 		if seen[lastID] {
-			log.Printf("[eval_api] cursor %q repeated; the listing may be incomplete", lastID)
-			return nil
+			return fmt.Errorf(
+				"listing did not advance: the service returned the cursor %q twice, "+
+					"so the results so far are incomplete", lastID)
 		}
 		seen[lastID] = true
 		after = lastID
 	}
-	log.Printf("[eval_api] stopped after %d pages; the listing may be incomplete", maxPages)
-	return nil
+	return fmt.Errorf(
+		"listing did not finish within %d pages, so the results so far are incomplete",
+		maxPages)
 }
 
 // GetOpenAIEval gets an OpenAI eval definition.

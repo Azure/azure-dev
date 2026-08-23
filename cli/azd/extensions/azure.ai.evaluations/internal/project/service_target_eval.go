@@ -137,9 +137,17 @@ func (p *EvalServiceTargetProvider) Deploy(
 ) (*azdext.ServiceDeployResult, error) {
 	// Asked once and reused: a second call could fail where the first
 	// succeeded, and the empty root that comes back is indistinguishable from a
-	// project that has none. The include guard below would have passed while
-	// artifact paths quietly resolved against this process's directory instead.
+	// project that has none.
+	//
+	// Refused rather than worked around. azd invokes this provider from inside a
+	// project, so an empty answer means the call failed, and every relative path
+	// in the configuration would then resolve against this process's directory --
+	// which is how `azd up` from a subdirectory came to report every dataset as
+	// missing, and could upload a same-named dataset from the wrong place.
 	projectRoot := p.projectRoot(ctx)
+	if projectRoot == "" {
+		return nil, messages.ProjectRootUnavailable(serviceConfig.GetName())
+	}
 
 	cfg, err := EvalConfigFromService(serviceConfig, projectRoot)
 	if err != nil {

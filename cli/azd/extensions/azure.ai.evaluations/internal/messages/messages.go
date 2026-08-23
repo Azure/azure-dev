@@ -1430,6 +1430,18 @@ func RefNeedsAProjectRoot(service string) error {
 		service)
 }
 
+// ProjectRootUnavailable reports a deploy that could not learn where the
+// project is, which every relative path in the configuration is measured from.
+func ProjectRootUnavailable(service string) error {
+	return fmt.Errorf(
+		"deploying service %q: azd could not report the project directory, and every "+
+			"relative path in the evaluation configuration is resolved against it. "+
+			"Continuing would measure them from wherever this command was started, "+
+			"which can publish a same-named dataset from the wrong directory. Re-run "+
+			"from inside the azd project",
+		service)
+}
+
 // CatalogNameBehindAnInclude reports a name declared through a `$ref`, which
 // this command cannot edit in place.
 //

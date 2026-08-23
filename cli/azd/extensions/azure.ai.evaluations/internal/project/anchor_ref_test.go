@@ -18,7 +18,7 @@ import (
 func TestAnchorsSurviveRefResolution(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "evaluators", "quality.json"),
 		[]byte(`{"type":"rubric","dimensions":[{"id":"tone","weight":3}]}`),

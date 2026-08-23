@@ -23,7 +23,7 @@ import (
 // writer's point of view it had saved what it read.
 func TestEditingReadsLeaveIncludesAlone(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "evaluators", "quality.yaml"),
 		[]byte("name: quality\nsource: ./quality.json\n"), 0o600))
@@ -59,7 +59,7 @@ evals:
 // The reader that commands *use* still resolves, so the two do not drift apart.
 func TestConsumingReadsStillResolve(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "evaluators", "quality.yaml"),
 		[]byte("name: quality\nsource: ./quality.json\n"), 0o600))

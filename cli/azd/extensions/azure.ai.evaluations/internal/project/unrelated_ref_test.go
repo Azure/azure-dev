@@ -20,8 +20,8 @@ import (
 // `dimensions:` -- a mistake the strict decoder exists to report -- was silently
 // filed as rubric content and published to the service instead.
 //
-// The same evaluator, refused in one file and accepted in another because of a
-// neighbour, is the shape this whole mechanism is supposed to rule out.
+// The same evaluator, refused in one file and accepted in another because of an
+// unrelated entry, is the shape this whole mechanism is supposed to rule out.
 func TestARefOnOneEntryDoesNotRescueAnother(t *testing.T) {
 	withoutRef := `
 datasets:
@@ -46,7 +46,7 @@ evaluators:
 	refused := func(t *testing.T, body string) error {
 		t.Helper()
 		dir := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "golden.yaml"),
 			[]byte("name: golden\nfile: ./datasets/golden.jsonl\n"), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, EvalConfigBase), []byte(body), 0o600))
@@ -59,8 +59,8 @@ evaluators:
 		"a rubric key written at entry level is a mistake, and the strict decoder reports it")
 	assert.Contains(t, baseline.Error(), "dimensions")
 
-	neighbour := refused(t, withUnrelatedRef)
-	require.Error(t, neighbour,
+	withUnrelated := refused(t, withUnrelatedRef)
+	require.Error(t, withUnrelated,
 		"the dataset's `$ref` says nothing about this evaluator, so the same entry is still a mistake")
-	assert.Contains(t, neighbour.Error(), "dimensions")
+	assert.Contains(t, withUnrelated.Error(), "dimensions")
 }

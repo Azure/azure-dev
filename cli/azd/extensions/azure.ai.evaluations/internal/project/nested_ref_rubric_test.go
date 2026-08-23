@@ -17,7 +17,7 @@ import (
 func TestARefdRubricInsideARefdConfig(t *testing.T) {
 	dir := t.TempDir()
 	evals := filepath.Join(dir, "evals")
-	require.NoError(t, os.MkdirAll(filepath.Join(evals, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(evals, "evaluators"), 0o750))
 
 	require.NoError(t, os.WriteFile(
 		filepath.Join(evals, "evaluators", "quality.json"),
@@ -53,7 +53,7 @@ evals:
 func TestARefToSomethingThatIsNotARubricIsStillRejected(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "evaluators", "quality.json"),
 		[]byte(`{"nmae":"quality","weight":3}`), 0o600))

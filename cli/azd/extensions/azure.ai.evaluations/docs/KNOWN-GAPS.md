@@ -12,7 +12,7 @@ found, and what closing it involves.
 Go structs and write it back. Two consequences:
 
 - **The file is rewritten, not edited.** Every comment is deleted and the
-  indentation is normalised. An author who annotates their configuration loses
+  indentation is normalized. An author who annotates their configuration loses
   those notes the first time they run `generate`.
 - **`$ref` has to be modelled shape by shape.** azd core resolves the directive
   on *any* object at any depth, but a typed round-trip only survives it where a
@@ -31,7 +31,7 @@ Moving the editing commands onto it would preserve the author's file, make the
 directive work wherever core supports it, and let the three `Ref` fields and the
 `splicedEvaluators` / `nestSplicedRubrics` machinery be deleted. `YAMLDocument`
 is oriented around service entries in `azure.yaml`, so this needs either a
-generalisation there or direct use of `yamlnode`.
+wider API there or direct use of `yamlnode`.
 
 ## 2. Gaps that item 1 would close
 

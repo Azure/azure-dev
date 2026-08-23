@@ -21,7 +21,7 @@ import (
 // refused the very key that pointed at the content.
 func TestEveryEntryCoreCanSpliceCanAlsoBeEdited(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o750))
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "golden.yaml"),
 		// Relative to the configuration, not to this file: core rebases only the

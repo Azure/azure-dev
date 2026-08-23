@@ -22,7 +22,7 @@ import (
 func TestRefResolvesOnTheCLIPathToo(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "evaluators", "quality.yaml"),
 		[]byte("name: support-agent-quality\nsource: ./quality.json\n"),
@@ -64,7 +64,7 @@ evals:
 func TestRefCanNameTheRubricItself(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "evaluators", "quality.json"),
 		[]byte(`{"name":"support-agent-quality",`+
@@ -100,7 +100,7 @@ evals:
 func TestBothRoutesReadARefdRubricTheSameWay(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "evaluators", "quality.json"),
 		[]byte(`{"type":"rubric","dimensions":[{"id":"tone","weight":3}]}`),
@@ -145,7 +145,7 @@ evals:
 func TestRefCanNameABareRubricFile(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "evaluators", "support-agent-quality.json"),
 		[]byte(`{"type":"rubric","pass_threshold":0.7,`+
@@ -201,7 +201,7 @@ evaluators:
 func TestRefSiblingKeysOverlayTheLoadedFile(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "evaluators", "quality.yaml"),
 		[]byte("name: from-the-file\nsource: ./quality.json\n"),

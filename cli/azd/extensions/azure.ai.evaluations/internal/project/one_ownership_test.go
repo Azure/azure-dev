@@ -4,8 +4,8 @@
 package project
 
 import (
+	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,14 +34,21 @@ func TestEvaluatorOwnershipIsDecidedInOnePlace(t *testing.T) {
 	// so it is the pairing with a `Source` test that means someone has
 	// re-derived ownership.
 	sightings := map[string][]int{}
-	require.NoError(t, filepath.WalkDir("../..", func(path string, d os.DirEntry, err error) error {
+	// Walked through a root rather than by OS path: the callback then reads from
+	// a handle that cannot be redirected by a symlink swapped in mid-walk.
+	root, err := os.OpenRoot("../..")
+	require.NoError(t, err)
+	defer func() { _ = root.Close() }()
+	fsys := root.FS()
+
+	require.NoError(t, fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}
 		if strings.HasSuffix(path, "_test.go") {
 			return nil // including this file, which spells out the shape it is looking for
 		}
-		body, err := os.ReadFile(path)
+		body, err := fs.ReadFile(fsys, path)
 		if err != nil {
 			return err
 		}

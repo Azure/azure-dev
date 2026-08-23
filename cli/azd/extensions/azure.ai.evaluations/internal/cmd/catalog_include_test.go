@@ -23,7 +23,7 @@ import (
 // them.
 func TestGenerateRefusesANameAnIncludeAlreadyDeclares(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "quality.yaml"),
 		[]byte("name: quality\nsource: ./quality.json\n"), 0o600))
 
@@ -44,7 +44,7 @@ evaluators:
 // mere presence of an include elsewhere.
 func TestGenerateStillAddsANameNobodyDeclares(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "quality.yaml"),
 		[]byte("name: quality\nsource: ./quality.json\n"), 0o600))
 
@@ -67,7 +67,7 @@ evaluators:
 // miss.
 func TestGenerateRefusesAnIncludeThatCarriesItsName(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "evaluators"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "evaluators", "quality.json"),
 		[]byte(`{"type":"rubric","dimensions":[{"id":"tone","weight":3}]}`), 0o600))
 
@@ -92,7 +92,7 @@ evaluators:
 // evaluator tests stayed green.
 func TestGenerateRefusesADatasetNameAnIncludeAlreadyDeclares(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "golden.yaml"),
 		[]byte("name: golden\nfile: ./datasets/golden.jsonl\n"), 0o600))
 
@@ -113,7 +113,7 @@ datasets:
 // above covers, refused through the dataset branch.
 func TestGenerateRefusesADatasetIncludeThatCarriesItsName(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "golden.yaml"),
 		[]byte("file: ./datasets/golden.jsonl\n"), 0o600))
 

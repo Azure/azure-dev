@@ -263,7 +263,7 @@ func resolveEvalRefs(values map[string]any, baseDir string) (map[string]any, err
 // an unrelated dataset switched the rescue on for the whole file, so a
 // hand-written `dimensions:` -- a mistake the strict decoder exists to report --
 // was filed as rubric content and published instead. The same evaluator was
-// then refused or accepted according to a neighbour.
+// then refused or accepted according to an unrelated entry.
 func splicedEvaluators(values map[string]any) (map[int]bool, bool) {
 	entries, ok := values["evaluators"].([]any)
 	if !ok {

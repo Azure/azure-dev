@@ -4,8 +4,8 @@
 package project
 
 import (
+	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,14 +27,22 @@ func TestRefsAreResolvedInOnePlace(t *testing.T) {
 	// The whole extension, not this package: both current routes already live
 	// here, so the plausible place for a second caller is internal/cmd, where a
 	// command wanting resolution would reach for the helper directly.
-	require.NoError(t, filepath.WalkDir("../..", func(path string, d os.DirEntry, err error) error {
+	//
+	// Walked through a root rather than by OS path: the callback then reads from
+	// a handle that cannot be redirected by a symlink swapped in mid-walk.
+	root, err := os.OpenRoot("../..")
+	require.NoError(t, err)
+	defer func() { _ = root.Close() }()
+	fsys := root.FS()
+
+	require.NoError(t, fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}
 		if strings.HasSuffix(path, "_test.go") {
 			return nil // including this file, which names the call it is counting
 		}
-		body, err := os.ReadFile(path)
+		body, err := fs.ReadFile(fsys, path)
 		if err != nil {
 			return err
 		}

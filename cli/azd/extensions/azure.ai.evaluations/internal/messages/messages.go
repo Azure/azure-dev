@@ -1435,7 +1435,7 @@ func RefNeedsAProjectRoot(service string) error {
 //
 // One message for two shapes, so the cause is stated as what they share: the
 // entry lives in the referenced file. Naming only the duplicate-on-resolve case
-// would misdescribe an overlay `name`, which collides with nothing and instead
+// would be wrong for an overlay `name`, which collides with nothing and instead
 // ends up declaring the rubric twice.
 func CatalogNameBehindAnInclude(kind, name string) error {
 	return fmt.Errorf(

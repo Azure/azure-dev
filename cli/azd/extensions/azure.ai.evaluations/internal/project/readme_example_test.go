@@ -24,10 +24,13 @@ func TestTheREADMEExampleLoads(t *testing.T) {
 
 	body := evalConfigExample(t, string(readme))
 
-	path := filepath.Join(t.TempDir(), EvalConfigBase)
-	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	require.NoError(t, err)
+	defer func() { _ = root.Close() }()
+	require.NoError(t, root.WriteFile(EvalConfigBase, []byte(body), 0o600))
 
-	_, err = LoadEvalConfig(path)
+	_, err = LoadEvalConfig(filepath.Join(dir, EvalConfigBase))
 	require.NoError(t, err, "the README example has to survive the decoder it documents")
 }
 

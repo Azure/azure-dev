@@ -23,24 +23,9 @@ func addDatasetToCatalog(cmd *cobra.Command, evalDir string, ref *project.Artifa
 	if ref == nil {
 		return nil
 	}
-	return updateCatalog(cmd, evalDir, "dataset", ref, func(cfg *project.EvalConfig) bool {
-		for i := range cfg.Datasets {
-			if cfg.Datasets[i].Name == ref.Name {
-				// Regeneration overwrites the file in place, so the entry only
-				// changes when the artifact moved.
-				if cfg.Datasets[i].File == ref.Source {
-					return false
-				}
-				cfg.Datasets[i].File = ref.Source
-				return true
-			}
-		}
-		cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{
-			Name: ref.Name,
-			File: ref.Source,
-		})
-		return true
-	})
+	// Regeneration overwrites the file in place, so the entry only changes when
+	// the artifact moved -- which UpsertCatalogEntry reports rather than rewrite.
+	return updateCatalog(cmd, evalDir, "dataset", ref, "datasets", "file")
 }
 
 // addEvaluatorToCatalog records a generated evaluator in `evaluators:`.
@@ -48,22 +33,7 @@ func addEvaluatorToCatalog(cmd *cobra.Command, evalDir string, ref *project.Arti
 	if ref == nil {
 		return nil
 	}
-	return updateCatalog(cmd, evalDir, "evaluator", ref, func(cfg *project.EvalConfig) bool {
-		for i := range cfg.Evaluators {
-			if cfg.Evaluators[i].Name == ref.Name {
-				if cfg.Evaluators[i].Source == ref.Source {
-					return false
-				}
-				cfg.Evaluators[i].Source = ref.Source
-				return true
-			}
-		}
-		cfg.Evaluators = append(cfg.Evaluators, project.EvaluatorDecl{
-			Name:   ref.Name,
-			Source: ref.Source,
-		})
-		return true
-	})
+	return updateCatalog(cmd, evalDir, "evaluator", ref, "evaluators", "source")
 }
 
 // checkCatalogEntryIsEditable refuses a name this command cannot rewrite in
@@ -140,18 +110,24 @@ func catalogEntryShapeOf(cfg *project.EvalConfig, kind, name string) (catalogEnt
 	return catalogEntryShape{}, false
 }
 
-// updateCatalog applies a change to the configuration and writes it back.
+// updateCatalog records the artifact in the configuration and writes it back.
 //
 // A missing configuration is created holding only the catalog. `generate` runs
 // before `init` on the golden path, and a downloaded artifact nobody recorded
 // is the one state that goes stale. The file it creates has no evals and no
 // azure.yaml entry, so it stays inert until init wires one.
+//
+// The read and the write are separate on purpose. Decisions are made from the
+// decoded configuration, because that is what the guard understands; the write
+// edits the node tree, so a comment the author left, and any key these structs
+// do not model, come back exactly as they were found.
 func updateCatalog(
 	cmd *cobra.Command,
 	evalDir string,
 	kind string,
 	ref *project.ArtifactRef,
-	apply func(*project.EvalConfig) bool,
+	sequence string,
+	field string,
 ) error {
 	// Held across the read and the write: two generates adding different
 	// entries would otherwise both read the same state, and the second write
@@ -166,24 +142,25 @@ func updateCatalog(
 	if err != nil {
 		return err
 	}
-	created := cfg == nil
-	if created {
+	if cfg == nil {
 		cfg = &project.EvalConfig{}
 	}
 	if err := checkCatalogEntryIsEditable(evalDir, cfg, kind, ref.Name); err != nil {
 		return err
 	}
-	if !apply(cfg) {
+
+	changed, created, err := project.UpsertCatalogEntry(evalDir, sequence, ref.Name, field, ref.Source)
+	if err != nil {
+		return err
+	}
+	if !changed {
 		return nil
 	}
 
-	if err := project.SaveEvalConfig(evalDir, cfg); err != nil {
-		return err
-	}
 	if !isJSON(cmd) {
-		// Resolved, not the current name: SaveEvalConfig writes back over a
-		// legacy file when that is what the project has, and the line has to
-		// name the file it actually wrote.
+		// Resolved, not the current name: the write goes back over a legacy file
+		// when that is what the project has, and the line has to name the file it
+		// actually wrote.
 		resolved, err := project.ResolveEvalConfigPath(evalDir)
 		if err != nil {
 			return err

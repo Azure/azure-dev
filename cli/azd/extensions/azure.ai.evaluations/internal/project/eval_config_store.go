@@ -417,7 +417,18 @@ func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 	if err != nil {
 		return messages.SerializingEvalConfig(err)
 	}
+	return writeConfigBytes(path, body)
+}
 
+// writeConfigBytes replaces the configuration at path with body.
+//
+// The replacement is atomic because os.WriteFile truncates first, and this file
+// is read by other processes. A reader landing inside that window sees zero
+// bytes, and a zero-byte config parses as a valid empty one rather than as an
+// error, so it would go on to write back a configuration with every eval
+// missing. Renaming into place means a reader sees either the whole old file or
+// the whole new one.
+func writeConfigBytes(path string, body []byte) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".azd-eval-config-*")
 	if err != nil {

@@ -6,34 +6,44 @@ found, and what closing it involves.
 
 ## 1. The editing path should not go through typed structs
 
-**The one that matters.** Everything in section 2 is a symptom of this.
+**Partly done.** The catalog write path no longer does; `init` still does.
 
-`generate`, `init` and the catalog commands read `evals/azure.eval.yaml` into
-Go structs and write it back. Two consequences:
+`generate` and the catalog commands used to read `evals/azure.eval.yaml` into Go
+structs and marshal the whole thing back. That had two consequences:
 
-- **The file is rewritten, not edited.** Every comment is deleted and the
-  indentation is normalized. An author who annotates their configuration loses
-  those notes the first time they run `generate`.
-- **`$ref` has to be modelled shape by shape.** azd core resolves the directive
+- **The file was rewritten, not edited.** Every comment was deleted and the
+  indentation normalized, so an author who annotated their configuration lost
+  those notes the first time they ran `generate`.
+- **`$ref` had to be modelled shape by shape.** azd core resolves the directive
   on *any* object at any depth, but a typed round-trip only survives it where a
-  `Ref` field exists. It is currently on `DatasetDecl`, `EvaluatorDecl` and
-  `Eval`, and each addition needed a specification change. Anywhere it is
-  missing, the file deploys and the editing commands refuse it.
+  `Ref` field exists.
 
-azd core already ships the mechanism: `foundry.YAMLDocument` in
-`cli/azd/pkg/foundry/includes_edit.go` is comment-preserving and `$ref`-aware
-(`EntryRef`, `EditRefFile`, `SetServiceField`), and `cli/azd/pkg/yamlnode`
-provides `Find` / `Set` / `Append` over a node tree. `YAMLDocument` has no
-callers today; its own doc comment says it was written for the composition
-command write path.
+`UpsertCatalogEntry` in `internal/project/eval_config_edit.go` now edits the node
+tree instead, using `github.com/braydonk/yaml` — the same library azd core uses
+for `azure.yaml`. Anything it does not touch is written back exactly as found,
+comments included, whether or not this package models it.
 
-Moving the editing commands onto it would preserve the author's file, make the
-directive work wherever core supports it, and let the three `Ref` fields and the
-`splicedEvaluators` / `nestSplicedRubrics` machinery be deleted. `YAMLDocument`
-is oriented around service entries in `azure.yaml`, so this needs either a
-wider API there or direct use of `yamlnode`.
+Decisions are still made from the decoded configuration, because that is what
+the guard understands; only the write moved. That split is what keeps the change
+small.
 
-## 2. Gaps that item 1 would close
+### Still to do
+
+`init` (`internal/cmd/init.go`) writes evals through `SaveEvalConfig` and has the
+same two problems. Moving it needs a node-level equivalent for the `evals:`
+sequence and for `RemoveEval`, which is more involved than the catalog case
+because an eval entry is a nested structure rather than two scalars.
+
+Once it is moved, `SaveEvalConfig` has no callers outside tests, and the three
+`Ref` fields plus the `splicedEvaluators` / `nestSplicedRubrics` machinery can be
+reconsidered — see 2b.
+
+Core also ships `foundry.YAMLDocument` (`pkg/foundry/includes_edit.go`), which is
+comment-preserving and `$ref`-aware but oriented around service entries in
+`azure.yaml`. It has no callers. Worth revisiting if this grows beyond targeted
+edits.
+
+## 2. Gaps that finishing item 1 would close
 
 ### 2a. `$ref` on nested shapes deploys but cannot be edited
 

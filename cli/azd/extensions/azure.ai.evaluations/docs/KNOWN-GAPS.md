@@ -72,7 +72,23 @@ separate bugs — or removing the need for the rescue entirely, which item 1 doe
 
 ## 3. Smaller, independent
 
-### 3a. `init` can append a duplicate eval behind a `$ref`
+### 3a. A failed environment read is indistinguishable from an unset key
+
+`evalContext.getEnvValue` returns the empty string both when a key is unset and
+when the read failed. It has 17 callers, including the dataset and evaluator
+fingerprints, the recorded versions, and the eval IDs.
+
+So a transient azd daemon error reads as "not registered yet". The reconciler
+then republishes: a wasted version for an immutable asset, and for a drift check
+a recreate nobody asked for. The deploy still reports success.
+
+The fix is to separate state-critical reads, which must surface the error, from
+best-effort ones such as the portal link. It is a change of its own because each
+caller has to be classified: an eval ID that is genuinely absent on a fresh
+clone must keep reading as absent, which is the case the current behavior exists
+for, and section 4 below depends on it.
+
+### 3b. `init` can append a duplicate eval behind a `$ref`
 
 `init` checks only the unresolved configuration, so a pure-`$ref` eval decodes
 with an empty name and `HasEval` misses it. `init --name nightly` then appends a
@@ -85,13 +101,13 @@ has no `eval` branch. Related: `init --force` calls `RemoveEval`, which on an
 overlay-name include deletes the directive and orphans the referenced file
 without saying so.
 
-### 3b. A bare rubric's own `name` becomes the catalog name
+### 3c. A bare rubric's own `name` becomes the catalog name
 
 A `$ref` pointed straight at a rubric file splices that file's `name` into the
 entry, so the rubric names the evaluator. Intended for the documented layout,
 surprising if the rubric was written for something else.
 
-### 3c. `errors.As` and `sort.Strings` predate the modernization guidance
+### 3d. `errors.As` and `sort.Strings` predate the modernization guidance
 
 `cli/azd/AGENTS.md` asks for `errors.AsType[T]` and the `slices` equivalents.
 Neither is rewritten by `go fix -diff`, which is what
@@ -99,7 +115,7 @@ Neither is rewritten by `go fix -diff`, which is what
 rather than a build failure. Pre-existing across this extension and
 `cli/azd/pkg` (40 and 5 occurrences). Worth one sweep, not a change per PR.
 
-### 3d. The schema cannot express every version conflict
+### 3e. The schema cannot express every version conflict
 
 `EvaluatorDecl` forbids `version:` alongside `source:` or `definition:`, but an
 entry written as a `$ref` matches the `FileRef` branch, whose

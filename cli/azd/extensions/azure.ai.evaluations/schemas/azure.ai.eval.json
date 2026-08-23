@@ -135,7 +135,7 @@
           "description": "Name of an entry in datasets[]. Mutually exclusive with source."
         },
         "source": {
-          "$ref": "#/definitions/SourceDecl",
+          "oneOf": [{ "$ref": "#/definitions/SourceDecl" }, { "$ref": "#/definitions/FileRef" }],
           "description": "Where rows come from when they are not a catalog dataset. Mutually exclusive with dataset."
         },
         "evaluation_level": {
@@ -150,11 +150,13 @@
         },
         "evaluators": {
           "type": "array",
-          "description": "The evaluators this eval grades with. Entries are either builtin.<name> or a name declared in evaluators[].",
-          "items": { "$ref": "#/definitions/EvaluatorRef" }
+          "description": "The evaluators this eval grades with. Entries are either builtin.<name>, a name declared in evaluators[], or a $ref at a file holding one.",
+          "items": {
+            "oneOf": [{ "$ref": "#/definitions/EvaluatorRef" }, { "$ref": "#/definitions/FileRef" }]
+          }
         },
         "target": {
-          "$ref": "#/definitions/Target",
+          "oneOf": [{ "$ref": "#/definitions/Target" }, { "$ref": "#/definitions/FileRef" }],
           "description": "What the run invokes to produce the responses being graded. Omit to grade the responses already present in the rows."
         }
       },

@@ -90,8 +90,14 @@ type Eval struct {
 }
 
 // SourceDecl says where an eval's rows come from when they are not a dataset.
+//
+// Ref carries a `$ref` an author wrote here, for the same reason the catalog
+// entries do: core splices the directive into any object, so a source kept in
+// its own file deploys, and modelling it is what stops the editing read from
+// refusing the file that deploy accepts.
 type SourceDecl struct {
-	Type          string   `yaml:"type"                      json:"type"`
+	Ref           string   `yaml:"$ref,omitempty"            json:"$ref,omitempty"`
+	Type          string   `yaml:"type,omitempty"            json:"type,omitempty"`
 	LookbackHours int      `yaml:"lookback_hours,omitempty"  json:"lookback_hours,omitempty"`
 	MaxTraces     int      `yaml:"max_traces,omitempty"      json:"max_traces,omitempty"`
 	AgentName     string   `yaml:"agent_name,omitempty"      json:"agent_name,omitempty"`
@@ -120,9 +126,13 @@ const (
 const DefaultScaffoldMaxTraces = 20
 
 // Target names what the run invokes.
+//
+// Ref carries a `$ref` an author wrote here, for the same reason SourceDecl
+// does: core splices it, so the editing read has to survive it.
 type Target struct {
-	Type string `yaml:"type" json:"type"`
-	Name string `yaml:"name" json:"name"`
+	Ref  string `yaml:"$ref,omitempty" json:"$ref,omitempty"`
+	Type string `yaml:"type,omitempty" json:"type,omitempty"`
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
 }
 
 // Target types the extension can invoke. Absent means nothing is invoked and

@@ -13,6 +13,127 @@ import (
 	"github.com/braydonk/yaml"
 )
 
+// ScaffoldWrite is what `init` decided to add to the configuration.
+//
+// Only the new entries, and at most one removal. What the author already wrote
+// is not represented here at all, which is what keeps it from being rewritten.
+type ScaffoldWrite struct {
+	// RemoveEval is the eval `--force` replaces, dropped before the new one is
+	// appended. Empty when nothing is being replaced.
+	RemoveEval string
+	Datasets   []DatasetDecl
+	Evaluators []EvaluatorDecl
+	Evals      []Eval
+}
+
+// Empty reports whether this would change nothing.
+func (w ScaffoldWrite) Empty() bool {
+	return w.RemoveEval == "" && len(w.Datasets) == 0 && len(w.Evaluators) == 0 && len(w.Evals) == 0
+}
+
+// ApplyScaffold writes what `init` decided, editing the file rather than
+// rewriting it.
+//
+// The same reasoning as UpsertCatalogEntry, for the command that adds an eval:
+// decisions are made from the decoded configuration, but only the new entries
+// are written, so comments and any key these structs do not model survive.
+func ApplyScaffold(evalDir string, write ScaffoldWrite) error {
+	if write.Empty() {
+		return nil
+	}
+	if err := checkOneConfig(evalDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(evalDir, 0o750); err != nil {
+		return messages.Creating(evalDir, err)
+	}
+	path := resolvedConfigPath(evalDir)
+
+	doc, err := readConfigDocument(path)
+	if err != nil {
+		return err
+	}
+	root := documentMapping(doc)
+
+	if write.RemoveEval != "" {
+		removeSequenceEntryNamed(mappingSequence(root, "evals"), write.RemoveEval)
+	}
+	for _, decl := range write.Datasets {
+		if err := appendEncoded(mappingSequence(root, "datasets"), decl); err != nil {
+			return err
+		}
+	}
+	for _, decl := range write.Evaluators {
+		if err := appendEncoded(mappingSequence(root, "evaluators"), decl); err != nil {
+			return err
+		}
+	}
+	for _, eval := range write.Evals {
+		if err := appendEncoded(mappingSequence(root, "evals"), eval); err != nil {
+			return err
+		}
+	}
+
+	out, err := marshalConfigDocument(doc)
+	if err != nil {
+		return messages.SerializingEvalConfig(err)
+	}
+	return writeConfigBytes(path, out)
+}
+
+// appendEncoded renders one entry and appends it to a sequence.
+//
+// Through the struct's own yaml tags, so a field added to the model is written
+// without this file having to learn about it.
+func appendEncoded(seq *yaml.Node, entry any) error {
+	body, err := yaml.Marshal(entry)
+	if err != nil {
+		return messages.SerializingEvalConfig(err)
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		return messages.SerializingEvalConfig(err)
+	}
+	if len(doc.Content) == 0 {
+		return nil
+	}
+	seq.Content = append(seq.Content, doc.Content[0])
+	return nil
+}
+
+// removeSequenceEntryNamed drops the entry whose `name` is name.
+func removeSequenceEntryNamed(seq *yaml.Node, name string) {
+	kept := seq.Content[:0]
+	for _, item := range seq.Content {
+		if mappingHasName(item, name) {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	seq.Content = kept
+}
+
+// readConfigDocument parses the configuration at path, answering an empty
+// document when there is nothing there yet.
+func readConfigDocument(path string) (*yaml.Node, error) {
+	body, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+	case errors.Is(err, os.ErrNotExist):
+		return &yaml.Node{}, nil
+	default:
+		return nil, messages.ReadingEvalConfig(path, err)
+	}
+
+	doc := &yaml.Node{}
+	if len(body) > 0 {
+		if err := yaml.Unmarshal(body, doc); err != nil {
+			return nil, messages.ParsingEvalConfig(path, err)
+		}
+	}
+	return doc, nil
+}
+
 // UpsertCatalogEntry records one field on a named catalog entry, editing the
 // file rather than rewriting it.
 //
@@ -39,24 +160,15 @@ func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool,
 	}
 	path := resolvedConfigPath(evalDir)
 
-	body, err := os.ReadFile(path)
-	switch {
-	case err == nil:
-	case errors.Is(err, os.ErrNotExist):
+	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
 		created = true
-		body = nil
-	default:
-		return false, false, messages.ReadingEvalConfig(path, err)
+	}
+	doc, err := readConfigDocument(path)
+	if err != nil {
+		return false, false, err
 	}
 
-	var doc yaml.Node
-	if len(body) > 0 {
-		if err := yaml.Unmarshal(body, &doc); err != nil {
-			return false, false, messages.ParsingEvalConfig(path, err)
-		}
-	}
-
-	root := documentMapping(&doc)
+	root := documentMapping(doc)
 	seq := mappingSequence(root, kind)
 	entry := sequenceEntryNamed(seq, name)
 
@@ -68,7 +180,7 @@ func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool,
 		return false, false, nil
 	}
 
-	out, err := marshalConfigDocument(&doc)
+	out, err := marshalConfigDocument(doc)
 	if err != nil {
 		return false, false, messages.SerializingEvalConfig(err)
 	}
@@ -127,16 +239,24 @@ func mappingSequence(mapping *yaml.Node, key string) *yaml.Node {
 // caller's guard refuses those before this is reached.
 func sequenceEntryNamed(seq *yaml.Node, name string) *yaml.Node {
 	for _, item := range seq.Content {
-		if item.Kind != yaml.MappingNode {
-			continue
-		}
-		for i := 0; i+1 < len(item.Content); i += 2 {
-			if item.Content[i].Value == "name" && item.Content[i+1].Value == name {
-				return item
-			}
+		if mappingHasName(item, name) {
+			return item
 		}
 	}
 	return nil
+}
+
+// mappingHasName reports whether a sequence entry declares this name here.
+func mappingHasName(item *yaml.Node, name string) bool {
+	if item.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(item.Content); i += 2 {
+		if item.Content[i].Value == "name" && item.Content[i+1].Value == name {
+			return true
+		}
+	}
+	return false
 }
 
 // setMappingScalar sets key on mapping, reporting whether that changed anything.

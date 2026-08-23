@@ -62,20 +62,23 @@ func TestEvalKeys(t *testing.T) {
 		yamlKeys(t, Eval{}))
 }
 
-// Every entry in an eval's evaluators: list is a map keyed evaluator:, and the
-// spec gives that map exactly five keys.
+// Every entry in an eval's evaluators: list is a map keyed evaluator:, or a
+// `$ref` at a file holding one -- modelled rather than only resolved, so a
+// command that reads, modifies and saves the file writes the author's include
+// back out instead of refusing it.
 func TestEvaluatorRefKeys(t *testing.T) {
 	assert.ElementsMatch(t,
-		[]string{"evaluator", "name", "version", "initialization_parameters", "data_mapping"},
+		[]string{"$ref", "evaluator", "name", "version", "initialization_parameters", "data_mapping"},
 		yamlKeys(t, evalcore.EvaluatorRef{}),
-		"the spec tabulates these five; a sixth is a promise it does not make")
+		"the spec tabulates these five, plus the include core splices into any object")
 }
 
-// source: says where rows come from when they are not a dataset.
+// source: says where rows come from when they are not a dataset, and may be
+// pulled in with `$ref` for the same reason.
 func TestSourceDeclKeys(t *testing.T) {
 	assert.ElementsMatch(t,
 		[]string{
-			"type", "lookback_hours", "max_traces", "agent_name", "response_ids", "max_turns",
+			"$ref", "type", "lookback_hours", "max_traces", "agent_name", "response_ids", "max_turns",
 			"agent_version", "start_time", "end_time",
 		},
 		yamlKeys(t, SourceDecl{}))
@@ -122,9 +125,10 @@ func TestEveryKeyIsSnakeCase(t *testing.T) {
 // from. A trace-backed eval has no target, which is what agent_name under
 // source: exists to say.
 func TestTargetAndSourceAreDistinct(t *testing.T) {
-	assert.ElementsMatch(t, []string{"type", "name"}, yamlKeys(t, Target{}),
-		"the spec's target: is a type and a name; a version there would pin the "+
-			"agent an eval invokes, which nothing asks for")
+	assert.ElementsMatch(t, []string{"$ref", "type", "name"}, yamlKeys(t, Target{}),
+		"the spec's target: is a type and a name, plus the include core splices into "+
+			"any object; a version there would pin the agent an eval invokes, which "+
+			"nothing asks for")
 
 	assert.Contains(t, yamlKeys(t, SourceDecl{}), "agent_name",
 		"a trace run filters by agent rather than invoking one")

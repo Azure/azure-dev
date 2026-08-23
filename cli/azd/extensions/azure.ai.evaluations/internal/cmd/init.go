@@ -188,13 +188,23 @@ func newInitCommand() *cobra.Command {
 			if cfg == nil {
 				cfg = &project.EvalConfig{}
 			}
+			// Recorded rather than applied here: the write below edits the file,
+			// so the replacement has to be expressed as a removal it can make.
+			replacedEval := ""
 			if cfg.HasEval(evalName) {
 				if !force {
 					return messages.EvalAlreadyDeclared(
 						evalName, filepath.ToSlash(configPath))
 				}
+				replacedEval = evalName
 				cfg.RemoveEval(evalName)
 			}
+
+			// What the file already declares, so the write can be limited to what
+			// planScaffold adds to it.
+			declaredDatasets := len(cfg.Datasets)
+			declaredEvaluators := len(cfg.Evaluators)
+			declaredEvals := len(cfg.Evals)
 
 			// The location may be the file azure.yaml names rather than the
 			// directory holding it, and artifacts sit beside the configuration.
@@ -219,7 +229,12 @@ func newInitCommand() *cobra.Command {
 				cfg:        cfg,
 			})
 
-			if err := project.SaveEvalConfig(path, cfg); err != nil {
+			if err := project.ApplyScaffold(path, project.ScaffoldWrite{
+				RemoveEval: replacedEval,
+				Datasets:   cfg.Datasets[declaredDatasets:],
+				Evaluators: cfg.Evaluators[declaredEvaluators:],
+				Evals:      cfg.Evals[declaredEvals:],
+			}); err != nil {
 				return err
 			}
 

@@ -4,12 +4,12 @@ Open work on `azd ai eval`, written down so it is decided rather than
 rediscovered. Each entry says what is wrong, why it was not fixed where it was
 found, and what closing it involves.
 
-## 1. The editing path should not go through typed structs
+## 1. The editing path no longer goes through typed structs
 
-**Partly done.** The catalog write path no longer does; `init` still does.
+**Done.** Kept here because the reasoning explains the shape of the code.
 
-`generate` and the catalog commands used to read `evals/azure.eval.yaml` into Go
-structs and marshal the whole thing back. That had two consequences:
+`generate`, `init` and the catalog commands used to read `evals/azure.eval.yaml`
+into Go structs and marshal the whole thing back. That had two consequences:
 
 - **The file was rewritten, not edited.** Every comment was deleted and the
   indentation normalized, so an author who annotated their configuration lost
@@ -18,50 +18,41 @@ structs and marshal the whole thing back. That had two consequences:
   on *any* object at any depth, but a typed round-trip only survives it where a
   `Ref` field exists.
 
-`UpsertCatalogEntry` in `internal/project/eval_config_edit.go` now edits the node
-tree instead, using `github.com/braydonk/yaml` — the same library azd core uses
-for `azure.yaml`. Anything it does not touch is written back exactly as found,
+`internal/project/eval_config_edit.go` now edits the node tree instead, using
+`github.com/braydonk/yaml` — the same library azd core uses for `azure.yaml`.
+`UpsertCatalogEntry` records one field on a named catalog entry;
+`ApplyScaffold` writes the entries `init` decided to add and drops the one
+`--force` replaces. Anything neither touches is written back exactly as found,
 comments included, whether or not this package models it.
 
 Decisions are still made from the decoded configuration, because that is what
-the guard understands; only the write moved. That split is what keeps the change
+the guards understand; only the write moved. That split is what kept the change
 small.
 
-### Still to do
-
-`init` (`internal/cmd/init.go`) writes evals through `SaveEvalConfig` and has the
-same two problems. Moving it needs a node-level equivalent for the `evals:`
-sequence and for `RemoveEval`, which is more involved than the catalog case
-because an eval entry is a nested structure rather than two scalars.
-
-Once it is moved, `SaveEvalConfig` has no callers outside tests, and the three
-`Ref` fields plus the `splicedEvaluators` / `nestSplicedRubrics` machinery can be
-reconsidered — see 2b.
+`SaveEvalConfig` now has no callers outside tests and the legacy-path helpers.
 
 Core also ships `foundry.YAMLDocument` (`pkg/foundry/includes_edit.go`), which is
 comment-preserving and `$ref`-aware but oriented around service entries in
 `azure.yaml`. It has no callers. Worth revisiting if this grows beyond targeted
 edits.
 
-## 2. Gaps that finishing item 1 would close
+## 2. What that closed, and what it did not
 
-### 2a. `$ref` on nested shapes deploys but cannot be edited
+### 2a. `$ref` on nested shapes — closed
 
 `$ref` under an eval's `source:`, under its `target:`, or on an item of its
-`evaluators:` list resolves and deploys correctly, then fails the editing read
+`evaluators:` list resolved and deployed correctly, then failed the editing read
 with `unknown key "$ref"`.
 
-Not fixed in place because modelling it means adding a fourth, fifth and sixth
-`Ref` field, which `internal/project/config_keys_test.go` deliberately fails:
-those tests pin each shape to the specification, and a new key there is a
-promise the spec does not make. It also needs validation changes, since a
-reference carrying only a directive currently fails `evaluator entry is missing
-'evaluator'`.
+Now modelled on `SourceDecl`, `Target` and `evalcore.EvaluatorRef`, allowed by
+the schema through the same `FileRef` branch the catalog entries use, and
+recorded in `config_keys_test.go`. The decode-time check that an evaluator
+reference names an evaluator now allows an entry that is still a directive,
+since the file it points at supplies the name — it stays strict on the resolved
+reading, where an entry with neither is genuinely malformed.
 
-Two ways to close it without item 1: extend the spec to allow the include on
-those shapes, or refuse it on the resolving path so both reads fail together.
-The second would forbid something item 1 intends to support, so it is not
-recommended.
+This changes the shapes the specification describes, so the spec is updated
+alongside it rather than the code drifting ahead of it.
 
 ### 2b. A rubric rescue is document-wide when the configuration is itself included
 

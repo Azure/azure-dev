@@ -27,6 +27,9 @@ func verifySocketPeer(conn *net.UnixConn) error {
 		credErr error
 	)
 	if err := rawConn.Control(func(fd uintptr) {
+		// A descriptor supplied by RawConn.Control is always a small
+		// non-negative value, so the conversion cannot overflow.
+		//nolint:gosec // G115: file descriptors always fit in an int.
 		cred, credErr = unix.GetsockoptXucred(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERCRED)
 	}); err != nil {
 		return fmt.Errorf("accessing AZD_AUTH_ENDPOINT socket handle: %w", err)
@@ -34,5 +37,5 @@ func verifySocketPeer(conn *net.UnixConn) error {
 	if credErr != nil {
 		return fmt.Errorf("reading AZD_AUTH_ENDPOINT socket peer credentials: %w", credErr)
 	}
-	return verifySocketPeerUID(cred.Uid)
+	return verifySocketPeerUID(int64(cred.Uid))
 }

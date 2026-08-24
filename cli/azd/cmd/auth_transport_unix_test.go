@@ -142,12 +142,8 @@ func TestNewPipeTransport_NotSupportedOnUnix(t *testing.T) {
 func TestVerifySocketPeerUID(t *testing.T) {
 	t.Parallel()
 
-	euid := uint32(os.Geteuid())
+	euid := int64(os.Geteuid())
 	require.NoError(t, verifySocketPeerUID(euid))
 
-	otherUID := euid + 1
-	if otherUID == euid {
-		otherUID = euid - 1
-	}
-	require.ErrorContains(t, verifySocketPeerUID(otherUID), "does not match current euid")
+	require.ErrorContains(t, verifySocketPeerUID(euid+1), "does not match current euid")
 }

@@ -137,9 +137,13 @@ func checkPathOwnedAndRestricted(path string, isDir bool) error {
 	return nil
 }
 
-func verifySocketPeerUID(uid uint32) error {
+// verifySocketPeerUID reports whether uid is the effective uid of the current
+// process. The uid is taken as an int64 so that the platform credential
+// structs, which use uint32, convert without truncation and without an
+// unchecked signed/unsigned conversion.
+func verifySocketPeerUID(uid int64) error {
 	euid := os.Geteuid()
-	if uint64(uid) != uint64(euid) {
+	if uid != int64(euid) {
 		return fmt.Errorf(
 			"permissions too permissive: socket peer uid %d does not match current euid %d",
 			uid, euid)

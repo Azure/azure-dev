@@ -259,6 +259,7 @@ func (sb *SpecBuilder) generateFlagArgs(flag *pflag.Flag, ctx *FlagContext) []Ar
 	if sb.flagArgsProvider != nil {
 		if customArg := sb.flagArgsProvider.GetFlagArgs(ctx); customArg != nil {
 			arg = *customArg
+			arg.IsOptional = arg.IsOptional || flag.NoOptDefVal != ""
 		}
 	}
 

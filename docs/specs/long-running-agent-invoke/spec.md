@@ -1,3 +1,5 @@
+<!-- cspell:ignore checkpointed conv exterrors httptest nonterminal omitempty sess unreplayable -->
+
 # Long-Running Responses Support in `azd ai agent invoke`
 
 ## Status

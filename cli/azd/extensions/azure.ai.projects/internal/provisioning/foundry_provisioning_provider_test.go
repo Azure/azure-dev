@@ -747,6 +747,8 @@ func TestPersistCreatedResourceGroupOwnership(t *testing.T) {
 
 	require.NoError(t, p.persistCreatedResourceGroupOwnership(t.Context()))
 	want := "/subscriptions/sub/resourceGroups/rg-foundry"
+	assert.True(t, p.rgExplicit)
+	assert.Equal(t, "rg-foundry", env.set[envKeyFoundryRG])
 	assert.Equal(t, want, p.foundryRGOwnerID)
 	assert.Equal(t, want, env.set[envKeyFoundryRGOwner])
 }
@@ -1398,6 +1400,21 @@ func TestDestroyPreservesExistingProjectBindings(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Empty(t, result.InvalidatedEnvKeys)
+}
+
+func TestPreviewPreservesConnectionOnlyExistingProject(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{existingProjectConnectionOnly: true}
+	var messages []string
+
+	result, err := p.Preview(t.Context(), func(message string) {
+		messages = append(messages, message)
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Preview)
+	assert.Empty(t, result.Preview.Changes)
+	assert.Contains(t, messages, "Using existing Foundry project; nothing to provision")
 }
 
 func TestDestroyResultForExistingProjectOnlyClearsAdjunctState(t *testing.T) {

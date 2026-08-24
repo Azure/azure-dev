@@ -1478,6 +1478,12 @@ func (p *FoundryProvisioningProvider) Preview(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
+	if p.existingProjectConnectionOnly {
+		progress("Using existing Foundry project; nothing to provision")
+		return &azdext.ProvisioningPreviewResult{
+			Preview: &azdext.ProvisioningDeploymentPreview{},
+		}, nil
+	}
 	progress("Computing deployment plan...")
 
 	src, err := p.resolveTemplate(ctx, progress)
@@ -2401,6 +2407,10 @@ func (p *FoundryProvisioningProvider) persistCreatedResourceGroupOwnership(ctx c
 	if err := verifyLayerResourceGroupTags(tags, p.envName, p.rgName); err != nil {
 		return err
 	}
+	if err := p.setEnv(recoveryCtx, envKeyFoundryRG, p.rgName); err != nil {
+		return err
+	}
+	p.rgExplicit = true
 	p.foundryRGOwnerID = fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", p.subID, p.rgName)
 	return p.setEnv(recoveryCtx, envKeyFoundryRGOwner, p.foundryRGOwnerID)
 }

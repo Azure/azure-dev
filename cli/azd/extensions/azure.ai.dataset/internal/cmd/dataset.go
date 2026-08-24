@@ -407,8 +407,13 @@ with JSON output, --force is required.`,
 			}
 			defer ec.Close()
 
-			if err := confirmDelete(cmd, ec, name, version, force); err != nil {
+			goAhead, err := confirmDelete(cmd, ec, name, version, force)
+			if err != nil {
 				return err
+			}
+			if !goAhead {
+				fmt.Fprint(cmd.OutOrStdout(), messages.DeleteCancelled(name, version))
+				return nil
 			}
 
 			if err := ec.datasetClient.DeleteDatasetVersion(
@@ -442,12 +447,17 @@ with JSON output, --force is required.`,
 // on --force, and refuse rather than assume when nobody can answer. A prompt
 // written into a JSON document, or into a script running with --no-prompt, is a
 // hang rather than a question, which is why those require the flag instead.
-func confirmDelete(cmd *cobra.Command, ec *datasetContext, name, version string, force bool) error {
+func confirmDelete(
+	cmd *cobra.Command,
+	ec *datasetContext,
+	name, version string,
+	force bool,
+) (bool, error) {
 	if force {
-		return nil
+		return true, nil
 	}
 	if noPrompt(cmd) {
-		return messages.DeleteNeedsForce(name, version)
+		return false, messages.DeleteNeedsForce(name, version)
 	}
 
 	defaultNo := false
@@ -458,10 +468,7 @@ func confirmDelete(cmd *cobra.Command, ec *datasetContext, name, version string,
 		},
 	})
 	if err != nil {
-		return exterrors.FromPrompt(err, "confirming the delete")
+		return false, exterrors.FromPrompt(err, "confirming the delete")
 	}
-	if resp.GetValue() {
-		return nil
-	}
-	return messages.DeleteCancelled(name, version)
+	return resp.GetValue(), nil
 }

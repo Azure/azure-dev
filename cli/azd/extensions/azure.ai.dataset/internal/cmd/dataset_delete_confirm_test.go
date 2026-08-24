@@ -6,6 +6,8 @@ package cmd
 import (
 	"testing"
 
+	"azureaidataset/internal/messages"
+
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,15 +22,18 @@ import (
 func TestDeleteAsksBeforeRemovingAVersion(t *testing.T) {
 	t.Run("--force skips the question", func(t *testing.T) {
 		cmd := deleteCommandWith(t, "--no-prompt")
-		require.NoError(t, confirmDelete(cmd, nil, "golden", "3", true),
-			"the caller already said yes on the command line")
+		goAhead, err := confirmDelete(cmd, nil, "golden", "3", true)
+
+		require.NoError(t, err, "the caller already said yes on the command line")
+		assert.True(t, goAhead, "--force is the answer, so the delete goes ahead")
 	})
 
 	t.Run("--no-prompt without --force is refused", func(t *testing.T) {
 		cmd := deleteCommandWith(t, "--no-prompt")
-		err := confirmDelete(cmd, nil, "golden", "3", false)
+		goAhead, err := confirmDelete(cmd, nil, "golden", "3", false)
 
 		require.Error(t, err, "nobody is there to answer, so it must not assume yes")
+		assert.False(t, goAhead)
 		assert.Contains(t, err.Error(), "--force", "the message has to say how to proceed")
 		assert.Contains(t, err.Error(), "golden")
 		assert.Contains(t, err.Error(), "3")
@@ -36,12 +41,28 @@ func TestDeleteAsksBeforeRemovingAVersion(t *testing.T) {
 
 	t.Run("json output is treated as unattended", func(t *testing.T) {
 		cmd := deleteCommandWith(t, "--output", "json")
-		err := confirmDelete(cmd, nil, "golden", "3", false)
+		goAhead, err := confirmDelete(cmd, nil, "golden", "3", false)
 
 		require.Error(t, err,
 			"a question written into a JSON document is a hang, not a prompt")
+		assert.False(t, goAhead)
 		assert.Contains(t, err.Error(), "--force")
 	})
+}
+
+// Answering no is the command working, not failing.
+//
+// It used to come back as an ordinary error, which azdext reports and exits 1
+// on, so a reader who deliberately said no got the same exit code as a reader
+// whose delete broke. Every script that checks the code reads that as a
+// failure. The refusal above still errors, because there the command could not
+// do what it was asked; declining is the command doing exactly what it was
+// asked.
+func TestDecliningIsNotAFailure(t *testing.T) {
+	assert.IsType(t, "", messages.DeleteCancelled("golden", "3"),
+		"a decline is something to print, not something to return as an error")
+	assert.Contains(t, messages.DeleteCancelled("golden", "3"), "golden",
+		"the line has to name what was left alone")
 }
 
 // The delete command exposes the flag the contract depends on.

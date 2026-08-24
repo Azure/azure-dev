@@ -72,7 +72,8 @@ func TestListDatasetsRefusesANextLinkOffTheEndpointOrigin(t *testing.T) {
 	assert.Zero(t, atomic.LoadInt32(&elsewhereHits), "the other host must never be contacted")
 }
 
-// A service that keeps returning the same link must not spin forever.
+// A service that keeps returning the same link must not spin forever, and the
+// short list it leaves behind must not be mistaken for the whole catalog.
 func TestListDatasetsStopsOnARepeatedNextLink(t *testing.T) {
 	var srvURL string
 	var hits int32
@@ -83,7 +84,7 @@ func TestListDatasetsStopsOnARepeatedNextLink(t *testing.T) {
 	srvURL = srv.URL
 
 	list, err := c.ListDatasets(t.Context(), testAPIVersion)
-	require.NoError(t, err)
-	require.NotNil(t, list)
+	require.Error(t, err, "an incomplete listing must not be reported as the listing")
+	assert.Nil(t, list, "a caller must not be handed the pages that happened to arrive")
 	assert.LessOrEqual(t, atomic.LoadInt32(&hits), int32(3), "the repeated link is followed at most once")
 }

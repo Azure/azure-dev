@@ -16,4 +16,7 @@ First release of the Foundry datasets extension.
   each refused locally.
 - Reads dataset content back, whether the service hands out a blob URI or the
   container holding it.
+- `delete` asks before removing a version, and takes `--force` to skip the
+  question. Under `--no-prompt` or `-o json` it refuses rather than assume,
+  because a prompt nobody can answer is a hang.
 - `-o json` on every command, and `--no-prompt` for unattended use.

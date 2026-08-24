@@ -251,8 +251,12 @@ func DeleteNeedsForce(dataset, version string) error {
 }
 
 // DeleteCancelled reports the author answering no.
-func DeleteCancelled(dataset, version string) error {
-	return fmt.Errorf("left dataset %s version %s alone", dataset, version)
+//
+// A line rather than an error: they were asked, they said no, and nothing was
+// deleted. That is the command doing its job, and exiting non-zero for it makes
+// a deliberate answer indistinguishable from a failure to anything scripted.
+func DeleteCancelled(dataset, version string) string {
+	return fmt.Sprintf("Left dataset %s version %s alone.\n", dataset, version)
 }
 
 // ReadingDownloadCredentials reports the service refusing to hand out a read URI.

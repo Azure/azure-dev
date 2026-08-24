@@ -7,12 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
 	"azureaidataset/internal/messages"
@@ -55,11 +53,12 @@ func (c *DatasetClient) followPages(ctx context.Context, first *DatasetList) (*D
 	seen := map[string]bool{}
 	for next := first.NextLink; next != ""; {
 		if seen[next] || len(seen) >= maxListPages {
-			// A repeated or endless link is the service misbehaving, not a reason
-			// to fail the command -- but the list is short and, said through log,
-			// nobody would know: log goes to io.Discard unless --debug.
-			fmt.Fprint(os.Stderr, messages.Warning(messages.ListingTruncated(len(seen))))
-			break
+			// A repeated or endless link is the service misbehaving, and what it
+			// leaves behind is a short list indistinguishable from a complete
+			// one. These rows pick the latest version, so a caller handed the
+			// pages that did arrive publishes from a stale baseline believing it
+			// saw everything. Being told to retry is the better outcome.
+			return nil, pageWalkError{cause: messages.ListingTruncated(len(seen))}
 		}
 		seen[next] = true
 
@@ -72,7 +71,7 @@ func (c *DatasetClient) followPages(ctx context.Context, first *DatasetList) (*D
 		// would throw away every page already collected.
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &page); err != nil {
-				return nil, messages.ParsingResponse(err)
+				return nil, pageWalkError{cause: messages.ParsingResponse(err)}
 			}
 		}
 		out.Value = append(out.Value, page.Value...)

@@ -298,7 +298,7 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			for _, envVar := range []string{
 				"CODEX_CI",
 				"CODEX_THREAD_ID",

@@ -51,7 +51,7 @@ func TestAssembleState_SplitConnectionsOnly(t *testing.T) {
 	assert.Equal(t, "CognitiveSearch | https://search.example", state.Connections[1].Detail)
 }
 
-func TestAssembleState_ConnectionUsesServiceKeyAsName(t *testing.T) {
+func TestAssembleState_ConnectionUsesPayloadName(t *testing.T) {
 	t.Parallel()
 
 	src := &fakeSource{
@@ -62,7 +62,7 @@ func TestAssembleState_ConnectionUsesServiceKeyAsName(t *testing.T) {
 					Name: "azure-search",
 					Host: connectionHost,
 					AdditionalProperties: mustStruct(t, map[string]any{
-						"name":     "ignored-body-name",
+						"name":     "payload-name",
 						"category": "CognitiveSearch",
 						"target":   "https://search.example",
 					}),
@@ -74,7 +74,8 @@ func TestAssembleState_ConnectionUsesServiceKeyAsName(t *testing.T) {
 	state, errs := assembleState(t.Context(), src)
 	require.Empty(t, errs)
 	require.Len(t, state.Connections, 1)
-	assert.Equal(t, "azure-search", state.Connections[0].Name)
+	assert.Equal(t, "payload-name", state.Connections[0].Name)
+	assert.Equal(t, "azure-search", state.Connections[0].ServiceName)
 }
 
 func TestAssembleState_DisabledConnectionIsSkipped(t *testing.T) {
@@ -438,10 +439,11 @@ resources:
 			Path: root,
 			Services: map[string]*azdext.ServiceConfig{
 				"echo": agent,
-				"shared-conn": {
-					Name: "shared-conn",
+				"split-service": {
+					Name: "split-service",
 					Host: connectionHost,
 					AdditionalProperties: mustStruct(t, map[string]any{
+						"name":     "shared-conn",
 						"category": "CognitiveSearch",
 						"target":   "https://split.example",
 					}),
@@ -460,7 +462,7 @@ resources:
 		byName[ref.Name] = ref
 	}
 	assert.Equal(t, "CognitiveSearch | https://split.example", byName["shared-conn"].Detail)
-	assert.Equal(t, "shared-conn", byName["shared-conn"].ServiceName)
+	assert.Equal(t, "split-service", byName["shared-conn"].ServiceName)
 	assert.Equal(t, "RemoteTool | https://bundled-only.example", byName["bundled-only"].Detail)
 	assert.Equal(t, "echo", byName["bundled-only"].ServiceName)
 	assert.Equal(t, "ApiKey | https://manifest-only.example", byName["manifest-only"].Detail)

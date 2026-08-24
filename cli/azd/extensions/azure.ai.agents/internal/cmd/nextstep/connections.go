@@ -157,11 +157,15 @@ func collectSplitConnections(
 			)
 			continue
 		}
-		if _, exists := collected[serviceName]; exists {
+		connectionName := decoded.Name
+		if connectionName == "" {
+			connectionName = serviceName
+		}
+		if _, exists := collected[connectionName]; exists {
 			continue
 		}
-		collected[serviceName] = ResourceRef{
-			Name:        serviceName,
+		collected[connectionName] = ResourceRef{
+			Name:        connectionName,
 			ServiceName: serviceName,
 			Detail: formatConnectionDetail(
 				decoded.Category,

@@ -18,6 +18,8 @@ import (
 // ParameterValues represents the user-provided values for manifest parameters
 type ParameterValues map[string]any
 
+const manifestParameterEnvPrefix = "AZD_AI_AGENT_MANIFEST_PARAMETER_"
+
 // ProcessManifestParameters prompts the user for parameter values and injects them into the template
 func ProcessManifestParameters(
 	ctx context.Context,
@@ -151,26 +153,27 @@ func promptForYamlParameterValues(
 		fmt.Println()
 
 		isRequired := property.Required != nil && *property.Required
+		parameterEnvVar := manifestParameterEnvPrefix + property.Name
 
-		if envValue, found := os.LookupEnv(property.Name); found {
+		if envValue, found := os.LookupEnv(parameterEnvVar); found {
 			if isRequired && envValue == "" {
 				return nil, fmt.Errorf(
 					"environment variable %s is empty but parameter '%s' is required",
-					property.Name,
+					parameterEnvVar,
 					property.Name,
 				)
 			}
 			if len(enumValues) > 0 && !slices.Contains(enumValues, envValue) {
 				return nil, fmt.Errorf(
 					"environment variable %s has invalid value %q for parameter '%s'; expected one of %v",
-					property.Name,
+					parameterEnvVar,
 					envValue,
 					property.Name,
 					enumValues,
 				)
 			}
 
-			fmt.Printf("Using value from environment variable %s.\n\n", property.Name)
+			fmt.Printf("Using value from environment variable %s.\n\n", parameterEnvVar)
 			paramValues[property.Name] = envValue
 			continue
 		}
@@ -185,7 +188,7 @@ func promptForYamlParameterValues(
 				return nil, fmt.Errorf(
 					"parameter '%s' is required in no-prompt mode; set environment variable %s",
 					property.Name,
-					property.Name,
+					parameterEnvVar,
 				)
 			default:
 				paramValues[property.Name] = ""

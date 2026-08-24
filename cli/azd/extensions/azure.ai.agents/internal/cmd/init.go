@@ -1163,6 +1163,7 @@ func agentDefiningFlagsSet(flags *initFlags, srcBlocksReuse bool) bool {
 		flags.model != "" ||
 		flags.modelDeployment != "" ||
 		flags.projectResourceId != "" ||
+		flags.acrConnection != "" ||
 		flags.image != "" ||
 		srcBlocksReuse ||
 		len(flags.protocols) > 0
@@ -1177,6 +1178,7 @@ func canReuseExistingAgentConfiguration(
 	srcBlocksReuse bool,
 ) bool {
 	return flags.manifestPointer == "" &&
+		!flags.force &&
 		!manifestDetectedButDeclined &&
 		!agentDefiningFlagsSet(flags, srcBlocksReuse)
 }

@@ -117,8 +117,8 @@ func TestPromptForYamlParameterValues_NoPrompt(t *testing.T) {
 		requiredName  = "AZD_TEST_MANIFEST_REQUIRED_9570"
 	)
 
-	t.Setenv(sensitiveName, "test-value")
-	t.Setenv(enumName, "second")
+	t.Setenv(manifestParameterEnvPrefix+sensitiveName, "test-value")
+	t.Setenv(manifestParameterEnvPrefix+enumName, "second")
 
 	defaultValue := any("default-value")
 	enumValues := []any{"first", "second"}
@@ -150,13 +150,13 @@ func TestPromptForYamlParameterValues_NoPrompt(t *testing.T) {
 		t,
 		err,
 		"parameter 'AZD_TEST_MANIFEST_REQUIRED_9570' is required in no-prompt mode; "+
-			"set environment variable AZD_TEST_MANIFEST_REQUIRED_9570",
+			"set environment variable AZD_AI_AGENT_MANIFEST_PARAMETER_AZD_TEST_MANIFEST_REQUIRED_9570",
 	)
 }
 
 func TestPromptForYamlParameterValues_RejectsInvalidEnvironmentEnum(t *testing.T) {
 	const name = "AZD_TEST_MANIFEST_INVALID_ENUM_9570"
-	t.Setenv(name, "invalid")
+	t.Setenv(manifestParameterEnvPrefix+name, "invalid")
 
 	enumValues := []any{"first", "second"}
 	_, err := promptForYamlParameterValues(
@@ -172,7 +172,24 @@ func TestPromptForYamlParameterValues_RejectsInvalidEnvironmentEnum(t *testing.T
 	require.EqualError(
 		t,
 		err,
-		"environment variable AZD_TEST_MANIFEST_INVALID_ENUM_9570 has invalid value \"invalid\" "+
+		"environment variable AZD_AI_AGENT_MANIFEST_PARAMETER_AZD_TEST_MANIFEST_INVALID_ENUM_9570 "+
+			"has invalid value \"invalid\" "+
 			"for parameter 'AZD_TEST_MANIFEST_INVALID_ENUM_9570'; expected one of [first second]",
 	)
+}
+
+func TestPromptForYamlParameterValues_DoesNotReadAmbientParameterName(t *testing.T) {
+	const name = "GITHUB_TOKEN"
+	t.Setenv(name, "unrelated-secret")
+
+	defaultValue := any("safe-default")
+	values, err := promptForYamlParameterValues(
+		t.Context(),
+		PropertySchema{Properties: []Property{{Name: name, Default: &defaultValue}}},
+		nil,
+		true,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "safe-default", values[name])
 }

@@ -146,10 +146,18 @@ func TestAssembleState_DisabledConnectionSkipsRefErrors(t *testing.T) {
 	assert.Empty(t, state.Connections)
 }
 
+func TestEvaluateConditionString_EmptyIsTrue(t *testing.T) {
+	t.Parallel()
+
+	enabled, err := evaluateConditionString("", nil)
+	require.NoError(t, err)
+	assert.True(t, enabled)
+}
+
 func TestEvaluateConditionString_WhitespaceOnlyIsFalse(t *testing.T) {
 	t.Parallel()
 
-	for _, value := range []string{"", " \t\n"} {
+	for _, value := range []string{" ", "\t", "\n", " \t\n"} {
 		enabled, err := evaluateConditionString(value, nil)
 		require.NoError(t, err)
 		assert.False(t, enabled)

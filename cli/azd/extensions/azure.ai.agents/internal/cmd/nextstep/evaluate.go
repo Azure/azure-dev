@@ -69,6 +69,9 @@ func evaluateConditionString(
 	value string,
 	getenv func(string) string,
 ) (bool, error) {
+	if value == "" {
+		return true, nil
+	}
 	if strings.TrimSpace(value) == "" {
 		return false, nil
 	}

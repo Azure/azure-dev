@@ -214,6 +214,31 @@ func TestMultiSelectValues(t *testing.T) {
 	})
 }
 
+func TestValidateMultiSelectResponse(t *testing.T) {
+	tests := []struct {
+		name                string
+		response            []string
+		allowEmptySelection *bool
+		expectError         bool
+	}{
+		{name: "historical default allows empty"},
+		{name: "explicitly allows empty", allowEmptySelection: new(true)},
+		{name: "requires selection", allowEmptySelection: new(false), expectError: true},
+		{name: "accepts selection", response: []string{"alpha"}, allowEmptySelection: new(false)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateMultiSelectResponse(test.response, test.allowEmptySelection)
+			if test.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestNewPromptOptions(t *testing.T) {
 	buf := &bytes.Buffer{}
 	opts := newPromptOptions(buf, ConsoleOptions{

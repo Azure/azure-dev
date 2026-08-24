@@ -2164,7 +2164,6 @@ func TestPromptService_MultiSelect_NoPrompt_NoneSelected(t *testing.T) {
 			Choices: []*azdext.MultiSelectChoice{
 				{Value: "a", Label: "A", Selected: false},
 			},
-			AllowEmptySelection: new(true),
 		},
 	})
 	require.NoError(t, err)

@@ -300,11 +300,19 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, envVar := range []string{
+				"CLAUDE_CODE",
+				"CLAUDE_CODE_ENTRYPOINT",
 				"CODEX_CI",
 				"CODEX_THREAD_ID",
 				"CODEX_SESSION_ID",
 				"CURSOR_AGENT",
 				"CURSOR_CONVERSATION_ID",
+				"GITHUB_COPILOT_CLI",
+				"GH_COPILOT",
+				"COPILOT_CLI",
+				"GEMINI_CLI",
+				"GEMINI_CLI_NO_RELAUNCH",
+				"OPENCODE",
 			} {
 				t.Setenv(envVar, "")
 				os.Unsetenv(envVar)

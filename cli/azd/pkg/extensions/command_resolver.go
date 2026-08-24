@@ -121,7 +121,7 @@ func parseFlags(args []string, flags []Flag) []string {
 		}
 
 		if f.ValueOptional && flagType != "bool" {
-			// The resolver only records flag presence, so any parseable value can stand in for NoOptDefVal.
+			// The resolver only records flag presence, so any valid value can stand in for NoOptDefVal.
 			noOptDefVal := "true"
 			if flagType == "int" || flagType == "intarray" {
 				noOptDefVal = "0"

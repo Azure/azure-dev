@@ -113,6 +113,78 @@ func Test_KubeConfigPermissions(t *testing.T) {
 	requirePermissions(t, mergedConfigPath, osutil.PermissionFileOwnerOnly)
 }
 
+func Test_EnsureKubeConfigDirectoryFailsWhenParentIsFile(t *testing.T) {
+	parentPath := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(parentPath, nil, osutil.PermissionFile))
+
+	err := ensureKubeConfigDirectory(filepath.Join(parentPath, ".kube"))
+
+	require.Error(t, err)
+}
+
+func Test_WriteKubeConfigFailsWhenParentDoesNotExist(t *testing.T) {
+	err := writeKubeConfig(filepath.Join(t.TempDir(), "missing", "config"), []byte("config"))
+
+	require.Error(t, err)
+}
+
+func Test_SaveKubeConfigFailsWhenConfigPathIsFile(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), ".kube")
+	require.NoError(t, os.WriteFile(configPath, nil, osutil.PermissionFile))
+
+	manager := &KubeConfigManager{configPath: configPath}
+	_, err := manager.SaveKubeConfig(t.Context(), "config", createTestCluster("cluster", "user"))
+
+	require.ErrorContains(t, err, "failed creating .kube config directory")
+}
+
+func Test_MergeKubeConfigFailsWhenConfigPathIsFile(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl config view")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "apiVersion: v1\n", ""), nil
+	})
+
+	configPath := filepath.Join(t.TempDir(), ".kube")
+	require.NoError(t, os.WriteFile(configPath, nil, osutil.PermissionFile))
+
+	manager := &KubeConfigManager{
+		cli:        NewCli(mockContext.CommandRunner),
+		configPath: configPath,
+	}
+	_, err := manager.MergeConfigs(*mockContext.Context, "config", "cluster")
+
+	require.ErrorContains(t, err, "failed securing .kube config directory")
+}
+
+func Test_AddOrUpdateContext(t *testing.T) {
+	manager := &KubeConfigManager{configPath: filepath.Join(t.TempDir(), ".kube")}
+
+	configPath, err := manager.AddOrUpdateContext(
+		t.Context(),
+		"cluster",
+		createTestCluster("cluster", "user"),
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(manager.configPath, "cluster"), configPath)
+}
+
+func Test_AddOrUpdateContextFailsWhenConfigPathIsFile(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), ".kube")
+	require.NoError(t, os.WriteFile(configPath, nil, osutil.PermissionFile))
+
+	manager := &KubeConfigManager{configPath: configPath}
+	_, err := manager.AddOrUpdateContext(
+		t.Context(),
+		"cluster",
+		createTestCluster("cluster", "user"),
+	)
+
+	require.ErrorContains(t, err, "failed write new kube context file")
+}
+
 func requirePermissions(t *testing.T, path string, expected os.FileMode) {
 	t.Helper()
 

@@ -826,9 +826,9 @@ func isDeployed(
 		return value != ""
 	}
 
-	// Voice deploys use the base ENDPOINT env var as the completion marker. The
-	// legacy voice API does not produce AGENT_<KEY>_VERSION, and unified voice
-	// deploys write VERSION before ENDPOINT to keep ENDPOINT as the final marker.
+	// Voice deploys use the base ENDPOINT env var as the completion marker.
+	// Unified voice deploys write VERSION before ENDPOINT to keep ENDPOINT as the
+	// final marker.
 	// Require ENDPOINT for voice even when VERSION is present, otherwise a partial
 	// env write could be reported as deployed before the callable endpoint was
 	// persisted. Gate this on the service's actual declared kind: a hosted agent

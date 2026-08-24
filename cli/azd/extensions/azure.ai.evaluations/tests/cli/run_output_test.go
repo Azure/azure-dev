@@ -209,7 +209,9 @@ func TestCLIResultsExport(t *testing.T) {
 
 		body, err := os.ReadFile(path)
 		require.NoError(t, err)
-		require.Contains(t, string(body), "run_id,status,criterion,passed,failed")
+		// The same header the assertion above checks on stdout: --output-file
+		// changes where the payload goes, not what it is.
+		require.Contains(t, string(body), "run_id,status,testing_criteria,passed,failed")
 		require.Contains(t, string(body), f.FirstRunID)
 	})
 

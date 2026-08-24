@@ -152,6 +152,13 @@ func (s *promptService) MultiSelect(
 			}
 		}
 
+		allowEmptySelection := req.Options.AllowEmptySelection != nil && *req.Options.AllowEmptySelection
+		if len(selectedChoices) == 0 && !allowEmptySelection {
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
+		}
+
 		return &azdext.MultiSelectResponse{
 			Values: selectedChoices,
 		}, nil

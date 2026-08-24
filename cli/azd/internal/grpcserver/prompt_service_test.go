@@ -2155,19 +2155,41 @@ func TestPromptService_MultiSelect_NoPrompt_ReturnsSelected(t *testing.T) {
 	require.Equal(t, "c", resp.Values[1].Value)
 }
 
-func TestPromptService_MultiSelect_NoPrompt_NoneSelected(t *testing.T) {
+func TestPromptService_MultiSelect_NoPrompt_EmptySelection(t *testing.T) {
 	t.Parallel()
-	svc := newTestPromptService(&mockPromptService{}, true)
-	resp, err := svc.MultiSelect(t.Context(), &azdext.MultiSelectRequest{
-		Options: &azdext.MultiSelectOptions{
-			Message: "pick:",
-			Choices: []*azdext.MultiSelectChoice{
-				{Value: "a", Label: "A", Selected: false},
-			},
-		},
-	})
-	require.NoError(t, err)
-	require.Empty(t, resp.Values)
+
+	tests := []struct {
+		name                string
+		allowEmptySelection *bool
+		expectError         bool
+	}{
+		{name: "default requires selection", expectError: true},
+		{name: "explicitly requires selection", allowEmptySelection: new(false), expectError: true},
+		{name: "allows empty selection", allowEmptySelection: new(true)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc := newTestPromptService(&mockPromptService{}, true)
+			resp, err := svc.MultiSelect(t.Context(), &azdext.MultiSelectRequest{
+				Options: &azdext.MultiSelectOptions{
+					Message: "pick:",
+					Choices: []*azdext.MultiSelectChoice{
+						{Value: "a", Label: "A", Selected: false},
+					},
+					AllowEmptySelection: test.allowEmptySelection,
+				},
+			})
+			if test.expectError {
+				require.Error(t, err)
+				requirePromptRequiredError(t, err, "pick:")
+				return
+			}
+
+			require.NoError(t, err)
+			require.Empty(t, resp.Values)
+		})
+	}
 }
 
 func TestPromptService_Prompt_NoPrompt_WithDefault(t *testing.T) {

@@ -92,20 +92,20 @@ func (a *listAction) Run() error {
 
 func listAllEnvironments(ctx context.Context, client *rleClient) ([]environmentResource, error) {
 	var environments []environmentResource
-	after := ""
+	continuationToken := ""
 	seenCursors := map[string]struct{}{}
 	for range environmentListMaxPages {
-		page, err := client.listEnvironments(ctx, after, environmentListPageSize)
+		page, err := client.listEnvironments(ctx, continuationToken, environmentListPageSize)
 		if err != nil {
 			return nil, serviceError(err)
 		}
 		environments = append(environments, page.Data...)
-		if !page.HasMore {
+		if strings.TrimSpace(page.NextContinuationToken) == "" {
 			return environments, nil
 		}
-		after, err = nextPaginationCursor(seenCursors, page.LastId, func() error {
+		continuationToken, err = nextPaginationCursor(seenCursors, page.NextContinuationToken, func() error {
 			return &azdext.LocalError{
-				Message:  "Environment list pagination did not return a new cursor.",
+				Message:  "Environment list pagination did not return a new continuation token.",
 				Code:     "rle_environment_list_cursor_invalid",
 				Category: azdext.LocalErrorCategoryInternal,
 			}

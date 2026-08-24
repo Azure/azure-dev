@@ -34,7 +34,7 @@ func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
 		if got := r.URL.Query().Get("api-version"); got != foundryAPIVersion {
 			t.Fatalf("expected API version %q, got %q", foundryAPIVersion, got)
 		}
-		if got := r.URL.Query().Get("after"); got != "" {
+		if got := r.URL.Query().Get("continuationToken"); got != "" {
 			t.Fatalf("expected no initial cursor, got %q", got)
 		}
 		if got := r.URL.Query().Get("limit"); got != fmt.Sprintf("%d", environmentListPageSize) {
@@ -58,7 +58,7 @@ func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
 					"updatedAtUtc": "2026-07-30T06:00:00Z"
 				}
 			],
-			"has_more": false
+			"nextContinuationToken": null
 		}`))
 	}))
 	defer controlPlane.Close()
@@ -109,7 +109,7 @@ func TestEnvironmentListSupportsJSONOutput(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"data": [{"id":"env-1","name":"echo_env","version":"1.0.0"}],
-			"has_more": false
+			"nextContinuationToken": null
 		}`))
 	}))
 	defer controlPlane.Close()
@@ -143,7 +143,7 @@ func TestEnvironmentListReportsEmptyProject(t *testing.T) {
 
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[],"has_more":false}`))
+		_, _ = w.Write([]byte(`{"data":[]}`))
 	}))
 	defer controlPlane.Close()
 	stubRleClientEndpoint(t, controlPlane.URL)
@@ -186,8 +186,17 @@ func TestListAllEnvironmentsPaginates(t *testing.T) {
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
 		pageSize := environmentListPageSize
-		after := r.URL.Query().Get("after")
-		if after != "" {
+		continuationToken := r.URL.Query().Get("continuationToken")
+		if got := r.URL.Query().Get("after"); got != "" {
+			t.Fatalf("expected no legacy after cursor, got %q", got)
+		}
+		if requestCount == 1 && continuationToken != "" {
+			t.Fatalf("expected no initial continuation token, got %q", continuationToken)
+		}
+		if requestCount == 2 && continuationToken != " cursor-a " {
+			t.Fatalf("expected second request continuation token %q, got %q", " cursor-a ", continuationToken)
+		}
+		if continuationToken != "" {
 			pageSize = 1
 		}
 		data := make([]environmentResource, pageSize)
@@ -197,10 +206,13 @@ func TestListAllEnvironmentsPaginates(t *testing.T) {
 				Name: fmt.Sprintf("environment-%d-%d", requestCount, i),
 			}
 		}
-		if err := json.NewEncoder(w).Encode(listEnvironmentsResponse{
-			Data:    data,
-			LastId:  data[len(data)-1].Id,
-			HasMore: requestCount == 1,
+		nextContinuationToken := ""
+		if requestCount == 1 {
+			nextContinuationToken = " cursor-a "
+		}
+		if err := json.NewEncoder(w).Encode(pagedEnvironmentResponse{
+			Data:                  data,
+			NextContinuationToken: nextContinuationToken,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -225,10 +237,9 @@ func TestListAllEnvironmentsStopsAtSafetyLimit(t *testing.T) {
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
 		data := make([]environmentResource, environmentListPageSize)
-		if err := json.NewEncoder(w).Encode(listEnvironmentsResponse{
-			Data:    data,
-			LastId:  fmt.Sprintf("cursor-%d", requestCount),
-			HasMore: true,
+		if err := json.NewEncoder(w).Encode(pagedEnvironmentResponse{
+			Data:                  data,
+			NextContinuationToken: fmt.Sprintf("cursor-%d", requestCount),
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -259,11 +270,17 @@ func TestListAllEnvironmentsRejectsCursorCycles(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch requestCount {
 		case 1:
-			_, _ = w.Write([]byte(`{"data":[{"id":"env-1","name":"echo_env"}],"last_id":"cursor-a","has_more":true}`))
+			_, _ = w.Write(
+				[]byte(`{"data":[{"id":"env-1","name":"echo_env"}],"nextContinuationToken":"cursor-a"}`),
+			)
 		case 2:
-			_, _ = w.Write([]byte(`{"data":[{"id":"env-2","name":"echo_env"}],"last_id":"cursor-b","has_more":true}`))
+			_, _ = w.Write(
+				[]byte(`{"data":[{"id":"env-2","name":"echo_env"}],"nextContinuationToken":"cursor-b"}`),
+			)
 		case 3:
-			_, _ = w.Write([]byte(`{"data":[{"id":"env-3","name":"echo_env"}],"last_id":"cursor-a","has_more":true}`))
+			_, _ = w.Write(
+				[]byte(`{"data":[{"id":"env-3","name":"echo_env"}],"nextContinuationToken":"cursor-a"}`),
+			)
 		default:
 			t.Fatalf("unexpected extra page request %d", requestCount)
 		}
@@ -336,29 +353,24 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"data": [
 					{
-						"environmentId":"env-1",
+						"id":"env-version-1",
+						"name":"echo_env",
 						"version":"1.0.0",
+						"diskImageConversionStatus":"Failed",
+						"updatedAtUtc":"2026-07-28T06:00:00Z",
 						"createdAtUtc":"2026-07-28T05:00:00Z",
 						"acrImagePath":"registry/echo:1.0.0"
 					},
 					{
-						"environmentId":"env-1",
+						"id":"env-1",
+						"name":"echo_env",
 						"version":"1.2.0",
+						"diskImageConversionStatus":"Ready",
+						"updatedAtUtc":"2026-07-30T05:00:00Z",
 						"createdAtUtc":"2026-07-30T05:00:00Z",
 						"acrImagePath":"registry/echo:1.2.0"
 					}
-				],
-				"has_more": false
-			}`))
-		case r.Method == http.MethodGet &&
-			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions/1.0.0":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{
-				"id":"env-1",
-				"name":"echo_env",
-				"version":"1.0.0",
-				"diskImageConversionStatus":"Failed",
-				"updatedAtUtc":"2026-07-28T06:00:00Z"
+				]
 			}`))
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -416,19 +428,28 @@ func TestResolveEnvironmentVersionsRejectsCursorCycles(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch requestCount {
 		case 1:
+			if got := r.URL.Query().Get("continuationToken"); got != "" {
+				t.Fatalf("expected no initial continuation token, got %q", got)
+			}
 			_, _ = w.Write([]byte(
-				`{"data":[{"environmentId":"env-1","version":"1.0.0"}],` +
-					`"last_id":"cursor-a","has_more":true}`,
+				`{"data":[{"id":"env-1","name":"echo_env","version":"1.0.0"}],` +
+					`"nextContinuationToken":" cursor-a "}`,
 			))
 		case 2:
+			if got := r.URL.Query().Get("continuationToken"); got != " cursor-a " {
+				t.Fatalf("expected continuation token %q, got %q", " cursor-a ", got)
+			}
 			_, _ = w.Write([]byte(
-				`{"data":[{"environmentId":"env-1","version":"1.1.0"}],` +
-					`"last_id":"cursor-b","has_more":true}`,
+				`{"data":[{"id":"env-2","name":"echo_env","version":"1.1.0"}],` +
+					`"nextContinuationToken":"cursor-b"}`,
 			))
 		case 3:
+			if got := r.URL.Query().Get("continuationToken"); got != "cursor-b" {
+				t.Fatalf("expected continuation token %q, got %q", "cursor-b", got)
+			}
 			_, _ = w.Write([]byte(
-				`{"data":[{"environmentId":"env-1","version":"1.2.0"}],` +
-					`"last_id":"cursor-a","has_more":true}`,
+				`{"data":[{"id":"env-3","name":"echo_env","version":"1.2.0"}],` +
+					`"nextContinuationToken":" cursor-a "}`,
 			))
 		default:
 			t.Fatalf("unexpected extra page request %d", requestCount)
@@ -458,9 +479,8 @@ func TestResolveEnvironmentVersionsStopsAtSafetyLimit(t *testing.T) {
 	requestCount := 0
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
-		if err := json.NewEncoder(w).Encode(listEnvironmentVersionsResponse{
-			LastId:  fmt.Sprintf("cursor-%d", requestCount),
-			HasMore: true,
+		if err := json.NewEncoder(w).Encode(pagedEnvironmentResponse{
+			NextContinuationToken: fmt.Sprintf("cursor-%d", requestCount),
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -508,7 +528,7 @@ func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
 		case r.Method == http.MethodGet &&
 			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":[],"has_more":false}`))
+			_, _ = w.Write([]byte(`{"data":[]}`))
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}

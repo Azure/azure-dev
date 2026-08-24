@@ -149,27 +149,31 @@ func resolveEnvironmentVersions(
 	client *rleClient,
 	current *environmentResource,
 ) ([]environmentResource, error) {
-	var history []environmentVersionResource
-	after := ""
+	var history []environmentResource
+	continuationToken := ""
 	complete := false
 	seenCursors := map[string]struct{}{}
 	for range environmentListMaxPages {
-		page, err := client.listEnvironmentVersions(ctx, current.Name, after, environmentListPageSize)
+		page, err := client.listEnvironmentVersions(ctx, current.Name, continuationToken, environmentListPageSize)
 		if err != nil {
 			return nil, err
 		}
 		history = append(history, page.Data...)
-		if !page.HasMore {
+		if strings.TrimSpace(page.NextContinuationToken) == "" {
 			complete = true
 			break
 		}
-		after, err = nextPaginationCursor(seenCursors, page.LastId, func() error {
-			return &azdext.LocalError{
-				Message:  "Environment version pagination did not return a new cursor.",
-				Code:     "rle_environment_version_cursor_invalid",
-				Category: azdext.LocalErrorCategoryInternal,
-			}
-		})
+		continuationToken, err = nextPaginationCursor(
+			seenCursors,
+			page.NextContinuationToken,
+			func() error {
+				return &azdext.LocalError{
+					Message:  "Environment version pagination did not return a new continuation token.",
+					Code:     "rle_environment_version_cursor_invalid",
+					Category: azdext.LocalErrorCategoryInternal,
+				}
+			},
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -185,23 +189,12 @@ func resolveEnvironmentVersions(
 	}
 
 	versions := make([]environmentResource, 0, len(history))
-	for _, summary := range history {
-		var version environmentResource
-		if summary.EnvironmentId == current.Id && summary.Version == current.Version {
+	for _, version := range history {
+		if version.Id == current.Id && version.Version == current.Version {
 			version = *current
-		} else {
-			resolved, err := client.getEnvironmentVersion(ctx, current.Name, summary.Version)
-			if err != nil {
-				return nil, err
-			}
-			version = *resolved
 		}
 
-		version.Id = firstNonEmpty(version.Id, summary.EnvironmentId)
 		version.Name = firstNonEmpty(version.Name, current.Name)
-		version.Version = firstNonEmpty(version.Version, summary.Version)
-		version.AcrImagePath = firstNonEmpty(version.AcrImagePath, summary.AcrImagePath)
-		version.CreatedAt = firstNonEmpty(version.CreatedAt, summary.CreatedAt)
 		versions = append(versions, version)
 	}
 

@@ -54,24 +54,9 @@ type environmentResource struct {
 	DiskImageConversionError  string `json:"diskImageConversionError,omitempty"`
 }
 
-type listEnvironmentsResponse struct {
-	Data    []environmentResource `json:"data"`
-	LastId  string                `json:"last_id,omitempty"`
-	HasMore bool                  `json:"has_more"`
-}
-
-type environmentVersionResource struct {
-	EnvironmentId string `json:"environmentId"`
-	ProjectId     string `json:"projectId,omitempty"`
-	Version       string `json:"version,omitempty"`
-	AcrImagePath  string `json:"acrImagePath,omitempty"`
-	CreatedAt     string `json:"createdAtUtc,omitempty"`
-}
-
-type listEnvironmentVersionsResponse struct {
-	Data    []environmentVersionResource `json:"data"`
-	LastId  string                       `json:"last_id,omitempty"`
-	HasMore bool                         `json:"has_more"`
+type pagedEnvironmentResponse struct {
+	Data                  []environmentResource `json:"data"`
+	NextContinuationToken string                `json:"nextContinuationToken,omitempty"`
 }
 
 type createInstanceGroupRequest struct {
@@ -212,16 +197,16 @@ func (c *rleClient) createV1Environment(
 
 func (c *rleClient) listEnvironments(
 	ctx context.Context,
-	after string,
+	continuationToken string,
 	limit int,
-) (*listEnvironmentsResponse, error) {
+) (*pagedEnvironmentResponse, error) {
 	query := url.Values{}
 	query.Set("limit", fmt.Sprintf("%d", limit))
-	if after != "" {
-		query.Set("after", after)
+	if continuationToken != "" {
+		query.Set("continuationToken", continuationToken)
 	}
 
-	var result listEnvironmentsResponse
+	var result pagedEnvironmentResponse
 	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+"?"+query.Encode(), nil, &result); err != nil {
 		return nil, err
 	}
@@ -264,17 +249,17 @@ func (c *rleClient) getEnvironmentVersion(
 func (c *rleClient) listEnvironmentVersions(
 	ctx context.Context,
 	name string,
-	after string,
+	continuationToken string,
 	limit int,
-) (*listEnvironmentVersionsResponse, error) {
+) (*pagedEnvironmentResponse, error) {
 	query := url.Values{}
 	query.Set("limit", fmt.Sprintf("%d", limit))
-	if after != "" {
-		query.Set("after", after)
+	if continuationToken != "" {
+		query.Set("continuationToken", continuationToken)
 	}
 	suffix := fmt.Sprintf("/%s/versions?%s", url.PathEscape(name), query.Encode())
 
-	var result listEnvironmentVersionsResponse
+	var result pagedEnvironmentResponse
 	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
 		return nil, err
 	}
@@ -450,16 +435,15 @@ func (c *rleClient) authorizationHeader(ctx context.Context) (string, error) {
 	return "Bearer " + token.Token, nil
 }
 
-func nextPaginationCursor(seen map[string]struct{}, lastID string, newCursorError func() error) (string, error) {
-	cursor := strings.TrimSpace(lastID)
-	if cursor == "" {
+func nextPaginationCursor(seen map[string]struct{}, nextToken string, newCursorError func() error) (string, error) {
+	if strings.TrimSpace(nextToken) == "" {
 		return "", newCursorError()
 	}
-	if _, exists := seen[cursor]; exists {
+	if _, exists := seen[nextToken]; exists {
 		return "", newCursorError()
 	}
-	seen[cursor] = struct{}{}
-	return cursor, nil
+	seen[nextToken] = struct{}{}
+	return nextToken, nil
 }
 
 func paginationSafetyLimitError(resourceName string, code string) error {

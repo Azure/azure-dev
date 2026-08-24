@@ -222,6 +222,23 @@ func buildInvocationsURL(projectEndpoint, agentName, apiVersion, sid string) str
 	return invURL
 }
 
+func buildInvocationRetrievalURL(projectEndpoint, agentName, invocationID, apiVersion, sid string) string {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	base := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/invocations/%s",
+		projectEndpoint,
+		agentName,
+		url.PathEscape(invocationID),
+	)
+	query := url.Values{"api-version": []string{apiVersion}}
+	if sid != "" {
+		query.Set("agent_session_id", sid)
+	}
+	return base + "?" + query.Encode()
+}
+
 // buildA2AInvokeURL builds the Foundry "a2a" protocol URL for an agent. When sid
 // is non-empty, an agent_session_id query parameter is appended (URL-encoded) so
 // the request routes to the same agent session, matching the invocations protocol.

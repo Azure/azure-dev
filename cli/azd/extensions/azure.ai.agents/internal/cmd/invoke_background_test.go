@@ -1170,6 +1170,46 @@ func TestInvokeCommandBackgroundValidation(t *testing.T) {
 	}
 }
 
+func TestInvokeCommandRejectsInvocationsContinueWithInput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "message",
+			args: []string{"--protocol", "invocations", "--resume", "revised requirements"},
+		},
+		{
+			name: "input file",
+			args: []string{"--protocol", "invocations", "--resume", "--input-file", "request.json"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := newInvokeCommand(nil)
+			cmd.SetArgs(tt.args)
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+
+			err := cmd.Execute()
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+			assert.Equal(t, "Invocations --resume does not accept a message or --input-file", localErr.Message)
+			assert.Equal(
+				t,
+				"remove the input to retrieve the latest saved Invocation, "+
+					"or remove --resume to start a new Invocation",
+				localErr.Suggestion,
+			)
+		})
+	}
+}
+
 func TestInvokeCommandBackgroundEndpointRoutesHostFailure(t *testing.T) {
 	isolateFromAzdDaemon(t)
 

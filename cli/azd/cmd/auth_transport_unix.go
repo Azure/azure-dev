@@ -25,6 +25,10 @@ import (
 // and have group/other bits cleared (mode & 0o077 == 0). If either check
 // fails, an error is returned and no transport is constructed.
 func newSocketTransport(rawURL string) (http.RoundTripper, string, error) {
+	if err := ensureSocketPeerValidationSupported(); err != nil {
+		return nil, "", err
+	}
+
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid AZD_AUTH_ENDPOINT value %q: %w", rawURL, err)
@@ -50,8 +54,24 @@ func newSocketTransport(rawURL string) (http.RoundTripper, string, error) {
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			if err := verifySocketPermissions(socketPath); err != nil {
+				return nil, err
+			}
 			var d net.Dialer
-			return d.DialContext(ctx, "unix", socketPath)
+			conn, err := d.DialContext(ctx, "unix", socketPath)
+			if err != nil {
+				return nil, err
+			}
+			unixConn, ok := conn.(*net.UnixConn)
+			if !ok {
+				_ = conn.Close()
+				return nil, fmt.Errorf("verifying AZD_AUTH_ENDPOINT socket peer: unexpected connection type %T", conn)
+			}
+			if err := verifySocketPeer(unixConn); err != nil {
+				_ = conn.Close()
+				return nil, err
+			}
+			return conn, nil
 		},
 	}
 	return transport, rewrittenAuthEndpoint, nil
@@ -113,6 +133,16 @@ func checkPathOwnedAndRestricted(path string, isDir bool) error {
 		return fmt.Errorf(
 			"permissions too permissive: mode %#o grants access beyond owner (group/world bits must be 0)",
 			info.Mode().Perm())
+	}
+	return nil
+}
+
+func verifySocketPeerUID(uid uint32) error {
+	euid := os.Geteuid()
+	if uint64(uid) != uint64(euid) {
+		return fmt.Errorf(
+			"permissions too permissive: socket peer uid %d does not match current euid %d",
+			uid, euid)
 	}
 	return nil
 }

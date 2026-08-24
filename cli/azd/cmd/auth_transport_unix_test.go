@@ -131,10 +131,23 @@ func TestNewSocketTransport_RejectsSymlink(t *testing.T) {
 }
 
 // TestNewPipeTransport_NotSupportedOnUnix asserts the npipe stub returns a
-// clear error on POSIX.
+// clear error on Unix.
 func TestNewPipeTransport_NotSupportedOnUnix(t *testing.T) {
 	t.Parallel()
 	_, _, err := newPipeTransport("npipe:azd-auth-x")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not supported on this platform")
+}
+
+func TestVerifySocketPeerUID(t *testing.T) {
+	t.Parallel()
+
+	euid := uint32(os.Geteuid())
+	require.NoError(t, verifySocketPeerUID(euid))
+
+	otherUID := euid + 1
+	if otherUID == euid {
+		otherUID = euid - 1
+	}
+	require.ErrorContains(t, verifySocketPeerUID(otherUID), "does not match current euid")
 }

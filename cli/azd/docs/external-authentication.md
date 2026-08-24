@@ -82,16 +82,16 @@ how `azd` dials the server changes.
 Loopback HTTPS server.
 
 - URL form: `https://host:port` (host is typically `127.0.0.1`).
-- `AZD_AUTH_CERT` is **required** and must be a base64-encoded DER X.509
-  certificate that the host's HTTPS server presents. `azd` pins the
-  connection to this certificate.
+- `AZD_AUTH_CERT` is optional. When set, it must be a base64-encoded DER X.509
+  certificate that the host's HTTPS server presents, and `azd` pins the
+  connection to this certificate. When omitted, `azd` uses the system trust
+  store, preserving the existing behavior.
 - `AZD_AUTH_KEY` is **required** and is sent as `Authorization: Bearer <key>`.
-- `azd` rejects the `https:` scheme when no cert is provided.
 
-### `unix:` (new, POSIX only)
+### `unix:` (new, Linux and macOS only)
 
 Unix domain socket transport. The OS enforces caller identity via filesystem
-permissions, so no TLS handshake and no shared bearer secret are required.
+permissions and peer credentials, so no TLS handshake is required.
 
 - URL form: `unix:/absolute/path/to/socket` or
   `unix:///absolute/path/to/socket`. The socket path is taken from the URL's
@@ -104,10 +104,10 @@ permissions, so no TLS handshake and no shared bearer secret are required.
   parent-directory permission check.
 - **IDE host requirements:** the socket file MUST be created with mode `0600`
   and the parent directory MUST be mode `0700`, both owned by the current
-  uid. `azd` `stat()`s the socket and the parent directory on first connect
-  and refuses if either is group- or world-accessible, or if the owner
-  differs from the `azd` process's effective uid. The connection fails with
-  a clear "permissions too permissive" error.
+  uid. `azd` `stat()`s the socket and the parent directory when configuring
+  the transport and again before each connection. After connecting, `azd`
+  verifies that the peer uid matches its effective uid. The connection fails
+  with a clear "permissions too permissive" error if any check fails.
 - The HTTP request line still targets `/token?api-version=2023-07-12-preview`;
   the URL host is irrelevant and `azd` rewrites the request URL to
   `http://azd-auth/token?...` before dispatch.
@@ -117,8 +117,7 @@ permissions, so no TLS handshake and no shared bearer secret are required.
 ### `npipe:` (new, Windows only)
 
 Windows named pipe transport. The OS enforces caller identity via the pipe's
-security descriptor, so no TLS handshake and no shared bearer secret are
-required.
+security descriptor, so no TLS handshake is required.
 
 - URL form: `npipe:azd-auth-<arbitrary>` (the value after `npipe:` is the
   pipe name; `azd` prepends `\\.\pipe\` automatically) **or**
@@ -127,10 +126,21 @@ required.
 - `AZD_AUTH_CERT` **MUST NOT** be set. Same handling as `unix:`.
 - `AZD_AUTH_KEY` is **required**. Same handling as `unix:`.
 - **IDE host requirements:** the pipe MUST be created with a security
-  descriptor that grants access only to the current user SID (and SYSTEM /
-  Administrators, as is conventional). `azd` queries the pipe's DACL after
-  connecting and refuses if any other SID has an allow ACE. The connection
-  fails with a clear "permissions too permissive" error.
+  descriptor whose owner and allow ACEs reference only the current user SID
+  (and SYSTEM / Administrators, as is conventional). `azd` reads the owner and
+  DACL after connecting and refuses if any other SID owns the pipe or holds an
+  allow ACE. The connection fails with a clear "permissions too permissive"
+  error.
+
+  > **Important:** the Windows *default* named pipe security descriptor grants
+  > `Everyone` (`S-1-1-0`) read/write access, and `azd` rejects it. Hosts must
+  > pass an explicit restrictive descriptor — for example the SDDL
+  > `D:P(A;;GA;;;<user-sid>)` — rather than relying on the default.
+
+- `azd` reads the security descriptor from the handle of the established
+  connection rather than by pipe name, so a pipe that is created or replaced
+  between the connect and the check cannot be substituted for the validated
+  one.
 - Same `/token?api-version=...` and URL-rewrite behavior as `unix:`.
 
 ### Backward compatibility

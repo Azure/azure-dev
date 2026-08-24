@@ -32,11 +32,10 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 			cert:     "",
 		},
 		{
-			name:       "https without cert is rejected because cert is required",
-			endpoint:   "https://127.0.0.1:1234",
-			key:        "k",
-			cert:       "",
-			wantErrSub: "AZD_AUTH_CERT is required when using the 'https' scheme",
+			name:     "https without cert uses system trust for backward compatibility",
+			endpoint: "https://127.0.0.1:1234",
+			key:      "k",
+			cert:     "",
 		},
 		{
 			name:       "http with cert is rejected because cert requires https",

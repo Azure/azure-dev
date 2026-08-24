@@ -22,9 +22,14 @@ import (
 // the Windows named pipe identified by rawURL. The returned string is the
 // rewritten endpoint placeholder.
 //
-// The pipe's security descriptor MUST grant access only to the current user
-// SID, plus the conventional SYSTEM / Administrators principals. If any other
-// SID has an allow ACE, an error is returned.
+// The pipe's security descriptor MUST be owned by, and grant access only to,
+// the current user SID plus the conventional SYSTEM / Administrators
+// principals. If any other SID owns the pipe or has an allow ACE, an error is
+// returned.
+//
+// Verification is performed against the handle of the established connection
+// rather than the pipe name, so a pipe that is created or replaced between the
+// connect and the check cannot be substituted for the validated one.
 func newPipeTransport(rawURL string) (http.RoundTripper, string, error) {
 	pipePath, err := normalizePipePath(rawURL)
 	if err != nil {
@@ -37,7 +42,12 @@ func newPipeTransport(rawURL string) (http.RoundTripper, string, error) {
 			if err != nil {
 				return nil, err
 			}
-			if vErr := verifyPipeSecurity(pipePath); vErr != nil {
+			handle, hErr := pipeConnHandle(conn)
+			if hErr != nil {
+				_ = conn.Close()
+				return nil, hErr
+			}
+			if vErr := verifyPipeSecurity(pipePath, handle); vErr != nil {
 				_ = conn.Close()
 				return nil, vErr
 			}
@@ -45,6 +55,20 @@ func newPipeTransport(rawURL string) (http.RoundTripper, string, error) {
 		},
 	}
 	return transport, rewrittenAuthEndpoint, nil
+}
+
+// pipeConnHandle extracts the underlying Win32 handle from a named pipe
+// connection. go-winio's pipe connection exposes the handle through an
+// exported Fd method; it does not implement syscall.Conn. The handle is only
+// used while conn is still owned by the caller, before it is handed to the
+// transport, so it cannot be closed concurrently.
+func pipeConnHandle(conn net.Conn) (windows.Handle, error) {
+	fdConn, ok := conn.(interface{ Fd() uintptr })
+	if !ok {
+		return 0, fmt.Errorf(
+			"verifying AZD_AUTH_ENDPOINT pipe: connection type %T does not expose its handle", conn)
+	}
+	return windows.Handle(fdConn.Fd()), nil
 }
 
 // newSocketTransport returns an error: unix domain sockets are not supported
@@ -66,9 +90,9 @@ func normalizePipePath(rawURL string) (string, error) {
 		return "", fmt.Errorf("internal error: normalizePipePath called with non-npipe scheme %q", u.Scheme)
 	}
 
-	// Long form: npipe:////./pipe/<name>  -> Host="." Path="/pipe/<name>"
-	if u.Host == "." && strings.HasPrefix(u.Path, "/pipe/") {
-		name := strings.TrimPrefix(u.Path, "/pipe/")
+	// Long form: npipe:////./pipe/<name> -> Path="//./pipe/<name>"
+	if u.Host == "" && strings.HasPrefix(u.Path, "//./pipe/") {
+		name := strings.TrimPrefix(u.Path, "//./pipe/")
 		if name == "" {
 			return "", fmt.Errorf("invalid AZD_AUTH_ENDPOINT value %q: missing pipe name", rawURL)
 		}
@@ -88,15 +112,19 @@ func normalizePipePath(rawURL string) (string, error) {
 	return `\\.\pipe\` + name, nil
 }
 
-// verifyPipeSecurity queries the DACL of the named pipe and refuses if any
-// allow ACE references a SID outside the current user / SYSTEM /
-// Administrators set. ACEs are walked structurally via windows.GetAce rather
-// than by parsing the SDDL string representation.
-func verifyPipeSecurity(pipePath string) error {
-	sd, err := windows.GetNamedSecurityInfo(
-		pipePath,
-		windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION,
+// verifyPipeSecurity queries the owner and DACL of the connected named pipe
+// handle. It refuses pipes owned by or granting access to a SID outside the
+// current user / SYSTEM / Administrators set. ACEs are walked structurally via
+// windows.GetAce rather than by parsing the SDDL string representation.
+//
+// The security descriptor is read from the connection handle rather than by
+// pipe name so that the object being validated is exactly the object being
+// used. pipePath is used only for error messages.
+func verifyPipeSecurity(pipePath string, handle windows.Handle) error {
+	sd, err := windows.GetSecurityInfo(
+		handle,
+		windows.SE_KERNEL_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION,
 	)
 	if err != nil {
 		return fmt.Errorf("querying pipe security descriptor: %w", err)
@@ -124,6 +152,14 @@ func verifyPipeSecurity(pipePath string) error {
 		return fmt.Errorf("creating Administrators SID: %w", err)
 	}
 	allowedSids := []*windows.SID{currentUserSid, systemSid, adminsSid}
+
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("reading pipe owner: %w", err)
+	}
+	if err := verifyPipeOwner(pipePath, owner, allowedSids); err != nil {
+		return err
+	}
 
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
 		var ace *windows.ACCESS_ALLOWED_ACE
@@ -156,6 +192,19 @@ func verifyPipeSecurity(pipePath string) error {
 		default:
 			// Deny / audit / other ACE types do not grant access; skip.
 		}
+	}
+	return nil
+}
+
+func verifyPipeOwner(pipePath string, owner *windows.SID, allowedSids []*windows.SID) error {
+	if owner == nil {
+		return fmt.Errorf("permissions too permissive: pipe %q has no owner SID", pipePath)
+	}
+	if !sidInList(owner, allowedSids) {
+		return fmt.Errorf(
+			"permissions too permissive: pipe %q is owned by SID %q "+
+				"outside the current user/SYSTEM/Administrators",
+			pipePath, owner.String())
 	}
 	return nil
 }

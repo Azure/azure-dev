@@ -24,8 +24,8 @@ const rewrittenAuthEndpoint = "http://azd-auth"
 // endpoint URL:
 //
 //   - "" or "https": existing loopback HTTPS behavior. AZD_AUTH_CERT is
-//     required for "https". AZD_AUTH_KEY is required.
-//   - "unix": POSIX-only Unix domain socket transport. Cert MUST NOT be set.
+//     optional for "https". AZD_AUTH_KEY is required.
+//   - "unix": Linux/macOS Unix domain socket transport. Cert MUST NOT be set.
 //     AZD_AUTH_KEY is required.
 //   - "npipe": Windows-only named pipe transport. Cert MUST NOT be set.
 //     AZD_AUTH_KEY is required.
@@ -61,15 +61,9 @@ func buildExternalAuthConfiguration(endpoint, key, cert string) (auth.ExternalAu
 }
 
 // buildHTTPSExternalAuth implements the historical HTTPS / no-scheme path.
-// The "https" scheme requires AZD_AUTH_CERT; the "" and "http" schemes are
-// retained only for the loopback test harness. When a cert is provided, the
-// scheme MUST be "https".
+// The "" and "http" schemes are retained only for the loopback test harness.
+// When a cert is provided, the scheme MUST be "https".
 func buildHTTPSExternalAuth(endpoint, key, cert, scheme string) (auth.ExternalAuthConfiguration, error) {
-	if scheme == "https" && len(cert) == 0 {
-		return auth.ExternalAuthConfiguration{}, fmt.Errorf(
-			"invalid AZD_AUTH_ENDPOINT value '%s': AZD_AUTH_CERT is required when using the 'https' scheme",
-			endpoint)
-	}
 	client := &http.Client{}
 	if len(cert) > 0 {
 		transport, err := httputil.TlsEnabledTransport(cert)

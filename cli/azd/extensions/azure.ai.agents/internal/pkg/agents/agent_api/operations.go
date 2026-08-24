@@ -216,35 +216,6 @@ func (c *AgentClient) doVoiceJSONAgentRequest(
 	return &agent, nil
 }
 
-// CreateVoiceAgent creates a new declarative (managed) voice agent.
-//
-// Voice agents live in a separate data-plane collection (/voice_agents), distinct
-// from the /agents collection used by hosted/workflow agents. The request
-// Definition must be a *VoiceAgentDefinition (service kind "voice").
-//
-// overriddenHost, when non-empty, is sent as the x-ms-overridden-host header.
-// This routes the request directly to the regional Hyena data-plane host,
-// bypassing the public Foundry APIM (whose voice route may not yet be rolled
-// out). Pass "" to use the default endpoint routing.
-//
-// Redeploy semantics: the voice data-plane exposes create-only POST /voice_agents
-// with no version/upsert model (unlike hosted agents, which mint a new
-// agent-version per deploy). A second `azd deploy` of the same voice service
-// therefore re-POSTs with the same name and the service rejects it with a
-// non-success status, which this method surfaces as a deploy error rather than
-// silently overwriting the existing agent. Idempotent redeploy/update is tracked
-// as a follow-up (see the PR "Follow-ups" section); until the service adds an
-// update route, redeploy requires deleting the existing voice agent first.
-func (c *AgentClient) CreateVoiceAgent(
-	ctx context.Context,
-	request *CreateAgentRequest,
-	apiVersion string,
-	overriddenHost string,
-) (*AgentObject, error) {
-	url := fmt.Sprintf("%s/voice_agents?api-version=%s", c.endpoint, apiVersion)
-	return c.doVoiceJSONAgentRequest(ctx, http.MethodPost, url, request, overriddenHost)
-}
-
 // GetVoiceAgentUnified retrieves a voice agent through the unified /agents
 // endpoint with the voice preview opt-in header. Use this instead of GetAgent
 // when deciding whether to create or update a prompt voice agent.

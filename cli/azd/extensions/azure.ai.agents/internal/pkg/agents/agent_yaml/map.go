@@ -608,16 +608,18 @@ func flatVoiceLocale(voice *agent_api.VoiceConfig) string {
 // voice agent. It translates the authoring kind "prompt-voice" into the
 // data-plane service kind "voice" and defaults the audio pipeline.
 func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
-	return createVoiceAgentAPIRequest(voiceAgent, false)
+	return createVoiceAgentAPIRequest(voiceAgent)
 }
 
-// CreateVoiceAgentAPIRequestFlat builds a CreateAgentRequest using the newer
-// TiP/unified API flat output voice shape.
+// CreateVoiceAgentAPIRequestFlat is kept as a compatibility wrapper for tests
+// and callers that explicitly selected the transition name while the unified API
+// work was in flight. Prompt voice requests now always use the unified flat
+// output shape.
 func CreateVoiceAgentAPIRequestFlat(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
-	return createVoiceAgentAPIRequest(voiceAgent, true)
+	return createVoiceAgentAPIRequest(voiceAgent)
 }
 
-func createVoiceAgentAPIRequest(voiceAgent VoiceAgent, flatOutput bool) (*agent_api.CreateAgentRequest, error) {
+func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
 	modelID := ""
 	if voiceAgent.Model != nil {
 		modelID = strings.TrimSpace(voiceAgent.Model.Id)
@@ -657,32 +659,7 @@ func createVoiceAgentAPIRequest(voiceAgent VoiceAgent, flatOutput bool) (*agent_
 		Transcription: &agent_api.VoiceTranscription{Model: defaultVoiceInputTranscriptionModel},
 	}
 	voiceConfig := buildVoiceConfig(voiceName)
-	if flatOutput {
-		voiceDef := agent_api.VoiceAgentDefinitionFlat{
-			AgentDefinition: agent_api.AgentDefinition{
-				// Translate authoring kind prompt-voice -> service kind voice.
-				Kind: agent_api.AgentKindVoice,
-			},
-			ModelType:    modelType,
-			Model:        modelID,
-			Instructions: instructions,
-			Audio: &agent_api.VoiceAudioConfigFlat{
-				Input: input,
-				Output: &agent_api.VoiceOutputConfigFlat{
-					Format:      audioFormat,
-					Voice:       voiceConfig.Name,
-					VoiceType:   flatVoiceType(voiceConfig),
-					VoiceLocale: flatVoiceLocale(voiceConfig),
-				},
-			},
-			OutputModalities: []string{"audio"},
-			Store:            voiceAgent.Store,
-		}
-
-		return createAgentAPIRequest(voiceAgent.AgentDefinition, voiceDef, nil, nil)
-	}
-
-	voiceDef := agent_api.VoiceAgentDefinition{
+	voiceDef := agent_api.VoiceAgentDefinitionFlat{
 		AgentDefinition: agent_api.AgentDefinition{
 			// Translate authoring kind prompt-voice -> service kind voice.
 			Kind: agent_api.AgentKindVoice,
@@ -690,11 +667,13 @@ func createVoiceAgentAPIRequest(voiceAgent VoiceAgent, flatOutput bool) (*agent_
 		ModelType:    modelType,
 		Model:        modelID,
 		Instructions: instructions,
-		Audio: &agent_api.VoiceAudioConfig{
+		Audio: &agent_api.VoiceAudioConfigFlat{
 			Input: input,
-			Output: &agent_api.VoiceOutputConfig{
-				Format: audioFormat,
-				Voice:  voiceConfig,
+			Output: &agent_api.VoiceOutputConfigFlat{
+				Format:      audioFormat,
+				Voice:       voiceConfig.Name,
+				VoiceType:   flatVoiceType(voiceConfig),
+				VoiceLocale: flatVoiceLocale(voiceConfig),
 			},
 		},
 		OutputModalities: []string{"audio"},

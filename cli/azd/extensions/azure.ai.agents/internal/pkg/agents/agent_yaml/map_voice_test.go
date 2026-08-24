@@ -90,9 +90,9 @@ func TestCreateVoiceAgentAPIRequest_Defaults(t *testing.T) {
 		t.Errorf("Name = %q", req.Name)
 	}
 
-	def, ok := req.Definition.(agent_api.VoiceAgentDefinition)
+	def, ok := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
 	if !ok {
-		t.Fatalf("expected VoiceAgentDefinition, got %T", req.Definition)
+		t.Fatalf("expected VoiceAgentDefinitionFlat, got %T", req.Definition)
 	}
 
 	// Authoring kind prompt-voice is translated to service kind voice.
@@ -131,9 +131,9 @@ func TestCreateVoiceAgentAPIRequest_Defaults(t *testing.T) {
 	if out.Format == nil || out.Format.Type != defaultVoiceAudioType || out.Format.Rate != defaultVoiceAudioRate {
 		t.Errorf("output format = %+v", out.Format)
 	}
-	// Default voice is the DragonHD Azure Neural voice.
-	if out.Voice == nil || out.Voice.Type != "azure_standard" || out.Voice.Name != defaultVoiceName {
-		t.Errorf("output voice = %+v, want azure_standard/%s", out.Voice, defaultVoiceName)
+	// Default voice is the DragonHD Azure Neural voice in the flat unified shape.
+	if out.Voice != defaultVoiceName || out.VoiceType != "azure-standard" || out.VoiceLocale != "en-US" {
+		t.Errorf("output voice = %+v, want azure-standard/%s", out, defaultVoiceName)
 	}
 	// Store defaults to nil (service defaults to false).
 	if def.Store != nil {
@@ -160,12 +160,12 @@ func TestCreateVoiceAgentAPIRequest_Overrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
 	if def.Instructions != instructions {
 		t.Errorf("Instructions = %q", def.Instructions)
 	}
 	// "alloy" is an OpenAI realtime voice.
-	if def.Audio.Output.Voice.Type != "openai" || def.Audio.Output.Voice.Name != "alloy" {
+	if def.Audio.Output.VoiceType != "openai" || def.Audio.Output.Voice != "alloy" {
 		t.Errorf("voice = %+v, want openai/alloy", def.Audio.Output.Voice)
 	}
 	if def.Store == nil || !*def.Store {
@@ -276,7 +276,7 @@ func TestCreateVoiceAgentAPIRequest_ExplicitManaged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.Definition.(agent_api.VoiceAgentDefinition).ModelType != agent_api.VoiceModelTypeManaged {
+	if req.Definition.(agent_api.VoiceAgentDefinitionFlat).ModelType != agent_api.VoiceModelTypeManaged {
 		t.Errorf("ModelType not managed")
 	}
 }
@@ -304,7 +304,7 @@ func TestCreateVoiceAgentAPIRequest_TrimsModelID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
 	if def.Model != "my-realtime-deployment" {
 		t.Errorf("Model = %q, want trimmed model id", def.Model)
 	}
@@ -334,7 +334,7 @@ func TestCreateVoiceAgentAPIRequest_SelfDeployedMapped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
 	if def.ModelType != agent_api.VoiceModelTypeSelfDeployed {
 		t.Errorf("ModelType = %q, want self_deployed", def.ModelType)
 	}

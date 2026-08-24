@@ -69,10 +69,9 @@ const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
 	// AgentKindVoice is the data-plane (service) kind for a declarative voice
-	// (speech-to-speech) agent. Note: this is the wire value posted to the
-	// /voice_agents collection. The azd manifest authoring kind is
-	// "prompt-voice" (agent_yaml.AgentKindPromptVoice), which the map layer
-	// translates to this value.
+	// (speech-to-speech) agent. The azd manifest authoring kind is "prompt-voice"
+	// (agent_yaml.AgentKindPromptVoice), which the map layer translates to this
+	// value before posting through the unified /agents API.
 	AgentKindVoice AgentKind = "voice"
 )
 
@@ -420,9 +419,9 @@ type VoiceAudioConfigFlat struct {
 	Output *VoiceOutputConfigFlat `json:"output,omitempty"`
 }
 
-// VoiceAgentDefinition is the data-plane definition body POSTed to the
-// /voice_agents collection for a declarative (managed) voice agent. Its Kind
-// is always AgentKindVoice ("voice").
+// VoiceAgentDefinition is retained for compatibility with object-shaped voice
+// definitions returned by older services. New prompt voice deploys use
+// VoiceAgentDefinitionFlat.
 type VoiceAgentDefinition struct {
 	AgentDefinition
 	ModelType        VoiceModelType    `json:"model_type"`

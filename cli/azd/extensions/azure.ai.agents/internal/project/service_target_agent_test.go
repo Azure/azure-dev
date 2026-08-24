@@ -669,44 +669,6 @@ func TestAdoptServiceConfigIgnoresNilAndKeepsResolvedState(t *testing.T) {
 	require.False(t, provider.serviceConfigResolved)
 }
 
-func TestResolveVoiceAgentAPIMode_DefaultsToLegacy(t *testing.T) {
-	t.Setenv(voiceAgentAPIEnvKey, "")
-	mode, err := resolveVoiceAgentAPIMode(map[string]string{})
-	require.NoError(t, err)
-	require.Equal(t, voiceAgentAPIModeLegacy, mode)
-}
-
-func TestResolveVoiceAgentAPIMode_EnvValues(t *testing.T) {
-	t.Setenv(voiceAgentAPIEnvKey, "unified_flat")
-	mode, err := resolveVoiceAgentAPIMode(map[string]string{})
-	require.NoError(t, err)
-	require.Equal(t, voiceAgentAPIModeUnifiedFlat, mode)
-
-	mode, err = resolveVoiceAgentAPIMode(map[string]string{voiceAgentAPIEnvKey: "unified"})
-	require.NoError(t, err)
-	require.Equal(t, voiceAgentAPIModeUnified, mode)
-}
-
-func TestResolveVoiceAgentAPIMode_Invalid(t *testing.T) {
-	_, err := resolveVoiceAgentAPIMode(map[string]string{voiceAgentAPIEnvKey: "future"})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), voiceAgentAPIEnvKey)
-}
-
-func TestVoiceAgentEndpoint_ByMode(t *testing.T) {
-	projectEndpoint := "https://proj.services.ai.azure.com/api/projects/p/"
-	require.Equal(
-		t,
-		"https://proj.services.ai.azure.com/api/projects/p/voice_agents/my-agent",
-		voiceAgentEndpoint(projectEndpoint, "my-agent", voiceAgentAPIModeLegacy),
-	)
-	require.Equal(
-		t,
-		"wss://proj.services.ai.azure.com/api/projects/p/agents/my-agent/endpoint/protocols/voice?api-version=v1",
-		voiceAgentEndpoint(projectEndpoint, "my-agent", voiceAgentAPIModeUnified),
-	)
-}
-
 func TestBuildVoiceWSProtocolURL(t *testing.T) {
 	got := buildVoiceWSProtocolURL(
 		"https://acct.services.ai.azure.com/api/projects/proj/",
@@ -720,31 +682,20 @@ func TestBuildVoiceWSProtocolURL(t *testing.T) {
 }
 
 func TestValidateVoiceAgentDeployResponse(t *testing.T) {
-	t.Run("legacy requires name only", func(t *testing.T) {
-		err := validateVoiceAgentDeployResponse(
-			&agent_api.AgentObject{Name: "voice-agent"},
-			voiceAgentAPIModeLegacy,
-		)
-		require.NoError(t, err)
-	})
-
-	t.Run("unified requires latest version", func(t *testing.T) {
+	t.Run("requires name and latest version", func(t *testing.T) {
 		agent := &agent_api.AgentObject{Name: "voice-agent"}
 		agent.Versions.Latest.Version = "1"
-		err := validateVoiceAgentDeployResponse(agent, voiceAgentAPIModeUnifiedFlat)
+		err := validateVoiceAgentDeployResponse(agent)
 		require.NoError(t, err)
 	})
 
 	t.Run("missing name rejected", func(t *testing.T) {
-		err := validateVoiceAgentDeployResponse(&agent_api.AgentObject{}, voiceAgentAPIModeLegacy)
+		err := validateVoiceAgentDeployResponse(&agent_api.AgentObject{})
 		require.ErrorContains(t, err, "missing agent name")
 	})
 
-	t.Run("unified missing version rejected", func(t *testing.T) {
-		err := validateVoiceAgentDeployResponse(
-			&agent_api.AgentObject{Name: "voice-agent"},
-			voiceAgentAPIModeUnified,
-		)
+	t.Run("missing version rejected", func(t *testing.T) {
+		err := validateVoiceAgentDeployResponse(&agent_api.AgentObject{Name: "voice-agent"})
 		require.ErrorContains(t, err, "missing latest agent version")
 	})
 }

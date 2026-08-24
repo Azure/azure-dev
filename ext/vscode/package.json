@@ -695,7 +695,7 @@
         "tsx": "*"
     },
     "dependencies": {
-        "@microsoft/vscode-azext-utils": "~4",
+        "@microsoft/vscode-azext-utils": "~4.1.1",
         "@microsoft/vscode-azureresources-api": "~3",
         "@microsoft/vscode-processutils": "~0.2",
         "dayjs": "~1",

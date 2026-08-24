@@ -215,7 +215,7 @@ func collectBundledConnections(
 			continue
 		}
 
-		resolved, err := resolveAgentDefinition(svc, projectCfg.Path)
+		resolved, err := resolveAgentConnectionConfig(svc, projectCfg.Path)
 		if err != nil {
 			recordConnectionLoadError(
 				state,
@@ -345,51 +345,73 @@ func resolveServiceProperties(
 	return resolved, nil
 }
 
-func resolveAgentDefinition(
+func resolveAgentConnectionConfig(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (map[string]any, error) {
-	for _, candidate := range []struct {
-		name  string
-		props *structpb.Struct
-	}{
-		{
-			name:  "service-level properties",
-			props: svc.GetAdditionalProperties(),
-		},
-		{
-			name:  "deprecated config",
-			props: svc.GetConfig(),
-		},
-	} {
-		if candidate.props == nil ||
-			len(candidate.props.GetFields()) == 0 {
-			continue
-		}
-		raw := candidate.props.AsMap()
-		resolved := raw
-		if projectRoot != "" {
-			var err error
-			resolved, err = foundry.ResolveFileRefs(raw, projectRoot)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"resolve %s: %w",
-					candidate.name,
-					err,
-				)
-			}
-		}
-		if !mapHasKind(resolved) {
-			continue
-		}
-		return resolved, nil
+	inline, err := resolveAgentConnectionProperties(
+		svc.GetAdditionalProperties(),
+		projectRoot,
+		"service-level properties",
+	)
+	if err != nil {
+		return nil, err
 	}
-	return nil, nil
+	legacy, err := resolveAgentConnectionProperties(
+		svc.GetConfig(),
+		projectRoot,
+		"deprecated config",
+	)
+	if err != nil {
+		return nil, err
+	}
+	resolved := selectAgentConnectionProperties(inline, legacy)
+	if len(resolved) == 0 {
+		return nil, nil
+	}
+	if _, found := resolved["connections"]; !found {
+		return nil, nil
+	}
+	return resolved, nil
 }
 
-func mapHasKind(values map[string]any) bool {
+func resolveAgentConnectionProperties(
+	props *structpb.Struct,
+	projectRoot string,
+	source string,
+) (map[string]any, error) {
+	if props == nil || len(props.GetFields()) == 0 {
+		return nil, nil
+	}
+	resolved := props.AsMap()
+	if projectRoot == "" {
+		return resolved, nil
+	}
+	resolved, err := foundry.ResolveFileRefs(resolved, projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", source, err)
+	}
+	return resolved, nil
+}
+
+// Mirrors provision's source precedence.
+// Importing project would create a package cycle.
+func selectAgentConnectionProperties(
+	inline, legacy map[string]any,
+) map[string]any {
+	if len(inline) == 0 {
+		return legacy
+	}
+	if !mapHasConnectionKind(inline) &&
+		mapHasConnectionKind(legacy) {
+		return legacy
+	}
+	return inline
+}
+
+func mapHasConnectionKind(values map[string]any) bool {
 	kind, ok := values["kind"].(string)
-	return ok && strings.TrimSpace(kind) != ""
+	return ok && kind != ""
 }
 
 func decodeJSONMap(values map[string]any, out any) error {

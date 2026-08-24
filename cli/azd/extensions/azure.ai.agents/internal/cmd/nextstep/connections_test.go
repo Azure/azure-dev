@@ -569,6 +569,120 @@ resources:
 	assert.Equal(t, "ApiKey | https://bundled.example", state.Connections[0].Detail)
 }
 
+func TestAssembleState_BundledConnectionsDoNotRequireKind(t *testing.T) {
+	t.Parallel()
+
+	agent := newAgentService(t, map[string]any{
+		"connections": []any{
+			map[string]any{
+				"name":     "legacy-bundled",
+				"category": "ApiKey",
+				"target":   "https://legacy.example",
+			},
+		},
+	})
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Len(t, state.Connections, 1)
+	assert.Equal(t, "legacy-bundled", state.Connections[0].Name)
+	assert.Equal(t, "ApiKey | https://legacy.example",
+		state.Connections[0].Detail)
+}
+
+func TestAssembleState_BundledConnectionsUseProvisionConfigPrecedence(t *testing.T) {
+	t.Parallel()
+
+	agent := newAgentService(t, map[string]any{
+		"connections": []any{
+			map[string]any{
+				"name":     "inline-connection",
+				"category": "ApiKey",
+				"target":   "https://inline.example",
+			},
+		},
+	})
+	agent.Config = mustStruct(t, map[string]any{
+		"kind": "hostedAgent",
+		"connections": []any{
+			map[string]any{
+				"name":     "legacy-connection",
+				"category": "ApiKey",
+				"target":   "https://legacy.example",
+			},
+		},
+	})
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Len(t, state.Connections, 1)
+	assert.Equal(t, "legacy-connection", state.Connections[0].Name)
+	assert.Equal(t, "ApiKey | https://legacy.example",
+		state.Connections[0].Detail)
+}
+
+func TestAssembleState_BundledConnectionsUseResolvedInlineConfig(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeProjectFile(t, root, "agent.yaml", `
+kind: hostedAgent
+connections:
+  - name: inline-connection
+    category: ApiKey
+    target: https://inline.example
+`)
+
+	agent := newAgentService(t, map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	agent.Config = mustStruct(t, map[string]any{
+		"kind": "hostedAgent",
+		"connections": []any{
+			map[string]any{
+				"name":     "legacy-connection",
+				"category": "ApiKey",
+				"target":   "https://legacy.example",
+			},
+		},
+	})
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Len(t, state.Connections, 1)
+	assert.Equal(t, "inline-connection", state.Connections[0].Name)
+	assert.Equal(t, "ApiKey | https://inline.example",
+		state.Connections[0].Detail)
+}
+
 func TestAssembleState_BundledLegacyConfigFallback(t *testing.T) {
 	t.Parallel()
 

@@ -36,18 +36,27 @@ func latestVersion(t *testing.T, name string) string {
 }
 
 // removeDataset deletes every version it can see, so nothing outlives the test.
+//
+// `--force` because delete asks before removing published data and there is no
+// one here to answer. Failures are reported rather than swallowed: the project
+// is shared, and a leaked name is the next person's collision.
 func removeDataset(t *testing.T, name string) {
 	t.Helper()
 	var versions []datasetSummary
 	res := run(t, "versions", "list", name, "-o", "json")
 	if res.ExitCode != 0 {
+		t.Errorf("cleanup: listing versions of %s failed (exit %d): %s", name, res.ExitCode, res.Stderr)
 		return
 	}
 	if err := json.Unmarshal([]byte(res.Stdout), &versions); err != nil {
+		t.Errorf("cleanup: reading versions of %s: %v", name, err)
 		return
 	}
 	for _, v := range versions {
-		run(t, "delete", name, "--version", v.Version)
+		if r := run(t, "delete", name, "--version", v.Version, "--force"); r.ExitCode != 0 {
+			t.Errorf("cleanup: deleting %s version %s failed (exit %d): %s",
+				name, v.Version, r.ExitCode, r.Stderr)
+		}
 	}
 }
 
@@ -239,6 +248,9 @@ func TestCLIRequiredValuesFailInsteadOfHanging(t *testing.T) {
 
 // Deleting something that is not registered is how a cleanup script ends, so
 // it is not an error.
+//
+// `--force` because the assertion is about a missing dataset, not about the
+// confirmation gate, and there is no one here to answer it.
 func TestCLIDeleteIsIdempotent(t *testing.T) {
-	requireSuccess(t, run(t, "delete", "azdcli-never-registered", "--version", "1"))
+	requireSuccess(t, run(t, "delete", "azdcli-never-registered", "--version", "1", "--force"))
 }

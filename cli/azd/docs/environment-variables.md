@@ -168,7 +168,7 @@ specific version of the tool installed on the machine.
 | Variable | Description |
 | --- | --- |
 | `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.dataset` extension. Read from the active azd environment first; if the endpoint is still unresolved after the azd environment and global config are consulted, it is read from the host shell environment. |
-| `AZURE_AI_PROJECT_ENDPOINT` | Host-environment fallback for the project endpoint, consulted only when `FOUNDRY_PROJECT_ENDPOINT` is unset. |
+| `AZURE_AI_PROJECT_ENDPOINT` | Fallback for the project endpoint, consulted only when `FOUNDRY_PROJECT_ENDPOINT` is unset. Read in both places the primary key is read: the active azd environment first, then the host shell environment. A value set in the azd environment therefore takes precedence over global config and over the shell. |
 | `AZD_EXT_DEBUG` | If true, waits for a debugger to attach before the command runs. |
 
 ### azure.ai.evaluations
@@ -176,7 +176,7 @@ specific version of the tool installed on the machine.
 | Variable | Description |
 | --- | --- |
 | `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.evaluations` extension, resolved in the same order as `azure.ai.dataset`. |
-| `AZURE_AI_PROJECT_ENDPOINT` | Host-environment fallback for the project endpoint, consulted only when `FOUNDRY_PROJECT_ENDPOINT` is unset. |
+| `AZURE_AI_PROJECT_ENDPOINT` | Fallback for the project endpoint, consulted only when `FOUNDRY_PROJECT_ENDPOINT` is unset, and read in the same two places: the active azd environment first, then the host shell environment. |
 | `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID, used to build portal links for an eval run. |
 | `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The model deployment `azd ai eval init` offers as the judge when one is not named on the command line. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | The Application Insights connection string used to read the traces a trace-backed eval evaluates. |

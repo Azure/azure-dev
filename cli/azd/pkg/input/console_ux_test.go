@@ -273,19 +273,34 @@ func TestNewConfirmOptions(t *testing.T) {
 
 func TestNewMultiSelectOptions(t *testing.T) {
 	buf := &bytes.Buffer{}
-	opts := newMultiSelectOptions(buf, ConsoleOptions{
-		Message:      "message",
-		Options:      []string{"alpha", "beta"},
-		DefaultValue: []string{"beta"},
-	})
+	tests := []struct {
+		name                string
+		allowEmptySelection *bool
+		expected            bool
+	}{
+		{name: "preserves historical default", expected: true},
+		{name: "allows empty selection", allowEmptySelection: new(true), expected: true},
+		{name: "requires selection", allowEmptySelection: new(false), expected: false},
+	}
 
-	require.Equal(t, buf, opts.Writer)
-	require.Equal(t, "message", opts.Message)
-	require.Len(t, opts.Choices, 2)
-	require.False(t, opts.Choices[0].Selected)
-	require.True(t, opts.Choices[1].Selected)
-	require.NotNil(t, opts.AllowEmptySelection)
-	require.True(t, *opts.AllowEmptySelection)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			opts := newMultiSelectOptions(buf, ConsoleOptions{
+				Message:             "message",
+				Options:             []string{"alpha", "beta"},
+				DefaultValue:        []string{"beta"},
+				AllowEmptySelection: test.allowEmptySelection,
+			})
+
+			require.Equal(t, buf, opts.Writer)
+			require.Equal(t, "message", opts.Message)
+			require.Len(t, opts.Choices, 2)
+			require.False(t, opts.Choices[0].Selected)
+			require.True(t, opts.Choices[1].Selected)
+			require.NotNil(t, opts.AllowEmptySelection)
+			require.Equal(t, test.expected, *opts.AllowEmptySelection)
+		})
+	}
 }
 
 func TestSelectResult(t *testing.T) {

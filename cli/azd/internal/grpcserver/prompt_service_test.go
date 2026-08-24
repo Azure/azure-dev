@@ -2110,6 +2110,32 @@ func TestPromptService_MultiSelect_NilOptions(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestNewMultiSelectOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		allowEmptySelection *bool
+	}{
+		{name: "default"},
+		{name: "allowed", allowEmptySelection: new(true)},
+		{name: "not allowed", allowEmptySelection: new(false)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			options := newMultiSelectOptions(&azdext.MultiSelectOptions{
+				Choices: []*azdext.MultiSelectChoice{
+					{Value: "a", Label: "A"},
+				},
+				AllowEmptySelection: test.allowEmptySelection,
+			})
+
+			require.Equal(t, test.allowEmptySelection, options.AllowEmptySelection)
+		})
+	}
+}
+
 func TestPromptService_MultiSelect_NoPrompt_ReturnsSelected(t *testing.T) {
 	t.Parallel()
 	svc := newTestPromptService(&mockPromptService{}, true)
@@ -2138,6 +2164,7 @@ func TestPromptService_MultiSelect_NoPrompt_NoneSelected(t *testing.T) {
 			Choices: []*azdext.MultiSelectChoice{
 				{Value: "a", Label: "A", Selected: false},
 			},
+			AllowEmptySelection: new(true),
 		},
 	})
 	require.NoError(t, err)

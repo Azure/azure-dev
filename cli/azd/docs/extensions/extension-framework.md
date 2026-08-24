@@ -2072,6 +2072,7 @@ Prompts the user to select multiple options from a list.
     - `help_message` (string)
     - `hint` (string)
     - `display_count` (int32)
+    - `allow_empty_selection` (optional bool): Whether the prompt can be submitted without a selection (default: `false`)
 - **Response:** _MultiSelectResponse_
   - Contains a list of selected **MultiSelectChoice** items
 

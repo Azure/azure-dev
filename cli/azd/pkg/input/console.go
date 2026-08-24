@@ -197,6 +197,9 @@ type ConsoleOptions struct {
 	DefaultValue  any
 	// EnableFiltering controls whether select prompts allow filtering. Nil uses the component default.
 	EnableFiltering *bool
+	// AllowEmptySelection controls whether multi-select prompts can be submitted without a selection.
+	// Nil preserves the historical behavior of allowing empty selections.
+	AllowEmptySelection *bool
 
 	// Prompt-only options
 	IsPassword bool

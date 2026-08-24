@@ -183,6 +183,7 @@ func TestEnvironmentListRequiresProjectEndpoint(t *testing.T) {
 
 func TestListAllEnvironmentsPaginates(t *testing.T) {
 	requestCount := 0
+	expectedCursor := " cursor-a "
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
 		pageSize := environmentListPageSize
@@ -193,8 +194,8 @@ func TestListAllEnvironmentsPaginates(t *testing.T) {
 		if requestCount == 1 && continuationToken != "" {
 			t.Fatalf("expected no initial continuation token, got %q", continuationToken)
 		}
-		if requestCount == 2 && continuationToken != " cursor-a " {
-			t.Fatalf("expected second request continuation token %q, got %q", " cursor-a ", continuationToken)
+		if requestCount == 2 && continuationToken != expectedCursor {
+			t.Fatalf("expected second request continuation token %q, got %q", expectedCursor, continuationToken)
 		}
 		if continuationToken != "" {
 			pageSize = 1
@@ -208,7 +209,7 @@ func TestListAllEnvironmentsPaginates(t *testing.T) {
 		}
 		nextContinuationToken := ""
 		if requestCount == 1 {
-			nextContinuationToken = " cursor-a "
+			nextContinuationToken = expectedCursor
 		}
 		if err := json.NewEncoder(w).Encode(pagedEnvironmentResponse{
 			Data:                  data,

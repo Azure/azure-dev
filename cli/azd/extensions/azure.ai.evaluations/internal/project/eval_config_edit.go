@@ -44,8 +44,8 @@ func ApplyScaffold(evalDir string, write ScaffoldWrite) error {
 	if err := checkOneConfig(evalDir); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(evalDir, 0o750); err != nil {
-		return messages.Creating(evalDir, err)
+	if _, err := ensureEvalDir(evalDir); err != nil {
+		return err
 	}
 	path := resolvedConfigPath(evalDir)
 
@@ -155,8 +155,8 @@ func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool,
 	if err := checkOneConfig(evalDir); err != nil {
 		return false, false, err
 	}
-	if err := os.MkdirAll(evalDir, 0o750); err != nil {
-		return false, false, messages.Creating(evalDir, err)
+	if _, err := ensureEvalDir(evalDir); err != nil {
+		return false, false, err
 	}
 	path := resolvedConfigPath(evalDir)
 

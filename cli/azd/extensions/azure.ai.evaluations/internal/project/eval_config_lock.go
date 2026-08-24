@@ -60,9 +60,9 @@ func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
 	// scaffolded project reads back the recorded path and hands over the file,
 	// and creating a directory named azure.eval.yaml then fails the command
 	// before it has done anything.
-	evalDir = EvalDirOf(evalDir)
-	if err := os.MkdirAll(evalDir, 0o750); err != nil {
-		return nil, messages.Creating(evalDir, err)
+	evalDir, err := ensureEvalDir(evalDir)
+	if err != nil {
+		return nil, err
 	}
 
 	lock := flock.New(filepath.Join(evalDir, evalConfigLockName))

@@ -40,3 +40,21 @@ func TestApplyScaffoldKeepsComments(t *testing.T) {
 	require.True(t, strings.Contains(body, "# the eval that gates the release"),
 		"the inline comment was deleted")
 }
+
+// A second init hands over the path the first one recorded, which is the
+// configuration file. ApplyScaffold created a directory of that name and failed
+// the command before it had done anything -- the same bug as the lock, in a
+// second copy, which is why fixing only the lock left the flow broken.
+func TestApplyScaffoldAcceptsTheConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, EvalConfigBase)
+	require.NoError(t, os.WriteFile(path, []byte("evals:\n  - name: first\n"), 0o600))
+
+	err := ApplyScaffold(path, ScaffoldWrite{Evals: []Eval{{Name: "second"}}})
+
+	require.NoError(t, err, "the path a previous init recorded has to be usable")
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(body), "- name: second")
+	require.Contains(t, string(body), "- name: first", "the existing eval was lost")
+}

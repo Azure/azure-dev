@@ -1,14 +1,15 @@
 # Release History
 
-## 1.0.23-beta (2026-08-24)
+## 1.0.24-beta (2026-08-24)
 
 ### Bugs Fixed
 
 - A second `init` in a project that already has a configuration works again.
   It read back the path the first `init` recorded, which is the configuration
   file, and tried to create a directory of that name -- so it failed with
-  `mkdir evals/azure.eval.yaml` before doing anything. The lock now accepts
-  either the file or the directory holding it.
+  `mkdir evals/azure.eval.yaml` before doing anything. Four functions
+  created the directory that way; they now share one helper that resolves
+  the location first, and a test fails the build if a fifth appears.
 - An eval pinned to an explicit `id:` is reserved before any other
   declaration can adopt it. It was claimed only once its own declaration was
   reached, so a declaration listed above it could reach the same eval first

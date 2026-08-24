@@ -65,6 +65,22 @@ func EvalDirOf(location string) string {
 	return location
 }
 
+// ensureEvalDir creates the directory a location lives in, and returns it.
+//
+// Every caller here is handed a location, which is the directory before
+// anything is written and the configuration file once it exists -- a second
+// `init` reads the recorded path back and gets the file. Creating that without
+// EvalDirOf first asks for a directory named azure.eval.yaml, which fails the
+// command before it has done anything. Four functions made that call; sharing
+// it is what stops the next one being fixed on its own.
+func ensureEvalDir(location string) (string, error) {
+	dir := EvalDirOf(location)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", messages.Creating(dir, err)
+	}
+	return dir, nil
+}
+
 // namesAFile reports whether a location is the configuration file rather than
 // the directory holding it. A path that does not exist is read as a directory,
 // which is what `init` is given before it writes anything.
@@ -397,8 +413,8 @@ func SaveEvalConfig(evalDir string, cfg *EvalConfig) error {
 	if err := checkOneConfig(evalDir); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(evalDir, 0o750); err != nil {
-		return messages.Creating(evalDir, err)
+	if _, err := ensureEvalDir(evalDir); err != nil {
+		return err
 	}
 	return SaveEvalConfigTo(resolvedConfigPath(evalDir), cfg)
 }

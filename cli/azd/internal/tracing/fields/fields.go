@@ -296,6 +296,8 @@ const (
 
 	// AI Coding Agent environments
 	EnvClaudeCode          = "Claude Code"
+	EnvCodex               = "Codex"
+	EnvCursor              = "Cursor"
 	EnvGitHubCopilotCLI    = "GitHub Copilot CLI"
 	EnvGitHubCopilotApp    = "GitHub Copilot App"
 	EnvGitHubCopilotVSCode = "GitHub Copilot VSCode"

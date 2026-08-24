@@ -1136,6 +1136,18 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			expectedNoPrompt: true,
 		},
 		{
+			name:             "Codex agent detected",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"CODEX_THREAD_ID": "thread-id"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "Cursor agent detected",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"CURSOR_AGENT": "1"},
+			expectedNoPrompt: true,
+		},
+		{
 			name:             "GitHub Copilot CLI agent detected via COPILOT_CLI",
 			args:             []string{"deploy"},
 			envVars:          map[string]string{"COPILOT_CLI": "true"},

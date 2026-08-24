@@ -259,10 +259,12 @@ func TestExecEnvForHosts_no_host(t *testing.T) {
 	}
 }
 
-func TestGetExecutionEnvironment_GitHubCopilotHosts(t *testing.T) {
+func TestGetExecutionEnvironment_Agents(t *testing.T) {
 	tests := []struct {
 		name      string
 		aiAgent   string
+		envVar    string
+		envValue  string
 		userAgent string
 		want      string
 	}{
@@ -277,6 +279,18 @@ func TestGetExecutionEnvironment_GitHubCopilotHosts(t *testing.T) {
 			want:    fields.EnvGitHubCopilotVSCode,
 		},
 		{
+			name:     "Codex",
+			envVar:   "CODEX_THREAD_ID",
+			envValue: "thread-id",
+			want:     fields.EnvCodex,
+		},
+		{
+			name:     "Cursor",
+			envVar:   "CURSOR_AGENT",
+			envValue: "1",
+			want:     fields.EnvCursor,
+		},
+		{
 			name:      "VS Code Azure GitHub Copilot",
 			userAgent: internal.VsCodeAzureCopilotAgentPrefix + "/1.0.0",
 			want:      fields.EnvVSCodeAzureCopilot,
@@ -284,9 +298,22 @@ func TestGetExecutionEnvironment_GitHubCopilotHosts(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+			t.Run(tt.name, func(t *testing.T) {
+			for _, envVar := range []string{
+				"CODEX_CI",
+				"CODEX_THREAD_ID",
+				"CODEX_SESSION_ID",
+				"CURSOR_AGENT",
+				"CURSOR_CONVERSATION_ID",
+			} {
+				t.Setenv(envVar, "")
+				os.Unsetenv(envVar)
+			}
 			t.Setenv("AI_AGENT", tt.aiAgent)
 			t.Setenv(internal.AzdUserAgentEnvVar, tt.userAgent)
+			if tt.envVar != "" {
+				t.Setenv(tt.envVar, tt.envValue)
+			}
 			t.Setenv(agentdetect.DisableAgentDetectEnvVar, "")
 			os.Unsetenv(agentdetect.DisableAgentDetectEnvVar)
 			agentdetect.ResetDetection()

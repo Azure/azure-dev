@@ -18,6 +18,8 @@ func TestAgentType_DisplayName(t *testing.T) {
 		displayName string
 	}{
 		{AgentTypeClaudeCode, "Claude Code"},
+		{AgentTypeCodex, "Codex"},
+		{AgentTypeCursor, "Cursor"},
 		{AgentTypeGitHubCopilotCLI, "GitHub Copilot CLI"},
 		{AgentTypeGitHubCopilotApp, "GitHub Copilot App"},
 		{AgentTypeGitHubCopilotVSCode, "GitHub Copilot VSCode"},
@@ -115,6 +117,48 @@ func TestDetectFromEnvVars(t *testing.T) {
 			envVars:       map[string]string{"CLAUDE_CODE_ENTRYPOINT": "/usr/bin/claude"},
 			expectedAgent: AgentTypeClaudeCode,
 			detected:      true,
+		},
+		{
+			name:          "Codex via CODEX_CI",
+			envVars:       map[string]string{"CODEX_CI": "1"},
+			expectedAgent: AgentTypeCodex,
+			detected:      true,
+		},
+		{
+			name:          "Codex via CODEX_THREAD_ID",
+			envVars:       map[string]string{"CODEX_THREAD_ID": "thread-id"},
+			expectedAgent: AgentTypeCodex,
+			detected:      true,
+		},
+		{
+			name:          "Codex via CODEX_SESSION_ID",
+			envVars:       map[string]string{"CODEX_SESSION_ID": "session-id"},
+			expectedAgent: AgentTypeCodex,
+			detected:      true,
+		},
+		{
+			name:          "CODEX_CI requires exact value",
+			envVars:       map[string]string{"CODEX_CI": "true"},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name:          "Cursor via CURSOR_AGENT",
+			envVars:       map[string]string{"CURSOR_AGENT": "1"},
+			expectedAgent: AgentTypeCursor,
+			detected:      true,
+		},
+		{
+			name:          "Cursor via CURSOR_CONVERSATION_ID",
+			envVars:       map[string]string{"CURSOR_CONVERSATION_ID": "conversation-id"},
+			expectedAgent: AgentTypeCursor,
+			detected:      true,
+		},
+		{
+			name:          "CURSOR_AGENT requires exact value",
+			envVars:       map[string]string{"CURSOR_AGENT": "true"},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
 		},
 		{
 			name:          "GitHub Copilot CLI via GITHUB_COPILOT_CLI",
@@ -382,6 +426,10 @@ func clearAgentEnvVars(t *testing.T) {
 		"AI_AGENT",
 		// Claude Code
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
+		// Codex
+		"CODEX_CI", "CODEX_THREAD_ID", "CODEX_SESSION_ID",
+		// Cursor
+		"CURSOR_AGENT", "CURSOR_CONVERSATION_ID",
 		// GitHub Copilot CLI
 		"GITHUB_COPILOT_CLI", "GH_COPILOT", "COPILOT_CLI",
 		// Gemini CLI

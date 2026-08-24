@@ -41,6 +41,16 @@ func TestIsTerminal_AgentDetection(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "Codex disables TTY",
+			envVars:  map[string]string{"CODEX_THREAD_ID": "thread-id"},
+			expected: false,
+		},
+		{
+			name:     "Cursor disables TTY",
+			envVars:  map[string]string{"CURSOR_AGENT": "1"},
+			expected: false,
+		},
+		{
 			name:     "GitHub Copilot CLI via COPILOT_CLI disables TTY",
 			envVars:  map[string]string{"COPILOT_CLI": "true"},
 			expected: false,
@@ -99,6 +109,8 @@ func clearTestEnvVars(t *testing.T) {
 		// Agent env vars
 		"AI_AGENT", // GitHub Copilot hosts
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
+		"CODEX_CI", "CODEX_THREAD_ID", "CODEX_SESSION_ID",
+		"CURSOR_AGENT", "CURSOR_CONVERSATION_ID",
 		"GITHUB_COPILOT_CLI", "GH_COPILOT", "COPILOT_CLI",
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		"OPENCODE",

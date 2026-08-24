@@ -36,9 +36,9 @@ const (
 	agentVersionVarFormat = "AGENT_%s_VERSION"
 
 	// agentEndpointVarFormat is the base endpoint env-var written for every
-	// deployed agent. Voice agents (kind: prompt-voice) are created
-	// synchronously with no agent-version object, so this base endpoint is the
-	// only deployment marker they set — isDeployed falls back to it.
+	// deployed agent. Voice agents (kind: prompt-voice) use it as the deploy
+	// completion marker. Unified voice deploys also set VERSION, while legacy
+	// voice environments may have only this endpoint marker.
 	agentEndpointVarFormat = "AGENT_%s_ENDPOINT"
 
 	// projectEndpointVar is the env-var that carries the Foundry project

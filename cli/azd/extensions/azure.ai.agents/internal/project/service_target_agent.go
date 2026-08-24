@@ -551,15 +551,16 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	agentVersionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	agentEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
 
-	// Voice agents (kind: prompt-voice) are created synchronously with no
-	// agent-version object and no per-protocol endpoints; they record only NAME
-	// and a base ENDPOINT. Gate the base-endpoint fallback on the service's
-	// actual declared kind (resolved via the shared agentkind lookup, so this
-	// agrees with the deploy path and next-step reader) rather than on the
-	// env-var shape: a hosted agent whose deploy partially failed (or whose vars
-	// were cleaned up) can also present an empty VERSION with a lingering
-	// ENDPOINT, and for that case we must still surface the actionable
-	// CodeMissingAgentEnvVars error below. Kind resolution is best-effort here:
+	// Voice agents (kind: prompt-voice) use the base ENDPOINT as their callable
+	// endpoint and deploy completion marker. Unified deploys also record VERSION,
+	// while environments created by the legacy voice API may have only
+	// NAME+ENDPOINT. Gate the base-endpoint path on the service's actual declared
+	// kind (resolved via the shared agentkind lookup, so this agrees with the
+	// deploy path and next-step reader) rather than on the env-var shape: a hosted
+	// agent whose deploy partially failed (or whose vars were cleaned up) can also
+	// present an empty VERSION with a lingering ENDPOINT, and for that case we
+	// must still surface the actionable CodeMissingAgentEnvVars error below.
+	// Kind resolution is best-effort here:
 	// an error (or non-voice result) simply falls through to the hosted guard, so
 	// hosted services keep their prior behavior on a path that never resolved
 	// config before.

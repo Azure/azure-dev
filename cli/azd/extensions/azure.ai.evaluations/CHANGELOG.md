@@ -1,6 +1,6 @@
 # Release History
 
-## 1.0.19-beta (2026-08-24)
+## 1.0.20-beta (2026-08-24)
 
 ### Bugs Fixed
 
@@ -29,6 +29,19 @@
 - `dataset show` reported dataset-client failures through the evaluation
   client's error classifier, so a missing version could surface as an
   unhelpful transport error instead of a named one.
+
+### Other Changes
+
+- The drift message now names `evaluator show --version --output-file`, so a
+  reader told their evaluator changed underneath them has the command that
+  shows them what changed.
+- `azd ai eval run` is described as a command group in the extension manifest.
+  It was listed as though it ran an evaluation itself, which it does not.
+
+## 1.0.19-beta (2026-08-24)
+
+### Bugs Fixed
+
 - `generate` and `init` now edit the configuration instead of rewriting it.
   They read it into memory, changed a field and wrote the whole thing back,
   which deleted every comment in the file and changed its indentation. Only the
@@ -43,14 +56,6 @@
 - A listing the service cannot finish now reports an error instead of returning
   the rows gathered so far. A truncated catalog was indistinguishable from a
   complete one, and these rows decide whether a name is ambiguous.
-
-### Other Changes
-
-- The drift message now names `evaluator show --version --output-file`, so a
-  reader told their evaluator changed underneath them has the command that
-  shows them what changed.
-- `azd ai eval run` is described as a command group in the extension manifest.
-  It was listed as though it ran an evaluation itself, which it does not.
 
 ## 1.0.18-beta (2026-08-21)
 

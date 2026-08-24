@@ -91,14 +91,18 @@ environment so repeat runs stay comparable.
 
 | Group | Commands |
 |---|---|
-| `azd ai eval` | `init` · `generate` · `run` |
-| `azd ai eval dataset` | `create` · `list` · `show` · `update` · `delete` |
-| `azd ai eval evaluator` | `upload` · `list` · `show` · `update` · `delete` · `builtins` |
-| `azd ai eval run` | `start` · `list` · `show` · `cancel` |
-| `azd ai eval results` | `show` · `export` |
+| `azd ai eval` | `init` · `generate` · `create [name]` · `list` · `show <eval>` · `delete <eval>` |
+| `azd ai eval dataset` | `create` · `update` · `list` · `show` · `delete` · `versions list` |
+| `azd ai eval evaluator` | `create` · `update` · `list` · `show` · `delete` · `versions list` |
+| `azd ai eval run` | `start` · `list` · `show` · `cancel` · `delete` · `output list` · `output show` · `output export` |
+| `azd ai eval job` | `list` · `show` · `cancel` · `delete` |
 
 `create` and `update` both publish a new immutable version; the server
 auto-increments and nothing mutates in place.
+
+`delete` asks before removing anything and takes `--force` to skip the
+question, which is what a pipeline passes. `job delete` is the exception: it
+discards a record of finished work, not the artifact the job produced.
 
 Every command supports `-o json` and `--no-prompt`, so the whole surface is
 usable from CI.
@@ -106,7 +110,7 @@ usable from CI.
 ## Evaluators
 
 Built-ins need no declaration — reference them as `builtin.<name>` and list
-them with `azd ai eval evaluator builtins`.
+them with `azd ai eval evaluator list --builtin`.
 
 Evaluators do not share an input contract, so the CLI reads each one's
 published contract and shapes the request to match. An evaluator needing an

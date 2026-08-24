@@ -424,9 +424,14 @@ func newDatasetDeleteCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			if err := confirmDelete(cmd, ec,
-				fmt.Sprintf("dataset %s version %s", name, version), force); err != nil {
+			goAhead, err := confirmDelete(cmd, ec,
+				fmt.Sprintf("dataset %s version %s", name, version), force)
+			if err != nil {
 				return err
+			}
+			if !goAhead {
+				return deleteDeclined(cmd,
+					fmt.Sprintf("dataset %s version %s", name, version))
 			}
 
 			if err := ec.datasetClient.DeleteDatasetVersion(

@@ -494,9 +494,14 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			if err := confirmDelete(cmd, ec,
-				fmt.Sprintf("evaluator %s version %s", name, version), force); err != nil {
+			goAhead, err := confirmDelete(cmd, ec,
+				fmt.Sprintf("evaluator %s version %s", name, version), force)
+			if err != nil {
 				return err
+			}
+			if !goAhead {
+				return deleteDeclined(cmd,
+					fmt.Sprintf("evaluator %s version %s", name, version))
 			}
 
 			if err := ec.evalClient.DeleteEvaluatorVersion(

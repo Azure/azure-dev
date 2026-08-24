@@ -81,8 +81,8 @@ func TestListDatasetsStopsOnATwoPageCycle(t *testing.T) {
 	base = srv.URL
 
 	list, err := c.ListDatasets(t.Context(), testAPIVersion)
-	require.NoError(t, err, "a cycle ends the walk rather than failing the command")
-	require.NotNil(t, list)
+	require.Error(t, err, "an incomplete listing must not be reported as the listing")
+	assert.Nil(t, list, "a caller must not be handed the pages that happened to arrive")
 	assert.LessOrEqual(t, atomic.LoadInt32(&hits), int32(4),
 		"a two-page cycle must stop quickly, not run to maxPages")
 }

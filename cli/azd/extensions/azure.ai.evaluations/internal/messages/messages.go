@@ -2302,17 +2302,20 @@ func FromNotASource(from string, sources []string) error {
 
 // ConfigLockUnavailable reports a config lock that could not be taken.
 //
-// Not fatal, and said out loud for that reason: the work goes ahead unlocked,
-// so a lost update afterwards has no other explanation on record.
+// Fatal, because the callers holding it read the configuration, change one
+// entry and write the whole document back. Two of them running unlocked both
+// report success and the later write drops the earlier one's entry, which is a
+// worse outcome than being asked to run the command again.
 func ConfigLockUnavailable(evalDir string, err error) error {
 	if err == nil {
 		return fmt.Errorf(
-			"another process is still updating %s, so this update is not "+
-				"serialized against it", filepath.ToSlash(evalDir))
+			"another process is still updating %s, so this update was not run: "+
+				"wait for it to finish and try again", filepath.ToSlash(evalDir))
 	}
 	return fmt.Errorf(
-		"could not lock %s, so this update is not serialized against other "+
-			"processes: %w", filepath.ToSlash(evalDir), err)
+		"could not lock %s, so this update was not run rather than risk "+
+			"overwriting another process's changes: %w",
+		filepath.ToSlash(evalDir), err)
 }
 
 // InvalidNextLink reports a pagination link the service sent that will not parse.
@@ -2839,6 +2842,10 @@ func DeleteNeedsForce(subject string) error {
 }
 
 // DeleteCancelled reports the author answering no.
-func DeleteCancelled(subject string) error {
-	return fmt.Errorf("left %s alone", subject)
+//
+// A line rather than an error: they were asked, they said no, and nothing was
+// deleted. That is the command doing its job, and exiting non-zero for it makes
+// a deliberate answer indistinguishable from a failure to anything scripted.
+func DeleteCancelled(subject string) string {
+	return fmt.Sprintf("Left %s alone.\n", subject)
 }

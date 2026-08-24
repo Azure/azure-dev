@@ -7,12 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -117,9 +115,13 @@ func walkNextLinks[T any](
 	for link != "" {
 		// A repeated link, not just a self-referencing one, ends the walk: a
 		// two-page cycle would otherwise run to maxPages for no benefit.
+		//
+		// It ends as an error, not as a short answer. These rows settle which
+		// version is latest and whether a name is ambiguous, so a caller
+		// handed the pages that did arrive would bind an older version, or
+		// pick one of several matches, believing it had seen everything.
 		if seen[link] || len(seen) >= maxPages {
-			fmt.Fprint(os.Stderr, messages.Warning(messages.ListingTruncated(len(seen))))
-			break
+			return nil, pageWalkError{cause: messages.ListingTruncated(len(seen))}
 		}
 		seen[link] = true
 

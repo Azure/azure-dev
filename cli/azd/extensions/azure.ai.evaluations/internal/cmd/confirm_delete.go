@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 
@@ -22,12 +24,22 @@ import (
 // A prompt written into a JSON document, or into a script running with
 // --no-prompt, is a hang rather than a question, which is why those require the
 // flag instead of defaulting either way.
-func confirmDelete(cmd *cobra.Command, ec *evalContext, subject string, force bool) error {
+//
+// Returns whether to go ahead, separately from whether anything went wrong.
+// Answering no is the command working: the reader was asked, they said no, and
+// nothing was deleted. Reporting that as an error exits 1, which makes a
+// deliberate answer look like a failure to every script that checks.
+func confirmDelete(
+	cmd *cobra.Command,
+	ec *evalContext,
+	subject string,
+	force bool,
+) (bool, error) {
 	if force {
-		return nil
+		return true, nil
 	}
 	if noPrompt(cmd) {
-		return messages.DeleteNeedsForce(subject)
+		return false, messages.DeleteNeedsForce(subject)
 	}
 
 	defaultNo := false
@@ -38,12 +50,16 @@ func confirmDelete(cmd *cobra.Command, ec *evalContext, subject string, force bo
 		},
 	})
 	if err != nil {
-		return exterrors.FromPrompt(err, "confirming the delete")
+		return false, exterrors.FromPrompt(err, "confirming the delete")
 	}
-	if resp.GetValue() {
-		return nil
-	}
-	return messages.DeleteCancelled(subject)
+	return resp.GetValue(), nil
+}
+
+// deleteDeclined reports the answer and is the whole of what a declined delete
+// does, so every caller ends it the same way.
+func deleteDeclined(cmd *cobra.Command, subject string) error {
+	fmt.Fprint(cmd.OutOrStdout(), messages.DeleteCancelled(subject))
+	return nil
 }
 
 // registerForceFlag adds the flag every delete verb needs to run unattended.

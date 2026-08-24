@@ -4,6 +4,18 @@
 
 ### Bugs Fixed
 
+- Answering "no" to a delete now exits 0. It came back as an ordinary error, so
+  a reader who deliberately declined got the same exit code as one whose delete
+  broke, and anything scripted read that as a failure.
+- A page walk that cannot finish now fails instead of returning the pages that
+  arrived. A repeated `nextLink`, or one past the page cap, produced a short
+  listing indistinguishable from a complete one -- and those rows choose the
+  latest version and decide whether a name is ambiguous, so the answer was
+  wrong rather than merely short.
+- A configuration lock that cannot be taken now fails the command. It warned
+  and continued unlocked, which is exactly the lost update the lock exists to
+  prevent: two `generate`s both report success and the later write drops the
+  earlier one's entry.
 - `dataset delete`, `evaluator delete`, `eval delete` and `run delete` now ask
   before removing anything, and take `--force` to skip the question. They
   removed the data immediately, while `azd ai dataset delete` in the companion
@@ -35,8 +47,9 @@
 - The drift message now names `evaluator show --version --output-file`, so a
   reader told their evaluator changed underneath them has the command that
   shows them what changed.
-- `azd ai eval run` is described as a command group in the extension manifest.
-  It was listed as though it ran an evaluation itself, which it does not.
+- `azd ai eval run` is described as a command group in the extension manifest,
+  and the README quickstart says `azd ai eval run start`. Both read as though
+  `run` started an evaluation itself; it prints help.
 
 ## 1.0.19-beta (2026-08-24)
 

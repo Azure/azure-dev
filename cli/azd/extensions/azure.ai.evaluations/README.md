@@ -7,7 +7,7 @@ with `azd up`, and run them from the terminal.
 azd ai eval init          # scaffold evals/ next to your agent
 azd ai eval generate      # synthesize a rubric and dataset from the agent
 azd up                    # register datasets and evaluators, create the eval group
-azd ai eval run           # run the evaluation and summarize the results
+azd ai eval run start     # run the evaluation and summarize the results
 ```
 
 ## What gets deployed

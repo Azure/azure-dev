@@ -8,15 +8,19 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// The lock is advisory: a scaffold must not fail because a lock file could
-// not be taken, and an earlier version reported that case only through log,
-// which is pointed at io.Discard unless --debug -- exactly as silent as saying
-// nothing. It now reports on stderr.
+// The lock is taken, released, and reusable.
+//
+// It used to be advisory: a lock it could not take was reported on stderr and
+// the work went ahead anyway. That reintroduced the very race the lock exists
+// for -- the callers read the configuration, change one entry and write the
+// whole document back, so two of them running unlocked both succeed and the
+// later write drops the earlier one's entry. It now refuses.
 func TestLockEvalConfigIsTakenAndReleased(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "evals")
 
@@ -30,6 +34,33 @@ func TestLockEvalConfigIsTakenAndReleased(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, unlock2)
 	unlock2()
+}
+
+// A lock already held elsewhere fails the command rather than letting a second
+// read-modify-write run beside the first.
+//
+// The message has to name the directory: a reader looking at a failed
+// `generate` needs to know which configuration is busy, and that another
+// process -- not their input -- is why.
+func TestLockEvalConfigRefusesWhenHeld(t *testing.T) {
+	// The wait itself is not what is under test, and paying the real one on
+	// every run buys nothing.
+	restore := configLockTimeout
+	configLockTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { configLockTimeout = restore })
+
+	dir := filepath.Join(t.TempDir(), "evals")
+
+	unlock, err := LockEvalConfig(context.Background(), dir)
+	require.NoError(t, err)
+	t.Cleanup(unlock)
+
+	second, err := LockEvalConfig(context.Background(), dir)
+
+	require.Error(t, err, "a held lock must stop the second writer, not warn it")
+	require.Nil(t, second, "there is no lock to release, so there is nothing to hand back")
+	assert.Contains(t, err.Error(), "evals",
+		"the reader has to know which configuration is busy")
 }
 
 // The lock lives beside the configuration it guards, not in the OS temp

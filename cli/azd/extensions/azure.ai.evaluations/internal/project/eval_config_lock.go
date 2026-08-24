@@ -6,7 +6,6 @@ package project
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -20,7 +19,10 @@ import (
 // Nothing that holds this lock waits on a person -- the evaluator prompt is
 // deliberately outside it -- so a wait longer than this is a stale lock rather
 // than contention.
-const configLockTimeout = 30 * time.Second
+//
+// A variable only so a test can prove the refusal without waiting it out.
+// Nothing outside this package changes it.
+var configLockTimeout = 30 * time.Second
 
 // evalConfigLockName is the lock file, beside the configuration it guards.
 //
@@ -63,15 +65,18 @@ func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
 
 	locked, err := lock.TryLockContext(waitCtx, 50*time.Millisecond)
 	if err != nil || !locked {
-		// Being cancelled is not the same as the lock being busy. The advisory
-		// behavior below exists so a held lock cannot fail a scaffold; carrying
-		// it into Ctrl-C would go on to rewrite the configuration the user just
-		// asked to stop.
+		// Being cancelled is not the same as the lock being busy. Carrying a
+		// Ctrl-C into the report below would blame a colleague for a stop the
+		// reader asked for themselves.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		fmt.Fprint(os.Stderr, messages.Warning(messages.ConfigLockUnavailable(evalDir, err)))
-		return func() {}, nil
+		// Failing is the point. The callers of this lock read the
+		// configuration, change one entry and write the whole document back,
+		// so two of them running unlocked both succeed and the later write
+		// drops the earlier one's entry. Losing an entry silently is worse
+		// than being told to run the command again.
+		return nil, messages.ConfigLockUnavailable(evalDir, err)
 	}
 	// Only once the file is ours: a lock that was never taken has no artifact
 	// to hide, and writing into a directory the user commits is not something

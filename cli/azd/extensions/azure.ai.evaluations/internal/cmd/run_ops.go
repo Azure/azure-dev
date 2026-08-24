@@ -343,9 +343,13 @@ func newRunDeleteCommand() *cobra.Command {
 				return err
 			}
 
-			if err := confirmDelete(cmd, ec,
-				fmt.Sprintf("run %s and its results", runID), force); err != nil {
+			goAhead, err := confirmDelete(cmd, ec,
+				fmt.Sprintf("run %s and its results", runID), force)
+			if err != nil {
 				return err
+			}
+			if !goAhead {
+				return deleteDeclined(cmd, fmt.Sprintf("run %s", runID))
 			}
 
 			if err := ec.evalClient.DeleteOpenAIEvalRun(ctx, evalID, runID); err != nil {

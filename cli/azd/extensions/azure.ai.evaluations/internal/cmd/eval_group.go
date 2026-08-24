@@ -316,9 +316,13 @@ func newEvalDeleteCommand() *cobra.Command {
 			// Asked on what the author typed, before the name is resolved to an
 			// id: the question is about the runs they are discarding, and that
 			// answer does not change with which id it turns out to be.
-			if err := confirmDelete(cmd, ec,
-				fmt.Sprintf("eval %s and every run under it", evalID), force); err != nil {
+			goAhead, err := confirmDelete(cmd, ec,
+				fmt.Sprintf("eval %s and every run under it", evalID), force)
+			if err != nil {
 				return err
+			}
+			if !goAhead {
+				return deleteDeclined(cmd, fmt.Sprintf("eval %s", evalID))
 			}
 
 			err = ec.evalClient.DeleteOpenAIEval(ctx, evalID)

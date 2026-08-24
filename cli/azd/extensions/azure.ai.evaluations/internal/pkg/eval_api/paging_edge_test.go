@@ -88,6 +88,10 @@ func TestListEvaluatorVersionsBlamesTheLinkNotTheEndpoint(t *testing.T) {
 
 // A cycle longer than one hop used to run to maxPages, because only a link
 // pointing at the page it came from ended the walk.
+//
+// It now ends as an error rather than as a short list. These rows settle which
+// evaluator version is latest, so handing back the pages that did arrive lets a
+// caller bind an older version believing it saw everything.
 func TestListEvaluatorVersionsStopsOnATwoPageCycle(t *testing.T) {
 	var hits int32
 	var base string
@@ -102,9 +106,11 @@ func TestListEvaluatorVersionsStopsOnATwoPageCycle(t *testing.T) {
 	})
 	base = srv.URL
 
-	list, err := c.ListEvaluatorVersions(t.Context(), "e", "v1")
-	require.NoError(t, err, "a cycle ends the walk rather than failing the command")
-	require.NotNil(t, list)
+	_, err := c.ListEvaluatorVersions(t.Context(), "e", "v1")
+
+	require.Error(t, err, "an incomplete catalog must not be reported as the catalog")
+	assert.False(t, IsNotFound(err),
+		"a walk that broke is not the evaluator being absent")
 	assert.LessOrEqual(t, atomic.LoadInt32(&hits), int32(4),
 		"a two-page cycle must stop quickly, not run to maxPages")
 }

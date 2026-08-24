@@ -75,6 +75,9 @@ func TestNextLinkToAnotherHostIsRefused(t *testing.T) {
 
 // A link pointing at the page it came from is the one shape that would
 // otherwise spin until the page bound for no benefit.
+//
+// It is bounded and it fails: the pages that did arrive are not the listing,
+// and a caller told otherwise picks a version from a partial answer.
 func TestSelfReferencingNextLinkStops(t *testing.T) {
 	calls := 0
 	c := datasetClientServing(t, func(w http.ResponseWriter, r *http.Request, base string) {
@@ -83,11 +86,11 @@ func TestSelfReferencingNextLinkStops(t *testing.T) {
 		fmt.Fprintf(w, `{"value":[{"name":"golden","version":"1.0"}],"nextLink":"%s/same"}`, base)
 	})
 
-	list, err := c.ListDatasets(context.Background(), "v1")
+	_, err := c.ListDatasets(context.Background(), "v1")
 
-	require.NoError(t, err)
+	require.Error(t, err, "an incomplete listing must not be reported as the listing")
+	assert.False(t, IsNotFound(err), "a walk that broke is not the dataset being absent")
 	assert.Equal(t, 2, calls, "the first request, then the link once")
-	assert.Len(t, list.Value, 2)
 }
 
 // A listing without a link is one page, which is what this did before it could

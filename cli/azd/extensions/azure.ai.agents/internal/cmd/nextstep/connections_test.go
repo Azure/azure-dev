@@ -378,6 +378,59 @@ func TestAssembleState_ActiveConnectionRefErrorIsLoadError(t *testing.T) {
 	assert.Contains(t, state.ConnectionLoadErrors[0], "resolve $ref")
 }
 
+func TestAssembleState_UnifiedLoadErrorSuppressesFallbackSources(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeManifest(t, root, "src/echo", `
+template:
+  kind: containerAgent
+  name: echo
+resources:
+  - name: manifest-connection
+    kind: connection
+    category: ApiKey
+    target: https://manifest.example
+`)
+
+	agent := newAgentService(t, map[string]any{
+		"kind": "hostedAgent",
+		"connections": []any{
+			map[string]any{
+				"name":     "bundled-connection",
+				"category": "ApiKey",
+				"target":   "https://bundled.example",
+			},
+		},
+	})
+	agent.RelativePath = "src/echo"
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": agent,
+				"broken-conn": {
+					Name: "broken-conn",
+					Host: connectionHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"$ref": "./missing-connection.yaml",
+					}),
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.NotEmpty(t, errs)
+	require.Len(t, state.ConnectionLoadErrors, 1)
+	assert.Contains(t, state.ConnectionLoadErrors[0],
+		`connection service "broken-conn"`)
+	assert.False(t, state.HasConnections)
+	assert.Empty(t, state.Connections)
+}
+
 func TestAssembleState_ConnectionTargetKeepsVarRef(t *testing.T) {
 	t.Parallel()
 

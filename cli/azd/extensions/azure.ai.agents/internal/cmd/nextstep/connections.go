@@ -44,7 +44,7 @@ func populateConnections(
 	}
 
 	collected := map[string]ResourceRef{}
-	collectSplitConnections(
+	hasSplitLoadError := collectSplitConnections(
 		ctx,
 		src,
 		envName,
@@ -53,7 +53,7 @@ func populateConnections(
 		errs,
 		collected,
 	)
-	if len(collected) == 0 {
+	if len(collected) == 0 && !hasSplitLoadError {
 		collectBundledConnections(
 			ctx,
 			src,
@@ -101,7 +101,8 @@ func collectSplitConnections(
 	state *State,
 	errs *[]error,
 	collected map[string]ResourceRef,
-) {
+) bool {
+	hasLoadError := false
 	for _, serviceName := range sortedServiceKeys(projectCfg) {
 		svc := projectCfg.Services[serviceName]
 		if svc == nil || svc.GetHost() != connectionHost {
@@ -119,6 +120,7 @@ func collectSplitConnections(
 					err,
 				),
 			)
+			hasLoadError = true
 			continue
 		}
 		if !enabled {
@@ -136,15 +138,18 @@ func collectSplitConnections(
 					err,
 				),
 			)
+			hasLoadError = true
 			continue
 		}
-		recordResolvedConditionError(
+		if recordResolvedConditionError(
 			state,
 			errs,
 			"connection service",
 			serviceName,
 			resolved,
-		)
+		) {
+			hasLoadError = true
+		}
 
 		var decoded bundledConnection
 		if err := decodeJSONMap(resolved, &decoded); err != nil {
@@ -157,6 +162,7 @@ func collectSplitConnections(
 					err,
 				),
 			)
+			hasLoadError = true
 			continue
 		}
 		connectionName := decoded.Name
@@ -175,6 +181,7 @@ func collectSplitConnections(
 			),
 		}
 	}
+	return hasLoadError
 }
 
 func collectBundledConnections(
@@ -423,9 +430,9 @@ func recordResolvedConditionError(
 	serviceType string,
 	serviceName string,
 	resolved map[string]any,
-) {
+) bool {
 	if _, found := resolved["condition"]; !found {
-		return
+		return false
 	}
 	recordConnectionLoadError(
 		state,
@@ -437,4 +444,5 @@ func recordResolvedConditionError(
 			serviceName,
 		),
 	)
+	return true
 }

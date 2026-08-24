@@ -106,7 +106,8 @@ func parseFlags(args []string, flags []Flag) []string {
 		if f.Name == "" {
 			continue
 		}
-		switch strings.ToLower(f.Type) {
+		flagType := strings.ToLower(f.Type)
+		switch flagType {
 		case "bool":
 			fs.BoolP(f.Name, f.Shorthand, false, "")
 		case "int":
@@ -117,6 +118,15 @@ func parseFlags(args []string, flags []Flag) []string {
 			fs.StringSliceP(f.Name, f.Shorthand, nil, "")
 		default: // string and any unknown types
 			fs.StringP(f.Name, f.Shorthand, "", "")
+		}
+
+		if f.ValueOptional && flagType != "bool" {
+			// The resolver only records flag presence, so any parseable value can stand in for NoOptDefVal.
+			noOptDefVal := "true"
+			if flagType == "int" || flagType == "intarray" {
+				noOptDefVal = "0"
+			}
+			fs.Lookup(f.Name).NoOptDefVal = noOptDefVal
 		}
 	}
 

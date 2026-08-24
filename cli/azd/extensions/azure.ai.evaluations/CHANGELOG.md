@@ -1,9 +1,18 @@
 # Release History
 
-## 1.0.21-beta (2026-08-24)
+## 1.0.22-beta (2026-08-24)
 
 ### Bugs Fixed
 
+- An eval pinned to an explicit `id:` is reserved before any other
+  declaration can adopt it. It was claimed only once its own declaration was
+  reached, so a declaration listed above it could reach the same eval first
+  and the two ended up sharing one run history.
+- The container listing no longer reports a partial answer as success. A
+  repeated blob marker, or exhausting the page cap, returned the names
+  gathered so far -- and those names are what the `.jsonl` is picked from, so
+  a container whose data file sat on an unread page yielded the wrong file or
+  none at all.
 - Answering "no" to a delete now exits 0. It came back as an ordinary error, so
   a reader who deliberately declined got the same exit code as one whose delete
   broke, and anything scripted read that as a failure.

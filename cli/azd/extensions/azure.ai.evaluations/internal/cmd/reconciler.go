@@ -71,7 +71,10 @@ func (r *evalReconciler) claim(id string) {
 // A declaration that is going to be recreated reserves nothing either: it is
 // about to abandon that eval, and holding it back would refuse the rename that
 // legitimately continues it.
+//
+// An explicit `id:` is reserved before any of that, by reserveExplicitIDs.
 func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.Eval) {
+	r.reserveExplicitIDs(groups)
 	for i := range groups {
 		decision, err := r.decide(ctx, groups[i])
 		if err != nil {
@@ -84,6 +87,27 @@ func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.E
 			continue
 		}
 		r.claim(id)
+	}
+}
+
+// reserveExplicitIDs claims every eval an author named outright.
+//
+// Separate, and first, because it reads nothing: an explicit `id:` is the
+// author naming the eval, so there is no decision to make and nothing that
+// could release it. The loop below consults the recorded environment, and a
+// read that fails skips its entry -- a reservation that can be skipped is not a
+// reservation.
+//
+// Without this, a pinned id was claimed only once its own declaration was
+// reached, so file order decided the outcome: a declaration listed above it
+// could reach the same eval through digestIDKey first, and the two ended up
+// sharing one eval and one run history. That is the collision this pre-pass
+// exists to prevent, and the pinned declaration was the one that lost it.
+func (r *evalReconciler) reserveExplicitIDs(groups []project.Eval) {
+	for i := range groups {
+		if groups[i].ID != "" {
+			r.claim(groups[i].ID)
+		}
 	}
 }
 

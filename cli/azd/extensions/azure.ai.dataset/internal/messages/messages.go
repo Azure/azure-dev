@@ -337,6 +337,26 @@ func EndpointNotHTTPS() error {
 	)
 }
 
+// EndpointInAnotherCloud reports a Foundry endpoint in a cloud this extension
+// cannot reach.
+//
+// Separated from EndpointNotFoundryHost because the two are different problems
+// with different answers. A malformed host is something the reader can fix; a
+// Government endpoint is correct and simply unsupported, and telling them it is
+// "not a recognized Foundry host" sends them to check a URL that is already
+// right.
+func EndpointInAnotherCloud(host, cloud string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf(
+			"project endpoint %q is a Foundry endpoint in %s, which this extension "+
+				"does not support yet", host, cloud,
+		),
+		"use a public Azure Foundry project, or track sovereign cloud support before "+
+			"relying on this extension there",
+	)
+}
+
 // EndpointNotFoundryHost reports a project endpoint pointing somewhere else.
 func EndpointNotFoundryHost(host, suffix string) error {
 	return exterrors.Validation(

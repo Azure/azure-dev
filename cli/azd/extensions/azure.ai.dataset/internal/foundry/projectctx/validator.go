@@ -12,8 +12,37 @@ import (
 )
 
 // foundryHostSuffixes is the authoritative list of accepted Foundry host suffixes.
+//
+// Public Azure only. The suffix is not the whole story: the client asks for a
+// token scoped to https://ai.azure.com/.default, which is a public-cloud
+// audience, so accepting a sovereign host here would move the failure from a
+// clear message to a 401 nobody can act on.
 var foundryHostSuffixes = []string{
 	".services.ai.azure.com",
+}
+
+// sovereignHostSuffixes are Foundry hosts in clouds this extension does not
+// reach yet.
+//
+// Listed so the refusal can say which problem it is. Without them a Government
+// or China endpoint is reported as not being a Foundry host at all, which
+// sends a reader to check a URL that is perfectly correct -- the endpoint is
+// fine, the support is missing.
+var sovereignHostSuffixes = map[string]string{
+	".services.ai.azure.us": "Azure Government",
+	".services.ai.azure.cn": "Microsoft Azure in China",
+}
+
+// sovereignCloudOf names the cloud a host belongs to, when it is one this
+// extension cannot reach.
+func sovereignCloudOf(hostname string) (string, bool) {
+	h := strings.ToLower(hostname)
+	for suffix, cloud := range sovereignHostSuffixes {
+		if strings.HasSuffix(h, suffix) {
+			return cloud, true
+		}
+	}
+	return "", false
 }
 
 // projectEndpointPathPrefix is the expected path prefix for Foundry project endpoints.
@@ -55,6 +84,9 @@ func Validate(raw string) (normalized string, pathWarning bool, err error) {
 
 	host := u.Hostname()
 	if host == "" || !isFoundryHost(host) {
+		if cloud, ok := sovereignCloudOf(host); ok {
+			return "", false, messages.EndpointInAnotherCloud(host, cloud)
+		}
 		return "", false, messages.EndpointNotFoundryHost(host, foundryHostSuffixes[0])
 	}
 

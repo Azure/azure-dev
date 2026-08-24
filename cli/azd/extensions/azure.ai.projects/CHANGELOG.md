@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.7 (2026-08-24)
+
+### Other Changes
+
+- [[#9580]](https://github.com/Azure/azure-dev/pull/9580) Update the azd extension SDK dependency to v1.31.0 for extension telemetry compatibility.
+
 ## 1.0.0-beta.6 (2026-08-13)
 
 ### Features Added

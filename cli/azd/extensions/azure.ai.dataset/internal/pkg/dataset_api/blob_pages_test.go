@@ -70,7 +70,12 @@ func TestListContainerBlobsStopsWithoutAMarker(t *testing.T) {
 }
 
 // A marker that repeats itself would otherwise spin until the page bound.
-func TestListContainerBlobsStopsOnARepeatedMarker(t *testing.T) {
+//
+// It stops, and it fails. The names this returns are what pickDatasetBlob
+// chooses the .jsonl from, so a container whose data file sits on a page the
+// walk never reached does not yield a shorter list -- it yields the wrong file,
+// or "no dataset file" about a dataset that plainly has one.
+func TestListContainerBlobsRefusesARepeatedMarker(t *testing.T) {
 	calls := 0
 
 	client, srv := pagingClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -79,8 +84,27 @@ func TestListContainerBlobsStopsOnARepeatedMarker(t *testing.T) {
 		fmt.Fprint(w, blobPage("stuck", "same.jsonl"))
 	})
 
-	_, err := client.ListContainerBlobs(t.Context(), srv.URL+"/container")
+	names, err := client.ListContainerBlobs(t.Context(), srv.URL+"/container")
 
-	require.NoError(t, err)
+	require.Error(t, err, "a stalled listing must not look like a complete one")
+	assert.Nil(t, names, "the pages that did arrive are not the container")
 	assert.Equal(t, 2, calls, "the first request, then the marker once")
+}
+
+// The other way a walk ends short: a service that keeps offering a fresh marker
+// until the page cap runs out. Same partial answer, same refusal.
+func TestListContainerBlobsRefusesToExhaustThePageCap(t *testing.T) {
+	calls := 0
+
+	client, srv := pagingClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/xml")
+		fmt.Fprint(w, blobPage(fmt.Sprintf("m%d", calls), fmt.Sprintf("part-%d.jsonl", calls)))
+	})
+
+	names, err := client.ListContainerBlobs(t.Context(), srv.URL+"/container")
+
+	require.Error(t, err, "exhausting the cap is still a partial answer")
+	assert.Nil(t, names)
+	assert.Equal(t, maxListPages, calls, "the cap has to bound the walk")
 }

@@ -78,9 +78,9 @@ ordering, and capture — is **not** restated here. It lives once in the executo
 [`driving-mechanics.md`](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/driving-mechanics.md)
 (repo path
 `cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/driving-mechanics.md`).
-Fan each selected scenario out to a **foundry-extension-scenario-worker** agent, which loads, drives, and
-reports one scenario per that spec. This skill's job is selection (impact → tags), gating,
-and reporting — not driving.
+Fan product phases out to **foundry-extension-scenario-worker** agents, then use cleanup-phase
+workers for deferred Tier 1b post hooks per that spec. This skill's job is selection
+(impact → tags), gating, and reporting — not driving.
 
 {{ references/reporting.md }}
 
@@ -90,8 +90,8 @@ and reporting — not driving.
 - The impacted scenario set was derived from the PR diff and **confirmed by the user**
   (including an explicit cost acknowledgement before any Tier 1b or Tier 2 run).
 - Every selected scenario was driven to completion with a recorded PASS/FAIL/SKIPPED, duration,
-  and any findings, and a `FINAL-REPORT.md` was written under `.reports/<run-id>/`.
+  product and cleanup findings, and a `FINAL-REPORT.md` was written under `.reports/<run-id>/`.
 - Scenarios with a `requires:` field whose prerequisite did not PASS are marked ⏭️ SKIPPED
   (not FAIL) with a clear reason.
 - A results comment was posted on the PR (unless the user opted out), and any Tier 1b/Tier 2
-  run was followed by appropriate teardown so no Azure resources are left running.
+  run was followed by appropriate teardown. Failed or pending cleanup is reported explicitly.

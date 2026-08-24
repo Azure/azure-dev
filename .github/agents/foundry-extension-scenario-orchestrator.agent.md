@@ -77,8 +77,8 @@ source — read it, don't restate it.
 
 The rules for *how* a scenario is driven live once in the executor spec
 **`cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/driving-mechanics.md`**.
-You don't drive scenarios yourself; you spawn one **`foundry-extension-scenario-worker`** per scenario (via the
-`agent` tool) and honor the readiness and parallelism rules in that spec:
+You don't drive scenarios yourself; you spawn **`foundry-extension-scenario-worker`** agents via
+the `agent` tool and honor the phase, readiness, and parallelism rules in that spec:
 
 - **Use an adaptive rolling pool for parallel-safe work.** Determine a safe target parallelism
   from the selected workload, available model/tool capacity, and the Azure side effects of
@@ -113,12 +113,39 @@ You don't drive scenarios yourself; you spawn one **`foundry-extension-scenario-
 
 Give each worker its inputs (scenario path in the correct style, per-scenario `session_vars`,
 `run_name`, `output_dir` under the single `<run-id>`, `session_id`, assigned `instance_id` when
-applicable, its prerequisite status, and the scenario YAML's raw optional `produces` value).
+applicable, its prerequisite status, the scenario YAML's raw optional `produces` value, and
+`phase: product`).
 Collect each worker's returned verdict block. Read `produces` during plan construction; do not
 expect `load_scenario` to return unknown orchestrator-only fields.
 
-Finish scheduling only when no worker is running, no scenario is ready, and every blocked
-scenario has either become ready or been marked SKIPPED from its prerequisite result.
+Before launching each Tier 1b product worker, register its cleanup identity in
+`.reports/<run-id>/CLEANUP-STATUS.md`. Use a Markdown table with columns
+`Scenario | Instance | Scaffold | Status | Cleanup duration | Finding`; initialize the status
+as `registered`. Keep the unchanged `session_vars` in run state rather than writing profile
+values to this human-readable ledger. If the worker returns `session_started: no`, mark the row
+`not-required`. If it returns `cleanup_required: yes`, mark it `pending`. If a launched worker
+terminates without a usable result, mark its row `pending` so cleanup is attempted
+conservatively.
+
+When resuming an interrupted run for cleanup, read its ledger before scheduling anything else.
+Rebuild each pending row's `session_vars` from the current profile merge plus the run directory's
+ID and the ledger's instance and scaffold path (`prerequisite_scaffold_dir`), then enter cleanup
+phase directly. Do not rerun product work as part of cleanup recovery.
+
+Product scheduling reaches its barrier only when no product worker is running, no scenario is
+ready, every blocked scenario has become ready or SKIPPED, and the Tier 2 serial lane (including
+`2.99-teardown`) has finished. After that barrier:
+
+1. Stop launching all other tester work.
+2. Drain pending Tier 1b entries **serially**, one cleanup-mode worker at a time, in stable
+   scenario order. Pass the original scenario path, unchanged `session_vars`, and exact
+   `instance_id`, with `phase: cleanup`; do not start a new tester session.
+3. After each cleanup result, update the ledger to `completed` or `failed` before launching the
+   next cleanup. Continue after failures so every pending resource receives a cleanup attempt.
+4. Merge product and cleanup results. A cleanup failure turns a product pass into FAIL; preserve
+   both findings if product and cleanup failed. Final duration is product duration plus cleanup
+   duration, excluding time spent waiting in the cleanup queue. A failed or still-pending
+   cleanup makes the final scenario verdict FAIL.
 
 ## Reporting handoff
 
@@ -127,7 +154,8 @@ run, post the PR comment — per
 `.github/skills/foundry-extension-scenario-pr-regression/references/reporting.md`. Never soften a real regression
 to make the table green. If a Tier 2 run started but was interrupted before `2.99-teardown`,
 run teardown (or `2.00-setup`'s down hook) so no Azure resources are left provisioned, then
-report that status explicitly.
+report that status explicitly. Report every Tier 1b cleanup as completed, failed, or still
+pending; never claim resources were removed from an entry that did not complete cleanup.
 
 ## Exit criteria
 
@@ -136,5 +164,6 @@ report that status explicitly.
   any fan-out; cost-incurring tiers ran only with explicit acknowledgement.
 - Every selected scenario has a recorded PASS / FAIL / ⏭️ SKIPPED (with duration and findings),
   `requires:`-gated scenarios that didn't qualify are SKIPPED (not FAIL), a `FINAL-REPORT.md`
-  was written, any PR comment was posted (unless opted out), and any Azure resources were torn
-  down.
+  was written, any PR comment was posted (unless opted out), and every registered Tier 1b
+  cleanup was attempted serially after the product barrier. Any cleanup still pending or failed
+  is reported explicitly.

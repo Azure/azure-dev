@@ -13,6 +13,8 @@ git-ignored). Include:
 - A short "Coverage gaps" section listing any changed command(s) with no scenario (from
   `impact-mapping.md` §2), so the author knows to add one.
 - Links to the per-scenario `tester-reports/<run_name>/` folders for screenshots/HTML.
+- Tier 1b cleanup status from `CLEANUP-STATUS.md`, calling out every failed or still-pending
+  cleanup.
 
 ## PR comment
 
@@ -57,3 +59,9 @@ Rules:
   summary to the user instead.
 - Mention any Tier 2 teardown status explicitly (e.g. "`2.99-teardown-down` ran — no resources
   left provisioned") so the reader knows nothing is still costing money.
+- Treat Tier 1b product verdicts as provisional until deferred cleanup completes. A cleanup
+  failure makes the final scenario result FAIL while preserving any product finding. Duration
+  is product execution plus cleanup execution, excluding cleanup-queue wait time.
+- A failed or still-pending Tier 1b cleanup makes the final scenario result FAIL.
+- Never state that Tier 1b resources were removed when cleanup failed or remains pending; list
+  the affected scenario and scaffold path so recovery is actionable.

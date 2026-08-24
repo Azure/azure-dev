@@ -229,10 +229,11 @@ documents which scenarios are *authored* to support concurrency.
 ## Orchestrating a fleet run
 
 Fleet orchestration — fan-out primitives, per-`session_id` timestamps, adaptive rolling
-parallelism, dependency readiness, the Tier 2 serial lane, and the operational guardrails
-(validate the recipe first and launch cost-incurring work conservatively) — is the executor's
-job and is specified once in [`driving-mechanics.md`](./driving-mechanics.md) § Parallelism &
-ordering. In practice you don't orchestrate by hand: the
+parallelism, dependency readiness, the Tier 2 serial lane, the deferred Tier 1b cleanup phase,
+and the operational guardrails (validate the recipe first and launch cost-incurring work
+conservatively) — is the executor's job and is specified once in
+[`driving-mechanics.md`](./driving-mechanics.md) § Parallelism & ordering. In practice you don't
+orchestrate by hand: the
 `foundry-extension-scenario-orchestrator` agent runs that flow and spawns one
 `foundry-extension-scenario-worker` per scenario.
 
@@ -341,8 +342,11 @@ and verifies the generated files, then stops before `azd provision`.
 Verifies that Tier 1 scaffolds actually **deploy** and produce a working agent.
 Each scenario reuses the on-disk scaffold from a Tier 1 init run (no init
 duplication), provisions its own Azure resources, deploys, checks the agent is
-accessible, then tears down with `azd down`. Independent Azure environments per
-scenario — safe to parallelize once prerequisites pass.
+accessible, then tears down with `azd down`. Product verification is safe to parallelize once
+prerequisites pass because each scenario has an independent Azure environment. To avoid
+long-running cleanup hooks delaying active tester calls, workers finish every product session
+first; after all product work and the Tier 2 lane complete, the orchestrator runs Tier 1b
+post-hook cleanup serially.
 
 Each scenario declares a `requires:` field pointing to the Tier 1 scenario
 whose scaffold it deploys. The orchestrator **must** check this: if the
@@ -357,7 +361,7 @@ contains `azure.yaml` and `.azure/`, resolves it to an absolute path, and return
 
 The orchestrator passes that exact path to the declared Tier 1b dependent as
 `{prerequisite_scaffold_dir}`. The consumer uses it for `cwd`, precondition checks, and
-cleanup. It neither searches for `azure.yaml` nor reconstructs a path from agent or template
+deferred cleanup. It neither searches for `azure.yaml` nor reconstructs a path from agent or template
 names. A producer PASS without a verified `scaffold_dir` is invalid and the dependent is
 skipped.
 
@@ -563,10 +567,11 @@ tmux session, **sequentially and fail-fast** unless a hook sets
 `continue_on_error: true`. Each entry is a string or a mapping with `run`
 (required), `cwd` (defaults to the scenario `cwd`, created if missing), `env`,
 `continue_on_error` (default `false`), `timeout` (default **120s**), and `name`.
-After a tester session starts, its worker always calls `finish_session` and then
-attempts declared post hooks, even if a product goal fails. Hook failures are
-reported separately and make the scenario fail without hiding the original
-product finding.
+After a tester session starts, its product worker always calls `finish_session`, even if a
+product goal fails. Non-Tier 1b post hooks run immediately afterward. Tier 1b post hooks are
+registered before product execution and deferred until all product workers and the Tier 2 lane
+finish; the orchestrator then runs them serially. Hook failures are reported separately and
+make the final scenario verdict fail without hiding the original product finding.
 
 How they're used here:
 
@@ -591,8 +596,10 @@ How they're used here:
 - **`pre` precondition guard (Tier 2 reuse)** — `2.01-`…`2.18` print a clear "run
   2.00-setup first" warning if the shared agent isn't deployed (non-fatal).
 - **`post` cleanup (Tier 1b)** — every deploy-verification scenario runs
-  `azd down --force --purge` with `timeout: 900` after its tester session,
-  including when product verification fails.
+  `azd down --force --purge` with `timeout: 900` after the global product barrier, including
+  when product verification fails. Cleanup state is persisted in the run's
+  `CLEANUP-STATUS.md`, and hooks are drained one at a time so long cleanup calls cannot block
+  active tester sessions.
 - **Success-gated cleanup (Tier 2)** — `2.99-teardown-down` removes the current
   run's `{shared_agent_name}` project directory only after the in-session
   `azd down` succeeds. Failed teardown retains the directory for recovery.

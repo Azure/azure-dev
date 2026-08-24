@@ -130,8 +130,8 @@ under `<scenarios-dir>/.reports/<run-id>/`.
 
 Drive each selected scenario per the executor spec
 `cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/driving-mechanics.md`
-— fan each scenario out to a **foundry-extension-scenario-worker** agent (one scenario per
-worker). Start with a mandatory validation step, then schedule by readiness:
+— use one **foundry-extension-scenario-worker** per scenario phase. Start with a mandatory
+validation step, then schedule by readiness:
 
 1. **Recipe validation (mandatory).** Run one Tier 0 scenario synchronously before fanning
    out. Pick a fast, non-interactive scenario (e.g. `0.01-version`). If it fails with an
@@ -158,9 +158,15 @@ worker). Start with a mandatory validation step, then schedule by readiness:
    scenarios run; otherwise skip them and proceed to cleanup/recovery. Each functional
    completion unlocks only its successor, and teardown follows the final attempted functional
    scenario regardless of verdict.
+5. **Defer Tier 1b cleanup until a global product barrier.** Before launching each Tier 1b
+   product worker, register its cleanup identity in
+   `.reports/<run-id>/CLEANUP-STATUS.md`. Product workers must call `finish_session` but leave
+   Tier 1b post hooks pending. After every product worker and the full Tier 2 lane (including
+   teardown) finish, run pending Tier 1b post hooks serially through cleanup-mode workers. Keep
+   draining after failures and merge each cleanup result into its scenario's final verdict.
 
-Record per scenario: PASS/FAIL, wall-clock duration (`Hh Mm Ss`), and any `report_finding`
-entries.
+Record per scenario: PASS/FAIL, active duration (`Hh Mm Ss`, product plus cleanup but excluding
+cleanup-queue wait), and any product or cleanup findings.
 
 ### Step 6 — Report
 

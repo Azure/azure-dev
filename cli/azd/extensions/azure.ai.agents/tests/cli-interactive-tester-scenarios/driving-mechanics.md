@@ -82,18 +82,22 @@ does not expose unknown orchestrator-only fields.
    same `session_vars`, resolve it to an absolute path, and verify through the tester session
    that it is a directory containing `azure.yaml` and `.azure/`. Retain the verified path as
    `scaffold_dir`. A missing or invalid scaffold fails the producer.
-6. Whether the goals pass or fail, enter the finally-style cleanup path and call
+6. Whether the goals pass or fail, enter the finally-style session path and call
    `finish_session` (this releases ports and generates the HTML report).
-7. If it has `post` hooks, always call
-   `run_post_hooks(path=…, session_vars=…, instance_id=<assigned instance>)` after
-   `finish_session`, even when a product goal failed. A post-hook failure is a separate cleanup
-   finding and makes the scenario FAIL. If product verification also failed, preserve both
-   findings.
+7. If it has `post` hooks:
+   - **Tier 1b:** return the product result with cleanup pending. The orchestrator runs the hook
+     in the serial cleanup phase after the global product barrier.
+   - **Every other tier:** immediately call
+     `run_post_hooks(path=…, session_vars=…, instance_id=<assigned instance>)` after
+     `finish_session`, even when a product goal failed.
+   A post-hook failure is a separate cleanup finding and makes the final scenario verdict FAIL.
+   If product verification also failed, preserve both findings.
 
 Use the same `instance` value in `session_vars` and `instance_id` on every tool that accepts
 it. Tier 2 has no assigned instance and omits `instance_id`.
 
-Always `finish_session` and attempt declared post hooks for every session you start.
+Always `finish_session` every session you start. Every declared post hook must eventually be
+attempted: immediately for non-Tier 1b scenarios, or through the deferred Tier 1b cleanup queue.
 
 ---
 
@@ -124,9 +128,10 @@ operational form of the README's **authoring contract** — see
   exit) report the finding and move on. Do **not** re-run hoping for a different result unless
   the scenario's `goals:` explicitly instruct a retry — retrying masks flakiness.
 - **Always run post-hook cleanup and report it independently.** Product failure stops further
-  product driving, not cleanup. Finish the tester session, run every declared post hook, and
-  record cleanup failure separately. A failed cleanup makes the scenario FAIL; when product
-  verification also failed, report both rather than replacing the original finding.
+  product driving, not cleanup. Finish the tester session; run non-Tier 1b post hooks
+  immediately and Tier 1b post hooks after the global product barrier. Record cleanup failure
+  separately. A failed cleanup makes the final scenario verdict FAIL; when product verification
+  also failed, report both rather than replacing the original finding.
 - **Screenshot capture is non-blocking and is never retried.** A screenshot is supporting
   evidence, not product behavior. If a screenshot call errors or times out, immediately file a
   `report_finding` with category `observation`, including the capture error and which expected
@@ -163,7 +168,7 @@ operational form of the README's **authoring contract** — see
 
 ## Parallelism & ordering
 
-Concurrency primitive: **parallel background sub-agents, one scenario per sub-agent.**
+Concurrency primitive: **parallel background sub-agents, one scenario phase per sub-agent.**
 
 - **Validate the recipe with one scenario before fanning out.** Confirm `load_scenario` →
   `start_session` → one `send_action` round-trips for a single fast Tier 0 scenario (e.g.
@@ -184,7 +189,8 @@ Concurrency primitive: **parallel background sub-agents, one scenario per sub-ag
   that exact path to the dependent's `session_vars` as `prerequisite_scaffold_dir` and make the
   dependent ready, reusing the producer's exact instance ID. A producer failure or invalid
   PASS skips only that dependent. Do not wait for unrelated Tier 1 scenarios and never
-  reconstruct the scaffold path.
+  reconstruct the scaffold path. Before launching a Tier 1b product worker, register its
+  cleanup identity in `.reports/<run-id>/CLEANUP-STATUS.md`.
 - **Tier 2** (`serial-only`, ⚠️ Azure cost) uses an independent serial lane that may overlap the
   rolling pool after recipe validation. Run `2.00-setup-deploy-shared-agent` **first**, then
   `2.01-`…`2.18-` **serially** (they share one deployed agent and mutate shared session/file/
@@ -199,15 +205,49 @@ Concurrency primitive: **parallel background sub-agents, one scenario per sub-ag
   Tier 2 remains serial and never receives an instance ID; `2.12` prefixes its paired session
   IDs with `run-` / `invoke-` and includes `{run_id}` to isolate them from other sweeps.
 
+### Tier 1b product barrier and cleanup queue
+
+Tier 1b uses two phases so its long `azd down` hooks cannot block active tester traffic:
+
+1. **Register before launch.** Before a Tier 1b product worker starts, append or update a ledger
+  row in `.reports/<run-id>/CLEANUP-STATUS.md`. Use columns
+  `Scenario | Instance | Scaffold | Status | Cleanup duration | Finding`, with initial status
+  `registered`. The orchestrator must retain the complete unchanged `session_vars` needed for
+  cleanup; do not place profile values in the human-readable ledger.
+2. **Finish product traffic.** The product worker performs pre-hooks, starts and drives the
+  tester session, calls `finish_session`, and returns a preliminary product result with cleanup
+  `pending`. It does not call `run_post_hooks`.
+3. **Cross one global barrier.** Do not begin Tier 1b cleanup until all rolling-pool product
+  workers and the complete Tier 2 serial lane, including `2.99-teardown`, have finished. No new
+  tester work may start after cleanup begins.
+4. **Drain serially.** Run one cleanup-mode worker at a time in stable scenario order. It calls
+  only `run_post_hooks` with the original scenario path, unchanged `session_vars`, and exact
+  instance ID. Continue after failures until every pending entry has been attempted.
+5. **Persist and merge.** Update the ledger after each attempt. A cleanup failure changes a
+  product pass to FAIL; product and cleanup failures are both retained. Final duration is the
+  sum of product and cleanup execution, excluding time waiting in the cleanup queue. A failed
+  or still-pending cleanup makes the final scenario verdict FAIL.
+
+If a product worker returns `session_started: no`, mark its ledger entry `not-required`. If a
+launched worker terminates without a usable result, mark the entry pending and attempt cleanup
+conservatively. An interrupted run must report all failed or pending entries; it must never claim
+those resources were removed.
+
+To resume cleanup after interruption, read the existing ledger before starting any new tester
+work. Rebuild each pending row's `session_vars` from the current profile merge plus the run
+directory's ID and the ledger's instance and scaffold path (`prerequisite_scaffold_dir`), then
+drain the serial cleanup queue directly. Cleanup recovery does not rerun product phases.
+
 ### Choose safe parallelism
 
-The wall-clock bottleneck is per-agent LLM time and per-account model concurrency, not the MCP
-server (which is per-`session_id`-parallel by design). Choose enough concurrency to keep
-available capacity busy without overwhelming the model, tester, or Azure account. Re-evaluate
-the target as the ready workload changes; expensive Tier 1b work and an active Tier 2 lane may
-justify lower overall concurrency than offline work. Background sub-agents are typically **not
-cancellable mid-run** — launch cost-incurring work conservatively because a stop request cannot
-recall an in-flight `azd provision`.
+The usual wall-clock bottleneck is per-agent LLM time and per-account model concurrency. The MCP
+server can service concurrent sessions, but long synchronous hook calls can delay unrelated
+responses; this is why Tier 1b cleanup is isolated behind a global barrier and drained serially.
+Choose enough concurrency to keep available capacity busy without overwhelming the model,
+tester, or Azure account. Re-evaluate the target as the ready workload changes; expensive Tier
+1b work and an active Tier 2 lane may justify lower overall concurrency than offline work.
+Background sub-agents are typically **not cancellable mid-run** — launch cost-incurring work
+conservatively because a stop request cannot recall an in-flight `azd provision`.
 
 ### Fleet sub-agent rules
 
@@ -216,8 +256,9 @@ Every spawned sub-agent must obey:
 - **Do not modify the environment** (see [Environment integrity](#environment-integrity-never-work-around-a-broken-environment)).
 - **Infrastructure errors → FAIL and return.** Fail the scenario with an infrastructure finding
   and return control to the orchestrator; do not attempt a fix.
-- **Each sub-agent runs exactly one scenario** — loads it, drives the goals, reports
-  PASS/FAIL/SKIP. It makes no decisions about other scenarios or the overall run.
+- **Each sub-agent runs exactly one scenario phase** — a product worker loads and drives one
+  scenario; a cleanup worker attempts one registered Tier 1b post hook. It makes no decisions
+  about other scenarios or the overall run.
 
 ---
 
@@ -235,10 +276,14 @@ Every spawned sub-agent must obey:
   UX, error, or doc mismatch. A screenshot error or timeout follows the non-blocking observation
   policy above and must identify the evidence that could not be captured.
 - **Record per scenario** for the report: scenario stem, tier, **PASS / FAIL / ⏭️ SKIPPED**,
-  wall-clock **duration** (`start_session` → `finish_session`, including hooks; formatted
-  `Hh Mm Ss`, e.g. `3m 21s`, `1h 04m 12s`; `—` for SKIPPED), and any `report_finding` text.
+  active **duration** (product execution plus cleanup execution, excluding deferred-queue wait;
+  formatted `Hh Mm Ss`, e.g. `3m 21s`, `1h 04m 12s`; `—` for SKIPPED), and any product or
+  cleanup finding text.
   Include `scaffold_dir` for producers and `—` for scenarios that declare no output.
   SKIPPED scenarios include the reason (e.g. `prerequisite tier1/1.01-init-template-python.yaml
   did not pass`).
 - The driving agent writes the final cross-scenario summary to
   `.reports/<run-id>/FINAL-REPORT.md` (the `.reports/` tree is git-ignored).
+- The orchestrator persists Tier 1b cleanup state in
+  `.reports/<run-id>/CLEANUP-STATUS.md` and updates it before each product launch and after each
+  cleanup attempt.

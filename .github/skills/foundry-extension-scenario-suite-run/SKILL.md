@@ -147,9 +147,9 @@ artifacts go under `<scenarios-dir>/.reports/<run-id>/`.
 
 ### Step 4 — Run the scenarios
 
-Drive each selected scenario per the executor spec (see **Execution mechanics** below) — fan
-each scenario out to a **foundry-extension-scenario-worker** agent, one scenario per worker,
-using a readiness scheduler:
+Drive each selected scenario per the executor spec (see **Execution mechanics** below) with
+**foundry-extension-scenario-worker** agents, one scenario phase per worker, using a readiness
+scheduler:
 
 1. **Recipe validation (mandatory).** Run one fast Tier 0 scenario (e.g. `0.01-version`)
    synchronously before fanning out. If it fails with an infrastructure error, **stop the whole
@@ -173,11 +173,18 @@ using a readiness scheduler:
    functional scenarios run; otherwise skip them and proceed to cleanup/recovery. Each
    functional completion unlocks only the next selected Tier 2 scenario, and teardown follows
    the final attempted functional scenario regardless of verdict.
+5. **Two-phase Tier 1b cleanup.** Tier 1b product workers finish their tester sessions but defer
+   post hooks. Register cleanup before launching each Tier 1b worker and persist its status in
+   `.reports/<run-id>/CLEANUP-STATUS.md`. After all product workers and the complete Tier 2 lane
+   finish, drain pending Tier 1b post hooks serially with cleanup-mode workers. Continue after a
+   cleanup failure, merge cleanup into the final verdict, and exclude queue wait time from
+   duration.
 
 `requires:` gating is a run-level decision: before dispatching a scenario that declares
 `requires:`, look up the prerequisite's verdict **in this run** and tell the worker whether it
 passed. Collect each completion as it arrives, update the ready/running/blocked state, and
-continue until every scenario has completed or been skipped.
+continue until every scenario's product phase has completed or been skipped. Then cross the
+global product barrier and complete the serial Tier 1b cleanup queue before reporting.
 
 ### Step 5 — Report
 
@@ -195,9 +202,9 @@ spec:
 [`driving-mechanics.md`](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/driving-mechanics.md)
 (repo path
 `cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/driving-mechanics.md`).
-Fan each selected scenario out to a **foundry-extension-scenario-worker** agent, which loads, drives, and reports
-one scenario per that spec. This skill's job is selection (tag/tier filter), gating, ordering,
-and reporting — not driving.
+Fan product phases out to **foundry-extension-scenario-worker** agents, then use cleanup-phase
+workers for deferred Tier 1b post hooks per that spec. This skill's job is selection (tag/tier
+filter), gating, ordering, and reporting — not driving.
 
 ## Reporting
 
@@ -225,4 +232,5 @@ Never soften a real regression to make the table green.
 - Every selected scenario was driven to a recorded PASS / FAIL / ⏭️ SKIPPED with duration and
   findings; scenarios with a `requires:` prerequisite that did not PASS are ⏭️ SKIPPED (not FAIL).
 - A `FINAL-REPORT.md` was written under `.reports/<run-id>/`, and any Tier 1b / Tier 2 run
-  was followed by appropriate teardown so no Azure resources are left running.
+  was followed by appropriate teardown. Every Tier 1b cleanup was attempted after the product
+  barrier, and any failed or pending cleanup is reported explicitly.

@@ -57,6 +57,15 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 	}
 }
 
+func TestInitCommand_AcrConnectionFlag(t *testing.T) {
+	cmd := newInitCommand(nil)
+
+	flag := cmd.Flags().Lookup("acr-connection")
+	require.NotNil(t, flag)
+	require.Empty(t, flag.Shorthand)
+	require.Empty(t, flag.DefValue)
+}
+
 // TestHasFoundryProviderDeclared covers the predicate ensureProject
 // uses to suppress the "missing infra/" warning.
 func TestHasFoundryProviderDeclared(t *testing.T) {

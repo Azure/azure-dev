@@ -21,6 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,6 +61,44 @@ func TestNewEvalCommand_UseString(t *testing.T) {
 	t.Parallel()
 	cmd := newEvalCommand(&azdext.ExtensionContext{})
 	assert.Equal(t, "eval <command>", cmd.Use)
+}
+
+func TestEvalCommandsExposeContextFlags(t *testing.T) {
+	t.Parallel()
+
+	commands := map[string]*cobra.Command{
+		"generate": newEvalGenerateCommand(&azdext.ExtensionContext{}),
+		"run":      newEvalRunCommand(&azdext.ExtensionContext{}),
+		"update":   newEvalUpdateCommand(&azdext.ExtensionContext{}),
+		"list":     newEvalListCommand(&azdext.ExtensionContext{}),
+		"show":     newEvalShowCommand(&azdext.ExtensionContext{}),
+	}
+
+	for name, cmd := range commands {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.NotNil(t, cmd.Flags().Lookup("agent"))
+			endpointFlag := cmd.Flags().Lookup("project-endpoint")
+			require.NotNil(t, endpointFlag)
+			assert.Equal(t, "p", endpointFlag.Shorthand)
+		})
+	}
+}
+
+func TestEvalContextFlagsOptions(t *testing.T) {
+	t.Parallel()
+
+	flags := evalContextFlags{
+		agent:           "service-a",
+		projectEndpoint: "https://example.services.ai.azure.com/api/projects/test",
+	}
+	options := flags.options("dev", true, false)
+
+	assert.Equal(t, "dev", options.envName)
+	assert.Equal(t, "service-a", options.agent)
+	assert.Equal(t, flags.projectEndpoint, options.projectEndpoint)
+	assert.True(t, options.noPrompt)
+	assert.False(t, options.requireAgent)
 }
 
 // ---------------------------------------------------------------------------

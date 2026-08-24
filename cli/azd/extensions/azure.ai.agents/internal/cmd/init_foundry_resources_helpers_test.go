@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strconv"
 	"testing"
 
 	"azureaiagent/internal/pkg/azure"
@@ -809,6 +810,7 @@ func TestConfigureFoundryProjectEnv_BicepLessShortCircuits(t *testing.T) {
 	err := configureFoundryProjectEnv(
 		t.Context(), azdClient, nil, envName,
 		project, project.SubscriptionId,
+		"",
 		true, // skipACR (code deploy)
 		true, // bicepless
 	)
@@ -852,6 +854,8 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 		loadErr     error
 		prompts     []string
 		initial     map[string]string
+		selector    string
+		noPrompt    bool
 		wantErr     string
 		wantValues  map[string]string
 	}{
@@ -935,10 +939,103 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
 			},
 		},
+		{
+			name: "explicit selector wins for multiple connections",
+			connections: []azure.Connection{
+				{Name: "alpha", Target: "alpha.azurecr.io"},
+				{Name: "beta", Target: "beta.azurecr.io"},
+			},
+			registries: map[string]string{
+				"alpha.azurecr.io": resourceId + "-alpha",
+				"beta.azurecr.io":  resourceId + "-beta",
+			},
+			selector: "beta",
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "beta",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "beta.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-beta",
+			},
+		},
+		{
+			name: "persisted connection wins for multiple connections",
+			connections: []azure.Connection{
+				{Name: "alpha", Target: "alpha.azurecr.io"},
+				{Name: "beta", Target: "beta.azurecr.io"},
+			},
+			registries: map[string]string{
+				"alpha.azurecr.io": resourceId + "-alpha",
+				"beta.azurecr.io":  resourceId + "-beta",
+			},
+			initial: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "beta",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "beta",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "beta.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-beta",
+			},
+		},
+		{
+			name: "persisted manual registry is preserved",
+			registries: map[string]string{
+				"manual.azurecr.io": resourceId + "-manual",
+			},
+			initial: map[string]string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "manual.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "stale-id",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "manual.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-manual",
+			},
+		},
+		{
+			name: "persisted resource id recovers from stale endpoint",
+			registries: map[string]string{
+				"manual.azurecr.io": resourceId + "-manual",
+			},
+			initial: map[string]string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "stale.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-manual",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "manual.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-manual",
+			},
+		},
+		{
+			name: "no prompt selects first connection alphabetically",
+			connections: []azure.Connection{
+				{Name: "zeta", Target: "zeta.azurecr.io"},
+				{Name: "alpha", Target: "alpha.azurecr.io"},
+			},
+			registries: map[string]string{
+				"zeta.azurecr.io":  resourceId + "-zeta",
+				"alpha.azurecr.io": resourceId + "-alpha",
+			},
+			noPrompt: true,
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "alpha",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "alpha.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-alpha",
+			},
+		},
+		{
+			name: "invalid explicit selector fails",
+			connections: []azure.Connection{{
+				Name: "valid", Target: "valid.azurecr.io",
+			}},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			selector:   "missing",
+			wantErr:    "container registry connection \"missing\" was not found or is not valid",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", strconv.FormatBool(tt.noPrompt))
 			envServer := &testEnvironmentServiceServer{
 				environments: map[string]*azdext.Environment{envName: {Name: envName}},
 				values:       map[string]map[string]string{envName: tt.initial},
@@ -952,11 +1049,11 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 				return tt.registries, tt.loadErr
 			}
 			err := configureAcrConnectionWithRegistryLoader(
-				t.Context(), azdClient, nil, envName, "sub", tt.connections, loader,
+				t.Context(), azdClient, nil, envName, "sub", tt.connections, tt.selector, loader,
 			)
 			require.Equal(t, 1, loadCalls)
 			if tt.wantErr != "" {
-				require.EqualError(t, err, tt.wantErr)
+				require.ErrorContains(t, err, tt.wantErr)
 				return
 			}
 			require.NoError(t, err)

@@ -4,12 +4,14 @@
 package cmd
 
 import (
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -17,6 +19,28 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestConfirmExistingDefinitionOverwrite_NoPromptRequiresForce(t *testing.T) {
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "agent.yaml"), []byte("name: existing\n"), 0o600))
+
+	action := &InitFromCodeAction{flags: &initFlags{noPrompt: true}}
+	err := action.confirmExistingDefinitionOverwrite(t.Context(), srcDir)
+
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+	require.Contains(t, localErr.Suggestion, "--force")
+}
+
+func TestConfirmExistingDefinitionOverwrite_ForcePreConsents(t *testing.T) {
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "agent.yaml"), []byte("name: existing\n"), 0o600))
+
+	action := &InitFromCodeAction{flags: &initFlags{noPrompt: true, force: true}}
+	require.NoError(t, action.confirmExistingDefinitionOverwrite(t.Context(), srcDir))
+}
 
 func TestSanitizeAgentName(t *testing.T) {
 	t.Parallel()

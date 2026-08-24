@@ -52,6 +52,7 @@ import (
 
 type initFlags struct {
 	projectResourceId string
+	acrConnection     string
 	modelDeployment   string
 	model             string
 	manifestPointer   string
@@ -1874,6 +1875,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
+	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "",
+		"Foundry Azure Container Registry connection name to use for an existing project")
+
 	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
 
@@ -1926,8 +1930,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	_ = cmd.Flags().MarkHidden("voice")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
-		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
-			"Required together with --no-prompt when init would otherwise need confirmation.")
+		"Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. "+
+			"Required together with --no-prompt when init would otherwise need overwrite confirmation.")
 
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
@@ -2493,7 +2497,7 @@ func (a *InitAction) configureModelChoice(
 	if !hasModelResources {
 		result, err := configureFoundryProject(
 			ctx, a.azdClient, a.azureContext, a.environment.Name,
-			a.flags.projectResourceId, a.flags.noPrompt, a.skipACR(),
+			a.flags.projectResourceId, a.flags.acrConnection, a.flags.noPrompt, a.skipACR(),
 			a.isHostedAgent(), // filterHostedRegions: voice/managed agents are not region-restricted
 		)
 		if err != nil {
@@ -2522,6 +2526,7 @@ func (a *InitAction) configureModelChoice(
 		selectedProject, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			a.flags.acrConnection,
 			a.skipACR(),
 			a.isHostedAgent(), // filterHostedRegions
 			true,              // bicepless
@@ -2602,6 +2607,7 @@ func (a *InitAction) configureModelChoice(
 			selectedProject, err := selectFoundryProject(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
+				a.flags.acrConnection,
 				a.skipACR(),
 				a.isHostedAgent(), // filterHostedRegions
 				true,              // bicepless

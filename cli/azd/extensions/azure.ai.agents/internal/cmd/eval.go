@@ -79,6 +79,37 @@ type evalContextOptions struct {
 	noPrompt        bool   // skip interactive prompts
 }
 
+type evalContextFlags struct {
+	agent           string
+	projectEndpoint string
+}
+
+func addEvalContextFlags(cmd *cobra.Command, flags *evalContextFlags) {
+	cmd.Flags().StringVar(
+		&flags.agent,
+		"agent",
+		"",
+		"Agent service name from azure.yaml, or Foundry agent name outside a project",
+	)
+	cmd.Flags().StringVarP(
+		&flags.projectEndpoint,
+		"project-endpoint",
+		"p",
+		"",
+		"Microsoft Foundry project endpoint URL",
+	)
+}
+
+func (f evalContextFlags) options(envName string, noPrompt, requireAgent bool) evalContextOptions {
+	return evalContextOptions{
+		envName:         envName,
+		agent:           f.agent,
+		projectEndpoint: f.projectEndpoint,
+		requireAgent:    requireAgent,
+		noPrompt:        noPrompt,
+	}
+}
+
 func newEvalCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "eval <command>",

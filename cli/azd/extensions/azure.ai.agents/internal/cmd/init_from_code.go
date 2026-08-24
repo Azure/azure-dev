@@ -81,40 +81,8 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		srcDir = "."
 	}
 
-	// Guard against silently overwriting an existing agent definition. Reached
-	// when the user declined the reuse prompt in RunE or bypassed it; we still
-	// refuse in --no-prompt and confirm interactively.
-	if existing, statErr := findExistingAgentYaml(srcDir); statErr == nil && existing != "" {
-		displayPath, relErr := filepath.Rel(srcDir, existing)
-		if relErr != nil || displayPath == "" {
-			displayPath = existing
-		}
-		if a.flags.noPrompt {
-			return exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("%s already exists at %q", displayPath, existing),
-				fmt.Sprintf(
-					"delete or move the existing %s, or run interactively to confirm overwrite",
-					displayPath,
-				),
-			)
-		}
-
-		confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message:      fmt.Sprintf("An agent definition already exists at %q. Overwrite?", displayPath),
-				DefaultValue: new(false),
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return exterrors.Cancelled("overwrite confirmation was cancelled")
-			}
-			return fmt.Errorf("prompting for overwrite confirmation: %w", err)
-		}
-		if !*confirmResp.Value {
-			return exterrors.Cancelled(fmt.Sprintf("%s already exists; overwrite declined", displayPath))
-		}
+	if err := a.confirmExistingDefinitionOverwrite(ctx, srcDir); err != nil {
+		return err
 	}
 
 	// No manifest pointer provided - process local agent code
@@ -158,6 +126,52 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		// partial state per the design spec.
 		state, _ := nextstep.AssembleState(ctx, a.azdClient)
 		_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
+	}
+
+	return nil
+}
+
+func (a *InitFromCodeAction) confirmExistingDefinitionOverwrite(ctx context.Context, srcDir string) error {
+	existing, err := findExistingAgentYaml(srcDir)
+	if err != nil || existing == "" {
+		return nil
+	}
+
+	displayPath, relErr := filepath.Rel(srcDir, existing)
+	if relErr != nil || displayPath == "" {
+		displayPath = existing
+	}
+
+	if a.flags.force {
+		log.Printf("--force: overwriting existing agent definition %q", existing)
+		return nil
+	}
+	if a.flags.noPrompt {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("%s already exists at %q", displayPath, existing),
+			fmt.Sprintf(
+				"pass --force to overwrite, delete or move the existing %s, "+
+					"or run interactively to confirm overwrite",
+				displayPath,
+			),
+		)
+	}
+
+	confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      fmt.Sprintf("An agent definition already exists at %q. Overwrite?", displayPath),
+			DefaultValue: new(false),
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("overwrite confirmation was cancelled")
+		}
+		return fmt.Errorf("prompting for overwrite confirmation: %w", err)
+	}
+	if confirmResp.Value == nil || !*confirmResp.Value {
+		return exterrors.Cancelled(fmt.Sprintf("%s already exists; overwrite declined", displayPath))
 	}
 
 	return nil
@@ -339,6 +353,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		proj, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			a.flags.acrConnection,
 			skipACR,
 			filterHostedRegions,
 			true, // bicepless
@@ -407,6 +422,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			proj, err := selectFoundryProject(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
+				a.flags.acrConnection,
 				deployMode == "code",
 				deployMode == "code", // filterHostedRegions: code deploy targets hosted agents
 				true,                 // bicepless

@@ -38,6 +38,7 @@ func configureFoundryProject(
 	azureContext *azdext.AzureContext,
 	envName string,
 	projectResourceId string,
+	acrConnection string,
 	noPrompt bool,
 	skipACR bool,
 	filterHostedRegions bool,
@@ -71,6 +72,7 @@ func configureFoundryProject(
 		selectedProject, err := selectFoundryProject(
 			ctx, azdClient, newCred, azureContext, envName,
 			azureContext.Scope.SubscriptionId, projectResourceId,
+			acrConnection,
 			skipACR,
 			filterHostedRegions,
 			true, // bicepless
@@ -145,6 +147,7 @@ func configureFoundryProject(
 			selectedProject, err := selectFoundryProject(
 				ctx, azdClient, newCred, azureContext, envName,
 				azureContext.Scope.SubscriptionId, "",
+				acrConnection,
 				skipACR,
 				filterHostedRegions,
 				true, // bicepless

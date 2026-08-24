@@ -109,3 +109,70 @@ func TestInjectParameterValuesIntoManifest_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "test-agent", result.Name)
 }
+
+func TestPromptForYamlParameterValues_NoPrompt(t *testing.T) {
+	const (
+		sensitiveName = "AZD_TEST_MANIFEST_INPUT_9570"
+		enumName      = "AZD_TEST_MANIFEST_ENUM_9570"
+		requiredName  = "AZD_TEST_MANIFEST_REQUIRED_9570"
+	)
+
+	t.Setenv(sensitiveName, "test-value")
+	t.Setenv(enumName, "second")
+
+	defaultValue := any("default-value")
+	enumValues := []any{"first", "second"}
+	values, err := promptForYamlParameterValues(
+		t.Context(),
+		PropertySchema{Properties: []Property{
+			{Name: sensitiveName, Required: new(true), Secret: new(true)},
+			{Name: enumName, Required: new(true), EnumValues: &enumValues},
+			{Name: "optional_with_default", Default: &defaultValue},
+			{Name: "optional_without_default"},
+		}},
+		nil,
+		true,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "test-value", values[sensitiveName])
+	require.Equal(t, "second", values[enumName])
+	require.Equal(t, "default-value", values["optional_with_default"])
+	require.Equal(t, "", values["optional_without_default"])
+
+	_, err = promptForYamlParameterValues(
+		t.Context(),
+		PropertySchema{Properties: []Property{{Name: requiredName, Required: new(true)}}},
+		nil,
+		true,
+	)
+	require.EqualError(
+		t,
+		err,
+		"parameter 'AZD_TEST_MANIFEST_REQUIRED_9570' is required in no-prompt mode; "+
+			"set environment variable AZD_TEST_MANIFEST_REQUIRED_9570",
+	)
+}
+
+func TestPromptForYamlParameterValues_RejectsInvalidEnvironmentEnum(t *testing.T) {
+	const name = "AZD_TEST_MANIFEST_INVALID_ENUM_9570"
+	t.Setenv(name, "invalid")
+
+	enumValues := []any{"first", "second"}
+	_, err := promptForYamlParameterValues(
+		t.Context(),
+		PropertySchema{Properties: []Property{{
+			Name:       name,
+			EnumValues: &enumValues,
+		}}},
+		nil,
+		true,
+	)
+
+	require.EqualError(
+		t,
+		err,
+		"environment variable AZD_TEST_MANIFEST_INVALID_ENUM_9570 has invalid value \"invalid\" "+
+			"for parameter 'AZD_TEST_MANIFEST_INVALID_ENUM_9570'; expected one of [first second]",
+	)
+}

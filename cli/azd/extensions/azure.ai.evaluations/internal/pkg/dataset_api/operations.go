@@ -518,14 +518,25 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 			return nil, err
 		}
 		names = append(names, pageNames...)
-		if next == "" || next == marker {
-			break
+		if next == "" {
+			// The only clean end: the service says there is no more.
+			log.Printf("[dataset_api] found %d blobs in container", len(names))
+			return names, nil
+		}
+		if next == marker {
+			// A marker that repeats is the service failing to advance. Breaking
+			// here used to hand back the pages that had arrived, and this list
+			// is what pickDatasetBlob chooses from -- so a container whose JSONL
+			// sits on an unseen page yields the wrong blob, or "no file found",
+			// with nothing to say why.
+			return nil, pageWalkError{cause: messages.ListingTruncated(len(names))}
 		}
 		marker = next
 	}
 
-	log.Printf("[dataset_api] found %d blobs in container", len(names))
-	return names, nil
+	// Falling out of the loop means the service kept offering more than the cap
+	// allows. That is the same partial answer, reached a different way.
+	return nil, pageWalkError{cause: messages.ListingTruncated(maxListPages)}
 }
 
 // readBlobPage performs one container listing request.

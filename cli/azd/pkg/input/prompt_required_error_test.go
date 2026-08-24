@@ -81,6 +81,44 @@ func TestPromptRequiredError_ToString_UsesConcreteEnvExamples(t *testing.T) {
 	require.NotContains(t, output, "azd env set <ENV_VAR_NAME> <value>")
 }
 
+func TestPromptRequiredError_ToString_UsesExecutableExamplesForAllSources(t *testing.T) {
+	err := &PromptRequiredError{
+		Message: "azd environment name is required",
+		Inputs: []RequiredInput{
+			{
+				Name: "azd environment name",
+				Sources: []InputSource{
+					{
+						Kind:    InputSourceFlag,
+						Name:    "--environment <name> (or -e <name>)",
+						Example: "azd -e dev provision",
+					},
+					{
+						Kind:    InputSourceEnvironment,
+						Name:    "AZD_ENVIRONMENT",
+						Example: `$env:AZD_ENVIRONMENT = "dev"; azd provision`,
+					},
+					{
+						Kind:    InputSourceConfig,
+						Name:    "current environment selection",
+						Example: "azd env select dev",
+					},
+				},
+			},
+		},
+	}
+
+	output := err.ToString("")
+	require.Contains(t, output, "azd environment name is required")
+	require.Contains(t, output, "• azd environment name")
+	require.Contains(t, output, "Flag: --environment <name> (or -e <name>)")
+	require.Contains(t, output, "Environment: AZD_ENVIRONMENT")
+	require.Contains(t, output, "Config: current environment selection")
+	require.Contains(t, output, "azd -e dev provision")
+	require.Contains(t, output, `$env:AZD_ENVIRONMENT = "dev"; azd provision`)
+	require.Contains(t, output, "azd env select dev")
+}
+
 func TestPromptRequiredError_ToString_UsesDescription(t *testing.T) {
 	err := &PromptRequiredError{
 		Message: DefaultPromptRequiredMessage,

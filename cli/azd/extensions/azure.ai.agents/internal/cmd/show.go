@@ -81,18 +81,10 @@ configuration and the current azd environment. Optionally specify the service na
 			}
 
 			if info.AgentName == "" {
-				return fmt.Errorf(
-					"agent name could not be resolved from azd environment for service '%s'\n\n"+
-						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
-					info.ServiceName,
-				)
+				return missingDeployedAgentStateError(info.ServiceName, "name")
 			}
 			if info.Version == "" {
-				return fmt.Errorf(
-					"agent version could not be resolved from azd environment for service '%s'\n\n"+
-						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
-					info.ServiceName,
-				)
+				return missingDeployedAgentStateError(info.ServiceName, "version")
 			}
 
 			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)

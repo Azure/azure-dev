@@ -47,7 +47,9 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+	rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
+		configureExtensionHostForEnvironment(host, extCtx.Environment)
+	}))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(extCtx))
 	rootCmd.AddCommand(newRunCommand(extCtx))

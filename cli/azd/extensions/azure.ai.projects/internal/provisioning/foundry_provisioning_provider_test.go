@@ -180,7 +180,7 @@ func TestSanitizeFoundryName(t *testing.T) {
 func TestFoundryProvider_ImplementsContract(t *testing.T) {
 	// Compile-time check is already in the package; runtime sanity check
 	// guards against future signature drift in azdext.
-	p := NewFoundryProvisioningProvider(nil)
+	p := NewFoundryProvisioningProvider(nil, "")
 	assert.NotNil(t, p)
 }
 

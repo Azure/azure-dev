@@ -5,15 +5,18 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 
+	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -198,6 +201,34 @@ func TestProjectLifecycleHandlerClearsEmptyDeployments(t *testing.T) {
 	assert.Equal(t, "[]", envServer.value)
 }
 
+func TestProjectLifecycleHandlerUsesCommandEnvironment(t *testing.T) {
+	t.Parallel()
+
+	envServer := &recordingProjectEnvironmentServer{
+		currentErr: errors.New("no persisted environment is selected"),
+	}
+	client := newProjectEnvironmentClient(t, envServer)
+
+	err := projectLifecycleHandlerForEnvironment(
+		t.Context(),
+		client,
+		" selected ",
+		&azdext.ProjectEventArgs{
+			Project: &azdext.ProjectConfig{
+				Services: map[string]*azdext.ServiceConfig{
+					"project": {Host: aiProjectHost},
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	envServer.mu.Lock()
+	defer envServer.mu.Unlock()
+	assert.Equal(t, "selected", envServer.envNameSet)
+	assert.Equal(t, "[]", envServer.value)
+}
+
 func TestProjectLifecycleHandlerResolvesDeploymentRefs(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
@@ -235,6 +266,80 @@ func TestProjectLifecycleHandlerResolvesDeploymentRefs(t *testing.T) {
 	assert.Contains(t, envServer.value, `\"name\":\"gpt-4o\"`)
 }
 
+func TestProjectLifecycleHandlerMissingEnvironmentIsActionable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		envName    string
+		currentErr error
+	}{
+		{
+			name:       "no current environment selected",
+			currentErr: errors.New("no current azd environment is selected"),
+		},
+		{
+			name: "environment has no name",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			envServer := &recordingProjectEnvironmentServer{
+				envName:    test.envName,
+				currentErr: test.currentErr,
+			}
+			client := newProjectEnvironmentClient(t, envServer)
+
+			err := projectLifecycleHandler(
+				t.Context(),
+				client,
+				&azdext.ProjectEventArgs{
+					Project: &azdext.ProjectConfig{
+						Services: map[string]*azdext.ServiceConfig{
+							"project": {Host: aiProjectHost},
+						},
+					},
+				},
+			)
+			require.Error(t, err)
+			assert.Equal(t, "azd environment name is required", err.Error())
+
+			var missing *exterrors.MissingInputError
+			require.ErrorAs(t, err, &missing)
+			require.Len(t, missing.Inputs, 1)
+			assert.Equal(t, "azd environment name", missing.Inputs[0].Name)
+			require.Len(t, missing.Inputs[0].Sources, 3)
+			assert.Equal(t, input.InputSourceFlag, missing.Inputs[0].Sources[0].Kind)
+			assert.Equal(t, "--environment <name> (or -e <name>)", missing.Inputs[0].Sources[0].Name)
+			assert.Equal(t, input.InputSourceEnvironment, missing.Inputs[0].Sources[1].Kind)
+			assert.Equal(t, "AZD_ENVIRONMENT", missing.Inputs[0].Sources[1].Name)
+			assert.Equal(t, input.InputSourceConfig, missing.Inputs[0].Sources[2].Kind)
+			assert.Equal(t, "current environment selection", missing.Inputs[0].Sources[2].Name)
+
+			var local *azdext.LocalError
+			require.ErrorAs(t, err, &local)
+			assert.Equal(t, exterrors.CodeEnvironmentNotFound, local.Code)
+			assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
+			assert.Contains(t, local.Suggestion, "azd -e dev up")
+			assert.Contains(t, local.Suggestion, `$env:AZD_ENVIRONMENT = "dev"; azd up`)
+			assert.Contains(t, local.Suggestion, "azd env select dev")
+
+			var prompt *input.PromptRequiredError
+			require.ErrorAs(t, err, &prompt)
+			require.Len(t, prompt.Inputs, 1)
+			assert.Equal(t, "azd environment name", prompt.Inputs[0].Name)
+
+			wrapped := azdext.WrapError(err)
+			require.NotNil(t, wrapped.GetLocalError())
+			assert.Equal(t, exterrors.CodeEnvironmentNotFound, wrapped.GetLocalError().GetCode())
+			assert.NotEmpty(t, wrapped.GetSuggestion())
+		})
+	}
+}
+
 func mustProjectProperties(
 	t *testing.T,
 	value map[string]any,
@@ -251,6 +356,7 @@ type recordingProjectEnvironmentServer struct {
 
 	mu         sync.Mutex
 	envName    string
+	currentErr error
 	envNameSet string
 	key        string
 	value      string
@@ -260,6 +366,9 @@ func (s *recordingProjectEnvironmentServer) GetCurrent(
 	context.Context,
 	*azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
+	if s.currentErr != nil {
+		return nil, s.currentErr
+	}
 	return &azdext.EnvironmentResponse{
 		Environment: &azdext.Environment{Name: s.envName},
 	}, nil

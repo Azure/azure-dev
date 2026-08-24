@@ -1059,6 +1059,57 @@ func toServiceKey(serviceName string) string {
 	return strings.ToUpper(key)
 }
 
+func missingDeployedAgentStateError(serviceName, state string) error {
+	return missingDeployedAgentStateErrorWithDescription(serviceName, state, "")
+}
+
+func missingCodeDownloadAgentStateError(serviceName string) error {
+	return missingDeployedAgentStateErrorWithDescription(
+		serviceName,
+		"name",
+		" The positional argument for code download is the azure.yaml service name, not a Foundry agent name.",
+	)
+}
+
+func missingDeployedAgentStateErrorWithDescription(serviceName, state, descriptionSuffix string) error {
+	serviceKey := toServiceKey(serviceName)
+	nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+
+	inputName := "deployed agent name"
+	expectedKey := nameKey
+	if state == "version" {
+		inputName = "deployed agent version"
+		expectedKey = versionKey
+	}
+	deployTarget := serviceName
+	if strings.ContainsAny(serviceName, " \t") {
+		deployTarget = fmt.Sprintf("%q", serviceName)
+	}
+
+	return exterrors.MissingInputDependency(
+		exterrors.CodeAgentNotDeployed,
+		fmt.Sprintf("%s could not be resolved for service %q", inputName, serviceName),
+		exterrors.RequiredInput{
+			Name: inputName,
+			Description: fmt.Sprintf(
+				"The selected azd environment must contain %s and %s for service %q.%s",
+				nameKey,
+				versionKey,
+				serviceName,
+				descriptionSuffix,
+			),
+			Sources: []exterrors.InputSource{
+				{
+					Kind:    exterrors.InputSourceEnvironment,
+					Name:    expectedKey,
+					Example: fmt.Sprintf("azd deploy %s", deployTarget),
+				},
+			},
+		},
+	)
+}
+
 // resolveStartupCommandForInit detects the startup command from the project source directory.
 // If detection fails and noPrompt is false, it prompts the user via the azdClient.
 // Returns empty string if the user skips the prompt or if running in no-prompt mode.

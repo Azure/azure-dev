@@ -709,10 +709,11 @@ These helpers are intended to remove common extension boilerplate for shell exec
 
 ```go
 type LocalError struct {
-    Message    string
-    Code       string
-    Category   LocalErrorCategory
-    Suggestion string
+    Message             string
+    Code                string
+    Category            LocalErrorCategory
+    Suggestion          string
+    PromptRequiredError *input.PromptRequiredError
 }
 ```
 
@@ -752,6 +753,48 @@ const (
 Error categories enable structured telemetry classification and targeted error
 guidance. Use `WrapError(err)` to convert a `LocalError` or `ServiceError` to
 the gRPC `ExtensionError` proto for reporting.
+
+### Missing Input Errors
+
+Use `NewMissingInputError` instead of a plain `fmt.Errorf` when a command cannot
+continue because prompting is disabled. Define every supported source and provide
+a complete executable example for each source:
+
+```go
+err := azdext.NewMissingInputError(
+    "environment_not_found",
+    azdext.LocalErrorCategoryDependency,
+    "azd environment name is required",
+    input.RequiredInput{
+        Name: "azd environment name",
+        Sources: []input.InputSource{
+            {
+                Kind:    input.InputSourceFlag,
+                Name:    "--environment <name> (or -e <name>)",
+                Example: "azd -e dev provision",
+            },
+            {
+                Kind:    input.InputSourceEnvironment,
+                Name:    "AZD_ENVIRONMENT",
+                Example: `$env:AZD_ENVIRONMENT = "dev"; azd provision`,
+            },
+            {
+                Kind:    input.InputSourceConfig,
+                Name:    "current environment selection",
+                Example: "azd env select dev",
+            },
+        },
+    },
+)
+```
+
+`WrapError` preserves the missing-input metadata, rendered remediation, and
+examples when the error is reported to the azd host.
+
+For generic `Confirm`, `Prompt`, and `Select` RPC calls, set the option's
+`PromptRequiredError` field with `NewMissingInputErrorDetail`. It accepts the
+same message and inputs, allowing the host to return the metadata when no
+default can satisfy a disabled prompt.
 
 ---
 

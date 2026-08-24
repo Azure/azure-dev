@@ -101,11 +101,7 @@ when streaming session logs.`,
 			}
 
 			if info.AgentName == "" {
-				return fmt.Errorf(
-					"agent name could not be resolved from azd environment for service '%s'\n\n"+
-						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
-					info.ServiceName,
-				)
+				return missingDeployedAgentStateError(info.ServiceName, "name")
 			}
 
 			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)

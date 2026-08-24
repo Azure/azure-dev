@@ -15,10 +15,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func TestServiceFromAzure(t *testing.T) {
@@ -313,10 +315,12 @@ func TestFromPrompt(t *testing.T) {
 			wantCode:     CodeCancelled,
 		},
 		{
-			name:        "Non-auth error returns wrapped error",
-			err:         status.Error(codes.Internal, "server error"),
-			contextMsg:  "failed to prompt for subscription",
-			wantContain: "failed to prompt for subscription",
+			name:         "Non-auth error returns structured internal error",
+			err:          status.Error(codes.Internal, "server error"),
+			contextMsg:   "failed to prompt for subscription",
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     CodePromptFailed,
+			wantContain:  "failed to prompt for subscription",
 		},
 		{
 			name: "Nil returns nil",
@@ -343,6 +347,89 @@ func TestFromPrompt(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFromPromptPreservesMissingInputMetadata(t *testing.T) {
+	hostSuggestion := "Choose -e/--environment, set AZD_ENVIRONMENT, or run azd env select <name>.\n" +
+		"Example: azd -e dev provision"
+	actionable := &azdext.ActionableErrorDetail{Suggestion: hostSuggestion}
+	actionable.ProtoReflect().SetUnknown(appendMessageField(nil, 3,
+		appendPromptRequiredDetail(nil,
+			"environment selection is required",
+			"Select an environment",
+			appendRequiredInput(nil,
+				"azd environment",
+				"Select the environment used by this provision command.",
+				appendInputSource(nil, 1, "-e/--environment", "dev", "azd -e dev provision"),
+				appendInputSource(nil, 2, "AZD_ENVIRONMENT", "dev",
+					`$env:AZD_ENVIRONMENT = "dev"; azd provision`),
+				appendInputSource(nil, 3, "azd env select", "dev", "azd env select dev; azd provision"),
+			),
+		),
+	))
+
+	st, err := status.New(codes.FailedPrecondition, "environment selection is required").WithDetails(actionable)
+	require.NoError(t, err)
+	assert.True(t, IsPromptRequired(st.Err()))
+
+	result := FromPrompt(st.Err(), "failed to select an environment")
+
+	missingInput, ok := errors.AsType[*MissingInputError](result)
+	require.True(t, ok)
+	assert.Equal(t, "Select an environment", missingInput.PromptError.PromptMessage)
+	require.Len(t, missingInput.Inputs, 1)
+	assert.Equal(t, "azd environment", missingInput.Inputs[0].Name)
+	require.Len(t, missingInput.Inputs[0].Sources, 3)
+	assert.Equal(t, InputSourceFlag, missingInput.Inputs[0].Sources[0].Kind)
+	assert.Equal(t, "-e/--environment", missingInput.Inputs[0].Sources[0].Name)
+	assert.Equal(t, "azd -e dev provision", missingInput.Inputs[0].Sources[0].Example)
+	assert.Equal(t, InputSourceEnvironment, missingInput.Inputs[0].Sources[1].Kind)
+	assert.Equal(t, "AZD_ENVIRONMENT", missingInput.Inputs[0].Sources[1].Name)
+	assert.Equal(t, `$env:AZD_ENVIRONMENT = "dev"; azd provision`, missingInput.Inputs[0].Sources[1].Example)
+	assert.Equal(t, InputSourceConfig, missingInput.Inputs[0].Sources[2].Kind)
+	assert.Equal(t, "azd env select", missingInput.Inputs[0].Sources[2].Name)
+	assert.Equal(t, "azd env select dev; azd provision", missingInput.Inputs[0].Sources[2].Example)
+	assert.Equal(t, hostSuggestion, missingInput.LocalError.Suggestion)
+	assert.Contains(t, result.Error(), "environment selection is required")
+
+	promptRequired, ok := errors.AsType[*input.PromptRequiredError](result)
+	require.True(t, ok)
+	assert.Equal(t, "azd environment", promptRequired.Inputs[0].Name)
+}
+
+func appendPromptRequiredDetail(data []byte, message, promptMessage string, inputs ...[]byte) []byte {
+	for _, input := range inputs {
+		data = appendMessageField(data, 1, input)
+	}
+	data = appendStringField(data, 2, promptMessage)
+	return appendStringField(data, 3, message)
+}
+
+func appendRequiredInput(data []byte, name, description string, sources ...[]byte) []byte {
+	data = appendStringField(data, 1, name)
+	data = appendStringField(data, 2, description)
+	for _, source := range sources {
+		data = appendMessageField(data, 3, source)
+	}
+	return data
+}
+
+func appendInputSource(data []byte, kind uint64, name, exampleValue, example string) []byte {
+	data = protowire.AppendTag(data, 1, protowire.VarintType)
+	data = protowire.AppendVarint(data, kind)
+	data = appendStringField(data, 2, name)
+	data = appendStringField(data, 3, exampleValue)
+	return appendStringField(data, 4, example)
+}
+
+func appendStringField(data []byte, number protowire.Number, value string) []byte {
+	data = protowire.AppendTag(data, number, protowire.BytesType)
+	return protowire.AppendString(data, value)
+}
+
+func appendMessageField(data []byte, number protowire.Number, value []byte) []byte {
+	data = protowire.AppendTag(data, number, protowire.BytesType)
+	return protowire.AppendBytes(data, value)
 }
 
 func TestIsPromptRequired(t *testing.T) {

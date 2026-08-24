@@ -78,6 +78,59 @@ func (ErrorOrigin) EnumDescriptor() ([]byte, []int) {
 	return file_errors_proto_rawDescGZIP(), []int{0}
 }
 
+// InputSourceKind identifies how a required input can be supplied.
+type InputSourceKind int32
+
+const (
+	InputSourceKind_INPUT_SOURCE_KIND_UNSPECIFIED InputSourceKind = 0
+	InputSourceKind_INPUT_SOURCE_KIND_FLAG        InputSourceKind = 1
+	InputSourceKind_INPUT_SOURCE_KIND_ENVIRONMENT InputSourceKind = 2
+	InputSourceKind_INPUT_SOURCE_KIND_CONFIG      InputSourceKind = 3
+)
+
+// Enum value maps for InputSourceKind.
+var (
+	InputSourceKind_name = map[int32]string{
+		0: "INPUT_SOURCE_KIND_UNSPECIFIED",
+		1: "INPUT_SOURCE_KIND_FLAG",
+		2: "INPUT_SOURCE_KIND_ENVIRONMENT",
+		3: "INPUT_SOURCE_KIND_CONFIG",
+	}
+	InputSourceKind_value = map[string]int32{
+		"INPUT_SOURCE_KIND_UNSPECIFIED": 0,
+		"INPUT_SOURCE_KIND_FLAG":        1,
+		"INPUT_SOURCE_KIND_ENVIRONMENT": 2,
+		"INPUT_SOURCE_KIND_CONFIG":      3,
+	}
+)
+
+func (x InputSourceKind) Enum() *InputSourceKind {
+	p := new(InputSourceKind)
+	*p = x
+	return p
+}
+
+func (x InputSourceKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (InputSourceKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_errors_proto_enumTypes[1].Descriptor()
+}
+
+func (InputSourceKind) Type() protoreflect.EnumType {
+	return &file_errors_proto_enumTypes[1]
+}
+
+func (x InputSourceKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use InputSourceKind.Descriptor instead.
+func (InputSourceKind) EnumDescriptor() ([]byte, []int) {
+	return file_errors_proto_rawDescGZIP(), []int{1}
+}
+
 // ServiceErrorDetail contains structured error information from an HTTP/gRPC service.
 // Used when ErrorOrigin is ERROR_ORIGIN_SERVICE.
 type ServiceErrorDetail struct {
@@ -247,6 +300,197 @@ func (x *ErrorLink) GetTitle() string {
 	return ""
 }
 
+// InputSource describes one way a required input can be supplied.
+type InputSource struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          InputSourceKind        `protobuf:"varint,1,opt,name=kind,proto3,enum=azdext.InputSourceKind" json:"kind,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	ExampleValue  string                 `protobuf:"bytes,3,opt,name=example_value,json=exampleValue,proto3" json:"example_value,omitempty"`
+	Example       string                 `protobuf:"bytes,4,opt,name=example,proto3" json:"example,omitempty"` // Complete executable command demonstrating this source.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InputSource) Reset() {
+	*x = InputSource{}
+	mi := &file_errors_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InputSource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InputSource) ProtoMessage() {}
+
+func (x *InputSource) ProtoReflect() protoreflect.Message {
+	mi := &file_errors_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InputSource.ProtoReflect.Descriptor instead.
+func (*InputSource) Descriptor() ([]byte, []int) {
+	return file_errors_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *InputSource) GetKind() InputSourceKind {
+	if x != nil {
+		return x.Kind
+	}
+	return InputSourceKind_INPUT_SOURCE_KIND_UNSPECIFIED
+}
+
+func (x *InputSource) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *InputSource) GetExampleValue() string {
+	if x != nil {
+		return x.ExampleValue
+	}
+	return ""
+}
+
+func (x *InputSource) GetExample() string {
+	if x != nil {
+		return x.Example
+	}
+	return ""
+}
+
+// RequiredInput describes a missing input and the supported sources that can provide it.
+type RequiredInput struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Sources       []*InputSource         `protobuf:"bytes,3,rep,name=sources,proto3" json:"sources,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequiredInput) Reset() {
+	*x = RequiredInput{}
+	mi := &file_errors_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequiredInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequiredInput) ProtoMessage() {}
+
+func (x *RequiredInput) ProtoReflect() protoreflect.Message {
+	mi := &file_errors_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequiredInput.ProtoReflect.Descriptor instead.
+func (*RequiredInput) Descriptor() ([]byte, []int) {
+	return file_errors_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *RequiredInput) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RequiredInput) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *RequiredInput) GetSources() []*InputSource {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+// PromptRequiredErrorDetail preserves structured missing-input metadata across gRPC boundaries.
+type PromptRequiredErrorDetail struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Inputs        []*RequiredInput       `protobuf:"bytes,1,rep,name=inputs,proto3" json:"inputs,omitempty"`
+	PromptMessage string                 `protobuf:"bytes,2,opt,name=prompt_message,json=promptMessage,proto3" json:"prompt_message,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromptRequiredErrorDetail) Reset() {
+	*x = PromptRequiredErrorDetail{}
+	mi := &file_errors_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptRequiredErrorDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptRequiredErrorDetail) ProtoMessage() {}
+
+func (x *PromptRequiredErrorDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_errors_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptRequiredErrorDetail.ProtoReflect.Descriptor instead.
+func (*PromptRequiredErrorDetail) Descriptor() ([]byte, []int) {
+	return file_errors_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *PromptRequiredErrorDetail) GetInputs() []*RequiredInput {
+	if x != nil {
+		return x.Inputs
+	}
+	return nil
+}
+
+func (x *PromptRequiredErrorDetail) GetPromptMessage() string {
+	if x != nil {
+		return x.PromptMessage
+	}
+	return ""
+}
+
+func (x *PromptRequiredErrorDetail) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 // ActionableErrorDetail carries user-facing remediation metadata in gRPC status details.
 // It is used for host-originated errors so clients can preserve suggestions and links
 // without parsing status message text.
@@ -257,16 +501,17 @@ func (x *ErrorLink) GetTitle() string {
 // The user-facing error message lives in google.rpc.Status.message; this detail does not
 // duplicate it.
 type ActionableErrorDetail struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Suggestion    string                 `protobuf:"bytes,1,opt,name=suggestion,proto3" json:"suggestion,omitempty"` // Optional user-facing suggestion for resolving the error
-	Links         []*ErrorLink           `protobuf:"bytes,2,rep,name=links,proto3" json:"links,omitempty"`           // Optional reference links rendered alongside the suggestion
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState     `protogen:"open.v1"`
+	Suggestion          string                     `protobuf:"bytes,1,opt,name=suggestion,proto3" json:"suggestion,omitempty"`                                                // Optional user-facing suggestion for resolving the error
+	Links               []*ErrorLink               `protobuf:"bytes,2,rep,name=links,proto3" json:"links,omitempty"`                                                          // Optional reference links rendered alongside the suggestion
+	PromptRequiredError *PromptRequiredErrorDetail `protobuf:"bytes,3,opt,name=prompt_required_error,json=promptRequiredError,proto3" json:"prompt_required_error,omitempty"` // Optional structured prompt-required metadata
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ActionableErrorDetail) Reset() {
 	*x = ActionableErrorDetail{}
-	mi := &file_errors_proto_msgTypes[3]
+	mi := &file_errors_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -278,7 +523,7 @@ func (x *ActionableErrorDetail) String() string {
 func (*ActionableErrorDetail) ProtoMessage() {}
 
 func (x *ActionableErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_errors_proto_msgTypes[3]
+	mi := &file_errors_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -291,7 +536,7 @@ func (x *ActionableErrorDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionableErrorDetail.ProtoReflect.Descriptor instead.
 func (*ActionableErrorDetail) Descriptor() ([]byte, []int) {
-	return file_errors_proto_rawDescGZIP(), []int{3}
+	return file_errors_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ActionableErrorDetail) GetSuggestion() string {
@@ -308,17 +553,25 @@ func (x *ActionableErrorDetail) GetLinks() []*ErrorLink {
 	return nil
 }
 
+func (x *ActionableErrorDetail) GetPromptRequiredError() *PromptRequiredErrorDetail {
+	if x != nil {
+		return x.PromptRequiredError
+	}
+	return nil
+}
+
 // ExtensionError is a unified error message that can represent errors from different sources.
 // It provides structured error information for telemetry and error handling.
 //
 // Direction: extension -> host only. Counterpart of host's ActionableErrorDetail, which carries
 // host-originated remediation metadata in the opposite direction.
 type ExtensionError struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Message    string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`                        // Human-readable error message
-	Origin     ErrorOrigin            `protobuf:"varint,4,opt,name=origin,proto3,enum=azdext.ErrorOrigin" json:"origin,omitempty"` // Where the error originated from
-	Suggestion string                 `protobuf:"bytes,5,opt,name=suggestion,proto3" json:"suggestion,omitempty"`                  // Optional user-facing suggestion for resolving the error
-	Links      []*ErrorLink           `protobuf:"bytes,6,rep,name=links,proto3" json:"links,omitempty"`                            // Optional reference links rendered alongside the suggestion
+	state               protoimpl.MessageState     `protogen:"open.v1"`
+	Message             string                     `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`                                                      // Human-readable error message
+	Origin              ErrorOrigin                `protobuf:"varint,4,opt,name=origin,proto3,enum=azdext.ErrorOrigin" json:"origin,omitempty"`                               // Where the error originated from
+	Suggestion          string                     `protobuf:"bytes,5,opt,name=suggestion,proto3" json:"suggestion,omitempty"`                                                // Optional user-facing suggestion for resolving the error
+	Links               []*ErrorLink               `protobuf:"bytes,6,rep,name=links,proto3" json:"links,omitempty"`                                                          // Optional reference links rendered alongside the suggestion
+	PromptRequiredError *PromptRequiredErrorDetail `protobuf:"bytes,7,opt,name=prompt_required_error,json=promptRequiredError,proto3" json:"prompt_required_error,omitempty"` // Optional structured prompt-required metadata
 	// Source-specific structured details. Only one should be set based on origin.
 	//
 	// Types that are valid to be assigned to Source:
@@ -332,7 +585,7 @@ type ExtensionError struct {
 
 func (x *ExtensionError) Reset() {
 	*x = ExtensionError{}
-	mi := &file_errors_proto_msgTypes[4]
+	mi := &file_errors_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -344,7 +597,7 @@ func (x *ExtensionError) String() string {
 func (*ExtensionError) ProtoMessage() {}
 
 func (x *ExtensionError) ProtoReflect() protoreflect.Message {
-	mi := &file_errors_proto_msgTypes[4]
+	mi := &file_errors_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -357,7 +610,7 @@ func (x *ExtensionError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExtensionError.ProtoReflect.Descriptor instead.
 func (*ExtensionError) Descriptor() ([]byte, []int) {
-	return file_errors_proto_rawDescGZIP(), []int{4}
+	return file_errors_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ExtensionError) GetMessage() string {
@@ -384,6 +637,13 @@ func (x *ExtensionError) GetSuggestion() string {
 func (x *ExtensionError) GetLinks() []*ErrorLink {
 	if x != nil {
 		return x.Links
+	}
+	return nil
+}
+
+func (x *ExtensionError) GetPromptRequiredError() *PromptRequiredErrorDetail {
+	if x != nil {
+		return x.PromptRequiredError
 	}
 	return nil
 }
@@ -445,19 +705,34 @@ const file_errors_proto_rawDesc = "" +
 	"\bcategory\x18\x02 \x01(\tR\bcategory\"3\n" +
 	"\tErrorLink\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
-	"\x05title\x18\x02 \x01(\tR\x05title\"`\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\"\x8d\x01\n" +
+	"\vInputSource\x12+\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x17.azdext.InputSourceKindR\x04kind\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
+	"\rexample_value\x18\x03 \x01(\tR\fexampleValue\x12\x18\n" +
+	"\aexample\x18\x04 \x01(\tR\aexample\"t\n" +
+	"\rRequiredInput\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12-\n" +
+	"\asources\x18\x03 \x03(\v2\x13.azdext.InputSourceR\asources\"\x8b\x01\n" +
+	"\x19PromptRequiredErrorDetail\x12-\n" +
+	"\x06inputs\x18\x01 \x03(\v2\x15.azdext.RequiredInputR\x06inputs\x12%\n" +
+	"\x0eprompt_message\x18\x02 \x01(\tR\rpromptMessage\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xb7\x01\n" +
 	"\x15ActionableErrorDetail\x12\x1e\n" +
 	"\n" +
 	"suggestion\x18\x01 \x01(\tR\n" +
 	"suggestion\x12'\n" +
-	"\x05links\x18\x02 \x03(\v2\x11.azdext.ErrorLinkR\x05links\"\xb6\x02\n" +
+	"\x05links\x18\x02 \x03(\v2\x11.azdext.ErrorLinkR\x05links\x12U\n" +
+	"\x15prompt_required_error\x18\x03 \x01(\v2!.azdext.PromptRequiredErrorDetailR\x13promptRequiredError\"\x8d\x03\n" +
 	"\x0eExtensionError\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12+\n" +
 	"\x06origin\x18\x04 \x01(\x0e2\x13.azdext.ErrorOriginR\x06origin\x12\x1e\n" +
 	"\n" +
 	"suggestion\x18\x05 \x01(\tR\n" +
 	"suggestion\x12'\n" +
-	"\x05links\x18\x06 \x03(\v2\x11.azdext.ErrorLinkR\x05links\x12A\n" +
+	"\x05links\x18\x06 \x03(\v2\x11.azdext.ErrorLinkR\x05links\x12U\n" +
+	"\x15prompt_required_error\x18\a \x01(\v2!.azdext.PromptRequiredErrorDetailR\x13promptRequiredError\x12A\n" +
 	"\rservice_error\x18\n" +
 	" \x01(\v2\x1a.azdext.ServiceErrorDetailH\x00R\fserviceError\x12;\n" +
 	"\vlocal_error\x18\v \x01(\v2\x18.azdext.LocalErrorDetailH\x00R\n" +
@@ -467,7 +742,12 @@ const file_errors_proto_rawDesc = "" +
 	"\x18ERROR_ORIGIN_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12ERROR_ORIGIN_LOCAL\x10\x01\x12\x18\n" +
 	"\x14ERROR_ORIGIN_SERVICE\x10\x02\x12\x15\n" +
-	"\x11ERROR_ORIGIN_TOOL\x10\x03B/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
+	"\x11ERROR_ORIGIN_TOOL\x10\x03*\x91\x01\n" +
+	"\x0fInputSourceKind\x12!\n" +
+	"\x1dINPUT_SOURCE_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16INPUT_SOURCE_KIND_FLAG\x10\x01\x12!\n" +
+	"\x1dINPUT_SOURCE_KIND_ENVIRONMENT\x10\x02\x12\x1c\n" +
+	"\x18INPUT_SOURCE_KIND_CONFIG\x10\x03B/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_errors_proto_rawDescOnce sync.Once
@@ -481,27 +761,36 @@ func file_errors_proto_rawDescGZIP() []byte {
 	return file_errors_proto_rawDescData
 }
 
-var file_errors_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_errors_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_errors_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_errors_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_errors_proto_goTypes = []any{
-	(ErrorOrigin)(0),              // 0: azdext.ErrorOrigin
-	(*ServiceErrorDetail)(nil),    // 1: azdext.ServiceErrorDetail
-	(*LocalErrorDetail)(nil),      // 2: azdext.LocalErrorDetail
-	(*ErrorLink)(nil),             // 3: azdext.ErrorLink
-	(*ActionableErrorDetail)(nil), // 4: azdext.ActionableErrorDetail
-	(*ExtensionError)(nil),        // 5: azdext.ExtensionError
+	(ErrorOrigin)(0),                  // 0: azdext.ErrorOrigin
+	(InputSourceKind)(0),              // 1: azdext.InputSourceKind
+	(*ServiceErrorDetail)(nil),        // 2: azdext.ServiceErrorDetail
+	(*LocalErrorDetail)(nil),          // 3: azdext.LocalErrorDetail
+	(*ErrorLink)(nil),                 // 4: azdext.ErrorLink
+	(*InputSource)(nil),               // 5: azdext.InputSource
+	(*RequiredInput)(nil),             // 6: azdext.RequiredInput
+	(*PromptRequiredErrorDetail)(nil), // 7: azdext.PromptRequiredErrorDetail
+	(*ActionableErrorDetail)(nil),     // 8: azdext.ActionableErrorDetail
+	(*ExtensionError)(nil),            // 9: azdext.ExtensionError
 }
 var file_errors_proto_depIdxs = []int32{
-	3, // 0: azdext.ActionableErrorDetail.links:type_name -> azdext.ErrorLink
-	0, // 1: azdext.ExtensionError.origin:type_name -> azdext.ErrorOrigin
-	3, // 2: azdext.ExtensionError.links:type_name -> azdext.ErrorLink
-	1, // 3: azdext.ExtensionError.service_error:type_name -> azdext.ServiceErrorDetail
-	2, // 4: azdext.ExtensionError.local_error:type_name -> azdext.LocalErrorDetail
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	1,  // 0: azdext.InputSource.kind:type_name -> azdext.InputSourceKind
+	5,  // 1: azdext.RequiredInput.sources:type_name -> azdext.InputSource
+	6,  // 2: azdext.PromptRequiredErrorDetail.inputs:type_name -> azdext.RequiredInput
+	4,  // 3: azdext.ActionableErrorDetail.links:type_name -> azdext.ErrorLink
+	7,  // 4: azdext.ActionableErrorDetail.prompt_required_error:type_name -> azdext.PromptRequiredErrorDetail
+	0,  // 5: azdext.ExtensionError.origin:type_name -> azdext.ErrorOrigin
+	4,  // 6: azdext.ExtensionError.links:type_name -> azdext.ErrorLink
+	7,  // 7: azdext.ExtensionError.prompt_required_error:type_name -> azdext.PromptRequiredErrorDetail
+	2,  // 8: azdext.ExtensionError.service_error:type_name -> azdext.ServiceErrorDetail
+	3,  // 9: azdext.ExtensionError.local_error:type_name -> azdext.LocalErrorDetail
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_errors_proto_init() }
@@ -509,7 +798,7 @@ func file_errors_proto_init() {
 	if File_errors_proto != nil {
 		return
 	}
-	file_errors_proto_msgTypes[4].OneofWrappers = []any{
+	file_errors_proto_msgTypes[7].OneofWrappers = []any{
 		(*ExtensionError_ServiceError)(nil),
 		(*ExtensionError_LocalError)(nil),
 	}
@@ -518,8 +807,8 @@ func file_errors_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_errors_proto_rawDesc), len(file_errors_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   5,
+			NumEnums:      2,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

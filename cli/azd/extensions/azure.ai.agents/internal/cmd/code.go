@@ -89,11 +89,7 @@ from the azd environment. When omitted, the default agent service is used.`,
 
 			agentName := info.AgentName
 			if agentName == "" {
-				return fmt.Errorf(
-					"agent name could not be resolved from azd environment for service '%s'\n\n"+
-						"Run 'azd deploy' first to deploy the agent, or provide the agent name as a positional argument",
-					info.ServiceName,
-				)
+				return missingCodeDownloadAgentStateError(info.ServiceName)
 			}
 
 			agentContext, err := newAgentContext(ctx, "", "", agentName, info.Version)

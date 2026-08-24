@@ -30,6 +30,67 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+func TestMissingAzureDependencyErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		err       func() error
+		inputName string
+		key       string
+		example   string
+		errorCode string
+	}{
+		{
+			name:      "subscription ID",
+			err:       missingAzureSubscriptionIDError,
+			inputName: "Azure subscription ID",
+			key:       "AZURE_SUBSCRIPTION_ID",
+			example:   "azd env set AZURE_SUBSCRIPTION_ID 11111111-1111-1111-1111-111111111111",
+			errorCode: exterrors.CodeMissingAzureSubscription,
+		},
+		{
+			name:      "location",
+			err:       missingAzureLocationError,
+			inputName: "Azure location",
+			key:       "AZURE_LOCATION",
+			example:   "azd env set AZURE_LOCATION eastus2",
+			errorCode: exterrors.CodeMissingAzureLocation,
+		},
+		{
+			name: "Foundry project endpoint",
+			err: func() error {
+				return missingFoundryProjectEndpointError(
+					"FOUNDRY_PROJECT_ENDPOINT is required for agent deployment",
+				)
+			},
+			inputName: "Foundry project endpoint",
+			key:       "FOUNDRY_PROJECT_ENDPOINT",
+			example: "azd env set FOUNDRY_PROJECT_ENDPOINT " +
+				"https://contoso.services.ai.azure.com/api/projects/my-project",
+			errorCode: exterrors.CodeMissingAiProjectEndpoint,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tt.err()
+			missingInput, ok := errors.AsType[*exterrors.MissingInputError](err)
+			require.True(t, ok)
+			require.Equal(t, azdext.LocalErrorCategoryDependency, missingInput.LocalError.Category)
+			require.Equal(t, tt.errorCode, missingInput.LocalError.Code)
+			require.Len(t, missingInput.Inputs, 1)
+			require.Equal(t, tt.inputName, missingInput.Inputs[0].Name)
+			require.Len(t, missingInput.Inputs[0].Sources, 1)
+			require.Equal(t, exterrors.InputSourceEnvironment, missingInput.Inputs[0].Sources[0].Kind)
+			require.Equal(t, tt.key, missingInput.Inputs[0].Sources[0].Name)
+			require.Contains(t, missingInput.LocalError.Suggestion, tt.example)
+		})
+	}
+}
+
 func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	instructions := "Route callers to the right team."
 	voice := "alloy"

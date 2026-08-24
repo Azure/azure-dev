@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -117,6 +118,96 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				assert.Equal(t, "Add the missing required field", localErr.Suggestion)
 				require.Len(t, localErr.Links, 1)
 				assert.Equal(t, "Invalid config reference", localErr.Links[0].Title)
+			},
+		},
+		{
+			name: "MissingInputError",
+			inputErr: NewMissingInputError(
+				"environment_not_found",
+				LocalErrorCategoryDependency,
+				"azd environment name is required",
+				input.RequiredInput{
+					Name: "azd environment name",
+					Sources: []input.InputSource{
+						{
+							Kind:    input.InputSourceFlag,
+							Name:    "--environment <name>",
+							Example: "azd -e dev provision",
+						},
+						{
+							Kind:    input.InputSourceEnvironment,
+							Name:    "AZD_ENVIRONMENT",
+							Example: `$env:AZD_ENVIRONMENT = "dev"; azd provision`,
+						},
+						{
+							Kind:    input.InputSourceConfig,
+							Name:    "current environment selection",
+							Example: "azd env select dev",
+						},
+					},
+				},
+			),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "azd environment name is required", protoErr.GetMessage())
+				assert.Contains(t, protoErr.GetSuggestion(), "azd env select dev")
+				require.NotNil(t, protoErr.GetPromptRequiredError())
+				require.Len(t, protoErr.GetPromptRequiredError().GetInputs(), 1)
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "environment_not_found", localDetail.GetCode())
+				assert.Equal(t, string(LocalErrorCategoryDependency), localDetail.GetCategory())
+
+				localErr, ok := errors.AsType[*LocalError](goErr)
+				require.True(t, ok)
+				assert.Equal(t, protoErr.GetSuggestion(), localErr.Suggestion)
+
+				promptErr, ok := errors.AsType[*input.PromptRequiredError](goErr)
+				require.True(t, ok)
+				require.Equal(t, "azd environment name is required", promptErr.Message)
+				require.Len(t, promptErr.Inputs, 1)
+				require.Len(t, promptErr.Inputs[0].Sources, 3)
+				assert.Equal(t, "azd -e dev provision", promptErr.Inputs[0].Sources[0].Example)
+				assert.Equal(t,
+					`$env:AZD_ENVIRONMENT = "dev"; azd provision`,
+					promptErr.Inputs[0].Sources[1].Example)
+				assert.Equal(t, "azd env select dev", promptErr.Inputs[0].Sources[2].Example)
+			},
+		},
+		{
+			name: "SiblingMissingInputMetadata",
+			inputErr: errors.Join(
+				&input.PromptRequiredError{
+					Message: "location is required",
+					Inputs: []input.RequiredInput{{
+						Name: "location",
+						Sources: []input.InputSource{{
+							Kind:    input.InputSourceEnvironment,
+							Name:    "AZURE_LOCATION",
+							Example: "azd env set AZURE_LOCATION eastus2",
+						}},
+					}},
+				},
+				&LocalError{
+					Message:  "location is required",
+					Code:     "missing_location",
+					Category: LocalErrorCategoryDependency,
+				},
+			),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				require.Equal(t, "missing_location", protoErr.GetLocalError().GetCode())
+				require.Equal(t, string(LocalErrorCategoryDependency), protoErr.GetLocalError().GetCategory())
+				require.NotNil(t, protoErr.GetPromptRequiredError())
+				require.Contains(t, protoErr.GetSuggestion(), "azd env set AZURE_LOCATION eastus2")
+
+				localErr, ok := errors.AsType[*LocalError](goErr)
+				require.True(t, ok)
+				require.Equal(t, "missing_location", localErr.Code)
+
+				promptErr, ok := errors.AsType[*input.PromptRequiredError](goErr)
+				require.True(t, ok)
+				require.Equal(t, "location", promptErr.Inputs[0].Name)
 			},
 		},
 		{
@@ -271,6 +362,44 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				require.ErrorAs(t, goErr, &localErr)
 				assert.Equal(t, LocalErrorCategoryLocal, localErr.Category)
 				assert.Equal(t, "Fix the extension config and retry.", localErr.Suggestion)
+			},
+		},
+		{
+			name: "GrpcPromptRequiredError",
+			inputErr: mustStatusErrorWithDetails(
+				codes.FailedPrecondition,
+				"location is required",
+				&ActionableErrorDetail{
+					Suggestion: "Set the location and retry.",
+					PromptRequiredError: NewMissingInputErrorDetail(
+						"location is required",
+						input.RequiredInput{
+							Name: "location",
+							Sources: []input.InputSource{{
+								Kind:    input.InputSourceEnvironment,
+								Name:    "AZURE_LOCATION",
+								Example: "azd env set AZURE_LOCATION eastus2",
+							}},
+						},
+					),
+				},
+			),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, "location is required", protoErr.GetMessage())
+				assert.Equal(t, "Set the location and retry.", protoErr.GetSuggestion())
+				require.NotNil(t, protoErr.GetPromptRequiredError())
+				require.Equal(t, missingInputErrorCode, protoErr.GetLocalError().GetCode())
+				require.Equal(t, string(LocalErrorCategoryValidation), protoErr.GetLocalError().GetCategory())
+
+				localErr, ok := errors.AsType[*LocalError](goErr)
+				require.True(t, ok)
+				assert.Equal(t, "Set the location and retry.", localErr.Suggestion)
+
+				promptErr, ok := errors.AsType[*input.PromptRequiredError](goErr)
+				require.True(t, ok)
+				require.Equal(t, "location is required", promptErr.Message)
+				require.Len(t, promptErr.Inputs, 1)
+				assert.Equal(t, "AZURE_LOCATION", promptErr.Inputs[0].Sources[0].Name)
 			},
 		},
 		{

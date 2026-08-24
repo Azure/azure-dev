@@ -8,6 +8,7 @@ option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
 
 import "models.proto";
 import "ai_model.proto";
+import "errors.proto";
 
 service PromptService {
   // PromptSubscription prompts the user to select a subscription.
@@ -146,6 +147,7 @@ message ConfirmOptions {
   string help_message = 3;
   string hint = 4;
   string placeholder = 5;
+  PromptRequiredErrorDetail prompt_required_error = 6;
 }
 
 message PromptOptions {
@@ -160,6 +162,7 @@ message PromptOptions {
   bool clear_on_completion = 9;
   bool ignore_hint_keys = 10;
   bool secret = 11;
+  PromptRequiredErrorDetail prompt_required_error = 12;
 }
 
 message SelectChoice {
@@ -182,6 +185,7 @@ message SelectOptions {
   int32 display_count = 6;
   optional bool display_numbers = 7;
   optional bool enable_filtering = 8;
+  PromptRequiredErrorDetail prompt_required_error = 9;
 }
 
 message MultiSelectOptions {

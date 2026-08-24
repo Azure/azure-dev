@@ -14,10 +14,12 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	goyaml "go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
@@ -309,6 +311,43 @@ func TestToServiceKey(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMissingDeployedAgentStateError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		state     string
+		inputName string
+		source    string
+	}{
+		{state: "name", inputName: "deployed agent name", source: "AGENT_MY_AGENT_NAME"},
+		{state: "version", inputName: "deployed agent version", source: "AGENT_MY_AGENT_VERSION"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.state, func(t *testing.T) {
+			t.Parallel()
+
+			err := missingDeployedAgentStateError("my-agent", tt.state)
+			missingInput, ok := errors.AsType[*exterrors.MissingInputError](err)
+			require.True(t, ok)
+			require.Len(t, missingInput.Inputs, 1)
+			assert.Equal(t, tt.inputName, missingInput.Inputs[0].Name)
+			require.Len(t, missingInput.Inputs[0].Sources, 1)
+			assert.Equal(t, tt.source, missingInput.Inputs[0].Sources[0].Name)
+			assert.Contains(t, missingInput.LocalError.Suggestion, "AGENT_MY_AGENT_NAME")
+			assert.Contains(t, missingInput.LocalError.Suggestion, "AGENT_MY_AGENT_VERSION")
+			assert.Contains(t, missingInput.LocalError.Suggestion, "azd deploy my-agent")
+			assert.NotContains(t, missingInput.LocalError.Suggestion, "agent name as a positional argument")
+		})
+	}
+
+	codeDownloadErr := missingCodeDownloadAgentStateError("my-agent")
+	codeDownloadInput, ok := errors.AsType[*exterrors.MissingInputError](codeDownloadErr)
+	require.True(t, ok)
+	assert.Contains(t, codeDownloadInput.LocalError.Suggestion,
+		"positional argument for code download is the azure.yaml service name, not a Foundry agent name")
 }
 
 func TestProtocolFromAgentYaml(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -42,11 +43,22 @@ type LocalError struct {
 	Suggestion string
 	// Links contains optional reference links rendered alongside the suggestion.
 	Links []errorhandler.ErrorLink
+	// PromptRequiredError contains optional structured missing-input metadata.
+	PromptRequiredError *input.PromptRequiredError
 }
 
 // Error implements the error interface.
 func (e *LocalError) Error() string {
 	return e.Message
+}
+
+// Unwrap returns structured missing-input metadata when present.
+func (e *LocalError) Unwrap() error {
+	if e.PromptRequiredError == nil {
+		return nil
+	}
+
+	return e.PromptRequiredError
 }
 
 // Error implements the error interface.
@@ -59,10 +71,11 @@ func (e *ServiceError) Error() string {
 // to serialize errors before sending them over gRPC.
 //
 // The function applies detection in priority order:
-//  1. [ServiceError] / [LocalError] — already structured by extension code (highest specificity)
-//  2. [azcore.ResponseError] — Azure SDK HTTP errors
-//  3. gRPC status — host-originated errors carrying ActionableErrorDetail and/or auth ErrorInfo
-//  4. Fallback — unclassified error with original message
+//  1. [ServiceError] / [LocalError] — already structured by extension code
+//  2. [input.PromptRequiredError] — structured missing-input remediation
+//  3. [azcore.ResponseError] — Azure SDK HTTP errors
+//  4. gRPC status — host-originated errors carrying ActionableErrorDetail and/or auth ErrorInfo
+//  5. Fallback — unclassified error with original message
 //
 // The counterpart [UnwrapError] is called from the azd host to deserialize
 // the proto back into typed Go errors for telemetry classification.
@@ -95,14 +108,37 @@ func WrapError(err error) *ExtensionError {
 
 	if extLocalErr, ok := errors.AsType[*LocalError](err); ok {
 		normalizedCategory := NormalizeLocalErrorCategory(extLocalErr.Category)
+		promptErr := extLocalErr.PromptRequiredError
+		if promptErr == nil {
+			promptErr, _ = errors.AsType[*input.PromptRequiredError](err)
+		}
+		suggestion := extLocalErr.Suggestion
+		if suggestion == "" && promptErr != nil {
+			suggestion = promptErr.Suggestion()
+		}
 		extErr.Message = extLocalErr.Message
-		extErr.Suggestion = extLocalErr.Suggestion
+		extErr.Suggestion = suggestion
 		extErr.Links = WrapErrorLinks(extLocalErr.Links)
+		extErr.PromptRequiredError = WrapPromptRequiredError(promptErr)
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
 		extErr.Source = &ExtensionError_LocalError{
 			LocalError: &LocalErrorDetail{
 				Code:     extLocalErr.Code,
 				Category: string(normalizedCategory),
+			},
+		}
+		return extErr
+	}
+
+	if promptErr, ok := errors.AsType[*input.PromptRequiredError](err); ok {
+		extErr.Message = promptErr.MessageText()
+		extErr.Suggestion = promptErr.Suggestion()
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
+		extErr.PromptRequiredError = WrapPromptRequiredError(promptErr)
+		extErr.Source = &ExtensionError_LocalError{
+			LocalError: &LocalErrorDetail{
+				Code:     missingInputErrorCode,
+				Category: string(LocalErrorCategoryValidation),
 			},
 		}
 		return extErr
@@ -151,6 +187,7 @@ func populateExtensionErrorFromStatus(extErr *ExtensionError, st *status.Status)
 	if actionable != nil {
 		extErr.Suggestion = actionable.GetSuggestion()
 		extErr.Links = actionable.GetLinks()
+		extErr.PromptRequiredError = actionable.GetPromptRequiredError()
 	}
 
 	switch {
@@ -166,10 +203,17 @@ func populateExtensionErrorFromStatus(extErr *ExtensionError, st *status.Status)
 		}
 	default:
 		// Non-auth host-originated actionable error.
+		code := ""
+		category := LocalErrorCategoryLocal
+		if actionable.GetPromptRequiredError() != nil {
+			code = missingInputErrorCode
+			category = LocalErrorCategoryValidation
+		}
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
 		extErr.Source = &ExtensionError_LocalError{
 			LocalError: &LocalErrorDetail{
-				Category: string(LocalErrorCategoryLocal),
+				Code:     code,
+				Category: string(category),
 			},
 		}
 	}
@@ -240,6 +284,37 @@ func UnwrapError(msg *ExtensionError) error {
 	}
 
 	links := UnwrapErrorLinks(msg.GetLinks())
+
+	if promptErr := UnwrapPromptRequiredError(msg.GetPromptRequiredError()); promptErr != nil {
+		if promptErr.Message == "" {
+			promptErr.Message = msg.GetMessage()
+		}
+
+		code := missingInputErrorCode
+		category := LocalErrorCategoryValidation
+		if localErr := msg.GetLocalError(); localErr != nil {
+			if localErr.GetCode() != "" {
+				code = localErr.GetCode()
+			}
+			if localErr.GetCategory() != "" {
+				category = ParseLocalErrorCategory(localErr.GetCategory())
+			}
+		}
+
+		suggestion := msg.GetSuggestion()
+		if suggestion == "" {
+			suggestion = promptErr.Suggestion()
+		}
+
+		return &LocalError{
+			Message:             msg.GetMessage(),
+			Code:                code,
+			Category:            category,
+			Suggestion:          suggestion,
+			Links:               links,
+			PromptRequiredError: promptErr,
+		}
+	}
 
 	// Check for service error details
 	if svcErr := msg.GetServiceError(); svcErr != nil {

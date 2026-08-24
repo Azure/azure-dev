@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 
@@ -202,9 +203,7 @@ func runEvalGenerate(ctx context.Context, flags *evalGenerateFlags, noPrompt boo
 
 	if flags.instruction == "" && flags.instructionFile == "" && flags.configFile == "" &&
 		(flags.dataset == "" || len(flags.evaluators) == 0) {
-		return fmt.Errorf(
-			"one of --gen-instruction, --gen-instruction-file, --config, or both --dataset and --evaluators is required" +
-				" when generating eval assets for a hosted agent")
+		return missingEvalGenerateInputError()
 	}
 	if flags.maxSamples < 15 || flags.maxSamples > 1000 {
 		return fmt.Errorf("--max-samples must be between 15 and 1000")
@@ -242,6 +241,38 @@ func runEvalGenerate(ctx context.Context, flags *evalGenerateFlags, noPrompt boo
 		log.Printf("warning: clearing eval state: %v", err)
 	}
 	return writeAndPrintEvalResult(ctx, resolved, evalCfg, pollRes, configPath, isRegenerate)
+}
+
+func missingEvalGenerateInputError() error {
+	return exterrors.MissingInputValidation(
+		exterrors.CodeEvalConfigInvalid,
+		"evaluation generation requires an instruction, project agent configuration, or a dataset with evaluators",
+		exterrors.RequiredInput{
+			Name:        "evaluation generation input",
+			Description: "Provide instructions directly or provide a dataset with at least one evaluator.",
+			Sources: []exterrors.InputSource{
+				{
+					Kind:         exterrors.InputSourceFlag,
+					Name:         "--gen-instruction",
+					ExampleValue: "This agent handles restaurant reservations.",
+					Example: "azd ai agent eval generate --gen-instruction " +
+						`"This agent handles restaurant reservations."`,
+				},
+				{
+					Kind:         exterrors.InputSourceFlag,
+					Name:         "--gen-instruction-file",
+					ExampleValue: "./instructions.md",
+					Example:      "azd ai agent eval generate --gen-instruction-file ./instructions.md",
+				},
+				{
+					Kind: exterrors.InputSourceFlag,
+					Name: "--dataset with one or more --evaluator flags",
+					Example: `azd ai agent eval generate --dataset ./tests/golden.jsonl ` +
+						"--evaluator builtin.task_adherence",
+				},
+			},
+		},
+	)
 }
 
 // handleExistingEvalConfig processes an existing eval.yaml by prompting for

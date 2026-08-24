@@ -2018,6 +2018,8 @@ Prompts the user to confirm an action.
     - `helpMessage` (string)
     - `hint` (string)
     - `placeholder` (string)
+    - `prompt_required_error` (PromptRequiredErrorDetail, optional): Structured missing-input
+      metadata returned when prompting is disabled and no default value is available.
 - **Response:** _ConfirmResponse_
   - Contains an optional `value` (bool)
 
@@ -2038,6 +2040,8 @@ Prompts the user for text input.
     - `clear_on_completion` (bool)
     - `ignore_hint_keys` (bool)
     - `secret` (bool): When true, the typed value is masked as `*` in the terminal and `?` is treated as an input character (so it can be part of the secret) instead of triggering the help message; the auto-generated `[Type ? for hint]` affordance is therefore not shown. Use this for passwords, API keys, and other sensitive input.
+    - `prompt_required_error` (PromptRequiredErrorDetail, optional): Structured missing-input
+      metadata returned when prompting is disabled and the required input has no default value.
 - **Response:** _PromptResponse_
   - Contains `value` (string)
 
@@ -2055,6 +2059,8 @@ Prompts the user to select an option from a list.
     - `display_count` (int32)
     - `display_numbers` (optional bool)
     - `enable_filtering` (optional bool)
+    - `prompt_required_error` (PromptRequiredErrorDetail, optional): Structured missing-input
+      metadata returned when prompting is disabled and no selected index is available.
 - **Response:** _SelectResponse_
   - Contains an optional `value` (int32)
 

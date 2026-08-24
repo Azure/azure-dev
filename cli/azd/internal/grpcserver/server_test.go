@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 )
 
@@ -856,6 +857,51 @@ func TestContextStream_Context(t *testing.T) {
 func TestMapHostError_Nil(t *testing.T) {
 	t.Parallel()
 	require.Nil(t, mapHostError(nil))
+}
+
+func TestMapHostError_PromptRequiredPreservesMetadata(t *testing.T) {
+	t.Parallel()
+
+	promptErr := azdext.NewMissingInputError(
+		"environment_not_found",
+		azdext.LocalErrorCategoryDependency,
+		"azd environment name is required",
+		input.RequiredInput{
+			Name: "azd environment name",
+			Sources: []input.InputSource{
+				{
+					Kind:    input.InputSourceFlag,
+					Name:    "--environment <name> (or -e <name>)",
+					Example: "azd -e dev provision",
+				},
+				{
+					Kind:    input.InputSourceEnvironment,
+					Name:    "AZD_ENVIRONMENT",
+					Example: `$env:AZD_ENVIRONMENT = "dev"; azd provision`,
+				},
+				{
+					Kind:    input.InputSourceConfig,
+					Name:    "current environment selection",
+					Example: "azd env select dev",
+				},
+			},
+		},
+	)
+
+	st, ok := status.FromError(mapHostError(promptErr))
+	require.True(t, ok)
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Equal(t, "azd environment name is required", st.Message())
+
+	actionable := azdext.ActionableErrorDetailFromStatus(st)
+	require.NotNil(t, actionable)
+	require.Contains(t, actionable.GetSuggestion(), "azd environment name")
+	require.Contains(t, actionable.GetSuggestion(), "azd -e dev provision")
+	require.Contains(t, actionable.GetSuggestion(), `$env:AZD_ENVIRONMENT = "dev"; azd provision`)
+	require.Contains(t, actionable.GetSuggestion(), "azd env select dev")
+
+	roundTrip := azdext.UnwrapPromptRequiredError(actionable.GetPromptRequiredError())
+	require.Equal(t, promptErr.PromptRequiredError, roundTrip)
 }
 
 func TestMapHostError_PlainError(t *testing.T) {

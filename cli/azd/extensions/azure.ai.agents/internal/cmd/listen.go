@@ -31,6 +31,10 @@ import (
 // from the root command, which handles the surrounding setup (access token,
 // AzdClient creation, and host.Run lifecycle).
 func configureExtensionHost(host *azdext.ExtensionHost) {
+	configureExtensionHostForEnvironment(host, "")
+}
+
+func configureExtensionHostForEnvironment(host *azdext.ExtensionHost, environmentName string) {
 	azdClient := host.Client()
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
@@ -39,7 +43,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-			return preprovisionHandler(ctx, azdClient, args)
+			return preprovisionHandler(ctx, azdClient, environmentName, args)
 		}).
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
@@ -55,10 +59,15 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		})
 }
 
-func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+func preprovisionHandler(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+	args *azdext.ProjectEventArgs,
+) error {
 	// Prompt for Activity bot names at the start of preprovision so the input
 	// appears before longer setup/update steps in this handler.
-	if err := provisionActivityBotNames(ctx, azdClient, args); err != nil {
+	if err := provisionActivityBotNames(ctx, azdClient, environmentName, args); err != nil {
 		return err
 	}
 

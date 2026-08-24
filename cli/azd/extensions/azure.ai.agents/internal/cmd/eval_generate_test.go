@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
@@ -52,6 +53,32 @@ func TestNewEvalGenerateCommand_Flags(t *testing.T) {
 			assert.Equal(t, ef.defaultValue, f.DefValue)
 		})
 	}
+}
+
+func TestMissingEvalGenerateInputError(t *testing.T) {
+	t.Parallel()
+
+	cmd := newEvalGenerateCommand(&azdext.ExtensionContext{})
+	assert.Nil(t, cmd.Flags().Lookup("config"))
+
+	err := missingEvalGenerateInputError()
+	missingInput, ok := errors.AsType[*exterrors.MissingInputError](err)
+	require.True(t, ok)
+	require.Len(t, missingInput.Inputs, 1)
+	assert.Equal(t, "evaluation generation input", missingInput.Inputs[0].Name)
+	require.Len(t, missingInput.Inputs[0].Sources, 3)
+	assert.Equal(t, "--gen-instruction", missingInput.Inputs[0].Sources[0].Name)
+	assert.Equal(t, "--gen-instruction-file", missingInput.Inputs[0].Sources[1].Name)
+	assert.Equal(t, "--dataset with one or more --evaluator flags", missingInput.Inputs[0].Sources[2].Name)
+
+	suggestion := missingInput.LocalError.Suggestion
+	assert.NotContains(t, suggestion, "--config")
+	assert.NotContains(t, suggestion, "--evaluators")
+	assert.Contains(t, suggestion,
+		`azd ai agent eval generate --gen-instruction "This agent handles restaurant reservations."`)
+	assert.Contains(t, suggestion, "azd ai agent eval generate --gen-instruction-file ./instructions.md")
+	assert.Contains(t, suggestion,
+		`azd ai agent eval generate --dataset ./tests/golden.jsonl --evaluator builtin.task_adherence`)
 }
 
 func TestNewEvalGenerateCommand_NoArgs(t *testing.T) {

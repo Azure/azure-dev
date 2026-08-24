@@ -36,6 +36,36 @@ message ErrorLink {
   string title = 2;  // Display text (falls back to the URL when empty)
 }
 
+// InputSourceKind identifies how a required input can be supplied.
+enum InputSourceKind {
+  INPUT_SOURCE_KIND_UNSPECIFIED = 0;
+  INPUT_SOURCE_KIND_FLAG = 1;
+  INPUT_SOURCE_KIND_ENVIRONMENT = 2;
+  INPUT_SOURCE_KIND_CONFIG = 3;
+}
+
+// InputSource describes one way a required input can be supplied.
+message InputSource {
+  InputSourceKind kind = 1;
+  string name = 2;
+  string example_value = 3;
+  string example = 4;  // Complete executable command demonstrating this source.
+}
+
+// RequiredInput describes a missing input and the supported sources that can provide it.
+message RequiredInput {
+  string name = 1;
+  string description = 2;
+  repeated InputSource sources = 3;
+}
+
+// PromptRequiredErrorDetail preserves structured missing-input metadata across gRPC boundaries.
+message PromptRequiredErrorDetail {
+  repeated RequiredInput inputs = 1;
+  string prompt_message = 2;
+  string message = 3;
+}
+
 // ActionableErrorDetail carries user-facing remediation metadata in gRPC status details.
 // It is used for host-originated errors so clients can preserve suggestions and links
 // without parsing status message text.
@@ -48,6 +78,7 @@ message ErrorLink {
 message ActionableErrorDetail {
   string suggestion = 1;         // Optional user-facing suggestion for resolving the error
   repeated ErrorLink links = 2;  // Optional reference links rendered alongside the suggestion
+  PromptRequiredErrorDetail prompt_required_error = 3;  // Optional structured prompt-required metadata
 }
 
 // ExtensionError is a unified error message that can represent errors from different sources.
@@ -61,6 +92,7 @@ message ExtensionError {
   ErrorOrigin origin = 4;   // Where the error originated from
   string suggestion = 5;    // Optional user-facing suggestion for resolving the error
   repeated ErrorLink links = 6;  // Optional reference links rendered alongside the suggestion
+  PromptRequiredErrorDetail prompt_required_error = 7;  // Optional structured prompt-required metadata
 
   // Source-specific structured details. Only one should be set based on origin.
   oneof source {

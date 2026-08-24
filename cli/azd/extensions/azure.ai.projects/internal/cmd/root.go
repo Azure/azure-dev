@@ -33,13 +33,19 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectSetCommand(extCtx))
 	rootCmd.AddCommand(newProjectUnsetCommand(extCtx))
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
-	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+	rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
+		configureExtensionHostForEnvironment(host, extCtx.Environment)
+	}))
 
 	return rootCmd
 }
 
 // configureExtensionHost registers project lifecycle providers.
 func configureExtensionHost(host *azdext.ExtensionHost) {
+	configureExtensionHostForEnvironment(host, "")
+}
+
+func configureExtensionHostForEnvironment(host *azdext.ExtensionHost, environmentName string) {
 	azdClient := host.Client()
 	host.
 		WithServiceTarget(
@@ -53,6 +59,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 			func() azdext.ProvisioningProvider {
 				return provisioning.NewFoundryProvisioningProvider(
 					azdClient,
+					environmentName,
 				)
 			},
 		).
@@ -71,7 +78,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 				ctx context.Context,
 				args *azdext.ProjectEventArgs,
 			) error {
-				return projectLifecycleHandler(ctx, azdClient, args)
+				return projectLifecycleHandlerForEnvironment(ctx, azdClient, environmentName, args)
 			},
 		).
 		WithProjectEventHandler(
@@ -80,7 +87,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 				ctx context.Context,
 				args *azdext.ProjectEventArgs,
 			) error {
-				return projectLifecycleHandler(ctx, azdClient, args)
+				return projectLifecycleHandlerForEnvironment(ctx, azdClient, environmentName, args)
 			},
 		)
 }

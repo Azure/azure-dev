@@ -83,11 +83,7 @@ func resolveFilesContext(ctx context.Context, flags *filesFlags, noPrompt bool) 
 	}
 
 	if info.AgentName == "" {
-		return nil, fmt.Errorf(
-			"agent name not found in azd environment for service %q\n\n"+
-				"Run 'azd deploy' to deploy the agent, or check that the service is configured in azure.yaml",
-			info.ServiceName,
-		)
+		return nil, missingDeployedAgentStateError(info.ServiceName, "name")
 	}
 
 	endpoint, err := resolveAgentEndpoint(ctx, "", "")

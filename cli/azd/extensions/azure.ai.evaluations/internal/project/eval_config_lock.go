@@ -55,6 +55,12 @@ func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
 		// Execute, and waiting on nil panics.
 		ctx = context.Background()
 	}
+	// Callers hold a location, which is the directory before anything is
+	// written and the configuration file once it exists. A second `init` in a
+	// scaffolded project reads back the recorded path and hands over the file,
+	// and creating a directory named azure.eval.yaml then fails the command
+	// before it has done anything.
+	evalDir = EvalDirOf(evalDir)
 	if err := os.MkdirAll(evalDir, 0o750); err != nil {
 		return nil, messages.Creating(evalDir, err)
 	}

@@ -63,6 +63,30 @@ func TestLockEvalConfigRefusesWhenHeld(t *testing.T) {
 		"the reader has to know which configuration is busy")
 }
 
+// The lock takes the configuration file as readily as the directory.
+//
+// A second `init` in a scaffolded project reads back the path the first one
+// recorded, and that is the configuration file. Passing it through gave
+// "creating evals/azure.eval.yaml: mkdir evals\azure.eval.yaml" and failed the
+// command before it had done anything -- on the one flow the instructions
+// explicitly ask people to try.
+func TestLockEvalConfigAcceptsTheConfigFile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "evals")
+	require.NoError(t, os.MkdirAll(dir, 0o750))
+	configPath := filepath.Join(dir, EvalConfigBase)
+	require.NoError(t, os.WriteFile(configPath, []byte("evals: []\n"), 0o600))
+
+	unlock, err := LockEvalConfig(context.Background(), configPath)
+
+	require.NoError(t, err, "the path a previous init recorded has to be usable")
+	require.NotNil(t, unlock)
+	defer unlock()
+
+	// Beside the configuration, not inside a directory named after it.
+	assert.FileExists(t, filepath.Join(dir, evalConfigLockName))
+	assert.NoDirExists(t, filepath.Join(configPath, evalConfigLockName))
+}
+
 // The lock lives beside the configuration it guards, not in the OS temp
 // directory. Temp looked tidier and was wrong twice over: the file is created
 // 0600 by whoever runs first, so a second user on the same machine can never

@@ -6,7 +6,6 @@ package eval_api
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -265,41 +264,22 @@ func (c *EvalClient) ListOutputItems(
 	// 200 samples answered one page at a time would otherwise be reported as
 	// however many rows fit in the first, and the mean scores computed from
 	// them would be a sample of the run rather than the run.
+	//
+	// Through collectPages rather than a walk of its own: this had a second
+	// copy of that loop, and the copy still handed back a partial list as
+	// success long after the shared one was taught to refuse.
 	all := &OutputItemList{}
-	after := ""
-	// A cursor that repeats while still returning rows would spin forever and
-	// grow all.Data until the process dies, so the walk is bounded the same way
-	// the next-link walker in pages.go is.
-	seen := map[string]bool{}
-	for range maxPages {
-		query := map[string]string{}
-		if limit > 0 {
-			query["limit"] = strconv.Itoa(limit - len(all.Data))
-		}
-		if after != "" {
-			query["after"] = after
-		}
-
+	err := collectPages(limit, func(query map[string]string) (int, bool, string, error) {
 		page, err := doRequestTyped[OutputItemList](c, ctx, http.MethodGet, path, query, nil, "")
 		if err != nil {
-			return nil, err
+			return 0, false, "", err
 		}
 		all.Data = append(all.Data, page.Data...)
-
-		if !page.HasMore || page.LastID == "" || len(page.Data) == 0 {
-			return all, nil
-		}
-		if limit > 0 && len(all.Data) >= limit {
-			return all, nil
-		}
-		if seen[page.LastID] {
-			log.Printf("[eval_api] cursor %q repeated; the listing may be incomplete", page.LastID)
-			return all, nil
-		}
-		seen[page.LastID] = true
-		after = page.LastID
+		return len(page.Data), page.HasMore, page.LastID, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	log.Printf("[eval_api] stopped after %d pages; the listing may be incomplete", maxPages)
 	return all, nil
 }
 

@@ -47,16 +47,20 @@ func stuckCursorServer(t *testing.T, calls *atomic.Int64) *EvalClient {
 // TestListOutputItemsStopsOnACursorThatNeverMoves pins termination. The
 // deadline exists so a regression reports a failure instead of hanging the
 // whole suite.
+//
+// Termination is not enough on its own: the walk used to stop and hand back the
+// rows it had, which a caller could not tell from the whole run. These rows
+// drive `run output list`, the mean scores and every export, so an unfinished
+// walk is now an error.
 func TestListOutputItemsStopsOnACursorThatNeverMoves(t *testing.T) {
 	var calls atomic.Int64
 	client := stuckCursorServer(t, &calls)
 
 	done := make(chan struct{})
-	var items *OutputItemList
 	var err error
 	go func() {
 		defer close(done)
-		items, err = client.ListOutputItems(t.Context(), "eval_1", "run_1", 0)
+		_, err = client.ListOutputItems(t.Context(), "eval_1", "run_1", 0)
 	}()
 
 	select {
@@ -65,11 +69,10 @@ func TestListOutputItemsStopsOnACursorThatNeverMoves(t *testing.T) {
 		t.Fatal("the walk never terminated on a repeating cursor")
 	}
 
-	require.NoError(t, err)
-	require.NotNil(t, items)
+	require.Error(t, err, "the service never advanced, so the rows read are partial")
+	assert.Contains(t, err.Error(), "incomplete")
 	assert.Equal(t, int64(2), calls.Load(),
 		"the repeat is visible on the second read, so the walk stops there")
-	assert.NotEmpty(t, items.Data, "the rows it did read are still returned")
 }
 
 // A cursor that always advances defeats the repeat check, so the page ceiling
@@ -95,11 +98,10 @@ func TestListOutputItemsStopsAtThePageCeiling(t *testing.T) {
 		srv.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
 	done := make(chan struct{})
-	var items *OutputItemList
 	var err error
 	go func() {
 		defer close(done)
-		items, err = client.ListOutputItems(t.Context(), "eval_1", "run_1", 0)
+		_, err = client.ListOutputItems(t.Context(), "eval_1", "run_1", 0)
 	}()
 
 	select {
@@ -108,9 +110,8 @@ func TestListOutputItemsStopsAtThePageCeiling(t *testing.T) {
 		t.Fatal("the walk never terminated on an endlessly advancing cursor")
 	}
 
-	require.NoError(t, err)
-	require.NotNil(t, items)
+	require.Error(t, err, "the ceiling was reached with more to fetch, so the rows read are partial")
+	assert.Contains(t, err.Error(), "incomplete")
 	assert.Equal(t, int64(maxPages), calls.Load(),
 		"the walk has to stop at the ceiling rather than trust the service to end it")
-	assert.Len(t, items.Data, maxPages)
 }

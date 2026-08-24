@@ -48,6 +48,7 @@ type invokeFlags struct {
 	outputFmt       string
 	callID          string
 	clientHeaders   []string
+	background      bool
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -120,7 +121,11 @@ Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
-suppressed in raw mode.`,
+suppressed in raw mode.
+
+Use --background with the Responses protocol to start stored background work
+and remain attached until it finishes. Background invocation is remote-only,
+does not support raw output, and is not bounded by --timeout.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -147,6 +152,9 @@ suppressed in raw mode.`,
 
   # Invoke a specific agent locally (useful in multi-agent projects)
   azd ai agent invoke my-agent --local "Hello!"
+
+  # Start stored background work and remain attached until it finishes
+  azd ai agent invoke --background "Run the long task"
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
@@ -261,6 +269,30 @@ suppressed in raw mode.`,
 			}
 			action.clientHeaders = clientHeaders
 
+			if flags.background {
+				if flags.local {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--background is supported only for remote Responses agents",
+						"remove --local and invoke a deployed Responses agent",
+					)
+				}
+				if flags.outputFmt == outputRaw {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--output raw is not supported with --background",
+						"remove --output raw so azd can save the Response identity and cursor",
+					)
+				}
+				if flags.agentEndpoint != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--background is not supported with --agent-endpoint",
+						"run from the azd project so the background Response state can be saved",
+					)
+				}
+			}
+
 			return action.Run(ctx)
 		},
 	}
@@ -309,6 +341,12 @@ suppressed in raw mode.`,
 		"version",
 		"",
 		"Agent version to invoke (creates or reuses a session backed by that version)",
+	)
+	cmd.Flags().BoolVar(
+		&flags.background,
+		"background",
+		false,
+		"Run a stored background Response and remain attached until it finishes",
 	)
 
 	// Register `raw` as an additional allowed value on the inherited global
@@ -431,6 +469,14 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// populated, but a2aRemote never calls applyCustomHeaders — the headers
 	// would be silently dropped, which is the exact silent no-op the guard
 	// intends to prevent.
+	if a.flags.background && protocol != agent_api.AgentProtocolResponses {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("--background is not supported with the %s protocol", protocol),
+			"use a deployed Responses agent or remove --background",
+		)
+	}
+
 	if len(a.clientHeaders) > 0 && protocol == agent_api.AgentProtocolA2A {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -1126,6 +1172,14 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		log.Printf("warning: agent endpoint not available, session state will not be persisted")
 	}
 
+	var responseStore responseStateStore
+	if a.flags.background {
+		if rc.azdClient == nil || agentKey == "" {
+			return fmt.Errorf("background Responses require project-backed local state")
+		}
+		responseStore = newUserConfigResponseStateStore(rc.azdClient)
+	}
+
 	// Acquire the bearer token after body validation so a local input error
 	// (e.g., unreadable --input-file) does not pay an unnecessary auth round-trip
 	// and is surfaced before any auth failure.
@@ -1149,7 +1203,15 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return err
 	}
 	if sid != "" {
-		reqBody["session_id"] = sid
+		if a.flags.background {
+			reqBody["agent_session_id"] = sid
+		} else {
+			reqBody["session_id"] = sid
+		}
+	}
+	if a.flags.background {
+		reqBody["store"] = true
+		reqBody["background"] = true
 	}
 
 	// Conversation ID — enables multi-turn memory via Foundry Conversations API.
@@ -1221,6 +1283,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
+	if a.flags.background {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.ResponseHeaderTimeout = 30 * time.Second
+		client = &http.Client{Transport: transport}
+	}
 	invokeStart := time.Now()
 	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
 	resp, err := client.Do(req)
@@ -1260,10 +1327,36 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), resp.Header.Get("x-adc-response-details"))
 		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", respURL, resp.StatusCode, resp.Status, string(respBody))
 	}
-
-	// Parse SSE stream for agent output
-	if err := readSSEStream(resp.Body, rc.name); err != nil {
-		return err
+	// Parse SSE stream for agent output.
+	if !a.flags.background {
+		if err := readResponsesSSE(ctx, resp.Body, os.Stdout, rc.name, false, nil); err != nil {
+			return err
+		}
+	} else {
+		effectiveSessionID := sid
+		if assigned := resp.Header.Get("x-agent-session-id"); assigned != "" {
+			effectiveSessionID = assigned
+		}
+		var printedResponseID string
+		onProgress := func(progress responsesStreamProgress) error {
+			if progress.ResponseID == "" {
+				return nil
+			}
+			if printedResponseID == "" {
+				fmt.Printf("Response:     %s\n", progress.ResponseID)
+				printedResponseID = progress.ResponseID
+			}
+			return responseStore.Save(ctx, agentKey, savedBackgroundResponse{
+				ResponseID:     progress.ResponseID,
+				Cursor:         progress.Cursor,
+				Status:         progress.Status,
+				SessionID:      effectiveSessionID,
+				ConversationID: convID,
+			})
+		}
+		if err := readResponsesSSE(ctx, resp.Body, os.Stdout, rc.name, true, onProgress); err != nil {
+			return err
+		}
 	}
 	totalDuration := time.Since(invokeStart)
 	printInvokeTiming(os.Stdout, totalDuration, ttfb)
@@ -1968,94 +2061,6 @@ func responseTraceID(resp *http.Response) string {
 		}
 	}
 	return ""
-}
-
-// readSSEStream reads a Server-Sent Events stream from the Foundry Responses API,
-// printing text deltas in real-time and returning the final response or any error.
-func readSSEStream(body io.Reader, agentName string) error {
-	scanner := bufio.NewScanner(body)
-	// Allow large SSE data lines (up to 1 MB)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-	var currentEvent string
-	var printed bool
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if after, ok := strings.CutPrefix(line, "event: "); ok {
-			currentEvent = after
-			continue
-		}
-
-		if data, ok := strings.CutPrefix(line, "data: "); ok {
-			switch currentEvent {
-			case "response.output_text.delta":
-				var delta struct {
-					Delta string `json:"delta"`
-				}
-				if err := json.Unmarshal([]byte(data), &delta); err == nil && delta.Delta != "" {
-					if !printed {
-						fmt.Printf("[%s] ", agentName)
-						printed = true
-					}
-					fmt.Print(delta.Delta)
-				}
-
-			case "response.completed":
-				if printed {
-					fmt.Println()
-				}
-				// Parse the completed response to check for errors
-				var event struct {
-					Response json.RawMessage `json:"response"`
-				}
-				if err := json.Unmarshal([]byte(data), &event); err == nil && event.Response != nil {
-					var result map[string]any
-					if err := json.Unmarshal(event.Response, &result); err == nil {
-						if status, _ := result["status"].(string); status == "failed" {
-							if errObj, ok := result["error"].(map[string]any); ok {
-								msg, _ := errObj["message"].(string)
-								code, _ := errObj["code"].(string)
-								return fmt.Errorf("agent failed (%s): %s", code, msg)
-							}
-							return fmt.Errorf("agent returned failed status")
-						}
-						// If no text was streamed, extract output from the completed response
-						if !printed {
-							return printAgentResponse(result, agentName)
-						}
-					}
-				}
-				return nil
-
-			case "error":
-				if printed {
-					fmt.Println()
-				}
-				var sseErr struct {
-					Code    string `json:"code"`
-					Message string `json:"message"`
-				}
-				if err := json.Unmarshal([]byte(data), &sseErr); err == nil {
-					return fmt.Errorf("agent error (%s): %s", sseErr.Code, sseErr.Message)
-				}
-				return fmt.Errorf("agent stream error: %s", data)
-			}
-
-			currentEvent = ""
-			continue
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading response stream: %w", err)
-	}
-
-	if printed {
-		fmt.Println()
-	}
-	return nil
 }
 
 // printAgentResponse pretty-prints the output_text items from an agent response.

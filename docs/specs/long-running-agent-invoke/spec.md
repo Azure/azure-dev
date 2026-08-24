@@ -4,7 +4,7 @@
 
 - **PRD:** [GitHub issue #9676](https://github.com/Azure/azure-dev/issues/9676)
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Protocol:** Remote hosted-agent Responses only
+- **Protocol:** Remote hosted-agent Responses lifecycle, plus one-shot retrieval for remote Invocations
 - **Feature status:** Preview
 
 This document is the implementation specification for the product behavior in issue #9676. The issue is the source of truth for the CLI user experience. This specification defines the MVP architecture, protocol handling, local state, validation, and test strategy.
@@ -19,13 +19,14 @@ The MVP adds these capabilities to `azd ai agent invoke`:
 4. Resume strictly after the automatically saved event sequence cursor.
 5. Submit revised input that steers the active current Response, or starts the next turn when it is terminal.
 6. Cancel the saved current background Response without stopping its hosted-agent session.
-7. Preserve existing foreground Responses, local invoke, Invocations, and A2A behavior.
+7. Preserve existing foreground Responses, local invoke, Invocations create/poll, and A2A behavior.
+8. For remote Invocations, save the latest invocation context and let message-free `--continue` perform one best-effort GET without applying Responses lifecycle semantics.
 
 ## Non-goals
 
 The MVP does not add:
 
-- Background or reconnect semantics for Invocations or A2A.
+- Background creation, polling continuation, stream reconnect, replay, steering, or cancellation semantics for Invocations or A2A. Remote Invocations supports only the additive one-shot retrieval defined below.
 - Local AgentServer background/reconnect support.
 - Task or State Store commands.
 - Conversation branching from an older terminal Response.
@@ -43,6 +44,17 @@ Issue #9676 describes the intended end-state UX. The first implementation delibe
 2. Raw output for the new lifecycle operations is deferred and rejected rather than silently losing reconnect state.
 
 These deviations are called out in [MVP limitations](#mvp-limitations) and [Future optimizations](#future-optimizations). They do not change the final product direction in the PRD.
+
+## Delivery plan
+
+The implementation is delivered as four independently useful, stacked pull requests:
+
+1. **Attached background Responses:** add `--background`, typed SSE processing, and saved Response identity/cursor state. The command remains attached until terminal completion or interruption. Active-turn enforcement is deferred until users have follow/cancel recovery in PR 2.
+2. **Responses detach, reconnect, and cancel:** add `--no-wait`, message-free `--continue`, cursor replay, transport recovery, snapshot fallback, and `--cancel`.
+3. **Responses steering:** add message-bearing `--continue`, replacement turns, terminal next-turn behavior, and service-refreshed active-turn enforcement.
+4. **Invocations retrieval:** save the latest remote invocation context and add message-free `--continue` as exactly one best-effort GET with no polling, status interpretation, replay, steering, or cancellation.
+
+PR 3 and PR 4 depend on PR 2 and can be reviewed in parallel. Each PR includes focused unit tests and live validation against the corresponding hosted reference agent.
 
 ## Public CLI contract
 
@@ -175,9 +187,35 @@ Perform structural validation before project resolution, followed by protocol va
 | `--continue` or `--cancel` with `--conversation-id` or `--new-conversation` | Reject; use the saved response context |
 | `--agent-name` with a positional agent name | Reject |
 | New lifecycle operation with `--local` | Reject |
-| New lifecycle operation with Invocations or A2A | Reject after protocol resolution |
+| Message-free `--continue` with remote Invocations | Accept; perform one best-effort GET of the saved invocation |
+| Message-bearing `--continue` with Invocations | Reject; steering is not defined |
+| `--background`, `--no-wait`, or `--cancel` with Invocations | Reject |
+| New lifecycle operation with A2A | Reject after protocol resolution |
 | New lifecycle operation with `--output raw` | Reject before network access |
 | Message-free operation in an ambiguous project without `--agent-name` and without prompts | Reject with agent-selection guidance |
+
+## Invocations one-shot retrieval contract
+
+For a remote Invocations agent, message-free `azd ai agent invoke --continue` loads the latest saved invocation for the selected agent context and sends exactly one authenticated request:
+
+```text
+GET {projectEndpoint}/agents/{agent}/endpoint/protocols/invocations/{invocationId}?api-version={apiVersion}[&agent_session_id={sessionId}]
+```
+
+The invocation ID is escaped as one path segment and query parameters are built with `net/url`. The record stores the invocation ID, effective session ID, and API version. IDs are captured from successful remote Invocations responses without inferring whether the work is background-capable.
+
+The GET uses a fresh bearer token, the saved session, and the `--user-identity` and allowed client headers supplied on the current command. Users must repeat the same identity used for the original invocation; raw identities are not persisted.
+
+This operation deliberately:
+
+- performs one request with no CLI-level retry or polling;
+- does not interpret status, result, error, cursor, or terminal fields from a successful body;
+- does not update or clear the saved invocation based on the GET body;
+- does not reconnect an SSE response;
+- rejects messages, session/conversation overrides, local mode, `--agent-endpoint`, and raw output;
+- returns `404`, throttling, service, timeout, and transport failures immediately with best-effort guidance.
+
+Running `--continue` again manually performs another independent GET. This is retrieval, not a guarantee of background execution, reconnect, or replay.
 
 ## Responses HTTP contract
 
@@ -771,7 +809,7 @@ Use the resilient Responses reference agent to verify:
 7. **Text-oriented friendly rendering:** non-text events are tracked for cursors but are not necessarily displayed.
 8. **No raw background lifecycle output:** `--output raw` is rejected for new operations.
 9. **No structured invoke output:** scripts must use friendly output until JSON output is added.
-10. **Responses only:** no equivalent standardized behavior is claimed for Invocations or A2A.
+10. **Responses lifecycle only:** background, cursor, reconnect, steering, and cancellation semantics apply only to Responses. Remote Invocations supports one best-effort GET using locally saved context; A2A remains unchanged.
 11. **No total background timeout:** attached background commands can run indefinitely until completion, interruption, or reconnect failure.
 
 ## Future optimizations
@@ -840,23 +878,40 @@ Render tool calls, reasoning, refusals, annotations, images, and multiple output
 
 If lifecycle operations outgrow `invoke`, consider dedicated list/show/follow/cancel commands without changing the MVP aliases.
 
-### Invocations-specific long-running support
+### Rich Invocations-specific long-running support
 
-Add only after defining an application capability-discovery contract. Do not assume the Responses status, cursor, cancellation, or steering model applies to arbitrary Invocations agents.
+The MVP blind GET requires no capability discovery because it makes no claim about lifecycle semantics. Polling, registration retry, streaming follow, replay, cancellation, steering, and terminal-state handling remain deferred until an application capability-discovery contract exists. Do not assume the Responses model applies to arbitrary Invocations agents.
 
 ## Implementation sequence
 
-1. Verify hosted/local session field compatibility and effective-version resolution.
-2. Add command operation parsing and validation with regression tests.
-3. Add the typed SSE decoder and response state model.
-4. Add one saved background-response record per existing agent context key.
-5. Add background create-and-follow and no-wait.
-6. Add current-response follow and reconnect.
-7. Add recovery reset rendering.
-8. Add steering and terminal next-turn behavior.
-9. Add cancel.
-10. Add live validation against the resilient reference agent.
-11. Update help, extension documentation, and command metadata.
+### PR 1 — Attached background Responses
+
+1. Add `--background` validation and preserve existing protocol behavior.
+2. Add the typed SSE decoder and saved Response state.
+3. Add attached stored background creation and identity/cursor persistence.
+4. Validate attached execution against the hosted Responses reference agent.
+
+### PR 2 — Responses detach, reconnect, and cancel
+
+1. Add `--no-wait` after identity capture.
+2. Add message-free `--continue`, strict-after cursor replay, and automatic reconnect.
+3. Add snapshot fallback, recovery reset rendering, and token refresh.
+4. Add `--cancel` without stopping the hosted session.
+5. Validate detach, reconnect, recovery, and cancel against the hosted Responses reference agent.
+
+### PR 3 — Responses steering
+
+1. Add message-bearing `--continue` for active replacement and terminal next-turn creation.
+2. Refresh active status before blocking competing turns.
+3. Handle active-to-terminal races and superseded cancellation.
+4. Validate steering against the hosted Responses reference agent.
+
+### PR 4 — Invocations one-shot retrieval
+
+1. Save the latest successful remote invocation ID, effective session, and API version.
+2. Route message-free Invocations `--continue` to exactly one opaque GET.
+3. Reject unsupported background, steering, replay, and cancellation combinations.
+4. Validate one-shot retrieval against the hosted Invocations reference agent.
 
 ## References
 

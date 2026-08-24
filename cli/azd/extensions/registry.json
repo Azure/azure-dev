@@ -7975,6 +7975,77 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-inspector_1.0.0-beta.4/azure-ai-inspector-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "1.0.0-beta.5",
+          "requiredAzdVersion": ">=1.31.0",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai inspector <command> [options]",
+          "examples": [
+            {
+              "name": "launch",
+              "description": "Launch the inspector against a local agent on the default agent port (8088), serving the inspector UI on the default inspector port (8087).",
+              "usage": "azd ai inspector launch"
+            },
+            {
+              "name": "launch with explicit ports",
+              "description": "Launch the inspector against a local agent on a custom port and serve the UI on a custom port.",
+              "usage": "azd ai inspector launch --port 9000 --inspector-port 9001"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f127b4bdd677ec68af169107904e8a42dc4993b1e761d68d0faf3dbaa5c0c9d4"
+              },
+              "entryPoint": "azure-ai-inspector-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-inspector_1.0.0-beta.5/azure-ai-inspector-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "e0bfebb57e22061ae80008faa52307141eb2d76ce5c2ba4e29f84e4f29c67808"
+              },
+              "entryPoint": "azure-ai-inspector-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-inspector_1.0.0-beta.5/azure-ai-inspector-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f31fa2e90e6ef570ad833deb6233cdf22eb48f77c9d4f15982aa562eba1b6c9c"
+              },
+              "entryPoint": "azure-ai-inspector-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-inspector_1.0.0-beta.5/azure-ai-inspector-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "4b976c5f097bd86ea86905c78d76753f7f257b5fdf8327869245226fd72b5a15"
+              },
+              "entryPoint": "azure-ai-inspector-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-inspector_1.0.0-beta.5/azure-ai-inspector-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "409f4ca13e0f74909551352a51f776067b4bebb7ad257f9db738fcc8d257899d"
+              },
+              "entryPoint": "azure-ai-inspector-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-inspector_1.0.0-beta.5/azure-ai-inspector-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "77a5a61125bba8e8a018b7d46acfbf73795a0d9bbbe1da159d23182468dc6c6e"
+              },
+              "entryPoint": "azure-ai-inspector-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-inspector_1.0.0-beta.5/azure-ai-inspector-windows-arm64.zip"
+            }
+          }
         }
       ]
     },

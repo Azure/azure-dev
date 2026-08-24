@@ -260,7 +260,7 @@ func (c *AgentClient) GetVoiceAgentUnified(
 }
 
 // CreateVoiceAgentUnified creates a voice agent through the unified /agents
-// collection. This path is opt-in while regional rollout is still in progress.
+// collection. Prompt voice deploys use this path by default.
 func (c *AgentClient) CreateVoiceAgentUnified(
 	ctx context.Context,
 	request *CreateAgentRequest,

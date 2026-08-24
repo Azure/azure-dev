@@ -104,6 +104,24 @@ func TestDecliningIsNotAFailure(t *testing.T) {
 	}
 }
 
+// TestDeclinedMessageKeepsTheConsequence pins the two subjects together.
+//
+// `eval delete` asks about "eval foo and every run under it" and used to
+// confirm "Left eval foo alone", dropping the very clause that made the
+// question worth asking. A reader who declines has to be told the same thing
+// they were asked about, or they cannot tell what they just protected.
+func TestDeclinedMessageKeepsTheConsequence(t *testing.T) {
+	for _, subject := range []string{
+		"eval nightly and every run under it",
+		"run run_123 and its results",
+	} {
+		line := messages.DeleteCancelled(subject)
+		if !strings.Contains(line, subject) {
+			t.Errorf("declining %q reported %q, dropping the consequence", subject, line)
+		}
+	}
+}
+
 // cannotAsk builds a command in each of the two states where no one can answer.
 func cannotAsk(t *testing.T, how string) *cobra.Command {
 	t.Helper()

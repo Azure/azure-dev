@@ -1,6 +1,6 @@
 # Release History
 
-## 1.0.20-beta (2026-08-24)
+## 1.0.21-beta (2026-08-24)
 
 ### Bugs Fixed
 

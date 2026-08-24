@@ -44,11 +44,11 @@ const evalConfigLockName = ".azure.eval.lock"
 // that reports success on both sides. The atomic write stops a reader seeing a
 // half-written file; it cannot stop this.
 //
-// Advisory and best-effort: a lock that could not be taken is reported and the
-// work goes ahead, because failing a scaffold over a lock file would be worse
-// than the lost update it guards against. Reported on stderr rather than
-// through log, which is pointed at io.Discard unless --debug -- an earlier
-// version logged it and was therefore exactly as silent as saying nothing.
+// A lock that cannot be taken fails the caller. It used to be advisory -- the
+// failure was printed and the work went ahead -- on the reasoning that failing
+// a scaffold over a lock file was worse than the lost update. It is not: a
+// scaffold that fails says so and can be run again, while a lost update is two
+// commands reporting success and one author's entry quietly gone.
 func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
 	if ctx == nil {
 		// cobra hands a nil context to a command that was not run through

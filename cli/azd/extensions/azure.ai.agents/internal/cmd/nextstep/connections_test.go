@@ -397,7 +397,7 @@ func TestAssembleState_ConnectionTargetKeepsVarRef(t *testing.T) {
 	assert.NotContains(t, state.Connections[0].Detail, "super-secret")
 }
 
-func TestAssembleState_ConnectionSourcePrecedence(t *testing.T) {
+func TestAssembleState_UnifiedConnectionsSuppressFallbackSources(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -455,18 +455,14 @@ resources:
 	state, errs := assembleState(t.Context(), src)
 	require.Empty(t, errs)
 	require.True(t, state.HasConnections)
-	require.Len(t, state.Connections, 3)
-
-	byName := map[string]ResourceRef{}
-	for _, ref := range state.Connections {
-		byName[ref.Name] = ref
-	}
-	assert.Equal(t, "CognitiveSearch | https://split.example", byName["shared-conn"].Detail)
-	assert.Equal(t, "split-service", byName["shared-conn"].ServiceName)
-	assert.Equal(t, "RemoteTool | https://bundled-only.example", byName["bundled-only"].Detail)
-	assert.Equal(t, "echo", byName["bundled-only"].ServiceName)
-	assert.Equal(t, "ApiKey | https://manifest-only.example", byName["manifest-only"].Detail)
-	assert.Equal(t, "echo", byName["manifest-only"].ServiceName)
+	require.Len(t, state.Connections, 1)
+	assert.Equal(t, "shared-conn", state.Connections[0].Name)
+	assert.Equal(t, "split-service", state.Connections[0].ServiceName)
+	assert.Equal(
+		t,
+		"CognitiveSearch | https://split.example",
+		state.Connections[0].Detail,
+	)
 }
 
 func TestAssembleState_BundledWinsOverManifest(t *testing.T) {

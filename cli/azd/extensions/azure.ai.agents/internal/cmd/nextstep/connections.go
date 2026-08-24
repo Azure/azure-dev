@@ -28,9 +28,9 @@ type bundledConnectionConfig struct {
 	Connections []bundledConnection `json:"connections"`
 }
 
-// populateConnections merges enabled unified connection services,
-// bundled agent config, and legacy manifest resources. Same Foundry
-// names keep split > bundled > manifest precedence.
+// populateConnections prefers enabled unified connections.
+// Bundled and manifest sources are used only as a fallback.
+// This matches provision's connection source selection.
 func populateConnections(
 	ctx context.Context,
 	src Source,
@@ -53,24 +53,26 @@ func populateConnections(
 		errs,
 		collected,
 	)
-	collectBundledConnections(
-		ctx,
-		src,
-		envName,
-		projectCfg,
-		state,
-		errs,
-		collected,
-	)
-	collectManifestConnections(
-		ctx,
-		src,
-		envName,
-		projectCfg,
-		state,
-		errs,
-		collected,
-	)
+	if len(collected) == 0 {
+		collectBundledConnections(
+			ctx,
+			src,
+			envName,
+			projectCfg,
+			state,
+			errs,
+			collected,
+		)
+		collectManifestConnections(
+			ctx,
+			src,
+			envName,
+			projectCfg,
+			state,
+			errs,
+			collected,
+		)
+	}
 
 	refs := make([]ResourceRef, 0, len(collected))
 	for _, ref := range collected {

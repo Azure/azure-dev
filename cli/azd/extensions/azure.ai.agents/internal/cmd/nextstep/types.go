@@ -161,10 +161,10 @@ type State struct {
 	// HasModels, HasToolboxes, and HasConnections are aggregate flags.
 	// They describe resources. Models still come from agent manifests.
 	// Toolboxes include split services and manifest resources.
-	// Connections include enabled azure.ai.connection services,
-	// bundled agent config, and legacy manifest resources. Doctor
-	// checks skip when no matching resource exists, while resolvers
-	// can tailor remediation.
+	// Connections prefer enabled azure.ai.connection services.
+	// Bundled agent config and legacy manifest resources are fallback
+	// sources. Doctor checks skip when no matching resource exists,
+	// while resolvers can tailor remediation.
 	//
 	// Model and toolbox flags stay false when the manifest file is
 	// missing, malformed, or declares no resources — the walker is
@@ -176,7 +176,7 @@ type State struct {
 
 	// ModelRefs, Toolboxes, and Connections list collected resources.
 	// ModelRefs still come from manifests. Connections come from
-	// enabled unified connection services or compatible sources.
+	// unified services or fallback sources.
 	// Entries are sorted by Name, then ServiceName, so callers can
 	// render them deterministically.
 	ModelRefs   []ResourceRef

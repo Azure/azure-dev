@@ -234,6 +234,9 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 		); err != nil {
 			return nil, err
 		}
+		if err := refuseUneditableCatalogEntry(plan.BaseDir, "dataset", name); err != nil {
+			return nil, err
+		}
 		plans = append(plans, plan)
 	}
 
@@ -252,6 +255,9 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 			project.ArtifactPath(plan.BaseDir, plan.OutputDir, name, ".json"),
 			req.flags.force,
 		); err != nil {
+			return nil, err
+		}
+		if err := refuseUneditableCatalogEntry(plan.BaseDir, "evaluator", name); err != nil {
 			return nil, err
 		}
 		plans = append(plans, plan)

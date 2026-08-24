@@ -20,7 +20,14 @@ func IsConflict(err error) bool {
 }
 
 // IsNotFound reports whether the service answered 404.
+//
+// A 404 raised part-way through a page walk is refused: the first page
+// answered, so the asset is there, and reading the break as "no such asset"
+// would have a caller create what already exists.
 func IsNotFound(err error) bool {
+	if _, walking := errors.AsType[pageWalkError](err); walking {
+		return false
+	}
 	var respErr *azcore.ResponseError
 	if !errors.As(err, &respErr) {
 		return false

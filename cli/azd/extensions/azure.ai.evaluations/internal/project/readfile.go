@@ -5,6 +5,7 @@ package project
 
 import (
 	"bytes"
+	"strings"
 )
 
 // utf8BOM is what Windows editors and PowerShell's Set-Content write ahead of
@@ -23,4 +24,16 @@ func ReadFileNoBOM(path string) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimPrefix(data, utf8BOM), nil
+}
+
+// TrimBOM drops a leading byte order mark from text already in hand.
+//
+// It exists for the readers that cannot use ReadFileNoBOM: a validator
+// streaming a large dataset a line at a time only ever sees the mark on its
+// first line, and holding the whole file in memory to strip three bytes would
+// be the wrong trade. Sharing the definition is the point -- a second copy is
+// how the upload path and the validator came to disagree about whether a file
+// PowerShell wrote is acceptable.
+func TrimBOM(text string) string {
+	return strings.TrimPrefix(text, string(utf8BOM))
 }

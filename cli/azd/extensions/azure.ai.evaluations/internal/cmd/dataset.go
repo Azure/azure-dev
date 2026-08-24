@@ -13,7 +13,6 @@ import (
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/dataset_api"
-	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/spf13/cobra"
 )
@@ -366,7 +365,7 @@ func newDatasetShowCommand() *cobra.Command {
 
 			ds, err := ec.datasetClient.GetDataset(ctx, name, version, ProjectEndpointAPIVersion)
 			if err != nil {
-				if eval_api.IsNotFound(err) {
+				if dataset_api.IsNotFound(err) {
 					return messages.DatasetVersionNotFoundWithHint(name, version)
 				}
 				return messages.ReadingDatasetVersion(name, version, err)
@@ -398,13 +397,17 @@ func newDatasetShowCommand() *cobra.Command {
 func newDatasetDeleteCommand() *cobra.Command {
 	var (
 		version     string
+		force       bool
 		endpointFlg string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a dataset version.",
-		Args:  cobra.ExactArgs(1),
+		Long: "Delete a dataset version.\n\n" +
+			"Asks before removing it. With --no-prompt, or with JSON output, " +
+			"--force is required.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if !validAssetName(name) {
@@ -421,10 +424,15 @@ func newDatasetDeleteCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
+			if err := confirmDelete(cmd, ec,
+				fmt.Sprintf("dataset %s version %s", name, version), force); err != nil {
+				return err
+			}
+
 			if err := ec.datasetClient.DeleteDatasetVersion(
 				ctx, name, version, ProjectEndpointAPIVersion,
 			); err != nil {
-				if eval_api.IsNotFound(err) {
+				if dataset_api.IsNotFound(err) {
 					return messages.DatasetVersionNotFound(name, version)
 				}
 				return messages.DeletingDatasetVersion(name, version, err)
@@ -441,6 +449,7 @@ func newDatasetDeleteCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&version, "version", "", "Version to delete.")
+	registerForceFlag(cmd, &force)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

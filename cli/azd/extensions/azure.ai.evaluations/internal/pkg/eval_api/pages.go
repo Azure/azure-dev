@@ -29,6 +29,24 @@ import (
 // reaching it means something is wrong rather than that a project is large.
 const maxPages = 100
 
+// pageWalkError marks a failure that happened after the first page.
+//
+// The first page answered, so the asset exists; a 404 on a later page is the
+// continuation failing, not the asset being unknown. IsNotFound refuses this
+// wrapper for that reason -- a listing that breaks part-way must not read as
+// "there is nothing published", because the reconciler answers that by
+// publishing, writing over a rubric someone else owns and reporting success.
+//
+// The cause stays reachable, so a cancelled context or an auth failure
+// part-way through a walk still classifies as itself.
+type pageWalkError struct{ cause error }
+
+func (e pageWalkError) Error() string {
+	return "reading a later page of the listing: " + e.cause.Error()
+}
+
+func (e pageWalkError) Unwrap() error { return e.cause }
+
 // followNextLink fetches one service-supplied page URL.
 //
 // The URL arrives in a response body, so it is checked against the endpoint
@@ -107,12 +125,12 @@ func walkNextLinks[T any](
 
 		body, err := c.followNextLink(ctx, link)
 		if err != nil {
-			return nil, err
+			return nil, pageWalkError{cause: err}
 		}
 		var page T
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &page); err != nil {
-				return nil, messages.ParsingResponse(err)
+				return nil, pageWalkError{cause: messages.ParsingResponse(err)}
 			}
 		}
 		merge(first, &page)

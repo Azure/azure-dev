@@ -467,13 +467,17 @@ func (ec *evalContext) renderEvaluator(
 func newEvaluatorDeleteCommand() *cobra.Command {
 	var (
 		version     string
+		force       bool
 		endpointFlg string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete an evaluator version.",
-		Args:  cobra.ExactArgs(1),
+		Long: "Delete an evaluator version.\n\n" +
+			"Asks before removing it. With --no-prompt, or with JSON output, " +
+			"--force is required.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if !validAssetName(name) {
@@ -489,6 +493,11 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 				return err
 			}
 			defer ec.Close()
+
+			if err := confirmDelete(cmd, ec,
+				fmt.Sprintf("evaluator %s version %s", name, version), force); err != nil {
+				return err
+			}
 
 			if err := ec.evalClient.DeleteEvaluatorVersion(
 				ctx, name, version, ProjectEndpointAPIVersion,
@@ -510,6 +519,7 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&version, "version", "", "Version to delete.")
+	registerForceFlag(cmd, &force)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

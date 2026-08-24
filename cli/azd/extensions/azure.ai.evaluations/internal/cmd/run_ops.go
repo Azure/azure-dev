@@ -319,12 +319,16 @@ func newRunDeleteCommand() *cobra.Command {
 	var (
 		endpointFlg string
 		groupName   string
+		force       bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "delete <run>",
 		Short: "Delete a run.",
-		Args:  cobra.ExactArgs(1),
+		Long: "Delete a run.\n\n" +
+			"The run's results go with it. Asks before removing it; with " +
+			"--no-prompt, or with JSON output, --force is required.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			runID := args[0]
@@ -336,6 +340,11 @@ func newRunDeleteCommand() *cobra.Command {
 
 			evalID, err := resolveEvalID(cmd, ec, groupName)
 			if err != nil {
+				return err
+			}
+
+			if err := confirmDelete(cmd, ec,
+				fmt.Sprintf("run %s and its results", runID), force); err != nil {
 				return err
 			}
 
@@ -360,6 +369,7 @@ func newRunDeleteCommand() *cobra.Command {
 	// outside ./evals can be addressed by every command, not just `run start`.
 	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	registerForceFlag(cmd, &force)
 	return cmd
 }
 

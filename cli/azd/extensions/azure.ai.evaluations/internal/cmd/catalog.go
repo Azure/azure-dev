@@ -51,6 +51,11 @@ func addEvaluatorToCatalog(cmd *cobra.Command, evalDir string, ref *project.Arti
 // entry. Each of those is refused on the next read -- after the generation job
 // has been billed and the file written, which is why they are refused here.
 //
+// Called twice: once by `buildGeneratePlans`, before anything is spent, and
+// again here under the lock, which is the answer that counts. The pre-flight
+// call is the one a reader notices, because it is the one that runs before
+// they are charged for a rubric this command then cannot record.
+//
 // A configuration that will not resolve is left to the commands that resolve it:
 // failing a generate over an unrelated broken include would be its own surprise.
 func checkCatalogEntryIsEditable(evalDir string, asWritten *project.EvalConfig, kind, name string) error {
@@ -86,6 +91,24 @@ type catalogEntryShape struct {
 	// pinned is an evaluator naming a registered `version:`. A dataset may hold
 	// a file and a version together; an evaluator may not.
 	pinned bool
+}
+
+// refuseUneditableCatalogEntry is the pre-flight form of the check, for the
+// callers that are about to spend money.
+//
+// It takes no lock, and is deliberately not the authoritative answer: the same
+// check runs again under the lock before the entry is written. Its whole job is
+// to fail early, so a reader whose entry cannot be rewritten hears it before a
+// generation job runs rather than after it has been billed.
+//
+// A configuration that cannot be read is not this check's business either --
+// the command that resolves it will say so with better context.
+func refuseUneditableCatalogEntry(evalDir, kind, name string) error {
+	cfg, err := project.OpenEvalConfigForEdit(evalDir)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	return checkCatalogEntryIsEditable(evalDir, cfg, kind, name)
 }
 
 // catalogEntryShapeOf returns how the entry was written, and whether the

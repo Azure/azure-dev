@@ -4,6 +4,31 @@
 
 ### Bugs Fixed
 
+- `dataset delete`, `evaluator delete`, `eval delete` and `run delete` now ask
+  before removing anything, and take `--force` to skip the question. They
+  removed the data immediately, while `azd ai dataset delete` in the companion
+  extension asked first: the same operation behaved two ways, and the
+  difference only showed when someone typed the wrong name. `job delete` still
+  does not ask, because it discards a record of finished work rather than the
+  artifact the job produced.
+- A 404 raised part-way through a paged listing is no longer read as "no such
+  evaluator". The first page had already answered, so the break was the
+  continuation failing; the reconciler took it as nothing being published,
+  published over a rubric its owner had not changed, and reported success.
+- `azd up` now accepts the `.jsonl` files `dataset create` accepts. PowerShell
+  writes a byte order mark ahead of the first row, and only one of the two
+  paths skipped it, so a file that uploaded cleanly was later refused with
+  "row 1 is not valid JSON" pointing at a row that was fine.
+- `init --max-traces <n>` no longer fails in a project wired for traces. The
+  flag was checked against `--source` as typed, before the default was chosen,
+  so it was refused a line before the eval was going to read traces anyway.
+- A catalog entry that cannot be rewritten -- one behind a `$ref`, one holding
+  its rubric inline, or one pinned to a version -- is now refused before the
+  generation job runs. It was refused after the job had been billed and the
+  file written.
+- `dataset show` reported dataset-client failures through the evaluation
+  client's error classifier, so a missing version could surface as an
+  unhelpful transport error instead of a named one.
 - `generate` and `init` now edit the configuration instead of rewriting it.
   They read it into memory, changed a field and wrote the whole thing back,
   which deleted every comment in the file and changed its indentation. Only the
@@ -18,6 +43,14 @@
 - A listing the service cannot finish now reports an error instead of returning
   the rows gathered so far. A truncated catalog was indistinguishable from a
   complete one, and these rows decide whether a name is ambiguous.
+
+### Other Changes
+
+- The drift message now names `evaluator show --version --output-file`, so a
+  reader told their evaluator changed underneath them has the command that
+  shows them what changed.
+- `azd ai eval run` is described as a command group in the extension manifest.
+  It was listed as though it ran an evaluation itself, which it does not.
 
 ## 1.0.18-beta (2026-08-21)
 

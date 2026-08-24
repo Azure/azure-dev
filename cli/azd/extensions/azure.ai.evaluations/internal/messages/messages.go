@@ -1329,9 +1329,10 @@ func EvaluatorDrifted(evaluator, remote, recorded string) error {
 			"deploy, and the local definition does not match it: something published a "+
 			"version outside this configuration, which `azd ai eval evaluator update` on "+
 			"the same evaluator also does. Publishing over it would leave that change "+
-			"behind, so bring version %s into the declared source and deploy again, or "+
-			"delete that version if it was a mistake",
-		evaluator, remote, recorded, remote)
+			"behind, so read it with `azd ai eval evaluator show %s --version %s "+
+			"--output-file <path>` and bring it into the declared source before "+
+			"deploying again, or delete that version if it was a mistake",
+		evaluator, remote, recorded, evaluator, remote)
 }
 
 // EvaluatorVersionNotAdvancing reports a publish the service kept answering with
@@ -2820,4 +2821,24 @@ func shellArg(v string) string {
 // rule decides how every printed command quotes what it carries.
 func ShellArg(v string) string {
 	return shellArg(v)
+}
+
+// ConfirmDelete asks before removing something published.
+func ConfirmDelete(subject string) string {
+	return fmt.Sprintf("Delete %s? This cannot be undone.", subject)
+}
+
+// DeleteNeedsForce reports a delete that could not ask, because nobody is
+// there to answer.
+func DeleteNeedsForce(subject string) error {
+	return fmt.Errorf(
+		"deleting %s removes it for good, and this command cannot ask for "+
+			"confirmation without a terminal. Re-run with --force to confirm it "+
+			"in advance",
+		subject)
+}
+
+// DeleteCancelled reports the author answering no.
+func DeleteCancelled(subject string) error {
+	return fmt.Errorf("left %s alone", subject)
 }

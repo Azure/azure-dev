@@ -62,9 +62,6 @@ func newInitCommand() *cobra.Command {
 			if source == initSourceTraces && dataset != "" {
 				return messages.TracesTakesNoDataset()
 			}
-			if cmd.Flags().Changed("max-traces") && source != initSourceTraces {
-				return messages.MaxTracesNeedsTraceSource()
-			}
 			if maxTraces < 0 {
 				return messages.MaxTracesMustBePositive()
 			}
@@ -82,17 +79,12 @@ func newInitCommand() *cobra.Command {
 			tracesWired := sync.OnceValue(func() bool {
 				return tracesConnected(commandContext(cmd))
 			})
-			if source == "" {
-				// The same signal `generate --from` defaults on, read from the azd
-				// environment rather than the service, so init still makes no
-				// service calls. Traces are real conversations; a project wired to
-				// collect them should not have to ask for them by flag.
-				if tracesWired() {
-					source = initSourceTraces
-				} else {
-					source = initSourceDataset
-				}
+			settled, err := settleInitSource(
+				source, cmd.Flags().Changed("max-traces"), tracesWired)
+			if err != nil {
+				return err
 			}
+			source = settled
 			// The same cascade every other command reads the configuration
 			// through. init merges into the configuration it finds, so a second
 			// `init` in a project scaffolded at ./quality has to find that one --
@@ -323,6 +315,42 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&force, "force", false,
 		"Replace an eval of the same name instead of failing.")
 	return cmd
+}
+
+// settleInitSource returns the data source the eval will read, and refuses
+// --max-traces when that source will not be traces.
+//
+// The defaulting and the rule live together because they were once apart, and
+// disagreed: the rule ran on the flag as typed, so `init --max-traces 50` with
+// no --source was refused for "not a trace source" even in a project wired for
+// traces, where the very next line was about to choose traces. Reading the flag
+// as its own request for traces would be the other way to fix it, but that
+// silently overrides a project that has no traces to read; refusing after the
+// source is known says the true thing.
+//
+// tracesWired is a function, not a value, so a run that was told its source
+// never opens an azd connection to answer a question nobody asked.
+func settleInitSource(
+	explicit string,
+	maxTracesGiven bool,
+	tracesWired func() bool,
+) (string, error) {
+	source := explicit
+	if source == "" {
+		// The same signal `generate --from` defaults on, read from the azd
+		// environment rather than the service, so init still makes no service
+		// calls. Traces are real conversations; a project wired to collect them
+		// should not have to ask for them by flag.
+		if tracesWired() {
+			source = initSourceTraces
+		} else {
+			source = initSourceDataset
+		}
+	}
+	if maxTracesGiven && source != initSourceTraces {
+		return "", messages.MaxTracesNeedsTraceSource()
+	}
+	return source, nil
 }
 
 // defaultEvalName names an eval after what it evaluates and what it reads.

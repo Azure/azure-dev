@@ -290,13 +290,18 @@ func evalGraders(group *eval_api.OpenAIEval) string {
 }
 
 func newEvalDeleteCommand() *cobra.Command {
-	var endpointFlg string
+	var (
+		force       bool
+		endpointFlg string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "delete <eval>",
 		Short: "Delete an eval and everything under it.",
 		Long: "Delete an eval and everything under it.\n\n" +
-			"An eval owns its runs, so deleting one discards their results too.",
+			"An eval owns its runs, so deleting one discards their results too.\n\n" +
+			"Asks before removing it. With --no-prompt, or with JSON output, " +
+			"--force is required.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			evalID := args[0]
@@ -307,6 +312,14 @@ func newEvalDeleteCommand() *cobra.Command {
 				return err
 			}
 			defer ec.Close()
+
+			// Asked on what the author typed, before the name is resolved to an
+			// id: the question is about the runs they are discarding, and that
+			// answer does not change with which id it turns out to be.
+			if err := confirmDelete(cmd, ec,
+				fmt.Sprintf("eval %s and every run under it", evalID), force); err != nil {
+				return err
+			}
 
 			err = ec.evalClient.DeleteOpenAIEval(ctx, evalID)
 			if err != nil && eval_api.IsNotFound(err) {
@@ -347,5 +360,6 @@ func newEvalDeleteCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	registerForceFlag(cmd, &force)
 	return cmd
 }

@@ -300,7 +300,16 @@ func validateJSONL(path string) error {
 
 	rows := 0
 	for line := 1; scanner.Scan(); line++ {
-		text := strings.TrimSpace(scanner.Text())
+		text := scanner.Text()
+		if line == 1 {
+			// PowerShell's `>` and Set-Content write a byte order mark, so a
+			// file a reader produced by redirecting output starts with bytes
+			// that are not JSON. The upload path already drops it, and refusing
+			// here what deploy would accept sends them hunting a row that is
+			// fine.
+			text = project.TrimBOM(text)
+		}
+		text = strings.TrimSpace(text)
 		if text == "" {
 			continue
 		}

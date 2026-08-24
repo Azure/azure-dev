@@ -464,6 +464,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			}
 		}()
 		reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, endpoint,
+			serviceDirFromProject(args.Project.Path, svc),
 			func(endpoint string) *optimize_api.OptimizeClient {
 				return optimize_api.NewOptimizeClient(endpoint, cred)
 			},

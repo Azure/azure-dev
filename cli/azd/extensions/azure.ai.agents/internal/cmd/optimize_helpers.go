@@ -13,9 +13,11 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -278,13 +280,18 @@ func terminalHyperlink(url, text string) string {
 
 // reportOptimizationDeployments reports optimization candidate deployments to the optimization service.
 // For each hosted agent service, if AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID is set in
-// the azd environment, it calls the promote API and then clears the env var.
+// the azd environment, it calls the promote API, advances the local baseline config
+// to the promoted candidate, and then clears the env var.
 // This is best-effort — failures are logged but do not block the deploy.
+//
+// projectPath is the azd project root used to locate each service's local
+// .agent_configs directory; it may be empty when unavailable (e.g. in tests),
+// in which case baseline advancement is skipped.
 func reportOptimizationDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	hostedAgents []*azdext.ServiceConfig,
-	envName, projectEndpoint string,
+	envName, projectEndpoint, projectPath string,
 	newClient func(endpoint string) *optimize_api.OptimizeClient,
 ) {
 	log.Printf("postdeploy: reporting optimization deployments for %d hosted agents", len(hostedAgents))
@@ -296,9 +303,93 @@ func reportOptimizationDeployments(
 					log.Printf("postdeploy: optimization reporting panicked for %s: %v", svc.Name, r)
 				}
 			}()
-			reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, projectEndpoint, newClient)
+			serviceDir := serviceDirFromProject(projectPath, svc)
+			reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, projectEndpoint, serviceDir, newClient)
 		}()
 	}
+}
+
+// serviceDirFromProject resolves the absolute service directory for svc within
+// the azd project. Returns "" when projectPath is empty so callers can treat a
+// missing project root as "skip local filesystem work".
+func serviceDirFromProject(projectPath string, svc *azdext.ServiceConfig) string {
+	if projectPath == "" {
+		return ""
+	}
+	return filepath.Join(projectPath, svc.GetRelativePath())
+}
+
+// advanceBaselineToCandidate replaces the service's local baseline agent config
+// with the promoted candidate's config so the next optimization round starts
+// from the deployed configuration rather than the original. The previous
+// baseline is archived as baseline_<job-id> (rather than deleted) for
+// rollback/audit; when no usable jobID is available it is removed instead.
+//
+// It is a no-op when serviceDir or candidateID is empty, or when the candidate
+// config directory does not exist locally (e.g. remote-only deploy flows). The
+// candidate directory is copied (not moved) so the deploy pipeline can still
+// read it, and the swap is staged so a mid-copy failure leaves the existing
+// baseline intact.
+func advanceBaselineToCandidate(serviceDir, candidateID, jobID string) error {
+	if serviceDir == "" || candidateID == "" {
+		return nil
+	}
+
+	// The candidate ID is read from the azd environment; guard against path
+	// traversal before joining it into a filesystem path.
+	if !isSafePathSegment(candidateID) {
+		return fmt.Errorf("invalid candidate id %q", candidateID)
+	}
+
+	configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
+	candidateDir := filepath.Join(configsDir, candidateID)
+	baselineDir := filepath.Join(configsDir, opt_eval.BaselineDir)
+
+	// Only advance when the candidate config exists locally.
+	if info, err := os.Stat(candidateDir); err != nil || !info.IsDir() {
+		return nil
+	}
+
+	// Stage the candidate config into a temp dir next to baseline, so a mid-copy
+	// failure leaves the existing baseline intact.
+	stageDir, err := os.MkdirTemp(configsDir, ".baseline-stage-*")
+	if err != nil {
+		return fmt.Errorf("staging baseline: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(stageDir) }()
+
+	if err := copyDirectory(candidateDir, stageDir); err != nil {
+		return fmt.Errorf("copying candidate config: %w", err)
+	}
+
+	// Retire the previous baseline before installing the new one. Prefer
+	// archiving it as baseline_<job-id> for rollback/audit; fall back to
+	// removal when the job ID is missing or unsafe as a path segment.
+	if _, err := os.Stat(baselineDir); err == nil {
+		if jobID != "" && isSafePathSegment(jobID) {
+			archiveDir := filepath.Join(configsDir, opt_eval.BaselineDir+"_"+jobID)
+			// Replace any existing archive for this job so Rename succeeds.
+			if err := os.RemoveAll(archiveDir); err != nil {
+				return fmt.Errorf("clearing previous baseline archive: %w", err)
+			}
+			if err := os.Rename(baselineDir, archiveDir); err != nil {
+				return fmt.Errorf("archiving previous baseline: %w", err)
+			}
+		} else if err := os.RemoveAll(baselineDir); err != nil {
+			return fmt.Errorf("removing old baseline: %w", err)
+		}
+	}
+
+	if err := os.Rename(stageDir, baselineDir); err != nil {
+		return fmt.Errorf("promoting baseline: %w", err)
+	}
+	return nil
+}
+
+// isSafePathSegment reports whether name is a single, non-traversing path
+// segment safe to join into a filesystem path.
+func isSafePathSegment(name string) bool {
+	return name != "" && name == filepath.Base(name) && name != "." && name != ".."
 }
 
 // reportSvcOptimizationDeployment reports a single service's optimization candidate.
@@ -306,7 +397,7 @@ func reportSvcOptimizationDeployment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
-	envName, projectEndpoint string,
+	envName, projectEndpoint, serviceDir string,
 	newClient func(endpoint string) *optimize_api.OptimizeClient,
 ) {
 	serviceKey := toServiceKey(svc.Name)
@@ -366,6 +457,16 @@ func reportSvcOptimizationDeployment(
 	}
 
 	log.Printf("postdeploy: successfully promoted candidate %s for %s", candidateResp.Value, svc.Name)
+
+	// Advance the local baseline config to the promoted candidate so a
+	// subsequent optimization round starts from the deployed configuration
+	// instead of the original. The previous baseline is archived as
+	// baseline_<job-id>. Best-effort; never blocks deploy.
+	if err := advanceBaselineToCandidate(serviceDir, candidateResp.Value, jobID); err != nil {
+		log.Printf("postdeploy: failed to advance baseline for %s: %v", svc.Name, err)
+	} else if serviceDir != "" {
+		log.Printf("postdeploy: advanced baseline to candidate %s for %s", candidateResp.Value, svc.Name)
+	}
 
 	// Clear the candidate ID after successful reporting.
 	if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{

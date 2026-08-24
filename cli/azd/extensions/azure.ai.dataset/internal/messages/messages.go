@@ -234,6 +234,27 @@ func DatasetDeleted(dataset, version string) string {
 	return fmt.Sprintf("Deleted dataset %s version %s\n", dataset, version)
 }
 
+// ConfirmDeleteDataset is the question asked before a version is removed.
+func ConfirmDeleteDataset(dataset, version string) string {
+	return fmt.Sprintf(
+		"Delete dataset %s version %s? This cannot be undone.", dataset, version)
+}
+
+// DeleteNeedsForce reports a delete that could not ask, because nobody is
+// there to answer.
+func DeleteNeedsForce(dataset, version string) error {
+	return fmt.Errorf(
+		"deleting dataset %s version %s removes it for good, and this command "+
+			"cannot ask for confirmation without a terminal. Re-run with --force "+
+			"to confirm it in advance",
+		dataset, version)
+}
+
+// DeleteCancelled reports the author answering no.
+func DeleteCancelled(dataset, version string) error {
+	return fmt.Errorf("left dataset %s version %s alone", dataset, version)
+}
+
 // ReadingDownloadCredentials reports the service refusing to hand out a read URI.
 func ReadingDownloadCredentials(dataset string, err error) error {
 	return fmt.Errorf("reading download credentials for %q: %w", dataset, err)

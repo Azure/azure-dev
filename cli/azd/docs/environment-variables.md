@@ -163,6 +163,25 @@ specific version of the tool installed on the machine.
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
 
+### azure.ai.dataset
+
+| Variable | Description |
+| --- | --- |
+| `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.dataset` extension. Read from the active azd environment first; if the endpoint is still unresolved after the azd environment and global config are consulted, it is read from the host shell environment. |
+| `AZURE_AI_PROJECT_ENDPOINT` | Host-environment fallback for the project endpoint, consulted only when `FOUNDRY_PROJECT_ENDPOINT` is unset. |
+| `AZD_EXT_DEBUG` | If true, waits for a debugger to attach before the command runs. |
+
+### azure.ai.evaluations
+
+| Variable | Description |
+| --- | --- |
+| `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.evaluations` extension, resolved in the same order as `azure.ai.dataset`. |
+| `AZURE_AI_PROJECT_ENDPOINT` | Host-environment fallback for the project endpoint, consulted only when `FOUNDRY_PROJECT_ENDPOINT` is unset. |
+| `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID, used to build portal links for an eval run. |
+| `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The model deployment `azd ai eval init` offers as the judge when one is not named on the command line. |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | The Application Insights connection string used to read the traces a trace-backed eval evaluates. |
+| `AZD_EXT_DEBUG` | If true, waits for a debugger to attach before the command runs. |
+
 ### azure.ai.routines
 
 | Variable | Description |

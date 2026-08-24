@@ -11,9 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaidataset/internal/exterrors"
 	"azureaidataset/internal/messages"
 	"azureaidataset/internal/pkg/dataset_api"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
@@ -377,12 +379,18 @@ func newDatasetDeleteCommand() *cobra.Command {
 	var (
 		version     string
 		endpointFlg string
+		force       bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a dataset version.",
-		Args:  cobra.ExactArgs(1),
+		Long: `Delete a dataset version from the resolved Foundry project.
+
+The version is removed immediately and cannot be recovered. The CLI asks for
+confirmation first; pass --force to skip the question. With --no-prompt, or
+with JSON output, --force is required.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if !validAssetName(name) {
@@ -398,6 +406,10 @@ func newDatasetDeleteCommand() *cobra.Command {
 				return err
 			}
 			defer ec.Close()
+
+			if err := confirmDelete(cmd, ec, name, version, force); err != nil {
+				return err
+			}
 
 			if err := ec.datasetClient.DeleteDatasetVersion(
 				ctx, name, version, ProjectEndpointAPIVersion,
@@ -420,5 +432,36 @@ func newDatasetDeleteCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&version, "version", "", "Version to delete.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	cmd.Flags().BoolVar(&force, "force", false, "Delete without asking for confirmation.")
 	return cmd
+}
+
+// confirmDelete asks before removing a version that cannot be recovered.
+//
+// The same contract the other Foundry delete commands use: ask by default, skip
+// on --force, and refuse rather than assume when nobody can answer. A prompt
+// written into a JSON document, or into a script running with --no-prompt, is a
+// hang rather than a question, which is why those require the flag instead.
+func confirmDelete(cmd *cobra.Command, ec *datasetContext, name, version string, force bool) error {
+	if force {
+		return nil
+	}
+	if noPrompt(cmd) {
+		return messages.DeleteNeedsForce(name, version)
+	}
+
+	defaultNo := false
+	resp, err := ec.azdClient.Prompt().Confirm(cmd.Context(), &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      messages.ConfirmDeleteDataset(name, version),
+			DefaultValue: &defaultNo,
+		},
+	})
+	if err != nil {
+		return exterrors.FromPrompt(err, "confirming the delete")
+	}
+	if resp.GetValue() {
+		return nil
+	}
+	return messages.DeleteCancelled(name, version)
 }

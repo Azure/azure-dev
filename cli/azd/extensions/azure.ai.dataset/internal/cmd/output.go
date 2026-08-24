@@ -34,6 +34,18 @@ func isJSON(cmd *cobra.Command) bool {
 	return outputFormat(cmd) == outputJSON
 }
 
+// noPrompt reports whether the caller asked for no interaction.
+//
+// JSON output counts: a question written into a document nobody is reading is a
+// hang rather than a prompt.
+func noPrompt(cmd *cobra.Command) bool {
+	if isJSON(cmd) {
+		return true
+	}
+	value, err := cmd.Flags().GetBool("no-prompt")
+	return err == nil && value
+}
+
 // emitJSON writes v as indented JSON.
 func emitJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)

@@ -1280,6 +1280,87 @@ func (m *mockContainerRegistryService) FindContainerRegistryResourceGroup(
 	args := m.Called(ctx, subscriptionId, registryName)
 	return args.String(0), args.Error(1)
 }
+func TestResolveImagePassthrough(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		image       string
+		docker      DockerProjectOptions
+		env         map[string]string
+		want        string
+		wantErr     bool
+		errContains string
+	}{
+		{name: "disabled"},
+		{
+			name:   "expands service image",
+			image:  "${PRIVATE_REGISTRY}/team/agent:v1",
+			docker: DockerProjectOptions{ImagePassthrough: true},
+			env:    map[string]string{"PRIVATE_REGISTRY": "private.example.com"},
+			want:   "private.example.com/team/agent:v1",
+		},
+		{
+			name:   "accepts explicit Docker Hub registry without library namespace",
+			image:  "docker.io/nginx:latest",
+			docker: DockerProjectOptions{ImagePassthrough: true},
+			want:   "docker.io/nginx:latest",
+		},
+		{
+			name: "preserves tag and digest",
+			image: "${PRIVATE_REGISTRY}/team/agent:v1@sha256:" +
+				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			docker: DockerProjectOptions{ImagePassthrough: true},
+			env:    map[string]string{"PRIVATE_REGISTRY": "private.example.com"},
+			want: "private.example.com/team/agent:v1@sha256:" +
+				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		},
+		{
+			name:        "requires service image",
+			docker:      DockerProjectOptions{ImagePassthrough: true},
+			wantErr:     true,
+			errContains: "requires the service image property",
+		},
+		{
+			name:        "requires fully qualified remote service image",
+			image:       "team/agent:v1",
+			docker:      DockerProjectOptions{ImagePassthrough: true},
+			wantErr:     true,
+			errContains: "fully qualified remote container image",
+		},
+		{
+			name:  "conflicts with remote build",
+			image: "private.example.com/team/agent:v1",
+			docker: DockerProjectOptions{
+				ImagePassthrough: true,
+				RemoteBuild:      true,
+			},
+			wantErr:     true,
+			errContains: "cannot be combined",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			serviceConfig := &ServiceConfig{
+				Image:  osutil.NewExpandableString(tt.image),
+				Docker: tt.docker,
+			}
+			got, err := resolveImagePassthrough(
+				serviceConfig,
+				environment.NewWithValues("test", tt.env),
+			)
+			if tt.wantErr {
+				require.ErrorContains(t, err, tt.errContains)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func Test_ContainerHelper_Publish(t *testing.T) {
 	tests := []struct {
 		name                    string
@@ -1287,16 +1368,21 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		image                   string
 		project                 string
 		packagePath             string
+		packageKind             ArtifactKind
+		packageLocationKind     LocationKind
+		additionalArtifacts     ArtifactCollection
 		imageHash               string
 		sourceImage             string
 		targetImage             string
 		publishOptions          *PublishOptions
 		expectedRemoteImage     string
+		imagePassthrough        bool
 		expectDockerLoginCalled bool
 		expectDockerPullCalled  bool
 		expectDockerTagCalled   bool
 		expectDockerPushCalled  bool
 		expectError             bool
+		expectedError           string
 	}{
 		{
 			name:                    "Source code and registry",
@@ -1358,6 +1444,158 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectDockerPushCalled:  false,
 			expectedRemoteImage:     "nginx",
 			expectError:             false,
+		},
+		{
+			name:                    "Image passthrough with configured destination registry",
+			image:                   "private.example.com/team/agent:v1",
+			registry:                osutil.NewExpandableString("contoso.azurecr.io"),
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage:     "private.example.com/team/agent:v1",
+			expectError:             false,
+		},
+		{
+			name:                    "Image passthrough rejects publish image override",
+			image:                   "private.example.com/team/agent:v1",
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{Image: "other.example.com/team/agent:v2"},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectError:             true,
+		},
+		{
+			name:                    "Image passthrough uses remote package image override",
+			image:                   "private.example.com/team/agent:v1",
+			packagePath:             "other.example.com/team/agent:v2",
+			packageKind:             ArtifactKindContainer,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage:     "other.example.com/team/agent:v2",
+		},
+		{
+			name:                    "Image passthrough accepts explicit Docker Hub package override",
+			image:                   "private.example.com/team/agent:v1",
+			packagePath:             "docker.io/nginx:latest",
+			packageKind:             ArtifactKindContainer,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage:     "docker.io/nginx:latest",
+		},
+		{
+			name:                "Image passthrough deduplicates package artifacts",
+			image:               "private.example.com/team/agent:v1",
+			packagePath:         "private.example.com/team/agent:v1",
+			packageKind:         ArtifactKindContainer,
+			packageLocationKind: LocationKindRemote,
+			additionalArtifacts: ArtifactCollection{&Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "private.example.com/team/agent:v1",
+				LocationKind: LocationKindRemote,
+			}},
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage:     "private.example.com/team/agent:v1",
+		},
+		{
+			name:                "Image passthrough rejects distinct package images",
+			image:               "private.example.com/team/agent:v1",
+			packagePath:         "private.example.com/team/agent:v1",
+			packageKind:         ArtifactKindContainer,
+			packageLocationKind: LocationKindRemote,
+			additionalArtifacts: ArtifactCollection{&Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "other.example.com/team/agent:v2",
+				LocationKind: LocationKindLocal,
+			}},
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectError:             true,
+			expectedError:           "multiple distinct remote container images",
+		},
+		{
+			name:  "Image passthrough preserves tag and digest package override",
+			image: "private.example.com/team/agent:v1",
+			packagePath: "other.example.com/team/agent:v2@sha256:" +
+				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			packageKind:             ArtifactKindContainer,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage: "other.example.com/team/agent:v2@sha256:" +
+				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		},
+		{
+			name:                    "Image passthrough rejects local package image override",
+			image:                   "private.example.com/team/agent:v1",
+			packagePath:             "team/agent:v2",
+			packageKind:             ArtifactKindContainer,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectError:             true,
+			expectedError:           "requires package container artifacts",
+		},
+		{
+			name:                    "Image passthrough rejects archive package override",
+			image:                   "private.example.com/team/agent:v1",
+			packagePath:             "agent.zip",
+			packageKind:             ArtifactKindArchive,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectError:             true,
+			expectedError:           "does not support archive package artifacts",
+		},
+		{
+			name:                    "Image passthrough rejects directory package override",
+			image:                   "private.example.com/team/agent:v1",
+			packagePath:             "agent",
+			packageKind:             ArtifactKindDirectory,
+			packageLocationKind:     LocationKindLocal,
+			imagePassthrough:        true,
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectError:             true,
+			expectedError:           "does not support directory package artifacts",
 		},
 		{
 			name:                    "With publish options overwrite",
@@ -1460,25 +1698,32 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 			serviceConfig.RelativePath = tt.project
 			serviceConfig.Docker.Registry = tt.registry
+			serviceConfig.Docker.ImagePassthrough = tt.imagePassthrough
 
-			packageOutput := &ServicePackageResult{
-				Artifacts: ArtifactCollection{
-					{
-						Kind:         ArtifactKindContainer,
-						Location:     tt.packagePath,
-						LocationKind: LocationKindLocal,
-						Metadata: map[string]string{
-							"imageHash":   tt.imageHash,
-							"sourceImage": tt.sourceImage,
-							"targetImage": tt.targetImage,
-						},
+			packageArtifacts := ArtifactCollection{}
+			if tt.packagePath != "" || tt.imageHash != "" || tt.sourceImage != "" || tt.targetImage != "" {
+				packageKind := tt.packageKind
+				if packageKind == "" {
+					packageKind = ArtifactKindContainer
+				}
+				packageLocationKind := tt.packageLocationKind
+				if packageLocationKind == "" {
+					packageLocationKind = LocationKindLocal
+				}
+				packageArtifacts = append(packageArtifacts, &Artifact{
+					Kind:         packageKind,
+					Location:     tt.packagePath,
+					LocationKind: packageLocationKind,
+					Metadata: map[string]string{
+						"imageHash":   tt.imageHash,
+						"sourceImage": tt.sourceImage,
+						"targetImage": tt.targetImage,
 					},
-				},
+				})
 			}
 
-			serviceContext := &ServiceContext{
-				Package: packageOutput.Artifacts,
-			}
+			packageArtifacts = append(packageArtifacts, tt.additionalArtifacts...)
+			serviceContext := &ServiceContext{Package: packageArtifacts}
 
 			publishResult, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
@@ -1490,6 +1735,9 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err)
+				if tt.expectedError != "" {
+					require.ErrorContains(t, err, tt.expectedError)
+				}
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, publishResult)
@@ -1522,7 +1770,12 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 				require.Len(t, publishResult.Artifacts, 1)
 				artifact := publishResult.Artifacts[0]
 				require.Equal(t, ArtifactKindContainer, artifact.Kind)
+				require.Equal(t, LocationKindRemote, artifact.LocationKind)
+				require.Equal(t, tt.expectedRemoteImage, artifact.Location)
 				require.Equal(t, tt.expectedRemoteImage, artifact.Metadata["remoteImage"])
+				if tt.imagePassthrough {
+					require.Equal(t, "true", artifact.Metadata["imagePassthrough"])
+				}
 			}
 		})
 	}

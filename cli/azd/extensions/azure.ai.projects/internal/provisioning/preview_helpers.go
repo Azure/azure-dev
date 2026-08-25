@@ -163,8 +163,8 @@ func shortenResourceID(id string) string {
 func whatIfFailure(r armresources.WhatIfOperationResult) error {
 	if r.Error != nil {
 		suggestion := "fix the underlying ARM error and retry `azd provision --preview`"
-		if armErrorResponseContainsCode(r.Error, "InsufficientQuota") {
-			suggestion = exterrors.CognitiveServicesQuotaSuggestion()
+		if quotaSuggestion := exterrors.QuotaSuggestionForARMError(r.Error); quotaSuggestion != "" {
+			suggestion = quotaSuggestion
 		}
 		return exterrors.Validation(
 			exterrors.CodeArmWhatIfFailed,
@@ -180,24 +180,6 @@ func whatIfFailure(r armresources.WhatIfOperationResult) error {
 		)
 	}
 	return nil
-}
-
-func armErrorResponseContainsCode(
-	err *armresources.ErrorResponse,
-	code string,
-) bool {
-	if err == nil {
-		return false
-	}
-	if err.Code != nil && strings.EqualFold(*err.Code, code) {
-		return true
-	}
-	for _, detail := range err.Details {
-		if armErrorResponseContainsCode(detail, code) {
-			return true
-		}
-	}
-	return false
 }
 
 // formatArmErrorResponse flattens an ARM ErrorResponse into a single line,

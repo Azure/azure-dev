@@ -25,9 +25,15 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+const (
+	cognitiveServicesAccountsResourceType = "microsoft.cognitiveservices/accounts"
+	insufficientQuotaCode                 = "InsufficientQuota"
 )
 
 // Validation returns a validation [azdext.LocalError] for user-input or
@@ -92,10 +98,6 @@ func ServiceFromAzure(err error, operation string) error {
 		if code == "" {
 			code = fmt.Sprintf("%d", responseErr.StatusCode)
 		}
-		suggestion := ""
-		if responseErrorContainsCode(responseErr, "InsufficientQuota") {
-			suggestion = CognitiveServicesQuotaSuggestion()
-		}
 		return &azdext.ServiceError{
 			Message: fmt.Sprintf(
 				"%s: %s",
@@ -105,7 +107,7 @@ func ServiceFromAzure(err error, operation string) error {
 			ErrorCode:   fmt.Sprintf("%s.%s", operation, code),
 			StatusCode:  responseErr.StatusCode,
 			ServiceName: serviceName,
-			Suggestion:  suggestion,
+			Suggestion:  quotaSuggestionForResponse(responseErr),
 		}
 	}
 	if IsCancellation(err) {
@@ -128,49 +130,111 @@ func CognitiveServicesQuotaSuggestion() string {
 		"`azd ai agent init --project-id <full-project-resource-id>`)."
 }
 
-type armErrorResponse struct {
-	Code    string              `json:"code"`
-	Details []*armErrorResponse `json:"details"`
-	Error   *armErrorResponse   `json:"error"`
+// GenericQuotaSuggestion returns generic quota guidance.
+func GenericQuotaSuggestion() string {
+	return "Check the quota and current usage for the affected resource provider " +
+		"in the Azure portal, or request a quota increase."
 }
 
-func responseErrorContainsCode(responseErr *azcore.ResponseError, code string) bool {
-	if strings.EqualFold(responseErr.ErrorCode, code) {
-		return true
+// QuotaSuggestionForARMError returns guidance for an ARM quota error.
+func QuotaSuggestionForARMError(err *armresources.ErrorResponse) string {
+	if !armErrorResponseContainsCode(err, insufficientQuotaCode) {
+		return ""
 	}
+	if armErrorResponseContainsCognitiveServicesQuota(err, "") {
+		return CognitiveServicesQuotaSuggestion()
+	}
+	return GenericQuotaSuggestion()
+}
 
-	if responseErr.RawResponse != nil && responseErr.RawResponse.Body != nil {
-		bodyReader := responseErr.RawResponse.Body
-		body, err := io.ReadAll(bodyReader)
-		_ = bodyReader.Close()
-		responseErr.RawResponse.Body = io.NopCloser(bytes.NewReader(body))
-		if err == nil {
-			var payload armErrorResponse
-			if json.Unmarshal(body, &payload) == nil && armErrorContainsCode(&payload, code) {
-				return true
-			}
+func quotaSuggestionForResponse(responseErr *azcore.ResponseError) string {
+	if payload := responseErrorPayload(responseErr); payload != nil {
+		if suggestion := QuotaSuggestionForARMError(payload); suggestion != "" {
+			return suggestion
 		}
 	}
 
-	return strings.Contains(strings.ToLower(responseErr.Error()), strings.ToLower(code))
+	if strings.EqualFold(responseErr.ErrorCode, insufficientQuotaCode) ||
+		strings.Contains(strings.ToLower(responseErr.Error()), strings.ToLower(insufficientQuotaCode)) {
+		return GenericQuotaSuggestion()
+	}
+
+	return ""
 }
 
-func armErrorContainsCode(err *armErrorResponse, code string) bool {
+func responseErrorPayload(responseErr *azcore.ResponseError) *armresources.ErrorResponse {
+	if responseErr.RawResponse == nil || responseErr.RawResponse.Body == nil {
+		return nil
+	}
+
+	bodyReader := responseErr.RawResponse.Body
+	body, err := io.ReadAll(bodyReader)
+	_ = bodyReader.Close()
+	responseErr.RawResponse.Body = io.NopCloser(bytes.NewReader(body))
+	if err != nil {
+		return nil
+	}
+
+	var envelope struct {
+		Error *armresources.ErrorResponse `json:"error"`
+	}
+	if json.Unmarshal(body, &envelope) == nil && envelope.Error != nil {
+		return envelope.Error
+	}
+
+	var payload armresources.ErrorResponse
+	if json.Unmarshal(body, &payload) == nil && payload.Code != nil {
+		return &payload
+	}
+
+	return nil
+}
+
+func armErrorResponseContainsCode(err *armresources.ErrorResponse, code string) bool {
 	if err == nil {
 		return false
 	}
-	if strings.EqualFold(err.Code, code) {
-		return true
-	}
-	if armErrorContainsCode(err.Error, code) {
+	if err.Code != nil && strings.EqualFold(*err.Code, code) {
 		return true
 	}
 	for _, detail := range err.Details {
-		if armErrorContainsCode(detail, code) {
+		if armErrorResponseContainsCode(detail, code) {
 			return true
 		}
 	}
 	return false
+}
+
+func armErrorResponseContainsCognitiveServicesQuota(
+	err *armresources.ErrorResponse,
+	inheritedTarget string,
+) bool {
+	if err == nil {
+		return false
+	}
+
+	target := inheritedTarget
+	if err.Target != nil {
+		target = *err.Target
+	}
+	if err.Code != nil && strings.EqualFold(*err.Code, insufficientQuotaCode) &&
+		(cognitiveServicesResource(target) ||
+			(err.Message != nil && cognitiveServicesResource(*err.Message))) {
+		return true
+	}
+	for _, detail := range err.Details {
+		if armErrorResponseContainsCognitiveServicesQuota(detail, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func cognitiveServicesResource(value string) bool {
+	return strings.Contains(
+		strings.ToLower(value),
+		cognitiveServicesAccountsResourceType,
+	)
 }
 
 // IsCancellation reports whether an operation was cancelled.

@@ -199,7 +199,7 @@ func TestWhatIfFailure_Success(t *testing.T) {
 	}
 }
 
-func TestWhatIfFailure_InlineErrorIsSurfaced(t *testing.T) {
+func TestWhatIfFailure_UnknownQuotaUsesGenericGuidance(t *testing.T) {
 	t.Parallel()
 
 	// ARM returns HTTP 200 with Properties.Error populated for
@@ -228,9 +228,35 @@ func TestWhatIfFailure_InlineErrorIsSurfaced(t *testing.T) {
 	assert.Contains(t, local.Message, "InvalidTemplateDeployment")
 	assert.Contains(t, local.Message, "InsufficientQuota")
 	assert.NotEmpty(t, local.Suggestion)
+	assert.Contains(t, local.Suggestion, "affected resource provider")
+	assert.NotContains(t, local.Suggestion, "az cognitiveservices usage list")
+	assert.NotContains(t, local.Suggestion, "AZURE_AI_PROJECT_ID")
+}
+
+func TestWhatIfFailure_CognitiveServicesQuotaUsesFoundryGuidance(t *testing.T) {
+	t.Parallel()
+
+	inner := &armresources.ErrorResponse{
+		Code:    new("InsufficientQuota"),
+		Message: new("Insufficient quota."),
+		Target: new(
+			"/subscriptions/sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/ai-account",
+		),
+	}
+	err := whatIfFailure(armresources.WhatIfOperationResult{
+		Error: &armresources.ErrorResponse{
+			Code:    new("InvalidTemplateDeployment"),
+			Message: new("Preflight validation failed."),
+			Details: []*armresources.ErrorResponse{inner},
+		},
+	})
+	require.Error(t, err)
+
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
 	assert.Contains(t, local.Suggestion, "az cognitiveservices usage list --location <region>")
 	assert.Contains(t, local.Suggestion, "AZURE_AI_PROJECT_ID")
-	assert.NotContains(t, local.Suggestion, "az vm list-usage")
 }
 
 func TestWhatIfFailure_NonSucceededStatus(t *testing.T) {

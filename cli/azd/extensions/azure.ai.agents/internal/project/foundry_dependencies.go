@@ -291,6 +291,10 @@ func validateFoundryProjectDependency(_ *azdext.ServiceConfig, env map[string]st
 }
 
 func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[string]string) string {
+	connectionProject := strings.TrimSpace(env[envkey.ConnectionProjectEndpoint])
+	if connectionProject != "" && !sameProjectEndpoint(connectionProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
+	}
 	found := false
 	for name := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
 		if strings.TrimSpace(name) == service.GetName() {
@@ -300,13 +304,6 @@ func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[
 	}
 	if !found {
 		return "connection is not listed in AZURE_AI_PROJECT_CONNECTION_NAMES"
-	}
-	// Older project extensions published connection names without a scope marker.
-	if strings.TrimSpace(env[envkey.ConnectionProjectEndpoint]) == "" {
-		return ""
-	}
-	if !sameProjectEndpoint(env[envkey.ConnectionProjectEndpoint], env["FOUNDRY_PROJECT_ENDPOINT"]) {
-		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
 	}
 	return ""
 }

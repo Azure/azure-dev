@@ -40,6 +40,11 @@ infra:
 
 The existing `infra/main.bicep` remains unchanged.
 
+For a service that sets `endpoint:`, Bicep eject keeps the
+`microsoft.foundry` provider. The provider compiles the generated `main.bicep`,
+so ejected and embedded provisioning use the same resource graph. Terraform
+eject uses the built-in `terraform` provider.
+
 ## Existing files
 
 Eject never overwrites generated-file collisions.
@@ -71,6 +76,27 @@ that it created the group and the live Azure group is tagged for the current
 environment. Otherwise teardown intentionally refuses deletion so a user-owned
 group is not removed.
 
+For an existing-project Bicep eject, the account and project resource group are
+never created by the generated template. Teardown can remove adjunct resources
+created by that template, but does not own or delete the reused account or project.
+
+## Existing container registries
+
+Eject preserves the registry choice made during init:
+
+- No registry required: no registry resources are managed.
+- No existing registry selected: create a registry, `AcrPull` assignment, and
+  project connection.
+- Existing registry without a project connection: reference the registry and
+  create only `AcrPull` plus the project connection.
+- Existing project connection selected: reference its registry and connection
+  without managing either one.
+
+The generated files never import or take ownership of an existing registry.
+When registry work is required, the generated file is consistently named
+`modules/container-registry.bicep` or `container-registry.tf`, whether the
+registry is created or reused.
+
 ## Layer dependencies
 
 The Foundry layer is independent by default. Azd analyzes generated parameter
@@ -100,7 +126,9 @@ value.
 
 - Terraform eject does not support a service with a private `network:` block;
   use Bicep for private networking.
-- Brownfield services that set `endpoint:` reuse an existing Foundry project
-  and cannot eject infrastructure for that externally owned resource.
+- Services that set `endpoint:` to reuse an existing project can eject Bicep or Terraform. The
+  generated templates reference the existing account and project without taking
+  ownership and manage only declared model deployments, connections, and
+  adjunct resources such as ACR.
 - Eject preserves the existing root infrastructure mapping during migration;
   custom properties remain the project owner's responsibility.

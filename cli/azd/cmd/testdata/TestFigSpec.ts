@@ -1453,7 +1453,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--app-version'],
-									description: 'Version stamped into the Teams app manifest',
+									description: 'Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.',
 									args: [
 										{
 											name: 'app-version',
@@ -1462,7 +1462,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--display-name'],
-									description: 'Display name for the Teams app (defaults to the agent name)',
+									description: 'Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.',
 									args: [
 										{
 											name: 'display-name',
@@ -1495,7 +1495,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--app-version'],
-									description: 'Version stamped into the Teams app manifest',
+									description: 'Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.',
 									args: [
 										{
 											name: 'app-version',
@@ -1504,7 +1504,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--display-name'],
-									description: 'Display name for the Teams app (defaults to the agent name)',
+									description: 'Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.',
 									args: [
 										{
 											name: 'display-name',
@@ -1523,7 +1523,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--scope'],
-									description: 'Publish scope (shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval; alias: org))',
+									description: 'Microsoft 365 publish scope (shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval; alias: org); Digital Workers require tenant)',
 									args: [
 										{
 											name: 'scope',
@@ -2673,6 +2673,18 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json'],
+										},
+									],
+								},
+							],
 						},
 					],
 				},

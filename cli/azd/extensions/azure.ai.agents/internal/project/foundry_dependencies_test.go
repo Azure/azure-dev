@@ -164,6 +164,22 @@ func TestValidateFoundryDependencies(t *testing.T) {
 			},
 		},
 		{
+			name: "connection readiness from another project fails",
+			uses: []string{"connection"},
+			services: map[string]*azdext.ServiceConfig{
+				"connection": {Name: "connection", Host: foundryConnectionHost},
+			},
+			env: map[string]string{
+				"FOUNDRY_PROJECT_ENDPOINT":          "https://example.test/projects/current",
+				envkey.ConnectionProjectEndpoint:    "https://example.test/projects/old",
+				"AZURE_AI_PROJECT_CONNECTION_NAMES": "connection",
+			},
+			wantErr: true,
+			wantDetail: []string{
+				"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT does not match FOUNDRY_PROJECT_ENDPOINT",
+			},
+		},
+		{
 			name: "skill marker from another project fails",
 			uses: []string{"summarize"},
 			services: map[string]*azdext.ServiceConfig{
@@ -384,15 +400,6 @@ func TestValidateFoundryDependenciesRejectsCrossProjectMarkers(t *testing.T) {
 				envkey.ToolboxProjectEndpoint("dep"): "https://old",
 			},
 			detail: "TOOLBOX_DEP_PROJECT_ENDPOINT",
-		},
-		{
-			name: "connection", host: foundryConnectionHost,
-			env: map[string]string{
-				"FOUNDRY_PROJECT_ENDPOINT":          "https://current",
-				"AZURE_AI_PROJECT_CONNECTION_NAMES": "dep",
-				envkey.ConnectionProjectEndpoint:    "https://old",
-			},
-			detail: envkey.ConnectionProjectEndpoint,
 		},
 		{
 			name: "agent", host: foundryAgentHost,

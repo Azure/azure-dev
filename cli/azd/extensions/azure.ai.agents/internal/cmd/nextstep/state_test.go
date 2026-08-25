@@ -741,7 +741,7 @@ func TestServiceKey(t *testing.T) {
 
 // TestIsDeployed_VoiceEndpointFallback verifies that voice readiness is based
 // on the base endpoint marker. Legacy voice agents never set VERSION, while
-// unified voice agents set VERSION before ENDPOINT; in both cases ENDPOINT is
+// prompt voice agents set VERSION before ENDPOINT; in both cases ENDPOINT is
 // the deploy completion marker.
 func TestIsDeployed_VoiceEndpointFallback(t *testing.T) {
 	t.Parallel()
@@ -764,7 +764,7 @@ func TestIsDeployed_VoiceEndpointFallback(t *testing.T) {
 			want:    false,
 		},
 		{
-			name: "version and endpoint set: deployed (unified voice agent)",
+			name: "version and endpoint set: deployed (prompt voice agent)",
 			values: map[string]string{
 				"env1/AGENT_VOICE_SVC_VERSION":  "1",
 				"env1/AGENT_VOICE_SVC_ENDPOINT": "wss://x/agents/a/endpoint/protocols/voice?api-version=v1",
@@ -774,7 +774,7 @@ func TestIsDeployed_VoiceEndpointFallback(t *testing.T) {
 		},
 		{
 			name:    "no version but base endpoint set: deployed (voice agent)",
-			values:  map[string]string{"env1/AGENT_VOICE_SVC_ENDPOINT": "https://x/voice_agents/a"},
+			values:  map[string]string{"env1/AGENT_VOICE_SVC_ENDPOINT": "wss://x/agents/a/endpoint/protocols/voice?api-version=v1"},
 			isVoice: true,
 			want:    true,
 		},

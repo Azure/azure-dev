@@ -704,7 +704,7 @@ func readAgentServices(prior []Result) []string {
 
 // filterHostedAgentServices removes prompt-voice services from the hosted-agent
 // status probe. The remote.agent-status check targets hosted agent versions
-// (`/agents/{name}/versions/{version}`). Unified prompt-voice deploys record a
+// (`/agents/{name}/versions/{version}`). Prompt-voice deploys record a
 // VERSION, but voice readiness follows its WebSocket endpoint rather than the
 // hosted-agent version lifecycle and should be covered by a voice-specific
 // doctor check in a future PR.

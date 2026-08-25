@@ -583,7 +583,7 @@ func buildVoiceConfig(name string) *agent_api.VoiceConfig {
 	return &agent_api.VoiceConfig{Type: "azure_standard", Name: trimmed}
 }
 
-func flatVoiceType(voice *agent_api.VoiceConfig) string {
+func voiceWireType(voice *agent_api.VoiceConfig) string {
 	if voice == nil {
 		return ""
 	}
@@ -593,7 +593,7 @@ func flatVoiceType(voice *agent_api.VoiceConfig) string {
 	return voice.Type
 }
 
-func flatVoiceLocale(voice *agent_api.VoiceConfig) string {
+func voiceWireLocale(voice *agent_api.VoiceConfig) string {
 	if voice == nil || voice.Name == "" || isOpenAIVoice(voice.Name) {
 		return ""
 	}
@@ -664,8 +664,8 @@ func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 			Output: &agent_api.VoiceOutputConfig{
 				Format:      audioFormat,
 				Voice:       voiceConfig.Name,
-				VoiceType:   flatVoiceType(voiceConfig),
-				VoiceLocale: flatVoiceLocale(voiceConfig),
+				VoiceType:   voiceWireType(voiceConfig),
+				VoiceLocale: voiceWireLocale(voiceConfig),
 			},
 		},
 		OutputModalities: []string{"audio"},

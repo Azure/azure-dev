@@ -37,7 +37,7 @@ const (
 
 	// agentEndpointVarFormat is the base endpoint env-var written for every
 	// deployed agent. Voice agents (kind: prompt-voice) use it as the deploy
-	// completion marker. Unified voice deploys also set VERSION, while legacy
+	// completion marker. Prompt voice deploys also set VERSION, while legacy
 	// voice environments may have only this endpoint marker.
 	agentEndpointVarFormat = "AGENT_%s_ENDPOINT"
 
@@ -827,7 +827,7 @@ func isDeployed(
 	}
 
 	// Voice deploys use the base ENDPOINT env var as the completion marker.
-	// Unified voice deploys write VERSION before ENDPOINT to keep ENDPOINT as the
+	// Prompt voice deploys write VERSION before ENDPOINT to keep ENDPOINT as the
 	// final marker.
 	// Require ENDPOINT for voice even when VERSION is present, otherwise a partial
 	// env write could be reported as deployed before the callable endpoint was

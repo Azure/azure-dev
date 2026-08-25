@@ -173,11 +173,11 @@ func TestCreateVoiceAgentAPIRequest_Overrides(t *testing.T) {
 	}
 }
 
-func TestCreateVoiceAgentAPIRequest_UsesFlatOutputShape(t *testing.T) {
+func TestCreateVoiceAgentAPIRequest_UsesServiceOutputShape(t *testing.T) {
 	t.Parallel()
 	voice := "alloy"
 	agent := VoiceAgent{
-		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-flat"},
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-agent"},
 		Model:           &Model{Id: "gpt-realtime"},
 		Voice:           &voice,
 	}
@@ -198,11 +198,11 @@ func TestCreateVoiceAgentAPIRequest_UsesFlatOutputShape(t *testing.T) {
 	}
 }
 
-func TestCreateVoiceAgentAPIRequest_AzureVoiceLocale(t *testing.T) {
+func TestCreateVoiceAgentAPIRequest_UsesAzureVoiceLocale(t *testing.T) {
 	t.Parallel()
 	voice := "en-US-Ava:DragonHDLatestNeural"
 	agent := VoiceAgent{
-		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-flat"},
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-agent"},
 		Model:           &Model{Id: "gpt-realtime"},
 		Voice:           &voice,
 	}
@@ -223,11 +223,11 @@ func TestCreateVoiceAgentAPIRequest_AzureVoiceLocale(t *testing.T) {
 	}
 }
 
-func TestCreateVoiceAgentAPIRequest_MarshalWireShape(t *testing.T) {
+func TestCreateVoiceAgentAPIRequest_MarshalServiceWireShape(t *testing.T) {
 	t.Parallel()
 	voice := "en-US-Ava:DragonHDLatestNeural"
 	agent := VoiceAgent{
-		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-flat"},
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-agent"},
 		Model:           &Model{Id: "gpt-realtime"},
 		Voice:           &voice,
 	}
@@ -268,7 +268,7 @@ func TestCreateVoiceAgentAPIRequest_MarshalWireShape(t *testing.T) {
 		t.Fatalf("audio.output.voice_locale = %#v, want en-US", got)
 	}
 	if _, exists := output["type"]; exists {
-		t.Fatalf("audio.output.type should not be present in flat wire shape: %#v", output)
+		t.Fatalf("audio.output.type should not be present in service wire shape: %#v", output)
 	}
 }
 

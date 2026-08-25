@@ -216,10 +216,10 @@ func (c *AgentClient) doVoiceJSONAgentRequest(
 	return &agent, nil
 }
 
-// GetVoiceAgentUnified retrieves a voice agent through the unified /agents
+// GetVoiceAgent retrieves a voice agent through the unified /agents
 // endpoint with the voice preview opt-in header. Use this instead of GetAgent
 // when deciding whether to create or update a prompt voice agent.
-func (c *AgentClient) GetVoiceAgentUnified(
+func (c *AgentClient) GetVoiceAgent(
 	ctx context.Context,
 	agentName string,
 	apiVersion string,
@@ -259,9 +259,9 @@ func (c *AgentClient) GetVoiceAgentUnified(
 	return &agent, nil
 }
 
-// CreateVoiceAgentUnified creates a voice agent through the unified /agents
+// CreateVoiceAgent creates a voice agent through the unified /agents
 // collection. Prompt voice deploys use this path by default.
-func (c *AgentClient) CreateVoiceAgentUnified(
+func (c *AgentClient) CreateVoiceAgent(
 	ctx context.Context,
 	request *CreateAgentRequest,
 	apiVersion string,
@@ -271,9 +271,9 @@ func (c *AgentClient) CreateVoiceAgentUnified(
 	return c.doVoiceJSONAgentRequest(ctx, http.MethodPost, url, request, overriddenHost)
 }
 
-// UpdateVoiceAgentUnified creates a new version for an existing voice agent
+// UpdateVoiceAgent creates a new version for an existing voice agent
 // through the unified /agents/{name} endpoint.
-func (c *AgentClient) UpdateVoiceAgentUnified(
+func (c *AgentClient) UpdateVoiceAgent(
 	ctx context.Context,
 	agentName string,
 	request *UpdateAgentRequest,

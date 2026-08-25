@@ -90,9 +90,9 @@ func TestCreateVoiceAgentAPIRequest_Defaults(t *testing.T) {
 		t.Errorf("Name = %q", req.Name)
 	}
 
-	def, ok := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
+	def, ok := req.Definition.(agent_api.VoiceAgentDefinition)
 	if !ok {
-		t.Fatalf("expected VoiceAgentDefinitionFlat, got %T", req.Definition)
+		t.Fatalf("expected VoiceAgentDefinition, got %T", req.Definition)
 	}
 
 	// Authoring kind prompt-voice is translated to service kind voice.
@@ -160,7 +160,7 @@ func TestCreateVoiceAgentAPIRequest_Overrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
 	if def.Instructions != instructions {
 		t.Errorf("Instructions = %q", def.Instructions)
 	}
@@ -173,7 +173,7 @@ func TestCreateVoiceAgentAPIRequest_Overrides(t *testing.T) {
 	}
 }
 
-func TestCreateVoiceAgentAPIRequestFlat_UsesFlatOutputShape(t *testing.T) {
+func TestCreateVoiceAgentAPIRequest_UsesFlatOutputShape(t *testing.T) {
 	t.Parallel()
 	voice := "alloy"
 	agent := VoiceAgent{
@@ -182,11 +182,11 @@ func TestCreateVoiceAgentAPIRequestFlat_UsesFlatOutputShape(t *testing.T) {
 		Voice:           &voice,
 	}
 
-	req, err := CreateVoiceAgentAPIRequestFlat(agent)
+	req, err := CreateVoiceAgentAPIRequest(agent)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
 	if def.Audio.Output.Voice != "alloy" {
 		t.Errorf("Voice = %q, want alloy", def.Audio.Output.Voice)
 	}
@@ -198,7 +198,7 @@ func TestCreateVoiceAgentAPIRequestFlat_UsesFlatOutputShape(t *testing.T) {
 	}
 }
 
-func TestCreateVoiceAgentAPIRequestFlat_AzureVoiceLocale(t *testing.T) {
+func TestCreateVoiceAgentAPIRequest_AzureVoiceLocale(t *testing.T) {
 	t.Parallel()
 	voice := "en-US-Ava:DragonHDLatestNeural"
 	agent := VoiceAgent{
@@ -207,11 +207,11 @@ func TestCreateVoiceAgentAPIRequestFlat_AzureVoiceLocale(t *testing.T) {
 		Voice:           &voice,
 	}
 
-	req, err := CreateVoiceAgentAPIRequestFlat(agent)
+	req, err := CreateVoiceAgentAPIRequest(agent)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
 	if def.Audio.Output.Voice != voice {
 		t.Errorf("Voice = %q, want %q", def.Audio.Output.Voice, voice)
 	}
@@ -223,7 +223,7 @@ func TestCreateVoiceAgentAPIRequestFlat_AzureVoiceLocale(t *testing.T) {
 	}
 }
 
-func TestCreateVoiceAgentAPIRequestFlat_MarshalWireShape(t *testing.T) {
+func TestCreateVoiceAgentAPIRequest_MarshalWireShape(t *testing.T) {
 	t.Parallel()
 	voice := "en-US-Ava:DragonHDLatestNeural"
 	agent := VoiceAgent{
@@ -232,7 +232,7 @@ func TestCreateVoiceAgentAPIRequestFlat_MarshalWireShape(t *testing.T) {
 		Voice:           &voice,
 	}
 
-	req, err := CreateVoiceAgentAPIRequestFlat(agent)
+	req, err := CreateVoiceAgentAPIRequest(agent)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -245,9 +245,18 @@ func TestCreateVoiceAgentAPIRequestFlat_MarshalWireShape(t *testing.T) {
 	if err := json.Unmarshal(payload, &wire); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
-	definition := wire["definition"].(map[string]any)
-	audio := definition["audio"].(map[string]any)
-	output := audio["output"].(map[string]any)
+	definition, ok := wire["definition"].(map[string]any)
+	if !ok {
+		t.Fatalf("definition = %#v, want object", wire["definition"])
+	}
+	audio, ok := definition["audio"].(map[string]any)
+	if !ok {
+		t.Fatalf("definition.audio = %#v, want object", definition["audio"])
+	}
+	output, ok := audio["output"].(map[string]any)
+	if !ok {
+		t.Fatalf("definition.audio.output = %#v, want object", audio["output"])
+	}
 
 	if got, ok := output["voice"].(string); !ok || got != voice {
 		t.Fatalf("audio.output.voice = %#v, want string %q", output["voice"], voice)
@@ -276,7 +285,7 @@ func TestCreateVoiceAgentAPIRequest_ExplicitManaged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.Definition.(agent_api.VoiceAgentDefinitionFlat).ModelType != agent_api.VoiceModelTypeManaged {
+	if req.Definition.(agent_api.VoiceAgentDefinition).ModelType != agent_api.VoiceModelTypeManaged {
 		t.Errorf("ModelType not managed")
 	}
 }
@@ -304,7 +313,7 @@ func TestCreateVoiceAgentAPIRequest_TrimsModelID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
 	if def.Model != "my-realtime-deployment" {
 		t.Errorf("Model = %q, want trimmed model id", def.Model)
 	}
@@ -334,7 +343,7 @@ func TestCreateVoiceAgentAPIRequest_SelfDeployedMapped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	def := req.Definition.(agent_api.VoiceAgentDefinitionFlat)
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
 	if def.ModelType != agent_api.VoiceModelTypeSelfDeployed {
 		t.Errorf("ModelType = %q, want self_deployed", def.ModelType)
 	}

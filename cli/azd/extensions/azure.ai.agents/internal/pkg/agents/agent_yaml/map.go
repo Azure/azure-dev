@@ -611,14 +611,6 @@ func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 	return createVoiceAgentAPIRequest(voiceAgent)
 }
 
-// CreateVoiceAgentAPIRequestFlat is kept as a compatibility wrapper for tests
-// and callers that explicitly selected the transition name while the unified API
-// work was in flight. Prompt voice requests now always use the unified flat
-// output shape.
-func CreateVoiceAgentAPIRequestFlat(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
-	return createVoiceAgentAPIRequest(voiceAgent)
-}
-
 func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
 	modelID := ""
 	if voiceAgent.Model != nil {
@@ -659,7 +651,7 @@ func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 		Transcription: &agent_api.VoiceTranscription{Model: defaultVoiceInputTranscriptionModel},
 	}
 	voiceConfig := buildVoiceConfig(voiceName)
-	voiceDef := agent_api.VoiceAgentDefinitionFlat{
+	voiceDef := agent_api.VoiceAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
 			// Translate authoring kind prompt-voice -> service kind voice.
 			Kind: agent_api.AgentKindVoice,
@@ -667,9 +659,9 @@ func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 		ModelType:    modelType,
 		Model:        modelID,
 		Instructions: instructions,
-		Audio: &agent_api.VoiceAudioConfigFlat{
+		Audio: &agent_api.VoiceAudioConfig{
 			Input: input,
-			Output: &agent_api.VoiceOutputConfigFlat{
+			Output: &agent_api.VoiceOutputConfig{
 				Format:      audioFormat,
 				Voice:       voiceConfig.Name,
 				VoiceType:   flatVoiceType(voiceConfig),

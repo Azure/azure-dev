@@ -552,9 +552,8 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	agentEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
 
 	// Voice agents (kind: prompt-voice) use the base ENDPOINT as their callable
-	// endpoint and deploy completion marker. Unified deploys also record VERSION,
-	// while environments created by the legacy voice API may have only
-	// NAME+ENDPOINT. Gate the base-endpoint path on the service's actual declared
+	// endpoint and deploy completion marker, and unified deploys also record
+	// VERSION. Gate the base-endpoint path on the service's actual declared
 	// kind (resolved via the shared agentkind lookup, so this agrees with the
 	// deploy path and next-step reader) rather than on the env-var shape: a hosted
 	// agent whose deploy partially failed (or whose vars were cleaned up) can also
@@ -2176,7 +2175,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Deploying voice agent")
 
-	request, err := agent_yaml.CreateVoiceAgentAPIRequestFlat(va)
+	request, err := agent_yaml.CreateVoiceAgentAPIRequest(va)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -2198,7 +2197,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	agentClient := agent_api.NewAgentClient(projectEndpoint, p.credential)
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
-	agentObject, deployOp, err := p.deployVoiceAgentUnified(
+	agentObject, deployOp, err := p.deployVoiceAgentRemote(
 		ctx, agentClient, request, azdEnv, progress,
 	)
 	if err != nil {
@@ -2256,7 +2255,7 @@ func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error 
 	return nil
 }
 
-func (p *AgentServiceTargetProvider) deployVoiceAgentUnified(
+func (p *AgentServiceTargetProvider) deployVoiceAgentRemote(
 	ctx context.Context,
 	agentClient *agent_api.AgentClient,
 	request *agent_api.CreateAgentRequest,
@@ -2264,7 +2263,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentUnified(
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentObject, string, error) {
 	overriddenHost := azdEnv[voiceOverriddenHostEnvKey]
-	remoteAgent, getErr := agentClient.GetVoiceAgentUnified(
+	remoteAgent, getErr := agentClient.GetVoiceAgent(
 		ctx, request.Name, agent_api.AgentEndpointAPIVersion, overriddenHost,
 	)
 	shouldUpdate, decisionErr := shouldUpdateVoiceAgent(remoteAgent, getErr)
@@ -2276,14 +2275,14 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentUnified(
 		updateRequest := &agent_api.UpdateAgentRequest{
 			CreateAgentVersionRequest: request.CreateAgentVersionRequest,
 		}
-		agentObject, err := agentClient.UpdateVoiceAgentUnified(
+		agentObject, err := agentClient.UpdateVoiceAgent(
 			ctx, request.Name, updateRequest, agent_api.AgentEndpointAPIVersion, overriddenHost,
 		)
 		return agentObject, exterrors.OpUpdateAgent, err
 	}
 
 	progress("Creating voice agent using unified API")
-	agentObject, err := agentClient.CreateVoiceAgentUnified(ctx, request, agent_api.AgentEndpointAPIVersion, overriddenHost)
+	agentObject, err := agentClient.CreateVoiceAgent(ctx, request, agent_api.AgentEndpointAPIVersion, overriddenHost)
 	return agentObject, exterrors.OpCreateAgent, err
 }
 

@@ -919,11 +919,11 @@ func TestDownloadAgentCode_ReturnsErrorOnNon200(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestCreateVoiceAgentUnified_PostsToAgentsWithPreviewHeader(t *testing.T) {
+func TestCreateVoiceAgent_PostsToAgentsWithPreviewHeader(t *testing.T) {
 	body := `{"object":"agent","id":"va-1","name":"my-voice","versions":{"latest":{}}}`
 	client, transport := newCaptureClient(http.StatusOK, body)
 
-	agent, err := client.CreateVoiceAgentUnified(
+	agent, err := client.CreateVoiceAgent(
 		t.Context(),
 		&CreateAgentRequest{Name: "my-voice"},
 		AgentEndpointAPIVersion,
@@ -940,11 +940,11 @@ func TestCreateVoiceAgentUnified_PostsToAgentsWithPreviewHeader(t *testing.T) {
 	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
 }
 
-func TestGetVoiceAgentUnified_GetsNamedAgentWithPreviewHeader(t *testing.T) {
+func TestGetVoiceAgent_GetsNamedAgentWithPreviewHeader(t *testing.T) {
 	body := `{"object":"agent","id":"va-1","name":"my-voice","versions":{"latest":{"version":"3"}}}`
 	client, transport := newCaptureClient(http.StatusOK, body)
 
-	agent, err := client.GetVoiceAgentUnified(
+	agent, err := client.GetVoiceAgent(
 		t.Context(),
 		"my-voice",
 		AgentEndpointAPIVersion,
@@ -963,11 +963,11 @@ func TestGetVoiceAgentUnified_GetsNamedAgentWithPreviewHeader(t *testing.T) {
 	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
 }
 
-func TestUpdateVoiceAgentUnified_PostsToNamedAgentWithPreviewHeader(t *testing.T) {
+func TestUpdateVoiceAgent_PostsToNamedAgentWithPreviewHeader(t *testing.T) {
 	body := `{"object":"agent","id":"va-1","name":"my-voice","versions":{"latest":{"version":"2"}}}`
 	client, transport := newCaptureClient(http.StatusOK, body)
 
-	agent, err := client.UpdateVoiceAgentUnified(
+	agent, err := client.UpdateVoiceAgent(
 		t.Context(),
 		"my-voice",
 		&UpdateAgentRequest{},

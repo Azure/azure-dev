@@ -619,13 +619,7 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 		log.Printf("[debug] foundry provider: no environment client; network ${VAR} uses process env only")
 		return out
 	}
-	curr, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || curr.GetEnvironment() == nil {
-		log.Printf("[debug] foundry provider: no current azd environment (%v); "+
-			"network ${VAR} uses process env only", err)
-		return out
-	}
-	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: curr.GetEnvironment().GetName()})
+	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: p.envName})
 	if err != nil {
 		log.Printf("[debug] foundry provider: GetValues failed (%s); network ${VAR} uses process env only", err)
 		return out

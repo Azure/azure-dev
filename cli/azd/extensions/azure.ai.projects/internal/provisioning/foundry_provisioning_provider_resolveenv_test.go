@@ -30,6 +30,7 @@ type resolveEnvStubEnvServer struct {
 	envName    string
 	currentErr error
 	get        map[string]string
+	getByEnv   map[string]map[string]string
 	getErr     map[string]error
 	set        map[string]string
 }
@@ -49,7 +50,24 @@ func (s *resolveEnvStubEnvServer) GetValue(
 	if err := s.getErr[req.Key]; err != nil {
 		return nil, err
 	}
+	if values, ok := s.getByEnv[req.EnvName]; ok {
+		return &azdext.KeyValueResponse{Value: values[req.Key]}, nil
+	}
 	return &azdext.KeyValueResponse{Value: s.get[req.Key]}, nil
+}
+
+func (s *resolveEnvStubEnvServer) GetValues(
+	_ context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	values := s.get
+	if envValues, ok := s.getByEnv[req.Name]; ok {
+		values = envValues
+	}
+	keyValues := make([]*azdext.KeyValue, 0, len(values))
+	for key, value := range values {
+		keyValues = append(keyValues, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: keyValues}, nil
 }
 
 func (s *resolveEnvStubEnvServer) SetValue(
@@ -166,6 +184,23 @@ func TestResolveEnv_UsesCommandEnvironment(t *testing.T) {
 
 	require.NoError(t, p.resolveEnv(t.Context()))
 	assert.Equal(t, "selected", p.envName)
+}
+
+func TestNetworkEnvMap_UsesResolvedEnvironment(t *testing.T) {
+	env := &resolveEnvStubEnvServer{
+		envName: "default",
+		getByEnv: map[string]map[string]string{
+			"default":  {"NETWORK_RESOURCE_ID": "from-default"},
+			"selected": {"NETWORK_RESOURCE_ID": "from-selected"},
+		},
+	}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	p := &FoundryProvisioningProvider{
+		azdClient: client,
+		envName:   "selected",
+	}
+
+	assert.Equal(t, "from-selected", p.networkEnvMap(t.Context())["NETWORK_RESOURCE_ID"])
 }
 
 func TestResolveEnv_UsesVirtualEnvFromPreviousLayer(t *testing.T) {

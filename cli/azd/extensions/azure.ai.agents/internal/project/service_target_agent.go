@@ -2214,10 +2214,18 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	baseEndpoint := buildVoiceWSProtocolURL(projectEndpoint, agentObject.Name)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	versionValue := agentObject.Versions.Latest.Version
+	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     endpointKey,
+		Value:   "",
+	}); setErr != nil {
+		return nil, fmt.Errorf("clearing voice agent environment variable %s: %w", endpointKey, setErr)
+	}
 	for _, envVar := range []struct{ key, value string }{
 		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
 		{versionKey, versionValue},
-		{fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey), baseEndpoint},
+		{endpointKey, baseEndpoint},
 	} {
 		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: p.env.Name,

@@ -115,30 +115,39 @@ func resolveActivityEnvironmentName(
 }
 
 func missingActivityEnvironmentError(cause error) error {
+	return missingEnvironmentError(
+		cause,
+		"no azd environment is selected for activity bot provisioning",
+		"Select the environment used by this provision command.",
+		"provision",
+	)
+}
+
+func missingEnvironmentError(cause error, message, description, command string) error {
 	return exterrors.MissingInputValidation(
 		exterrors.CodeEnvironmentNotFound,
-		"no azd environment is selected for activity bot provisioning",
+		message,
 		exterrors.RequiredInput{
 			Name:        "azd environment",
-			Description: "Select the environment used by this provision command.",
+			Description: description,
 			Sources: []exterrors.InputSource{
 				{
 					Kind:         exterrors.InputSourceFlag,
 					Name:         "-e/--environment",
 					ExampleValue: "dev",
-					Example:      "azd -e dev provision",
+					Example:      fmt.Sprintf("azd -e dev %s", command),
 				},
 				{
 					Kind:         exterrors.InputSourceEnvironment,
 					Name:         "AZD_ENVIRONMENT",
 					ExampleValue: "dev",
-					Example:      `$env:AZD_ENVIRONMENT = "dev"; azd provision`,
+					Example:      fmt.Sprintf(`$env:AZD_ENVIRONMENT = "dev"; azd %s`, command),
 				},
 				{
 					Kind:         exterrors.InputSourceConfig,
 					Name:         "azd env select <name>",
 					ExampleValue: "dev",
-					Example:      "azd env select dev; azd provision",
+					Example:      fmt.Sprintf("azd env select dev; azd %s", command),
 				},
 			},
 		},

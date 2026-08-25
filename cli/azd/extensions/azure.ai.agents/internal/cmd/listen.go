@@ -176,15 +176,6 @@ func postprovisionHandler(
 	return nil
 }
 
-// currentEnvName returns the name of the currently selected azd
-// environment, or empty string + error when no environment is
-// selected. Wraps Environment().GetCurrent so callers (notably
-// postprovisionHandler) can read the current env name without
-// duplicating the request shape.
-func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
-	return resolveEnvironmentName(ctx, azdClient, "")
-}
-
 func resolveEnvironmentName(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -254,8 +245,13 @@ func predeployHandler(
 ) error {
 	svc := args.Service
 	envName, err := resolveEnvironmentName(ctx, azdClient, environmentName)
-	if err != nil {
-		return fmt.Errorf("resolving environment for deploy: %w", err)
+	if err != nil || envName == "" {
+		return missingEnvironmentError(
+			err,
+			"no azd environment is selected for deploy",
+			"Select the environment used by this deploy command.",
+			"deploy",
+		)
 	}
 
 	// Warn (once) when multiple agent services resolve to the same Foundry agent

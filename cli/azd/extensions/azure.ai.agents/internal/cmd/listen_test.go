@@ -5,12 +5,14 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
@@ -205,6 +207,27 @@ func TestResolveEnvironmentName_PrefersExplicitEnvironment(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "dev", envName)
+}
+
+func TestPredeployHandler_MissingEnvironmentReturnsRemediation(t *testing.T) {
+	t.Parallel()
+
+	azdClient := newTestAzdClient(
+		t,
+		&testEnvironmentServiceServer{},
+		&testWorkflowServiceServer{},
+	)
+	args := &azdext.ServiceEventArgs{Service: &azdext.ServiceConfig{}}
+
+	err := predeployHandler(t.Context(), azdClient, "", args)
+
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeEnvironmentNotFound, local.Code)
+	assert.Contains(t, local.Suggestion, "-e/--environment")
+	assert.Contains(t, local.Suggestion, "AZD_ENVIRONMENT")
+	assert.Contains(t, local.Suggestion, "azd env select <name>")
+	assert.Contains(t, local.Suggestion, "azd -e dev deploy")
 }
 
 func TestIsHostedAgentServiceRejectsTraversal(t *testing.T) {

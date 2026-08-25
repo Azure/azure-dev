@@ -236,9 +236,8 @@ func (i *Initializer) confirmArchivedTemplate(ctx context.Context, templateURL s
 	)
 
 	if i.console.IsNoPromptMode() {
-		return fmt.Errorf(
-			"template repository %s is archived and requires confirmation; rerun without --no-prompt",
-			templateURL,
+		return errors.New(
+			"template repository is archived and requires confirmation; rerun without --no-prompt",
 		)
 	}
 

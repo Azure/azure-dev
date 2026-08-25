@@ -185,10 +185,14 @@ func TestInitializerConfirmArchivedTemplate(t *testing.T) {
 			statusChecker: &fakeRepositoryStatusChecker{status: &RepositoryStatus{Archived: true}},
 		}
 
-		err := initializer.confirmArchivedTemplate(t.Context(), "https://github.com/contoso/template")
+		err := initializer.confirmArchivedTemplate(
+			t.Context(),
+			"https://secret-token@github.com/contoso/template",
+		)
 
 		require.ErrorContains(t, err, "requires confirmation")
 		require.ErrorContains(t, err, "rerun without --no-prompt")
+		require.NotContains(t, err.Error(), "secret-token")
 	})
 
 	t.Run("MetadataFailureContinues", func(t *testing.T) {

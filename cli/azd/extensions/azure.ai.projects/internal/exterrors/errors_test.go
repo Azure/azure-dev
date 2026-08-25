@@ -4,6 +4,7 @@
 package exterrors
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -41,7 +42,7 @@ func TestServiceFromAzure_NestedInsufficientQuota(t *testing.T) {
 
 	result := ServiceFromAzure(err, OpArmDeploymentCreate)
 
-	serviceErr, ok := result.(*azdext.ServiceError)
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](result)
 	require.True(t, ok)
 	assert.Contains(t, serviceErr.Suggestion, "az cognitiveservices usage list --location <region>")
 	assert.Contains(t, serviceErr.Suggestion, "AZURE_AI_PROJECT_ID")
@@ -64,7 +65,7 @@ func TestServiceFromAzure_UnrelatedErrorHasNoSuggestion(t *testing.T) {
 
 	result := ServiceFromAzure(err, OpArmDeploymentCreate)
 
-	serviceErr, ok := result.(*azdext.ServiceError)
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](result)
 	require.True(t, ok)
 	assert.Empty(t, serviceErr.Suggestion)
 }

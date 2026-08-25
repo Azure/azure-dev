@@ -4,6 +4,7 @@
 package bicep
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -30,7 +31,7 @@ func TestAnnotateDeploymentErrorResources_FromTarget(t *testing.T) {
 	annotated := annotateDeploymentErrorLineForTest(err, resources)
 	require.NotNil(t, annotated)
 
-	deploymentErr, ok := annotated.(*azapi.AzureDeploymentError)
+	deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](annotated)
 	require.True(t, ok)
 	require.Len(t, deploymentErr.Details.Inner[0].Inner, 1)
 	require.Equal(
@@ -54,7 +55,7 @@ func TestAnnotateDeploymentErrorResources_FromMessage(t *testing.T) {
 	}}
 
 	annotated := annotateDeploymentErrorLineForTest(err, resources)
-	deploymentErr, ok := annotated.(*azapi.AzureDeploymentError)
+	deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](annotated)
 	require.True(t, ok)
 	require.Len(t, deploymentErr.Details.Inner[0].Inner, 1)
 	require.Equal(
@@ -82,7 +83,7 @@ func TestAnnotateDeploymentErrorResources_FromCompiledTemplate(t *testing.T) {
 	}`)
 
 	annotated := annotateDeploymentErrorResources(err, nil, template)
-	deploymentErr, ok := annotated.(*azapi.AzureDeploymentError)
+	deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](annotated)
 	require.True(t, ok)
 	require.Len(t, deploymentErr.Details.Inner[0].Inner, 1)
 	require.Equal(
@@ -106,7 +107,7 @@ func TestAnnotateDeploymentErrorResources_AmbiguousTargetFallsBack(t *testing.T)
 	}
 
 	annotated := annotateDeploymentErrorLineForTest(err, resources)
-	deploymentErr, ok := annotated.(*azapi.AzureDeploymentError)
+	deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](annotated)
 	require.True(t, ok)
 	require.Empty(t, deploymentErr.Details.Inner[0].Inner[0].ResourceType)
 }

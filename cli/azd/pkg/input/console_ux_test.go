@@ -214,6 +214,31 @@ func TestMultiSelectValues(t *testing.T) {
 	})
 }
 
+func TestValidateMultiSelectResponse(t *testing.T) {
+	tests := []struct {
+		name                string
+		response            []string
+		allowEmptySelection *bool
+		expectError         bool
+	}{
+		{name: "historical default allows empty"},
+		{name: "explicitly allows empty", allowEmptySelection: new(true)},
+		{name: "requires selection", allowEmptySelection: new(false), expectError: true},
+		{name: "accepts selection", response: []string{"alpha"}, allowEmptySelection: new(false)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateMultiSelectResponse(test.response, test.allowEmptySelection)
+			if test.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestNewPromptOptions(t *testing.T) {
 	buf := &bytes.Buffer{}
 	opts := newPromptOptions(buf, ConsoleOptions{
@@ -273,19 +298,34 @@ func TestNewConfirmOptions(t *testing.T) {
 
 func TestNewMultiSelectOptions(t *testing.T) {
 	buf := &bytes.Buffer{}
-	opts := newMultiSelectOptions(buf, ConsoleOptions{
-		Message:      "message",
-		Options:      []string{"alpha", "beta"},
-		DefaultValue: []string{"beta"},
-	})
+	tests := []struct {
+		name                string
+		allowEmptySelection *bool
+		expected            bool
+	}{
+		{name: "preserves historical default", expected: true},
+		{name: "allows empty selection", allowEmptySelection: new(true), expected: true},
+		{name: "requires selection", allowEmptySelection: new(false), expected: false},
+	}
 
-	require.Equal(t, buf, opts.Writer)
-	require.Equal(t, "message", opts.Message)
-	require.Len(t, opts.Choices, 2)
-	require.False(t, opts.Choices[0].Selected)
-	require.True(t, opts.Choices[1].Selected)
-	require.NotNil(t, opts.AllowEmptySelection)
-	require.True(t, *opts.AllowEmptySelection)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			opts := newMultiSelectOptions(buf, ConsoleOptions{
+				Message:             "message",
+				Options:             []string{"alpha", "beta"},
+				DefaultValue:        []string{"beta"},
+				AllowEmptySelection: test.allowEmptySelection,
+			})
+
+			require.Equal(t, buf, opts.Writer)
+			require.Equal(t, "message", opts.Message)
+			require.Len(t, opts.Choices, 2)
+			require.False(t, opts.Choices[0].Selected)
+			require.True(t, opts.Choices[1].Selected)
+			require.NotNil(t, opts.AllowEmptySelection)
+			require.Equal(t, test.expected, *opts.AllowEmptySelection)
+		})
+	}
 }
 
 func TestSelectResult(t *testing.T) {

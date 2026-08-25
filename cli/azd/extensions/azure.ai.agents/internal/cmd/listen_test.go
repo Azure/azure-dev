@@ -125,7 +125,7 @@ func TestPostdeployHandler_NonHostedAgent_NoOp(t *testing.T) {
 	}
 
 	// nil azdClient — the early return must fire before any RPC call.
-	if err := postdeployHandler(t.Context(), nil, args); err != nil {
+	if err := postdeployHandler(t.Context(), nil, "", args); err != nil {
 		t.Fatalf("expected no error for non-hosted agent service, got: %v", err)
 	}
 }
@@ -188,11 +188,23 @@ func TestPostdeployHandler_MissingTelemetryEnv_ReturnsNil(t *testing.T) {
 				Service: &azdext.ServiceConfig{Name: "echo", Host: AiAgentHost, RelativePath: "echo"},
 			}
 
-			if err := postdeployHandler(t.Context(), azdClient, args); err != nil {
+			if err := postdeployHandler(t.Context(), azdClient, "", args); err != nil {
 				t.Fatalf("expected nil (best-effort telemetry setup must not fail deploy), got: %v", err)
 			}
 		})
 	}
+}
+
+func TestResolveEnvironmentName_PrefersExplicitEnvironment(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	envName, err := resolveEnvironmentName(t.Context(), azdClient, " dev ")
+
+	require.NoError(t, err)
+	require.Equal(t, "dev", envName)
 }
 
 func TestIsHostedAgentServiceRejectsTraversal(t *testing.T) {

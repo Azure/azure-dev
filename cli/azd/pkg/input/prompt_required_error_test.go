@@ -119,6 +119,27 @@ func TestPromptRequiredError_ToString_UsesExecutableExamplesForAllSources(t *tes
 	require.Contains(t, output, "azd env select dev")
 }
 
+func TestPromptRequiredError_ToString_DoesNotSynthesizeFlagExample(t *testing.T) {
+	err := &PromptRequiredError{
+		Inputs: []RequiredInput{
+			{
+				Name: "subscription",
+				Sources: []InputSource{
+					{
+						Kind:         InputSourceFlag,
+						Name:         "--subscription",
+						ExampleValue: "<subscription-id>",
+					},
+				},
+			},
+		},
+	}
+
+	output := err.ToString("")
+	require.NotContains(t, output, "azd --subscription <subscription-id>")
+	require.NotContains(t, output, "Example:")
+}
+
 func TestPromptRequiredError_ToString_UsesDescription(t *testing.T) {
 	err := &PromptRequiredError{
 		Message: DefaultPromptRequiredMessage,

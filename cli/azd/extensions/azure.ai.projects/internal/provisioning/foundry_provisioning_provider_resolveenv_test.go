@@ -287,11 +287,6 @@ func TestResolveEnvironmentNameErrorsAreActionable(t *testing.T) {
 					assert.Contains(t, local.Suggestion, "azd env select dev")
 					assert.NotEmpty(t, local.Suggestion)
 
-					var promptErr *input.PromptRequiredError
-					require.ErrorAs(t, err, &promptErr)
-					require.Len(t, promptErr.Inputs, 1)
-					assert.Equal(t, "azd environment name", promptErr.Inputs[0].Name)
-
 					assert.Zero(t, prompt.subscriptionN)
 					assert.Zero(t, prompt.locationN)
 				})

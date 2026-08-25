@@ -15,7 +15,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -376,7 +375,7 @@ func TestFromPromptPreservesMissingInputMetadata(t *testing.T) {
 
 	missingInput, ok := errors.AsType[*MissingInputError](result)
 	require.True(t, ok)
-	assert.Equal(t, "Select an environment", missingInput.PromptError.PromptMessage)
+	assert.Equal(t, "Select an environment", missingInput.PromptMessage)
 	require.Len(t, missingInput.Inputs, 1)
 	assert.Equal(t, "azd environment", missingInput.Inputs[0].Name)
 	require.Len(t, missingInput.Inputs[0].Sources, 3)
@@ -392,9 +391,6 @@ func TestFromPromptPreservesMissingInputMetadata(t *testing.T) {
 	assert.Equal(t, hostSuggestion, missingInput.LocalError.Suggestion)
 	assert.Contains(t, result.Error(), "environment selection is required")
 
-	promptRequired, ok := errors.AsType[*input.PromptRequiredError](result)
-	require.True(t, ok)
-	assert.Equal(t, "azd environment", promptRequired.Inputs[0].Name)
 }
 
 func appendPromptRequiredDetail(data []byte, message, promptMessage string, inputs ...[]byte) []byte {

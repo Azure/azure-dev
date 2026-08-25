@@ -1,0 +1,104 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+option csharp_namespace = "Microsoft.Azd";
+
+// ErrorOrigin indicates where an error originated from.
+// This helps with telemetry categorization and error handling strategies.
+enum ErrorOrigin {
+  ERROR_ORIGIN_UNSPECIFIED = 0;  // Default/unknown origin
+  ERROR_ORIGIN_LOCAL       = 1;  // Local errors: config, filesystem, auth state, validation, etc.
+  ERROR_ORIGIN_SERVICE     = 2;  // HTTP/gRPC upstream service errors
+  ERROR_ORIGIN_TOOL        = 3;  // Subprocess, plugin, or external tool errors
+}
+
+// ServiceErrorDetail contains structured error information from an HTTP/gRPC service.
+// Used when ErrorOrigin is ERROR_ORIGIN_SERVICE.
+message ServiceErrorDetail {
+  string error_code   = 1;  // Error code from the service (e.g., "Conflict", "NotFound", "RateLimitExceeded")
+  int32 status_code   = 2;  // HTTP status code (e.g., 409, 404, 500)
+  string service_name = 3;  // Service host/name for telemetry (e.g., "ai.azure.com", "management.azure.com")
+}
+
+// LocalErrorDetail contains structured error information for local/validation failures.
+// Used when ErrorOrigin is ERROR_ORIGIN_LOCAL.
+message LocalErrorDetail {
+  string code = 1;      // Extension-defined error code (e.g., "invalid_config")
+  string category = 2;  // Error category (e.g., "user", "validation", "dependency", "internal")
+}
+
+// ErrorLink contains a reference link with a URL and optional title.
+message ErrorLink {
+  string url = 1;    // Link target
+  string title = 2;  // Display text (falls back to the URL when empty)
+}
+
+// InputSourceKind identifies how a required input can be supplied.
+enum InputSourceKind {
+  INPUT_SOURCE_KIND_UNSPECIFIED = 0;
+  INPUT_SOURCE_KIND_FLAG = 1;
+  INPUT_SOURCE_KIND_ENVIRONMENT = 2;
+  INPUT_SOURCE_KIND_CONFIG = 3;
+}
+
+// InputSource describes one way a required input can be supplied.
+message InputSource {
+  InputSourceKind kind = 1;
+  string name = 2;
+  string example_value = 3;
+  string example = 4;  // Complete executable command demonstrating this source.
+}
+
+// RequiredInput describes a missing input and the supported sources that can provide it.
+message RequiredInput {
+  string name = 1;
+  string description = 2;
+  repeated InputSource sources = 3;
+}
+
+// PromptRequiredErrorDetail preserves structured missing-input metadata across gRPC boundaries.
+message PromptRequiredErrorDetail {
+  repeated RequiredInput inputs = 1;
+  string prompt_message = 2;
+  string message = 3;
+}
+
+// ActionableErrorDetail carries user-facing remediation metadata in gRPC status details.
+// It is used for host-originated errors so clients can preserve suggestions and links
+// without parsing status message text.
+//
+// Direction: host -> extension only. Extensions returning errors to the host should use
+// LocalError / ServiceError (transported via ExtensionError) instead.
+//
+// The user-facing error message lives in google.rpc.Status.message; this detail does not
+// duplicate it.
+message ActionableErrorDetail {
+  string suggestion = 1;         // Optional user-facing suggestion for resolving the error
+  repeated ErrorLink links = 2;  // Optional reference links rendered alongside the suggestion
+  PromptRequiredErrorDetail prompt_required_error = 3;  // Optional structured prompt-required metadata
+}
+
+// ExtensionError is a unified error message that can represent errors from different sources.
+// It provides structured error information for telemetry and error handling.
+//
+// Direction: extension -> host only. Counterpart of host's ActionableErrorDetail, which carries
+// host-originated remediation metadata in the opposite direction.
+message ExtensionError {
+  reserved 1, 3;            // Reserved for future use; do not reuse.
+  string message = 2;       // Human-readable error message
+  ErrorOrigin origin = 4;   // Where the error originated from
+  string suggestion = 5;    // Optional user-facing suggestion for resolving the error
+  repeated ErrorLink links = 6;  // Optional reference links rendered alongside the suggestion
+  PromptRequiredErrorDetail prompt_required_error = 7;  // Optional structured prompt-required metadata
+
+  // Source-specific structured details. Only one should be set based on origin.
+  oneof source {
+    ServiceErrorDetail service_error = 10;
+    LocalErrorDetail local_error = 11;
+    // ToolErrorDetail tool_error = 12;
+  }
+}

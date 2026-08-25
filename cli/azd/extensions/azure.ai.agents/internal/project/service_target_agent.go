@@ -228,6 +228,7 @@ type AgentServiceTargetProvider struct {
 	projectServices       map[string]*azdext.ServiceConfig
 	dependencyEnabled     dependencyEnabled
 	dependencyEnv         map[string]string
+	environmentName       string
 }
 
 const (
@@ -242,9 +243,10 @@ var containerImageRefRe = regexp.MustCompile(
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
-func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
+func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient, environmentName string) azdext.ServiceTargetProvider {
 	return &AgentServiceTargetProvider{
-		azdClient: azdClient,
+		azdClient:       azdClient,
+		environmentName: strings.TrimSpace(environmentName),
 	}
 }
 
@@ -465,6 +467,18 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 // enough for non-deploy entrypoints (Endpoints, registerAgentEnvironmentVariables).
 func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
 	if p.env != nil {
+		return nil
+	}
+	if p.environmentName != "" {
+		envResp, err := p.azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{Name: p.environmentName})
+		if err != nil {
+			return exterrors.Dependency(
+				exterrors.CodeEnvironmentNotFound,
+				fmt.Sprintf("failed to get environment %q: %s", p.environmentName, err),
+				fmt.Sprintf("run 'azd env new %s' to create the environment", p.environmentName),
+			)
+		}
+		p.env = envResp.Environment
 		return nil
 	}
 	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, nil)

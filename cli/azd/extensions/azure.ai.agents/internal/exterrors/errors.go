@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -55,13 +54,13 @@ type RequiredInput struct {
 	Sources     []InputSource
 }
 
-// MissingInputError preserves structured required-input metadata while remaining
-// compatible with the extension SDK's LocalError transport.
+// MissingInputError renders required-input metadata through the extension SDK's
+// currently supported LocalError transport.
 type MissingInputError struct {
-	LocalError  *azdext.LocalError
-	PromptError *input.PromptRequiredError
-	Inputs      []RequiredInput
-	cause       error
+	LocalError    *azdext.LocalError
+	Inputs        []RequiredInput
+	PromptMessage string
+	cause         error
 }
 
 // Error implements the error interface.
@@ -69,9 +68,9 @@ func (e *MissingInputError) Error() string {
 	return e.LocalError.Error()
 }
 
-// Unwrap exposes both typed missing-input metadata and the LocalError transport.
+// Unwrap exposes the LocalError transport and optional cause.
 func (e *MissingInputError) Unwrap() []error {
-	errs := []error{e.PromptError, e.LocalError}
+	errs := []error{e.LocalError}
 	if e.cause != nil {
 		errs = append(errs, e.cause)
 	}
@@ -131,10 +130,6 @@ func newMissingInputError(
 			Category:   category,
 			Suggestion: renderMissingInputSuggestion(inputs),
 		},
-		PromptError: &input.PromptRequiredError{
-			Message: message,
-			Inputs:  promptRequiredInputs(inputs),
-		},
 		Inputs: inputs,
 	}
 }
@@ -181,39 +176,6 @@ func renderMissingInputSuggestion(inputs []RequiredInput) string {
 	}
 
 	return b.String()
-}
-
-func promptRequiredInputs(inputs []RequiredInput) []input.RequiredInput {
-	required := make([]input.RequiredInput, len(inputs))
-	for i, missing := range inputs {
-		sources := make([]input.InputSource, len(missing.Sources))
-		for j, source := range missing.Sources {
-			sources[j] = promptInputSource(source)
-		}
-		required[i] = input.RequiredInput{
-			Name:        missing.Name,
-			Description: missing.Description,
-			Sources:     sources,
-		}
-	}
-	return required
-}
-
-func promptInputSource(source InputSource) input.InputSource {
-	result := input.InputSource{
-		Kind:         source.Kind,
-		Name:         source.Name,
-		ExampleValue: source.ExampleValue,
-	}
-
-	// InputSource.Example is additive in the next azd SDK. Reflection keeps this
-	// extension buildable on v1.31 while populating it after a merge-safe upgrade.
-	exampleField := reflect.ValueOf(&result).Elem().FieldByName("Example")
-	if exampleField.IsValid() && exampleField.CanSet() && exampleField.Kind() == reflect.String {
-		exampleField.SetString(source.Example)
-	}
-
-	return result
 }
 
 // Compatibility returns a compatibility [azdext.LocalError] for version/feature mismatches.
@@ -450,7 +412,7 @@ func FromPrompt(err error, contextMsg string) error {
 				fmt.Sprintf("%s: %s", contextMsg, message),
 				metadata.Inputs...,
 			)
-			missingInput.PromptError.PromptMessage = metadata.PromptMessage
+			missingInput.PromptMessage = metadata.PromptMessage
 			if actionable.GetSuggestion() != "" {
 				missingInput.LocalError.Suggestion = actionable.GetSuggestion()
 			}

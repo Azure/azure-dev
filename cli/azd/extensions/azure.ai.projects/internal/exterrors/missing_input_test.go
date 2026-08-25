@@ -46,15 +46,6 @@ func TestMissingEnvironmentName(t *testing.T) {
 	assert.Contains(t, local.Suggestion, `$env:AZD_ENVIRONMENT = "dev"; azd provision`)
 	assert.Contains(t, local.Suggestion, "azd env select dev")
 
-	var prompt *input.PromptRequiredError
-	require.ErrorAs(t, err, &prompt)
-	require.Len(t, prompt.Inputs, 1)
-	assert.Equal(t, "azd environment name", prompt.Inputs[0].Name)
-	require.Len(t, prompt.Inputs[0].Sources, 3)
-	assert.Equal(t, input.InputSourceFlag, prompt.Inputs[0].Sources[0].Kind)
-	assert.Equal(t, input.InputSourceEnvironment, prompt.Inputs[0].Sources[1].Kind)
-	assert.Equal(t, input.InputSourceConfig, prompt.Inputs[0].Sources[2].Kind)
-
 	wrapped := azdext.WrapError(err)
 	require.NotNil(t, wrapped.GetLocalError())
 	assert.Equal(t, CodeEnvironmentNotFound, wrapped.GetLocalError().GetCode())

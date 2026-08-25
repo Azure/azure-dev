@@ -5,7 +5,6 @@ package exterrors
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -27,13 +26,12 @@ type MissingInput struct {
 	Sources     []MissingInputSource
 }
 
-// MissingInputError carries missing-input metadata while remaining compatible
-// with the extension SDK version currently pinned by this module.
+// MissingInputError renders missing-input metadata through the extension SDK's
+// currently supported LocalError transport.
 type MissingInputError struct {
-	LocalError  *azdext.LocalError
-	PromptError *input.PromptRequiredError
-	Inputs      []MissingInput
-	cause       error
+	LocalError *azdext.LocalError
+	Inputs     []MissingInput
+	cause      error
 }
 
 // NewMissingInputError creates a structured local error with actionable
@@ -50,10 +48,6 @@ func NewMissingInputError(
 			Code:       code,
 			Category:   category,
 			Suggestion: missingInputSuggestion(inputs),
-		},
-		PromptError: &input.PromptRequiredError{
-			Message: message,
-			Inputs:  promptRequiredInputs(inputs),
 		},
 		Inputs: inputs,
 	}
@@ -98,10 +92,9 @@ func (e *MissingInputError) Error() string {
 	return e.LocalError.Error()
 }
 
-// Unwrap exposes both the future structured prompt metadata and the currently
-// supported LocalError transport.
+// Unwrap exposes the LocalError transport and optional cause.
 func (e *MissingInputError) Unwrap() []error {
-	errs := []error{e.PromptError, e.LocalError}
+	errs := []error{e.LocalError}
 	if e.cause != nil {
 		errs = append(errs, e.cause)
 	}
@@ -146,40 +139,6 @@ func missingInputSuggestion(inputs []MissingInput) string {
 	}
 
 	return strings.TrimSpace(builder.String())
-}
-
-func promptRequiredInputs(inputs []MissingInput) []input.RequiredInput {
-	required := make([]input.RequiredInput, len(inputs))
-	for i, missing := range inputs {
-		sources := make([]input.InputSource, len(missing.Sources))
-		for j, source := range missing.Sources {
-			sources[j] = promptInputSource(source)
-		}
-		required[i] = input.RequiredInput{
-			Name:        missing.Name,
-			Description: missing.Description,
-			Sources:     sources,
-		}
-	}
-	return required
-}
-
-func promptInputSource(source MissingInputSource) input.InputSource {
-	result := input.InputSource{
-		Kind:         source.Kind,
-		Name:         source.Name,
-		ExampleValue: source.ExampleValue,
-	}
-
-	// InputSource.Example is additive in the next azd SDK. Reflection keeps this
-	// extension buildable on v1.31.0 while populating the field after a merge-safe
-	// SDK upgrade becomes available.
-	exampleField := reflect.ValueOf(&result).Elem().FieldByName("Example")
-	if exampleField.IsValid() && exampleField.CanSet() && exampleField.Kind() == reflect.String {
-		exampleField.SetString(source.Example)
-	}
-
-	return result
 }
 
 func inputSourceLabel(kind input.InputSourceKind) string {

@@ -199,8 +199,6 @@ func (e *PromptRequiredError) examples() []string {
 			switch {
 			case source.Kind == InputSourceEnvironment && source.ExampleValue != "":
 				examples = append(examples, fmt.Sprintf("azd env set %s %s", source.Name, source.ExampleValue))
-			case source.Kind == InputSourceFlag && source.ExampleValue != "":
-				examples = append(examples, fmt.Sprintf("azd %s %s", source.Name, source.ExampleValue))
 			}
 		}
 	}

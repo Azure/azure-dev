@@ -327,11 +327,6 @@ func TestProjectLifecycleHandlerMissingEnvironmentIsActionable(t *testing.T) {
 			assert.Contains(t, local.Suggestion, `$env:AZD_ENVIRONMENT = "dev"; azd up`)
 			assert.Contains(t, local.Suggestion, "azd env select dev")
 
-			var prompt *input.PromptRequiredError
-			require.ErrorAs(t, err, &prompt)
-			require.Len(t, prompt.Inputs, 1)
-			assert.Equal(t, "azd environment name", prompt.Inputs[0].Name)
-
 			wrapped := azdext.WrapError(err)
 			require.NotNil(t, wrapped.GetLocalError())
 			assert.Equal(t, exterrors.CodeEnvironmentNotFound, wrapped.GetLocalError().GetCode())

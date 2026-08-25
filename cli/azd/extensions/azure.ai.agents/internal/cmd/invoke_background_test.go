@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -18,6 +20,80 @@ func TestInvokeCommandBackgroundFlagRegistered(t *testing.T) {
 	flag := newInvokeCommand(nil).Flags().Lookup("background")
 	require.NotNil(t, flag)
 	assert.Equal(t, "false", flag.DefValue)
+}
+
+type orderingResponseStore struct {
+	saved   bool
+	saveErr error
+}
+
+func (s *orderingResponseStore) Get(context.Context, string) (*savedBackgroundResponse, error) {
+	return nil, nil
+}
+
+func (s *orderingResponseStore) Save(context.Context, string, savedBackgroundResponse) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
+	s.saved = true
+	return nil
+}
+
+func (s *orderingResponseStore) Delete(context.Context, string) error {
+	return nil
+}
+
+type afterSaveWriter struct {
+	store  *orderingResponseStore
+	output strings.Builder
+}
+
+func (w *afterSaveWriter) Write(p []byte) (int, error) {
+	if !w.store.saved {
+		return 0, errors.New("response ID printed before state was saved")
+	}
+	return w.output.Write(p)
+}
+
+func TestPersistAndPrintBackgroundProgressSavesBeforePrinting(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{}
+	writer := &afterSaveWriter{store: store}
+	printedID := ""
+	err := persistAndPrintBackgroundProgress(
+		t.Context(),
+		store,
+		"agent-key",
+		savedBackgroundResponse{ResponseID: "resp_123", Status: "in_progress"},
+		&printedID,
+		writer,
+	)
+
+	require.NoError(t, err)
+	assert.True(t, store.saved)
+	assert.Equal(t, "resp_123", printedID)
+	assert.Equal(t, "Response:     resp_123\n", writer.output.String())
+}
+
+func TestPersistAndPrintBackgroundProgressDoesNotPrintWhenSaveFails(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{saveErr: errors.New("write failed")}
+	writer := &afterSaveWriter{store: store}
+	printedID := ""
+	err := persistAndPrintBackgroundProgress(
+		t.Context(),
+		store,
+		"agent-key",
+		savedBackgroundResponse{ResponseID: "resp_123"},
+		&printedID,
+		writer,
+	)
+
+	require.EqualError(t, err, "write failed")
+	assert.Empty(t, writer.output.String())
+	assert.Empty(t, printedID)
 }
 
 func TestInvokeCommandBackgroundValidation(t *testing.T) {

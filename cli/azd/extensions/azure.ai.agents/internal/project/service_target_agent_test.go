@@ -43,18 +43,18 @@ func TestMissingAzureDependencyErrors(t *testing.T) {
 	}{
 		{
 			name:      "subscription ID",
-			err:       missingAzureSubscriptionIDError,
+			err:       func() error { return missingAzureSubscriptionIDError("dev") },
 			inputName: "Azure subscription ID",
 			key:       "AZURE_SUBSCRIPTION_ID",
-			example:   "azd env set AZURE_SUBSCRIPTION_ID 11111111-1111-1111-1111-111111111111",
+			example:   `azd -e "dev" env set AZURE_SUBSCRIPTION_ID 11111111-1111-1111-1111-111111111111`,
 			errorCode: exterrors.CodeMissingAzureSubscription,
 		},
 		{
 			name:      "location",
-			err:       missingAzureLocationError,
+			err:       func() error { return missingAzureLocationError("dev") },
 			inputName: "Azure location",
 			key:       "AZURE_LOCATION",
-			example:   "azd env set AZURE_LOCATION eastus2",
+			example:   `azd -e "dev" env set AZURE_LOCATION eastus2`,
 			errorCode: exterrors.CodeMissingAzureLocation,
 		},
 		{
@@ -62,11 +62,12 @@ func TestMissingAzureDependencyErrors(t *testing.T) {
 			err: func() error {
 				return missingFoundryProjectEndpointError(
 					"FOUNDRY_PROJECT_ENDPOINT is required for agent deployment",
+					"dev",
 				)
 			},
 			inputName: "Foundry project endpoint",
 			key:       "FOUNDRY_PROJECT_ENDPOINT",
-			example: "azd env set FOUNDRY_PROJECT_ENDPOINT " +
+			example: `azd -e "dev" env set FOUNDRY_PROJECT_ENDPOINT ` +
 				"https://contoso.services.ai.azure.com/api/projects/my-project",
 			errorCode: exterrors.CodeMissingAiProjectEndpoint,
 		},

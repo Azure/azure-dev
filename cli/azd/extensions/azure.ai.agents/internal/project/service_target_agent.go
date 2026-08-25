@@ -98,7 +98,7 @@ func endpointHost(endpoint string) string {
 	return u.Hostname()
 }
 
-func missingAzureSubscriptionIDError() error {
+func missingAzureSubscriptionIDError(environmentName string) error {
 	const example = "11111111-1111-1111-1111-111111111111"
 	return missingAzdEnvironmentValueError(
 		exterrors.CodeMissingAzureSubscription,
@@ -106,10 +106,11 @@ func missingAzureSubscriptionIDError() error {
 		"AZURE_SUBSCRIPTION_ID",
 		example,
 		"AZURE_SUBSCRIPTION_ID is required for agent deployment",
+		environmentName,
 	)
 }
 
-func missingAzureLocationError() error {
+func missingAzureLocationError(environmentName string) error {
 	const example = "eastus2"
 	return missingAzdEnvironmentValueError(
 		exterrors.CodeMissingAzureLocation,
@@ -117,10 +118,11 @@ func missingAzureLocationError() error {
 		"AZURE_LOCATION",
 		example,
 		"AZURE_LOCATION is required for hosted agent code deployment",
+		environmentName,
 	)
 }
 
-func missingFoundryProjectEndpointError(message string) error {
+func missingFoundryProjectEndpointError(message, environmentName string) error {
 	const example = "https://contoso.services.ai.azure.com/api/projects/my-project"
 	return missingAzdEnvironmentValueError(
 		exterrors.CodeMissingAiProjectEndpoint,
@@ -128,10 +130,11 @@ func missingFoundryProjectEndpointError(message string) error {
 		"FOUNDRY_PROJECT_ENDPOINT",
 		example,
 		message,
+		environmentName,
 	)
 }
 
-func missingAzdEnvironmentValueError(code, inputName, key, exampleValue, message string) error {
+func missingAzdEnvironmentValueError(code, inputName, key, exampleValue, message, environmentName string) error {
 	return exterrors.MissingInputDependency(
 		code,
 		message,
@@ -143,7 +146,7 @@ func missingAzdEnvironmentValueError(code, inputName, key, exampleValue, message
 					Kind:         exterrors.InputSourceEnvironment,
 					Name:         key,
 					ExampleValue: exampleValue,
-					Example:      fmt.Sprintf("azd env set %s %s", key, exampleValue),
+					Example:      fmt.Sprintf("azd -e %q env set %s %s", environmentName, key, exampleValue),
 				},
 			},
 		},
@@ -353,7 +356,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 
 	subscriptionId := resp.Value
 	if subscriptionId == "" {
-		return missingAzureSubscriptionIDError()
+		return missingAzureSubscriptionIDError(p.env.Name)
 	}
 
 	// Get the tenant ID
@@ -589,6 +592,7 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, missingFoundryProjectEndpointError(
 			"FOUNDRY_PROJECT_ENDPOINT is required to resolve deployed agent endpoints",
+			p.env.Name,
 		)
 	}
 
@@ -1683,6 +1687,7 @@ func (p *AgentServiceTargetProvider) provisionMemoryStores(
 	if projectEndpoint == "" {
 		return missingFoundryProjectEndpointError(
 			"cannot provision memory stores: the Foundry project endpoint is not set",
+			p.env.Name,
 		)
 	}
 
@@ -1965,6 +1970,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, missingFoundryProjectEndpointError(
 			"FOUNDRY_PROJECT_ENDPOINT is required for agent deployment",
+			p.env.Name,
 		)
 	}
 
@@ -2274,6 +2280,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	if projectEndpoint == "" {
 		return nil, missingFoundryProjectEndpointError(
 			"cannot deploy voice agent: FOUNDRY_PROJECT_ENDPOINT is not set",
+			p.env.Name,
 		)
 	}
 
@@ -2703,7 +2710,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	// Validate that AZURE_LOCATION is set (region validation is handled server-side;
 	// code deploy is supported in all hosted-agent regions).
 	if strings.TrimSpace(azdEnv["AZURE_LOCATION"]) == "" {
-		return nil, missingAzureLocationError()
+		return nil, missingAzureLocationError(p.env.Name)
 	}
 
 	// Find the ZIP artifact from Package phase

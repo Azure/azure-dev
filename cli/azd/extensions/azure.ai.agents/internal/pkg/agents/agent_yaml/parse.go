@@ -487,6 +487,10 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 			errors = append(errors, fmt.Sprintf("template.output_modalities[%d] must not be blank", i))
 		}
 	}
+	if agent.ParallelToolCalls != nil {
+		errors = append(errors,
+			"template.parallel_tool_calls is not currently supported by the prompt voice runtime; remove it from azure.yaml")
+	}
 
 	if agent.Audio == nil {
 		return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, "")...)

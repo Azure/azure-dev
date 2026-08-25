@@ -26,8 +26,6 @@ applyTo:
   report flag conflicts with `exterrors.Validation(exterrors.CodeConflictingArguments, message,
   suggestion)`. Otherwise, follow the extension's established validation-error pattern.
 
-  _Source: [#9366](https://github.com/Azure/azure-dev/pull/9366), [#9404](https://github.com/Azure/azure-dev/pull/9404), [#9407](https://github.com/Azure/azure-dev/pull/9407), [#9422](https://github.com/Azure/azure-dev/pull/9422)_
-
 - **Redact credentials from URLs before printing to terminal, logs, or error messages.** URLs may
   carry credentials in the userinfo component (`user:pass@host`) or in the query string (SAS
   tokens, `sig=` parameters). Clear `URL.User` and drop `RawQuery` and `Fragment` before passing a
@@ -38,17 +36,9 @@ applyTo:
   addresses, and any URL stored in artifacts or uploaded CI outputs. Add a non-disclosure test that
   feeds a credential-bearing URL and asserts no sensitive portion appears in the output.
 
-  _Source: [#9361](https://github.com/Azure/azure-dev/pull/9361), [#9415](https://github.com/Azure/azure-dev/pull/9415), [#9417](https://github.com/Azure/azure-dev/pull/9417)_
-
 - **Keep output on the injected writer when a command handler or helper receives one**; do not bypass
   it with direct writes to `os.Stdout` or `os.Stderr`, including in debug and diagnostic paths.
   Extensions that do not expose a writer must follow their local `AGENTS.md` output conventions.
   See "Keep terminal output on the injected writer" in `cli/azd/AGENTS.md`.
 
-  _Source: [#9291](https://github.com/Azure/azure-dev/pull/9291), [#9366](https://github.com/Azure/azure-dev/pull/9366)_
-
-- **When behavior narrows, narrow the help text and doc comments with it.** A comment that still
-  says a function "runs eject" after it was restricted to projects that already declare a Foundry
-  service is a recurring review finding. See "Help text consistency" in `cli/azd/AGENTS.md`.
-
-  _Source: [#9329](https://github.com/Azure/azure-dev/pull/9329), [#9407](https://github.com/Azure/azure-dev/pull/9407), [#9422](https://github.com/Azure/azure-dev/pull/9422)_
+- When behavior narrows, narrow the help text and doc comments with it.

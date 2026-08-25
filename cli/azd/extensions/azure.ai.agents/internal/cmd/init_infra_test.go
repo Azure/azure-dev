@@ -1246,6 +1246,11 @@ services:
 	deployments, err := os.ReadFile(filepath.Join(dir, "infra", "model-deployments.tf")) //nolint:gosec
 	require.NoError(t, err)
 	assert.NotContains(t, string(deployments), `resource "azapi_resource"`)
+	connections, err := os.ReadFile(filepath.Join(dir, "infra", "connections.tf")) //nolint:gosec
+	require.NoError(t, err)
+	assert.Contains(t, string(connections), `resource "azapi_resource_action" "connection"`)
+	assert.Contains(t, string(connections), `method      = "PUT"`)
+	assert.NotContains(t, string(connections), `resource "azapi_resource" "connection"`)
 
 	tfvars, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec
 	require.NoError(t, err)
@@ -1333,9 +1338,10 @@ services:
 	contents := string(data)
 	firstResource := fmt.Sprintf("model_deployment_%x", sha256.Sum256([]byte("first")))[:33]
 	secondResource := fmt.Sprintf("model_deployment_%x", sha256.Sum256([]byte("second")))[:33]
-	assert.Contains(t, contents, fmt.Sprintf(`resource "azapi_resource" %q`, firstResource))
-	assert.Contains(t, contents, fmt.Sprintf(`resource "azapi_resource" %q`, secondResource))
-	assert.Contains(t, contents, fmt.Sprintf("depends_on = [azapi_resource.%s]", firstResource))
+	assert.Contains(t, contents, fmt.Sprintf(`resource "azapi_resource_action" %q`, firstResource))
+	assert.Contains(t, contents, fmt.Sprintf(`resource "azapi_resource_action" %q`, secondResource))
+	assert.Contains(t, contents, `method      = "PUT"`)
+	assert.Contains(t, contents, fmt.Sprintf("depends_on = [azapi_resource_action.%s]", firstResource))
 }
 
 func TestEjectInfra_ExistingProjectTerraformRejectsProvisionedCreateMode(t *testing.T) {

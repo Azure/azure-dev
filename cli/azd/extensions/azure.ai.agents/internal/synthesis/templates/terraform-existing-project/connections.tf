@@ -1,9 +1,9 @@
-resource "azapi_resource" "connection" {
+resource "azapi_resource_action" "connection" {
   for_each = { for c in var.connections : c.name => c }
 
-  type      = "Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview"
-  name      = each.value.name
-  parent_id = local.normalized_project_id
+  type        = "Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview"
+  resource_id = "${local.normalized_project_id}/connections/${each.value.name}"
+  method      = "PUT"
 
   body = {
     properties = merge(

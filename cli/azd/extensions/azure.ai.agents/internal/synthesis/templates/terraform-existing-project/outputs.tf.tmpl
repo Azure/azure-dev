@@ -27,7 +27,7 @@ output "FOUNDRY_PROJECT_ENDPOINT" {
 }
 
 output "AZURE_AI_PROJECT_CONNECTION_NAMES" {
-  value = join(",", [for c in azapi_resource.connection : c.name])
+  value = join(",", [for c in var.connections : c.name])
 }
 
 output "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT" {

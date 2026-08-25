@@ -868,16 +868,16 @@ func writeExistingProjectTerraformDeployments(
 		if i > 0 {
 			contents.WriteString("\n")
 		}
-		fmt.Fprintf(&contents, "resource \"azapi_resource\" %q {\n", resourceNames[i])
+		fmt.Fprintf(&contents, "resource \"azapi_resource_action\" %q {\n", resourceNames[i])
 		fmt.Fprintf(&contents, "  type      = \"Microsoft.CognitiveServices/accounts/deployments@2025-06-01\"\n")
-		fmt.Fprintf(&contents, "  name      = var.deployments[%d].name\n", i)
-		contents.WriteString("  parent_id = local.foundry_account_id\n\n")
+		fmt.Fprintf(&contents, "  resource_id = \"${local.foundry_account_id}/deployments/${var.deployments[%d].name}\"\n", i)
+		contents.WriteString("  method      = \"PUT\"\n\n")
 		contents.WriteString("  body = {\n")
 		fmt.Fprintf(&contents, "    properties = { model = var.deployments[%d].model }\n", i)
 		fmt.Fprintf(&contents, "    sku        = var.deployments[%d].sku\n", i)
 		contents.WriteString("  }\n")
 		if i > 0 {
-			fmt.Fprintf(&contents, "\n  depends_on = [azapi_resource.%s]\n", resourceNames[i-1])
+			fmt.Fprintf(&contents, "\n  depends_on = [azapi_resource_action.%s]\n", resourceNames[i-1])
 		}
 		contents.WriteString("}\n")
 	}

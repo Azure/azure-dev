@@ -688,6 +688,14 @@ func configureAcrConnectionWithRegistryLoader(
 	if selectedConnection == nil && persistedEndpoint != "" {
 		selectedConnection = findValidatedAcrConnectionByEndpoint(validatedConnections, persistedEndpoint)
 	}
+	if selectedConnection == nil && persistedResourceId != "" {
+		for i := range validatedConnections {
+			if strings.EqualFold(validatedConnections[i].resourceId, persistedResourceId) {
+				selectedConnection = &validatedConnections[i]
+				break
+			}
+		}
+	}
 
 	if selectedConnection == nil && acrConnection == "" {
 		loginServer := normalizeLoginServer(persistedEndpoint)

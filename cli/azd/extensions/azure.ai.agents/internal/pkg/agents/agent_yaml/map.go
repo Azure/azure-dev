@@ -550,9 +550,10 @@ var knownOpenAIVoices = map[string]struct{}{
 
 // azureNeuralVoicePattern matches the locale prefix that every Azure Neural
 // voice name carries, e.g. "en-US-Ava:DragonHDLatestNeural",
-// "ja-JP-NanamiNeural", or Azure voices with script locales. The optional script tag
-// keeps valid BCP-47 locales from being classified as OpenAI voices.
-var azureNeuralVoicePattern = regexp.MustCompile(`^([a-z]{2,3}(?:-[A-Z][a-z]{3})?-[A-Z]{2,3})-`)
+// "ja-JP-NanamiNeural", or Azure voices with script/numeric-region locales.
+// The optional script tag and numeric region support keep valid BCP-47 locales
+// from being classified as OpenAI voices.
+var azureNeuralVoicePattern = regexp.MustCompile(`^([a-z]{2,3}(?:-[A-Z][a-z]{3})?-(?:[A-Z]{2,3}|[0-9]{3}))-`)
 
 // isOpenAIVoice reports whether a voice name denotes an OpenAI realtime voice
 // (e.g. "alloy") vs an Azure Neural voice (e.g. "en-US-Ava:DragonHDLatestNeural").

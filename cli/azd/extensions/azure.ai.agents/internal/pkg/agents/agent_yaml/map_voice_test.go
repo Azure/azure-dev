@@ -223,6 +223,43 @@ func TestCreateVoiceAgentAPIRequest_UsesAzureVoiceLocale(t *testing.T) {
 	}
 }
 
+func TestCreateVoiceAgentAPIRequest_UsesAzureVoiceLocaleVariants(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		voice      string
+		wantLocale string
+	}{
+		{name: "script locale", voice: "az-Latn-AZ-BanuNeural", wantLocale: "az-Latn-AZ"},
+		{name: "numeric region", voice: "es-419-AnaNeural", wantLocale: "es-419"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			agent := VoiceAgent{
+				AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-agent"},
+				Model:           &Model{Id: "gpt-realtime"},
+				Voice:           &tt.voice,
+			}
+
+			req, err := CreateVoiceAgentAPIRequest(agent)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			def := req.Definition.(agent_api.VoiceAgentDefinition)
+			if def.Audio.Output.Voice != tt.voice {
+				t.Errorf("Voice = %q, want %q", def.Audio.Output.Voice, tt.voice)
+			}
+			if def.Audio.Output.VoiceType != "azure-standard" {
+				t.Errorf("VoiceType = %q, want azure-standard", def.Audio.Output.VoiceType)
+			}
+			if def.Audio.Output.VoiceLocale != tt.wantLocale {
+				t.Errorf("VoiceLocale = %q, want %q", def.Audio.Output.VoiceLocale, tt.wantLocale)
+			}
+		})
+	}
+}
+
 func TestCreateVoiceAgentAPIRequest_MarshalServiceWireShape(t *testing.T) {
 	t.Parallel()
 	voice := "en-US-Ava:DragonHDLatestNeural"

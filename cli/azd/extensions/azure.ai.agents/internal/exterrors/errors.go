@@ -54,13 +54,11 @@ type RequiredInput struct {
 	Sources     []InputSource
 }
 
-// MissingInputError renders required-input metadata through the extension SDK's
+// MissingInputError renders required-input guidance through the extension SDK's
 // currently supported LocalError transport.
 type MissingInputError struct {
-	LocalError    *azdext.LocalError
-	Inputs        []RequiredInput
-	PromptMessage string
-	cause         error
+	LocalError *azdext.LocalError
+	cause      error
 }
 
 // Error implements the error interface.
@@ -130,7 +128,6 @@ func newMissingInputError(
 			Category:   category,
 			Suggestion: renderMissingInputSuggestion(inputs),
 		},
-		Inputs: inputs,
 	}
 }
 
@@ -380,8 +377,8 @@ func FromAiService(err error, fallbackCode string) error {
 }
 
 // FromPrompt converts a gRPC error from an azd host Prompt call into a structured error.
-// It preserves actionable missing-input metadata emitted by newer hosts while remaining
-// compatible with the extension's currently pinned SDK.
+// It renders actionable missing-input metadata emitted by newer hosts through the
+// LocalError transport supported by the extension's currently pinned SDK.
 func FromPrompt(err error, contextMsg string) error {
 	if err == nil {
 		return nil
@@ -412,7 +409,6 @@ func FromPrompt(err error, contextMsg string) error {
 				fmt.Sprintf("%s: %s", contextMsg, message),
 				metadata.Inputs...,
 			)
-			missingInput.PromptMessage = metadata.PromptMessage
 			if actionable.GetSuggestion() != "" {
 				missingInput.LocalError.Suggestion = actionable.GetSuggestion()
 			}
@@ -439,9 +435,8 @@ func FromPrompt(err error, contextMsg string) error {
 // ---------------------------------------------------------------------------
 
 type promptRequiredMetadata struct {
-	Inputs        []RequiredInput
-	PromptMessage string
-	Message       string
+	Inputs  []RequiredInput
+	Message string
 }
 
 func promptRequiredMetadataFromActionable(
@@ -498,7 +493,7 @@ func parsePromptRequiredMetadata(data []byte) promptRequiredMetadata {
 			metadata.Inputs = append(metadata.Inputs, parseRequiredInput(value))
 			data = data[valueLength:]
 		case number == 2 && wireType == protowire.BytesType:
-			metadata.PromptMessage, data = consumeStringField(data)
+			_, data = consumeStringField(data)
 		case number == 3 && wireType == protowire.BytesType:
 			metadata.Message, data = consumeStringField(data)
 		default:

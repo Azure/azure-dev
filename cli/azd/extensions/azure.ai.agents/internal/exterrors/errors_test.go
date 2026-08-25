@@ -348,7 +348,7 @@ func TestFromPrompt(t *testing.T) {
 	}
 }
 
-func TestFromPromptPreservesMissingInputMetadata(t *testing.T) {
+func TestFromPromptPreservesMissingInputSuggestion(t *testing.T) {
 	hostSuggestion := "Choose -e/--environment, set AZD_ENVIRONMENT, or run azd env select <name>.\n" +
 		"Example: azd -e dev provision"
 	actionable := &azdext.ActionableErrorDetail{Suggestion: hostSuggestion}
@@ -373,22 +373,9 @@ func TestFromPromptPreservesMissingInputMetadata(t *testing.T) {
 
 	result := FromPrompt(st.Err(), "failed to select an environment")
 
-	missingInput, ok := errors.AsType[*MissingInputError](result)
+	local, ok := errors.AsType[*azdext.LocalError](result)
 	require.True(t, ok)
-	assert.Equal(t, "Select an environment", missingInput.PromptMessage)
-	require.Len(t, missingInput.Inputs, 1)
-	assert.Equal(t, "azd environment", missingInput.Inputs[0].Name)
-	require.Len(t, missingInput.Inputs[0].Sources, 3)
-	assert.Equal(t, InputSourceFlag, missingInput.Inputs[0].Sources[0].Kind)
-	assert.Equal(t, "-e/--environment", missingInput.Inputs[0].Sources[0].Name)
-	assert.Equal(t, "azd -e dev provision", missingInput.Inputs[0].Sources[0].Example)
-	assert.Equal(t, InputSourceEnvironment, missingInput.Inputs[0].Sources[1].Kind)
-	assert.Equal(t, "AZD_ENVIRONMENT", missingInput.Inputs[0].Sources[1].Name)
-	assert.Equal(t, `$env:AZD_ENVIRONMENT = "dev"; azd provision`, missingInput.Inputs[0].Sources[1].Example)
-	assert.Equal(t, InputSourceConfig, missingInput.Inputs[0].Sources[2].Kind)
-	assert.Equal(t, "azd env select", missingInput.Inputs[0].Sources[2].Name)
-	assert.Equal(t, "azd env select dev; azd provision", missingInput.Inputs[0].Sources[2].Example)
-	assert.Equal(t, hostSuggestion, missingInput.LocalError.Suggestion)
+	assert.Equal(t, hostSuggestion, local.Suggestion)
 	assert.Contains(t, result.Error(), "environment selection is required")
 
 }

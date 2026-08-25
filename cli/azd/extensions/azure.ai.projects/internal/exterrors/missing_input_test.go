@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,21 +17,6 @@ func TestMissingEnvironmentName(t *testing.T) {
 	err := MissingEnvironmentName(CodeEnvironmentNotFound, "provision", cause)
 	assert.Equal(t, "azd environment name is required", err.Error())
 	assert.ErrorIs(t, err, cause)
-
-	var missing *MissingInputError
-	require.ErrorAs(t, err, &missing)
-	require.Len(t, missing.Inputs, 1)
-	assert.Equal(t, "azd environment name", missing.Inputs[0].Name)
-	require.Len(t, missing.Inputs[0].Sources, 3)
-	assert.Equal(t, input.InputSourceFlag, missing.Inputs[0].Sources[0].Kind)
-	assert.Equal(t, "--environment <name> (or -e <name>)", missing.Inputs[0].Sources[0].Name)
-	assert.Equal(t, "azd -e dev provision", missing.Inputs[0].Sources[0].Example)
-	assert.Equal(t, input.InputSourceEnvironment, missing.Inputs[0].Sources[1].Kind)
-	assert.Equal(t, "AZD_ENVIRONMENT", missing.Inputs[0].Sources[1].Name)
-	assert.Equal(t, `$env:AZD_ENVIRONMENT = "dev"; azd provision`, missing.Inputs[0].Sources[1].Example)
-	assert.Equal(t, input.InputSourceConfig, missing.Inputs[0].Sources[2].Kind)
-	assert.Equal(t, "current environment selection", missing.Inputs[0].Sources[2].Name)
-	assert.Equal(t, "azd env select dev", missing.Inputs[0].Sources[2].Example)
 
 	var local *azdext.LocalError
 	require.ErrorAs(t, err, &local)

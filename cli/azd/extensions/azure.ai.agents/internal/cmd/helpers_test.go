@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
 
@@ -330,24 +329,27 @@ func TestMissingDeployedAgentStateError(t *testing.T) {
 			t.Parallel()
 
 			err := missingDeployedAgentStateError("my-agent", tt.state)
-			missingInput, ok := errors.AsType[*exterrors.MissingInputError](err)
+			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
-			require.Len(t, missingInput.Inputs, 1)
-			assert.Equal(t, tt.inputName, missingInput.Inputs[0].Name)
-			require.Len(t, missingInput.Inputs[0].Sources, 1)
-			assert.Equal(t, tt.source, missingInput.Inputs[0].Sources[0].Name)
-			assert.Contains(t, missingInput.LocalError.Suggestion, "AGENT_MY_AGENT_NAME")
-			assert.Contains(t, missingInput.LocalError.Suggestion, "AGENT_MY_AGENT_VERSION")
-			assert.Contains(t, missingInput.LocalError.Suggestion, "azd deploy my-agent")
-			assert.NotContains(t, missingInput.LocalError.Suggestion, "agent name as a positional argument")
+			assert.Contains(t, local.Suggestion, tt.inputName)
+			assert.Contains(t, local.Suggestion, tt.source)
+			assert.Contains(t, local.Suggestion, "AGENT_MY_AGENT_NAME")
+			assert.Contains(t, local.Suggestion, "AGENT_MY_AGENT_VERSION")
+			assert.Contains(t, local.Suggestion, `azd deploy "my-agent"`)
+			assert.NotContains(t, local.Suggestion, "agent name as a positional argument")
 		})
 	}
 
 	codeDownloadErr := missingCodeDownloadAgentStateError("my-agent")
-	codeDownloadInput, ok := errors.AsType[*exterrors.MissingInputError](codeDownloadErr)
+	codeDownloadInput, ok := errors.AsType[*azdext.LocalError](codeDownloadErr)
 	require.True(t, ok)
-	assert.Contains(t, codeDownloadInput.LocalError.Suggestion,
+	assert.Contains(t, codeDownloadInput.Suggestion,
 		"positional argument for code download is the azure.yaml service name, not a Foundry agent name")
+
+	metacharErr := missingDeployedAgentStateError("api;echo unsafe", "name")
+	metacharLocal, ok := errors.AsType[*azdext.LocalError](metacharErr)
+	require.True(t, ok)
+	assert.Contains(t, metacharLocal.Suggestion, `azd deploy "api;echo unsafe"`)
 }
 
 func TestProtocolFromAgentYaml(t *testing.T) {

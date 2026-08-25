@@ -26,16 +26,15 @@ type MissingInput struct {
 	Sources     []MissingInputSource
 }
 
-// MissingInputError renders missing-input metadata through the extension SDK's
+// MissingInputError renders missing-input guidance through the extension SDK's
 // currently supported LocalError transport.
 type MissingInputError struct {
 	LocalError *azdext.LocalError
-	Inputs     []MissingInput
 	cause      error
 }
 
 // NewMissingInputError creates a structured local error with actionable
-// missing-input metadata and executable examples.
+// missing-input guidance and executable examples.
 func NewMissingInputError(
 	code string,
 	category azdext.LocalErrorCategory,
@@ -49,7 +48,6 @@ func NewMissingInputError(
 			Category:   category,
 			Suggestion: missingInputSuggestion(inputs),
 		},
-		Inputs: inputs,
 	}
 }
 

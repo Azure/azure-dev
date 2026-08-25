@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
@@ -62,16 +61,10 @@ func TestMissingEvalGenerateInputError(t *testing.T) {
 	assert.Nil(t, cmd.Flags().Lookup("config"))
 
 	err := missingEvalGenerateInputError()
-	missingInput, ok := errors.AsType[*exterrors.MissingInputError](err)
+	local, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
-	require.Len(t, missingInput.Inputs, 1)
-	assert.Equal(t, "evaluation generation input", missingInput.Inputs[0].Name)
-	require.Len(t, missingInput.Inputs[0].Sources, 3)
-	assert.Equal(t, "--gen-instruction", missingInput.Inputs[0].Sources[0].Name)
-	assert.Equal(t, "--gen-instruction-file", missingInput.Inputs[0].Sources[1].Name)
-	assert.Equal(t, "--dataset with one or more --evaluator flags", missingInput.Inputs[0].Sources[2].Name)
 
-	suggestion := missingInput.LocalError.Suggestion
+	suggestion := local.Suggestion
 	assert.NotContains(t, suggestion, "--config")
 	assert.NotContains(t, suggestion, "--evaluators")
 	assert.Contains(t, suggestion,

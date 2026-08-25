@@ -15,7 +15,6 @@ import (
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -266,18 +265,6 @@ func TestResolveEnvironmentNameErrorsAreActionable(t *testing.T) {
 					require.Error(t, err)
 					assert.Equal(t, "azd environment name is required", err.Error())
 
-					var missing *exterrors.MissingInputError
-					require.ErrorAs(t, err, &missing)
-					require.Len(t, missing.Inputs, 1)
-					assert.Equal(t, "azd environment name", missing.Inputs[0].Name)
-					require.Len(t, missing.Inputs[0].Sources, 3)
-					assert.Equal(t, input.InputSourceFlag, missing.Inputs[0].Sources[0].Kind)
-					assert.Equal(t, "--environment <name> (or -e <name>)", missing.Inputs[0].Sources[0].Name)
-					assert.Equal(t, input.InputSourceEnvironment, missing.Inputs[0].Sources[1].Kind)
-					assert.Equal(t, "AZD_ENVIRONMENT", missing.Inputs[0].Sources[1].Name)
-					assert.Equal(t, input.InputSourceConfig, missing.Inputs[0].Sources[2].Kind)
-					assert.Equal(t, "current environment selection", missing.Inputs[0].Sources[2].Name)
-
 					var local *azdext.LocalError
 					require.ErrorAs(t, err, &local)
 					assert.Equal(t, exterrors.CodeEnvironmentNotFound, local.Code)
@@ -313,7 +300,8 @@ func TestResolveEnv_NoPromptSubscriptionReturnsActionableError(t *testing.T) {
 	require.ErrorAs(t, err, &local)
 	assert.Equal(t, exterrors.CodeMissingAzureSubscription, local.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
-	assert.Contains(t, local.Suggestion, "azd env set "+envKeySubscriptionID+" <subscription-id>")
+	assert.Contains(t, local.Suggestion,
+		"azd env set "+envKeySubscriptionID+" 11111111-1111-1111-1111-111111111111")
 	assert.Empty(t, env.set, "nothing should be persisted when the prompt fails")
 }
 
@@ -338,7 +326,7 @@ func TestResolveEnv_NoPromptLocationReturnsActionableError(t *testing.T) {
 	require.ErrorAs(t, err, &local)
 	assert.Equal(t, exterrors.CodeMissingAzureLocation, local.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
-	assert.Contains(t, local.Suggestion, "azd env set "+envKeyLocation+" <region>")
+	assert.Contains(t, local.Suggestion, "azd env set "+envKeyLocation+" eastus2")
 }
 
 func TestResolveEnv_PromptFailuresIncludeExactEnvSetCommands(t *testing.T) {
@@ -357,7 +345,7 @@ func TestResolveEnv_PromptFailuresIncludeExactEnvSetCommands(t *testing.T) {
 			},
 			wantCode: exterrors.CodeMissingAzureSubscription,
 			wantCommand: "azd env set " + envKeySubscriptionID +
-				" <subscription-id>",
+				" 11111111-1111-1111-1111-111111111111",
 		},
 		{
 			name: "location",
@@ -368,7 +356,7 @@ func TestResolveEnv_PromptFailuresIncludeExactEnvSetCommands(t *testing.T) {
 				locationErr: status.Error(codes.Internal, "location prompt failed"),
 			},
 			wantCode:    exterrors.CodeMissingAzureLocation,
-			wantCommand: "azd env set " + envKeyLocation + " <region>",
+			wantCommand: "azd env set " + envKeyLocation + " eastus2",
 		},
 	}
 

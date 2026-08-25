@@ -77,16 +77,13 @@ func TestMissingAzureDependencyErrors(t *testing.T) {
 			t.Parallel()
 
 			err := tt.err()
-			missingInput, ok := errors.AsType[*exterrors.MissingInputError](err)
+			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
-			require.Equal(t, azdext.LocalErrorCategoryDependency, missingInput.LocalError.Category)
-			require.Equal(t, tt.errorCode, missingInput.LocalError.Code)
-			require.Len(t, missingInput.Inputs, 1)
-			require.Equal(t, tt.inputName, missingInput.Inputs[0].Name)
-			require.Len(t, missingInput.Inputs[0].Sources, 1)
-			require.Equal(t, exterrors.InputSourceEnvironment, missingInput.Inputs[0].Sources[0].Kind)
-			require.Equal(t, tt.key, missingInput.Inputs[0].Sources[0].Name)
-			require.Contains(t, missingInput.LocalError.Suggestion, tt.example)
+			require.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
+			require.Equal(t, tt.errorCode, local.Code)
+			require.Contains(t, local.Suggestion, tt.inputName)
+			require.Contains(t, local.Suggestion, tt.key)
+			require.Contains(t, local.Suggestion, tt.example)
 		})
 	}
 }

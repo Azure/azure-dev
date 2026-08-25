@@ -893,14 +893,14 @@ func (p *FoundryProvisioningProvider) promptSubscription(ctx context.Context) er
 			return exterrors.Dependency(
 				exterrors.CodeMissingAzureSubscription,
 				fmt.Sprintf("%s is required but not set in azd environment %q", envKeySubscriptionID, p.envName),
-				fmt.Sprintf("run `azd env set %s <subscription-id>`, or run interactively to pick one",
+				fmt.Sprintf("run `azd env set %s 11111111-1111-1111-1111-111111111111`, or run interactively to pick one",
 					envKeySubscriptionID),
 			)
 		}
 		return exterrors.Dependency(
 			exterrors.CodeMissingAzureSubscription,
 			fmt.Sprintf("failed to select an Azure subscription: %s", err),
-			fmt.Sprintf("retry interactively, or run `azd env set %s <subscription-id>`",
+			fmt.Sprintf("retry interactively, or run `azd env set %s 11111111-1111-1111-1111-111111111111`",
 				envKeySubscriptionID),
 		)
 	}
@@ -910,7 +910,8 @@ func (p *FoundryProvisioningProvider) promptSubscription(ctx context.Context) er
 		return exterrors.Dependency(
 			exterrors.CodeMissingAzureSubscription,
 			"subscription selection returned an empty subscription id",
-			fmt.Sprintf("retry, or run `azd env set %s <subscription-id>`", envKeySubscriptionID),
+			fmt.Sprintf("retry, or run `azd env set %s 11111111-1111-1111-1111-111111111111`",
+				envKeySubscriptionID),
 		)
 	}
 	p.subID = subID
@@ -936,13 +937,13 @@ func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error 
 			return exterrors.Dependency(
 				exterrors.CodeMissingAzureLocation,
 				fmt.Sprintf("%s is required but not set in azd environment %q", envKeyLocation, p.envName),
-				fmt.Sprintf("run `azd env set %s <region>`, or run interactively to pick one", envKeyLocation),
+				fmt.Sprintf("run `azd env set %s eastus2`, or run interactively to pick one", envKeyLocation),
 			)
 		}
 		return exterrors.Dependency(
 			exterrors.CodeMissingAzureLocation,
 			fmt.Sprintf("failed to select an Azure location: %s", err),
-			fmt.Sprintf("retry interactively, or run `azd env set %s <region>`", envKeyLocation),
+			fmt.Sprintf("retry interactively, or run `azd env set %s eastus2`", envKeyLocation),
 		)
 	}
 
@@ -951,7 +952,7 @@ func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error 
 		return exterrors.Dependency(
 			exterrors.CodeMissingAzureLocation,
 			"location selection returned an empty location name",
-			fmt.Sprintf("retry, or run `azd env set %s <region>`", envKeyLocation),
+			fmt.Sprintf("retry, or run `azd env set %s eastus2`", envKeyLocation),
 		)
 	}
 	p.location = location

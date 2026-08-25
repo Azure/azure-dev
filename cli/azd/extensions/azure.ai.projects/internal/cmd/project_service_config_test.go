@@ -16,7 +16,6 @@ import (
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -306,18 +305,6 @@ func TestProjectLifecycleHandlerMissingEnvironmentIsActionable(t *testing.T) {
 			)
 			require.Error(t, err)
 			assert.Equal(t, "azd environment name is required", err.Error())
-
-			var missing *exterrors.MissingInputError
-			require.ErrorAs(t, err, &missing)
-			require.Len(t, missing.Inputs, 1)
-			assert.Equal(t, "azd environment name", missing.Inputs[0].Name)
-			require.Len(t, missing.Inputs[0].Sources, 3)
-			assert.Equal(t, input.InputSourceFlag, missing.Inputs[0].Sources[0].Kind)
-			assert.Equal(t, "--environment <name> (or -e <name>)", missing.Inputs[0].Sources[0].Name)
-			assert.Equal(t, input.InputSourceEnvironment, missing.Inputs[0].Sources[1].Kind)
-			assert.Equal(t, "AZD_ENVIRONMENT", missing.Inputs[0].Sources[1].Name)
-			assert.Equal(t, input.InputSourceConfig, missing.Inputs[0].Sources[2].Kind)
-			assert.Equal(t, "current environment selection", missing.Inputs[0].Sources[2].Name)
 
 			var local *azdext.LocalError
 			require.ErrorAs(t, err, &local)

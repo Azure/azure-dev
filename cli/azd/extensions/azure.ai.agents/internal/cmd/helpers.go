@@ -1082,10 +1082,7 @@ func missingDeployedAgentStateErrorWithDescription(serviceName, state, descripti
 		inputName = "deployed agent version"
 		expectedKey = versionKey
 	}
-	deployTarget := serviceName
-	if strings.ContainsAny(serviceName, " \t") {
-		deployTarget = fmt.Sprintf("%q", serviceName)
-	}
+	deployTarget := fmt.Sprintf("%q", serviceName)
 
 	return exterrors.MissingInputDependency(
 		exterrors.CodeAgentNotDeployed,

@@ -153,6 +153,7 @@ message SelectOptions {
   int32 display_count = 6;
   optional bool display_numbers = 7;
   optional bool enable_filtering = 8;
+  PromptRequiredErrorDetail prompt_required_error = 9;
 }
 
 message MultiSelectOptions {

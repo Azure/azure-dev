@@ -22,8 +22,9 @@ applyTo:
   it — for example, `--inspector-port` with `--no-client`, or any agent-creation flag during a
   reuse flow, or init-only flags during a standalone-eject run — return a clear error that names the
   conflicting inputs. Automation scripts that pass explicit flags and receive a success exit code
-  must be able to trust that those flags were honored. Use `exterrors.CodeConflictingArguments` for
-  flag/flag conflicts and `exterrors.Validation` for semantic violations.
+  must be able to trust that those flags were honored. In extensions that provide `internal/exterrors`,
+  report flag conflicts with `exterrors.Validation(exterrors.CodeConflictingArguments, message,
+  suggestion)`. Otherwise, follow the extension's established validation-error pattern.
 
   _Source: [#9366](https://github.com/Azure/azure-dev/pull/9366), [#9404](https://github.com/Azure/azure-dev/pull/9404), [#9407](https://github.com/Azure/azure-dev/pull/9407), [#9422](https://github.com/Azure/azure-dev/pull/9422)_
 
@@ -39,9 +40,10 @@ applyTo:
 
   _Source: [#9361](https://github.com/Azure/azure-dev/pull/9361), [#9415](https://github.com/Azure/azure-dev/pull/9415), [#9417](https://github.com/Azure/azure-dev/pull/9417)_
 
-- **Route every user-visible message through the caller's `io.Writer`**; never write directly to
-  `os.Stdout` or `os.Stderr` inside extension command handlers or their helpers, including debug
-  and diagnostic paths. See "Keep terminal output on the injected writer" in `cli/azd/AGENTS.md`.
+- **Keep output on the injected writer when a command handler or helper receives one**; do not bypass
+  it with direct writes to `os.Stdout` or `os.Stderr`, including in debug and diagnostic paths.
+  Extensions that do not expose a writer must follow their local `AGENTS.md` output conventions.
+  See "Keep terminal output on the injected writer" in `cli/azd/AGENTS.md`.
 
   _Source: [#9291](https://github.com/Azure/azure-dev/pull/9291), [#9366](https://github.com/Azure/azure-dev/pull/9366)_
 

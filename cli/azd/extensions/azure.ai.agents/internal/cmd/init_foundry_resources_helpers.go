@@ -727,6 +727,29 @@ func configureAcrConnectionWithRegistryLoader(
 			); err != nil {
 				return err
 			}
+			assigned := false
+			if len(projectPrincipalIDs) > 0 && projectPrincipalIDs[0] != "" {
+				assigned, err = hasAcrPullAssignment(ctx, credential, resourceId, projectPrincipalIDs[0])
+				if err != nil {
+					return fmt.Errorf("check existing AcrPull assignment: %w", err)
+				}
+			}
+			mode := "reuse-connect"
+			previousConnection := validatedAcrConnection{
+				connection: azure.Connection{Name: persistedConnection},
+				resourceId: resourceId,
+			}
+			if shouldPreserveCreatedAcrMode(previous, previousConnection) {
+				mode = "create"
+			}
+			if err := setEnvValue(
+				ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", fmt.Sprint(assigned),
+			); err != nil {
+				return err
+			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", mode); err != nil {
+				return err
+			}
 			if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
 			}
@@ -756,6 +779,12 @@ func configureAcrConnectionWithRegistryLoader(
 			}
 			if err := updatePendingACRSignal(ctx, azdClient, envName, false); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
+			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "create"); err != nil {
+				return err
+			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", "false"); err != nil {
+				return err
 			}
 			return nil
 		}

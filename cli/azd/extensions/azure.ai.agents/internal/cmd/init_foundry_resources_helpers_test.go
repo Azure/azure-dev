@@ -1000,11 +1000,34 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 			initial: map[string]string{
 				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "manual.azurecr.io",
 				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "stale-id",
+				"AZD_FOUNDRY_ACR_MODE":                 "already-connected",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
 			},
 			wantValues: map[string]string{
 				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
 				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "manual.azurecr.io",
 				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-manual",
+				"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "false",
+			},
+		},
+		{
+			name: "persisted owned registry preserves create mode after connection disappears",
+			registries: map[string]string{
+				"valid.azurecr.io": resourceId,
+			},
+			initial: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZD_FOUNDRY_RESOURCE_GROUP_ID":        "/subscriptions/sub/resourceGroups/rg",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "false",
 			},
 		},
 		{
@@ -1020,6 +1043,26 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
 				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "manual.azurecr.io",
 				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-manual",
+			},
+		},
+		{
+			name:       "no prompt create clears stale mode and pull assignment",
+			noPrompt:   true,
+			registries: map[string]string{},
+			initial: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "missing-conn",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "missing.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "missing-id",
+				"AZD_FOUNDRY_ACR_MODE":                 "already-connected",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "",
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "false",
+				"AI_AGENT_PENDING_PROVISION":           "acr",
 			},
 		},
 		{

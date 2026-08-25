@@ -101,6 +101,25 @@ func TestEvalContextFlagsOptions(t *testing.T) {
 	assert.False(t, options.requireAgent)
 }
 
+func TestResolveEvalAgentService_RejectsUnknownExplicitService(t *testing.T) {
+	t.Parallel()
+
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"known": {Name: "known", Host: AiAgentHost, RelativePath: "."},
+		},
+	}}
+	azdClient := newHelpersTestAzdClient(t, projectServer, &helpersPromptServer{})
+
+	_, err := resolveEvalAgentService(t.Context(), azdClient, evalContextOptions{
+		agent:    "typo",
+		noPrompt: true,
+	})
+
+	require.ErrorContains(t, err, "no azure.ai.agent service named 'typo' found in azure.yaml")
+}
+
 // ---------------------------------------------------------------------------
 // GenerationJob methods
 // ---------------------------------------------------------------------------

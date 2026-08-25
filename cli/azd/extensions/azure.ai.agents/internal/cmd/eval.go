@@ -194,8 +194,12 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 
 	var svc *azdext.ServiceConfig
 	var info *AgentServiceInfo
-	svc, _, err = resolveAgentService(ctx, azdClient, options.agent, options.noPrompt)
-	if err == nil {
+	svc, err = resolveEvalAgentService(ctx, azdClient, options)
+	if err != nil {
+		azdClient.Close()
+		return nil, err
+	}
+	if svc != nil {
 		// Resolve deployed agent name/version from azd environment.
 		info = &AgentServiceInfo{ServiceName: svc.Name}
 		serviceKey := toServiceKey(svc.Name)
@@ -205,9 +209,6 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 		if v := getEnvValue(fmt.Sprintf("AGENT_%s_VERSION", serviceKey)); v != "" {
 			info.Version = v
 		}
-	} else if options.agent == "" && options.requireAgent {
-		azdClient.Close()
-		return nil, evalAgentContextError(err)
 	}
 
 	fmt.Println(output.WithGrayFormat("  Resolving Foundry project endpoint..."))
@@ -328,6 +329,18 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 		projectEndpointSource: projectEndpointSource,
 		envName:               envName,
 	}, nil
+}
+
+func resolveEvalAgentService(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	options evalContextOptions,
+) (*azdext.ServiceConfig, error) {
+	svc, _, err := resolveAgentService(ctx, azdClient, options.agent, options.noPrompt)
+	if err != nil && (options.agent != "" || options.requireAgent) {
+		return nil, evalAgentContextError(err)
+	}
+	return svc, nil
 }
 
 // resolveEvalContextWithoutProject prompts the user for essential inputs when

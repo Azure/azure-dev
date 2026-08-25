@@ -288,7 +288,7 @@ seconds).
 
 Details:
 
-- `idleTimeoutSeconds` must be between **300 and 3600** seconds (inclusive).
+- `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
 - In the deprecated on-disk `agent.yaml` shape the keys are snake_case

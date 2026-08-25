@@ -26,7 +26,13 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 		wantRewrite string // expected Endpoint on success; empty to skip
 	}{
 		{
-			name:     "empty endpoint, no cert preserves backward compat",
+			name:     "empty endpoint and key disables external auth",
+			endpoint: "",
+			key:      "",
+			cert:     "",
+		},
+		{
+			name:     "empty endpoint with key preserves backward compat",
 			endpoint: "",
 			key:      "k",
 			cert:     "",
@@ -36,6 +42,13 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 			endpoint: "https://127.0.0.1:1234",
 			key:      "k",
 			cert:     "",
+		},
+		{
+			name:       "https scheme requires a key",
+			endpoint:   "https://127.0.0.1:1234",
+			key:        "",
+			cert:       "",
+			wantErrSub: "AZD_AUTH_KEY is required",
 		},
 		{
 			name:       "http with cert is rejected because cert requires https",
@@ -49,6 +62,13 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 			endpoint: "http://127.0.0.1:1234",
 			key:      "k",
 			cert:     "",
+		},
+		{
+			name:       "http scheme requires a key",
+			endpoint:   "http://127.0.0.1:1234",
+			key:        "",
+			cert:       "",
+			wantErrSub: "AZD_AUTH_KEY is required",
 		},
 		{
 			name:       "unix scheme rejects cert",
@@ -72,9 +92,16 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 			wantErrSub: "AZD_AUTH_KEY is required",
 		},
 		{
+			name:       "npipe scheme requires a key",
+			endpoint:   "npipe:azd-auth-x",
+			key:        "",
+			cert:       "",
+			wantErrSub: "AZD_AUTH_KEY is required",
+		},
+		{
 			name:       "unknown scheme is refused with a list of supported schemes",
 			endpoint:   "ftp://nope",
-			key:        "k",
+			key:        "",
 			cert:       "",
 			wantErrSub: "supported schemes: https, unix, npipe",
 		},

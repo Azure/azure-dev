@@ -161,9 +161,9 @@ func verifyPipeSecurity(pipePath string, handle windows.Handle) error {
 		return err
 	}
 
-	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
+	for i := range dacl.AceCount {
 		var ace *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, i, &ace); err != nil {
+		if err := windows.GetAce(dacl, uint32(i), &ace); err != nil {
 			return fmt.Errorf("reading ACE %d: %w", i, err)
 		}
 		// For ACCESS_ALLOWED_ACE_TYPE and its callback variant, the ACE

@@ -23,7 +23,10 @@ import (
 // listener is closed automatically.
 func listenUnixSocket(t *testing.T) (string, net.Listener) {
 	t.Helper()
-	dir := t.TempDir()
+	// Deliberately avoid t.TempDir: its long path can exceed macOS Unix socket path limits.
+	dir, err := os.MkdirTemp("/tmp", "azd-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(dir)) })
 	require.NoError(t, os.Chmod(dir, 0o700))
 	sock := filepath.Join(dir, "azd.sock")
 	l, err := net.Listen("unix", sock)

@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1315,7 +1314,7 @@ services:
 	assert.NotContains(t, string(tfvars), `"acr_mode"`)
 }
 
-func TestEjectInfra_ExistingProjectTerraformSerializesDeployments(t *testing.T) {
+func TestEjectInfra_ExistingProjectTerraformDeploymentsRemainEditable(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
@@ -1336,12 +1335,11 @@ services:
 	data, err := os.ReadFile(filepath.Join(dir, "infra", "model-deployments.tf")) //nolint:gosec
 	require.NoError(t, err)
 	contents := string(data)
-	firstResource := fmt.Sprintf("model_deployment_%x", sha256.Sum256([]byte("first")))[:33]
-	secondResource := fmt.Sprintf("model_deployment_%x", sha256.Sum256([]byte("second")))[:33]
-	assert.Contains(t, contents, fmt.Sprintf(`resource "azapi_resource_action" %q`, firstResource))
-	assert.Contains(t, contents, fmt.Sprintf(`resource "azapi_resource_action" %q`, secondResource))
+	assert.Contains(t, contents, `resource "azapi_resource_action" "model_deployment"`)
+	assert.Contains(t, contents, `for_each = { for deployment in var.deployments : deployment.name => deployment }`)
 	assert.Contains(t, contents, `method      = "PUT"`)
-	assert.Contains(t, contents, fmt.Sprintf("depends_on = [azapi_resource_action.%s]", firstResource))
+	assert.Contains(t, contents, `locks       = [local.foundry_account_id]`)
+	assert.NotContains(t, contents, "var.deployments[")
 }
 
 func TestEjectInfra_ExistingProjectTerraformRejectsProvisionedCreateMode(t *testing.T) {

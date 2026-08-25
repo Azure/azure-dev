@@ -6,7 +6,6 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -813,12 +812,6 @@ func ejectExistingProjectTerraform(
 	if err != nil {
 		return nil, err
 	}
-	deploymentsArtifact, err := writeExistingProjectTerraformDeployments(
-		infraDir, artifactRoot, params)
-	if err != nil {
-		return nil, err
-	}
-	written = append(written, deploymentsArtifact)
 	markerArtifact, err := writeFoundryTerraformMarker(infraDir, artifactRoot)
 	if err != nil {
 		return nil, err
@@ -843,57 +836,6 @@ func ejectExistingProjectTerraform(
 		return nil, err
 	}
 	return append(written, tfvarsArtifact), nil
-}
-
-func writeExistingProjectTerraformDeployments(
-	infraDir string,
-	artifactRoot string,
-	params map[string]any,
-) (ejectArtifact, error) {
-	deployments, ok := params["deployments"].([]synthesis.Deployment)
-	if !ok {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("deployments parameter has unexpected type %T", params["deployments"]),
-		)
-	}
-
-	var contents strings.Builder
-	contents.WriteString("# Model deployments are serialized because Cognitive Services throttles concurrent updates.\n")
-	resourceNames := make([]string, len(deployments))
-	for i, deployment := range deployments {
-		resourceNames[i] = fmt.Sprintf("model_deployment_%x", sha256.Sum256([]byte(deployment.Name)))[:33]
-	}
-	for i := range deployments {
-		if i > 0 {
-			contents.WriteString("\n")
-		}
-		fmt.Fprintf(&contents, "resource \"azapi_resource_action\" %q {\n", resourceNames[i])
-		fmt.Fprintf(&contents, "  type      = \"Microsoft.CognitiveServices/accounts/deployments@2025-06-01\"\n")
-		fmt.Fprintf(&contents, "  resource_id = \"${local.foundry_account_id}/deployments/${var.deployments[%d].name}\"\n", i)
-		contents.WriteString("  method      = \"PUT\"\n\n")
-		contents.WriteString("  body = {\n")
-		fmt.Fprintf(&contents, "    properties = { model = var.deployments[%d].model }\n", i)
-		fmt.Fprintf(&contents, "    sku        = var.deployments[%d].sku\n", i)
-		contents.WriteString("  }\n")
-		if i > 0 {
-			fmt.Fprintf(&contents, "\n  depends_on = [azapi_resource_action.%s]\n", resourceNames[i-1])
-		}
-		contents.WriteString("}\n")
-	}
-
-	dst := filepath.Join(infraDir, "model-deployments.tf")
-	//nolint:gosec // G306: ejected Terraform sources are intended to be human-readable
-	if err := os.WriteFile(dst, []byte(contents.String()), 0o644); err != nil {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("write model-deployments.tf: %s", err),
-		)
-	}
-	return ejectArtifact{
-		relPath: filepath.ToSlash(filepath.Join(artifactRoot, "model-deployments.tf")),
-		bytes:   contents.Len(),
-	}, nil
 }
 
 func writeFoundryTerraformMarker(infraDir, artifactRoot string) (ejectArtifact, error) {

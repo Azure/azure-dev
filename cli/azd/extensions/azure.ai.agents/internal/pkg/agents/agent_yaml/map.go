@@ -549,11 +549,10 @@ var knownOpenAIVoices = map[string]struct{}{
 }
 
 // azureNeuralVoicePattern matches the locale prefix that every Azure Neural
-// voice name carries, e.g. "en-US-Ava:DragonHDLatestNeural" or
-// "ja-JP-NanamiNeural". The service contract guarantees this <lang>-<REGION>-
-// shape for Azure voices, which is what distinguishes them from the flat
-// lowercase OpenAI voice tokens.
-var azureNeuralVoicePattern = regexp.MustCompile(`^[a-z]{2,3}-[A-Z]{2,3}-`)
+// voice name carries, e.g. "en-US-Ava:DragonHDLatestNeural",
+// "ja-JP-NanamiNeural", or Azure voices with script locales. The optional script tag
+// keeps valid BCP-47 locales from being classified as OpenAI voices.
+var azureNeuralVoicePattern = regexp.MustCompile(`^([a-z]{2,3}(?:-[A-Z][a-z]{3})?-[A-Z]{2,3})-`)
 
 // isOpenAIVoice reports whether a voice name denotes an OpenAI realtime voice
 // (e.g. "alloy") vs an Azure Neural voice (e.g. "en-US-Ava:DragonHDLatestNeural").
@@ -597,11 +596,11 @@ func voiceWireLocale(voice *agent_api.VoiceConfig) string {
 	if voice == nil || voice.Name == "" || isOpenAIVoice(voice.Name) {
 		return ""
 	}
-	parts := strings.SplitN(voice.Name, "-", 3)
-	if len(parts) < 2 {
+	match := azureNeuralVoicePattern.FindStringSubmatch(voice.Name)
+	if len(match) < 2 {
 		return ""
 	}
-	return parts[0] + "-" + parts[1]
+	return match[1]
 }
 
 // CreateVoiceAgentAPIRequest builds a CreateAgentRequest for a declarative

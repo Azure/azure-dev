@@ -2225,6 +2225,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	for _, envVar := range []struct{ key, value string }{
 		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
 		{versionKey, versionValue},
+		{fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", serviceKey), strings.TrimRight(projectEndpoint, "/")},
 		{endpointKey, baseEndpoint},
 	} {
 		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -2276,7 +2277,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentRemote(
 	)
 	shouldUpdate, decisionErr := shouldUpdateVoiceAgent(remoteAgent, getErr)
 	if decisionErr != nil {
-		return nil, exterrors.OpCreateAgent, decisionErr
+		return nil, exterrors.OpGetAgent, decisionErr
 	}
 	if shouldUpdate {
 		progress("Updating voice agent using unified API")

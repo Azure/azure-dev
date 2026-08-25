@@ -40,9 +40,9 @@ const (
 	agentVersionVarFormat = "AGENT_%s_VERSION"
 
 	// agentEndpointVarFormat is the base endpoint env-var written for every
-	// deployed agent. Voice agents (kind: prompt-voice) are created
-	// synchronously with no agent-version object, so this base endpoint is the
-	// only deployment marker they set — isDeployed falls back to it.
+	// deployed agent. Voice agents (kind: prompt-voice) use it as the deploy
+	// completion marker. Prompt voice deploys also set VERSION, while legacy
+	// voice environments may have only this endpoint marker.
 	agentEndpointVarFormat = "AGENT_%s_ENDPOINT"
 
 	// projectEndpointVar is the env-var that carries the Foundry project
@@ -834,23 +834,22 @@ func isDeployed(
 		*errs = append(*errs, fmt.Errorf("read %s: %w", key, err))
 		return false
 	}
-	if value != "" {
-		return true
+	if !isVoice {
+		return value != ""
 	}
 
-	// Voice agents (kind: prompt-voice) deploy without an agent-version object,
-	// so they never set AGENT_<KEY>_VERSION. Fall back to the base endpoint
-	// marker, which every voice deploy writes, so a successfully created voice
-	// agent is not reported as undeployed. Gate this on the service's actual
-	// declared kind: a hosted agent whose deploy partially failed can also
-	// present an empty VERSION with a lingering ENDPOINT, and must stay reported
-	// as not-deployed. This mirrors the kind gate in
+	// Voice deploys use the base ENDPOINT env var as the completion marker.
+	// Prompt voice deploys write VERSION before ENDPOINT to keep ENDPOINT as the
+	// final marker.
+	// Require ENDPOINT for voice even when VERSION is present, otherwise a partial
+	// env write could be reported as deployed before the callable endpoint was
+	// persisted. Gate this on the service's actual declared kind: a hosted agent
+	// whose deploy partially failed can also present an empty VERSION with a
+	// lingering ENDPOINT, and must stay reported as not-deployed. This mirrors the
+	// kind gate in
 	// AgentServiceTargetProvider.Endpoints (project package); the two live in
 	// separate packages because project imports nextstep, so a literally shared
 	// helper would create an import cycle.
-	if !isVoice {
-		return false
-	}
 	endpointKey := fmt.Sprintf(agentEndpointVarFormat, serviceKey(serviceName))
 	endpointValue, err := src.EnvValue(ctx, envName, endpointKey)
 	if err != nil {

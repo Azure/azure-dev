@@ -95,7 +95,9 @@ when streaming session logs.`,
 			}
 			defer azdClient.Close()
 
-			info, err := resolveMonitorAgentInfo(ctx, azdClient, flags.name, extCtx.NoPrompt)
+			info, err := resolveMonitorAgentInfo(
+				ctx, azdClient, flags.name, extCtx.NoPrompt, extCtx.Environment,
+			)
 			if err != nil {
 				return err
 			}
@@ -153,8 +155,11 @@ func resolveMonitorAgentInfo(
 	azdClient *azdext.AzdClient,
 	name string,
 	noPrompt bool,
+	environmentName string,
 ) (*AgentServiceInfo, error) {
-	info, err := resolveAgentServiceFromProject(ctx, azdClient, name, noPrompt)
+	info, err := resolveAgentServiceFromProject(
+		ctx, azdClient, name, noPrompt, withEnvironmentName(environmentName),
+	)
 	if err == nil {
 		return info, nil
 	}

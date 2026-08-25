@@ -50,7 +50,7 @@ func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Show the status of a hosted agent.
 
 The agent name and version are resolved automatically from the azure.yaml service
-configuration and the current azd environment. Optionally specify the service name
+configuration and the selected azd environment. Optionally specify the service name
 (from azure.yaml) as a positional argument when multiple agent services exist.`,
 		Example: `  # Show status (auto-resolves from azure.yaml)
   azd ai agent show
@@ -75,7 +75,9 @@ configuration and the current azd environment. Optionally specify the service na
 			}
 			defer azdClient.Close()
 
-			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
+			info, err := resolveAgentServiceFromProject(
+				ctx, azdClient, flags.name, extCtx.NoPrompt, withEnvironmentName(extCtx.Environment),
+			)
 			if err != nil {
 				return err
 			}
@@ -92,17 +94,11 @@ configuration and the current azd environment. Optionally specify the service na
 				return err
 			}
 
-			// Resolve the current environment name for env var lookups
-			var envName string
-			if envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
-				envName = envResp.Environment.Name
-			}
-
 			action := &ShowAction{
 				AgentContext: agentContext,
 				flags:        flags,
 				azdClient:    azdClient,
-				envName:      envName,
+				envName:      info.EnvironmentName,
 				serviceName:  info.ServiceName,
 				serviceKey:   toServiceKey(info.ServiceName),
 			}

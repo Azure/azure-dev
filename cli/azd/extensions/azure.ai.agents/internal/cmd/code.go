@@ -82,7 +82,9 @@ from the azd environment. When omitted, the default agent service is used.`,
 			}
 			defer azdClient.Close()
 
-			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
+			info, err := resolveAgentServiceFromProject(
+				ctx, azdClient, flags.name, extCtx.NoPrompt, withEnvironmentName(extCtx.Environment),
+			)
 			if err != nil {
 				return err
 			}

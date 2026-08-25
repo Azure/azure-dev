@@ -405,13 +405,14 @@ func (s *stubContainerServer) Publish(
 // service and returns an AzdClient connected to it.
 func newContainerTestClient(t *testing.T, containerSrv azdext.ContainerServiceServer) *azdext.AzdClient {
 	t.Helper()
-	return newServiceTargetTestClient(t, containerSrv, nil)
+	return newServiceTargetTestClient(t, containerSrv, nil, nil)
 }
 
 func newServiceTargetTestClient(
 	t *testing.T,
 	containerSrv azdext.ContainerServiceServer,
 	promptSrv azdext.PromptServiceServer,
+	environmentSrv azdext.EnvironmentServiceServer,
 	projectSrvs ...azdext.ProjectServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
@@ -422,6 +423,9 @@ func newServiceTargetTestClient(
 	}
 	if promptSrv != nil {
 		azdext.RegisterPromptServiceServer(srv, promptSrv)
+	}
+	if environmentSrv != nil {
+		azdext.RegisterEnvironmentServiceServer(srv, environmentSrv)
 	}
 	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
 		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
@@ -470,7 +474,7 @@ func TestDependencyConditionScalarValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			value, err := structpb.NewValue(tt.value)
 			require.NoError(t, err)
-			client := newServiceTargetTestClient(t, nil, nil, &stubProjectServer{configValue: value})
+			client := newServiceTargetTestClient(t, nil, nil, nil, &stubProjectServer{configValue: value})
 			provider := &AgentServiceTargetProvider{azdClient: client}
 
 			enabled, err := provider.isDependencyEnabled(t.Context(), "tools")
@@ -500,6 +504,85 @@ func (s *stubInitializeEnvServer) GetValue(
 	context.Context, *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
 	return &azdext.KeyValueResponse{Value: "00000000-0000-0000-0000-000000000000"}, nil
+}
+
+type explicitEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	getNames       []string
+	getValuesNames []string
+	setValueNames  []string
+	currentCalls   int
+	values         map[string]string
+}
+
+func (s *explicitEnvironmentServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	s.currentCalls++
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "default"}}, nil
+}
+
+func (s *explicitEnvironmentServer) Get(
+	_ context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.EnvironmentResponse, error) {
+	s.getNames = append(s.getNames, req.Name)
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: req.Name}}, nil
+}
+
+func (s *explicitEnvironmentServer) GetValues(
+	_ context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	s.getValuesNames = append(s.getValuesNames, req.Name)
+	values := make([]*azdext.KeyValue, 0, len(s.values))
+	for key, value := range s.values {
+		values = append(values, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: values}, nil
+}
+
+func (s *explicitEnvironmentServer) SetValue(
+	_ context.Context, req *azdext.SetEnvRequest,
+) (*azdext.EmptyResponse, error) {
+	s.setValueNames = append(s.setValueNames, req.EnvName)
+	return &azdext.EmptyResponse{}, nil
+}
+
+func TestAgentServiceTargetProvider_UsesExplicitEnvironment(t *testing.T) {
+	envServer := &explicitEnvironmentServer{values: map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT":          "https://example.services.ai.azure.com/api/projects/project",
+		"AGENT_MY_AGENT_NAME":               "deployed-agent",
+		"AGENT_MY_AGENT_VERSION":            "1",
+		"AGENT_MY_AGENT_RESPONSES_ENDPOINT": "https://example.test/responses",
+	}}
+	client := newServiceTargetTestClient(t, nil, nil, envServer)
+	provider := NewAgentServiceTargetProvider(client, "selected").(*AgentServiceTargetProvider)
+	serviceConfig := &azdext.ServiceConfig{Name: "my-agent", Host: "azure.ai.agent"}
+
+	endpoints, err := provider.Endpoints(t.Context(), serviceConfig, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"https://example.test/responses"}, endpoints)
+
+	err = provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		envServer.values,
+		serviceConfig,
+		&agent_api.AgentVersionObject{Name: "deployed-agent", Version: "1"},
+		nil,
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"selected"}, envServer.getNames)
+	require.Equal(t, []string{"selected"}, envServer.getValuesNames)
+	require.Zero(t, envServer.currentCalls)
+	require.NotEmpty(t, envServer.setValueNames)
+	for _, envName := range envServer.setValueNames {
+		require.Equal(t, "selected", envName)
+	}
 }
 
 type stubAccountServer struct {
@@ -560,7 +643,7 @@ func (s *stubPromptServer) Select(
 
 func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *azdext.AzdClient {
 	t.Helper()
-	return newServiceTargetTestClient(t, nil, promptSrv)
+	return newServiceTargetTestClient(t, nil, promptSrv, nil)
 }
 
 func TestInitializeIsCheapAndSideEffectFree(t *testing.T) {
@@ -1918,7 +2001,7 @@ func TestPackage_BuildsWhenUserChoseDockerfile(t *testing.T) {
 
 	containerStub := &stubContainerServer{}
 	promptStub := &stubPromptServer{selectedIndex: 0}
-	client := newServiceTargetTestClient(t, containerStub, promptStub)
+	client := newServiceTargetTestClient(t, containerStub, promptStub, nil)
 
 	provider := &AgentServiceTargetProvider{
 		azdClient:           client,

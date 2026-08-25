@@ -70,14 +70,21 @@ type filesContext struct {
 }
 
 // resolveFilesContext resolves agent details and session from the azd environment.
-func resolveFilesContext(ctx context.Context, flags *filesFlags, noPrompt bool) (*filesContext, error) {
+func resolveFilesContext(
+	ctx context.Context,
+	flags *filesFlags,
+	noPrompt bool,
+	environmentName string,
+) (*filesContext, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create azd client: %w", err)
 	}
 	defer azdClient.Close()
 
-	info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.agentName, noPrompt)
+	info, err := resolveAgentServiceFromProject(
+		ctx, azdClient, flags.agentName, noPrompt, withEnvironmentName(environmentName),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +206,7 @@ Agent details are automatically resolved from the azd environment.`,
 				)
 			}
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt, extCtx.Environment)
 			if err != nil {
 				return err
 			}
@@ -308,7 +315,7 @@ Agent details are automatically resolved from the azd environment.`,
 				)
 			}
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt, extCtx.Environment)
 			if err != nil {
 				return err
 			}
@@ -416,7 +423,7 @@ Agent details are automatically resolved from the azd environment.`,
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt, extCtx.Environment)
 			if err != nil {
 				return err
 			}
@@ -555,7 +562,7 @@ Agent details are automatically resolved from the azd environment.`,
 				)
 			}
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt, extCtx.Environment)
 			if err != nil {
 				return err
 			}
@@ -645,7 +652,7 @@ Agent details are automatically resolved from the azd environment.`,
 				)
 			}
 
-			fc, err := resolveFilesContext(ctx, flags, extCtx.NoPrompt)
+			fc, err := resolveFilesContext(ctx, flags, extCtx.NoPrompt, extCtx.Environment)
 			if err != nil {
 				return err
 			}
@@ -731,7 +738,7 @@ Agent details are automatically resolved from the azd environment.`,
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt, extCtx.Environment)
 			if err != nil {
 				return err
 			}

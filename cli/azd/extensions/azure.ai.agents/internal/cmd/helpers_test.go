@@ -335,7 +335,7 @@ func TestMissingDeployedAgentStateError(t *testing.T) {
 			assert.Contains(t, local.Suggestion, tt.source)
 			assert.Contains(t, local.Suggestion, "AGENT_MY_AGENT_NAME")
 			assert.Contains(t, local.Suggestion, "AGENT_MY_AGENT_VERSION")
-			assert.Contains(t, local.Suggestion, `azd deploy "my-agent"`)
+			assert.Contains(t, local.Suggestion, "azd deploy")
 			assert.NotContains(t, local.Suggestion, "agent name as a positional argument")
 		})
 	}
@@ -349,7 +349,8 @@ func TestMissingDeployedAgentStateError(t *testing.T) {
 	metacharErr := missingDeployedAgentStateError("api;echo unsafe", "name")
 	metacharLocal, ok := errors.AsType[*azdext.LocalError](metacharErr)
 	require.True(t, ok)
-	assert.Contains(t, metacharLocal.Suggestion, `azd deploy "api;echo unsafe"`)
+	assert.Contains(t, metacharLocal.Suggestion, "azd deploy")
+	assert.NotContains(t, metacharLocal.Suggestion, `azd deploy "api;echo unsafe"`)
 }
 
 func TestProtocolFromAgentYaml(t *testing.T) {
@@ -829,6 +830,47 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "deployed-agent", info.AgentName,
 		"deployed environment output should override the inline definition")
+}
+
+func TestResolveAgentServiceFromProject_UsesSelectedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"service-key": {
+				Name: "service-key",
+				Host: AiAgentHost,
+			},
+		},
+	}}
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{
+			"selected": {Name: "selected"},
+		},
+		current: &azdext.Environment{Name: "default"},
+		values: map[string]map[string]string{
+			"default": {
+				"AGENT_SERVICE_KEY_NAME":    "default-agent",
+				"AGENT_SERVICE_KEY_VERSION": "1",
+			},
+			"selected": {
+				"AGENT_SERVICE_KEY_NAME":    "selected-agent",
+				"AGENT_SERVICE_KEY_VERSION": "2",
+			},
+		},
+	}
+	azdClient := newHelpersTestAzdClient(
+		t, projectServer, &helpersPromptServer{}, envServer,
+	)
+
+	info, err := resolveAgentServiceFromProject(
+		t.Context(), azdClient, "", true, withEnvironmentName("selected"),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "selected", info.EnvironmentName)
+	require.Equal(t, "selected-agent", info.AgentName)
+	require.Equal(t, "2", info.Version)
 }
 
 // TestResolveAgentServiceFromProject_EnvLookupFailureDoesNotFallback verifies a

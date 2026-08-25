@@ -336,7 +336,7 @@ func TestResolveEnv_NoPromptSubscriptionReturnsActionableError(t *testing.T) {
 	assert.Equal(t, exterrors.CodeMissingAzureSubscription, local.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
 	assert.Contains(t, local.Suggestion,
-		"azd env set "+envKeySubscriptionID+" 11111111-1111-1111-1111-111111111111")
+		`azd -e "foundry-bugbash" env set `+envKeySubscriptionID+" 11111111-1111-1111-1111-111111111111")
 	assert.Empty(t, env.set, "nothing should be persisted when the prompt fails")
 }
 
@@ -361,7 +361,7 @@ func TestResolveEnv_NoPromptLocationReturnsActionableError(t *testing.T) {
 	require.ErrorAs(t, err, &local)
 	assert.Equal(t, exterrors.CodeMissingAzureLocation, local.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
-	assert.Contains(t, local.Suggestion, "azd env set "+envKeyLocation+" eastus2")
+	assert.Contains(t, local.Suggestion, `azd -e "foundry-bugbash" env set `+envKeyLocation+" eastus2")
 }
 
 func TestResolveEnv_PromptFailuresIncludeExactEnvSetCommands(t *testing.T) {
@@ -379,7 +379,7 @@ func TestResolveEnv_PromptFailuresIncludeExactEnvSetCommands(t *testing.T) {
 				subscriptionErr: status.Error(codes.Internal, "subscription prompt failed"),
 			},
 			wantCode: exterrors.CodeMissingAzureSubscription,
-			wantCommand: "azd env set " + envKeySubscriptionID +
+			wantCommand: `azd -e "foundry-bugbash" env set ` + envKeySubscriptionID +
 				" 11111111-1111-1111-1111-111111111111",
 		},
 		{
@@ -391,7 +391,7 @@ func TestResolveEnv_PromptFailuresIncludeExactEnvSetCommands(t *testing.T) {
 				locationErr: status.Error(codes.Internal, "location prompt failed"),
 			},
 			wantCode:    exterrors.CodeMissingAzureLocation,
-			wantCommand: "azd env set " + envKeyLocation + " eastus2",
+			wantCommand: `azd -e "foundry-bugbash" env set ` + envKeyLocation + " eastus2",
 		},
 	}
 

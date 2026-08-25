@@ -1567,7 +1567,12 @@ func (p *FoundryProvisioningProvider) Destroy(
 			progress("Existing Foundry project is not owned by azd; leaving it in place")
 			return &azdext.ProvisioningDestroyResult{}, nil
 		}
-		if p.existingProjectAcrMode(ctx) != "create" {
+		mode := p.existingProjectAcrMode(ctx)
+		if mode == "none" || mode == "already-connected" {
+			progress("Existing Foundry project resources are not owned by azd; leaving them in place")
+			return &azdext.ProvisioningDestroyResult{}, nil
+		}
+		if mode != "create" {
 			return nil, exterrors.Validation(
 				exterrors.CodeInvalidServiceConfig,
 				"azd down cannot safely remove resources created inside an existing Foundry project",

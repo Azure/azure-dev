@@ -1278,6 +1278,7 @@ services:
 
 	provider, err := os.ReadFile(filepath.Join(dir, "infra", "provider.tf")) //nolint:gosec
 	require.NoError(t, err)
+	assert.Contains(t, string(provider), `required_version = ">= 1.11.0, < 2.0.0"`)
 	assert.Contains(t, string(provider), "subscription_id = local.project_subscription_id")
 	assert.Contains(t, string(provider), "tenant_id       = var.tenant_id")
 	assert.Contains(t, string(tfvars), `"tenant_id": "${AZURE_TENANT_ID}"`)

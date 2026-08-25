@@ -1402,6 +1402,49 @@ func TestDestroyPreservesExistingProjectBindings(t *testing.T) {
 	assert.Empty(t, result.InvalidatedEnvKeys)
 }
 
+func TestDestroyPreservesNonOwningExistingProjectModes(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"none", "already-connected"} {
+		t.Run(mode, func(t *testing.T) {
+			p := &FoundryProvisioningProvider{
+				brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+				existingAcrMode:    mode,
+			}
+			var messages []string
+
+			result, err := p.Destroy(
+				t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true},
+				func(message string) { messages = append(messages, message) },
+			)
+
+			require.NoError(t, err)
+			assert.Empty(t, result.InvalidatedEnvKeys)
+			assert.Contains(t, messages,
+				"Existing Foundry project resources are not owned by azd; leaving them in place")
+		})
+	}
+}
+
+func TestDestroyRefusesExistingProjectReuseConnect(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+		existingAcrMode:    "reuse-connect",
+	}
+
+	_, err := p.Destroy(
+		t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true},
+		func(string) {},
+	)
+
+	require.Error(t, err)
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, local.Code)
+}
+
 func TestPreviewPreservesConnectionOnlyExistingProject(t *testing.T) {
 	t.Parallel()
 	p := &FoundryProvisioningProvider{existingProjectConnectionOnly: true}

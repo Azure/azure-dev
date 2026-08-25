@@ -773,8 +773,10 @@ func TestIsDeployed_VoiceEndpointFallback(t *testing.T) {
 			want:    true,
 		},
 		{
-			name:    "no version but base endpoint set: deployed (voice agent)",
-			values:  map[string]string{"env1/AGENT_VOICE_SVC_ENDPOINT": "wss://x/agents/a/endpoint/protocols/voice?api-version=v1"},
+			name: "no version but base endpoint set: deployed (voice agent)",
+			values: map[string]string{
+				"env1/AGENT_VOICE_SVC_ENDPOINT": "wss://x/agents/a/endpoint/protocols/voice?api-version=v1",
+			},
 			isVoice: true,
 			want:    true,
 		},

@@ -6,9 +6,9 @@ package useragent
 import (
 	"testing"
 
-	"azureaiagent/internal/version"
-
 	"github.com/stretchr/testify/require"
+
+	"azureaiagent/internal/version"
 )
 
 func TestDefault(t *testing.T) {

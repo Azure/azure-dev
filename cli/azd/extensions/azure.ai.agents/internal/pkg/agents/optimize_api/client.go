@@ -15,13 +15,14 @@ import (
 	"net/http"
 	netURL "net/url"
 
-	"azureaiagent/internal/pkg/useragent"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+	"azureaiagent/internal/pkg/useragent"
 )
 
 // OptimizeClient provides methods for interacting with the Agents Optimization API.

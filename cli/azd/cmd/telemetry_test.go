@@ -97,6 +97,21 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, int64(3), kvCount.Value.AsInt64())
 	})
 
+	t.Run("GDPRMeasurementMetadata", func(t *testing.T) {
+		t.Parallel()
+
+		measurementFields := []fields.AttributeKey{
+			fields.AgentFixAttempts,
+			fields.ExeGraphMaxConcurrencyKey,
+			fields.ToolExitCode,
+		}
+		for _, field := range measurementFields {
+			require.True(t, field.IsMeasurement, field.Key)
+		}
+
+		require.False(t, fields.ServiceErrorCode.IsMeasurement)
+	})
+
 	// Hooks command telemetry fields
 	t.Run("HooksFields", func(t *testing.T) {
 		t.Parallel()

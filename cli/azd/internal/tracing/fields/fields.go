@@ -799,6 +799,7 @@ var (
 		Key:            attribute.Key("exegraph.max_concurrency"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 
 	// ExeGraphErrorPolicyKey records the error policy (fail_fast or continue_on_error).
@@ -945,8 +946,8 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// Status code of a response returned by the service.
-	// For HTTP, this corresponds to the HTTP status code.
+	// Status code of a response returned by the service. Numeric HTTP/service
+	// statuses are measurements; AAD authentication errors use string OAuth statuses.
 	ServiceStatusCode = AttributeKey{
 		Key:            attribute.Key("service.statusCode"),
 		Classification: SystemMetadata,
@@ -968,7 +969,6 @@ var (
 		Key:            attribute.Key("service.errorCode"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
-		IsMeasurement:  true,
 	}
 
 	// Correlation ID for a request to the service.
@@ -993,6 +993,7 @@ var (
 		Key:            attribute.Key("tool.exitCode"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 )
 
@@ -1198,6 +1199,7 @@ var (
 		Key:            attribute.Key("agent.fix.attempts"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
 	}
 )
 

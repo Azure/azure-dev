@@ -10,6 +10,8 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
+func ptr[T any](v T) *T { return &v }
+
 // ---------------------------------------------------------------------------
 // isOpenAIVoice / buildVoiceConfig
 // ---------------------------------------------------------------------------
@@ -118,7 +120,8 @@ func TestCreateVoiceAgentAPIRequest_Defaults(t *testing.T) {
 		t.Fatalf("Audio pipeline not populated: %+v", def.Audio)
 	}
 	in := def.Audio.Input
-	if in.Format == nil || in.Format.Type != defaultVoiceAudioType || in.Format.Rate != defaultVoiceAudioRate {
+	if in.Format == nil || in.Format.Type != defaultVoiceAudioType || in.Format.Rate == nil ||
+		*in.Format.Rate != defaultVoiceAudioRate {
 		t.Errorf("input format = %+v", in.Format)
 	}
 	if in.TurnDetection == nil || in.TurnDetection.Type != defaultVoiceTurnDetectionType {
@@ -128,7 +131,8 @@ func TestCreateVoiceAgentAPIRequest_Defaults(t *testing.T) {
 		t.Errorf("transcription = %+v", in.Transcription)
 	}
 	out := def.Audio.Output
-	if out.Format == nil || out.Format.Type != defaultVoiceAudioType || out.Format.Rate != defaultVoiceAudioRate {
+	if out.Format == nil || out.Format.Type != defaultVoiceAudioType || out.Format.Rate == nil ||
+		*out.Format.Rate != defaultVoiceAudioRate {
 		t.Errorf("output format = %+v", out.Format)
 	}
 	// Default voice is the DragonHD Azure Neural voice in the flat unified shape.
@@ -306,6 +310,100 @@ func TestCreateVoiceAgentAPIRequest_MarshalServiceWireShape(t *testing.T) {
 	}
 	if _, exists := output["type"]; exists {
 		t.Fatalf("audio.output.type should not be present in service wire shape: %#v", output)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
+	t.Parallel()
+	inRate := 16000
+	outRate := 24000
+	threshold := 0.6
+	speechDurationMs := 120
+	createResponse := true
+	removeFillerWords := true
+	interruptResponse := true
+	autoTruncate := true
+	speed := 1.1
+	parallelToolCalls := true
+	style := "cheerful"
+	pitch := "+0Hz"
+	rate := "+0%"
+	volume := "+0%"
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-advanced"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Instructions:    ptr("You are {{persona}}, a concise voice assistant."),
+		StructuredInputs: map[string]any{
+			"persona": map[string]any{"description": "Assistant persona", "defaultValue": "Ada"},
+		},
+		Audio: &VoiceAudio{
+			Input: &VoiceAudioInput{
+				Format:           &VoiceAudioFormat{Type: "audio/pcmu", Rate: &inRate},
+				NoiseReduction:   &VoiceNoiseReduction{Type: "near_field"},
+				EchoCancellation: map[string]any{"type": "server_echo_cancellation", "channels": 1},
+				TurnDetection: &VoiceTurnDetection{
+					Type:              "azure_semantic_vad",
+					Threshold:         &threshold,
+					SpeechDurationMs:  &speechDurationMs,
+					CreateResponse:    &createResponse,
+					RemoveFillerWords: &removeFillerWords,
+					InterruptResponse: &interruptResponse,
+					Languages:         []string{"en-US"},
+					AutoTruncate:      &autoTruncate,
+				},
+				Transcription: &VoiceTranscription{Model: "whisper-1", Language: ptr("en-US"), Prompt: ptr("Contoso terms")},
+			},
+			Output: &VoiceAudioOutput{
+				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: &outRate},
+				Voice: &VoiceConfig{
+					Type: "azure_standard", Name: "en-US-AvaNeural", Style: &style,
+					Pitch: &pitch, Rate: &rate, Locale: ptr("en-US"), Volume: &volume,
+				},
+				Speed: &speed,
+			},
+		},
+		OutputModalities:  []string{"audio", "text"},
+		Tools:             []map[string]any{{"type": "system", "name": "end_conversation"}},
+		Avatar:            map[string]any{"type": "video_avatar", "character": "lisa", "output_protocol": "webrtc"},
+		Greeting:          map[string]any{"type": "template", "text": "Hello {{persona}}"},
+		ToolChoice:        "auto",
+		ParallelToolCalls: &parallelToolCalls,
+		MaxOutputTokens:   "inf",
+		Include:           []string{"item.input_audio_transcription.phrases"},
+	}
+
+	req, err := CreateVoiceAgentAPIRequest(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	var wire map[string]any
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	def := wire["definition"].(map[string]any)
+	input := def["audio"].(map[string]any)["input"].(map[string]any)
+	output := def["audio"].(map[string]any)["output"].(map[string]any)
+	structured := def["structured_inputs"].(map[string]any)["persona"].(map[string]any)
+
+	if structured["default_value"] != "Ada" || structured["defaultValue"] != nil {
+		t.Fatalf("structured input default was not mapped to wire shape: %#v", structured)
+	}
+	if output["voice"] != "en-US-AvaNeural" || output["voice_type"] != "azure-standard" || output["style"] != style {
+		t.Fatalf("output voice flat shape not mapped: %#v", output)
+	}
+	if input["echo_cancellation"].(map[string]any)["type"] != "server_echo_cancellation" {
+		t.Fatalf("echo cancellation not mapped: %#v", input["echo_cancellation"])
+	}
+	if def["tool_choice"] != "auto" || def["max_output_tokens"] != "inf" {
+		t.Fatalf("response options not mapped: %#v", def)
+	}
+	if len(def["tools"].([]any)) != 1 || def["avatar"].(map[string]any)["character"] != "lisa" {
+		t.Fatalf("tools/avatar not mapped: %#v", def)
 	}
 }
 

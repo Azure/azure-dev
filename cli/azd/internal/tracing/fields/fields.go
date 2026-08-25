@@ -55,19 +55,25 @@ func ExtensionUsageAttribute(key string) AttributeKey {
 
 // Application-level fields. Guaranteed to be set and available for all events.
 var (
-	// Application name. Value is always "azd".
+	// Service name. The application resource uses "azd"; MapError prefixes error details as error.service.name.
 	ServiceNameKey = AttributeKey{
-		Key: semconv.ServiceNameKey, // service.name
+		Key:            semconv.ServiceNameKey, // service.name
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
 	}
 
 	// Application version.
 	ServiceVersionKey = AttributeKey{
-		Key: semconv.ServiceVersionKey, // service.version
+		Key:            semconv.ServiceVersionKey, // service.version
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
 	}
 
 	// The operating system type.
 	OSTypeKey = AttributeKey{
-		Key: semconv.OSTypeKey, // os.type
+		Key:            semconv.OSTypeKey, // os.type
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
 	}
 
 	// The operating system version.
@@ -935,13 +941,6 @@ var (
 	// The list of allowed values can be found in [Domains].
 	ServiceHost = AttributeKey{
 		Key:            attribute.Key("service.host"),
-		Classification: SystemMetadata,
-		Purpose:        PerformanceAndHealth,
-	}
-
-	// Name of the service.
-	ServiceName = AttributeKey{
-		Key:            attribute.Key("service.name"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}

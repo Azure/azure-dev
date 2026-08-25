@@ -28,8 +28,8 @@ func WrapErrorWithSuggestion(err error) error {
 		error
 		Suggestion() string
 	}
-	if sugg, ok := errors.AsType[suggester](err); ok {
-		if text := sugg.Suggestion(); text != "" {
+	if suggestionError, ok := errors.AsType[suggester](err); ok {
+		if text := suggestionError.Suggestion(); text != "" {
 			return &ErrorWithSuggestion{
 				Err:        err,
 				Suggestion: text,

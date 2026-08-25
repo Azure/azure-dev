@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,17 +26,19 @@ func TestInvokeCommandBackgroundFlagRegistered(t *testing.T) {
 type orderingResponseStore struct {
 	saved   bool
 	saveErr error
+	saves   []savedBackgroundResponse
 }
 
 func (s *orderingResponseStore) Get(context.Context, string) (*savedBackgroundResponse, error) {
 	return nil, nil
 }
 
-func (s *orderingResponseStore) Save(context.Context, string, savedBackgroundResponse) error {
+func (s *orderingResponseStore) Save(_ context.Context, _ string, record savedBackgroundResponse) error {
 	if s.saveErr != nil {
 		return s.saveErr
 	}
 	s.saved = true
+	s.saves = append(s.saves, record)
 	return nil
 }
 
@@ -55,45 +58,153 @@ func (w *afterSaveWriter) Write(p []byte) (int, error) {
 	return w.output.Write(p)
 }
 
-func TestPersistAndPrintBackgroundProgressSavesBeforePrinting(t *testing.T) {
+func newTestProgressPersister(
+	store *orderingResponseStore,
+	writer io.Writer,
+	now func() time.Time,
+) *backgroundProgressPersister {
+	persister := newBackgroundProgressPersister(store, "agent-key", "sess_123", "conv_123", writer)
+	persister.now = now
+	return persister
+}
+
+func TestBackgroundProgressPersisterSavesBeforePrinting(t *testing.T) {
 	t.Parallel()
 
 	store := &orderingResponseStore{}
 	writer := &afterSaveWriter{store: store}
-	printedID := ""
-	err := persistAndPrintBackgroundProgress(
-		t.Context(),
-		store,
-		"agent-key",
-		savedBackgroundResponse{ResponseID: "resp_123", Status: "in_progress"},
-		&printedID,
-		writer,
-	)
+	now := time.Unix(1_000, 0)
+	persister := newTestProgressPersister(store, writer, func() time.Time { return now })
+	err := persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123",
+		Cursor:     new(int64(0)),
+		Status:     "in_progress",
+		EventType:  "response.created",
+	})
 
 	require.NoError(t, err)
-	assert.True(t, store.saved)
-	assert.Equal(t, "resp_123", printedID)
+	require.Len(t, store.saves, 1)
+	assert.Equal(t, "resp_123", store.saves[0].ResponseID)
 	assert.Equal(t, "Response:     resp_123\n", writer.output.String())
 }
 
-func TestPersistAndPrintBackgroundProgressDoesNotPrintWhenSaveFails(t *testing.T) {
+func TestBackgroundProgressPersisterDoesNotPrintWhenSaveFails(t *testing.T) {
 	t.Parallel()
 
 	store := &orderingResponseStore{saveErr: errors.New("write failed")}
 	writer := &afterSaveWriter{store: store}
-	printedID := ""
-	err := persistAndPrintBackgroundProgress(
-		t.Context(),
-		store,
-		"agent-key",
-		savedBackgroundResponse{ResponseID: "resp_123"},
-		&printedID,
-		writer,
-	)
+	persister := newTestProgressPersister(store, writer, time.Now)
+	err := persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123",
+		Cursor:     new(int64(0)),
+		Status:     "in_progress",
+		EventType:  "response.created",
+	})
 
 	require.EqualError(t, err, "write failed")
 	assert.Empty(t, writer.output.String())
-	assert.Empty(t, printedID)
+}
+
+func TestBackgroundProgressPersisterThrottlesOrdinaryEvents(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{}
+	writer := &afterSaveWriter{store: store}
+	now := time.Unix(1_000, 0)
+	persister := newTestProgressPersister(store, writer, func() time.Time { return now })
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123",
+		Cursor:     new(int64(0)),
+		Status:     "in_progress",
+		EventType:  "response.created",
+	}))
+
+	for sequenceNumber := int64(1); sequenceNumber < backgroundCursorPersistEventCount; sequenceNumber++ {
+		require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+			ResponseID: "resp_123",
+			Cursor:     new(sequenceNumber),
+			Status:     "in_progress",
+			EventType:  "response.output_text.delta",
+		}))
+	}
+	assert.Len(t, store.saves, 1)
+
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123",
+		Cursor:     new(int64(backgroundCursorPersistEventCount)),
+		Status:     "in_progress",
+		EventType:  "response.output_text.delta",
+	}))
+	require.Len(t, store.saves, 2)
+	assert.Equal(t, int64(backgroundCursorPersistEventCount), *store.saves[1].LastSequenceNumber)
+}
+
+func TestBackgroundProgressPersisterPersistsAfterInterval(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{}
+	writer := &afterSaveWriter{store: store}
+	now := time.Unix(1_000, 0)
+	persister := newTestProgressPersister(store, writer, func() time.Time { return now })
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(0)), Status: "in_progress", EventType: "response.created",
+	}))
+
+	now = now.Add(backgroundCursorPersistInterval - time.Millisecond)
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(1)), Status: "in_progress", EventType: "response.output_text.delta",
+	}))
+	assert.Len(t, store.saves, 1)
+
+	now = now.Add(time.Millisecond)
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(2)), Status: "in_progress", EventType: "response.output_text.delta",
+	}))
+	assert.Len(t, store.saves, 2)
+}
+
+func TestBackgroundProgressPersisterPersistsLifecycleAndTerminalEvents(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{}
+	writer := &afterSaveWriter{store: store}
+	now := time.Unix(1_000, 0)
+	persister := newTestProgressPersister(store, writer, func() time.Time { return now })
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(0)), Status: "in_progress", EventType: "response.created",
+	}))
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(1)), Status: "in_progress", EventType: "response.in_progress",
+	}))
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(2)), Status: "completed", EventType: "response.completed", Terminal: true,
+	}))
+
+	require.Len(t, store.saves, 3)
+	assert.Equal(t, int64(0), *store.saves[0].LastSequenceNumber)
+	assert.Equal(t, int64(1), *store.saves[1].LastSequenceNumber)
+	assert.Equal(t, int64(2), *store.saves[2].LastSequenceNumber)
+	assert.Equal(t, "completed", store.saves[2].Status)
+}
+
+func TestBackgroundProgressPersisterFlushesPendingCursor(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{}
+	writer := &afterSaveWriter{store: store}
+	now := time.Unix(1_000, 0)
+	persister := newTestProgressPersister(store, writer, func() time.Time { return now })
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(0)), Status: "in_progress", EventType: "response.created",
+	}))
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(1)), Status: "in_progress", EventType: "response.output_text.delta",
+	}))
+	assert.Len(t, store.saves, 1)
+
+	require.NoError(t, persister.Flush(t.Context()))
+	require.Len(t, store.saves, 2)
+	assert.Equal(t, int64(1), *store.saves[1].LastSequenceNumber)
 }
 
 func TestInvokeCommandBackgroundValidation(t *testing.T) {

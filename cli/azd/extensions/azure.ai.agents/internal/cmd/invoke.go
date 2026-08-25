@@ -1337,28 +1337,29 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		if assigned := resp.Header.Get("x-agent-session-id"); assigned != "" {
 			effectiveSessionID = assigned
 		}
-		var printedResponseID string
-		onProgress := func(progress responsesStreamProgress) error {
-			if progress.ResponseID == "" {
-				return nil
-			}
-			return persistAndPrintBackgroundProgress(
-				ctx,
-				responseStore,
-				agentKey,
-				savedBackgroundResponse{
-					ResponseID:     progress.ResponseID,
-					Cursor:         progress.Cursor,
-					Status:         progress.Status,
-					SessionID:      effectiveSessionID,
-					ConversationID: convID,
-				},
-				&printedResponseID,
-				os.Stdout,
-			)
+		progressPersister := newBackgroundProgressPersister(
+			responseStore,
+			agentKey,
+			effectiveSessionID,
+			convID,
+			os.Stdout,
+		)
+		streamErr := readResponsesSSE(
+			ctx,
+			resp.Body,
+			os.Stdout,
+			rc.name,
+			true,
+			func(progress responsesStreamProgress) error {
+				return progressPersister.Apply(ctx, progress)
+			},
+		)
+		var flushErr error
+		if ctx.Err() == nil {
+			flushErr = progressPersister.Flush(ctx)
 		}
-		if err := readResponsesSSE(ctx, resp.Body, os.Stdout, rc.name, true, onProgress); err != nil {
-			return err
+		if streamErr != nil || flushErr != nil {
+			return errors.Join(streamErr, flushErr)
 		}
 	}
 	totalDuration := time.Since(invokeStart)

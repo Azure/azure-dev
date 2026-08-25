@@ -20,6 +20,7 @@ type responsesStreamProgress struct {
 	ResponseID string
 	Cursor     *int64
 	Status     string
+	EventType  string
 	Terminal   bool
 }
 
@@ -130,6 +131,8 @@ func readResponsesSSE(
 				snapshot.Status = "failed"
 			case "response.incomplete":
 				snapshot.Status = "incomplete"
+			case "response.cancelled":
+				snapshot.Status = "cancelled"
 			}
 		}
 
@@ -152,7 +155,7 @@ func readResponsesSSE(
 					return err
 				}
 			}
-		case "response.completed", "response.failed", "response.incomplete":
+		case "response.completed", "response.failed", "response.incomplete", "response.cancelled":
 			terminal = true
 			if printed {
 				if _, err := fmt.Fprintln(writer); err != nil {
@@ -183,6 +186,7 @@ func readResponsesSSE(
 				ResponseID: identity,
 				Cursor:     cursor,
 				Status:     status,
+				EventType:  event.name,
 				Terminal:   terminal,
 			}); err != nil {
 				return err
@@ -275,7 +279,7 @@ func writeResponsesSnapshot(
 func isKnownResponsesEvent(event string) bool {
 	switch event {
 	case "response.created", "response.queued", "response.in_progress", "response.output_text.delta",
-		"response.completed", "response.failed", "response.incomplete", "error":
+		"response.completed", "response.failed", "response.incomplete", "response.cancelled", "error":
 		return true
 	default:
 		return false

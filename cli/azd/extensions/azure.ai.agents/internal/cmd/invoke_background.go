@@ -7,6 +7,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
+)
+
+const (
+	backgroundCursorPersistInterval   = 3 * time.Second
+	backgroundCursorPersistEventCount = 64
 )
 
 func isTerminalResponseStatus(status string) bool {
@@ -18,22 +24,97 @@ func isTerminalResponseStatus(status string) bool {
 	}
 }
 
-func persistAndPrintBackgroundProgress(
-	ctx context.Context,
+func isResponseLifecycleEvent(eventType string) bool {
+	switch eventType {
+	case "response.created", "response.queued", "response.in_progress",
+		"response.completed", "response.failed", "response.incomplete", "response.cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+type backgroundProgressPersister struct {
+	store              responseStateStore
+	agentKey           string
+	sessionID          string
+	conversationID     string
+	writer             io.Writer
+	now                func() time.Time
+	latest             savedBackgroundResponse
+	persistedResponse  string
+	persistedStatus    string
+	lastPersistedAt    time.Time
+	eventsSincePersist int
+	printedResponseID  bool
+	dirty              bool
+}
+
+func newBackgroundProgressPersister(
 	store responseStateStore,
 	agentKey string,
-	record savedBackgroundResponse,
-	printedResponseID *string,
+	sessionID string,
+	conversationID string,
 	writer io.Writer,
-) error {
-	if err := store.Save(ctx, agentKey, record); err != nil {
+) *backgroundProgressPersister {
+	return &backgroundProgressPersister{
+		store:          store,
+		agentKey:       agentKey,
+		sessionID:      sessionID,
+		conversationID: conversationID,
+		writer:         writer,
+		now:            time.Now,
+	}
+}
+
+func (p *backgroundProgressPersister) Apply(ctx context.Context, progress responsesStreamProgress) error {
+	if progress.ResponseID == "" {
+		return nil
+	}
+
+	p.latest = savedBackgroundResponse{
+		ResponseID:         progress.ResponseID,
+		LastSequenceNumber: progress.Cursor,
+		Status:             progress.Status,
+		SessionID:          p.sessionID,
+		ConversationID:     p.conversationID,
+	}
+	p.dirty = true
+	p.eventsSincePersist++
+	now := p.now()
+	shouldPersist := p.persistedResponse == "" ||
+		isResponseLifecycleEvent(progress.EventType) ||
+		progress.Status != p.persistedStatus ||
+		progress.Terminal ||
+		p.eventsSincePersist >= backgroundCursorPersistEventCount ||
+		(!p.lastPersistedAt.IsZero() && now.Sub(p.lastPersistedAt) >= backgroundCursorPersistInterval)
+	if !shouldPersist {
+		return nil
+	}
+	return p.persist(ctx, now)
+}
+
+func (p *backgroundProgressPersister) Flush(ctx context.Context) error {
+	if !p.dirty {
+		return nil
+	}
+	return p.persist(ctx, p.now())
+}
+
+func (p *backgroundProgressPersister) persist(ctx context.Context, now time.Time) error {
+	if err := p.store.Save(ctx, p.agentKey, p.latest); err != nil {
 		return err
 	}
-	if *printedResponseID == "" {
-		if _, err := fmt.Fprintf(writer, "Response:     %s\n", record.ResponseID); err != nil {
+	if !p.printedResponseID {
+		if _, err := fmt.Fprintf(p.writer, "Response:     %s\n", p.latest.ResponseID); err != nil {
 			return err
 		}
-		*printedResponseID = record.ResponseID
+		p.printedResponseID = true
 	}
+	p.persistedResponse = p.latest.ResponseID
+	p.persistedStatus = p.latest.Status
+	p.lastPersistedAt = now
+	p.eventsSincePersist = 0
+	p.dirty = false
 	return nil
 }

@@ -13,17 +13,22 @@ import (
 const backgroundResponsesConfigPath = configPathPrefix + ".backgroundResponses"
 
 type savedBackgroundResponse struct {
-	ResponseID     string `json:"responseId"`
-	Cursor         *int64 `json:"cursor,omitempty"`
+	ResponseID string `json:"responseId"`
+	// LastSequenceNumber is the sequence_number of the last fully processed
+	// Responses SSE event. It is sent as starting_after when the stream is resumed.
+	// A pointer preserves zero, which is a valid sequence number.
+	LastSequenceNumber *int64 `json:"cursor,omitempty"`
+	// Status is the Responses API response.status value: queued, in_progress,
+	// completed, failed, incomplete, or cancelled.
 	Status         string `json:"status,omitempty"`
 	SessionID      string `json:"sessionId,omitempty"`
 	ConversationID string `json:"conversationId,omitempty"`
 }
 
 type responseStateStore interface {
-	Get(context.Context, string) (*savedBackgroundResponse, error)
-	Save(context.Context, string, savedBackgroundResponse) error
-	Delete(context.Context, string) error
+	Get(ctx context.Context, agentKey string) (*savedBackgroundResponse, error)
+	Save(ctx context.Context, agentKey string, record savedBackgroundResponse) error
+	Delete(ctx context.Context, agentKey string) error
 }
 
 type userConfigResponseStateStore struct {
@@ -76,8 +81,9 @@ func (s *userConfigResponseStateStore) Save(
 	}
 
 	if current, ok := records[agentKey]; ok && current.ResponseID == record.ResponseID &&
-		current.Cursor != nil && (record.Cursor == nil || *record.Cursor < *current.Cursor) {
-		record.Cursor = new(*current.Cursor)
+		current.LastSequenceNumber != nil &&
+		(record.LastSequenceNumber == nil || *record.LastSequenceNumber < *current.LastSequenceNumber) {
+		record.LastSequenceNumber = new(*current.LastSequenceNumber)
 	}
 	records[agentKey] = record
 

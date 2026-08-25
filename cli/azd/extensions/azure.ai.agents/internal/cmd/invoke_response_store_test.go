@@ -17,11 +17,11 @@ func TestUserConfigResponseStateStoreRoundTrip(t *testing.T) {
 
 	cursor := int64(0)
 	want := savedBackgroundResponse{
-		ResponseID:     "resp_123",
-		Cursor:         &cursor,
-		Status:         "in_progress",
-		SessionID:      "sess_123",
-		ConversationID: "conv_123",
+		ResponseID:         "resp_123",
+		LastSequenceNumber: &cursor,
+		Status:             "in_progress",
+		SessionID:          "sess_123",
+		ConversationID:     "conv_123",
 	}
 
 	require.NoError(t, store.Save(t.Context(), "agent-a", want))
@@ -42,20 +42,20 @@ func TestUserConfigResponseStateStoreCursorIsMonotonic(t *testing.T) {
 	store := newUserConfigResponseStateStore(client)
 
 	require.NoError(t, store.Save(t.Context(), "agent-a", savedBackgroundResponse{
-		ResponseID: "resp_123",
-		Cursor:     new(int64(10)),
-		Status:     "in_progress",
+		ResponseID:         "resp_123",
+		LastSequenceNumber: new(int64(10)),
+		Status:             "in_progress",
 	}))
 	require.NoError(t, store.Save(t.Context(), "agent-a", savedBackgroundResponse{
-		ResponseID: "resp_123",
-		Cursor:     new(int64(5)),
-		Status:     "completed",
+		ResponseID:         "resp_123",
+		LastSequenceNumber: new(int64(5)),
+		Status:             "completed",
 	}))
 
 	got, err := store.Get(t.Context(), "agent-a")
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	require.NotNil(t, got.Cursor)
-	assert.Equal(t, int64(10), *got.Cursor)
+	require.NotNil(t, got.LastSequenceNumber)
+	assert.Equal(t, int64(10), *got.LastSequenceNumber)
 	assert.Equal(t, "completed", got.Status)
 }

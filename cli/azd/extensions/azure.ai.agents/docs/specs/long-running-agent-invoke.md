@@ -367,7 +367,7 @@ Persist cursor progress:
 
 - Immediately when the Response ID is first learned.
 - On lifecycle transitions.
-- Periodically while deltas stream, no less often than once per second or every 32 committed events, whichever occurs first.
+- Periodically while events stream, no less often than once every three seconds or every 64 committed events, whichever occurs first.
 - On terminal completion when the process remains alive.
 
 Periodic persistence limits replay after abrupt Ctrl-C or process termination. It does not guarantee that the displayed output and saved cursor are identical at the instant the process exits.
@@ -549,7 +549,7 @@ Suggested Go shape:
 ```go
 type savedBackgroundResponse struct {
     ResponseID     string `json:"responseId"`
-    Cursor         *int64 `json:"cursor,omitempty"`
+    LastSequenceNumber *int64 `json:"cursor,omitempty"`
     Status         string `json:"status,omitempty"`
     SessionID      string `json:"sessionId,omitempty"`
     ConversationID string `json:"conversationId,omitempty"`

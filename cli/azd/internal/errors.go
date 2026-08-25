@@ -14,6 +14,31 @@ import (
 // The canonical type lives in pkg/errorhandler so it can be used by extensions.
 type ErrorWithSuggestion = errorhandler.ErrorWithSuggestion
 
+// WrapErrorWithSuggestion converts errors that implement Suggestion() into ErrorWithSuggestion
+// so command UX and middleware can print guidance without per-call-site adapters.
+func WrapErrorWithSuggestion(err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := errors.AsType[*ErrorWithSuggestion](err); ok {
+		return err
+	}
+
+	type suggester interface {
+		error
+		Suggestion() string
+	}
+	if sugg, ok := errors.AsType[suggester](err); ok {
+		if text := sugg.Suggestion(); text != "" {
+			return &ErrorWithSuggestion{
+				Err:        err,
+				Suggestion: text,
+			}
+		}
+	}
+	return err
+}
+
 // ErrorWithTraceId is a custom error type that includes a trace ID for the current operation
 type ErrorWithTraceId struct {
 	TraceId string

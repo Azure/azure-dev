@@ -159,10 +159,13 @@ func (a *ExtensionActivator) SuggestExtensionForProvider(ctx context.Context, pr
 		}
 	}
 
-	matches, err := a.extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
-		Capability: extensions.ProvisioningProviderCapability,
-		Provider:   providerName,
-	})
+	matches, err := a.extensionManager.FindInstallableExtensions(
+		ctx,
+		&extensions.InstallResolutionOptions{FilterOptions: extensions.FilterOptions{
+			Capability: extensions.ProvisioningProviderCapability,
+			Provider:   providerName,
+		}},
+	)
 	if err != nil || len(matches) == 0 {
 		return ""
 	}

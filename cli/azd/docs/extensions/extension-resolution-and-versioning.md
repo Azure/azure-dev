@@ -157,8 +157,10 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 ### Behavior
 
 - `azd` filters out all versions whose `requiredAzdVersion` constraint is not satisfied by the running `azd` version, then selects the **highest remaining compatible version** that also matches the user's version constraint.
-- If a **newer incompatible version** exists beyond the selected version, `azd` shows a **warning** suggesting the user update `azd`.
+- Install resolution owns this policy centrally. `azd init`, project auto-install, command auto-install, explicit install, update, provider lookup, and recursive dependencies all use the same compatibility-aware resolver. The selected release and any newer incompatible release are recorded on that result so install and update can warn without applying a second compatibility filter.
+- During `azd extension install` and `azd extension update`, if a **newer incompatible version** exists beyond the selected version, `azd` shows a **warning** suggesting the user update `azd`. An explicit `--version` pin does not produce this warning.
 - If **no compatible versions** remain after filtering, the install **fails** with guidance to update `azd`. The install also fails if the user explicitly requests a specific version that is incompatible.
+- Catalogue commands still retain the full published metadata so they can display incompatible releases and explain their requirements.
 - If `requiredAzdVersion` is **empty or cannot be parsed**, the version is treated as compatible (fail-open). This ensures that extensions without the field remain installable.
 
 ## Install Flow
@@ -166,7 +168,7 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 Once a version is resolved, installation proceeds through these steps:
 
 1. **Resolve version** — Apply the version constraint against available versions, filter by `azd` compatibility, and select the highest match.
-2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**, then fall back to the main `azd` registry when that source has no version satisfying the dependency constraint. Other configured sources are not searched. Self-contained bundles do not use the fallback because all of their dependencies must be included in the bundle. Dependencies use the declared version constraint (or `latest`) and are filtered by their `requiredAzdVersion` compatibility with the running `azd` version. Passing `--no-dependencies` skips this step entirely: only the named extension is installed, its declared dependencies are neither resolved nor installed, and the installed-dependency version constraints are not enforced. This is intended for callers that only need the extension's own binary (for example, generating command snapshots) and cannot guarantee the registry's dependency graph is internally consistent.
+2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**, then fall back to the main `azd` registry when that source has no compatible version satisfying the dependency constraint. Other configured sources are not searched. Self-contained bundles do not use the fallback because all of their dependencies must be included in the bundle. Dependencies use the declared version constraint (or `latest`) and are filtered by their `requiredAzdVersion` compatibility with the running `azd` version. Passing `--no-dependencies` skips this step entirely: only the named extension is installed, its declared dependencies are neither resolved nor installed, and the installed-dependency version constraints are not enforced. This is intended for callers that only need the extension's own binary (for example, generating command snapshots) and cannot guarantee the registry's dependency graph is internally consistent.
 3. **Match platform artifact** — Find the artifact for the current OS and architecture. `azd` first looks for `<os>/<arch>` (for example, `linux/amd64` or `windows/amd64`). If no exact match is found, it falls back to `<os>` only (for example, `linux` or `windows`).
 4. **Download** — Fetch the artifact from its URL (HTTP/HTTPS) or copy from a local file path.
 5. **Validate checksum** — Verify the downloaded file against the published checksum. Supported algorithms are `sha256` and `sha512`.
@@ -274,13 +276,11 @@ Each entry maps an extension ID to a version constraint string. The same constra
 - When `azd init` runs, it reads the `requiredVersions.extensions` map and installs each extension with the specified constraint.
 - If the constraint value is `null` or empty, `"latest"` is used (the highest available version is installed).
 - If an extension is already installed (any version), `azd init` **skips it** — it does not check whether the installed version satisfies the configured constraint.
-- `azd init` does **not** apply `requiredAzdVersion` compatibility filtering (unlike `azd extension install`).
+- Version selection, source eligibility, and recursive dependency installation all apply `requiredAzdVersion` compatibility filtering.
 
-> **Note:** These are known limitations in the current implementation and may be addressed in future versions:
+> **Note:** The following is a known limitation in the current implementation and may be addressed in a future version:
 >
 > - `azd init` does not check whether an already-installed extension satisfies the configured version constraint.
-> - `azd init` does not apply `requiredAzdVersion` compatibility filtering.
-> - Dependency (transitive) installation calls `Install()` directly without passing through `requiredAzdVersion` compatibility filtering, so a dependency may be installed even if its `requiredAzdVersion` is not satisfied by the running `azd` version.
 
 ### Behavior during project commands
 
@@ -293,7 +293,7 @@ Resolution during project commands differs from `azd init` in two ways:
 
 Resolution only prompts for extensions that are genuinely missing, and it is skipped when the command renders help instead of running, such as `azd up --help`.
 
-Before installing anything, `azd` displays the complete set of missing extensions and their available configured sources. A single missing extension is shown with its ID, source or sources, and description. Multiple missing extensions are summarized in a table and confirmed together.
+Before installing anything, `azd` displays the complete set of missing extensions and their eligible configured sources. A source is eligible only when it publishes a version that satisfies the project constraint, supports the running azd version, and provides the capability and provider the command needs. A single missing extension is shown with its ID, source or sources, and description. Multiple missing extensions are summarized in a table and confirmed together.
 
 When the official azd registry is one of several sources, `azd` recommends it but allows another configured source to be selected. For multiple extensions, a source selected for the first extension can be reused for the remaining extensions only when that source publishes every remaining requirement. Otherwise, azd prompts for each ambiguous source separately. Declining installation prints `Canceled: required extension isn't installed.`, stops the requested command before it runs, and exits successfully.
 
@@ -312,7 +312,7 @@ Providers that `azd` implements itself are never resolved through an extension a
 
 When several extensions publish the same provider, `azd` prompts for the one to install. When an extension is already selected by `requiredVersions.extensions`, or is pulled in as a dependency of one, that version is used instead of installing another extension. If a version selected that way cannot supply the provider, `azd` reports the conflicting constraint rather than installing a second extension that the first would override.
 
-An extension only qualifies when the version `azd` would select publishes the provider. Older versions are not considered: a publisher that moves a provider to a different extension supersedes the versions that carried it, so `azd` never installs an earlier version to satisfy a provider. A provider that an installed extension already supplies is not resolved again.
+An extension only qualifies when the version `azd` would select publishes the provider. Selection first removes releases that do not support the running azd version, then chooses the highest remaining version. An older compatible release can therefore supply a provider when newer releases require a newer azd. azd does not select an older release merely because the newest compatible release dropped the provider. A provider that an installed extension already supplies is not resolved again.
 
 ## Caching
 
@@ -402,7 +402,8 @@ When `latest` is specified (or the version is omitted), `azd` selects the **high
 |-------|-------|-----|
 | *"extension X not found"* | The extension ID is not present in any configured source. | Verify your sources with `azd extension source list`. Check the extension ID spelling. |
 | *"found in multiple sources, specify exact source"* | The extension exists in two or more configured sources. | Use `azd extension install X --source <name>` to specify which source to use. |
-| *"no matching version found"* | The version constraint excludes all available versions. | Check available versions with `azd extension show X`. Relax the constraint. |
+| *"version X was not found; latest compatible version is Y"* | The extension exists, but the requested version is not published by the eligible source. | Run the suggested install command to use the latest compatible version, or inspect available versions with `azd extension show X`. |
+| *"not compatible with azd X"* | Matching extension metadata exists, but the selected release requires another azd version. | Use an azd version that satisfies the reported constraint, then retry. |
 | *"dependency X not found"* | A recursive dependency is not installed and is missing from the applicable sources: the parent source and main `azd` registry for registry-backed installs, or the bundle for a bundle install. | Include the dependency in the parent source or bundle, publish it to `azd` for a registry-backed install, or install it explicitly before installing the parent. |
 | *"no version satisfies constraint"* | The applicable sources contain the dependency, but none of its versions match the parent extension's constraint. | Include or publish a compatible dependency version, install one explicitly, or update the parent extension's constraint. |
 | Stale version installed | The source cache has not expired yet, so `azd` is using an older manifest. | Set `AZD_EXTENSION_CACHE_TTL=0s` or delete files in `~/.azd/cache/extensions/`. |

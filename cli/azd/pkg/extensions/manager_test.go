@@ -503,6 +503,36 @@ func TestResolveExtensionVersionNil(t *testing.T) {
 	require.EqualError(t, err, "extension metadata cannot be nil")
 }
 
+func TestResolveExtensionVersion_TypedErrors(t *testing.T) {
+	t.Parallel()
+
+	extension := &ExtensionMetadata{
+		Id: "test.extension",
+		Versions: []ExtensionVersion{
+			{Version: "1.0.0"},
+			{Version: "2.0.0", RequiredAzdVersion: ">=2.0.0"},
+		},
+	}
+
+	t.Run("incompatible requested version", func(t *testing.T) {
+		_, err := ResolveExtensionVersion(extension, "2.0.0", semver.MustParse("1.0.0"))
+
+		compatibilityErr, ok := errors.AsType[*ExtensionAzdVersionIncompatibleError](err)
+		require.True(t, ok)
+		require.Equal(t, extension.Id, compatibilityErr.ExtensionId)
+		require.Equal(t, "2.0.0", compatibilityErr.Version)
+	})
+
+	t.Run("missing version", func(t *testing.T) {
+		_, err := ResolveExtensionVersion(extension, "0.1.0", semver.MustParse("1.0.0"))
+
+		versionErr, ok := errors.AsType[*ExtensionVersionNotFoundError](err)
+		require.True(t, ok)
+		require.Equal(t, extension.Id, versionErr.ExtensionId)
+		require.Equal(t, "0.1.0", versionErr.Version)
+	})
+}
+
 func Test_CreateExtensionFilter_VersionConstraints(t *testing.T) {
 	ext := &ExtensionMetadata{
 		Id: "test.constraints",
@@ -1006,9 +1036,8 @@ func Test_Install_PackDependency_FallsBackWhenParentSourceRequiresNewerAzd(t *te
 	}))
 	manager.installed = nil
 
-	_, err := manager.InstallWithOptions(t.Context(), parent, InstallOptions{
-		AzdVersion: semver.MustParse("1.0.0"),
-	})
+	manager.azdVersion = semver.MustParse("1.0.0")
+	_, err := manager.InstallWithOptions(t.Context(), parent, InstallOptions{})
 	require.NoError(t, err)
 
 	installed, err := manager.GetInstalled(FilterOptions{Id: mainChild.Id})
@@ -1153,11 +1182,11 @@ func Test_Install_PackDependency_UsesCompatibleDependencyVersion(t *testing.T) {
 
 	azdVersion, err := semver.NewVersion("1.0.0")
 	require.NoError(t, err)
+
 	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
 	require.NoError(t, err)
-	_, err = manager.InstallWithOptions(*mockContext.Context, packs[0], InstallOptions{
-		AzdVersion: azdVersion,
-	})
+	manager.azdVersion = azdVersion
+	_, err = manager.InstallWithOptions(*mockContext.Context, packs[0], InstallOptions{})
 	require.NoError(t, err)
 
 	installed, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
@@ -1932,6 +1961,10 @@ func Test_HasMetadataCapability(t *testing.T) {
 }
 
 func newTestManager(t *testing.T) *Manager {
+	return newTestManagerWithOptions(t, ManagerOptions{})
+}
+
+func newTestManagerWithOptions(t *testing.T, options ManagerOptions) *Manager {
 	t.Helper()
 
 	mockContext := mocks.NewMockContext(t.Context())
@@ -1940,7 +1973,13 @@ func newTestManager(t *testing.T) *Manager {
 	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
 		return NewRunner(mockContext.CommandRunner), nil
 	})
-	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	manager, err := NewManagerWithOptions(
+		userConfigManager,
+		sourceManager,
+		lazyRunner,
+		mockContext.HttpClient,
+		options,
+	)
 	require.NoError(t, err)
 
 	return manager
@@ -1962,6 +2001,7 @@ func writeExtensionRegistryFile(t *testing.T, registry Registry) string {
 type mockSource struct {
 	name       string
 	extensions []*ExtensionMetadata
+	listCalls  int
 }
 
 func (m *mockSource) Name() string {
@@ -1969,6 +2009,7 @@ func (m *mockSource) Name() string {
 }
 
 func (m *mockSource) ListExtensions(ctx context.Context) ([]*ExtensionMetadata, error) {
+	m.listCalls++
 	return m.extensions, nil
 }
 
@@ -2957,12 +2998,12 @@ func Test_Upgrade_DependencyUpgrade_FallsBackWhenParentSourceRequiresNewerAzd(t 
 	}))
 	manager.installed = nil
 
+	manager.azdVersion = semver.MustParse("1.0.0")
 	_, depUpgrades, err := manager.ReconcileDependencies(
 		t.Context(),
 		parent,
 		UpgradeOptions{
 			UpgradeDependencies: true,
-			AzdVersion:          semver.MustParse("1.0.0"),
 		},
 	)
 	require.NoError(t, err)
@@ -3263,12 +3304,12 @@ func Test_Upgrade_DependencyUpgrade_RequiresNewerAzd(t *testing.T) {
 	require.NoError(t, err)
 
 	azdVersion := semver.MustParse("1.0.0")
+	manager.azdVersion = azdVersion
 	_, depUpgrades, err := manager.ReconcileDependencies(
 		*mockContext.Context,
 		packs[0],
 		UpgradeOptions{
 			UpgradeDependencies: true,
-			AzdVersion:          azdVersion,
 		},
 	)
 	require.NoError(t, err)
@@ -3364,13 +3405,13 @@ func Test_Upgrade_DependencyUpgrade_KeepsNewerInstalledWhenInRange(t *testing.T)
 
 	azdVersion, err := semver.NewVersion("1.0.0")
 	require.NoError(t, err)
+	manager.azdVersion = azdVersion
 	_, depUpgrades, err := manager.ReconcileDependencies(
 		*mockContext.Context,
 		packs[0],
 		UpgradeOptions{
 			VersionPreference:   "",
 			UpgradeDependencies: true,
-			AzdVersion:          azdVersion,
 		},
 	)
 	require.NoError(t, err)
@@ -3438,13 +3479,13 @@ func Test_Upgrade_DependencyUpgrade_UsesCompatibleDependencyVersion(t *testing.T
 
 	azdVersion, err := semver.NewVersion("1.0.0")
 	require.NoError(t, err)
+	manager.azdVersion = azdVersion
 	_, depUpgrades, err := manager.ReconcileDependencies(
 		*mockContext.Context,
 		packs[0],
 		UpgradeOptions{
 			VersionPreference:   "",
 			UpgradeDependencies: true,
-			AzdVersion:          azdVersion,
 		},
 	)
 	require.NoError(t, err)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -23,17 +24,23 @@ const testExtensionRegistryURL = "https://aka.ms/azd/extensions/registry"
 // stubProviderRegistry makes the extension registry respond with a single extension that declares
 // the given provisioning provider, so registry lookups resolve deterministically without network.
 func stubProviderRegistry(mockCtx *mocks.MockContext, extensionID, providerName string) {
+	stubProviderRegistryVersions(mockCtx, extensionID, []extensions.ExtensionVersion{{
+		Version:      "1.0.0",
+		Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+		Providers:    []extensions.Provider{{Name: providerName}},
+	}})
+}
+
+func stubProviderRegistryVersions(
+	mockCtx *mocks.MockContext,
+	extensionID string,
+	versions []extensions.ExtensionVersion,
+) {
 	registry := extensions.Registry{
 		Extensions: []*extensions.ExtensionMetadata{
 			{
-				Id: extensionID,
-				Versions: []extensions.ExtensionVersion{
-					{
-						Version:      "1.0.0",
-						Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-						Providers:    []extensions.Provider{{Name: providerName}},
-					},
-				},
+				Id:       extensionID,
+				Versions: versions,
 			},
 		},
 	}
@@ -221,6 +228,38 @@ func Test_SuggestExtensionForProvider(t *testing.T) {
 		stubProviderRegistry(mockCtx, "azure.ai.agents", "microsoft.foundry")
 		activator := newTestExtensionActivator(t, mockCtx, nil)
 		require.Empty(t, activator.SuggestExtensionForProvider(t.Context(), "unknown.provider"))
+	})
+
+	t.Run("UsesCompatibleVersion", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		stubProviderRegistryVersions(mockCtx, "azure.ai.agents", []extensions.ExtensionVersion{
+			{
+				Version:      "1.0.0",
+				Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+				Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+			},
+			{
+				Version:            "2.0.0",
+				RequiredAzdVersion: ">=2.0.0",
+			},
+		})
+		manager := createExtensionsManagerWithOptions(
+			t,
+			mockCtx,
+			nil,
+			extensions.ManagerOptions{AzdVersion: semver.MustParse("1.0.0")},
+		)
+		activator := NewExtensionActivator(
+			mockCtx.Container,
+			manager,
+			extensions.NewRunner(exec.NewCommandRunner(nil)),
+			&internal.GlobalCommandOptions{},
+		)
+
+		require.Equal(t, "azure.ai.agents", activator.SuggestExtensionForProvider(
+			t.Context(),
+			"microsoft.foundry",
+		))
 	})
 }
 

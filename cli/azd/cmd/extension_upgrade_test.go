@@ -162,7 +162,7 @@ func TestUpgradeFailureDetails(t *testing.T) {
 	require.Contains(t, suggestion, "azure.ai.agents")
 }
 
-func TestWrapDependencyErrorUsesTypedSuggestion(t *testing.T) {
+func TestWrapErrorWithSuggestionUsesTypedSuggestion(t *testing.T) {
 	t.Parallel()
 
 	dependencyErr := &extensions.DependencyNotFoundError{
@@ -170,7 +170,7 @@ func TestWrapDependencyErrorUsesTypedSuggestion(t *testing.T) {
 		ParentId:     "azure.ai.agents",
 	}
 
-	wrapped := wrapDependencyError(fmt.Errorf("install failed: %w", dependencyErr))
+	wrapped := internal.WrapErrorWithSuggestion(fmt.Errorf("install failed: %w", dependencyErr))
 
 	suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](wrapped)
 	require.True(t, ok)
@@ -209,14 +209,16 @@ func TestUpgradeOneExtension_InteractiveFailurePreservesRetryFlags(t *testing.T)
 		extensionManager: manager,
 	}
 
-	result := action.upgradeOneExtension(t.Context(), "ext-a", 0, nil, false)
+	result := action.upgradeOneExtension(t.Context(), "ext-a", 0, false)
 
 	require.Equal(t, extensions.UpgradeStatusFailed, result.Status)
 	require.EqualError(t, result.Error, "extension 'ext-a' version '3.0.0' not available in source 'test'")
+	require.Contains(t, result.Suggestion, "azd extension update ext-a --source test --version 2.0.0")
 
 	rendered := strings.Join(console.Output(), "\n")
 	require.Contains(t, rendered, result.Error.Error())
-	require.Contains(t, rendered, "azd extension update ext-a --source test --version 3.0.0")
+	require.Contains(t, rendered, "azd extension update ext-a --source test --version 2.0.0")
+	require.NotContains(t, rendered, "Retry with:")
 }
 
 func TestDisplayDependencyUpgradeResultsFailedSuggestion(t *testing.T) {
@@ -322,6 +324,24 @@ func createUpgradeTestManager(
 	registryURL string,
 	registry extensions.Registry,
 ) (*extensions.Manager, *extensions.SourceManager) {
+	return createUpgradeTestManagerWithOptions(
+		t,
+		mockCtx,
+		installed,
+		registryURL,
+		registry,
+		extensions.ManagerOptions{},
+	)
+}
+
+func createUpgradeTestManagerWithOptions(
+	t *testing.T,
+	mockCtx *mocks.MockContext,
+	installed map[string]*extensions.Extension,
+	registryURL string,
+	registry extensions.Registry,
+	managerOptions extensions.ManagerOptions,
+) (*extensions.Manager, *extensions.SourceManager) {
 	t.Helper()
 
 	userConfigManager := config.NewUserConfigManager(mockCtx.ConfigManager)
@@ -357,8 +377,8 @@ func createUpgradeTestManager(
 		)
 	})
 
-	manager, err := extensions.NewManager(
-		userConfigManager, sourceManager, lazyRunner, mockCtx.HttpClient,
+	manager, err := extensions.NewManagerWithOptions(
+		userConfigManager, sourceManager, lazyRunner, mockCtx.HttpClient, managerOptions,
 	)
 	require.NoError(t, err)
 
@@ -665,8 +685,7 @@ func TestUpgradeOneExtension(t *testing.T) {
 
 			// Use JSON output to avoid spinner/console issues
 			result := action.upgradeOneExtension(
-				t.Context(), tt.extensionId, 0, nil, true,
-			)
+				t.Context(), tt.extensionId, 0, true)
 
 			assert.Equal(t, tt.wantStatus, result.Status)
 			assert.Equal(t, tt.extensionId, result.ExtensionId)
@@ -733,7 +752,7 @@ func TestExtensionLifecycleTelemetrySpans(t *testing.T) {
 			extensionManager: manager,
 		}
 
-		result := action.upgradeOneExtension(t.Context(), "missing-ext", 0, nil, true)
+		result := action.upgradeOneExtension(t.Context(), "missing-ext", 0, true)
 		require.Equal(t, extensions.UpgradeStatusSkipped, result.Status)
 
 		span := extensionEndedSpan(t, recorder, events.ExtensionUpdateEvent)
@@ -1077,8 +1096,7 @@ func TestUpgradeOneExtension_DelistedSkipped(t *testing.T) {
 	}
 
 	result := action.upgradeOneExtension(
-		t.Context(), "delisted-ext", 0, nil, true,
-	)
+		t.Context(), "delisted-ext", 0, true)
 
 	assert.Equal(t, extensions.UpgradeStatusSkipped, result.Status)
 	assert.Contains(
@@ -1165,8 +1183,7 @@ func TestUpgradeOneExtension_NetworkFailure_SourceCreation(
 	}
 
 	result := action.upgradeOneExtension(
-		t.Context(), "net-fail-ext", 0, nil, true,
-	)
+		t.Context(), "net-fail-ext", 0, true)
 
 	// Source creation failure means 0 matches → skipped (delisted)
 	assert.Equal(t, extensions.UpgradeStatusSkipped, result.Status)

@@ -179,49 +179,23 @@ func TestIsJsonOutputFromArgs(t *testing.T) {
 	}
 }
 
-func TestValidateVersionCompatibility(t *testing.T) {
+func TestShouldWarnNewerIncompatible(t *testing.T) {
 	t.Parallel()
 
-	azdVersion, err := semver.NewVersion("1.24.0")
-	require.NoError(t, err)
+	candidate := &extensions.InstallCandidate{
+		HasNewerIncompatible: true,
+		LatestOverall:        &extensions.ExtensionVersion{Version: "2.0.0"},
+		LatestCompatible:     &extensions.ExtensionVersion{Version: "1.0.0"},
+	}
 
-	t.Run("compatible_version", func(t *testing.T) {
-		t.Parallel()
-		versions := []extensions.ExtensionVersion{
-			{Version: "0.1.0", RequiredAzdVersion: ">= 1.23.0"},
-		}
-		err := validateVersionCompatibility(versions, "0.1.0", "test-ext", azdVersion)
-		assert.NoError(t, err)
-	})
-
-	t.Run("incompatible_version", func(t *testing.T) {
-		t.Parallel()
-		versions := []extensions.ExtensionVersion{
-			{Version: "0.1.0", RequiredAzdVersion: ">= 2.0.0"},
-		}
-		err := validateVersionCompatibility(versions, "0.1.0", "test-ext", azdVersion)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "incompatible")
-	})
-
-	t.Run("version_not_found", func(t *testing.T) {
-		t.Parallel()
-		versions := []extensions.ExtensionVersion{
-			{Version: "0.1.0", RequiredAzdVersion: ">= 2.0.0"},
-		}
-		// non-matching version just returns nil
-		err := validateVersionCompatibility(versions, "0.2.0", "test-ext", azdVersion)
-		assert.NoError(t, err)
-	})
-
-	t.Run("no_constraint", func(t *testing.T) {
-		t.Parallel()
-		versions := []extensions.ExtensionVersion{
-			{Version: "0.1.0"}, // no RequiredAzdVersion
-		}
-		err := validateVersionCompatibility(versions, "0.1.0", "test-ext", azdVersion)
-		assert.NoError(t, err)
-	})
+	require.True(t, shouldWarnNewerIncompatible("", candidate))
+	require.True(t, shouldWarnNewerIncompatible("latest", candidate))
+	require.False(t, shouldWarnNewerIncompatible("1.0.0", candidate))
+	require.False(t, shouldWarnNewerIncompatible("", nil))
+	require.False(t, shouldWarnNewerIncompatible("", &extensions.InstallCandidate{
+		HasNewerIncompatible: true,
+		LatestOverall:        &extensions.ExtensionVersion{Version: "2.0.0"},
+	}))
 }
 
 func TestValidateExactVersionFlag(t *testing.T) {
@@ -254,132 +228,6 @@ func TestValidateExactVersionFlag(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
-}
-
-func TestResolveCompatibleExtension_NilAzdVersion(t *testing.T) {
-	t.Parallel()
-
-	metadata := &extensions.ExtensionMetadata{
-		Id: "test-ext",
-		Versions: []extensions.ExtensionVersion{
-			{Version: "0.1.0"},
-		},
-	}
-
-	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", nil)
-	require.NoError(t, err)
-	assert.Equal(t, metadata, result)
-	assert.Nil(t, compat)
-}
-
-func TestResolveCompatibleExtension_SpecificVersion(t *testing.T) {
-	t.Parallel()
-
-	azdVersion, err := semver.NewVersion("1.24.0")
-	require.NoError(t, err)
-
-	metadata := &extensions.ExtensionMetadata{
-		Id: "test-ext",
-		Versions: []extensions.ExtensionVersion{
-			{Version: "0.1.0", RequiredAzdVersion: ">= 1.23.0"},
-		},
-	}
-
-	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "0.1.0", azdVersion)
-	require.NoError(t, err)
-	assert.Equal(t, metadata, result)
-	assert.Nil(t, compat)
-}
-
-func TestResolveCompatibleExtension_FilterVersions(t *testing.T) {
-	t.Parallel()
-
-	azdVersion, err := semver.NewVersion("1.24.0")
-	require.NoError(t, err)
-
-	metadata := &extensions.ExtensionMetadata{
-		Id: "test-ext",
-		Versions: []extensions.ExtensionVersion{
-			{Version: "0.1.0", RequiredAzdVersion: ">= 1.23.0"},
-			{Version: "0.2.0", RequiredAzdVersion: ">= 2.0.0"}, // incompatible
-		},
-	}
-
-	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.NotNil(t, compat)
-	// Should have filtered out the incompatible version
-	assert.Len(t, result.Versions, 1)
-	assert.Equal(t, "0.1.0", result.Versions[0].Version)
-}
-
-func TestResolveCompatibleExtension_NoCompatible(t *testing.T) {
-	t.Parallel()
-
-	azdVersion, err := semver.NewVersion("1.0.0")
-	require.NoError(t, err)
-
-	metadata := &extensions.ExtensionMetadata{
-		Id: "test-ext",
-		Versions: []extensions.ExtensionVersion{
-			{Version: "0.1.0", RequiredAzdVersion: ">= 2.0.0"},
-		},
-	}
-
-	_, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no compatible version")
-	require.NotNil(t, compat)
-}
-
-func TestResolveCompatibleExtension_AllCompatible(t *testing.T) {
-	t.Parallel()
-
-	azdVersion, err := semver.NewVersion("1.24.0")
-	require.NoError(t, err)
-
-	metadata := &extensions.ExtensionMetadata{
-		Id: "test-ext",
-		Versions: []extensions.ExtensionVersion{
-			{Version: "0.1.0", RequiredAzdVersion: ">= 1.0.0"},
-			{Version: "0.2.0", RequiredAzdVersion: ">= 1.20.0"},
-		},
-	}
-
-	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion)
-	require.NoError(t, err)
-	assert.Equal(t, metadata, result) // same pointer, no filtering needed
-	require.NotNil(t, compat)
-}
-
-func TestResolveCompatibleExtension_LatestVersion(t *testing.T) {
-	t.Parallel()
-
-	azdVersion, err := semver.NewVersion("1.24.0")
-	require.NoError(t, err)
-
-	metadata := &extensions.ExtensionMetadata{
-		Id: "test-ext",
-		Versions: []extensions.ExtensionVersion{
-			{Version: "0.1.0"},
-		},
-	}
-
-	// "latest" should go through the filter path, not the specific version path
-	result, _, err := resolveCompatibleExtension(metadata, "test-ext", "latest", azdVersion)
-	require.NoError(t, err)
-	assert.Equal(t, metadata, result)
-}
-
-func TestCurrentAzdSemver(t *testing.T) {
-	t.Parallel()
-
-	// In test/dev builds, IsDevVersion() is true, so currentAzdSemver returns nil
-	result := currentAzdSemver()
-	// We just verify it doesn't panic and returns a consistent result
-	// In dev builds this will be nil; in release builds it would be a version
-	_ = result
 }
 
 func TestDisplayValidationResult(t *testing.T) {
@@ -687,41 +535,6 @@ func TestExtensionStatusColor(t *testing.T) {
 		assert.NotEmpty(t, result, "color function should return non-empty for %q", s)
 		assert.Contains(t, result, "\x1b[", "expected ANSI color codes in output for %q", s)
 	}
-}
-
-// --- currentAzdSemver Tests ---
-
-func Test_CurrentAzdSemver_DevVersion(t *testing.T) {
-	// Default dev build returns nil
-	v := currentAzdSemver()
-	assert.Nil(t, v, "dev build should return nil")
-}
-
-func Test_CurrentAzdSemver_ReleaseVersion(t *testing.T) {
-	old := internal.Version
-	internal.Version = "1.24.3 (commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)"
-	defer func() { internal.Version = old }()
-
-	v := currentAzdSemver()
-	require.NotNil(t, v)
-	assert.Equal(t, uint64(1), v.Major())
-	assert.Equal(t, uint64(24), v.Minor())
-	assert.Equal(t, uint64(3), v.Patch())
-	assert.Equal(t, "", v.Prerelease())
-}
-
-func Test_CurrentAzdSemver_PrereleaseStripped(t *testing.T) {
-	old := internal.Version
-	internal.Version = "1.25.0-beta.1-pr.12345 (commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)"
-	defer func() { internal.Version = old }()
-
-	v := currentAzdSemver()
-	require.NotNil(t, v)
-	// Prerelease tag should be stripped
-	assert.Equal(t, "", v.Prerelease())
-	assert.Equal(t, uint64(1), v.Major())
-	assert.Equal(t, uint64(25), v.Minor())
-	assert.Equal(t, uint64(0), v.Patch())
 }
 
 // --- selectDistinctExtension Tests ---

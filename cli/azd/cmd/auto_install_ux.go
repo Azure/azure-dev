@@ -72,6 +72,7 @@ func autoInstallExtensionRequirements(
 
 	if resource.IsRunningOnCI() {
 		return autoInstallResult{}, manualInstallError(
+			extensionManager,
 			requirements,
 			"Auto-installation is not supported in CI/CD environments.",
 		)
@@ -81,7 +82,7 @@ func autoInstallExtensionRequirements(
 	var declined bool
 	var err error
 	if console.IsNoPromptMode() {
-		selections, err = noPromptInstallPlan(requirements)
+		selections, err = noPromptInstallPlan(extensionManager, requirements)
 		if err == nil {
 			console.Message(ctx, "\nNo-prompt mode: installing required extensions automatically.")
 		}
@@ -96,7 +97,7 @@ func autoInstallExtensionRequirements(
 		return autoInstallResult{declined: true}, nil
 	}
 
-	selections, err = orderInstallSelections(selections)
+	selections, err = orderInstallSelections(extensionManager, selections)
 	if err != nil {
 		return autoInstallResult{}, err
 	}
@@ -137,6 +138,7 @@ func installSelectionsUseMultipleSources(selections []extensionInstallSelection)
 }
 
 func orderInstallSelections(
+	extensionManager extensionAutoInstallManager,
 	selections []extensionInstallSelection,
 ) ([]extensionInstallSelection, error) {
 	byID := make(map[string]extensionInstallSelection, len(selections))
@@ -163,10 +165,9 @@ func orderInstallSelections(
 		}
 		state[id] = selectionVisiting
 
-		version, err := extensions.ResolveExtensionVersion(
+		version, err := extensionManager.ResolveVersion(
 			selection.extension,
 			selection.requirement.versionPreference,
-			nil,
 		)
 		if err != nil {
 			return fmt.Errorf("resolving required extension %s: %w", selection.extension.Id, err)
@@ -316,11 +317,13 @@ func recommendedSourceCandidate(
 }
 
 func noPromptInstallPlan(
+	extensionManager extensionAutoInstallManager,
 	requirements []projectExtensionRequirement,
 ) ([]extensionInstallSelection, error) {
 	for _, requirement := range requirements {
 		if len(requirementCandidates(requirement)) != 1 {
 			return nil, manualInstallError(
+				extensionManager,
 				requirements,
 				"Required extensions are available from more than one source.",
 			)
@@ -338,6 +341,7 @@ func noPromptInstallPlan(
 }
 
 func manualInstallError(
+	extensionManager extensionAutoInstallManager,
 	requirements []projectExtensionRequirement,
 	message string,
 ) error {
@@ -351,10 +355,9 @@ func manualInstallError(
 		for _, candidate := range candidates {
 			versionArg := ""
 			if requirement.versionPreference != "" {
-				version, err := extensions.ResolveExtensionVersion(
+				version, err := extensionManager.ResolveVersion(
 					candidate,
 					requirement.versionPreference,
-					nil,
 				)
 				if err != nil {
 					return fmt.Errorf("resolving required extension %s: %w", candidate.Id, err)

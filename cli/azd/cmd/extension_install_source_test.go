@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -395,6 +396,37 @@ func TestResolveSourceLocation_NoPromptFileDirectsToSourceAdd(t *testing.T) {
 	for _, src := range sources {
 		require.NotEqual(t, registryPath, src.Location, "the file source must not be registered")
 	}
+}
+
+func TestExtensionInstall_MissingVersionReportsLatestCompatible(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newBundleInstallTestAction(t)
+	registryPath := writeRegistryFile(t)
+	require.NoError(t, action.sourceManager.Add(t.Context(), "local-dev", &extensions.SourceConfig{
+		Name:     "local-dev",
+		Type:     extensions.SourceKindFile,
+		Location: registryPath,
+	}))
+	action.args = []string{"test.ext"}
+	action.flags.source = "local-dev"
+	action.flags.version = "0.1.0"
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.ErrorContains(
+		t,
+		err,
+		`extension "test.ext" version "0.1.0" was not found; latest compatible version is "1.0.0"`,
+	)
+
+	versionErr, ok := errors.AsType[*extensions.ExtensionVersionNotFoundError](err)
+	require.True(t, ok)
+	require.Contains(
+		t,
+		versionErr.Suggestion(),
+		"azd extension install test.ext --version 1.0.0 --source local-dev",
+	)
 }
 
 func newInstallSourceTestAction(t *testing.T) (*extensionInstallAction, *mocks.MockContext) {

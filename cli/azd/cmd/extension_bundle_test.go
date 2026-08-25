@@ -163,32 +163,29 @@ func TestSourceDisplayLabel(t *testing.T) {
 	require.Equal(t, `source "azd"`, noBundle.sourceDisplayLabelForInstalled("azd"))
 }
 
-func TestWrapDependencyError(t *testing.T) {
+func TestWrapErrorWithSuggestion(t *testing.T) {
 	t.Parallel()
 
-	// Non-dependency errors pass through unchanged.
 	plain := fmt.Errorf("some other failure")
-	require.Equal(t, plain, wrapDependencyError(plain))
+	require.Equal(t, plain, internal.WrapErrorWithSuggestion(plain))
 
-	// Dependency-not-found errors are wrapped with an actionable suggestion.
 	depErr := fmt.Errorf("install failed: %w", &extensions.DependencyNotFoundError{
 		DependencyId: "azure.ai.inspector",
 		ParentId:     "azure.ai.agents",
 	})
-	wrapped := wrapDependencyError(depErr)
+	wrapped := internal.WrapErrorWithSuggestion(depErr)
 
 	suggestErr, ok := errors.AsType[*internal.ErrorWithSuggestion](wrapped)
 	require.True(t, ok, "expected ErrorWithSuggestion, got %T", wrapped)
 	require.Contains(t, suggestErr.Suggestion, "azd extension install azure.ai.inspector")
 	require.ErrorAs(t, suggestErr.Err, new(*extensions.DependencyNotFoundError))
 
-	// Dependency-version errors explain how to satisfy or update the constraint.
 	versionErr := fmt.Errorf("install failed: %w", &extensions.DependencyVersionNotFoundError{
 		DependencyId: "azure.ai.inspector",
 		ParentId:     "azure.ai.agents",
 		Constraint:   ">=2.0.0",
 	})
-	wrapped = wrapDependencyError(versionErr)
+	wrapped = internal.WrapErrorWithSuggestion(versionErr)
 
 	suggestErr, ok = errors.AsType[*internal.ErrorWithSuggestion](wrapped)
 	require.True(t, ok, "expected ErrorWithSuggestion, got %T", wrapped)

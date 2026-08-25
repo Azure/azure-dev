@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
@@ -138,18 +139,22 @@ func findFirstNonFlagArg(args []string, flagsWithValues map[string]bool) (comman
 // from the command arguments. For example, "azd foo demo bar" will check for
 // extensions with namespaces: "foo", "foo.demo", "foo.demo.bar"
 func checkForMatchingExtensions(
-	ctx context.Context, extensionManager *extensions.Manager, args []string) ([]*extensions.ExtensionMetadata, error) {
+	ctx context.Context,
+	extensionManager extensionAutoInstallManager,
+	args []string,
+) ([]*extensions.ExtensionMetadata, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
 
-	options := &extensions.FilterOptions{}
-	registryExtensions, err := extensionManager.FindExtensions(ctx, options)
+	resolution, err := extensionManager.ResolveExtensions(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var matchingExtensions []*extensions.ExtensionMetadata
+	var incompatibleExtensions []*extensions.ExtensionMetadata
+	incompatibleNamespace := ""
 
 	// Generate all possible namespace combinations from the command arguments
 	// For "azd something demo foo" -> check "something", "something.demo", "something.demo.foo"
@@ -157,13 +162,26 @@ func checkForMatchingExtensions(
 		candidateNamespace := strings.Join(args[:i], ".")
 
 		// Check if any extension has this exact namespace
-		for _, ext := range registryExtensions {
+		for _, ext := range resolution.Matches {
 			if ext.Namespace == candidateNamespace {
 				matchingExtensions = append(matchingExtensions, ext)
 			}
 		}
+		for _, ext := range resolution.IncompatibleMatches {
+			if ext.Namespace == candidateNamespace {
+				incompatibleExtensions = append(incompatibleExtensions, ext)
+				incompatibleNamespace = candidateNamespace
+			}
+		}
 	}
 
+	if len(matchingExtensions) == 0 && len(incompatibleExtensions) > 0 {
+		return nil, &extensions.ExtensionAzdVersionIncompatibleError{
+			Namespace:  incompatibleNamespace,
+			AzdVersion: extensionManager.AzdVersion(),
+			Matches:    incompatibleExtensions,
+		}
+	}
 	return matchingExtensions, nil
 }
 
@@ -371,6 +389,9 @@ func tryAutoInstallForPartialNamespace(
 
 	extensionMatches, err := checkForMatchingExtensions(ctx, extensionManager, argsForMatching)
 	if err != nil {
+		if _, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+			return autoInstallResult{}, internal.WrapErrorWithSuggestion(err)
+		}
 		log.Printf("failed to check for matching extensions: %v", err)
 		return autoInstallResult{}, nil
 	}
@@ -391,17 +412,30 @@ func tryAutoInstallForPartialNamespace(
 }
 
 type extensionAutoInstallManager interface {
+	AzdVersion() *semver.Version
 	FindExtensions(ctx context.Context, options *extensions.FilterOptions) ([]*extensions.ExtensionMetadata, error)
+	FindInstallableExtensions(
+		ctx context.Context,
+		options *extensions.InstallResolutionOptions,
+	) ([]*extensions.ExtensionMetadata, error)
+	ResolveExtensions(
+		ctx context.Context,
+		options *extensions.InstallResolutionOptions,
+	) (*extensions.InstallResolutionResult, error)
+	ResolveVersion(
+		extension *extensions.ExtensionMetadata,
+		versionPreference string,
+	) (*extensions.ExtensionVersion, error)
 	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
 	ResolveDependency(
 		ctx context.Context,
 		parent *extensions.ExtensionMetadata,
 		dependency extensions.ExtensionDependency,
 	) (*extensions.ExtensionMetadata, error)
-	Install(
+	InstallWithOptions(
 		ctx context.Context,
 		extension *extensions.ExtensionMetadata,
-		versionPreference string,
+		opts extensions.InstallOptions,
 	) (*extensions.ExtensionVersion, error)
 	ListInstalled() (map[string]*extensions.Extension, error)
 }
@@ -436,7 +470,9 @@ func tryAutoInstallExtensionVersion(
 
 	stepMessage := extensionTaskMessage("Installing", extension.Id)
 	console.ShowSpinner(ctx, stepMessage, input.Step)
-	installedVersion, err := extensionManager.Install(ctx, &extension, versionPreference)
+	installedVersion, err := extensionManager.InstallWithOptions(ctx, &extension, extensions.InstallOptions{
+		VersionPreference: versionPreference,
+	})
 	if err != nil {
 		console.StopSpinner(ctx, stepMessage, input.StepFailed)
 		return false, fmt.Errorf("failed to install extension: %w", err)
@@ -707,11 +743,20 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		}
 
 		requiredHost := unsupportedErr.Host
-		availableExtensionsForHost, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
-			Capability: extensions.ServiceTargetProviderCapability,
-			Provider:   requiredHost,
-		})
+		availableExtensionsForHost, err := extensionManager.FindInstallableExtensions(
+			ctx,
+			&extensions.InstallResolutionOptions{FilterOptions: extensions.FilterOptions{
+				Capability: extensions.ServiceTargetProviderCapability,
+				Provider:   requiredHost,
+			}},
+		)
 		if err != nil {
+			if _, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+				wrappedErr := internal.WrapErrorWithSuggestion(err)
+				displayAutoInstallError(ctx, console, wrappedErr)
+				result.Err = wrappedErr
+				return result
+			}
 			// Do not fail if we couldn't check for extensions - just report the command's own failure
 			log.Println("Error: check for extensions. Skipping auto-install:", err)
 			console.Message(ctx, unsupportedErr.ErrorMessage)
@@ -727,12 +772,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			return result
 		}
 		// Offer only the extensions whose selected version supplies the host and that are not
-		// already installed.
-		availableExtensionsForHost = filterExtensionsForProvider(
-			availableExtensionsForHost,
-			extensions.ServiceTargetProviderCapability,
-			requiredHost,
-		)
+		// already installed. FindInstallableExtensions already filters by the selected release.
 		availableExtensionsForHost = uninstalledExtensionMatches(availableExtensionsForHost, installedExtensions)
 		if len(availableExtensionsForHost) == 0 {
 			// Nothing can be installed to supply the host, so the command's failure stands.
@@ -846,6 +886,12 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// Check if any commands might match extensions with various namespace lengths
 		extensionMatches, err := checkForMatchingExtensions(ctx, extensionManager, argsForMatching)
 		if err != nil {
+			if _, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+				wrappedErr := internal.WrapErrorWithSuggestion(err)
+				displayAutoInstallError(ctx, console, wrappedErr)
+				result.Err = wrappedErr
+				return result
+			}
 			// Do not fail if we couldn't check for extensions - just proceed to normal execution
 			log.Println("Error: check for extensions. Skipping auto-install:", err)
 			result.Err = rootCmd.ExecuteContext(ctx)

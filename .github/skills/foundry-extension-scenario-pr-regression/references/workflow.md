@@ -47,22 +47,25 @@ start_session(command="bash /mnt/c/<path-to-scenarios>/setup-wsl.sh",
 ```
 
 `setup-wsl.sh` owns the WSL build toolchain: it reads the exact Go version from
-`cli/azd/go.mod` and .NET SDK version from the scenario suite's `dotnet-sdk.version`, installing
-the official versions under `/usr/local/go` and `/usr/local/dotnet` when absent or mismatched.
-The downloads are verified against the SHA-256/SHA-512 values from their official release
-metadata. This authorized bootstrap happens before scenario execution and is not a scenario
-workaround.
+`cli/azd/go.mod`, .NET SDK version from `dotnet-sdk.version`, and uv bootstrap version from
+`uv.version`. It installs the official Go and .NET versions under `/usr/local` when absent or
+mismatched, reuses working native uv and Python 3.13+ installations, and installs uv or Python
+only when needed. Downloads are verified against official release checksums. This authorized
+bootstrap happens before scenario execution and is not a scenario workaround.
 
 Wait for it to print "Done. WSL is ready for scenario testing." and then `finish_session`.
-If Go or .NET cannot be downloaded, verified, or installed, or if the build fails, stop and
-report the gate error — do not proceed with stale binaries and do not ask a scenario worker to
-repair the environment.
+If a runtime cannot be downloaded, verified, or installed, or if the build fails, stop and
+report the gate error — do not proceed with stale binaries and do not ask a scenario worker
+to repair the environment.
 
 After `setup-wsl.sh` succeeds, **verify** the installation by starting a quick tester session
-and running `which azd && azd version && dotnet --version`. Confirm that:
+and running `which azd && azd version && dotnet --version && uv --version && python3 --version`.
+Confirm that:
 1. `which azd` returns `/usr/local/bin/azd` (not `/mnt/c/…` or a path ending in `azd.exe`)
 2. `azd version` output contains the expected dev version string (e.g. `0.0.0-dev.0`)
 3. `dotnet --version` equals the exact SDK from `dotnet-sdk.version`
+4. `uv --version` succeeds using a native Linux executable
+5. `python3 --version` reports Python 3.13 or newer
 
 Record the verified version string for the report. Re-run `git rev-parse HEAD` after the build
 and confirm it still equals the tested SHA. For a PR run, also confirm the tree is still clean.
@@ -72,8 +75,9 @@ If any check fails, stop — do NOT proceed to Step 5.
 
 On native Linux or macOS, `setup-wsl.sh` does not apply. The user builds and installs `azd`
 from source using their normal workflow (e.g. `go install`, `make`, or equivalent). Before
-proceeding, verify that `azd version` returns the expected dev build version. If it does not,
-stop and ask the user to build and install the correct version.
+proceeding, verify that `azd version` returns the expected dev build version, `uv --version`
+succeeds, and `python3 --version` reports Python 3.13 or newer. If any check fails, stop and ask
+the user to install the missing runtime or build the correct `azd` version.
 
 #### Hard gate
 
@@ -189,7 +193,8 @@ cleanup-queue wait), and any product or cleanup findings.
 
 Aggregate results into `.reports/<run-id>/FINAL-REPORT.md` and post a PR comment per
 `reporting.md`. If a Tier 2 run started but was interrupted before `2.99-teardown`, run
-`2.99-teardown-down` (or `2.00-setup`'s down hook) so no resources are orphaned, then report.
+`2.99-teardown-down` with the original `shared_agent_name` so no resources are orphaned, then
+report.
 
 ### Step 7 — Stop conditions
 

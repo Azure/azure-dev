@@ -118,25 +118,31 @@ This script:
 2. Reads the required .NET SDK version from `dotnet-sdk.version` and, when necessary, downloads
    the matching official WSL architecture build from Microsoft's release metadata, verifies its
    SHA-512 checksum, and installs it under `/usr/local/dotnet`
-3. Builds `azd` core for the native WSL architecture → `/usr/local/bin/azd`
-4. Ensures the extensions dev kit (`microsoft.azd.extensions`) supports
+3. Reuses an existing native `uv`, or downloads the version pinned by `uv.version` from its
+   official GitHub release and verifies its SHA-256 checksum when uv is missing
+4. Reuses an existing Python 3.13+ interpreter, including an existing uv-managed interpreter,
+   or installs Python 3.13 with uv only when no compatible interpreter exists
+5. Builds `azd` core for the native WSL architecture → `/usr/local/bin/azd`
+6. Ensures the extensions dev kit (`microsoft.azd.extensions`) supports
    `azd x pack --bundle`, installing or upgrading it when needed
-5. Builds, packages, and installs the `azure.ai.agents` extension from source
+7. Builds, packages, and installs the `azure.ai.agents` extension from source
    using `azd x build` → `azd x pack --bundle` → `azd extension install`
-6. Verifies azd, the extension, and the pinned .NET SDK report expected versions
+8. Verifies azd, the extension, .NET SDK, uv, and Python report expected versions
 
 The script properly registers the extension in azd's config, so it will always
 use your dev build — never the published registry version.
 
 **Re-run `setup-wsl.sh` after every local code change** you want to test.
-It supports x86-64 and ARM64 WSL environments. Go and .NET do not need to be installed first;
-the script bootstraps the exact pinned versions. It requires network access to `go.dev` and
-Microsoft's .NET release/download endpoints, Git, `curl` or `wget`, `awk`, `grep`, `tar`,
-`sha256sum`, `sha512sum`, `uname`, and sudo access in WSL. It does not install general OS
+It supports x86-64 and ARM64 WSL environments. Go, .NET, uv, and Python do not need to be
+installed first; the script bootstraps missing runtimes while preserving compatible existing uv
+and Python installations. It requires network access to `go.dev`, Microsoft's .NET
+release/download endpoints, and GitHub Releases, plus Git, `curl` or `wget`, `awk`, `grep`,
+`tar`, `sha256sum`, `sha512sum`, `uname`, and sudo access in WSL. It does not install general OS
 packages or modify shell startup files.
 
 On native Linux or macOS, do not run `setup-wsl.sh`. Build and install the repository's
-development `azd` and extension through your normal local workflow.
+development `azd` and extension through your normal local workflow, and ensure native `uv`
+and Python 3.13+ are available before running scenarios.
 
 ## Authentication
 
@@ -551,10 +557,10 @@ profile/session variable.
   the profile pair above — see [Profile / overrides](#profile--overrides).
 - **Resource naming**: every newly created Azure resource (Foundry
   project/account, azd environment, agent, model deployment, resource group) is
-  named with the `{prefix}-` value from your profile (and, in parallel-ready
-  Tier 1 scenarios, a run-scoped `-{instance}` suffix) so test resources are easy to
-  identify, keep distinct across scenarios and concurrent runs, and clean up. Note that some
-  fields lowercase the value and replace invalid characters with hyphens — that
+  named with the `{prefix}-` value from your profile plus a run-unique component: `-{instance}`
+  in parallel-ready Tier 1 scenarios and the exact `{run_id}` in Tier 2. This keeps test
+  resources distinct across scenarios and concurrent runs and makes cleanup unambiguous. Note
+  that some fields lowercase the value and replace invalid characters with hyphens — that
   normalization is expected (see `sanitizeAgentName` in the extension).
 - `command:` invokes the installed extension as `azd ai agent …`.
 - Init scenarios set `env: AZD_DISABLE_AGENT_DETECT: "1"` to disable agent

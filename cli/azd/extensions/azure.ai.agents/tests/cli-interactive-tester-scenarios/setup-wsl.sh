@@ -9,7 +9,7 @@
 # Prerequisites:
 #   - Git installed in WSL
 #   - curl or wget, plus awk, grep, tar, sha256sum, sha512sum, and uname
-#   - sudo access (for installing Go, .NET, and azd under /usr/local)
+#   - sudo access (for installing Go, .NET, uv, Python, and azd under /usr/local)
 #
 # Usage:
 #   cd cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios
@@ -18,10 +18,11 @@
 # What it does:
 #   1. Installs the Go version pinned by cli/azd/go.mod when needed
 #   2. Installs the .NET SDK pinned by dotnet-sdk.version when needed
-#   3. Builds azd core for the native Linux architecture -> /usr/local/bin/azd
-#   4. Ensures the azd extensions dev kit supports bundle packaging
-#   5. Builds + packages + installs the azure.ai.agents extension from source
-#   6. Verifies the dev version is running
+#   3. Reuses native uv and Python 3.13+ when available, otherwise installs them
+#   4. Builds azd core for the native Linux architecture -> /usr/local/bin/azd
+#   5. Ensures the azd extensions dev kit supports bundle packaging
+#   6. Builds + packages + installs the azure.ai.agents extension from source
+#   7. Verifies the dev version and required runtimes
 
 set -euo pipefail
 
@@ -95,10 +96,12 @@ case "$(uname -m)" in
     x86_64|amd64)
         GO_ARCH="amd64"
         DOTNET_ARCH="x64"
+        UV_TARGET="x86_64-unknown-linux-gnu"
         ;;
     aarch64|arm64)
         GO_ARCH="arm64"
         DOTNET_ARCH="arm64"
+        UV_TARGET="aarch64-unknown-linux-gnu"
         ;;
     *)
         echo "ERROR: Unsupported WSL architecture '$(uname -m)'." >&2
@@ -291,7 +294,128 @@ else
 fi
 echo ""
 
-# --- Step 3: Build azd core ---
+# --- Step 3: Ensure uv and Python 3.13+ for local-agent scenarios ---
+UV_VERSION_FILE="$SCRIPT_DIR/uv.version"
+PINNED_UV_VERSION=$(awk 'NF { sub(/\r$/, "", $1); print $1; exit }' "$UV_VERSION_FILE")
+if [[ ! "$PINNED_UV_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "ERROR: Could not read a valid uv version from $UV_VERSION_FILE." >&2
+    exit 1
+fi
+
+UV_PATH=""
+if command -v uv &>/dev/null; then
+    CANDIDATE_UV_PATH=$(command -v uv)
+    CANDIDATE_UV_VERSION=$(
+        "$CANDIDATE_UV_PATH" --version 2>/dev/null | awk '{ print $2 }' || true
+    )
+    if [[ "$CANDIDATE_UV_PATH" != /mnt/* ]] &&
+        [[ "$CANDIDATE_UV_PATH" != *.exe ]] &&
+        [[ "$CANDIDATE_UV_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-z0-9.-]+)?$ ]] &&
+        "$CANDIDATE_UV_PATH" python find --help &>/dev/null &&
+        "$CANDIDATE_UV_PATH" python install --help &>/dev/null; then
+        UV_PATH="$CANDIDATE_UV_PATH"
+        echo "▸ Using existing native uv: $CANDIDATE_UV_VERSION ($UV_PATH)"
+    fi
+fi
+
+if [ -z "$UV_PATH" ]; then
+    UV_ARCHIVE="uv-${UV_TARGET}.tar.gz"
+    UV_ARCHIVE_PATH="$TEMP_DIR/$UV_ARCHIVE"
+    UV_CHECKSUM_PATH="$TEMP_DIR/$UV_ARCHIVE.sha256"
+    UV_EXTRACT_DIR="$TEMP_DIR/uv"
+    UV_RELEASE_URL="https://github.com/astral-sh/uv/releases/download/${PINNED_UV_VERSION}"
+
+    echo "▸ Installing scenario-pinned uv: $PINNED_UV_VERSION $UV_TARGET"
+    download "$UV_RELEASE_URL/$UV_ARCHIVE.sha256" "$UV_CHECKSUM_PATH"
+    UV_SHA256=$(awk 'NR == 1 { print $1 }' "$UV_CHECKSUM_PATH")
+    if [[ ! "$UV_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+        echo "ERROR: Could not resolve the official SHA-256 for $UV_ARCHIVE." >&2
+        exit 1
+    fi
+
+    download "$UV_RELEASE_URL/$UV_ARCHIVE" "$UV_ARCHIVE_PATH"
+    if ! printf '%s  %s\n' "$UV_SHA256" "$UV_ARCHIVE_PATH" |
+        sha256sum --check --status; then
+        echo "ERROR: SHA-256 verification failed for uv $PINNED_UV_VERSION $UV_TARGET." >&2
+        exit 1
+    fi
+
+    mkdir "$UV_EXTRACT_DIR"
+    tar -C "$UV_EXTRACT_DIR" --strip-components=1 -xzf "$UV_ARCHIVE_PATH"
+    if [ ! -x "$UV_EXTRACT_DIR/uv" ] ||
+        [ "$("$UV_EXTRACT_DIR/uv" --version | awk '{ print $2 }')" != "$PINNED_UV_VERSION" ]; then
+        echo "ERROR: Downloaded uv archive verification failed." >&2
+        exit 1
+    fi
+
+    sudo install -m 755 "$UV_EXTRACT_DIR/uv" /usr/local/bin/uv
+    sudo install -m 755 "$UV_EXTRACT_DIR/uvx" /usr/local/bin/uvx
+    hash -r
+    UV_PATH="/usr/local/bin/uv"
+    echo "  Installed and verified uv $PINNED_UV_VERSION $UV_TARGET"
+fi
+
+python_version() {
+    "$1" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null
+}
+
+is_native_linux_path() {
+    [[ "$1" != /mnt/* ]] && [[ "$1" != *.exe ]]
+}
+
+is_compatible_python() {
+    local version major minor
+    is_native_linux_path "$1" || return 1
+    version=$(python_version "$1") || return 1
+    if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+ ]]; then
+        return 1
+    fi
+    major="${BASH_REMATCH[1]}"
+    minor="${BASH_REMATCH[2]}"
+    [ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge 13 ]; }
+}
+
+PYTHON_PATH=""
+for candidate in python3 python; do
+    if command -v "$candidate" &>/dev/null; then
+        CANDIDATE_PYTHON_PATH=$(command -v "$candidate")
+        if is_compatible_python "$CANDIDATE_PYTHON_PATH"; then
+            PYTHON_PATH="$CANDIDATE_PYTHON_PATH"
+            break
+        fi
+    fi
+done
+
+if [ -n "$PYTHON_PATH" ]; then
+    echo "▸ Using existing Python $(python_version "$PYTHON_PATH") ($PYTHON_PATH)"
+else
+    EXISTING_UV_PYTHON=$(UV_PYTHON_DOWNLOADS=never "$UV_PATH" python find ">=3.13" 2>/dev/null || true)
+    if [ -n "$EXISTING_UV_PYTHON" ] && is_compatible_python "$EXISTING_UV_PYTHON"; then
+        echo "▸ Reusing existing uv-managed Python $(python_version "$EXISTING_UV_PYTHON")"
+        PYTHON_PATH="$EXISTING_UV_PYTHON"
+    else
+        echo "▸ Installing Python 3.13 with uv"
+        "$UV_PATH" python install 3.13 --no-progress
+        PYTHON_PATH=$(
+            UV_PYTHON_DOWNLOADS=never "$UV_PATH" python find ">=3.13" 2>/dev/null || true
+        )
+        if [ -z "$PYTHON_PATH" ] || ! is_compatible_python "$PYTHON_PATH"; then
+            echo "ERROR: Python 3.13 installation verification failed." >&2
+            exit 1
+        fi
+        echo "  Installed and verified Python $(python_version "$PYTHON_PATH")"
+    fi
+
+    # azd probes python3/python on PATH when a project does not use uv.lock.
+    sudo ln -sfn "$PYTHON_PATH" /usr/local/bin/python3
+    hash -r
+    PYTHON_PATH=$(command -v python3)
+fi
+
+PYTHON_VERSION=$(python_version "$PYTHON_PATH")
+echo ""
+
+# --- Step 4: Build azd core ---
 echo "▸ Building azd core ($EXPECTED_GO_PLATFORM)..."
 
 EXPECTED_AZD_VERSION="0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
@@ -305,7 +429,7 @@ sudo install -m 755 "$TEMP_DIR/azd-dev-build" /usr/local/bin/azd
 echo "  ✓ Installed /usr/local/bin/azd"
 echo ""
 
-# --- Step 4: Ensure microsoft.azd.extensions supports bundle packaging ---
+# --- Step 5: Ensure microsoft.azd.extensions supports bundle packaging ---
 echo "▸ Checking azd extensions dev kit bundle support (microsoft.azd.extensions)..."
 
 if has_bundle_capable_dev_kit; then
@@ -321,13 +445,13 @@ else
 fi
 echo ""
 
-# --- Step 5: Build extension from source ---
+# --- Step 6: Build extension from source ---
 echo "▸ Building azure.ai.agents extension ($EXPECTED_GO_PLATFORM)..."
 azd x build -C "$EXTENSION_DIR"
 echo "  ✓ Extension built"
 echo ""
 
-# --- Step 6: Package as bundle ---
+# --- Step 7: Package as bundle ---
 echo "▸ Packaging extension bundle..."
 azd x pack --bundle -C "$EXTENSION_DIR"
 
@@ -344,13 +468,13 @@ fi
 echo "  ✓ Bundle created: $BUNDLE_ZIP"
 echo ""
 
-# --- Step 7: Install from bundle ---
+# --- Step 8: Install from bundle ---
 echo "▸ Installing extension from bundle..."
 azd extension install "$BUNDLE_ZIP" --force --no-prompt
 echo "  ✓ Extension installed and registered"
 echo ""
 
-# --- Step 8: Verify ---
+# --- Step 9: Verify ---
 echo "▸ Verifying installation..."
 
 AZD_VER=$(azd version 2>&1 | head -1)
@@ -366,6 +490,8 @@ fi
 EXT_VER=$(azd ai agent version 2>&1)
 echo "  extension:   $EXT_VER"
 echo "  .NET SDK:   $DOTNET_SDK_VERSION"
+echo "  uv:         $("$UV_PATH" --version)"
+echo "  Python:     $PYTHON_VERSION ($PYTHON_PATH)"
 
 if ! echo "$EXT_VER" | grep -qi "version"; then
     echo "ERROR: Failed to get extension version. Is it properly registered?" >&2

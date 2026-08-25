@@ -83,8 +83,9 @@ per-scenario `instance` values that must be threaded consistently through every 
 The mandatory **`azd` binary build/verify gate** and **recipe validation** are shared gates the
 **foundry-extension-scenario-orchestrator** owns (see the `foundry-extension-scenario-orchestrator` agent and
 [`../foundry-extension-scenario-pr-regression/references/workflow.md`](../foundry-extension-scenario-pr-regression/references/workflow.md)
-§ Step 1b). When the orchestrator dispatches this skill it has already run them; when this skill
-runs standalone, perform those same gates first — do not run any scenario against an unverified
+§ Step 2 for the binary/toolchain gate and § Step 5, item 1 for recipe validation). When
+the orchestrator dispatches this skill it has already run them; when this skill runs
+standalone, perform those same gates first — do not run any scenario against an unverified
 `azd` binary.
 
 ## Workflow
@@ -191,8 +192,8 @@ global product barrier and complete the serial Tier 1b cleanup queue before repo
 Aggregate every worker's verdict into `.reports/<run-id>/FINAL-REPORT.md` (see
 **Reporting** below). Post a PR comment **only** if the user explicitly asked to tie this sweep
 to a PR; a suite run is not PR-scoped by default. If a Tier 2 run started but was interrupted
-before `2.99-teardown`, run `2.99-teardown-down` (or `2.00-setup`'s down hook) so no Azure
-resources are orphaned, then report that status.
+before `2.99-teardown`, run `2.99-teardown-down` with the original `shared_agent_name`, then
+report that status.
 
 ## Execution mechanics (single source)
 

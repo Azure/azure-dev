@@ -55,11 +55,11 @@ source — read it, don't restate it.
    through every worker after adding that scenario's assigned `instance` where applicable.
 2. **`azd` binary gate (mandatory).** Ensure a verified native-Linux `azd` dev build is
    installed before any scenario runs, per
-   `.github/skills/foundry-extension-scenario-pr-regression/references/workflow.md` § Step 1b (Windows/WSL:
-   `setup-wsl.sh` bootstraps the repository-pinned Go version and scenario-pinned .NET SDK
-   when needed, then confirm `which azd` = `/usr/local/bin/azd`, `azd version` shows the dev
-   string, and `dotnet --version` equals the pinned SDK; native Linux/macOS: confirm the
-   user's dev build without running WSL setup). **If bootstrap or verification fails, stop** —
+   `.github/skills/foundry-extension-scenario-pr-regression/references/workflow.md` § Step 2 (Windows/WSL:
+   `setup-wsl.sh` bootstraps the repository-pinned Go version, scenario-pinned .NET SDK and uv,
+   and Python 3.13+ when needed, then verifies the native tools and versions; native Linux/macOS:
+   confirm the user's dev build and required runtimes without running WSL setup).
+   **If bootstrap or verification fails, stop** —
    do not run scenarios against the wrong toolchain and do not delegate environment repair to
    a worker.
 3. **Cost / consent gate.** List the plan grouped by tier. Tier 0 is free; Tier 1 needs
@@ -153,8 +153,8 @@ Aggregate every worker's verdict into `.reports/<run-id>/FINAL-REPORT.md` and, f
 run, post the PR comment — per
 `.github/skills/foundry-extension-scenario-pr-regression/references/reporting.md`. Never soften a real regression
 to make the table green. If a Tier 2 run started but was interrupted before `2.99-teardown`,
-run teardown (or `2.00-setup`'s down hook) so no Azure resources are left provisioned, then
-report that status explicitly. Report every Tier 1b cleanup as completed, failed, or still
+run `2.99-teardown-down` with the original `shared_agent_name`, then report that status
+explicitly. Report every Tier 1b cleanup as completed, failed, or still
 pending; never claim resources were removed from an entry that did not complete cleanup.
 
 ## Exit criteria

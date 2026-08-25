@@ -1,6 +1,6 @@
 # Tier 2 (cloud E2E) — TEARDOWN: destroy all resources created by the setup scenario.
 #
-# ⚠️ Run this LAST, after all 21-..2A targeted scenarios are done. Cleans up the
+# ⚠️ Run this LAST, after all targeted 2.01-2.18 scenarios are done. Cleans up the
 # shared agent and its Azure resources to stop incurring cost.
 name: "teardown-down"
 command: "azd down --force --purge"

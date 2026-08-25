@@ -110,7 +110,7 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "service.arm.deployment.failed",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
+				fields.ErrorKey(fields.ServiceNameKey.Key).String("arm"),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String(mustMarshalJson(
 					[]map[string]any{
 						{
@@ -145,7 +145,7 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "service.arm.validate.failed",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
+				fields.ErrorKey(fields.ServiceNameKey.Key).String("arm"),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String(mustMarshalJson(
 					[]map[string]any{
 						{
@@ -174,7 +174,7 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "service.arm.503",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
+				fields.ErrorKey(fields.ServiceNameKey.Key).String("arm"),
 				fields.ErrorKey(fields.ServiceHost.Key).String("management.azure.com"),
 				fields.ErrorKey(fields.ServiceMethod.Key).String("GET"),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String("ServiceUnavailable"),
@@ -196,7 +196,7 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "service.aad.failed",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ServiceName.Key).String("aad"),
+				fields.ErrorKey(fields.ServiceNameKey.Key).String("aad"),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String("50076,50078,50079"),
 				fields.ErrorKey(fields.ServiceStatusCode.Key).String("invalid_grant"),
 				fields.ErrorKey(fields.ServiceCorrelationId.Key).String("12345"),
@@ -226,7 +226,7 @@ func Test_MapError(t *testing.T) {
 			wantErrReason: "error.suggestion",
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrType.String("service.aad.failed"),
-				fields.ErrorKey(fields.ServiceName.Key).String("aad"),
+				fields.ErrorKey(fields.ServiceNameKey.Key).String("aad"),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String("530084"),
 				fields.ErrorKey(fields.ServiceStatusCode.Key).String("invalid_grant"),
 				fields.ErrorKey(fields.ServiceCorrelationId.Key).String("blocked-token-protection"),
@@ -250,7 +250,7 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "ext.service.create_agent.ratelimitexceeded",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ServiceName.Key).String("openai"),
+				fields.ErrorKey(fields.ServiceNameKey.Key).String("openai"),
 				fields.ErrorKey(fields.ServiceHost.Key).String("openai.azure.com"),
 				fields.ErrorKey(fields.ServiceStatusCode.Key).Int(429),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String("create_agent.RateLimitExceeded"),
@@ -276,7 +276,7 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "ext.service.ai.500",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ServiceName.Key).String("ai"),
+				fields.ErrorKey(fields.ServiceNameKey.Key).String("ai"),
 				fields.ErrorKey(fields.ServiceHost.Key).String("services.ai.azure.com"),
 				fields.ErrorKey(fields.ServiceStatusCode.Key).Int(500),
 			},

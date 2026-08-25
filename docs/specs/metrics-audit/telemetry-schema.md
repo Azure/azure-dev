@@ -52,9 +52,9 @@ These are set once at process startup via `resource.New()` and attached to every
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Service name | `service.name` | — | — | Always `"azd"` |
-| Service version | `service.version` | — | — | Build version string |
-| OS type | `os.type` | — | — | e.g. `linux`, `windows`, `darwin` |
+| Service name | `service.name` | SystemMetadata | PerformanceAndHealth | Always `"azd"` |
+| Service version | `service.version` | SystemMetadata | FeatureInsight | Build version string |
+| OS type | `os.type` | SystemMetadata | FeatureInsight | e.g. `linux`, `windows`, `darwin` |
 | OS version | `os.version` | SystemMetadata | PerformanceAndHealth | Kernel / build version |
 | Host architecture | `host.arch` | SystemMetadata | PerformanceAndHealth | e.g. `amd64`, `arm64` |
 | Runtime version | `process.runtime.version` | SystemMetadata | PerformanceAndHealth | Go version |

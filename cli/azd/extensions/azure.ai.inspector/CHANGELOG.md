@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.5 (2026-08-24)
+
+### Other Changes
+
+- [[#9580]](https://github.com/Azure/azure-dev/pull/9580) Report when the Agent Inspector interface is ready while preserving the originating trace context.
+
 ## 1.0.0-beta.4 (2026-08-20)
 
 ### Features Added

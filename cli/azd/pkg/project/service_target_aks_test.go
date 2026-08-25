@@ -245,6 +245,74 @@ func Test_AKS_Publish(t *testing.T) {
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", publishArtifacts[0].Location)
 }
 
+func Test_AKS_Publish_ImagePassthrough(t *testing.T) {
+	tests := []struct {
+		name             string
+		packageArtifacts ArtifactCollection
+		wantImage        string
+	}{
+		{
+			name:      "configured image",
+			wantImage: "private.example.com/team/agent:v1",
+		},
+		{
+			name: "from package override",
+			packageArtifacts: ArtifactCollection{&Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "other.example.com/team/agent:v2",
+				LocationKind: LocationKindLocal,
+			}},
+			wantImage: "other.example.com/team/agent:v2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			ostest.Chdir(t, tempDir)
+
+			mockContext := mocks.NewMockContext(t.Context())
+			err := setupMocksForAksTarget(mockContext)
+			require.NoError(t, err)
+
+			serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+			serviceConfig.Image = osutil.NewExpandableString("private.example.com/team/agent:v1")
+			serviceConfig.Docker.ImagePassthrough = true
+			env := createEnv()
+			azdCtx := createTestAzdContext(t, env)
+
+			serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil, azdCtx)
+			err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
+			require.NoError(t, err)
+
+			serviceContext := NewServiceContext()
+			serviceContext.Package = tt.packageArtifacts
+			scope := environment.NewTargetResource(
+				"SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster),
+			)
+
+			publishResult, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+					return serviceTarget.Publish(
+						*mockContext.Context, serviceConfig, serviceContext, scope, progress, &PublishOptions{})
+				},
+			)
+
+			require.NoError(t, err)
+			require.NotNil(t, publishResult)
+			require.Len(t, publishResult.Artifacts, 1)
+			require.Equal(t, tt.wantImage, env.Dotenv()["SERVICE_API_IMAGE_NAME"])
+
+			artifact := publishResult.Artifacts[0]
+			require.Equal(t, ArtifactKindContainer, artifact.Kind)
+			require.Equal(t, tt.wantImage, artifact.Location)
+			require.Equal(t, LocationKindRemote, artifact.LocationKind)
+			require.Equal(t, "true", artifact.Metadata[MetadataKeyImagePassthrough])
+			require.Equal(t, tt.wantImage, artifact.Metadata["remoteImage"])
+		})
+	}
+}
+
 func Test_AKS_Publish_NoContainer(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)

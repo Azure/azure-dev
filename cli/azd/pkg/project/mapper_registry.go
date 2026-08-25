@@ -201,16 +201,17 @@ func registerProjectMappings() {
 		}
 
 		return &azdext.DockerProjectOptions{
-			Path:        src.Path,
-			Context:     src.Context,
-			Platform:    src.Platform,
-			Target:      src.Target,
-			Registry:    registry,
-			Image:       image,
-			Tag:         tag,
-			RemoteBuild: src.RemoteBuild,
-			BuildArgs:   buildArgs,
-			Network:     src.Network,
+			Path:             src.Path,
+			Context:          src.Context,
+			Platform:         src.Platform,
+			Target:           src.Target,
+			Registry:         registry,
+			Image:            image,
+			Tag:              tag,
+			RemoteBuild:      src.RemoteBuild,
+			ImagePassthrough: src.ImagePassthrough,
+			BuildArgs:        buildArgs,
+			Network:          src.Network,
 		}, nil
 	})
 
@@ -427,15 +428,16 @@ func registerProjectMappings() {
 		}
 
 		result := DockerProjectOptions{
-			Path:        src.Path,
-			Context:     src.Context,
-			Platform:    src.Platform,
-			Target:      src.Target,
-			Registry:    osutil.NewExpandableString(src.Registry),
-			Image:       osutil.NewExpandableString(src.Image),
-			Tag:         osutil.NewExpandableString(src.Tag),
-			RemoteBuild: src.RemoteBuild,
-			Network:     src.Network,
+			Path:             src.Path,
+			Context:          src.Context,
+			Platform:         src.Platform,
+			Target:           src.Target,
+			Registry:         osutil.NewExpandableString(src.Registry),
+			Image:            osutil.NewExpandableString(src.Image),
+			Tag:              osutil.NewExpandableString(src.Tag),
+			RemoteBuild:      src.RemoteBuild,
+			ImagePassthrough: src.ImagePassthrough,
+			Network:          src.Network,
 		}
 
 		if len(src.BuildArgs) > 0 {
@@ -455,15 +457,16 @@ func registerProjectMappings() {
 		}
 
 		result := &DockerProjectOptions{
-			Path:        src.Path,
-			Context:     src.Context,
-			Platform:    src.Platform,
-			Target:      src.Target,
-			Registry:    osutil.NewExpandableString(src.Registry),
-			Image:       osutil.NewExpandableString(src.Image),
-			Tag:         osutil.NewExpandableString(src.Tag),
-			RemoteBuild: src.RemoteBuild,
-			Network:     src.Network,
+			Path:             src.Path,
+			Context:          src.Context,
+			Platform:         src.Platform,
+			Target:           src.Target,
+			Registry:         osutil.NewExpandableString(src.Registry),
+			Image:            osutil.NewExpandableString(src.Image),
+			Tag:              osutil.NewExpandableString(src.Tag),
+			RemoteBuild:      src.RemoteBuild,
+			ImagePassthrough: src.ImagePassthrough,
+			Network:          src.Network,
 		}
 
 		if len(src.BuildArgs) > 0 {

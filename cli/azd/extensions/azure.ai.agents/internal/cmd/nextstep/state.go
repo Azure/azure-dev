@@ -31,6 +31,10 @@ const (
 	// wire cmd → nextstep, so the reverse import would close a cycle.
 	agentHost = "azure.ai.agent"
 
+	// connectionHost matches azure.yaml for an azure.ai.connection
+	// service. Duplicated here so nextstep stays free of cmd imports.
+	connectionHost = "azure.ai.connection"
+
 	// agentVersionVarFormat is the env-var name that signals a deployed
 	// agent service. Filled with the upper-cased service key.
 	agentVersionVarFormat = "AGENT_%s_VERSION"
@@ -332,6 +336,14 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 			populateManifestResources(project.Path, state)
 		}
 		splitToolboxState = populateSplitToolboxes(
+			ctx,
+			src,
+			envName,
+			project,
+			state,
+			&errs,
+		)
+		populateConnections(
 			ctx,
 			src,
 			envName,

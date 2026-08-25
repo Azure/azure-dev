@@ -30,11 +30,17 @@ Files under `internal/cmd/` map to the command they implement:
 | `internal/cmd/root.go` | `cmd:help` + broad | Touches the whole command tree — treat as broad (see §3). |
 | `internal/cmd/listen.go` | — | gRPC host entrypoint; not scenario-testable. |
 
+After applying every rule in this document, retain every changed file that matched no rule.
+Do not guess a command tag or broaden the run on its behalf. Report each exact path as an
+unmapped coverage gap in the proposed plan and final test output so mapping omissions cannot
+silently produce an empty or incomplete regression set.
+
 ## 2. Changed command with NO scenario coverage (gaps)
 
 These commands have **no** scenario in the suite yet. If the PR touches them, you cannot
 run a regression check — **report the gap** and recommend the author add a scenario
-(per the extension `AGENTS.md`), rather than silently passing:
+(per the extension `AGENTS.md`), rather than silently passing. Report these known gaps together
+with the unmatched changed files retained by §1:
 
 | Changed file (glob) | Uncovered command |
 | --- | --- |

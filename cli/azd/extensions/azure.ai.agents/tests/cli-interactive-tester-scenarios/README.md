@@ -396,7 +396,7 @@ as their `cwd`.
 | `tier2/2.03-invoke-remote.yaml` | `invoke` (remote) |
 | `tier2/2.04-invoke-new-session.yaml` | `invoke --new-session` / `--new-conversation` (session vs conversation memory) |
 | `tier2/2.05-invoke-input-file.yaml` | `invoke -f <file>` |
-| `tier2/2.06-invoke-protocol-invocations.yaml` | `invoke --protocol invocations` (session-bound memory; `--new-session` resets, `--new-conversation` no-op) |
+| `tier2/2.06-invoke-protocol-invocations.yaml` | Unsupported `invoke --protocol invocations` against the Basic Responses agent (clear protocol-mismatch error) |
 | `tier2/2.07-sessions-lifecycle.yaml` | `sessions create/list/show/delete` |
 | `tier2/2.08-files-lifecycle.yaml` | `files upload/list/stat/mkdir/download/delete` |
 | `tier2/2.09-monitor-console.yaml` | `monitor` (console) |
@@ -408,6 +408,10 @@ as their `cwd`.
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
 | `tier2/2.18-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
 | `tier2/2.99-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
+
+The shared Tier 2 agent supports the Responses protocol only. The suite does not yet cover
+successful Invocations calls or their session-bound memory semantics; that requires a separate
+Invocations-capable setup and lifecycle.
 
 ## Tags
 

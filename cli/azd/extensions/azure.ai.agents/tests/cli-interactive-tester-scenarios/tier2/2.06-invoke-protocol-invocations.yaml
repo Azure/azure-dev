@@ -1,15 +1,12 @@
-# Tier 2 (cloud E2E) — `invoke --protocol invocations` and its memory semantics.
+# Tier 2 (cloud E2E) — unsupported `invoke --protocol invocations` validation.
 #
 # Precondition: 2.00-setup-deploy-shared-agent.yaml has been run successfully.
 #
-# NOTE: the shared agent is deployed with the "responses" protocol. This scenario
-# exercises the invocations protocol path and its DISTINCT memory model:
-#   - memory is bound to the SESSION (reset with --new-session)
-#   - --new-conversation has NO effect under invocations (opposite of responses)
-# If the deployed agent does not support invocations, the command should fail
-# CLEANLY (clear protocol-mismatch error), which is itself a valid result to
-# capture. Frame findings around clarity, not around forcing success.
-name: "invoke-protocol-invocations"
+# The shared Basic Responses agent intentionally does not support invocations. This
+# scenario deterministically verifies that requesting the wrong protocol fails
+# cleanly. Positive invocations and session-memory semantics require a separate
+# invocations-capable deployed agent and are not covered by this scenario.
+name: "invoke-protocol-invocations-unsupported"
 command: "azd ai agent invoke --protocol invocations \"Remember the word 'banana'.\""
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
 tags: ["tier:2", "cmd:invoke", "serial-only"]
@@ -23,13 +20,10 @@ pre:
     continue_on_error: true
 
 goals:
-  - "Run the invoke command with '--protocol invocations' against the deployed shared agent."
-  - "If the agent does not support the invocations protocol, confirm the command fails with a CLEAR protocol-mismatch error (not a 500, hang, or stack trace), capture it, and report a finding describing the message; then STOP."
-  - "If the invocations protocol IS supported and the first call succeeds, run a follow-up: 'azd ai agent invoke --protocol invocations \"What word did I ask you to remember?\"' and confirm the agent recalls 'banana' (session memory persists across calls within the same session)."
-  - "Run 'azd ai agent invoke --protocol invocations --new-conversation \"What word did I ask you to remember?\"' and confirm memory is STILL retained (under invocations, --new-conversation has NO effect; memory is bound to the session)."
-  - "Run 'azd ai agent invoke --protocol invocations --new-session \"What word did I ask you to remember?\"' and confirm memory is RESET (the agent no longer recalls 'banana')."
-  - "Take a screenshot of the relevant responses."
-  - "Report a finding if --new-conversation unexpectedly resets memory, if --new-session does NOT reset it, or if an unsupported protocol yields an unclear error."
+  - "Run the invoke command with '--protocol invocations' against the deployed Basic Responses shared agent."
+  - "Confirm the command fails with a CLEAR protocol-mismatch error, not a 500, hang, or stack trace. A successful invocation is a failure because it means the shared-agent protocol contract has changed; do not continue into memory assertions."
+  - "Take a screenshot of the protocol-mismatch error."
+  - "Report a finding if the command succeeds or if the unsupported protocol produces an unclear error."
 
 post:
   - run: "echo 'invoke-protocol-invocations complete; no local teardown required'"

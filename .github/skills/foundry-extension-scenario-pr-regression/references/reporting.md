@@ -7,11 +7,13 @@ Two outputs: a local `FINAL-REPORT.md` artifact and a PR comment.
 Write to `<scenarios-dir>/.reports/<run-id>/FINAL-REPORT.md` (the `.reports/` tree is
 git-ignored). Include:
 
-- Run header: run ID, PR number/URL, branch, base ref, the derived tag set, and the
-  tiers actually run.
+- Run header: run ID, PR number/URL, branch, base ref, tested SHA, verified `azd` version,
+  whether the tested tree had local modifications, the derived tag set, and the tiers actually
+  run. A PR run must always report a clean tree and a tested SHA equal to that PR's head SHA.
 - A per-tier table of scenarios with columns: `Scenario | Tier | Result | Duration | Findings`.
-- A short "Coverage gaps" section listing any changed command(s) with no scenario (from
-  `impact-mapping.md` §2), so the author knows to add one.
+- A short "Coverage gaps" section listing known uncovered commands and every exact changed-file
+  path that matched no impact rule, so omissions are visible even when no scenario can be
+  selected.
 - Links to the per-scenario `tester-reports/<run_name>/` folders for screenshots/HTML.
 - Tier 1b cleanup status from `CLEANUP-STATUS.md`, calling out every failed or still-pending
   cleanup.
@@ -24,7 +26,7 @@ formatting). Keep it scannable — full detail lives in the artifact. Suggested 
 ```markdown
 ## 🧪 Agent scenario regression check
 
-**Branch:** `<headRef>` → `<baseRef>` · **Run:** `<run-id>`
+**Branch:** `<headRef>` → `<baseRef>` · **SHA:** `<tested-sha>` · **Run:** `<run-id>`
 **Impacted tags:** `cmd:init`, `cmd:invoke` · **Tiers run:** 0, 1, 1b, 2
 
 | Scenario | Tier | Result | Duration |
@@ -41,7 +43,8 @@ formatting). Keep it scannable — full detail lives in the artifact. Suggested 
 - `2.04-invoke-new-session`: `--new-conversation` still recalled the prior name — memory
   was not reset. (screenshot: …)
 
-**Coverage gaps:** this PR also touches `mcp.go`, which has no scenario — consider adding one.
+**Coverage gaps:** `internal/cmd/mcp.go` has no scenario;
+`internal/cmd/session_carryover.go` matched no impact rule.
 
 <sub>Run locally via the `foundry-extension-scenario-pr-regression` skill (or the `foundry-extension-scenario-orchestrator` agent). Not run in CI.</sub>
 ```
@@ -57,6 +60,10 @@ Rules:
   of the PR's change is a FAIL — report it and recommend fixing the code, not the scenario.
 - If the user opted out of posting (or there's no PR), write only the artifact and print the
   summary to the user instead.
+- Never post results unless the tested SHA equals the PR head SHA and the tested tree was clean.
+  For a local-only run, report the commit and local-modification state only in the local artifact.
+- When no impact tags map, state that zero scenarios ran and report the unmapped paths. Do not
+  present the gap-only result as a passing regression check.
 - Mention any Tier 2 teardown status explicitly (e.g. "`2.99-teardown-down` ran — no resources
   left provisioned") so the reader knows nothing is still costing money.
 - Treat Tier 1b product verdicts as provisional until deferred cleanup completes. A cleanup

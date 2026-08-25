@@ -86,11 +86,14 @@ workers for deferred Tier 1b post hooks per that spec. This skill's job is selec
 
 ## Exit Criteria
 
-- The current branch's PR was resolved (or the user supplied one / chose to skip the comment).
+- The target PR was resolved before the build, and a posting run used a clean checkout whose
+  tested SHA exactly matched that PR's head SHA (or the user chose a local-only, non-posting run).
 - The impacted scenario set was derived from the PR diff and **confirmed by the user**
   (including an explicit cost acknowledgement before any Tier 1b or Tier 2 run).
 - Every selected scenario was driven to completion with a recorded PASS/FAIL/SKIPPED, duration,
   product and cleanup findings, and a `FINAL-REPORT.md` was written under `.reports/<run-id>/`.
+- Every changed file that matched no impact rule was listed as a coverage gap in the plan and
+  final output rather than silently omitted.
 - Scenarios with a `requires:` field whose prerequisite did not PASS are marked ⏭️ SKIPPED
   (not FAIL) with a clear reason.
 - A results comment was posted on the PR (unless the user opted out), and any Tier 1b/Tier 2

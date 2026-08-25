@@ -5,7 +5,29 @@
 Run the checks in `prerequisites.md`. If a hard prerequisite is missing, stop with a clear
 message. Don't auto-install or work around a missing MCP server or profile.
 
-### Step 1b — Build and verify the `azd` binary (mandatory gate)
+### Step 1b — Resolve the test target and bind the checkout
+
+Resolve the PR before building anything:
+
+```bash
+gh pr view [<number-or-url>] --json number,url,headRefName,headRefOid,baseRefName,title
+```
+
+- **PR found or supplied:** capture `number`, `url`, `headRefName`, `headRefOid`, and
+  `baseRefName`. Require `git rev-parse HEAD` to equal `headRefOid` and
+  `git status --porcelain --untracked-files=all` to be empty. If either check fails, stop and
+  ask the user to check out the exact PR head with a clean tree. Do not switch refs, discard
+  changes, or publish results from a different or locally modified tree.
+- **No PR for the current branch:** ask the user via `ask_user` whether to (a) supply a PR
+  number/URL, (b) run against the local diff vs `origin/main` without posting a comment, or
+  (c) abort.
+- **Local-only run:** capture `git rev-parse HEAD` and whether the tree has local modifications.
+  The final report must identify both. Never post local-only results to a PR.
+
+Retain the resolved commit as the **tested SHA**. The build and all subsequent scenario work
+must use this same checkout.
+
+### Step 2 — Build and verify the `azd` binary (mandatory gate)
 
 Before running **any** scenarios, the orchestrator must ensure a working native Linux `azd`
 dev build is available. The exact steps depend on the host OS:
@@ -42,8 +64,9 @@ and running `which azd && azd version && dotnet --version`. Confirm that:
 2. `azd version` output contains the expected dev version string (e.g. `0.0.0-dev.0`)
 3. `dotnet --version` equals the exact SDK from `dotnet-sdk.version`
 
-Record the verified version string for the report. If any check fails, stop — do NOT
-proceed to Step 5.
+Record the verified version string for the report. Re-run `git rev-parse HEAD` after the build
+and confirm it still equals the tested SHA. For a PR run, also confirm the tree is still clean.
+If any check fails, stop — do NOT proceed to Step 5.
 
 #### Native Linux / macOS
 
@@ -54,20 +77,9 @@ stop and ask the user to build and install the correct version.
 
 #### Hard gate
 
-**If Step 1b is skipped or verification fails, do NOT proceed to Step 5.** No scenarios may
+**If Step 2 is skipped or verification fails, do NOT proceed to Step 5.** No scenarios may
 run until the `azd` binary is verified. This is not optional — running scenarios against
 the wrong binary produces unreliable results and wastes time and cost.
-
-### Step 2 — Resolve the PR
-
-```bash
-gh pr view --json number,url,headRefName,baseRefName,title
-```
-
-- **PR found:** capture `number`, `url`, and `baseRefName` (the merge base for the diff).
-- **No PR for the current branch:** ask the user via `ask_user` whether to (a) supply a PR
-  number/URL, (b) run against the local diff vs `origin/main` without posting a comment, or
-  (c) abort.
 
 ### Step 3 — Compute the impacted scenario tag set
 
@@ -82,10 +94,15 @@ gh pr view --json number,url,headRefName,baseRefName,title
 2. Map those files to scenario tags using `impact-mapping.md`. The result is:
    - a set of `cmd:*` tags (which commands changed),
    - the **highest tier** you should offer (cost gating), and
-   - any **coverage gaps** (changed commands that have *no* scenario yet — e.g. `mcp`).
-     Surface gaps to the user; do not silently skip them.
+   - any **coverage gaps** (known uncovered commands plus every changed file that matched no
+     impact rule). Surface the exact unmapped paths to the user and retain them for the final
+     report; do not silently skip them or invent a mapping.
 
-3. Enumerate matching scenarios via the tester:
+3. If no `cmd:*` tags were derived, do not call `list_scenarios` with an empty filter because
+   that would select the entire suite. Present a zero-scenario plan, then produce a gap-only
+   final report that makes clear no mapped regression scenarios ran.
+
+4. Otherwise, enumerate matching scenarios via the tester:
 
    ```text
    list_scenarios(root="<scenarios-dir>", tags=[<cmd:* tags>])
@@ -96,18 +113,18 @@ gh pr view --json number,url,headRefName,baseRefName,title
    returned rows locally to the tiers approved in Step 4. Never add tier tags to the same
    query to simulate an AND filter. Broad whole-tier coverage is a separate tier-only query.
 
-4. Inspect every retained scenario's `requires:` field and recursively add its referenced
+5. Inspect every retained scenario's `requires:` field and recursively add its referenced
    prerequisites to the concrete plan, deduplicating paths. If a referenced scenario does not
    exist, stop with a plan-construction error rather than scheduling a dependent that can only
    be skipped.
 
-5. If the dependency-closed result contains **any Tier 2 scenario**, add
+6. If the dependency-closed result contains **any Tier 2 scenario**, add
    `tier2/2.00-setup-deploy-shared-agent.yaml` and
    `tier2/2.99-teardown-down.yaml` to the concrete plan, deduplicating them if already
    selected. This lifecycle closure happens before cost confirmation so the user sees and
    approves the exact set that will create and tear down resources.
 
-6. Read and retain each selected scenario's optional top-level `produces` value so it can be
+7. Read and retain each selected scenario's optional top-level `produces` value so it can be
    passed directly to that scenario's worker. The tester's `load_scenario` summary does not
    expose orchestrator-only fields.
 
@@ -136,7 +153,7 @@ validation step, then schedule by readiness:
 1. **Recipe validation (mandatory).** Run one Tier 0 scenario synchronously before fanning
    out. Pick a fast, non-interactive scenario (e.g. `0.01-version`). If it fails with an
    infrastructure error (file-locking, wrong binary, missing tool), **stop the entire run** —
-   do not fan out into a fleet of failures. Fix the environment issue (re-run Step 1b on
+   do not fan out into a fleet of failures. Fix the environment issue (re-run Step 2 on
    Windows, rebuild on native Linux) and start over.
 
 2. **Adaptive rolling pool.** Choose a safe target parallelism from the selected workload,
@@ -176,10 +193,11 @@ Aggregate results into `.reports/<run-id>/FINAL-REPORT.md` and post a PR comment
 
 ### Step 7 — Stop conditions
 
+Coverage gaps do not stop otherwise selected scenarios. Carry every known uncovered command and
+unmapped changed-file path through to the proposed plan and final report.
+
 Stop and escalate to the user when:
 
 - a required prerequisite is missing (Step 1),
-- the diff touches a changed command with **no** scenario coverage (note it in the report so
-  the user can author one — see the extension `AGENTS.md` guidance), or
 - a scenario fails in a way that looks like a real product regression: report it as a FAIL
   with the finding and do **not** edit the scenario to make it pass.

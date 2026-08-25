@@ -5,8 +5,7 @@ package azure
 
 import (
 	"azureaiagent/internal/pkg/recordproxy"
-	"azureaiagent/internal/version"
-	"fmt"
+	"azureaiagent/internal/pkg/useragent"
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -17,8 +16,6 @@ import (
 // NewArmClientOptions creates a new arm.ClientOptions with standard policies for Azure SDK clients.
 // This includes correlation headers, user agent, and logging configuration.
 func NewArmClientOptions() *arm.ClientOptions {
-	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
-
 	opts := &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Logging: policy.LogOptions{
@@ -26,7 +23,7 @@ func NewArmClientOptions() *arm.ClientOptions {
 			},
 			PerCallPolicies: []policy.Policy{
 				azsdk.NewMsCorrelationPolicy(),
-				azsdk.NewUserAgentPolicy(userAgent),
+				azsdk.NewUserAgentPolicy(useragent.Default()),
 			},
 		},
 	}

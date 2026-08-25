@@ -15,7 +15,7 @@ import (
 	"net/http"
 	netURL "net/url"
 
-	"azureaiagent/internal/version"
+	"azureaiagent/internal/pkg/useragent"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -48,8 +48,6 @@ func (foundryFeaturesPolicy) Do(req *policy.Request) (*http.Response, error) {
 
 // NewOptimizeClient creates a new OptimizeClient with the given endpoint and credential.
 func NewOptimizeClient(endpoint string, cred azcore.TokenCredential) *OptimizeClient {
-	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
-
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
@@ -58,7 +56,7 @@ func NewOptimizeClient(endpoint string, cred azcore.TokenCredential) *OptimizeCl
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
 			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy(userAgent),
+			azsdk.NewUserAgentPolicy(useragent.Default()),
 			foundryFeaturesPolicy{},
 		},
 	}

@@ -15,7 +15,7 @@ import (
 	"net/url"
 	"strings"
 
-	"azureaiagent/internal/version"
+	"azureaiagent/internal/pkg/useragent"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -35,8 +35,6 @@ type DatasetClient struct {
 
 // NewDatasetClient creates a new DatasetClient.
 func NewDatasetClient(endpoint string, cred azcore.TokenCredential) *DatasetClient {
-	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
-
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
@@ -45,7 +43,7 @@ func NewDatasetClient(endpoint string, cred azcore.TokenCredential) *DatasetClie
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
 			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy(userAgent),
+			azsdk.NewUserAgentPolicy(useragent.Default()),
 		},
 	}
 

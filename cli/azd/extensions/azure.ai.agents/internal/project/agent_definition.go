@@ -127,6 +127,8 @@ func orphanedConfigEnvNames(svc *azdext.ServiceConfig) []string {
 // the schema fields to the top level.
 type AgentDefinitionInline struct {
 	agent_yaml.AgentDefinition `json:",inline"`
+	Language                   string                             `json:"language,omitempty"`
+	Toolbox                    *agent_yaml.ToolboxReference       `json:"toolbox,omitempty"`
 	Protocols                  []agent_yaml.ProtocolVersionRecord `json:"protocols,omitempty"`
 	// EnvironmentVariables reads the deprecated inline shape.
 	EnvironmentVariables *[]agent_yaml.EnvironmentVariable `json:"environmentVariables,omitempty"`
@@ -177,6 +179,8 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInline, *ContainerSettings, string) {
 	inline := AgentDefinitionInline{
 		AgentDefinition:      ca.AgentDefinition,
+		Language:             ca.Language,
+		Toolbox:              ca.Toolbox,
 		Protocols:            ca.Protocols,
 		AgentEndpoint:        ca.AgentEndpoint,
 		AgentCard:            ca.AgentCard,
@@ -217,6 +221,8 @@ func (d AgentDefinitionInline) toContainerAgent(
 
 	ca := agent_yaml.ContainerAgent{
 		AgentDefinition:      d.AgentDefinition,
+		Language:             d.Language,
+		Toolbox:              d.Toolbox,
 		Image:                image,
 		Protocols:            d.Protocols,
 		EnvironmentVariables: environmentVariables,

@@ -49,6 +49,21 @@
       "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt-voice' for a declarative (managed) speech-to-speech voice agent.",
       "enum": ["hosted", "prompt-voice"]
     },
+    "language": {
+      "type": "string",
+      "description": "Implementation language for a hosted agent.",
+      "enum": ["python", "csharp", "docker"]
+    },
+    "toolbox": {
+      "type": "object",
+      "description": "Named Foundry toolbox consumed by the agent.",
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
     "modelType": {
       "type": "string",
       "description": "Voice agent (kind: prompt-voice) model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' (BYOM) references an existing Foundry model deployment.",

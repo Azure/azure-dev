@@ -348,6 +348,8 @@ type Policy struct {
 //     Dockerfile) is used automatically.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
+	Language             string                  `json:"language,omitempty" yaml:"language,omitempty"`
+	Toolbox              *ToolboxReference       `json:"toolbox,omitempty" yaml:"toolbox,omitempty"`
 	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
@@ -357,6 +359,13 @@ type ContainerAgent struct {
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
 	SessionConfiguration *SessionConfiguration   `json:"sessionConfiguration,omitempty" yaml:"session_configuration,omitempty"`
+}
+
+// ToolboxReference identifies the Foundry toolbox consumed by an agent.
+// Version is optional; omitting it follows the toolbox's default version.
+type ToolboxReference struct {
+	Name    string `json:"name" yaml:"name"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

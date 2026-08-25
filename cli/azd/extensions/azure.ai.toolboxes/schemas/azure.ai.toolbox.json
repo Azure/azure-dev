@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.toolboxes/schemas/azure.ai.toolbox.json",
   "title": "Azure AI Foundry toolbox service",
-  "description": "Service-level configuration for a host: azure.ai.toolbox entry. The service key is the toolbox name. A toolbox is a named bundle of connection-backed tools that agents reference by name. When endpoint is omitted, azd creates a new toolbox version from tools; when set, azd reuses that existing toolbox instead of creating one.",
+  "description": "Service-level configuration for a host: azure.ai.toolbox entry. The service key is the toolbox name. A toolbox is a named bundle of tools, skills, and connection references that agents consume through an MCP endpoint. When endpoint is omitted, azd creates a new toolbox version from the definition; when set, azd reuses that existing toolbox instead of creating one.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -13,6 +13,33 @@
     "description": {
       "type": "string",
       "description": "Description of the toolbox."
+    },
+    "connections": {
+      "type": "array",
+      "description": "Project connection references resolved into toolbox tools during deployment.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "index": { "type": "string" },
+          "instance_name": { "type": "string" }
+        },
+        "required": ["name"]
+      }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Project skill references exposed through the toolbox.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "version": { "type": "string" }
+        },
+        "required": ["name"]
+      }
     },
     "tools": {
       "type": "array",
@@ -32,18 +59,32 @@
           }
         }
       }
+    },
+    "policies": {
+      "type": "object",
+      "description": "Per-version toolbox governance settings.",
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata stored on the toolbox version.",
+      "additionalProperties": { "type": "string" }
     }
   },
   "allOf": [
     {
-      "$comment": "Reuse mode: a toolbox version is immutable, so 'endpoint' cannot be combined with 'tools' or 'description'.",
+      "$comment": "Reuse mode: a toolbox version is immutable, so 'endpoint' cannot be combined with inline definition fields.",
       "if": {
         "required": ["endpoint"]
       },
       "then": {
         "properties": {
           "tools": false,
-          "description": false
+          "description": false,
+          "connections": false,
+          "skills": false,
+          "policies": false,
+          "metadata": false
         }
       }
     }

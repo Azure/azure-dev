@@ -626,6 +626,60 @@ func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 	assert.Equal(t, []string{aiProjectServiceName, "myconn"}, server.uses["myagent"])
 }
 
+func TestEmitResourceServices_WiresToolboxToReferencedConnections(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	connections := []project.Connection{
+		{Name: "search", Category: "CognitiveSearch"},
+		{Name: "unused", Category: "ApiKey"},
+	}
+	toolboxes := []project.Toolbox{{
+		Name: "support-tools",
+		Tools: []map[string]any{
+			{
+				"type": "azure_ai_search",
+				"azure_ai_search": map[string]any{
+					"indexes": []any{
+						map[string]any{"project_connection_id": "search", "index_name": "tickets"},
+					},
+				},
+			},
+		},
+	}}
+
+	_, err := emitResourceServices(
+		t.Context(), client, "support-agent", "", "", nil, connections, toolboxes)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	assert.Equal(t, []string{aiProjectServiceName, "search"}, server.uses["support-tools"])
+	assert.Equal(
+		t,
+		[]string{aiProjectServiceName, "search", "unused", "support-tools"},
+		server.uses["support-agent"],
+	)
+}
+
+func TestToolboxConnectionReferences(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, []string{"a2a", "mcp", "search"}, toolboxConnectionReferences([]map[string]any{
+		{"type": "mcp", "connection": "mcp"},
+		{"type": "a2a_preview", "project_connection_id": "a2a"},
+		{
+			"type": "azure_ai_search",
+			"azure_ai_search": map[string]any{
+				"indexes": []any{
+					map[string]any{"project_connection_id": "search"},
+				},
+			},
+		},
+	}))
+}
+
 func TestEmitResourceServices_CountsEmittedConnections(t *testing.T) {
 	t.Parallel()
 

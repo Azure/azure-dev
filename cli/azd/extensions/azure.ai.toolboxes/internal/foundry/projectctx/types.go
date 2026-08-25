@@ -33,7 +33,7 @@ const (
 	// FOUNDRY_PROJECT_ENDPOINT (or, as a fallback, AZURE_AI_PROJECT_ENDPOINT) value.
 	SourceAzdEnv EndpointSource = "azdEnv"
 	// SourceGlobalConfig means the endpoint came from ~/.azd/config.json
-	// (extensions.ai-agents.project.context.endpoint — owned by azure.ai.agents
+	// (extensions.ai-projects.context.endpoint — owned by azure.ai.projects
 	// and shared read-only with sibling extensions).
 	SourceGlobalConfig EndpointSource = "globalConfig"
 	// SourceFoundryEnv means the endpoint came from the FOUNDRY_PROJECT_ENDPOINT
@@ -72,7 +72,7 @@ type AzdHostedSources struct {
 	CfgFound bool
 }
 
-// State is the JSON shape stored at extensions.ai-agents.project.context in
+// State is the JSON shape stored at extensions.ai-projects.context in
 // ~/.azd/config.json. This key is owned by azure.ai.agents; the toolboxes
 // extension reads it but never writes it.
 type State struct {

@@ -228,6 +228,9 @@ func TestWhatIfFailure_InlineErrorIsSurfaced(t *testing.T) {
 	assert.Contains(t, local.Message, "InvalidTemplateDeployment")
 	assert.Contains(t, local.Message, "InsufficientQuota")
 	assert.NotEmpty(t, local.Suggestion)
+	assert.Contains(t, local.Suggestion, "az cognitiveservices usage list --location <region>")
+	assert.Contains(t, local.Suggestion, "AZURE_AI_PROJECT_ID")
+	assert.NotContains(t, local.Suggestion, "az vm list-usage")
 }
 
 func TestWhatIfFailure_NonSucceededStatus(t *testing.T) {

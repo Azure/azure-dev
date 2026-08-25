@@ -16,9 +16,12 @@
 package exterrors
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -89,6 +92,10 @@ func ServiceFromAzure(err error, operation string) error {
 		if code == "" {
 			code = fmt.Sprintf("%d", responseErr.StatusCode)
 		}
+		suggestion := ""
+		if responseErrorContainsCode(responseErr, "InsufficientQuota") {
+			suggestion = CognitiveServicesQuotaSuggestion()
+		}
 		return &azdext.ServiceError{
 			Message: fmt.Sprintf(
 				"%s: %s",
@@ -98,6 +105,7 @@ func ServiceFromAzure(err error, operation string) error {
 			ErrorCode:   fmt.Sprintf("%s.%s", operation, code),
 			StatusCode:  responseErr.StatusCode,
 			ServiceName: serviceName,
+			Suggestion:  suggestion,
 		}
 	}
 	if IsCancellation(err) {
@@ -107,6 +115,62 @@ func ServiceFromAzure(err error, operation string) error {
 		operation,
 		fmt.Sprintf("%s: %s", operation, err.Error()),
 	)
+}
+
+// CognitiveServicesQuotaSuggestion returns guidance for quota errors returned
+// while provisioning a Foundry account, project, or deployment.
+func CognitiveServicesQuotaSuggestion() string {
+	return "Check Cognitive Services usage for the deployment region with " +
+		"`az cognitiveservices usage list --location <region>` or request a " +
+		"quota increase in the Azure portal. If you want to reuse an existing " +
+		"Foundry project, configure its endpoint and set `AZURE_AI_PROJECT_ID` " +
+		"to the full project resource ID before retrying (or initialize with " +
+		"`azd ai agent init --project-id <full-project-resource-id>`)."
+}
+
+type armErrorResponse struct {
+	Code    string              `json:"code"`
+	Details []*armErrorResponse `json:"details"`
+	Error   *armErrorResponse   `json:"error"`
+}
+
+func responseErrorContainsCode(responseErr *azcore.ResponseError, code string) bool {
+	if strings.EqualFold(responseErr.ErrorCode, code) {
+		return true
+	}
+
+	if responseErr.RawResponse != nil && responseErr.RawResponse.Body != nil {
+		bodyReader := responseErr.RawResponse.Body
+		body, err := io.ReadAll(bodyReader)
+		_ = bodyReader.Close()
+		responseErr.RawResponse.Body = io.NopCloser(bytes.NewReader(body))
+		if err == nil {
+			var payload armErrorResponse
+			if json.Unmarshal(body, &payload) == nil && armErrorContainsCode(&payload, code) {
+				return true
+			}
+		}
+	}
+
+	return strings.Contains(strings.ToLower(responseErr.Error()), strings.ToLower(code))
+}
+
+func armErrorContainsCode(err *armErrorResponse, code string) bool {
+	if err == nil {
+		return false
+	}
+	if strings.EqualFold(err.Code, code) {
+		return true
+	}
+	if armErrorContainsCode(err.Error, code) {
+		return true
+	}
+	for _, detail := range err.Details {
+		if armErrorContainsCode(detail, code) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsCancellation reports whether an operation was cancelled.

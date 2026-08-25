@@ -2618,7 +2618,7 @@ func (p *BicepProvider) validateProvision(
 	skipArmPreflight bool,
 ) (canceled bool, err error) {
 	// Local (client-side) provision validation, traced under the validation.provision event.
-	canceled, err = p.traceLocalProvisionValidation(
+	valCtx, canceled, err := p.traceLocalProvisionValidation(
 		ctx, target, modulePath, armTemplate, armParameters, skipLocalValidation)
 	if err != nil || canceled {
 		return canceled, err
@@ -2630,12 +2630,13 @@ func (p *BicepProvider) validateProvision(
 	if skipArmPreflight {
 		return false, nil
 	}
-	return false, target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+	err = target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+	return false, annotateDeploymentErrorResources(err, valCtx, armTemplate)
 }
 
 // traceLocalProvisionValidation runs (or skips) azd's local provision validation within the
 // `validation.provision` telemetry span and records the outcome attributes. It returns the
-// same (canceled, err) semantics as validateProvision for the local step.
+// validation context and the same (canceled, err) semantics as validateProvision for the local step.
 func (p *BicepProvider) traceLocalProvisionValidation(
 	ctx context.Context,
 	target infra.Deployment,
@@ -2643,7 +2644,7 @@ func (p *BicepProvider) traceLocalProvisionValidation(
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
 	skipLocalValidation bool,
-) (canceled bool, err error) {
+) (valCtx *validationContext, canceled bool, err error) {
 	ctx, span := tracing.Start(ctx, events.ProvisionValidationEvent)
 	defer func() {
 		span.EndWithStatus(err)
@@ -2662,16 +2663,16 @@ func (p *BicepProvider) traceLocalProvisionValidation(
 		span.SetAttributes(fields.ProvisionValidationDiagnosticsKey.StringSlice([]string{}))
 		span.SetAttributes(fields.ProvisionValidationWarningCountKey.Int(0))
 		span.SetAttributes(fields.ProvisionValidationErrorCountKey.Int(0))
-		return false, nil
+		return nil, false, nil
 	}
 
 	return p.runLocalProvisionValidation(ctx, span, target, modulePath, armTemplate, armParameters)
 }
 
 // runLocalProvisionValidation executes azd's local (client-side) provision validation
-// pipeline and reports findings to the user. It returns (canceled, err) using the same
-// semantics as validateProvision (canceled=true means provisioning should be skipped with
-// exit code 0).
+// pipeline and reports findings to the user. It returns the validation context and
+// (canceled, err) using the same semantics as validateProvision (canceled=true means
+// provisioning should be skipped with exit code 0).
 func (p *BicepProvider) runLocalProvisionValidation(
 	ctx context.Context,
 	span tracing.Span,
@@ -2679,7 +2680,7 @@ func (p *BicepProvider) runLocalProvisionValidation(
 	modulePath string,
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
-) (canceled bool, err error) {
+) (valCtx *validationContext, canceled bool, err error) {
 	// Local validation catches common issues without requiring a network round-trip.
 	// Resolve the environment location for RG-scoped deployments: prefer the actual
 	// resource group location (if the RG already exists), then fall back to AZURE_LOCATION.
@@ -2713,7 +2714,7 @@ func (p *BicepProvider) runLocalProvisionValidation(
 	valCtx, results, err := validator.validate(ctx, p.console, armTemplate, armParameters)
 	if err != nil {
 		p.setProvisionValidationOutcome(span, provisionValidationOutcomeError, nil)
-		return false, fmt.Errorf("local provision validation failed: %w", err)
+		return nil, false, fmt.Errorf("local provision validation failed: %w", err)
 	}
 
 	// Dispatch to extension-provided validation checks for the "arm-provision" check type.
@@ -2825,7 +2826,7 @@ func (p *BicepProvider) runLocalProvisionValidation(
 			// This is not an internal failure, so no error is returned (exit code 0).
 			p.console.Message(ctx, "Validation detected errors, provisioning canceled.")
 			p.setProvisionValidationOutcome(span, provisionValidationOutcomeCanceledByErrors, diagnosticIDs)
-			return true, nil
+			return valCtx, true, nil
 		}
 
 		if report.HasWarnings() {
@@ -2838,14 +2839,14 @@ func (p *BicepProvider) runLocalProvisionValidation(
 				p.setProvisionValidationOutcome(
 					span, provisionValidationOutcomeError, diagnosticIDs,
 				)
-				return false, fmt.Errorf(
+				return valCtx, false, fmt.Errorf(
 					"prompting for validation confirmation: %w", promptErr,
 				)
 			}
 			if !continueDeployment {
 				// User chose not to continue — this is an intentional cancel, not a failure.
 				p.setProvisionValidationOutcome(span, provisionValidationOutcomeCanceledByUser, diagnosticIDs)
-				return true, nil
+				return valCtx, true, nil
 			}
 			p.setProvisionValidationOutcome(span, provisionValidationOutcomeWarningsAccepted, diagnosticIDs)
 		}
@@ -2853,7 +2854,7 @@ func (p *BicepProvider) runLocalProvisionValidation(
 		p.setProvisionValidationOutcome(span, provisionValidationOutcomePassed, nil)
 	}
 
-	return false, nil
+	return valCtx, false, nil
 }
 
 // setProvisionValidationOutcome records the validation outcome on both the span and as a usage-level

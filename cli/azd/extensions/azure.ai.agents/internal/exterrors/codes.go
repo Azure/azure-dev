@@ -195,6 +195,7 @@ const (
 	OpContainerPackage      = "container_package"
 	OpContainerPublish      = "container_publish"
 	OpCreateAgent           = "create_agent"
+	OpGetAgent              = "get_agent"
 	OpUpdateAgent           = "update_agent"
 	OpGetActivityBot        = "get_activity_bot"
 	OpEnsureActivityBot     = "ensure_activity_bot"

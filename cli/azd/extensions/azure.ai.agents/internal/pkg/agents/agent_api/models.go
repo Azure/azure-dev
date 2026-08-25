@@ -69,10 +69,9 @@ const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
 	// AgentKindVoice is the data-plane (service) kind for a declarative voice
-	// (speech-to-speech) agent. Note: this is the wire value posted to the
-	// /voice_agents collection. The azd manifest authoring kind is
-	// "prompt-voice" (agent_yaml.AgentKindPromptVoice), which the map layer
-	// translates to this value.
+	// (speech-to-speech) agent. The azd manifest authoring kind is "prompt-voice"
+	// (agent_yaml.AgentKindPromptVoice), which the map layer translates to this
+	// value before posting through the unified /agents API.
 	AgentKindVoice AgentKind = "voice"
 )
 
@@ -392,10 +391,14 @@ type VoiceConfig struct {
 	Name string `json:"name"`
 }
 
-// VoiceOutputConfig is the output (agent -> caller) audio configuration.
+// VoiceOutputConfig is the output (agent -> caller) audio configuration for the
+// unified /agents voice API. The voice name is a string and provider details are
+// sibling fields.
 type VoiceOutputConfig struct {
-	Format *VoiceAudioFormat `json:"format,omitempty"`
-	Voice  *VoiceConfig      `json:"voice,omitempty"`
+	Format      *VoiceAudioFormat `json:"format,omitempty"`
+	Voice       string            `json:"voice,omitempty"`
+	VoiceType   string            `json:"voice_type,omitempty"`
+	VoiceLocale string            `json:"voice_locale,omitempty"`
 }
 
 // VoiceAudioConfig bundles the input and output audio configuration.
@@ -404,9 +407,8 @@ type VoiceAudioConfig struct {
 	Output *VoiceOutputConfig `json:"output,omitempty"`
 }
 
-// VoiceAgentDefinition is the data-plane definition body POSTed to the
-// /voice_agents collection for a declarative (managed) voice agent. Its Kind
-// is always AgentKindVoice ("voice").
+// VoiceAgentDefinition is the data-plane definition body for a declarative
+// prompt voice agent. Its Kind is always AgentKindVoice ("voice").
 type VoiceAgentDefinition struct {
 	AgentDefinition
 	ModelType        VoiceModelType    `json:"model_type"`

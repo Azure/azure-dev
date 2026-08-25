@@ -872,6 +872,23 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 			},
 		},
 		{
+			name: "re-init preserves create mode for the owned registry connection",
+			connections: []azure.Connection{{
+				Name: "valid-conn", Target: "valid.azurecr.io",
+			}},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			initial: map[string]string{
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZD_FOUNDRY_RESOURCE_GROUP_ID":        "/subscriptions/sub/resourceGroups/rg",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+			wantValues: map[string]string{
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+		},
+		{
 			name: "stale sole connection falls back to create on provision and clears stale values",
 			connections: []azure.Connection{{
 				Name: "stale-conn", Target: "stale.azurecr.io",

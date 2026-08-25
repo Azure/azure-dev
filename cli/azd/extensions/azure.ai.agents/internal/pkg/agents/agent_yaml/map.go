@@ -549,11 +549,11 @@ var knownOpenAIVoices = map[string]struct{}{
 }
 
 // azureNeuralVoicePattern matches the locale prefix that every Azure Neural
-// voice name carries, e.g. "en-US-Ava:DragonHDLatestNeural" or
-// "ja-JP-NanamiNeural". The service contract guarantees this <lang>-<REGION>-
-// shape for Azure voices, which is what distinguishes them from the flat
-// lowercase OpenAI voice tokens.
-var azureNeuralVoicePattern = regexp.MustCompile(`^[a-z]{2,3}-[A-Z]{2,3}-`)
+// voice name carries, e.g. "en-US-Ava:DragonHDLatestNeural",
+// "ja-JP-NanamiNeural", or Azure voices with script/numeric-region locales.
+// The optional script tag and numeric region support keep valid BCP-47 locales
+// from being classified as OpenAI voices.
+var azureNeuralVoicePattern = regexp.MustCompile(`^([a-z]{2,3}(?:-[A-Z][a-z]{3})?-(?:[A-Z]{2,3}|[0-9]{3}))-`)
 
 // isOpenAIVoice reports whether a voice name denotes an OpenAI realtime voice
 // (e.g. "alloy") vs an Azure Neural voice (e.g. "en-US-Ava:DragonHDLatestNeural").
@@ -583,10 +583,35 @@ func buildVoiceConfig(name string) *agent_api.VoiceConfig {
 	return &agent_api.VoiceConfig{Type: "azure_standard", Name: trimmed}
 }
 
+func voiceWireType(voice *agent_api.VoiceConfig) string {
+	if voice == nil {
+		return ""
+	}
+	if voice.Type == "azure_standard" {
+		return "azure-standard"
+	}
+	return voice.Type
+}
+
+func voiceWireLocale(voice *agent_api.VoiceConfig) string {
+	if voice == nil || voice.Name == "" || isOpenAIVoice(voice.Name) {
+		return ""
+	}
+	match := azureNeuralVoicePattern.FindStringSubmatch(voice.Name)
+	if len(match) < 2 {
+		return ""
+	}
+	return match[1]
+}
+
 // CreateVoiceAgentAPIRequest builds a CreateAgentRequest for a declarative
 // voice agent. It translates the authoring kind "prompt-voice" into the
 // data-plane service kind "voice" and defaults the audio pipeline.
 func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
+	return createVoiceAgentAPIRequest(voiceAgent)
+}
+
+func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
 	modelID := ""
 	if voiceAgent.Model != nil {
 		modelID = strings.TrimSpace(voiceAgent.Model.Id)
@@ -620,6 +645,12 @@ func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 		Rate: defaultVoiceAudioRate,
 	}
 
+	input := &agent_api.VoiceInputConfig{
+		Format:        audioFormat,
+		TurnDetection: &agent_api.VoiceTurnDetection{Type: defaultVoiceTurnDetectionType},
+		Transcription: &agent_api.VoiceTranscription{Model: defaultVoiceInputTranscriptionModel},
+	}
+	voiceConfig := buildVoiceConfig(voiceName)
 	voiceDef := agent_api.VoiceAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
 			// Translate authoring kind prompt-voice -> service kind voice.
@@ -629,14 +660,12 @@ func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 		Model:        modelID,
 		Instructions: instructions,
 		Audio: &agent_api.VoiceAudioConfig{
-			Input: &agent_api.VoiceInputConfig{
-				Format:        audioFormat,
-				TurnDetection: &agent_api.VoiceTurnDetection{Type: defaultVoiceTurnDetectionType},
-				Transcription: &agent_api.VoiceTranscription{Model: defaultVoiceInputTranscriptionModel},
-			},
+			Input: input,
 			Output: &agent_api.VoiceOutputConfig{
-				Format: audioFormat,
-				Voice:  buildVoiceConfig(voiceName),
+				Format:      audioFormat,
+				Voice:       voiceConfig.Name,
+				VoiceType:   voiceWireType(voiceConfig),
+				VoiceLocale: voiceWireLocale(voiceConfig),
 			},
 		},
 		OutputModalities: []string{"audio"},

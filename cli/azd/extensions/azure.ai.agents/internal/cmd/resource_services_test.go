@@ -230,6 +230,92 @@ func TestCollectConnections(t *testing.T) {
 	assert.Equal(t, "zeta", connections[1].Name)
 }
 
+func TestCollectConnections_UsesAgentConfigPrecedence(t *testing.T) {
+	t.Parallel()
+
+	inline, err := structpb.NewStruct(map[string]any{
+		"connections": []any{
+			map[string]any{
+				"name":     "inline-connection",
+				"category": "ApiKey",
+				"target":   "https://inline.example",
+			},
+		},
+	})
+	require.NoError(t, err)
+	legacy, err := structpb.NewStruct(map[string]any{
+		"kind": "hostedAgent",
+		"connections": []any{
+			map[string]any{
+				"name":     "legacy-connection",
+				"category": "ApiKey",
+				"target":   "https://legacy.example",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	services := map[string]*azdext.ServiceConfig{
+		"agent": {
+			Name:                 "agent",
+			Host:                 AiAgentHost,
+			AdditionalProperties: inline,
+			Config:               legacy,
+		},
+	}
+
+	connections, err := collectConnections(services, "")
+	require.NoError(t, err)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "legacy-connection", connections[0].Name)
+}
+
+func TestCollectConnections_UsesResolvedInlineConfig(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "agent.yaml"),
+		[]byte(
+			"kind: hostedAgent\n"+
+				"connections:\n"+
+				"  - name: inline-connection\n"+
+				"    category: ApiKey\n"+
+				"    target: https://inline.example\n",
+		),
+		0o600,
+	))
+	inline, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	legacy, err := structpb.NewStruct(map[string]any{
+		"kind": "hostedAgent",
+		"connections": []any{
+			map[string]any{
+				"name":     "legacy-connection",
+				"category": "ApiKey",
+				"target":   "https://legacy.example",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	services := map[string]*azdext.ServiceConfig{
+		"agent": {
+			Name:                 "agent",
+			Host:                 AiAgentHost,
+			AdditionalProperties: inline,
+			Config:               legacy,
+		},
+	}
+
+	connections, err := collectConnections(services, root)
+	require.NoError(t, err)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "inline-connection", connections[0].Name)
+}
+
 // TestCollectToolboxes verifies toolboxes are sourced from azure.ai.toolbox
 // services only.
 func TestCollectToolboxes(t *testing.T) {

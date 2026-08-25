@@ -94,7 +94,7 @@ from the azd environment. When omitted, the default agent service is used.`,
 				return missingCodeDownloadAgentStateError(info.ServiceName)
 			}
 
-			agentContext, err := newAgentContext(ctx, "", "", agentName, info.Version)
+			agentContext, err := newAgentContext(ctx, "", "", agentName, info.Version, info.EnvironmentName)
 			if err != nil {
 				return err
 			}

@@ -24,7 +24,9 @@ import (
 // settings from the selected/created project, and returns the resolved model
 // deployment to persist to azure.yaml along with the selected existing project
 // (nil when a new one will be provisioned), which the caller needs to name and
-// mark the sibling azure.ai.project service.
+// mark the sibling azure.ai.project service, and the credential resolved for
+// the chosen subscription so later steps can read the account without
+// re-authenticating.
 //
 // Location is NOT prompted separately: for an existing project it is derived
 // from the project; for a new project it is prompted only at that point — the
@@ -41,10 +43,10 @@ func resolvePromptHarnessTarget(
 	flags *initFlags,
 	env *azdext.Environment,
 	settings *project.PromptAgentSettings,
-) (*project.Deployment, *FoundryProjectInfo, error) {
+) (*project.Deployment, *FoundryProjectInfo, azcore.TokenCredential, error) {
 	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// A full project resource ID already names its subscription, so seed the
@@ -66,9 +68,9 @@ func resolvePromptHarnessTarget(
 	if strings.TrimSpace(flags.projectResourceId) == "" &&
 		shouldDeferInitAzureContext(flags.noPrompt, azureContext) {
 		if err := configureDeferredInitAzureContext(ctx, azdClient, env.Name, azureContext, true); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	// Subscription only — location is resolved per project branch below.
@@ -77,14 +79,14 @@ func resolvePromptHarnessTarget(
 		"Select an Azure subscription to find your Foundry project and models.",
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	proj, err := selectPromptFoundryProject(
 		ctx, azdClient, cred, azureContext, env.Name, flags.projectResourceId, flags.noPrompt,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if proj == nil {
@@ -95,10 +97,10 @@ func resolvePromptHarnessTarget(
 				"with the model deployment you choose next.",
 		))
 		if err := ensureLocation(ctx, azdClient, azureContext, env.Name); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if err := setEnvValue(ctx, azdClient, env.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if err := updatePendingProjectSignal(ctx, azdClient, env.Name, false); err != nil {
 			log.Printf("warning: failed to update project provision signal: %v", err)
@@ -106,7 +108,7 @@ func resolvePromptHarnessTarget(
 		// A new project is provisioned by `azd up`; the harness workspace tuple
 		// is filled from the provisioned env values at deploy time (overlay).
 		deployment, err := resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
-		return deployment, nil, err
+		return deployment, nil, cred, err
 	}
 
 	// Existing project: populate the harness target and derive the location
@@ -125,7 +127,7 @@ func resolvePromptHarnessTarget(
 	azureContext.Scope.Location = proj.Location
 	if proj.Location != "" {
 		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_AI_DEPLOYMENTS_LOCATION", proj.Location); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		// Also seed AZURE_LOCATION from the selected project's region. The
 		// infra main.parameters.json resolves `location` from ${AZURE_LOCATION};
@@ -133,22 +135,22 @@ func resolvePromptHarnessTarget(
 		// (and thus the target region) is already known. Deploy the model using
 		// the project's region.
 		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_LOCATION", proj.Location); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
 	if err := setPromptFoundryProjectEnv(ctx, azdClient, env.Name, proj); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := setEnvValue(ctx, azdClient, env.Name, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := updatePendingProjectSignal(ctx, azdClient, env.Name, true); err != nil {
 		log.Printf("warning: failed to update project provision signal: %v", err)
 	}
 
 	deployment, err := resolvePromptModelForExistingProject(ctx, azdClient, cred, azureContext, env, flags, proj)
-	return deployment, proj, err
+	return deployment, proj, cred, err
 }
 
 // selectPromptFoundryProject lists the Foundry projects in the subscription and

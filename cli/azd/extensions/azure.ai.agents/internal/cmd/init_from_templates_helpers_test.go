@@ -21,26 +21,26 @@ func TestResolveInitHarness(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		harnessFlag string
-		choice      agentKindChoice
-		expected    string
-		expectErr   bool
+		name           string
+		harnessFlag    string
+		impliedHarness string
+		expected       string
+		expectErr      bool
 	}{
 		{
-			name:     "prompt kind has no harness",
-			choice:   AgentKindChoicePrompt,
+			name:     "no flag and no implied harness scaffolds a plain prompt agent",
 			expected: "",
 		},
 		{
-			name:     "managed kind implies the github-copilot harness",
-			choice:   AgentKindChoiceManaged,
-			expected: agent_api.ManagedAgentHarnessGitHubCopilot,
+			// The harnessed menu row and a manifest's `harness:` block both
+			// arrive here as an implied value.
+			name:           "implied harness is honored",
+			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
 		},
 		{
-			name:        "explicit harness overrides prompt kind",
-			harnessFlag: "GitHub-Copilot",
-			choice:      AgentKindChoicePrompt,
+			name:        "explicit harness is accepted case-insensitively",
+			harnessFlag: "GitHub_Copilot_Preview",
 			expected:    agent_api.ManagedAgentHarnessGitHubCopilot,
 		},
 		{
@@ -49,19 +49,30 @@ func TestResolveInitHarness(t *testing.T) {
 			// service no longer knows.
 			name:        "removed ghcp spelling is rejected",
 			harnessFlag: "ghcp",
-			choice:      AgentKindChoicePrompt,
 			expectErr:   true,
 		},
 		{
-			name:        "none opts out of the managed harness",
-			harnessFlag: " none ",
-			choice:      AgentKindChoiceManaged,
-			expected:    "",
+			name:           "none opts out of an implied harness",
+			harnessFlag:    " none ",
+			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			expected:       "",
+		},
+		{
+			name:           "explicit harness overrides a harness-less context",
+			harnessFlag:    agent_api.ManagedAgentHarnessGitHubCopilot,
+			impliedHarness: "",
+			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
+		},
+		{
+			// A manifest can name a harness azd no longer accepts; it is
+			// validated on the same path as the flag rather than passed through.
+			name:           "removed implied harness is rejected",
+			impliedHarness: "ghcp",
+			expectErr:      true,
 		},
 		{
 			name:        "unknown harness is rejected",
 			harnessFlag: "bogus",
-			choice:      AgentKindChoicePrompt,
 			expectErr:   true,
 		},
 	}
@@ -70,7 +81,7 @@ func TestResolveInitHarness(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			harness, err := resolveInitHarness(tc.harnessFlag, tc.choice)
+			harness, err := resolveInitHarness(tc.harnessFlag, tc.impliedHarness)
 			if tc.expectErr {
 				require.Error(t, err)
 				return
@@ -81,38 +92,44 @@ func TestResolveInitHarness(t *testing.T) {
 	}
 }
 
-// TestWarnPromptAgentPreview verifies the preview callout fires for the plain
-// prompt agent and stays silent for the other kinds. The harnessed option
-// already says "(preview)" in its label, and hosted agents are GA.
+// TestAgentKindMenuHasNoManagedKind guards the invariant behind removing the
+// managed kind: the harnessed row is a prompt agent that carries a harness, not
+// a kind of its own. A row reintroducing one would scaffold an agent.yaml the
+// schema rejects.
+func TestAgentKindMenuHasNoManagedKind(t *testing.T) {
+	t.Parallel()
+
+	var harnessed int
+	for _, entry := range agentKindMenu {
+		require.Contains(
+			t,
+			[]agentKindChoice{AgentKindChoiceHosted, AgentKindChoicePrompt},
+			entry.kind,
+			"menu entry %q uses an unsupported kind", entry.label,
+		)
+		if entry.harness != "" {
+			harnessed++
+			require.Equal(t, AgentKindChoicePrompt, entry.kind,
+				"only a prompt agent can carry a harness")
+		}
+	}
+
+	require.Equal(t, 1, harnessed, "expected exactly one harnessed menu entry")
+}
+
+// TestWarnPromptAgentPreview verifies the preview callout renders its
+// emphasized segment intact. It is unconditional: every prompt-agent init
+// funnels through the one call site, so the notice reaches --kind prompt and
+// manifest adoption as well as the interactive picker.
 func TestWarnPromptAgentPreview(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name     string
-		choice   agentKindChoice
-		wantWarn bool
-	}{
-		{name: "prompt agent warns", choice: AgentKindChoicePrompt, wantWarn: true},
-		{name: "managed agent stays quiet", choice: AgentKindChoiceManaged},
-		{name: "hosted agent stays quiet", choice: AgentKindChoiceHosted},
-	}
+	buf := &bytes.Buffer{}
+	warnPromptAgentPreview(buf)
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			buf := &bytes.Buffer{}
-			warnPromptAgentPreview(buf, tc.choice)
-
-			if !tc.wantWarn {
-				require.Empty(t, buf.String())
-				return
-			}
-			// The emphasized phrase is a separately colored segment, so assert
-			// it survives concatenation intact rather than being split.
-			require.Contains(t, buf.String(), "preview feature of the azd CLI experience")
-		})
-	}
+	// The emphasized phrase is a separately colored segment, so assert
+	// it survives concatenation intact rather than being split.
+	require.Contains(t, buf.String(), "preview feature of the azd CLI experience")
 }
 
 func TestEffectiveType(t *testing.T) {

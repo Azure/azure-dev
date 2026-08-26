@@ -887,18 +887,16 @@ func (a *InitFromCodeAction) addToProject(
 	// and wire the agent's uses: to it. A selected existing project contributes
 	// its endpoint so provision reuses it instead of creating a new project. The
 	// endpoint itself lives in the azd environment; azure.yaml only references it.
-	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	endpointRef, err := recordFoundryProjectEnv(
 		ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject,
 	)
 	if err != nil {
 		return err
 	}
-	// its endpoint so provision reuses it instead of creating a new project.
 	if _, err := emitResourceServices(
 		ctx, a.azdClient, agentServiceName,
 		endpointRef,
-		resourceDeployments, nil, nil,
+		foundryResources{Deployments: resourceDeployments},
 	); err != nil {
 		return err
 	}

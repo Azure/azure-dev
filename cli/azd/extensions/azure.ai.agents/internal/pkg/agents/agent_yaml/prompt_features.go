@@ -65,7 +65,7 @@ var knowledgeToolTypes = map[string]bool{
 
 // harnessedPromptFeatures records whether each capability is honored by a
 // *harnessed* prompt agent — a managed agent that names a harness such as
-// "github-copilot" and runs in a platform-provisioned sandbox.
+// "github_copilot_preview" and runs in a platform-provisioned sandbox.
 //
 // This map is the switch, and it follows the harness spec literally: a
 // capability is enabled only where the spec says the harness honors it.
@@ -171,9 +171,21 @@ const (
 // reads like a missing resource and sends authors hunting for a policy that is
 // in fact present on their account. The real cause is the shape of the value,
 // so name that instead of letting the deploy fail on a misleading message.
+//
+// A value that still carries an unexpanded ${VAR} reference is passed over
+// rather than judged. `azd ai agent init` deliberately writes ${RAI_POLICY_ID}
+// instead of the resource ID so a project can be copied to another
+// subscription unchanged, and the concrete ID is substituted from the azd
+// environment at deploy time. This function also runs when the manifest is
+// first read, before that substitution has happened, where the eventual shape
+// is not knowable. The expanded value is re-validated on the deploy path, so
+// deferring here does not let a malformed ID through.
 func ValidateRaiPolicyName(name string) error {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
+		return nil
+	}
+	if strings.Contains(trimmed, "${") {
 		return nil
 	}
 	if strings.HasPrefix(trimmed, raiPolicyIDPrefix) && strings.Contains(trimmed, raiPolicyIDSegment) {

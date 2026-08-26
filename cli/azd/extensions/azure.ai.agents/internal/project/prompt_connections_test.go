@@ -8,7 +8,39 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/envkey"
 )
+
+// TestResolveConnectionAction_Rung0_SiblingOwned covers the case where a
+// sibling `host: azure.ai.connection` service provisioned the connection. The
+// data-plane listing rung 1 consults can lag a just-provisioned connection, so
+// without this rung azd would race that extension and try to create a second
+// connection of the same name.
+func TestResolveConnectionAction_Rung0_SiblingOwned(t *testing.T) {
+	decl := agent_yaml.PromptConnection{Name: "aisearch-conn", Category: "CognitiveSearch"}
+	env := map[string]string{
+		"AZURE_AI_PROJECT_CONNECTION_NAMES": "other-conn,aisearch-conn",
+		envkey.ConnectionProjectEndpoint:    "https://acct.services.ai.azure.com/api/projects/p",
+		"FOUNDRY_PROJECT_ENDPOINT":          "https://acct.services.ai.azure.com/api/projects/p",
+	}
+
+	// No existing connections and no target: without rung 0 this would fail fast.
+	action, _, err := resolveConnectionAction(decl, nil, env)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if action != connActionUseExisting {
+		t.Errorf("action: got %v, want use-existing", action)
+	}
+
+	// A marker left over from a different project must not suppress creation --
+	// the connection genuinely does not exist in the project being targeted.
+	env["FOUNDRY_PROJECT_ENDPOINT"] = "https://other.services.ai.azure.com/api/projects/q"
+	action, _, err = resolveConnectionAction(decl, nil, env)
+	if err == nil {
+		t.Fatalf("expected a stale marker to fall through to fail-fast, got %v", action)
+	}
+}
 
 func TestResolveConnectionAction_Rung1_ExistingByName(t *testing.T) {
 	existing := map[string]string{"aisearch-conn": "id-1"}

@@ -120,13 +120,25 @@ const (
 	AuthTypeSAS                  AuthType = "SAS"
 )
 
+// AuthTypeEntra is the name authors reach for when they mean "no secret, use
+// the caller's Entra identity", and is what azd's own documentation and
+// scaffolding have used. The service has never accepted it: its discriminator
+// for that mode is AAD. Sent verbatim it fails provisioning with a bad-request
+// listing twenty-one auth types, none of which explains that Entra and AAD are
+// the same thing. It is normalized rather than rejected because it names the
+// right concept.
+const AuthTypeEntra AuthType = "Entra"
+
 // NormalizeConnectionAuthType maps auth types accepted in agent.yaml to
 // the management-plane value required for project connection provisioning.
 // Legacy AgenticIdentity values are normalized to AgenticIdentityToken
-// for API compatibility.
+// for API compatibility, and Entra to AAD.
 func NormalizeConnectionAuthType(authType AuthType) AuthType {
-	if authType == AuthTypeAgenticIdentity {
+	switch authType {
+	case AuthTypeAgenticIdentity:
 		return AuthTypeAgenticIdentityToken
+	case AuthTypeEntra:
+		return AuthTypeAAD
 	}
 
 	return authType
@@ -387,7 +399,7 @@ type HarnessSkillRef struct {
 // else is equivalent to the old `harness: <name>` string.
 type PromptHarness struct {
 	// Type is the harness discriminator, e.g.
-	// agent_api.ManagedAgentHarnessGitHubCopilot ("github-copilot").
+	// agent_api.ManagedAgentHarnessGitHubCopilot ("github_copilot_preview").
 	// It is passed through verbatim: azd keeps no allowlist of harness names, so
 	// a harness the service gains later needs no change here.
 	Type string `json:"type" yaml:"type"`
@@ -630,7 +642,10 @@ type PromptConnection struct {
 	// deploy engine attempts to fill it from provisioning outputs.
 	Target string `json:"target,omitempty" yaml:"target,omitempty"`
 
-	// AuthType selects the authentication mode ("Entra" default, or "ApiKey").
+	// AuthType selects the authentication mode. Empty means AAD, the
+	// secret-free mode that uses the caller's Entra identity; "Entra" is
+	// accepted as a spelling of it and normalized. Otherwise one of the
+	// AuthType constants, e.g. "ApiKey".
 	AuthType string `json:"authType,omitempty" yaml:"authType,omitempty"`
 
 	// Credentials carries auth material for non-Entra auth (e.g. an API key,

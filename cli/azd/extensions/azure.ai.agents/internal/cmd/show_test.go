@@ -402,15 +402,15 @@ func TestResolveNextStepFromStatus_NonActiveBranches(t *testing.T) {
 }
 
 func TestDisplayHarness(t *testing.T) {
-	assert.Equal(t, "GitHub Copilot (github-copilot)", displayHarness("github-copilot"))
+	assert.Equal(t, "GitHub Copilot (github_copilot_preview)", displayHarness("github_copilot_preview"))
 	assert.Equal(t, "custom-harness", displayHarness("custom-harness"))
 }
 
 // TestHarnessTypeFromMap covers both shapes `show` can be handed: agents
 // created before the harness became a block still carry a bare string.
 func TestHarnessTypeFromMap(t *testing.T) {
-	assert.Equal(t, "github-copilot", harnessTypeFromMap(map[string]any{
-		"harness": map[string]any{"type": "github-copilot"},
+	assert.Equal(t, "github_copilot_preview", harnessTypeFromMap(map[string]any{
+		"harness": map[string]any{"type": "github_copilot_preview"},
 	}))
 	assert.Equal(t, "ghcp", harnessTypeFromMap(map[string]any{"harness": "ghcp"}))
 	assert.Equal(t, "", harnessTypeFromMap(map[string]any{"harness": map[string]any{}}))
@@ -419,9 +419,9 @@ func TestHarnessTypeFromMap(t *testing.T) {
 
 func TestPromptDefinitionMap(t *testing.T) {
 	version := agent_api.AgentVersionObject{
-		Definition: map[string]any{"harness": "github-copilot"},
+		Definition: map[string]any{"harness": "github_copilot_preview"},
 	}
-	assert.Equal(t, "github-copilot", stringFromMap(promptDefinitionMap(version), "harness"))
+	assert.Equal(t, "github_copilot_preview", stringFromMap(promptDefinitionMap(version), "harness"))
 
 	// Non-map definition yields nil, and stringFromMap tolerates nil.
 	assert.Nil(t, promptDefinitionMap(agent_api.AgentVersionObject{Definition: "not-a-map"}))

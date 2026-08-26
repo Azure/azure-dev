@@ -516,10 +516,18 @@ func ProjectEndpoint(
 }
 
 // expandEndpoint resolves ${VAR} in a project service's endpoint: and trims the
-// result. Unset variables expand to the empty string, so a fully unresolved
-// endpoint is indistinguishable from an absent one.
+// result. Values come from env first, then the process environment. Unset
+// variables expand to the empty string, so a fully unresolved endpoint is
+// indistinguishable from an absent one.
 func expandEndpoint(raw string, env map[string]string) (string, error) {
-	expanded, err := maybeExpand(strings.TrimSpace(raw), env, true)
+	mapping := func(name string) string {
+		if value, found := env[name]; found {
+			return value
+		}
+		value, _ := os.LookupEnv(name)
+		return value
+	}
+	expanded, err := maybeExpand(strings.TrimSpace(raw), mapping, true)
 	if err != nil {
 		return "", fmt.Errorf("expand endpoint: %w", err)
 	}

@@ -79,8 +79,11 @@ func validateFoundryDependencies(
 				detail: detail,
 				requiresProvision: host == foundryProjectHost || host == legacyFoundryHost ||
 					host == foundryConnectionHost,
+				// Toolboxes, agents, skills and routines are all applied during
+				// `azd deploy`, so a failure on any of them is fixed by deploying
+				// the dependency first rather than by re-provisioning.
 				requiresDeploy: host == foundryToolboxHost || host == foundryAgentHost ||
-					host == foundrySkillHost,
+					host == foundrySkillHost || host == foundryRoutineHost,
 			})
 		}
 	}
@@ -227,6 +230,13 @@ func validateFoundryDependency(
 		return validateFoundryAgentDependency(service, env)
 	case foundrySkillHost:
 		return validateFoundrySkillDependency(service, env)
+	case foundryRoutineHost:
+		// A routine names the agent it dispatches, so the dependency edge points
+		// from the routine to the agent, not the other way around. The host is
+		// listed here so a hand-authored `uses:` entry is recognized rather than
+		// falling through to the default; there is nothing to check because the
+		// routine extension publishes no readiness marker.
+		return ""
 	default:
 		return ""
 	}

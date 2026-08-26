@@ -14,6 +14,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
@@ -129,6 +130,29 @@ func targetFromEnv(name string, env map[string]string) string {
 	return ""
 }
 
+// siblingOwnsConnection reports whether a sibling `host: azure.ai.connection`
+// service provisioned a connection of this name into the project this agent
+// targets. The azure.ai.connections extension records the names it provisioned
+// in AZURE_AI_PROJECT_CONNECTION_NAMES, along with the project endpoint it
+// provisioned them into; a name recorded against a different project is ignored
+// so a reused environment cannot make azd skip creating a connection that is
+// genuinely absent here.
+func siblingOwnsConnection(name string, env map[string]string) bool {
+	if env == nil {
+		return false
+	}
+	declared := strings.TrimSpace(env[envkey.ConnectionProjectEndpoint])
+	if declared != "" && !sameProjectEndpoint(declared, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		return false
+	}
+	for entry := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
+		if strings.EqualFold(strings.TrimSpace(entry), strings.TrimSpace(name)) {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveConnectionAction decides how to satisfy one declared connection given
 // the set of existing connection names and the azd environment. It is pure and
 // table-testable; the connection node performs the side effects.
@@ -146,6 +170,14 @@ func resolveConnectionAction(
 			"a declared connection is missing a name",
 			"set 'name' on each entry under connections:",
 		)
+	}
+
+	// Rung 0: the connection has a sibling `host: azure.ai.connection` service
+	// that already provisioned it. That extension owns the connection, so azd
+	// takes it as-is rather than racing to create a second one -- the data-plane
+	// listing that rung 1 consults can lag a just-provisioned connection.
+	if siblingOwnsConnection(decl.Name, env) {
+		return connActionUseExisting, decl, nil
 	}
 
 	// Rung 1: an existing connection with this name is used as-is.
@@ -347,9 +379,14 @@ func (r *foundryConnectionResolver) Create(
 		return "", err
 	}
 	created, err := r.client.CreateConnection(ctx, decl.Name, &azure.CreateConnectionRequest{
-		Category:    decl.Category,
-		Target:      decl.Target,
-		AuthType:    decl.AuthType, // empty defaults to AAD in the client
+		Category: decl.Category,
+		Target:   decl.Target,
+		// Empty defaults to AAD in the client. Non-empty is normalized so the
+		// authoring spelling "Entra" reaches the service as the AAD
+		// discriminator it actually accepts.
+		AuthType: string(agent_yaml.NormalizeConnectionAuthType(
+			agent_yaml.AuthType(decl.AuthType),
+		)),
 		Credentials: credentials,
 		Metadata:    decl.Metadata,
 	})

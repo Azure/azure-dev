@@ -29,6 +29,7 @@ const (
 	nodeMemoryStore promptNodeKind = "memory_store"
 	nodeSkill       promptNodeKind = "skill"
 	nodeToolbox     promptNodeKind = "toolbox"
+	nodePolicy      promptNodeKind = "policy"
 )
 
 // promptNode is a single dependency in the prompt-agent deploy graph. Validate
@@ -141,9 +142,12 @@ func newPromptGraph(
 	}
 
 	// Convention: a non-empty skills/ folder contributes the agent's skills.
-	// How they are reached splits on the harness — a managed agent provisions
-	// them into its sandbox by pinning them on the harness block, while a plain
-	// prompt agent references them by name and runs them with a shell tool.
+	// The bundles themselves are created and versioned by the sibling
+	// `host: azure.ai.skill` services that `azd ai agent init` emits; these
+	// nodes only attach the versions those services published. How they are
+	// reached splits on the harness — a managed agent provisions them into its
+	// sandbox by pinning them on the harness block, while a plain prompt agent
+	// references them by name and runs them with a shell tool.
 	skills, err := scanSkillsDir(agentDir)
 	if err != nil {
 		return nil, err
@@ -159,15 +163,11 @@ func newPromptGraph(
 		}); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
-		if node := skillsHarnessNode(g, skills, func() (harnessSkillPublisher, error) {
-			return newFoundrySkillPublisher(settings)
-		}); node != nil {
+		if node := skillsHarnessNode(g, skills); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
 	} else {
-		if node := skillsShellNode(g, skills, managed.Toolbox, func() (skillAttacher, error) {
-			return newFoundrySkillPublisher(settings)
-		}); node != nil {
+		if node := skillsShellNode(g, skills, managed.Toolbox); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
 	}
@@ -178,6 +178,14 @@ func newPromptGraph(
 	if node := connectionsNode(g, func() (connectionResolver, error) {
 		return newFoundryConnectionResolver(settings)
 	}); node != nil {
+		g.nodes = append(g.nodes, *node)
+	}
+
+	// Guardrails are checked just before the agent node so a policy that does
+	// not exist is reported by name instead of as an opaque service rejection
+	// from the create call, and is replaced with the account's built-in default
+	// rather than failing the deploy.
+	if node := policiesNode(g, azureRaiPolicyLister); node != nil {
 		g.nodes = append(g.nodes, *node)
 	}
 

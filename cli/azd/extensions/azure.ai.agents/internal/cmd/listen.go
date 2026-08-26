@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"google.golang.org/protobuf/proto"
 )
 
 // configureExtensionHost wires the service target and event handlers on the
@@ -546,11 +547,13 @@ func resolveAgentServiceConfigWithProjectOverrides(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (*azdext.ServiceConfig, error) {
-	resolvedSvc := *svc
-	if err := project.ResolveServiceConfigInPlace(&resolvedSvc, projectRoot); err != nil {
+	// ServiceConfig is a protobuf message, so clone it rather than dereferencing
+	// (a shallow copy would copy the embedded message state and its mutex).
+	resolvedSvc := proto.Clone(svc).(*azdext.ServiceConfig)
+	if err := project.ResolveServiceConfigInPlace(resolvedSvc, projectRoot); err != nil {
 		return nil, err
 	}
-	return &resolvedSvc, nil
+	return resolvedSvc, nil
 }
 
 func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.ServiceConfig) {

@@ -188,7 +188,7 @@ func TestManagedAgentClient_CreateAgent_URLAndBody(t *testing.T) {
 		Name: "my-managed",
 		CreateAgentVersionRequest: CreateAgentVersionRequest{
 			Definition: ManagedAgentDefinition{
-				AgentDefinition: AgentDefinition{Kind: AgentKindManaged},
+				AgentDefinition: AgentDefinition{Kind: AgentKindPrompt},
 				Model:           "gpt-4.1-mini",
 				Instructions:    "Be helpful.",
 			},

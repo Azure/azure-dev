@@ -232,4 +232,14 @@ func TestNormalizeConnectionAuthType(t *testing.T) {
 	if got := NormalizeConnectionAuthType(AuthTypeOAuth2); got != AuthTypeOAuth2 {
 		t.Fatalf("NormalizeConnectionAuthType(OAuth2) = %q, want %q", got, AuthTypeOAuth2)
 	}
+
+	// "Entra" is the name authors reach for; the service's discriminator for
+	// that mode is AAD, and sending it verbatim fails provisioning.
+	if got := NormalizeConnectionAuthType(AuthTypeEntra); got != AuthTypeAAD {
+		t.Fatalf("NormalizeConnectionAuthType(Entra) = %q, want %q", got, AuthTypeAAD)
+	}
+
+	if got := NormalizeConnectionAuthType(AuthTypeAAD); got != AuthTypeAAD {
+		t.Fatalf("NormalizeConnectionAuthType(AAD) = %q, want %q", got, AuthTypeAAD)
+	}
 }

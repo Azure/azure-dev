@@ -14,6 +14,9 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/envkey"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // testPromptHarness returns a minimal harness block. Each caller gets its own
@@ -37,6 +40,51 @@ func (b *fakeToolboxBuilder) ResolveToolbox(_ context.Context, ref toolboxRef) (
 		b.mcpURL = "https://proj/toolboxes/existing/versions/2/mcp"
 	}
 	return toolboxAttachment{McpURL: b.mcpURL, ConnectionName: b.connName}, nil
+}
+
+// TestToolboxNode_PrefersSiblingEndpoint verifies the toolbox node hands the
+// builder the MCP url the sibling azure.ai.toolbox service published, rather
+// than letting the builder synthesize one from the name. The toolboxes extension
+// owns the toolbox's lifecycle and knows the endpoint it actually created, so
+// the two extensions must not be free to disagree about where it lives.
+func TestToolboxNode_PrefersSiblingEndpoint(t *testing.T) {
+	published := "https://acct.services.ai.azure.com/toolboxes/tb/mcp"
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
+	g := &promptGraph{managed: managed, bindings: map[string]any{}, env: map[string]string{
+		envkey.ToolboxMCPEndpoint("tb"):     published,
+		envkey.ToolboxProjectEndpoint("tb"): "https://acct.services.ai.azure.com/api/projects/p",
+		"FOUNDRY_PROJECT_ENDPOINT":          "https://acct.services.ai.azure.com/api/projects/p",
+	}}
+
+	builder := &fakeToolboxBuilder{}
+	node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "tb"}, func() (toolboxBuilder, error) {
+		return builder, nil
+	})
+	if err := node.Resolve(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if builder.lastRef.MCPEndpoint != published {
+		t.Errorf("published endpoint: got %q, want %q", builder.lastRef.MCPEndpoint, published)
+	}
+}
+
+// TestToolboxNode_RejectsCrossProjectEndpoint verifies a marker left over from a
+// different Foundry project fails the deploy instead of pointing the agent at a
+// toolbox it cannot reach, which the service would only report at run time.
+func TestToolboxNode_RejectsCrossProjectEndpoint(t *testing.T) {
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
+	g := &promptGraph{managed: managed, bindings: map[string]any{}, env: map[string]string{
+		envkey.ToolboxMCPEndpoint("tb"):     "https://other.services.ai.azure.com/toolboxes/tb/mcp",
+		envkey.ToolboxProjectEndpoint("tb"): "https://other.services.ai.azure.com/api/projects/q",
+		"FOUNDRY_PROJECT_ENDPOINT":          "https://acct.services.ai.azure.com/api/projects/p",
+	}}
+
+	node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "tb"}, func() (toolboxBuilder, error) {
+		return &fakeToolboxBuilder{}, nil
+	})
+	if err := node.Resolve(context.Background()); err == nil {
+		t.Fatal("expected a toolbox published to another project to fail the deploy")
+	}
 }
 
 func writeSkillsDir(t *testing.T, skills map[string]string) string {
@@ -247,68 +295,27 @@ func TestToolboxNode_NoneReturnsNil(t *testing.T) {
 	}
 }
 
-// fakeSkillAttacher records the bundles it was given and returns their names.
-type fakeSkillAttacher struct {
-	attachCalls int
-	lastSkills  []skillBundle
-	names       []string
-	err         error
-}
-
-func (a *fakeSkillAttacher) AttachSkills(_ context.Context, skills []skillBundle) ([]string, error) {
-	a.attachCalls++
-	a.lastSkills = skills
-	if a.err != nil {
-		return nil, a.err
+// skillMarkers builds the azd environment a deployed sibling azure.ai.skill
+// service leaves behind: one SKILL_<NAME>_VERSION entry per published skill.
+func skillMarkers(nameToVersion map[string]string) map[string]string {
+	env := map[string]string{}
+	for name, version := range nameToVersion {
+		env[envkey.SkillVersion(name)] = version
 	}
-	if a.names != nil {
-		return a.names, nil
-	}
-	names := make([]string, 0, len(skills))
-	for _, s := range skills {
-		names = append(names, s.Meta.Name)
-	}
-	return names, nil
+	return env
 }
 
 func TestSkillsShellNode_NoneReturnsNil(t *testing.T) {
 	g := &promptGraph{managed: &agent_yaml.PromptAgent{}, bindings: map[string]any{}}
-	node := skillsShellNode(g, nil, nil, func() (skillAttacher, error) { return nil, nil })
+	node := skillsShellNode(g, nil, nil)
 	if node != nil {
 		t.Fatal("expected nil node when no skills and no reference")
 	}
 }
 
-// fakeHarnessSkillPublisher records the bundles it was given and echoes them
-// back as published skills at a fixed version.
-type fakeHarnessSkillPublisher struct {
-	calls      int
-	lastSkills []skillBundle
-	published  []publishedSkill
-	err        error
-}
-
-func (p *fakeHarnessSkillPublisher) PublishSkills(
-	_ context.Context, skills []skillBundle,
-) ([]publishedSkill, error) {
-	p.calls++
-	p.lastSkills = skills
-	if p.err != nil {
-		return nil, p.err
-	}
-	if p.published != nil {
-		return p.published, nil
-	}
-	out := make([]publishedSkill, 0, len(skills))
-	for _, s := range skills {
-		out = append(out, publishedSkill{Name: s.Meta.Name, Version: "7"})
-	}
-	return out, nil
-}
-
 func TestSkillsHarnessNode_NoneReturnsNil(t *testing.T) {
 	g := &promptGraph{managed: &agent_yaml.PromptAgent{}, bindings: map[string]any{}}
-	node := skillsHarnessNode(g, nil, func() (harnessSkillPublisher, error) { return nil, nil })
+	node := skillsHarnessNode(g, nil)
 	if node != nil {
 		t.Fatal("expected nil node when there are no skills")
 	}
@@ -316,19 +323,23 @@ func TestSkillsHarnessNode_NoneReturnsNil(t *testing.T) {
 
 // TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool is the core of the
 // harnessed skills contract: skills land on the harness as versioned
-// references, and nothing is added to tools. A skill is not a tool, and the
-// toolbox that used to carry them is service-owned.
+// references taken from the sibling skill services' markers, and nothing is
+// added to tools. A skill is not a tool, and the toolbox that used to carry
+// them is service-owned.
 func TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
 	managed.Name = "agent"
-	g := &promptGraph{managed: managed, bindings: map[string]any{}}
-	pub := &fakeHarnessSkillPublisher{}
+	g := &promptGraph{
+		managed:  managed,
+		bindings: map[string]any{},
+		env:      skillMarkers(map[string]string{"skill-a": "7", "skill-b": "7"}),
+	}
 
 	skills := []skillBundle{
 		{Dir: "skill-a", Meta: skillMeta{Name: "skill-a", Description: "d", Instructions: "body"}},
 		{Dir: "skill-b", Meta: skillMeta{Name: "skill-b", Description: "d", Instructions: "body"}},
 	}
-	node := skillsHarnessNode(g, skills, func() (harnessSkillPublisher, error) { return pub, nil })
+	node := skillsHarnessNode(g, skills)
 	if node == nil {
 		t.Fatal("expected a skills node")
 	}
@@ -342,9 +353,6 @@ func TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 
-	if pub.calls != 1 {
-		t.Errorf("expected 1 publish call, got %d", pub.calls)
-	}
 	want := []agent_yaml.HarnessSkillRef{
 		{Name: "skill-a", Version: "7"},
 		{Name: "skill-b", Version: "7"},
@@ -362,18 +370,19 @@ func TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool(t *testing.T) {
 
 // TestSkillsHarnessNode_PinsVersionEvenWhenUnpinned guards the workaround for
 // the service returning 500 for a reference with no version: azd always sends
-// the version it just published, whether or not SKILL.md pinned one.
+// the version the skill service published, whether or not SKILL.md pinned one.
 func TestSkillsHarnessNode_PinsVersionEvenWhenUnpinned(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
-	g := &promptGraph{managed: managed, bindings: map[string]any{}}
-	pub := &fakeHarnessSkillPublisher{
-		published: []publishedSkill{{Name: "skill-a", Version: "3", Pinned: false}},
+	g := &promptGraph{
+		managed:  managed,
+		bindings: map[string]any{},
+		env:      skillMarkers(map[string]string{"skill-a": "3"}),
 	}
 
 	skills := []skillBundle{{Dir: "skill-a", Meta: skillMeta{
 		Name: "skill-a", Description: "d", Instructions: "body",
 	}}}
-	node := skillsHarnessNode(g, skills, func() (harnessSkillPublisher, error) { return pub, nil })
+	node := skillsHarnessNode(g, skills)
 	if err := node.Resolve(context.Background()); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -390,13 +399,16 @@ func TestSkillsHarnessNode_ResolveIsIdempotent(t *testing.T) {
 		Harness:       testPromptHarness(),
 		HarnessSkills: []agent_yaml.HarnessSkillRef{{Name: "skill-a", Version: "7"}},
 	}
-	g := &promptGraph{managed: managed, bindings: map[string]any{}}
-	pub := &fakeHarnessSkillPublisher{}
+	g := &promptGraph{
+		managed:  managed,
+		bindings: map[string]any{},
+		env:      skillMarkers(map[string]string{"skill-a": "7"}),
+	}
 
 	skills := []skillBundle{{Dir: "skill-a", Meta: skillMeta{
 		Name: "skill-a", Description: "d", Instructions: "body",
 	}}}
-	node := skillsHarnessNode(g, skills, func() (harnessSkillPublisher, error) { return pub, nil })
+	node := skillsHarnessNode(g, skills)
 	if err := node.Resolve(context.Background()); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -409,10 +421,9 @@ func TestSkillsHarnessNode_ResolveIsIdempotent(t *testing.T) {
 func TestSkillsHarnessNode_RejectsEmptyInstructions(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
-	pub := &fakeHarnessSkillPublisher{}
 
 	skills := []skillBundle{{Dir: "empty", Meta: skillMeta{Name: "empty", Description: "d"}}}
-	node := skillsHarnessNode(g, skills, func() (harnessSkillPublisher, error) { return pub, nil })
+	node := skillsHarnessNode(g, skills)
 
 	err := node.Validate()
 	if err == nil {
@@ -421,26 +432,51 @@ func TestSkillsHarnessNode_RejectsEmptyInstructions(t *testing.T) {
 	if !strings.Contains(err.Error(), "empty") {
 		t.Errorf("error should name the skill, got: %v", err)
 	}
-	if pub.calls != 0 {
-		t.Errorf("validation failure must not publish skills, got %d calls", pub.calls)
-	}
 }
 
-func TestSkillsHarnessNode_PublisherErrorPropagates(t *testing.T) {
+// TestSkillsHarnessNode_MissingMarkerFails covers the case the replacement of
+// azd's own publisher introduces: a skills/ folder with no sibling
+// azure.ai.skill service, so nothing ever created the skill. The deploy must
+// fail with the azure.yaml entry to add rather than silently drop the skill.
+func TestSkillsHarnessNode_MissingMarkerFails(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
-	g := &promptGraph{managed: managed, bindings: map[string]any{}}
-	pub := &fakeHarnessSkillPublisher{err: errors.New("boom")}
+	g := &promptGraph{managed: managed, bindings: map[string]any{}, env: map[string]string{}}
 
 	skills := []skillBundle{{Dir: "skill-a", Meta: skillMeta{
 		Name: "skill-a", Description: "d", Instructions: "body",
 	}}}
-	node := skillsHarnessNode(g, skills, func() (harnessSkillPublisher, error) { return pub, nil })
+	node := skillsHarnessNode(g, skills)
 
-	if err := node.Resolve(context.Background()); err == nil {
-		t.Fatal("expected the publish error to propagate")
+	err := node.Resolve(context.Background())
+	if err == nil {
+		t.Fatal("expected an unpublished skill to fail the deploy")
+	}
+	if !strings.Contains(err.Error(), "SKILL_SKILL_A_VERSION") {
+		t.Errorf("error should name the missing marker, got: %v", err)
+	}
+	svcErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected a structured error, got %T", err)
+	}
+	if !strings.Contains(svcErr.Suggestion, "azure.ai.skill") {
+		t.Errorf("suggestion should name the host to declare, got: %v", svcErr.Suggestion)
 	}
 	if len(managed.HarnessSkills) != 0 {
-		t.Errorf("failed publish must leave the definition untouched, got %+v", managed.HarnessSkills)
+		t.Errorf("failed resolve must leave the definition untouched, got %+v", managed.HarnessSkills)
+	}
+}
+
+// TestResolveSkillMarkers_RejectsCrossProjectVersion covers a stale marker left
+// by a deploy against a different Foundry project: the version id would not
+// resolve there, and the service reports that only at run time.
+func TestResolveSkillMarkers_RejectsCrossProjectVersion(t *testing.T) {
+	env := skillMarkers(map[string]string{"skill-a": "7"})
+	env[envkey.SkillProjectEndpoint("skill-a")] = "https://other.services.ai.azure.com/api/projects/other"
+	env["FOUNDRY_PROJECT_ENDPOINT"] = "https://mine.services.ai.azure.com/api/projects/mine"
+
+	skills := []skillBundle{{Dir: "skill-a", Meta: skillMeta{Name: "skill-a"}}}
+	if _, err := resolveSkillMarkers(skills, env); err == nil {
+		t.Fatal("expected a marker from another project to be rejected")
 	}
 }
 
@@ -452,10 +488,9 @@ func TestSkillsShellNode_RejectsToolboxReference(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
-	fake := &fakeSkillAttacher{}
 
 	ref := &agent_yaml.ToolboxReference{Name: "existing-tb", Version: "2"}
-	node := skillsShellNode(g, nil, ref, func() (skillAttacher, error) { return fake, nil })
+	node := skillsShellNode(g, nil, ref)
 	if node == nil {
 		t.Fatal("expected a skills node")
 	}
@@ -466,9 +501,6 @@ func TestSkillsShellNode_RejectsToolboxReference(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "harness") {
 		t.Errorf("error should point at the harness requirement, got: %v", err)
-	}
-	if fake.attachCalls != 0 {
-		t.Errorf("validation failure must not publish skills, got %d calls", fake.attachCalls)
 	}
 }
 
@@ -481,9 +513,7 @@ func TestSkillsShellNode_RejectsEmptyInstructions(t *testing.T) {
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 
 	skills := []skillBundle{{Dir: "empty", Meta: skillMeta{Name: "empty", Description: "d"}}}
-	node := skillsShellNode(g, skills, nil, func() (skillAttacher, error) {
-		return &fakeSkillAttacher{}, nil
-	})
+	node := skillsShellNode(g, skills, nil)
 
 	err := node.Validate()
 	if err == nil {
@@ -494,20 +524,23 @@ func TestSkillsShellNode_RejectsEmptyInstructions(t *testing.T) {
 	}
 }
 
-// TestSkillsShellNode_PublishesAndInjectsShell asserts the node's whole job:
-// publish the bundles, reference the returned names on the definition, and add
-// the shell tool that makes them runnable.
-func TestSkillsShellNode_PublishesAndInjectsShell(t *testing.T) {
+// TestSkillsShellNode_AttachesAndInjectsShell asserts the node's whole job:
+// reference the skills the sibling services published, and add the shell tool
+// that makes them runnable.
+func TestSkillsShellNode_AttachesAndInjectsShell(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
 	managed.Name = "agent"
-	g := &promptGraph{managed: managed, bindings: map[string]any{}}
-	fake := &fakeSkillAttacher{}
+	g := &promptGraph{
+		managed:  managed,
+		bindings: map[string]any{},
+		env:      skillMarkers(map[string]string{"skill-a": "1", "skill-b": "1"}),
+	}
 
 	skills := []skillBundle{
 		{Dir: "a", Meta: skillMeta{Name: "skill-a", Description: "d", Instructions: "do a"}},
 		{Dir: "b", Meta: skillMeta{Name: "skill-b", Description: "d", Instructions: "do b"}},
 	}
-	node := skillsShellNode(g, skills, nil, func() (skillAttacher, error) { return fake, nil })
+	node := skillsShellNode(g, skills, nil)
 	if node == nil {
 		t.Fatal("expected a skills node")
 	}
@@ -521,12 +554,6 @@ func TestSkillsShellNode_PublishesAndInjectsShell(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 
-	if fake.attachCalls != 1 {
-		t.Errorf("expected 1 attach call, got %d", fake.attachCalls)
-	}
-	if len(fake.lastSkills) != 2 {
-		t.Errorf("expected both bundles published, got %d", len(fake.lastSkills))
-	}
 	if want := []string{"skill-a", "skill-b"}; !slices.Equal(managed.Skills, want) {
 		t.Errorf("skills: got %v, want %v", managed.Skills, want)
 	}
@@ -549,13 +576,16 @@ func TestSkillsShellNode_ResolveIsIdempotent(t *testing.T) {
 		Tools:        []any{map[string]any{"type": promptSkillShellToolType}},
 	}
 	managed.Name = "agent"
-	g := &promptGraph{managed: managed, bindings: map[string]any{}}
-	fake := &fakeSkillAttacher{}
+	g := &promptGraph{
+		managed:  managed,
+		bindings: map[string]any{},
+		env:      skillMarkers(map[string]string{"skill-a": "1"}),
+	}
 
 	skills := []skillBundle{
 		{Dir: "a", Meta: skillMeta{Name: "skill-a", Description: "d", Instructions: "do a"}},
 	}
-	node := skillsShellNode(g, skills, nil, func() (skillAttacher, error) { return fake, nil })
+	node := skillsShellNode(g, skills, nil)
 	if err := node.Resolve(context.Background()); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -568,23 +598,22 @@ func TestSkillsShellNode_ResolveIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestSkillsShellNode_AttacherErrorPropagates asserts a publish failure fails
-// the deploy rather than leaving the definition half-wired -- an agent that
+// TestSkillsShellNode_MissingMarkerFails asserts an unpublished skill fails the
+// deploy rather than leaving the definition half-wired -- an agent that
 // references skills the service never received.
-func TestSkillsShellNode_AttacherErrorPropagates(t *testing.T) {
+func TestSkillsShellNode_MissingMarkerFails(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
 	managed.Name = "agent"
-	g := &promptGraph{managed: managed, bindings: map[string]any{}}
-	fake := &fakeSkillAttacher{err: errors.New("publish failed")}
+	g := &promptGraph{managed: managed, bindings: map[string]any{}, env: map[string]string{}}
 
 	skills := []skillBundle{
 		{Dir: "a", Meta: skillMeta{Name: "skill-a", Description: "d", Instructions: "do a"}},
 	}
-	node := skillsShellNode(g, skills, nil, func() (skillAttacher, error) { return fake, nil })
+	node := skillsShellNode(g, skills, nil)
 
 	err := node.Resolve(context.Background())
 	if err == nil {
-		t.Fatal("expected the attacher error to propagate")
+		t.Fatal("expected an unpublished skill to fail the deploy")
 	}
 	if len(managed.Skills) != 0 || len(managed.Tools) != 0 {
 		t.Errorf("definition must be left untouched on failure: skills=%v tools=%v",

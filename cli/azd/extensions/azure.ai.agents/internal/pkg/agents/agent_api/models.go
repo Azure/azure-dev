@@ -68,10 +68,11 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
-	// AgentKindManaged is the Foundry "managed" / "prompt" agent kind backed
-	// by the Prompt Execution Service (PES). The API control plane accepts the
-	// value "prompt" as the wire discriminator for this kind.
-	AgentKindManaged AgentKind = "prompt"
+	// AgentKindPrompt is the Foundry prompt agent kind backed by the Prompt
+	// Execution Service (PES). "prompt" is the wire discriminator for both the
+	// plain and the harnessed ("managed") flavor — a harness is a property of
+	// the agent, not a kind of its own.
+	AgentKindPrompt AgentKind = "prompt"
 	// AgentKindVoice is the data-plane (service) kind for a declarative voice
 	// (speech-to-speech) agent. The azd manifest authoring kind is "prompt-voice"
 	// (agent_yaml.AgentKindPromptVoice), which the map layer translates to this
@@ -372,11 +373,10 @@ type ManagedEnvironment struct {
 // agent definition's `harness.type` field to run the agent on the GitHub
 // Copilot harness.
 //
-// The managed-agent spec writes the wire discriminator as
-// "github_copilot_preview". azd deliberately keeps the preview-free spelling
-// until the service confirms the versioned one, so that a manifest does not
-// have to be rewritten twice.
-const ManagedAgentHarnessGitHubCopilot = "github-copilot"
+// This is the spelling the managed-agent spec defines, and the `_preview`
+// suffix is part of it: the harness is in preview and the service will version
+// the discriminator when it leaves preview.
+const ManagedAgentHarnessGitHubCopilot = "github_copilot_preview"
 
 // RemovedManagedAgentHarnesses maps a harness spelling the service no longer
 // accepts to the spelling that replaced it.
@@ -384,7 +384,8 @@ const ManagedAgentHarnessGitHubCopilot = "github-copilot"
 // These are retained only so validation can name the replacement when it meets
 // an old manifest; none of them is ever sent on the wire or accepted as input.
 var RemovedManagedAgentHarnesses = map[string]string{
-	"ghcp": ManagedAgentHarnessGitHubCopilot,
+	"ghcp":           ManagedAgentHarnessGitHubCopilot,
+	"github-copilot": ManagedAgentHarnessGitHubCopilot,
 }
 
 // HarnessSkillReference pins one published Foundry skill onto a harnessed

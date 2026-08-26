@@ -6,10 +6,14 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
+	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -29,6 +33,10 @@ const (
 	AiConnectionHost = "azure.ai.connection"
 	// AiToolboxHost owns a single Foundry toolbox (toolset).
 	AiToolboxHost = "azure.ai.toolbox"
+	// AiSkillHost owns a single Foundry skill and its versions. azd never
+	// uploads a skill bundle itself; it emits one service per skills/<name>/
+	// folder and attaches the version that extension publishes.
+	AiSkillHost = "azure.ai.skill"
 
 	// aiProjectServiceName is the stable azure.yaml service key used for the
 	// single azure.ai.project service. A stable name keeps repeated inits
@@ -76,11 +84,105 @@ func promptAgentEnvRefs() *project.PromptAgentSettings {
 	}
 }
 
+// promptResourceServices derives the sibling Foundry services a prompt or
+// managed agent needs from its scaffolded definition and folder layout, so a
+// prompt agent's azure.yaml carries the same hosts as a hosted agent's.
+//
+//   - Each entry under connections: becomes an azure.ai.connection service.
+//   - Each skills/<dir>/ folder becomes an azure.ai.skill service keyed by the
+//     name its SKILL.md declares. The agents extension never uploads a bundle
+//     itself; at deploy time it attaches the version the skill service
+//     published.
+//   - toolbox: names an existing toolbox rather than defining one, so there is
+//     nothing to write as a service. Its name is added to the agent's uses: when
+//     a toolbox service of that name is already in azure.yaml, which is what
+//     orders the toolbox ahead of the agent; a uses: entry naming a service that
+//     does not exist would fail the project load instead.
+//
+// Deployments are left to the caller, which owns the model selection flow.
+func promptResourceServices(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	promptAgent *agent_yaml.PromptAgent,
+	serviceRelPath string,
+) (foundryResources, error) {
+	resources := foundryResources{}
+
+	for _, conn := range promptAgent.Connections {
+		resources.Connections = append(resources.Connections, project.Connection{
+			Name:        conn.Name,
+			Category:    conn.Category,
+			Target:      conn.Target,
+			AuthType:    conn.AuthType,
+			Credentials: conn.Credentials,
+			Metadata:    conn.Metadata,
+		})
+	}
+
+	bundles, err := project.ScanSkillBundles(serviceRelPath)
+	if err != nil {
+		return foundryResources{}, err
+	}
+	for _, bundle := range bundles {
+		if resources.Skills == nil {
+			resources.Skills = map[string]project.SkillService{}
+		}
+		resources.Skills[bundle.Name] = project.SkillService{
+			Description: bundle.Description,
+			// Relative to azure.yaml, which lives in the directory init runs in.
+			Archive: "./" + path.Join(filepath.ToSlash(serviceRelPath), bundle.RelPath),
+		}
+	}
+
+	if promptAgent.Toolbox != nil {
+		name := sanitizeServiceName(promptAgent.Toolbox.Name)
+		if name != "" && serviceHasHost(ctx, azdClient, name, AiToolboxHost) {
+			resources.ExtraUses = append(resources.ExtraUses, name)
+		}
+	}
+
+	return resources, nil
+}
+
+// serviceHasHost reports whether azure.yaml already defines a service named
+// name with the given host. Errors are treated as "no", because the callers use
+// it to decide whether adding a uses: edge is safe and the conservative answer
+// is to leave the edge out.
+func serviceHasHost(ctx context.Context, azdClient *azdext.AzdClient, name, host string) bool {
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return false
+	}
+	svc, ok := resp.GetProject().GetServices()[name]
+	return ok && svc.GetHost() == host
+}
+
+// foundryResources are the Foundry resources an agent depends on, each written
+// to azure.yaml as its own sibling service entry keyed by the resource name.
+// Grouping them keeps emitResourceServices readable as the set of hosts grows;
+// a zero value emits only the always-present azure.ai.project service.
+type foundryResources struct {
+	// Deployments are the model deployments carried by the project service.
+	Deployments []project.Deployment
+	// Connections become one azure.ai.connection service each.
+	Connections []project.Connection
+	// Toolboxes become one azure.ai.toolbox service each.
+	Toolboxes []project.Toolbox
+	// Skills become one azure.ai.skill service each, keyed by skill name.
+	Skills map[string]project.SkillService
+	// ExtraUses are service keys added to the agent's uses: list without
+	// emitting a service for them. A prompt agent's `toolbox:` names an
+	// *existing* toolbox, so there is no definition to write, but the edge is
+	// still needed for ordering and for the deploy-time dependency check.
+	ExtraUses []string
+}
+
 // emitResourceServices writes the Foundry resource sibling services that the
 // agent depends on (one azure.ai.project carrying the model deployments, one
-// azure.ai.connection per connection, one azure.ai.toolbox per toolbox) and
-// wires the agent service's uses: list to them for ordering. Each resource is
-// its own azure.yaml service entry so a different extension can own each host.
+// azure.ai.connection per connection, one azure.ai.toolbox per toolbox, one
+// azure.ai.skill per skill bundle) and wires the agent service's uses: list to
+// them for ordering. Each resource is its own azure.yaml service entry so a
+// different extension can own each host.
 //
 // projectEndpoint, when non-empty, is written as endpoint: on the project
 // service to mark an existing (brownfield) Foundry project so provision
@@ -92,9 +194,7 @@ func emitResourceServices(
 	azdClient *azdext.AzdClient,
 	agentServiceName string,
 	projectEndpoint string,
-	deployments []project.Deployment,
-	connections []project.Connection,
-	toolboxes []project.Toolbox,
+	resources foundryResources,
 ) (int, error) {
 	var agentUses []string
 	emittedConnections := 0
@@ -127,7 +227,7 @@ func emitResourceServices(
 	// provisioning order. A non-empty endpoint marks an existing project.
 	projectCfg, err := project.MarshalStruct(&project.ServiceTargetAgentConfig{
 		Endpoint:    projectEndpoint,
-		Deployments: deployments,
+		Deployments: resources.Deployments,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("marshaling project service config: %w", err)
@@ -141,12 +241,12 @@ func emitResourceServices(
 	}
 	agentUses = append(agentUses, projectServiceName)
 
-	// Connection and toolbox services depend on the project service so the
-	// project is provisioned first.
+	// Connection, toolbox and skill services depend on the project service so
+	// the project is provisioned first.
 	siblingUses := []string{projectServiceName}
 
-	for i := range connections {
-		conn := connections[i]
+	for i := range resources.Connections {
+		conn := resources.Connections[i]
 		connName := sanitizeServiceName(conn.Name)
 		if connName == "" {
 			fmt.Fprintf(os.Stderr,
@@ -169,8 +269,8 @@ func emitResourceServices(
 		emittedConnections++
 	}
 
-	for i := range toolboxes {
-		toolbox := toolboxes[i]
+	for i := range resources.Toolboxes {
+		toolbox := resources.Toolboxes[i]
 		toolboxName := sanitizeServiceName(toolbox.Name)
 		if toolboxName == "" {
 			fmt.Fprintf(os.Stderr,
@@ -190,6 +290,38 @@ func emitResourceServices(
 			return 0, err
 		}
 		agentUses = append(agentUses, toolboxName)
+	}
+
+	// The service key is the skill name the azure.ai.skills extension creates,
+	// and the name the agent's SKILL.md declares, so iterate in sorted order to
+	// keep repeated inits byte-identical.
+	for _, skill := range slices.Sorted(maps.Keys(resources.Skills)) {
+		skillName := sanitizeServiceName(skill)
+		if skillName == "" {
+			fmt.Fprintf(os.Stderr,
+				"warning: skill %q has no characters usable as an azure.yaml service key; "+
+					"skipping it. Rename the skill so it is written to azure.yaml.\n",
+				skill)
+			continue
+		}
+		if err := reserveServiceName(usedNames, skillName, fmt.Sprintf("skill %q", skill)); err != nil {
+			return 0, err
+		}
+		definition := resources.Skills[skill]
+		skillCfg, err := project.MarshalStruct(&definition)
+		if err != nil {
+			return 0, fmt.Errorf("marshaling skill service %q config: %w", skillName, err)
+		}
+		if err := addResourceService(ctx, azdClient, skillName, AiSkillHost, skillCfg, siblingUses); err != nil {
+			return 0, err
+		}
+		agentUses = append(agentUses, skillName)
+	}
+
+	for _, name := range resources.ExtraUses {
+		if name != "" && !slices.Contains(agentUses, name) {
+			agentUses = append(agentUses, name)
+		}
 	}
 
 	// Wire the agent service to its resource siblings so azd walks them first.

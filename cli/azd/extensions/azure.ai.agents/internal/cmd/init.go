@@ -84,17 +84,19 @@ type initFlags struct {
 	// `azd config reset`, and `azd infra generate`.
 	force bool
 	// kind, when set, explicitly selects the agent runtime ("hosted",
-	// "prompt", "managed", or "prompt-voice") and bypasses the interactive kind
+	// "prompt", or "prompt-voice") and bypasses the interactive kind
 	// prompt. This is primarily for non-interactive callers (--no-prompt) and
 	// automation; interactive users get the kind prompt when this is empty.
+	// A harnessed ("managed") agent is not one of these values: it is "prompt"
+	// plus a --harness.
 	// "prompt-voice" synthesizes a declarative (managed) voice agent manifest and
 	// routes it through the manifest flow (no code/image, no template/language
 	// selection, no ACR).
 	kind string
 	// harness, when set, names the execution harness written to the scaffolded
-	// prompt agent.yaml (only "github-copilot" is supported today). It overrides
-	// the harness implied by --kind, so `--kind prompt --harness github-copilot`
-	// is equivalent to `--kind managed`. Ignored for hosted agents.
+	// prompt agent.yaml (only "github_copilot_preview" is supported today). A
+	// harness is what makes a prompt agent a "managed" agent; there is no
+	// separate --kind for it. Ignored for hosted agents.
 	harness string
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
@@ -106,6 +108,9 @@ type initFlags struct {
 	// and `--infra=bicep` are explicit. The eject runs after a fresh init or
 	// standalone when azure.yaml already exists.
 	infra string
+	// raiPolicy selects the Responsible AI policy a prompt or managed agent
+	// binds to. Empty means "ask" (or, with --no-prompt, attach nothing).
+	raiPolicy string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -795,6 +800,11 @@ func synthesizeImageManifestFile(agentName, image string, flagProtocols []string
 // kindFlagPromptVoice is the accepted --kind value for a declarative voice agent.
 const kindFlagPromptVoice = "prompt-voice"
 
+// kindFlagRemovedManaged is the retired --kind value for a harnessed prompt
+// agent. It is matched only so the flag can be rejected with the replacement
+// spelling; a managed agent is `--kind prompt --harness github_copilot_preview`.
+const kindFlagRemovedManaged agentKindChoice = "managed"
+
 // synthesizeVoiceManifestFile writes a temporary declarative (managed) voice
 // agent manifest (kind: prompt-voice) to a temp dir and returns its path plus a
 // cleanup func. Like synthesizeImageManifestFile, it lets `--kind prompt-voice`
@@ -1349,9 +1359,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			//
 			// An explicit --kind flag always wins: it bypasses both the prompt
 			// and the hosted-signal gating so automation can select a
-			// prompt-agent runtime non-interactively. Both prompt kinds share the
-			// same init flow and the same agent.yaml `kind: prompt`; they differ
-			// only in the harness written to the manifest.
+			// prompt-agent runtime non-interactively. A harnessed ("managed")
+			// agent is not a kind of its own — it is `--kind prompt` plus
+			// `--harness`, and both scaffold agent.yaml with `kind: prompt`.
 			//
 			// A supplied --manifest (or positional template) that declares
 			// `kind: prompt` also routes here, with or without --kind, so a
@@ -1361,14 +1371,27 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// fetch of a remote pointer.
 			requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
 			isPromptVoice := strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
+			if requestedKind == kindFlagRemovedManaged {
+				// Named separately from the generic "unknown value" case: this
+				// value used to work, so the error owes the user the two flags
+				// that replace it rather than only the list of what is allowed.
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--kind managed is not a valid kind",
+					fmt.Sprintf(
+						"a managed agent is a prompt agent with a harness; "+
+							"use --kind prompt --harness %s instead",
+						agent_api.ManagedAgentHarnessGitHubCopilot,
+					),
+				)
+			}
 			if flags.kind != "" && !isPromptVoice &&
 				requestedKind != AgentKindChoiceHosted &&
-				requestedKind != AgentKindChoicePrompt &&
-				requestedKind != AgentKindChoiceManaged {
+				requestedKind != AgentKindChoicePrompt {
 				return exterrors.Validation(
 					exterrors.CodeInvalidParameter,
 					fmt.Sprintf("unknown --kind value %q", flags.kind),
-					"supported values are: hosted, prompt, managed, prompt-voice",
+					"supported values are: hosted, prompt, prompt-voice",
 				)
 			}
 
@@ -1381,8 +1404,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			switch {
-			case requestedKind == AgentKindChoicePrompt || requestedKind == AgentKindChoiceManaged:
-				harness, harnessErr := resolveInitHarness(flags.harness, requestedKind)
+			case requestedKind == AgentKindChoicePrompt:
+				// No implied harness on the flag path: --harness is the only way
+				// to ask for one, and omitting it scaffolds a plain prompt agent.
+				harness, harnessErr := resolveInitHarness(flags.harness, "")
 				if harnessErr != nil {
 					return harnessErr
 				}
@@ -1391,7 +1416,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				// No --kind: the manifest's own harness decides the flavor, so a
 				// template with a `harness:` block scaffolds a managed agent and a
 				// harness-less one a plain prompt agent. --harness still wins.
-				harness, harnessErr := resolveManifestInitHarness(
+				harness, harnessErr := resolveInitHarness(
 					flags.harness, promptManifest.definition.HarnessType(),
 				)
 				if harnessErr != nil {
@@ -1405,12 +1430,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					flags.runtime != "" ||
 					flags.entryPoint != ""
 				if !hostedSignalsPresent {
-					kindChoice, kindErr := promptAgentKind(ctx, azdClient, flags.noPrompt)
+					kindChoice, kindHarness, kindErr := promptAgentKind(ctx, azdClient, flags.noPrompt)
 					if kindErr != nil {
 						return kindErr
 					}
-					if kindChoice == AgentKindChoicePrompt || kindChoice == AgentKindChoiceManaged {
-						harness, harnessErr := resolveInitHarness(flags.harness, kindChoice)
+					if kindChoice == AgentKindChoicePrompt {
+						harness, harnessErr := resolveInitHarness(flags.harness, kindHarness)
 						if harnessErr != nil {
 							return harnessErr
 						}
@@ -2029,16 +2054,16 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 	cmd.Flags().StringVar(&flags.kind, "kind", "",
 		"Agent runtime to initialize: 'hosted' (bring your own code/container), 'prompt' "+
-			"(model + instructions; Foundry runs the agent directly, no harness), 'managed' "+
-			"(a prompt agent that additionally runs on the GitHub Copilot Brain+Hand harness), or "+
-			"'prompt-voice' (a declarative voice agent; use --model for the speech-to-speech model "+
-			"and --voice for the output voice). When omitted, "+
+			"(model + instructions; Foundry runs the agent), or 'prompt-voice' (a declarative "+
+			"voice agent; use --model for the speech-to-speech model and --voice for the output "+
+			"voice). A managed agent is not a separate kind: pair 'prompt' with "+
+			"--harness github_copilot_preview to run it on the Brain+Hand harness. When omitted, "+
 			"the kind is taken from --manifest when it declares one, otherwise you are prompted "+
-			"interactively. With --no-prompt, 'prompt' and 'managed' require --agent-name and "+
+			"interactively. With --no-prompt, 'prompt' requires --agent-name and "+
 			"either --model or --model-deployment (unless supplied by --manifest).")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
-		"Execution harness for a prompt agent: 'github-copilot' (GitHub Copilot Brain+Hand) "+
-			"or 'none'. Overrides the harness implied by --kind. Ignored for hosted agents.")
+		"Execution harness for a prompt agent: 'github_copilot_preview' (GitHub Copilot "+
+			"Brain+Hand) or 'none'. Ignored for hosted agents.")
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
 			"Foundry files are generated as a separate infra/foundry layer. "+
@@ -2050,6 +2075,14 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	// NoOptDefVal makes a bare `--infra` resolve to "bicep" while still allowing
 	// `--infra=terraform` / `--infra=bicep`. Absent flag stays "" (no eject).
 	cmd.Flags().Lookup("infra").NoOptDefVal = project.BicepProviderName
+
+	cmd.Flags().StringVar(&flags.raiPolicy, "rai-policy", "",
+		"Responsible AI policy for a prompt or managed agent: 'none' to inherit the account's "+
+			"default content filters, a policy name on the selected Foundry account, or a policy's "+
+			"full ARM resource ID. The policy must already exist; azd attaches it, it does not "+
+			"create it. When omitted, you are prompted to pick from the policies on the account; "+
+			"with --no-prompt no policy is attached. "+
+			"Ignored for hosted agents and when --manifest already declares policies.")
 
 	return cmd
 }
@@ -3532,7 +3565,11 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	emittedConnections, err := emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
 		endpointRef,
-		resourceDeployments, resourceConnections, resourceToolboxes,
+		foundryResources{
+			Deployments: resourceDeployments,
+			Connections: resourceConnections,
+			Toolboxes:   resourceToolboxes,
+		},
 	)
 	if err != nil {
 		return err
@@ -3624,7 +3661,7 @@ func (a *InitAction) addVoiceAgentToProject(
 	if _, err := emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
 		endpointRef,
-		nil, nil, nil,
+		foundryResources{},
 	); err != nil {
 		return err
 	}

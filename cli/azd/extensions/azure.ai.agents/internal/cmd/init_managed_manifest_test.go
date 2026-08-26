@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
@@ -24,7 +26,7 @@ func TestLooksLikePromptAgentManifest(t *testing.T) {
 		},
 		{
 			name:    "prompt agent with harness",
-			content: "kind: prompt\nname: my-agent\nmodel: gpt-4.1-mini\nharness:\n  type: github-copilot\n",
+			content: "kind: prompt\nname: my-agent\nmodel: gpt-4.1-mini\nharness:\n  type: github_copilot_preview\n",
 			want:    true,
 		},
 		{
@@ -64,7 +66,7 @@ func TestLoadPromptAgentManifest(t *testing.T) {
 			"name: triage-agent\n" +
 			"description: Triages incoming issues\n" +
 			"model: gpt-4.1\n" +
-			"harness:\n  type: github-copilot\n  skills:\n    - name: summarize\n      version: \"2\"\n" +
+			"harness:\n  type: github_copilot_preview\n  skills:\n    - name: summarize\n      version: \"2\"\n" +
 			"instructions: You triage issues.\n" +
 			"displayName: Triage Agent\n" +
 			"metadata:\n  tags:\n    - Prompt Agent\n" +
@@ -144,52 +146,24 @@ func TestPromptAgentManifest_NilAccessors(t *testing.T) {
 	}
 }
 
-func TestResolveManifestInitHarness(t *testing.T) {
-	tests := []struct {
-		name            string
-		harnessFlag     string
-		manifestHarness string
-		want            string
-		wantErr         bool
-	}{
-		{
-			name:            "manifest harness is honored",
-			manifestHarness: "github-copilot",
-			want:            "github-copilot",
-		},
-		{name: "no harness anywhere means plain prompt agent"},
-		{
-			name:        "harness flag wins",
-			harnessFlag: "github-copilot",
-			want:        "github-copilot",
-		},
-		{
-			name:            "harness none overrides manifest",
-			harnessFlag:     "none",
-			manifestHarness: "github-copilot",
-			want:            "",
-		},
-		{name: "unknown flag value", harnessFlag: "bogus", wantErr: true},
-		{name: "unknown manifest value", manifestHarness: "bogus", wantErr: true},
-	}
+// The manifest's `harness:` block is now resolved by the same
+// resolveInitHarness used for --harness and the kind menu, so its precedence
+// and validation are covered by TestResolveInitHarness.
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveManifestInitHarness(tt.harnessFlag, tt.manifestHarness)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected an error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("resolveManifestInitHarness: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("harness = %q, want %q", got, tt.want)
-			}
-		})
-	}
+// The two prompt flavors scaffold different projects into the same folder, so
+// their suggested names must not collide.
+func TestDefaultPromptAgentName(t *testing.T) {
+	t.Parallel()
+
+	plain := defaultPromptAgentName("")
+	harnessed := defaultPromptAgentName(agent_api.ManagedAgentHarnessGitHubCopilot)
+
+	require.NotEmpty(t, plain)
+	require.NotEmpty(t, harnessed)
+	require.NotEqual(t, plain, harnessed)
+	// Whitespace is treated as "no harness" so a blank flag value cannot
+	// silently pick the harnessed default.
+	require.Equal(t, plain, defaultPromptAgentName("   "))
 }
 
 // The non-interactive guard runs before ensureProject writes anything, so these

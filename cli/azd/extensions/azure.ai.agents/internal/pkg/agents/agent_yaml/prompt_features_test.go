@@ -148,11 +148,18 @@ func TestPromptAgent_ValidateHarness(t *testing.T) {
 	}{
 		{name: "absent harness is a plain prompt agent", harness: ""},
 		{name: "whitespace is treated as absent", harness: "   "},
-		{name: "current spelling is accepted", harness: "github-copilot"},
+		{name: "current spelling is accepted", harness: "github_copilot_preview"},
 		{
 			name:        "abbreviated spelling names its replacement",
 			harness:     "ghcp",
-			wantErrPart: "github-copilot",
+			wantErrPart: "github_copilot_preview",
+		},
+		{
+			// The pre-preview spelling azd used to write is now a removed
+			// value, so an older agent.yaml is told what to change it to.
+			name:        "pre-preview spelling names its replacement",
+			harness:     "github-copilot",
+			wantErrPart: "github_copilot_preview",
 		},
 		{
 			name:    "unknown harness is left to the service",
@@ -203,31 +210,31 @@ func TestValidateHarnessFeatures(t *testing.T) {
 		},
 		{
 			name:    "harnessed agent without capabilities is fine",
-			harness: "github-copilot",
+			harness: "github_copilot_preview",
 			agent:   PromptAgent{},
 		},
 		{
 			name:    "harnessed agent accepts guardrails",
-			harness: "github-copilot",
+			harness: "github_copilot_preview",
 			agent: PromptAgent{
 				Policies: []Policy{{Type: PolicyTypeRai, RaiPolicyName: testRaiPolicyID}},
 			},
 		},
 		{
 			name:         "harnessed agent rejects memory",
-			harness:      "github-copilot",
+			harness:      "github_copilot_preview",
 			agent:        PromptAgent{Memory: &PromptMemory{Store: "s"}},
 			wantRejected: []PromptFeature{PromptFeatureMemory},
 		},
 		{
 			name:         "harnessed agent rejects knowledge",
-			harness:      "github-copilot",
+			harness:      "github_copilot_preview",
 			agent:        PromptAgent{Tools: []any{map[string]any{"type": "file_search"}}},
 			wantRejected: []PromptFeature{PromptFeatureKnowledge},
 		},
 		{
 			name:         "harnessed agent reports memory and knowledge together",
-			harness:      "github-copilot",
+			harness:      "github_copilot_preview",
 			agent:        fullyFeatured,
 			wantRejected: []PromptFeature{PromptFeatureMemory, PromptFeatureKnowledge},
 		},
@@ -275,10 +282,10 @@ func TestUnsupportedHarnessFeatures_ReportingOrder(t *testing.T) {
 	// A harness-less agent is never gated, whatever the switch says.
 	require.NoError(t, agent.ValidateHarnessFeatures())
 
-	agent.Harness = NewPromptHarness("github-copilot")
+	agent.Harness = NewPromptHarness("github_copilot_preview")
 	err := agent.ValidateHarnessFeatures()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "github-copilot")
+	require.Contains(t, err.Error(), "github_copilot_preview")
 
 	names := make([]string, 0, 3)
 	for _, feature := range agent.UnsupportedHarnessFeatures() {
@@ -349,6 +356,10 @@ func TestValidateRaiPolicyName(t *testing.T) {
 		{name: "full arm id", policy: testRaiPolicyID, wantErr: false},
 		{name: "short but well formed arm id", policy: "/subscriptions/s/raiPolicies/p", wantErr: false},
 		{name: "surrounding whitespace tolerated", policy: "  " + testRaiPolicyID + "  ", wantErr: false},
+		// The scaffold writes ${RAI_POLICY_ID}; the concrete ID is substituted
+		// on the deploy path and re-validated there.
+		{name: "unexpanded reference is deferred", policy: "${RAI_POLICY_ID}", wantErr: false},
+		{name: "reference embedded in a path is deferred", policy: "/subscriptions/${SUB}/x", wantErr: false},
 		{name: "bare built-in name", policy: "Microsoft.DefaultV2", wantErr: true},
 		{name: "bare custom name", policy: "strict", wantErr: true},
 		{name: "missing raiPolicies segment", policy: "/subscriptions/s/resourceGroups/rg", wantErr: true},

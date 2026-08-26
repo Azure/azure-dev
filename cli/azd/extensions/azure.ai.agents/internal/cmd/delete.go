@@ -478,7 +478,7 @@ func (a *DeleteAction) runPromptDelete(
 	if envResp, envErr := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); envErr == nil {
 		cleanupAgentSessionState(ctx, azdClient, envResp.Environment.Name, pctx.ServiceName)
 	}
-	a.cleanupEnvVars(ctx, azdClient, pctx.ServiceName)
+	a.cleanupEnvVars(ctx, azdClient, pctx.ServiceName, pctx.Settings.ProjectEndpoint)
 
 	switch a.flags.output {
 	case "json":

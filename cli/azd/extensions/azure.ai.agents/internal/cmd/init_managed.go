@@ -158,20 +158,8 @@ func loadPromptManifestFromPointer(
 	return loadPromptAgentManifest(content, sourceDir)
 }
 
-// resolveManifestInitHarness resolves the harness for a prompt-agent manifest
-// adopted without an explicit --kind. An explicit --harness always wins;
-// otherwise the manifest's own harness type is honored, so a template that
-// declares one scaffolds a managed agent and one that declares none scaffolds a
-// plain prompt agent.
-func resolveManifestInitHarness(harnessFlag, manifestHarness string) (string, error) {
-	if strings.TrimSpace(harnessFlag) != "" {
-		return resolveInitHarness(harnessFlag, AgentKindChoicePrompt)
-	}
-	return resolveInitHarness(manifestHarness, AgentKindChoicePrompt)
-}
-
 // runInitManaged is the entry point for `azd ai agent init` when the user has
-// selected one of the prompt agent kinds. It produces a first-class azd project
+// selected the prompt agent kind. It produces a first-class azd project
 // so prompt agents follow the same `azd up` / `azd deploy` lifecycle as hosted
 // agents:
 //
@@ -187,7 +175,7 @@ func resolveManifestInitHarness(harnessFlag, manifestHarness string) (string, er
 //
 // harness selects the prompt agent flavor. An empty harness scaffolds a plain
 // prompt agent that Foundry runs directly; a non-empty harness
-// ("github-copilot")
+// ("github_copilot_preview")
 // scaffolds a managed agent whose Brain+Hand sandbox the platform provisions.
 //
 // manifest, when non-nil, seeds the agent name, description, model, and
@@ -200,6 +188,12 @@ func runInitManaged(
 	harness string,
 	manifest *promptAgentManifest,
 ) error {
+	// Every prompt-agent init converges here — interactive picker, --kind prompt,
+	// and manifest adoption alike — so this is the one place the preview notice
+	// reaches all of them. Emitted before validation so it is seen even when the
+	// run is about to fail on a missing --no-prompt input.
+	warnPromptAgentPreview(os.Stdout)
+
 	// Fail before anything is written when non-interactive mode is missing an
 	// input that has no deterministic fallback. ensureProject below creates a
 	// project folder and azd environment, so a late failure would strand a
@@ -209,7 +203,7 @@ func runInitManaged(
 	}
 
 	// Prompt for the conceptual agent details first: name and description.
-	agentName, err := promptManagedAgentName(ctx, azdClient, flags, manifest)
+	agentName, err := promptManagedAgentName(ctx, azdClient, flags, manifest, harness)
 	if err != nil {
 		return err
 	}
@@ -292,7 +286,7 @@ func runInitManaged(
 	// it a --no-prompt scaffold would carry only placeholder routing values and
 	// `azd up` would fail to find a Foundry project.
 	var model string
-	deployment, foundryProject, err := resolvePromptHarnessTarget(ctx, azdClient, flags, env, &settings)
+	deployment, foundryProject, credential, err := resolvePromptHarnessTarget(ctx, azdClient, flags, env, &settings)
 	if err != nil {
 		return err
 	}
@@ -304,6 +298,15 @@ func runInitManaged(
 		if err != nil {
 			return err
 		}
+	}
+
+	// Resolve guardrails against the same Foundry account the model was
+	// resolved on, while its credential is still in hand. Nothing is written
+	// yet: the selection is applied after the manifest carry-over below so an
+	// authored policy set is never silently replaced.
+	raiPolicy, err := resolvePromptRaiPolicy(ctx, azdClient, flags, manifest, foundryProject, credential)
+	if err != nil {
+		return err
 	}
 
 	// cwd is now the project root. Create the service directory when nested.
@@ -351,6 +354,12 @@ func runInitManaged(
 		desc := strings.TrimSpace(description)
 		promptAgent.AgentDefinition.Description = &desc
 	}
+	// Applied after the manifest carry-over so a manifest that declares its own
+	// policies keeps them; resolvePromptRaiPolicy returns "not attached" in that
+	// case, making this a no-op.
+	if err := applyRaiPolicySelection(ctx, azdClient, env.Name, &promptAgent, raiPolicy); err != nil {
+		return err
+	}
 	if err := writePromptAgentYAML(serviceRelPath, &promptAgent); err != nil {
 		return err
 	}
@@ -366,14 +375,21 @@ func runInitManaged(
 		return err
 	}
 
-	// Model deployments live on a sibling azure.ai.project service, not on the
-	// agent service, so a prompt agent's azure.yaml has the same shape as a
-	// hosted agent's. emitResourceServices also wires the agent's uses: list so
-	// `azd provision` creates the project (and its deployments) first.
+	// Model deployments, connections and skills live on sibling Foundry
+	// services, not on the agent service, so a prompt agent's azure.yaml has the
+	// same shape as a hosted agent's and each host is owned by the extension
+	// that implements it. emitResourceServices also wires the agent's uses: list
+	// so `azd provision` creates the project (and its deployments) first and
+	// `azd deploy` publishes the skills before the agent that references them.
 	var deployments []project.Deployment
 	if deployment != nil {
 		deployments = []project.Deployment{*deployment}
 	}
+	resources, err := promptResourceServices(ctx, azdClient, &promptAgent, serviceRelPath)
+	if err != nil {
+		return err
+	}
+	resources.Deployments = deployments
 	endpointRef, err := recordFoundryProjectEnv(ctx, azdClient, env.Name, foundryProject)
 	if err != nil {
 		return err
@@ -381,7 +397,7 @@ func runInitManaged(
 	if _, err := emitResourceServices(
 		ctx, azdClient, agentName,
 		endpointRef,
-		deployments, nil, nil,
+		resources,
 	); err != nil {
 		return err
 	}
@@ -494,6 +510,18 @@ func validateManagedNoPromptInputs(flags *initFlags, manifest *promptAgentManife
 	return nil
 }
 
+// defaultPromptAgentName returns the suggested agent name for the flavor being
+// scaffolded. The two flavors get distinct defaults because they produce
+// different projects: accepting the default twice in the same folder would
+// otherwise collide, and the name is also the Foundry agent identity, where a
+// reused name silently creates a new version of the existing agent.
+func defaultPromptAgentName(harness string) string {
+	if strings.TrimSpace(harness) != "" {
+		return "my-copilot-agent"
+	}
+	return "my-prompt-agent"
+}
+
 // promptManagedAgentName asks for the agent's name. The name is the Foundry
 // agent identity and (for a fresh project) the project folder name. It matches
 // the hosted flow's message, help text, and validation so the two flows feel
@@ -504,6 +532,7 @@ func promptManagedAgentName(
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
 	manifest *promptAgentManifest,
+	harness string,
 ) (string, error) {
 	if strings.TrimSpace(flags.agentName) != "" {
 		return validateInitAgentName(flags.agentName)
@@ -520,7 +549,7 @@ func promptManagedAgentName(
 		)
 	}
 	if defaultName == "" {
-		defaultName = "my-prompt-agent"
+		defaultName = defaultPromptAgentName(harness)
 	}
 
 	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{

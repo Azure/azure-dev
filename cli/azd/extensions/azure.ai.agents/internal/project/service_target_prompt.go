@@ -138,6 +138,108 @@ func expandPromptAgentSettings(
 	return &expanded, nil
 }
 
+// expandPromptAgentPolicies resolves ${VAR} references in the agent's
+// policies[].raiPolicyName against the azd environment.
+//
+// A Responsible AI policy is addressed by its full ARM resource ID, which
+// embeds a subscription, resource group and account. `azd ai agent init` writes
+// ${RAI_POLICY_ID} rather than that ID so the scaffold can be copied to another
+// subscription unchanged, and the generated `rai` infrastructure layer exports
+// the concrete value at provision time.
+//
+// An unresolved reference is fatal rather than silently empty: dropping the
+// policy would publish an agent without the guardrails its manifest declares.
+func expandPromptAgentPolicies(managed *agent_yaml.PromptAgent, env map[string]string) error {
+	lookup := func(name string) string {
+		if value, ok := env[name]; ok {
+			return value
+		}
+		value, _ := os.LookupEnv(name)
+		return value
+	}
+
+	for i := range managed.Policies {
+		policy := &managed.Policies[i]
+		if policy.Type != agent_yaml.PolicyTypeRai {
+			continue
+		}
+		raw := strings.TrimSpace(policy.RaiPolicyName)
+		if raw == "" {
+			continue
+		}
+		expanded, err := ExpandEnv(raw, lookup)
+		if err != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("failed to expand policies[%d].raiPolicyName: %s", i, err),
+				"check the ${VAR} references in the policies block in agent.yaml",
+			)
+		}
+		expanded = strings.TrimSpace(expanded)
+		if expanded == "" {
+			return exterrors.Dependency(
+				exterrors.CodeRaiPolicyNotFound,
+				fmt.Sprintf("policies[%d].raiPolicyName is %q, but that value is not set in the azd environment",
+					i, raw),
+				"run `azd provision` to create the policy declared by your infrastructure, or set the "+
+					"variable to the policy's full ARM resource ID with `azd env set "+
+					raiPolicyEnvVarName+" <resource id>`",
+			)
+		}
+		policy.RaiPolicyName = expanded
+	}
+	return nil
+}
+
+// raiPolicyEnvVarName is the variable `azd ai agent init` records the resolved
+// Responsible AI policy ID under. Named here so the deploy-time suggestion
+// above points at the same variable the scaffold writes.
+const raiPolicyEnvVarName = "RAI_POLICY_ID"
+
+// promptCreateError converts a failed agent create into an actionable error.
+//
+// Guardrails get a suggestion of their own. The managed harness has been
+// observed to reject rai_config outright while the same policy is accepted by a
+// plain prompt agent, and the service returns a generic bad request that names
+// neither rai_config nor the policy. Without this, the only visible difference
+// between "your policy is wrong" and "this harness does not take policies yet"
+// is a message that mentions neither.
+func promptCreateError(err error, managed *agent_yaml.PromptAgent) error {
+	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+
+	local, ok := errors.AsType[*azdext.LocalError](converted)
+	if !ok || !declaresRaiPolicy(managed) {
+		return converted
+	}
+
+	suggestion := "This agent declares a Responsible AI policy. Verify the policy ID is correct and " +
+		"reachable from this account, then re-run. If the policy is valid, the harness may not accept " +
+		"policies yet — remove the policies block from agent.yaml to confirm, and deploy without " +
+		"'harness:' to apply the policy as a plain prompt agent."
+	if managed.HarnessType() == "" {
+		suggestion = "This agent declares a Responsible AI policy. Verify the policy ID is correct and " +
+			"reachable from this account, then re-run."
+	}
+	if local.Suggestion != "" {
+		suggestion = local.Suggestion + " " + suggestion
+	}
+	local.Suggestion = suggestion
+	return local
+}
+
+// declaresRaiPolicy reports whether the agent binds a Responsible AI policy.
+func declaresRaiPolicy(managed *agent_yaml.PromptAgent) bool {
+	if managed == nil {
+		return false
+	}
+	for _, policy := range managed.Policies {
+		if policy.Type == agent_yaml.PolicyTypeRai && strings.TrimSpace(policy.RaiPolicyName) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // resolvedPromptAgentSettings returns the prompt-agent settings with the same
 // azd environment-derived target resolution deployPromptAgent applies. Read-only
 // callers (Endpoints, GetTargetResource) must use this rather than
@@ -299,6 +401,13 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		return nil, err
 	}
 
+	// Guardrails are stated as ${RAI_POLICY_ID} so the project stays portable;
+	// resolve them against the azd environment before anything validates the
+	// shape of the value.
+	if err := expandPromptAgentPolicies(&managed, env); err != nil {
+		return nil, err
+	}
+
 	// Overlay the provisioned Foundry project values from the azd environment
 	// onto any settings still at their default placeholder. This makes the
 	// "create a new Foundry project" init path work: `azd up` provisions the
@@ -390,7 +499,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		}
 	}
 	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+		return nil, promptCreateError(err, &managed)
 	}
 
 	latest := agent.Versions.Latest

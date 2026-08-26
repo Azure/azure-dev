@@ -500,7 +500,9 @@ func infraEjectNeedsEnvironment(projectRoot string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	endpoint, err := synthesis.ProjectEndpoint(rawYAML, serviceName, projectRoot)
+	// No azd environment is available yet: this call only decides whether one is
+	// needed, so ${VAR} references fall back to the process environment.
+	endpoint, err := synthesis.ProjectEndpoint(rawYAML, serviceName, projectRoot, nil)
 	if err != nil {
 		return false, exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -539,7 +541,11 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 	if err != nil {
 		return err
 	}
-	endpoint, err := synthesis.ProjectEndpoint(rawYAML, svcName, projectRoot)
+	var ejectEnv map[string]string
+	if len(environments) > 0 {
+		ejectEnv = environments[0]
+	}
+	endpoint, err := synthesis.ProjectEndpoint(rawYAML, svcName, projectRoot, ejectEnv)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,

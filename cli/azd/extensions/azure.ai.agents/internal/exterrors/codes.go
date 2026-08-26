@@ -66,6 +66,7 @@ const (
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodePromptFailed              = "prompt_failed"
+	CodeRaiPolicyNotFound         = "rai_policy_not_found"
 )
 
 // Error codes for ACR dependency errors.

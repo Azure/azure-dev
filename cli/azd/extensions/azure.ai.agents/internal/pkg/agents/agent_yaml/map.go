@@ -627,7 +627,7 @@ func mapHarnessBuiltInTools(builtin *PromptHarnessBuiltInTools) *agent_api.Harne
 //
 // The agent's Harness is omitted entirely when nil: a harness-less prompt
 // agent is run directly by Foundry, while a managed agent names its harness
-// (e.g. "github-copilot") and the platform provisions a Brain+Hand
+// (e.g. "github_copilot_preview") and the platform provisions a Brain+Hand
 // sandbox for it.
 func CreatePromptAgentAPIRequest(
 	promptAgent PromptAgent,
@@ -663,7 +663,7 @@ func CreatePromptAgentAPIRequest(
 
 	promptDef := agent_api.ManagedAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
-			Kind:      agent_api.AgentKindManaged,
+			Kind:      agent_api.AgentKindPrompt,
 			RaiConfig: mapRaiConfig(promptAgent.Policies),
 		},
 		Model:        promptAgent.Model,

@@ -44,5 +44,10 @@
 # ── Schemas ───────────────────────────────────────────────────────────────────
 /schemas/                                   @vhvb1989 @tg-msft @RickWinter
 
+# ── Stable extension protobuf contract ────────────────────────────────────────
+/cli/azd/grpc/proto/azd/extensions/v1/      @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
+/cli/azd/pkg/azdext/contracts/v1/           @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
+/cli/azd/pkg/azdext/contracts_v1_aliases.go @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
+
 # ── This file (most specific -- must be last for /.github/) ───────────────────
 /.github/CODEOWNERS                         @tg-msft @RickWinter @richardpark-msft @Azure/azure-sdk-eng

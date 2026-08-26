@@ -39,12 +39,37 @@ type DirectDeployResult struct {
 	Endpoint string `json:"endpoint,omitempty"`
 }
 
+// PreparedStandaloneHostedAgent contains validated deployment inputs with no
+// remote Agent or Toolbox mutations performed.
+type PreparedStandaloneHostedAgent struct {
+	definition      agent_yaml.ContainerAgent
+	environment     map[string]string
+	projectEndpoint string
+	progress        azdext.ProgressReporter
+	zipData         []byte
+	sha256Hex       string
+	credential      azcore.TokenCredential
+}
+
 // DeployStandaloneHostedAgent deploys a hosted agent directly from agent.yaml
 // and source code without requiring an azd project or azure.yaml.
 func DeployStandaloneHostedAgent(
 	ctx context.Context,
 	options DirectDeployOptions,
 ) (*DirectDeployResult, error) {
+	prepared, err := PrepareStandaloneHostedAgent(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	return DeployPreparedStandaloneHostedAgent(ctx, prepared, nil)
+}
+
+// PrepareStandaloneHostedAgent validates and packages a standalone hosted
+// Agent without performing any remote resource mutations.
+func PrepareStandaloneHostedAgent(
+	ctx context.Context,
+	options DirectDeployOptions,
+) (*PreparedStandaloneHostedAgent, error) {
 	definitionPath := strings.TrimSpace(options.DefinitionPath)
 	if definitionPath == "" {
 		definitionPath = "agent.yaml"
@@ -103,6 +128,34 @@ func DeployStandaloneHostedAgent(
 		return nil, fmt.Errorf("read agent code package: %w", err)
 	}
 
+	if _, err := standaloneAgentRequest(agentDefinition, environment); err != nil {
+		return nil, err
+	}
+
+	credential, err := newStandaloneCredential()
+	if err != nil {
+		return nil, exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			fmt.Sprintf("failed to create Azure credential: %s", err),
+			"run 'azd auth login' to authenticate",
+		)
+	}
+
+	return &PreparedStandaloneHostedAgent{
+		definition:      agentDefinition,
+		environment:     environment,
+		projectEndpoint: projectEndpoint,
+		progress:        progress,
+		zipData:         zipData,
+		sha256Hex:       sha256Hex,
+		credential:      credential,
+	}, nil
+}
+
+func standaloneAgentRequest(
+	agentDefinition agent_yaml.ContainerAgent,
+	environment map[string]string,
+) (*agent_api.CreateAgentRequest, error) {
 	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(
 		agentDefinition,
 		agent_yaml.WithEnvironmentVariables(environment),
@@ -117,48 +170,63 @@ func DeployStandaloneHostedAgent(
 		)
 	}
 	applyAgentMetadata(request)
+	return request, nil
+}
 
-	credential, err := newStandaloneCredential()
-	if err != nil {
-		return nil, exterrors.Auth(
-			exterrors.CodeCredentialCreationFailed,
-			fmt.Sprintf("failed to create Azure credential: %s", err),
-			"run 'azd auth login' to authenticate",
-		)
+// DeployPreparedStandaloneHostedAgent deploys previously validated Agent inputs.
+// Environment overrides, such as a deployed Toolbox endpoint, take precedence.
+func DeployPreparedStandaloneHostedAgent(
+	ctx context.Context,
+	prepared *PreparedStandaloneHostedAgent,
+	environmentOverrides map[string]string,
+) (*DirectDeployResult, error) {
+	if prepared == nil {
+		return nil, fmt.Errorf("prepared standalone hosted agent must not be nil")
 	}
-	agentClient := agent_api.NewAgentClient(projectEndpoint, credential)
+
+	environment := maps.Clone(prepared.environment)
+	if environment == nil {
+		environment = map[string]string{}
+	}
+	maps.Copy(environment, environmentOverrides)
+	request, err := standaloneAgentRequest(prepared.definition, environment)
+	if err != nil {
+		return nil, err
+	}
+
+	agentClient := agent_api.NewAgentClient(prepared.projectEndpoint, prepared.credential)
 	versionRequest := &agent_api.CreateAgentVersionRequest{
 		Description: request.Description,
 		Metadata:    request.Metadata,
 		Definition:  request.Definition,
 	}
 
-	progress("Checking existing agent")
-	_, getErr := agentClient.GetAgent(ctx, agentDefinition.Name, agent_api.AgentEndpointAPIVersion)
+	prepared.progress("Checking existing agent")
+	_, getErr := agentClient.GetAgent(ctx, prepared.definition.Name, agent_api.AgentEndpointAPIVersion)
 	var agentObject *agent_api.AgentObject
 	if getErr != nil {
 		if responseError, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
 			responseError.StatusCode != http.StatusNotFound {
 			return nil, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
 		}
-		progress("Creating agent from code package")
+		prepared.progress("Creating agent from code package")
 		agentObject, err = agentClient.CreateAgentFromZip(
 			ctx,
-			agentDefinition.Name,
+			prepared.definition.Name,
 			versionRequest,
-			zipData,
-			sha256Hex,
+			prepared.zipData,
+			prepared.sha256Hex,
 			agent_api.AgentEndpointAPIVersion,
 		)
 	} else {
-		progress("Creating a new agent version from code package")
-		writeExistingAgentVersionWarning(agentDefinition.Name)
+		prepared.progress("Creating a new agent version from code package")
+		writeExistingAgentVersionWarning(prepared.definition.Name)
 		agentObject, err = agentClient.UpdateAgentFromZip(
 			ctx,
-			agentDefinition.Name,
+			prepared.definition.Name,
 			versionRequest,
-			zipData,
-			sha256Hex,
+			prepared.zipData,
+			prepared.sha256Hex,
 			agent_api.AgentEndpointAPIVersion,
 		)
 	}
@@ -167,15 +235,15 @@ func DeployStandaloneHostedAgent(
 	}
 
 	version := &agentObject.Versions.Latest
-	provider := &AgentServiceTargetProvider{credential: credential}
+	provider := &AgentServiceTargetProvider{credential: prepared.credential}
 	if version.Status != "active" {
 		version, err = provider.waitForAgentActive(
 			ctx,
 			agentClient,
-			endpointHost(projectEndpoint),
-			agentDefinition.Name,
+			endpointHost(prepared.projectEndpoint),
+			prepared.definition.Name,
 			version.Version,
-			progress,
+			prepared.progress,
 		)
 		if err != nil {
 			return nil, err
@@ -183,26 +251,26 @@ func DeployStandaloneHostedAgent(
 	}
 	if err := provider.patchAgentEndpointFields(
 		ctx,
-		agentDefinition.Name,
+		prepared.definition.Name,
 		request.AgentEndpoint,
 		request.AgentCard,
-		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": projectEndpoint},
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": prepared.projectEndpoint},
 	); err != nil {
 		return nil, err
 	}
 
-	protocols := agentDefinition.Protocols
+	protocols := prepared.definition.Protocols
 	if len(protocols) == 0 {
 		protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}
 	}
-	endpoints := agentInvocationEndpoints(projectEndpoint, agentDefinition.Name, protocols)
+	endpoints := agentInvocationEndpoints(prepared.projectEndpoint, prepared.definition.Name, protocols)
 	endpoint := ""
 	if len(endpoints) > 0 {
 		endpoint = endpoints[0].URL
 	}
 
 	return &DirectDeployResult{
-		Name:     agentDefinition.Name,
+		Name:     prepared.definition.Name,
 		Version:  version.Version,
 		State:    version.Status,
 		Endpoint: endpoint,
@@ -321,7 +389,7 @@ func prepareStandaloneHostedDefinition(
 			environment[variable.Name] = resolved
 		}
 	}
-if agentDefinition.Toolbox != nil {
+	if agentDefinition.Toolbox != nil {
 		environment["TOOLBOX_NAME"] = strings.TrimSpace(agentDefinition.Toolbox.Name)
 		if version := strings.TrimSpace(agentDefinition.Toolbox.Version); version != "" {
 			environment["TOOLBOX_VERSION"] = version

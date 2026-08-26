@@ -52,9 +52,15 @@ func (azdDependencyCommandRunner) Run(ctx context.Context, args ...string) ([]by
 	return stdout.Bytes(), nil
 }
 
-type standaloneAgentDeployer func(
+type standaloneAgentPreparer func(
 	context.Context,
 	project.DirectDeployOptions,
+) (*project.PreparedStandaloneHostedAgent, error)
+
+type preparedStandaloneAgentDeployer func(
+	context.Context,
+	*project.PreparedStandaloneHostedAgent,
+	map[string]string,
 ) (*project.DirectDeployResult, error)
 
 func newAgentDeployCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -75,7 +81,9 @@ present next to agent.yaml, it is deployed first through the toolbox extension.`
 			}
 			return runAgentDeploy(
 				cmd.Context(), path, *flags, extCtx.OutputFormat,
-				azdDependencyCommandRunner{}, project.DeployStandaloneHostedAgent,
+				azdDependencyCommandRunner{},
+				project.PrepareStandaloneHostedAgent,
+				project.DeployPreparedStandaloneHostedAgent,
 			)
 		},
 	}
@@ -96,13 +104,27 @@ func runAgentDeploy(
 	flags agentDeployFlags,
 	output string,
 	runner dependencyCommandRunner,
-	deployer standaloneAgentDeployer,
+	preparer standaloneAgentPreparer,
+	deployer preparedStandaloneAgentDeployer,
 ) error {
 	resolved, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{FlagValue: flags.projectEndpoint})
 	if err != nil {
 		return err
 	}
 	toolbox, err := loadAgentToolboxReference(definitionPath)
+	if err != nil {
+		return err
+	}
+	prepared, err := preparer(ctx, project.DirectDeployOptions{
+		DefinitionPath:  definitionPath,
+		CodePath:        flags.codePath,
+		ProjectEndpoint: resolved.Endpoint,
+		Progress: func(message string) {
+			if output != "json" {
+				fmt.Fprintln(os.Stderr, message)
+			}
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -113,17 +135,7 @@ func runAgentDeploy(
 		return err
 	}
 
-	result, err := deployer(ctx, project.DirectDeployOptions{
-		DefinitionPath:  definitionPath,
-		CodePath:        flags.codePath,
-		ProjectEndpoint: resolved.Endpoint,
-		Environment:     environment,
-		Progress: func(message string) {
-			if output != "json" {
-				fmt.Fprintln(os.Stderr, message)
-			}
-		},
-	})
+	result, err := deployer(ctx, prepared, environment)
 	if err != nil {
 		return err
 	}

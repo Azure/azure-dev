@@ -68,3 +68,25 @@ language: csharp
 	_, _, err := prepareStandaloneHostedDefinition(path, nil)
 	require.Error(t, err)
 }
+
+func TestPrepareStandaloneHostedAgentPreparesPackageAndCredential(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "agent.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+name: research-agent
+kind: hosted
+language: python
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "main.py"), []byte("print('ready')\n"), 0o600))
+
+	prepared, err := PrepareStandaloneHostedAgent(t.Context(), DirectDeployOptions{
+		DefinitionPath:  path,
+		CodePath:        directory,
+		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, prepared)
+	assert.NotEmpty(t, prepared.zipData)
+	assert.NotEmpty(t, prepared.sha256Hex)
+	assert.NotNil(t, prepared.credential)
+}

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -171,20 +172,113 @@ toolbox:
   "endpoint": "https://example/toolboxes/support-tools/versions/4/mcp?api-version=v1"
 }`)}
 
-	var got project.DirectDeployOptions
-	deployer := func(_ context.Context, options project.DirectDeployOptions) (*project.DirectDeployResult, error) {
-		got = options
+	var gotOptions project.DirectDeployOptions
+	preparer := func(
+		_ context.Context,
+		options project.DirectDeployOptions,
+	) (*project.PreparedStandaloneHostedAgent, error) {
+		gotOptions = options
+		return &project.PreparedStandaloneHostedAgent{}, nil
+	}
+	var gotEnvironment map[string]string
+	deployer := func(
+		_ context.Context,
+		_ *project.PreparedStandaloneHostedAgent,
+		environment map[string]string,
+	) (*project.DirectDeployResult, error) {
+		gotEnvironment = environment
 		return &project.DirectDeployResult{Name: "research-agent", Version: "1", State: "active"}, nil
 	}
 	err := runAgentDeploy(
 		t.Context(), agentPath,
 		agentDeployFlags{projectEndpoint: "https://account.services.ai.azure.com/api/projects/project"},
-		"json", runner, deployer,
+		"json", runner, preparer, deployer,
 	)
 	require.NoError(t, err)
-	assert.Equal(t, agentPath, got.DefinitionPath)
-	assert.Equal(t, "support-tools", got.Environment["TOOLBOX_NAME"])
-	assert.Equal(t, runnerOutputEndpoint(), got.Environment["TOOLBOX_ENDPOINT"])
+	assert.Equal(t, agentPath, gotOptions.DefinitionPath)
+	assert.Equal(t, "support-tools", gotEnvironment["TOOLBOX_NAME"])
+	assert.Equal(t, runnerOutputEndpoint(), gotEnvironment["TOOLBOX_ENDPOINT"])
+}
+
+func TestRunAgentDeployPreparesBeforeToolboxDeployment(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	agentPath := filepath.Join(directory, "agent.yaml")
+	require.NoError(t, os.WriteFile(agentPath, []byte(`
+name: research-agent
+kind: hosted
+toolbox:
+  name: support-tools
+`), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(directory, "toolbox.yaml"),
+		[]byte("name: support-tools\n"),
+		0o600,
+	))
+	runner := &recordingDependencyRunner{}
+	prepareErr := errors.New("agent preparation failed")
+	preparer := func(
+		context.Context,
+		project.DirectDeployOptions,
+	) (*project.PreparedStandaloneHostedAgent, error) {
+		return nil, prepareErr
+	}
+	deployer := func(
+		context.Context,
+		*project.PreparedStandaloneHostedAgent,
+		map[string]string,
+	) (*project.DirectDeployResult, error) {
+		t.Fatal("deployer must not run after preparation fails")
+		return nil, nil
+	}
+
+	err := runAgentDeploy(
+		t.Context(), agentPath,
+		agentDeployFlags{projectEndpoint: "https://account.services.ai.azure.com/api/projects/project"},
+		"json", runner, preparer, deployer,
+	)
+	require.ErrorIs(t, err, prepareErr)
+	assert.Empty(t, runner.args, "Toolbox deployment must not run before Agent preparation succeeds")
+}
+
+func TestRunAgentDeployMissingSourceDoesNotDeployToolbox(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	agentPath := filepath.Join(directory, "agent.yaml")
+	require.NoError(t, os.WriteFile(agentPath, []byte(`
+name: research-agent
+kind: hosted
+language: python
+toolbox:
+  name: support-tools
+`), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(directory, "toolbox.yaml"),
+		[]byte("name: support-tools\n"),
+		0o600,
+	))
+	runner := &recordingDependencyRunner{}
+	deployer := func(
+		context.Context,
+		*project.PreparedStandaloneHostedAgent,
+		map[string]string,
+	) (*project.DirectDeployResult, error) {
+		t.Fatal("deployer must not run when the Agent source directory is missing")
+		return nil, nil
+	}
+
+	err := runAgentDeploy(
+		t.Context(), agentPath,
+		agentDeployFlags{
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			codePath:        filepath.Join(directory, "missing"),
+		},
+		"json", runner, project.PrepareStandaloneHostedAgent, deployer,
+	)
+	require.Error(t, err)
+	assert.Empty(t, runner.args, "Toolbox deployment must not run before Agent source validation succeeds")
 }
 
 func toolboxReference(name, version string) agent_yaml.ToolboxReference {

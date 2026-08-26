@@ -78,6 +78,7 @@ func (a *showAction) Run() error {
 	renderTableOrNoResults(output,
 		[]string{"VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED"},
 		rows,
+		noEnvironmentVersionsMessage,
 	)
 	return nil
 }

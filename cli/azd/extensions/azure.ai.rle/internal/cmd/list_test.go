@@ -156,7 +156,7 @@ func TestEnvironmentListDisplaysNoResultsForEmptyProject(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if output.String() != "\n"+noResultsMessage+"\n\n" {
+	if output.String() != "\n"+noEnvironmentsMessage+"\n\n" {
 		t.Fatalf("expected no-results message, got %q", output.String())
 	}
 }
@@ -507,7 +507,7 @@ func TestShowDisplaysNoResultsForEmptyVersionList(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if output.String() != "\n"+noResultsMessage+"\n\n" {
+	if output.String() != "\n"+noEnvironmentVersionsMessage+"\n\n" {
 		t.Fatalf("expected no-results message, got %q", output.String())
 	}
 }

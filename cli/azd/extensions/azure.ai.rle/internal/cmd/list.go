@@ -16,7 +16,6 @@ import (
 const (
 	environmentListPageSize = 100
 	environmentListMaxPages = 100
-	noResultsMessage        = "No environments found."
 )
 
 type listAction struct {
@@ -80,6 +79,7 @@ func (a *listAction) Run() error {
 	renderTableOrNoResults(output,
 		[]string{"NAME", "VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED"},
 		rows,
+		noEnvironmentsMessage,
 	)
 	return nil
 }
@@ -141,14 +141,4 @@ func resolveEnvironmentListProjectEndpoint() (string, error) {
 			foundryProjectEndpointEnvVar,
 		),
 	}
-}
-
-func renderTableOrNoResults(output *azdext.Output, headers []string, rows [][]string) {
-	output.Message("")
-	if len(rows) == 0 {
-		output.Message(noResultsMessage)
-	} else {
-		output.Table(headers, rows)
-	}
-	output.Message("")
 }

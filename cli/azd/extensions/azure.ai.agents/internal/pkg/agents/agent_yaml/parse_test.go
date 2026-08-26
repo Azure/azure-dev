@@ -1526,12 +1526,12 @@ policies:
 			wantErrSubst: "policies[1] invocationsModeration is only supported for 'hosted' agents",
 		},
 		{
-			name: "a non-hosted agent without the block stays valid",
+			// policies itself is hosted-only (see
+			// TestValidateAgentDefinition_HostedOnlyFieldsRejectedOnPromptVoice),
+			// so a non-hosted agent free of the whole block stays valid.
+			name: "a non-hosted agent without policies stays valid",
 			yaml: `kind: workflow
 name: workflow-agent
-policies:
-  - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p
 `,
 		},
 		{

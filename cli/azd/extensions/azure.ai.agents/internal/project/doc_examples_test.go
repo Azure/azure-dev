@@ -799,6 +799,62 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 			},
 		},
 		{
+			// kind-less service configuration must stay valid: the hosted-only
+			// gate only applies once a non-hosted kind is declared (#9623).
+			name: "hosted-only fields valid without kind",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 300}
+				value.value["agentEndpoint"] = map[string]any{"url": "https://example.test"}
+			},
+		},
+		{
+			name: "hosted-only fields valid for hosted kind",
+			mutate: func(value *fixture) {
+				value.value["kind"] = "hosted"
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 300}
+			},
+		},
+		{
+			name: "session configuration rejected for prompt-voice",
+			mutate: func(value *fixture) {
+				value.value["kind"] = "prompt-voice"
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 300}
+			},
+			wantErr: true,
+		},
+		{
+			name: "agent endpoint rejected for prompt-voice",
+			mutate: func(value *fixture) {
+				value.value["kind"] = "prompt-voice"
+				value.value["agentEndpoint"] = map[string]any{"url": "https://example.test"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "code configuration rejected for prompt-voice",
+			mutate: func(value *fixture) {
+				value.value["kind"] = "prompt-voice"
+				value.value["codeConfiguration"] = map[string]any{"directory": "src"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "policies rejected for prompt-voice",
+			mutate: func(value *fixture) {
+				value.value["kind"] = "prompt-voice"
+				value.value["policies"] = []any{}
+			},
+			wantErr: true,
+		},
+		{
+			name: "protocols rejected for prompt-voice",
+			mutate: func(value *fixture) {
+				value.value["kind"] = "prompt-voice"
+				value.value["protocols"] = []any{}
+			},
+			wantErr: true,
+		},
+		{
 			name: "session idle timeout max valid",
 			mutate: func(value *fixture) {
 				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3600}

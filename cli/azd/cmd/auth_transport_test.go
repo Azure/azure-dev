@@ -58,8 +58,20 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 			wantErrSub: "AZD_AUTH_CERT", // cert parse failure fires first
 		},
 		{
-			name:     "http without cert is preserved for backward compat",
+			name:     "http IPv4 loopback is accepted",
 			endpoint: "http://127.0.0.1:1234",
+			key:      "k",
+			cert:     "",
+		},
+		{
+			name:     "http alternate IPv4 loopback is accepted",
+			endpoint: "http://127.0.0.2:1234",
+			key:      "k",
+			cert:     "",
+		},
+		{
+			name:     "http IPv6 loopback is accepted",
+			endpoint: "http://[::1]:1234",
 			key:      "k",
 			cert:     "",
 		},
@@ -69,6 +81,41 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 			key:        "",
 			cert:       "",
 			wantErrSub: "AZD_AUTH_KEY is required",
+		},
+		{
+			name:       "http remote IPv4 is rejected",
+			endpoint:   "http://192.0.2.1:1234",
+			key:        "k",
+			cert:       "",
+			wantErrSub: "http is accepted only for loopback IP endpoints used by local testing",
+		},
+		{
+			name:       "http remote IPv6 is rejected",
+			endpoint:   "http://[2001:db8::1]:1234",
+			key:        "k",
+			cert:       "",
+			wantErrSub: "http is accepted only for loopback IP endpoints used by local testing",
+		},
+		{
+			name:       "http remote hostname is rejected",
+			endpoint:   "http://remote.example:1234",
+			key:        "k",
+			cert:       "",
+			wantErrSub: "http is accepted only for loopback IP endpoints used by local testing",
+		},
+		{
+			name:       "http localhost hostname is rejected",
+			endpoint:   "http://localhost:1234",
+			key:        "k",
+			cert:       "",
+			wantErrSub: "http is accepted only for loopback IP endpoints used by local testing",
+		},
+		{
+			name:       "http remote endpoint is rejected before missing key",
+			endpoint:   "http://192.0.2.1:1234",
+			key:        "",
+			cert:       "",
+			wantErrSub: "http is accepted only for loopback IP endpoints used by local testing",
 		},
 		{
 			name:       "unix scheme rejects cert",

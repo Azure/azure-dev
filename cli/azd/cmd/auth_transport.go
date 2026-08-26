@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 
@@ -53,6 +54,15 @@ func buildExternalAuthConfiguration(endpoint, key, cert string) (auth.ExternalAu
 			"invalid AZD_AUTH_ENDPOINT value '%s': unsupported scheme %q "+
 				"(supported schemes: https, unix, npipe; http and no-scheme are accepted for local testing only)",
 			endpoint, endpointUrl.Scheme)
+	}
+
+	if endpointUrl.Scheme == "http" {
+		ip := net.ParseIP(endpointUrl.Hostname())
+		if ip == nil || !ip.IsLoopback() {
+			return auth.ExternalAuthConfiguration{}, fmt.Errorf(
+				"invalid AZD_AUTH_ENDPOINT value '%s': http is accepted only for loopback IP endpoints used by local testing",
+				endpoint)
+		}
 	}
 
 	if endpoint != "" && key == "" {

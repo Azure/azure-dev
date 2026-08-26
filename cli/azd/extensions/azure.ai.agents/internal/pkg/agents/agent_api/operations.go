@@ -16,13 +16,14 @@ import (
 	"strconv"
 	"time"
 
-	"azureaiagent/internal/version"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+	"azureaiagent/internal/pkg/useragent"
 )
 
 // AgentClient provides methods for interacting with the Azure AI Agents API
@@ -60,8 +61,6 @@ func (o *SessionRequestOptions) ApplyHeaders(headers http.Header) {
 
 // NewAgentClient creates a new AgentClient
 func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
-	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
-
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
@@ -72,7 +71,7 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
 			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy(userAgent),
+			azsdk.NewUserAgentPolicy(useragent.Default()),
 		},
 	}
 
@@ -933,7 +932,7 @@ func (c *AgentClient) GetAgentSessionLogStream(
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token.Token)
-	req.Header.Set("User-Agent", fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version))
+	req.Header.Set("User-Agent", useragent.Default())
 	options.ApplyHeaders(req.Header)
 
 	httpClient := &http.Client{}

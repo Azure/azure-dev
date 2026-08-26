@@ -4,7 +4,10 @@
 package agent_yaml
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"slices"
 
 	"go.yaml.in/yaml/v3"
@@ -447,6 +450,105 @@ type PromptHarnessBuiltInTools struct {
 	Excluded *[]string `json:"excluded,omitempty" yaml:"excluded,omitempty"`
 }
 
+// harnessTypeGitHubCopilotPreview duplicates
+// agent_api.ManagedAgentHarnessGitHubCopilot. It is repeated here rather than
+// imported because agent_api already depends on this package.
+const harnessTypeGitHubCopilotPreview = "github_copilot_preview"
+
+// harnessTypeObsoleteAbbreviation is the pre-release spelling of
+// harnessTypeGitHubCopilotPreview. It is rejected by name so an author who
+// copied an older sample is told what to write instead, rather than having the
+// value forwarded to a service that reports it as an opaque bad request.
+const harnessTypeObsoleteAbbreviation = "ghcp"
+
+// UnmarshalYAML decodes the `harness:` block.
+//
+// Two things happen here that a plain struct decode would not do:
+//
+//   - A scalar is rejected with the block that replaces it. `harness:` used to
+//     be a bare string, so an author carrying a manifest forward would otherwise
+//     get go-yaml's "cannot unmarshal !!str into agent_yaml.PromptHarness",
+//     which names a Go type and no fix.
+//   - Unknown keys are rejected. Every field of this block changes what the
+//     sandbox can do, so a typo that silently binds nothing — `builtin_tool:`
+//     for `builtin_tools:` — would deploy an agent with capabilities the author
+//     believed they had turned off. Tools stay `[]any` and are unaffected, so a
+//     tool type newer than this build still passes through.
+func (h *PromptHarness) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		replacement := value.Value
+		if replacement == harnessTypeObsoleteAbbreviation {
+			replacement = harnessTypeGitHubCopilotPreview
+		}
+		return fmt.Errorf(
+			"harness must be a block, not a string: replace `harness: %s` with\n"+
+				"  harness:\n"+
+				"    type: %s",
+			value.Value, replacement)
+	}
+
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("harness must be a block with a `type:` key, got %s", nodeKindName(value.Kind))
+	}
+
+	// A distinct type so this method is not inherited, which would recurse.
+	type harnessFields PromptHarness
+	var decoded harnessFields
+	if err := decodeStrict(value, &decoded); err != nil {
+		return fmt.Errorf("harness: %w", err)
+	}
+
+	if decoded.Type == harnessTypeObsoleteAbbreviation {
+		return fmt.Errorf(
+			"harness.type %q is no longer accepted: use %q",
+			harnessTypeObsoleteAbbreviation, harnessTypeGitHubCopilotPreview)
+	}
+
+	*h = PromptHarness(decoded)
+	return nil
+}
+
+// decodeStrict decodes node into out, rejecting keys that bind to no field.
+//
+// yaml.Node.Decode has no strict mode, so the node is re-serialized and run
+// through a Decoder that does. Nested blocks are covered by the same pass;
+// fields typed `any` are not, which is what keeps pass-through fields such as
+// PromptAgent.Tools forward-compatible.
+func decodeStrict(node *yaml.Node, out any) error {
+	raw, err := yaml.Marshal(node)
+	if err != nil {
+		return fmt.Errorf("failed to re-encode: %w", err)
+	}
+
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(out); err != nil {
+		if errors.Is(err, io.EOF) {
+			// An empty block leaves the zero value in place.
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// nodeKindName renders a yaml.Node kind for an error message, so a reader sees
+// "a list" rather than the bit value go-yaml uses internally.
+func nodeKindName(kind yaml.Kind) string {
+	switch kind {
+	case yaml.SequenceNode:
+		return "a list"
+	case yaml.ScalarNode:
+		return "a value"
+	case yaml.AliasNode:
+		return "an alias"
+	case yaml.DocumentNode:
+		return "a document"
+	default:
+		return "an unsupported node"
+	}
+}
+
 // PromptAgent represents a Foundry "prompt" agent — a PES (Prompt Execution
 // Service) backed agent. The customer declares the model and instructions; the
 // platform manages the runtime, lifecycle, and orchestration.
@@ -596,6 +698,29 @@ type PromptMemory struct {
 
 	// Options toggles which memory kinds the store extracts.
 	Options *PromptMemoryOptions `json:"options,omitempty" yaml:"options,omitempty"`
+}
+
+// UnmarshalYAML decodes the `memory:` block, rejecting keys that bind to no
+// field.
+//
+// Memory is the one block azd acts on rather than forwards — it provisions the
+// store and synthesizes the memory_search_preview tool — so a key that silently
+// binds nothing produces an agent whose recall behavior differs from what the
+// manifest says, with nothing in the deploy output to indicate it.
+func (m *PromptMemory) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("memory must be a block with a `store:` key, got %s", nodeKindName(value.Kind))
+	}
+
+	// A distinct type so this method is not inherited, which would recurse.
+	type memoryFields PromptMemory
+	var decoded memoryFields
+	if err := decodeStrict(value, &decoded); err != nil {
+		return fmt.Errorf("memory: %w", err)
+	}
+
+	*m = PromptMemory(decoded)
+	return nil
 }
 
 // PromptMemoryOptions toggles the extraction behaviors of a memory store. All

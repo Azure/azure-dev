@@ -241,8 +241,12 @@ func promptAgentKind(
 	}
 
 	// Two menu rows share the value "prompt", so the answer is resolved by
-	// index. Guard it: an out-of-range index would otherwise pick a harness at
-	// random or panic.
+	// index. Guard it: a missing or out-of-range index would otherwise pick a
+	// harness at random or panic.
+	if resp == nil || resp.Value == nil {
+		return "", "", fmt.Errorf("agent kind selection returned no value")
+	}
+
 	selected := int(*resp.Value)
 	if selected < 0 || selected >= len(agentKindMenu) {
 		return "", "", fmt.Errorf("agent kind selection returned an out-of-range index %d", selected)

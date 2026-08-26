@@ -806,11 +806,12 @@ func (p *AgentServiceTargetProvider) resolvePromptWorkspaceFromAzure(
 	settings *PromptAgentSettings,
 	env map[string]string,
 ) (string, bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "Warning: workspace discovery panicked: %v\n", r)
-		}
-	}()
+	// No panic recovery here on purpose. A panic in discovery used to be
+	// converted into ("", false), which the caller cannot tell apart from "no
+	// workspace exists" -- so a crash silently became a request to provision a
+	// new workspace. It masked a nil credential reaching armresources.NewClient
+	// for the entire life of this function. deployPromptAgent already recovers
+	// at the RPC boundary and reports the panic as a deploy error.
 
 	if settings == nil {
 		return "", false

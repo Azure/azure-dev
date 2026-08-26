@@ -203,6 +203,13 @@ func promptForRaiPolicy(
 		)
 	}
 
+	// A prompt that reports no error but carries no index means the harness
+	// returned nothing to choose from. Treat it as "attach no policy" rather
+	// than dereferencing a nil pointer.
+	if resp == nil || resp.Value == nil {
+		return raiPolicySelection{}, nil
+	}
+
 	selected := int(*resp.Value)
 	if selected <= 0 || selected > len(existing) {
 		return raiPolicySelection{}, nil

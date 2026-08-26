@@ -1751,6 +1751,33 @@ Removes a service configuration value or section at the specified path from serv
   - `path` (string): Dot-notation path to the config to remove
 - **Response:** _EmptyResponse_
 
+#### PatchServiceConfig
+
+Creates or patches one service while preserving unrelated service fields.
+Concurrent project configuration mutations in the same azd process are
+serialized; this is not a cross-process transaction or locking mechanism.
+
+- **Request:** _PatchServiceConfigRequest_
+  - `service_name` (string): Literal service map key. Dots are not path separators.
+  - `required_host` (string): Required existing host and host assigned on create.
+  - `create_if_missing` (bool): Creates the service when absent.
+  - `set_values` (map): Service-relative dot paths and values to set.
+  - `unset_paths` (string array): Service-relative dot paths removed before sets.
+  - `expected_uses` (optional string list): Aborts when the current `uses` list
+    differs. A missing `uses` field is treated as an empty list.
+- **Response:** _EmptyResponse_
+
+The `host` and `language` fields cannot be patched because active lifecycle
+subscriptions filter on those fields. A host mismatch returns
+`FailedPrecondition`; a missing service returns `NotFound` unless creation is
+enabled. New services become visible to lifecycle subscriptions in the next azd
+session, matching `AddService` behavior. Unsets run before sets, so a set wins
+when the same path appears in both collections. Protobuf null values are stored
+as YAML null for extension-owned fields. Core service fields reject nulls; use
+`unset_paths` to remove them. When `expected_uses` does not match, the RPC
+returns `Aborted` without changing the project. Extensions can use this guard
+to avoid replacing dependency edits made after they last read the project.
+
 ---
 
 ### Environment Service

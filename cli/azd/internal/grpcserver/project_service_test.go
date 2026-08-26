@@ -2229,6 +2229,14 @@ func TestProjectService_ParseGitHubUrl_Empty(t *testing.T) {
 
 // newProjectServiceWithYaml creates a projectService backed by a temp dir with a minimal azure.yaml.
 func newProjectServiceWithYaml(t *testing.T, yamlContent string) azdext.ProjectServiceServer {
+	return newProjectServiceWithYamlAndLock(t, yamlContent, NewProjectConfigMutationLocker())
+}
+
+func newProjectServiceWithYamlAndLock(
+	t *testing.T,
+	yamlContent string,
+	mutationLock ProjectConfigMutationLocker,
+) azdext.ProjectServiceServer {
 	t.Helper()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(yamlContent), 0600)
@@ -2245,7 +2253,7 @@ func newProjectServiceWithYaml(t *testing.T, yamlContent string) azdext.ProjectS
 		return environment.NewWithValues("dev", nil), nil
 	})
 
-	return NewProjectService(lazyCtx, nil, lazyEnv, lazyPC, nil, nil)
+	return NewProjectServiceWithLock(lazyCtx, nil, lazyEnv, lazyPC, nil, nil, mutationLock)
 }
 
 func TestProjectService_GetConfigValue_EmptyPath(t *testing.T) {

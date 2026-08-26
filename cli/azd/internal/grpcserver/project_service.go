@@ -33,7 +33,8 @@ type projectService struct {
 	importManager       *project.ImportManager
 	lazyProjectConfig   *lazy.Lazy[*project.ProjectConfig]
 	ghCli               *github.Cli
-	configMutationMu    sync.Mutex
+	configMutationMu    sync.Locker
+	patchConfigLoaded   func()
 }
 
 // NewProjectService creates a new project service instance with lazy-loaded dependencies.
@@ -55,6 +56,27 @@ func NewProjectService(
 	importManager *project.ImportManager,
 	ghCli *github.Cli,
 ) azdext.ProjectServiceServer {
+	return NewProjectServiceWithLock(
+		lazyAzdContext,
+		lazyResourceManager,
+		lazyEnv,
+		lazyProjectConfig,
+		importManager,
+		ghCli,
+		NewProjectConfigMutationLocker(),
+	)
+}
+
+// NewProjectServiceWithLock creates a project service using the shared project mutation lock.
+func NewProjectServiceWithLock(
+	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+	lazyResourceManager *lazy.Lazy[project.ResourceManager],
+	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+	importManager *project.ImportManager,
+	ghCli *github.Cli,
+	mutationLock ProjectConfigMutationLocker,
+) azdext.ProjectServiceServer {
 	return &projectService{
 		lazyAzdContext:      lazyAzdContext,
 		lazyResourceManager: lazyResourceManager,
@@ -62,6 +84,7 @@ func NewProjectService(
 		lazyProjectConfig:   lazyProjectConfig,
 		importManager:       importManager,
 		ghCli:               ghCli,
+		configMutationMu:    mutationLock,
 	}
 }
 

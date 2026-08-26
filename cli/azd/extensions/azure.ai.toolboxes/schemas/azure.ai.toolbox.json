@@ -63,7 +63,18 @@
     "policies": {
       "type": "object",
       "description": "Per-version toolbox governance settings.",
-      "additionalProperties": true
+      "additionalProperties": false,
+      "properties": {
+        "rai_config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "rai_policy_name": { "type": "string" },
+            "name": { "type": "string" }
+          }
+        }
+      }
+    }
     },
     "metadata": {
       "type": "object",

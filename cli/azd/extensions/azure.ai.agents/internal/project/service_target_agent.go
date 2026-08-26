@@ -478,7 +478,7 @@ func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
 			return exterrors.Dependency(
 				exterrors.CodeEnvironmentNotFound,
 				fmt.Sprintf("failed to get environment %q: %s", p.environmentName, err),
-				fmt.Sprintf("run 'azd env new %s' to create the environment", p.environmentName),
+				fmt.Sprintf("run 'azd env new %q' to create the environment", p.environmentName),
 			)
 		}
 		p.env = envResp.Environment

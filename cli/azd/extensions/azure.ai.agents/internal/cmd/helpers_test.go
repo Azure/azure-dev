@@ -871,6 +871,11 @@ func TestResolveAgentServiceFromProject_UsesSelectedEnvironment(t *testing.T) {
 	require.Equal(t, "selected", info.EnvironmentName)
 	require.Equal(t, "selected-agent", info.AgentName)
 	require.Equal(t, "2", info.Version)
+
+	_, err = resolveAgentServiceFromProject(
+		t.Context(), azdClient, "", true, withEnvironmentName("missing"),
+	)
+	require.ErrorContains(t, err, `getting environment for agent service "service-key"`)
 }
 
 // TestResolveAgentServiceFromProject_EnvLookupFailureDoesNotFallback verifies a

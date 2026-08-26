@@ -585,7 +585,7 @@ func TestDeployTrackStatus_StatusChangeResetsTimeout(t *testing.T) {
 	timeoutErr, ok := errors.AsType[*DeploymentStatusTimeoutError](err)
 	require.True(t, ok)
 	require.Equal(t, 40*time.Millisecond, timeoutErr.Timeout)
-	require.GreaterOrEqual(t, pollCount, 2)
+	require.GreaterOrEqual(t, pollCount, 3)
 }
 
 func registerTrackedDeployMocks(mockContext *mocks.MockContext) {

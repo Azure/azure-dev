@@ -874,7 +874,7 @@ func resolveAgentServiceFromProject(
 		envResponse, err = azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	}
 	if err != nil {
-		if resolutionOptions.allowBrownfieldInlineName {
+		if resolutionOptions.environmentName != "" || resolutionOptions.allowBrownfieldInlineName {
 			return info, fmt.Errorf("getting environment for agent service %q: %w", svc.Name, err)
 		}
 		return info, nil

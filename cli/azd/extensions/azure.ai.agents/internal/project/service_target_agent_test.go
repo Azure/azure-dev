@@ -514,6 +514,7 @@ type explicitEnvironmentServer struct {
 	setValueNames  []string
 	currentCalls   int
 	values         map[string]string
+	getErr         error
 }
 
 func (s *explicitEnvironmentServer) GetCurrent(
@@ -527,6 +528,9 @@ func (s *explicitEnvironmentServer) Get(
 	_ context.Context, req *azdext.GetEnvironmentRequest,
 ) (*azdext.EnvironmentResponse, error) {
 	s.getNames = append(s.getNames, req.Name)
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
 	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: req.Name}}, nil
 }
 
@@ -584,6 +588,20 @@ func TestAgentServiceTargetProvider_UsesExplicitEnvironment(t *testing.T) {
 	for _, envName := range envServer.setValueNames {
 		require.Equal(t, "selected", envName)
 	}
+}
+
+func TestAgentServiceTargetProvider_QuotesExplicitEnvironmentInSuggestion(t *testing.T) {
+	envServer := &explicitEnvironmentServer{}
+	client := newServiceTargetTestClient(t, nil, nil, envServer)
+	provider := NewAgentServiceTargetProvider(client, "my(project)").(*AgentServiceTargetProvider)
+	envServer.getErr = errors.New("environment not found")
+
+	err := provider.ensureEnv(t.Context())
+
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Contains(t, localErr.Suggestion, `azd env new "my(project)"`)
 }
 
 type stubAccountServer struct {

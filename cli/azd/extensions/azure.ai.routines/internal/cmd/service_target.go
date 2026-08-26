@@ -7,7 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"net/url"
+	"path/filepath"
+	"strings"
 
+	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -112,7 +117,15 @@ func (p *routineServiceTarget) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	body, err := parseRoutineServiceConfig(serviceConfig)
+	projectRoot := ""
+	if routineServiceHasRef(serviceConfig) {
+		projectResp, err := p.projectClient.Get(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, fmt.Errorf("reading project for routine %q: %w", serviceConfig.GetName(), err)
+		}
+		projectRoot = projectResp.GetProject().GetPath()
+	}
+	body, err := parseRoutineServiceConfig(serviceConfig, projectRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +163,7 @@ func (p *routineServiceTarget) Deploy(
 // parseRoutineServiceConfig binds the service-level (inline) routine keys to the
 // routine API model, falling back to the deprecated config: shape for azure.yaml
 // files written before the per-resource service split.
-func parseRoutineServiceConfig(svc *azdext.ServiceConfig) (*routines.Routine, error) {
+func parseRoutineServiceConfig(svc *azdext.ServiceConfig, projectRoot string) (*routines.Routine, error) {
 	props := svc.GetAdditionalProperties()
 	if props == nil || len(props.GetFields()) == 0 {
 		props = svc.GetConfig()
@@ -159,7 +172,15 @@ func parseRoutineServiceConfig(svc *azdext.ServiceConfig) (*routines.Routine, er
 	if props == nil {
 		return body, nil
 	}
-	b, err := json.Marshal(props.AsMap())
+	values := props.AsMap()
+	if _, hasRef := values["$ref"]; hasRef {
+		resolved, err := resolveRoutineServiceRef(values, projectRoot)
+		if err != nil {
+			return nil, err
+		}
+		values = resolved
+	}
+	b, err := json.Marshal(values)
 	if err != nil {
 		return nil, fmt.Errorf("encoding routine service %q config: %w", svc.GetName(), err)
 	}
@@ -167,6 +188,65 @@ func parseRoutineServiceConfig(svc *azdext.ServiceConfig) (*routines.Routine, er
 		return nil, fmt.Errorf("parsing routine service %q config: %w", svc.GetName(), err)
 	}
 	return body, nil
+}
+
+func routineServiceHasRef(svc *azdext.ServiceConfig) bool {
+	props := svc.GetAdditionalProperties()
+	if props == nil || len(props.GetFields()) == 0 {
+		props = svc.GetConfig()
+	}
+	if props == nil {
+		return false
+	}
+	_, found := props.GetFields()["$ref"]
+	return found
+}
+
+func resolveRoutineServiceRef(values map[string]any, projectRoot string) (map[string]any, error) {
+	ref, ok := values["$ref"].(string)
+	if !ok || strings.TrimSpace(ref) == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidRoutineManifest,
+			"routine service $ref must be a non-empty string",
+			"set $ref to a local .yaml, .yml, or .json routine manifest",
+		)
+	}
+	refPath := strings.TrimSpace(ref)
+	if !filepath.IsAbs(refPath) {
+		parsed, err := url.Parse(refPath)
+		if (parsed != nil && parsed.IsAbs()) || (err != nil && strings.Contains(refPath, "://")) {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidRoutineManifest,
+				fmt.Sprintf("remote routine service $ref %q is not supported", refPath),
+				"set $ref to a local .yaml, .yml, or .json routine manifest",
+			)
+		}
+		if projectRoot == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidRoutineManifest,
+				"cannot resolve routine service $ref without an azure.yaml project path",
+				"run the command from an initialized azd project",
+			)
+		}
+		refPath = filepath.Join(projectRoot, refPath)
+	}
+	referenced, err := readRoutineManifest(refPath)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(referenced)
+	if err != nil {
+		return nil, fmt.Errorf("encoding referenced routine service: %w", err)
+	}
+	resolved := map[string]any{}
+	if err := json.Unmarshal(data, &resolved); err != nil {
+		return nil, fmt.Errorf("decoding referenced routine service: %w", err)
+	}
+
+	overlay := maps.Clone(values)
+	delete(overlay, "$ref")
+	maps.Copy(resolved, overlay)
+	return resolved, nil
 }
 
 // newRoutineServiceClient resolves the project endpoint (from the active azd
@@ -200,6 +280,11 @@ func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
 // concrete *azdext.AzdClient lets tests supply a fake: the client's
 // project field is unexported and no option overrides it.
 type serviceConfigReader interface {
+	Get(
+		ctx context.Context,
+		in *azdext.EmptyRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.GetProjectResponse, error)
 	GetServiceConfigValue(
 		ctx context.Context,
 		in *azdext.GetServiceConfigValueRequest,

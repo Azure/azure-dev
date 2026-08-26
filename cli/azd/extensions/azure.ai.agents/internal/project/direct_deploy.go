@@ -137,7 +137,8 @@ func DeployStandaloneHostedAgent(
 	_, getErr := agentClient.GetAgent(ctx, agentDefinition.Name, agent_api.AgentEndpointAPIVersion)
 	var agentObject *agent_api.AgentObject
 	if getErr != nil {
-		if responseError, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || responseError.StatusCode != http.StatusNotFound {
+		if responseError, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
+			responseError.StatusCode != http.StatusNotFound {
 			return nil, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
 		}
 		progress("Creating agent from code package")

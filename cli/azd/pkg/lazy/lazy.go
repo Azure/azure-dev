@@ -10,12 +10,12 @@ type InitializerFn[T comparable] func() (T, error)
 // A data structure that will lazily load an instance of the underlying type
 // from the specified initializer
 type Lazy[T comparable] struct {
-	initialized  bool
-	initializer  InitializerFn[T]
-	value        T
-	error        error
-	getValueLock sync.Mutex
-	setValueLock sync.Mutex
+	initialized     bool
+	initializer     InitializerFn[T]
+	value           T
+	error           error
+	initializerLock sync.Mutex
+	valueLock       sync.Mutex
 }
 
 // Creates a new Lazy[T]
@@ -33,30 +33,52 @@ func From[T comparable](value T) *Lazy[T] {
 // Gets the value of the configured initializer
 // Initializer will only run once on success
 func (l *Lazy[T]) GetValue() (T, error) {
-	// Only allow a single caller to get a value at one time.
-	// Additional calls will block until current call is complete
-	l.getValueLock.Lock()
-	defer l.getValueLock.Unlock()
-
-	if !l.initialized {
-		value, err := l.initializer()
-		if err == nil {
-			l.SetValue(value)
-		} else {
-			l.error = err
-		}
+	l.valueLock.Lock()
+	if l.initialized {
+		value, err := l.value, l.error
+		l.valueLock.Unlock()
+		return value, err
 	}
+	l.valueLock.Unlock()
 
+	// Only one caller runs the initializer. SetValue remains available while the
+	// initializer runs, including when the initializer itself calls SetValue.
+	l.initializerLock.Lock()
+	defer l.initializerLock.Unlock()
+
+	l.valueLock.Lock()
+	if l.initialized {
+		value, err := l.value, l.error
+		l.valueLock.Unlock()
+		return value, err
+	}
+	l.valueLock.Unlock()
+
+	value, err := l.initializer()
+
+	l.valueLock.Lock()
+	defer l.valueLock.Unlock()
+	if l.initialized {
+		return l.value, l.error
+	}
+	if err == nil {
+		l.setValue(value)
+	} else {
+		l.error = err
+	}
 	return l.value, l.error
 }
 
-// Sets a value on the lazy type
+// SetValue sets the resolved value and clears any prior error. It may be called
+// while the initializer is running; the explicit value then takes precedence
+// over that initializer's result.
 func (l *Lazy[T]) SetValue(value T) {
-	// Only allow a single caller to get a value at one time.
-	// Additional calls will block until current call is complete
-	l.setValueLock.Lock()
-	defer l.setValueLock.Unlock()
+	l.valueLock.Lock()
+	defer l.valueLock.Unlock()
+	l.setValue(value)
+}
 
+func (l *Lazy[T]) setValue(value T) {
 	l.value = value
 	l.error = nil
 	l.initialized = true

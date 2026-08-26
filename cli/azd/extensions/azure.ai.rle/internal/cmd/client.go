@@ -214,38 +214,6 @@ func (c *rleClient) listEnvironments(
 	return &result, nil
 }
 
-func (c *rleClient) getEnvironment(
-	ctx context.Context,
-	name string,
-) (*environmentResource, error) {
-	path := environmentCollectionPath + "/" + url.PathEscape(name)
-
-	var result environmentResource
-	if err := c.do(ctx, http.MethodGet, path, nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *rleClient) getEnvironmentVersion(
-	ctx context.Context,
-	name string,
-	version string,
-) (*environmentResource, error) {
-	suffix := fmt.Sprintf(
-		"/%s/versions/%s",
-		url.PathEscape(name),
-		url.PathEscape(version),
-	)
-
-	var result environmentResource
-	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
-}
-
 func (c *rleClient) listEnvironmentVersions(
 	ctx context.Context,
 	name string,

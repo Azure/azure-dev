@@ -153,11 +153,16 @@ func TestEnvironmentListReportsEmptyProject(t *testing.T) {
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
+	err := command.Execute()
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
 	}
-	if !strings.Contains(output.String(), "No RLE environments found") {
-		t.Fatalf("expected empty project message, got %s", output.String())
+	if localErr.Code != "rle_environments_not_found" {
+		t.Fatalf("expected environments-not-found code, got %q", localErr.Code)
+	}
+	if localErr.Message != "No RLE environments were found in this Foundry project." {
+		t.Fatalf("unexpected empty project message: %q", localErr.Message)
 	}
 }
 
@@ -329,25 +334,6 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{
-				"id":"env-1",
-				"name":"echo_env",
-				"version":"1.2.0",
-				"diskImageConversionStatus":"Ready",
-				"updatedAtUtc":"2026-07-30T05:00:00Z"
-			}`))
-		case r.Method == http.MethodGet &&
-			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions/1.2.0":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{
-				"id":"env-1",
-				"name":"echo_env",
-				"version":"1.2.0",
-				"diskImageConversionStatus":"Ready",
-				"updatedAtUtc":"2026-07-30T05:00:00Z"
-			}`))
 		case r.Method == http.MethodGet &&
 			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions":
 			w.Header().Set("Content-Type", "application/json")
@@ -422,6 +408,151 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 	}
 }
 
+func TestShowSupportsJSONOutput(t *testing.T) {
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/saved-project",
+	)
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet ||
+			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"data": [{
+				"id": "env-1",
+				"name": "echo_env",
+				"version": "1.2.0",
+				"acrImagePath": "registry/echo:1.2.0",
+				"createdAtUtc": "2026-07-30T04:00:00Z"
+			}]
+		}`))
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	outputFormat := "json"
+	command := newShowCommand(&outputFormat)
+	command.SetArgs([]string{"echo_env"})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	var versions []environmentResource
+	if err := json.Unmarshal(output.Bytes(), &versions); err != nil {
+		t.Fatalf("expected version-list JSON, got %s: %v", output.String(), err)
+	}
+	if len(versions) != 1 ||
+		versions[0].Name != "echo_env" ||
+		versions[0].AcrImagePath != "registry/echo:1.2.0" ||
+		versions[0].CreatedAt != "2026-07-30T04:00:00Z" {
+		t.Fatalf("unexpected version-list JSON: %#v", versions)
+	}
+}
+
+func TestShowReportsEmptyVersionListAsNotFound(t *testing.T) {
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/saved-project",
+	)
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet ||
+			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/missing_env/versions" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	outputFormat := "json"
+	command := newShowCommand(&outputFormat)
+	command.SetArgs([]string{"missing_env"})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	err := command.Execute()
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_environment_versions_not_found" {
+		t.Fatalf("expected rle_environment_versions_not_found, got %q", localErr.Code)
+	}
+	if localErr.Message != `No versions were found for RLE environment "missing_env".` {
+		t.Fatalf("unexpected no-versions message: %q", localErr.Message)
+	}
+}
+
+func TestShowReportsVersionListNotFound(t *testing.T) {
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/saved-project",
+	)
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	outputFormat := "default"
+	command := newShowCommand(&outputFormat)
+	command.SetArgs([]string{"missing_env"})
+	err := command.Execute()
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_environment_not_found" {
+		t.Fatalf("expected rle_environment_not_found, got %q", localErr.Code)
+	}
+}
+
+func TestListAllEnvironmentVersionsPreservesAPIResponse(t *testing.T) {
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet ||
+			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"data": [{
+				"id": "env-1",
+				"name": "echo_env",
+				"version": "1.2.0",
+				"acrImagePath": "registry/echo:1.2.0",
+				"createdAtUtc": "2026-07-30T04:00:00Z",
+				"updatedAtUtc": "2026-07-30T05:00:00Z",
+				"diskImageConversionStatus": "Ready"
+			}]
+		}`))
+	}))
+	defer controlPlane.Close()
+
+	client := testRleClientForServer(t, controlPlane.URL)
+	versions, err := listAllEnvironmentVersions(t.Context(), client, "echo_env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("expected one version, got %d", len(versions))
+	}
+	if versions[0].Name != "echo_env" {
+		t.Fatalf("expected version-list environment name, got %q", versions[0].Name)
+	}
+	if versions[0].AcrImagePath != "registry/echo:1.2.0" {
+		t.Fatalf("expected full version ACR image, got %q", versions[0].AcrImagePath)
+	}
+	if versions[0].CreatedAt != "2026-07-30T04:00:00Z" {
+		t.Fatalf("expected full version creation time, got %q", versions[0].CreatedAt)
+	}
+}
+
 func TestResolveEnvironmentVersionsRejectsCursorCycles(t *testing.T) {
 	requestCount := 0
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -459,11 +590,7 @@ func TestResolveEnvironmentVersionsRejectsCursorCycles(t *testing.T) {
 	defer controlPlane.Close()
 
 	client := testRleClientForServer(t, controlPlane.URL)
-	_, err := resolveEnvironmentVersions(t.Context(), client, &environmentResource{
-		Id:      "env-1",
-		Name:    "echo_env",
-		Version: "1.2.0",
-	})
+	_, err := listAllEnvironmentVersions(t.Context(), client, "echo_env")
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok {
 		t.Fatalf("expected LocalError, got %T: %v", err, err)
@@ -489,7 +616,7 @@ func TestResolveEnvironmentVersionsStopsAtSafetyLimit(t *testing.T) {
 	defer controlPlane.Close()
 
 	client := testRleClientForServer(t, controlPlane.URL)
-	_, err := resolveEnvironmentVersions(t.Context(), client, &environmentResource{Name: "echo_env"})
+	_, err := listAllEnvironmentVersions(t.Context(), client, "echo_env")
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok {
 		t.Fatalf("expected LocalError, got %T: %v", err, err)
@@ -517,22 +644,20 @@ func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
 	}
 
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env":
+		if r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
-				"id":"env-1",
-				"name":"echo_env",
-				"version":"1.2.0",
-				"diskImageConversionStatus":"Ready"
+				"data":[{
+					"id":"env-1",
+					"name":"echo_env",
+					"version":"1.2.0",
+					"diskImageConversionStatus":"Ready"
+				}]
 			}`))
-		case r.Method == http.MethodGet &&
-			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":[]}`))
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+			return
 		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 	}))
 	defer controlPlane.Close()
 	oldCreateRleClient := createRleClient
@@ -554,34 +679,13 @@ func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "1.2.0") {
-		t.Fatalf("expected API environment resolved from saved name, got %s", output.String())
+		t.Fatalf("expected API versions resolved from saved name, got %s", output.String())
 	}
 	if strings.Contains(output.String(), "echo_env") {
 		t.Fatalf("expected environment name to be omitted from the version table, got %s", output.String())
 	}
 	if resolvedProjectEndpoint != "https://account.services.ai.azure.com/api/projects/saved-project" {
 		t.Fatalf("expected saved project endpoint, got %q", resolvedProjectEndpoint)
-	}
-}
-
-func TestResolveLatestEnvironmentByNameReportsNotFound(t *testing.T) {
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet ||
-			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/missing_env" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		http.NotFound(w, r)
-	}))
-	defer controlPlane.Close()
-
-	client := testRleClientForServer(t, controlPlane.URL)
-	_, err := resolveLatestEnvironmentByName(t.Context(), client, "missing_env")
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
-	}
-	if localErr.Code != "rle_environment_not_found" {
-		t.Fatalf("expected rle_environment_not_found, got %q", localErr.Code)
 	}
 }
 

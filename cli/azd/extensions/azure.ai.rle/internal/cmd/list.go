@@ -53,6 +53,14 @@ func (a *listAction) Run() error {
 	if err != nil {
 		return err
 	}
+	if len(environments) == 0 {
+		return &azdext.LocalError{
+			Message:    "No RLE environments were found in this Foundry project.",
+			Code:       "rle_environments_not_found",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Publish an RLE environment, then run this command again.",
+		}
+	}
 
 	format, err := azdext.ParseOutputFormat(*a.outputFormat)
 	if err != nil {
@@ -66,11 +74,6 @@ func (a *listAction) Run() error {
 	if output.IsJSON() {
 		return output.JSON(environments)
 	}
-	if len(environments) == 0 {
-		output.Message("No RLE environments found in this Foundry project.")
-		return nil
-	}
-
 	rows := make([][]string, 0, len(environments))
 	for _, environment := range environments {
 		rows = append(rows, []string{

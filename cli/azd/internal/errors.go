@@ -14,8 +14,7 @@ import (
 // The canonical type lives in pkg/errorhandler so it can be used by extensions.
 type ErrorWithSuggestion = errorhandler.ErrorWithSuggestion
 
-// WrapErrorWithSuggestion converts errors that implement Suggestion() into ErrorWithSuggestion
-// so command UX and middleware can print guidance without per-call-site adapters.
+// WrapErrorWithSuggestion converts an error's Suggestion method into ErrorWithSuggestion.
 func WrapErrorWithSuggestion(err error) error {
 	if err == nil {
 		return nil

@@ -771,8 +771,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			result.Err = commandErr
 			return result
 		}
-		// Offer only the extensions whose selected version supplies the host and that are not
-		// already installed. FindInstallableExtensions already filters by the selected release.
+		// Remove extensions that are already installed.
 		availableExtensionsForHost = uninstalledExtensionMatches(availableExtensionsForHost, installedExtensions)
 		if len(availableExtensionsForHost) == 0 {
 			// Nothing can be installed to supply the host, so the command's failure stands.

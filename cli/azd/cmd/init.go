@@ -1159,7 +1159,7 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 
 		if len(extensionMatches) == 0 {
 			i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return fmt.Errorf("compatible extension %s not found", extensionId)
+			return fmt.Errorf("extension %s not found", extensionId)
 		}
 
 		extensionMetadata, err := selectDistinctExtension(

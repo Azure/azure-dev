@@ -11,9 +11,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 )
 
-// CurrentAzdVersion returns the running azd version used for extension compatibility checks.
-// Development builds return nil so locally built extensions remain installable. Prerelease tags
-// are removed because standard semver constraints exclude prerelease versions by default.
+// CurrentAzdVersion returns the version used for extension compatibility checks.
+// It returns nil for development builds and removes prerelease tags.
 func CurrentAzdVersion() *semver.Version {
 	if internal.IsDevVersion() {
 		return nil

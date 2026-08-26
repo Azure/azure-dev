@@ -3413,7 +3413,7 @@ func displayVersionCompatibilityWarning(
 	azdVersion *semver.Version,
 ) {
 	console.Message(ctx, output.WithWarningFormat(
-		"   WARNING: %s is incompatible with azd %s (requires %q), installing %s instead.",
+		"   WARNING: %s is incompatible with azd %s (requires %q), using %s instead.",
 		latestOverall.Version,
 		azdVersion.String(),
 		latestOverall.RequiredAzdVersion,
@@ -3423,7 +3423,7 @@ func displayVersionCompatibilityWarning(
 
 func validateExactVersionFlag(version string) error {
 	if extensions.IsVersionRange(version) {
-		return fmt.Errorf("--version requires an exact version, not a version constraint: %s", version)
+		return fmt.Errorf("--version does not accept version constraint %q", version)
 	}
 
 	return nil

@@ -478,9 +478,7 @@ func extensionCandidateProvidesProvider(
 	return false, nil
 }
 
-// extensionForProvider narrows an extension to every version supplying the provider. This ignores
-// which version would be selected, so callers can tell an extension that cannot supply the
-// provider from one whose selected version happens not to.
+// extensionForProvider returns every release that supplies the requested provider.
 func extensionForProvider(
 	extension *extensions.ExtensionMetadata,
 	capability extensions.CapabilityType,
@@ -532,9 +530,8 @@ func missingProjectExtensions(
 				return nil, &internal.ErrorWithSuggestion{
 					Err: fmt.Errorf("required extension %s not found", extensionId),
 					Suggestion: fmt.Sprintf(
-						"Check the extension id and version constraint declared under "+
-							"requiredVersions.extensions in azure.yaml, then run "+
-							"'azd extension source list' to confirm a configured source publishes %s.",
+						"Check requiredVersions.extensions in azure.yaml, then run "+
+							"'azd extension source list' to verify that a configured source publishes %s.",
 						extensionId,
 					),
 				}

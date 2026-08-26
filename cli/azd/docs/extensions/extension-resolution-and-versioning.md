@@ -157,9 +157,9 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 ### Behavior
 
 - `azd` filters out all versions whose `requiredAzdVersion` constraint is not satisfied by the running `azd` version, then selects the **highest remaining compatible version** that also matches the user's version constraint.
-- Install resolution owns this policy centrally. `azd init`, project auto-install, command auto-install, explicit install, update, provider lookup, and recursive dependencies all use the same compatibility-aware resolver. The selected release and any newer incompatible release are recorded on that result so install and update can warn without applying a second compatibility filter.
+- `azd init`, auto-install, explicit install, update, provider lookup, and recursive dependencies all use the same compatibility rules.
 - During `azd extension install` and `azd extension update`, if a **newer incompatible version** exists beyond the selected version, `azd` shows a **warning** suggesting the user update `azd`. An explicit `--version` pin does not produce this warning.
-- If **no compatible versions** remain after filtering, the install **fails** with guidance to update `azd`. The install also fails if the user explicitly requests a specific version that is incompatible.
+- If **no compatible versions** remain after filtering, the install **fails** with guidance to use a compatible azd version. The install also fails if the user explicitly requests a specific version that is incompatible.
 - Catalogue commands still retain the full published metadata so they can display incompatible releases and explain their requirements.
 - If `requiredAzdVersion` is **empty or cannot be parsed**, the version is treated as compatible (fail-open). This ensures that extensions without the field remain installable.
 
@@ -403,7 +403,7 @@ When `latest` is specified (or the version is omitted), `azd` selects the **high
 | *"extension X not found"* | The extension ID is not present in any configured source. | Verify your sources with `azd extension source list`. Check the extension ID spelling. |
 | *"found in multiple sources, specify exact source"* | The extension exists in two or more configured sources. | Use `azd extension install X --source <name>` to specify which source to use. |
 | *"version X was not found; latest compatible version is Y"* | The extension exists, but the requested exact version is not published by the eligible source. | Run the suggested install command to use the latest compatible version, or inspect available versions with `azd extension show X`. |
-| *"version X was not found"* for a range constraint | `requiredVersions.extensions` asks for a range that no published release satisfies. | Inspect published versions with `azd extension show X` and update the constraint in azure.yaml so it matches a published release. Do not install unconstrained latest. |
+| *"version X was not found"* for a range constraint | `requiredVersions.extensions` asks for a range that no published release satisfies. | Run `azd extension show X`, then update the constraint in `azure.yaml`. Do not install an unconstrained version. |
 | *"not compatible with azd X"* | Matching extension metadata exists, but the selected release requires another azd version. | Use an azd version that satisfies the reported constraint, then retry. |
 | *"dependency X not found"* | A recursive dependency is not installed and is missing from the applicable sources: the parent source and main `azd` registry for registry-backed installs, or the bundle for a bundle install. | Include the dependency in the parent source or bundle, publish it to `azd` for a registry-backed install, or install it explicitly before installing the parent. |
 | *"no version satisfies constraint"* | The applicable sources contain the dependency, but none of its versions match the parent extension's constraint. | Include or publish a compatible dependency version, install one explicitly, or update the parent extension's constraint. |

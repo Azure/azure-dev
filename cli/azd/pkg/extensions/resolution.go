@@ -12,8 +12,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 )
 
-// ExtensionVersionNotFoundError indicates an extension exists but no published version matches
-// the requested version preference.
+// ExtensionVersionNotFoundError indicates that no published release matches the requested version.
 type ExtensionVersionNotFoundError struct {
 	// ExtensionId is the id of the extension without a matching version.
 	ExtensionId string
@@ -23,7 +22,7 @@ type ExtensionVersionNotFoundError struct {
 	Source string
 	// Matches contains matching extension metadata from eligible sources.
 	Matches []*ExtensionMetadata
-	// AzdVersion limits suggested alternatives to releases compatible with azd.
+	// AzdVersion is used to filter alternatives.
 	AzdVersion *semver.Version
 }
 
@@ -33,7 +32,7 @@ func (e *ExtensionVersionNotFoundError) Error() string {
 	case 0:
 		if e.AzdVersion != nil {
 			return fmt.Sprintf(
-				"extension %q version %q was not found, and no published version is compatible with azd %s",
+				"extension %q version %q was not found; no published version is compatible with azd %s",
 				e.ExtensionId,
 				e.Version,
 				e.AzdVersion,
@@ -50,10 +49,10 @@ func (e *ExtensionVersionNotFoundError) Error() string {
 	default:
 		displayVersions := make([]string, 0, len(latestVersions))
 		for _, latest := range latestVersions {
-			displayVersions = append(displayVersions, fmt.Sprintf("%s: %s", latest.Source, latest.Version))
+			displayVersions = append(displayVersions, fmt.Sprintf("%q from %s", latest.Version, latest.Source))
 		}
 		return fmt.Sprintf(
-			"extension %q version %q was not found; latest compatible versions are %s",
+			"extension %q version %q was not found; compatible versions: %s",
 			e.ExtensionId,
 			e.Version,
 			strings.Join(displayVersions, ", "),
@@ -61,24 +60,22 @@ func (e *ExtensionVersionNotFoundError) Error() string {
 	}
 }
 
-// Suggestion returns guidance for installing an available compatible version.
-// Range constraints (for example from requiredVersions.extensions) skip the install
-// command: installing unconstrained latest would still fail the project constraint.
+// Suggestion returns guidance without suggesting an unconstrained install for a range.
 func (e *ExtensionVersionNotFoundError) Suggestion() string {
 	if IsVersionRange(e.Version) {
 		return fmt.Sprintf(
-			"Inspect published versions with 'azd extension show %s' and update "+
-				"requiredVersions.extensions in azure.yaml so the constraint matches a published release.",
+			"Run 'azd extension show %s' to list published versions. "+
+				"Then update requiredVersions.extensions in azure.yaml.",
 			e.ExtensionId,
 		)
 	}
 
 	latestVersions := e.latestVersions()
 	if len(latestVersions) == 0 {
-		return "Use an azd version compatible with a published release, or choose another extension source."
+		return "Use a compatible azd version or choose another extension source, then retry."
 	}
 	if len(latestVersions) > 1 {
-		return "Specify the extension source using the --source flag, then choose an available version."
+		return "Use --source to choose a source, then select one of its published versions."
 	}
 
 	latest := latestVersions[0]
@@ -121,8 +118,7 @@ func (e *ExtensionVersionNotFoundError) latestVersions() []ExtensionVersionAlter
 	return e.Alternatives()
 }
 
-// ExtensionAzdVersionIncompatibleError indicates matching extension releases exist, but the
-// releases that satisfy the requested install criteria require a different azd version.
+// ExtensionAzdVersionIncompatibleError indicates that matching releases require another azd version.
 type ExtensionAzdVersionIncompatibleError struct {
 	// ExtensionId is the requested extension id, when resolution was by id.
 	ExtensionId string
@@ -153,7 +149,7 @@ func (e *ExtensionAzdVersionIncompatibleError) Error() string {
 		return fmt.Sprintf("no version of extension %q is compatible with azd %s", e.ExtensionId, e.AzdVersion)
 	case e.Namespace != "":
 		return fmt.Sprintf(
-			"command namespace %q is available only from extensions that are incompatible with azd %s",
+			"command namespace %q requires a different azd version than %s",
 			e.Namespace,
 			e.AzdVersion,
 		)
@@ -192,8 +188,7 @@ type InstallResolutionOptions struct {
 	FilterOptions
 }
 
-// InstallCandidate is an extension and the release installation will pick under the
-// manager's azd compatibility policy.
+// InstallCandidate pairs extension metadata with the release selected for installation.
 type InstallCandidate struct {
 	Extension            *ExtensionMetadata
 	Version              *ExtensionVersion
@@ -202,10 +197,13 @@ type InstallCandidate struct {
 	HasNewerIncompatible bool
 }
 
-// InstallResolutionResult describes installable extensions and why other matching extensions were rejected.
+// InstallResolutionResult groups extensions by resolution outcome.
 type InstallResolutionResult struct {
-	Matches             []*ExtensionMetadata
-	VersionMismatches   []*ExtensionMetadata
+	// Matches contains installable extensions.
+	Matches []*ExtensionMetadata
+	// VersionMismatches contains extensions with no release matching the requested version.
+	VersionMismatches []*ExtensionMetadata
+	// IncompatibleMatches contains extensions rejected by azd compatibility.
 	IncompatibleMatches []*ExtensionMetadata
 	// Options contains the query that produced the result.
 	Options InstallResolutionOptions
@@ -227,7 +225,7 @@ func extensionIdentity(extension *ExtensionMetadata) string {
 	return extension.Source + "\n" + extension.Id
 }
 
-// Error returns the most specific resolution error, or nil when no rejected extension explains an empty result.
+// Error returns a resolution error when no installable match exists.
 func (r *InstallResolutionResult) Error() error {
 	if len(r.Matches) > 0 {
 		return nil
@@ -255,8 +253,7 @@ func (r *InstallResolutionResult) Error() error {
 	return nil
 }
 
-// ResolveExtensions finds extensions that installation can select under the manager's compatibility policy.
-// The result retains rejected matches so callers can distinguish missing metadata from version and azd conflicts.
+// ResolveExtensions classifies catalogue entries using the manager's compatibility policy.
 func (m *Manager) ResolveExtensions(
 	ctx context.Context,
 	options *InstallResolutionOptions,
@@ -393,8 +390,7 @@ func ProviderTypeForCapability(capability CapabilityType) (ProviderType, bool) {
 	}
 }
 
-// VersionProvidesProvider reports whether the release supplies the named provider.
-// When capability maps to a provider type, the provider entry must use that type.
+// VersionProvidesProvider checks the capability, provider name, and provider type.
 func VersionProvidesProvider(
 	version *ExtensionVersion,
 	capability CapabilityType,

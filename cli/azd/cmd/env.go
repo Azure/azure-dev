@@ -1158,10 +1158,8 @@ func newEnvRefreshAction(
 	}
 }
 
-// suggestionForUnresolvedProvider returns the id of a registry extension to suggest installing
-// when err is a provider-resolution failure. Any other initialization error skips the registry
-// lookup. A non-nil error is *extensions.ExtensionAzdVersionIncompatibleError when matching
-// releases require a different azd version.
+// suggestionForUnresolvedProvider looks for an extension only when provider resolution fails.
+// It returns a compatibility error when matching releases require another azd version.
 func suggestionForUnresolvedProvider(
 	ctx context.Context,
 	err error,
@@ -1175,9 +1173,8 @@ func suggestionForUnresolvedProvider(
 	return activator.SuggestExtensionForProvider(ctx, providerName)
 }
 
-// errorForUnresolvedProvider attaches install or azd-compatibility guidance to a provider
-// initialization failure. lookupErr is joined with initErr so both the original resolve
-// context and the typed explanation are preserved.
+// errorForUnresolvedProvider adds install or compatibility guidance to initErr.
+// Joining lookupErr preserves both error chains.
 func errorForUnresolvedProvider(
 	initErr error,
 	providerName string,
@@ -1191,10 +1188,10 @@ func errorForUnresolvedProvider(
 		return &internal.ErrorWithSuggestion{
 			Err: initErr,
 			Suggestion: fmt.Sprintf(
-				"Provisioning provider '%s' is supplied by the '%s' extension. To install it, run %s",
-				providerName,
-				extensionId,
+				"Run %s to install extension '%s', which provides provisioning provider '%s'.",
 				output.WithHighLightFormat("azd extension install %s", extensionId),
+				extensionId,
+				providerName,
 			),
 		}
 	}

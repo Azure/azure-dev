@@ -1027,7 +1027,7 @@ func TestCheckForMatchingExtensionsReportsIncompatibleNamespace(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(
 		t,
-		`command namespace "ai.agent" is available only from extensions that are incompatible with azd 1.0.0`,
+		`command namespace "ai.agent" requires a different azd version than 1.0.0`,
 		compatibilityErr.Error(),
 	)
 	require.Contains(t, compatibilityErr.Suggestion(), `satisfies ">=2.0.0"`)

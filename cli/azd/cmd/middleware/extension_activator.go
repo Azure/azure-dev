@@ -145,12 +145,8 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 	return cleanup, nil
 }
 
-// SuggestExtensionForProvider returns the id of a registry extension that declares the named
-// provisioning provider when no installed extension does. An empty id with a nil error means the
-// provider is unknown to the registry, already declared by an installed extension, or the lookup
-// failed for a reason other than azd compatibility.
-// An *extensions.ExtensionAzdVersionIncompatibleError is returned when matching releases exist
-// but none are compatible with the current azd version.
+// SuggestExtensionForProvider finds an installable extension for a missing provisioning provider.
+// It returns a compatibility error when matching releases require another azd version.
 func (a *ExtensionActivator) SuggestExtensionForProvider(ctx context.Context, providerName string) (string, error) {
 	if strings.TrimSpace(providerName) == "" {
 		return "", nil

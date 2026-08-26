@@ -189,16 +189,8 @@ func resolveUpgradeSource(
 	return nil
 }
 
-// shouldPromote determines whether a promotion from a non-main source to the main registry
-// should occur. Promotion happens when:
-//   - The stored source has no match at all (extension removed from dev), OR
-//   - The main registry's selected version is strictly greater than the stored source's
-//     selected version (the extension has advanced in the main registry beyond the
-//     non-main source). When a selected-version callback is provided, that version is
-//     the install-selected compatible release, not the latest published tag.
-//
-// When both sources have the same selected version, the stored source is preferred
-// to keep the extension "sticky" to its original source.
+// shouldPromote reports whether the main registry has a newer selected release.
+// A missing stored match promotes; equal releases remain on the stored source.
 func shouldPromote(
 	storedMatch, mainMatch *ExtensionMetadata,
 	selectedVersion func(*ExtensionMetadata) *ExtensionVersion,

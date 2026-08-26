@@ -268,10 +268,8 @@ type FilterOptions struct {
 type sourceFilterPredicate func(config *SourceConfig) bool
 type extensionFilterPredicate func(extension *ExtensionMetadata) bool
 
-// IsVersionRange reports whether expr is a semver constraint rather than an exact
-// version, empty preference, or "latest". Exact non-semver tags such as "nightly" are
-// not ranges. The operator set matches CLI --version validation, including compound
-// constraints that use comma or space (">=1.0.0, <2.0.0").
+// IsVersionRange reports whether expr is a semver constraint.
+// Exact versions, non-semver tags, an empty value, and "latest" are not ranges.
 func IsVersionRange(expr string) bool {
 	if expr == "" || strings.EqualFold(expr, "latest") {
 		return false
@@ -384,8 +382,7 @@ func bestSatisfyingVersionForAzd(
 	return bestSatisfyingVersion(expr, compatible)
 }
 
-// ResolveExtensionVersion selects the best published version of extension that satisfies
-// versionPreference and is compatible with azdVersion, or returns a descriptive error.
+// ResolveExtensionVersion selects the highest release that matches versionPreference and azdVersion.
 func ResolveExtensionVersion(
 	extension *ExtensionMetadata,
 	versionPreference string,

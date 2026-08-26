@@ -24,7 +24,8 @@ const rewrittenAuthEndpoint = "http://azd-auth"
 // from the raw AZD_AUTH_* env values. It dispatches on the scheme of the
 // endpoint URL:
 //
-//   - "": external auth is disabled when AZD_AUTH_KEY is also empty.
+//   - "": external auth is disabled when the endpoint is empty. Non-empty
+//     endpoints without a scheme are rejected.
 //   - "http" or "https": existing loopback behavior. AZD_AUTH_CERT is optional
 //     for "https". AZD_AUTH_KEY is required.
 //   - "unix": Linux/macOS Unix domain socket transport. Cert MUST NOT be set.
@@ -32,15 +33,14 @@ const rewrittenAuthEndpoint = "http://azd-auth"
 //   - "npipe": Windows-only named pipe transport. Cert MUST NOT be set.
 //     AZD_AUTH_KEY is required.
 //
-// The "" and "http" schemes are accepted only to preserve the existing
-// loopback test harness; production hosts use "https", "unix", or "npipe".
+// The "http" scheme is accepted only to preserve the existing loopback test
+// harness; production hosts use "https", "unix", or "npipe".
 //
 // Any other scheme yields an error that lists the supported schemes.
 func buildExternalAuthConfiguration(endpoint, key, cert string) (auth.ExternalAuthConfiguration, error) {
 	// Parse the endpoint up front so we can dispatch on its scheme. An empty
-	// endpoint string parses successfully with an empty scheme, which is the
-	// historical "no external auth configured" / "implicit http for tests"
-	// case.
+	// endpoint string parses successfully with an empty scheme, which represents
+	// "no external auth configured".
 	endpointUrl, err := url.Parse(endpoint)
 	if err != nil {
 		return auth.ExternalAuthConfiguration{},
@@ -48,11 +48,16 @@ func buildExternalAuthConfiguration(endpoint, key, cert string) (auth.ExternalAu
 	}
 
 	switch endpointUrl.Scheme {
-	case "", "http", "https", "unix", "npipe":
+	case "":
+		if endpoint != "" {
+			return auth.ExternalAuthConfiguration{}, fmt.Errorf(
+				"invalid AZD_AUTH_ENDPOINT value %q: endpoint must include a URL scheme", endpoint)
+		}
+	case "http", "https", "unix", "npipe":
 	default:
 		return auth.ExternalAuthConfiguration{}, fmt.Errorf(
 			"invalid AZD_AUTH_ENDPOINT value %q: unsupported scheme %q "+
-				"(supported schemes: https, unix, npipe; http and no-scheme are accepted for local testing only)",
+				"(supported schemes: https, unix, npipe; http is accepted for local testing only)",
 			endpoint, endpointUrl.Scheme)
 	}
 
@@ -80,9 +85,8 @@ func buildExternalAuthConfiguration(endpoint, key, cert string) (auth.ExternalAu
 	return buildHTTPSExternalAuth(endpoint, key, cert, endpointUrl.Scheme)
 }
 
-// buildHTTPSExternalAuth implements the historical HTTPS / no-scheme path.
-// The "" and "http" schemes are retained only for the loopback test harness.
-// When a cert is provided, the scheme MUST be "https".
+// buildHTTPSExternalAuth implements the HTTPS, loopback HTTP, and disabled
+// endpoint paths. When a cert is provided, the scheme MUST be "https".
 func buildHTTPSExternalAuth(endpoint, key, cert, scheme string) (auth.ExternalAuthConfiguration, error) {
 	client := &http.Client{}
 	if len(cert) > 0 {

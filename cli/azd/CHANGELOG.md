@@ -2,10 +2,6 @@
 
 ## 1.32.0-beta.1 (Unreleased)
 
-### Features Added
-
-- Add Unix domain socket (`unix:`) and Windows named pipe (`npipe:`) transports to the External Authentication protocol. IDE hosts can now set `AZD_AUTH_ENDPOINT` to `unix:/path/to/socket` (Linux/macOS) or `npipe:<pipe-name>` (Windows) so `azd` reaches the host's token server over a local IPC channel where the OS enforces caller identity, removing the need for a loopback HTTPS server and a self-signed certificate (`AZD_AUTH_KEY` is still required). The existing `https:` flow is unchanged. See [External Authentication](./docs/external-authentication.md) for the spec.
-
 ### Breaking Changes
 
 ### Bugs Fixed

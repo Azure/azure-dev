@@ -38,6 +38,13 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 			cert:     "",
 		},
 		{
+			name:       "non-empty endpoint requires a scheme",
+			endpoint:   "//127.0.0.1:1234",
+			key:        "k",
+			cert:       "",
+			wantErrSub: "endpoint must include a URL scheme",
+		},
+		{
 			name:     "https without cert uses system trust for backward compatibility",
 			endpoint: "https://127.0.0.1:1234",
 			key:      "k",

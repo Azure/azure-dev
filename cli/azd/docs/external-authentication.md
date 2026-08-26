@@ -148,9 +148,8 @@ access, so no TLS handshake is required.
 
 ### Backward compatibility
 
-An `AZD_AUTH_ENDPOINT` without a scheme, or with `https:`, behaves exactly as
-it always has. No existing IDE host configuration is broken by the addition
-of `unix:` and `npipe:`.
+The existing `https:` flow is unchanged. `AZD_AUTH_ENDPOINT` must include an
+explicit supported scheme when it is non-empty.
 
 ## Implementation
 

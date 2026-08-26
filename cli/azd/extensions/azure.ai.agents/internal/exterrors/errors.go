@@ -147,7 +147,7 @@ func renderMissingInputSuggestion(inputs []RequiredInput) string {
 
 		for _, source := range input.Sources {
 			b.WriteString("\n  - ")
-			b.WriteString(string(source.Kind))
+			b.WriteString(inputSourceLabel(source.Kind))
 			b.WriteString(": ")
 			b.WriteString(source.Name)
 			if source.ExampleValue != "" {
@@ -173,6 +173,19 @@ func renderMissingInputSuggestion(inputs []RequiredInput) string {
 	}
 
 	return b.String()
+}
+
+func inputSourceLabel(kind InputSourceKind) string {
+	switch kind {
+	case InputSourceFlag:
+		return "Flag"
+	case InputSourceEnvironment:
+		return "Environment"
+	case InputSourceConfig:
+		return "Config"
+	default:
+		return "Source"
+	}
 }
 
 // Compatibility returns a compatibility [azdext.LocalError] for version/feature mismatches.

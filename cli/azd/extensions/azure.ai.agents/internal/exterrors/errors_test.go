@@ -205,6 +205,23 @@ func TestFromHost_PrioritizesCancellationAndAuthentication(t *testing.T) {
 	})
 }
 
+func TestRenderMissingInputSuggestionUsesSourceLabels(t *testing.T) {
+	suggestion := renderMissingInputSuggestion([]RequiredInput{{
+		Name: "input",
+		Sources: []InputSource{
+			{Kind: InputSourceFlag, Name: "--input"},
+			{Kind: InputSourceEnvironment, Name: "INPUT"},
+			{Kind: InputSourceConfig, Name: "config"},
+			{Name: "other"},
+		},
+	}})
+
+	assert.Contains(t, suggestion, "\n  - Flag: --input")
+	assert.Contains(t, suggestion, "\n  - Environment: INPUT")
+	assert.Contains(t, suggestion, "\n  - Config: config")
+	assert.Contains(t, suggestion, "\n  - Source: other")
+}
+
 func TestInternalFromErrorPreservesStructuredError(t *testing.T) {
 	expected := &azdext.LocalError{
 		Message:  "missing dependency",

@@ -283,6 +283,30 @@ func TestCreateVoiceAgentAPIRequest_PrefersExplicitVoiceLocale(t *testing.T) {
 	}
 }
 
+func TestCreateVoiceAgentAPIRequest_DoesNotInheritPcmRateForG711Formats(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-agent"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Audio: &VoiceAudio{
+			Input:  &VoiceAudioInput{Format: &VoiceAudioFormat{Type: "audio/pcmu"}},
+			Output: &VoiceAudioOutput{Format: &VoiceAudioFormat{Type: "audio/pcma"}},
+		},
+	}
+
+	req, err := CreateVoiceAgentAPIRequest(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	if def.Audio.Input.Format.Rate != nil {
+		t.Fatalf("input G.711 rate = %v, want nil", *def.Audio.Input.Format.Rate)
+	}
+	if def.Audio.Output.Format.Rate != nil {
+		t.Fatalf("output G.711 rate = %v, want nil", *def.Audio.Output.Format.Rate)
+	}
+}
+
 func TestCreateVoiceAgentAPIRequest_MarshalServiceWireShape(t *testing.T) {
 	t.Parallel()
 	voice := "en-US-Ava:DragonHDLatestNeural"

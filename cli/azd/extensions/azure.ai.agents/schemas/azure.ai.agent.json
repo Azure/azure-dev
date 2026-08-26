@@ -116,6 +116,7 @@
       "description": "Voice agent (kind: prompt-voice) parallel tool call toggle. Currently rejected by azd for prompt voice runtime."
     },
     "maxOutputTokens": {
+      "type": ["integer", "string"],
       "description": "Voice agent (kind: prompt-voice) maximum output tokens. Use an integer or a service-supported string such as inf."
     },
     "include": {

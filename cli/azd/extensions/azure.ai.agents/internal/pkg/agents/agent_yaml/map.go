@@ -626,6 +626,8 @@ func mapVoiceAudioFormat(format *VoiceAudioFormat, fallback *agent_api.VoiceAudi
 		}
 		if format.Rate != nil {
 			out.Rate = format.Rate
+		} else if out.Type == "audio/pcmu" || out.Type == "audio/pcma" {
+			out.Rate = nil
 		}
 	}
 	return out

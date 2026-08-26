@@ -115,12 +115,14 @@ type DeploymentSku struct {
 // key becomes Name. Credentials and Metadata pass through as-is so any auth
 // type (ApiKey, CustomKeys, OAuth2, identity tokens, ...) can be expressed.
 type Connection struct {
-	Name        string            `yaml:"name" json:"name"`
-	Category    string            `yaml:"category" json:"category"`
-	Target      string            `yaml:"target" json:"target"`
-	AuthType    string            `yaml:"authType" json:"authType"`
-	Credentials map[string]any    `yaml:"credentials,omitempty" json:"credentials,omitempty"`
-	Metadata    map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	Name          string            `yaml:"name" json:"name"`
+	Category      string            `yaml:"category" json:"category"`
+	Target        string            `yaml:"target" json:"target"`
+	AuthType      string            `yaml:"authType" json:"authType"`
+	Audience      string            `yaml:"audience,omitempty" json:"audience,omitempty"`
+	ConnectorName string            `yaml:"connectorName,omitempty" json:"connectorName,omitempty"`
+	Credentials   map[string]any    `yaml:"credentials,omitempty" json:"credentials,omitempty"`
+	Metadata      map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
 }
 
 // SplitConnectionCredentials separates credential values.
@@ -163,12 +165,14 @@ func JoinConnectionCredentials(
 // the synthesizer reads. The service key (not a body field) is the connection
 // name; see collectConnections.
 type connectionService struct {
-	Host        string            `yaml:"host"`
-	Category    string            `yaml:"category,omitempty"`
-	Target      string            `yaml:"target,omitempty"`
-	AuthType    string            `yaml:"authType,omitempty"`
-	Credentials map[string]any    `yaml:"credentials,omitempty"`
-	Metadata    map[string]string `yaml:"metadata,omitempty"`
+	Host          string            `yaml:"host"`
+	Category      string            `yaml:"category,omitempty"`
+	Target        string            `yaml:"target,omitempty"`
+	AuthType      string            `yaml:"authType,omitempty"`
+	Audience      string            `yaml:"audience,omitempty"`
+	ConnectorName string            `yaml:"connectorName,omitempty"`
+	Credentials   map[string]any    `yaml:"credentials,omitempty"`
+	Metadata      map[string]string `yaml:"metadata,omitempty"`
 }
 
 // aiConnectionHost is the host: value that marks a service as a Foundry
@@ -771,6 +775,16 @@ func collectConnections(
 			return nil, fmt.Errorf("services.%s.target: %w", name, err)
 		}
 
+		audience, err := maybeExpand(svc.Audience, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.audience: %w", name, err)
+		}
+
+		connectorName, err := maybeExpand(svc.ConnectorName, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.connectorName: %w", name, err)
+		}
+
 		credentials, err := expandCredentials(
 			svc.Credentials,
 			mapping,
@@ -786,12 +800,14 @@ func collectConnections(
 		}
 
 		connections = append(connections, Connection{
-			Name:        name,
-			Category:    svc.Category,
-			Target:      target,
-			AuthType:    svc.AuthType,
-			Credentials: credentials,
-			Metadata:    metadata,
+			Name:          name,
+			Category:      svc.Category,
+			Target:        target,
+			AuthType:      svc.AuthType,
+			Audience:      audience,
+			ConnectorName: connectorName,
+			Credentials:   credentials,
+			Metadata:      metadata,
 		})
 	}
 

@@ -65,6 +65,8 @@ variable "connections" {
     category    = string
     target      = string
     authType    = string
+    audience      = optional(string)
+    connectorName = optional(string)
     credentials = optional(any)
     metadata    = optional(map(string))
   }))

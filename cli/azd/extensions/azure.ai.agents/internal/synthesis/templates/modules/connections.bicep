@@ -26,6 +26,12 @@ type connectionType = {
   @description('Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ...')
   authType: string
 
+  @description('Optional token audience for UserEntraToken, AgenticIdentity, or ProjectManagedIdentity connections.')
+  audience: string?
+
+  @description('Optional connector name for OAuth2 connections.')
+  connectorName: string?
+
   @description('Optional metadata key-value pairs.')
   metadata: object?
 }
@@ -71,6 +77,8 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
         target: c.target
         authType: c.authType
       },
+      !empty(c.?audience) ? { audience: c.?audience } : {},
+      !empty(c.?connectorName) ? { connectorName: c.?connectorName } : {},
       contains(connectionCredentials, c.name)
         ? { credentials: connectionCredentials[c.name] }
         : {},

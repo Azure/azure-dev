@@ -36,6 +36,14 @@
         "UsernamePassword"
       ]
     },
+    "audience": {
+      "type": "string",
+      "description": "Token audience for UserEntraToken, AgenticIdentity, or ProjectManagedIdentity connections. May contain ${VAR}; declare each referenced variable in the service-level env object."
+    },
+    "connectorName": {
+      "type": "string",
+      "description": "Connector name for OAuth2 connections. May contain ${VAR}; declare each referenced variable in the service-level env object."
+    },
     "credentials": {
       "type": "object",
       "description": "Credentials. Use ${VAR} for azd service env substitution or ${{...}} for Foundry server-side resolution. In a service env value, use $${{...}} so azd forwards the Foundry expression unchanged.",

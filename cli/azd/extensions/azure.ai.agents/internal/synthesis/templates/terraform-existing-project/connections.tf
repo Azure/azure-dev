@@ -12,6 +12,8 @@ resource "azapi_resource_action" "connection" {
         target   = each.value.target
         authType = each.value.authType
       },
+      each.value.audience != null && each.value.audience != "" ? { audience = each.value.audience } : {},
+      each.value.connectorName != null && each.value.connectorName != "" ? { connectorName = each.value.connectorName } : {},
       each.value.metadata != null ? { metadata = each.value.metadata } : {}
     )
   }

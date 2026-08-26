@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "6633403746269170516"
+      "templateHash": "1623628647410127953"
     }
   },
   "definitions": {
@@ -78,6 +78,14 @@
         },
         "authType": {
           "type": "string"
+        },
+        "audience": {
+          "type": "string",
+          "nullable": true
+        },
+        "connectorName": {
+          "type": "string",
+          "nullable": true
         },
         "metadata": {
           "type": "object",
@@ -347,7 +355,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "9663028600979689998"
+              "templateHash": "12386005187548462183"
             }
           },
           "definitions": {
@@ -419,6 +427,14 @@
                 },
                 "authType": {
                   "type": "string"
+                },
+                "audience": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "connectorName": {
+                  "type": "string",
+                  "nullable": true
                 },
                 "metadata": {
                   "type": "object",
@@ -1449,7 +1465,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.46.1.21595",
-                      "templateHash": "13263232618571910387"
+                      "templateHash": "9074904177094890277"
                     }
                   },
                   "definitions": {
@@ -1478,6 +1494,20 @@
                           "type": "string",
                           "metadata": {
                             "description": "Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ..."
+                          }
+                        },
+                        "audience": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional token audience for UserEntraToken, AgenticIdentity, or ProjectManagedIdentity connections."
+                          }
+                        },
+                        "connectorName": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional connector name for OAuth2 connections."
                           }
                         },
                         "metadata": {
@@ -1551,7 +1581,7 @@
                       "type": "Microsoft.CognitiveServices/accounts/projects/connections",
                       "apiVersion": "2025-04-01-preview",
                       "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), parameters('connections')[copyIndex()].name)]",
-                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
+                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(not(empty(tryGet(parameters('connections')[copyIndex()], 'audience'))), createObject('audience', tryGet(parameters('connections')[copyIndex()], 'audience')), createObject()), if(not(empty(tryGet(parameters('connections')[copyIndex()], 'connectorName'))), createObject('connectorName', tryGet(parameters('connections')[copyIndex()], 'connectorName')), createObject()), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
                     }
                   },
                   "outputs": {

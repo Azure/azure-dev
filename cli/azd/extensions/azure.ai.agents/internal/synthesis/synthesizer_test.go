@@ -557,6 +557,8 @@ services:
     category: RemoteTool
     target: ${MCP_URL}
     authType: CustomKeys
+    audience: ${MCP_AUDIENCE}
+    connectorName: ${MCP_CONNECTOR}
     credentials:
       keys:
         x-api-key: ${MCP_KEY}
@@ -564,9 +566,11 @@ services:
       owner: ${MCP_OWNER}
 `
 	env := map[string]string{
-		"MCP_URL":   "https://mcp.example.com/mcp",
-		"MCP_KEY":   "secret-value",
-		"MCP_OWNER": "team-ai",
+		"MCP_URL":       "https://mcp.example.com/mcp",
+		"MCP_AUDIENCE":  "https://mcp.example.com",
+		"MCP_CONNECTOR": "mcp-connector",
+		"MCP_KEY":       "secret-value",
+		"MCP_OWNER":     "team-ai",
 	}
 
 	getConn := func(t *testing.T, res *Result) Connection {
@@ -587,6 +591,8 @@ services:
 
 		c := getConn(t, res)
 		assert.Equal(t, "https://mcp.example.com/mcp", c.Target)
+		assert.Equal(t, "https://mcp.example.com", c.Audience)
+		assert.Equal(t, "mcp-connector", c.ConnectorName)
 		keys, ok := c.Credentials["keys"].(map[string]any)
 		require.True(t, ok, "keys should be a nested map, got %T", c.Credentials["keys"])
 		assert.Equal(t, "secret-value", keys["x-api-key"])
@@ -610,6 +616,8 @@ services:
 
 		c := getConn(t, res)
 		assert.Equal(t, "${MCP_URL}", c.Target)
+		assert.Equal(t, "${MCP_AUDIENCE}", c.Audience)
+		assert.Equal(t, "${MCP_CONNECTOR}", c.ConnectorName)
 		keys, ok := c.Credentials["keys"].(map[string]any)
 		require.True(t, ok)
 		assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
@@ -659,9 +667,35 @@ services:
 
 		c := getConn(t, res)
 		assert.Equal(t, "", c.Target)
+		assert.Empty(t, c.Audience)
+		assert.Empty(t, c.ConnectorName)
 		keys := c.Credentials["keys"].(map[string]any)
 		assert.Equal(t, "", keys["x-api-key"])
 	})
+}
+
+func TestConnectionJSONOmitsEmptyOptionalAuthProperties(t *testing.T) {
+	data, err := json.Marshal(Connection{
+		Name:     "mcp-conn",
+		Category: "RemoteTool",
+		Target:   "https://mcp.example.com/mcp",
+		AuthType: "CustomKeys",
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), `"audience"`)
+	assert.NotContains(t, string(data), `"connectorName"`)
+
+	data, err = json.Marshal(Connection{
+		Name:          "mcp-conn",
+		Category:      "RemoteTool",
+		Target:        "https://mcp.example.com/mcp",
+		AuthType:      "OAuth2",
+		Audience:      "https://mcp.example.com",
+		ConnectorName: "mcp-connector",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"audience":"https://mcp.example.com"`)
+	assert.Contains(t, string(data), `"connectorName":"mcp-connector"`)
 }
 
 func TestSynthesizeConnectionsAtRootResolvesFileRef(t *testing.T) {
@@ -1281,6 +1315,39 @@ func TestTerraformModule_DerivesNamesWhenEmpty(t *testing.T) {
 		"the resource group must use the derived local, not the raw variable")
 	assert.Contains(t, string(main), `"rg-${local.derived_rg_suffix}"`,
 		"main.tf must derive an rg-{env} name when resource_group_name is empty")
+}
+
+func TestTerraformConnectionTemplatesPreserveOptionalAuthProperties(t *testing.T) {
+	readers := []struct {
+		name string
+		path string
+		read func(string) ([]byte, error)
+	}{
+		{
+			name: "greenfield",
+			path: "templates/terraform/connections.tf",
+			read: TerraformTemplatesFS().ReadFile,
+		},
+		{
+			name: "existing project",
+			path: "templates/terraform-existing-project/connections.tf",
+			read: ExistingProjectTerraformTemplatesFS().ReadFile,
+		},
+	}
+
+	for _, tt := range readers {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := tt.read(tt.path)
+			require.NoError(t, err)
+			text := string(data)
+			assert.Contains(t, text,
+				"each.value.audience != null && each.value.audience != \"\"",
+				"connection audience must be conditionally merged")
+			assert.Contains(t, text,
+				"each.value.connectorName != null && each.value.connectorName != \"\"",
+				"connection connectorName must be conditionally merged")
+		})
+	}
 }
 
 func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {

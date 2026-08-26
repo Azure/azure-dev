@@ -18,6 +18,8 @@ type connectionType = {
   category: string
   target: string
   authType: string
+  audience: string?
+  connectorName: string?
   metadata: object?
 }
 
@@ -85,6 +87,8 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
         target: c.target
         authType: c.authType
       },
+      !empty(c.?audience) ? { audience: c.?audience } : {},
+      !empty(c.?connectorName) ? { connectorName: c.?connectorName } : {},
       contains(connectionCredentials, c.name) ? { credentials: connectionCredentials[c.name] } : {},
       c.?metadata != null ? { metadata: c.?metadata } : {}
     )

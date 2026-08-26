@@ -36,6 +36,8 @@ type connectionType = {
   category: string
   target: string
   authType: string
+  audience: string?
+  connectorName: string?
   metadata: object?
 }
 

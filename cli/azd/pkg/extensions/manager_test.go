@@ -599,6 +599,25 @@ func Test_CreateExtensionFilter_ProviderUsesSelectedVersion(t *testing.T) {
 			require.Equal(t, tc.Match, filter(ext))
 		})
 	}
+
+	t.Run("provider type must match the requested capability", func(t *testing.T) {
+		typed := &ExtensionMetadata{
+			Id: "test.provider",
+			Versions: []ExtensionVersion{{
+				Version: "1.0.0",
+				Capabilities: []CapabilityType{
+					ProvisioningProviderCapability,
+					ServiceTargetProviderCapability,
+				},
+				Providers: []Provider{{Type: ProvisioningProviderType, Name: "microsoft.foundry"}},
+			}},
+		}
+		filter := createExtensionFilter(&FilterOptions{
+			Capability: ServiceTargetProviderCapability,
+			Provider:   "microsoft.foundry",
+		})
+		require.False(t, filter(typed))
+	})
 }
 
 func Test_Install_PackDependency_SemverConstraint(t *testing.T) {

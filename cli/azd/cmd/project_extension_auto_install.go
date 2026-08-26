@@ -401,25 +401,11 @@ func extensionProvidesProvider(
 	capability extensions.CapabilityType,
 	providerName string,
 ) bool {
-	expectedType, hasProviderType := providerTypeForCapability(capability)
-	if !hasProviderType || !slices.Contains(capabilities, capability) {
-		return false
-	}
-
-	return slices.ContainsFunc(providers, func(provider extensions.Provider) bool {
-		return provider.Type == expectedType && strings.EqualFold(provider.Name, providerName)
-	})
-}
-
-func providerTypeForCapability(capability extensions.CapabilityType) (extensions.ProviderType, bool) {
-	switch capability {
-	case extensions.ServiceTargetProviderCapability:
-		return extensions.ServiceTargetProviderType, true
-	case extensions.ProvisioningProviderCapability:
-		return extensions.ProvisioningProviderType, true
-	default:
-		return "", false
-	}
+	return extensions.VersionProvidesProvider(
+		&extensions.ExtensionVersion{Capabilities: capabilities, Providers: providers},
+		capability,
+		providerName,
+	)
 }
 
 // providerIsBuiltIn reports whether azd itself implements the named provider. Core registers these

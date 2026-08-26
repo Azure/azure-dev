@@ -330,6 +330,30 @@ func TestClassifyInstallResolution_ProviderUsesSelectedRelease(t *testing.T) {
 		require.Empty(t, result.IncompatibleMatches)
 	})
 
+	t.Run("same provider name with the other type does not match", func(t *testing.T) {
+		result := ClassifyInstallResolution(
+			[]*ExtensionMetadata{{
+				Id: "both.capabilities",
+				Versions: []ExtensionVersion{{
+					Version: "2.0.0",
+					Capabilities: []CapabilityType{
+						ProvisioningProviderCapability,
+						ServiceTargetProviderCapability,
+					},
+					Providers: []Provider{{Type: ProvisioningProviderType, Name: "demo"}},
+				}},
+			}},
+			&InstallResolutionOptions{FilterOptions: FilterOptions{
+				Capability: ServiceTargetProviderCapability,
+				Provider:   "demo",
+			}},
+			nil,
+		)
+
+		require.Empty(t, result.Matches)
+		require.Empty(t, result.IncompatibleMatches)
+	})
+
 	t.Run("silent drop when newest compatible release dropped the provider", func(t *testing.T) {
 		extension := &ExtensionMetadata{
 			Id: "dropped.provider",

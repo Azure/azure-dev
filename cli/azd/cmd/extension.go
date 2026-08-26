@@ -2430,9 +2430,10 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 
 	versionMismatchError := func(versionErr *extensions.ExtensionVersionNotFoundError) error {
-		res := extensions.ResolveUpgradeSource(
-			installed, versionErr.Matches, a.flags.source,
-		)
+		if len(versionErr.Alternatives()) == 0 {
+			return versionErr
+		}
+		res := versionErr.ResolveUpgradeSource(installed, a.flags.source)
 		if res == nil {
 			return upgradeSourceResolutionError(
 				extensionId, a.flags.source, installed.Source,
@@ -2517,9 +2518,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	isBatchOrNoPrompt := a.flags.all || a.flags.global.NoPrompt
 
 	if isBatchOrNoPrompt || len(matches) == 1 {
-		res := extensions.ResolveUpgradeSource(
-			installed, matches, a.flags.source,
-		)
+		res := resolution.ResolveUpgradeSource(installed, a.flags.source)
 		if res == nil {
 			return fail(upgradeSourceResolutionError(
 				extensionId, a.flags.source, installed.Source,

@@ -521,12 +521,12 @@ If an extension exists in both the `azd` and `dev` sources and you do not specif
 When you run `azd extension update`, extensions installed from the dev registry are evaluated for **one-way promotion** to the main registry. Promotion occurs automatically when:
 
 1. **The extension is no longer in the dev registry** — it was removed from `registry.dev.json` after being promoted to `registry.json`.
-2. **The main registry has a newer version** — the latest version in the main registry is strictly greater than the latest version in the dev registry.
+2. **The main registry has a newer compatible version** — the latest azd-compatible version in the main registry is strictly greater than the latest azd-compatible version in the stored source. A newer main-registry release that requires a newer azd does not trigger promotion.
 
 When promotion happens, the extension's stored source switches from `dev` to `azd`. This is a one-way operation — extensions are never demoted from the main registry back to the dev registry.
 
 > [!NOTE]
-> If the main and dev registries have the **same** latest version, the extension stays on its current (dev) source. Equal versions are source-sticky.
+> If the main and stored sources have the **same** latest compatible version, the extension stays on its current source. Equal versions are source-sticky.
 
 The update priority chain is:
 

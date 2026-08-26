@@ -365,10 +365,42 @@ func extensionVersionMatchesResolution(
 	if options.Capability != "" && !slices.Contains(version.Capabilities, options.Capability) {
 		return false
 	}
-	if options.Provider != "" && !slices.ContainsFunc(version.Providers, func(provider Provider) bool {
-		return strings.EqualFold(provider.Name, options.Provider)
-	}) {
+	if options.Provider != "" && !VersionProvidesProvider(version, options.Capability, options.Provider) {
 		return false
 	}
 	return true
+}
+
+// ProviderTypeForCapability returns the provider type a capability is expected to register.
+func ProviderTypeForCapability(capability CapabilityType) (ProviderType, bool) {
+	switch capability {
+	case ServiceTargetProviderCapability:
+		return ServiceTargetProviderType, true
+	case ProvisioningProviderCapability:
+		return ProvisioningProviderType, true
+	default:
+		return "", false
+	}
+}
+
+// VersionProvidesProvider reports whether the release supplies the named provider.
+// When capability maps to a provider type, the provider entry must use that type.
+func VersionProvidesProvider(
+	version *ExtensionVersion,
+	capability CapabilityType,
+	providerName string,
+) bool {
+	if version == nil || providerName == "" {
+		return false
+	}
+	if capability != "" && !slices.Contains(version.Capabilities, capability) {
+		return false
+	}
+	expectedType, requireType := ProviderTypeForCapability(capability)
+	return slices.ContainsFunc(version.Providers, func(provider Provider) bool {
+		if !strings.EqualFold(provider.Name, providerName) {
+			return false
+		}
+		return !requireType || provider.Type == expectedType
+	})
 }

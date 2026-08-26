@@ -460,9 +460,7 @@ func createExtensionFilter(options *FilterOptions) extensionFilterPredicate {
 			if err != nil {
 				return false
 			}
-			if !slices.ContainsFunc(selectedVersion.Providers, func(provider Provider) bool {
-				return strings.EqualFold(provider.Name, options.Provider)
-			}) {
+			if !VersionProvidesProvider(selectedVersion, options.Capability, options.Provider) {
 				return false
 			}
 		}

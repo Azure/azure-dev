@@ -41,6 +41,24 @@ func TestTelemetryEventConstants(t *testing.T) {
 // rejected by TestNoRawTelemetryAttributes (below).
 func TestTelemetryFieldConstants(t *testing.T) {
 	t.Parallel()
+	t.Run("ResourceFields", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			key             fields.AttributeKey
+			expectedName    string
+			expectedPurpose fields.Purpose
+		}{
+			{fields.ServiceNameKey, "service.name", fields.PerformanceAndHealth},
+			{fields.ServiceVersionKey, "service.version", fields.FeatureInsight},
+			{fields.OSTypeKey, "os.type", fields.FeatureInsight},
+		}
+		for _, tt := range tests {
+			require.Equal(t, tt.expectedName, string(tt.key.Key))
+			require.Equal(t, fields.SystemMetadata, tt.key.Classification)
+			require.Equal(t, tt.expectedPurpose, tt.key.Purpose)
+		}
+	})
+
 	// Auth command telemetry fields
 	t.Run("AuthFields", func(t *testing.T) {
 		t.Parallel()
@@ -77,6 +95,21 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		kvCount := fields.EnvCountKey.Int(3)
 		require.Equal(t, "env.count", string(kvCount.Key))
 		require.Equal(t, int64(3), kvCount.Value.AsInt64())
+	})
+
+	t.Run("GDPRMeasurementMetadata", func(t *testing.T) {
+		t.Parallel()
+
+		measurementFields := []fields.AttributeKey{
+			fields.AgentFixAttempts,
+			fields.ExeGraphMaxConcurrencyKey,
+			fields.ToolExitCode,
+		}
+		for _, field := range measurementFields {
+			require.True(t, field.IsMeasurement, field.Key)
+		}
+
+		require.False(t, fields.ServiceErrorCode.IsMeasurement)
 	})
 
 	// Hooks command telemetry fields

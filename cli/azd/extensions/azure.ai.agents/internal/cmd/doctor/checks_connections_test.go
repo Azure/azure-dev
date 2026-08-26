@@ -91,13 +91,54 @@ func TestCheckConnections_SkipsCascadeFromUpstream(t *testing.T) {
 
 func TestCheckConnections_SkipsWhenNoManifestConnections(t *testing.T) {
 	t.Parallel()
+	var probeCalls int
 	deps := Dependencies{
-		assembleState:           fixedAssembler(&nextstep.State{HasConnections: false}),
-		probeFoundryConnections: fixedConnectionsProbe(nil, nil, nil),
+		assembleState: fixedAssembler(&nextstep.State{HasConnections: false}),
+		probeFoundryConnections: func(
+			_ context.Context, _, _ string,
+		) ([]string, error) {
+			probeCalls++
+			return nil, nil
+		},
 	}
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusSkip, res.Status)
-	require.Contains(t, res.Message, "no connection resources declared")
+	require.Contains(t, res.Message, "no enabled connection services")
+	require.Contains(t, res.Message, "legacy connection resources found")
+	require.Equal(t, 0, probeCalls)
+}
+
+func TestCheckConnections_FailsOnLoadErrorsBeforeSkip(t *testing.T) {
+	t.Parallel()
+	var probeCalls int
+	deps := Dependencies{
+		assembleState: fixedAssembler(&nextstep.State{
+			HasConnections: false,
+			ConnectionLoadErrors: []string{
+				`connection service "bad-conn" has condition in its resolved $ref; ` +
+					`put condition beside host in azure.yaml`,
+			},
+		}),
+		probeFoundryConnections: func(
+			_ context.Context, _, _ string,
+		) ([]string, error) {
+			probeCalls++
+			return nil, nil
+		},
+	}
+	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
+	require.Equal(t, StatusFail, res.Status)
+	require.Equal(t, 0, probeCalls)
+	require.Contains(t, res.Message, "failed to load configured connections")
+	require.Contains(t, res.Message, `connection service "bad-conn"`)
+	require.Contains(t, res.Message, "put condition beside host in azure.yaml")
+	require.Contains(t, res.Suggestion, "Fix azure.yaml")
+	require.Contains(t, res.Suggestion, "azd ai agent doctor")
+	require.NotContains(t, res.Suggestion, "azd deploy")
+	require.Equal(t, []string{
+		`connection service "bad-conn" has condition in its resolved $ref; ` +
+			`put condition beside host in azure.yaml`,
+	}, res.Details["loadErrors"])
 }
 
 func TestCheckConnections_FailsWhenAssemblerReturnsNilState(t *testing.T) {
@@ -125,11 +166,40 @@ func TestCheckConnections_SkipsWhenProjectIDUnset(t *testing.T) {
 	}
 	deps := Dependencies{
 		assembleState:           fixedAssembler(state),
-		readProjectResourceIDFn: fixedProjectIDReader("", errors.New("not set")),
+		readProjectResourceIDFn: fixedProjectIDReader("", nil),
 	}
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusSkip, res.Status)
 	require.Contains(t, res.Message, "AZURE_AI_PROJECT_ID")
+}
+
+func TestCheckConnections_SkipsWhenProjectIDReadFails(t *testing.T) {
+	t.Parallel()
+	state := &nextstep.State{
+		HasConnections: true,
+		Connections: []nextstep.ResourceRef{
+			{Name: "blob-storage", ServiceName: "chat"},
+		},
+	}
+	var probeCalls int
+	deps := Dependencies{
+		assembleState: fixedAssembler(state),
+		readProjectResourceIDFn: fixedProjectIDReader(
+			"", errors.New("environment service unavailable"),
+		),
+		probeFoundryConnections: func(
+			_ context.Context, _, _ string,
+		) ([]string, error) {
+			probeCalls++
+			return nil, nil
+		},
+	}
+	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
+	require.Equal(t, StatusSkip, res.Status)
+	require.Contains(t, res.Message, "could not read AZURE_AI_PROJECT_ID")
+	require.Contains(t, res.Message, "environment service unavailable")
+	require.NotContains(t, res.Message, "is not set")
+	require.Equal(t, 0, probeCalls)
 }
 
 func TestCheckConnections_SkipsWhenProjectIDUnparsable(t *testing.T) {
@@ -140,13 +210,25 @@ func TestCheckConnections_SkipsWhenProjectIDUnparsable(t *testing.T) {
 			{Name: "blob-storage", ServiceName: "chat"},
 		},
 	}
+	var probeCalls int
 	deps := Dependencies{
-		assembleState:           fixedAssembler(state),
-		readProjectResourceIDFn: fixedProjectIDReader("garbage", nil),
+		assembleState: fixedAssembler(state),
+		readProjectResourceIDFn: fixedProjectIDReader(
+			"/subscriptions/sub/resourceGroups/rg/providers/Other.Provider/"+
+				"accounts/acct/projects/proj",
+			nil,
+		),
+		probeFoundryConnections: func(
+			_ context.Context, _, _ string,
+		) ([]string, error) {
+			probeCalls++
+			return nil, nil
+		},
 	}
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusSkip, res.Status)
 	require.Contains(t, res.Message, "could not parse account / project")
+	require.Equal(t, 0, probeCalls)
 }
 
 func TestCheckConnections_SkipsWhenProbeErrors(t *testing.T) {
@@ -220,11 +302,13 @@ func TestCheckConnections_FailsWithMissing(t *testing.T) {
 	}
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusFail, res.Status)
-	require.Contains(t, res.Message, "2 connection(s)")
+	require.Contains(t, res.Message, "2 configured connection(s)")
 	require.Contains(t, res.Message, "openai-default [AzureOpenAI | https://openai.test] (service chat)")
 	require.Contains(t, res.Message, "search-conn [CognitiveSearch | search.test] (service search)")
 	require.NotContains(t, res.Message, "blob-storage")
 	require.Contains(t, res.Suggestion, "azd provision")
+	require.NotContains(t, res.Suggestion, "azd deploy")
+	require.Contains(t, res.Suggestion, "configured connection services")
 	require.EqualValues(t, 1, res.Details["matchedCount"])
 }
 
@@ -243,7 +327,7 @@ func TestCheckConnections_FailsWhenAllMissing(t *testing.T) {
 	}
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusFail, res.Status)
-	require.Contains(t, res.Message, "1 connection(s)")
+	require.Contains(t, res.Message, "1 configured connection(s)")
 	require.Contains(t, res.Message, "blob-storage (service chat)")
 }
 
@@ -288,7 +372,7 @@ func TestParseAccountProjectFromProjectID(t *testing.T) {
 		{
 			name: "mixed-case segment markers",
 			input: "/SUBSCRIPTIONS/sub-1/RESOURCEGROUPS/rg-1" +
-				"/providers/Microsoft.CognitiveServices/ACCOUNTS/acct-2/PROJECTS/p-2",
+				"/PROVIDERS/MICROSOFT.COGNITIVESERVICES/ACCOUNTS/acct-2/PROJECTS/p-2",
 			wantAccount: "acct-2",
 			wantProject: "p-2",
 		},
@@ -305,6 +389,16 @@ func TestParseAccountProjectFromProjectID(t *testing.T) {
 		{
 			name:      "garbage input",
 			input:     "not-a-resource-id",
+			wantError: true,
+		},
+		{
+			name:      "account and project without ARM path",
+			input:     "accounts/acct/projects/proj",
+			wantError: true,
+		},
+		{
+			name:      "extra resource segment",
+			input:     validProjectResourceID + "/child",
 			wantError: true,
 		},
 	}

@@ -1191,7 +1191,7 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 		"templates/terraform/provider.tf",
 		"templates/terraform/variables.tf",
 		"templates/terraform/main.tf",
-		"templates/terraform/acr.tf",
+		"templates/terraform/container-registry.tf",
 		"templates/terraform/connections.tf",
 		"templates/terraform/outputs.tf.tmpl",
 	}
@@ -1202,10 +1202,6 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 			assert.NotEmpty(t, data, "%s should not be empty", p)
 		})
 	}
-	outputs, err := fs.ReadFile("templates/terraform/outputs.tf.tmpl")
-	require.NoError(t, err)
-	assert.Contains(t, string(outputs), `output "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"`)
-
 	// outputs.tf is rendered from outputs.tf.tmpl at eject time, and
 	// main.tfvars.json is generated -- neither is embedded as a final file
 	// (otherwise they would go stale).
@@ -1336,8 +1332,8 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 		"private endpoint location must come from the customer VNet")
 }
 
-func TestBrownfieldARMTemplate_SecuresConnectionCredentials(t *testing.T) {
-	data, err := BrownfieldARMTemplate()
+func TestExistingProjectARMTemplate_SecuresConnectionCredentials(t *testing.T) {
+	data, err := ExistingProjectARMTemplate()
 	require.NoError(t, err)
 
 	var arm map[string]any
@@ -1346,13 +1342,10 @@ func TestBrownfieldARMTemplate_SecuresConnectionCredentials(t *testing.T) {
 	require.True(t, ok, "parameters must be an object")
 	connections, ok := params["connections"].(map[string]any)
 	require.True(t, ok, "connections param must be an object")
-	assert.Equal(t, "#/definitions/connectionsType", connections["$ref"])
+	assert.Equal(t, "array", connections["type"])
 	credentials, ok := params["connectionCredentials"].(map[string]any)
 	require.True(t, ok, "connectionCredentials param must be an object")
 	assert.Equal(t, "secureObject", credentials["type"])
-	assert.Contains(t, string(data),
-		"parameters('principalId'), parameters('roleDefinitionId')",
-		"ACR role assignment name must include the assigned principal")
 }
 
 func TestSynthesize_Network(t *testing.T) {

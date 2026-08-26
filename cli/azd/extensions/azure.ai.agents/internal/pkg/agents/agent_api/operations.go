@@ -16,13 +16,14 @@ import (
 	"strconv"
 	"time"
 
-	"azureaiagent/internal/version"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+	"azureaiagent/internal/pkg/useragent"
 )
 
 // AgentClient provides methods for interacting with the Azure AI Agents API
@@ -60,8 +61,6 @@ func (o *SessionRequestOptions) ApplyHeaders(headers http.Header) {
 
 // NewAgentClient creates a new AgentClient
 func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
-	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
-
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
@@ -72,7 +71,7 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
 			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy(userAgent),
+			azsdk.NewUserAgentPolicy(useragent.Default()),
 		},
 	}
 
@@ -167,47 +166,24 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 // header while voice agents remain a preview capability.
 const voiceAgentsPreviewFeature = "VoiceAgents=V1Preview"
 
-// CreateVoiceAgent creates a new declarative (managed) voice agent.
-//
-// Voice agents live in a separate data-plane collection (/voice_agents), distinct
-// from the /agents collection used by hosted/workflow agents. The request
-// Definition must be a *VoiceAgentDefinition (service kind "voice").
-//
-// overriddenHost, when non-empty, is sent as the x-ms-overridden-host header.
-// This routes the request directly to the regional Hyena data-plane host,
-// bypassing the public Foundry APIM (whose voice route may not yet be rolled
-// out). Pass "" to use the default endpoint routing.
-//
-// Redeploy semantics: the voice data-plane exposes create-only POST /voice_agents
-// with no version/upsert model (unlike hosted agents, which mint a new
-// agent-version per deploy). A second `azd deploy` of the same voice service
-// therefore re-POSTs with the same name and the service rejects it with a
-// non-success status, which this method surfaces as a deploy error rather than
-// silently overwriting the existing agent. Idempotent redeploy/update is tracked
-// as a follow-up (see the PR "Follow-ups" section); until the service adds an
-// update route, redeploy requires deleting the existing voice agent first.
-func (c *AgentClient) CreateVoiceAgent(
+func (c *AgentClient) doVoiceJSONAgentRequest(
 	ctx context.Context,
-	request *CreateAgentRequest,
-	apiVersion string,
+	method string,
+	url string,
+	request any,
 	overriddenHost string,
 ) (*AgentObject, error) {
-	url := fmt.Sprintf("%s/voice_agents?api-version=%s", c.endpoint, apiVersion)
-
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
+	req, err := runtime.NewRequest(ctx, method, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Voice agents are a preview feature; the service rejects the request with
-	// 403 preview_feature_required unless this opt-in header is present.
 	req.Raw().Header.Set("Foundry-Features", voiceAgentsPreviewFeature)
-
 	if overriddenHost != "" {
 		req.Raw().Header.Set("x-ms-overridden-host", overriddenHost)
 	}
@@ -237,6 +213,74 @@ func (c *AgentClient) CreateVoiceAgent(
 	}
 
 	return &agent, nil
+}
+
+// GetVoiceAgent retrieves a voice agent through the unified /agents
+// endpoint with the voice preview opt-in header. Use this instead of GetAgent
+// when deciding whether to create or update a prompt voice agent.
+func (c *AgentClient) GetVoiceAgent(
+	ctx context.Context,
+	agentName string,
+	apiVersion string,
+	overriddenHost string,
+) (*AgentObject, error) {
+	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", voiceAgentsPreviewFeature)
+	if overriddenHost != "" {
+		req.Raw().Header.Set("x-ms-overridden-host", overriddenHost)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var agent AgentObject
+	if err := json.Unmarshal(body, &agent); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &agent, nil
+}
+
+// CreateVoiceAgent creates a voice agent through the unified /agents
+// collection. Prompt voice deploys use this path by default.
+func (c *AgentClient) CreateVoiceAgent(
+	ctx context.Context,
+	request *CreateAgentRequest,
+	apiVersion string,
+	overriddenHost string,
+) (*AgentObject, error) {
+	url := fmt.Sprintf("%s/agents?api-version=%s", c.endpoint, apiVersion)
+	return c.doVoiceJSONAgentRequest(ctx, http.MethodPost, url, request, overriddenHost)
+}
+
+// UpdateVoiceAgent creates a new version for an existing voice agent
+// through the unified /agents/{name} endpoint.
+func (c *AgentClient) UpdateVoiceAgent(
+	ctx context.Context,
+	agentName string,
+	request *UpdateAgentRequest,
+	apiVersion string,
+	overriddenHost string,
+) (*AgentObject, error) {
+	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
+	return c.doVoiceJSONAgentRequest(ctx, http.MethodPost, url, request, overriddenHost)
 }
 
 // UpdateAgent updates an existing agent
@@ -888,7 +932,7 @@ func (c *AgentClient) GetAgentSessionLogStream(
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token.Token)
-	req.Header.Set("User-Agent", fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version))
+	req.Header.Set("User-Agent", useragent.Default())
 	options.ApplyHeaders(req.Header)
 
 	httpClient := &http.Client{}

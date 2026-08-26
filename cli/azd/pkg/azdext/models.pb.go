@@ -1070,19 +1070,20 @@ func (x *InfraOptions) GetModule() string {
 
 // DockerProjectOptions message definition
 type DockerProjectOptions struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	Context       string                 `protobuf:"bytes,2,opt,name=context,proto3" json:"context,omitempty"`
-	Platform      string                 `protobuf:"bytes,3,opt,name=platform,proto3" json:"platform,omitempty"`
-	Target        string                 `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty"`
-	Registry      string                 `protobuf:"bytes,5,opt,name=registry,proto3" json:"registry,omitempty"`
-	Image         string                 `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
-	Tag           string                 `protobuf:"bytes,7,opt,name=tag,proto3" json:"tag,omitempty"`
-	RemoteBuild   bool                   `protobuf:"varint,8,opt,name=remote_build,json=remoteBuild,proto3" json:"remote_build,omitempty"`
-	BuildArgs     []string               `protobuf:"bytes,9,rep,name=build_args,json=buildArgs,proto3" json:"build_args,omitempty"`
-	Network       string                 `protobuf:"bytes,10,opt,name=network,proto3" json:"network,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Path             string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Context          string                 `protobuf:"bytes,2,opt,name=context,proto3" json:"context,omitempty"`
+	Platform         string                 `protobuf:"bytes,3,opt,name=platform,proto3" json:"platform,omitempty"`
+	Target           string                 `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty"`
+	Registry         string                 `protobuf:"bytes,5,opt,name=registry,proto3" json:"registry,omitempty"`
+	Image            string                 `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
+	Tag              string                 `protobuf:"bytes,7,opt,name=tag,proto3" json:"tag,omitempty"`
+	RemoteBuild      bool                   `protobuf:"varint,8,opt,name=remote_build,json=remoteBuild,proto3" json:"remote_build,omitempty"`
+	BuildArgs        []string               `protobuf:"bytes,9,rep,name=build_args,json=buildArgs,proto3" json:"build_args,omitempty"`
+	Network          string                 `protobuf:"bytes,10,opt,name=network,proto3" json:"network,omitempty"`
+	ImagePassthrough bool                   `protobuf:"varint,11,opt,name=image_passthrough,json=imagePassthrough,proto3" json:"image_passthrough,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *DockerProjectOptions) Reset() {
@@ -1183,6 +1184,13 @@ func (x *DockerProjectOptions) GetNetwork() string {
 		return x.Network
 	}
 	return ""
+}
+
+func (x *DockerProjectOptions) GetImagePassthrough() bool {
+	if x != nil {
+		return x.ImagePassthrough
+	}
+	return false
 }
 
 // ServiceContext defines the shared pipeline state across all phases of the service lifecycle
@@ -1457,7 +1465,7 @@ const file_models_proto_rawDesc = "" +
 	"\fInfraOptions\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
-	"\x06module\x18\x03 \x01(\tR\x06module\"\x98\x02\n" +
+	"\x06module\x18\x03 \x01(\tR\x06module\"\xc5\x02\n" +
 	"\x14DockerProjectOptions\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
 	"\acontext\x18\x02 \x01(\tR\acontext\x12\x1a\n" +
@@ -1470,7 +1478,8 @@ const file_models_proto_rawDesc = "" +
 	"\n" +
 	"build_args\x18\t \x03(\tR\tbuildArgs\x12\x18\n" +
 	"\anetwork\x18\n" +
-	" \x01(\tR\anetwork\"\xe6\x01\n" +
+	" \x01(\tR\anetwork\x12+\n" +
+	"\x11image_passthrough\x18\v \x01(\bR\x10imagePassthrough\"\xe6\x01\n" +
 	"\x0eServiceContext\x12*\n" +
 	"\arestore\x18\x01 \x03(\v2\x10.azdext.ArtifactR\arestore\x12&\n" +
 	"\x05build\x18\x02 \x03(\v2\x10.azdext.ArtifactR\x05build\x12*\n" +

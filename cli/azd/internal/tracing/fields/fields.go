@@ -55,19 +55,25 @@ func ExtensionUsageAttribute(key string) AttributeKey {
 
 // Application-level fields. Guaranteed to be set and available for all events.
 var (
-	// Application name. Value is always "azd".
+	// Service name. The application resource uses "azd"; MapError prefixes error details as error.service.name.
 	ServiceNameKey = AttributeKey{
-		Key: semconv.ServiceNameKey, // service.name
+		Key:            semconv.ServiceNameKey, // service.name
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
 	}
 
 	// Application version.
 	ServiceVersionKey = AttributeKey{
-		Key: semconv.ServiceVersionKey, // service.version
+		Key:            semconv.ServiceVersionKey, // service.version
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
 	}
 
 	// The operating system type.
 	OSTypeKey = AttributeKey{
-		Key: semconv.OSTypeKey, // os.type
+		Key:            semconv.OSTypeKey, // os.type
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
 	}
 
 	// The operating system version.
@@ -793,6 +799,7 @@ var (
 		Key:            attribute.Key("exegraph.max_concurrency"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 
 	// ExeGraphErrorPolicyKey records the error policy (fail_fast or continue_on_error).
@@ -939,15 +946,8 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// Name of the service.
-	ServiceName = AttributeKey{
-		Key:            attribute.Key("service.name"),
-		Classification: SystemMetadata,
-		Purpose:        PerformanceAndHealth,
-	}
-
-	// Status code of a response returned by the service.
-	// For HTTP, this corresponds to the HTTP status code.
+	// Status code of a response returned by the service. Numeric HTTP/service
+	// statuses are measurements; AAD authentication errors use string OAuth statuses.
 	ServiceStatusCode = AttributeKey{
 		Key:            attribute.Key("service.statusCode"),
 		Classification: SystemMetadata,
@@ -969,7 +969,6 @@ var (
 		Key:            attribute.Key("service.errorCode"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
-		IsMeasurement:  true,
 	}
 
 	// Correlation ID for a request to the service.
@@ -994,6 +993,7 @@ var (
 		Key:            attribute.Key("tool.exitCode"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 )
 
@@ -1199,6 +1199,7 @@ var (
 		Key:            attribute.Key("agent.fix.attempts"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
 	}
 )
 

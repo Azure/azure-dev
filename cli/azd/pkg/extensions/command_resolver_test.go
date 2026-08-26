@@ -420,6 +420,70 @@ func TestResolveCommandFlagsAllTypes(t *testing.T) {
 			args: []string{"run", "-abc"},
 			want: []string{"all", "brief", "color"},
 		},
+		{
+			name: "OptionalStringFlagBeforeAnotherFlag",
+			metadata: &ExtensionCommandMetadata{
+				Commands: []Command{
+					{
+						Name: []string{"run"},
+						Flags: []Flag{
+							{Name: "infra", Type: "string", ValueOptional: true},
+							{Name: "verbose", Shorthand: "v", Type: "bool"},
+						},
+					},
+				},
+			},
+			args: []string{"run", "--infra", "--verbose"},
+			want: []string{"infra", "verbose"},
+		},
+		{
+			name: "OptionalIntFlagBeforeAnotherFlag",
+			metadata: &ExtensionCommandMetadata{
+				Commands: []Command{
+					{
+						Name: []string{"run"},
+						Flags: []Flag{
+							{Name: "count", Type: "int", ValueOptional: true},
+							{Name: "verbose", Shorthand: "v", Type: "bool"},
+						},
+					},
+				},
+			},
+			args: []string{"run", "--count", "--verbose"},
+			want: []string{"count", "verbose"},
+		},
+		{
+			name: "OptionalStringArrayFlagBeforeAnotherFlag",
+			metadata: &ExtensionCommandMetadata{
+				Commands: []Command{
+					{
+						Name: []string{"run"},
+						Flags: []Flag{
+							{Name: "tags", Type: "stringArray", ValueOptional: true},
+							{Name: "verbose", Shorthand: "v", Type: "bool"},
+						},
+					},
+				},
+			},
+			args: []string{"run", "--tags", "--verbose"},
+			want: []string{"tags", "verbose"},
+		},
+		{
+			name: "OptionalIntArrayFlagBeforeAnotherFlag",
+			metadata: &ExtensionCommandMetadata{
+				Commands: []Command{
+					{
+						Name: []string{"run"},
+						Flags: []Flag{
+							{Name: "ports", Type: "intArray", ValueOptional: true},
+							{Name: "verbose", Shorthand: "v", Type: "bool"},
+						},
+					},
+				},
+			},
+			args: []string{"run", "--ports", "--verbose"},
+			want: []string{"ports", "verbose"},
+		},
 	}
 
 	for _, tt := range tests {

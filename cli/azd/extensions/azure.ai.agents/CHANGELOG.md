@@ -1,5 +1,17 @@
 # Release History
 
+## 1.0.0-beta.12 (2026-08-24)
+
+### Features Added
+
+- [[#9596]](https://github.com/Azure/azure-dev/pull/9596) Add invocation moderation configuration for RAI policies used with the `invocations` protocol.
+- [[#9610]](https://github.com/Azure/azure-dev/pull/9610) Add end-to-end Digital Worker deployment, packaging, and Microsoft 365 publishing workflows.
+
+### Bugs Fixed
+
+- [[#9596]](https://github.com/Azure/azure-dev/pull/9596) Reject agent manifests that declare multiple `rai_policy` entries instead of silently discarding additional policies.
+- [[#9679]](https://github.com/Azure/azure-dev/pull/9679) Prompt users to provision after agent initialization adds a standalone Foundry connection service.
+
 ## 1.0.0-beta.11 (2026-08-20)
 
 ### Features Added

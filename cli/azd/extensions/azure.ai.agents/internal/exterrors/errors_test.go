@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func TestServiceFromAzure(t *testing.T) {
@@ -365,24 +364,10 @@ func TestFromPrompt(t *testing.T) {
 	}
 }
 
-func TestFromPromptPreservesMissingInputSuggestion(t *testing.T) {
+func TestFromPromptPreservesActionableSuggestion(t *testing.T) {
 	hostSuggestion := "Choose -e/--environment, set AZD_ENVIRONMENT, or run azd env select <name>.\n" +
 		"Example: azd -e dev provision"
 	actionable := &azdext.ActionableErrorDetail{Suggestion: hostSuggestion}
-	actionable.ProtoReflect().SetUnknown(appendMessageField(nil, 3,
-		appendPromptRequiredDetail(nil,
-			"environment selection is required",
-			"Select an environment",
-			appendRequiredInput(nil,
-				"azd environment",
-				"Select the environment used by this provision command.",
-				appendInputSource(nil, 1, "-e/--environment", "dev", "azd -e dev provision"),
-				appendInputSource(nil, 2, "AZD_ENVIRONMENT", "dev",
-					`$env:AZD_ENVIRONMENT = "dev"; azd provision`),
-				appendInputSource(nil, 3, "azd env select", "dev", "azd env select dev; azd provision"),
-			),
-		),
-	))
 
 	st, err := status.New(codes.FailedPrecondition, "environment selection is required").WithDetails(actionable)
 	require.NoError(t, err)
@@ -394,42 +379,6 @@ func TestFromPromptPreservesMissingInputSuggestion(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, hostSuggestion, local.Suggestion)
 	assert.Contains(t, result.Error(), "environment selection is required")
-
-}
-
-func appendPromptRequiredDetail(data []byte, message, promptMessage string, inputs ...[]byte) []byte {
-	for _, input := range inputs {
-		data = appendMessageField(data, 1, input)
-	}
-	data = appendStringField(data, 2, promptMessage)
-	return appendStringField(data, 3, message)
-}
-
-func appendRequiredInput(data []byte, name, description string, sources ...[]byte) []byte {
-	data = appendStringField(data, 1, name)
-	data = appendStringField(data, 2, description)
-	for _, source := range sources {
-		data = appendMessageField(data, 3, source)
-	}
-	return data
-}
-
-func appendInputSource(data []byte, kind uint64, name, exampleValue, example string) []byte {
-	data = protowire.AppendTag(data, 1, protowire.VarintType)
-	data = protowire.AppendVarint(data, kind)
-	data = appendStringField(data, 2, name)
-	data = appendStringField(data, 3, exampleValue)
-	return appendStringField(data, 4, example)
-}
-
-func appendStringField(data []byte, number protowire.Number, value string) []byte {
-	data = protowire.AppendTag(data, number, protowire.BytesType)
-	return protowire.AppendString(data, value)
-}
-
-func appendMessageField(data []byte, number protowire.Number, value []byte) []byte {
-	data = protowire.AppendTag(data, number, protowire.BytesType)
-	return protowire.AppendBytes(data, value)
 }
 
 func TestIsPromptRequired(t *testing.T) {

@@ -859,14 +859,12 @@ func TestMapHostError_Nil(t *testing.T) {
 	require.Nil(t, mapHostError(nil))
 }
 
-func TestMapHostError_PromptRequiredPreservesMetadata(t *testing.T) {
+func TestMapHostError_PromptRequiredPreservesSuggestion(t *testing.T) {
 	t.Parallel()
 
-	promptErr := azdext.NewMissingInputError(
-		"environment_not_found",
-		azdext.LocalErrorCategoryDependency,
-		"azd environment name is required",
-		input.RequiredInput{
+	promptErr := &input.PromptRequiredError{
+		Message: "azd environment name is required",
+		Inputs: []input.RequiredInput{{
 			Name: "azd environment name",
 			Sources: []input.InputSource{
 				{
@@ -885,8 +883,8 @@ func TestMapHostError_PromptRequiredPreservesMetadata(t *testing.T) {
 					Example: "azd env select dev",
 				},
 			},
-		},
-	)
+		}},
+	}
 
 	st, ok := status.FromError(mapHostError(promptErr))
 	require.True(t, ok)
@@ -899,9 +897,6 @@ func TestMapHostError_PromptRequiredPreservesMetadata(t *testing.T) {
 	require.Contains(t, actionable.GetSuggestion(), "azd -e dev provision")
 	require.Contains(t, actionable.GetSuggestion(), `$env:AZD_ENVIRONMENT = "dev"; azd provision`)
 	require.Contains(t, actionable.GetSuggestion(), "azd env select dev")
-
-	roundTrip := azdext.UnwrapPromptRequiredError(actionable.GetPromptRequiredError())
-	require.Equal(t, promptErr.PromptRequiredError, roundTrip)
 }
 
 func TestMapHostError_PlainError(t *testing.T) {

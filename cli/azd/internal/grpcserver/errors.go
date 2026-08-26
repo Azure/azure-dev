@@ -29,7 +29,7 @@ import (
 // Auth-related errors are reported with codes.Unauthenticated and an azd.auth ErrorInfo detail
 // (preserving AADSTS<code> reasons from Entra). ErrorWithSuggestion errors carry an
 // ActionableErrorDetail so consumers receive suggestion + links structurally. PromptRequiredError
-// values also carry ActionableErrorDetail with structured missing-input metadata and remediation.
+// values carry their rendered remediation through the existing suggestion field.
 //
 // status.Message is err.Error(), ErrorWithSuggestion.Message, or the PromptRequiredError headline.
 // Suggestion text is never concatenated into status.Message; consumers must read
@@ -64,7 +64,7 @@ func mapHostError(err error) error {
 		st = withAuthErrorInfo(st, err)
 	}
 	if hasPromptRequired {
-		st = withPromptRequiredErrorDetail(st, promptErr)
+		st = withPromptRequiredSuggestion(st, promptErr)
 	} else if hasSuggestion {
 		st = withActionableErrorDetail(st, suggestionErr)
 	}
@@ -252,17 +252,16 @@ func withActionableErrorDetail(st *status.Status, err *internal.ErrorWithSuggest
 	return withDetails
 }
 
-func withPromptRequiredErrorDetail(st *status.Status, err *input.PromptRequiredError) *status.Status {
+func withPromptRequiredSuggestion(st *status.Status, err *input.PromptRequiredError) *status.Status {
 	if err == nil {
 		return st
 	}
 
 	withDetails, detailErr := st.WithDetails(&azdext.ActionableErrorDetail{
-		Suggestion:          err.Suggestion(),
-		PromptRequiredError: azdext.WrapPromptRequiredError(err),
+		Suggestion: err.Suggestion(),
 	})
 	if detailErr != nil {
-		log.Printf("failed to attach prompt-required ActionableErrorDetail to gRPC status: %v", detailErr)
+		log.Printf("failed to attach prompt-required suggestion to gRPC status: %v", detailErr)
 		return st
 	}
 

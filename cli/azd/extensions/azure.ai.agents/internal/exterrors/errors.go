@@ -27,7 +27,6 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protowire"
 )
 
 // InputSourceKind identifies a supported way to provide a required input.
@@ -390,8 +389,7 @@ func FromAiService(err error, fallbackCode string) error {
 }
 
 // FromPrompt converts a gRPC error from an azd host Prompt call into a structured error.
-// It renders actionable missing-input metadata emitted by newer hosts through the
-// LocalError transport supported by the extension's currently pinned SDK.
+// It preserves actionable remediation emitted through the existing ActionableErrorDetail fields.
 func FromPrompt(err error, contextMsg string) error {
 	if err == nil {
 		return nil
@@ -411,23 +409,6 @@ func FromPrompt(err error, contextMsg string) error {
 
 	if ok {
 		actionable := azdext.ActionableErrorDetailFromError(err)
-		if metadata, found := promptRequiredMetadataFromActionable(actionable); found {
-			message := metadata.Message
-			if message == "" {
-				message = st.Message()
-			}
-			missingInput := newMissingInputError(
-				azdext.LocalErrorCategoryValidation,
-				CodePromptFailed,
-				fmt.Sprintf("%s: %s", contextMsg, message),
-				metadata.Inputs...,
-			)
-			if actionable.GetSuggestion() != "" {
-				missingInput.LocalError.Suggestion = actionable.GetSuggestion()
-			}
-			missingInput.LocalError.Links = azdext.UnwrapErrorLinks(actionable.GetLinks())
-			return missingInput
-		}
 		if actionable != nil {
 			return &azdext.LocalError{
 				Message:    fmt.Sprintf("%s: %s", contextMsg, st.Message()),
@@ -441,170 +422,6 @@ func FromPrompt(err error, contextMsg string) error {
 	}
 
 	return Internal(CodePromptFailed, fmt.Sprintf("%s: %s", contextMsg, err))
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-type promptRequiredMetadata struct {
-	Inputs  []RequiredInput
-	Message string
-}
-
-func promptRequiredMetadataFromActionable(
-	actionable *azdext.ActionableErrorDetail,
-) (promptRequiredMetadata, bool) {
-	if actionable == nil {
-		return promptRequiredMetadata{}, false
-	}
-
-	// The v1.31 SDK does not expose ActionableErrorDetail field 3. New hosts
-	// serialize PromptRequiredErrorDetail there, so decode the preserved unknown
-	// field until this module can take a merge-safe SDK upgrade.
-	data := actionable.ProtoReflect().GetUnknown()
-	for len(data) > 0 {
-		number, wireType, tagLength := protowire.ConsumeTag(data)
-		if tagLength < 0 {
-			return promptRequiredMetadata{}, false
-		}
-		data = data[tagLength:]
-
-		if number == 3 && wireType == protowire.BytesType {
-			value, valueLength := protowire.ConsumeBytes(data)
-			if valueLength < 0 {
-				return promptRequiredMetadata{}, false
-			}
-			return parsePromptRequiredMetadata(value), true
-		}
-
-		valueLength := protowire.ConsumeFieldValue(number, wireType, data)
-		if valueLength < 0 {
-			return promptRequiredMetadata{}, false
-		}
-		data = data[valueLength:]
-	}
-
-	return promptRequiredMetadata{}, false
-}
-
-func parsePromptRequiredMetadata(data []byte) promptRequiredMetadata {
-	metadata := promptRequiredMetadata{}
-	for len(data) > 0 {
-		number, wireType, tagLength := protowire.ConsumeTag(data)
-		if tagLength < 0 {
-			return metadata
-		}
-		data = data[tagLength:]
-
-		switch {
-		case number == 1 && wireType == protowire.BytesType:
-			value, valueLength := protowire.ConsumeBytes(data)
-			if valueLength < 0 {
-				return metadata
-			}
-			metadata.Inputs = append(metadata.Inputs, parseRequiredInput(value))
-			data = data[valueLength:]
-		case number == 2 && wireType == protowire.BytesType:
-			_, data = consumeStringField(data)
-		case number == 3 && wireType == protowire.BytesType:
-			metadata.Message, data = consumeStringField(data)
-		default:
-			valueLength := protowire.ConsumeFieldValue(number, wireType, data)
-			if valueLength < 0 {
-				return metadata
-			}
-			data = data[valueLength:]
-		}
-	}
-	return metadata
-}
-
-func parseRequiredInput(data []byte) RequiredInput {
-	input := RequiredInput{}
-	for len(data) > 0 {
-		number, wireType, tagLength := protowire.ConsumeTag(data)
-		if tagLength < 0 {
-			return input
-		}
-		data = data[tagLength:]
-
-		switch {
-		case number == 1 && wireType == protowire.BytesType:
-			input.Name, data = consumeStringField(data)
-		case number == 2 && wireType == protowire.BytesType:
-			input.Description, data = consumeStringField(data)
-		case number == 3 && wireType == protowire.BytesType:
-			value, valueLength := protowire.ConsumeBytes(data)
-			if valueLength < 0 {
-				return input
-			}
-			input.Sources = append(input.Sources, parseInputSource(value))
-			data = data[valueLength:]
-		default:
-			valueLength := protowire.ConsumeFieldValue(number, wireType, data)
-			if valueLength < 0 {
-				return input
-			}
-			data = data[valueLength:]
-		}
-	}
-	return input
-}
-
-func parseInputSource(data []byte) InputSource {
-	source := InputSource{}
-	for len(data) > 0 {
-		number, wireType, tagLength := protowire.ConsumeTag(data)
-		if tagLength < 0 {
-			return source
-		}
-		data = data[tagLength:]
-
-		switch {
-		case number == 1 && wireType == protowire.VarintType:
-			value, valueLength := protowire.ConsumeVarint(data)
-			if valueLength < 0 {
-				return source
-			}
-			source.Kind = inputSourceKindFromProto(value)
-			data = data[valueLength:]
-		case number == 2 && wireType == protowire.BytesType:
-			source.Name, data = consumeStringField(data)
-		case number == 3 && wireType == protowire.BytesType:
-			source.ExampleValue, data = consumeStringField(data)
-		case number == 4 && wireType == protowire.BytesType:
-			source.Example, data = consumeStringField(data)
-		default:
-			valueLength := protowire.ConsumeFieldValue(number, wireType, data)
-			if valueLength < 0 {
-				return source
-			}
-			data = data[valueLength:]
-		}
-	}
-	return source
-}
-
-func consumeStringField(data []byte) (string, []byte) {
-	value, valueLength := protowire.ConsumeString(data)
-	if valueLength < 0 {
-		return "", nil
-	}
-	return value, data[valueLength:]
-}
-
-func inputSourceKindFromProto(value uint64) InputSourceKind {
-	switch value {
-	case 1:
-		return InputSourceFlag
-	case 2:
-		return InputSourceEnvironment
-	case 3:
-		return InputSourceConfig
-	default:
-		return ""
-	}
 }
 
 // authFromGrpcMessage creates a structured Auth error from a gRPC Unauthenticated message.
@@ -699,8 +516,8 @@ func IsCancellation(err error) bool {
 }
 
 // IsPromptRequired reports whether err is a `--no-prompt` failure propagated
-// from the azd host. New hosts attach structured metadata; older hosts only
-// expose the PromptRequiredError text in the gRPC status message.
+// from the azd host. Current hosts return FailedPrecondition with actionable
+// guidance; older hosts expose PromptRequiredError text in the status message.
 func IsPromptRequired(err error) bool {
 	if err == nil {
 		return false
@@ -708,10 +525,11 @@ func IsPromptRequired(err error) bool {
 	if _, ok := errors.AsType[*input.PromptRequiredError](err); ok {
 		return true
 	}
-	if _, found := promptRequiredMetadataFromActionable(azdext.ActionableErrorDetailFromError(err)); found {
-		return true
-	}
 	if st, ok := status.FromError(err); ok {
+		if st.Code() == codes.FailedPrecondition &&
+			azdext.ActionableErrorDetailFromStatus(st) != nil {
+			return true
+		}
 		return strings.Contains(strings.ToLower(st.Message()), "prompt required")
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "prompt required")

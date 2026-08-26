@@ -55,7 +55,9 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 
 	if s.globalOptions.NoPrompt {
 		if req.Options.DefaultValue == nil {
-			return nil, promptRequiredError(req.Options.Message, req.Options.PromptRequiredError)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.ConfirmResponse{
 				Value: req.Options.DefaultValue,
@@ -92,7 +94,9 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 
 	if s.globalOptions.NoPrompt {
 		if req.Options.SelectedIndex == nil {
-			return nil, promptRequiredError(req.Options.Message, req.Options.PromptRequiredError)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.SelectResponse{
 				Value: req.Options.SelectedIndex,
@@ -201,7 +205,9 @@ func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (
 
 	if s.globalOptions.NoPrompt {
 		if req.Options.Required && req.Options.DefaultValue == "" {
-			return nil, promptRequiredError(req.Options.Message, req.Options.PromptRequiredError)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.PromptResponse{
 				Value: req.Options.DefaultValue,
@@ -491,19 +497,6 @@ func createResourceOptions(options *azdext.PromptResourceOptions) prompt.Resourc
 	}
 
 	return resourceOptions
-}
-
-func promptRequiredError(promptMessage string, detail *azdext.PromptRequiredErrorDetail) error {
-	if detail == nil {
-		return &input.PromptRequiredError{PromptMessage: promptMessage}
-	}
-
-	promptErr := azdext.UnwrapPromptRequiredError(detail)
-	if len(promptErr.Inputs) == 0 && promptErr.PromptMessage == "" {
-		promptErr.PromptMessage = promptMessage
-	}
-
-	return promptErr
 }
 
 func promptSubscriptionMessage(req *azdext.PromptSubscriptionRequest) string {

@@ -151,65 +151,6 @@ func Test_PromptService_Prompt_NoPromptRequiredWithoutDefault(t *testing.T) {
 	requirePromptRequiredError(t, err, "Enter name:")
 }
 
-func Test_PromptService_Prompt_NoPromptPreservesMissingInputMetadataOverGRPC(t *testing.T) {
-	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	promptSvc := NewPromptService(nil, nil, nil, globalOptions)
-	_, ctx, client, cleanup := setupTestServer(t, promptSvc)
-	defer cleanup()
-
-	_, err := client.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:  "Select an azd environment:",
-			Required: true,
-			PromptRequiredError: azdext.NewMissingInputErrorDetail(
-				"azd environment name is required",
-				input.RequiredInput{
-					Name: "azd environment name",
-					Sources: []input.InputSource{
-						{
-							Kind:    input.InputSourceFlag,
-							Name:    "--environment <name> (or -e <name>)",
-							Example: "azd -e dev provision",
-						},
-						{
-							Kind:    input.InputSourceEnvironment,
-							Name:    "AZD_ENVIRONMENT",
-							Example: `$env:AZD_ENVIRONMENT = "dev"; azd provision`,
-						},
-						{
-							Kind:    input.InputSourceConfig,
-							Name:    "current environment selection",
-							Example: "azd env select dev",
-						},
-					},
-				},
-			),
-		},
-	})
-	require.Error(t, err)
-
-	st, ok := status.FromError(err)
-	require.True(t, ok)
-	require.Equal(t, codes.FailedPrecondition, st.Code())
-	require.Equal(t, "azd environment name is required", st.Message())
-
-	actionable := azdext.ActionableErrorDetailFromStatus(st)
-	require.NotNil(t, actionable)
-	require.Contains(t, actionable.GetSuggestion(), "azd environment name")
-	require.Contains(t, actionable.GetSuggestion(), "Flag: --environment <name> (or -e <name>)")
-	require.Contains(t, actionable.GetSuggestion(), "Environment: AZD_ENVIRONMENT")
-	require.Contains(t, actionable.GetSuggestion(), `$env:AZD_ENVIRONMENT = "dev"; azd provision`)
-	require.Contains(t, actionable.GetSuggestion(), "Config: current environment selection")
-	require.Contains(t, actionable.GetSuggestion(), "azd -e dev provision")
-	require.Contains(t, actionable.GetSuggestion(), "azd env select dev")
-
-	promptErr := azdext.UnwrapPromptRequiredError(actionable.GetPromptRequiredError())
-	require.NotNil(t, promptErr)
-	require.Len(t, promptErr.Inputs, 1)
-	require.Equal(t, "azd environment name", promptErr.Inputs[0].Name)
-	require.Len(t, promptErr.Inputs[0].Sources, 3)
-}
-
 func Test_PromptService_Prompt_NoPromptPreservesPromptMessageOverGRPC(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
 	promptSvc := NewPromptService(nil, nil, nil, globalOptions)
@@ -232,10 +173,6 @@ func Test_PromptService_Prompt_NoPromptPreservesPromptMessageOverGRPC(t *testing
 	actionable := azdext.ActionableErrorDetailFromStatus(st)
 	require.NotNil(t, actionable)
 	require.Contains(t, actionable.GetSuggestion(), "Enter name:")
-
-	promptErr := azdext.UnwrapPromptRequiredError(actionable.GetPromptRequiredError())
-	require.NotNil(t, promptErr)
-	require.Equal(t, "Enter name:", promptErr.PromptMessage)
 }
 
 func Test_PromptService_Prompt_NoPromptNotRequiredWithoutDefault(t *testing.T) {

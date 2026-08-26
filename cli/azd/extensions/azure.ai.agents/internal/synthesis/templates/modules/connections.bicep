@@ -26,7 +26,7 @@ type connectionType = {
   @description('Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ...')
   authType: string
 
-  @description('Optional token audience for UserEntraToken, AgenticIdentity, or ProjectManagedIdentity connections.')
+  @description('Optional token audience for UserEntraToken, AgenticIdentityToken, or ProjectManagedIdentity connections.')
   audience: string?
 
   @description('Optional connector name for OAuth2 connections.')

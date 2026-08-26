@@ -790,6 +790,32 @@ func TestConnectionJSONOmitsEmptyOptionalAuthProperties(t *testing.T) {
 	assert.Contains(t, string(data), `"connectorName":"mcp-connector"`)
 }
 
+func TestSynthesizeNormalizesLegacyAgenticIdentity(t *testing.T) {
+	const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  token-conn:
+    host: azure.ai.connection
+    uses: [my-project]
+    category: RemoteTool
+    target: https://mcp.example.com/mcp
+    authType: AgenticIdentity
+    audience: https://mcp.example.com
+`
+
+	res, err := Synthesize(Input{
+		RawAzureYAML:  []byte(yaml),
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+	})
+	require.NoError(t, err)
+
+	connections := resultConnections(t, res)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "AgenticIdentityToken", connections[0].AuthType)
+}
+
 // TestBrownfieldConnections verifies connection services are collected for a
 // brownfield (endpoint:) project, with ${VAR} resolved (brownfield provisions
 // so references must be concrete) and Foundry ${{...}} preserved.

@@ -16,7 +16,7 @@
     },
     "authType": {
       "type": "string",
-      "description": "Authentication type.",
+      "description": "Authentication type. AgenticIdentity is accepted as a legacy alias and normalized to AgenticIdentityToken.",
       "enum": [
         "AAD",
         "AccessKey",
@@ -38,7 +38,7 @@
     },
     "audience": {
       "type": "string",
-      "description": "Token audience for UserEntraToken, AgenticIdentity, or ProjectManagedIdentity connections. May contain ${VAR}; declare each referenced variable in the service-level env object."
+      "description": "Token audience for UserEntraToken, AgenticIdentityToken, or ProjectManagedIdentity connections. May contain ${VAR}; declare each referenced variable in the service-level env object."
     },
     "connectorName": {
       "type": "string",

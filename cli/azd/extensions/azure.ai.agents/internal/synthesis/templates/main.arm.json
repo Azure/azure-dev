@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "9071396275066560032"
+      "templateHash": "1827299096555805098"
     }
   },
   "definitions": {
@@ -355,7 +355,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "9372434474066967846"
+              "templateHash": "7324472740330727641"
             }
           },
           "definitions": {
@@ -1465,7 +1465,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.46.1.21595",
-                      "templateHash": "1819027861873427817"
+                      "templateHash": "2461725267308360908"
                     }
                   },
                   "definitions": {
@@ -1500,7 +1500,7 @@
                           "type": "string",
                           "nullable": true,
                           "metadata": {
-                            "description": "Optional token audience for UserEntraToken, AgenticIdentity, or ProjectManagedIdentity connections."
+                            "description": "Optional token audience for UserEntraToken, AgenticIdentityToken, or ProjectManagedIdentity connections."
                           }
                         },
                         "connectorName": {

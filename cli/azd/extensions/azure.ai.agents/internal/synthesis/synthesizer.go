@@ -179,6 +179,15 @@ type connectionService struct {
 // connection. Matches the azure.ai.connection service-target provider name.
 const aiConnectionHost = "azure.ai.connection"
 
+// normalizeConnectionAuthType maps legacy aliases to ARM values.
+func normalizeConnectionAuthType(authType string) string {
+	if authType == "AgenticIdentity" {
+		return "AgenticIdentityToken"
+	}
+
+	return authType
+}
+
 // codeConfigBlock marks an agent as a code (ZIP) deploy. Its presence is the
 // signal; the keys are camelCase because the unified azure.ai.agent service
 // entry is serialized from the agent definition's JSON tags.
@@ -803,7 +812,7 @@ func collectConnections(
 			Name:          name,
 			Category:      svc.Category,
 			Target:        target,
-			AuthType:      svc.AuthType,
+			AuthType:      normalizeConnectionAuthType(svc.AuthType),
 			Audience:      audience,
 			ConnectorName: connectorName,
 			Credentials:   credentials,

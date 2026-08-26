@@ -513,7 +513,7 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 			if strings.TrimSpace(td.Type) == "" {
 				errors = append(errors, "template.audio.input.turn_detection.type must not be blank")
 			}
-			if td.Threshold != nil && (*td.Threshold <= 0 || *td.Threshold > 1) {
+			if td.Threshold != nil && (!isFinite(*td.Threshold) || *td.Threshold <= 0 || *td.Threshold > 1) {
 				errors = append(errors, "template.audio.input.turn_detection.threshold must be greater than 0 and <= 1")
 			}
 			if td.PrefixPaddingMs != nil && *td.PrefixPaddingMs < 0 {
@@ -540,11 +540,15 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 				errors = append(errors, "template.audio.output.voice.name must not be blank")
 			}
 		}
-		if speed := agent.Audio.Output.Speed; speed != nil && (*speed < 0.25 || *speed > 1.5) {
+		if speed := agent.Audio.Output.Speed; speed != nil && (!isFinite(*speed) || *speed < 0.25 || *speed > 1.5) {
 			errors = append(errors, "template.audio.output.speed must be between 0.25 and 1.5")
 		}
 	}
 	return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, transcriptionModel)...)
+}
+
+func isFinite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func validateVoiceMaxOutputTokens(value any) error {

@@ -207,6 +207,15 @@ func TestValidateAgentDefinition_PromptVoice_AdvancedValidationBoundaries(t *tes
 			want: "speech_duration_ms must be >= 0",
 		},
 		{
+			name: "nan threshold",
+			yaml: `audio:
+  input:
+    turn_detection:
+      type: azure_semantic_vad
+      threshold: .nan`,
+			want: "threshold must be greater than 0",
+		},
+		{
 			name: "blank voice name",
 			yaml: `audio:
   output:
@@ -220,6 +229,13 @@ func TestValidateAgentDefinition_PromptVoice_AdvancedValidationBoundaries(t *tes
 			yaml: `audio:
   output:
     speed: 2`,
+			want: "speed must be between 0.25 and 1.5",
+		},
+		{
+			name: "nan speed",
+			yaml: `audio:
+  output:
+    speed: .nan`,
 			want: "speed must be between 0.25 and 1.5",
 		},
 	}

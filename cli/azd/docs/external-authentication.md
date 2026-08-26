@@ -72,7 +72,7 @@ The message is returned as is as the `error` for the `GetToken` call on the clie
 
 ## Transport selection via URL scheme
 
-Starting with `azd` 1.32.0-beta.1, `AZD_AUTH_ENDPOINT` accepts three URL schemes that
+Starting with `azd` 1.33.0, `AZD_AUTH_ENDPOINT` accepts three URL schemes that
 select the transport used to reach the host's token server. The HTTP request
 body, response shape, and `api-version` are identical across schemes — only
 how `azd` dials the server changes.

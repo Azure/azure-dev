@@ -60,7 +60,8 @@ func buildExternalAuthConfiguration(endpoint, key, cert string) (auth.ExternalAu
 		ip := net.ParseIP(endpointUrl.Hostname())
 		if ip == nil || !ip.IsLoopback() {
 			return auth.ExternalAuthConfiguration{}, fmt.Errorf(
-				"invalid AZD_AUTH_ENDPOINT value '%s': http is accepted only for loopback IP endpoints used by local testing",
+				"invalid AZD_AUTH_ENDPOINT value '%s': http is accepted only for "+
+					"loopback IP endpoints used by local testing",
 				endpoint)
 		}
 	}

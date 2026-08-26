@@ -560,11 +560,12 @@ func validateVoiceMaxOutputTokens(value any) error {
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return nil
 	case float32:
-		if math.Trunc(float64(v)) == float64(v) {
+		f := float64(v)
+		if !math.IsInf(f, 0) && !math.IsNaN(f) && math.Trunc(f) == f {
 			return nil
 		}
 	case float64:
-		if math.Trunc(v) == v {
+		if !math.IsInf(v, 0) && !math.IsNaN(v) && math.Trunc(v) == v {
 			return nil
 		}
 	}

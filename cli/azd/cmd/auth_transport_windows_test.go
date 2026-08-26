@@ -53,8 +53,17 @@ func TestNormalizePipePath(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "short form opaque", in: "npipe:azd-auth-foo", want: `\\.\pipe\azd-auth-foo`},
-		{name: "long form", in: "npipe:////./pipe/azd-auth-foo", want: `\\.\pipe\azd-auth-foo`},
-		{name: "missing name", in: "npipe:", wantErr: true},
+		{name: "short form path", in: "npipe:/azd-auth-foo", want: `\\.\pipe\azd-auth-foo`},
+		{name: "qualified authority form", in: "npipe://./pipe/azd-auth-foo", want: `\\.\pipe\azd-auth-foo`},
+		{name: "qualified path form", in: "npipe:////./pipe/azd-auth-foo", want: `\\.\pipe\azd-auth-foo`},
+		{name: "backslash namespace", in: `npipe:azd-auth\nested`, want: `\\.\pipe\azd-auth\nested`},
+		{name: "missing short name", in: "npipe:", wantErr: true},
+		{name: "missing qualified authority name", in: "npipe://./pipe/", wantErr: true},
+		{name: "missing qualified path name", in: "npipe:////./pipe/", wantErr: true},
+		{name: "remote authority", in: "npipe://server/pipe/azd-auth-foo", wantErr: true},
+		{name: "unexpected local path", in: "npipe://./other/azd-auth-foo", wantErr: true},
+		{name: "forward slash in name", in: "npipe:azd-auth/foo", wantErr: true},
+		{name: "malformed qualified path", in: "npipe:///pipe/azd-auth-foo", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -205,7 +214,7 @@ func TestNewPipeTransport_FullRoundTrip(t *testing.T) {
 	go func() { _ = srv.Serve(l) }()
 	t.Cleanup(func() { _ = srv.Close() })
 
-	rt, endpoint, err := newPipeTransport("npipe:" + name)
+	rt, endpoint, err := newPipeTransport("npipe://./pipe/" + name)
 	require.NoError(t, err)
 	require.Equal(t, rewrittenAuthEndpoint, endpoint)
 

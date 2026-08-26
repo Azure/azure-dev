@@ -78,9 +78,10 @@ func newSocketTransport(rawURL string) (http.RoundTripper, string, error) {
 		"AZD_AUTH_ENDPOINT scheme 'unix' is not supported on this platform; use 'npipe' or 'https'")
 }
 
-// normalizePipePath accepts either short form `npipe:azd-auth-...` or long
-// form `npipe:////./pipe/azd-auth-...` and returns a fully qualified pipe
-// path of the form `\\.\pipe\<name>`.
+// normalizePipePath accepts the short forms `npipe:azd-auth-...` and
+// `npipe:/azd-auth-...`, or the fully qualified forms
+// `npipe://./pipe/azd-auth-...` and `npipe:////./pipe/azd-auth-...`, and
+// returns a fully qualified pipe path of the form `\\.\pipe\<name>`.
 func normalizePipePath(rawURL string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -90,24 +91,35 @@ func normalizePipePath(rawURL string) (string, error) {
 		return "", fmt.Errorf("internal error: normalizePipePath called with non-npipe scheme %q", u.Scheme)
 	}
 
-	// Long form: npipe:////./pipe/<name> -> Path="//./pipe/<name>"
-	if u.Host == "" && strings.HasPrefix(u.Path, "//./pipe/") {
-		name := strings.TrimPrefix(u.Path, "//./pipe/")
-		if name == "" {
-			return "", fmt.Errorf("invalid AZD_AUTH_ENDPOINT value %q: missing pipe name", rawURL)
+	var name string
+	switch {
+	// Fully qualified authority form:
+	// npipe://./pipe/<name> -> Host=".", Path="/pipe/<name>"
+	case u.Host == ".":
+		if u.User != nil || !strings.HasPrefix(u.Path, "/pipe/") {
+			return "", fmt.Errorf("invalid AZD_AUTH_ENDPOINT value %q: expected local pipe path /pipe/<name>", rawURL)
 		}
-		return `\\.\pipe\` + name, nil
-	}
-
+		name = strings.TrimPrefix(u.Path, "/pipe/")
+	case u.Host != "":
+		return "", fmt.Errorf("invalid AZD_AUTH_ENDPOINT value %q: named pipe authority must be local", rawURL)
+	// Fully qualified path form:
+	// npipe:////./pipe/<name> -> Host="", Path="//./pipe/<name>"
+	case strings.HasPrefix(u.Path, "//./pipe/"):
+		name = strings.TrimPrefix(u.Path, "//./pipe/")
+	case strings.HasPrefix(u.Path, "//"):
+		return "", fmt.Errorf("invalid AZD_AUTH_ENDPOINT value %q: expected local pipe path //./pipe/<name>", rawURL)
 	// Short form: npipe:<name> -> Opaque="<name>"
-	if u.Opaque != "" {
-		return `\\.\pipe\` + u.Opaque, nil
+	case u.Opaque != "":
+		name = u.Opaque
+	// Fallback short form: npipe:/<name>
+	default:
+		name = strings.TrimPrefix(u.Path, "/")
 	}
-
-	// Fallback: short form without colon-opaque, e.g. npipe:/<name>
-	name := strings.TrimPrefix(u.Path, "/")
 	if name == "" {
 		return "", fmt.Errorf("invalid AZD_AUTH_ENDPOINT value %q: missing pipe name", rawURL)
+	}
+	if strings.Contains(name, "/") {
+		return "", fmt.Errorf("invalid AZD_AUTH_ENDPOINT value %q: pipe name must not contain '/'", rawURL)
 	}
 	return `\\.\pipe\` + name, nil
 }

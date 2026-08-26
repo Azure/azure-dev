@@ -120,9 +120,10 @@ Windows named pipe transport. The OS enforces caller identity via the pipe's
 security descriptor, so no TLS handshake is required.
 
 - URL form: `npipe:azd-auth-<arbitrary>` (the value after `npipe:` is the
-  pipe name; `azd` prepends `\\.\pipe\` automatically) **or**
-  `npipe:////./pipe/azd-auth-<arbitrary>` (fully qualified). Both forms are
-  accepted.
+  pipe name; `azd` prepends `\\.\pipe\` automatically), or either fully
+  qualified spelling: `npipe://./pipe/azd-auth-<arbitrary>` or
+  `npipe:////./pipe/azd-auth-<arbitrary>`. All forms identify the same local
+  named pipe.
 - `AZD_AUTH_CERT` **MUST NOT** be set. Same handling as `unix:`.
 - `AZD_AUTH_KEY` is **required**. Same handling as `unix:`.
 - **IDE host requirements:** the pipe MUST be created with a security

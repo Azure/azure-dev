@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -21,6 +22,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -30,10 +32,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 )
+
+type echoValidationService struct {
+	azdext.UnimplementedValidationServiceServer
+}
+
+func (echoValidationService) Stream(stream azdext.ValidationService_StreamServer) error {
+	message, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	return stream.Send(message)
+}
 
 // Test_Server_Start validates the start and stop flows of the gRPC server,
 // and confirms the expected behavior for authenticated and unauthenticated requests.
@@ -67,7 +82,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedAiModelServiceServer{},
 		azdext.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
-		azdext.UnimplementedValidationServiceServer{},
+		echoValidationService{},
 		newTelemetryService(stubExtensionLookup{extension: reportingExtension}),
 	)
 
@@ -86,6 +101,39 @@ func Test_Server_Start(t *testing.T) {
 		},
 		Namespace: "test",
 	}
+
+	t.Run("RegistersStableAndBetaServices", func(t *testing.T) {
+		serviceNames := []string{
+			"AccountService",
+			"AiModelService",
+			"ComposeService",
+			"ContainerService",
+			"CopilotService",
+			"DeploymentService",
+			"EnvironmentService",
+			"EventService",
+			"ExtensionService",
+			"FrameworkService",
+			"ProjectService",
+			"PromptService",
+			"ProvisioningService",
+			"ServiceTargetService",
+			"TelemetryService",
+			"UserConfigService",
+			"ValidationService",
+			"WorkflowService",
+		}
+
+		services := server.grpcServer.GetServiceInfo()
+		require.Len(t, services, 2*len(serviceNames))
+		for _, serviceName := range serviceNames {
+			require.Contains(t, services, "azd.extensions.v1."+serviceName)
+			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
+		}
+		for serviceName := range services {
+			require.False(t, strings.HasPrefix(serviceName, "azdext."))
+		}
+	})
 
 	t.Run("ValidToken", func(t *testing.T) {
 		// Test for a valid extension token: expect service calls to be unimplemented (authenticated case).
@@ -150,6 +198,62 @@ func Test_Server_Start(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.True(t, resp.Accepted)
+	})
+
+	t.Run("BetaTelemetryAccepted", func(t *testing.T) {
+		accessToken, err := GenerateExtensionToken(reportingExtension, serverInfo)
+		require.NoError(t, err)
+
+		connection, err := grpc.NewClient(
+			serverInfo.Address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, connection.Close())
+		}()
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		client := v1beta.NewTelemetryServiceClient(connection)
+		resp, err := client.ReportUsage(ctx, &v1beta.ReportUsageRequest{
+			EventName:  "deploy.completed",
+			Attributes: map[string]string{"deploy.mode": "code"},
+		})
+		require.NoError(t, err)
+		require.True(t, resp.Accepted)
+	})
+
+	t.Run("BetaStreamingService", func(t *testing.T) {
+		accessToken, err := GenerateExtensionToken(extension, serverInfo)
+		require.NoError(t, err)
+
+		connection, err := grpc.NewClient(
+			serverInfo.Address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, connection.Close())
+		}()
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		stream, err := v1beta.NewValidationServiceClient(connection).Stream(ctx)
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&v1beta.ValidationMessage{
+			MessageType: &v1beta.ValidationMessage_RegisterValidationCheckRequest{
+				RegisterValidationCheckRequest: &v1beta.RegisterValidationCheckRequest{
+					CheckType: "provision",
+					RuleId:    "test-rule",
+				},
+			},
+		}))
+		response, err := stream.Recv()
+		require.NoError(t, err)
+		require.IsType(
+			t,
+			&v1beta.ValidationMessage_RegisterValidationCheckRequest{},
+			response.MessageType,
+		)
 	})
 
 	t.Run("TelemetryRejectsMissingEventName", func(t *testing.T) {
@@ -387,6 +491,175 @@ func TestServer_RelaysExtensionErrorOverGRPC(t *testing.T) {
 	require.Equal(t, serviceErr, recoveredServiceErr)
 }
 
+func TestServer_BetaStructuredErrorDetails(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		ErrorCode:  "AuthorizationFailed",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusForbidden,
+			Request: &http.Request{
+				Host: "management.azure.com",
+				URL:  &url.URL{Scheme: "https", Host: "management.azure.com"},
+			},
+		},
+	}
+	tests := []struct {
+		name             string
+		err              error
+		wantActionable   bool
+		wantService      bool
+		wantExtension    bool
+		wantStandardInfo bool
+	}{
+		{
+			name: "actionable extension error",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf("resolve target: %w", &azdext.LocalError{
+					Message:  "invalid project",
+					Code:     "invalid_project",
+					Category: azdext.LocalErrorCategoryValidation,
+				}),
+				Message:    "Could not resolve the target.",
+				Suggestion: "verify the project configuration",
+			},
+			wantActionable: true,
+			wantExtension:  true,
+		},
+		{
+			name: "actionable service error",
+			err: &internal.ErrorWithSuggestion{
+				Err:        responseErr,
+				Message:    "The service request failed.",
+				Suggestion: "verify access to the resource",
+			},
+			wantActionable: true,
+			wantService:    true,
+		},
+		{
+			name:             "standard auth detail",
+			err:              auth.ErrNoCurrentUser,
+			wantStandardInfo: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := newServerWithContainerService(&relayingContainerService{err: test.err})
+			serverInfo, err := server.Start()
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, server.Stop())
+			}()
+
+			extension := &extensions.Extension{Id: "azd.internal.test", Namespace: "test"}
+			accessToken, err := GenerateExtensionToken(extension, serverInfo)
+			require.NoError(t, err)
+
+			connection, err := grpc.NewClient(
+				serverInfo.Address,
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+			)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, connection.Close())
+			}()
+
+			_, err = v1beta.NewContainerServiceClient(connection).Publish(
+				azdext.WithAccessToken(t.Context(), accessToken),
+				&v1beta.ContainerPublishRequest{},
+			)
+			require.Error(t, err)
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+
+			var (
+				hasActionable bool
+				hasService    bool
+				hasExtension  bool
+				hasErrorInfo  bool
+			)
+			for _, detail := range st.Details() {
+				switch detail.(type) {
+				case *v1beta.ActionableErrorDetail:
+					hasActionable = true
+				case *v1beta.ServiceErrorDetail:
+					hasService = true
+				case *v1beta.ExtensionError:
+					hasExtension = true
+				case *errdetails.ErrorInfo:
+					hasErrorInfo = true
+				}
+			}
+			require.Equal(t, test.wantActionable, hasActionable)
+			require.Equal(t, test.wantService, hasService)
+			require.Equal(t, test.wantExtension, hasExtension)
+			require.Equal(t, test.wantStandardInfo, hasErrorInfo)
+
+			for _, typeURL := range detailTypeURLs(st) {
+				require.NotContains(t, typeURL, "azd.extensions.v1.")
+			}
+			if test.wantStandardInfo {
+				require.Contains(t, detailTypeURLs(st), "type.googleapis.com/google.rpc.ErrorInfo")
+			}
+		})
+	}
+}
+
+type betaTelemetryOverride struct{}
+
+func (betaTelemetryOverride) ReportUsage(
+	ctx context.Context,
+	request *v1beta.ReportUsageRequest,
+) (*v1beta.ReportUsageResponse, error) {
+	return &v1beta.ReportUsageResponse{Accepted: request.GetEventName() == "preview.event"}, nil
+}
+
+var _ BetaTelemetryServiceReportUsageOverride = betaTelemetryOverride{}
+
+func TestServer_BetaMethodOverride(t *testing.T) {
+	t.Parallel()
+
+	server := newServerWithContainerService(
+		azdext.UnimplementedContainerServiceServer{},
+		WithBetaServiceOverride(BetaTelemetryService, betaTelemetryOverride{}),
+	)
+	serverInfo, err := server.Start()
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, server.Stop())
+	}()
+
+	extension := &extensions.Extension{Id: "azd.internal.test", Namespace: "test"}
+	accessToken, err := GenerateExtensionToken(extension, serverInfo)
+	require.NoError(t, err)
+	connection, err := grpc.NewClient(
+		serverInfo.Address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, connection.Close())
+	}()
+
+	response, err := v1beta.NewTelemetryServiceClient(connection).ReportUsage(
+		azdext.WithAccessToken(t.Context(), accessToken),
+		&v1beta.ReportUsageRequest{EventName: "preview.event"},
+	)
+	require.NoError(t, err)
+	require.True(t, response.GetAccepted())
+
+	_, err = azdext.NewTelemetryServiceClient(connection).ReportUsage(
+		azdext.WithAccessToken(t.Context(), accessToken),
+		&azdext.ReportUsageRequest{EventName: "preview.event"},
+	)
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Unimplemented, st.Code())
+}
+
 type relayingContainerService struct {
 	azdext.UnimplementedContainerServiceServer
 	err error
@@ -397,6 +670,32 @@ func (s *relayingContainerService) Publish(
 	req *azdext.ContainerPublishRequest,
 ) (*azdext.ContainerPublishResponse, error) {
 	return nil, s.err
+}
+
+func newServerWithContainerService(
+	containerService azdext.ContainerServiceServer,
+	options ...ServerOption,
+) *Server {
+	return NewServer(
+		azdext.UnimplementedProjectServiceServer{},
+		azdext.UnimplementedEnvironmentServiceServer{},
+		azdext.UnimplementedPromptServiceServer{},
+		azdext.UnimplementedUserConfigServiceServer{},
+		azdext.UnimplementedDeploymentServiceServer{},
+		azdext.UnimplementedEventServiceServer{},
+		azdext.UnimplementedComposeServiceServer{},
+		azdext.UnimplementedWorkflowServiceServer{},
+		azdext.UnimplementedExtensionServiceServer{},
+		azdext.UnimplementedServiceTargetServiceServer{},
+		azdext.UnimplementedFrameworkServiceServer{},
+		containerService,
+		azdext.UnimplementedAccountServiceServer{},
+		azdext.UnimplementedAiModelServiceServer{},
+		azdext.UnimplementedCopilotServiceServer{},
+		azdext.UnimplementedProvisioningServiceServer{},
+		azdext.UnimplementedValidationServiceServer{},
+		azdext.UnimplementedTelemetryServiceServer{},
+	).WithOptions(options...)
 }
 
 func Test_mapHostError(t *testing.T) {

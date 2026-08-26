@@ -1434,7 +1434,9 @@ For extensions built using Go, the `azdext` package provides an `AzdClient` whic
 
 #### Other Languages
 
-For extensions authored in other programming languages, the [gRPC proto files](../../grpc/proto/) can be used to generate clients in your preferred language.
+For extensions authored in other programming languages, use the
+[stable or beta gRPC proto files](contract-versioning.md) to generate clients
+in your preferred language.
 
 ### How to set `azd` access token on requests
 
@@ -1567,19 +1569,27 @@ if err := host.Run(ctx); err != nil {
 
 ## Developer Artifacts
 
-`azd` leverages gRPC for the communication protocol between Core `azd` and extensions. gRPC client & server components are automatically generated from profile files.
+`azd` uses versioned gRPC contracts for communication between core and
+extensions. See [Extension contract versioning](contract-versioning.md) for
+the stable and beta channel policy.
 
-- Proto files @ [grpc/proto](../../grpc/proto/)
-- Generated files @ [pkg/azdext](../../pkg/azdext)
+- Stable proto files @ [grpc/proto/azd/extensions/v1](../../grpc/proto/azd/extensions/v1/)
+- Beta proto files @ [grpc/proto/azd/extensions/v1beta](../../grpc/proto/azd/extensions/v1beta/)
+- Generated stable files @ [pkg/azdext/contracts/v1](../../pkg/azdext/contracts/v1/)
+- Generated beta files @ [pkg/azdext/contracts/v1beta](../../pkg/azdext/contracts/v1beta/)
+- Generated host beta adapters @
+  [internal/grpcserver/versioned_services_generated.go](../../internal/grpcserver/versioned_services_generated.go)
 - Make file @ [Makefile](../../Makefile)
 
 To re-generate gRPC clients:
 
-- Run `protoc --version` to check if `protoc` is installed. If not, download and install it from [GitHub](https://github.com/protocolbuffers/protobuf/releases).
 - Run `make --version` to check if `make` is installed.
-- Run `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest` and `go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest` to install the required Go tools.
-- Run `make proto` from the `~/cli/azd` folder of the repo in `Git Bash`.
-- Run `../../eng/scripts/copyright-check.sh . --fix` to add copyright.
+- Install the pinned `protoc`, `protoc-gen-go`, and
+  `protoc-gen-go-grpc` versions declared in the Makefile. Generation checks
+  them before writing output.
+- Run `make proto` from `cli/azd`.
+- See [Extension protobuf contracts](../../grpc/README.md) for Buf lint and
+  compatibility checks.
 
 ## gRPC Services
 
@@ -1625,7 +1635,7 @@ the expanded results in place of the original `${VAR}` references.
 
 This service manages project configuration retrieval and related operations, including project and service-level configuration management.
 
-> See [project.proto](../../grpc/proto/project.proto) for more details.
+> See [project.proto](../../grpc/proto/azd/extensions/v1/project.proto) for more details.
 
 #### Get
 
@@ -1757,7 +1767,7 @@ Removes a service configuration value or section at the specified path from serv
 
 This service handles environment management including retrieval, selection, and key-value operations.
 
-> See [environment.proto](../../grpc/proto/environment.proto) for more details.
+> See [environment.proto](../../grpc/proto/azd/extensions/v1/environment.proto) for more details.
 
 #### GetCurrent
 
@@ -1879,7 +1889,7 @@ Removes a config value at a given path.
 
 This service manages user-specific configuration retrieval and updates.
 
-> See [user_config.proto](../../grpc/proto/user_config.proto) for more details.
+> See [user_config.proto](../../grpc/proto/azd/extensions/v1/user_config.proto) for more details.
 
 #### Get
 
@@ -1941,7 +1951,7 @@ Removes a user configuration value.
 
 This service provides operations for deployment retrieval and context management.
 
-> See [deployment.proto](../../grpc/proto/deployment.proto) for more details.
+> See [deployment.proto](../../grpc/proto/azd/extensions/v1/deployment.proto) for more details.
 
 #### GetDeployment
 
@@ -1979,7 +1989,7 @@ Retrieves the current deployment context.
 
 This service manages user prompt interactions for subscriptions, locations, resources, and confirmations.
 
-> See [prompt.proto](../../grpc/proto/prompt.proto) for more details.
+> See [prompt.proto](../../grpc/proto/azd/extensions/v1/prompt.proto) for more details.
 
 #### PromptSubscription
 
@@ -2206,7 +2216,7 @@ Prompts the user to select a location for a specific model and shows quota avail
 
 This service provides non-interactive AI catalog, deployment resolution, and quota usage primitives.
 
-> See [ai_model.proto](../../grpc/proto/ai_model.proto) for more details.
+> See [ai_model.proto](../../grpc/proto/azd/extensions/v1/ai_model.proto) for more details.
 
 #### ListModels
 
@@ -2371,7 +2381,7 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - Invoke event handlers.
   - Send status updates regarding event processing.
 
-> See [event.proto](../../grpc/proto/event.proto) for more details.
+> See [event.proto](../../grpc/proto/azd/extensions/v1/event.proto) for more details.
 
 #### Message Types
 
@@ -2502,7 +2512,7 @@ host := azdext.NewExtensionHost(azdClient).
 
 This service provides container build, package, and publish operations for extensions that need to work with containers but don't want to implement the full complexity of Docker CLI integration, registry authentication, etc.
 
-> See [container.proto](../../grpc/proto/container.proto) for more details.
+> See [container.proto](../../grpc/proto/azd/extensions/v1/container.proto) for more details.
 
 #### Build
 
@@ -2616,7 +2626,7 @@ fmt.Printf("Container published successfully with %d artifacts\n", len(publishRe
 
 This service handles language and framework-specific operations like restore, build, and package for services. Extensions can register framework service providers to handle custom languages or override default behavior.
 
-> See [framework_service.proto](../../grpc/proto/framework_service.proto) for more details.
+> See [framework_service.proto](../../grpc/proto/azd/extensions/v1/framework_service.proto) for more details.
 
 #### Provider Interface
 
@@ -2738,7 +2748,7 @@ func main() {
 
 This service handles the full deployment lifecycle for services, including packaging, publishing, and deploying to Azure resources. Extensions can register service target providers for custom deployment scenarios.
 
-> See [service_target.proto](../../grpc/proto/service_target.proto) for more details.
+> See [service_target.proto](../../grpc/proto/azd/extensions/v1/service_target.proto) for more details.
 
 #### Provider Interface
 
@@ -2854,7 +2864,7 @@ func main() {
 
 This service manages composability resources in an azd project.
 
-> See [compose.proto](../../grpc/proto/compose.proto) for more details.
+> See [compose.proto](../../grpc/proto/azd/extensions/v1/compose.proto) for more details.
 
 #### ListResources
 
@@ -2911,7 +2921,7 @@ Adds a new composability resource to the project.
 
 This service executes workflows defined within the project.
 
-> See [workflow.proto](../../grpc/proto/workflow.proto) for more details.
+> See [workflow.proto](../../grpc/proto/azd/extensions/v1/workflow.proto) for more details.
 
 #### Run
 
@@ -2928,7 +2938,7 @@ Executes a workflow consisting of sequential steps.
 
 This service provides information about the currently logged-in user or identity.
 
-> See [account.proto](../../grpc/proto/account.proto) for more details.
+> See [account.proto](../../grpc/proto/azd/extensions/v1/account.proto) for more details.
 
 #### ListSubscriptions
 
@@ -3066,7 +3076,7 @@ func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, su
 
 This service provides Copilot agent capabilities to extensions. Sessions are created lazily on the first `SendMessage` call and can be reused across multiple calls. Sessions run in headless/autopilot mode by default when invoked via gRPC, suppressing all console output.
 
-> See [copilot.proto](../../grpc/proto/copilot.proto) for more details.
+> See [copilot.proto](../../grpc/proto/azd/extensions/v1/copilot.proto) for more details.
 
 #### Initialize
 

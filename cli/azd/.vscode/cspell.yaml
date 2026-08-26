@@ -511,6 +511,22 @@ overrides:
       - Getsockopt
       - PEERCRED
       - Xucred
+  - filename: grpc/generateadapters/main.go
+    words:
+      - generateadapters
+  - filename: grpc/generatefacade/main.go
+    words:
+      - generatefacade
+  - filename: internal/grpcserver/versioned_services.go
+    words:
+      - anypb
+      - protoregistry
+  - filename: internal/grpcserver/versioned_services_generated.go
+    words:
+      - generateadapters
+  - filename: pkg/azdext/contracts_v1_aliases.go
+    words:
+      - generatefacade
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

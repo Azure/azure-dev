@@ -1,5 +1,19 @@
 # Release History
 
+## 1.0.25-beta (2026-08-26)
+
+### Bugs Fixed
+
+- The inline example wrote a rubric dimension as `name:`; the service field
+  is `id`, so anyone who copied it got an empty dimension ID and a deploy
+  that failed. The examples are now checked.
+- An absolute `--path` produced `.//tmp/evals/azure.eval.yaml` as the
+  service reference, so `init` wrote the configuration where it was asked
+  and `azd up` resolved a different file under the project.
+- `--evaluator` no longer accepts a path. The value becomes
+  `./evaluators/<ref>.json`, so one carrying separators scaffolded a source
+  outside the project that deploy would then read and upload.
+
 ## 1.0.24-beta (2026-08-24)
 
 ### Bugs Fixed

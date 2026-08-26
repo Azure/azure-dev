@@ -1739,6 +1739,18 @@ func EvaluatorRefMalformed(ref string) error {
 		"them with commas, and use builtin.<name> for a built-in", ref)
 }
 
+// EvaluatorRefNotAPath reports an --evaluator value carrying path separators.
+//
+// The value becomes ./evaluators/<ref>.json, so one with separators in it
+// scaffolds a source outside the evaluators directory, and deploy reads and
+// uploads whatever that resolves to. Refused rather than cleaned up: a reader
+// who typed a path meant something other than this flag.
+func EvaluatorRefNotAPath(ref string) error {
+	return fmt.Errorf("%q looks like a path, not an evaluator name: pass a name such as "+
+		"builtin.relevance or quality, and declare a rubric file with source: in the "+
+		"configuration instead", ref)
+}
+
 // GateNeedsATerminalRun refuses to gate a run that is still moving.
 //
 // The counts are partial until the run stops, so a threshold read from them

@@ -141,6 +141,11 @@ func azdEnvValue(ctx context.Context, key string) string {
 // This needs no service call, so it keeps `init`'s promise to make none. The
 // alternative is a config that scaffolds cleanly and fails at `create`, naming
 // a value the user passed to a different command.
+//
+// A reference becomes `./evaluators/<ref>.json`, so anything that can climb out
+// of that directory is refused here: `--evaluator ../../id_rsa` would otherwise
+// scaffold a source path outside the project and deploy would read and upload
+// whatever it found there.
 func validateEvaluatorRefs(refs []string) error {
 	for _, ref := range refs {
 		if strings.TrimSpace(ref) == "" {
@@ -148,6 +153,9 @@ func validateEvaluatorRefs(refs []string) error {
 		}
 		if strings.ContainsAny(ref, " \t") {
 			return messages.EvaluatorRefMalformed(ref)
+		}
+		if strings.ContainsAny(ref, `/\:`) || ref == "." || ref == ".." {
+			return messages.EvaluatorRefNotAPath(ref)
 		}
 	}
 	return nil

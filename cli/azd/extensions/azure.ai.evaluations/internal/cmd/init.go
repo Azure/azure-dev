@@ -353,6 +353,20 @@ func settleInitSource(
 	return source, nil
 }
 
+// refTo is the `$ref` value for a configuration at path.
+//
+// Relative paths get `./` so the directive reads as a path rather than a
+// registry name. An absolute one already is a path, and prefixing it produced
+// `.//tmp/evals/azure.eval.yaml`: `init` wrote the configuration where it was
+// asked, and `azd up` then resolved something else under the project.
+func refTo(configPath string) string {
+	slashed := filepath.ToSlash(configPath)
+	if filepath.IsAbs(configPath) {
+		return slashed
+	}
+	return "./" + slashed
+}
+
 // defaultEvalName names an eval after what it evaluates and what it reads.
 func defaultEvalName(target, source string) string {
 	if source == initSourceTraces {
@@ -802,7 +816,7 @@ func ensureRootEvalService(
 	// host alone reported the wiring present after `init --path` moved the
 	// configuration, and `azd up` went on deploying the file that was left
 	// behind -- the scaffold the reader was looking at was never deployed.
-	wantRef := "./" + filepath.ToSlash(configPath)
+	wantRef := refTo(configPath)
 	if svc, ok := resp.GetProject().GetServices()[serviceName]; ok && svc.GetHost() == project.EvalHost {
 		if have := serviceConfigRef(svc); have != "" && !sameRefTarget(have, wantRef) {
 			return "", messages.ServiceRefPointsElsewhere(serviceName, have, wantRef)

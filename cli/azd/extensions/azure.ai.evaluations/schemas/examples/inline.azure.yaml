@@ -25,7 +25,7 @@ services:
         definition:
           type: rubric
           dimensions:
-            - name: length
+            - id: length
               weight: 1
               description: Answers the question without restating it.
 

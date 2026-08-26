@@ -931,6 +931,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	//   - provision.preflight=off   → skip the server-side ARM provision validation call.
 	skipValidation := false
 	skipArmPreflight := false
+	var valCtx *validationContext
 	var userConfigManager config.UserConfigManager
 	if err := p.serviceLocator.Resolve(&userConfigManager); err == nil {
 		if userConfig, err := userConfigManager.Load(); err == nil {
@@ -940,7 +941,9 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	if !skipValidation || !skipArmPreflight {
 		p.console.ShowSpinner(ctx, "Validating deployment", input.Step)
-		canceled, validationErr := p.validateProvision(
+		var canceled bool
+		var validationErr error
+		valCtx, canceled, validationErr = p.validateProvision(
 			ctx,
 			deployment,
 			p.path,
@@ -1049,6 +1052,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		planned.Parameters,
 		deploymentTags,
 		optionsMap,
+		valCtx,
 	)
 
 	// Try to atomically claim the "completed" state. If the interrupt
@@ -2601,7 +2605,7 @@ func resolveProvisionValidationGates(userConfig config.Config) (skipValidation b
 // server-side ARM call runs outside that span so its failures/latency are not attributed
 // to azd's local validation event.
 //
-// It returns (canceled, err) where:
+// It returns (validation context, canceled, err) where:
 //   - canceled=true, err=nil: validation detected issues and provisioning should be skipped
 //     (exit code 0).
 //   - canceled=false, err!=nil: the validation itself failed to run (exit code 1).
@@ -2616,22 +2620,22 @@ func (p *BicepProvider) validateProvision(
 	options map[string]any,
 	skipLocalValidation bool,
 	skipArmPreflight bool,
-) (canceled bool, err error) {
+) (valCtx *validationContext, canceled bool, err error) {
 	// Local (client-side) provision validation, traced under the validation.provision event.
-	valCtx, canceled, err := p.traceLocalProvisionValidation(
+	valCtx, canceled, err = p.traceLocalProvisionValidation(
 		ctx, target, modulePath, armTemplate, armParameters, skipLocalValidation)
 	if err != nil || canceled {
-		return canceled, err
+		return valCtx, canceled, err
 	}
 
 	// Server-side ARM provision validation. Skipped independently via provision.preflight=off.
 	// This runs outside the validation.provision span on purpose so ARM preflight errors are
 	// not attributed to azd's local validation telemetry.
 	if skipArmPreflight {
-		return false, nil
+		return valCtx, false, nil
 	}
 	err = target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
-	return false, annotateDeploymentErrorResources(err, valCtx, armTemplate)
+	return valCtx, false, annotateDeploymentErrorResources(err, valCtx, armTemplate)
 }
 
 // traceLocalProvisionValidation runs (or skips) azd's local provision validation within the
@@ -3403,8 +3407,10 @@ func (p *BicepProvider) deployModule(
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
+	valCtx *validationContext,
 ) (*azapi.ResourceDeployment, error) {
-	return target.Deploy(ctx, armTemplate, armParameters, tags, options)
+	deployResult, err := target.Deploy(ctx, armTemplate, armParameters, tags, options)
+	return deployResult, annotateDeploymentErrorResources(err, valCtx, armTemplate)
 }
 
 // inputsParameter generates and updates input parameters for the Azure Resource Manager (ARM) template.

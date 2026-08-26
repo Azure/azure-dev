@@ -4,13 +4,30 @@
 package bicep
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/stretchr/testify/require"
 )
+
+type deploymentErrorFake struct {
+	fakeDeployment
+	deployErr error
+}
+
+func (f *deploymentErrorFake) Deploy(
+	context.Context,
+	azure.RawArmTemplate,
+	azure.ArmParameters,
+	map[string]*string,
+	map[string]any,
+) (*azapi.ResourceDeployment, error) {
+	return nil, f.deployErr
+}
 
 func TestAnnotateDeploymentErrorResources_FromTarget(t *testing.T) {
 	err := azapi.NewAzureDeploymentError(
@@ -128,6 +145,48 @@ func TestDeploymentResources_UsesSnapshotBeforeTemplate(t *testing.T) {
 	resources := deploymentResources(valCtx, template)
 	require.Len(t, resources, 1)
 	require.Equal(t, "resolved-account", resources[0].Name)
+}
+
+func TestDeployModuleAnnotatesDeploymentErrors(t *testing.T) {
+	deploymentErr := azapi.NewAzureDeploymentError(
+		"Deployment Error Details",
+		`{"error":{"code":"DeploymentFailed","details":[`+
+			`{"code":"InsufficientQuota","target":"ai-account",`+
+			`"message":"Insufficient quota."}]}}`,
+		azapi.DeploymentOperationDeploy,
+	)
+	target := &deploymentErrorFake{
+		deployErr: fmt.Errorf("deploying: %w", deploymentErr),
+	}
+	template := azure.RawArmTemplate(`{
+		"$schema":"schema",
+		"contentVersion":"1.0.0.0",
+		"resources":[{
+			"type":"Microsoft.CognitiveServices/accounts",
+			"name":"ai-account"
+		}]
+	}`)
+
+	_, err := (&BicepProvider{}).deployModule(
+		t.Context(),
+		target,
+		template,
+		nil,
+		nil,
+		nil,
+		&validationContext{SnapshotResources: []armTemplateResource{{
+			Type: "Microsoft.CognitiveServices/accounts",
+			Name: "ai-account",
+		}}},
+	)
+
+	deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](err)
+	require.True(t, ok)
+	require.Equal(
+		t,
+		"Microsoft.CognitiveServices/accounts",
+		deploymentErr.Details.Inner[0].Inner[0].ResourceType,
+	)
 }
 
 func annotateDeploymentErrorLineForTest(err error, resources []armTemplateResource) error {

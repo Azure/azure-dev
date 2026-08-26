@@ -428,7 +428,9 @@ func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 					Languages:         []string{"en-US"},
 					AutoTruncate:      &autoTruncate,
 				},
-				Transcription: &VoiceTranscription{Model: "azure-speech", Language: new("en-US"), Prompt: new("Contoso terms")},
+				Transcription: &VoiceTranscription{
+					Model: "azure-speech", Language: new("en-US"), Prompt: new("Contoso terms"),
+				},
 			},
 			Output: &VoiceAudioOutput{
 				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: &outRate},
@@ -461,10 +463,30 @@ func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 	if err := json.Unmarshal(payload, &wire); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
-	def := wire["definition"].(map[string]any)
-	input := def["audio"].(map[string]any)["input"].(map[string]any)
-	output := def["audio"].(map[string]any)["output"].(map[string]any)
-	structured := def["structured_inputs"].(map[string]any)["persona"].(map[string]any)
+	def, ok := wire["definition"].(map[string]any)
+	if !ok {
+		t.Fatalf("definition = %#v, want object", wire["definition"])
+	}
+	audio, ok := def["audio"].(map[string]any)
+	if !ok {
+		t.Fatalf("definition.audio = %#v, want object", def["audio"])
+	}
+	input, ok := audio["input"].(map[string]any)
+	if !ok {
+		t.Fatalf("definition.audio.input = %#v, want object", audio["input"])
+	}
+	output, ok := audio["output"].(map[string]any)
+	if !ok {
+		t.Fatalf("definition.audio.output = %#v, want object", audio["output"])
+	}
+	structuredInputs, ok := def["structured_inputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("definition.structured_inputs = %#v, want object", def["structured_inputs"])
+	}
+	structured, ok := structuredInputs["persona"].(map[string]any)
+	if !ok {
+		t.Fatalf("definition.structured_inputs.persona = %#v, want object", structuredInputs["persona"])
+	}
 
 	if structured["default_value"] != "Ada" || structured["defaultValue"] != nil {
 		t.Fatalf("structured input default was not mapped to wire shape: %#v", structured)
@@ -472,13 +494,25 @@ func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 	if output["voice"] != "en-US-AvaNeural" || output["voice_type"] != "azure-standard" || output["style"] != style {
 		t.Fatalf("output voice flat shape not mapped: %#v", output)
 	}
-	if input["echo_cancellation"].(map[string]any)["type"] != "server_echo_cancellation" {
+	echoCancellation, ok := input["echo_cancellation"].(map[string]any)
+	if !ok {
+		t.Fatalf("echo cancellation = %#v, want object", input["echo_cancellation"])
+	}
+	if echoCancellation["type"] != "server_echo_cancellation" {
 		t.Fatalf("echo cancellation not mapped: %#v", input["echo_cancellation"])
 	}
 	if def["tool_choice"] != "auto" || def["max_output_tokens"] != "inf" {
 		t.Fatalf("response options not mapped: %#v", def)
 	}
-	if len(def["tools"].([]any)) != 1 || def["avatar"].(map[string]any)["character"] != "lisa" {
+	tools, ok := def["tools"].([]any)
+	if !ok {
+		t.Fatalf("tools = %#v, want array", def["tools"])
+	}
+	avatar, ok := def["avatar"].(map[string]any)
+	if !ok {
+		t.Fatalf("avatar = %#v, want object", def["avatar"])
+	}
+	if len(tools) != 1 || avatar["character"] != "lisa" {
 		t.Fatalf("tools/avatar not mapped: %#v", def)
 	}
 }

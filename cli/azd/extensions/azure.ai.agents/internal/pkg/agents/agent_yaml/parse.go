@@ -482,6 +482,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 
 func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	var errors []string
+	if agent.OutputModalities != nil && len(agent.OutputModalities) == 0 {
+		errors = append(errors, "template.output_modalities must not be empty when specified")
+	}
 	for i, modality := range agent.OutputModalities {
 		if strings.TrimSpace(modality) == "" {
 			errors = append(errors, fmt.Sprintf("template.output_modalities[%d] must not be blank", i))
@@ -552,7 +555,8 @@ func validateVoiceIncludeTranscriptionCompatibility(agent VoiceAgent, transcript
 		return nil
 	}
 	return []string{
-		"template.include item.input_audio_transcription.phrases requires template.audio.input.transcription.model to be azure-speech or azure-fast-transcription",
+		"template.include item.input_audio_transcription.phrases requires " +
+			"template.audio.input.transcription.model to be azure-speech or azure-fast-transcription",
 	}
 }
 

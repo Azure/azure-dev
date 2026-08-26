@@ -774,7 +774,9 @@ func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 		if voiceAgent.Audio.Input != nil {
 			inputFormat = mapVoiceAudioFormat(voiceAgent.Audio.Input.Format, inputFormat)
 			if voiceAgent.Audio.Input.NoiseReduction != nil {
-				noiseReduction = &agent_api.VoiceNoiseReduction{Type: strings.TrimSpace(voiceAgent.Audio.Input.NoiseReduction.Type)}
+				noiseReduction = &agent_api.VoiceNoiseReduction{
+					Type: strings.TrimSpace(voiceAgent.Audio.Input.NoiseReduction.Type),
+				}
 			}
 			echoCancellation = voiceAgent.Audio.Input.EchoCancellation
 			turnDetection = mapVoiceTurnDetection(voiceAgent.Audio.Input.TurnDetection)
@@ -788,7 +790,7 @@ func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 	}
 
 	outputModalities := []string{"audio"}
-	if len(voiceAgent.OutputModalities) > 0 {
+	if voiceAgent.OutputModalities != nil {
 		outputModalities = voiceAgent.OutputModalities
 	}
 

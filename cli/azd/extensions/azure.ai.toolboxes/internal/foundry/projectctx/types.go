@@ -73,7 +73,7 @@ type AzdHostedSources struct {
 }
 
 // State is the JSON shape stored at extensions.ai-projects.context in
-// ~/.azd/config.json. This key is owned by azure.ai.agents; the toolboxes
+// ~/.azd/config.json. This key is owned by azure.ai.projects; the toolboxes
 // extension reads it but never writes it.
 type State struct {
 	Endpoint string `json:"endpoint"`

@@ -14,12 +14,18 @@ const (
 	CodeConflictingArguments   = "conflicting_arguments"
 	CodeInvalidRoutineManifest = "invalid_routine_manifest"
 	CodeRoutineAlreadyExists   = "routine_already_exists"
+	CodeProjectServiceConflict = "project_service_conflict"
 )
 
 // Error codes for dependency errors.
 const (
 	CodeMissingProjectEndpoint = "missing_project_endpoint"
 	CodeFileNotFound           = "file_not_found"
+)
+
+// Error codes for internal errors.
+const (
+	CodeProjectAuthoringFailed = "project_authoring_failed"
 )
 
 // Error codes for auth errors.

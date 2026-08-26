@@ -277,6 +277,25 @@ func newTestAzdClient(
 ) *azdext.AzdClient {
 	t.Helper()
 
+	address := newTestAzdServer(t, envServer, workflowServer, promptServers...)
+	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(address))
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		azdClient.Close()
+	})
+
+	return azdClient
+}
+
+func newTestAzdServer(
+	t *testing.T,
+	envServer azdext.EnvironmentServiceServer,
+	workflowServer azdext.WorkflowServiceServer,
+	promptServers ...azdext.PromptServiceServer,
+) string {
+	t.Helper()
+
 	grpcServer := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(grpcServer, envServer)
 	azdext.RegisterWorkflowServiceServer(grpcServer, workflowServer)
@@ -304,14 +323,7 @@ func newTestAzdClient(
 		}
 	})
 
-	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		azdClient.Close()
-	})
-
-	return azdClient
+	return listener.Addr().String()
 }
 
 func TestFoundryProjectInfoFromResource(t *testing.T) {

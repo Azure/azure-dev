@@ -478,37 +478,13 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 	}
 
 	var env map[string]string
-	needsEnv, err := infraEjectNeedsEnvironment(projectRoot)
-	if err != nil {
-		return err
-	}
-	if needsEnv && len(clients) > 0 && clients[0] != nil {
+	if len(clients) > 0 && clients[0] != nil {
 		env, err = readInfraEjectEnvironment(ctx, clients[0])
 		if err != nil {
 			return err
 		}
 	}
 	return ejectInfra(projectRoot, provider, env)
-}
-
-func infraEjectNeedsEnvironment(projectRoot string) (bool, error) {
-	rawYAML, err := readProjectAzureYAML(projectRoot)
-	if err != nil {
-		return false, err
-	}
-	serviceName, err := findFoundryServiceForEject(rawYAML)
-	if err != nil {
-		return false, err
-	}
-	endpoint, err := synthesis.ProjectEndpoint(rawYAML, serviceName, projectRoot)
-	if err != nil {
-		return false, exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("read endpoint for foundry project service %q: %s", serviceName, err),
-			"check the endpoint field under your azure.ai.project service",
-		)
-	}
-	return endpoint != "", nil
 }
 
 // ejectInfra synthesizes infrastructure templates from azure.yaml. A project

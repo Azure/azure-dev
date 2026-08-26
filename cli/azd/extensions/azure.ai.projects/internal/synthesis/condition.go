@@ -6,12 +6,11 @@ package synthesis
 import (
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 // evaluateCondition matches project.ServiceConfig.IsEnabled.
-// Extensions pin a published azd module, so they cannot import
-// newer core helpers until that module is bumped.
+// Foundry expressions are not valid in condition values.
 func evaluateCondition(
 	value string,
 	getenv func(string) string,
@@ -22,7 +21,7 @@ func evaluateCondition(
 	if getenv == nil {
 		getenv = func(string) string { return "" }
 	}
-	expanded, err := foundry.ExpandEnv(value, getenv)
+	expanded, err := osutil.NewExpandableString(value).Envsubst(getenv)
 	if err != nil {
 		return false, fmt.Errorf(
 			"malformed condition template: %w",

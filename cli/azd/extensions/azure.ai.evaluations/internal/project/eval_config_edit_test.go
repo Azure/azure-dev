@@ -81,7 +81,7 @@ datasets:
 	require.NoError(t, err)
 	require.True(t, changed)
 
-	cfg, err := OpenEvalConfigForEdit(dir)
+	cfg, err := OpenEvalConfig(dir)
 	require.NoError(t, err)
 	require.Len(t, cfg.Datasets, 2)
 	assert.Equal(t, "golden", cfg.Datasets[0].Name)
@@ -125,7 +125,7 @@ evaluators:
 	require.NoError(t, err)
 	assert.True(t, changed)
 
-	cfg, err := OpenEvalConfigForEdit(dir)
+	cfg, err := OpenEvalConfig(dir)
 	require.NoError(t, err)
 	require.Len(t, cfg.Evaluators, 1, "updated in place, not appended beside itself")
 	assert.Equal(t, "./evaluators/quality.json", cfg.Evaluators[0].Source)
@@ -140,7 +140,7 @@ func TestRecordingIntoAProjectWithNoConfigurationYet(t *testing.T) {
 	assert.True(t, changed)
 	assert.True(t, created, "generate runs before init on the golden path")
 
-	cfg, err := OpenEvalConfigForEdit(dir)
+	cfg, err := OpenEvalConfig(dir)
 	require.NoError(t, err)
 	require.Len(t, cfg.Datasets, 1)
 	assert.Equal(t, "golden", cfg.Datasets[0].Name)

@@ -73,7 +73,7 @@ func TestForcingAnEvalReplacesOnlyThatEntry(t *testing.T) {
 		Evals:      []Eval{{Name: "nightly", Dataset: "golden"}},
 	}))
 
-	cfg, err := OpenEvalConfigForEdit(dir)
+	cfg, err := OpenEvalConfig(dir)
 	require.NoError(t, err)
 	require.Len(t, cfg.Evals, 2, "replaced, not appended beside itself")
 

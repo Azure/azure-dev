@@ -14,11 +14,12 @@ import (
 
 // A `$ref` on one entry does not change what a different entry means.
 //
-// The rescue that moves spliced rubric keys under `definition` used to be gated
-// on "this document uses `$ref` somewhere". A directive on an unrelated dataset
-// therefore switched it on for every evaluator in the file, and a hand-written
-// `dimensions:` -- a mistake the strict decoder exists to report -- was silently
-// filed as rubric content and published to the service instead.
+// Rubric keys at evaluator entry level were once moved under `definition` when
+// the document used `$ref` anywhere. A directive on an unrelated dataset
+// therefore switched that on for every evaluator in the file, and a hand-written
+// `dimensions:` -- a mistake worth reporting -- was silently filed as rubric
+// content and published to the service instead. A `$ref` now fills the field
+// that holds it, so nothing about one entry can reach another.
 //
 // The same evaluator, refused in one file and accepted in another because of an
 // unrelated entry, is the shape this whole mechanism is supposed to rule out.

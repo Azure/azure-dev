@@ -27,8 +27,9 @@ func TestAnchorsSurviveRefResolution(t *testing.T) {
 	path := filepath.Join(dir, EvalConfigBase)
 	require.NoError(t, os.WriteFile(path, []byte(`
 evaluators:
-  - $ref: ./evaluators/quality.json
-    name: quality
+  - name: quality
+    definition:
+      $ref: ./evaluators/quality.json
 
 evals:
   - name: nightly

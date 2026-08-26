@@ -41,10 +41,9 @@ evals:
     dataset: golden
 `), 0o600))
 
-	cfg, err := OpenEvalConfigForEdit(dir)
-	require.NoError(t, err)
-	require.NotNil(t, cfg)
-	require.NoError(t, SaveEvalConfig(dir, cfg))
+	require.NoError(t, ApplyScaffold(dir, ScaffoldWrite{
+		Datasets: []DatasetDecl{{Name: "extra", File: "./datasets/extra.jsonl"}},
+	}))
 
 	after, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -77,17 +76,20 @@ evals:
 	assert.Equal(t, "quality", cfg.Evaluators[0].Name)
 }
 
-// An include is the only thing the editing reader treats differently. A
-// configuration without one decodes identically either way, so a mistyped key
-// is still refused on the path that writes.
-func TestEditingReadsAreStillStrict(t *testing.T) {
+// The authored read answers what is declared without decoding, so a mistyped
+// key is reported by the commands that read the configuration rather than by
+// the ones that append to it.
+func TestTheAuthoredReadDoesNotDecode(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, EvalConfigBase),
 		[]byte("datasets:\n  - name: golden\n    fiel: ./x.jsonl\n"), 0o600))
 
-	_, err := OpenEvalConfigForEdit(dir)
+	authored, err := ReadAuthoredConfig(dir)
+	require.NoError(t, err, "appending to a file does not require making sense of every key")
+	assert.Equal(t, []string{"golden"}, authored.Names(SectionDatasets))
 
+	_, err = OpenEvalConfig(dir)
 	require.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "fiel"),
-		"the typo has to be named on the path that saves the file too")
+		"the typo is still named by every command that reads the configuration")
 }

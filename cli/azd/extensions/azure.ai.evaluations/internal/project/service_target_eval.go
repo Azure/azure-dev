@@ -315,14 +315,11 @@ func EvalConfigFromService(svc *azdext.ServiceConfig, projectRoot string) (*Eval
 		return nil, messages.RefNeedsAProjectRoot(svc.GetName())
 	}
 
-	// `$ref` is a directive, not configuration: ResolveFileRefs has already
-	// replaced it with the file's content. It only survives when resolution was
-	// skipped, and that config cannot deploy anyway.
-	delete(values, "$ref")
-
 	// Decoded by the same strict reader the on-disk path uses, so `azd up` and
 	// `azd ai eval run` name a mistyped key identically instead of one
-	// explaining it and the other ignoring it.
+	// explaining it and the other ignoring it. A surviving `$ref` is reported
+	// rather than swallowed: it means this config reached the decoder without
+	// passing the resolver.
 	raw, err := yaml.Marshal(values)
 	if err != nil {
 		return nil, messages.ReadingServiceConfig(err)

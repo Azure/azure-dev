@@ -109,8 +109,9 @@ func TestBothRoutesReadARefdRubricTheSameWay(t *testing.T) {
 	path := filepath.Join(dir, "azure.eval.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
 evaluators:
-  - $ref: ./evaluators/quality.json
-    name: quality
+  - name: quality
+    definition:
+      $ref: ./evaluators/quality.json
 
 evals:
   - name: nightly
@@ -122,8 +123,8 @@ evals:
 
 	svc := serviceWith(t, map[string]any{
 		"evaluators": []any{map[string]any{
-			"$ref": "./evaluators/quality.json",
-			"name": "quality",
+			"name":       "quality",
+			"definition": map[string]any{"$ref": "./evaluators/quality.json"},
 		}},
 		"evals": []any{map[string]any{"name": "nightly", "dataset": "golden"}},
 	})
@@ -134,14 +135,14 @@ evals:
 		"one file, one meaning, whichever command opened it")
 }
 
-// A `$ref` can name a bare rubric file, which is the shape the spec documents
-// and the shape `generate` downloads from the service.
+// A `$ref` at `definition:` names the bare rubric file `generate` downloads
+// from the service, which is the shape the spec documents.
 //
-// `$ref` splices the file's top-level keys into the entry, so `dimensions` and
-// friends land beside `name` and used to be rejected outright. They are moved
-// under `definition` instead. Wrapping the file would have been the smaller
-// change and the wrong one: the tool writes that file, so the config has to
-// read what the tool writes.
+// The directive fills the field that holds it, so the file's `{type,
+// dimensions}` become the definition without the reader knowing anything about
+// rubrics. Wrapping the file would have been the smaller change and the wrong
+// one: the tool writes that file, so the config has to read what the tool
+// writes.
 func TestRefCanNameABareRubricFile(t *testing.T) {
 	dir := t.TempDir()
 
@@ -155,8 +156,9 @@ func TestRefCanNameABareRubricFile(t *testing.T) {
 	path := filepath.Join(dir, "azure.eval.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
 evaluators:
-  - $ref: ./evaluators/support-agent-quality.json
-    name: support-agent-quality
+  - name: support-agent-quality
+    definition:
+      $ref: ./evaluators/support-agent-quality.json
 
 evals:
   - name: nightly
@@ -167,7 +169,7 @@ evals:
 	require.NoError(t, err, "the spec's own example has to load")
 	require.Len(t, cfg.Evaluators, 1)
 	assert.Equal(t, "support-agent-quality", cfg.Evaluators[0].Name,
-		"the sibling name stays the author's, not a key from the rubric")
+		"the name stays the author's, not a key from the rubric")
 	assert.Equal(t, "rubric", cfg.Evaluators[0].Definition["type"])
 	assert.Equal(t, 0.7, cfg.Evaluators[0].Definition["pass_threshold"],
 		"every rubric key travels, not just the ones this decoder happens to know")

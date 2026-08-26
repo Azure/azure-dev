@@ -32,8 +32,9 @@ func TestAnEvaluatorCarryingItsRubricIsPublished(t *testing.T) {
 	path := filepath.Join(dir, EvalConfigBase)
 	require.NoError(t, os.WriteFile(path, []byte(`
 evaluators:
-  - $ref: ./evaluators/quality.json
-    name: quality
+  - name: quality
+    definition:
+      $ref: ./evaluators/quality.json
   - name: from-a-file
     source: ./evaluators/quality.json
   - name: builtin.relevance-is-not-ours

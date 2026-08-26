@@ -17,10 +17,11 @@ services:
     evaluators:
       - name: support-agent-quality
         source: ./evaluators/support-agent-quality.json
-      # Or pulled in from its own file, the way agents and projects do it.
-      - $ref: ./evaluators/tone.yaml
-        name: tone
-      # Or written out here, which is also what a $ref to a rubric resolves to.
+      # Or the rubric kept in its own file, pulled into the field it fills.
+      - name: tone
+        definition:
+          $ref: ./evaluators/tone.yaml
+      # Or written out here, which is what the $ref above resolves to.
       - name: brevity
         definition:
           type: rubric

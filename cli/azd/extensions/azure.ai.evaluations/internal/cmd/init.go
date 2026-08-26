@@ -129,13 +129,11 @@ func newInitCommand() *cobra.Command {
 			// reporting it as created would claim a file it only added to.
 			_, configExistedErr := os.Stat(configPath)
 			configExisted := configExistedErr == nil
-			cfg, err := project.OpenEvalConfigForEdit(path)
+			authored, err := project.ReadAuthoredConfig(path)
 			if err != nil {
 				return err
 			}
-			if cfg == nil {
-				cfg = &project.EvalConfig{}
-			}
+			cfg := declaredSoFar(authored)
 			// Checked before the prompt as well as after it, so a name that is
 			// already taken is reported without asking a question first.
 			if cfg.HasEval(evalName) && !force {
@@ -173,13 +171,11 @@ func newInitCommand() *cobra.Command {
 			}
 			defer unlockConfig()
 
-			cfg, err = project.OpenEvalConfigForEdit(path)
+			authored, err = project.ReadAuthoredConfig(path)
 			if err != nil {
 				return err
 			}
-			if cfg == nil {
-				cfg = &project.EvalConfig{}
-			}
+			cfg = declaredSoFar(authored)
 			// Recorded rather than applied here: the write below edits the file,
 			// so the replacement has to be expressed as a removal it can make.
 			replacedEval := ""
@@ -543,6 +539,27 @@ func addEvaluatorDecl(cfg *project.EvalConfig, decl project.EvaluatorDecl) {
 		return
 	}
 	cfg.Evaluators = append(cfg.Evaluators, decl)
+}
+
+// declaredSoFar seeds the accumulator with the names the configuration already
+// declares, so planScaffold can tell an addition from a duplicate.
+//
+// Names only. The write below appends to the document rather than saving this
+// value, so nothing else about the existing entries is needed -- and reading
+// more would mean decoding a configuration whose includes are deliberately left
+// unresolved.
+func declaredSoFar(authored *project.AuthoredConfig) *project.EvalConfig {
+	cfg := &project.EvalConfig{}
+	for _, name := range authored.Names(project.SectionDatasets) {
+		cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{Name: name})
+	}
+	for _, name := range authored.Names(project.SectionEvaluators) {
+		cfg.Evaluators = append(cfg.Evaluators, project.EvaluatorDecl{Name: name})
+	}
+	for _, name := range authored.Names(project.SectionEvals) {
+		cfg.Evals = append(cfg.Evals, project.Eval{Name: name})
+	}
+	return cfg
 }
 
 // evaluatorNames lists the evaluators the eval will run, in declaration order.

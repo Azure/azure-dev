@@ -49,12 +49,10 @@ evals:
 	require.Len(t, resolved.Evals, 1)
 	assert.Equal(t, "nightly", resolved.Evals[0].Name)
 
-	asWritten, err := OpenEvalConfigForEdit(dir)
+	authored, err := ReadAuthoredConfig(dir)
 	require.NoError(t, err,
 		"a command that edits the file has to be able to open what azd up deploys")
-	require.Len(t, asWritten.Datasets, 1)
-	assert.Equal(t, "./parts/golden.yaml", asWritten.Datasets[0].Ref,
-		"the include survives an editing read, so saving writes it back")
-	require.Len(t, asWritten.Evals, 1)
-	assert.Equal(t, "./parts/nightly.yaml", asWritten.Evals[0].Ref)
+	assert.True(t, authored.HasUnnamedRef(SectionDatasets),
+		"the include survives an authored read, so appending writes it back")
+	assert.True(t, authored.HasUnnamedRef(SectionEvals))
 }

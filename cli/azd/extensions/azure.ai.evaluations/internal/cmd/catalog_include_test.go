@@ -212,9 +212,9 @@ datasets:
 		dir, mustOpenForEdit(t, dir), "dataset", "golden"))
 }
 
-func mustOpenForEdit(t *testing.T, dir string) *project.EvalConfig {
+func mustOpenForEdit(t *testing.T, dir string) *project.AuthoredConfig {
 	t.Helper()
-	cfg, err := project.OpenEvalConfigForEdit(dir)
+	cfg, err := project.ReadAuthoredConfig(dir)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	return cfg

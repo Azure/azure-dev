@@ -58,16 +58,26 @@ func addEvaluatorToCatalog(cmd *cobra.Command, evalDir string, ref *project.Arti
 //
 // A configuration that will not resolve is left to the commands that resolve it:
 // failing a generate over an unrelated broken include would be its own surprise.
-func checkCatalogEntryIsEditable(evalDir string, asWritten *project.EvalConfig, kind, name string) error {
-	if entry, ok := catalogEntryShapeOf(asWritten, kind, name); ok {
+func checkCatalogEntryIsEditable(evalDir string, asWritten *project.AuthoredConfig, kind, name string) error {
+	section := catalogSection(kind)
+	if entry, ok := asWritten.Entry(section, name); ok {
 		switch {
-		case entry.ref != "":
+		case entry.Ref != "":
 			return messages.CatalogNameBehindAnInclude(kind, name)
-		case entry.inlineRubric:
+		case kind == "dataset":
+			// A dataset may hold a file and a version together; the two
+			// refusals below are about an evaluator's single rubric.
+			return nil
+		case entry.HasDefinition:
 			return messages.EvaluatorRubricWrittenInPlace(name)
-		case entry.pinned:
+		case entry.Version != "":
 			return messages.EvaluatorPinnedToAVersion(name)
 		}
+		return nil
+	}
+	if !asWritten.HasUnnamedRef(section) {
+		// Nothing here names it and no include could be hiding it, so there is
+		// nothing this command cannot rewrite.
 		return nil
 	}
 	resolved, err := project.OpenEvalConfig(evalDir)
@@ -80,12 +90,17 @@ func checkCatalogEntryIsEditable(evalDir string, asWritten *project.EvalConfig, 
 	return nil
 }
 
+// catalogSection maps a command's word for a catalog to the key it lives under.
+func catalogSection(kind string) string {
+	if kind == "dataset" {
+		return project.SectionDatasets
+	}
+	return project.SectionEvaluators
+}
+
 // catalogEntryShape is how an entry was written, for deciding whether this
 // command may rewrite it.
 type catalogEntryShape struct {
-	// ref is the `$ref` directive the entry carries, empty when it is written
-	// out here.
-	ref string
 	// inlineRubric is an evaluator holding its rubric under `definition:`.
 	inlineRubric bool
 	// pinned is an evaluator naming a registered `version:`. A dataset may hold
@@ -104,7 +119,7 @@ type catalogEntryShape struct {
 // A configuration that cannot be read is not this check's business either --
 // the command that resolves it will say so with better context.
 func refuseUneditableCatalogEntry(evalDir, kind, name string) error {
-	cfg, err := project.OpenEvalConfigForEdit(evalDir)
+	cfg, err := project.ReadAuthoredConfig(evalDir)
 	if err != nil || cfg == nil {
 		return nil
 	}
@@ -118,14 +133,13 @@ func catalogEntryShapeOf(cfg *project.EvalConfig, kind, name string) (catalogEnt
 		return catalogEntryShape{}, false
 	}
 	if kind == "dataset" {
-		if decl, ok := cfg.DatasetDeclaration(name); ok {
-			return catalogEntryShape{ref: decl.Ref}, true
+		if _, ok := cfg.DatasetDeclaration(name); ok {
+			return catalogEntryShape{}, true
 		}
 		return catalogEntryShape{}, false
 	}
 	if decl, ok := cfg.EvaluatorDeclaration(name); ok {
 		return catalogEntryShape{
-			ref:          decl.Ref,
 			inlineRubric: decl.Definition != nil,
 			pinned:       decl.Version != "",
 		}, true
@@ -161,12 +175,9 @@ func updateCatalog(
 	}
 	defer unlock()
 
-	cfg, err := project.OpenEvalConfigForEdit(evalDir)
+	cfg, err := project.ReadAuthoredConfig(evalDir)
 	if err != nil {
 		return err
-	}
-	if cfg == nil {
-		cfg = &project.EvalConfig{}
 	}
 	if err := checkCatalogEntryIsEditable(evalDir, cfg, kind, ref.Name); err != nil {
 		return err

@@ -27,8 +27,9 @@ func TestARefdRubricInsideARefdConfig(t *testing.T) {
 	require.NoError(t, os.WriteFile(
 		filepath.Join(evals, EvalConfigBase), []byte(`
 evaluators:
-  - $ref: ./evaluators/quality.json
-    name: quality
+  - name: quality
+    definition:
+      $ref: ./evaluators/quality.json
 
 evals:
   - name: nightly
@@ -44,12 +45,8 @@ evals:
 	assert.Equal(t, "rubric", cfg.Evaluators[0].Definition["type"])
 }
 
-// `dimensions` is what tells a spliced rubric from a mistake, so a `$ref` to a
-// file that is not a rubric is still reported rather than filed away.
-//
-// This is the whole difference between the rescue and a catch-all, so it is
-// worth a test of its own: widening the gate would make every misspelling in an
-// evaluator entry publishable content.
+// A `$ref` fills the field that holds it, so one that names a file which is not
+// a rubric still reports the keys that are wrong rather than filing them away.
 func TestARefToSomethingThatIsNotARubricIsStillRejected(t *testing.T) {
 	dir := t.TempDir()
 

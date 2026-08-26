@@ -1232,6 +1232,21 @@ func EvaluatorNotGeneratedYet(evaluator, path string) error {
 		filepath.ToSlash(path), shellArg(evaluator))
 }
 
+// RubricBelongsUnderDefinition reports a rubric written at evaluator entry
+// level, where a `$ref` to a bare rubric file puts it.
+func RubricBelongsUnderDefinition(evaluator string) error {
+	which := "an evaluator"
+	if evaluator != "" {
+		which = fmt.Sprintf("evaluator %q", evaluator)
+	}
+	return fmt.Errorf(
+		"%s carries rubric keys such as `dimensions:` beside `name:`. "+
+			"A rubric belongs under `definition:` -- write it there, or point at "+
+			"its file with `definition:` and a nested `$ref:`, which fills that "+
+			"field with the file's contents",
+		which)
+}
+
 // CheckingEvaluatorExists reports a failure to tell create from update.
 func CheckingEvaluatorExists(evaluator string, err error) error {
 	return fmt.Errorf("checking whether evaluator %q exists: %w", evaluator, err)

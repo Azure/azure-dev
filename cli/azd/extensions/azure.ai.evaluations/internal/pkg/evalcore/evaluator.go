@@ -36,12 +36,7 @@ const BuiltinPrefix = "builtin."
 //	    data_mapping:
 //	      query: "{{item.customer_message}}"
 type EvaluatorRef struct {
-	// Ref carries a `$ref` an author wrote here. Core splices the directive into
-	// any object, so a reference kept in its own file deploys; modelling it is
-	// what stops the editing read from refusing the file that deploy accepts.
-	Ref string `yaml:"$ref,omitempty" json:"$ref,omitempty"`
 	// Evaluator is the evaluator to run: a catalog name or builtin.<name>.
-	// Empty only on an entry that is still a `$ref`, before it is resolved.
 	Evaluator string `yaml:"evaluator,omitempty" json:"evaluator,omitempty"`
 	// Name labels the criterion in results. Empty means the evaluator's name.
 	Name string `yaml:"name,omitempty" json:"name,omitempty"`
@@ -113,12 +108,7 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 			if err != nil {
 				return err
 			}
-			// An entry that is still a `$ref` has no name here: the file it
-			// points at supplies one, and resolution consumes the directive. So
-			// this stays strict on the resolved reading, where an entry with
-			// neither is genuinely malformed, without refusing an include the
-			// deploy path accepts.
-			if ref.Evaluator == "" && ref.Ref == "" {
+			if ref.Evaluator == "" {
 				return messages.EvaluatorEntryMissingEvaluator()
 			}
 			result = append(result, ref)

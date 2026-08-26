@@ -33,13 +33,7 @@ type EvalConfig struct {
 // definition with one loaded from a YAML or JSON file, and these rows are an
 // artifact to publish. A `.jsonl` is neither, so there would be nothing to
 // splice.
-//
-// Ref is the directive an author may still write to load this whole entry from
-// its own file. Core resolves it on every node, so the commands that use the
-// configuration never see it -- but the ones that read, modify and save do, and
-// modelling it is what keeps them from refusing a file `azd up` accepts.
 type DatasetDecl struct {
-	Ref     string `yaml:"$ref,omitempty"    json:"$ref,omitempty"`
 	Name    string `yaml:"name,omitempty"    json:"name,omitempty"`
 	File    string `yaml:"file,omitempty"    json:"file,omitempty"`
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
@@ -51,20 +45,12 @@ type DatasetDecl struct {
 // Source names a `.json` file holding a rubric: a list of weighted scoring
 // dimensions.
 //
-// Ref carries the `$ref` an author wrote. Commands that use the configuration
-// never see it -- resolution has already replaced the entry with the file's
-// content by then -- but the commands that read, modify and save the file do,
-// and modelling it is what lets the include survive being written back. Name is
-// omitempty for the same reason: an entry that is only a `$ref` has no name of
-// its own until the file it names supplies one.
-//
-// Definition is the rubric written out in place of naming a file, which is what
-// lets a `$ref` name a rubric: resolution splices the file's keys in here, and
-// they have to land on a field to survive strict decoding. It is deliberately
-// one named key rather than a catch-all: a catch-all would swallow every
-// misspelling in the entry and publish it to the service as rubric content.
+// Definition is the rubric written out in place of naming a file. A `$ref`
+// written here fills it with the contents of a rubric file, which is how a
+// rubric kept in its own file reaches the service. It is deliberately one named
+// key rather than a catch-all: a catch-all would swallow every misspelling in
+// the entry and publish it to the service as rubric content.
 type EvaluatorDecl struct {
-	Ref        string         `yaml:"$ref,omitempty"       json:"$ref,omitempty"`
 	Name       string         `yaml:"name,omitempty"       json:"name,omitempty"`
 	Source     string         `yaml:"source,omitempty"     json:"source,omitempty"`
 	Version    string         `yaml:"version,omitempty"    json:"version,omitempty"`
@@ -77,7 +63,6 @@ type EvaluatorDecl struct {
 // from a source such as production traces. Target is what gets invoked, and is
 // a separate axis — an eval can read traces and invoke nothing.
 type Eval struct {
-	Ref             string                 `yaml:"$ref,omitempty"              json:"$ref,omitempty"`
 	Name            string                 `yaml:"name,omitempty"              json:"name,omitempty"`
 	ID              string                 `yaml:"id,omitempty"                json:"id,omitempty"`
 	Description     string                 `yaml:"description,omitempty"       json:"description,omitempty"`
@@ -90,13 +75,7 @@ type Eval struct {
 }
 
 // SourceDecl says where an eval's rows come from when they are not a dataset.
-//
-// Ref carries a `$ref` an author wrote here, for the same reason the catalog
-// entries do: core splices the directive into any object, so a source kept in
-// its own file deploys, and modelling it is what stops the editing read from
-// refusing the file that deploy accepts.
 type SourceDecl struct {
-	Ref           string   `yaml:"$ref,omitempty"            json:"$ref,omitempty"`
 	Type          string   `yaml:"type,omitempty"            json:"type,omitempty"`
 	LookbackHours int      `yaml:"lookback_hours,omitempty"  json:"lookback_hours,omitempty"`
 	MaxTraces     int      `yaml:"max_traces,omitempty"      json:"max_traces,omitempty"`
@@ -126,11 +105,7 @@ const (
 const DefaultScaffoldMaxTraces = 20
 
 // Target names what the run invokes.
-//
-// Ref carries a `$ref` an author wrote here, for the same reason SourceDecl
-// does: core splices it, so the editing read has to survive it.
 type Target struct {
-	Ref  string `yaml:"$ref,omitempty" json:"$ref,omitempty"`
 	Type string `yaml:"type,omitempty" json:"type,omitempty"`
 	Name string `yaml:"name,omitempty" json:"name,omitempty"`
 }

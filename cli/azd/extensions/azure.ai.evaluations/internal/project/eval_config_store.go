@@ -149,33 +149,15 @@ func checkOneConfig(location string) error {
 // A missing file returns (nil, nil): generate runs before init, so "no
 // configuration yet" is an ordinary state rather than a failure.
 //
-// Commands that write the configuration back must use OpenEvalConfigForEdit
+// Commands that write the configuration back must use ReadAuthoredConfig
 // instead. Resolution and editing do not mix: what comes back here is the
 // configuration with every include spliced in, and saving that replaces the
 // author's `$ref` with its content.
 func OpenEvalConfig(location string) (*EvalConfig, error) {
-	return openEvalConfig(location, true)
-}
-
-// OpenEvalConfigForEdit reads the configuration exactly as written, leaving
-// `$ref` directives alone.
-//
-// `init` and `generate` read, modify and write the same file. Handing them a
-// resolved configuration and saving the result inlined the author's includes,
-// orphaned the files they named, and left the paths inside those files
-// resolving against the wrong directory -- a `source: ./quality.json` written
-// beside `evaluators/quality.yaml` came back pointing at the project root.
-// None of it was reported, because from the writer's point of view it had
-// simply saved what it read.
-func OpenEvalConfigForEdit(location string) (*EvalConfig, error) {
-	return openEvalConfig(location, false)
-}
-
-func openEvalConfig(location string, resolve bool) (*EvalConfig, error) {
 	if err := checkOneConfig(location); err != nil {
 		return nil, err
 	}
-	cfg, err := loadEvalConfig(resolvedConfigPath(location), resolve)
+	cfg, err := loadEvalConfig(resolvedConfigPath(location), true)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -253,60 +235,51 @@ func resolveConfigRefs(data []byte, baseDir, name string) ([]byte, error) {
 // CLI command refused, and later the reverse. Callers differ in how they obtain
 // the map and what they do with it; everything between is here.
 func resolveEvalRefs(values map[string]any, baseDir string) (map[string]any, error) {
-	// Read before resolution, which consumes the directive. Both routes gate the
-	// rescue on the same answer so they cannot disagree: without it, the CLI's
-	// no-`$ref` fast path would skip nesting while the deploy path still applied
-	// it, and a hand-written entry carrying rubric keys would deploy and then be
-	// refused by every command that reads it.
-	spliced, visible := splicedEvaluators(values)
-
+	// TODO: pass foundry.WithPathKeys("file", "source") once this module moves
+	// off azd v1.28.0, which predates the option. Until then a `source:` written
+	// inside a `$ref` file arrives verbatim and resolves against the
+	// configuration rather than against that file, which is why a rubric kept in
+	// its own file belongs under `definition:`.
 	resolved, err := foundry.ResolveFileRefs(values, baseDir)
 	if err != nil {
 		return nil, messages.ResolvingServiceRefs(err)
 	}
-	// `$ref` is a directive rather than configuration, and the strict decoder
-	// would report the leftover as a mistyped key.
-	delete(resolved, "$ref")
-	nestSplicedRubrics(resolved, spliced, visible)
+	if err := checkRubricPlacement(resolved); err != nil {
+		return nil, err
+	}
 	return resolved, nil
 }
 
-// splicedEvaluators reports which evaluator entries carry an include of their
-// own, and whether the list could be read at all.
+// checkRubricPlacement reports rubric keys sitting at evaluator entry level.
 //
-// Entry level rather than document level. Asking only whether the document used
-// `$ref` anywhere made one entry's meaning depend on another's: a directive on
-// an unrelated dataset switched the rescue on for the whole file, so a
-// hand-written `dimensions:` -- a mistake the strict decoder exists to report --
-// was filed as rubric content and published instead. The same evaluator was
-// then refused or accepted according to an unrelated entry.
-func splicedEvaluators(values map[string]any) (map[int]bool, bool) {
-	entries, ok := values["evaluators"].([]any)
-	if !ok {
-		// The configuration is itself behind a `$ref`, so its entries do not
-		// exist yet and nothing here was hand-written to protect.
-		return nil, false
-	}
-	spliced := map[int]bool{}
-	for i, entry := range entries {
+// A `$ref` fills the field that holds it, so a rubric file belongs at
+// `definition:`. Written beside `name:` instead, its `{type, dimensions}` keys
+// land on the declaration, where strict decoding rejects them one key at a time
+// without saying why. This names the cause; it reads the same for a hand-typed
+// `dimensions:`, which belongs under `definition:` too.
+func checkRubricPlacement(resolved map[string]any) error {
+	entries, _ := resolved["evaluators"].([]any)
+	for _, entry := range entries {
 		m, ok := entry.(map[string]any)
 		if !ok {
 			continue
 		}
-		if _, has := m[refDirective]; has {
-			spliced[i] = true
+		if _, has := m["definition"]; has {
+			continue
 		}
+		if _, isRubric := m["dimensions"]; !isRubric {
+			continue
+		}
+		name, _ := m["name"].(string)
+		return messages.RubricBelongsUnderDefinition(name)
 	}
-	// Position survives resolution: entries are replaced in place, never added
-	// or dropped.
-	return spliced, true
+	return nil
 }
 
 // containsRefDirective reports whether the document uses `$ref` anywhere.
 //
 // Structural rather than a text scan: the byte "$ref" also appears in comments
-// and in prose values, and letting those decide whether an unrelated entry is
-// rescued would make one entry's meaning depend on another's wording.
+// and in prose values.
 func containsRefDirective(value any) bool {
 	switch typed := value.(type) {
 	case map[string]any:
@@ -326,59 +299,6 @@ func containsRefDirective(value any) bool {
 
 // refDirective is the include key azd core owns.
 const refDirective = "$ref"
-
-// evaluatorDeclKeys are the keys an evaluator entry declares in its own right.
-// Anything else at entry level was spliced in by a `$ref`.
-var evaluatorDeclKeys = map[string]bool{
-	"$ref": true, "name": true, "source": true, "version": true, "definition": true,
-}
-
-// nestSplicedRubrics moves a rubric that a `$ref` spliced in at entry level
-// down under `definition`.
-//
-// `$ref` splices the referenced file's top-level keys into the entry, and a
-// rubric file is a bare `{type, dimensions}` -- the shape `generate` downloads
-// from the service -- so its keys land beside `name` and the strict decoder
-// rejects them. Moving them is what lets a `$ref` name a rubric.
-//
-// Only the entries that carried a directive are touched. `dimensions` then
-// marks the leftovers as a rubric rather than a typo, and it is the same key
-// normalizeRubricBody insists on before it will treat a document as a
-// definition. Without both gates this is a catch-all by another name, filing a
-// misspelled `name` as rubric content and publishing it to the service instead
-// of reporting it.
-//
-// visible is false when the configuration is itself behind a `$ref`, where the
-// entries only exist after resolution and there is nothing written here to tell
-// them apart from. That is the layout the README documents.
-func nestSplicedRubrics(resolved map[string]any, spliced map[int]bool, visible bool) {
-	entries, _ := resolved["evaluators"].([]any)
-	for i, entry := range entries {
-		if visible && !spliced[i] {
-			continue
-		}
-		m, ok := entry.(map[string]any)
-		if !ok {
-			continue
-		}
-		// A file already shaped `{name, definition}` needs no rescue, and
-		// merging into it would guess at which one the author meant.
-		if _, has := m["definition"]; has {
-			continue
-		}
-		if _, isRubric := m["dimensions"]; !isRubric {
-			continue
-		}
-		rubric := map[string]any{}
-		for key, value := range m {
-			if !evaluatorDeclKeys[key] {
-				rubric[key] = value
-				delete(m, key)
-			}
-		}
-		m["definition"] = rubric
-	}
-}
 
 // DecodeEvalConfig is the one strict decoder, so every route into a
 // configuration reports a mistyped key the same way.

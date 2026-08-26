@@ -1,5 +1,32 @@
 # Release History
 
+## 1.0.26-beta (2026-08-26)
+
+### Breaking Changes
+
+- A rubric kept in its own file is now referenced at the field it fills:
+
+  ```yaml
+  evaluators:
+    - name: quality
+      definition:
+        $ref: ./evaluators/quality.json
+  ```
+
+  Written beside `name:` instead, the file's `{type, dimensions}` landed on
+  the declaration and were moved under `definition:` afterwards. That was
+  this extension teaching the shared resolver a rule only it knew, and it is
+  what made one entry's meaning depend on another's. The old spelling is now
+  reported, and the message names the fix.
+
+### Other Changes
+
+- The commands that read, modify and save the configuration read the document
+  rather than decoding it, so `$ref` is no longer modelled on six types
+  purely to survive a strict decode. Strict decoding now only ever sees a
+  resolved configuration, and a `$ref` that reaches it is reported as the
+  bypass it is rather than accepted.
+
 ## 1.0.25-beta (2026-08-26)
 
 ### Bugs Fixed

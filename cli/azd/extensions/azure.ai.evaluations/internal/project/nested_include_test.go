@@ -62,9 +62,9 @@ evals:
 			_, deployed := OpenEvalConfig(dir)
 			require.NoError(t, deployed, "core splices this shape, so the resolving read accepts it")
 
-			_, edited := OpenEvalConfigForEdit(dir)
+			_, edited := ReadAuthoredConfig(dir)
 			require.NoError(t, edited,
-				"the editing read has to survive what deploy accepts, or generate and init "+
+				"the authored read has to survive what deploy accepts, or generate and init "+
 					"refuse a file that deploys")
 		})
 	}
@@ -85,13 +85,6 @@ evals:
     evaluators:
       - evaluator: builtin.task_adherence
 `)
-
-	cfg, err := OpenEvalConfigForEdit(dir)
-	require.NoError(t, err)
-	require.Len(t, cfg.Evals, 1)
-	require.NotNil(t, cfg.Evals[0].Target)
-	assert.Equal(t, "./parts/target.yaml", cfg.Evals[0].Target.Ref)
-	assert.Empty(t, cfg.Evals[0].Target.Type, "the referenced file supplies this, not the entry")
 
 	// Through the editing path an author actually reaches.
 	require.NoError(t, ApplyScaffold(dir, ScaffoldWrite{
@@ -126,7 +119,6 @@ evals:
 	require.NotNil(t, cfg.Evals[0].Target)
 	assert.Equal(t, TargetTypeAgent, cfg.Evals[0].Target.Type)
 	assert.Equal(t, "support-agent", cfg.Evals[0].Target.Name)
-	assert.Empty(t, cfg.Evals[0].Target.Ref, "resolution consumes the directive")
 }
 
 func writeNestedRefFixture(t *testing.T, body string) string {

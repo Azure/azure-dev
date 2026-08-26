@@ -51,34 +51,32 @@ func TestEvalConfigKeys(t *testing.T) {
 		"the top-level shape is the spec's configuration model")
 }
 
-// An eval names what it evaluates, what it reads, and how to grade it, or is
-// pulled in whole with `$ref`.
+// An eval names what it evaluates, what it reads, and how to grade it.
+//
+// No `$ref`: the directive is resolved before this decodes, and the commands
+// that read the file as written answer it from the document instead.
 func TestEvalKeys(t *testing.T) {
 	assert.ElementsMatch(t,
 		[]string{
-			"$ref", "name", "id", "description", "dataset", "source",
+			"name", "id", "description", "dataset", "source",
 			"evaluation_level", "max_samples", "evaluators", "target",
 		},
 		yamlKeys(t, Eval{}))
 }
 
-// Every entry in an eval's evaluators: list is a map keyed evaluator:, or a
-// `$ref` at a file holding one -- modelled rather than only resolved, so a
-// command that reads, modifies and saves the file writes the author's include
-// back out instead of refusing it.
+// Every entry in an eval's evaluators: list is a map keyed evaluator:.
 func TestEvaluatorRefKeys(t *testing.T) {
 	assert.ElementsMatch(t,
-		[]string{"$ref", "evaluator", "name", "version", "initialization_parameters", "data_mapping"},
+		[]string{"evaluator", "name", "version", "initialization_parameters", "data_mapping"},
 		yamlKeys(t, evalcore.EvaluatorRef{}),
-		"the spec tabulates these five, plus the include core splices into any object")
+		"the spec tabulates these five")
 }
 
-// source: says where rows come from when they are not a dataset, and may be
-// pulled in with `$ref` for the same reason.
+// source: says where rows come from when they are not a dataset.
 func TestSourceDeclKeys(t *testing.T) {
 	assert.ElementsMatch(t,
 		[]string{
-			"$ref", "type", "lookback_hours", "max_traces", "agent_name", "response_ids", "max_turns",
+			"type", "lookback_hours", "max_traces", "agent_name", "response_ids", "max_turns",
 			"agent_version", "start_time", "end_time",
 		},
 		yamlKeys(t, SourceDecl{}))
@@ -86,15 +84,12 @@ func TestSourceDeclKeys(t *testing.T) {
 
 // The catalogs are named, reusable assets. A dataset says where its rows come
 // from. An evaluator says where its rubric is -- named as a file, or written
-// out under `definition` -- and may instead be pulled in with `$ref`, which is
-// modelled rather than only resolved so that a command which reads, modifies
-// and saves the file writes the author's include back out instead of inlining
-// it.
+// out under `definition`, which a `$ref` may fill from a file of its own.
 func TestCatalogKeys(t *testing.T) {
 	assert.ElementsMatch(t,
-		[]string{"$ref", "name", "file", "version"}, yamlKeys(t, DatasetDecl{}))
+		[]string{"name", "file", "version"}, yamlKeys(t, DatasetDecl{}))
 	assert.ElementsMatch(t,
-		[]string{"$ref", "name", "source", "version", "definition"},
+		[]string{"name", "source", "version", "definition"},
 		yamlKeys(t, EvaluatorDecl{}))
 }
 
@@ -125,10 +120,9 @@ func TestEveryKeyIsSnakeCase(t *testing.T) {
 // from. A trace-backed eval has no target, which is what agent_name under
 // source: exists to say.
 func TestTargetAndSourceAreDistinct(t *testing.T) {
-	assert.ElementsMatch(t, []string{"$ref", "type", "name"}, yamlKeys(t, Target{}),
-		"the spec's target: is a type and a name, plus the include core splices into "+
-			"any object; a version there would pin the agent an eval invokes, which "+
-			"nothing asks for")
+	assert.ElementsMatch(t, []string{"type", "name"}, yamlKeys(t, Target{}),
+		"the spec's target: is a type and a name; a version there would pin the "+
+			"agent an eval invokes, which nothing asks for")
 
 	assert.Contains(t, yamlKeys(t, SourceDecl{}), "agent_name",
 		"a trace run filters by agent rather than invoking one")

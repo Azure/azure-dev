@@ -384,6 +384,58 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 	}
 }
 
+func TestRemoteBuildRunError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		status         armcontainerregistry.RunStatus
+		diagnosticCode string
+	}{
+		{
+			name:           "failed",
+			status:         armcontainerregistry.RunStatusFailed,
+			diagnosticCode: "acr_run_failed",
+		},
+		{
+			name:           "error",
+			status:         armcontainerregistry.RunStatusError,
+			diagnosticCode: "acr_run_error",
+		},
+		{
+			name:           "timeout",
+			status:         armcontainerregistry.RunStatusTimeout,
+			diagnosticCode: "acr_run_timeout",
+		},
+		{
+			name:           "canceled",
+			status:         armcontainerregistry.RunStatusCanceled,
+			diagnosticCode: "acr_run_canceled",
+		},
+		{
+			name:   "unknown",
+			status: armcontainerregistry.RunStatus("unknown"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := &RemoteBuildRunError{
+				Status:   tt.status,
+				buildLog: "remote output",
+			}
+			require.Equal(t, "remote build failed: remote output", err.Error())
+			require.Equal(t, tt.diagnosticCode, err.DiagnosticCode())
+		})
+	}
+
+	var nilErr *RemoteBuildRunError
+	require.Equal(t, "remote build failed", nilErr.Error())
+	require.Empty(t, nilErr.DiagnosticCode())
+}
+
 func TestTerminalContainerRegistryRunStates(t *testing.T) {
 	t.Parallel()
 

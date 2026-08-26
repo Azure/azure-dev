@@ -685,6 +685,9 @@ func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceCon
 		out.Volume = voice.Volume
 		return out
 	}
+	if voiceType == "openai" {
+		name = strings.ToLower(name)
+	}
 	return &agent_api.VoiceConfig{
 		Type:   voiceType,
 		Name:   name,
@@ -744,6 +747,9 @@ func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 		return nil, fmt.Errorf(
 			"model_type '%s' is not supported; use '%s' or '%s'",
 			voiceAgent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed)
+	}
+	if errors := validateVoiceAgentAdvancedConfig(voiceAgent); len(errors) > 0 {
+		return nil, fmt.Errorf("invalid prompt-voice configuration: %s", strings.Join(errors, "; "))
 	}
 
 	instructions := defaultVoiceInstructions

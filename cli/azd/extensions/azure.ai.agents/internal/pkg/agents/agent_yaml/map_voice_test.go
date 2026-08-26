@@ -5,6 +5,7 @@ package agent_yaml
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -283,6 +284,40 @@ func TestCreateVoiceAgentAPIRequest_PrefersExplicitVoiceLocale(t *testing.T) {
 	}
 }
 
+func TestCreateVoiceAgentAPIRequest_ExplicitOpenAIVoiceLowercasesName(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-agent"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Audio: &VoiceAudio{Output: &VoiceAudioOutput{Voice: &VoiceConfig{
+			Type: "openai", Name: "Shimmer",
+		}}},
+	}
+
+	req, err := CreateVoiceAgentAPIRequest(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	if def.Audio.Output.Voice != "shimmer" {
+		t.Errorf("Voice = %q, want shimmer", def.Audio.Output.Voice)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequest_RejectsInvalidAdvancedConfig(t *testing.T) {
+	t.Parallel()
+	parallelToolCalls := true
+	agent := VoiceAgent{
+		AgentDefinition:   AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-agent"},
+		Model:             &Model{Id: "gpt-realtime"},
+		ParallelToolCalls: &parallelToolCalls,
+	}
+	_, err := CreateVoiceAgentAPIRequest(agent)
+	if err == nil || !strings.Contains(err.Error(), "parallel_tool_calls is not currently supported") {
+		t.Fatalf("expected parallel_tool_calls validation error, got: %v", err)
+	}
+}
+
 func TestCreateVoiceAgentAPIRequest_DoesNotInheritPcmRateForG711Formats(t *testing.T) {
 	t.Parallel()
 	agent := VoiceAgent{
@@ -367,7 +402,6 @@ func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 	interruptResponse := true
 	autoTruncate := true
 	speed := 1.1
-	parallelToolCalls := true
 	style := "cheerful"
 	pitch := "+0Hz"
 	rate := "+0%"
@@ -394,7 +428,7 @@ func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 					Languages:         []string{"en-US"},
 					AutoTruncate:      &autoTruncate,
 				},
-				Transcription: &VoiceTranscription{Model: "whisper-1", Language: new("en-US"), Prompt: new("Contoso terms")},
+				Transcription: &VoiceTranscription{Model: "azure-speech", Language: new("en-US"), Prompt: new("Contoso terms")},
 			},
 			Output: &VoiceAudioOutput{
 				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: &outRate},
@@ -405,14 +439,13 @@ func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 				Speed: &speed,
 			},
 		},
-		OutputModalities:  []string{"audio", "text"},
-		Tools:             []map[string]any{{"type": "system", "name": "end_conversation"}},
-		Avatar:            map[string]any{"type": "video_avatar", "character": "lisa", "output_protocol": "webrtc"},
-		Greeting:          map[string]any{"type": "template", "text": "Hello {{persona}}"},
-		ToolChoice:        "auto",
-		ParallelToolCalls: &parallelToolCalls,
-		MaxOutputTokens:   "inf",
-		Include:           []string{"item.input_audio_transcription.phrases"},
+		OutputModalities: []string{"audio", "text"},
+		Tools:            []map[string]any{{"type": "system", "name": "end_conversation"}},
+		Avatar:           map[string]any{"type": "video_avatar", "character": "lisa", "output_protocol": "webrtc"},
+		Greeting:         map[string]any{"type": "template", "text": "Hello {{persona}}"},
+		ToolChoice:       "auto",
+		MaxOutputTokens:  "inf",
+		Include:          []string{"item.input_audio_transcription.phrases"},
 	}
 
 	req, err := CreateVoiceAgentAPIRequest(agent)

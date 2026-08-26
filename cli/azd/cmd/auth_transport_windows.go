@@ -22,10 +22,10 @@ import (
 // the Windows named pipe identified by rawURL. The returned string is the
 // rewritten endpoint placeholder.
 //
-// The pipe's security descriptor MUST be owned by, and grant access only to,
-// the current user SID plus the conventional SYSTEM / Administrators
-// principals. If any other SID owns the pipe or has an allow ACE, an error is
-// returned.
+// The pipe's security descriptor MUST be owned by the current user SID or the
+// conventional SYSTEM / Administrators principals. Allow ACEs may grant those
+// principals any access. The standard Everyone / Anonymous read-only ACEs are
+// also accepted, but any other SID or broader access is refused.
 //
 // Verification is performed against the handle of the established connection
 // rather than the pipe name, so a pipe that is created or replaced between the
@@ -125,9 +125,9 @@ func normalizePipePath(rawURL string) (string, error) {
 }
 
 // verifyPipeSecurity queries the owner and DACL of the connected named pipe
-// handle. It refuses pipes owned by or granting access to a SID outside the
-// current user / SYSTEM / Administrators set. ACEs are walked structurally via
-// windows.GetAce rather than by parsing the SDDL string representation.
+// handle. It permits full access for the current user / SYSTEM / Administrators
+// and read-only access for Everyone / Anonymous. ACEs are walked structurally
+// via windows.GetAce rather than by parsing the SDDL string representation.
 //
 // The security descriptor is read from the connection handle rather than by
 // pipe name so that the object being validated is exactly the object being
@@ -164,6 +164,15 @@ func verifyPipeSecurity(pipePath string, handle windows.Handle) error {
 		return fmt.Errorf("creating Administrators SID: %w", err)
 	}
 	allowedSids := []*windows.SID{currentUserSid, systemSid, adminsSid}
+	worldSid, err := windows.CreateWellKnownSid(windows.WinWorldSid)
+	if err != nil {
+		return fmt.Errorf("creating Everyone SID: %w", err)
+	}
+	anonymousSid, err := windows.CreateWellKnownSid(windows.WinAnonymousSid)
+	if err != nil {
+		return fmt.Errorf("creating Anonymous SID: %w", err)
+	}
+	readOnlySids := []*windows.SID{worldSid, anonymousSid}
 
 	owner, _, err := sd.Owner()
 	if err != nil {
@@ -190,10 +199,19 @@ func verifyPipeSecurity(pipePath string, handle windows.Handle) error {
 			if err != nil {
 				return fmt.Errorf("reading SID from ACE %d: %w", i, err)
 			}
-			if !sidInList(sid, allowedSids) {
+			switch {
+			case sidInList(sid, allowedSids):
+				continue
+			case sidInList(sid, readOnlySids):
+				if ace.Mask&^readOnlyPipeAccessMask != 0 {
+					return fmt.Errorf(
+						"permissions too permissive: pipe %q grants non-read-only access mask %#x to SID %q",
+						pipePath, uint32(ace.Mask), sid.String())
+				}
+			default:
 				return fmt.Errorf(
 					"permissions too permissive: pipe %q grants access to SID %q "+
-						"outside the current user/SYSTEM/Administrators",
+						"outside the current user/SYSTEM/Administrators/Everyone/Anonymous policy",
 					pipePath, sid.String())
 			}
 		case accessAllowedObjectAceType, accessAllowedCallbackObjectAceType:
@@ -227,6 +245,7 @@ const (
 	accessAllowedObjectAceType         uint8 = 0x05
 	accessAllowedCallbackAceType       uint8 = 0x09
 	accessAllowedCallbackObjectAceType uint8 = 0x0B
+	readOnlyPipeAccessMask                   = windows.GENERIC_READ | windows.FILE_GENERIC_READ
 )
 
 func accessAllowedAceSid(ace *windows.ACCESS_ALLOWED_ACE) (*windows.SID, error) {

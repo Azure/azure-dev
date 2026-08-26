@@ -27,20 +27,45 @@ func testPipeName(t *testing.T) string {
 	return fmt.Sprintf("azd-auth-test-%d-%d", os.Getpid(), time.Now().UnixNano())
 }
 
-// listenSecurePipe creates a named pipe restricted to the current user, which
-// is the configuration required of IDE hosts. The default named pipe security
-// descriptor grants Everyone access and is deliberately not used here.
+// listenSecurePipe creates a named pipe restricted to the current user.
 func listenSecurePipe(t *testing.T, pipePath string) net.Listener {
 	t.Helper()
 	sid, err := currentProcessUserSid()
 	require.NoError(t, err)
 
+	return listenPipeWithSecurityDescriptor(t, pipePath, fmt.Sprintf("D:P(A;;GA;;;%s)", sid.String()))
+}
+
+func listenPipeWithSecurityDescriptor(t *testing.T, pipePath, securityDescriptor string) net.Listener {
+	t.Helper()
 	l, err := winio.ListenPipe(pipePath, &winio.PipeConfig{
-		SecurityDescriptor: fmt.Sprintf("D:P(A;;GA;;;%s)", sid.String()),
+		SecurityDescriptor: securityDescriptor,
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = l.Close() })
 	return l
+}
+
+func verifyConnectedPipeSecurity(t *testing.T, pipePath string, l net.Listener) error {
+	t.Helper()
+
+	go func() {
+		if c, err := l.Accept(); err == nil {
+			_ = c.Close()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	conn, err := winio.DialPipeContext(ctx, pipePath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	handle, err := pipeConnHandle(conn)
+	require.NoError(t, err)
+	require.NotEqual(t, windows.Handle(0), handle)
+
+	return verifyPipeSecurity(pipePath, handle)
 }
 
 func TestNormalizePipePath(t *testing.T) {
@@ -132,39 +157,22 @@ func TestPipeConnHandle_UnsupportedConn(t *testing.T) {
 	require.ErrorContains(t, err, "does not expose its handle")
 }
 
-// TestVerifyPipeSecurity_ConnectedHandle verifies that a pipe created with the
-// default named pipe security descriptor passes verification when checked
-// through the handle of the established connection.
+// TestVerifyPipeSecurity_ConnectedHandle verifies that a restrictive pipe
+// passes verification when checked through the established connection handle.
 func TestVerifyPipeSecurity_ConnectedHandle(t *testing.T) {
 	name := testPipeName(t)
 	pipePath := `\\.\pipe\` + name
 
 	l := listenSecurePipe(t, pipePath)
 
-	go func() {
-		if c, aErr := l.Accept(); aErr == nil {
-			_ = c.Close()
-		}
-	}()
-
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	conn, err := winio.DialPipeContext(ctx, pipePath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = conn.Close() })
-
-	handle, err := pipeConnHandle(conn)
-	require.NoError(t, err)
-	require.NotEqual(t, windows.Handle(0), handle)
-
-	require.NoError(t, verifyPipeSecurity(pipePath, handle))
+	require.NoError(t, verifyConnectedPipeSecurity(t, pipePath, l))
 }
 
-// TestVerifyPipeSecurity_RejectsPermissivePipe verifies that a pipe created
-// with the default named pipe security descriptor is refused. The Windows
-// default grants Everyone (S-1-1-0) access, which would let any local user
-// impersonate the IDE host's token server.
-func TestVerifyPipeSecurity_RejectsPermissivePipe(t *testing.T) {
+// TestVerifyPipeSecurity_AcceptsDefaultDACL verifies compatibility with Node
+// and other hosts that use the Windows default named pipe security descriptor.
+// Its Everyone and Anonymous ACEs grant read access but cannot be used to send
+// a token request or observe another client's pipe instance.
+func TestVerifyPipeSecurity_AcceptsDefaultDACL(t *testing.T) {
 	name := testPipeName(t)
 	pipePath := `\\.\pipe\` + name
 
@@ -172,23 +180,52 @@ func TestVerifyPipeSecurity_RejectsPermissivePipe(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = l.Close() })
 
-	go func() {
-		if c, aErr := l.Accept(); aErr == nil {
-			_ = c.Close()
-		}
-	}()
+	require.NoError(t, verifyConnectedPipeSecurity(t, pipePath, l))
+}
 
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	conn, err := winio.DialPipeContext(ctx, pipePath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = conn.Close() })
-
-	handle, err := pipeConnHandle(conn)
+func TestVerifyPipeSecurity_RejectsUnsafeAllowACEs(t *testing.T) {
+	currentUserSid, err := currentProcessUserSid()
 	require.NoError(t, err)
 
-	err = verifyPipeSecurity(pipePath, handle)
-	require.ErrorContains(t, err, "permissions too permissive")
+	tests := []struct {
+		name       string
+		access     string
+		sid        string
+		wantErrSub string
+	}{
+		{
+			name:       "everyone write",
+			access:     "GW",
+			sid:        "WD",
+			wantErrSub: "grants non-read-only access mask",
+		},
+		{
+			name:       "anonymous write",
+			access:     "GW",
+			sid:        "AN",
+			wantErrSub: "grants non-read-only access mask",
+		},
+		{
+			name:       "another group read",
+			access:     "GR",
+			sid:        "AU",
+			wantErrSub: "outside the current user/SYSTEM/Administrators/Everyone/Anonymous policy",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pipePath := `\\.\pipe\` + testPipeName(t)
+			descriptor := fmt.Sprintf(
+				"D:P(A;;GA;;;%s)(A;;%s;;;%s)",
+				currentUserSid.String(),
+				tt.access,
+				tt.sid)
+			l := listenPipeWithSecurityDescriptor(t, pipePath, descriptor)
+
+			err := verifyConnectedPipeSecurity(t, pipePath, l)
+			require.ErrorContains(t, err, tt.wantErrSub)
+		})
+	}
 }
 
 // TestNewPipeTransport_FullRoundTrip serves HTTP over a named pipe and checks
@@ -197,7 +234,10 @@ func TestVerifyPipeSecurity_RejectsPermissivePipe(t *testing.T) {
 func TestNewPipeTransport_FullRoundTrip(t *testing.T) {
 	name := testPipeName(t)
 
-	l := listenSecurePipe(t, `\\.\pipe\`+name)
+	pipePath := `\\.\pipe\` + name
+	l, err := winio.ListenPipe(pipePath, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = l.Close() })
 
 	srv := &http.Server{
 		ReadHeaderTimeout: 30 * time.Second,

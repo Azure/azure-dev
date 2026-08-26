@@ -116,8 +116,8 @@ permissions and peer credentials, so no TLS handshake is required.
 
 ### `npipe:` (new, Windows only)
 
-Windows named pipe transport. The OS enforces caller identity via the pipe's
-security descriptor, so no TLS handshake is required.
+Windows named pipe transport. The pipe's security descriptor restricts local
+access, so no TLS handshake is required.
 
 - URL form: `npipe:azd-auth-<arbitrary>` (the value after `npipe:` is the
   pipe name; `azd` prepends `\\.\pipe\` automatically), or either fully
@@ -126,17 +126,19 @@ security descriptor, so no TLS handshake is required.
   named pipe.
 - `AZD_AUTH_CERT` **MUST NOT** be set. Same handling as `unix:`.
 - `AZD_AUTH_KEY` is **required**. Same handling as `unix:`.
-- **IDE host requirements:** the pipe MUST be created with a security
-  descriptor whose owner and allow ACEs reference only the current user SID
-  (and SYSTEM / Administrators, as is conventional). `azd` reads the owner and
-  DACL after connecting and refuses if any other SID owns the pipe or holds an
-  allow ACE. The connection fails with a clear "permissions too permissive"
-  error.
+- **IDE host requirements:** the pipe owner MUST be the current user SID,
+  SYSTEM, or Administrators. Allow ACEs may grant those principals any access.
+  `azd` also accepts the standard Windows default read-only ACEs for Everyone
+  (`S-1-1-0`) and Anonymous (`S-1-5-7`), which supports Node.js servers that do
+  not expose named-pipe security descriptor configuration. Any write or
+  security-control access for Everyone or Anonymous, or any allow ACE for
+  another SID, is refused with a clear "permissions too permissive" error.
 
-  > **Important:** the Windows *default* named pipe security descriptor grants
-  > `Everyone` (`S-1-1-0`) read/write access, and `azd` rejects it. Hosts must
-  > pass an explicit restrictive descriptor — for example the SDDL
-  > `D:P(A;;GA;;;<user-sid>)` — rather than relying on the default.
+  Read-only clients connect to separate pipe instances, cannot observe azd's
+  connection, and cannot send the authenticated HTTP request required to obtain
+  a token. Hosts that can configure an explicit descriptor may still restrict
+  the pipe to the current user, for example with
+  `D:P(A;;GA;;;<user-sid>)`.
 
 - `azd` reads the security descriptor from the handle of the established
   connection rather than by pipe name, so a pipe that is created or replaced

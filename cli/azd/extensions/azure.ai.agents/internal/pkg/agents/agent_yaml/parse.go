@@ -5,6 +5,7 @@ package agent_yaml
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -495,6 +496,9 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 			"template.parallel_tool_calls is not currently supported by the prompt voice runtime; "+
 				"remove it from the agent definition")
 	}
+	if err := validateVoiceMaxOutputTokens(agent.MaxOutputTokens); err != nil {
+		errors = append(errors, err.Error())
+	}
 
 	if agent.Audio == nil {
 		return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, "")...)
@@ -541,6 +545,30 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 		}
 	}
 	return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, transcriptionModel)...)
+}
+
+func validateVoiceMaxOutputTokens(value any) error {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return fmt.Errorf("template.max_output_tokens must be a non-empty string or an integer")
+		}
+		return nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return nil
+	case float32:
+		if math.Trunc(float64(v)) == float64(v) {
+			return nil
+		}
+	case float64:
+		if math.Trunc(v) == v {
+			return nil
+		}
+	}
+	return fmt.Errorf("template.max_output_tokens must be a string or an integer")
 }
 
 func validateVoiceIncludeTranscriptionCompatibility(agent VoiceAgent, transcriptionModel string) []string {

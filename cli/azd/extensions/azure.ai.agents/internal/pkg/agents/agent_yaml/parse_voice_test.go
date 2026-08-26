@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -228,6 +229,44 @@ func TestValidateAgentDefinition_PromptVoice_AdvancedValidationBoundaries(t *tes
 			err := ValidateAgentDefinition(yamlContent)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("expected %q validation error, got: %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoice_MaxOutputTokensValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		valueYaml string
+		wantErr   bool
+	}{
+		{name: "string inf", valueYaml: "inf", wantErr: false},
+		{name: "integer", valueYaml: "4096", wantErr: false},
+		{name: "integer valued float", valueYaml: "4096.0", wantErr: false},
+		{name: "empty string", valueYaml: `""`, wantErr: true},
+		{name: "non integer float", valueYaml: "1.5", wantErr: true},
+		{name: "bool", valueYaml: "true", wantErr: true},
+		{name: "array", valueYaml: "[1]", wantErr: true},
+		{name: "object", valueYaml: "{ value: 1 }", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			yamlContent := []byte(fmt.Sprintf(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+max_output_tokens: %s
+`, tt.valueYaml))
+			err := ValidateAgentDefinition(yamlContent)
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "max_output_tokens") {
+					t.Fatalf("expected max_output_tokens validation error, got: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected valid max_output_tokens, got: %v", err)
 			}
 		})
 	}

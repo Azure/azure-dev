@@ -818,7 +818,15 @@ func (p *AgentServiceTargetProvider) resolvePromptWorkspaceFromAzure(
 
 	// Prompt agents skip the hosted credential-init path so p.credential is nil.
 	// Fall back to the prompt harness credential so workspace discovery works.
-	var cred azcore.TokenCredential = p.credential
+	//
+	// The nil check is on the concrete pointer, not on the interface. Assigning a
+	// nil *AzureDeveloperCLICredential into azcore.TokenCredential produces an
+	// interface that is non-nil but carries a nil pointer, so comparing the
+	// interface to nil never succeeds and the fallback below never runs.
+	var cred azcore.TokenCredential
+	if p.credential != nil {
+		cred = p.credential
+	}
 	if cred == nil {
 		cred = promptCredential()
 	}

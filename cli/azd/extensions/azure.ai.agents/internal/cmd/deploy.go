@@ -20,9 +20,11 @@ import (
 // the harness by the service-target provider during `azd up` / `azd deploy`,
 // exactly like hosted agents. The previous standalone harness-deploy behavior
 // has been removed in favor of that unified flow.
-func newDeployCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	extCtx = ensureExtensionContext(extCtx)
-
+//
+// The extension context is accepted for symmetry with the other command
+// constructors in root.go but is unused: the command only returns an error
+// pointing at the standard lifecycle.
+func newDeployCommand(_ *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "deploy [name]",
 		Short:  "Deprecated: use `azd up` or `azd deploy`.",

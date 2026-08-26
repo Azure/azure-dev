@@ -699,7 +699,7 @@ func TestPromptResourceServices(t *testing.T) {
 
 		dir := t.TempDir()
 		bundle := filepath.Join(dir, "skills", "code-review")
-		require.NoError(t, os.MkdirAll(bundle, 0o755))
+		require.NoError(t, os.MkdirAll(bundle, 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(bundle, "SKILL.md"), []byte(
 			"---\nname: code-review\ndescription: reviews code\n---\n\nDo the review.\n",
 		), 0o600))

@@ -133,3 +133,19 @@ words:
   - cognitiveservices
   - fdp
   - PES
+  # Prompt agent (graph, skills, connections, policies) terms
+  - chdirs
+  - dedupe
+  - frontmatter
+  - gerr
+  - ghcp
+  - pasteable
+  - pctx
+  - raipolicies
+  - retarget
+  - sandboxed
+  - stringifying
+  - subfolders
+  - ufeff
+  - warnf
+  - workspacenotfound

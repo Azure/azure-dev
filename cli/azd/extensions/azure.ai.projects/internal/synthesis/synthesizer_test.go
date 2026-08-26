@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -756,6 +757,74 @@ services:
 	})
 }
 
+func TestSynthesize_ConnectionExtendedFields(t *testing.T) {
+	const inputYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  oauth-conn:
+    host: azure.ai.connection
+    uses: [my-project]
+    category: RemoteTool
+    target: https://mcp.example.com/mcp
+    authType: OAuth2
+    audience: ${OAUTH_AUDIENCE}
+    authorizationUrl: ${OAUTH_AUTHORIZATION_URL}
+    tokenUrl: ${OAUTH_TOKEN_URL}
+    refreshUrl: ${OAUTH_REFRESH_URL}
+    scopes:
+      - ${OAUTH_SCOPE}
+      - static.scope
+    connectorName: ${OAUTH_CONNECTOR_NAME}
+`
+	// #nosec G101 -- these are test-only OAuth endpoint and scope values, not credentials.
+	env := map[string]string{
+		"OAUTH_AUDIENCE":          "https://mcp.example.com",
+		"OAUTH_AUTHORIZATION_URL": "https://login.example.com/authorize",
+		"OAUTH_TOKEN_URL":         "https://login.example.com/token",
+		"OAUTH_REFRESH_URL":       "https://login.example.com/refresh",
+		"OAUTH_SCOPE":             "tool.read",
+		"OAUTH_CONNECTOR_NAME":    "managed-mcp",
+	}
+
+	t.Run("provision resolves extended fields", func(t *testing.T) {
+		result, err := Synthesize(Input{
+			RawAzureYAML:  []byte(inputYAML),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			Env:           env,
+		})
+		require.NoError(t, err)
+
+		connection := resultConnections(t, result)[0]
+		assert.Equal(t, env["OAUTH_AUDIENCE"], connection.Audience)
+		assert.Equal(t, env["OAUTH_AUTHORIZATION_URL"], connection.AuthorizationURL)
+		assert.Equal(t, env["OAUTH_TOKEN_URL"], connection.TokenURL)
+		assert.Equal(t, env["OAUTH_REFRESH_URL"], connection.RefreshURL)
+		assert.Equal(t, []string{"tool.read", "static.scope"}, connection.Scopes)
+		assert.Equal(t, env["OAUTH_CONNECTOR_NAME"], connection.ConnectorName)
+	})
+
+	t.Run("eject preserves extended field references", func(t *testing.T) {
+		result, err := Synthesize(Input{
+			RawAzureYAML:    []byte(inputYAML),
+			ServiceName:     "my-project",
+			AcceptedHosts:   []string{"azure.ai.project"},
+			Env:             env,
+			PreserveVarRefs: true,
+		})
+		require.NoError(t, err)
+
+		connection := resultConnections(t, result)[0]
+		assert.Equal(t, "${OAUTH_AUDIENCE}", connection.Audience)
+		assert.Equal(t, "${OAUTH_AUTHORIZATION_URL}", connection.AuthorizationURL)
+		assert.Equal(t, "${OAUTH_TOKEN_URL}", connection.TokenURL)
+		assert.Equal(t, "${OAUTH_REFRESH_URL}", connection.RefreshURL)
+		assert.Equal(t, []string{"${OAUTH_SCOPE}", "static.scope"}, connection.Scopes)
+		assert.Equal(t, "${OAUTH_CONNECTOR_NAME}", connection.ConnectorName)
+	})
+}
+
 // TestBrownfieldConnections verifies connection services are collected for a
 // brownfield (endpoint:) project, with ${VAR} resolved (brownfield provisions
 // so references must be concrete) and Foundry ${{...}} preserved.
@@ -1214,6 +1283,46 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 	}
 }
 
+func TestTerraformConnectionTemplatesIncludeExtendedFields(t *testing.T) {
+	tests := []struct {
+		name          string
+		fs            fs.ReadFileFS
+		variablesPath string
+		resourcePath  string
+	}{
+		{
+			name:          "greenfield",
+			fs:            TerraformTemplatesFS(),
+			variablesPath: "templates/terraform/variables.tf",
+			resourcePath:  "templates/terraform/connections.tf",
+		},
+		{
+			name:          "existing project",
+			fs:            ExistingProjectTerraformTemplatesFS(),
+			variablesPath: "templates/terraform-existing-project/variables.tf",
+			resourcePath:  "templates/terraform-existing-project/connections.tf",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			variables, err := test.fs.ReadFile(test.variablesPath)
+			require.NoError(t, err)
+			resource, err := test.fs.ReadFile(test.resourcePath)
+			require.NoError(t, err)
+
+			for _, field := range []string{
+				"audience", "authorizationUrl", "tokenUrl", "refreshUrl", "scopes", "connectorName",
+			} {
+				assert.Contains(t, string(variables), field,
+					"Terraform connection variable must expose %s", field)
+				assert.Contains(t, string(resource), fmt.Sprintf("%s = each.value.%s", field, field),
+					"Terraform connection payload must emit %s", field)
+			}
+		})
+	}
+}
+
 // TestTerraformModule_DerivesNamesWhenEmpty guards the regression where unset
 // AZURE_AI_PROJECT_NAME / AZURE_RESOURCE_GROUP substituted to "" in
 // main.tfvars.json and failed at plan time (foundry_project_name validation /
@@ -1282,6 +1391,12 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	credentials, ok := params["connectionCredentials"].(map[string]any)
 	require.True(t, ok, "connectionCredentials param must be an object")
 	assert.Equal(t, "secureObject", credentials["type"])
+	for _, field := range []string{
+		"audience", "authorizationUrl", "tokenUrl", "refreshUrl", "scopes", "connectorName",
+	} {
+		assert.Contains(t, string(data), fmt.Sprintf("createObject('%s'", field),
+			"compiled connection resource must emit %s", field)
+	}
 
 	// Network isolation parameters must exist so the synthesizer's network
 	// param set is accepted by ARM (extra params would fail the deployment).

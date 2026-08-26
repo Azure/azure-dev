@@ -112,15 +112,21 @@ type DeploymentSku struct {
 
 // Connection mirrors the connectionType in modules/connections.bicep: the
 // synthesized shape of a host: azure.ai.connection service, where the service
-// key becomes Name. Credentials and Metadata pass through as-is so any auth
-// type (ApiKey, CustomKeys, OAuth2, identity tokens, ...) can be expressed.
+// key becomes Name. Credentials, metadata, OAuth settings, and identity audience
+// pass through so every supported authentication type can be expressed.
 type Connection struct {
-	Name        string            `yaml:"name" json:"name"`
-	Category    string            `yaml:"category" json:"category"`
-	Target      string            `yaml:"target" json:"target"`
-	AuthType    string            `yaml:"authType" json:"authType"`
-	Credentials map[string]any    `yaml:"credentials,omitempty" json:"credentials,omitempty"`
-	Metadata    map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	Name             string            `yaml:"name" json:"name"`
+	Category         string            `yaml:"category" json:"category"`
+	Target           string            `yaml:"target" json:"target"`
+	AuthType         string            `yaml:"authType" json:"authType"`
+	Credentials      map[string]any    `yaml:"credentials,omitempty" json:"credentials,omitempty"`
+	Metadata         map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	Audience         string            `yaml:"audience,omitempty" json:"audience,omitempty"`
+	AuthorizationURL string            `yaml:"authorizationUrl,omitempty" json:"authorizationUrl,omitempty"`
+	TokenURL         string            `yaml:"tokenUrl,omitempty" json:"tokenUrl,omitempty"`
+	RefreshURL       string            `yaml:"refreshUrl,omitempty" json:"refreshUrl,omitempty"`
+	Scopes           []string          `yaml:"scopes,omitempty" json:"scopes,omitempty"`
+	ConnectorName    string            `yaml:"connectorName,omitempty" json:"connectorName,omitempty"`
 }
 
 // SplitConnectionCredentials separates credential values.
@@ -163,12 +169,18 @@ func JoinConnectionCredentials(
 // the synthesizer reads. The service key (not a body field) is the connection
 // name; see collectConnections.
 type connectionService struct {
-	Host        string            `yaml:"host"`
-	Category    string            `yaml:"category,omitempty"`
-	Target      string            `yaml:"target,omitempty"`
-	AuthType    string            `yaml:"authType,omitempty"`
-	Credentials map[string]any    `yaml:"credentials,omitempty"`
-	Metadata    map[string]string `yaml:"metadata,omitempty"`
+	Host             string            `yaml:"host"`
+	Category         string            `yaml:"category,omitempty"`
+	Target           string            `yaml:"target,omitempty"`
+	AuthType         string            `yaml:"authType,omitempty"`
+	Credentials      map[string]any    `yaml:"credentials,omitempty"`
+	Metadata         map[string]string `yaml:"metadata,omitempty"`
+	Audience         string            `yaml:"audience,omitempty"`
+	AuthorizationURL string            `yaml:"authorizationUrl,omitempty"`
+	TokenURL         string            `yaml:"tokenUrl,omitempty"`
+	RefreshURL       string            `yaml:"refreshUrl,omitempty"`
+	Scopes           []string          `yaml:"scopes,omitempty"`
+	ConnectorName    string            `yaml:"connectorName,omitempty"`
 }
 
 // aiConnectionHost is the host: value that marks a service as a Foundry
@@ -770,6 +782,30 @@ func collectConnections(
 		if err != nil {
 			return nil, fmt.Errorf("services.%s.target: %w", name, err)
 		}
+		audience, err := maybeExpand(svc.Audience, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.audience: %w", name, err)
+		}
+		authorizationURL, err := maybeExpand(svc.AuthorizationURL, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.authorizationUrl: %w", name, err)
+		}
+		tokenURL, err := maybeExpand(svc.TokenURL, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.tokenUrl: %w", name, err)
+		}
+		refreshURL, err := maybeExpand(svc.RefreshURL, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.refreshUrl: %w", name, err)
+		}
+		scopes, err := expandStrings(svc.Scopes, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.scopes: %w", name, err)
+		}
+		connectorName, err := maybeExpand(svc.ConnectorName, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.connectorName: %w", name, err)
+		}
 
 		credentials, err := expandCredentials(
 			svc.Credentials,
@@ -786,12 +822,18 @@ func collectConnections(
 		}
 
 		connections = append(connections, Connection{
-			Name:        name,
-			Category:    svc.Category,
-			Target:      target,
-			AuthType:    svc.AuthType,
-			Credentials: credentials,
-			Metadata:    metadata,
+			Name:             name,
+			Category:         svc.Category,
+			Target:           target,
+			AuthType:         svc.AuthType,
+			Credentials:      credentials,
+			Metadata:         metadata,
+			Audience:         audience,
+			AuthorizationURL: authorizationURL,
+			TokenURL:         tokenURL,
+			RefreshURL:       refreshURL,
+			Scopes:           scopes,
+			ConnectorName:    connectorName,
 		})
 	}
 
@@ -849,6 +891,25 @@ func maybeExpand(
 		return s, nil
 	}
 	return foundry.ExpandEnv(s, mapping)
+}
+
+func expandStrings(
+	values []string,
+	mapping func(string) string,
+	resolve bool,
+) ([]string, error) {
+	if values == nil {
+		return nil, nil
+	}
+	out := make([]string, len(values))
+	for i, value := range values {
+		expanded, err := maybeExpand(value, mapping, resolve)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = expanded
+	}
+	return out, nil
 }
 
 // expandCredentials deep-copies a credentials map, expanding ${VAR} in every

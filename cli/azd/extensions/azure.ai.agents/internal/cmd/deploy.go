@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -167,7 +168,9 @@ func deployAgentToolboxDependency(
 		environment["TOOLBOX_VERSION"] = version
 		environment["TOOLBOX_ENDPOINT"] = fmt.Sprintf(
 			"%s/toolboxes/%s/versions/%s/mcp?api-version=v1",
-			strings.TrimRight(projectEndpoint, "/"), name, version,
+			strings.TrimRight(projectEndpoint, "/"),
+			url.PathEscape(name),
+			url.PathEscape(version),
 		)
 		return environment, nil
 	}

@@ -86,6 +86,27 @@ func TestDeployAgentToolboxDependencyUsesRemoteReference(t *testing.T) {
 	)
 }
 
+func TestDeployAgentToolboxDependencyEscapesPinnedReference(t *testing.T) {
+	t.Parallel()
+
+	agentPath := filepath.Join(t.TempDir(), "agent.yaml")
+	runner := &recordingDependencyRunner{}
+	environment, err := deployAgentToolboxDependency(
+		t.Context(), runner,
+		"https://account.services.ai.azure.com/api/projects/project",
+		agentPath,
+		pointerToolboxReference("support/tools?#", "3/preview?#"),
+	)
+	require.NoError(t, err)
+	assert.Empty(t, runner.args)
+	assert.Equal(
+		t,
+		"https://account.services.ai.azure.com/api/projects/project/"+
+			"toolboxes/support%2Ftools%3F%23/versions/3%2Fpreview%3F%23/mcp?api-version=v1",
+		environment["TOOLBOX_ENDPOINT"],
+	)
+}
+
 func TestDeployAgentToolboxDependencyPinnedVersionSkipsSiblingDefinition(t *testing.T) {
 	t.Parallel()
 

@@ -133,7 +133,7 @@ func TestEnvironmentListSupportsJSONOutput(t *testing.T) {
 	}
 }
 
-func TestEnvironmentListReportsEmptyProject(t *testing.T) {
+func TestEnvironmentListDisplaysNoResultsForEmptyProject(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(
@@ -153,16 +153,44 @@ func TestEnvironmentListReportsEmptyProject(t *testing.T) {
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
 	}
-	if localErr.Code != "rle_environments_not_found" {
-		t.Fatalf("expected environments-not-found code, got %q", localErr.Code)
+	if output.String() != "\n"+noResultsMessage+"\n\n" {
+		t.Fatalf("expected no-results message, got %q", output.String())
 	}
-	if localErr.Message != "No RLE environments were found in this Foundry project." {
-		t.Fatalf("unexpected empty project message: %q", localErr.Message)
+}
+
+func TestEnvironmentListReturnsEmptyJSONForEmptyProject(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-from-env",
+	)
+
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	outputFormat := "json"
+	command := newListCommand(&outputFormat)
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	var result []environmentResource
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatalf("expected JSON output, got %s: %v", output.String(), err)
+	}
+	if result == nil || len(result) != 0 {
+		t.Fatalf("expected empty environment array, got %#v", result)
 	}
 }
 
@@ -454,7 +482,37 @@ func TestShowSupportsJSONOutput(t *testing.T) {
 	}
 }
 
-func TestShowReportsEmptyVersionListAsNotFound(t *testing.T) {
+func TestShowDisplaysNoResultsForEmptyVersionList(t *testing.T) {
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/saved-project",
+	)
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet ||
+			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/missing_env/versions" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	outputFormat := "default"
+	command := newShowCommand(&outputFormat)
+	command.SetArgs([]string{"missing_env"})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "\n"+noResultsMessage+"\n\n" {
+		t.Fatalf("expected no-results message, got %q", output.String())
+	}
+}
+
+func TestShowReturnsEmptyJSONForEmptyVersionList(t *testing.T) {
 	t.Setenv(
 		foundryProjectEndpointEnvVar,
 		"https://account.services.ai.azure.com/api/projects/saved-project",
@@ -476,16 +534,16 @@ func TestShowReportsEmptyVersionListAsNotFound(t *testing.T) {
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
 	}
-	if localErr.Code != "rle_environment_versions_not_found" {
-		t.Fatalf("expected rle_environment_versions_not_found, got %q", localErr.Code)
+
+	var versions []environmentResource
+	if err := json.Unmarshal(output.Bytes(), &versions); err != nil {
+		t.Fatalf("expected JSON output, got %s: %v", output.String(), err)
 	}
-	if localErr.Message != `No versions were found for RLE environment "missing_env".` {
-		t.Fatalf("unexpected no-versions message: %q", localErr.Message)
+	if versions == nil || len(versions) != 0 {
+		t.Fatalf("expected empty version array, got %#v", versions)
 	}
 }
 

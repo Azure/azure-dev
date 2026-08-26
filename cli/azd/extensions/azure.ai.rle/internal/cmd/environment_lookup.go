@@ -33,12 +33,3 @@ func environmentVersionNotFoundError(environmentName string, version string) err
 		),
 	}
 }
-
-func environmentVersionsNotFoundError(environmentName string) error {
-	return &azdext.LocalError{
-		Message:    fmt.Sprintf("No versions were found for RLE environment %q.", environmentName),
-		Code:       "rle_environment_versions_not_found",
-		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: "Verify the environment name, or publish a version and run this command again.",
-	}
-}

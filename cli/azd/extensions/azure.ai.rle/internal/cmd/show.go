@@ -75,12 +75,10 @@ func (a *showAction) Run() error {
 			version.UpdatedAt,
 		})
 	}
-	output.Message("")
-	output.Table(
+	renderTableOrNoResults(output,
 		[]string{"VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED"},
 		rows,
 	)
-	output.Message("")
 	return nil
 }
 
@@ -169,9 +167,6 @@ func listAllEnvironmentVersions(
 			"Environment version list",
 			"rle_environment_version_list_safety_limit",
 		)
-	}
-	if len(history) == 0 {
-		return nil, environmentVersionsNotFoundError(environmentName)
 	}
 	return history, nil
 }

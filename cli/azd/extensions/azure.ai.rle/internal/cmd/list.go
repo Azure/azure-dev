@@ -16,6 +16,7 @@ import (
 const (
 	environmentListPageSize = 100
 	environmentListMaxPages = 100
+	noResultsMessage        = "No environments found."
 )
 
 type listAction struct {
@@ -53,14 +54,6 @@ func (a *listAction) Run() error {
 	if err != nil {
 		return err
 	}
-	if len(environments) == 0 {
-		return &azdext.LocalError{
-			Message:    "No RLE environments were found in this Foundry project.",
-			Code:       "rle_environments_not_found",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Publish an RLE environment, then run this command again.",
-		}
-	}
 
 	format, err := azdext.ParseOutputFormat(*a.outputFormat)
 	if err != nil {
@@ -84,17 +77,15 @@ func (a *listAction) Run() error {
 			environment.UpdatedAt,
 		})
 	}
-	output.Message("")
-	output.Table(
+	renderTableOrNoResults(output,
 		[]string{"NAME", "VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED"},
 		rows,
 	)
-	output.Message("")
 	return nil
 }
 
 func listAllEnvironments(ctx context.Context, client *rleClient) ([]environmentResource, error) {
-	var environments []environmentResource
+	environments := make([]environmentResource, 0)
 	continuationToken := ""
 	seenCursors := map[string]struct{}{}
 	for range environmentListMaxPages {
@@ -150,4 +141,14 @@ func resolveEnvironmentListProjectEndpoint() (string, error) {
 			foundryProjectEndpointEnvVar,
 		),
 	}
+}
+
+func renderTableOrNoResults(output *azdext.Output, headers []string, rows [][]string) {
+	output.Message("")
+	if len(rows) == 0 {
+		output.Message(noResultsMessage)
+	} else {
+		output.Table(headers, rows)
+	}
+	output.Message("")
 }

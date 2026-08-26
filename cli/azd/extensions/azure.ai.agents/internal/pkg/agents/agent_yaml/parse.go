@@ -505,8 +505,8 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 			if strings.TrimSpace(td.Type) == "" {
 				errors = append(errors, "template.audio.input.turn_detection.type must not be blank")
 			}
-			if td.Threshold != nil && (*td.Threshold < 0 || *td.Threshold > 1) {
-				errors = append(errors, "template.audio.input.turn_detection.threshold must be between 0 and 1")
+			if td.Threshold != nil && (*td.Threshold <= 0 || *td.Threshold > 1) {
+				errors = append(errors, "template.audio.input.turn_detection.threshold must be greater than 0 and <= 1")
 			}
 			if td.PrefixPaddingMs != nil && *td.PrefixPaddingMs < 0 {
 				errors = append(errors, "template.audio.input.turn_detection.prefix_padding_ms must be >= 0")

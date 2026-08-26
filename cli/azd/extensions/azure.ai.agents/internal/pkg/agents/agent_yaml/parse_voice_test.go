@@ -133,6 +133,24 @@ parallel_tool_calls: true
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoice_RejectsZeroTurnDetectionThreshold(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+audio:
+  input:
+    turn_detection:
+      type: azure_semantic_vad
+      threshold: 0
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "threshold must be greater than 0") {
+		t.Fatalf("expected threshold validation error, got: %v", err)
+	}
+}
+
 func TestValidateAgentDefinition_PromptVoice_InvalidIncludeTranscriptionModel(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice

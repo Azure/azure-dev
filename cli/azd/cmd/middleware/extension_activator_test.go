@@ -27,7 +27,10 @@ func stubProviderRegistry(mockCtx *mocks.MockContext, extensionID, providerName 
 	stubProviderRegistryVersions(mockCtx, extensionID, []extensions.ExtensionVersion{{
 		Version:      "1.0.0",
 		Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-		Providers:    []extensions.Provider{{Name: providerName}},
+		Providers: []extensions.Provider{{
+			Type: extensions.ProvisioningProviderType,
+			Name: providerName,
+		}},
 	}})
 }
 
@@ -236,7 +239,10 @@ func Test_SuggestExtensionForProvider(t *testing.T) {
 			{
 				Version:      "1.0.0",
 				Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-				Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+				Providers: []extensions.Provider{{
+					Type: extensions.ProvisioningProviderType,
+					Name: "microsoft.foundry",
+				}},
 			},
 			{
 				Version:            "2.0.0",

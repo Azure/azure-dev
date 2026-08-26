@@ -251,13 +251,13 @@ func TestValidateAgentDefinition_PromptVoice_MaxOutputTokensValidation(t *testin
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			yamlContent := []byte(fmt.Sprintf(`
+			yamlContent := fmt.Appendf(nil, `
 kind: prompt-voice
 name: voice-agent
 model:
   id: gpt-realtime
 max_output_tokens: %s
-`, tt.valueYaml))
+`, tt.valueYaml)
 			err := ValidateAgentDefinition(yamlContent)
 			if tt.wantErr {
 				if err == nil || !strings.Contains(err.Error(), "max_output_tokens") {

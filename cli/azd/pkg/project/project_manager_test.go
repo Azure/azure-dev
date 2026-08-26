@@ -307,54 +307,37 @@ func Test_projectManager_Initialize(t *testing.T) {
 	})
 }
 
-func Test_projectManager_InitializeServices_RespectsRootConditions(t *testing.T) {
-	tests := []struct {
-		name      string
-		condition string
-		wantInit  bool
-	}{
-		{name: "RootFalse", condition: "false"},
-		{name: "Whitespace", condition: " "},
-		{name: "RootAbsent", wantInit: true},
-		{name: "RootTrue", condition: "true", wantInit: true},
+func Test_projectManager_InitializeServices_InitializesSuppliedServices(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectConfig := &ProjectConfig{
+		Path:     tmpDir,
+		Services: map[string]*ServiceConfig{},
+	}
+	disabledService := &ServiceConfig{
+		Name:      "disabled",
+		Host:      AppServiceTarget,
+		Project:   projectConfig,
+		Condition: osutil.NewExpandableString("false"),
+	}
+	enabledService := &ServiceConfig{
+		Name:    "enabled",
+		Host:    AppServiceTarget,
+		Project: projectConfig,
+	}
+	projectConfig.Services[disabledService.Name] = disabledService
+	projectConfig.Services[enabledService.Name] = enabledService
+
+	serviceManager := &fakeServiceManager{}
+	projectManager := &projectManager{
+		importManager:  NewImportManager(nil),
+		serviceManager: serviceManager,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			projectConfig := &ProjectConfig{
-				Path:     t.TempDir(),
-				Services: map[string]*ServiceConfig{},
-			}
-			serviceConfig := &ServiceConfig{
-				Name:      "connection",
-				Host:      ServiceTargetKind("azure.ai.connection"),
-				Project:   projectConfig,
-				Condition: osutil.NewExpandableString(tt.condition),
-				AdditionalProperties: map[string]any{
-					"$ref": "missing-connection.yaml",
-				},
-			}
-			projectConfig.Services[serviceConfig.Name] = serviceConfig
-
-			serviceManager := &fakeServiceManager{frameworkSvc: &noOpProject{}}
-			projectManager := &projectManager{
-				importManager:  NewImportManager(nil),
-				serviceManager: serviceManager,
-			}
-
-			services, err := projectManager.importManager.ServiceStableFiltered(
-				t.Context(), projectConfig, "", func(string) string { return "" },
-			)
-			require.NoError(t, err)
-			require.NoError(t, projectManager.InitializeServices(t.Context(), services))
-
-			if tt.wantInit {
-				assert.Equal(t, []string{"connection"}, serviceManager.initializedServices)
-			} else {
-				assert.Empty(t, serviceManager.initializedServices)
-			}
-		})
-	}
+	require.NoError(t, projectManager.InitializeServices(
+		t.Context(),
+		[]*ServiceConfig{enabledService},
+	))
+	assert.Equal(t, []string{"enabled"}, serviceManager.initializedServices)
 }
 
 func Test_projectManager_InitializeFrameworks(t *testing.T) {
@@ -465,8 +448,7 @@ func Test_projectManager_EnsureAllTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{},
 		}
-		prj := &ProjectConfig{Services: map[string]*ServiceConfig{}}
-		err := pm.EnsureAllTools(t.Context(), prj, nil)
+		err := pm.EnsureAllTools(t.Context(), nil)
 		require.NoError(t, err)
 	})
 
@@ -477,19 +459,16 @@ func Test_projectManager_EnsureAllTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{requiredTools: nil},
 		}
-		err := pm.EnsureAllTools(t.Context(), sc.Project, nil)
+		err := pm.EnsureAllTools(t.Context(), []*ServiceConfig{sc})
 		require.NoError(t, err)
 	})
 
-	t.Run("FilterSkipsService", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		sc := makeSvcConfig("api", "api", AppServiceTarget, ServiceLanguagePython, tmpDir)
+	t.Run("EmptyServicesSkipsService", func(t *testing.T) {
 		pm := &projectManager{
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{getRequiredToolsErr: assert.AnError},
 		}
-		// Filter rejects all services → loop body never executes → no error
-		err := pm.EnsureAllTools(t.Context(), sc.Project, func(svc *ServiceConfig) bool { return false })
+		err := pm.EnsureAllTools(t.Context(), nil)
 		require.NoError(t, err)
 	})
 
@@ -500,7 +479,7 @@ func Test_projectManager_EnsureAllTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{getRequiredToolsErr: assert.AnError},
 		}
-		err := pm.EnsureAllTools(t.Context(), sc.Project, nil)
+		err := pm.EnsureAllTools(t.Context(), []*ServiceConfig{sc})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting service required tools")
 	})
@@ -512,8 +491,7 @@ func Test_projectManager_EnsureFrameworkTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{},
 		}
-		prj := &ProjectConfig{Services: map[string]*ServiceConfig{}}
-		err := pm.EnsureFrameworkTools(t.Context(), prj, nil)
+		err := pm.EnsureFrameworkTools(t.Context(), nil)
 		require.NoError(t, err)
 	})
 
@@ -524,7 +502,7 @@ func Test_projectManager_EnsureFrameworkTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{frameworkSvc: &noOpProject{}},
 		}
-		err := pm.EnsureFrameworkTools(t.Context(), sc.Project, nil)
+		err := pm.EnsureFrameworkTools(t.Context(), []*ServiceConfig{sc})
 		require.NoError(t, err)
 	})
 
@@ -535,19 +513,17 @@ func Test_projectManager_EnsureFrameworkTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{getFrameworkErr: assert.AnError},
 		}
-		err := pm.EnsureFrameworkTools(t.Context(), sc.Project, nil)
+		err := pm.EnsureFrameworkTools(t.Context(), []*ServiceConfig{sc})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting framework service")
 	})
 
-	t.Run("FilterSkipsService", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		sc := makeSvcConfig("api", "api", AppServiceTarget, ServiceLanguagePython, tmpDir)
+	t.Run("EmptyServicesSkipsService", func(t *testing.T) {
 		pm := &projectManager{
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{getFrameworkErr: assert.AnError},
 		}
-		err := pm.EnsureFrameworkTools(t.Context(), sc.Project, func(svc *ServiceConfig) bool { return false })
+		err := pm.EnsureFrameworkTools(t.Context(), nil)
 		require.NoError(t, err)
 	})
 }
@@ -558,8 +534,7 @@ func Test_projectManager_EnsureServiceTargetTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{},
 		}
-		prj := &ProjectConfig{Services: map[string]*ServiceConfig{}}
-		err := pm.EnsureServiceTargetTools(t.Context(), prj, nil)
+		err := pm.EnsureServiceTargetTools(t.Context(), nil)
 		require.NoError(t, err)
 	})
 
@@ -570,7 +545,7 @@ func Test_projectManager_EnsureServiceTargetTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{serviceTarget: &fakeConfigurableServiceTarget{}},
 		}
-		err := pm.EnsureServiceTargetTools(t.Context(), sc.Project, nil)
+		err := pm.EnsureServiceTargetTools(t.Context(), []*ServiceConfig{sc})
 		require.NoError(t, err)
 	})
 
@@ -581,19 +556,17 @@ func Test_projectManager_EnsureServiceTargetTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{getTargetErr: assert.AnError},
 		}
-		err := pm.EnsureServiceTargetTools(t.Context(), sc.Project, nil)
+		err := pm.EnsureServiceTargetTools(t.Context(), []*ServiceConfig{sc})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting service target")
 	})
 
-	t.Run("FilterSkipsService", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		sc := makeSvcConfig("api", "api", AppServiceTarget, ServiceLanguagePython, tmpDir)
+	t.Run("EmptyServicesSkipsService", func(t *testing.T) {
 		pm := &projectManager{
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{getTargetErr: assert.AnError},
 		}
-		err := pm.EnsureServiceTargetTools(t.Context(), sc.Project, func(svc *ServiceConfig) bool { return false })
+		err := pm.EnsureServiceTargetTools(t.Context(), nil)
 		require.NoError(t, err)
 	})
 }
@@ -604,8 +577,7 @@ func Test_projectManager_EnsureRestoreTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{},
 		}
-		prj := &ProjectConfig{Services: map[string]*ServiceConfig{}}
-		err := pm.EnsureRestoreTools(t.Context(), prj, nil)
+		err := pm.EnsureRestoreTools(t.Context(), nil)
 		require.NoError(t, err)
 	})
 
@@ -616,7 +588,7 @@ func Test_projectManager_EnsureRestoreTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{frameworkSvc: &noOpProject{}},
 		}
-		err := pm.EnsureRestoreTools(t.Context(), sc.Project, nil)
+		err := pm.EnsureRestoreTools(t.Context(), []*ServiceConfig{sc})
 		require.NoError(t, err)
 	})
 
@@ -627,7 +599,7 @@ func Test_projectManager_EnsureRestoreTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{getFrameworkErr: assert.AnError},
 		}
-		err := pm.EnsureRestoreTools(t.Context(), sc.Project, nil)
+		err := pm.EnsureRestoreTools(t.Context(), []*ServiceConfig{sc})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "getting framework service")
 	})
@@ -641,7 +613,7 @@ func Test_projectManager_EnsureRestoreTools(t *testing.T) {
 			importManager:  NewImportManager(nil),
 			serviceManager: &fakeServiceManager{frameworkSvc: dp},
 		}
-		err := pm.EnsureRestoreTools(t.Context(), sc.Project, nil)
+		err := pm.EnsureRestoreTools(t.Context(), []*ServiceConfig{sc})
 		require.NoError(t, err)
 	})
 }
@@ -717,7 +689,7 @@ func Test_projectManager_EnsureServiceTargetTools_DockerMissing(t *testing.T) {
 			serviceTarget: &fakeConfigurableServiceTarget{requiredTools: []tools.ExternalTool{dockerTool}},
 		},
 	}
-	err := pm.EnsureServiceTargetTools(t.Context(), sc.Project, nil)
+	err := pm.EnsureServiceTargetTools(t.Context(), []*ServiceConfig{sc})
 	require.Error(t, err)
 	// suggestRemoteBuild wraps in ErrorWithSuggestion; the Suggestion field has "remoteBuild"
 	var errSug *errorhandler.ErrorWithSuggestion
@@ -739,7 +711,7 @@ func Test_projectManager_EnsureAllTools_ToolMissing(t *testing.T) {
 			requiredTools: []tools.ExternalTool{pyTool},
 		},
 	}
-	err := pm.EnsureAllTools(t.Context(), sc.Project, nil)
+	err := pm.EnsureAllTools(t.Context(), []*ServiceConfig{sc})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Python")
 }
@@ -759,7 +731,7 @@ func Test_projectManager_EnsureFrameworkTools_ToolMissing(t *testing.T) {
 			frameworkSvc: innerFw,
 		},
 	}
-	err := pm.EnsureFrameworkTools(t.Context(), sc.Project, nil)
+	err := pm.EnsureFrameworkTools(t.Context(), []*ServiceConfig{sc})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Python")
 }
@@ -780,7 +752,7 @@ func Test_projectManager_EnsureRestoreTools_DockerInner_ToolMissing(t *testing.T
 			frameworkSvc: dp,
 		},
 	}
-	err := pm.EnsureRestoreTools(t.Context(), sc.Project, nil)
+	err := pm.EnsureRestoreTools(t.Context(), []*ServiceConfig{sc})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Python")
 }

@@ -271,7 +271,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 
-	if err := p.projectManager.EnsureAllTools(ctx, p.projectConfig, selectedServiceFilter(services)); err != nil {
+	if err := p.projectManager.EnsureAllTools(ctx, services); err != nil {
 		return nil, err
 	}
 
@@ -314,18 +314,6 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// UX — environment details banner, JSON state dumps, and OpenAI /
 	// Responsible AI error wrappers.
 	return p.provisionLayersGraph(ctx, layers, startTime, previewMode)
-}
-
-func selectedServiceFilter(services []*project.ServiceConfig) project.ServiceFilterPredicate {
-	serviceNames := make(map[string]struct{}, len(services))
-	for _, service := range services {
-		serviceNames[service.Name] = struct{}{}
-	}
-
-	return func(service *project.ServiceConfig) bool {
-		_, ok := serviceNames[service.Name]
-		return ok
-	}
 }
 
 // deployResultToUx creates the ux element to display from a provision preview

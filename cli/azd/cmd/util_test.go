@@ -329,27 +329,27 @@ func (m *mockProjectManager) InitializeFrameworks(
 }
 
 func (m *mockProjectManager) EnsureAllTools(
-	ctx context.Context, projectConfig *project.ProjectConfig, filter project.ServiceFilterPredicate,
+	ctx context.Context, services []*project.ServiceConfig,
 ) error {
-	return m.Called(ctx, projectConfig, filter).Error(0)
+	return m.Called(ctx, services).Error(0)
 }
 
 func (m *mockProjectManager) EnsureFrameworkTools(
-	ctx context.Context, projectConfig *project.ProjectConfig, filter project.ServiceFilterPredicate,
+	ctx context.Context, services []*project.ServiceConfig,
 ) error {
-	return m.Called(ctx, projectConfig, filter).Error(0)
+	return m.Called(ctx, services).Error(0)
 }
 
 func (m *mockProjectManager) EnsureServiceTargetTools(
-	ctx context.Context, projectConfig *project.ProjectConfig, filter project.ServiceFilterPredicate,
+	ctx context.Context, services []*project.ServiceConfig,
 ) error {
-	return m.Called(ctx, projectConfig, filter).Error(0)
+	return m.Called(ctx, services).Error(0)
 }
 
 func (m *mockProjectManager) EnsureRestoreTools(
-	ctx context.Context, projectConfig *project.ProjectConfig, filter project.ServiceFilterPredicate,
+	ctx context.Context, services []*project.ServiceConfig,
 ) error {
-	return m.Called(ctx, projectConfig, filter).Error(0)
+	return m.Called(ctx, services).Error(0)
 }
 
 func Test_GetTargetServiceName(t *testing.T) {

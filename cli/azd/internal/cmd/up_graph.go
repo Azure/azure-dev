@@ -813,7 +813,7 @@ func (u *UpGraphAction) initializeServices(ctx context.Context) ([]*project.Serv
 	}
 
 	if err := u.projectManager.EnsureServiceTargetTools(
-		ctx, u.projectConfig, selectedServiceFilter(stableServices),
+		ctx, stableServices,
 	); err != nil {
 		return nil, fmt.Errorf("ensuring service tools: %w", err)
 	}

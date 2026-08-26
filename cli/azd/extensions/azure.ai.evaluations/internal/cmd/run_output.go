@@ -62,7 +62,7 @@ func newRunOutputListCommand() *cobra.Command {
 			}
 
 			runID := firstArg(args)
-			run, err := ec.latestOrNamedRun(cmd, evalID, runID, runID != "")
+			run, err := ec.latestOrNamedRun(cmd, evalID, runID, true)
 			if err != nil {
 				return err
 			}
@@ -153,7 +153,7 @@ func newRunOutputShowCommand() *cobra.Command {
 				return err
 			}
 
-			run, err := ec.latestOrNamedRun(cmd, evalID, runID, runID != "")
+			run, err := ec.latestOrNamedRun(cmd, evalID, runID, true)
 			if err != nil {
 				return err
 			}
@@ -237,7 +237,7 @@ func newRunOutputExportCommand() *cobra.Command {
 			}
 
 			runID := firstArg(args)
-			run, err := ec.latestOrNamedRun(cmd, evalID, runID, runID != "")
+			run, err := ec.latestOrNamedRun(cmd, evalID, runID, true)
 			if err != nil {
 				return err
 			}
@@ -343,24 +343,29 @@ func evalPathFlag(cmd *cobra.Command) string {
 	return ""
 }
 
-// latestOrNamedRun returns the named run, or the most recent one for the eval.
+// latestOrNamedRun returns the run a command should act on.
 //
-// explicit says whether the caller named the run rather than leaving it to
-// default. A remembered run that no longer resolves is worth falling through
-// on; one that was asked for by name is not.
+// Three sources, in order: the id the caller named, the id this environment
+// recorded, and -- only when mayGuess -- the newest run the service lists.
 //
-// The remembered id is preferred over the service's listing, and deliberately.
-// Listing looks like the fix for two concurrent starts leaving this key holding
-// whichever wrote last, but ListOpenAIEvalRuns sends no order parameter, so
-// "the first row" is not promised to be the newest; and `run cancel` defaults
-// through here, so guessing would cancel a run this environment never started.
-// The remembered id is at least scoped to the environment that made it.
+// mayGuess is off for the commands that change a run. The listing is the one
+// source that can name a run this environment never started: ListOpenAIEvalRuns
+// sends no order parameter, so "the first row" is not promised to be the newest,
+// and on a shared project it may belong to someone else. Reading the wrong run
+// is a confusing answer; cancelling it is somebody's lost work.
+//
+// A remembered id the service no longer has is worth falling through on. One
+// that fails for any other reason -- a 403, a 500, a timeout -- is reported
+// instead: a run that is merely unreachable has not been replaced by a
+// different one, and quietly acting on another is how the wrong run gets
+// cancelled during an outage.
 func (ec *evalContext) latestOrNamedRun(
 	cmd *cobra.Command,
 	evalID, runID string,
-	explicit bool,
+	mayGuess bool,
 ) (*eval_api.OpenAIEvalRun, error) {
 	ctx := cmd.Context()
+	explicit := runID != ""
 
 	// The remembered run is per group. A single shared one belongs to whichever
 	// group ran last, and asking another group for it returns 404 rather than
@@ -374,9 +379,13 @@ func (ec *evalContext) latestOrNamedRun(
 			ec.sayWhichRun(cmd, explicit, run.ID)
 			return run, nil
 		}
-		if explicit {
+		if explicit || !eval_api.IsNotFound(err) {
 			return nil, messages.ReadingRun(runID, err)
 		}
+	}
+
+	if !mayGuess {
+		return nil, messages.RunMustBeNamed(evalID)
 	}
 
 	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)

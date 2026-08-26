@@ -282,6 +282,17 @@ func EvalHasNoRuns(evalID string) error {
 	return fmt.Errorf("eval %s has no runs yet", evalID)
 }
 
+// RunMustBeNamed reports a command that changes a run reaching no run it can be
+// sure of. It does not guess: the alternative is the newest run the service
+// lists, which on a shared project may be someone else's.
+func RunMustBeNamed(evalID string) error {
+	return fmt.Errorf(
+		"name the run to act on: this environment has no run recorded for eval %s, "+
+			"and a command that changes a run will not pick one for you. "+
+			"`azd ai eval run list --eval %s` shows the runs there are",
+		evalID, evalID)
+}
+
 // ReadingRun reports a failure to read the run the caller named.
 func ReadingRun(runID string, err error) error {
 	return fmt.Errorf("reading run %s: %w", runID, err)

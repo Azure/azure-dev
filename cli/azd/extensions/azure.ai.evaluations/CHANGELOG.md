@@ -1,5 +1,19 @@
 # Release History
 
+## 1.0.27-beta (2026-08-26)
+
+### Bugs Fixed
+
+- `run cancel` could cancel a run it was never asked about. It settles on the
+  run you name, or the one this environment started, and no longer falls back
+  to the newest run the service lists -- on a shared project that is somebody
+  else's, and the listing is unordered anyway. With neither available it says
+  so instead of picking one.
+- A remembered run that could not be read is reported rather than quietly
+  swapped for a different one. Any failure used to fall through to the newest
+  run, so a 403, a 500 or a timeout moved the command onto another run without
+  saying so. A run that is genuinely gone still falls through.
+
 ## 1.0.26-beta (2026-08-26)
 
 ### Breaking Changes

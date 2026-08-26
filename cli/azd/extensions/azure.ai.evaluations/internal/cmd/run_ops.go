@@ -138,7 +138,7 @@ func newRunShowCommand() *cobra.Command {
 			}
 
 			runID := firstArg(args)
-			run, err := ec.latestOrNamedRun(cmd, evalID, runID, runID != "")
+			run, err := ec.latestOrNamedRun(cmd, evalID, runID, true)
 			if err != nil {
 				return err
 			}
@@ -275,7 +275,9 @@ func newRunCancelCommand() *cobra.Command {
 			}
 
 			runID := firstArg(args)
-			target, err := ec.latestOrNamedRun(cmd, evalID, runID, runID != "")
+			// Cancelling changes a run, so this settles for the one named or the
+			// one this environment started, and never the newest one listed.
+			target, err := ec.latestOrNamedRun(cmd, evalID, runID, false)
 			if err != nil {
 				return err
 			}

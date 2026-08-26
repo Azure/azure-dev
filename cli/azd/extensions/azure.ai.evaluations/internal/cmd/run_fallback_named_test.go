@@ -56,7 +56,7 @@ func TestTheRunAFallbackSettledOnIsNamed(t *testing.T) {
 	ec := evalContextListingOneRun(t, "evalrun_last")
 
 	var out, errOut bytes.Buffer
-	run, err := ec.latestOrNamedRun(commandWritingTo(t, &out, &errOut, false), "eval_1", "", false)
+	run, err := ec.latestOrNamedRun(commandWritingTo(t, &out, &errOut, false), "eval_1", "", true)
 
 	require.NoError(t, err)
 	assert.Equal(t, "evalrun_last", run.ID)
@@ -83,7 +83,7 @@ func TestTheRunIsNotNamedBackToWhoeverNamedIt(t *testing.T) {
 		ec := evalContextListingOneRun(t, "evalrun_last")
 
 		var out, errOut bytes.Buffer
-		_, err := ec.latestOrNamedRun(commandWritingTo(t, &out, &errOut, true), "eval_1", "", false)
+		_, err := ec.latestOrNamedRun(commandWritingTo(t, &out, &errOut, true), "eval_1", "", true)
 
 		require.NoError(t, err)
 		assert.Empty(t, errOut.String())

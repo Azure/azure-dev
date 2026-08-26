@@ -328,6 +328,64 @@ func Synthesize(in Input) (*Result, error) {
 	}, nil
 }
 
+// SynthesizeExistingProject derives parameters for editable infrastructure that
+// augments an existing Foundry project without taking ownership of it.
+func SynthesizeExistingProject(in Input) (*Result, error) {
+	if len(in.RawAzureYAML) == 0 {
+		return nil, errors.New("synthesis: RawAzureYAML is empty")
+	}
+	if in.ServiceName == "" {
+		return nil, errors.New("synthesis: ServiceName is empty")
+	}
+
+	var root projectFile
+	if err := yaml.Unmarshal(in.RawAzureYAML, &root); err != nil {
+		return nil, fmt.Errorf("parse azure.yaml: %w", err)
+	}
+	svc, err := loadProjectService(root.Services, in.ServiceName, in.ProjectRoot)
+	if err != nil {
+		return nil, err
+	}
+	if len(in.AcceptedHosts) > 0 && !slices.Contains(in.AcceptedHosts, svc.Host) {
+		return nil, ErrServiceNotFound
+	}
+	if strings.TrimSpace(svc.Endpoint) == "" {
+		return nil, errors.New("synthesis: existing Foundry project endpoint is empty")
+	}
+
+	includeAcr, err := deriveIncludeAcr(
+		root.Services,
+		svc,
+		in.ProjectRoot,
+		in.Env,
+	)
+	if err != nil {
+		return nil, err
+	}
+	connections, err := collectConnections(
+		root.Services,
+		in.Env,
+		in.ServiceEnvironments,
+		!in.PreserveVarRefs,
+		in.ProjectRoot,
+	)
+	if err != nil {
+		return nil, err
+	}
+	connections, connectionCredentials := SplitConnectionCredentials(connections)
+	deployments := svc.Deployments
+	if deployments == nil {
+		deployments = []Deployment{}
+	}
+
+	return &Result{Parameters: map[string]any{
+		"deployments":           deployments,
+		"includeAcr":            includeAcr,
+		"connections":           connections,
+		"connectionCredentials": connectionCredentials,
+	}, NetworkMode: NetworkModeNone}, nil
+}
+
 // ConnectionEnvironmentScopes returns enabled connection services
 // that declare env. An empty env block still establishes an
 // isolated service scope. Disabled connections are omitted so

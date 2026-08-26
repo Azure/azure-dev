@@ -1269,16 +1269,17 @@ func (x *SelectOptions) GetEnableFiltering() bool {
 }
 
 type MultiSelectOptions struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Message         string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	Choices         []*MultiSelectChoice   `protobuf:"bytes,2,rep,name=choices,proto3" json:"choices,omitempty"`
-	HelpMessage     string                 `protobuf:"bytes,3,opt,name=help_message,json=helpMessage,proto3" json:"help_message,omitempty"`
-	Hint            string                 `protobuf:"bytes,4,opt,name=hint,proto3" json:"hint,omitempty"`
-	DisplayCount    int32                  `protobuf:"varint,5,opt,name=display_count,json=displayCount,proto3" json:"display_count,omitempty"`
-	DisplayNumbers  *bool                  `protobuf:"varint,6,opt,name=display_numbers,json=displayNumbers,proto3,oneof" json:"display_numbers,omitempty"`
-	EnableFiltering *bool                  `protobuf:"varint,7,opt,name=enable_filtering,json=enableFiltering,proto3,oneof" json:"enable_filtering,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Message             string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	Choices             []*MultiSelectChoice   `protobuf:"bytes,2,rep,name=choices,proto3" json:"choices,omitempty"`
+	HelpMessage         string                 `protobuf:"bytes,3,opt,name=help_message,json=helpMessage,proto3" json:"help_message,omitempty"`
+	Hint                string                 `protobuf:"bytes,4,opt,name=hint,proto3" json:"hint,omitempty"`
+	DisplayCount        int32                  `protobuf:"varint,5,opt,name=display_count,json=displayCount,proto3" json:"display_count,omitempty"`
+	DisplayNumbers      *bool                  `protobuf:"varint,6,opt,name=display_numbers,json=displayNumbers,proto3,oneof" json:"display_numbers,omitempty"`
+	EnableFiltering     *bool                  `protobuf:"varint,7,opt,name=enable_filtering,json=enableFiltering,proto3,oneof" json:"enable_filtering,omitempty"`
+	AllowEmptySelection *bool                  `protobuf:"varint,8,opt,name=allow_empty_selection,json=allowEmptySelection,proto3,oneof" json:"allow_empty_selection,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *MultiSelectOptions) Reset() {
@@ -1356,6 +1357,13 @@ func (x *MultiSelectOptions) GetDisplayNumbers() bool {
 func (x *MultiSelectOptions) GetEnableFiltering() bool {
 	if x != nil && x.EnableFiltering != nil {
 		return *x.EnableFiltering
+	}
+	return false
+}
+
+func (x *MultiSelectOptions) GetAllowEmptySelection() bool {
+	if x != nil && x.AllowEmptySelection != nil {
+		return *x.AllowEmptySelection
 	}
 	return false
 }
@@ -2226,7 +2234,7 @@ const file_prompt_proto_rawDesc = "" +
 	"\x10enable_filtering\x18\b \x01(\bH\x02R\x0fenableFiltering\x88\x01\x01B\x11\n" +
 	"\x0f_selected_indexB\x12\n" +
 	"\x10_display_numbersB\x13\n" +
-	"\x11_enable_filtering\"\xc6\x02\n" +
+	"\x11_enable_filtering\"\x99\x03\n" +
 	"\x12MultiSelectOptions\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x123\n" +
 	"\achoices\x18\x02 \x03(\v2\x19.azdext.MultiSelectChoiceR\achoices\x12!\n" +
@@ -2234,9 +2242,11 @@ const file_prompt_proto_rawDesc = "" +
 	"\x04hint\x18\x04 \x01(\tR\x04hint\x12#\n" +
 	"\rdisplay_count\x18\x05 \x01(\x05R\fdisplayCount\x12,\n" +
 	"\x0fdisplay_numbers\x18\x06 \x01(\bH\x00R\x0edisplayNumbers\x88\x01\x01\x12.\n" +
-	"\x10enable_filtering\x18\a \x01(\bH\x01R\x0fenableFiltering\x88\x01\x01B\x12\n" +
+	"\x10enable_filtering\x18\a \x01(\bH\x01R\x0fenableFiltering\x88\x01\x01\x127\n" +
+	"\x15allow_empty_selection\x18\b \x01(\bH\x02R\x13allowEmptySelection\x88\x01\x01B\x12\n" +
 	"\x10_display_numbersB\x13\n" +
-	"\x11_enable_filtering\"\xdb\x01\n" +
+	"\x11_enable_filteringB\x18\n" +
+	"\x16_allow_empty_selection\"\xdb\x01\n" +
 	"\x15PromptResourceOptions\x12#\n" +
 	"\rresource_type\x18\x01 \x01(\tR\fresourceType\x12\x14\n" +
 	"\x05kinds\x18\x02 \x03(\tR\x05kinds\x12;\n" +

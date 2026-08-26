@@ -52,9 +52,9 @@ These are set once at process startup via `resource.New()` and attached to every
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Service name | `service.name` | — | — | Always `"azd"` |
-| Service version | `service.version` | — | — | Build version string |
-| OS type | `os.type` | — | — | e.g. `linux`, `windows`, `darwin` |
+| Service name | `service.name` | SystemMetadata | PerformanceAndHealth | Always `"azd"` |
+| Service version | `service.version` | SystemMetadata | FeatureInsight | Build version string |
+| OS type | `os.type` | SystemMetadata | FeatureInsight | e.g. `linux`, `windows`, `darwin` |
 | OS version | `os.version` | SystemMetadata | PerformanceAndHealth | Kernel / build version |
 | Host architecture | `host.arch` | SystemMetadata | PerformanceAndHealth | e.g. `amd64`, `arm64` |
 | Runtime version | `process.runtime.version` | SystemMetadata | PerformanceAndHealth | Go version |
@@ -131,17 +131,17 @@ not emitted by azd spans.
 |-------|----------|----------------|---------|-------|
 | Service host | `service.host` | SystemMetadata | PerformanceAndHealth | |
 | Service name | `service.name` | SystemMetadata | PerformanceAndHealth | |
-| Status code | `service.statusCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
+| Status code | `service.statusCode` | SystemMetadata | PerformanceAndHealth | **Measurement or string** — numeric HTTP/service status codes are measurements; AAD authentication errors emit string OAuth statuses such as `invalid_grant` |
 | Method | `service.method` | SystemMetadata | PerformanceAndHealth | |
-| Error code | `service.errorCode` | SystemMetadata | PerformanceAndHealth | **Measurement**; ARM deployment errors encode JSON objects with `error.code` and `error.arm.frame_index` |
+| Error code | `service.errorCode` | SystemMetadata | PerformanceAndHealth | String; ARM deployment errors encode JSON objects with `error.code` and `error.arm.frame_index` |
 | Correlation ID | `service.correlationId` | SystemMetadata | PerformanceAndHealth | |
 
 ### Tool Attributes
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Tool name | `tool.name` | SystemMetadata | FeatureInsight |
-| Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth |
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Tool name | `tool.name` | SystemMetadata | PerformanceAndHealth | |
+| Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 
 ### Performance
 
@@ -208,9 +208,9 @@ not emitted by azd spans.
 
 ### Agent
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Fix attempts | `agent.fix.attempts` | SystemMetadata | PerformanceAndHealth |
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Fix attempts | `agent.fix.attempts` | SystemMetadata | FeatureInsight | **Measurement** |
 
 ### Extensions
 
@@ -253,6 +253,13 @@ guarantees about the whole class:
 | Purpose | Always `FeatureInsight` |
 | Trust | `extension.id` and `extension.version` are derived from host-signed claims; `extension.source` and eligibility are checked against the installed record and verified source config, never from the request |
 | Review | Extension telemetry is reviewed when the extension is admitted to the official registry, under the same documentation, classification, and privacy rules as core fields. The eligibility rule above is what ties recording to that review |
+
+Reviewed first-party event contracts:
+
+| Extension | `extension.event` | Trigger | Extension attributes |
+|-----------|-------------------|---------|----------------------|
+| `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; this precedes client availability, agent startup, and client launch | `ext.route`: fixed enum `inspector`, `playground`, or `suppressed`; suppression takes precedence |
+| `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage`: fixed enum `ui_ready`; `ext.outcome`: fixed enum `succeeded`; this does not indicate agent connection |
 
 Because `ext.usage` spans share the command's trace, they join the originating
 command in Kusto on `operation_Id`. See
@@ -408,7 +415,7 @@ The execution graph powers the parallel `up` / `provision` / `deploy` engine.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Step count | `exegraph.step.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of steps in the graph |
-| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | Effective concurrency limit used for the run |
+| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — effective concurrency limit used for the run |
 | Error policy | `exegraph.error_policy` | SystemMetadata | PerformanceAndHealth | `fail_fast` or `continue_on_error` |
 | Step name | `exegraph.step.name` | SystemMetadata | PerformanceAndHealth | **Hashed** via `fields.StringHashed` — step names embed user-chosen service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
 | Step deps | `exegraph.step.deps` | SystemMetadata | PerformanceAndHealth | **Hashed slice** via `fields.StringSliceHashed` — each entry is another step name that embeds user-chosen identifiers |

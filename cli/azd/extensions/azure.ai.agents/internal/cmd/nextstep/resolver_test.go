@@ -118,6 +118,15 @@ func TestResolveAfterInit(t *testing.T) {
 			wantTrailing:   "azd deploy",
 		},
 		{
+			name: "new connection in existing project → provision",
+			state: &State{
+				HasProjectEndpoint:      true,
+				PendingProvisionReasons: []string{"connection"},
+			},
+			wantPrimaryHas: "azd provision",
+			wantTrailing:   "azd deploy",
+		},
+		{
 			name: "provision needed with missing Azure context → env set before provision",
 			state: &State{
 				PendingProvisionReasons: []string{"project"},

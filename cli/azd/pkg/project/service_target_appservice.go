@@ -134,10 +134,12 @@ func (st *appServiceTarget) Publish(
 	var publishResult *ServicePublishResult
 	var err error
 
-	// Check if the package artifact is already a remote image reference
-	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
-		if parsedImage, parseErr := docker.ParseContainerImage(artifact.Location); parseErr == nil {
-			if parsedImage.Registry != "" {
+	// Check if the package artifact is already a remote image reference. Image passthrough
+	// is handled by ContainerHelper.Publish so validation and artifact metadata stay consistent.
+	if !serviceConfig.Docker.ImagePassthrough {
+		if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
+			if parsedImage, parseErr := docker.ParseContainerImage(artifact.Location); parseErr == nil &&
+				parsedImage.Registry != "" {
 				publishResult = &ServicePublishResult{
 					Artifacts: ArtifactCollection{
 						{

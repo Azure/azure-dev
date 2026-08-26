@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -666,6 +667,63 @@ func TestAdoptServiceConfigIgnoresNilAndKeepsResolvedState(t *testing.T) {
 
 	provider.adoptServiceConfig(&azdext.ServiceConfig{Name: "echo"})
 	require.False(t, provider.serviceConfigResolved)
+}
+
+func TestBuildVoiceWSProtocolURL(t *testing.T) {
+	got := buildVoiceWSProtocolURL(
+		"https://acct.services.ai.azure.com/api/projects/proj/",
+		"voice-agent",
+	)
+	require.Equal(
+		t,
+		"wss://acct.services.ai.azure.com/api/projects/proj/agents/voice-agent/endpoint/protocols/voice?api-version=v1",
+		got,
+	)
+}
+
+func TestValidateVoiceAgentDeployResponse(t *testing.T) {
+	t.Run("requires name and latest version", func(t *testing.T) {
+		agent := &agent_api.AgentObject{Name: "voice-agent"}
+		agent.Versions.Latest.Version = "1"
+		err := validateVoiceAgentDeployResponse(agent)
+		require.NoError(t, err)
+	})
+
+	t.Run("missing name rejected", func(t *testing.T) {
+		err := validateVoiceAgentDeployResponse(&agent_api.AgentObject{})
+		require.ErrorContains(t, err, "missing agent name")
+	})
+
+	t.Run("missing version rejected", func(t *testing.T) {
+		err := validateVoiceAgentDeployResponse(&agent_api.AgentObject{Name: "voice-agent"})
+		require.ErrorContains(t, err, "missing latest agent version")
+	})
+}
+
+func TestShouldUpdateVoiceAgent(t *testing.T) {
+	t.Run("remote found updates", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(&agent_api.AgentObject{Name: "voice"}, nil)
+		require.NoError(t, err)
+		require.True(t, update)
+	})
+
+	t.Run("remote nil creates", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(nil, nil)
+		require.NoError(t, err)
+		require.False(t, update)
+	})
+
+	t.Run("not found creates", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(nil, &azcore.ResponseError{StatusCode: http.StatusNotFound})
+		require.NoError(t, err)
+		require.False(t, update)
+	})
+
+	t.Run("other get error returns error", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(nil, &azcore.ResponseError{StatusCode: http.StatusInternalServerError})
+		require.Error(t, err)
+		require.False(t, update)
+	})
 }
 
 func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
@@ -2828,9 +2886,9 @@ func newEndpointsTestClient(
 // TestEndpoints_VoiceManifestOnDisk_ResolvesProjectRoot covers the fresh-process
 // case where Endpoints runs without ensureDeployContext having populated
 // p.projectPath. A legacy-shape prompt-voice service (kind only on disk, no
-// inline kind) records NAME+ENDPOINT but no VERSION; Endpoints must resolve the
-// project root itself so agentkind classifies it as voice and returns the base
-// endpoint instead of the missing-VERSION error.
+// inline kind) may retain NAME+ENDPOINT without VERSION from an earlier deploy;
+// Endpoints must resolve the project root itself so agentkind classifies it as
+// voice and returns the base endpoint instead of the missing-VERSION error.
 func TestEndpoints_VoiceManifestOnDisk_ResolvesProjectRoot(t *testing.T) {
 	t.Parallel()
 
@@ -2848,7 +2906,7 @@ func TestEndpoints_VoiceManifestOnDisk_ResolvesProjectRoot(t *testing.T) {
 		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
 		"AGENT_VOICE_NAME":         "my-voice",
 		"AGENT_VOICE_ENDPOINT":     endpoint,
-		// deliberately no AGENT_VOICE_VERSION: voice agents have no version.
+		// Deliberately model a legacy persisted environment with no VERSION.
 	})
 
 	// Fresh process: projectPath/agentDefinitionPath are empty, exactly as they
@@ -2866,10 +2924,10 @@ func TestEndpoints_VoiceManifestOnDisk_ResolvesProjectRoot(t *testing.T) {
 
 // TestEndpoints_VoiceAgentDefinitionPathOverride covers the fresh-process case
 // where a voice manifest is supplied via the AGENT_DEFINITION_PATH override.
-// Deploy follows the override and writes NAME+ENDPOINT but no VERSION; Endpoints
-// runs without ensureDeployContext (so p.agentDefinitionPath is empty) and must
-// read the process override to classify the service as voice, rather than
-// classifying the (kind-less) service entry and returning missing-VERSION.
+// Endpoints runs without ensureDeployContext (so p.agentDefinitionPath is empty)
+// and must read the process override to classify a legacy persisted
+// NAME+ENDPOINT environment as voice, rather than classifying the (kind-less)
+// service entry and returning missing-VERSION.
 func TestEndpoints_VoiceAgentDefinitionPathOverride(t *testing.T) {
 	projectRoot := t.TempDir()
 	overridePath := filepath.Join(projectRoot, "custom-voice.yaml")
@@ -2885,7 +2943,7 @@ func TestEndpoints_VoiceAgentDefinitionPathOverride(t *testing.T) {
 		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
 		"AGENT_VOICE_NAME":         "my-voice",
 		"AGENT_VOICE_ENDPOINT":     endpoint,
-		// no AGENT_VOICE_VERSION: voice agents have no version.
+		// Deliberately model a legacy persisted environment with no VERSION.
 	})
 
 	// Fresh process: the service entry carries no kind; only the override does.

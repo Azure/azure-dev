@@ -59,8 +59,9 @@ func emitResourceServices(
 	deployments []project.Deployment,
 	connections []project.Connection,
 	toolboxes []project.Toolbox,
-) error {
+) (int, error) {
 	var agentUses []string
+	emittedConnections := 0
 
 	// Track every azure.yaml service key we emit so two resource names that
 	// sanitize to the same key (e.g. "my conn" and "myconn") fail fast instead
@@ -93,14 +94,14 @@ func emitResourceServices(
 		Deployments: deployments,
 	})
 	if err != nil {
-		return fmt.Errorf("marshaling project service config: %w", err)
+		return 0, fmt.Errorf("marshaling project service config: %w", err)
 	}
 	projectServiceName := resolveProjectServiceKey(ctx, azdClient, projectName, agentServiceName)
 	if err := reserveServiceName(usedNames, projectServiceName, "project service"); err != nil {
-		return err
+		return 0, err
 	}
 	if err := addResourceService(ctx, azdClient, projectServiceName, AiProjectHost, projectCfg, nil); err != nil {
-		return err
+		return 0, err
 	}
 	agentUses = append(agentUses, projectServiceName)
 
@@ -119,16 +120,17 @@ func emitResourceServices(
 			continue
 		}
 		if err := reserveServiceName(usedNames, connName, fmt.Sprintf("connection %q", conn.Name)); err != nil {
-			return err
+			return 0, err
 		}
 		connCfg, err := project.MarshalStruct(&conn)
 		if err != nil {
-			return fmt.Errorf("marshaling connection service %q config: %w", connName, err)
+			return 0, fmt.Errorf("marshaling connection service %q config: %w", connName, err)
 		}
 		if err := addResourceService(ctx, azdClient, connName, AiConnectionHost, connCfg, siblingUses); err != nil {
-			return err
+			return 0, err
 		}
 		agentUses = append(agentUses, connName)
+		emittedConnections++
 	}
 
 	for i := range toolboxes {
@@ -142,14 +144,14 @@ func emitResourceServices(
 			continue
 		}
 		if err := reserveServiceName(usedNames, toolboxName, fmt.Sprintf("toolbox %q", toolbox.Name)); err != nil {
-			return err
+			return 0, err
 		}
 		toolboxCfg, err := project.MarshalStruct(&toolbox)
 		if err != nil {
-			return fmt.Errorf("marshaling toolbox service %q config: %w", toolboxName, err)
+			return 0, fmt.Errorf("marshaling toolbox service %q config: %w", toolboxName, err)
 		}
 		if err := addResourceService(ctx, azdClient, toolboxName, AiToolboxHost, toolboxCfg, siblingUses); err != nil {
-			return err
+			return 0, err
 		}
 		agentUses = append(agentUses, toolboxName)
 	}
@@ -157,11 +159,11 @@ func emitResourceServices(
 	// Wire the agent service to its resource siblings so azd walks them first.
 	if len(agentUses) > 0 && agentServiceName != "" {
 		if err := setServiceUses(ctx, azdClient, agentServiceName, agentUses); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
-	return nil
+	return emittedConnections, nil
 }
 
 // resolveProjectServiceKey picks the azure.yaml service key for the single

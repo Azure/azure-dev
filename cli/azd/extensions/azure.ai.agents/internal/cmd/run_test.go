@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -236,6 +237,73 @@ func TestWaitForLocalPort(t *testing.T) {
 			t.Fatal("waitForLocalPort should fail for a closed port")
 		}
 	})
+}
+
+func TestReportLocalClientRouteSelected(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		activityProfile activityRunProfile
+		suppressClient  bool
+		reportErr       error
+		wantRoute       string
+	}{
+		{
+			name:      "selects Inspector for non-activity agent",
+			wantRoute: localClientRouteInspector,
+		},
+		{
+			name:            "selects Playground for activity agent",
+			activityProfile: activityRunProfile{IsActivity: true},
+			wantRoute:       localClientRoutePlayground,
+		},
+		{
+			name:           "selects suppressed for non-activity agent",
+			suppressClient: true,
+			wantRoute:      localClientRouteSuppressed,
+		},
+		{
+			name:            "suppression overrides activity route",
+			activityProfile: activityRunProfile{IsActivity: true},
+			suppressClient:  true,
+			wantRoute:       localClientRouteSuppressed,
+		},
+		{
+			name:      "reporting failure is best effort",
+			reportErr: errors.New("telemetry unavailable"),
+			wantRoute: localClientRouteInspector,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			telemetry := &recordingTelemetryClient{err: tt.reportErr}
+			reportLocalClientRouteSelected(
+				t.Context(),
+				telemetry,
+				tt.activityProfile,
+				tt.suppressClient,
+			)
+
+			if telemetry.request == nil {
+				t.Fatal("expected telemetry request")
+			}
+			if telemetry.request.EventName != localClientRouteSelectedEvent {
+				t.Fatalf(
+					"event name = %q, want %q",
+					telemetry.request.EventName,
+					localClientRouteSelectedEvent,
+				)
+			}
+			wantAttributes := map[string]string{localClientRouteAttribute: tt.wantRoute}
+			if !maps.Equal(telemetry.request.Attributes, wantAttributes) {
+				t.Fatalf("attributes = %v, want %v", telemetry.request.Attributes, wantAttributes)
+			}
+		})
+	}
 }
 
 func TestLaunchInspectorUsesWorkflowCommand(t *testing.T) {
@@ -846,6 +914,11 @@ type recordingWorkflowClient struct {
 	called  chan struct{}
 }
 
+type recordingTelemetryClient struct {
+	request *azdext.ReportUsageRequest
+	err     error
+}
+
 type lockedBuffer struct {
 	mu sync.Mutex
 	bytes.Buffer
@@ -873,6 +946,18 @@ func (c *recordingWorkflowClient) Run(
 		close(c.called)
 	}
 	return &azdext.EmptyResponse{}, c.err
+}
+
+func (c *recordingTelemetryClient) ReportUsage(
+	_ context.Context,
+	request *azdext.ReportUsageRequest,
+	_ ...grpc.CallOption,
+) (*azdext.ReportUsageResponse, error) {
+	c.request = request
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &azdext.ReportUsageResponse{Accepted: true}, nil
 }
 
 // createVenv sets up a minimal .venv directory structure for testing.

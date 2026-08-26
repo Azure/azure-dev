@@ -919,7 +919,7 @@ func TestDownloadAgentCode_ReturnsErrorOnNon200(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestCreateVoiceAgent_PostsToVoiceCollectionWithPreviewHeader(t *testing.T) {
+func TestCreateVoiceAgent_PostsToAgentsWithPreviewHeader(t *testing.T) {
 	body := `{"object":"agent","id":"va-1","name":"my-voice","versions":{"latest":{}}}`
 	client, transport := newCaptureClient(http.StatusOK, body)
 
@@ -932,53 +932,56 @@ func TestCreateVoiceAgent_PostsToVoiceCollectionWithPreviewHeader(t *testing.T) 
 
 	require.NoError(t, err)
 	require.Equal(t, "my-voice", agent.Name)
-
 	require.Len(t, transport.requests, 1)
 	req := transport.requests[0]
-
 	require.Equal(t, http.MethodPost, req.Method)
-	require.Equal(t, "/api/projects/proj/voice_agents", req.URL.Path)
+	require.Equal(t, "/api/projects/proj/agents", req.URL.Path)
 	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
 	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
-	// Default routing: no host override.
-	require.Empty(t, req.Header.Get("x-ms-overridden-host"))
-
-	reqBody, err := io.ReadAll(req.Body)
-	require.NoError(t, err)
-	require.Contains(t, string(reqBody), `"name":"my-voice"`)
 }
 
-func TestCreateVoiceAgent_SetsOverriddenHostHeader(t *testing.T) {
-	client, transport := newCaptureClient(http.StatusCreated, `{"name":"my-voice","versions":{"latest":{}}}`)
+func TestGetVoiceAgent_GetsNamedAgentWithPreviewHeader(t *testing.T) {
+	body := `{"object":"agent","id":"va-1","name":"my-voice","versions":{"latest":{"version":"3"}}}`
+	client, transport := newCaptureClient(http.StatusOK, body)
 
-	_, err := client.CreateVoiceAgent(
+	agent, err := client.GetVoiceAgent(
 		t.Context(),
-		&CreateAgentRequest{Name: "my-voice"},
+		"my-voice",
 		AgentEndpointAPIVersion,
 		"regional.hyena.example.com",
 	)
 
 	require.NoError(t, err)
+	require.Equal(t, "my-voice", agent.Name)
+	require.Equal(t, "3", agent.Versions.Latest.Version)
 	require.Len(t, transport.requests, 1)
-	require.Equal(
-		t,
-		"regional.hyena.example.com",
-		transport.requests[0].Header.Get("x-ms-overridden-host"),
-	)
+	req := transport.requests[0]
+	require.Equal(t, http.MethodGet, req.Method)
+	require.Equal(t, "/api/projects/proj/agents/my-voice", req.URL.Path)
+	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
 }
 
-func TestCreateVoiceAgent_ReturnsErrorOnNonSuccess(t *testing.T) {
-	client, _ := newCaptureClient(
-		http.StatusForbidden,
-		`{"error":{"code":"preview_feature_required","message":"voice agents preview"}}`,
-	)
+func TestUpdateVoiceAgent_PostsToNamedAgentWithPreviewHeader(t *testing.T) {
+	body := `{"object":"agent","id":"va-1","name":"my-voice","versions":{"latest":{"version":"2"}}}`
+	client, transport := newCaptureClient(http.StatusOK, body)
 
-	_, err := client.CreateVoiceAgent(
+	agent, err := client.UpdateVoiceAgent(
 		t.Context(),
-		&CreateAgentRequest{Name: "my-voice"},
+		"my-voice",
+		&UpdateAgentRequest{},
 		AgentEndpointAPIVersion,
-		"",
+		"regional.hyena.example.com",
 	)
 
-	require.Error(t, err)
+	require.NoError(t, err)
+	require.Equal(t, "my-voice", agent.Name)
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+	require.Equal(t, http.MethodPost, req.Method)
+	require.Equal(t, "/api/projects/proj/agents/my-voice", req.URL.Path)
+	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
 }

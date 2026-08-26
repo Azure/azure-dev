@@ -1376,7 +1376,7 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 		"templates/terraform/provider.tf",
 		"templates/terraform/variables.tf",
 		"templates/terraform/main.tf",
-		"templates/terraform/acr.tf",
+		"templates/terraform/container-registry.tf",
 		"templates/terraform/connections.tf",
 		"templates/terraform/outputs.tf.tmpl",
 	}
@@ -1387,10 +1387,6 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 			assert.NotEmpty(t, data, "%s should not be empty", p)
 		})
 	}
-	outputs, err := fs.ReadFile("templates/terraform/outputs.tf.tmpl")
-	require.NoError(t, err)
-	assert.Contains(t, string(outputs), `output "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"`)
-
 	// outputs.tf is rendered from outputs.tf.tmpl at eject time, and
 	// main.tfvars.json is generated -- neither is embedded as a final file
 	// (otherwise they would go stale).

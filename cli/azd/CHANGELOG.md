@@ -1,6 +1,6 @@
 # Release History
 
-## 1.32.0-beta.1 (Unreleased)
+## 1.33.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,28 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.32.0 (2026-08-26)
+
+### Features Added
+
+- [[#9588]](https://github.com/Azure/azure-dev/pull/9588) Add `docker.imagePassthrough` support to deploy an existing container image by reference without local or remote image operations.
+
+### Bugs Fixed
+
+- [[#9714]](https://github.com/Azure/azure-dev/pull/9714) Fix optional extension flag values in generated shell completions and extension telemetry parsing.
+- [[#9715]](https://github.com/Azure/azure-dev/pull/9715) Fix extension multi-select prompts to consistently validate empty submissions in interactive and no-prompt modes.
+- [[#9675]](https://github.com/Azure/azure-dev/pull/9675) Fix AKS kubeconfig directories and files to use owner-only permissions.
+- [[#9645]](https://github.com/Azure/azure-dev/pull/9645) Fix GitHub Copilot model setup offering unsupported reasoning levels by selecting the model first and using its supported options.
+- [[#9636]](https://github.com/Azure/azure-dev/pull/9636) Fix structured extension errors losing details when relayed across nested gRPC calls.
+
+### Other Changes
+
+- [[#9698]](https://github.com/Azure/azure-dev/pull/9698) Recognize Codex and Cursor as AI-agent execution environments for non-interactive behavior and telemetry.
+- [[#9673]](https://github.com/Azure/azure-dev/pull/9673) Update the bundled GitHub CLI to v2.98.0.
+- [[#9690]](https://github.com/Azure/azure-dev/pull/9690) Fix telemetry measurement metadata to match runtime value types.
+- [[#9693]](https://github.com/Azure/azure-dev/pull/9693) Fix telemetry resource field classification and purpose metadata.
+- [[#9644]](https://github.com/Azure/azure-dev/pull/9644) Update the bundled GitHub Copilot CLI to v1.0.80 and the Copilot SDK to v1.0.11.
 
 ## 1.31.2 (2026-08-19)
 

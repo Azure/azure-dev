@@ -36,6 +36,15 @@ var knownEnvVarPatterns = []envVarPattern{
 	{envVar: "CLAUDE_CODE", agentType: AgentTypeClaudeCode},
 	{envVar: "CLAUDE_CODE_ENTRYPOINT", agentType: AgentTypeClaudeCode},
 
+	// Codex - OpenAI's coding agent
+	{envVar: "CODEX_CI", expectedValue: "1", agentType: AgentTypeCodex},
+	{envVar: "CODEX_THREAD_ID", agentType: AgentTypeCodex},
+	{envVar: "CODEX_SESSION_ID", agentType: AgentTypeCodex},
+
+	// Cursor - Cursor's coding agent
+	{envVar: "CURSOR_AGENT", expectedValue: "1", agentType: AgentTypeCursor},
+	{envVar: "CURSOR_CONVERSATION_ID", agentType: AgentTypeCursor},
+
 	// GitHub Copilot CLI
 	{envVar: "GITHUB_COPILOT_CLI", agentType: AgentTypeGitHubCopilotCLI},
 	{envVar: "GH_COPILOT", agentType: AgentTypeGitHubCopilotCLI},

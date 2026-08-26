@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -338,6 +340,54 @@ func Test_projectManager_InitializeServices_InitializesSuppliedServices(t *testi
 		[]*ServiceConfig{enabledService},
 	))
 	assert.Equal(t, []string{"enabled"}, serviceManager.initializedServices)
+}
+
+func Test_projectManager_InitializeServices_PreservesProjectServiceTargets(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+	t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+	projectConfig := &ProjectConfig{
+		Path:     t.TempDir(),
+		Services: map[string]*ServiceConfig{},
+	}
+	disabledService := &ServiceConfig{
+		Name:      "disabled",
+		Host:      ContainerAppTarget,
+		Project:   projectConfig,
+		Condition: osutil.NewExpandableString("false"),
+	}
+	enabledService := &ServiceConfig{
+		Name:    "enabled",
+		Host:    AppServiceTarget,
+		Project: projectConfig,
+	}
+	projectConfig.Services[disabledService.Name] = disabledService
+	projectConfig.Services[enabledService.Name] = enabledService
+
+	importManager := NewImportManager(nil)
+	services, err := importManager.ServiceStableFiltered(
+		t.Context(), projectConfig, "", func(string) string { return "" })
+	require.NoError(t, err)
+	require.Equal(t, []*ServiceConfig{enabledService}, services)
+
+	projectManager := &projectManager{serviceManager: &fakeServiceManager{}}
+	require.NoError(t, projectManager.InitializeServices(t.Context(), services))
+
+	var targets []string
+	found := false
+	for _, attr := range tracing.GetUsageAttributes() {
+		if attr.Key == fields.ProjectServiceTargetsKey.Key {
+			targets = attr.Value.AsStringSlice()
+			found = true
+			break
+		}
+	}
+
+	require.True(t, found, "expected project service targets usage attribute")
+	assert.ElementsMatch(t, []string{
+		string(AppServiceTarget),
+		string(ContainerAppTarget),
+	}, targets)
 }
 
 func Test_projectManager_InitializeFrameworks(t *testing.T) {

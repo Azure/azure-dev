@@ -120,17 +120,11 @@ func (pm *projectManager) Initialize(ctx context.Context, projectConfig *Project
 		return err
 	}
 
+	setProjectServiceTargets(servicesStable)
 	return pm.InitializeServices(ctx, servicesStable)
 }
 
 func (pm *projectManager) InitializeServices(ctx context.Context, services []*ServiceConfig) error {
-	serviceTargets := make([]string, 0, len(services))
-	for _, svc := range services {
-		serviceTargets = append(serviceTargets, string(svc.Host))
-	}
-
-	tracing.SetUsageAttributes(fields.ProjectServiceTargetsKey.StringSlice(serviceTargets))
-
 	for _, svc := range services {
 		if err := pm.serviceManager.Initialize(ctx, svc); err != nil {
 			return fmt.Errorf("initializing service '%s', %w", svc.Name, err)
@@ -151,12 +145,7 @@ func (pm *projectManager) InitializeFrameworks(
 		return nil, nil, err
 	}
 
-	serviceTargets := make([]string, 0, len(servicesStable))
-	for _, svc := range servicesStable {
-		serviceTargets = append(serviceTargets, string(svc.Host))
-	}
-
-	tracing.SetUsageAttributes(fields.ProjectServiceTargetsKey.StringSlice(serviceTargets))
+	setProjectServiceTargets(servicesStable)
 
 	initialized := make([]*ServiceConfig, 0, len(servicesStable))
 	var skipped []ServiceFrameworkInitFailure
@@ -174,6 +163,15 @@ func (pm *projectManager) InitializeFrameworks(
 	}
 
 	return initialized, skipped, nil
+}
+
+func setProjectServiceTargets(services []*ServiceConfig) {
+	serviceTargets := make([]string, 0, len(services))
+	for _, svc := range services {
+		serviceTargets = append(serviceTargets, string(svc.Host))
+	}
+
+	tracing.SetUsageAttributes(fields.ProjectServiceTargetsKey.StringSlice(serviceTargets))
 }
 
 // Returns the default service name to target based on the current working directory.

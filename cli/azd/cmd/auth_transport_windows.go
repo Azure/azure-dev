@@ -37,6 +37,7 @@ func newPipeTransport(rawURL string) (http.RoundTripper, string, error) {
 	}
 
 	transport := &http.Transport{
+		Proxy: nil, // Local IPC must not honor proxy environment variables.
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			conn, err := winio.DialPipeContext(ctx, pipePath)
 			if err != nil {

@@ -157,6 +157,11 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 			endpoint:   "://broken",
 			wantErrSub: "invalid AZD_AUTH_ENDPOINT",
 		},
+		{
+			name:       "malformed url is unambiguously quoted",
+			endpoint:   "http://127.0.0.1/\n",
+			wantErrSub: "value \"http://127.0.0.1/\\n\"",
+		},
 	}
 
 	for _, tt := range tests {

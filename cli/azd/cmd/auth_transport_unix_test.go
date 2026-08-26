@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//go:build unix
+//go:build linux || darwin
 
 package cmd
 
@@ -74,6 +74,7 @@ func TestNewSocketTransport_OverlyPermissiveSocket(t *testing.T) {
 // UDS listener and verifies that newSocketTransport produces a transport that
 // can reach the server and receive a token-shaped response.
 func TestNewSocketTransport_FullRoundTrip(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
 	sock, l := listenUnixSocket(t)
 
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

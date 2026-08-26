@@ -232,6 +232,7 @@ func TestVerifyPipeSecurity_RejectsUnsafeAllowACEs(t *testing.T) {
 // that the transport built by newPipeTransport connects, passes security
 // verification, and reaches the handler.
 func TestNewPipeTransport_FullRoundTrip(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
 	name := testPipeName(t)
 
 	pipePath := `\\.\pipe\` + name

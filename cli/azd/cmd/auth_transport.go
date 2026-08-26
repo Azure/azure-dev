@@ -44,14 +44,14 @@ func buildExternalAuthConfiguration(endpoint, key, cert string) (auth.ExternalAu
 	endpointUrl, err := url.Parse(endpoint)
 	if err != nil {
 		return auth.ExternalAuthConfiguration{},
-			fmt.Errorf("invalid AZD_AUTH_ENDPOINT value '%s': %w", endpoint, err)
+			fmt.Errorf("invalid AZD_AUTH_ENDPOINT value %q: %w", endpoint, err)
 	}
 
 	switch endpointUrl.Scheme {
 	case "", "http", "https", "unix", "npipe":
 	default:
 		return auth.ExternalAuthConfiguration{}, fmt.Errorf(
-			"invalid AZD_AUTH_ENDPOINT value '%s': unsupported scheme %q "+
+			"invalid AZD_AUTH_ENDPOINT value %q: unsupported scheme %q "+
 				"(supported schemes: https, unix, npipe; http and no-scheme are accepted for local testing only)",
 			endpoint, endpointUrl.Scheme)
 	}
@@ -60,7 +60,7 @@ func buildExternalAuthConfiguration(endpoint, key, cert string) (auth.ExternalAu
 		ip := net.ParseIP(endpointUrl.Hostname())
 		if ip == nil || !ip.IsLoopback() {
 			return auth.ExternalAuthConfiguration{}, fmt.Errorf(
-				"invalid AZD_AUTH_ENDPOINT value '%s': http is accepted only for "+
+				"invalid AZD_AUTH_ENDPOINT value %q: http is accepted only for "+
 					"loopback IP endpoints used by local testing",
 				endpoint)
 		}
@@ -96,7 +96,7 @@ func buildHTTPSExternalAuth(endpoint, key, cert, scheme string) (auth.ExternalAu
 		if scheme != "https" {
 			return auth.ExternalAuthConfiguration{},
 				fmt.Errorf(
-					"invalid AZD_AUTH_ENDPOINT value '%s': scheme must be 'https' when certificate is provided",
+					"invalid AZD_AUTH_ENDPOINT value %q: scheme must be 'https' when certificate is provided",
 					endpoint)
 		}
 	}

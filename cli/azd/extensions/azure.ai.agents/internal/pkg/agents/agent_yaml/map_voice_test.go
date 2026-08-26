@@ -262,6 +262,27 @@ func TestCreateVoiceAgentAPIRequest_UsesAzureVoiceLocaleVariants(t *testing.T) {
 	}
 }
 
+func TestCreateVoiceAgentAPIRequest_PrefersExplicitVoiceLocale(t *testing.T) {
+	t.Parallel()
+	voiceLocale := "fr-FR"
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-agent"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Audio: &VoiceAudio{Output: &VoiceAudioOutput{Voice: &VoiceConfig{
+			Type: "azure_standard", Name: "en-US-AvaNeural", Locale: &voiceLocale,
+		}}},
+	}
+
+	req, err := CreateVoiceAgentAPIRequest(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	if def.Audio.Output.VoiceLocale != voiceLocale {
+		t.Errorf("VoiceLocale = %q, want explicit %q", def.Audio.Output.VoiceLocale, voiceLocale)
+	}
+}
+
 func TestCreateVoiceAgentAPIRequest_MarshalServiceWireShape(t *testing.T) {
 	t.Parallel()
 	voice := "en-US-Ava:DragonHDLatestNeural"

@@ -594,7 +594,13 @@ func voiceWireType(voice *agent_api.VoiceConfig) string {
 }
 
 func voiceWireLocale(voice *agent_api.VoiceConfig) string {
-	if voice == nil || voice.Name == "" || isOpenAIVoice(voice.Name) {
+	if voice == nil || voice.Name == "" {
+		return ""
+	}
+	if voice.Locale != nil && strings.TrimSpace(*voice.Locale) != "" {
+		return strings.TrimSpace(*voice.Locale)
+	}
+	if isOpenAIVoice(voice.Name) {
 		return ""
 	}
 	match := azureNeuralVoicePattern.FindStringSubmatch(voice.Name)

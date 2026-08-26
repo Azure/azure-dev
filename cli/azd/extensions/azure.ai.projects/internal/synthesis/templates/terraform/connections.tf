@@ -28,9 +28,9 @@ resource "azapi_resource" "connection" {
     )
   }
 
-  sensitive_body = each.value.credentials != null ? {
+  sensitive_body = each.value.credentials != null || lower(each.value.authType) == "oauth2" ? {
     properties = {
-      credentials = each.value.credentials
+      credentials = each.value.credentials != null ? each.value.credentials : {}
     }
   } : null
 }

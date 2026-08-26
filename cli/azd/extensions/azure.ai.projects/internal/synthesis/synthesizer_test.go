@@ -1311,6 +1311,12 @@ func TestTerraformConnectionTemplatesPreserveOptionalAuthProperties(t *testing.T
 			assert.Contains(t, text,
 				"each.value.connectorName != null && each.value.connectorName != \"\"",
 				"connection connectorName must be conditionally merged")
+			assert.Contains(t, text,
+				`lower(each.value.authType) == "oauth2"`,
+				"OAuth2 connections must include credentials when omitted")
+			assert.Contains(t, text,
+				"credentials = each.value.credentials != null ? each.value.credentials : {}",
+				"OAuth2 connections must use an empty credentials object when needed")
 		})
 	}
 }
@@ -1405,6 +1411,11 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 		"if(not(empty(tryGet(parameters('connections')[copyIndex()], 'connectorName'))), "+
 			"createObject('connectorName', tryGet(parameters('connections')[copyIndex()], 'connectorName'))",
 		"connection connectorName must reach the compiled ARM request")
+	assert.Contains(t, text,
+		"if(and(equals(toLower(parameters('connections')[copyIndex()].authType), 'oauth2'), "+
+			"not(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name))), "+
+			"createObject('credentials', createObject()), createObject())",
+		"managed OAuth2 connections must include an empty credentials object")
 }
 
 func TestExistingProjectARMTemplate_SecuresConnectionCredentials(t *testing.T) {
@@ -1431,6 +1442,11 @@ func TestExistingProjectARMTemplate_SecuresConnectionCredentials(t *testing.T) {
 		"if(not(empty(tryGet(parameters('connections')[copyIndex()], 'connectorName'))), "+
 			"createObject('connectorName', tryGet(parameters('connections')[copyIndex()], 'connectorName'))",
 		"connection connectorName must reach the existing-project ARM request")
+	assert.Contains(t, text,
+		"if(and(equals(toLower(parameters('connections')[copyIndex()].authType), 'oauth2'), "+
+			"not(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name))), "+
+			"createObject('credentials', createObject()), createObject())",
+		"managed OAuth2 connections must include an empty credentials object")
 }
 
 func TestSynthesize_Network(t *testing.T) {

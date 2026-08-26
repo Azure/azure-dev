@@ -66,7 +66,7 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
   }
 }
 
-// Optional credentials and metadata are emitted only when supplied.
+// OAuth2 also requires an empty credentials object when none are supplied.
 resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview' = [
   for c in connections: {
     parent: foundryAccount::project
@@ -81,6 +81,9 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
       !empty(c.?connectorName) ? { connectorName: c.?connectorName } : {},
       contains(connectionCredentials, c.name)
         ? { credentials: connectionCredentials[c.name] }
+        : {},
+      toLower(c.authType) == 'oauth2' && !contains(connectionCredentials, c.name)
+        ? { credentials: {} }
         : {},
       c.?metadata != null ? { metadata: c.?metadata } : {}
     )

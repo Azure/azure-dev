@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "1623628647410127953"
+      "templateHash": "9071396275066560032"
     }
   },
   "definitions": {
@@ -355,7 +355,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "12386005187548462183"
+              "templateHash": "9372434474066967846"
             }
           },
           "definitions": {
@@ -1465,7 +1465,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.46.1.21595",
-                      "templateHash": "9074904177094890277"
+                      "templateHash": "1819027861873427817"
                     }
                   },
                   "definitions": {
@@ -1581,7 +1581,7 @@
                       "type": "Microsoft.CognitiveServices/accounts/projects/connections",
                       "apiVersion": "2025-04-01-preview",
                       "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), parameters('connections')[copyIndex()].name)]",
-                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(not(empty(tryGet(parameters('connections')[copyIndex()], 'audience'))), createObject('audience', tryGet(parameters('connections')[copyIndex()], 'audience')), createObject()), if(not(empty(tryGet(parameters('connections')[copyIndex()], 'connectorName'))), createObject('connectorName', tryGet(parameters('connections')[copyIndex()], 'connectorName')), createObject()), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
+                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(not(empty(tryGet(parameters('connections')[copyIndex()], 'audience'))), createObject('audience', tryGet(parameters('connections')[copyIndex()], 'audience')), createObject()), if(not(empty(tryGet(parameters('connections')[copyIndex()], 'connectorName'))), createObject('connectorName', tryGet(parameters('connections')[copyIndex()], 'connectorName')), createObject()), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(and(equals(toLower(parameters('connections')[copyIndex()].authType), 'oauth2'), not(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name))), createObject('credentials', createObject()), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
                     }
                   },
                   "outputs": {

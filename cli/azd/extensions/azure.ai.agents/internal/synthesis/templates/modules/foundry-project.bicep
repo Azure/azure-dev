@@ -90,6 +90,9 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
       !empty(c.?audience) ? { audience: c.?audience } : {},
       !empty(c.?connectorName) ? { connectorName: c.?connectorName } : {},
       contains(connectionCredentials, c.name) ? { credentials: connectionCredentials[c.name] } : {},
+      toLower(c.authType) == 'oauth2' && !contains(connectionCredentials, c.name)
+        ? { credentials: {} }
+        : {},
       c.?metadata != null ? { metadata: c.?metadata } : {}
     )
   }

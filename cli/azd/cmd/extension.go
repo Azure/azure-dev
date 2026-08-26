@@ -998,7 +998,11 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		if targetVersion == "" || strings.EqualFold(targetVersion, "latest") {
 			if candidate == nil || candidate.Version == nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, fmt.Errorf("no versions available for extension '%s'", extensionId)
+				return nil, fmt.Errorf(
+					"%w for extension %q",
+					internal.ErrNoExtensionVersionsAvailable,
+					extensionId,
+				)
 			}
 			targetVersion = candidate.Version.Version
 		}
@@ -2563,7 +2567,8 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	} else {
 		if candidate == nil || candidate.Version == nil {
 			return fail(fmt.Errorf(
-				"no versions available for extension '%s'",
+				"%w for extension %q",
+				internal.ErrNoExtensionVersionsAvailable,
 				extensionId,
 			))
 		}

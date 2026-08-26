@@ -117,9 +117,10 @@ var (
 
 // Extension errors
 var (
-	ErrExtensionNotFound     = errors.New("extension not found")
-	ErrNoExtensionsAvailable = errors.New("no extensions available for operation")
-	ErrExtensionTokenFailed  = errors.New("failed to generate extension token")
+	ErrExtensionNotFound            = errors.New("extension not found")
+	ErrNoExtensionsAvailable        = errors.New("no extensions available for operation")
+	ErrNoExtensionVersionsAvailable = errors.New("no versions available")
+	ErrExtensionTokenFailed         = errors.New("failed to generate extension token")
 )
 
 // Service/resource errors

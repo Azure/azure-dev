@@ -4,8 +4,16 @@
 package cmd
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
+	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -16,6 +24,7 @@ import (
 // specific tests in auth_transport_unix_test.go / auth_transport_windows_test.go.
 func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 	t.Parallel()
+	validCert := generateExternalAuthTestCert(t)
 
 	tests := []struct {
 		name        string
@@ -61,8 +70,8 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 			name:       "http with cert is rejected because cert requires https",
 			endpoint:   "http://127.0.0.1:1234",
 			key:        "k",
-			cert:       "not-a-real-cert",
-			wantErrSub: "AZD_AUTH_CERT", // cert parse failure fires first
+			cert:       validCert,
+			wantErrSub: "scheme must be 'https'",
 		},
 		{
 			name:     "http IPv4 loopback is accepted",
@@ -189,6 +198,22 @@ func TestBuildExternalAuthConfiguration_Schemes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func generateExternalAuthTestCert(t *testing.T) string {
+	t.Helper()
+
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "external-auth-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	require.NoError(t, err)
+	return base64.StdEncoding.EncodeToString(der)
 }
 
 // TestRewrittenAuthEndpoint_FormatsValidURL verifies that the placeholder

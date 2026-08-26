@@ -36,13 +36,12 @@ func newSocketTransport(rawURL string) (http.RoundTripper, string, error) {
 	if u.Scheme != "unix" {
 		return nil, "", fmt.Errorf("internal error: newSocketTransport called with non-unix scheme %q", u.Scheme)
 	}
+	if u.Host != "" || u.User != nil {
+		return nil, "", fmt.Errorf(
+			"invalid AZD_AUTH_ENDPOINT value %q: unix scheme must not include an authority or user info", rawURL)
+	}
 
 	socketPath := u.Path
-	if socketPath == "" {
-		// url.Parse puts host of "unix:/foo" into Path but "unix://foo" puts
-		// "foo" into Host; fall back to Host when Path is empty.
-		socketPath = u.Host
-	}
 	if !filepath.IsAbs(socketPath) {
 		return nil, "", fmt.Errorf(
 			"invalid AZD_AUTH_ENDPOINT value %q: unix scheme requires an absolute socket path", rawURL)

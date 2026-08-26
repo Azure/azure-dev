@@ -45,6 +45,20 @@ func TestNewSocketTransport_RejectsRelativePath(t *testing.T) {
 	require.Contains(t, err.Error(), "absolute socket path")
 }
 
+func TestNewSocketTransport_RejectsAuthorityAndUserInfo(t *testing.T) {
+	t.Parallel()
+
+	for _, endpoint := range []string{
+		"unix://host/path/to/socket",
+		"unix://user@host/path/to/socket",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			_, _, err := newSocketTransport(endpoint)
+			require.ErrorContains(t, err, "must not include an authority or user info")
+		})
+	}
+}
+
 func TestNewSocketTransport_OverlyPermissiveParent(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.Chmod(dir, 0o755))
@@ -92,12 +106,16 @@ func TestNewSocketTransport_FullRoundTrip(t *testing.T) {
 	srv.Start()
 	t.Cleanup(srv.Close)
 
-	rt, endpoint, err := newSocketTransport("unix:" + sock)
+	const key = "test-key"
+	cfg, err := buildExternalAuthConfiguration("unix:"+sock, key, "")
 	require.NoError(t, err)
-	require.Equal(t, rewrittenAuthEndpoint, endpoint)
+	require.Equal(t, rewrittenAuthEndpoint, cfg.Endpoint)
+	require.Equal(t, key, cfg.Key)
+	client, ok := cfg.Transporter.(*http.Client)
+	require.True(t, ok)
+	require.NotNil(t, client.Transport)
 
-	client := &http.Client{Transport: rt}
-	resp, err := client.Get(endpoint + "/token?api-version=2023-07-12-preview")
+	resp, err := client.Get(cfg.Endpoint + "/token?api-version=2023-07-12-preview")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -110,7 +128,7 @@ func TestNewSocketTransport_FullRoundTrip(t *testing.T) {
 // produces a transport without error (independent of an actual server).
 func TestNewSocketTransport_HappyPath(t *testing.T) {
 	sock, _ := listenUnixSocket(t)
-	rt, endpoint, err := newSocketTransport("unix:" + sock)
+	rt, endpoint, err := newSocketTransport("unix://" + sock)
 	require.NoError(t, err)
 	require.NotNil(t, rt)
 	require.Equal(t, rewrittenAuthEndpoint, endpoint)

@@ -255,17 +255,22 @@ func TestNewPipeTransport_FullRoundTrip(t *testing.T) {
 	go func() { _ = srv.Serve(l) }()
 	t.Cleanup(func() { _ = srv.Close() })
 
-	rt, endpoint, err := newPipeTransport("npipe://./pipe/" + name)
+	const key = "test-key"
+	cfg, err := buildExternalAuthConfiguration("npipe://./pipe/"+name, key, "")
 	require.NoError(t, err)
-	require.Equal(t, rewrittenAuthEndpoint, endpoint)
+	require.Equal(t, rewrittenAuthEndpoint, cfg.Endpoint)
+	require.Equal(t, key, cfg.Key)
+	client, ok := cfg.Transporter.(*http.Client)
+	require.True(t, ok)
+	require.NotNil(t, client.Transport)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, endpoint+"/token?api-version=2023-07-12-preview", nil)
+		ctx, http.MethodGet, cfg.Endpoint+"/token?api-version=2023-07-12-preview", nil)
 	require.NoError(t, err)
 
-	resp, err := (&http.Client{Transport: rt}).Do(req)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)

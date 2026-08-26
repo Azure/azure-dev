@@ -35,6 +35,7 @@ type dependencyCommandRunner interface {
 type azdDependencyCommandRunner struct{}
 
 func (azdDependencyCommandRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
+	// #nosec G702 -- the executable is fixed and callers construct the azd argument list without a shell.
 	command := exec.CommandContext(ctx, "azd", args...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

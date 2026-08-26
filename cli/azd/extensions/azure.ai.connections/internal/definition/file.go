@@ -6,6 +6,7 @@ package definition
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -84,7 +85,7 @@ func requireEOF(err error) error {
 	if err == nil {
 		return fmt.Errorf("multiple documents are not supported")
 	}
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		return err
 	}
 	return nil

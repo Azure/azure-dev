@@ -223,7 +223,7 @@ func newStandaloneCredential() (azcore.TokenCredential, error) {
 		credentials = append(credentials, azd)
 	}
 	if len(credentials) == 0 {
-		return nil, fmt.Errorf("Azure CLI credential: %v; azd credential: %v", azureCLIError, azdError)
+		return nil, fmt.Errorf("Azure CLI credential: %w; azd credential: %w", azureCLIError, azdError)
 	}
 	if len(credentials) == 1 {
 		return credentials[0], nil

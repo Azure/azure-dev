@@ -51,6 +51,7 @@ func TestConnectionDeployFlagsOAuth2(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), definition.DefaultPath)
+	// #nosec G101 -- the test fixture contains placeholder OAuth credentials only.
 	require.NoError(t, definition.Save(path, &definition.Definition{
 		Name:             "github-oauth",
 		Category:         "RemoteTool",

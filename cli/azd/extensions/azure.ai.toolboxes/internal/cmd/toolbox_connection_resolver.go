@@ -40,6 +40,7 @@ type connectionDescriptorRunner interface {
 type azdConnectionDescriptorRunner struct{}
 
 func (azdConnectionDescriptorRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
+	// #nosec G204 -- the executable is fixed and callers construct the azd argument list without a shell.
 	command := exec.CommandContext(ctx, "azd", args...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

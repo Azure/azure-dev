@@ -260,16 +260,26 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		status        armcontainerregistry.RunStatus
-		propertiesNil bool
+		name                   string
+		status                 armcontainerregistry.RunStatus
+		missingPropertiesFirst bool
+		missingStatusFirst     bool
 	}{
 		{name: "succeeded", status: armcontainerregistry.RunStatusSucceeded},
 		{name: "failed", status: armcontainerregistry.RunStatusFailed},
 		{name: "error", status: armcontainerregistry.RunStatusError},
 		{name: "timeout", status: armcontainerregistry.RunStatusTimeout},
 		{name: "canceled", status: armcontainerregistry.RunStatusCanceled},
-		{name: "missing properties", propertiesNil: true},
+		{
+			name:                   "missing properties then succeeds",
+			status:                 armcontainerregistry.RunStatusSucceeded,
+			missingPropertiesFirst: true,
+		},
+		{
+			name:               "missing status then succeeds",
+			status:             armcontainerregistry.RunStatusSucceeded,
+			missingStatusFirst: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -313,10 +323,15 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 					}
 
 				case strings.Contains(r.URL.Path, "/runs/run-id"):
-					runGetCalls.Add(1)
-					var runProperties *armcontainerregistry.RunProperties
-					if !tt.propertiesNil {
-						runProperties = &armcontainerregistry.RunProperties{Status: &tt.status}
+					runGetCall := runGetCalls.Add(1)
+					runProperties := &armcontainerregistry.RunProperties{Status: &tt.status}
+					if runGetCall == 1 {
+						switch {
+						case tt.missingPropertiesFirst:
+							runProperties = nil
+						case tt.missingStatusFirst:
+							runProperties.Status = nil
+						}
 					}
 					response := armcontainerregistry.Run{
 						Properties: runProperties,
@@ -350,12 +365,12 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 			)
 
 			require.Equal(t, int32(2), logHeadCalls.Load())
-			require.Equal(t, int32(1), runGetCalls.Load())
-			require.Equal(t, buildLog, output.String())
-			if tt.propertiesNil {
-				require.EqualError(t, err, "remote build status is missing")
-				return
+			expectedRunGetCalls := int32(1)
+			if tt.missingPropertiesFirst || tt.missingStatusFirst {
+				expectedRunGetCalls = 2
 			}
+			require.Equal(t, expectedRunGetCalls, runGetCalls.Load())
+			require.Equal(t, buildLog, output.String())
 			if tt.status == armcontainerregistry.RunStatusSucceeded {
 				require.NoError(t, err)
 				return

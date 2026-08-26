@@ -489,7 +489,8 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	}
 	if agent.ParallelToolCalls != nil {
 		errors = append(errors,
-			"template.parallel_tool_calls is not currently supported by the prompt voice runtime; remove it from azure.yaml")
+			"template.parallel_tool_calls is not currently supported by the prompt voice runtime; "+
+				"remove it from the agent definition")
 	}
 
 	if agent.Audio == nil {

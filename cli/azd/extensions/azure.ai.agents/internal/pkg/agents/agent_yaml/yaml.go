@@ -197,11 +197,10 @@ type Workflow struct {
 // pipeline. The map layer translates this into a data-plane VoiceAgentDefinition
 // whose service kind is "voice".
 //
-// v1 keeps authoring lightweight: only the model and (optionally) a voice name,
-// instructions, model type, and store flag are author-facing. ModelType defaults
-// to "managed" when omitted; BYOM uses "self_deployed". The audio pipeline (PCM16 @
-// 24 kHz, server VAD turn detection, input transcription) is defaulted by the
-// map layer so authors don't have to specify it.
+// Simple authoring can rely on defaults for omitted audio/runtime settings.
+// Advanced projects can override the audio pipeline, structured inputs, tools,
+// greeting, avatar, handoff, and response options supported by the service.
+// ModelType defaults to "managed" when omitted; BYOM uses "self_deployed".
 type VoiceAgent struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
 	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.

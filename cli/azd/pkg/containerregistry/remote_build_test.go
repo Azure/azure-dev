@@ -260,14 +260,16 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name   string
-		status armcontainerregistry.RunStatus
+		name          string
+		status        armcontainerregistry.RunStatus
+		propertiesNil bool
 	}{
 		{name: "succeeded", status: armcontainerregistry.RunStatusSucceeded},
 		{name: "failed", status: armcontainerregistry.RunStatusFailed},
 		{name: "error", status: armcontainerregistry.RunStatusError},
 		{name: "timeout", status: armcontainerregistry.RunStatusTimeout},
 		{name: "canceled", status: armcontainerregistry.RunStatusCanceled},
+		{name: "missing properties", propertiesNil: true},
 	}
 
 	for _, tt := range tests {
@@ -312,8 +314,12 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 
 				case strings.Contains(r.URL.Path, "/runs/run-id"):
 					runGetCalls.Add(1)
+					var runProperties *armcontainerregistry.RunProperties
+					if !tt.propertiesNil {
+						runProperties = &armcontainerregistry.RunProperties{Status: &tt.status}
+					}
 					response := armcontainerregistry.Run{
-						Properties: &armcontainerregistry.RunProperties{Status: &tt.status},
+						Properties: runProperties,
 					}
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
@@ -346,6 +352,10 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 			require.Equal(t, int32(2), logHeadCalls.Load())
 			require.Equal(t, int32(1), runGetCalls.Load())
 			require.Equal(t, buildLog, output.String())
+			if tt.propertiesNil {
+				require.EqualError(t, err, "remote build status is missing")
+				return
+			}
 			if tt.status == armcontainerregistry.RunStatusSucceeded {
 				require.NoError(t, err)
 				return

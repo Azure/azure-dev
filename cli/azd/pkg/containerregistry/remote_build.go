@@ -242,7 +242,7 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 			if err != nil {
 				return err
 			}
-			if runRes.Properties.Status == nil {
+			if runRes.Properties == nil || runRes.Properties.Status == nil {
 				return errors.New("remote build status is missing")
 			}
 

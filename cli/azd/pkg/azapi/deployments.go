@@ -5,7 +5,9 @@ package azapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -391,18 +393,42 @@ func responseToDeploymentError(title string, respErr *azcore.ResponseError, oper
 	return NewAzureDeploymentError(title, errorText, operation)
 }
 
+// deploymentErrorTitle returns the user-facing heading used when rendering an
+// Azure deployment error for the given operation.
+func deploymentErrorTitle(operation DeploymentOperation) string {
+	switch operation {
+	case DeploymentOperationValidate:
+		return "Validation Error Details"
+	case DeploymentOperationPreview:
+		return "Preview Error Details"
+	default:
+		return "Deployment Error Details"
+	}
+}
+
 // Attempts to create an Azure Deployment error from the HTTP response error
 func createDeploymentError(err error, operation DeploymentOperation) error {
 	if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-		title := "Deployment Error Details"
-		switch operation {
-		case DeploymentOperationValidate:
-			title = "Validation Error Details"
-		case DeploymentOperationPreview:
-			title = "Preview Error Details"
-		}
-		return responseToDeploymentError(title, responseErr, operation)
+		return responseToDeploymentError(deploymentErrorTitle(operation), responseErr, operation)
 	}
 
 	return err
+}
+
+// NewAzureDeploymentErrorFromResponse builds an AzureDeploymentError from an ARM
+// ErrorResponse carried in a successful (HTTP 200) response body, such as a failed
+// what-if operation that reports the failure in the payload rather than as an HTTP
+// error. Marshalling back to JSON lets the error reuse the same recursive parser as
+// the HTTP error path, so nested details are surfaced and the error-suggestion
+// pipeline can match on any DeploymentErrorLine in the tree.
+func NewAzureDeploymentErrorFromResponse(
+	errResp *armresources.ErrorResponse,
+	operation DeploymentOperation,
+) error {
+	raw, err := json.Marshal(errResp)
+	if err != nil {
+		return fmt.Errorf("marshalling deployment error response: %w", err)
+	}
+
+	return NewAzureDeploymentError(deploymentErrorTitle(operation), string(raw), operation)
 }

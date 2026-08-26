@@ -918,3 +918,70 @@ func TestDownloadAgentCode_ReturnsErrorOnNon200(t *testing.T) {
 	_, err := client.DownloadAgentCode(context.Background(), "no-such-agent", "v1", "")
 	require.Error(t, err)
 }
+
+func TestCreateVoiceAgent_PostsToAgentsWithPreviewHeader(t *testing.T) {
+	body := `{"object":"agent","id":"va-1","name":"my-voice","versions":{"latest":{}}}`
+	client, transport := newCaptureClient(http.StatusOK, body)
+
+	agent, err := client.CreateVoiceAgent(
+		t.Context(),
+		&CreateAgentRequest{Name: "my-voice"},
+		AgentEndpointAPIVersion,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "my-voice", agent.Name)
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+	require.Equal(t, http.MethodPost, req.Method)
+	require.Equal(t, "/api/projects/proj/agents", req.URL.Path)
+	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+}
+
+func TestGetVoiceAgent_GetsNamedAgentWithPreviewHeader(t *testing.T) {
+	body := `{"object":"agent","id":"va-1","name":"my-voice","versions":{"latest":{"version":"3"}}}`
+	client, transport := newCaptureClient(http.StatusOK, body)
+
+	agent, err := client.GetVoiceAgent(
+		t.Context(),
+		"my-voice",
+		AgentEndpointAPIVersion,
+		"regional.hyena.example.com",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "my-voice", agent.Name)
+	require.Equal(t, "3", agent.Versions.Latest.Version)
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+	require.Equal(t, http.MethodGet, req.Method)
+	require.Equal(t, "/api/projects/proj/agents/my-voice", req.URL.Path)
+	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
+}
+
+func TestUpdateVoiceAgent_PostsToNamedAgentWithPreviewHeader(t *testing.T) {
+	body := `{"object":"agent","id":"va-1","name":"my-voice","versions":{"latest":{"version":"2"}}}`
+	client, transport := newCaptureClient(http.StatusOK, body)
+
+	agent, err := client.UpdateVoiceAgent(
+		t.Context(),
+		"my-voice",
+		&UpdateAgentRequest{},
+		AgentEndpointAPIVersion,
+		"regional.hyena.example.com",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "my-voice", agent.Name)
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+	require.Equal(t, http.MethodPost, req.Method)
+	require.Equal(t, "/api/projects/proj/agents/my-voice", req.URL.Path)
+	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
+}

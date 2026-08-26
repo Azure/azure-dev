@@ -38,6 +38,12 @@ func Test_CLI_ProvisionValidationQuota_RG_DefaultCapacity(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
+	// Persist the subscription so the subscription selection prompt does not fire during
+	// provision. In playback the recorded subscription id is used; in live CI it comes from
+	// cfg.SubscriptionID. This keeps the interactive prompt sequence identical across modes.
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfgOrStoredSubscription(session))
+	require.NoError(t, err)
+
 	// Persist AZURE_LOCATION to the azd environment so the validation check
 	// can resolve it for RG-scoped deployments where the RG doesn't exist yet.
 	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_LOCATION", "eastus2")
@@ -84,6 +90,12 @@ func Test_CLI_ProvisionValidationQuota_RG_InvalidModelName(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
+	// Persist the subscription so the subscription selection prompt does not fire during
+	// provision. In playback the recorded subscription id is used; in live CI it comes from
+	// cfg.SubscriptionID. This keeps the interactive prompt sequence identical across modes.
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfgOrStoredSubscription(session))
+	require.NoError(t, err)
+
 	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_LOCATION", "eastus2")
 	require.NoError(t, err)
 
@@ -123,6 +135,12 @@ func Test_CLI_ProvisionValidationQuota_RG_InvalidVersion(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
+	// Persist the subscription so the subscription selection prompt does not fire during
+	// provision. In playback the recorded subscription id is used; in live CI it comes from
+	// cfg.SubscriptionID. This keeps the interactive prompt sequence identical across modes.
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfgOrStoredSubscription(session))
+	require.NoError(t, err)
+
 	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_LOCATION", "eastus2")
 	require.NoError(t, err)
 
@@ -159,6 +177,12 @@ func Test_CLI_ProvisionValidationQuota_Sub_DefaultCapacity(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
+	// Persist the subscription so the subscription selection prompt does not fire during
+	// provision. In playback the recorded subscription id is used; in live CI it comes from
+	// cfg.SubscriptionID. This keeps the interactive prompt sequence identical across modes.
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfgOrStoredSubscription(session))
+	require.NoError(t, err)
+
 	result, err := cli.RunCommandWithStdIn(
 		ctx,
 		stdinForProvisionWithValidationNo(),
@@ -192,6 +216,12 @@ func Test_CLI_ProvisionValidationQuota_Sub_InvalidModelName(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// Persist the subscription so the subscription selection prompt does not fire during
+	// provision. In playback the recorded subscription id is used; in live CI it comes from
+	// cfg.SubscriptionID. This keeps the interactive prompt sequence identical across modes.
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfgOrStoredSubscription(session))
 	require.NoError(t, err)
 
 	result, err := cli.RunCommandWithStdIn(
@@ -230,6 +260,12 @@ func Test_CLI_ProvisionValidationQuota_Sub_DifferentLocation(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
+	// Persist the subscription so the subscription selection prompt does not fire during
+	// provision. In playback the recorded subscription id is used; in live CI it comes from
+	// cfg.SubscriptionID. This keeps the interactive prompt sequence identical across modes.
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfgOrStoredSubscription(session))
+	require.NoError(t, err)
+
 	result, err := cli.RunCommandWithStdIn(
 		ctx,
 		stdinForProvisionWithValidationNo(),
@@ -244,23 +280,26 @@ func Test_CLI_ProvisionValidationQuota_Sub_DifferentLocation(t *testing.T) {
 
 // stdinForProvisionWithValidationNo provides stdin for subscription-scoped provision.
 //
-// Subscription and location are resolved from the environment (AZURE_SUBSCRIPTION_ID /
-// AZURE_LOCATION), so no interactive subscription/location prompt fires. The only prompt
-// is the validation warning confirm ("Proceed with deployment despite the warnings above?"),
-// which we answer "No" to. A blank line would now be interpreted as the confirm's default
-// (Yes) since azd honors the prompt default at EOF/blank input, so we must answer explicitly.
+// The subscription and location are resolved non-interactively (the test persists
+// AZURE_SUBSCRIPTION_ID / AZURE_LOCATION to the azd environment before provisioning), so no
+// subscription/location prompt fires. The only prompt is the validation warning confirm
+// ("Proceed with deployment despite the warnings above?"), which we answer "No" to. The answer
+// must be explicit ("n") rather than a blank line, because azd honors the confirm's default
+// (Yes) at EOF/blank input.
 func stdinForProvisionWithValidationNo() string {
 	return "n" // decline the validation warning
 }
 
 // stdinForRGProvisionWithValidationNo provides stdin for resource-group-scoped provision.
 //
-// For RG-scoped provision, azd prompts to pick a resource group and to name a new one
-// before validating the deployment; both are answered with a blank line to accept the
+// The subscription and location are resolved non-interactively (the test persists
+// AZURE_SUBSCRIPTION_ID / AZURE_LOCATION to the azd environment before provisioning), so no
+// subscription/location prompt fires. azd still prompts to pick a resource group and to name a
+// new one before validating the deployment; both are answered with a blank line to accept the
 // defaults ("Create a new resource group" and the default name). The final prompt is the
-// validation warning confirm ("Proceed with deployment despite the warnings above?"), which
-// we answer "No" to. The answer must be explicit ("n") rather than a blank line, because
-// azd now honors the confirm's default (Yes) at EOF/blank input.
+// validation warning confirm ("Proceed with deployment despite the warnings above?"), which we
+// answer "No" to. The confirm answer must be explicit ("n") rather than a blank line, because
+// azd honors the confirm's default (Yes) at EOF/blank input.
 func stdinForRGProvisionWithValidationNo() string {
 	return strings.Join([]string{
 		"",  // pick resource group (default = create new)

@@ -6,9 +6,11 @@ package provisioning
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"azure.ai.projects/internal/azure"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -87,20 +89,17 @@ func (c *ResourceGroupLocationCheck) Validate(
 	// installed) an existing resource group in a different region is perfectly
 	// valid, so running the check there would raise a false positive. Skip
 	// unless the current project actually provisions through microsoft.foundry.
-	if !c.usesFoundryProvider(ctx) {
+	usesFoundry, usesFoundryLayer := c.foundryProviderUsage(ctx)
+	if !usesFoundry {
 		return empty, nil
 	}
 
-	// Skip brownfield (bring-your-own) projects. When the Foundry service sets
-	// `endpoint:`, the microsoft.foundry provider connects to that existing
-	// project and provisions nothing — it creates no resource group and derives
-	// its target from AZURE_AI_PROJECT_ID, ignoring AZURE_RESOURCE_GROUP. Running
-	// this check there would compare AZURE_LOCATION against an unrelated, stale
-	// resource group of the same name and could wrongly block provisioning while
-	// suggesting the deletion of a resource group that has nothing to do with the
-	// deployment.
+	// Existing projects only create a resource group when azd owns an adjunct ACR.
 	if c.isBrownfieldFoundryProject(ctx) {
-		return empty, nil
+		if !c.existingProjectCreatesResourceGroup(ctx) {
+			return empty, nil
+		}
+		usesFoundryLayer = true
 	}
 
 	envClient := c.azdClient.Environment()
@@ -140,7 +139,14 @@ func (c *ResourceGroupLocationCheck) Validate(
 
 	resourceGroup, ok := valCtx.ResourceGroup()
 	resourceGroup = strings.TrimSpace(resourceGroup)
-	if !ok || resourceGroup == "" {
+	resourceGroupKey := envKeyResourceGroup
+	if usesFoundryLayer {
+		resourceGroupKey = envKeyFoundryRG
+		resourceGroup = envValueOrEmpty(ctx, envClient, envName, envKeyFoundryRG)
+		if resourceGroup == "" {
+			resourceGroup = defaultResourceGroupName(envName) + "-foundry"
+		}
+	} else if !ok || resourceGroup == "" {
 		resourceGroup = envValueOrEmpty(ctx, envClient, envName, "AZURE_RESOURCE_GROUP")
 	}
 	if resourceGroup == "" {
@@ -158,7 +164,54 @@ func (c *ResourceGroupLocationCheck) Validate(
 		return empty, nil
 	}
 
-	return evaluateResourceGroupLocation(resourceGroup, existingLocation, location, subscriptionID), nil
+	return evaluateResourceGroupLocation(
+		resourceGroup,
+		existingLocation,
+		location,
+		subscriptionID,
+		resourceGroupKey,
+	), nil
+}
+
+func (c *ResourceGroupLocationCheck) existingProjectCreatesResourceGroup(ctx context.Context) bool {
+	current, err := c.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || current.GetEnvironment().GetName() == "" {
+		return false
+	}
+	envName := current.GetEnvironment().GetName()
+	mode := envValueOrEmpty(ctx, c.azdClient.Environment(), envName, "AZD_FOUNDRY_ACR_MODE")
+	if mode != "" {
+		return strings.EqualFold(mode, "create")
+	}
+	if envValueOrEmpty(ctx, c.azdClient.Environment(), envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT") != "" ||
+		envValueOrEmpty(ctx, c.azdClient.Environment(), envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID") != "" {
+		return false
+	}
+
+	project, err := c.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || project.GetProject().GetPath() == "" {
+		return false
+	}
+	projectPath := project.GetProject().GetPath()
+	rawYAML, _, err := readProjectFile(projectPath)
+	if err != nil {
+		return false
+	}
+	serviceName, err := findFoundryProjectService(rawYAML)
+	if err != nil {
+		return false
+	}
+	result, err := synthesis.SynthesizeExistingProject(synthesis.Input{
+		RawAzureYAML:  rawYAML,
+		ServiceName:   serviceName,
+		AcceptedHosts: FoundryProvisioningServiceHosts,
+		ProjectRoot:   projectPath,
+	})
+	if err != nil {
+		return false
+	}
+	includeAcr, _ := result.Parameters["includeAcr"].(bool)
+	return includeAcr
 }
 
 // armResourceGroupLocation is the production resourceGroupLocationLookup. It
@@ -209,7 +262,7 @@ func (c *ResourceGroupLocationCheck) armResourceGroupLocation(
 // differ. The comparison and message construction are isolated here so they can be
 // unit-tested without Azure access.
 func evaluateResourceGroupLocation(
-	resourceGroup, existingLocation, requestedLocation, subscriptionID string,
+	resourceGroup, existingLocation, requestedLocation, subscriptionID, resourceGroupKey string,
 ) *azdext.ValidationCheckResponse {
 	if strings.EqualFold(existingLocation, requestedLocation) {
 		return &azdext.ValidationCheckResponse{}
@@ -225,10 +278,10 @@ func evaluateResourceGroupLocation(
 	suggestion := fmt.Sprintf(
 		"Resolve the conflict before provisioning by choosing one of the following:\n"+
 			"  • Use the existing region:          azd env set AZURE_LOCATION %s\n"+
-			"  • Target a different resource group: azd env set AZURE_RESOURCE_GROUP <new-name>\n"+
+			"  • Target a different resource group: azd env set %s <new-name>\n"+
 			"  • Delete the resource group if it is no longer needed: "+
 			"az group delete --name %q --subscription %s",
-		existingLocation, resourceGroup, subscriptionID,
+		existingLocation, resourceGroupKey, resourceGroup, subscriptionID,
 	)
 
 	return &azdext.ValidationCheckResponse{
@@ -243,17 +296,31 @@ func evaluateResourceGroupLocation(
 	}
 }
 
-// usesFoundryProvider reports whether the current azd project provisions through
-// the microsoft.foundry provider (azure.yaml `infra.provider: microsoft.foundry`).
+// foundryProviderUsage reports whether the project uses microsoft.foundry and
+// whether that use comes from a named infrastructure layer.
 // It is best-effort: when the project configuration cannot be read it returns
-// false so the check is skipped rather than risk a false positive on a project
-// that has nothing to do with Foundry agents.
-func (c *ResourceGroupLocationCheck) usesFoundryProvider(ctx context.Context) bool {
+// the root provider reported by azd, or false when no reliable signal exists.
+func (c *ResourceGroupLocationCheck) foundryProviderUsage(ctx context.Context) (bool, bool) {
 	resp, err := c.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil || resp.GetProject() == nil {
-		return false
+		return false, false
 	}
-	return resp.GetProject().GetInfra().GetProvider() == FoundryProviderName
+	rootProvider := resp.GetProject().GetInfra().GetProvider()
+	projectPath := resp.GetProject().GetPath()
+	if projectPath == "" || !filepath.IsAbs(projectPath) {
+		return rootProvider == FoundryProviderName, false
+	}
+	rawYAML, projectFile, err := readProjectFile(projectPath)
+	if err != nil || projectFile == "" {
+		return rootProvider == FoundryProviderName, false
+	}
+	config, err := parseFoundryInfraConfig(rawYAML)
+	if err != nil {
+		return rootProvider == FoundryProviderName, false
+	}
+	usesLayer := len(config.foundryLayers) > 0
+	usesRoot := config.rootProvider == FoundryProviderName && !config.hasLayers
+	return usesRoot || usesLayer, usesLayer
 }
 
 // isBrownfieldFoundryProject reports whether the current project's Foundry

@@ -45,9 +45,12 @@ const (
 	OpArmDeploymentCreate       = "arm_deployment_create"
 	OpArmDeploymentGet          = "arm_deployment_get"
 	OpArmDeploymentWhatIf       = "arm_deployment_what_if"
+	OpResourceGroupGet          = "resource_group_get"
 	OpResourceGroupDelete       = "resource_group_delete"
 	OpCognitiveAccountList      = "cognitive_account_list"
 	OpCognitiveAccountPurge     = "cognitive_account_purge"
 	OpCognitiveDeploymentList   = "cognitive_deployment_list"
 	OpCognitiveDeploymentDelete = "cognitive_deployment_delete"
+	OpProjectConnectionDelete   = "project_connection_delete"
+	OpProjectConnectionGet      = "project_connection_get"
 )

@@ -19,6 +19,6 @@ func backupCurrentExe() (string, string, error) {
 func restoreExeFromBackup(_, _ string) error { return nil }
 
 // buildInstallScriptArgs is a no-op on non-Windows platforms.
-func buildInstallScriptArgs(_ Channel) []string {
-	return nil
+func buildInstallScriptArgs(_ *VersionInfo) ([]string, error) {
+	return nil, nil
 }

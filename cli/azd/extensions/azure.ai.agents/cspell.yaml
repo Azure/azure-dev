@@ -8,6 +8,9 @@ words:
   - harsheet
   # Terms
   - Reprompt
+  # Voice (prompt-voice) agents
+  - BYOM
+  - Nanami
   # Azure region names
   - australiaeast
   - brazilsouth
@@ -87,6 +90,7 @@ words:
   # Doctor / next-step terms
   - nextstep
   - nextsteps
+  - agentkind
   - undeployed
   - unredacted
   - UNKN

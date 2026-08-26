@@ -84,13 +84,20 @@ func (e *AzureDeploymentError) Error() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("\n\n%s:\n", e.Title))
 
-	// Return the original error string if we can't parse the JSON
-	if e.Details == nil {
+	var lines []string
+	if e.Details != nil {
+		lines = generateErrorOutput(e.Details)
+	}
+
+	// Fall back to the raw payload when the JSON could not be parsed, and also when
+	// it parsed into a tree that renders nothing: every node was code-only, blanked
+	// (DeploymentFailed, ResourceDeploymentFailure), or a wrapper whose message held
+	// no nested code/message pair. Without this the heading would be the whole error.
+	if len(lines) == 0 {
 		sb.WriteString(e.Json)
 		return sb.String()
 	}
 
-	lines := generateErrorOutput(e.Details)
 	for _, line := range lines {
 		sb.WriteString(fmt.Sprintln(output.WithErrorFormat(line)))
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -91,10 +92,39 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 func mapRaiConfig(policies []Policy) *agent_api.RaiConfig {
 	for _, policy := range policies {
 		if policy.Type == PolicyTypeRai && policy.RaiPolicyName != "" {
-			return &agent_api.RaiConfig{RaiPolicyName: policy.RaiPolicyName}
+			return &agent_api.RaiConfig{
+				RaiPolicyName:         policy.RaiPolicyName,
+				InvocationsModeration: mapInvocationsModeration(policy.InvocationsModeration),
+			}
 		}
 	}
 	return nil
+}
+
+// mapInvocationsModeration translates the YAML invocations-moderation block into its
+// data-plane representation. It returns nil when the block is absent so agents that do not
+// configure it serialize exactly as before.
+func mapInvocationsModeration(moderation *InvocationsModeration) *agent_api.InvocationsModeration {
+	if moderation == nil {
+		return nil
+	}
+
+	mapped := &agent_api.InvocationsModeration{
+		InputContentType:  agent_api.RaiInvocationContentType(moderation.InputContentType),
+		OutputContentType: agent_api.RaiInvocationContentType(moderation.OutputContentType),
+		ResponseMode:      agent_api.RaiInvocationMode(moderation.ResponseMode),
+		InputPaths:        slices.Clone(moderation.InputPaths),
+		OutputPaths:       slices.Clone(moderation.OutputPaths),
+	}
+
+	for _, selector := range moderation.StreamSelectors {
+		mapped.StreamSelectors = append(mapped.StreamSelectors, agent_api.SseTextSelector{
+			EventType: selector.EventType,
+			TextField: selector.TextField,
+		})
+	}
+
+	return mapped
 }
 
 // MapEndpointAndCard maps YAML-layer endpoint and card fields to API model types
@@ -137,8 +167,12 @@ func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuil
 	case AgentKindPrompt:
 		promptDef := agentTemplate.(PromptAgent)
 		return CreatePromptAgentAPIRequest(promptDef, buildConfig)
+	case AgentKindPromptVoice:
+		voiceDef := agentTemplate.(VoiceAgent)
+		return CreateVoiceAgentAPIRequest(voiceDef)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted, prompt", agentDef.Kind)
+		return nil, fmt.Errorf(
+			"unsupported agent kind: %s. Supported kinds are: hosted, prompt, prompt-voice", agentDef.Kind)
 	}
 }
 
@@ -363,6 +397,27 @@ func convertFloat64ToFloat32(f64 *float64) *float32 {
 	return &f32
 }
 
+// mapSessionConfiguration converts the author-facing session configuration into
+// the API shape, validating the idle-timeout bounds. It returns nil when the
+// author omitted session configuration so session_configuration is left out of
+// the request and the service applies its default.
+func mapSessionConfiguration(sc *SessionConfiguration) (*agent_api.SessionConfigurationAPI, error) {
+	if sc == nil || sc.IdleTimeoutSeconds == nil {
+		return nil, nil
+	}
+
+	idle := *sc.IdleTimeoutSeconds
+	if idle < MinSessionIdleTimeoutSeconds || idle > MaxSessionIdleTimeoutSeconds {
+		return nil, fmt.Errorf(
+			"session idle timeout must be between %d and %d seconds, got %d "+
+				"('sessionConfiguration.idleTimeoutSeconds' in azure.yaml, "+
+				"'session_configuration.idle_timeout_seconds' in agent.yaml)",
+			MinSessionIdleTimeoutSeconds, MaxSessionIdleTimeoutSeconds, idle)
+	}
+
+	return &agent_api.SessionConfigurationAPI{IdleTimeoutSeconds: idle}, nil
+}
+
 // CreateHostedAgentAPIRequest creates a CreateAgentRequest for hosted agents
 func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
 	imageURL := hostedAgent.Image
@@ -401,6 +456,13 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		}
 	}
 
+	// Map optional session configuration (validated); nil when omitted so the
+	// service applies its default.
+	sessionConfig, err := mapSessionConfiguration(hostedAgent.SessionConfiguration)
+	if err != nil {
+		return nil, err
+	}
+
 	// Code deploy path
 	if hostedAgent.CodeConfiguration != nil {
 		cmdPrefix := RuntimeCmdPrefix(hostedAgent.CodeConfiguration.Runtime)
@@ -428,6 +490,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 				EntryPoint:           entryPoint,
 				DependencyResolution: depRes,
 			},
+			SessionConfiguration: sessionConfig,
 		}
 
 		return createAgentAPIRequest(hostedAgent.AgentDefinition, codeDef,
@@ -451,6 +514,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		ContainerConfiguration: &agent_api.ContainerConfigurationAPI{
 			Image: imageURL,
 		},
+		SessionConfiguration: sessionConfig,
 	}
 
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,
@@ -652,6 +716,164 @@ func CreatePromptAgentAPIRequest(
 	// Prompt agents do not have endpoint or agent-card customization at the
 	// YAML layer today, so pass nil for both.
 	return createAgentAPIRequest(promptAgent.AgentDefinition, promptDef, nil, nil)
+}
+
+// Default audio-pipeline values for a voice agent. Authors don't specify the
+// audio block in v1; these mirror the Voice Live sample (PCM16 @ 24 kHz, server
+// VAD turn detection, input transcription enabled).
+const (
+	defaultVoiceAudioType         = "audio/pcm"
+	defaultVoiceAudioRate         = 24000
+	defaultVoiceTurnDetectionType = "server_vad"
+	defaultVoiceInstructions      = "You are a helpful voice assistant. Respond naturally and concisely."
+	// defaultVoiceInputTranscriptionModel enables user-speech transcription events.
+	// azure-speech is accepted by both realtime and cascaded voice pipelines.
+	defaultVoiceInputTranscriptionModel = "azure-speech"
+	// defaultVoiceName is a DragonHD (HD) Azure Neural voice used when the author
+	// omits a voice.
+	defaultVoiceName = "en-US-Ava:DragonHDLatestNeural"
+)
+
+// knownOpenAIVoices is the set of OpenAI realtime voice names accepted by the
+// data-plane voice service. OpenAI voices are single lowercase tokens; Azure
+// Neural voices are locale-prefixed (see azureNeuralVoicePattern). Keep this in
+// sync with the service's supported voice list.
+var knownOpenAIVoices = map[string]struct{}{
+	"alloy":   {},
+	"ash":     {},
+	"ballad":  {},
+	"coral":   {},
+	"echo":    {},
+	"sage":    {},
+	"shimmer": {},
+	"verse":   {},
+}
+
+// azureNeuralVoicePattern matches the locale prefix that every Azure Neural
+// voice name carries, e.g. "en-US-Ava:DragonHDLatestNeural",
+// "ja-JP-NanamiNeural", or Azure voices with script/numeric-region locales.
+// The optional script tag and numeric region support keep valid BCP-47 locales
+// from being classified as OpenAI voices.
+var azureNeuralVoicePattern = regexp.MustCompile(`^([a-z]{2,3}(?:-[A-Z][a-z]{3})?-(?:[A-Z]{2,3}|[0-9]{3}))-`)
+
+// isOpenAIVoice reports whether a voice name denotes an OpenAI realtime voice
+// (e.g. "alloy") vs an Azure Neural voice (e.g. "en-US-Ava:DragonHDLatestNeural").
+// It first matches the explicit known-OpenAI set, then falls back to structure:
+// anything lacking the Azure Neural locale prefix is treated as OpenAI. This is
+// deliberately stricter than a plain "contains '-'" check so that a partly
+// specified or future name is classified by its actual shape.
+func isOpenAIVoice(name string) bool {
+	if _, ok := knownOpenAIVoices[strings.ToLower(strings.TrimSpace(name))]; ok {
+		return true
+	}
+	return !azureNeuralVoicePattern.MatchString(name)
+}
+
+// buildVoiceConfig chooses the OpenAI vs Azure voice type by name shape.
+//
+// OpenAI realtime voice IDs are lowercase on the wire, and the classifier
+// already matches them case-insensitively, so normalize to lowercase to keep
+// e.g. "--voice Shimmer" from being emitted as "Shimmer". Azure Neural voice
+// names are case-sensitive (e.g. "en-US-Ava:DragonHDLatestNeural"), so only the
+// surrounding whitespace is trimmed for those.
+func buildVoiceConfig(name string) *agent_api.VoiceConfig {
+	trimmed := strings.TrimSpace(name)
+	if isOpenAIVoice(trimmed) {
+		return &agent_api.VoiceConfig{Type: "openai", Name: strings.ToLower(trimmed)}
+	}
+	return &agent_api.VoiceConfig{Type: "azure_standard", Name: trimmed}
+}
+
+func voiceWireType(voice *agent_api.VoiceConfig) string {
+	if voice == nil {
+		return ""
+	}
+	if voice.Type == "azure_standard" {
+		return "azure-standard"
+	}
+	return voice.Type
+}
+
+func voiceWireLocale(voice *agent_api.VoiceConfig) string {
+	if voice == nil || voice.Name == "" || isOpenAIVoice(voice.Name) {
+		return ""
+	}
+	match := azureNeuralVoicePattern.FindStringSubmatch(voice.Name)
+	if len(match) < 2 {
+		return ""
+	}
+	return match[1]
+}
+
+// CreateVoiceAgentAPIRequest builds a CreateAgentRequest for a declarative
+// voice agent. It translates the authoring kind "prompt-voice" into the
+// data-plane service kind "voice" and defaults the audio pipeline.
+func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
+	return createVoiceAgentAPIRequest(voiceAgent)
+}
+
+func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
+	modelID := ""
+	if voiceAgent.Model != nil {
+		modelID = strings.TrimSpace(voiceAgent.Model.Id)
+	}
+	if modelID == "" {
+		return nil, fmt.Errorf("model.id is required for a prompt-voice agent")
+	}
+
+	modelType := agent_api.VoiceModelTypeManaged
+	if voiceAgent.ModelType != "" {
+		modelType = agent_api.VoiceModelType(voiceAgent.ModelType)
+	}
+	if modelType != agent_api.VoiceModelTypeManaged && modelType != agent_api.VoiceModelTypeSelfDeployed {
+		return nil, fmt.Errorf(
+			"model_type '%s' is not supported; use '%s' or '%s'",
+			voiceAgent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed)
+	}
+
+	instructions := defaultVoiceInstructions
+	if voiceAgent.Instructions != nil && *voiceAgent.Instructions != "" {
+		instructions = *voiceAgent.Instructions
+	}
+
+	voiceName := defaultVoiceName
+	if voiceAgent.Voice != nil && *voiceAgent.Voice != "" {
+		voiceName = *voiceAgent.Voice
+	}
+
+	audioFormat := &agent_api.VoiceAudioFormat{
+		Type: defaultVoiceAudioType,
+		Rate: defaultVoiceAudioRate,
+	}
+
+	input := &agent_api.VoiceInputConfig{
+		Format:        audioFormat,
+		TurnDetection: &agent_api.VoiceTurnDetection{Type: defaultVoiceTurnDetectionType},
+		Transcription: &agent_api.VoiceTranscription{Model: defaultVoiceInputTranscriptionModel},
+	}
+	voiceConfig := buildVoiceConfig(voiceName)
+	voiceDef := agent_api.VoiceAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{
+			// Translate authoring kind prompt-voice -> service kind voice.
+			Kind: agent_api.AgentKindVoice,
+		},
+		ModelType:    modelType,
+		Model:        modelID,
+		Instructions: instructions,
+		Audio: &agent_api.VoiceAudioConfig{
+			Input: input,
+			Output: &agent_api.VoiceOutputConfig{
+				Format:      audioFormat,
+				Voice:       voiceConfig.Name,
+				VoiceType:   voiceWireType(voiceConfig),
+				VoiceLocale: voiceWireLocale(voiceConfig),
+			},
+		},
+		OutputModalities: []string{"audio"},
+		Store:            voiceAgent.Store,
+	}
+
+	return createAgentAPIRequest(voiceAgent.AgentDefinition, voiceDef, nil, nil)
 }
 
 // createAgentAPIRequest is a helper function to create the final request with common fields.

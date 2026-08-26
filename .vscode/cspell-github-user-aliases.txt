@@ -23,10 +23,14 @@ envsubst
 fatih
 fiscaletti
 gofrs
+gimenete
 haoozhang
 hemarina
 huimiu
+hyoshis
+imatiach
 isatty
+jayzhang
 joho
 karolz
 kitsiosk
@@ -44,6 +48,7 @@ otiai10
 pamelafox
 pauldotyu
 pbnj
+qinezh
 rajeshkamal
 richardpark-msft
 rguptar

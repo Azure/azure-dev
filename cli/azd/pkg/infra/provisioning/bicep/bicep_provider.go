@@ -258,6 +258,7 @@ type BicepProvider struct {
 	// Options that are available after Initialize()
 	options               provisioning.Options
 	projectPath           string
+	projectName           string
 	path                  string
 	layer                 string
 	mode                  bicepFileMode
@@ -315,6 +316,10 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt 
 	}
 
 	p.projectPath = projectPath
+	p.projectName, err = resolveProjectName(projectPath)
+	if err != nil {
+		return fmt.Errorf("resolving project name: %w", err)
+	}
 	p.layer = infraOptions.Name
 	p.options = infraOptions
 	p.ignoreDeploymentState = infraOptions.IgnoreDeploymentState
@@ -517,7 +522,8 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 
 	var deployment *azapi.ResourceDeployment
 
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), p.layer, options.Hint())
+	deployments, err := p.deploymentManager.CompletedDeployments(
+		ctx, scope, p.deploymentProjectName(), p.env.Name(), p.layer, options.Hint())
 	p.console.StopSpinner(ctx, "", input.StepDone)
 
 	if err != nil {
@@ -652,7 +658,6 @@ func (p *BicepProvider) generateDeploymentObject(plan *compileBicepResult) (infr
 	if p.layer != "" {
 		baseName += "-" + p.layer
 	}
-
 	uniqueName := p.deploymentManager.GenerateDeploymentName(baseName)
 	scope, err := plan.Template.TargetScope()
 	if err != nil {
@@ -702,6 +707,13 @@ func (p *BicepProvider) deploymentState(
 		return nil, fmt.Errorf("deployment state error: %w", err)
 	}
 
+	if projectName := p.deploymentProjectName(); projectName != "" {
+		projectTag, hasProjectTag := prevDeploymentResult.Tags[azure.TagKeyAzdProjectName]
+		if !hasProjectTag || projectTag == nil || *projectTag != projectName {
+			return nil, errors.New("previous deployment does not contain matching azd project identity")
+		}
+	}
+
 	// State is invalid if the last deployment was not succeeded.
 	// This is currently safe because we rely on latestDeploymentResult which
 	// relies on findCompletedDeployments which filters to only Failed and Succeeded.
@@ -729,7 +741,8 @@ func (p *BicepProvider) latestDeploymentResult(
 	ctx context.Context,
 	scope infra.Scope,
 ) (*azapi.ResourceDeployment, error) {
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), p.layer, "")
+	deployments, err := p.deploymentManager.CompletedDeployments(
+		ctx, scope, p.deploymentProjectName(), p.env.Name(), p.layer, "")
 	// findCompletedDeployments returns error if no deployments are found
 	// No need to check for empty list
 	if err != nil {
@@ -833,7 +846,14 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		logDS("%s", parametersHashErr.Error())
 	}
 
-	if !p.ignoreDeploymentState && parametersHashErr == nil {
+	useDeploymentState := p.useDeploymentStateShortcut(parametersHashErr)
+	if !useDeploymentState && !p.ignoreDeploymentState && parametersHashErr == nil {
+		// The only remaining reason the shortcut is disabled here is an active deployment-stacks
+		// configuration; surface it in the deployment-stacks debug log.
+		logDS("deployment stacks configuration present; bypassing deployment-state shortcut")
+	}
+
+	if useDeploymentState {
 		deploymentState, stateErr := p.deploymentState(ctx, planned, deployment, currentParamsHash)
 		if stateErr == nil {
 			// As a heuristic, we also check the existence of all resource groups
@@ -894,11 +914,14 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		azure.TagKeyAzdEnvName:   new(p.env.Name()),
 		azure.TagKeyAzdLayerName: &p.layer,
 	}
+	if projectName := p.deploymentProjectName(); projectName != "" {
+		deploymentTags[azure.TagKeyAzdProjectName] = new(projectName)
+	}
 	if parametersHashErr == nil {
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = new(currentParamsHash)
 	}
 
-	optionsMap, err := convert.ToMap(p.options)
+	optionsMap, err := p.deploymentOptionsMap(true)
 	if err != nil {
 		return nil, err
 	}
@@ -1088,25 +1111,9 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 	}
 
 	if deployPreviewResult.Error != nil {
-		deploymentErr := *deployPreviewResult.Error
-		errDetailsList := make([]string, len(deploymentErr.Details))
-		for index, errDetail := range deploymentErr.Details {
-			errDetailsList[index] = fmt.Sprintf(
-				"code: %s, message: %s",
-				convert.ToValueWithDefault(errDetail.Code, ""),
-				convert.ToValueWithDefault(errDetail.Message, ""),
-			)
-		}
-
-		var errDetails string
-		if len(errDetailsList) > 0 {
-			errDetails = fmt.Sprintf(" Details: %s", strings.Join(errDetailsList, "\n"))
-		}
-		return nil, fmt.Errorf(
-			"generating preview: error code: %s, message: %s.%s",
-			convert.ToValueWithDefault(deploymentErr.Code, ""),
-			convert.ToValueWithDefault(deploymentErr.Message, ""),
-			errDetails,
+		return nil, azapi.NewAzureDeploymentErrorFromResponse(
+			deployPreviewResult.Error,
+			azapi.DeploymentOperationPreview,
 		)
 	}
 
@@ -1258,7 +1265,8 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
 
-	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), p.layer, "")
+	completedDeployments, err := p.deploymentManager.CompletedDeployments(
+		ctx, scope, p.deploymentProjectName(), p.env.Name(), p.layer, "")
 	if err != nil {
 		return nil, fmt.Errorf("finding completed deployments: %w", err)
 	}
@@ -1660,7 +1668,7 @@ func (p *BicepProvider) destroyDeployment(
 			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
 		}
 	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		optionsMap, err := convert.ToMap(p.options)
+		optionsMap, err := p.deploymentOptionsMap(false)
 		if err != nil {
 			return err
 		}

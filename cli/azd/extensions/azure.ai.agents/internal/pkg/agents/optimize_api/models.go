@@ -77,10 +77,11 @@ type Dataset struct {
 	Items   []json.RawMessage `json:"items,omitempty"`
 }
 
-// EvaluatorRef references an evaluator by name and optional version.
+// EvaluatorRef references an evaluator by name, optional version, and optional initialization_parameters.
 type EvaluatorRef struct {
-	Name    string `json:"name"`
-	Version string `json:"version,omitempty"`
+	Name                     string         `json:"name"`
+	Version                  string         `json:"version,omitempty"`
+	InitializationParameters map[string]any `json:"initialization_parameters,omitempty"`
 }
 
 // SkillDefinition describes a skill attached to an agent.
@@ -113,6 +114,12 @@ type OptimizeOptions struct {
 	OptimizationModel  string                     `json:"optimization_model"`
 	OptimizationConfig map[string]json.RawMessage `json:"optimization_config,omitempty"`
 	EvaluationLevel    string                     `json:"evaluation_level,omitempty"`
+	// MaxStalls is the maximum number of consecutive non-improving iterations
+	// before the optimizer stops early. Omitted when nil (service default applies).
+	MaxStalls *int `json:"max_stalls,omitempty"`
+	// MaxConcurrentAgentRuns is the maximum number of agent invocations the
+	// evaluation service executes concurrently. Omitted when nil (service default applies).
+	MaxConcurrentAgentRuns *int `json:"max_concurrent_agent_runs,omitempty"`
 }
 
 // --- Response models ---

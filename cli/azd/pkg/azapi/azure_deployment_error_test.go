@@ -36,6 +36,40 @@ func Test_Not_Json_Error(t *testing.T) {
 	require.Equal(t, "\n\nTitle:\n"+nonJsonError, errorString)
 }
 
+// A payload can parse cleanly yet render nothing: nodes carrying only a code,
+// codes that are deliberately blanked, or a null body. Falling back to the raw
+// payload keeps some cause visible instead of emitting a bare heading.
+func Test_Parsed_But_Unrenderable_Error_Falls_Back_To_Json(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+	}{
+		{
+			name: "code with no message",
+			json: `{"error":{"code":"ResourceGroupNotFound"}}`,
+		},
+		{
+			name: "blanked code with no details",
+			json: `{"error":{"code":"DeploymentFailed","message":"At least one operation failed."}}`,
+		},
+		{
+			name: "additionalInfo only",
+			json: `{"error":{"code":"BadRequest","additionalInfo":[{"type":"QuotaExceeded"}]}}`,
+		},
+		{
+			name: "null body",
+			json: `null`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deploymentError := NewAzureDeploymentError("Title", tt.json, DeploymentOperationPreview)
+			require.Equal(t, "\n\nTitle:\n"+tt.json, deploymentError.Error())
+		})
+	}
+}
+
 func assertOutputsMatch(t *testing.T, jsonPath string, expectedOutputPath string) {
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {

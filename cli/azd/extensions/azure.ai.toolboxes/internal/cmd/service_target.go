@@ -15,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"google.golang.org/grpc"
 )
 
 // aiToolboxHost is the azure.yaml service host kind owned by this extension. A
@@ -47,18 +48,26 @@ type toolboxServiceConfig struct {
 // artifact.
 type toolboxServiceTarget struct {
 	azdClient     *azdext.AzdClient
-	serviceConfig *azdext.ServiceConfig
+	projectClient serviceConfigReader
 	resolver      connectionResolver
 }
 
 // newToolboxServiceTarget creates the azure.ai.toolbox service-target provider.
-func newToolboxServiceTarget(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
-	return &toolboxServiceTarget{azdClient: azdClient, resolver: defaultConnectionResolver{}}
+func newToolboxServiceTarget(
+	azdClient *azdext.AzdClient,
+) azdext.ServiceTargetProvider {
+	return &toolboxServiceTarget{
+		azdClient:     azdClient,
+		projectClient: azdClient.Project(),
+		resolver:      defaultConnectionResolver{},
+	}
 }
 
-// Initialize stores the service configuration; no other setup is required.
-func (p *toolboxServiceTarget) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
-	p.serviceConfig = serviceConfig
+// Initialize requires no setup.
+func (p *toolboxServiceTarget) Initialize(
+	_ context.Context,
+	_ *azdext.ServiceConfig,
+) error {
 	return nil
 }
 
@@ -113,8 +122,8 @@ func (p *toolboxServiceTarget) Publish(
 
 // Deploy upserts the toolbox by creating a new version from the entry's tools. Tool
 // entries that name a `connection` are resolved to their project_connection_id (the
-// `uses:` edge guarantees the connection is reconciled first). ${VAR} references resolve
-// against the azd environment; Foundry ${{...}} expressions pass through untouched.
+// `uses:` edge guarantees the connection is reconciled first). ${VAR}
+// references resolve from the forwarded service environment.
 // Removing the service from azure.yaml stops azd managing the toolbox but does not delete
 // it (use `azd ai toolbox delete`).
 // When the entry sets `endpoint` instead, azd reuses that existing
@@ -135,7 +144,7 @@ func (p *toolboxServiceTarget) Deploy(
 	// Reuse (bring-your-own): endpoint set means azd resolves ${VAR}
 	// and publishes it for agents instead of creating a version.
 	if strings.TrimSpace(cfg.Endpoint) != "" {
-		return p.deployReuse(ctx, name, cfg, progress)
+		return p.deployReuse(ctx, name, cfg, serviceConfig, progress)
 	}
 
 	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{})
@@ -144,12 +153,16 @@ func (p *toolboxServiceTarget) Deploy(
 	}
 	endpoint := resolved.Endpoint
 
-	env, err := p.currentEnvValues(ctx)
+	environment, err := p.environmentValues(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}
-
-	tools, err := p.buildToolEntries(ctx, endpoint, cfg.Tools, env)
+	tools, err := p.buildToolEntries(
+		ctx,
+		endpoint,
+		cfg.Tools,
+		environment,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +186,7 @@ func (p *toolboxServiceTarget) Deploy(
 
 	// Surface the toolbox's MCP endpoint to agents (and the developer) without re-running.
 	mcpURL := buildToolboxMcpURL(endpoint, name, created.Version)
-	if err := setToolboxEndpointEnvFunc(ctx, name, mcpURL); err != nil {
+	if err := setToolboxEndpointEnvFunc(ctx, name, mcpURL, ""); err != nil {
 		return nil, err
 	}
 
@@ -189,9 +202,10 @@ func (p *toolboxServiceTarget) deployReuse(
 	ctx context.Context,
 	name string,
 	cfg *toolboxServiceConfig,
+	serviceConfig *azdext.ServiceConfig,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	env, err := p.currentEnvValues(ctx)
+	env, err := p.environmentValues(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +233,9 @@ func (p *toolboxServiceTarget) publishReuseEndpoint(
 		progress(fmt.Sprintf("Reusing existing toolbox %q", name))
 	}
 
-	if err := setToolboxEndpointEnvFunc(ctx, name, resolved); err != nil {
+	// Explicit reuse may reference a toolbox managed outside this project. The scope records
+	// readiness for this deployment context rather than asserting ownership of the endpoint.
+	if err := setToolboxEndpointEnvFunc(ctx, name, resolved, env["FOUNDRY_PROJECT_ENDPOINT"]); err != nil {
 		return nil, err
 	}
 	return &azdext.ServiceDeployResult{}, nil
@@ -323,16 +339,66 @@ func parseToolboxServiceConfig(svc *azdext.ServiceConfig) (*toolboxServiceConfig
 	return cfg, nil
 }
 
-// currentEnvValues loads all key-value pairs from the active azd environment, used to
-// resolve ${VAR} references in tool fields at deploy time.
-func (p *toolboxServiceTarget) currentEnvValues(ctx context.Context) (map[string]string, error) {
-	current, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+// serviceConfigReader is the slice of azdext.ProjectServiceClient
+// this target uses. Depending on the interface rather than the
+// concrete *azdext.AzdClient lets tests supply a fake: the client's
+// project field is unexported and no option overrides it.
+type serviceConfigReader interface {
+	GetServiceConfigValue(
+		ctx context.Context,
+		in *azdext.GetServiceConfigValueRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.GetServiceConfigValueResponse, error)
+}
+
+func serviceEnvDeclared(
+	ctx context.Context,
+	projectClient serviceConfigReader,
+	serviceName string,
+) (bool, error) {
+	resp, err := projectClient.GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "env",
+	})
+	if err != nil {
+		return false, fmt.Errorf("reading env for service %q: %w", serviceName, err)
+	}
+	return resp.GetFound(), nil
+}
+
+func (p *toolboxServiceTarget) environmentValues(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+) (map[string]string, error) {
+	environment := serviceConfig.GetEnvironment()
+	if len(environment) > 0 {
+		return environment, nil
+	}
+	// An explicit empty env: {} declares an isolated scope.
+	// Core forwards it as an empty map, indistinguishable from
+	// an omitted env, so consult the raw config before falling
+	// back to the full azd environment.
+	declared, err := serviceEnvDeclared(ctx, p.projectClient, serviceConfig.GetName())
+	if err != nil {
+		return nil, err
+	}
+	if declared {
+		return environment, nil
+	}
+
+	current, err := p.azdClient.Environment().GetCurrent(
+		ctx,
+		&azdext.EmptyRequest{},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("resolving current azd environment: %w", err)
 	}
-	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: current.GetEnvironment().GetName(),
-	})
+	resp, err := p.azdClient.Environment().GetValues(
+		ctx,
+		&azdext.GetEnvironmentRequest{
+			Name: current.GetEnvironment().GetName(),
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("loading azd environment values: %w", err)
 	}
@@ -343,9 +409,7 @@ func (p *toolboxServiceTarget) currentEnvValues(ctx context.Context) (map[string
 	return values, nil
 }
 
-// expandToolboxValue recursively expands ${VAR} references in every string within a tool
-// value (maps, slices, scalars) against the azd environment, preserving Foundry
-// server-side ${{...}} expressions.
+// expandToolboxValue expands ${VAR} in nested toolbox values.
 func expandToolboxValue(value any, env map[string]string) any {
 	switch typed := value.(type) {
 	case string:

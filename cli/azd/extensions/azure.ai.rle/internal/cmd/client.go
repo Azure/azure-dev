@@ -12,189 +12,372 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 const (
-	defaultControlPlaneEndpoint = "http://localhost:5000"
+	environmentCollectionPath = "/rl_environments"
+	foundryAPIVersion         = "2025-11-15-preview"
+	foundryTokenScope         = "https://ai.azure.com/.default" //nolint:gosec // OAuth scope, not a credential
 )
 
 type rleClient struct {
 	baseUrl    string
+	credential azcore.TokenCredential
 	httpClient *http.Client
 }
+
+var createRleClient = newRleClient
 
 type v1EnvironmentRequest struct {
 	Name         string `json:"name,omitempty"`
 	AcrImagePath string `json:"acrImagePath"`
+	VersionBump  string `json:"versionBump,omitempty"`
 }
 
 type environmentResource struct {
-	Id           string `json:"id"`
-	ProjectId    string `json:"projectId,omitempty"`
-	Name         string `json:"name,omitempty"`
-	AcrImagePath string `json:"acrImagePath,omitempty"`
-	Version      string `json:"version,omitempty"`
-	CreatedAt    string `json:"createdAtUtc,omitempty"`
-	UpdatedAt    string `json:"updatedAtUtc,omitempty"`
-	VersionLabel string `json:"versionLabel,omitempty"`
+	Id                        string `json:"id"`
+	ProjectId                 string `json:"projectId,omitempty"`
+	Name                      string `json:"name,omitempty"`
+	AcrImagePath              string `json:"acrImagePath,omitempty"`
+	Version                   string `json:"version,omitempty"`
+	CreatedAt                 string `json:"createdAtUtc,omitempty"`
+	UpdatedAt                 string `json:"updatedAtUtc,omitempty"`
+	VersionLabel              string `json:"versionLabel,omitempty"`
+	DiskImageConversionStatus string `json:"diskImageConversionStatus,omitempty"`
+	DiskImageConversionError  string `json:"diskImageConversionError,omitempty"`
 }
 
-type sandboxCreateRequest struct {
-	Version string `json:"version,omitempty"`
+type listEnvironmentsResponse struct {
+	Data    []environmentResource `json:"data"`
+	LastId  string                `json:"last_id,omitempty"`
+	HasMore bool                  `json:"has_more"`
 }
 
-type sandboxResource struct {
-	Id            string `json:"id"`
+type environmentVersionResource struct {
+	EnvironmentId string `json:"environmentId"`
 	ProjectId     string `json:"projectId,omitempty"`
-	EnvironmentId string `json:"environmentId,omitempty"`
 	Version       string `json:"version,omitempty"`
-	Url           string `json:"url,omitempty"`
-	Endpoint      string `json:"endpoint,omitempty"`
-	Status        string `json:"status,omitempty"`
-	Error         string `json:"error,omitempty"`
+	AcrImagePath  string `json:"acrImagePath,omitempty"`
 	CreatedAt     string `json:"createdAtUtc,omitempty"`
-	UpdatedAt     string `json:"updatedAtUtc,omitempty"`
+}
+
+type listEnvironmentVersionsResponse struct {
+	Data    []environmentVersionResource `json:"data"`
+	LastId  string                       `json:"last_id,omitempty"`
+	HasMore bool                         `json:"has_more"`
+}
+
+type createInstanceGroupRequest struct {
+	MaxActiveInstances int `json:"maxActiveInstances"`
+}
+
+type instanceGroupResource struct {
+	Id                 string `json:"id"`
+	EnvironmentName    string `json:"environmentName"`
+	EnvironmentVersion string `json:"environmentVersion"`
+	MaxActiveInstances int    `json:"maxActiveInstances"`
+}
+
+type instanceResource struct {
+	InstanceId      string `json:"instanceId"`
+	InstanceGroupId string `json:"instanceGroupId"`
+	BaseUrl         string `json:"baseUrl,omitempty"`
+	Status          string `json:"status,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 type rleHTTPError struct {
 	statusCode int
 	body       string
+	details    *rleErrorBody
+}
+
+type rleErrorBody struct {
+	Code    string        `json:"code,omitempty"`
+	Message string        `json:"message,omitempty"`
+	Error   *rleErrorBody `json:"error,omitempty"`
 }
 
 func (e *rleHTTPError) Error() string {
-	return fmt.Sprintf("RLE control plane returned HTTP %d: %s", e.statusCode, strings.TrimSpace(e.body))
+	return fmt.Sprintf("RLE service returned HTTP %d: %s", e.statusCode, e.message())
+}
+
+func (e *rleHTTPError) code() string {
+	if e.details == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.details.primary().Code)
+}
+
+func (e *rleHTTPError) message() string {
+	if e.details != nil {
+		if message := strings.TrimSpace(e.details.primary().Message); message != "" {
+			return message
+		}
+	}
+	return strings.TrimSpace(e.body)
+}
+
+func newRleHTTPError(statusCode int, body []byte) *rleHTTPError {
+	result := &rleHTTPError{
+		statusCode: statusCode,
+		body:       string(body),
+	}
+	var details rleErrorBody
+	if err := json.Unmarshal(body, &details); err == nil {
+		if primary := details.primary(); primary.Code != "" || primary.Message != "" {
+			result.details = &details
+		}
+	}
+	return result
+}
+
+func (b *rleErrorBody) primary() *rleErrorBody {
+	current := b
+	for current != nil && current.Error != nil {
+		current = current.Error
+	}
+	if current == nil {
+		return &rleErrorBody{}
+	}
+	return current
 }
 
 func serviceError(err error) error {
-	return &azdext.ServiceError{
+	result := &azdext.ServiceError{
 		Message:     err.Error(),
-		ServiceName: "rle-control-plane",
+		ServiceName: "rle-service",
 		Suggestion: fmt.Sprintf(
-			"Ensure the RLE control plane is running and reachable. Trying at %s; adjust if needed by setting RLE_ENDPOINT=<endpoint>.",
-			resolveControlPlaneEndpoint(),
+			"Ensure the Foundry project endpoint in %s is reachable and enabled for RLE.",
+			foundryProjectEndpointEnvVar,
 		),
 	}
-}
-
-// isNotFoundError reports whether err is an RLE control plane error with HTTP 404 status.
-func isNotFoundError(err error) bool {
 	if httpErr, ok := errors.AsType[*rleHTTPError](err); ok {
-		return httpErr.statusCode == http.StatusNotFound
+		result.ErrorCode = httpErr.code()
+		result.StatusCode = httpErr.statusCode
+		switch {
+		case httpErr.statusCode == http.StatusUnauthorized || httpErr.statusCode == http.StatusForbidden:
+			result.Suggestion = "Verify your Azure sign-in and access to the Foundry project, then retry."
+		case httpErr.statusCode == http.StatusTooManyRequests:
+			result.Suggestion = "Wait for the RLE service retry window, then retry."
+		case httpErr.statusCode >= http.StatusInternalServerError:
+			result.Suggestion = "Retry later. If the problem persists, check the RLE service status and logs."
+		}
 	}
-	return false
+	return result
 }
 
-func newRleClient(endpoint string) *rleClient {
+func newRleClient(endpoint string) (*rleClient, error) {
+	normalizedEndpoint, err := normalizeFoundryProjectEndpoint(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	credential, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("create Azure credential: %w", err)
+	}
+
+	return newRleClientWithCredential(normalizedEndpoint, credential), nil
+}
+
+func newRleClientWithCredential(endpoint string, credential azcore.TokenCredential) *rleClient {
 	return &rleClient{
-		baseUrl: strings.TrimRight(endpoint, "/"),
+		baseUrl:    strings.TrimRight(endpoint, "/"),
+		credential: credential,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
 }
 
-func resolveControlPlaneEndpoint() string {
-	if endpoint := os.Getenv("RLE_ENDPOINT"); endpoint != "" {
-		return endpoint
-	}
-	return defaultControlPlaneEndpoint
-}
-
 func (c *rleClient) createV1Environment(
 	ctx context.Context,
-	project string,
 	request v1EnvironmentRequest,
 ) (*environmentResource, error) {
-	path := fmt.Sprintf(
-		"/rle/v1.0/projects/%s/environments",
-		url.PathEscape(project),
-	)
-
 	var result environmentResource
-	if err := c.do(ctx, http.MethodPost, path, request, &result); err != nil {
+	if err := c.do(ctx, http.MethodPost, environmentCollectionPath, request, &result); err != nil {
 		return nil, err
 	}
 
 	return &result, nil
 }
 
-func (c *rleClient) updateV1Environment(
+func (c *rleClient) listEnvironments(
 	ctx context.Context,
-	project string,
-	environmentId string,
-	request v1EnvironmentRequest,
+	after string,
+	limit int,
+) (*listEnvironmentsResponse, error) {
+	query := url.Values{}
+	query.Set("limit", fmt.Sprintf("%d", limit))
+	if after != "" {
+		query.Set("after", after)
+	}
+
+	var result listEnvironmentsResponse
+	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+"?"+query.Encode(), nil, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (c *rleClient) getEnvironment(
+	ctx context.Context,
+	name string,
 ) (*environmentResource, error) {
-	path := fmt.Sprintf(
-		"/rle/v1.0/projects/%s/environments/%s",
-		url.PathEscape(project),
-		url.PathEscape(environmentId),
-	)
+	path := environmentCollectionPath + "/" + url.PathEscape(name)
 
 	var result environmentResource
-	if err := c.do(ctx, http.MethodPut, path, request, &result); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
-}
-
-func (c *rleClient) createSandbox(
-	ctx context.Context,
-	project string,
-	environmentId string,
-	request sandboxCreateRequest,
-) (*sandboxResource, error) {
-	path := fmt.Sprintf(
-		"/rle/v1.0/projects/%s/environments/%s/sandboxes",
-		url.PathEscape(project),
-		url.PathEscape(environmentId),
-	)
-
-	var result sandboxResource
-	if err := c.do(ctx, http.MethodPost, path, request, &result); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
-}
-
-func (c *rleClient) getSandbox(
-	ctx context.Context,
-	project string,
-	environmentId string,
-	sandboxId string,
-) (*sandboxResource, error) {
-	path := sandboxPath(project, environmentId, sandboxId)
-
-	var result sandboxResource
 	if err := c.do(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
+	return &result, nil
+}
+
+func (c *rleClient) getEnvironmentVersion(
+	ctx context.Context,
+	name string,
+	version string,
+) (*environmentResource, error) {
+	suffix := fmt.Sprintf(
+		"/%s/versions/%s",
+		url.PathEscape(name),
+		url.PathEscape(version),
+	)
+
+	var result environmentResource
+	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
+		return nil, err
+	}
 
 	return &result, nil
 }
 
-func (c *rleClient) deleteSandbox(
+func (c *rleClient) listEnvironmentVersions(
 	ctx context.Context,
-	project string,
-	environmentId string,
-	sandboxId string,
-) error {
-	return c.do(ctx, http.MethodDelete, sandboxPath(project, environmentId, sandboxId), nil, nil)
+	name string,
+	after string,
+	limit int,
+) (*listEnvironmentVersionsResponse, error) {
+	query := url.Values{}
+	query.Set("limit", fmt.Sprintf("%d", limit))
+	if after != "" {
+		query.Set("after", after)
+	}
+	suffix := fmt.Sprintf("/%s/versions?%s", url.PathEscape(name), query.Encode())
+
+	var result listEnvironmentVersionsResponse
+	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
 
-func sandboxPath(project string, environmentId string, sandboxId string) string {
-	return fmt.Sprintf(
-		"/rle/v1.0/projects/%s/environments/%s/sandboxes/%s",
-		url.PathEscape(project),
-		url.PathEscape(environmentId),
-		url.PathEscape(sandboxId),
-	)
+func (c *rleClient) createInstanceGroup(
+	ctx context.Context,
+	environmentName string,
+	environmentVersion string,
+) (*instanceGroupResource, error) {
+	suffix := instanceGroupCollectionSuffix(environmentName, environmentVersion)
+	request := createInstanceGroupRequest{MaxActiveInstances: 1}
+
+	var result instanceGroupResource
+	if err := c.do(ctx, http.MethodPost, environmentCollectionPath+suffix, request, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *rleClient) deleteInstanceGroup(
+	ctx context.Context,
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+) error {
+	suffix := instanceGroupSuffix(environmentName, environmentVersion, instanceGroupId)
+	return c.do(ctx, http.MethodDelete, environmentCollectionPath+suffix, nil, nil)
+}
+
+func (c *rleClient) createInstance(
+	ctx context.Context,
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+) (*instanceResource, error) {
+	suffix := instanceCollectionSuffix(environmentName, environmentVersion, instanceGroupId)
+
+	var result instanceResource
+	if err := c.do(ctx, http.MethodPost, environmentCollectionPath+suffix, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *rleClient) getInstance(
+	ctx context.Context,
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+	instanceId string,
+) (*instanceResource, error) {
+	suffix := instanceSuffix(environmentName, environmentVersion, instanceGroupId, instanceId)
+
+	var result instanceResource
+	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *rleClient) deleteInstance(
+	ctx context.Context,
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+	instanceId string,
+) error {
+	suffix := instanceSuffix(environmentName, environmentVersion, instanceGroupId, instanceId)
+	return c.do(ctx, http.MethodDelete, environmentCollectionPath+suffix, nil, nil)
+}
+
+func instanceSuffix(
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+	instanceId string,
+) string {
+	return instanceCollectionSuffix(environmentName, environmentVersion, instanceGroupId) +
+		"/" + url.PathEscape(instanceId)
+}
+
+func instanceCollectionSuffix(
+	environmentName string,
+	environmentVersion string,
+	instanceGroupId string,
+) string {
+	return instanceGroupSuffix(environmentName, environmentVersion, instanceGroupId) + "/instances"
+}
+
+func instanceGroupSuffix(environmentName string, environmentVersion string, instanceGroupId string) string {
+	return instanceGroupCollectionSuffix(environmentName, environmentVersion) +
+		"/" + url.PathEscape(instanceGroupId)
+}
+
+func instanceGroupCollectionSuffix(environmentName string, environmentVersion string) string {
+	path := "/" + url.PathEscape(environmentName)
+	if environmentVersion != "" {
+		path += "/versions/" + url.PathEscape(environmentVersion)
+	}
+	return path + "/instance_groups"
 }
 
 func (c *rleClient) do(ctx context.Context, method string, path string, body any, target any) error {
@@ -207,17 +390,33 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 		reader = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.baseUrl+path, reader)
+	requestUrl, err := url.Parse(c.baseUrl + path)
+	if err != nil {
+		return fmt.Errorf("create request URL: %w", err)
+	}
+	query := requestUrl.Query()
+	query.Set("api-version", foundryAPIVersion)
+	requestUrl.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, method, requestUrl.String(), reader)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
+	if !strings.EqualFold(req.URL.Scheme, "https") {
+		return errors.New("RLE service authentication requires an HTTPS Foundry project endpoint")
+	}
+	authorization, err := c.authorizationHeader(ctx)
+	if err != nil {
+		return fmt.Errorf("authenticate to Foundry: %w", err)
+	}
+	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("call RLE control plane %s: %w", c.baseUrl, err)
+		return fmt.Errorf("call RLE service %s: %w", c.baseUrl, err)
 	}
 	defer resp.Body.Close()
 
@@ -227,15 +426,50 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &rleHTTPError{statusCode: resp.StatusCode, body: string(respBody)}
+		return newRleHTTPError(resp.StatusCode, respBody)
 	}
 
 	if target == nil || len(respBody) == 0 {
 		return nil
 	}
+
 	if err := json.Unmarshal(respBody, target); err != nil {
 		return fmt.Errorf("decode RLE response: %w", err)
 	}
 
 	return nil
+}
+
+func (c *rleClient) authorizationHeader(ctx context.Context) (string, error) {
+	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{foundryTokenScope},
+	})
+	if err != nil {
+		return "", err
+	}
+	return "Bearer " + token.Token, nil
+}
+
+func nextPaginationCursor(seen map[string]struct{}, lastID string, newCursorError func() error) (string, error) {
+	cursor := strings.TrimSpace(lastID)
+	if cursor == "" {
+		return "", newCursorError()
+	}
+	if _, exists := seen[cursor]; exists {
+		return "", newCursorError()
+	}
+	seen[cursor] = struct{}{}
+	return cursor, nil
+}
+
+func paginationSafetyLimitError(resourceName string, code string) error {
+	return &azdext.LocalError{
+		Message: fmt.Sprintf(
+			"%s exceeded the %d-item safety limit.",
+			resourceName,
+			environmentListPageSize*environmentListMaxPages,
+		),
+		Code:     code,
+		Category: azdext.LocalErrorCategoryInternal,
+	}
 }

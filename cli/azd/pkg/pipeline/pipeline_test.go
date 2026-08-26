@@ -2072,7 +2072,7 @@ func Test_AzdoCiProvider_preConfigureCheck_clientCredentials(t *testing.T) {
 		require.False(t, updated)
 	})
 
-	t.Run("federated auth type returns error", func(t *testing.T) {
+	t.Run("federated auth type is accepted (default for azdo)", func(t *testing.T) {
 		t.Parallel()
 
 		testConsole := mockinput.NewMockConsole()
@@ -2090,9 +2090,7 @@ func Test_AzdoCiProvider_preConfigureCheck_clientCredentials(t *testing.T) {
 		_, err := provider.preConfigureCheck(t.Context(), PipelineManagerArgs{
 			PipelineAuthTypeName: string(AuthTypeFederated),
 		}, provisioning.Options{}, "")
-		require.Error(t, err)
-		require.ErrorIs(t, err, ErrAuthNotSupported)
-		require.Contains(t, err.Error(), "does not support federated")
+		require.NoError(t, err)
 	})
 }
 
@@ -6652,33 +6650,35 @@ func Test_AzdoCiProvider_requiredTools(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AzdoCiProvider.preConfigureCheck — federated auth returns error
+// AzdoCiProvider.preConfigureCheck — federated auth is accepted (default)
 // ---------------------------------------------------------------------------
 
-func Test_AzdoCiProvider_preConfigureCheck_federatedAuthError(t *testing.T) {
+func Test_AzdoCiProvider_preConfigureCheck_federatedAuthAccepted(t *testing.T) {
 	t.Parallel()
-	tempDir := t.TempDir()
-	ctx := t.Context()
-	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	mockContext := resetContext(tempDir, ctx)
 
-	resetAzureYaml(t, filepath.Join(tempDir, "azure.yaml"))
-	deleteYamlFiles(t, tempDir)
-	simulateUserInteraction(mockContext, ciProviderAzureDevOps, true)
+	testConsole := mockinput.NewMockConsole()
 
-	manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
-	require.NoError(t, err)
+	// PAT and org already present in the environment so no prompting is required.
+	env := environment.NewWithValues("test-env", map[string]string{
+		"AZURE_DEVOPS_EXT_PAT":  "testPAT",
+		"AZURE_DEVOPS_ORG_NAME": "myorg",
+	})
 
-	// AzDo CI provider explicitly rejects federated auth
-	_, err = manager.ciProvider.preConfigureCheck(
-		ctx,
+	provider := &AzdoCiProvider{
+		Env:     env,
+		console: testConsole,
+	}
+
+	// Azure DevOps supports federated (OIDC) credentials and uses them by default,
+	// so requesting federated auth explicitly must not be rejected.
+	_, err := provider.preConfigureCheck(
+		t.Context(),
 		PipelineManagerArgs{PipelineAuthTypeName: string(AuthTypeFederated)},
 		provisioning.Options{},
-		tempDir,
+		"",
 	)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrAuthNotSupported)
-	assert.Contains(t, err.Error(), "does not support federated")
+	require.NoError(t, err)
+	require.NotErrorIs(t, err, ErrAuthNotSupported)
 }
 
 // ---------------------------------------------------------------------------

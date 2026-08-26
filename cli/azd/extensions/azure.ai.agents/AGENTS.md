@@ -38,6 +38,38 @@ replace github.com/azure/azure-dev/cli/azd => ../../
 
 That `replace` points this extension at your local `cli/azd` checkout instead of the version in `go.mod`. Do not merge the extension with that `replace` still present.
 
+## Documentation examples
+
+`azure.yaml` examples in this extension's markdown docs are validated by
+`TestDocExamplesAreValid` (`internal/project/doc_examples_test.go`). Every fenced
+YAML block declaring an `azure.ai.agent` service must:
+
+1. Resolve through `AgentDefinitionFromService` without error, and
+2. Satisfy `schemas/azure.ai.agent.json`, including required fields, types,
+   enums, patterns, and declared properties, and
+3. Parse core-owned service fields (`docker`, `k8s`, `infra`, `hooks`, and the
+   scalar fields) with the same YAML shapes azd core expects.
+
+azd ignores unknown service properties at runtime, so an undocumented key
+deploys cleanly while doing nothing — the test blocks that in our docs.
+
+Snippets that are deliberately incomplete (for example, the network examples in
+`docs/private-networking.md`, which omit `kind` because azd falls back to the
+on-disk `agent.yaml`) opt out of the "must fully resolve" check with a marker on
+the line before the fence:
+
+````markdown
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+```
+````
+
+Use the marker only when the snippet is intentionally partial. If a complete
+example fails, fix the example rather than adding the marker.
+
 ## Error handling
 
 This extension uses `internal/exterrors` so the azd host can show a useful message, attach an optional suggestion, and emit stable telemetry.
@@ -107,6 +139,7 @@ func runCommand() error {
 Prefer the dedicated helpers instead of hand-rolling conversions:
 
 - `exterrors.ServiceFromAzure(err, operation)` for `azcore.ResponseError`
+- `exterrors.FromHost(err, operation, context)` for azd host gRPC service calls
 - `exterrors.FromAiService(err, fallbackCode)` for azd host AI service calls
 - `exterrors.FromPrompt(err, contextMessage)` for prompt failures
 

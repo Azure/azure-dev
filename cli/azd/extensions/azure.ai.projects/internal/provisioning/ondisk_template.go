@@ -19,15 +19,14 @@ import (
 	"github.com/drone/envsubst"
 )
 
-// Hard-coded relative locations for the on-disk Bicep tree the user owns
-// after running `azd ai agent init --infra`. azure.yaml's infra.path /
-// infra.module overrides are deliberately not honored; the eject writer
-// hard-codes these same paths.
+// Default locations for the on-disk Bicep tree. A provisioning layer can
+// override both through its path and module options.
 const (
 	onDiskInfraDir       = "infra"
-	onDiskBicepFile      = "main.bicep"
-	onDiskBicepParamFile = "main.bicepparam"
-	onDiskParamsFile     = "main.parameters.json"
+	onDiskModule         = "main"
+	onDiskBicepFile      = onDiskModule + ".bicep"
+	onDiskBicepParamFile = onDiskModule + ".bicepparam"
+	onDiskParamsFile     = onDiskModule + ".parameters.json"
 )
 
 // templateMode records which on-disk source was used, for telemetry /
@@ -68,6 +67,21 @@ type bicepCompiler interface {
 	BuildBicepParam(ctx context.Context, file string, env []string) (bicep.BuildResult, error)
 }
 
+// onDiskEnvironment keeps connection service scopes separate.
+// Project values remain the fallback for legacy connections.
+type onDiskEnvironment struct {
+	project           map[string]string
+	services          map[string]map[string]string
+	scopedConnections map[string]bool
+}
+
+func (e onDiskEnvironment) connection(name string) map[string]string {
+	if e.scopedConnections[name] {
+		return e.services[name]
+	}
+	return e.project
+}
+
 // loadOnDiskTemplate compiles the on-disk Bicep source (if any) and returns
 // a fully-resolved templateSource. Returns (nil, nil) -- not an error -- when
 // no on-disk template is found, so the caller falls back to the embedded path.
@@ -86,16 +100,77 @@ func loadOnDiskTemplate(
 	compiler bicepCompiler,
 	envValues map[string]string,
 ) (*templateSource, error) {
-	infraDir := filepath.Join(projectPath, onDiskInfraDir)
-	bicepparamPath := filepath.Join(infraDir, onDiskBicepParamFile)
-	bicepPath := filepath.Join(infraDir, onDiskBicepFile)
+	return loadOnDiskTemplateWithEnvironment(
+		ctx,
+		projectPath,
+		compiler,
+		onDiskEnvironment{project: envValues},
+	)
+}
+
+func loadOnDiskTemplateWithEnvironment(
+	ctx context.Context,
+	projectPath string,
+	compiler bicepCompiler,
+	environment onDiskEnvironment,
+) (*templateSource, error) {
+	return loadOnDiskTemplateAtWithEnvironment(
+		ctx,
+		filepath.Join(projectPath, onDiskInfraDir),
+		onDiskModule,
+		compiler,
+		environment,
+	)
+}
+
+// loadOnDiskTemplateAt loads a Bicep module from an explicit provisioning
+// layer path and module name.
+func loadOnDiskTemplateAt(
+	ctx context.Context,
+	infraDir string,
+	module string,
+	compiler bicepCompiler,
+	envValues map[string]string,
+) (*templateSource, error) {
+	return loadOnDiskTemplateAtWithEnvironment(
+		ctx,
+		infraDir,
+		module,
+		compiler,
+		onDiskEnvironment{project: envValues},
+	)
+}
+
+func loadOnDiskTemplateAtWithEnvironment(
+	ctx context.Context,
+	infraDir string,
+	module string,
+	compiler bicepCompiler,
+	environment onDiskEnvironment,
+) (*templateSource, error) {
+	if module == "" {
+		module = onDiskModule
+	}
+	bicepparamPath := filepath.Join(infraDir, module+".bicepparam")
+	bicepPath := filepath.Join(infraDir, module+".bicep")
 
 	switch {
 	case fileExistsAt(bicepparamPath):
-		return loadFromBicepParam(ctx, bicepparamPath, compiler, envValues)
+		return loadFromBicepParam(
+			ctx,
+			bicepparamPath,
+			compiler,
+			environment.project,
+		)
 	case fileExistsAt(bicepPath):
-		paramsPath := filepath.Join(infraDir, onDiskParamsFile)
-		return loadFromBicep(ctx, bicepPath, paramsPath, compiler, envValues)
+		paramsPath := filepath.Join(infraDir, module+".parameters.json")
+		return loadFromBicep(
+			ctx,
+			bicepPath,
+			paramsPath,
+			compiler,
+			environment,
+		)
 	default:
 		return nil, nil
 	}
@@ -108,7 +183,7 @@ func loadFromBicep(
 	ctx context.Context,
 	bicepPath, paramsPath string,
 	compiler bicepCompiler,
-	envValues map[string]string,
+	environment onDiskEnvironment,
 ) (*templateSource, error) {
 	res, err := compiler.Build(ctx, bicepPath)
 	if err != nil {
@@ -124,7 +199,10 @@ func loadFromBicep(
 		return nil, err
 	}
 
-	params, err := loadParametersFile(paramsPath, envValues)
+	params, err := loadParametersFileWithEnvironment(
+		paramsPath,
+		environment,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -199,6 +277,16 @@ func loadFromBicepParam(
 // Each parameter is substituted in isolation so one unresolved VAR doesn't
 // affect siblings.
 func loadParametersFile(paramFilePath string, envValues map[string]string) (map[string]any, error) {
+	return loadParametersFileWithEnvironment(
+		paramFilePath,
+		onDiskEnvironment{project: envValues},
+	)
+}
+
+func loadParametersFileWithEnvironment(
+	paramFilePath string,
+	environment onDiskEnvironment,
+) (map[string]any, error) {
 	//nolint:gosec // paramFilePath is derived from projectPath supplied by azd-core
 	raw, err := os.ReadFile(paramFilePath)
 	if err != nil {
@@ -220,7 +308,12 @@ func loadParametersFile(paramFilePath string, envValues map[string]string) (map[
 
 	out := make(map[string]any, len(pre))
 	for name, raw := range pre {
-		kept, err := substituteParamValue(raw, paramFilePath, name, envValues)
+		kept, err := substituteParameterValue(
+			raw,
+			paramFilePath,
+			name,
+			environment,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -232,6 +325,126 @@ func loadParametersFile(paramFilePath string, envValues map[string]string) (map[
 	return out, nil
 }
 
+func substituteParameterValue(
+	rawEntry any,
+	sourcePath, name string,
+	environment onDiskEnvironment,
+) (any, error) {
+	switch name {
+	case "connections":
+		return substituteConnectionsParameter(
+			rawEntry,
+			sourcePath,
+			name,
+			environment,
+		)
+	case "connectionCredentials":
+		return substituteConnectionCredentialsParameter(
+			rawEntry,
+			sourcePath,
+			name,
+			environment,
+		)
+	default:
+		return substituteParamValue(
+			rawEntry,
+			sourcePath,
+			name,
+			environment.project,
+		)
+	}
+}
+
+func substituteConnectionsParameter(
+	rawEntry any,
+	sourcePath, name string,
+	environment onDiskEnvironment,
+) (any, error) {
+	entry, ok := rawEntry.(map[string]any)
+	if !ok {
+		return substituteParamValue(
+			rawEntry,
+			sourcePath,
+			name,
+			environment.project,
+		)
+	}
+	connections, ok := entry["value"].([]any)
+	if !ok {
+		return substituteParamValue(
+			rawEntry,
+			sourcePath,
+			name,
+			environment.project,
+		)
+	}
+
+	resolvedConnections := make([]any, len(connections))
+	for i, connection := range connections {
+		connectionName := ""
+		if fields, ok := connection.(map[string]any); ok {
+			connectionName, _ = fields["name"].(string)
+		}
+		resolved, _, err := substituteJSONValue(
+			connection,
+			sourcePath,
+			name,
+			environment.connection(connectionName),
+		)
+		if err != nil {
+			return nil, err
+		}
+		resolvedConnections[i] = resolved
+	}
+
+	resolvedEntry := maps.Clone(entry)
+	resolvedEntry["value"] = resolvedConnections
+	return resolvedEntry, nil
+}
+
+func substituteConnectionCredentialsParameter(
+	rawEntry any,
+	sourcePath, name string,
+	environment onDiskEnvironment,
+) (any, error) {
+	entry, ok := rawEntry.(map[string]any)
+	if !ok {
+		return substituteParamValue(
+			rawEntry,
+			sourcePath,
+			name,
+			environment.project,
+		)
+	}
+	credentials, ok := entry["value"].(map[string]any)
+	if !ok {
+		return substituteParamValue(
+			rawEntry,
+			sourcePath,
+			name,
+			environment.project,
+		)
+	}
+
+	resolvedCredentials := make(map[string]any, len(credentials))
+	for connectionName, credential := range credentials {
+		resolved, _, err := substituteJSONValue(
+			credential,
+			sourcePath,
+			name,
+			environment.connection(connectionName),
+		)
+		if err != nil {
+			return nil, err
+		}
+		resolvedCredentials[connectionName] = resolved
+	}
+
+	resolvedEntry := maps.Clone(entry)
+	resolvedEntry["value"] = resolvedCredentials
+	return resolvedEntry, nil
+}
+
 // substituteParamValue runs envsubst over the JSON encoding of one parameter
 // entry. Returns nil when the entry should be dropped (string value collapsed
 // to "" AND at least one referenced VAR was unset).
@@ -240,9 +453,36 @@ func substituteParamValue(
 	sourcePath, name string,
 	envValues map[string]string,
 ) (any, error) {
+	resolved, hasUnsetEnvVar, err := substituteJSONValue(
+		rawEntry,
+		sourcePath,
+		name,
+		envValues,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Drop strings that unresolved variables reduce to empty.
+	// Non-string values are always kept.
+	if entry, ok := resolved.(map[string]any); ok {
+		if val, ok := entry["value"]; ok {
+			if str, ok := val.(string); ok && str == "" && hasUnsetEnvVar {
+				return nil, nil
+			}
+		}
+	}
+	return resolved, nil
+}
+
+func substituteJSONValue(
+	rawEntry any,
+	sourcePath, name string,
+	envValues map[string]string,
+) (any, bool, error) {
 	enc, err := json.Marshal(rawEntry)
 	if err != nil {
-		return nil, exterrors.Internal(
+		return nil, false, exterrors.Internal(
 			exterrors.CodeOnDiskParametersInvalid,
 			fmt.Sprintf("re-encode parameter %q in %s: %s", name, sourcePath, err),
 		)
@@ -266,7 +506,7 @@ func substituteParamValue(
 		return string(escaped[1 : len(escaped)-1])
 	})
 	if err != nil {
-		return nil, exterrors.Validation(
+		return nil, false, exterrors.Validation(
 			exterrors.CodeOnDiskParametersInvalid,
 			fmt.Sprintf("substitute env vars in parameter %q of %s: %s", name, sourcePath, err),
 			"check for malformed ${VAR} references in the parameters file",
@@ -275,23 +515,13 @@ func substituteParamValue(
 
 	var resolved any
 	if err := json.Unmarshal([]byte(substituted), &resolved); err != nil {
-		return nil, exterrors.Validation(
+		return nil, false, exterrors.Validation(
 			exterrors.CodeOnDiskParametersInvalid,
 			fmt.Sprintf("parse parameter %q in %s after substitution: %s", name, sourcePath, err),
 			"ensure the substituted value is valid JSON",
 		)
 	}
-
-	// Drop string-valued parameters whose substituted value collapsed to ""
-	// because of an unresolved ${VAR}. Non-string values are always kept.
-	if entry, ok := resolved.(map[string]any); ok {
-		if val, ok := entry["value"]; ok {
-			if str, ok := val.(string); ok && str == "" && hasUnsetEnvVar {
-				return nil, nil
-			}
-		}
-	}
-	return resolved, nil
+	return resolved, hasUnsetEnvVar, nil
 }
 
 // extractParametersFromARMFile pulls the inner "parameters" map out of
@@ -324,6 +554,20 @@ func mergeParameters(userParams, hostParams map[string]any) map[string]any {
 	out := make(map[string]any, len(userParams)+len(hostParams))
 	maps.Copy(out, hostParams)
 	maps.Copy(out, userParams)
+	return out
+}
+
+// parametersDeclaredByTemplate keeps host-derived values only when the
+// compiled on-disk template declares the matching parameter. User-authored
+// parameters are deliberately not filtered so ARM still reports misspellings.
+func parametersDeclaredByTemplate(hostParams, armTemplate map[string]any) map[string]any {
+	declared, _ := armTemplate["parameters"].(map[string]any)
+	out := make(map[string]any, min(len(hostParams), len(declared)))
+	for name, value := range hostParams {
+		if _, ok := declared[name]; ok {
+			out[name] = value
+		}
+	}
 	return out
 }
 

@@ -14,6 +14,8 @@ import (
 type ExtensionClaims struct {
 	jwt.RegisteredClaims
 	Capabilities []CapabilityType `json:"cap,omitempty"`
+	Traceparent  string           `json:"traceparent,omitempty"`
+	Tracestate   string           `json:"tracestate,omitempty"`
 }
 
 // extensionClaimsKeyType is the context key for storing validated extension claims.

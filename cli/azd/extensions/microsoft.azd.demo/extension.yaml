@@ -4,7 +4,8 @@ namespace: demo
 displayName: Demo Extension
 description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
-version: 0.7.1
+version: 0.8.0
+requiredAzdVersion: ">=1.31.0"
 language: go
 capabilities:
   - custom-commands
@@ -44,3 +45,6 @@ examples:
   - name: copilot
     description: Interactive Copilot chat loop demonstrating CopilotService gRPC API.
     usage: azd demo copilot [--model <model>] [--resume]
+  - name: telemetry
+    description: Report a sample usage event through the telemetry service.
+    usage: azd demo telemetry

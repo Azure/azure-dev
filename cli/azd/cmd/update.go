@@ -264,13 +264,11 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	// Perform the update
-	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Updating azd to %s (%s)", versionInfo.Version, cfg.Channel),
-	})
+	// Perform the update.
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{Title: updateTitle(installedBy, versionInfo)})
 
 	stdout := a.console.Handles().Stdout
-	if err := mgr.Update(ctx, cfg, stdout); err != nil {
+	if err := mgr.Update(ctx, versionInfo, stdout); err != nil {
 		// UpdateError already has the right code, just track it
 		if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(updateErr.Code))
@@ -302,13 +300,37 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf(
-				"Updated azd to version %s! Changes take effect on next invocation.",
-				versionInfo.Version,
-			),
+			Header:   updatedHeader(installedBy, versionInfo),
 			FollowUp: "Run `azd version` to confirm.",
 		},
 	}, nil
+}
+
+// updateTitle returns the progress title shown before an update runs.
+//
+// A version is named only when azd controls exactly which build gets installed. Package
+// managers resolve the version themselves, and daily installs come from a rolling folder
+// that can advance between the check and the download, so neither can be promised a
+// specific version — that mismatch is what this fix removes (Azure/azure-dev#9145).
+func updateTitle(installedBy installer.InstallType, target *update.VersionInfo) string {
+	switch {
+	case update.CanPinVersion(installedBy, target.Channel):
+		return fmt.Sprintf("Updating azd to %s (%s)", target.Version, target.Channel)
+	case update.UsesPackageManager(installedBy):
+		return fmt.Sprintf("Updating azd via %s (%s)", installedBy, target.Channel)
+	default:
+		return fmt.Sprintf("Updating azd (%s)", target.Channel)
+	}
+}
+
+// updatedHeader returns the success message shown after an update completes.
+// It reports the resolved version only when the install was pinned to it; see [updateTitle].
+func updatedHeader(installedBy installer.InstallType, target *update.VersionInfo) string {
+	if !update.CanPinVersion(installedBy, target.Channel) {
+		return "Updated azd! Changes take effect on next invocation."
+	}
+
+	return fmt.Sprintf("Updated azd to version %s! Changes take effect on next invocation.", target.Version)
 }
 
 // persistNonChannelFlags saves check-interval flags to config.

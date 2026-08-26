@@ -344,6 +344,160 @@ func TestValidate_NeitherDatasetFileNorReference(t *testing.T) {
 	assert.Contains(t, err.Error(), "a dataset is required")
 }
 
+func TestValidate_MaxStallsZeroIsRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+			MaxStalls:         new(0),
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_stalls must be >= 1")
+}
+
+// TestValidate_MaxStallsNegativeIsRejected verifies Validate() rejects a negative
+// max_stalls value set via the YAML config.
+func TestValidate_MaxStallsNegativeIsRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+			MaxStalls:         new(-1),
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_stalls must be >= 1")
+}
+
+func TestValidate_MaxStallsPositiveIsAccepted(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+			MaxStalls:         new(3),
+		},
+	}
+
+	err := cfg.Validate()
+	require.NoError(t, err)
+}
+
+func TestValidate_MaxConcurrentAgentRunsZeroIsRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:              "gpt-4o-mini",
+			OptimizationModel:      "gpt-5",
+			MaxConcurrentAgentRuns: new(0),
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_concurrent_agent_runs must be >= 1")
+}
+
+func TestValidate_MaxConcurrentAgentRunsPositiveIsAccepted(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:              "gpt-4o-mini",
+			OptimizationModel:      "gpt-5",
+			MaxConcurrentAgentRuns: new(8),
+		},
+	}
+
+	err := cfg.Validate()
+	require.NoError(t, err)
+}
+
+func TestToRequest_MaxConcurrentAgentRunsForwardedToAPI(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:              "gpt-4o-mini",
+			OptimizationModel:      "gpt-5",
+			MaxConcurrentAgentRuns: new(8),
+		},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	require.NotNil(t, req.Options.MaxConcurrentAgentRuns)
+	assert.Equal(t, 8, *req.Options.MaxConcurrentAgentRuns)
+}
+
+func TestToRequest_MaxConcurrentAgentRunsNilWhenOmitted(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+		},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	assert.Nil(t, req.Options.MaxConcurrentAgentRuns)
+}
+
 func TestLoadOptimizeConfig_FileNotFound(t *testing.T) {
 	t.Parallel()
 
@@ -826,4 +980,81 @@ func TestLoadSkillsFromDir_AllEmpty(t *testing.T) {
 	skills, err := loadSkillsFromDir(dir)
 	require.NoError(t, err)
 	assert.Empty(t, skills)
+}
+
+func TestToRequest_MaxStalls(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel: "gpt-4o-mini",
+			MaxStalls: new(3),
+		},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	require.NotNil(t, req.Options.MaxStalls)
+	assert.Equal(t, 3, *req.Options.MaxStalls)
+}
+
+func TestToRequest_EvaluatorInitParamsForwardedToAPI(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{Name: "agent"},
+			Evaluators: opt_eval.EvaluatorList{
+				{
+					Name:    "builtin.regex_match",
+					Version: "4",
+					InitializationParameters: map[string]any{
+						"patterns": []any{"(?i)Answer:\\s*{{ground_truth}}"},
+					},
+				},
+			},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi","ground_truth":"yes"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+		},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	require.Len(t, req.Evaluators, 1)
+	params := req.Evaluators[0].InitializationParameters
+	require.NotNil(t, params, "expected initialization_parameters on evaluator ref")
+	patterns, ok := params["patterns"]
+	require.True(t, ok, "expected patterns key")
+	assert.NotEmpty(t, patterns)
+}
+
+func TestToRequest_EvaluatorInitParamsNilWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+		},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	require.Len(t, req.Evaluators, 1)
+	assert.Nil(t, req.Evaluators[0].InitializationParameters)
 }

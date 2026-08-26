@@ -5,8 +5,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.44.1.10279",
-      "templateHash": "10316642581792918930"
+      "version": "0.46.1.21595",
+      "templateHash": "6633403746269170516"
     }
   },
   "definitions": {
@@ -346,8 +346,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "9277725728848811858"
+              "version": "0.46.1.21595",
+              "templateHash": "9663028600979689998"
             }
           },
           "definitions": {
@@ -736,8 +736,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.44.1.10279",
-                      "templateHash": "9033097500563316958"
+                      "version": "0.46.1.21595",
+                      "templateHash": "10967961645819739964"
                     }
                   },
                   "parameters": {
@@ -830,8 +830,8 @@
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
-                              "version": "0.44.1.10279",
-                              "templateHash": "9706203844896299767"
+                              "version": "0.46.1.21595",
+                              "templateHash": "10528013059105939935"
                             }
                           },
                           "parameters": {
@@ -915,8 +915,8 @@
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
-                              "version": "0.44.1.10279",
-                              "templateHash": "9706203844896299767"
+                              "version": "0.46.1.21595",
+                              "templateHash": "10528013059105939935"
                             }
                           },
                           "parameters": {
@@ -1050,8 +1050,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.44.1.10279",
-                      "templateHash": "2948233716175969636"
+                      "version": "0.46.1.21595",
+                      "templateHash": "16746221481092115316"
                     }
                   },
                   "parameters": {
@@ -1221,8 +1221,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.44.1.10279",
-                      "templateHash": "17191653749134434458"
+                      "version": "0.46.1.21595",
+                      "templateHash": "2415286770463307805"
                     }
                   },
                   "parameters": {
@@ -1448,8 +1448,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.44.1.10279",
-                      "templateHash": "487447368010536336"
+                      "version": "0.46.1.21595",
+                      "templateHash": "13263232618571910387"
                     }
                   },
                   "definitions": {
@@ -1629,6 +1629,10 @@
       "type": "string",
       "value": "[parameters('resourceGroupName')]"
     },
+    "AZURE_FOUNDRY_RESOURCE_GROUP": {
+      "type": "string",
+      "value": "[parameters('resourceGroupName')]"
+    },
     "AZURE_AI_PROJECT_ID": {
       "type": "string",
       "value": "[reference('resources').outputs.AZURE_AI_PROJECT_ID.value]"
@@ -1664,6 +1668,10 @@
     "AZURE_AI_PROJECT_CONNECTION_NAMES": {
       "type": "string",
       "value": "[reference('resources').outputs.AZURE_AI_PROJECT_CONNECTION_NAMES.value]"
+    },
+    "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": {
+      "type": "string",
+      "value": "[reference('resources').outputs.FOUNDRY_PROJECT_ENDPOINT.value]"
     },
     "AZURE_FOUNDRY_NETWORK_MODE": {
       "type": "string",

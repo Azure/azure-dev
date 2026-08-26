@@ -20,11 +20,16 @@ type envVarPattern struct {
 // knownEnvVarPatterns defines environment variables that indicate known AI agents.
 // These are checked in order, so more specific patterns should come first.
 var knownEnvVarPatterns = []envVarPattern{
-	// GitHub Copilot App can expose Copilot CLI markers, so check its host-specific marker first.
+	// GitHub Copilot hosts can expose Copilot CLI markers, so check their host-specific markers first.
 	{
 		envVar:        "AI_AGENT",
 		expectedValue: "github_copilot_app_agent",
 		agentType:     AgentTypeGitHubCopilotApp,
+	},
+	{
+		envVar:        "AI_AGENT",
+		expectedValue: "github_copilot_vscode_agent",
+		agentType:     AgentTypeGitHubCopilotVSCode,
 	},
 
 	// Claude Code - Anthropic's coding agent
@@ -70,7 +75,7 @@ var userAgentPatterns = []struct {
 	substring string
 	agentType AgentType
 }{
-	// VS Code GitHub Copilot extension
+	// GitHub Copilot for Azure extension in VS Code
 	{substring: internal.VsCodeAzureCopilotAgentPrefix, agentType: AgentTypeVSCodeCopilot},
 	{substring: "github-copilot", agentType: AgentTypeGitHubCopilotCLI},
 	{substring: "copilot-cli", agentType: AgentTypeGitHubCopilotCLI},

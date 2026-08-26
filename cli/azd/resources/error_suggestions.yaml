@@ -260,6 +260,12 @@ rules:
       - url: "https://learn.microsoft.com/azure/container-apps/troubleshooting"
         title: "Troubleshoot Container Apps"
 
+  - errorType: "AzureDeploymentError"
+    properties:
+      Operation: "preview"
+    message: "Azure validation rejected the deployment template."
+    suggestion: "Review the nested error codes above for the specific cause."
+
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "InvalidTemplate"
@@ -595,10 +601,10 @@ rules:
   # catch-all for any alternative code paths where the error surfaces unwrapped.
   - errorType: "ErrUnsupportedRegistrySchema"
     message: "The extension registry uses a schema version not supported by this version of azd."
-    suggestion: "Upgrade azd to the latest version to use this registry."
+    suggestion: "Update azd to the latest version to use this registry."
     links:
       - url: "https://aka.ms/azd/install"
-        title: "Install/upgrade azd"
+        title: "Install/update azd"
 
   # ============================================================================
   # Text Pattern Rules — Broad/generic patterns (least specific, must be last)

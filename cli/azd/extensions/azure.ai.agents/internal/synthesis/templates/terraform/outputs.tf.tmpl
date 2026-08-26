@@ -1,8 +1,14 @@
 # Outputs consumed by azd. Each value is written into the azd environment, so
 # the names must stay stable.
 
+{{ if not .Layer }}
 output "AZURE_RESOURCE_GROUP" {
-  value = azurerm_resource_group.this.name
+  value = local.resource_group_name
+}
+{{ end }}
+
+output "AZURE_FOUNDRY_RESOURCE_GROUP" {
+  value = local.resource_group_name
 }
 
 output "AZURE_AI_PROJECT_ID" {
@@ -27,6 +33,10 @@ output "FOUNDRY_PROJECT_ENDPOINT" {
 
 output "AZURE_AI_PROJECT_CONNECTION_NAMES" {
   value = join(",", [for c in azapi_resource.connection : c.name])
+}
+
+output "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT" {
+  value = "https://${azapi_resource.foundry_account.name}.services.ai.azure.com/api/projects/${azapi_resource.project.name}"
 }
 {{ if .IncludeAcr }}
 output "AZURE_CONTAINER_REGISTRY_ENDPOINT" {

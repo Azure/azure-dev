@@ -11,8 +11,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -35,6 +38,18 @@ import (
 // Test_Server_Start validates the start and stop flows of the gRPC server,
 // and confirms the expected behavior for authenticated and unauthenticated requests.
 func Test_Server_Start(t *testing.T) {
+	// The reporting extension is installed and resolvable, which is how the
+	// host stamps identity onto the span the extension can never supply.
+	reportingExtension := &extensions.Extension{
+		Id:      "azd.internal.telemetry",
+		Version: "1.0.0",
+		Source:  extensions.MainRegistryName,
+		Capabilities: []extensions.CapabilityType{
+			extensions.CustomCommandCapability,
+		},
+		Namespace: "test",
+	}
+
 	server := NewServer(
 		azdext.UnimplementedProjectServiceServer{},
 		azdext.UnimplementedEnvironmentServiceServer{},
@@ -53,6 +68,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
+		newTelemetryService(stubExtensionLookup{extension: reportingExtension}),
 	)
 
 	serverInfo, err := server.Start()
@@ -119,6 +135,69 @@ func Test_Server_Start(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, codes.Unauthenticated, st.Code())
 	})
+
+	t.Run("TelemetryAccepted", func(t *testing.T) {
+		accessToken, err := GenerateExtensionToken(reportingExtension, serverInfo)
+		require.NoError(t, err)
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		resp, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+			EventName:  "deploy.completed",
+			Attributes: map[string]string{"deploy.mode": "code"},
+		})
+		require.NoError(t, err)
+		require.True(t, resp.Accepted)
+	})
+
+	t.Run("TelemetryRejectsMissingEventName", func(t *testing.T) {
+		accessToken, err := GenerateExtensionToken(reportingExtension, serverInfo)
+		require.NoError(t, err)
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		_, err = client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+			Attributes: map[string]string{"deploy.mode": "code"},
+		})
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("TelemetryRejectsUninstalledExtension", func(t *testing.T) {
+		// The base extension is not the record the lookup resolves, so the
+		// host has no identity to stamp and must refuse.
+		accessToken, err := GenerateExtensionToken(extension, serverInfo)
+		require.NoError(t, err)
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		_, err = client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+			EventName: "deploy.completed",
+		})
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.PermissionDenied, st.Code())
+	})
+
+	t.Run("TelemetryMissingToken", func(t *testing.T) {
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		_, err = client.Telemetry().ReportUsage(
+			t.Context(),
+			&azdext.ReportUsageRequest{EventName: "deploy.completed"},
+		)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.Unauthenticated, st.Code())
+	})
 }
 
 // Test_Server_StreamInterceptor validates that the streaming RPC interceptor
@@ -142,6 +221,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		azdext.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
+		azdext.UnimplementedTelemetryServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -241,6 +321,82 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 			require.Equal(t, codes.Unauthenticated, st.Code())
 		}
 	})
+}
+
+func TestServer_RelaysExtensionErrorOverGRPC(t *testing.T) {
+	serviceErr := &azdext.ServiceError{
+		Message:     "could not get Foundry project",
+		ErrorCode:   "get_foundry_project.AuthorizationFailed",
+		StatusCode:  http.StatusForbidden,
+		ServiceName: "management.azure.com",
+	}
+	server := NewServer(
+		azdext.UnimplementedProjectServiceServer{},
+		azdext.UnimplementedEnvironmentServiceServer{},
+		azdext.UnimplementedPromptServiceServer{},
+		azdext.UnimplementedUserConfigServiceServer{},
+		azdext.UnimplementedDeploymentServiceServer{},
+		azdext.UnimplementedEventServiceServer{},
+		azdext.UnimplementedComposeServiceServer{},
+		azdext.UnimplementedWorkflowServiceServer{},
+		azdext.UnimplementedExtensionServiceServer{},
+		azdext.UnimplementedServiceTargetServiceServer{},
+		azdext.UnimplementedFrameworkServiceServer{},
+		&relayingContainerService{
+			err: fmt.Errorf("resolving target resource via external service target: %w", serviceErr),
+		},
+		azdext.UnimplementedAccountServiceServer{},
+		azdext.UnimplementedAiModelServiceServer{},
+		azdext.UnimplementedCopilotServiceServer{},
+		azdext.UnimplementedProvisioningServiceServer{},
+		azdext.UnimplementedValidationServiceServer{},
+		newTelemetryService(stubExtensionLookup{}),
+	)
+	serverInfo, err := server.Start()
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, server.Stop())
+	}()
+
+	extension := &extensions.Extension{
+		Id:        "azd.internal.test",
+		Namespace: "test",
+	}
+	accessToken, err := GenerateExtensionToken(extension, serverInfo)
+	require.NoError(t, err)
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.Container().Publish(
+		azdext.WithAccessToken(t.Context(), accessToken),
+		&azdext.ContainerPublishRequest{},
+	)
+	require.Error(t, err)
+
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Unknown, st.Code())
+	require.Contains(t, st.Message(), "resolving target resource via external service target")
+
+	relayed := requireRelayedExtensionError(t, st)
+	recovered := azdext.UnwrapError(relayed)
+	var recoveredServiceErr *azdext.ServiceError
+	require.ErrorAs(t, recovered, &recoveredServiceErr)
+	require.Equal(t, serviceErr, recoveredServiceErr)
+}
+
+type relayingContainerService struct {
+	azdext.UnimplementedContainerServiceServer
+	err error
+}
+
+func (s *relayingContainerService) Publish(
+	ctx context.Context,
+	req *azdext.ContainerPublishRequest,
+) (*azdext.ContainerPublishResponse, error) {
+	return nil, s.err
 }
 
 func Test_mapHostError(t *testing.T) {
@@ -385,6 +541,292 @@ func Test_mapHostError(t *testing.T) {
 	}
 }
 
+func TestMapHostError_ResponseErrorPreservesServiceDetails(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{
+		StatusCode: http.StatusTooManyRequests,
+		ErrorCode:  "TooManyRequests",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Request: &http.Request{
+				Host: "registry.azurecr.io",
+				URL:  &url.URL{Scheme: "https", Host: "registry.azurecr.io"},
+			},
+		},
+	}
+
+	mapped := mapHostError(responseErr)
+	st, ok := status.FromError(mapped)
+	require.True(t, ok)
+	require.Equal(t, codes.Unknown, st.Code())
+
+	detail := requireServiceErrorDetail(t, st)
+	require.Equal(t, "TooManyRequests", detail.GetErrorCode())
+	require.Equal(t, int32(http.StatusTooManyRequests), detail.GetStatusCode())
+	require.Equal(t, "registry.azurecr.io", detail.GetServiceName())
+	require.Empty(t, relayedExtensionErrorDetails(st))
+}
+
+func TestMapHostError_RelaysExtensionServiceError(t *testing.T) {
+	t.Parallel()
+
+	serviceErr := &azdext.ServiceError{
+		Message:     "could not get Foundry project",
+		ErrorCode:   "get_foundry_project.AuthorizationFailed",
+		StatusCode:  http.StatusForbidden,
+		ServiceName: "management.azure.com",
+		Suggestion:  "request the required role",
+		Links: []errorhandler.ErrorLink{{
+			URL:   "https://aka.ms/foundry-project-access",
+			Title: "Foundry project access",
+		}},
+	}
+	wrapped := fmt.Errorf("resolving target resource via external service target: %w", serviceErr)
+
+	st, ok := status.FromError(mapHostError(wrapped))
+	require.True(t, ok)
+	require.Equal(t, codes.Unknown, st.Code())
+	require.Equal(t, wrapped.Error(), st.Message())
+	require.Empty(t, serviceErrorDetails(st))
+
+	relayed := requireRelayedExtensionError(t, st)
+	recovered := azdext.UnwrapError(relayed)
+	var recoveredServiceErr *azdext.ServiceError
+	require.ErrorAs(t, recovered, &recoveredServiceErr)
+	require.Equal(t, serviceErr.Message, recoveredServiceErr.Message)
+	require.Equal(t, serviceErr.ErrorCode, recoveredServiceErr.ErrorCode)
+	require.Equal(t, serviceErr.StatusCode, recoveredServiceErr.StatusCode)
+	require.Equal(t, serviceErr.ServiceName, recoveredServiceErr.ServiceName)
+	require.Equal(t, serviceErr.Suggestion, recoveredServiceErr.Suggestion)
+	require.Equal(t, serviceErr.Links, recoveredServiceErr.Links)
+}
+
+func TestMapHostError_RelaysExtensionLocalError(t *testing.T) {
+	t.Parallel()
+
+	localErr := &azdext.LocalError{
+		Message:    "invalid Foundry project resource ID",
+		Code:       "invalid_ai_project_id",
+		Category:   azdext.LocalErrorCategoryValidation,
+		Suggestion: "verify AZURE_AI_PROJECT_ID",
+		Links: []errorhandler.ErrorLink{{
+			URL:   "https://aka.ms/azd-ai-project-id",
+			Title: "Foundry project configuration",
+		}},
+	}
+	errWithSuggestion := &internal.ErrorWithSuggestion{
+		Err:        fmt.Errorf("resolving target resource via external service target: %w", localErr),
+		Message:    "Could not resolve the target resource.",
+		Suggestion: "run azd env refresh and retry",
+		Links: []errorhandler.ErrorLink{{
+			URL:   "https://aka.ms/azd-env-refresh",
+			Title: "Environment refresh",
+		}},
+	}
+
+	st, ok := status.FromError(mapHostError(errWithSuggestion))
+	require.True(t, ok)
+	require.Equal(t, codes.Unknown, st.Code())
+	require.Equal(t, errWithSuggestion.Message, st.Message())
+
+	actionable := azdext.ActionableErrorDetailFromStatus(st)
+	require.NotNil(t, actionable)
+	require.Equal(t, errWithSuggestion.Suggestion, actionable.GetSuggestion())
+	require.Equal(t, azdext.WrapErrorLinks(errWithSuggestion.Links), actionable.GetLinks())
+
+	relayed := requireRelayedExtensionError(t, st)
+	recovered := azdext.UnwrapError(relayed)
+	var recoveredLocalErr *azdext.LocalError
+	require.ErrorAs(t, recovered, &recoveredLocalErr)
+	require.Equal(t, localErr.Message, recoveredLocalErr.Message)
+	require.Equal(t, localErr.Code, recoveredLocalErr.Code)
+	require.Equal(t, localErr.Category, recoveredLocalErr.Category)
+	require.Equal(t, localErr.Suggestion, recoveredLocalErr.Suggestion)
+	require.Equal(t, localErr.Links, recoveredLocalErr.Links)
+}
+
+func TestMapHostError_DoesNotDuplicateRelayedExtensionError(t *testing.T) {
+	t.Parallel()
+
+	localErr := &azdext.LocalError{
+		Message:  "invalid project",
+		Code:     "invalid_ai_project_id",
+		Category: azdext.LocalErrorCategoryValidation,
+	}
+	baseStatus, err := status.New(codes.Unknown, "request failed").WithDetails(azdext.WrapError(localErr))
+	require.NoError(t, err)
+
+	wrapped := &hostErrorChain{
+		error:  localErr,
+		status: baseStatus,
+	}
+
+	st, ok := status.FromError(mapHostError(wrapped))
+	require.True(t, ok)
+	require.Len(t, relayedExtensionErrorDetails(st), 1)
+}
+
+func TestMapHostError_ResponseErrorUsesURLHostname(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		ErrorCode:  "AuthorizationFailed",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusForbidden,
+			Request: &http.Request{
+				URL: &url.URL{
+					Scheme: "https",
+					Host:   "management.azure.com",
+					Path:   "/subscriptions/redacted",
+				},
+			},
+		},
+	}
+
+	st, ok := status.FromError(mapHostError(responseErr))
+	require.True(t, ok)
+
+	detail := requireServiceErrorDetail(t, st)
+	require.Equal(t, "management.azure.com", detail.GetServiceName())
+}
+
+func TestMapHostError_ResponseErrorPreservesExistingDetails(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		ErrorCode:  "AuthorizationFailed",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusForbidden,
+			Request: &http.Request{
+				Host: "management.azure.com",
+				URL:  &url.URL{Scheme: "https", Host: "management.azure.com"},
+			},
+		},
+	}
+	baseStatus, err := status.New(codes.Unavailable, "service unavailable").WithDetails(
+		&errdetails.ErrorInfo{Reason: "existing-detail"},
+	)
+	require.NoError(t, err)
+
+	wrapped := &internal.ErrorWithSuggestion{
+		Err:        &hostErrorChain{error: responseErr, status: baseStatus},
+		Message:    "request failed",
+		Suggestion: "try again later",
+	}
+
+	st, ok := status.FromError(mapHostError(wrapped))
+	require.True(t, ok)
+	require.Equal(t, codes.Unavailable, st.Code())
+	require.Equal(t, "request failed", st.Message())
+	require.Equal(t, "existing-detail", requireErrorInfo(t, st).GetReason())
+	require.Equal(t, "try again later", azdext.ActionableErrorDetailFromStatus(st).GetSuggestion())
+
+	detail := requireServiceErrorDetail(t, st)
+	require.Equal(t, "AuthorizationFailed", detail.GetErrorCode())
+	require.Equal(t, int32(http.StatusForbidden), detail.GetStatusCode())
+}
+
+func TestMapHostError_DoesNotDuplicateExistingServiceDetails(t *testing.T) {
+	t.Parallel()
+
+	baseStatus, err := status.New(codes.Unknown, "request failed").WithDetails(
+		&azdext.ServiceErrorDetail{
+			ErrorCode:   "AlreadyStructured",
+			StatusCode:  http.StatusBadGateway,
+			ServiceName: "management.azure.com",
+		},
+	)
+	require.NoError(t, err)
+
+	wrapped := &internal.ErrorWithSuggestion{
+		Err:        baseStatus.Err(),
+		Suggestion: "try again later",
+	}
+
+	st, ok := status.FromError(mapHostError(wrapped))
+	require.True(t, ok)
+	require.Len(t, serviceErrorDetails(st), 1)
+	require.Equal(t, "AlreadyStructured", requireServiceErrorDetail(t, st).GetErrorCode())
+}
+
+func TestMapHostError_ResponseErrorWithoutRawResponse(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{
+		StatusCode: http.StatusBadGateway,
+		ErrorCode:  "BadGateway",
+	}
+
+	st, ok := status.FromError(mapHostError(responseErr))
+	require.True(t, ok)
+
+	detail := requireServiceErrorDetail(t, st)
+	require.Equal(t, "BadGateway", detail.GetErrorCode())
+	require.Equal(t, int32(http.StatusBadGateway), detail.GetStatusCode())
+	require.Empty(t, detail.GetServiceName())
+}
+
+type hostErrorChain struct {
+	error
+	status *status.Status
+}
+
+func (e *hostErrorChain) Unwrap() error {
+	return e.error
+}
+
+func (e *hostErrorChain) GRPCStatus() *status.Status {
+	return e.status
+}
+
+func serviceErrorDetails(st *status.Status) []*azdext.ServiceErrorDetail {
+	var result []*azdext.ServiceErrorDetail
+	for _, detail := range st.Details() {
+		if serviceDetail, ok := detail.(*azdext.ServiceErrorDetail); ok {
+			result = append(result, serviceDetail)
+		}
+	}
+	return result
+}
+
+func relayedExtensionErrorDetails(st *status.Status) []*azdext.ExtensionError {
+	var result []*azdext.ExtensionError
+	for _, detail := range st.Details() {
+		if relayedErr, ok := detail.(*azdext.ExtensionError); ok {
+			result = append(result, relayedErr)
+		}
+	}
+	return result
+}
+
+func requireServiceErrorDetail(t *testing.T, st *status.Status) *azdext.ServiceErrorDetail {
+	t.Helper()
+	details := serviceErrorDetails(st)
+	require.Len(t, details, 1)
+	return details[0]
+}
+
+func requireRelayedExtensionError(t *testing.T, st *status.Status) *azdext.ExtensionError {
+	t.Helper()
+	details := relayedExtensionErrorDetails(st)
+	require.Len(t, details, 1)
+	return details[0]
+}
+
+func requireErrorInfo(t *testing.T, st *status.Status) *errdetails.ErrorInfo {
+	t.Helper()
+	for _, detail := range st.Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok {
+			return info
+		}
+	}
+	require.FailNow(t, "expected ErrorInfo detail")
+	return nil
+}
+
 func requireAuthErrorInfo(t *testing.T, st *status.Status) *errdetails.ErrorInfo {
 	t.Helper()
 
@@ -398,11 +840,11 @@ func requireAuthErrorInfo(t *testing.T, st *status.Status) *errdetails.ErrorInfo
 	return nil
 }
 
-func TestAuthenticatedStream_Context(t *testing.T) {
+func TestContextStream_Context(t *testing.T) {
 	t.Parallel()
 	ctx := context.WithValue(t.Context(), struct{ key string }{key: "test"}, "value")
 
-	stream := &authenticatedStream{
+	stream := &contextStream{
 		ctx: ctx,
 	}
 
@@ -618,7 +1060,7 @@ func TestValidateAuthToken_InvalidToken(t *testing.T) {
 
 func TestNewServer(t *testing.T) {
 	t.Parallel()
-	s := NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NotNil(t, s)
 	assert.Nil(t, s.grpcServer, "grpcServer should be nil before Start")
 }

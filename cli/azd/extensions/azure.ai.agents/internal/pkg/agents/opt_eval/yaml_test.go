@@ -124,6 +124,56 @@ func TestConfig_RoundTrip_DatasetReference(t *testing.T) {
 	assert.Empty(t, loaded.DatasetFile)
 }
 
+func TestConfig_RoundTrip_EvaluatorInitializationParameters(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	original := &Config{
+		Agent: AgentRef{Name: "agent-x"},
+		Evaluators: EvaluatorList{
+			// Plain evaluator — no init params, should survive as scalar.
+			{Name: "builtin.task_adherence"},
+			// Evaluator with initialization_parameters only (no version/local_uri).
+			// MarshalYAML must emit this as a mapping, not a plain scalar,
+			// otherwise the params are silently dropped on round-trip.
+			{
+				Name: "builtin.regex_match",
+				InitializationParameters: map[string]any{
+					"patterns": []any{"(?i)Answer:\\s*{{ground_truth}}"},
+				},
+			},
+			// Evaluator with both version and init params.
+			{
+				Name:    "custom-quality",
+				Version: "3",
+				InitializationParameters: map[string]any{
+					"threshold": 0.5,
+				},
+			},
+		},
+	}
+
+	require.NoError(t, Write(path, original))
+	loaded, err := Read(path)
+	require.NoError(t, err)
+
+	require.Len(t, loaded.Evaluators, 3)
+
+	// Plain evaluator — no init params.
+	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0].Name)
+	assert.Empty(t, loaded.Evaluators[0].InitializationParameters)
+
+	// Init-params-only evaluator — must NOT be lost.
+	assert.Equal(t, "builtin.regex_match", loaded.Evaluators[1].Name)
+	require.NotEmpty(t, loaded.Evaluators[1].InitializationParameters, "initialization_parameters must survive YAML round-trip")
+
+	// Version + init params.
+	assert.Equal(t, "custom-quality", loaded.Evaluators[2].Name)
+	assert.Equal(t, "3", loaded.Evaluators[2].Version)
+	require.NotEmpty(t, loaded.Evaluators[2].InitializationParameters)
+}
+
 // ---------------------------------------------------------------------------
 // DatasetRef.IsLocal / IsRemote — inferred from populated fields
 // ---------------------------------------------------------------------------
@@ -351,6 +401,53 @@ max_candidates: 7
 	assert.Equal(t, 7, *opts.MaxCandidates)
 }
 
+// TestOptions_MaxStalls verifies the max_stalls key populates MaxStalls.
+func TestOptions_MaxStalls(t *testing.T) {
+	t.Parallel()
+
+	input := `
+eval_model: gpt-4.1
+max_stalls: 3
+`
+	var opts Options
+	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
+
+	require.NotNil(t, opts.MaxStalls)
+	assert.Equal(t, 3, *opts.MaxStalls)
+}
+
+// TestOptions_MaxConcurrentAgentRuns verifies the max_concurrent_agent_runs key
+// populates MaxConcurrentAgentRuns.
+func TestOptions_MaxConcurrentAgentRuns(t *testing.T) {
+	t.Parallel()
+
+	input := `
+eval_model: gpt-4.1
+optimization_model: gpt-5
+max_concurrent_agent_runs: 8
+`
+	var opts Options
+	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
+
+	require.NotNil(t, opts.MaxConcurrentAgentRuns)
+	assert.Equal(t, 8, *opts.MaxConcurrentAgentRuns)
+}
+
+// TestOptions_MaxConcurrentAgentRunsOmitted verifies MaxConcurrentAgentRuns is nil
+// when the key is absent.
+func TestOptions_MaxConcurrentAgentRunsOmitted(t *testing.T) {
+	t.Parallel()
+
+	input := `
+eval_model: gpt-4.1
+optimization_model: gpt-5
+`
+	var opts Options
+	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
+
+	assert.Nil(t, opts.MaxConcurrentAgentRuns)
+}
+
 func TestOptions_OptimizationConfig_NativeYAML(t *testing.T) {
 	t.Parallel()
 
@@ -399,4 +496,51 @@ optimization_config:
 
 	// model should be the JSON string, not double-quoted.
 	assert.JSONEq(t, `"gpt-4o"`, string(opts.OptimizationConfig["model"]))
+}
+
+// TestOptions_EvaluatorInitializationParameters verifies initialization_parameters
+// under an evaluator entry is parsed correctly.
+func TestOptions_EvaluatorInitializationParameters(t *testing.T) {
+	t.Parallel()
+
+	input := `
+name: test
+agent:
+  name: my-agent
+evaluators:
+  - name: builtin.regex_match
+    version: "4"
+    initialization_parameters:
+      patterns:
+        - "(?i)Answer:\\s*{{ground_truth}}"
+`
+	var cfg Config
+	require.NoError(t, yaml.Unmarshal([]byte(input), &cfg))
+
+	require.Len(t, cfg.Evaluators, 1)
+	ref := cfg.Evaluators[0]
+	assert.Equal(t, "builtin.regex_match", ref.Name)
+	require.NotNil(t, ref.InitializationParameters)
+	patterns, ok := ref.InitializationParameters["patterns"]
+	require.True(t, ok)
+	assert.NotEmpty(t, patterns)
+}
+
+// TestOptions_EvaluatorInitializationParametersOmitted verifies
+// InitializationParameters is nil when absent.
+func TestOptions_EvaluatorInitializationParametersOmitted(t *testing.T) {
+	t.Parallel()
+
+	input := `
+name: test
+agent:
+  name: my-agent
+evaluators:
+  - name: builtin.task_adherence
+`
+	var cfg Config
+	require.NoError(t, yaml.Unmarshal([]byte(input), &cfg))
+
+	require.Len(t, cfg.Evaluators, 1)
+	assert.Nil(t, cfg.Evaluators[0].InitializationParameters)
 }

@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../../../../../../schemas/v1.0/azure.yaml.json
+
+name: container-function
+services:
+  func:
+    project: src/function
+    host: function
+    language: js
+    docker:
+      path: ./Dockerfile

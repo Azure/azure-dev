@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -34,51 +35,111 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// foundryServiceHosts are the azure.yaml service `host` values that identify a
-// unified Microsoft Foundry project manifest. The legacy `microsoft.foundry`
-// host is included for backward compatibility with older non-split files.
-var foundryServiceHosts = map[string]struct{}{
-	"azure.ai.agent":      {},
-	"azure.ai.project":    {},
-	"azure.ai.connection": {},
-	"azure.ai.toolbox":    {},
-	"microsoft.foundry":   {},
+type azureYamlManifestInfo struct {
+	hasServices       bool
+	hasAgentService   bool
+	hasUnresolvedRefs bool
 }
 
-// looksLikeFoundryAzureYaml reports whether the given YAML content is a unified
-// Foundry `azure.yaml` project manifest rather than an agent manifest.
+// inspectAzureYaml identifies unified manifests and Agent services.
 //
-// It returns true when the document has a top-level `services:` map in which at
-// least one service declares a Foundry `host:`. Agent manifests have a top-level
-// `template:` and no `services:`, so they never match. This lets `azd ai agent
-// init -m <pointer>` route a unified `azure.yaml` to the adoption path and an
-// agent manifest to the legacy generate path unambiguously.
-func looksLikeFoundryAzureYaml(content []byte) bool {
+// Local references are resolved against projectRoot. Remote references
+// wait for the sample directory download.
+func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo, error) {
+	var info azureYamlManifestInfo
 	var top map[string]any
 	if err := yaml.Unmarshal(content, &top); err != nil {
-		return false
+		return info, nil
 	}
 
 	services, ok := top["services"].(map[string]any)
 	if !ok {
-		return false
+		return info, nil
 	}
+	info.hasServices = true
 
-	for _, svc := range services {
+	for serviceName, svc := range services {
 		svcMap, ok := svc.(map[string]any)
 		if !ok {
 			continue
 		}
-		host, ok := svcMap["host"].(string)
-		if !ok {
-			continue
+
+		if hasAzureYamlFileRef(svcMap) {
+			if projectRoot == "" {
+				info.hasUnresolvedRefs = true
+			} else {
+				resolved, err := foundry.ResolveFileRefs(svcMap, projectRoot)
+				if err != nil {
+					return info, fmt.Errorf(
+						"resolving $ref includes for service %q: %w",
+						serviceName,
+						err,
+					)
+				}
+				svcMap = resolved
+			}
 		}
-		if _, isFoundry := foundryServiceHosts[host]; isFoundry {
+
+		host, _ := svcMap["host"].(string)
+		if host == AiAgentHost {
+			info.hasAgentService = true
+		}
+	}
+
+	return info, nil
+}
+
+func hasAzureYamlFileRef(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		if _, ok := typed["$ref"]; ok {
+			return true
+		}
+		for _, child := range typed {
+			if hasAzureYamlFileRef(child) {
+				return true
+			}
+		}
+	case []any:
+		if slices.ContainsFunc(typed, hasAzureYamlFileRef) {
 			return true
 		}
 	}
 
 	return false
+}
+
+func missingAgentServiceError(manifestPointer string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidManifestPointer,
+		fmt.Sprintf(
+			"manifest %q is a unified azure.yaml but does not declare an agent service",
+			manifestPointer,
+		),
+		fmt.Sprintf(
+			"add a service with host: %s, or pass an agent manifest",
+			AiAgentHost,
+		),
+	)
+}
+
+func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
+	manifestPath := filepath.Join(stagingDir, "azure.yaml")
+	//nolint:gosec // stagingDir is created or selected by the init flow
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("reading staged azure.yaml: %w", err)
+	}
+
+	info, err := inspectAzureYaml(content, stagingDir)
+	if err != nil {
+		return err
+	}
+	if !info.hasServices || !info.hasAgentService {
+		return missingAgentServiceError(manifestPointer)
+	}
+
+	return nil
 }
 
 // foundryProjectName returns the top-level `name:` of a unified azure.yaml, used
@@ -493,7 +554,7 @@ func promptAlternativeDeployment(
 	if useCatalog {
 		// Use the full model + deployment prompt which handles version,
 		// SKU, and capacity selection (same as manifest path).
-		defaultModel := "gpt-4.1-mini"
+		defaultModel := defaultAgentModel
 		if modelFlag != "" {
 			defaultModel = modelFlag
 		}
@@ -656,7 +717,8 @@ func updateAzureYamlDeployments(
 type adoptedAgentNameResolver func(context.Context, string) (string, error)
 
 func adoptedAgentNameConflictSuggestion() string {
-	return "To create a separate agent, update the agent service's `name` in the adopted azure.yaml before deploying.\n"
+	return "To create a separate agent, re-run init with --agent-name <unique-name> for single-agent samples, " +
+		"or update each agent service's `name` in the adopted azure.yaml.\n"
 }
 
 // confirmAdoptedAgentNameConflicts checks every agent definition embedded in an
@@ -732,6 +794,70 @@ func updateAdoptedAgentNames(
 	}
 
 	return nil
+}
+
+func applyAdoptedAgentNameOverride(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+) error {
+	agentName, err := validateInitAgentName(agentName)
+	if err != nil {
+		return err
+	}
+
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading adopted project for agent name override: %w", err)
+	}
+
+	var serviceName string
+	var configPath string
+	for name, svc := range resp.GetProject().GetServices() {
+		if svc.GetHost() != AiAgentHost {
+			continue
+		}
+		if serviceName != "" {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--agent-name cannot be applied to an adopted azure.yaml with multiple agent services",
+				"update each agent service's `name` in azure.yaml after init, or use a sample with a single agent service",
+			)
+		}
+		serviceName = name
+		configPath = adoptedAgentNameOverrideConfigPath(svc)
+	}
+	if serviceName == "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--agent-name could not be applied because the adopted azure.yaml has no agent service",
+			"update the agent service's `name` in azure.yaml after init, or use a sample with an agent service",
+		)
+	}
+
+	value, err := structpb.NewValue(agentName)
+	if err != nil {
+		return fmt.Errorf("encoding agent name override for agent service %q: %w", serviceName, err)
+	}
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        configPath,
+		Value:       value,
+	}); err != nil {
+		return fmt.Errorf("updating agent name in adopted azure.yaml for service %q: %w", serviceName, err)
+	}
+
+	return nil
+}
+
+func adoptedAgentNameOverrideConfigPath(svc *azdext.ServiceConfig) string {
+	if svc == nil {
+		return "name"
+	}
+	if legacy := svc.GetConfig(); legacy != nil && legacy.GetFields()["kind"].GetStringValue() != "" {
+		return "config.name"
+	}
+	return "name"
 }
 
 // adoptedAgentNameConfig returns the Foundry agent name and its service-relative
@@ -832,7 +958,16 @@ func runInitFromAzureYaml(
 	httpClient *http.Client,
 	content []byte,
 ) error {
-	targetDir, folderDisplay := adoptTargetDir(flags, foundryProjectName(content))
+	projectName := foundryProjectName(content)
+	agentNameOverride, err := adoptedAgentNameOverride(flags)
+	if err != nil {
+		return err
+	}
+	if agentNameOverride != "" {
+		projectName = agentNameOverride
+	}
+
+	targetDir, folderDisplay := adoptTargetDir(flags, projectName)
 
 	// Adoption is a fresh-project operation: it lays down the project-root
 	// azure.yaml. When the target already contains an azd project manifest we
@@ -848,7 +983,6 @@ func runInitFromAzureYaml(
 				"'azd ai agent init -m <agent.manifest.yaml>'",
 		)
 	}
-
 	// Stage the sample as a local template directory (azure.yaml at its root
 	// alongside referenced files) that azd-core can adopt with `azd init -t`.
 	stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
@@ -856,6 +990,21 @@ func runInitFromAzureYaml(
 		return err
 	}
 	defer cleanup()
+
+	if err := validateStagedAzureYaml(stagingDir, flags.manifestPointer); err != nil {
+		return err
+	}
+	if agentNameOverride != "" {
+		// Validate against the fully staged template so services whose host lives
+		// inside a local $ref are counted the same way azd-core will load them.
+		stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
+		if err != nil {
+			return fmt.Errorf("reading staged azure.yaml for agent name override: %w", err)
+		}
+		if err := validateAdoptedAgentNameOverride(stagedContent, stagingDir); err != nil {
+			return err
+		}
+	}
 
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
@@ -869,6 +1018,11 @@ func runInitFromAzureYaml(
 	// bicep-less by default.
 	if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
 		return err
+	}
+	if agentNameOverride != "" {
+		if err := applyAdoptedAgentNameOverride(ctx, azdClient, agentNameOverride); err != nil {
+			return err
+		}
 	}
 
 	// --- Interactive Azure context setup (subscription, Foundry project) ---
@@ -904,11 +1058,16 @@ func runInitFromAzureYaml(
 	// manages. Code deploy and --image (bring your own registry) both
 	// skip ACR.
 	skipACR := !usesContainer || flags.image != ""
+	// The adopt path only supports hosted agents today. Hosted-region filtering
+	// is independent from ACR setup; prompt-voice has its own region/onboarding
+	// constraints and does not flow through this path.
+	filterHostedRegions := true
 
 	result, err := configureFoundryProject(
 		ctx, azdClient, azureContext, env.Name,
 		flags.projectResourceId, flags.noPrompt,
 		skipACR,
+		filterHostedRegions,
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -1005,6 +1164,71 @@ func runInitFromAzureYaml(
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay)
 	return nil
+}
+
+func validateAdoptedAgentNameOverride(content []byte, projectRoot string) error {
+	var doc map[string]any
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return fmt.Errorf("parsing adopted azure.yaml for agent name override: %w", err)
+	}
+
+	services, ok := doc["services"].(map[string]any)
+	if !ok {
+		services = map[string]any{}
+	}
+
+	agentServices := 0
+	for serviceName, svc := range services {
+		svcMap, ok := svc.(map[string]any)
+		if !ok {
+			continue
+		}
+		if hasAzureYamlFileRef(svcMap) && projectRoot != "" {
+			resolved, err := foundry.ResolveFileRefs(svcMap, projectRoot)
+			if err != nil {
+				return fmt.Errorf("resolving $ref includes for service %q: %w", serviceName, err)
+			}
+			svcMap = resolved
+		}
+
+		host, _ := svcMap["host"].(string)
+		if host != AiAgentHost {
+			continue
+		}
+		agentServices++
+		if agentServices > 1 {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--agent-name cannot be applied to an adopted azure.yaml with multiple agent services",
+				"update each agent service's `name` in azure.yaml after init, or use a sample with a single agent service",
+			)
+		}
+	}
+	if agentServices == 0 {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--agent-name could not be applied because the adopted azure.yaml has no agent service",
+			"update the agent service's `name` in azure.yaml after init, or use a sample with an agent service",
+		)
+	}
+
+	return nil
+}
+
+func adoptedAgentNameOverride(flags *initFlags) (string, error) {
+	if !flags.agentNameExplicit {
+		return "", nil
+	}
+	agentNameOverride := strings.TrimSpace(flags.agentName)
+	if agentNameOverride == "" {
+		return "", nil
+	}
+	validatedName, err := validateInitAgentName(agentNameOverride)
+	if err != nil {
+		return "", err
+	}
+	flags.agentName = validatedName
+	return validatedName, nil
 }
 
 // adoptTargetDir resolves the directory the adopted project is created in and

@@ -20,6 +20,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -494,7 +496,7 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 				{Status: extensions.UpgradeStatusUpgraded},
 			},
 			wantMsgs: []string{
-				"2 upgraded",
+				"2 updated",
 			},
 		},
 		{
@@ -506,7 +508,7 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 				{Status: extensions.UpgradeStatusFailed},
 			},
 			wantMsgs: []string{
-				"1 upgraded",
+				"1 updated",
 				"1 skipped",
 				"1 promoted",
 				"1 failed",
@@ -519,7 +521,7 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 			},
 			wantMsgs: []string{
 				"1 failed",
-				"azd extension upgrade <name>",
+				"azd extension update <name>",
 			},
 		},
 		{
@@ -590,7 +592,7 @@ func TestUpgradeActionResult(t *testing.T) {
 		require.NotNil(t, actionResult)
 		assert.Equal(
 			t,
-			"Extensions upgraded successfully",
+			"Extensions updated successfully",
 			actionResult.Message.Header,
 		)
 	})
@@ -609,7 +611,7 @@ func TestUpgradeActionResult(t *testing.T) {
 			require.NotNil(t, actionResult)
 			assert.Contains(
 				t, err.Error(),
-				"2 of 3 extensions failed to upgrade",
+				"2 of 3 extensions failed to update",
 			)
 			assert.Contains(
 				t, actionResult.Message.Header,
@@ -643,7 +645,7 @@ func TestUpgradeActionResult_EmptyResults(t *testing.T) {
 	require.NotNil(t, actionResult)
 	assert.Equal(
 		t,
-		"Extensions upgraded successfully",
+		"Extensions updated successfully",
 		actionResult.Message.Header,
 	)
 }
@@ -916,6 +918,7 @@ func Test_NewExtensionInstallAction(t *testing.T) {
 		mockinput.NewMockConsole(),
 		nil, // extensionManager
 		nil, // sourceManager
+		nil, // transport
 	)
 	require.NotNil(t, action)
 }
@@ -1210,11 +1213,37 @@ func Test_NewExtensionUninstallFlags_Constructor(t *testing.T) {
 
 func Test_NewExtensionUpgradeFlags_Constructor(t *testing.T) {
 	t.Parallel()
-	cmd := &cobra.Command{Use: "test"}
-	global := &internal.GlobalCommandOptions{}
-	flags := newExtensionUpgradeFlags(cmd, global)
-	require.NotNil(t, flags)
-	assert.Equal(t, global, flags.global)
+
+	tests := []struct {
+		name string
+		flag string
+	}{
+		{name: "canonical", flag: "--no-dependency-updates"},
+		{name: "legacy alias", flag: "--no-dependency-upgrades"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := &cobra.Command{Use: "test"}
+			global := &internal.GlobalCommandOptions{}
+			flags := newExtensionUpgradeFlags(cmd, global)
+
+			require.NoError(t, cmd.Flags().Parse([]string{tt.flag}))
+			assert.Equal(t, global, flags.global)
+			assert.True(t, flags.noDependencyUpdates)
+
+			canonical := cmd.Flags().Lookup("no-dependency-updates")
+			require.NotNil(t, canonical)
+			assert.False(t, canonical.Hidden)
+
+			legacy := cmd.Flags().Lookup("no-dependency-upgrades")
+			require.NotNil(t, legacy)
+			assert.True(t, legacy.Hidden)
+			assert.Empty(t, legacy.Deprecated)
+		})
+	}
 }
 
 func Test_NewExtensionSourceAddFlags_Constructor(t *testing.T) {
@@ -1387,6 +1416,14 @@ func Test_ExtensionSourceRemoveAction_TooManyArgs(t *testing.T) {
 	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
 }
 
+func TestExtensionSourceDisplayName(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "valid-source", extensionSourceDisplayName("valid-source"))
+	require.Equal(t, `"legacy\nsource"`, extensionSourceDisplayName("legacy\nsource"))
+	require.Equal(t, `"\x1b[31mspoof"`, extensionSourceDisplayName("\x1b[31mspoof"))
+}
+
 func Test_ExtensionSourceValidateAction_NoArgs(t *testing.T) {
 	t.Parallel()
 	action := &extensionSourceValidateAction{args: []string{}}
@@ -1534,6 +1571,38 @@ func Test_ExtensionSourceAddAction_EmptyNameError(t *testing.T) {
 	}
 	_, err := action.Run(t.Context())
 	require.Error(t, err)
+}
+
+func Test_ExtensionSourceAddAction_EmitsSourceCategory(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+	t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+	sm, cfgMgr := newTestSourceManager(t)
+	cfg := config.NewEmptyConfig()
+	cfgMgr.On("Load").Return(cfg, nil)
+	cfgMgr.On("Save", mock.Anything).Return(nil)
+
+	action := &extensionSourceAddAction{
+		sourceManager: sm,
+		console:       mockinput.NewMockConsole(),
+		flags: &extensionSourceAddFlags{
+			name:     "private-source",
+			location: writeRegistryFile(t),
+			kind:     string(extensions.SourceKindFile),
+		},
+	}
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	var category string
+	for _, attr := range tracing.GetUsageAttributes() {
+		if attr.Key == fields.ExtensionSourceCategory.Key {
+			category = attr.Value.AsString()
+		}
+		require.NotContains(t, attr.Value.Emit(), action.flags.location)
+		require.NotContains(t, attr.Value.Emit(), action.flags.name)
+	}
+	require.Equal(t, string(extensions.SourceCategoryLocal), category)
 }
 
 func Test_ExtensionSourceListAction_DefaultSource(t *testing.T) {

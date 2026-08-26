@@ -378,7 +378,7 @@ func runInitManaged(
 	if err != nil {
 		return err
 	}
-	if err := emitResourceServices(
+	if _, err := emitResourceServices(
 		ctx, azdClient, agentName,
 		endpointRef,
 		deployments, nil, nil,

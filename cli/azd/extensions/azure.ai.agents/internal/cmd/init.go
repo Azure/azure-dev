@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -55,6 +56,7 @@ type initFlags struct {
 	model             string
 	manifestPointer   string
 	agentName         string
+	agentNameExplicit bool
 	description       string
 	src               string
 	env               string
@@ -72,15 +74,22 @@ type initFlags struct {
 	// connection prompts. Requires --agent-name when no --manifest is given. Incompatible
 	// with --deploy-mode code.
 	image string
+	// voice optionally overrides the output voice name for hidden/private
+	// prompt-voice automation. Public interactive flows use the default and let
+	// users edit azure.yaml for customization.
+	voice string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
 	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
 	// `azd config reset`, and `azd infra generate`.
 	force bool
 	// kind, when set, explicitly selects the agent runtime ("hosted",
-	// "prompt", or "managed") and bypasses the interactive kind prompt. This is
-	// primarily for non-interactive callers (--no-prompt) and automation;
-	// interactive users get the kind prompt when this is empty.
+	// "prompt", "managed", or "prompt-voice") and bypasses the interactive kind
+	// prompt. This is primarily for non-interactive callers (--no-prompt) and
+	// automation; interactive users get the kind prompt when this is empty.
+	// "prompt-voice" synthesizes a declarative (managed) voice agent manifest and
+	// routes it through the manifest flow (no code/image, no template/language
+	// selection, no ACR).
 	kind string
 	// harness, when set, names the execution harness written to the scaffolded
 	// prompt agent.yaml (only "github-copilot" is supported today). It overrides
@@ -90,7 +99,8 @@ type initFlags struct {
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
-	// infra selects the IaC flavor to eject from azure.yaml into ./infra/.
+	// infra selects the IaC flavor to eject from azure.yaml. Existing projects
+	// may receive a dedicated infra/foundry provisioning layer.
 	// Empty means the flag was not passed (bicepless default, no files). A bare
 	// `--infra` resolves to "bicep" via the flag's NoOptDefVal; `--infra=terraform`
 	// and `--infra=bicep` are explicit. The eject runs after a fresh init or
@@ -118,6 +128,7 @@ type InitAction struct {
 	deploymentDetails    []project.Deployment
 	containerSettings    *project.ContainerSettings
 	isCodeDeploy         bool // true when user selects code deploy mode; skips ACR config
+	isVoiceAgent         bool // true when the manifest kind is prompt-voice (managed, no container)
 	httpClient           *http.Client
 	serviceNameOverride  string // when set, addToProject uses this instead of the manifest name
 	createdFolderDisplay string // pre-computed relative display path for the created folder
@@ -139,7 +150,18 @@ type InitAction struct {
 // This happens when:
 // - Code deploy mode is selected (ZIP upload, no container build)
 // - Pre-built image is provided via --image flag (user manages their own registry)
+// - The manifest is a prompt-voice agent (managed, no container image)
 func (a *InitAction) skipACR() bool {
+	return a.isCodeDeploy || a.flags.image != "" || a.isVoiceAgent
+}
+
+// isHostedAgent reports whether the agent is deployed as an azd hosted agent
+// (code deploy or a pre-built --image). Hosted agents must land in a Foundry
+// project whose region supports hosted agents, so this gates the region filter
+// in selectFoundryProject. It is deliberately distinct from skipACR: a
+// prompt-voice agent also skips ACR, but is managed rather than hosted and must
+// not be constrained to hosted-agent regions.
+func (a *InitAction) isHostedAgent() bool {
 	return a.isCodeDeploy || a.flags.image != ""
 }
 
@@ -196,7 +218,7 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 		return exterrors.Compatibility(
 			exterrors.CodeIncompatibleAzdVersion,
 			"this version of the azure.ai.agents extension is incompatible with your installed version of azd.",
-			"upgrade azd to the latest version (https://aka.ms/azd/upgrade) and retry",
+			"update azd to the latest version (https://aka.ms/azd/upgrade) and retry",
 		)
 	}
 
@@ -646,6 +668,15 @@ func updateAgentDefinition(
 		}
 		update(&t.AgentDefinition)
 		return t, nil
+	case agent_yaml.VoiceAgent:
+		update(&t.AgentDefinition)
+		return t, nil
+	case *agent_yaml.VoiceAgent:
+		if t == nil {
+			return nil, fmt.Errorf("agent template is nil")
+		}
+		update(&t.AgentDefinition)
+		return t, nil
 	default:
 		return nil, fmt.Errorf("unsupported agent template type %T", template)
 	}
@@ -744,6 +775,60 @@ func synthesizeImageManifestFile(agentName, image string, flagProtocols []string
 			"description": fmt.Sprintf("Hosted container agent using pre-built image %s", image),
 			"protocols":   protocolDocs,
 		},
+	}
+
+	content, err := yaml.Marshal(doc)
+	if err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("marshaling synthesized manifest: %w", err)
+	}
+
+	manifestPath := filepath.Join(tmpDir, "agent.yaml")
+	if err := os.WriteFile(manifestPath, content, osutil.PermissionFile); err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("writing synthesized manifest: %w", err)
+	}
+
+	return manifestPath, cleanup, nil
+}
+
+// kindFlagPromptVoice is the accepted --kind value for a declarative voice agent.
+const kindFlagPromptVoice = "prompt-voice"
+
+// synthesizeVoiceManifestFile writes a temporary declarative (managed) voice
+// agent manifest (kind: prompt-voice) to a temp dir and returns its path plus a
+// cleanup func. Like synthesizeImageManifestFile, it lets `--kind prompt-voice`
+// (and the interactive voice option) route through the existing manifest flow,
+// skipping template/language selection and code scaffolding. A voice agent has
+// no image, Dockerfile, or source, so none of those are emitted. model_type is
+// written explicitly as "managed" from day one.
+func synthesizeVoiceManifestFile(agentName, model, voice string) (string, func(), error) {
+	noop := func() {}
+
+	if strings.TrimSpace(model) == "" {
+		model = defaultVoiceModel
+	}
+
+	tmpDir, err := os.MkdirTemp("", "azd-agent-voice-")
+	if err != nil {
+		return "", noop, fmt.Errorf("creating temp directory for synthesized manifest: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(tmpDir) }
+
+	template := map[string]any{
+		"kind":        string(agent_yaml.AgentKindPromptVoice),
+		"name":        agentName,
+		"description": "Declarative (managed) voice speech-to-speech agent",
+		"model_type":  string(agent_yaml.VoiceModelTypeManaged),
+		"model":       map[string]any{"id": model},
+	}
+	if v := strings.TrimSpace(voice); v != "" {
+		template["voice"] = v
+	}
+
+	doc := map[string]any{
+		"name":     agentName,
+		"template": template,
 	}
 
 	content, err := yaml.Marshal(doc)
@@ -1057,6 +1142,51 @@ func runInitFromManifest(
 	return action.Run(ctx)
 }
 
+// agentDefiningFlagsSet reports whether the caller passed any flag that
+// describes the agent to set up.
+//
+// Reusing an already-configured project is only safe when the command was not
+// told what to build. Each of these flags feeds a value init would otherwise
+// prompt for, so reusing while one is set would silently discard it — notably
+// under --no-prompt, where reuse is unconditional.
+//
+// srcBlocksReuse must come from cmd.Flags().Changed("src") for project reuse,
+// not from flags.src:
+// applyPositionalArg folds a positional directory into flags.src, so testing
+// the field would make `azd ai agent init .` — a documented form — skip reuse
+// and re-prompt, which is the very behavior issue #9154 reports.
+// Bare agent.yaml reuse passes false because it consumes --src as the directory
+// containing the definition instead of ignoring it.
+//
+// --env and --infra are deliberately absent: they describe the environment and
+// the IaC output rather than the agent, and both stay meaningful on a reuse run.
+func agentDefiningFlagsSet(flags *initFlags, srcBlocksReuse bool) bool {
+	return flags.agentName != "" ||
+		flags.deployMode != "" ||
+		flags.runtime != "" ||
+		flags.entryPoint != "" ||
+		flags.depResolution != "" ||
+		flags.model != "" ||
+		flags.modelDeployment != "" ||
+		flags.projectResourceId != "" ||
+		flags.image != "" ||
+		srcBlocksReuse ||
+		len(flags.protocols) > 0
+}
+
+// canReuseExistingAgentConfiguration reports whether init may reuse either a
+// project-owned definition or a bare agent.yaml without discarding caller
+// intent.
+func canReuseExistingAgentConfiguration(
+	flags *initFlags,
+	manifestDetectedButDeclined bool,
+	srcBlocksReuse bool,
+) bool {
+	return flags.manifestPointer == "" &&
+		!manifestDetectedButDeclined &&
+		!agentDefiningFlagsSet(flags, srcBlocksReuse)
+}
+
 func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &initFlags{}
 	extCtx = ensureExtensionContext(extCtx)
@@ -1115,6 +1245,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
     --image myacr.azurecr.io/agents/my-agent:v1`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
+			}
+			defer azdClient.Close()
+
 			flags.noPrompt = extCtx.NoPrompt
 			if flags.env == "" {
 				flags.env = extCtx.Environment
@@ -1146,31 +1283,43 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				infraProvider = p
 			}
 
-			// `--infra` on a directory that already has an azd agent project
+			// `--infra` inside a project that already declares a Foundry service
 			// is a standalone eject: synthesize infra (Bicep or Terraform) from
 			// the existing azure.yaml, write ./infra/, and return without
 			// prompting.
-			if infraProvider != "" && fileExists("azure.yaml") {
-				// Reject inputs the eject path would silently ignore (a
-				// positional arg, -m, or --src) instead of pretending they
-				// were honored.
-				if err := validateStandaloneEjectArgs(args, flags); err != nil {
-					return err
+			//
+			// Any other project — including one azd already manages that has no
+			// Foundry service yet — has nothing to eject, so `--infra` falls
+			// through to the normal init flow and ejects afterwards via
+			// ejectInfraAfterInit. See resolveInfraGate.
+			if infraProvider != "" {
+				gate, gateErr := resolveInfraGate(infraProvider)
+				if gateErr != nil {
+					return gateErr
 				}
-				cwd, err := os.Getwd()
-				if err != nil {
-					return fmt.Errorf("resolve current directory: %w", err)
+				if gate.standaloneEject {
+					// Reject init inputs the eject path would silently ignore
+					// instead of pretending they were honored. They stay valid
+					// on the init fall-through, where they do drive the flow.
+					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
+						return err
+					}
+					var env map[string]string
+					needsEnv, err := infraEjectNeedsEnvironment(gate.projectRoot)
+					if err != nil {
+						return err
+					}
+					if needsEnv {
+						env, err = readInfraEjectEnvironment(ctx, azdClient)
+						if err != nil {
+							return err
+						}
+					}
+					return ejectInfra(gate.projectRoot, infraProvider, env)
 				}
-				return ejectInfra(cwd, infraProvider)
 			}
 
-			ctx := azdext.WithAccessToken(cmd.Context())
-
-			azdClient, err := azdext.NewAzdClient()
-			if err != nil {
-				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
-			}
-			defer azdClient.Close()
+			flags.agentNameExplicit = cmd.Flags().Changed("agent-name")
 
 			if err := checkAiModelServiceAvailable(ctx, azdClient); err != nil {
 				return err
@@ -1211,19 +1360,20 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// that peek entirely so the hosted path never pays for an extra
 			// fetch of a remote pointer.
 			requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
-			if flags.kind != "" &&
+			isPromptVoice := strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
+			if flags.kind != "" && !isPromptVoice &&
 				requestedKind != AgentKindChoiceHosted &&
 				requestedKind != AgentKindChoicePrompt &&
 				requestedKind != AgentKindChoiceManaged {
 				return exterrors.Validation(
 					exterrors.CodeInvalidParameter,
 					fmt.Sprintf("unknown --kind value %q", flags.kind),
-					"supported values are: hosted, prompt, managed",
+					"supported values are: hosted, prompt, managed, prompt-voice",
 				)
 			}
 
 			var promptManifest *promptAgentManifest
-			if requestedKind != AgentKindChoiceHosted {
+			if requestedKind != AgentKindChoiceHosted && !isPromptVoice {
 				promptManifest, err = loadPromptManifestFromPointer(ctx, azdClient, flags, httpClient)
 				if err != nil {
 					return err
@@ -1274,6 +1424,36 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// when a template adds a subfolder to an existing project.
 			existingProject := fileExists("azure.yaml")
 
+			// Validate --kind prompt-voice and its incompatible options before either
+			// synthesis branch. The image and prompt-voice fast paths both mutate
+			// flags.manifestPointer, so validating inside one branch is unreachable
+			// when the other runs first (e.g. --kind prompt-voice --image would
+			// otherwise silently create a hosted image agent).
+			if isPromptVoice {
+				if !promptVoicePreviewEnabled() {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"prompt voice agent init is private preview",
+						fmt.Sprintf("set %s=true to enable prompt voice init", promptVoicePreviewEnvVar),
+					)
+				}
+				if flags.image != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--kind prompt-voice cannot be combined with --image",
+						"a voice agent is managed and has no container image; drop --image",
+					)
+				}
+				if flags.manifestPointer != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--kind prompt-voice cannot be combined with --manifest",
+						"a voice agent is synthesized from --agent-name/--model; "+
+							"drop --manifest, or omit --kind to adopt the manifest as-is",
+					)
+				}
+			}
+
 			// Bring-your-own-image fast path: when --image is set without a manifest,
 			// there is no source to scaffold and no template/language to choose.
 			// Synthesize a minimal hosted container manifest and route it through the
@@ -1303,9 +1483,31 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				userProvidedManifest = true
 			}
 
-			// Auto-detect an existing agent manifest in the target directory
-			// when no --manifest flag was provided.
-			//
+			// Prompt-voice fast path: when --kind prompt-voice is set without a
+			// manifest, there is no source to scaffold and no template/language to
+			// choose. Synthesize a declarative (managed) voice manifest and route it
+			// through the manifest flow (which skips the init-mode / template /
+			// language prompts and code scaffolding). Mirrors the --image fast path.
+			// --kind value and --image incompatibility are validated above, before
+			// either synthesis branch.
+			if isPromptVoice && flags.manifestPointer == "" {
+				if flags.agentName == "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--kind prompt-voice requires --agent-name",
+						"pass --agent-name <name>",
+					)
+				}
+				manifestPath, cleanup, err := synthesizeVoiceManifestFile(
+					flags.agentName, flags.model, flags.voice,
+				)
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+				flags.manifestPointer = manifestPath
+				userProvidedManifest = true
+			}
 			// manifestDetectedButDeclined: gates the definition-reuse scan below so
 			// a declined manifest is not re-discovered and mis-classified.
 			manifestDetectedButDeclined := false
@@ -1349,10 +1551,73 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
+			// When the project's own manifest already declares agent
+			// service(s), the values init would prompt for (agent name,
+			// protocols, deploy mode) are already recorded there. Offer to
+			// reuse that configuration instead of re-asking (issue #9154).
+			//
+			// This check runs before the bare agent.yaml scan below. A configured
+			// service may legitimately load its definition from agent.yaml; in
+			// that case project reuse must win so init does not add or replace a
+			// service that azure.yaml already owns.
+			//
+			// Any flag that describes the agent to set up states intent to
+			// configure that agent, so it opts out of reuse and falls through
+			// to the normal flow. Without that, a scripted
+			// `--no-prompt --deploy-mode code --runtime ...` in a repo that
+			// already declares an agent would silently no-op instead of
+			// honoring the flags the caller passed.
+			if canReuseExistingAgentConfiguration(
+				flags,
+				manifestDetectedButDeclined,
+				cmd.Flags().Changed("src"),
+			) {
+				detection := detectProjectAgentServices(ctx, azdClient)
+				if len(detection.services) > 0 &&
+					!positionalSourceOptsOutOfReuse(
+						flags.src,
+						detection.projectRoot,
+						detection.services,
+					) {
+					useExisting := flags.noPrompt
+					if !flags.noPrompt {
+						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+							Options: &azdext.ConfirmOptions{
+								Message: fmt.Sprintf(
+									"This project already configures %s. Use it?",
+									describeProjectAgentServices(detection.services),
+								),
+								DefaultValue: new(true),
+							},
+						})
+						if promptErr != nil {
+							if exterrors.IsCancellation(promptErr) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return fmt.Errorf("prompting for project agent reuse: %w", promptErr)
+						}
+						useExisting = *confirmResp.Value
+					}
+					if useExisting {
+						if err := runReuseProjectAgentServices(
+							ctx, flags, azdClient, detection.services,
+						); err != nil {
+							return err
+						}
+						return ejectInfraAfterInit(ctx, infraProvider, azdClient)
+					}
+				}
+			}
+
 			// When no manifest was detected, look for a bare agent.yaml definition
 			// to reuse (issue #7268). Skips the init-mode prompt and from-code
-			// scaffolding. Bypassed when the user already declined a manifest above.
-			if flags.manifestPointer == "" && !manifestDetectedButDeclined {
+			// scaffolding. Bypassed when the user already declined a manifest
+			// above or supplied agent-defining flags that reuse would ignore.
+			if canReuseExistingAgentConfiguration(
+				flags,
+				manifestDetectedButDeclined,
+				false,
+			) {
 				checkDir := flags.src
 				if checkDir == "" {
 					checkDir = "."
@@ -1385,7 +1650,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if flags.src == "" {
 							flags.src = checkDir
 						}
-						return runReuseDefinition(ctx, flags, azdClient, httpClient, checkDir, existing)
+						if err := runReuseDefinition(ctx, flags, azdClient, httpClient, checkDir, existing); err != nil {
+							return err
+						}
+						return ejectInfraAfterInit(ctx, infraProvider, azdClient)
 					}
 				}
 			}
@@ -1402,16 +1670,38 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				// (generate the project). For private GitHub URLs, the detector
 				// falls back to the authenticated gh CLI download path before
 				// deciding whether this is a unified azure.yaml. See #8798.
+				manifestRoot := ""
+				if isLocalFilePath(flags.manifestPointer) {
+					manifestRoot = filepath.Dir(flags.manifestPointer)
+				}
 				if content, ok := readManifestContentForInitDetection(
 					ctx, azdClient, flags.manifestPointer, httpClient,
-				); ok && looksLikeFoundryAzureYaml(content) {
-					if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
-						if exterrors.IsCancellation(err) {
-							return exterrors.Cancelled("initialization was cancelled")
-						}
+				); ok {
+					manifestInfo, err := inspectAzureYaml(content, manifestRoot)
+					if err != nil {
 						return err
 					}
-					return nil
+					if manifestInfo.hasServices {
+						if manifestInfo.hasAgentService ||
+							manifestInfo.hasUnresolvedRefs {
+							if err := runInitFromAzureYaml(
+								ctx,
+								flags,
+								azdClient,
+								httpClient,
+								content,
+							); err != nil {
+								if exterrors.IsCancellation(err) {
+									return exterrors.Cancelled(
+										"initialization was cancelled",
+									)
+								}
+								return err
+							}
+							return ejectInfraAfterInit(ctx, infraProvider, azdClient)
+						}
+						return missingAgentServiceError(flags.manifestPointer)
+					}
 				}
 
 				// Resolve the agent name BEFORE creating the project folder
@@ -1460,15 +1750,23 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 					}
 
-					if !manifestInCwd {
+					if manifestInCwd {
+						if flags.src == "" {
+							flags.src = "."
+						}
+					} else if strings.EqualFold(flags.kind, kindFlagPromptVoice) && existingProject {
+						// A prompt-voice agent carries no source code, so inside an
+						// existing project it is appended to the current azure.yaml
+						// (targetDir stays ".") like other agents, rather than
+						// scaffolded into a nested <name>/ project. Matches the
+						// interactive voice branch.
+					} else {
 						_, statErr := os.Stat(folderName)
 						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
 						targetDir = folderName
 						if newlyCreated && !existingProject {
 							folderDisplay = filepath.ToSlash(folderName)
 						}
-					} else if flags.src == "" {
-						flags.src = "."
 					}
 				}
 
@@ -1520,21 +1818,26 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							)
 						}
 
-						// Resolve the agent name BEFORE creating the project
-						// folder so the folder and agent identity use the same
-						// name. Use the azure.yaml project name as the default,
-						// falling back to the template title.
+						// Resolve --agent-name only when the user explicitly
+						// provided it. Unified azure.yaml adoption can contain
+						// multiple agent services, so an interactive/default
+						// single name must not be treated as an override.
 						defaultName := foundryProjectName(content)
 						if defaultName == "" {
 							defaultName = folderNameStrippingParenSuffix(selectedTemplate.Title)
 						}
 
-						resolvedName, err := resolveInitAgentName(ctx, azdClient, flags, defaultName)
-						if err != nil {
-							if exterrors.IsCancellation(err) {
-								return exterrors.Cancelled("initialization was cancelled")
+						resolvedName := defaultName
+						if flags.agentNameExplicit {
+							var err error
+							resolvedName, err = resolveInitAgentName(ctx, azdClient, flags, defaultName)
+							if err != nil {
+								if exterrors.IsCancellation(err) {
+									return exterrors.Cancelled("initialization was cancelled")
+								}
+								return err
 							}
-							return err
+							flags.agentName = resolvedName
 						}
 
 						if flags.src == "" && resolvedName != "" {
@@ -1593,6 +1896,57 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 					}
 
+				case initModeVoice:
+					// User chose to create a declarative (managed) voice agent.
+					// Resolve the agent name, synthesize a prompt-voice manifest,
+					// and route it through the manifest flow — the same path as
+					// `azd ai agent init --kind prompt-voice`.
+					resolvedName, err := resolveInitAgentName(ctx, azdClient, flags, "voice-agent")
+					if err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+					// Pin the resolved name so the inner resolveInitAgentName call
+					// in runInitFromManifest short-circuits instead of prompting a
+					// second time. Mirrors resolveAgentNameFromManifestPointer.
+					flags.agentName = resolvedName
+
+					manifestPath, cleanup, err := synthesizeVoiceManifestFile(
+						resolvedName, flags.model, flags.voice,
+					)
+					if err != nil {
+						return err
+					}
+					defer cleanup()
+					flags.manifestPointer = manifestPath
+
+					// When run inside an existing azd project, append the voice
+					// agent as a new service to the current azure.yaml
+					// (targetDir="."), matching hosted and other agents, instead
+					// of scaffolding a nested <name>/ project. Only a brand-new
+					// (empty) init creates the <name>/ project folder.
+					targetDir := "."
+					var folderDisplay string
+					if !existingProject {
+						folderName := sanitizeAgentName(resolvedName)
+						_, statErr := os.Stat(folderName)
+						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+						targetDir = folderName
+						if newlyCreated {
+							folderDisplay = filepath.ToSlash(folderName)
+						}
+					}
+					if err := runInitFromManifest(
+						ctx, flags, azdClient, httpClient, targetDir, folderDisplay, true,
+					); err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+
 				default:
 					// initModeFromCode - use existing code in current directory
 					action := &InitFromCodeAction{
@@ -1614,29 +1968,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// wrote azure.yaml, chain the eject step. Skip silently when init
 			// didn't produce a foundry-bearing azure.yaml (cancelled or
 			// non-foundry flow) to avoid a confusing "nothing to eject" error.
-			if infraProvider != "" {
-				cwd, err := os.Getwd()
-				if err != nil {
-					return fmt.Errorf("resolve current directory: %w", err)
-				}
-				//nolint:gosec // G304: azure.yaml in the current azd project directory
-				rawYAML, readErr := os.ReadFile(filepath.Join(cwd, "azure.yaml"))
-				switch {
-				case errors.Is(readErr, fs.ErrNotExist):
-					// Init didn't write azure.yaml; nothing to eject.
-				case readErr != nil:
-					return fmt.Errorf("read azure.yaml after init: %w", readErr)
-				default:
-					// Skip silently when no foundry service is present.
-					if _, svcErr := findFoundryServiceForEject(rawYAML); svcErr == nil {
-						if err := ejectInfra(cwd, infraProvider); err != nil {
-							return err
-						}
-					}
-				}
-			}
-
-			return nil
+			return ejectInfraAfterInit(ctx, infraProvider, azdClient)
 		},
 	}
 
@@ -1647,7 +1979,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
 
 	cmd.Flags().StringVar(&flags.model, "model", "",
-		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided")
+		fmt.Sprintf(
+			"Name of the AI model to deploy. Defaults to '%s' during interactive model selection; "+
+				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
+				"--model-deployment takes precedence.",
+			defaultAgentModel,
+		))
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest (hosted or 'kind: prompt'), or to a sample's unified azure.yaml to adopt as the project manifest")
@@ -1682,14 +2019,20 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Dockerfile generation, and ACR setup, and requires --agent-name. "+
 			"Incompatible with --deploy-mode code.")
 
+	cmd.Flags().StringVar(&flags.voice, "voice", "",
+		"Output voice name for private prompt-voice automation. Hidden until public preview.")
+	_ = cmd.Flags().MarkHidden("voice")
+
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
 			"Required together with --no-prompt when init would otherwise need confirmation.")
 
 	cmd.Flags().StringVar(&flags.kind, "kind", "",
 		"Agent runtime to initialize: 'hosted' (bring your own code/container), 'prompt' "+
-			"(model + instructions; Foundry runs the agent directly, no harness), or 'managed' "+
-			"(a prompt agent that additionally runs on the GitHub Copilot Brain+Hand harness). When omitted, "+
+			"(model + instructions; Foundry runs the agent directly, no harness), 'managed' "+
+			"(a prompt agent that additionally runs on the GitHub Copilot Brain+Hand harness), or "+
+			"'prompt-voice' (a declarative voice agent; use --model for the speech-to-speech model "+
+			"and --voice for the output voice). When omitted, "+
 			"the kind is taken from --manifest when it declares one, otherwise you are prompted "+
 			"interactively. With --no-prompt, 'prompt' and 'managed' require --agent-name and "+
 			"either --model or --model-deployment (unless supplied by --manifest).")
@@ -1697,10 +2040,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Execution harness for a prompt agent: 'github-copilot' (GitHub Copilot Brain+Hand) "+
 			"or 'none'. Overrides the harness implied by --kind. Ignored for hosted agents.")
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
-		"Eject infrastructure-as-code from azure.yaml into ./infra/. "+
+		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
+			"Foundry files are generated as a separate infra/foundry layer. "+
 			"A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets "+
-			"infra.provider: terraform; --infra=bicep is explicit Bicep. "+
-			"When azure.yaml already exists, runs as a standalone eject and skips the init prompts.")
+			"the Foundry layer provider to terraform; Bicep keeps the microsoft.foundry provider. "+
+			"--infra=bicep is explicit Bicep. "+
+			"When azure.yaml already declares a Foundry project service, runs as a standalone "+
+			"eject and skips the init prompts; otherwise init runs first and the eject follows it.")
 	// NoOptDefVal makes a bare `--infra` resolve to "bicep" while still allowing
 	// `--infra=terraform` / `--infra=bicep`. Absent flag stays "" (no eject).
 	cmd.Flags().Lookup("infra").NoOptDefVal = project.BicepProviderName
@@ -1941,8 +2287,8 @@ func ensureProject(
 			if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
 				fmt.Printf("%s", output.WithWarningFormat(
 					"No infra/ directory found in the project, and azure.yaml does not declare "+
-						"'infra.provider: %s'. If you need Azure infrastructure for deployment, "+
-						"set that provider in azure.yaml, or run "+
+						"the '%s' provider. If you need Azure infrastructure for deployment, "+
+						"declare that provider in azure.yaml, or run "+
 						"'azd ai agent init --infra' to generate an infra/ directory.\n",
 					project.FoundryProviderName,
 				))
@@ -2087,13 +2433,55 @@ func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) erro
 	return nil
 }
 
-// hasFoundryProviderDeclared reports whether azure.yaml already
-// declares this extension's provisioning provider.
+// hasFoundryProviderDeclared reports whether azure.yaml declares the Foundry
+// provider at the root or on an infrastructure layer. Project().Get exposes
+// only root infra options today, so inspect the project file for layers.
 func hasFoundryProviderDeclared(proj *azdext.ProjectConfig) bool {
 	if proj == nil || proj.Infra == nil {
 		return false
 	}
-	return proj.Infra.Provider == project.FoundryProviderName
+	if proj.Path == "" {
+		return proj.Infra.Provider == project.FoundryProviderName
+	}
+
+	var raw []byte
+	for _, name := range azdcontext.ProjectFileNames {
+		data, err := os.ReadFile(filepath.Join(proj.Path, name)) //nolint:gosec // project path is from azd
+		if err == nil {
+			raw = data
+			break
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return proj.Infra.Provider == project.FoundryProviderName
+		}
+	}
+	if raw == nil {
+		return proj.Infra.Provider == project.FoundryProviderName
+	}
+	var doc struct {
+		Infra struct {
+			Provider string `yaml:"provider"`
+			Layers   []struct {
+				Provider string `yaml:"provider"`
+			} `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return proj.Infra.Provider == project.FoundryProviderName
+	}
+	if doc.Infra.Provider == project.FoundryProviderName && len(doc.Infra.Layers) == 0 {
+		return true
+	}
+	for _, layer := range doc.Infra.Layers {
+		provider := layer.Provider
+		if provider == "" {
+			provider = doc.Infra.Provider
+		}
+		if provider == project.FoundryProviderName {
+			return true
+		}
+	}
+	return false
 }
 
 func getExistingEnvironment(ctx context.Context, envName string, azdClient *azdext.AzdClient) *azdext.Environment {
@@ -2127,6 +2515,24 @@ func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
 	return false
 }
 
+// agentManifestKind extracts the agent kind from a manifest's template. The kind
+// lives inside the (untyped) Template payload rather than on AgentManifest, so we
+// round-trip the template into an AgentDefinition to read it. Mirrors the
+// extraction addToProject performs before dispatching on kind.
+func agentManifestKind(manifest *agent_yaml.AgentManifest) (agent_yaml.AgentKind, error) {
+	templateBytes, err := json.Marshal(manifest.Template)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal agent template to JSON: %w", err)
+	}
+
+	var agentDef agent_yaml.AgentDefinition
+	if err := json.Unmarshal(templateBytes, &agentDef); err != nil {
+		return "", fmt.Errorf("failed to unmarshal agent template to AgentDefinition: %w", err)
+	}
+
+	return agentDef.Kind, nil
+}
+
 // configureModelChoice presents the "use existing / deploy new" model configuration choice
 // and establishes the necessary Azure context (subscription, location, project) before
 // ProcessModels is called. This defers subscription/location prompting until we know
@@ -2134,6 +2540,14 @@ func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
 func (a *InitAction) configureModelChoice(
 	ctx context.Context, agentManifest *agent_yaml.AgentManifest,
 ) (*agent_yaml.AgentManifest, error) {
+	// Record whether this manifest is a prompt-voice (managed) agent so ACR is
+	// skipped (skipACR) without treating it as a hosted agent for region
+	// filtering (isHostedAgent). Best-effort: a parse failure here leaves the
+	// default non-voice behavior unchanged.
+	if kind, err := agentManifestKind(agentManifest); err == nil {
+		a.isVoiceAgent = kind == agent_yaml.AgentKindPromptVoice
+	}
+
 	// When no --project-id flag was given, check whether the azd environment already
 	// has a Foundry project configured from a previous init. If so, reuse it so the
 	// user isn't prompted to select a project they already chose.
@@ -2190,6 +2604,7 @@ func (a *InitAction) configureModelChoice(
 		result, err := configureFoundryProject(
 			ctx, a.azdClient, a.azureContext, a.environment.Name,
 			a.flags.projectResourceId, a.flags.noPrompt, a.skipACR(),
+			a.isHostedAgent(), // filterHostedRegions: voice/managed agents are not region-restricted
 		)
 		if err != nil {
 			return nil, err
@@ -2218,7 +2633,8 @@ func (a *InitAction) configureModelChoice(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
 			a.skipACR(),
-			true, // bicepless
+			a.isHostedAgent(), // filterHostedRegions
+			true,              // bicepless
 		)
 		if err != nil {
 			return nil, err
@@ -2297,7 +2713,8 @@ func (a *InitAction) configureModelChoice(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
 				a.skipACR(),
-				true, // bicepless
+				a.isHostedAgent(), // filterHostedRegions
+				true,              // bicepless
 			)
 			if err != nil {
 				return nil, err
@@ -2889,6 +3306,10 @@ func writeAgentIgnoreFile(targetDir string) error {
 	return nil
 }
 
+func printAgentAddedMessage(agentName string) {
+	fmt.Printf("\nAdded agent '%s' to azure.yaml.\n", agentName)
+}
+
 func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
@@ -2922,6 +3343,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	var agentDef agent_yaml.AgentDefinition
 	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
 		return fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
+	}
+
+	// Voice agents (kind: prompt-voice) carry no container/image/code config and
+	// take an entirely different service-entry shape. Handle them in an isolated
+	// branch and return early so the container path below is unaffected.
+	if agentDef.Kind == agent_yaml.AgentKindPromptVoice {
+		return a.addVoiceAgentToProject(ctx, targetDir, agentManifest)
 	}
 
 	var agentConfig = project.ServiceTargetAgentConfig{}
@@ -3048,6 +3476,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if err != nil {
 		return err
 	}
+	agentEnvironment := project.AgentEnvironment(containerDef)
 
 	serviceConfig := &azdext.ServiceConfig{
 		Name:                 a.serviceNameOverride,
@@ -3081,6 +3510,14 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
+	if err := setServiceEnvironment(
+		ctx,
+		a.azdClient,
+		a.serviceNameOverride,
+		agentEnvironment,
+	); err != nil {
+		return err
+	}
 
 	// Emit the sibling Foundry resource services (project + deployments,
 	// connections, toolboxes) and wire the agent's uses: to them. A selected
@@ -3092,18 +3529,22 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if err != nil {
 		return err
 	}
-	if err := emitResourceServices(
+	emittedConnections, err := emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
 		endpointRef,
 		resourceDeployments, resourceConnections, resourceToolboxes,
-	); err != nil {
+	)
+	if err != nil {
 		return err
 	}
-
-	fmt.Printf(
-		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
-		a.serviceNameOverride,
+	recordPendingConnectionProvision(
+		ctx,
+		a.azdClient,
+		a.environment.Name,
+		emittedConnections,
 	)
+
+	printAgentAddedMessage(agentDef.Name)
 
 	// Replace the legacy hardcoded `azd up` / `azd deploy` hint with the
 	// shared nextstep resolver. The resolver inspects the current azd
@@ -3114,6 +3555,85 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// everything is configured. All paths append the deploy hint as the
 	// trailing line. State-assembly errors are intentionally ignored: the
 	// resolver degrades gracefully on partial state per the design spec.
+	var stateOpts []nextstep.Option
+	if a.createdFolderDisplay != "" {
+		stateOpts = append(stateOpts, nextstep.WithCreatedFolder(a.createdFolderDisplay))
+	}
+	state, _ := nextstep.AssembleState(ctx, a.azdClient, stateOpts...)
+	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
+	return nil
+}
+
+// addVoiceAgentToProject writes a prompt-voice (declarative, managed) agent as an
+// azure.ai.agent service entry. Voice agents carry no container/image/code
+// config, so this path skips startup-command detection, Docker settings, and
+// pre-built image handling entirely. The agent definition is embedded inline
+// using the voice-specific writer; sibling Foundry resource services (project)
+// are still emitted so provision wires the endpoint.
+func (a *InitAction) addVoiceAgentToProject(
+	ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest,
+) error {
+	if targetDir == "." {
+		if cwd, err := os.Getwd(); err == nil && a.projectConfig != nil && a.projectConfig.Path != "" {
+			if relPath, err := filepath.Rel(a.projectConfig.Path, cwd); err == nil && relPath != "." {
+				targetDir = filepath.ToSlash(relPath)
+			}
+		}
+	}
+
+	// Rebuild the full VoiceAgent from the manifest template so it can be
+	// embedded inline on the service entry.
+	templateYAML, err := yaml.Marshal(agentManifest.Template)
+	if err != nil {
+		return fmt.Errorf("marshaling voice agent definition: %w", err)
+	}
+	var voiceDef agent_yaml.VoiceAgent
+	if err := yaml.Unmarshal(templateYAML, &voiceDef); err != nil {
+		return fmt.Errorf("parsing voice agent definition: %w", err)
+	}
+
+	agentConfig := project.ServiceTargetAgentConfig{}
+	agentProps, err := project.VoiceAgentDefinitionToServiceProperties(voiceDef, &agentConfig)
+	if err != nil {
+		return err
+	}
+
+	serviceConfig := &azdext.ServiceConfig{
+		Name:                 a.serviceNameOverride,
+		RelativePath:         targetDir,
+		Host:                 AiAgentHost,
+		AdditionalProperties: agentProps,
+	}
+
+	req := &azdext.AddServiceRequest{Service: serviceConfig}
+	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
+		return fmt.Errorf("adding voice agent service to project: %w", err)
+	}
+
+	// Emit the sibling Foundry project service so provision reuses/creates the
+	// project. Voice init emits no deployment/connection/toolbox siblings; managed
+	// models are service-hosted, and BYOM model deployments are referenced from
+	// azure.yaml and must already exist. The endpoint itself lives in the azd
+	// environment; azure.yaml only references it.
+	endpointRef, err := recordFoundryProjectEnv(
+		ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject,
+	)
+	if err != nil {
+		return err
+	}
+	if _, err := emitResourceServices(
+		ctx, a.azdClient, a.serviceNameOverride,
+		endpointRef,
+		nil, nil, nil,
+	); err != nil {
+		return err
+	}
+
+	fmt.Printf(
+		"\nAdded your voice agent as a service entry named '%s' under the file azure.yaml.\n",
+		a.serviceNameOverride,
+	)
+
 	var stateOpts []nextstep.Option
 	if a.createdFolderDisplay != "" {
 		stateOpts = append(stateOpts, nextstep.WithCreatedFolder(a.createdFolderDisplay))

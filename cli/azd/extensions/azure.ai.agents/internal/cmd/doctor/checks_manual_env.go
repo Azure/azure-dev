@@ -8,23 +8,20 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"azureaiagent/internal/cmd/nextstep"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // newCheckManualEnvVars produces Check `local.manual-env-vars` — the
 // "manual config values not set" diagnostic.
 //
 // "Manual" env vars are values referenced by `${...}` syntax inside an
-// agent.yaml whose names are NOT declared as outputs of the project's
-// infrastructure (Bicep / Terraform). They are operator-supplied:
+// agent configuration whose names are NOT declared as outputs of
+// the project's infrastructure (Bicep / Terraform). They are
+// operator-supplied:
 // third-party API keys, model deployment names, hand-rolled connection
 // strings. They have to be set in the active azd environment before
 // `azd ai agent run` (local) or `azd deploy` (Azure) can resolve the
-// agent.yaml — otherwise the running agent sees the literal `${KEY}`
-// string and almost certainly fails on first use.
+// agent configuration — otherwise the running agent sees the literal
+// `${KEY}` string and almost certainly fails on first use.
 //
 // The classification of "manual" vs "infra" lives in nextstep's
 // AssembleState (the same pipeline that drives the `Next:` renderer's
@@ -42,10 +39,10 @@ import (
 //   - deps.AzdClient is nil (gRPC channel unavailable). Check
 //     `local.grpc-extension` will already have failed with the actionable
 //     error.
-//   - `local.agent-yaml-valid` failed or was skipped. A broken agent.yaml
-//     produces an empty MissingManualVars (the classifier can't extract
-//     references it can't parse), which would mislead the user into
-//     thinking nothing was missing. This guard transitively covers the
+//   - `local.agent-yaml-valid` failed or was skipped. A broken agent
+//     definition produces an empty MissingManualVars (the classifier
+//     can't extract references it can't parse), which would mislead
+//     the user into thinking nothing was missing. This guard covers the
 //     azure-yaml → agent-service-detected → agent-yaml-valid arm of the
 //     local-check chain (each step's own skip-cascade propagates here).
 //   - `local.environment-selected` failed or was skipped.
@@ -85,17 +82,11 @@ func newCheckManualEnvVars(deps Dependencies) Check {
 				// would be empty and the check would falsely Pass.
 				return Result{
 					Status:  StatusSkip,
-					Message: "skipped: no azd environment selected (cannot resolve agent.yaml variables)",
+					Message: "skipped: no azd environment selected (cannot resolve agent environment variables)",
 				}
 			}
 
-			assembler := deps.assembleState
-			if assembler == nil {
-				assembler = func(c context.Context, client *azdext.AzdClient) (*nextstep.State, []error) {
-					return nextstep.AssembleState(c, client)
-				}
-			}
-			state, errs := assembler(ctx, deps.AzdClient)
+			state, errs := deps.AssembleAgentState(ctx)
 			if state == nil {
 				// AssembleState always returns a non-nil State even when errs
 				// is non-empty — but defend against a future contract change
@@ -108,6 +99,23 @@ func newCheckManualEnvVars(deps Dependencies) Check {
 					Status:     StatusFail,
 					Message:    fmt.Sprintf("failed to assemble agent state: %s", cause),
 					Suggestion: "Re-run `azd ai agent doctor`; the state assembly returned nil unexpectedly.",
+				}
+			}
+
+			loadErrors := slices.Clone(state.EnvironmentLoadErrors)
+			slices.Sort(loadErrors)
+			if len(loadErrors) > 0 {
+				return Result{
+					Status: StatusFail,
+					Message: fmt.Sprintf(
+						"agent environment configuration could not be loaded: %s",
+						strings.Join(loadErrors, "; "),
+					),
+					Suggestion: "Fix azure.yaml, its referenced file, or the legacy agent file, " +
+						"then re-run `azd ai agent doctor`.",
+					Details: map[string]any{
+						"environmentLoadErrors": loadErrors,
+					},
 				}
 			}
 
@@ -135,7 +143,7 @@ func newCheckManualEnvVars(deps Dependencies) Check {
 			return Result{
 				Status: StatusFail,
 				Message: fmt.Sprintf(
-					"%d manual env var(s) referenced by agent.yaml are not set in the azd environment: %s",
+					"%d manual env var(s) referenced by agent configuration are not set in the azd environment: %s",
 					len(missing), strings.Join(missing, ", ")),
 				Suggestion: suggestion,
 				Details: map[string]any{

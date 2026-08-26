@@ -595,7 +595,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "invocations only",
 			flagProtocols: []string{"invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "invocations", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "2.0.0"},
 			},
 		},
 		{
@@ -610,7 +610,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			flagProtocols: []string{"responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
-				{Protocol: "invocations", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "2.0.0"},
 			},
 		},
 		{
@@ -624,7 +624,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			flagProtocols: []string{"responses", "responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
-				{Protocol: "invocations", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "2.0.0"},
 			},
 		},
 		{
@@ -753,7 +753,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
-				{Protocol: "invocations", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "2.0.0"},
 			},
 		},
 		{

@@ -143,12 +143,14 @@ func generateFlags(cmd *cobra.Command) []extensions.Flag {
 			return
 		}
 
+		flagType := getFlagType(flag)
 		flagMeta := extensions.Flag{
-			Name:        flag.Name,
-			Shorthand:   flag.Shorthand,
-			Description: flag.Usage,
-			Type:        getFlagType(flag),
-			Hidden:      flag.Hidden,
+			Name:          flag.Name,
+			Shorthand:     flag.Shorthand,
+			Description:   flag.Usage,
+			Type:          flagType,
+			ValueOptional: flagType != "bool" && flag.NoOptDefVal != "",
+			Hidden:        flag.Hidden,
 		}
 
 		if flag.DefValue != "" {

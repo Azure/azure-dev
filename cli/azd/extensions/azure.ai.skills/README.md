@@ -47,6 +47,52 @@ manual zip step.
 All commands accept the standard cross-cutting flags: `-p` / `--project-endpoint`,
 `--output table|json`, `--no-prompt`, and `--debug`.
 
+## Composing skills in `azure.yaml`
+
+Declare a skill as its own service to reconcile it with `azd deploy` or
+`azd up`:
+
+```yaml
+services:
+  triage-rules:
+    host: azure.ai.skill
+    description: Rules for triaging incoming issues
+    instructions: Classify the issue, identify its owner, and recommend next steps.
+    license: MIT
+    compatibility: gpt-5
+    metadata:
+      owner: support
+    tools:
+      - web_search
+
+  support-agent:
+    host: azure.ai.agent
+    uses:
+      - triage-rules
+    skill: triage-rules
+```
+
+`instructions` can also reference a `.md` or `.txt` file. To preserve a
+complete skill package, use `archive` instead of the inline fields:
+
+```yaml
+services:
+  triage-rules:
+    host: azure.ai.skill
+    archive: ./skills/triage-rules
+```
+
+`archive` accepts a `.zip` file or a directory with `SKILL.md` at its root.
+Relative instruction and archive paths resolve from the service's `project`
+path when set, otherwise from the directory containing `azure.yaml`. Parent
+traversal (`..`) is rejected.
+
+Deploying the skill creates a new immutable default version and publishes
+readiness markers for dependent agent services. A consuming agent must list
+the skill service in `uses:` so azd deploys it first. Removing the service from
+`azure.yaml` stops azd managing the skill but does not delete it; use
+`azd ai skill delete` for deletion.
+
 ## Project endpoint resolution
 
 The Foundry project endpoint is resolved in this order:

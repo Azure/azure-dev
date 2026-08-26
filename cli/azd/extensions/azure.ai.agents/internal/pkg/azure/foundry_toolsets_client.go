@@ -17,7 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 
-	"azureaiagent/internal/version"
+	"azureaiagent/internal/pkg/useragent"
 )
 
 const (
@@ -35,8 +35,6 @@ func NewFoundryToolboxClient(
 	endpoint string,
 	cred azcore.TokenCredential,
 ) *FoundryToolboxClient {
-	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
-
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{azsdk.MsCorrelationIdHeader, "X-Request-Id"},
@@ -45,7 +43,7 @@ func NewFoundryToolboxClient(
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
 			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy(userAgent),
+			azsdk.NewUserAgentPolicy(useragent.Default()),
 		},
 	}
 

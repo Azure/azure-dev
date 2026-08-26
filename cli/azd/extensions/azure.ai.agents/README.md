@@ -13,6 +13,90 @@ Use `--no-inspector` to run only the local agent process:
 azd ai agent run --no-inspector
 ```
 
+## Publishing a Digital Worker
+
+An Activity-protocol hosted agent can be published as a Microsoft 365 Digital
+Worker. Declare the Digital Worker settings on the `azure.ai.agent` service in
+`azure.yaml`, deploy the agent, and then publish it:
+
+```yaml
+services:
+  my-digital-worker:
+    host: azure.ai.agent
+    project: src/my-digital-worker
+    language: python
+    kind: hosted
+    name: my-digital-worker
+    protocols:
+      - protocol: activity
+        version: 2.0.0
+    activity:
+      useCase: digital_worker
+      publish:
+        publishScope: tenant
+        agentDisplayName: My Digital Worker
+        agenticUserTemplate:
+          id: digitalWorkerTemplate
+          file: agenticUserTemplateManifest.json
+          schemaVersion: 0.1.0-preview
+          communicationProtocol: activityProtocol
+```
+
+The `activity.publish` block is shared Microsoft 365 app publish metadata for
+Activity use cases (including `simple`). For `digital_worker`, azd enforces
+additional constraints: `publish` must be present, `publishScope` must be
+`tenant`, and `agenticUserTemplate` must include `id`, `file`,
+`schemaVersion`, and `communicationProtocol`. The publish request sets
+`publishAsAutopilot` automatically to `true` for this use case; users do not
+need to declare it in YAML. The Agent Identity Blueprint ID is generated during
+deployment and added to the publish request automatically.
+
+```bash
+azd deploy
+azd ai agent publish
+```
+
+For `simple` Activity agents, `publishScope` accepts `shared` or `tenant`. For
+`digital_worker`, `publishScope` is always `tenant`.
+An explicit `azd ai agent publish --scope <scope>` overrides the configured
+value where allowed by the use case. Use `--display-name` and `--app-version`
+to override the corresponding configured publish metadata for one command
+invocation.
+
+The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
+move it, which is what you need when running two agents side by side or when a
+stale process still holds the default port:
+
+```bash
+azd ai agent run --port 9091 --inspector-port 9002
+```
+
+`--inspector-port` is rejected when it cannot be honored:
+
+- with `--no-client` (or the deprecated `--no-inspector`), since no local client
+  is opened and the port would go unused; and
+- for agents that use Agent Inspector, when it matches `--port`, since the agent
+  binds that address first and the inspector would then fail to bind it.
+
+azd also warns, without failing the run, when `--inspector-port` cannot take
+effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
+than the Agent Inspector, and `--port 8087` on its own collides with the
+inspector's own default UI port.
+
+### Local client route telemetry
+
+When installed from the official registry, the extension reports the
+`local_client.route.selected` usage event after `azd ai agent run` resolves the
+service and protocol profile. Its `ext.route` attribute is exactly one of:
+
+- `inspector` for a non-activity agent;
+- `playground` for an activity-protocol agent; or
+- `suppressed` when `--no-client` or the deprecated `--no-inspector` is set.
+
+The event is emitted before checking client availability, starting the local
+agent, or launching a client. It records route selection, not successful client
+launch.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the
@@ -34,6 +118,7 @@ services:
     project: .
     config:
       kind: hosted
+      name: my-agent
       description: My hosted agent
 ```
 
@@ -45,8 +130,170 @@ services:
     host: azure.ai.agent
     project: .
     kind: hosted
+    name: my-agent
     description: My hosted agent
 ```
+
+### Environment variables under `config:`
+
+Older projects could also set environment variables in an `env:` block nested
+under the service's `config:`. That position is no longer read: azd takes the
+service environment only from the service-level `env:`. A service that still
+carries `config: env:` gets a warning naming the affected variables on both
+`azd ai agent run` and `azd deploy`.
+
+Move them up one level to fix it:
+
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    env:
+      API_KEY: ${SECRET}
+      LOG_LEVEL: debug
+```
+
+Hosted Agent Service environment variable names must start with a letter or
+underscore and contain only letters, digits, or underscores. For example,
+`API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
+before contacting Foundry Agent Service.
+
+## Content safety policies
+
+A hosted agent can be bound to an Azure AI Content Safety (RAI) policy so every
+request and response it handles is screened by that policy. Declare it with a
+`policies` list on the `azure.ai.agent` service entry in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    policies:
+      - type: rai_policy
+        raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
+```
+
+`policies` applies to both deploy modes — container images and code deploys
+(`codeConfiguration`) alike. It is optional; agents without it deploy exactly as
+before.
+
+Details:
+
+- `type` is required. `rai_policy` is currently the only supported value.
+- `raiPolicyName` is required for `rai_policy` and takes the **full ARM resource
+  ID** of the policy, not its short name. Built-in policies such as
+  `Microsoft.DefaultV2` still need the full ID, with the account that hosts them
+  in the path.
+- Create or list policies on the Foundry account first — azd does not create the
+  policy, it only associates the agent with an existing one.
+
+> **Note:** In the deprecated on-disk `agent.yaml` shape the key is snake_case
+> (`rai_policy_name`). In `azure.yaml` it is camelCase (`raiPolicyName`), like
+> the other inline agent properties such as `codeConfiguration` and
+> `environmentVariables`.
+
+### Moderating invocations-protocol traffic
+
+For agents that expose the `invocations` protocol, the RAI policy alone is not
+enough: the content-safety proxy needs to be told **where the text lives** in the
+request and response bodies. Without that it has nothing to submit to the policy,
+so no content is actually screened. Supply an `invocationsModeration` block on the
+`rai_policy` entry:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    protocols:
+      - protocol: invocations
+        version: "1.0.0"
+    policies:
+      - type: rai_policy
+        raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
+        invocationsModeration:
+          responseMode: both
+          inputContentType: json
+          outputContentType: json
+          inputPaths:
+            - $.input
+          outputPaths:
+            - $.output
+          streamSelectors:
+            - eventType: response.output_text.delta
+              textField: $.delta
+```
+
+Fields:
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `responseMode` | yes | `non_streaming`, `streaming`, or `both`. |
+| `inputContentType` | no | `json` (default) or `text`. |
+| `outputContentType` | no | `json` (default) or `text`. |
+| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
+| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the buffered response text. |
+| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. |
+
+`invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
+includes `invocations`. Declaring it elsewhere — on another agent kind, or on an
+`invocations_ws`-only agent, which does not go through the content-safety HTTP
+proxy — fails validation rather than silently deploying a policy that never runs.
+
+> **Understanding `responseMode`:** it declares which response *shapes* the
+> container can produce, **not** "input and output". Input is always moderated.
+> For the output side the proxy inspects the actual response `Content-Type` and
+> runs exactly one gate: the SSE gate for `text/event-stream`, the buffered gate
+> otherwise. Use `both` only for containers that genuinely answer both ways —
+> if a response arrives in a shape `responseMode` did not declare, the request
+> fails closed rather than skipping moderation.
+
+Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
+the whole body is then moderated and no paths are needed for that direction.
+
+As with `raiPolicyName`, the deprecated on-disk `agent.yaml` shape uses snake_case
+keys throughout this block (`invocations_moderation`, `response_mode`,
+`input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
+(`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
+
+## Session idle timeout
+
+A hosted agent's runtime session sandbox is suspended by Foundry after a period
+of inactivity. The default is 900 seconds. Override it with
+`sessionConfiguration.idleTimeoutSeconds` on the `azure.ai.agent` service entry
+in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    sessionConfiguration:
+      idleTimeoutSeconds: 300
+```
+
+`sessionConfiguration` applies to both deploy modes — container images and code
+deploys (`codeConfiguration`) alike. It is optional; when omitted, the setting
+is left out of the service request and Foundry applies its default (900
+seconds).
+
+Details:
+
+- `idleTimeoutSeconds` must be between **300 and 3600** seconds (inclusive).
+  Values outside that range are rejected at deploy time and by schema
+  validation.
+- In the deprecated on-disk `agent.yaml` shape the keys are snake_case
+  (`session_configuration.idle_timeout_seconds`). In `azure.yaml` they are
+  camelCase, like the other inline agent properties.
 
 ## Session carry-over across deploys
 
@@ -77,6 +324,10 @@ Details:
   fails (for example, the previous session was already deleted), azd silently
   falls back to the default behavior and the next invoke starts a fresh session
   on the new version.
+
+## Customize infrastructure
+
+Use `azd ai agent init --infra` to generate editable Foundry Bicep or Terraform. Existing project infrastructure is preserved as a separate layer. See [Customize Foundry infrastructure with `--infra`](docs/infrastructure-eject.md) for migration behavior, file-conflict rules, resource-group ownership, layer dependencies, and limitations.
 
 ## Private networking for `host: azure.ai.project`
 

@@ -84,7 +84,7 @@ azd extension source add -n dev -t url -l "https://aka.ms/azd/extensions/registr
 
 Extensions installed from the dev registry are automatically promoted to the main registry when a newer version becomes available there. See the [Dev/Experimental Extension Registry](./extension-resolution-and-versioning.md#devexperimental-extension-registry) section for full details on stability expectations, submission guidelines, promotion behavior, and troubleshooting.
 
-A separate **nightly** registry distributes always-latest, automatically built snapshots of first-party extensions (signed on Windows/macOS, built from `main`). To opt in:
+A separate **nightly** registry distributes always-latest, automatically built snapshots of Azure internal extensions (signed on Windows/macOS, built from `main`). To opt in:
 
 ```bash
 # Add a new extension source name 'nightly' to your `azd` configuration.
@@ -102,7 +102,7 @@ Displays a list of installed extension sources.
 Adds a new named extension source to the global `azd` configuration.
 
 - `-l, --location` The location of the extension source.
-- `-n, --name` The name of the extension source.
+- `-n, --name` The name of the extension source. Names must contain 1 to 64 lowercase ASCII letters, digits, hyphens, or underscores, and must begin and end with a letter or digit. `bundle` is reserved.
 - `-t, --type` The type of extension source. Supported types are `file` and `url`.
 
 #### `azd extension source remove <name>`
@@ -148,14 +148,16 @@ Uninstalls one or more previously installed extensions.
 
 - `--all` Removes all installed extensions when specified.
 
-#### `azd extension upgrade <extension-ids>`
+#### `azd extension update <extension-ids>`
 
-Upgrades one or more extensions to the latest versions.
+> Aliased as `azd extension upgrade` for backward compatibility.
 
-- `--all` Upgrades all previously installed extensions when specified.
-- `-v, --version` Upgrades a specified extension to an exact version, if provided.
-- `-s, --source` Specifies the source used for the upgrade. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source before resolving the extension, updates the extension's stored source after a successful upgrade, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
-- `--no-dependency-upgrades` Skips upgrading dependencies declared by extension packs.
+Updates one or more extensions to the latest versions.
+
+- `--all` Updates all previously installed extensions when specified.
+- `-v, --version` Updates a specified extension to an exact version, if provided.
+- `-s, --source` Specifies the source used for the update. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source before resolving the extension, updates the extension's stored source after a successful update, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
+- `--no-dependency-updates` Skips updating dependencies declared by extension packs.
 
 ## Developing Extensions
 
@@ -348,7 +350,7 @@ The metadata JSON includes:
   - `usage`: Usage template string
   - `examples`: Example usages with description and command
   - `args`: Positional arguments with name, description, required flag
-  - `flags`: Command flags with name, shorthand, type, default, validValues
+  - `flags`: Command flags with name, shorthand, type, default, and validValues. `valueOptional` marks a value-taking flag that can be used without an explicit value.
   - `subcommands`: Nested subcommand definitions
   - `hidden`, `aliases`, `deprecated`: Optional command metadata
 - **`configuration`**: Optional configuration schemas:
@@ -647,11 +649,27 @@ Once installed the extension registers a suite of commands under the `x` namespa
 Usage: `azd x init`
 
 - Collects information for the extension and scaffolds and extension in a specified language of choice.
+- Go is the recommended language and is preselected in the language prompt; it has the most complete and actively maintained template.
 - Creates local extension source if it doesn't already exist
 - Builds initial binaries for extension
 - Packs extension
 - Publishes extension to local extension source
 - Installs the extension locally for immediate use
+
+Flags (all values are prompted for when omitted):
+
+- `--no-prompt` requires `--id`, `--name`, `--capabilities` and `--language`, except with standalone `--registry`.
+- `--internal --no-prompt` requires `--id`, `--name`, `--capabilities` and `--codeowners`; the language defaults to Go.
+
+- `--id` - The extension identifier, for example `contoso.extension`.
+- `--name` - The display name for the extension.
+- `--namespace` - The namespace used to invoke the extension commands.
+- `--capabilities` - Comma-separated list of extension capabilities.
+- `--language` - The programming language for the extension: `go` (recommended), `dotnet`, `javascript` or `python`.
+- `--tags` - Optional tags for the extension (max 10 tags, 64 characters each).
+- `--registry, -r` - Creates the local extension source registry without scaffolding an extension.
+- `--internal` - Scaffolds the additional files required by Azure internal extension development (CI build/test scripts, lint workflow, release pipeline and a CODEOWNERS entry). Must be run from inside a clone of `Azure/azure-dev` and currently supports Go only.
+- `--codeowners` - GitHub handles or teams used for the generated CODEOWNERS entry when `--internal` is set.
 
 ---
 
@@ -1105,6 +1123,15 @@ Extensions can declare the following capabilities in their manifest:
 - **`validation-provider`**: Contribute validation checks to azd's provision validation and future validation pipelines
 - **`metadata`**: Provide comprehensive metadata about commands and configuration schemas
 
+Telemetry is not a capability. Internal telemetry is currently available to
+Microsoft-built extensions in this repository after a privacy review and
+publication to the official `azd` registry. Those extensions can call the
+telemetry gRPC service, and events are recorded when the configured source
+matches the verified official `azd` registry name, type, and normalized URL —
+see [Extension Telemetry](./extension-telemetry.md). Published versions that
+depend on the service should set `requiredAzdVersion` to the first `azd`
+release that includes it.
+
 #### Complete Extension Manifest Example
 
 ```yaml
@@ -1209,9 +1236,9 @@ dependencies:
     version: "~0.1.0-preview"
 ```
 
-Pack manifests must include at least one dependency. They may omit `capabilities`, `namespace`, `entryPoint`, `usage`, and `examples` when the pack has no commands of its own. Installing a pack installs its dependencies recursively from the same extension source as the pack. Dependency versions in the manifest support semver constraints, but command-line `--version` values for `azd extension install` and `azd extension upgrade` are exact versions.
+Pack manifests must include at least one dependency. They may omit `capabilities`, `namespace`, `entryPoint`, `usage`, and `examples` when the pack has no commands of its own. Installing a pack installs its dependencies recursively from the same extension source as the pack. Dependency versions in the manifest support semver constraints, but command-line `--version` values for `azd extension install` and `azd extension update` are exact versions.
 
-Upgrading a pack upgrades the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency upgrades with `azd extension upgrade <pack-id> --no-dependency-upgrades`.
+Updating a pack updates the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency updates with `azd extension update <pack-id> --no-dependency-updates`.
 
 #### Provider Registration
 
@@ -2045,6 +2072,7 @@ Prompts the user to select multiple options from a list.
     - `help_message` (string)
     - `hint` (string)
     - `display_count` (int32)
+    - `allow_empty_selection` (optional bool): Whether the prompt can be submitted without a selection (default: `false`)
 - **Response:** _MultiSelectResponse_
   - Contains a list of selected **MultiSelectChoice** items
 
@@ -3243,19 +3271,19 @@ Registry schema versions use `major.minor` format (e.g. `"1.0"`, `"1.1"`, `"2.0"
 |----------|----------|
 | Missing `schemaVersion` | Treated as `"1.0"` for backward compatibility |
 | Same major, newer minor (e.g. `"1.1"`) | Accepted silently — minor bumps are backward compatible |
-| Newer major (e.g. `"2.0"`) | Rejected with an error and upgrade guidance |
+| Newer major (e.g. `"2.0"`) | Rejected with an error and update guidance |
 | `0.x` (e.g. `"0.1"`) | Accepted — pre-release schema versions are valid |
 | Malformed version string | Rejected with a descriptive parse error |
 
-### Upgrade Guidance
+### Update Guidance
 
 When azd encounters a registry with a schema version it cannot support, it will
-display an error with a suggestion to upgrade:
+display an error with a suggestion to update:
 
 ```
 ERROR: registry schema version 2.0 is not supported (max supported: 1.0)
 
-Suggestion: Upgrade azd to the latest version to use this registry
+Suggestion: Update azd to the latest version to use this registry
   https://aka.ms/azd/install
 ```
 

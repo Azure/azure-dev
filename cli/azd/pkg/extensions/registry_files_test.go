@@ -35,6 +35,9 @@ func collectValidationErrors(result *RegistryValidationResult) []string {
 	return errs
 }
 
+// TestDevRegistryFileIsValid gates the development registry on the same
+// ext-registry-ci trigger as TestRegistryFileIsValid, and applies the same rule:
+// only validation errors fail, never warnings.
 func TestDevRegistryFileIsValid(t *testing.T) {
 	registryPath := filepath.Join("..", "..", "extensions", "registry.dev.json")
 	data, err := os.ReadFile(registryPath)
@@ -45,7 +48,11 @@ func TestDevRegistryFileIsValid(t *testing.T) {
 	require.Equal(t, CurrentRegistrySchemaVersion, registry.SchemaVersion)
 
 	result := ValidateRegistry(&registry, false)
-	require.True(t, result.Valid, "registry.dev.json failed validation: %+v", result)
+	if !result.Valid {
+		errs := collectValidationErrors(result)
+		t.Fatalf("registry.dev.json failed validation with %d error(s):\n  - %s",
+			len(errs), strings.Join(errs, "\n  - "))
+	}
 }
 
 // TestRegistryFileIsValid gates the production registry on every pull request that

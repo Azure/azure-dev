@@ -27,9 +27,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// cliVersion is the Copilot CLI version that matches the SDK version in go.mod.
-// SDK v0.3.0 → CLI v1.0.36-0 (determined by the SDK's package-lock.json).
-const cliVersion = "1.0.36-0"
+// cliVersion is the Copilot CLI version used with the SDK version in go.mod.
+const cliVersion = "1.0.80"
 
 // CopilotCLI manages the Copilot CLI binary lifecycle — download, cache, and version management.
 // Follows the same pattern as pkg/tools/bicep for on-demand tool installation.
@@ -173,20 +172,28 @@ func (c *CopilotCLI) InstallPlugin(ctx context.Context, source string) error {
 
 // Login runs the copilot login command (OAuth device flow).
 func (c *CopilotCLI) Login(ctx context.Context) error {
-	runArgs := azdexec.NewRunArgs("copilot", "login").
+	cliPath, err := c.Path(ctx)
+	if err != nil {
+		return fmt.Errorf("resolving copilot CLI path: %w", err)
+	}
+
+	runArgs := azdexec.NewRunArgs(cliPath, "login").
 		WithInteractive(true)
-	_, err := c.runner.Run(ctx, runArgs)
+	_, err = c.runner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("copilot login failed: %w", err)
 	}
 	return nil
 }
 
-// runCommand executes a copilot CLI command using the command runner.
-// Uses "copilot" from PATH for plugin management commands (the npm-distributed
-// native binary doesn't support CLI subcommands like "plugin list").
+// runCommand executes a Copilot CLI command using the command runner.
 func (c *CopilotCLI) runCommand(ctx context.Context, args ...string) (azdexec.RunResult, error) {
-	runArgs := azdexec.NewRunArgs("copilot", args...)
+	cliPath, err := c.Path(ctx)
+	if err != nil {
+		return azdexec.RunResult{}, fmt.Errorf("resolving copilot CLI path: %w", err)
+	}
+
+	runArgs := azdexec.NewRunArgs(cliPath, args...)
 	return c.runner.Run(ctx, runArgs)
 }
 

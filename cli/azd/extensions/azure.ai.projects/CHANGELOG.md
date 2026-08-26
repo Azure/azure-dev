@@ -6,6 +6,35 @@
 
 - A Foundry project service whose `endpoint:` is written as an environment reference (for example `endpoint: ${AZURE_AI_PROJECT_ENDPOINT}`, which `azd ai agent init` now generates so `azure.yaml` stays portable) is resolved against the azd environment before it is used. Previously the unexpanded `${...}` literal was carried into the brownfield deployment, which failed with `InvalidTemplate` because the project name segment came out empty. An endpoint whose variables are all unset now means "create a new project" instead of "reuse an existing one".
 
+## 1.0.0-beta.7 (2026-08-24)
+
+### Other Changes
+
+- [[#9580]](https://github.com/Azure/azure-dev/pull/9580) Update the azd extension SDK dependency to v1.31.0 for extension telemetry compatibility.
+
+## 1.0.0-beta.6 (2026-08-13)
+
+### Features Added
+
+- [[#9457]](https://github.com/Azure/azure-dev/pull/9457) Support Foundry provisioning as an isolated infrastructure layer with layer paths, virtual outputs, ownership tracking, repeat provisioning, and teardown behavior.
+
+## 1.0.0-beta.5 (2026-08-06)
+
+### Features Added
+
+- [[#9079]](https://github.com/Azure/azure-dev/pull/9079) Add service-scoped environment support to Foundry project provisioning while preserving raw templates and project-wide fallback behavior.
+
+### Bugs Fixed
+
+- [[#9326]](https://github.com/Azure/azure-dev/pull/9326) Publish Foundry dependency readiness state so agent deployments can fail early with actionable guidance when resources are not ready.
+- [[#9367]](https://github.com/Azure/azure-dev/pull/9367) Fix Foundry project synthesis so network environment references use shared defaults, escaping, and unresolved-variable validation.
+
+## 1.0.0-beta.4 (2026-07-30)
+
+### Bugs Fixed
+
+- [[#9292]](https://github.com/Azure/azure-dev/pull/9292) Fix Foundry ARM deployment names exceeding ARM's 64-character limit when long azd environment names are used. Long environment-name segments are now truncated while retaining deterministic environment and project-path hashes for uniqueness.
+
 ## 1.0.0-beta.3 (2026-07-23)
 
 ### Features Added

@@ -7,8 +7,13 @@ the data classification framework, hashing requirements, and a PR checklist temp
 
 A privacy review **must** be triggered when any of the following conditions are met:
 
-1. **New telemetry field** — Any new attribute key added to `cli/azd/internal/tracing/fields/fields.go` or emitted
-   via `SetUsageAttributes` / `tracing.SetSpanAttributes`.
+1. **New telemetry field** — Any new attribute key added to
+   `cli/azd/internal/tracing/fields/fields.go` or emitted through tracing APIs.
+   Extension-supplied `ext.*` attributes are reviewed with the extension that
+   reports them rather than here, but the same rules apply to their content.
+   Only extensions whose configured source matches the verified official `azd`
+   registry name, type, and normalized URL can record these attributes, so
+   that admission is where the review has to happen.
 
 2. **New event** — Any new event constant added to `cli/azd/internal/tracing/events/events.go` or new span name
    introduced via `tracing.Start`.
@@ -166,7 +171,11 @@ A new field **must** be hashed if any of the following are true:
 
 A new field should **not** be hashed if:
 
-- The value is from a fixed enum (e.g., `auth.method` = `"browser"`).
+- The value is from a fixed enum (e.g., `auth.method` = `"browser"`,
+  `aspire.apphost.language` = `"typescript"` / `"python"` / `"go"` / `"java"` / `"rust"`,
+  `auth.cache_clear_failed` = `"auth"` / `"subscriptions"`, or
+  `skip.reason` = `"cluster_not_provisioned"`), or a boolean
+  (e.g., `container.remotebuild`).
 - The value is a count or duration (measurements).
 - The value is system-generated metadata (e.g., OS type).
 - The value is a hardcoded literal in source code (e.g., `exegraph.step.tags`, which
@@ -178,7 +187,13 @@ A new field should **not** be hashed if:
 
 When adding a new telemetry field:
 
-1. **Define the field** in `internal/telemetry/fields/fields.go` using the `NewKey` pattern.
+1. **Define the field** in `internal/tracing/fields/fields.go`. Extension
+   telemetry is different: an extension supplies its own keys and values at
+   runtime, and the host classifies the whole `ext.*` class through
+   `ExtensionUsageAttribute`. The extension author owns each value's content
+   and must apply this checklist to it during their own review, which the host
+   enforces by recording `ext.usage` only when the configured source matches
+   the verified official `azd` registry name, type, and normalized URL.
 2. **Assign classification** — use the decision tree above to determine the correct classification.
 3. **Assign purpose** — select one or more from: `FeatureInsight`, `BusinessInsight`, `PerformanceAndHealth`.
 4. **Determine hashing** — apply hashing rules above.
@@ -186,6 +201,7 @@ When adding a new telemetry field:
    - OTel key name
    - Classification
    - Purpose
+   - Endpoint (only when the value is a known endpoint identifier)
    - Whether it is hashed
    - Whether it is a measurement
    - Allowed values (if enum)
@@ -200,14 +216,18 @@ Copy this checklist into your PR description when making telemetry changes.
 ## Telemetry Change Checklist
 
 ### New Fields
-- [ ] Field defined in `fields/fields.go` with correct classification and purpose
+- [ ] Core field defined in `fields/fields.go`; extension-supplied `ext.*` values are covered by the extension's own review instead
+- [ ] Field has the correct classification and purpose
 - [ ] Field documented in `docs/specs/metrics-audit/telemetry-schema.md`
 - [ ] Hashing applied where required (user-provided values, names, paths)
 - [ ] Measurement fields use correct OTel type (Int64, Float64)
 - [ ] Enum values documented with allowed value set
+- [ ] Extension enum values contain no user-derived or customer content
 
 ### New Events
 - [ ] Event constant defined in `events/events.go`
+- [ ] Event constant is an exported string `const` whose Go identifier contains `Event` (end it with
+      `Prefix` for a prefix-match group) so the GDPR classifier discovers it
 - [ ] Event documented in `docs/specs/metrics-audit/telemetry-schema.md`
 - [ ] Event follows naming convention (`prefix.noun.verb`)
 

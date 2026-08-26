@@ -13,8 +13,10 @@ import (
 	"log"
 	"maps"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -22,6 +24,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -96,9 +100,10 @@ location is given, azd registers it as a source (prompting for a name, and
 confirming first for a URL) and then installs from it. If the location is already
 registered, azd reuses that source.
 
-You can also pass the path to a self-contained extension bundle (.zip): azd
-extracts it and installs the bundled extension. Bundled extensions aren't
-tracked for updates; reinstall from a newer bundle to update.`,
+You can also pass a self-contained extension bundle (.zip), either as a local
+path or an https URL: azd downloads (when remote) and extracts it, then installs
+the bundled extension. Bundled extensions aren't tracked for updates; reinstall
+from a newer bundle to update.`,
 		},
 		ActionResolver: newExtensionInstallAction,
 		FlagsResolver:  newExtensionInstallFlags,
@@ -114,32 +119,33 @@ tracked for updates; reinstall from a newer bundle to update.`,
 		FlagsResolver:  newExtensionUninstallFlags,
 	})
 
-	// azd extension upgrade <extension-id>
-	group.Add("upgrade", &actions.ActionDescriptorOptions{
+	// azd extension update <extension-id>
+	group.Add("update", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "upgrade [extension-id]",
-			Short: "Upgrade installed extensions to the latest version.",
-			Long: `Upgrade one or more installed extensions.
+			Use:     "update [extension-id]",
+			Aliases: []string{"upgrade"},
+			Short:   "Update installed extensions to the latest version.",
+			Long: `Update one or more installed extensions.
 
 By default, uses the stored registry source for each extension. If the stored
 source is unavailable, falls back to the main (azd) registry. Extensions that
 were installed from a non-main registry (e.g., dev) are automatically promoted
 to the main registry when a newer version is available there.
 
-Use --source to override the registry source for the upgrade. It accepts a
+Use --source to override the registry source for the update. It accepts a
 registered source name or registry location (URL or file path); locations are
-registered first and the upgraded extension's stored source is updated. Because
+registered first and the updated extension's stored source is updated. Because
 registration is interactive, locations are rejected under --no-prompt. Use --all
-to upgrade all installed extensions in a single batch; failures in one extension
-do not prevent the remaining extensions from being upgraded.
+to update all installed extensions in a single batch; failures in one extension
+do not prevent the remaining extensions from being updated.
 
-When upgrading an extension that has dependencies, any installed
-dependencies are automatically upgraded too, to the highest version
+When updating an extension that has dependencies, any installed
+dependencies are automatically updated too, to the highest version
 satisfying the extension's declared constraints. Use
---no-dependency-upgrades to opt out and upgrade only the named
+--no-dependency-updates to opt out and update only the named
 extension.
 
-Use --output json for a structured report of all upgrade results.`,
+Use --output json for a structured report of all update results.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
@@ -169,7 +175,9 @@ Use --output json for a structured report of all upgrade results.`,
 			Use:   "add",
 			Short: "Add an extension source with the specified name",
 			Long: "Add an extension source with the specified name.\n\n" +
-				"`azd extension install --source` and `azd extension upgrade --source` also accept " +
+				"Names must contain 1-64 lowercase ASCII letters, digits, hyphens, or underscores, " +
+				"and must begin and end with a letter or digit. The name 'bundle' is reserved.\n\n" +
+				"`azd extension install --source` and `azd extension update --source` also accept " +
 				"a registry URL or file path directly.",
 		},
 		ActionResolver: newExtensionSourceAddAction,
@@ -484,9 +492,9 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 			if hasCompatibleUpdates {
 				a.console.Message(ctx, fmt.Sprintf(
-					"To upgrade: %s", output.WithHighLightFormat("azd extension upgrade <extension-id>")))
+					"To update: %s", output.WithHighLightFormat("azd extension update <extension-id>")))
 				a.console.Message(ctx, fmt.Sprintf(
-					"To upgrade all: %s", output.WithHighLightFormat("azd extension upgrade --all")))
+					"To update all: %s", output.WithHighLightFormat("azd extension update --all")))
 			}
 
 			if hasIncompatibleUpdates {
@@ -507,7 +515,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 // Status indicator constants for extension list display.
 const (
 	statusUpToDate   = "Up to date"
-	statusUpgrade    = "Upgrade available"
+	statusUpgrade    = "Update available"
 	statusIncompat   = "Incompatible"
 	statusNotInstall = "Not installed"
 )
@@ -836,6 +844,7 @@ type extensionInstallAction struct {
 	console          input.Console
 	extensionManager *extensions.Manager
 	sourceManager    *extensions.SourceManager
+	transport        policy.Transporter
 	// bundleSourceName is the transient source registered while installing from a
 	// self-contained bundle (.zip). It is removed during cleanup; extensions
 	// installed under it are re-pointed to extensions.BundleSourceName.
@@ -843,6 +852,9 @@ type extensionInstallAction struct {
 	// bundleTempDir is the temporary directory the bundle was extracted into. It
 	// is deleted during cleanup once installation completes.
 	bundleTempDir string
+	// bundleTempZip is the temporary file a remote bundle was downloaded to. It
+	// is deleted during cleanup once installation completes.
+	bundleTempZip string
 }
 
 func newExtensionInstallAction(
@@ -851,6 +863,7 @@ func newExtensionInstallAction(
 	console input.Console,
 	extensionManager *extensions.Manager,
 	sourceManager *extensions.SourceManager,
+	transport policy.Transporter,
 ) actions.Action {
 	return &extensionInstallAction{
 		args:             args,
@@ -858,6 +871,7 @@ func newExtensionInstallAction(
 		console:          console,
 		extensionManager: extensionManager,
 		sourceManager:    sourceManager,
+		transport:        transport,
 	}
 }
 
@@ -919,7 +933,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.Message(ctx, "")
 		}
 
-		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
+		stepMessage := extensionTaskMessage("Installing", extensionId)
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Check if extension is already installed
@@ -1049,15 +1063,16 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 			extensionVersion, _, err = a.extensionManager.Upgrade(
 				ctx, compatibleExtension, extensions.UpgradeOptions{
-					VersionPreference:   a.flags.version,
-					UpgradeDependencies: !a.flags.noDependencies,
-					SkipDependencies:    a.flags.noDependencies,
-					AzdVersion:          azdVersion,
+					VersionPreference:                  a.flags.version,
+					UpgradeDependencies:                !a.flags.noDependencies,
+					SkipDependencies:                   a.flags.noDependencies,
+					AzdVersion:                         azdVersion,
+					SkipMainRegistryDependencyFallback: a.bundleSourceName != "",
 				},
 			)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, wrapDependencyError(fmt.Errorf("failed to upgrade extension: %w", err))
+				return nil, wrapDependencyError(fmt.Errorf("failed to update extension: %w", err))
 			}
 
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
@@ -1070,9 +1085,10 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 				ctx,
 				compatibleExtension,
 				extensions.InstallOptions{
-					VersionPreference: a.flags.version,
-					AzdVersion:        azdVersion,
-					SkipDependencies:  a.flags.noDependencies,
+					VersionPreference:                  a.flags.version,
+					AzdVersion:                         azdVersion,
+					SkipDependencies:                   a.flags.noDependencies,
+					SkipMainRegistryDependencyFallback: a.bundleSourceName != "",
 				},
 			)
 			if err != nil {
@@ -1092,6 +1108,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 				preInstalledIds,
 				"  ",
 				map[string]struct{}{compatibleExtension.Id: {}},
+				compatibleExtension.SourceCategoryOrUnknown(),
 			)
 		}
 
@@ -1109,6 +1126,16 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 // self-contained bundle (.zip) is extracted into during installation. The
 // directory is removed once installation completes.
 const extensionBundleTempPrefix = "azd-extension-bundle-"
+
+type insecureBundleRedirectError struct{}
+
+func (*insecureBundleRedirectError) Error() string {
+	return "extension bundle download redirected to an insecure URL"
+}
+
+func (*insecureBundleRedirectError) NonRetriable() {}
+
+var errInsecureBundleRedirect = &insecureBundleRedirectError{}
 
 // sourceDisplayLabel returns a user-facing label for an extension source. The
 // transient source registered while installing a bundle is an implementation
@@ -1137,7 +1164,7 @@ func (a *extensionInstallAction) sourceDisplayLabelForInstalled(source string) s
 
 // versionTransitionVerb returns a capitalized verb phrase describing the move
 // from the installed version to the target version: "Reinstall" when they match,
-// "Upgrade to <target>" / "Downgrade to <target>" when both parse as semver, and
+// "Update to <target>" / "Downgrade to <target>" when both parse as semver, and
 // a neutral "Replace with <target>" when ordering is undefined (non-semver tags).
 func versionTransitionVerb(installedVersion, targetVersion string) string {
 	if installedVersion == targetVersion {
@@ -1150,7 +1177,7 @@ func versionTransitionVerb(installedVersion, targetVersion string) string {
 	case installedErr == nil && targetErr == nil && targetSemver.LessThan(installedSemver):
 		return fmt.Sprintf("Downgrade to %s", targetVersion)
 	case installedErr == nil && targetErr == nil && targetSemver.GreaterThan(installedSemver):
-		return fmt.Sprintf("Upgrade to %s", targetVersion)
+		return fmt.Sprintf("Update to %s", targetVersion)
 	default:
 		return fmt.Sprintf("Replace with %s", targetVersion)
 	}
@@ -1216,18 +1243,18 @@ func (a *extensionInstallAction) confirmReplace(
 	return true, nil
 }
 
-// wrapDependencyError augments a dependency-not-found failure with actionable
-// guidance. azd does not resolve dependencies across sources during install, so
-// when a required dependency is missing from the parent's source the user is
-// directed to install it explicitly first. Other errors pass through unchanged.
+// wrapDependencyError augments dependency resolution failures with actionable
+// guidance. Other errors pass through unchanged.
 func wrapDependencyError(err error) error {
-	if depErr, ok := errors.AsType[*extensions.DependencyNotFoundError](err); ok {
+	type dependencyErrorWithSuggestion interface {
+		error
+		Suggestion() string
+	}
+
+	if depErr, ok := errors.AsType[dependencyErrorWithSuggestion](err); ok {
 		return &internal.ErrorWithSuggestion{
-			Err: depErr,
-			Suggestion: fmt.Sprintf(
-				"Install the required dependency first with %s, then retry.",
-				output.WithHighLightFormat("azd extension install %s", depErr.DependencyId),
-			),
+			Err:        depErr,
+			Suggestion: depErr.Suggestion(),
 		}
 	}
 
@@ -1235,10 +1262,15 @@ func wrapDependencyError(err error) error {
 }
 
 // isBundleArg reports whether the provided arguments represent a single
-// self-contained extension bundle (.zip) path that exists on disk.
+// self-contained extension bundle (.zip), either as a local path that exists on
+// disk or as an HTTP or HTTPS URL.
 func isBundleArg(args []string) bool {
 	if len(args) != 1 {
 		return false
+	}
+
+	if isRemoteBundleArg(args[0]) {
+		return true
 	}
 
 	if !strings.EqualFold(filepath.Ext(args[0]), ".zip") {
@@ -1249,11 +1281,46 @@ func isBundleArg(args []string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// prepareBundleInstall extracts the bundle, registers an ephemeral source over
-// it, and rewrites a.args/a.flags.source so the standard install loop installs
-// the bundled extensions from that source. cleanupBundleInstall tears the
-// ephemeral state down afterwards.
-func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, zipPath string) error {
+// isRemoteBundleArg reports whether the value is an HTTP or HTTPS URL pointing at a
+// self-contained extension bundle (.zip). Detection is intentionally lexical so
+// malformed URLs still reach generic URL validation instead of being displayed as
+// extension IDs.
+func isRemoteBundleArg(value string) bool {
+	lowerValue := strings.ToLower(value)
+	if !strings.HasPrefix(lowerValue, "http://") &&
+		!strings.HasPrefix(lowerValue, "https://") {
+		return false
+	}
+
+	pathEnd := len(value)
+	if index := strings.IndexAny(value, "?#"); index >= 0 {
+		pathEnd = index
+	}
+
+	return strings.EqualFold(path.Ext(value[:pathEnd]), ".zip")
+}
+
+// prepareBundleInstall resolves the bundle (downloading it first when the
+// argument is a remote URL), extracts it, registers an ephemeral source over it,
+// and rewrites a.args/a.flags.source so the standard install loop installs the
+// bundled extensions from that source. cleanupBundleInstall tears the ephemeral
+// state down afterwards.
+func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, bundleArg string) error {
+	// A remote bundle is downloaded to a temporary file first; from there it goes
+	// through the exact same validation, extraction and install path as a local one.
+	isRemote := isRemoteBundleArg(bundleArg)
+	displayName := filepath.Base(bundleArg)
+	sourceBaseName := displayName
+	zipPath := bundleArg
+	if isRemote {
+		downloadedPath, err := a.downloadBundle(ctx, bundleArg)
+		if err != nil {
+			return err
+		}
+		sourceBaseName = "bundle"
+		zipPath = downloadedPath
+	}
+
 	absZipPath, err := filepath.Abs(zipPath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve bundle path: %w", err)
@@ -1266,13 +1333,23 @@ func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, zipPa
 	if err != nil {
 		return fmt.Errorf("failed to generate bundle source name: %w", err)
 	}
-	base := bundleSourceName(absZipPath)
+	base := bundleSourceName(sourceBaseName)
+	if base == "" {
+		base = "bundle"
+	}
+	maxBaseLength := extensions.SourceNameMaxLength - len(suffix) - 1
+	if len(base) > maxBaseLength {
+		base = strings.TrimRight(base[:maxBaseLength], "-_")
+	}
 	if base == "" {
 		base = "bundle"
 	}
 	sourceName := fmt.Sprintf("%s-%s", base, suffix)
 
-	stepMessage := fmt.Sprintf("Extracting bundle %s", output.WithHighLightFormat(filepath.Base(absZipPath)))
+	stepMessage := "Extracting extension bundle"
+	if !isRemote {
+		stepMessage = fmt.Sprintf("Extracting bundle %s", output.WithHighLightFormat(displayName))
+	}
 	a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 	bundleDir, err := os.MkdirTemp("", extensionBundleTempPrefix)
@@ -1316,7 +1393,10 @@ func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, zipPa
 		return fmt.Errorf("failed to read bundled extensions: %w", err)
 	}
 	if len(bundledExtensions) == 0 {
-		return fmt.Errorf("bundle %q contains no extensions", filepath.Base(absZipPath))
+		if isRemote {
+			return errors.New("downloaded extension bundle contains no extensions")
+		}
+		return fmt.Errorf("bundle %q contains no extensions", displayName)
 	}
 
 	// Register the ephemeral bundle source so the install loop can resolve it.
@@ -1350,8 +1430,9 @@ func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, zipPa
 // cleanupBundleInstall tears down the ephemeral state created by
 // prepareBundleInstall: it re-points any extension installed from the transient
 // bundle source to extensions.BundleSourceName, removes the transient source, and
-// deletes the extracted bundle directory. It is safe to call multiple times and
-// when prepareBundleInstall failed partway through.
+// deletes the extracted bundle directory and any downloaded bundle file. It is
+// safe to call multiple times and when prepareBundleInstall failed partway
+// through.
 func (a *extensionInstallAction) cleanupBundleInstall(ctx context.Context) {
 	if a.bundleSourceName != "" {
 		// Re-point extensions installed from the transient source so they are not
@@ -1362,6 +1443,7 @@ func (a *extensionInstallAction) cleanupBundleInstall(ctx context.Context) {
 					continue
 				}
 				ext.Source = extensions.BundleSourceName
+				ext.SourceCategory = extensions.SourceCategoryBundle
 				if err := a.extensionManager.UpdateInstalled(ext); err != nil {
 					log.Printf("failed to mark extension %q as bundle-installed: %v", ext.Id, err)
 				}
@@ -1384,6 +1466,163 @@ func (a *extensionInstallAction) cleanupBundleInstall(ctx context.Context) {
 		}
 		a.bundleTempDir = ""
 	}
+
+	if a.bundleTempZip != "" {
+		if err := os.Remove(a.bundleTempZip); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("failed to remove downloaded bundle %q: %v", a.bundleTempZip, err)
+		}
+		a.bundleTempZip = ""
+	}
+}
+
+// downloadBundle downloads a remote bundle (.zip) to a temporary file and
+// returns its path. The temporary file is recorded on the action so
+// cleanupBundleInstall removes it whether the install succeeds or fails.
+func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL string) (string, error) {
+	parsedURL, err := url.Parse(bundleURL)
+	if err != nil || parsedURL.Host == "" {
+		return "", &internal.ErrorWithSuggestion{
+			Err:     errors.New("invalid remote extension bundle URL"),
+			Message: "Remote extension bundles require a valid HTTPS URL.",
+			Suggestion: "Use a valid HTTPS URL, or download the bundle and install it " +
+				"from a local path.",
+		}
+	}
+	if !strings.EqualFold(parsedURL.Scheme, "https") {
+		return "", &internal.ErrorWithSuggestion{
+			Err:     errors.New("remote extension bundle URL must use HTTPS"),
+			Message: "Remote extension bundles require a valid HTTPS URL.",
+			Suggestion: "Use an HTTPS URL, or download the bundle and install it " +
+				"from a local path.",
+		}
+	}
+
+	stepMessage := "Downloading extension bundle"
+	a.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+	downloadFailed := func(err error) (string, error) {
+		a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+		return "", err
+	}
+	requestFailed := func(err error) error {
+		return &internal.ErrorWithSuggestion{
+			Err: &bundleDownloadError{
+				message: "failed to download extension bundle",
+				err:     err,
+			},
+			Message: "The extension bundle could not be downloaded.",
+			Suggestion: "Check your network connection and verify the bundle URL is accessible, " +
+				"or download the bundle and install it from a local path.",
+		}
+	}
+	insecureRedirect := func() error {
+		return &internal.ErrorWithSuggestion{
+			Err:     errInsecureBundleRedirect,
+			Message: "The extension bundle download was redirected from HTTPS to HTTP.",
+			Suggestion: "Use a bundle URL that remains on HTTPS, or download the bundle and install it " +
+				"from a local path.",
+		}
+	}
+
+	pipeline := azruntime.NewPipeline(
+		"azd-extension-bundle", "1.0.0", azruntime.PipelineOptions{}, &policy.ClientOptions{
+			Transport: bundleTransportWithHTTPSRedirectsOnly(a.transport),
+		})
+
+	req, err := azruntime.NewRequest(ctx, http.MethodGet, bundleURL)
+	if err != nil {
+		return downloadFailed(requestFailed(err))
+	}
+
+	resp, err := pipeline.Do(req)
+	if err != nil {
+		if errors.Is(err, errInsecureBundleRedirect) {
+			return downloadFailed(insecureRedirect())
+		}
+		return downloadFailed(requestFailed(err))
+	}
+	defer resp.Body.Close()
+
+	if resp.Request != nil && resp.Request.URL != nil &&
+		!strings.EqualFold(resp.Request.URL.Scheme, "https") {
+		return downloadFailed(insecureRedirect())
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return downloadFailed(&internal.ErrorWithSuggestion{
+			Err:     fmt.Errorf("failed to download extension bundle: server responded with status %d", resp.StatusCode),
+			Message: "The extension bundle could not be downloaded.",
+			Suggestion: "Verify the bundle URL is correct and accessible, " +
+				"or download the bundle and install it from a local path.",
+		})
+	}
+
+	tempFile, err := os.CreateTemp("", extensionBundleTempPrefix+"*.zip")
+	if err != nil {
+		return downloadFailed(fmt.Errorf("failed to create temporary bundle file: %w", err))
+	}
+	// Record the temp file immediately so cleanup removes it even if a later step fails.
+	a.bundleTempZip = tempFile.Name()
+
+	if _, err := io.Copy(tempFile, resp.Body); err != nil {
+		tempFile.Close()
+		return downloadFailed(&bundleDownloadError{
+			message: "failed to save downloaded extension bundle",
+			err:     err,
+		})
+	}
+
+	if err := tempFile.Close(); err != nil {
+		return downloadFailed(&bundleDownloadError{
+			message: "failed to save downloaded extension bundle",
+			err:     err,
+		})
+	}
+
+	a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+
+	return tempFile.Name(), nil
+}
+
+// bundleDownloadError preserves the underlying error for classification without
+// rendering request details that may contain credentials.
+type bundleDownloadError struct {
+	message string
+	err     error
+}
+
+func (e *bundleDownloadError) Error() string {
+	return e.message
+}
+
+func (e *bundleDownloadError) Unwrap() error {
+	return e.err
+}
+
+// bundleTransportWithHTTPSRedirectsOnly clones an injected HTTP client so the
+// stricter redirect policy applies only to extension bundle downloads.
+func bundleTransportWithHTTPSRedirectsOnly(transport policy.Transporter) policy.Transporter {
+	client, ok := transport.(*http.Client)
+	if !ok {
+		return transport
+	}
+
+	bundleClient := *client
+	existingCheckRedirect := bundleClient.CheckRedirect
+	bundleClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL == nil || !strings.EqualFold(req.URL.Scheme, "https") {
+			return errInsecureBundleRedirect
+		}
+		if existingCheckRedirect != nil {
+			return existingCheckRedirect(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+
+	return &bundleClient
 }
 
 // randomHexToken returns a short random hex string used to make the transient
@@ -1425,7 +1664,7 @@ func normalizeBundleSourceName(name string) string {
 			}
 		}
 	}
-	return strings.Trim(sb.String(), "-")
+	return strings.Trim(sb.String(), "-_")
 }
 
 // resolveSourceLocation registers a direct --source location and rewrites it to
@@ -1521,11 +1760,11 @@ func registerSourceFromLocation(
 			console.Message(ctx, output.WithErrorFormat("Extension source name cannot be empty"))
 			continue
 		}
-		if err := validateSourceName(sourceName); err != nil {
+		if err := extensions.ValidateSourceName(sourceName); err != nil {
 			console.Message(ctx, output.WithErrorFormat(err.Error()))
 			continue
 		}
-		if _, err := sourceManager.Get(ctx, extensions.NormalizeSourceKey(sourceName)); err == nil {
+		if _, err := sourceManager.Get(ctx, sourceName); err == nil {
 			console.Message(ctx, output.WithErrorFormat("Extension source '%s' already exists", sourceName))
 			continue
 		} else if !errors.Is(err, extensions.ErrSourceNotFound) {
@@ -1574,19 +1813,6 @@ func resolveRegisteredSourceName(
 	_, err := sourceManager.Get(ctx, source)
 	if err == nil {
 		return source, true, nil
-	}
-	if !errors.Is(err, extensions.ErrSourceNotFound) {
-		return "", false, fmt.Errorf("failed to resolve extension source %q: %w", source, err)
-	}
-
-	normalizedSource := extensions.NormalizeSourceKey(source)
-	if normalizedSource == source {
-		return "", false, nil
-	}
-
-	_, err = sourceManager.Get(ctx, normalizedSource)
-	if err == nil {
-		return normalizedSource, true, nil
 	}
 	if !errors.Is(err, extensions.ErrSourceNotFound) {
 		return "", false, fmt.Errorf("failed to resolve extension source %q: %w", source, err)
@@ -1651,19 +1877,6 @@ func normalizeUrlLocation(location string) string {
 	return parsed.String()
 }
 
-func validateSourceName(name string) error {
-	if strings.Contains(name, ".") {
-		return errors.New("Extension source name cannot contain '.'")
-	}
-	if strings.ContainsAny(name, `/\`) {
-		return errors.New("Extension source name cannot contain path separators")
-	}
-	if strings.EqualFold(extensions.NormalizeSourceKey(name), extensions.BundleSourceName) {
-		return fmt.Errorf("Extension source name '%s' is reserved", extensions.BundleSourceName)
-	}
-	return nil
-}
-
 func sourceArgKind(source string) string {
 	if source == "" {
 		return "none"
@@ -1699,6 +1912,9 @@ func resolveSourceFilter(
 
 	kind, ok := inferSourceKind(source)
 	if !ok {
+		if err := extensions.ValidateSourceName(source); err != nil {
+			return sourceFilterResolution{}, err
+		}
 		return sourceFilterResolution{source: source}, nil
 	}
 
@@ -1810,7 +2026,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 	}
 
 	for _, extensionId := range extensionIds {
-		stepMessage := fmt.Sprintf("Uninstalling %s extension", output.WithHighLightFormat(extensionId))
+		stepMessage := extensionTaskMessage("Uninstalling", extensionId)
 
 		installed, err := a.extensionManager.GetInstalled(extensions.FilterOptions{
 			Id: extensionId,
@@ -1822,7 +2038,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 			return nil, fmt.Errorf("failed to get installed extension: %w", err)
 		}
 
-		stepMessage += fmt.Sprintf(" (%s)", installed.Version)
+		stepMessage = extensionTaskMessageWithVersion("Uninstalling", extensionId, installed.Version)
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		if err := a.extensionManager.Uninstall(ctx, extensionId); err != nil {
@@ -1841,28 +2057,31 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 }
 
 type extensionUpgradeFlags struct {
-	version              string
-	source               string
-	all                  bool
-	noDependencyUpgrades bool
-	global               *internal.GlobalCommandOptions
+	version             string
+	source              string
+	all                 bool
+	noDependencyUpdates bool
+	global              *internal.GlobalCommandOptions
 }
 
 func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionUpgradeFlags {
 	flags := &extensionUpgradeFlags{
 		global: global,
 	}
-	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to upgrade to")
+	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to update to")
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
-		"The registered source name or registry location (URL or file path) to use for upgrades.")
-	cmd.Flags().BoolVar(&flags.all, "all", false, "Upgrade all installed extensions")
-	cmd.Flags().BoolVar(&flags.noDependencyUpgrades, "no-dependency-upgrades", false,
-		"Do not upgrade dependencies when upgrading an extension that has dependencies")
+		"The registered source name or registry location (URL or file path) to use for updates.")
+	cmd.Flags().BoolVar(&flags.all, "all", false, "Update all installed extensions")
+	cmd.Flags().BoolVar(&flags.noDependencyUpdates, "no-dependency-updates", false,
+		"Do not update dependencies when updating an extension that has dependencies")
+	cmd.Flags().BoolVar(&flags.noDependencyUpdates, "no-dependency-upgrades", false,
+		"Do not update dependencies when updating an extension that has dependencies")
+	_ = cmd.Flags().MarkHidden("no-dependency-upgrades")
 
 	return flags
 }
 
-// azd extension upgrade
+// azd extension update
 type extensionUpgradeAction struct {
 	args             []string
 	flags            *extensionUpgradeFlags
@@ -1902,8 +2121,8 @@ func (a *extensionUpgradeAction) Run(
 			Err: fmt.Errorf(
 				"cannot specify both an extension name and --all flag: %w",
 				internal.ErrInvalidFlagCombination),
-			Suggestion: "Use either 'azd extension upgrade <id>' " +
-				"or 'azd extension upgrade --all'.",
+			Suggestion: "Use either 'azd extension update <id>' " +
+				"or 'azd extension update --all'.",
 		}
 	}
 
@@ -1912,7 +2131,7 @@ func (a *extensionUpgradeAction) Run(
 			Err: fmt.Errorf(
 				"cannot specify --version with multiple extensions: %w",
 				internal.ErrInvalidFlagCombination),
-			Suggestion: "Upgrade one extension at a time when " +
+			Suggestion: "Update one extension at a time when " +
 				"using --version.",
 		}
 	}
@@ -1927,8 +2146,8 @@ func (a *extensionUpgradeAction) Run(
 	if len(a.args) == 0 && !a.flags.all {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: internal.ErrNoArgsProvided,
-			Suggestion: "Run 'azd extension upgrade <extension-id>'" +
-				" or 'azd extension upgrade --all'.",
+			Suggestion: "Run 'azd extension update <extension-id>'" +
+				" or 'azd extension update --all'.",
 		}
 	}
 
@@ -1936,9 +2155,9 @@ func (a *extensionUpgradeAction) Run(
 
 	if !isJsonOutput {
 		a.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: "Upgrade azd extensions " +
-				"(azd extension upgrade)",
-			TitleNote: "Upgrades the specified extensions " +
+			Title: "Update azd extensions " +
+				"(azd extension update)",
+			TitleNote: "Updates the specified extensions " +
 				"on the local machine",
 		})
 	}
@@ -2010,7 +2229,7 @@ loop:
 			report, a.writer, nil,
 		); err != nil {
 			return nil, fmt.Errorf(
-				"failed to format upgrade report: %w", err,
+				"failed to format update report: %w", err,
 			)
 		}
 		return upgradeActionResult(results)
@@ -2020,6 +2239,69 @@ loop:
 	displayUpgradeSummary(ctx, a.console, results)
 
 	return upgradeActionResult(results)
+}
+
+// upgradeSourceResolutionError builds a user-facing error when upgrade cannot
+// select a registry source for the extension.
+func upgradeSourceResolutionError(extensionId, flagSource, installedSource string) error {
+	if flagSource != "" {
+		return fmt.Errorf(
+			"extension '%s' not found in source '%s'",
+			extensionId, flagSource,
+		)
+	}
+
+	sourceName := installedSource
+	if sourceName == "" {
+		sourceName = extensions.MainRegistryName
+	}
+	if strings.EqualFold(sourceName, extensions.MainRegistryName) {
+		return fmt.Errorf(
+			"extension '%s' not available in the main registry",
+			extensionId,
+		)
+	}
+	return fmt.Errorf(
+		"extension '%s' not available in source '%s' or the main registry",
+		extensionId, sourceName,
+	)
+}
+
+// upgradeVersionResolutionError builds a user-facing error when the selected
+// upgrade source contains the extension but not the requested version.
+func upgradeVersionResolutionError(extensionId, version, source string) error {
+	if source == "" || strings.EqualFold(source, extensions.MainRegistryName) {
+		return fmt.Errorf(
+			"extension '%s' version '%s' not available in the main registry",
+			extensionId, version,
+		)
+	}
+	return fmt.Errorf(
+		"extension '%s' version '%s' not available in source '%s'",
+		extensionId, version, source,
+	)
+}
+
+// upgradeRetryCommand returns a retry command that preserves the source and
+// version explicitly requested by the user.
+func upgradeRetryCommand(extensionId, source, version string) string {
+	command := fmt.Sprintf("azd extension update %s", extensionId)
+	if source != "" {
+		command += fmt.Sprintf(" --source %s", source)
+	}
+	if version != "" {
+		command += fmt.Sprintf(" --version %s", version)
+	}
+	return command
+}
+
+// upgradeFailureDetails extracts actionable guidance from typed upgrade errors.
+func upgradeFailureDetails(err error) (string, error) {
+	wrappedErr := wrapDependencyError(err)
+	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](wrappedErr); ok {
+		return suggestionErr.Suggestion, wrappedErr
+	}
+	return "", wrappedErr
 }
 
 // upgradeOneExtension processes a single extension upgrade and returns
@@ -2038,10 +2320,14 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	isJsonOutput bool,
 ) extensions.UpgradeResult {
 	startTime := time.Now()
-	baseResult := extensions.UpgradeResult{ExtensionId: extensionId}
+	baseResult := extensions.UpgradeResult{
+		ExtensionId:        extensionId,
+		FromSourceCategory: extensions.SourceCategoryUnknown,
+		ToSourceCategory:   extensions.SourceCategoryUnknown,
+	}
 
-	// Start a telemetry span for this individual extension upgrade.
-	ctx, span := tracing.Start(ctx, events.ExtensionUpgradeEvent)
+	// Start a telemetry span for this individual extension update.
+	ctx, span := tracing.Start(ctx, events.ExtensionUpdateEvent)
 	defer func() {
 		elapsed := time.Since(startTime).Milliseconds()
 		span.SetAttributes(
@@ -2052,19 +2338,19 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			fields.ExtensionVersionTo.String(
 				baseResult.ToVersion,
 			),
-			fields.ExtensionSource.String(
-				baseResult.ToSource,
+			fields.ExtensionSourceCategory.String(
+				string(baseResult.ToSourceCategory),
 			),
-			fields.ExtensionUpgradeDurationMs.Int64(elapsed),
-			fields.ExtensionUpgradeOutcome.String(
+			fields.ExtensionUpdateDurationMs.Int64(elapsed),
+			fields.ExtensionUpdateOutcome.String(
 				baseResult.Status.String(),
 			),
-			fields.ExtensionDependencyUpgradeCount.Int(
+			fields.ExtensionDependencyUpdateCount.Int(
 				extensions.CountDependencyUpgrades(baseResult.DependencyUpgrades),
 			),
 		)
 		if baseResult.Status == extensions.UpgradeStatusFailed {
-			span.SetStatus(codes.Error, "upgrade.failed")
+			span.SetStatus(codes.Error, "update.failed")
 		} else {
 			span.SetStatus(codes.Ok, "")
 		}
@@ -2075,16 +2361,14 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		a.console.Message(ctx, "")
 	}
 
-	stepMsg := fmt.Sprintf(
-		"Upgrading %s extension",
-		output.WithHighLightFormat(extensionId),
-	)
+	stepMsg := extensionTaskMessage("Updating", extensionId)
 	if !isJsonOutput {
 		a.console.ShowSpinner(ctx, stepMsg, input.Step)
 	}
 
 	// Helper to record a failure and stop the spinner.
 	fail := func(err error) extensions.UpgradeResult {
+		baseResult.Suggestion, err = upgradeFailureDetails(err)
 		baseResult.Status = extensions.UpgradeStatusFailed
 		baseResult.Error = err
 		if !isJsonOutput {
@@ -2095,11 +2379,18 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 				"  %s",
 				output.WithGrayFormat("%s", err.Error()),
 			))
+			if baseResult.Suggestion != "" {
+				a.console.Message(ctx, fmt.Sprintf(
+					"  %s", baseResult.Suggestion,
+				))
+			}
 			a.console.Message(ctx, fmt.Sprintf(
 				"  Retry with: %s",
 				output.WithHighLightFormat(
-					"azd extension upgrade %s",
-					extensionId,
+					"%s",
+					upgradeRetryCommand(
+						extensionId, a.flags.source, a.flags.version,
+					),
 				),
 			))
 		}
@@ -2116,6 +2407,8 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 	baseResult.FromVersion = installed.Version
 	baseResult.FromSource = installed.Source
+	baseResult.FromSourceCategory = installed.SourceCategoryOrUnknown()
+	baseResult.ToSourceCategory = baseResult.FromSourceCategory
 
 	// Extensions installed from a self-contained bundle have no live registry to
 	// upgrade against. Skip them gracefully and direct the user to reinstall with
@@ -2125,9 +2418,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		baseResult.SkipReason = "installed from a self-contained bundle; " +
 			"reinstall with a newer bundle to update"
 		if !isJsonOutput {
-			skipMsg := fmt.Sprintf(
-				"Upgrading %s extension",
-				output.WithHighLightFormat(extensionId),
+			skipMsg := extensionTaskMessage(
+				"Updating",
+				extensionId,
 			) + output.WithGrayFormat(
 				" (Installed from a bundle)",
 			)
@@ -2147,6 +2440,45 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		allMatchOptions.Source = a.flags.source
 	}
 
+	versionMismatchError := func() error {
+		if a.flags.version == "" || strings.EqualFold(a.flags.version, "latest") {
+			return nil
+		}
+
+		unversionedOptions := *allMatchOptions
+		unversionedOptions.Version = ""
+		unversionedMatches, err := a.extensionManager.FindExtensions(
+			ctx, &unversionedOptions,
+		)
+		if err != nil {
+			if isNetworkError(err) {
+				return fmt.Errorf(
+					"network error looking up extension %s "+
+						"(check your connection and retry): %w",
+					extensionId, err,
+				)
+			}
+			return fmt.Errorf(
+				"failed to find extension %s: %w", extensionId, err,
+			)
+		}
+
+		res := extensions.ResolveUpgradeSource(
+			installed, unversionedMatches, a.flags.source,
+		)
+		if res == nil {
+			if len(unversionedMatches) > 0 {
+				return upgradeSourceResolutionError(
+					extensionId, a.flags.source, installed.Source,
+				)
+			}
+			return nil
+		}
+		return upgradeVersionResolutionError(
+			extensionId, a.flags.version, res.NewSource,
+		)
+	}
+
 	matches, err := a.extensionManager.FindExtensions(
 		ctx, allMatchOptions,
 	)
@@ -2163,15 +2495,34 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		))
 	}
 	if len(matches) == 0 {
+		if err := versionMismatchError(); err != nil {
+			return fail(err)
+		}
+
+		// Explicit --source miss: neither the requested version nor any other
+		// version of the extension exists in that source.
+		if a.flags.source != "" && !a.flags.all {
+			return fail(upgradeSourceResolutionError(
+				extensionId, a.flags.source, installed.Source,
+			))
+		}
+
 		// Delisted or unavailable — skip instead of fail so
 		// the batch continues.
 		baseResult.Status = extensions.UpgradeStatusSkipped
-		baseResult.SkipReason = "extension no longer available " +
-			"in any configured registry"
+		if a.flags.source != "" {
+			baseResult.SkipReason = fmt.Sprintf(
+				"extension not available in source '%s'",
+				a.flags.source,
+			)
+		} else {
+			baseResult.SkipReason = "extension no longer available " +
+				"in any configured registry"
+		}
 		if !isJsonOutput {
-			skipMsg := fmt.Sprintf(
-				"Upgrading %s extension",
-				output.WithHighLightFormat(extensionId),
+			skipMsg := extensionTaskMessage(
+				"Updating",
+				extensionId,
 			) + output.WithGrayFormat(
 				" (No longer available in any registry)",
 			)
@@ -2192,9 +2543,11 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			installed, matches, a.flags.source,
 		)
 		if res == nil {
-			return fail(fmt.Errorf(
-				"extension '%s' not found in source '%s'",
-				extensionId, a.flags.source,
+			if err := versionMismatchError(); err != nil {
+				return fail(err)
+			}
+			return fail(upgradeSourceResolutionError(
+				extensionId, a.flags.source, installed.Source,
 			))
 		}
 		selectedExt = res.Extension
@@ -2261,6 +2614,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	targetSemver, targetErr := semver.NewVersion(targetVersionStr)
 
 	baseResult.ToSource = newSource
+	baseResult.ToSourceCategory = selectedExt.SourceCategoryOrUnknown()
 
 	// Compare versions
 	if installedErr == nil && targetErr == nil && installedSemver.GreaterThan(targetSemver) {
@@ -2290,7 +2644,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		reconciledVersion, depUpgrades, err := a.extensionManager.ReconcileDependencies(
 			ctx, compatExt, extensions.UpgradeOptions{
 				VersionPreference:   a.flags.version,
-				UpgradeDependencies: !a.flags.noDependencyUpgrades,
+				UpgradeDependencies: !a.flags.noDependencyUpdates,
 				AzdVersion:          azdVersion,
 			},
 		)
@@ -2308,7 +2662,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		baseResult.SkipReason = "already up to date"
 		if !isJsonOutput {
 			skipMsg := stepMsg + output.WithGrayFormat(
-				" (No upgrade available)",
+				" (No update available)",
 			)
 			a.console.StopSpinner(
 				ctx, skipMsg, input.StepSkipped,
@@ -2322,20 +2676,20 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	extVersion, depUpgrades, err := a.extensionManager.Upgrade(
 		ctx, compatExt, extensions.UpgradeOptions{
 			VersionPreference:   a.flags.version,
-			UpgradeDependencies: !a.flags.noDependencyUpgrades,
+			UpgradeDependencies: !a.flags.noDependencyUpdates,
 			AzdVersion:          azdVersion,
 		},
 	)
 	if err != nil {
 		if isNetworkError(err) {
 			return fail(fmt.Errorf(
-				"network error upgrading %s "+
+				"network error updating %s "+
 					"(check your connection and retry): %w",
 				extensionId, err,
 			))
 		}
 		return fail(fmt.Errorf(
-			"failed to upgrade extension: %w", err,
+			"failed to update extension: %w", err,
 		))
 	}
 	baseResult.ToVersion = extVersion.Version
@@ -2347,7 +2701,8 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		emitPromotionEvent(
 			ctx, extensionId,
 			installed.Version, extVersion.Version,
-			oldSource, newSource,
+			installed.SourceCategoryOrUnknown(),
+			selectedExt.SourceCategoryOrUnknown(),
 		)
 		if !isJsonOutput {
 			a.displayPromotionWarning(
@@ -2361,13 +2716,12 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 
 	if !isJsonOutput {
-		doneMsg := fmt.Sprintf(
-			"Upgraded %s extension %s",
-			output.WithHighLightFormat(extensionId),
-			output.WithGrayFormat(
-				"(%s \u2192 %s)",
-				installed.Version, extVersion.Version,
-			),
+		doneMsg := extensionTaskMessage(
+			"Updated",
+			extensionId,
+		) + " " + output.WithGrayFormat(
+			"(%s \u2192 %s)",
+			installed.Version, extVersion.Version,
 		)
 		a.console.StopSpinner(ctx, doneMsg, input.StepDone)
 		displayDependencyUpgradeResults(ctx, a.console, baseResult.DependencyUpgrades, "  ")
@@ -2392,7 +2746,7 @@ func (a *extensionUpgradeAction) displayPromotionWarning(
 ) {
 	a.console.StopSpinner(ctx, stepMsg, input.StepWarning)
 	a.console.Message(ctx, output.WithWarningFormat(
-		"  (!) Warning: Upgraded %s extension (%s \u2192 %s, %s \u2192 %s registry)",
+		"  (!) Warning: Updated %s (%s \u2192 %s, %s \u2192 %s registry)",
 		output.WithHighLightFormat(extensionId),
 		fromVersion, toVersion,
 		output.WithHighLightFormat(oldSource),
@@ -2426,6 +2780,7 @@ func displayDependencyUpgradeResults(
 	indent string,
 ) {
 	for _, child := range results {
+		suggestionPadding := 0
 		switch child.Status {
 		case extensions.UpgradeStatusUpgraded:
 			verb := dependencyChangeVerb(child.FromVersion, child.ToVersion)
@@ -2441,8 +2796,9 @@ func displayDependencyUpgradeResults(
 				),
 			))
 		case extensions.UpgradeStatusFailed:
+			suggestionPadding = len("(x) Failed: ")
 			console.Message(ctx, fmt.Sprintf(
-				"%s%s Upgrading %s dependency%s",
+				"%s%s Updating %s dependency%s",
 				indent,
 				output.WithErrorFormat("(x) Failed:"),
 				output.WithHighLightFormat(child.ExtensionId),
@@ -2456,8 +2812,9 @@ func displayDependencyUpgradeResults(
 				}(),
 			))
 		case extensions.UpgradeStatusSkipped:
+			suggestionPadding = len("(-) Skipped: ")
 			line := fmt.Sprintf(
-				"%s%s Upgrading %s dependency",
+				"%s%s Updating %s dependency",
 				indent,
 				output.WithGrayFormat("(-) Skipped:"),
 				output.WithHighLightFormat(child.ExtensionId),
@@ -2466,14 +2823,14 @@ func displayDependencyUpgradeResults(
 				line += output.WithGrayFormat(" (%s)", child.SkipReason)
 			}
 			console.Message(ctx, line)
-			if child.Suggestion != "" {
-				console.Message(ctx, fmt.Sprintf(
-					"%s%s%s",
-					indent,
-					strings.Repeat(" ", len("(-) Skipped: ")),
-					child.Suggestion,
-				))
-			}
+		}
+		if child.Suggestion != "" && suggestionPadding > 0 {
+			console.Message(ctx, fmt.Sprintf(
+				"%s%s%s",
+				indent,
+				strings.Repeat(" ", suggestionPadding),
+				child.Suggestion,
+			))
 		}
 		displayDependencyUpgradeResults(ctx, console, child.DependencyUpgrades, indent)
 	}
@@ -2488,7 +2845,7 @@ func dependencyChangeVerb(fromVersion, toVersion string) string {
 	if to.LessThan(from) {
 		return "Downgraded"
 	}
-	return "Upgraded"
+	return "Updated"
 }
 
 // displayUpgradeSummary prints the batch summary line after all
@@ -2505,7 +2862,7 @@ func displayUpgradeSummary(
 	depUpgraded := summary.DependencyUpgradesByStatus[extensions.UpgradeStatusUpgraded]
 	if summary.Upgraded > 0 {
 		upgradedPart := output.WithSuccessFormat(
-			"%d upgraded", summary.Upgraded,
+			"%d updated", summary.Upgraded,
 		)
 		if depUpgraded > 0 {
 			noun := "dependency"
@@ -2551,7 +2908,7 @@ func displayUpgradeSummary(
 		console.Message(ctx, fmt.Sprintf(
 			"  Run '%s' to retry failed extensions.",
 			output.WithHighLightFormat(
-				"azd extension upgrade <name>",
+				"azd extension update <name>",
 			),
 		))
 	}
@@ -2568,19 +2925,19 @@ func upgradeActionResult(
 		return &actions.ActionResult{
 				Message: &actions.ResultMessage{
 					Header: fmt.Sprintf(
-						"%d of %d extensions failed to upgrade",
+						"%d of %d extensions failed to update",
 						summary.Failed, summary.Total,
 					),
 				},
 			}, fmt.Errorf(
-				"%d of %d extensions failed to upgrade",
+				"%d of %d extensions failed to update",
 				summary.Failed, summary.Total,
 			)
 	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Extensions upgraded successfully",
+			Header: "Extensions updated successfully",
 		},
 	}, nil
 }
@@ -2597,16 +2954,16 @@ func emitPromotionEvent(
 	extensionId string,
 	fromVersion string,
 	toVersion string,
-	oldSource string,
-	newSource string,
+	oldSourceCategory extensions.SourceCategory,
+	newSourceCategory extensions.SourceCategory,
 ) {
 	_, promSpan := tracing.Start(ctx, events.ExtensionPromoteEvent)
 	promSpan.SetAttributes(
 		fields.ExtensionId.String(extensionId),
 		fields.ExtensionVersionFrom.String(fromVersion),
 		fields.ExtensionVersionTo.String(toVersion),
-		fields.ExtensionSourceFrom.String(oldSource),
-		fields.ExtensionSourceTo.String(newSource),
+		fields.ExtensionSourceCategoryFrom.String(string(oldSourceCategory)),
+		fields.ExtensionSourceCategoryTo.String(string(newSourceCategory)),
 	)
 	promSpan.SetStatus(codes.Ok, "")
 	promSpan.End()
@@ -2714,7 +3071,13 @@ type extensionSourceAddFlags struct {
 
 func newExtensionSourceAddFlags(cmd *cobra.Command) *extensionSourceAddFlags {
 	flags := &extensionSourceAddFlags{}
-	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "The name of the extension source")
+	cmd.Flags().StringVarP(
+		&flags.name,
+		"name",
+		"n",
+		"",
+		"The source name: 1-64 lowercase letters, digits, hyphens, or underscores.",
+	)
 	cmd.Flags().StringVarP(&flags.location, "location", "l", "", "The location of the extension source")
 	cmd.Flags().StringVarP(&flags.kind,
 		"type", "t", "", "The type of the extension source. Supported types are 'file' and 'url'")
@@ -2745,6 +3108,10 @@ func (a *extensionSourceAddAction) Run(ctx context.Context) (*actions.ActionResu
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Add extension source (azd extension source add)",
 	})
+
+	if err := extensions.ValidateSourceName(a.flags.name); err != nil {
+		return nil, err
+	}
 
 	spinnerMessage := "Validating extension source"
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
@@ -2779,6 +3146,9 @@ func (a *extensionSourceAddAction) Run(ctx context.Context) (*actions.ActionResu
 	if err != nil {
 		return nil, fmt.Errorf("failed adding extension source: %w", err)
 	}
+	tracing.SetUsageAttributes(
+		fields.ExtensionSourceCategory.String(string(extensions.ClassifySource(sourceConfig))),
+	)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
@@ -2792,6 +3162,13 @@ type extensionSourceRemoveAction struct {
 	sourceManager *extensions.SourceManager
 	console       input.Console
 	args          []string
+}
+
+func extensionSourceDisplayName(name string) string {
+	if err := extensions.ValidateSourceName(name); err != nil {
+		return fmt.Sprintf("%q", name)
+	}
+	return name
 }
 
 func newExtensionSourceRemoveAction(
@@ -2823,8 +3200,9 @@ func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionR
 		Title: "Remove extension source (azd extension source remove)",
 	})
 
-	var key = strings.ToLower(a.args[0])
-	spinnerMessage := fmt.Sprintf("Removing extension source (%s)", key)
+	key := a.args[0]
+	displayName := extensionSourceDisplayName(key)
+	spinnerMessage := fmt.Sprintf("Removing extension source (%s)", displayName)
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
 	err := a.sourceManager.Remove(ctx, key)
@@ -2835,7 +3213,7 @@ func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionR
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Removed azd extension source %s", key),
+			Header: fmt.Sprintf("Removed azd extension source %s", displayName),
 			FollowUp: fmt.Sprintf(
 				"Add more extension sources by running %s",
 				output.WithHighLightFormat("azd extension source add <key>"),
@@ -2870,14 +3248,23 @@ func displayExtensionUsageAndExamples(
 
 // displayInstalledDependencies renders newly installed and skipped dependencies
 // as flat rows aligned with the parent step.
+type installedDependencyManager interface {
+	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
+	FindExtensions(
+		ctx context.Context,
+		options *extensions.FilterOptions,
+	) ([]*extensions.ExtensionMetadata, error)
+}
+
 func displayInstalledDependencies(
 	ctx context.Context,
 	console input.Console,
-	manager *extensions.Manager,
+	manager installedDependencyManager,
 	deps []extensions.ExtensionDependency,
 	preInstalledIds map[string]struct{},
 	indent string,
 	visited map[string]struct{},
+	parentSourceCategory extensions.SourceCategory,
 ) {
 	for _, dep := range deps {
 		if _, seen := visited[dep.Id]; seen {
@@ -2899,12 +3286,18 @@ func displayInstalledDependencies(
 				output.WithGrayFormat("(%s, already installed)", installed.Version),
 			))
 		} else {
+			sourceSuffix := ""
+			if installed.SourceCategoryOrUnknown() == extensions.SourceCategoryAzd &&
+				parentSourceCategory != extensions.SourceCategoryAzd {
+				sourceSuffix = fmt.Sprintf(" from %s", extensions.MainRegistryName)
+			}
 			console.Message(ctx, fmt.Sprintf(
-				"%s%s Installing %s dependency %s",
+				"%s%s Installing %s dependency %s%s",
 				indent,
 				output.WithSuccessFormat("(\u2713) Done:"),
 				output.WithHighLightFormat(installed.Id),
 				output.WithGrayFormat("(%s)", installed.Version),
+				sourceSuffix,
 			))
 		}
 
@@ -2920,6 +3313,7 @@ func displayInstalledDependencies(
 				displayInstalledDependencies(
 					ctx, console, manager, v.Dependencies,
 					preInstalledIds, indent, visited,
+					installed.SourceCategoryOrUnknown(),
 				)
 				break
 			}

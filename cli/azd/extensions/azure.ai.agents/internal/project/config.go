@@ -45,7 +45,6 @@ type ServiceTargetAgentConfig struct {
 	// Foundry project. Its presence is the brownfield signal that makes provision
 	// connect to that project instead of creating a new one.
 	Endpoint        string             `json:"endpoint,omitempty"`
-	Environment     map[string]string  `json:"env,omitempty"`
 	Container       *ContainerSettings `json:"container,omitempty"`
 	Deployments     []Deployment       `json:"deployments,omitempty"`
 	Resources       []Resource         `json:"resources,omitempty"`
@@ -54,12 +53,45 @@ type ServiceTargetAgentConfig struct {
 	Connections     []Connection       `json:"connections,omitempty"`
 	MemoryStores    []MemoryStore      `json:"memoryStores,omitempty"`
 	StartupCommand  string             `json:"startupCommand,omitempty"`
+	Activity        *ActivitySettings  `json:"activity,omitempty"`
 	// PromptAgent holds the harness connection details for a "prompt"
 	// (kind=managed) agent service. It is only populated for prompt agents;
 	// hosted/workflow agents leave it nil. The harness has no container/code
 	// to build, so prompt-agent services carry their entire deploy target in
 	// this block instead of a Docker/code configuration.
 	PromptAgent *PromptAgentSettings `json:"promptAgent,omitempty"`
+}
+
+// ActivitySettings configures the Teams hosting model for an Activity-protocol agent.
+type ActivitySettings struct {
+	UseCase ActivityUseCase        `json:"useCase,omitempty"`
+	Publish *ActivityPublishConfig `json:"publish,omitempty"`
+}
+
+// ActivityPublishConfig carries Activity-protocol Teams package/publish metadata.
+// Digital Worker-only fields are applied only when the resolved use case is
+// digital_worker.
+type ActivityPublishConfig struct {
+	PublishAsAutopilot       bool                       `json:"publishAsAutopilot,omitempty"`
+	PublishScope             string                     `json:"publishScope,omitempty"`
+	CanRespondWithoutMention *bool                      `json:"canRespondWithoutMention,omitempty"`
+	AppVersion               string                     `json:"appVersion,omitempty"`
+	AgentDisplayName         string                     `json:"agentDisplayName,omitempty"`
+	ShortDescription         string                     `json:"shortDescription,omitempty"`
+	FullDescription          string                     `json:"fullDescription,omitempty"`
+	DeveloperName            string                     `json:"developerName,omitempty"`
+	DeveloperWebsiteURL      string                     `json:"developerWebsiteUrl,omitempty"`
+	PrivacyURL               string                     `json:"privacyUrl,omitempty"`
+	TermsOfUseURL            string                     `json:"termsOfUseUrl,omitempty"`
+	AgenticUserTemplate      *AgenticUserTemplateConfig `json:"agenticUserTemplate,omitempty"`
+}
+
+// AgenticUserTemplateConfig identifies the template embedded in a Digital Worker Teams package.
+type AgenticUserTemplateConfig struct {
+	ID                    string `json:"id,omitempty"`
+	File                  string `json:"file,omitempty"`
+	SchemaVersion         string `json:"schemaVersion,omitempty"`
+	CommunicationProtocol string `json:"communicationProtocol,omitempty"`
 }
 
 // ContainerSettings provides container configuration for the Azure AI Service target

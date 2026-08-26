@@ -38,6 +38,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMetadataCommand())
 	rootCmd.AddCommand(newAiCommand())
 	rootCmd.AddCommand(newCopilotCommand())
+	rootCmd.AddCommand(newTelemetryCommand())
 
 	return rootCmd
 }

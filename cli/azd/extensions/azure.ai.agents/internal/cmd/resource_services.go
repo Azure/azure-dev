@@ -95,8 +95,9 @@ func emitResourceServices(
 	deployments []project.Deployment,
 	connections []project.Connection,
 	toolboxes []project.Toolbox,
-) error {
+) (int, error) {
 	var agentUses []string
+	emittedConnections := 0
 
 	// Track every azure.yaml service key we emit so two resource names that
 	// sanitize to the same key (e.g. "my conn" and "myconn") fail fast instead
@@ -129,14 +130,14 @@ func emitResourceServices(
 		Deployments: deployments,
 	})
 	if err != nil {
-		return fmt.Errorf("marshaling project service config: %w", err)
+		return 0, fmt.Errorf("marshaling project service config: %w", err)
 	}
 	projectServiceName := resolveProjectServiceKey(ctx, azdClient)
 	if err := reserveServiceName(usedNames, projectServiceName, "project service"); err != nil {
-		return err
+		return 0, err
 	}
 	if err := addResourceService(ctx, azdClient, projectServiceName, AiProjectHost, projectCfg, nil); err != nil {
-		return err
+		return 0, err
 	}
 	agentUses = append(agentUses, projectServiceName)
 
@@ -155,16 +156,17 @@ func emitResourceServices(
 			continue
 		}
 		if err := reserveServiceName(usedNames, connName, fmt.Sprintf("connection %q", conn.Name)); err != nil {
-			return err
+			return 0, err
 		}
 		connCfg, err := project.MarshalStruct(&conn)
 		if err != nil {
-			return fmt.Errorf("marshaling connection service %q config: %w", connName, err)
+			return 0, fmt.Errorf("marshaling connection service %q config: %w", connName, err)
 		}
 		if err := addResourceService(ctx, azdClient, connName, AiConnectionHost, connCfg, siblingUses); err != nil {
-			return err
+			return 0, err
 		}
 		agentUses = append(agentUses, connName)
+		emittedConnections++
 	}
 
 	for i := range toolboxes {
@@ -178,14 +180,14 @@ func emitResourceServices(
 			continue
 		}
 		if err := reserveServiceName(usedNames, toolboxName, fmt.Sprintf("toolbox %q", toolbox.Name)); err != nil {
-			return err
+			return 0, err
 		}
 		toolboxCfg, err := project.MarshalStruct(&toolbox)
 		if err != nil {
-			return fmt.Errorf("marshaling toolbox service %q config: %w", toolboxName, err)
+			return 0, fmt.Errorf("marshaling toolbox service %q config: %w", toolboxName, err)
 		}
 		if err := addResourceService(ctx, azdClient, toolboxName, AiToolboxHost, toolboxCfg, siblingUses); err != nil {
-			return err
+			return 0, err
 		}
 		agentUses = append(agentUses, toolboxName)
 	}
@@ -193,11 +195,11 @@ func emitResourceServices(
 	// Wire the agent service to its resource siblings so azd walks them first.
 	if len(agentUses) > 0 && agentServiceName != "" {
 		if err := setServiceUses(ctx, azdClient, agentServiceName, agentUses); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
-	return nil
+	return emittedConnections, nil
 }
 
 // resolveProjectServiceKey picks the azure.yaml service key for the single
@@ -316,6 +318,7 @@ func addResourceService(
 	cfg *structpb.Struct,
 	uses []string,
 ) error {
+	environment := serviceEnvironmentTemplates(cfg)
 	svc := &azdext.ServiceConfig{
 		Name:                 name,
 		Host:                 host,
@@ -326,12 +329,137 @@ func addResourceService(
 		return fmt.Errorf("adding %s service %q: %w", host, name, err)
 	}
 
+	if err := setServiceEnvironment(
+		ctx,
+		azdClient,
+		name,
+		environment,
+	); err != nil {
+		return err
+	}
+
 	if len(uses) > 0 {
 		if err := setServiceUses(ctx, azdClient, name, uses); err != nil {
 			return err
 		}
 	}
 
+	return nil
+}
+
+// serviceEnvironmentTemplates discovers client-side templates in the
+// generic nested resource config emitted to azure.yaml.
+func serviceEnvironmentTemplates(cfg *structpb.Struct) map[string]string {
+	if cfg == nil {
+		return nil
+	}
+
+	environment := map[string]string{}
+	collectEnvironmentTemplates(cfg.AsMap(), environment)
+	if len(environment) == 0 {
+		return nil
+	}
+	return environment
+}
+
+func collectEnvironmentTemplates(value any, environment map[string]string) {
+	switch typed := value.(type) {
+	case string:
+		collectStringEnvironmentTemplates(typed, environment)
+	case map[string]any:
+		for _, nested := range typed {
+			collectEnvironmentTemplates(nested, environment)
+		}
+	case []any:
+		for _, nested := range typed {
+			collectEnvironmentTemplates(nested, environment)
+		}
+	}
+}
+
+func collectStringEnvironmentTemplates(value string, environment map[string]string) {
+	for _, reference := range findEnvironmentReferences(value) {
+		// env is keyed by name, so store one canonical ${NAME}.
+		// A ${NAME:-default} default is re-applied by the owning
+		// extension against the raw config at deploy, so the env section
+		// only needs NAME's resolved base value. Collapsing every form of
+		// a var to one value also keeps collection deterministic when the
+		// same var appears with and without a default. This assumes a
+		// literal default: a nested ${VAR} default is unsupported and
+		// gets no entry here. See findEnvironmentReferences.
+		environment[reference.Name] = "${" + reference.Name + "}"
+	}
+}
+
+// escapeFoundryTemplates escapes Foundry ${{...}} spans as $${{...}}
+// so azd core's envsubst emits a literal ${{...}} for the owning
+// extension to resolve. Already-escaped $${{...}} and bare ${VAR}
+// are left unchanged, so it is safe on values read back from disk.
+func escapeFoundryTemplates(value string) string {
+	if !strings.Contains(value, "${{") {
+		return value
+	}
+	var b strings.Builder
+	b.Grow(len(value) + 2)
+	for i := 0; i < len(value); i++ {
+		if value[i] == '$' && strings.HasPrefix(value[i:], "${{") &&
+			(i == 0 || value[i-1] != '$') {
+			b.WriteByte('$')
+		}
+		b.WriteByte(value[i])
+	}
+	return b.String()
+}
+
+// setServiceEnvironment writes the env: block of a service, and
+// leaves azure.yaml untouched when there is nothing to write.
+//
+// A generated service with no variables of its own therefore reads
+// as legacy at run and deploy. Declaring an explicit env: {} here
+// would not change that today: core drops a zero-length env on
+// save because ServiceConfig.Environment is tagged omitempty.
+// Fixing it needs core to distinguish an absent env: from an
+// explicitly empty one.
+func setServiceEnvironment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	environment map[string]string,
+) error {
+	if len(environment) == 0 {
+		return nil
+	}
+
+	sectionValues := make(map[string]any, len(environment))
+	for key, value := range environment {
+		sectionValues[key] = escapeFoundryTemplates(value)
+	}
+	section, err := structpb.NewStruct(sectionValues)
+	if err != nil {
+		return fmt.Errorf(
+			"encoding env for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
+
+	// ServiceConfig.Environment only carries expanded values.
+	// The config RPC preserves raw ${VAR} templates.
+	_, err = azdClient.Project().SetServiceConfigSection(
+		ctx,
+		&azdext.SetServiceConfigSectionRequest{
+			ServiceName: serviceName,
+			Path:        "env",
+			Section:     section,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"setting env for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
 	return nil
 }
 

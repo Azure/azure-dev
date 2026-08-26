@@ -131,6 +131,19 @@
                   }
                 }
               }
+            },
+            "sessionConfiguration": {
+              "type": "object",
+              "description": "Optional hosted-agent session runtime settings. When omitted, the service applies its defaults (idle timeout 900 seconds).",
+              "additionalProperties": false,
+              "properties": {
+                "idleTimeoutSeconds": {
+                  "type": "integer",
+                  "description": "Idle duration in seconds before a session's sandbox is suspended. Range 300–3600 (inclusive). Defaults to 900 when omitted.",
+                  "minimum": 300,
+                  "maximum": 3600
+                }
+              }
             }
           }
         }

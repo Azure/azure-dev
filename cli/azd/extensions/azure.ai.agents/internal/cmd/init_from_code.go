@@ -334,10 +334,13 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 		a.credential = newCred
 
+		skipACR := deployMode == "code"
+		filterHostedRegions := true // code and container deploy modes both create hosted agents.
 		proj, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
-			deployMode == "code",
+			skipACR,
+			filterHostedRegions,
 			true, // bicepless
 		)
 		if err != nil {
@@ -405,7 +408,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
 				deployMode == "code",
-				true, // bicepless
+				deployMode == "code", // filterHostedRegions: code deploy targets hosted agents
+				true,                 // bicepless
 			)
 			if err != nil {
 				return nil, err
@@ -831,6 +835,7 @@ func (a *InitFromCodeAction) addToProject(
 	if err != nil {
 		return err
 	}
+	agentEnvironment := project.AgentEnvironment(*definition)
 
 	language := "python"
 	if !isCodeDeploy {
@@ -840,8 +845,9 @@ func (a *InitFromCodeAction) addToProject(
 		language = "csharp"
 	}
 
+	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	serviceConfig := &azdext.ServiceConfig{
-		Name:                 strings.ReplaceAll(agentName, " ", ""),
+		Name:                 agentServiceName,
 		RelativePath:         targetDir,
 		Host:                 AiAgentHost,
 		Language:             language,
@@ -868,6 +874,14 @@ func (a *InitFromCodeAction) addToProject(
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
+	if err := setServiceEnvironment(
+		ctx,
+		a.azdClient,
+		agentServiceName,
+		agentEnvironment,
+	); err != nil {
+		return err
+	}
 
 	// Emit the sibling azure.ai.project service carrying the model deployments
 	// and wire the agent's uses: to it. A selected existing project contributes
@@ -880,7 +894,8 @@ func (a *InitFromCodeAction) addToProject(
 	if err != nil {
 		return err
 	}
-	if err := emitResourceServices(
+	// its endpoint so provision reuses it instead of creating a new project.
+	if _, err := emitResourceServices(
 		ctx, a.azdClient, agentServiceName,
 		endpointRef,
 		resourceDeployments, nil, nil,
@@ -888,7 +903,7 @@ func (a *InitFromCodeAction) addToProject(
 		return err
 	}
 
-	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)
+	printAgentAddedMessage(agentName)
 	return nil
 }
 
@@ -910,7 +925,7 @@ type protocolInfo struct {
 // knownProtocols lists the protocols offered during init, in display order.
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
-	{Name: "invocations", Version: "1.0.0"},
+	{Name: "invocations", Version: "2.0.0"},
 	{Name: "invocations_ws", Version: "2.0.0"},
 	// "activity" is the canonical protocol name (legacy alias: "activity_protocol").
 	// The version selects the platform's internal container route ("v1"/"1.0.0" ->

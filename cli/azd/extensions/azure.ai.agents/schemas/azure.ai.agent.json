@@ -4,13 +4,6 @@
   "description": "Custom configuration for the Azure AI Agent Service target",
   "type": "object",
   "properties": {
-    "env": {
-      "type": "object",
-      "description": "Environment variables as key-value pairs",
-      "additionalProperties": {
-        "type": "string"
-      }
-    },
     "container": {
       "$ref": "#/definitions/ContainerSettings"
     },
@@ -48,10 +41,39 @@
       "type": "string",
       "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
     },
+    "activity": {
+      "$ref": "#/definitions/ActivitySettings"
+    },
     "kind": {
       "type": "string",
-      "description": "The agent kind. Currently only 'hosted' is supported.",
-      "enum": ["hosted"]
+      "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt-voice' for a declarative (managed) speech-to-speech voice agent.",
+      "enum": ["hosted", "prompt-voice"]
+    },
+    "modelType": {
+      "type": "string",
+      "description": "Voice agent (kind: prompt-voice) model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' (BYOM) references an existing Foundry model deployment.",
+      "enum": ["managed", "self_deployed"]
+    },
+    "model": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) speech-to-speech model (e.g. id: gpt-realtime).",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Model name for managed mode (e.g. 'gpt-realtime') or existing Foundry deployment name for self_deployed mode." }
+      },
+      "required": ["id"],
+      "additionalProperties": true
+    },
+    "instructions": {
+      "type": "string",
+      "description": "Voice agent (kind: prompt-voice) system prompt for the assistant."
+    },
+    "voice": {
+      "type": "string",
+      "description": "Voice agent (kind: prompt-voice) output voice name (e.g. 'en-US-Ava:DragonHDLatestNeural' for an Azure Neural voice, or 'alloy' for an OpenAI realtime voice)."
+    },
+    "store": {
+      "type": "boolean",
+      "description": "Voice agent (kind: prompt-voice) server-side logging toggle (transcript + per-turn audio). Defaults to false when omitted."
     },
     "name": {
       "type": "string",
@@ -88,6 +110,9 @@
     "codeConfiguration": {
       "$ref": "#/definitions/CodeConfiguration"
     },
+    "sessionConfiguration": {
+      "$ref": "#/definitions/SessionConfiguration"
+    },
     "policies": {
       "type": "array",
       "description": "Governance policies attached to the agent (e.g., Responsible AI).",
@@ -105,7 +130,90 @@
     }
   },
   "additionalProperties": true,
+  "allOf": [
+    {
+      "$comment": "A prompt-voice agent must declare a speech-to-speech model; the deploy path rejects a voice service whose model.id is missing. Keep editor/schema validation aligned with that runtime requirement.",
+      "if": {
+        "properties": {
+          "kind": { "const": "prompt-voice" }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["model"]
+      }
+    },
+    {
+      "$comment": "The activity.publish block is shared publish metadata for Activity use cases (including simple). Digital Worker adds stricter requirements: publish must exist, publishScope must be tenant, and agenticUserTemplate is required to carry the persisted blueprint identity.",
+      "if": {
+        "properties": {
+          "activity": {
+            "properties": {
+              "useCase": { "const": "digital_worker" }
+            },
+            "required": ["useCase"]
+          }
+        },
+        "required": ["activity"]
+      },
+      "then": {
+        "properties": {
+          "activity": {
+            "required": ["publish"],
+            "properties": {
+              "publish": {
+                "properties": {
+                  "publishScope": { "const": "tenant" }
+                },
+                "required": ["agenticUserTemplate"]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "definitions": {
+    "ActivitySettings": {
+      "type": "object",
+      "description": "Activity-protocol Teams configuration. The publish block is shared metadata for Activity use cases; digital_worker applies additional constraints via allOf.",
+      "properties": {
+        "useCase": { "type": "string", "enum": ["simple", "digital_worker"] },
+        "publish": {
+          "$ref": "#/definitions/ActivityPublishConfig",
+          "description": "Shared Microsoft 365 app publish metadata used by Activity use cases. For digital_worker, publishScope=tenant and agenticUserTemplate are required."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ActivityPublishConfig": {
+      "type": "object",
+      "properties": {
+        "publishScope": { "type": "string", "enum": ["shared", "tenant"] },
+        "canRespondWithoutMention": { "type": "boolean" },
+        "appVersion": { "type": "string", "minLength": 1 },
+        "agentDisplayName": { "type": "string", "minLength": 1 },
+        "shortDescription": { "type": "string" },
+        "fullDescription": { "type": "string" },
+        "developerName": { "type": "string" },
+        "developerWebsiteUrl": { "type": "string", "format": "uri" },
+        "privacyUrl": { "type": "string", "format": "uri" },
+        "termsOfUseUrl": { "type": "string", "format": "uri" },
+        "agenticUserTemplate": { "$ref": "#/definitions/AgenticUserTemplateConfig" }
+      },
+      "additionalProperties": false
+    },
+    "AgenticUserTemplateConfig": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "file": { "type": "string", "minLength": 1 },
+        "schemaVersion": { "type": "string", "minLength": 1 },
+        "communicationProtocol": { "type": "string", "minLength": 1 }
+      },
+      "required": ["id", "file", "schemaVersion", "communicationProtocol"],
+      "additionalProperties": false
+    },
     "ProtocolVersionRecord": {
       "type": "object",
       "description": "A protocol the agent implements, with its version.",
@@ -127,14 +235,117 @@
       "required": ["runtime", "entryPoint"],
       "additionalProperties": false
     },
+    "SessionConfiguration": {
+      "type": "object",
+      "description": "Optional hosted-agent session runtime settings. When omitted, the service applies its defaults (idle timeout 900 seconds).",
+      "properties": {
+        "idleTimeoutSeconds": {
+          "type": "integer",
+          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 300–3600 (inclusive). Defaults to 900 when omitted.",
+          "minimum": 300,
+          "maximum": 3600
+        }
+      },
+      "additionalProperties": false
+    },
     "Policy": {
       "type": "object",
       "description": "A safety or governance policy attached to the agent.",
       "properties": {
         "type": { "type": "string", "description": "Policy type (e.g., 'rai_policy')." },
-        "raiPolicyName": { "type": "string", "description": "ARM resource ID of the RAI policy (for type 'rai_policy')." }
+        "raiPolicyName": { "type": "string", "description": "ARM resource ID of the RAI policy (for type 'rai_policy')." },
+        "invocationsModeration": { "$ref": "#/definitions/InvocationsModeration" }
       },
       "required": ["type"],
+      "additionalProperties": false
+    },
+    "InvocationsModeration": {
+      "type": "object",
+      "description": "Configures how the content-safety proxy extracts the text it submits to the RAI policy. Only supported for agents that expose the 'invocations' protocol; without it an attached RAI policy has nothing to moderate on that path.",
+      "properties": {
+        "inputContentType": {
+          "type": "string",
+          "enum": ["json", "text"],
+          "description": "How the request body is encoded. Defaults to 'json'."
+        },
+        "outputContentType": {
+          "type": "string",
+          "enum": ["json", "text"],
+          "description": "How the response body is encoded. Defaults to 'json'."
+        },
+        "responseMode": {
+          "type": "string",
+          "enum": ["non_streaming", "streaming", "both"],
+          "description": "Response shapes the agent container can produce. This declares a capability, not an input/output switch: the proxy runs exactly one output gate per response, chosen from the actual response Content-Type."
+        },
+        "inputPaths": {
+          "type": "array",
+          "description": "JSONPath expressions selecting request text. Required when inputContentType is 'json' or omitted.",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "outputPaths": {
+          "type": "array",
+          "description": "JSONPath expressions selecting buffered response text. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "streamSelectors": {
+          "type": "array",
+          "description": "Locates text within server-sent event frames. Required when responseMode includes streaming and outputContentType is 'json' or omitted.",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/SseTextSelector" }
+        }
+      },
+      "required": ["responseMode"],
+      "allOf": [
+        {
+          "if": { "$ref": "#/definitions/InvocationsInputIsJson" },
+          "then": { "required": ["inputPaths"] }
+        },
+        {
+          "if": {
+            "allOf": [
+              { "properties": { "responseMode": { "enum": ["non_streaming", "both"] } }, "required": ["responseMode"] },
+              { "$ref": "#/definitions/InvocationsOutputIsJson" }
+            ]
+          },
+          "then": { "required": ["outputPaths"] }
+        },
+        {
+          "if": {
+            "allOf": [
+              { "properties": { "responseMode": { "enum": ["streaming", "both"] } }, "required": ["responseMode"] },
+              { "$ref": "#/definitions/InvocationsOutputIsJson" }
+            ]
+          },
+          "then": { "required": ["streamSelectors"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "InvocationsInputIsJson": {
+      "description": "Matches when inputContentType resolves to 'json', i.e. it is set to 'json' or omitted entirely (the default).",
+      "anyOf": [
+        { "properties": { "inputContentType": { "const": "json" } }, "required": ["inputContentType"] },
+        { "not": { "required": ["inputContentType"] } }
+      ]
+    },
+    "InvocationsOutputIsJson": {
+      "description": "Matches when outputContentType resolves to 'json', i.e. it is set to 'json' or omitted entirely (the default).",
+      "anyOf": [
+        { "properties": { "outputContentType": { "const": "json" } }, "required": ["outputContentType"] },
+        { "not": { "required": ["outputContentType"] } }
+      ]
+    },
+    "SseTextSelector": {
+      "type": "object",
+      "description": "Locates the text to moderate inside a single server-sent event frame.",
+      "properties": {
+        "eventType": { "type": "string", "pattern": "\\S", "description": "SSE event name this selector applies to." },
+        "textField": { "type": "string", "description": "JSONPath expression, relative to the frame payload, holding the text." }
+      },
+      "required": ["eventType"],
       "additionalProperties": false
     },
     "ContainerSettings": {

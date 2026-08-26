@@ -743,6 +743,7 @@ services:
 		conns, err := BrownfieldConnections(
 			[]byte(yaml),
 			map[string]string{"SEARCH_API_KEY": "secret"},
+			nil,
 			"",
 		)
 		require.NoError(t, err)
@@ -760,13 +761,18 @@ services:
     host: azure.ai.project
     endpoint: https://existing.services.ai.azure.com/api/projects/p1
 `
-		conns, err := BrownfieldConnections([]byte(noConns), nil, "")
+		conns, err := BrownfieldConnections(
+			[]byte(noConns),
+			nil,
+			nil,
+			"",
+		)
 		require.NoError(t, err)
 		assert.Empty(t, conns)
 	})
 
 	t.Run("empty raw errors", func(t *testing.T) {
-		_, err := BrownfieldConnections(nil, nil, "")
+		_, err := BrownfieldConnections(nil, nil, nil, "")
 		require.Error(t, err)
 	})
 
@@ -796,6 +802,7 @@ credentials:
 		connections, err := BrownfieldConnections(
 			raw,
 			map[string]string{"SEARCH_KEY": "secret"},
+			nil,
 			root,
 		)
 
@@ -1285,7 +1292,7 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 		"templates/terraform/provider.tf",
 		"templates/terraform/variables.tf",
 		"templates/terraform/main.tf",
-		"templates/terraform/acr.tf",
+		"templates/terraform/container-registry.tf",
 		"templates/terraform/connections.tf",
 		"templates/terraform/outputs.tf.tmpl",
 	}
@@ -1296,7 +1303,6 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 			assert.NotEmpty(t, data, "%s should not be empty", p)
 		})
 	}
-
 	// outputs.tf is rendered from outputs.tf.tmpl at eject time, and
 	// main.tfvars.json is generated -- neither is embedded as a final file
 	// (otherwise they would go stale).

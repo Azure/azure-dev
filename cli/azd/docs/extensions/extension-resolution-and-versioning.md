@@ -13,7 +13,9 @@ Extension sources are manifests that describe the extensions available for insta
 | `url` | HTTP/HTTPS endpoint | Remote JSON manifest fetched over the network. |
 | `file` | Local filesystem path | Local JSON file, useful for development and offline scenarios. |
 
-In addition, extensions installed from a [self-contained bundle](#self-contained-bundles) are tagged with a reserved `bundle` source. `bundle` is not a configurable source type and never appears in `azd extension source list` — it simply marks an extension that has no live registry to track updates against. Such extensions are listed with their `bundle` source in `azd extension list` and are skipped by `azd extension upgrade`. The name `bundle` is reserved, so it cannot be used as a user-configured source name.
+In addition, extensions installed from a [self-contained bundle](#self-contained-bundles) are tagged with a reserved `bundle` source. `bundle` is not a configurable source type and never appears in `azd extension source list` — it simply marks an extension that has no live registry to track updates against. Such extensions are listed with their `bundle` source in `azd extension list` and are skipped by `azd extension update`. The name `bundle` is reserved, so it cannot be used as a user-configured source name.
+
+Source names must contain 1 to 64 lowercase ASCII letters, digits, hyphens, or underscores, and must begin and end with a letter or digit. Invalid names are rejected rather than normalized. If an older configuration contains an invalid name, extension source loading reports the exact entry to remove and re-add.
 
 Sources are configured in `~/.azd/config.json`. You can manage them with the following commands:
 
@@ -50,6 +52,22 @@ azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registr
 ### Source Ordering
 
 Sources are sorted **alphabetically by name** — not by insertion order. This means a source named `"alpha"` is always consulted before `"beta"`, regardless of when each was added.
+
+### Source Categories
+
+For telemetry, `azd` classifies sources by type and location rather than by the user-defined name:
+
+| Category | Source |
+|----------|--------|
+| `azd` | Main aka.ms registry or its resolved GitHub URL |
+| `dev` | Dev aka.ms registry or its resolved GitHub URL |
+| `nightly` | Nightly aka.ms registry or its resolved GitHub URL |
+| `local` | File source |
+| `bundle` | Self-contained extension bundle |
+| `other` | Other URL or custom source type |
+| `unknown` | Legacy installed record without a persisted category |
+
+The category is stored with an installed extension so it remains available if the configured source is later removed or changed. Source names, URLs, paths, and hosts are not emitted.
 
 ## Resolution Algorithm
 
@@ -139,8 +157,8 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 ### Behavior
 
 - `azd` filters out all versions whose `requiredAzdVersion` constraint is not satisfied by the running `azd` version, then selects the **highest remaining compatible version** that also matches the user's version constraint.
-- If a **newer incompatible version** exists beyond the selected version, `azd` shows a **warning** suggesting the user upgrade `azd`.
-- If **no compatible versions** remain after filtering, the install **fails** with guidance to upgrade `azd`. The install also fails if the user explicitly requests a specific version that is incompatible.
+- If a **newer incompatible version** exists beyond the selected version, `azd` shows a **warning** suggesting the user update `azd`.
+- If **no compatible versions** remain after filtering, the install **fails** with guidance to update `azd`. The install also fails if the user explicitly requests a specific version that is incompatible.
 - If `requiredAzdVersion` is **empty or cannot be parsed**, the version is treated as compatible (fail-open). This ensures that extensions without the field remain installable.
 
 ## Install Flow
@@ -148,7 +166,7 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 Once a version is resolved, installation proceeds through these steps:
 
 1. **Resolve version** — Apply the version constraint against available versions, filter by `azd` compatibility, and select the highest match.
-2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**. Cross-source dependency resolution is not performed. Dependencies use the declared version constraint (or `latest`) but do **not** go through `azd` version compatibility filtering — `requiredAzdVersion` checks are only applied to the top-level extension. Passing `--no-dependencies` skips this step entirely: only the named extension is installed, its declared dependencies are neither resolved nor installed, and the installed-dependency version constraints are not enforced. This is intended for callers that only need the extension's own binary (for example, generating command snapshots) and cannot guarantee the registry's dependency graph is internally consistent.
+2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**, then fall back to the main `azd` registry when that source has no version satisfying the dependency constraint. Other configured sources are not searched. Self-contained bundles do not use the fallback because all of their dependencies must be included in the bundle. Dependencies use the declared version constraint (or `latest`) and are filtered by their `requiredAzdVersion` compatibility with the running `azd` version. Passing `--no-dependencies` skips this step entirely: only the named extension is installed, its declared dependencies are neither resolved nor installed, and the installed-dependency version constraints are not enforced. This is intended for callers that only need the extension's own binary (for example, generating command snapshots) and cannot guarantee the registry's dependency graph is internally consistent.
 3. **Match platform artifact** — Find the artifact for the current OS and architecture. `azd` first looks for `<os>/<arch>` (for example, `linux/amd64` or `windows/amd64`). If no exact match is found, it falls back to `<os>` only (for example, `linux` or `windows`).
 4. **Download** — Fetch the artifact from its URL (HTTP/HTTPS) or copy from a local file path.
 5. **Validate checksum** — Verify the downloaded file against the published checksum. Supported algorithms are `sha256` and `sha512`.
@@ -166,18 +184,18 @@ Once a version is resolved, installation proceeds through these steps:
 When the source is **not** changing (same source as the installed extension):
 
 - **Same version** — a no-op; the install is skipped.
-- **Newer version** — upgraded in place.
+- **Newer version** — updated in place.
 - **Older version** — a downgrade; `azd` **prompts for confirmation** before replacing the newer install with an older one. Declining skips the install. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
 
-When the source **is** changing (for example installing a bundle build over a registry build, or vice versa), the artifacts may differ, so `azd` does not silently proceed, no-op, or block a downgrade. Instead it **prompts for confirmation** before replacing the installed extension. The prompt states the version transition explicitly — *Reinstall*, *Upgrade to `<version>`*, or *Downgrade to `<version>`* — and the target source. Declining skips the install; confirming reinstalls and re-points the extension to the new source. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
+When the source **is** changing (for example installing a bundle build over a registry build, or vice versa), the artifacts may differ, so `azd` does not silently proceed, no-op, or block a downgrade. Instead it **prompts for confirmation** before replacing the installed extension. The prompt states the version transition explicitly — *Reinstall*, *Update to `<version>`*, or *Downgrade to `<version>`* — and the target source. Declining skips the install; confirming reinstalls and re-points the extension to the new source. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
 
 Because each bundle install registers a unique transient source, installing from **any** bundle over an already-installed extension is always treated as a source change — so it prompts even when the bundled version matches the installed one (the two builds may not be byte-identical).
 
-If a required dependency cannot be resolved from the parent's source and is not already installed, the install fails with an actionable error directing you to install the dependency first (consistent with the no cross-source dependency resolution behavior described above).
+For registry-backed installs, a required dependency must resolve from the parent's source or the main `azd` registry. For self-contained bundles, it must resolve from the bundle itself. If the dependency is not already installed and cannot be resolved from the applicable sources, the install fails with actionable guidance.
 
 ## Self-Contained Bundles
 
-A **self-contained bundle** is a single portable `.zip` that contains a well-known `registry.json` plus the extension artifacts it references. It lets you share a one-off build (for example, a PR build or an internal extension) without hosting a registry or making the artifacts reachable over the network — the recipient runs a single command to install everything from the file.
+A **self-contained bundle** is a single portable `.zip` that contains a well-known `registry.json` plus the extension artifacts it references. It lets you share a one-off build (for example, a PR build or an internal extension) without hosting a registry — the recipient runs a single command to install everything from the file, or from a single link when the `.zip` is hosted somewhere reachable.
 
 ### Producing a bundle
 
@@ -197,19 +215,26 @@ Consumers install a bundle by passing its path to `azd extension install`:
 azd extension install ./my-ext_1.0.0.zip
 ```
 
+A bundle can also be installed directly from an `https` URL, so a preview or internal build can be shared as a single link:
+
+```bash
+azd extension install https://example.com/builds/my-ext_1.0.0.zip
+```
+
 The install flow treats the bundle as an **installer, not a registry** — nothing about the bundle persists as a configured source once installation finishes:
 
-1. **Extract** the bundle into a temporary directory.
-2. **Register an ephemeral source** that reads the extracted `registry.json` and rewrites each relative artifact URL to an absolute path anchored inside the extracted directory. This is what allows the standard install flow — including checksum validation — to resolve the bundled artifacts unchanged. Relative paths that escape the bundle directory are rejected. The source name is transient and is never surfaced to the user.
-3. **Install** the bundled extension through the normal install path. Bundles are produced per extension by `azd x pack --bundle`, so a bundle declares a single extension.
-4. **Clean up** — once the extension is installed, `azd` re-points it to the reserved `bundle` source, removes the ephemeral source, and deletes the temporary extraction directory. The only durable state left behind is the installed extension itself (its binary under `~/.azd/extensions/<id>/` and its `extension.installed` record).
+1. **Download** (URLs only) the bundle to a temporary file. Download failures — an unreachable host or a non-`200` response — are reported as such, separately from a `.zip` that turns out not to be a valid bundle. From here on, remote and local bundles follow the exact same path.
+2. **Extract** the bundle into a temporary directory.
+3. **Register an ephemeral source** that reads the extracted `registry.json` and rewrites each relative artifact URL to an absolute path anchored inside the extracted directory. This is what allows the standard install flow — including checksum validation — to resolve the bundled artifacts unchanged. Relative paths that escape the bundle directory are rejected. The source name is transient and is never surfaced to the user.
+4. **Install** the bundled extension through the normal install path. Bundles are produced per extension by `azd x pack --bundle`, so a bundle declares a single extension.
+5. **Clean up** — once the extension is installed, `azd` re-points it to the reserved `bundle` source, removes the ephemeral source, and deletes the temporary extraction directory along with any downloaded `.zip`. Temporary files are removed whether the install succeeds or fails. The only durable state left behind is the installed extension itself (its binary under `~/.azd/extensions/<id>/` and its `extension.installed` record).
 
 ### Lifecycle of a bundle-installed extension
 
 Because a bundle does not register a lasting source, a bundle-installed extension is tracked under the reserved `bundle` source:
 
 - `azd extension list` shows it with its `bundle` source and a normal `✓ Up to date` status. It has no "latest" version to compare against, so no update is ever reported.
-- `azd extension upgrade` skips bundle-installed extensions with a note that they were installed from a self-contained bundle.
+- `azd extension update` skips bundle-installed extensions with a note that they were installed from a self-contained bundle.
 - `azd extension source list` does **not** show an entry for the bundle — there is no leftover source to clean up.
 
 To update a bundle-installed extension, install a newer bundle:
@@ -226,11 +251,11 @@ azd extension install <extension-id> --source <source-name>
 
 ### Trust model
 
-Bundles run arbitrary extension binaries on your machine. The embedded `sha256` checksums protect the **integrity** of each artifact within the bundle (they guarantee the bytes were not altered after packing), but bundles are **not signed** — there is no verification of the publisher's identity. Only install bundles you obtained from a source you trust.
+Bundles run arbitrary extension binaries on your machine. The embedded `sha256` checksums verify that each artifact matches the checksum declared in the `registry.json` received in the same bundle. They can detect accidental corruption or inconsistencies within that bundle, but they do not authenticate the publisher or protect against an attacker replacing both the artifacts and their checksums. Bundles are not signed. Only install bundles obtained from a source you trust. Remote bundle installation requires `https` because HTTP downloads can be modified in transit.
 
 ## Declaring Extensions in `azure.yaml`
 
-Projects can declare required extensions and version constraints in `azure.yaml`. When `azd init` runs, it reads this configuration and installs each extension automatically.
+Projects can declare required extensions and version constraints in `azure.yaml`. `azd init` reads this configuration and installs each extension automatically, and the project commands listed below re-check it before they run.
 
 ### Format
 
@@ -244,7 +269,7 @@ requiredVersions:
 
 Each entry maps an extension ID to a version constraint string. The same constraint syntax described in [Version Constraints](#version-constraints) applies here.
 
-### Behavior
+### Behavior during `azd init`
 
 - When `azd init` runs, it reads the `requiredVersions.extensions` map and installs each extension with the specified constraint.
 - If the constraint value is `null` or empty, `"latest"` is used (the highest available version is installed).
@@ -257,6 +282,38 @@ Each entry maps an extension ID to a version constraint string. The same constra
 > - `azd init` does not apply `requiredAzdVersion` compatibility filtering.
 > - Dependency (transitive) installation calls `Install()` directly without passing through `requiredAzdVersion` compatibility filtering, so a dependency may be installed even if its `requiredAzdVersion` is not satisfied by the running `azd` version.
 
+### Behavior during project commands
+
+Cloning a repository or editing `azure.yaml` by hand skips `azd init`, so the project commands that resolve a provider check for extensions again before running: `up`, `provision`, `deploy`, `package`, `restore`, `down` and `env refresh`.
+
+Resolution during project commands differs from `azd init` in two ways:
+
+- It **does** check installed extensions against the configured constraint, and fails with the conflicting constraint rather than proceeding with an unsatisfying version.
+- It resolves not only `requiredVersions.extensions` but also the providers the project implies (see below).
+
+Resolution only prompts for extensions that are genuinely missing, and it is skipped when the command renders help instead of running, such as `azd up --help`.
+
+Before installing anything, `azd` displays the complete set of missing extensions and their available configured sources. A single missing extension is shown with its ID, source or sources, and description. Multiple missing extensions are summarized in a table and confirmed together.
+
+When the official azd registry is one of several sources, `azd` recommends it but allows another configured source to be selected. For multiple extensions, a source selected for the first extension can be reused for the remaining extensions only when that source publishes every remaining requirement. Otherwise, azd prompts for each ambiguous source separately. Declining installation prints `Canceled: required extension isn't installed.`, stops the requested command before it runs, and exits successfully.
+
+With an explicit local `--no-prompt`, azd installs automatically only when every missing extension has one eligible source. The sources do not need to be the same. If any extension is available from several sources, azd stops and prints the exact `azd extension install` commands that can resolve the ambiguity.
+
+Auto-install remains disabled in detected CI/CD environments, including when CI detection enables no-prompt mode automatically. The error lists manual install commands for every missing extension so the pipeline can install them explicitly before rerunning the project command.
+
+### Inferred extension requirements
+
+Beyond the explicit `requiredVersions.extensions` list, project commands infer requirements from the providers the project uses:
+
+- Each `services.<name>.host` value must be supplied by an extension declaring the `service-target-provider` capability for that host.
+- Each `infra.provider` value (including entries under `infra.layers`) must be supplied by an extension declaring the `provisioning-provider` capability for that provider.
+
+Providers that `azd` implements itself are never resolved through an extension and never contact a registry: the built-in hosts (`appservice`, `containerapp`, `function`, `staticwebapp`, `aks`, `ai.endpoint`) and the built-in provisioning providers (`bicep`, `terraform`).
+
+When several extensions publish the same provider, `azd` prompts for the one to install. When an extension is already selected by `requiredVersions.extensions`, or is pulled in as a dependency of one, that version is used instead of installing another extension. If a version selected that way cannot supply the provider, `azd` reports the conflicting constraint rather than installing a second extension that the first would override.
+
+An extension only qualifies when the version `azd` would select publishes the provider. Older versions are not considered: a publisher that moves a provider to a different extension supersedes the versions that carried it, so `azd` never installs an earlier version to satisfy a provider. A provider that an installed extension already supplies is not resolved again.
+
 ## Caching
 
 ### Cache Location
@@ -267,7 +324,7 @@ Each entry maps an extension ID to a version constraint string. The same constra
 ~/.azd/cache/extensions/<source-name>.json
 ```
 
-Each source has its own cache file. The filename is derived from the source name by lowercasing it and replacing any characters outside `[a-zA-Z0-9._-]` with `_`. For example, a source named `"My Source!"` would be cached as `my_source_.json`.
+Each source has its own cache file. Because configured source names use the canonical format described above, the source name maps directly to a unique cache filename.
 
 ### Default TTL
 
@@ -346,7 +403,8 @@ When `latest` is specified (or the version is omitted), `azd` selects the **high
 | *"extension X not found"* | The extension ID is not present in any configured source. | Verify your sources with `azd extension source list`. Check the extension ID spelling. |
 | *"found in multiple sources, specify exact source"* | The extension exists in two or more configured sources. | Use `azd extension install X --source <name>` to specify which source to use. |
 | *"no matching version found"* | The version constraint excludes all available versions. | Check available versions with `azd extension show X`. Relax the constraint. |
-| *"dependency X not found"* | A recursive dependency declared by the extension is missing from all sources. | Ensure the dependency is published to an accessible source. |
+| *"dependency X not found"* | A recursive dependency is not installed and is missing from the applicable sources: the parent source and main `azd` registry for registry-backed installs, or the bundle for a bundle install. | Include the dependency in the parent source or bundle, publish it to `azd` for a registry-backed install, or install it explicitly before installing the parent. |
+| *"no version satisfies constraint"* | The applicable sources contain the dependency, but none of its versions match the parent extension's constraint. | Include or publish a compatible dependency version, install one explicitly, or update the parent extension's constraint. |
 | Stale version installed | The source cache has not expired yet, so `azd` is using an older manifest. | Set `AZD_EXTENSION_CACHE_TTL=0s` or delete files in `~/.azd/cache/extensions/`. |
 
 ### Diagnostic Steps
@@ -378,7 +436,7 @@ When `latest` is specified (or the version is omitted), `azd` selects the **high
 
 ## Dev/Experimental Extension Registry
 
-The dev (experimental) registry is a separate extension source for bleeding-edge, pre-release, and community-contributed extensions that have not yet been promoted to the official `azd` registry. It lives alongside the main registry in the `azure-dev` repository and is served via a dedicated aka.ms link. While `azd` and `dev` are the official source names, the extension source system supports adding custom sources with any name via `azd extension source add`.
+The dev (experimental) registry is a separate extension source for bleeding-edge, pre-release, and community-contributed extensions that have not yet been promoted to the official `azd` registry. It lives alongside the main registry in the `azure-dev` repository and is served via a dedicated aka.ms link. While `azd` and `dev` are the official source names, custom source names must follow the canonical source-name format.
 
 | Property | Main Registry | Dev Registry |
 |----------|---------------|--------------|
@@ -457,9 +515,9 @@ azd extension install my.experimental.extension --version 2.0.0-beta.1 --source 
 
 If an extension exists in both the `azd` and `dev` sources and you do not specify `--source`, `azd` will prompt you to choose (in interactive mode) or return an error (in non-interactive mode). See [Handle Conflicts](#3-handle-conflicts) for details.
 
-### Upgrade and Dev→Main Promotion
+### Update and Dev→Main Promotion
 
-When you run `azd extension upgrade`, extensions installed from the dev registry are evaluated for **one-way promotion** to the main registry. Promotion occurs automatically when:
+When you run `azd extension update`, extensions installed from the dev registry are evaluated for **one-way promotion** to the main registry. Promotion occurs automatically when:
 
 1. **The extension is no longer in the dev registry** — it was removed from `registry.dev.json` after being promoted to `registry.json`.
 2. **The main registry has a newer version** — the latest version in the main registry is strictly greater than the latest version in the dev registry.
@@ -469,13 +527,13 @@ When promotion happens, the extension's stored source switches from `dev` to `az
 > [!NOTE]
 > If the main and dev registries have the **same** latest version, the extension stays on its current (dev) source. Equal versions are source-sticky.
 
-The upgrade priority chain is:
+The update priority chain is:
 
 1. **Explicit `--source` flag** — always wins if provided
 2. **Stored source** — the source the extension was originally installed from
 3. **Main registry fallback** — `azd` checks the main registry for promotion opportunities
 
-Promotion events are tracked via `ext.promote` telemetry. Upgrade events (regardless of promotion) are tracked via `ext.upgrade`.
+Promotion events are tracked via `ext.promote` telemetry. Update events (regardless of promotion) are tracked via `ext.update`.
 
 #### Example: Dev→Main Promotion in Action
 
@@ -484,9 +542,9 @@ Promotion events are tracked via `ext.promote` telemetry. Upgrade events (regard
 azd extension install my.extension --source dev
 
 # Later, the extension graduates to the main registry with a newer version.
-# Running upgrade will auto-promote:
-azd extension upgrade my.extension
-# Output: my.extension upgraded from 1.0.0-beta.2 (dev) → 1.0.0 (azd)
+# Running update will auto-promote:
+azd extension update my.extension
+# Output: my.extension updated from 1.0.0-beta.2 (dev) → 1.0.0 (azd)
 ```
 
 ### Submitting an Extension to the Dev Registry
@@ -585,7 +643,7 @@ When the same extension ID is present in both `azd` and `dev`:
 
 #### Source ordering affects resolution
 
-Sources are sorted **alphabetically by name**. With the default naming (`azd` and `dev`), `azd` is consulted first because `"azd"` sorts before `"dev"`. If you name your dev source `"aaa-dev"`, it would be consulted first. The name only affects the order in which sources are searched — it does not affect upgrade or promotion behavior.
+Sources are sorted **alphabetically by name**. With the default naming (`azd` and `dev`), `azd` is consulted first because `"azd"` sorts before `"dev"`. If you name your dev source `"aaa-dev"`, it would be consulted first. The name only affects the order in which sources are searched — it does not affect update or promotion behavior.
 
 #### Stale cache after registry updates
 
@@ -656,12 +714,12 @@ To remove the nightly registry later:
 azd extension source remove nightly
 ```
 
-### Upgrade and Nightly→Main Promotion
+### Update and Nightly→Main Promotion
 
-Nightly versions use semver prerelease labels, so the standard `azd extension upgrade` flow works:
+Nightly versions use semver prerelease labels, so the standard `azd extension update` flow works:
 
-- A newer nightly (higher build id, or a higher base version) supersedes an older one, so `azd extension upgrade` pulls the latest nightly.
-- When the extension ships a **stable** release whose base version matches your nightly (for example stable `1.2.3` versus `1.2.3-nightly.200`), the stable release outranks the nightly and you are **automatically promoted** to the `azd` registry on your next upgrade.
+- A newer nightly (higher build id, or a higher base version) supersedes an older one, so `azd extension update` pulls the latest nightly.
+- When the extension ships a **stable** release whose base version matches your nightly (for example stable `1.2.3` versus `1.2.3-nightly.200`), the stable release outranks the nightly and you are **automatically promoted** to the `azd` registry on your next update.
 
 > [!NOTE]
 > If your nightly was built from a **prerelease** base (for example `1.2.3-preview.nightly.60`), it sorts **above** the matching stable prerelease `1.2.3-preview`. In that case you are not promoted until the stable registry advances to a higher base version. This is expected semver precedence behavior.

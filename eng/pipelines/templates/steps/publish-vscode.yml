@@ -5,6 +5,8 @@ parameters:
   PublishToMarketplace: false
 
 steps:
+  - template: /eng/common/pipelines/templates/steps/create-authenticated-npmrc.yml
+
   - ${{ if eq('true', parameters.TagRepository) }}:
 
     - template: /eng/common/pipelines/templates/steps/login-to-github.yml

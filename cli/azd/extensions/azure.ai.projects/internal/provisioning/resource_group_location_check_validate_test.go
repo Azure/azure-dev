@@ -89,7 +89,8 @@ func newValidateTestClient(
 func writeAzureYAML(t *testing.T, endpoint string) string {
 	t.Helper()
 	dir := t.TempDir()
-	body := "name: rgloc-test\nservices:\n  ai-project:\n    host: " + FoundryProjectHost + "\n"
+	body := "name: rgloc-test\ninfra:\n  provider: " + FoundryProviderName +
+		"\nservices:\n  ai-project:\n    host: " + FoundryProjectHost + "\n"
 	if endpoint != "" {
 		body += "    endpoint: " + endpoint + "\n"
 	}
@@ -118,11 +119,21 @@ func TestValidate_Gates(t *testing.T) {
 	const sub = "00000000-0000-0000-0000-000000000000"
 
 	t.Run("skips non-foundry provider without looking up the resource group", func(t *testing.T) {
+		dir := writeAzureYAML(t, "")
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(`name: rgloc-test
+infra:
+  provider: bicep
+services:
+  ai-project:
+    host: azure.ai.project
+`), 0o600))
 		proj := &validateStubProjectServer{project: &azdext.ProjectConfig{
-			Path:  writeAzureYAML(t, ""),
+			Path:  dir,
 			Infra: &azdext.InfraOptions{Provider: "bicep"},
 		}}
-		env := &validateStubEnvServer{envName: "rgloc-test", get: map[string]string{}}
+		env := &validateStubEnvServer{envName: "rgloc-test", get: map[string]string{
+			envKeyFoundryRG: "rg-foundry-layer",
+		}}
 		client := newValidateTestClient(t, proj, env)
 
 		var called bool
@@ -157,6 +168,28 @@ func TestValidate_Gates(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, resp.Results)
 		assert.False(t, called, "resource group lookup must not run for a brownfield project")
+	})
+
+	t.Run("checks brownfield adjunct resource group in create mode", func(t *testing.T) {
+		proj := &validateStubProjectServer{project: &azdext.ProjectConfig{
+			Path:  writeAzureYAML(t, "https://acct.services.ai.azure.com/api/projects/p"),
+			Infra: &azdext.InfraOptions{Provider: FoundryProviderName},
+		}}
+		env := &validateStubEnvServer{envName: "rgloc-test", get: map[string]string{
+			"AZD_FOUNDRY_ACR_MODE": "create",
+			envKeyFoundryRG:        "rg-adjunct",
+		}}
+		client := newValidateTestClient(t, proj, env)
+
+		c := &ResourceGroupLocationCheck{azdClient: client}
+		c.resourceGroupLocation = func(_ context.Context, _, resourceGroup string) (string, bool, error) {
+			assert.Equal(t, "rg-adjunct", resourceGroup)
+			return "eastus", true, nil
+		}
+
+		resp, err := c.Validate(t.Context(), provisionContext(sub, "westus2", "rg-x"), &azdext.ValidationCheckRequest{})
+		require.NoError(t, err)
+		require.Len(t, resp.Results, 1)
 	})
 
 	t.Run("skips brownfield project from azure.yml", func(t *testing.T) {
@@ -273,6 +306,40 @@ services:
 		require.NoError(t, err)
 		assert.Empty(t, resp.Results)
 		assert.False(t, called, "lookup must not run without both subscription and location")
+	})
+
+	t.Run("runs for foundry provisioning layer", func(t *testing.T) {
+		dir := writeAzureYAML(t, "")
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(`name: rgloc-test
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: infra/foundry
+      provider: microsoft.foundry
+services:
+  ai-project:
+    host: azure.ai.project
+`), 0o600))
+		proj := &validateStubProjectServer{project: &azdext.ProjectConfig{
+			Path:  dir,
+			Infra: &azdext.InfraOptions{Provider: "bicep"},
+		}}
+		env := &validateStubEnvServer{envName: "rgloc-test", get: map[string]string{}}
+		client := newValidateTestClient(t, proj, env)
+
+		var called bool
+		c := &ResourceGroupLocationCheck{azdClient: client}
+		c.resourceGroupLocation = func(context.Context, string, string) (string, bool, error) {
+			called = true
+			return "eastus", true, nil
+		}
+
+		_, err := c.Validate(t.Context(), provisionContext(sub, "westus2", "rg-x"), &azdext.ValidationCheckRequest{})
+		require.NoError(t, err)
+		assert.True(t, called, "resource group lookup must run for a Foundry layer")
 	})
 }
 

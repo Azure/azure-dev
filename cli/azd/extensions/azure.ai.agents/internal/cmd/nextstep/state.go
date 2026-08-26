@@ -10,13 +10,14 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
@@ -30,9 +31,19 @@ const (
 	// wire cmd → nextstep, so the reverse import would close a cycle.
 	agentHost = "azure.ai.agent"
 
+	// connectionHost matches azure.yaml for an azure.ai.connection
+	// service. Duplicated here so nextstep stays free of cmd imports.
+	connectionHost = "azure.ai.connection"
+
 	// agentVersionVarFormat is the env-var name that signals a deployed
 	// agent service. Filled with the upper-cased service key.
 	agentVersionVarFormat = "AGENT_%s_VERSION"
+
+	// agentEndpointVarFormat is the base endpoint env-var written for every
+	// deployed agent. Voice agents (kind: prompt-voice) use it as the deploy
+	// completion marker. Prompt voice deploys also set VERSION, while legacy
+	// voice environments may have only this endpoint marker.
+	agentEndpointVarFormat = "AGENT_%s_ENDPOINT"
 
 	// projectEndpointVar is the env-var that carries the Foundry project
 	// endpoint URL produced by `azd ai agent init`.
@@ -63,18 +74,6 @@ const (
 	azureLocationVar       = "AZURE_LOCATION"
 )
 
-// envVarRefPattern captures ${VAR} references inside YAML string values.
-// Group 1 is the variable name. Group 2 captures the optional default
-// tail `:-fallback`; when group 2 is non-empty the agent.yaml author
-// explicitly opted into a fallback and the variable is therefore not
-// required at deploy time (the runtime expander `drone/envsubst` honors
-// `:-` semantics). `extractAgentYamlEnvRefs` skips refs with a non-empty
-// group 2 so they never surface in the missing-vars hints; the variable
-// is reported as missing only when authored as the bare `${VAR}` form.
-// Variable names follow the standard shell convention: leading letter or
-// underscore, then alphanumeric or underscore.
-var envVarRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
-
 // placeholderPattern aliases agent_yaml.PlaceholderPattern. nextstep
 // surfaces the same placeholders that agent_yaml's
 // injectParameterValues warns about, so the two MUST stay in lockstep.
@@ -99,6 +98,12 @@ type Source interface {
 	// string with a nil error means the key is unset; transport errors are
 	// surfaced verbatim.
 	EnvValue(ctx context.Context, envName, key string) (string, error)
+	// ServiceConfigValue returns a raw service configuration value.
+	ServiceConfigValue(
+		ctx context.Context,
+		serviceName string,
+		path string,
+	) (*structpb.Value, bool, error)
 }
 
 // NewSource adapts an *azdext.AzdClient to the Source interface. The
@@ -148,10 +153,35 @@ func (s *clientSource) EnvValue(ctx context.Context, envName, key string) (strin
 	return resp.Value, nil
 }
 
+func (s *clientSource) ServiceConfigValue(
+	ctx context.Context,
+	serviceName string,
+	path string,
+) (*structpb.Value, bool, error) {
+	resp, err := s.client.Project().GetServiceConfigValue(
+		ctx,
+		&azdext.GetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        path,
+		},
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	if resp == nil {
+		return nil, false, nil
+	}
+	return resp.Value, resp.Found, nil
+}
+
 // Option configures AssembleState.
 type Option func(*config)
 
 type config struct {
+	// environmentName, when non-empty, selects the environment to inspect
+	// without changing azd's active environment.
+	environmentName string
+
 	// openAPIAgent and openAPISuffix together enable a cache-only OpenAPI
 	// payload lookup. The zero value (empty strings) disables the probe.
 	openAPIAgent  string
@@ -169,6 +199,12 @@ type config struct {
 	// the folder created during init (e.g., "my-agent"). Empty when
 	// init did not create a new directory.
 	createdFolderDisplay string
+}
+
+// WithEnvironment selects the azd environment used to assemble next-step
+// state. It does not change the project's active environment.
+func WithEnvironment(name string) Option {
+	return func(c *config) { c.environmentName = name }
 }
 
 // WithOpenAPIProbe enables a cache-only OpenAPI lookup for (agentName, suffix).
@@ -241,11 +277,16 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 
 	state := &State{}
 	state.CreatedFolderDisplay = cfg.createdFolderDisplay
+	state.EnvironmentName = cfg.environmentName
 	var errs []error
 
-	envName, err := src.CurrentEnvName(ctx)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("read current environment: %w", err))
+	envName := cfg.environmentName
+	if envName == "" {
+		var err error
+		envName, err = src.CurrentEnvName(ctx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("read current environment: %w", err))
+		}
 	}
 
 	if envName != "" {
@@ -280,28 +321,59 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		errs = append(errs, fmt.Errorf("load project: %w", err))
 	}
 
-	state.Services = collectServices(ctx, src, envName, project, &errs)
+	state.Services = collectServices(
+		ctx,
+		src,
+		envName,
+		project,
+		&errs,
+		&state.EnvironmentLoadErrors,
+	)
+
+	var splitToolboxState splitToolboxResult
+	if project != nil {
+		if len(state.Services) > 0 {
+			populateManifestResources(project.Path, state)
+		}
+		splitToolboxState = populateSplitToolboxes(
+			ctx,
+			src,
+			envName,
+			project,
+			state,
+			&errs,
+		)
+		populateConnections(
+			ctx,
+			src,
+			envName,
+			project,
+			state,
+			&errs,
+		)
+	}
 
 	if project != nil && envName != "" {
-		state.MissingInfraVars, state.MissingManualVars, state.UnresolvedPlaceholders = detectMissingVars(
-			ctx, src, envName, project.Path, state.Services, &errs,
-		)
+		state.MissingInfraVars, state.MissingManualVars, state.UnresolvedPlaceholders =
+			detectMissingVars(
+				ctx,
+				src,
+				envName,
+				project.Path,
+				state.Services,
+				state.Toolboxes,
+				splitToolboxState.endpointKeys,
+				splitToolboxState.excludedAgents,
+				&errs,
+			)
 		populateOpenAPIPayload(ctx, cfg, project.Path, envName, state)
 	}
 
-	if project != nil && len(state.Services) > 0 {
-		populateManifestResources(project.Path, state)
+	if envName != "" && len(state.Toolboxes) > 0 {
+		state.MissingToolboxEndpoints = probeToolboxEndpoints(
+			ctx, src, envName, state.Toolboxes, &state.ToolboxEndpointErrors, &errs)
+		state.ToolboxEndpointsChecked = true
 	}
-
-	// Partition toolbox-derived endpoint vars out of MissingManualVars
-	// into MissingToolboxEndpoints. This must run AFTER
-	// populateManifestResources because it depends on state.Toolboxes
-	// being populated — without the manifest's toolbox list we cannot
-	// tell a toolbox-derived var ("TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"
-	// for a manifest-declared `web-search-tools` toolbox) apart from a
-	// generic user-named variable that happens to start with TOOLBOX_.
-	// See MissingToolboxEndpoints docs (types.go) for the rationale.
-	partitionToolboxEndpointVars(state)
 
 	return state, errs
 }
@@ -323,60 +395,44 @@ func detectMissingAzureContextVars(ctx context.Context, src Source, envName stri
 	return missing
 }
 
-// partitionToolboxEndpointVars moves any entry in state.MissingManualVars
-// whose name is the canonical TOOLBOX_<NAME>_MCP_ENDPOINT key for a
-// manifest-declared toolbox into state.MissingToolboxEndpoints. The
-// partition is a no-op when state.Toolboxes is empty: any TOOLBOX_*
-// entry in MissingManualVars without a corresponding manifest toolbox
-// is a generic user variable and stays where it is.
-//
-// state.MissingManualVars order is preserved (caller-visible sorting
-// happens in the resolver). The matched ResourceRefs are then sorted
-// by (Name, ServiceName) before being written to MissingToolboxEndpoints
-// so callers see a stable ordering that matches state.Toolboxes regardless
-// of how MissingManualVars happens to be ordered.
-func partitionToolboxEndpointVars(state *State) {
-	if len(state.MissingManualVars) == 0 || len(state.Toolboxes) == 0 {
-		return
-	}
-
-	// keyToToolbox maps each declared toolbox's canonical endpoint key
-	// to its ResourceRef. envkey.ToolboxMCPEndpoint is the single
-	// source of truth for the key normalization (sanitize → upper →
-	// "TOOLBOX_<X>_MCP_ENDPOINT") shared with the provisioner and the
-	// local.toolboxes doctor check; computing the lookup here ensures
-	// any future normalization change ripples consistently.
-	keyToToolbox := make(map[string]ResourceRef, len(state.Toolboxes))
-	for _, tb := range state.Toolboxes {
-		keyToToolbox[envkey.ToolboxMCPEndpoint(tb.Name)] = tb
-	}
-
-	remaining := make([]string, 0, len(state.MissingManualVars))
-	var matched []ResourceRef
-	for _, name := range state.MissingManualVars {
-		if tb, ok := keyToToolbox[name]; ok {
-			matched = append(matched, tb)
+// probeToolboxEndpoints reads each canonical toolbox endpoint once.
+// azd produces these values, so the probe does not depend on agent
+// environment references.
+func probeToolboxEndpoints(
+	ctx context.Context,
+	src Source,
+	envName string,
+	toolboxes []ResourceRef,
+	endpointErrors *[]string,
+	errs *[]error,
+) []ResourceRef {
+	seen := make(map[string]struct{}, len(toolboxes))
+	var missing []ResourceRef
+	for _, toolbox := range toolboxes {
+		key := envkey.ToolboxMCPEndpoint(toolbox.Name)
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		remaining = append(remaining, name)
+		seen[key] = struct{}{}
+		value, err := src.EnvValue(ctx, envName, key)
+		if err != nil {
+			probeErr := fmt.Errorf("read toolbox endpoint %s: %w", key, err)
+			*endpointErrors = append(*endpointErrors, probeErr.Error())
+			*errs = append(*errs, probeErr)
+			continue
+		}
+		if strings.TrimSpace(value) == "" {
+			missing = append(missing, toolbox)
+		}
 	}
-	if len(matched) == 0 {
-		return
-	}
-
-	state.MissingManualVars = remaining
-	// Sort matched by (Name, ServiceName) for deterministic rendering;
-	// state.Toolboxes is already sorted but `matched` was built by
-	// MissingManualVars iteration order, which is sorted by var name
-	// rather than toolbox name. Re-sort so callers see the same
-	// ordering they'd see if they iterated state.Toolboxes directly.
-	slices.SortFunc(matched, func(a, b ResourceRef) int {
+	slices.SortFunc(missing, func(a, b ResourceRef) int {
 		if c := strings.Compare(a.Name, b.Name); c != 0 {
 			return c
 		}
 		return strings.Compare(a.ServiceName, b.ServiceName)
 	})
-	state.MissingToolboxEndpoints = matched
+	slices.Sort(*endpointErrors)
+	return missing
 }
 
 // populateOpenAPIPayload locates a sample invoke payload for the
@@ -429,6 +485,7 @@ func collectServices(
 	envName string,
 	project *azdext.ProjectConfig,
 	errs *[]error,
+	environmentLoadErrors *[]string,
 ) []ServiceState {
 	if project == nil || len(project.Services) == 0 {
 		return nil
@@ -440,19 +497,34 @@ func collectServices(
 			continue
 		}
 		protocol, multiProtocol := loadServiceProtocolInfo(project.Path, svc)
+		environment, err := loadEffectiveAgentEnvironment(svc, project.Path)
+		if err != nil {
+			loadErr := fmt.Errorf(
+				"service %q agent environment: %w",
+				svc.Name,
+				err,
+			)
+			*errs = append(*errs, loadErr)
+			*environmentLoadErrors = append(
+				*environmentLoadErrors,
+				loadErr.Error(),
+			)
+		}
 		services = append(services, ServiceState{
-			Name:          svc.Name,
-			Host:          svc.Host,
-			RelativePath:  svc.RelativePath,
-			Protocol:      protocol,
-			MultiProtocol: multiProtocol,
-			IsDeployed:    isDeployed(ctx, src, envName, svc.Name, errs),
+			Name:              svc.Name,
+			Host:              svc.Host,
+			RelativePath:      svc.RelativePath,
+			Protocol:          protocol,
+			MultiProtocol:     multiProtocol,
+			IsDeployed:        isDeployed(ctx, src, envName, svc.Name, isVoiceService(project.Path, svc), errs),
+			EnvironmentValues: sortedEnvironmentValues(environment),
 		})
 	}
 
 	slices.SortFunc(services, func(a, b ServiceState) int {
 		return strings.Compare(a.Name, b.Name)
 	})
+	slices.Sort(*environmentLoadErrors)
 	return services
 }
 
@@ -513,6 +585,17 @@ func structHasKind(s *structpb.Struct) bool {
 	return ok && strings.TrimSpace(v.GetStringValue()) != ""
 }
 
+// isVoiceService reports whether the service declares kind: prompt-voice. It
+// delegates to the shared agentkind lookup so the next-step reader classifies a
+// service identically to the deploy path and Endpoints, including honoring an
+// explicit AGENT_DEFINITION_PATH override (which deploy follows). Kind
+// resolution is best-effort for next-step hints, so any error is treated as
+// not-voice.
+func isVoiceService(projectPath string, svc *azdext.ServiceConfig) bool {
+	isVoice, err := agentkind.IsPromptVoice(svc, projectPath, os.Getenv("AGENT_DEFINITION_PATH"))
+	return err == nil && isVoice
+}
+
 func loadServiceProtocolFromFile(projectPath, relativePath string) (string, bool) {
 	if projectPath == "" {
 		return "", false
@@ -562,7 +645,7 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 	return "", multiProtocol
 }
 
-// detectMissingVars walks each service's agent.yaml environment_variables
+// detectMissingVars walks each service's effective environment values
 // section and partitions the trouble-spots into three lists:
 //
 //  1. infra:        unset ${VAR} refs that name a top-level output of
@@ -573,9 +656,11 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 //     to substitute these from agent.manifest.yaml's parameters block)
 //
 // Only bare-form ${VAR} refs participate in (1) and (2): when the
-// agent.yaml author supplies an explicit fallback via `${VAR:-default}`,
-// the deploy-time resolver substitutes the fallback and the variable is
-// not required. `extractAgentYamlEnvRefs` filters defaulted refs out.
+// configuration author supplies an explicit fallback via
+// `${VAR:-default}`,
+// the deploy-time resolver substitutes the fallback, so the variable
+// is not required. `extractEnvironmentRefs` filters defaulted refs
+// out.
 //
 // Classification rule for ${VAR}: a variable is an infra var iff its
 // name is declared as a top-level `output` in `<projectPath>/infra/
@@ -599,21 +684,22 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 // output — not to guess based on the variable name.
 //
 // {{NAME}} placeholders are reported separately because the user cannot
-// fix them with `azd env set` — the placeholder is literally inside
-// azure.yaml and would land in the container as `{{NAME}}` at deploy
-// time. The resolver surfaces an "edit azure.yaml" suggestion for each.
+// fix them with `azd env set` — the placeholder would land in the
+// container literally at deploy time. The resolver surfaces an
+// "edit agent configuration" suggestion for each.
 //
-// All three result lists are deduplicated and sorted ascending. Read
-// errors on individual azure.yaml files are silent: the resolver should
-// fall back to the default branch rather than emit guidance that
-// mentions variables we cannot prove are needed. Transport errors from
-// src.EnvValue are appended to errs so AssembleState's caller can
-// surface them in --debug logs without aborting the snapshot.
+// All three result lists are deduplicated and sorted ascending.
+// Transport errors from src.EnvValue are appended to errs so
+// AssembleState's caller can surface them in --debug logs without
+// aborting the snapshot.
 func detectMissingVars(
 	ctx context.Context,
 	src Source,
 	envName, projectPath string,
 	services []ServiceState,
+	toolboxes []ResourceRef,
+	splitToolboxEndpointKeys map[string]struct{},
+	excludedAgents map[string]struct{},
 	errs *[]error,
 ) (infra, manual, placeholders []string) {
 	if envName == "" || projectPath == "" || len(services) == 0 {
@@ -624,10 +710,23 @@ func detectMissingVars(
 	seenInfra := make(map[string]struct{})
 	seenManual := make(map[string]struct{})
 	seenPlaceholder := make(map[string]struct{})
+	toolboxKeys := make(map[string]struct{}, len(toolboxes))
+	for _, toolbox := range toolboxes {
+		toolboxKeys[envkey.ToolboxMCPEndpoint(toolbox.Name)] = struct{}{}
+	}
+	for key := range splitToolboxEndpointKeys {
+		toolboxKeys[key] = struct{}{}
+	}
 
 	for _, svc := range services {
-		refs, phs := extractAgentYamlEnvRefs(projectPath, svc.RelativePath)
+		if _, excluded := excludedAgents[svc.Name]; excluded {
+			continue
+		}
+		refs, phs := extractEnvironmentRefs(svc.EnvironmentValues)
 		for _, name := range refs {
+			if _, isToolbox := toolboxKeys[name]; isToolbox {
+				continue
+			}
 			if _, ok := seenInfra[name]; ok {
 				continue
 			}
@@ -673,8 +772,7 @@ func bicepOutputSet(projectPath string) map[string]struct{} {
 	return set
 }
 
-// extractAgentYamlEnvRefs returns two lists from the service's
-// agent.yaml environment_variables block:
+// extractEnvironmentRefs returns two lists from effective values:
 //
 //  1. refs: unique bare-form ${VAR} names. Refs that supply a fallback
 //     via `${VAR:-default}` are skipped — the deploy-time expander
@@ -684,49 +782,32 @@ func bicepOutputSet(projectPath string) map[string]struct{} {
 //     init's manifest processing failed to substitute. These would land
 //     in the container literally as `{{NAME}}` at deploy time.
 //
-// Order matches first appearance in the file. Missing or malformed
-// manifests return nil for both — consistent with loadServiceProtocol's
-// best-effort contract.
-func extractAgentYamlEnvRefs(projectPath, relativePath string) (refs, placeholders []string) {
-	if projectPath == "" {
-		return nil, nil
-	}
-	manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, "agent.yaml")
-	if err != nil {
-		return nil, nil
-	}
-	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
-	if err != nil {
-		return nil, nil
-	}
-	var hosted agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &hosted); err != nil {
-		return nil, nil
-	}
-	if hosted.EnvironmentVariables == nil {
-		return nil, nil
-	}
-
+// Order matches the sorted environment-variable names. Foundry
+// expressions are excluded from placeholder detection.
+func extractEnvironmentRefs(values []string) (refs, placeholders []string) {
 	seenRef := make(map[string]struct{})
 	seenPh := make(map[string]struct{})
-	for _, ev := range *hosted.EnvironmentVariables {
-		for _, m := range envVarRefPattern.FindAllStringSubmatch(ev.Value, -1) {
-			if m[2] != "" {
-				// Variable carries an explicit `:-fallback` default; the
-				// deploy-time resolver honors it, so the user does not need
-				// to set the var. Skipping here keeps the next-step hint
-				// honest: only bare-form refs become missing-var prompts.
+	for _, value := range values {
+		for _, ref := range synthesis.FindEnvReferences(value) {
+			if ref.HasDefault {
+				// The deploy-time expander supplies a fallback, so the
+				// environment variable is not required and must not become a
+				// missing-var hint. This matches the azd resolver semantics
+				// shared by the extension's other env-ref consumers.
 				continue
 			}
-			name := m[1]
+			name := ref.Name
 			if _, ok := seenRef[name]; ok {
 				continue
 			}
 			seenRef[name] = struct{}{}
 			refs = append(refs, name)
 		}
-		for _, m := range placeholderPattern.FindAllStringSubmatch(ev.Value, -1) {
-			name := m[1]
+		for _, m := range placeholderPattern.FindAllStringSubmatchIndex(value, -1) {
+			if len(m) < 4 || (m[0] > 0 && value[m[0]-1] == '$') {
+				continue
+			}
+			name := value[m[2]:m[3]]
 			if _, ok := seenPh[name]; ok {
 				continue
 			}
@@ -741,6 +822,7 @@ func isDeployed(
 	ctx context.Context,
 	src Source,
 	envName, serviceName string,
+	isVoice bool,
 	errs *[]error,
 ) bool {
 	if envName == "" || serviceName == "" {
@@ -752,7 +834,29 @@ func isDeployed(
 		*errs = append(*errs, fmt.Errorf("read %s: %w", key, err))
 		return false
 	}
-	return value != ""
+	if !isVoice {
+		return value != ""
+	}
+
+	// Voice deploys use the base ENDPOINT env var as the completion marker.
+	// Prompt voice deploys write VERSION before ENDPOINT to keep ENDPOINT as the
+	// final marker.
+	// Require ENDPOINT for voice even when VERSION is present, otherwise a partial
+	// env write could be reported as deployed before the callable endpoint was
+	// persisted. Gate this on the service's actual declared kind: a hosted agent
+	// whose deploy partially failed can also present an empty VERSION with a
+	// lingering ENDPOINT, and must stay reported as not-deployed. This mirrors the
+	// kind gate in
+	// AgentServiceTargetProvider.Endpoints (project package); the two live in
+	// separate packages because project imports nextstep, so a literally shared
+	// helper would create an import cycle.
+	endpointKey := fmt.Sprintf(agentEndpointVarFormat, serviceKey(serviceName))
+	endpointValue, err := src.EnvValue(ctx, envName, endpointKey)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("read %s: %w", endpointKey, err))
+		return false
+	}
+	return endpointValue != ""
 }
 
 // serviceKey converts a service name into the env-var key fragment used by

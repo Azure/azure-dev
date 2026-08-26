@@ -1,6 +1,6 @@
 # Azure Developer CLI (azd) - Agent Instructions
 
-<!-- cspell:ignore Errorf Chdir azapi gofmt golangci stdlib strconv Readdirnames -->
+<!-- cspell:ignore Errorf Chdir azapi gofmt golangci stdlib strconv Readdirnames preconfigures -->
 
 Instructions for AI coding agents working with the Azure Developer CLI.
 
@@ -34,6 +34,24 @@ cli/azd/
 
 **Tip**: Service registration in `cmd/container.go` shows all major components. To find where a feature is implemented, start with the command in `cmd/`, follow to the action, then trace service dependencies.
 
+## Agency and MCP Tools
+
+For Microsoft contributors, this repository's [`agency.toml`](../../agency.toml) preconfigures [Agency](https://aka.ms/agency) with Azure DevOps MCP access for the `azure-sdk` organization and Kusto MCP access to the `DevCli` database. Prefer these tools for ADO operations and authorized telemetry investigations. Do not expose customer-identifying data in issues, pull requests, logs, or generated artifacts.
+
+### Checking Azure DevOps Pipelines
+
+All repository-owned azd pipelines are in the Azure DevOps `internal` project:
+
+- [Core and repository pipelines](https://dev.azure.com/azure-sdk/internal/_build?definitionScope=%5Cazure-dev) are under `\azure-dev`.
+- [Extension pipelines](https://dev.azure.com/azure-sdk/internal/_build?definitionScope=%5Cazure-dev%5Cextensions) are under `\azure-dev\extensions`.
+
+When investigating a pipeline:
+
+- Start from the GitHub pull request check link when available. It identifies the exact Azure DevOps build and often the specific job.
+- Otherwise, locate the relevant pipeline in the folders above.
+- Correlate runs using the pull request number, commit SHA, and source branch.
+- Inspect the failed or running job logs first. Distinguish the root failure from secondary warnings, infrastructure noise, or downstream failures.
+- For releases, distinguish publishing from validation using the source branch and template parameters. For the core CLI pipeline, `DoPublish=true` identifies a publishing release run.
 
 ## Development
 
@@ -174,9 +192,9 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 ### CLI UX & Style
 
-When working on CLI output, terminal UX, spinners, progress states, colors, or prompts for **core azd flows**, you **MUST read** the style guide before making any changes or recommendations:
+When working on CLI output, terminal UX, spinners, progress states, colors, or prompts, you **MUST read** the relevant style guide before making any changes or recommendations. Reference the right file for the flow you're working on:
 
-📄 **`cli/azd/docs/style-guidelines/azd-style-guide.md`** (full path from repo root)
+📄 **`cli/azd/docs/style-guidelines/azd-style-guide.md`** — **core azd design patterns** (full path from repo root)
 
 This file is the authoritative reference for core azd terminal UX patterns including:
 - Progress report states (`(✓) Done`, `(x) Failed`, `(!) Warning`, `(-) Skipped`)
@@ -185,7 +203,15 @@ This file is the authoritative reference for core azd terminal UX patterns inclu
 - User input patterns (text input, list select, yes/no confirm)
 - Prompt styling (`?` marker in bold blue, `[Type ? for hint]`, post-submit states)
 
-> **Note**: This style guide covers **core azd flows only**. Separate guidelines for agentic flows and extension-specific UX will be provided in dedicated files in the future. Do not apply core azd patterns to agentic or extension flows without a dedicated style reference.
+📄 **`cli/azd/docs/style-guidelines/responsive-layout-style-guide.md`** — **responsive list and table layouts**
+
+Read this file when adding or changing list-command output that uses `output.PrettyTableFormatter`. It documents full, compact, and stacked-row layouts, column priorities, grouping, status styling, and empty states.
+
+📄 **`cli/azd/docs/style-guidelines/agentic-ux-style-guide.md`** — **agentic (AI / GitHub Copilot) UX patterns**
+
+Read this file instead when working on the AI-driven / agentic experience (the "Set up with GitHub Copilot (Preview)" flow, the Copilot session runtime, and the `AgentDisplay` renderer). It documents the distinct magenta + glyph visual language for agent identity, tool activity, subagents, and thinking states.
+
+> **Note**: These are two distinct visual systems. The core guide's patterns are **not enforced on extensions**, but extension developers are encouraged to follow them where applicable for consistency. Do **not** apply core azd status patterns to agentic flows (or vice versa) — pick the guide that matches the flow. Extension-specific UX is documented in `cli/azd/docs/extensions/extensions-style-guide.md`.
 
 ### Code Organization
 
@@ -253,20 +279,31 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
 
 **1. Code**
 
-- **Field** — define an `AttributeKey` in `cli/azd/internal/tracing/fields/fields.go` (this file
-  holds the field/key definitions; within the same package `features.go` holds feature-name
-  attribute values and `domains.go` the Azure host-domain table). Every field MUST set a
-  `Classification` (e.g. `SystemMetadata`, `OrganizationalIdentifiableInformation`,
-  `EndUserPseudonymizedInformation`; never emit `CustomerContent`) and a `Purpose`
-  (`FeatureInsight` / `BusinessInsight` / `PerformanceAndHealth`).
+- **Field** — define an **exported, package-level** `AttributeKey` var in
+  `cli/azd/internal/tracing/fields/fields.go` (this file holds the field/key definitions; within the
+  same package `features.go` holds feature-name attribute values and `domains.go` the Azure
+  host-domain table). Every field MUST set a `Classification` (e.g. `SystemMetadata`,
+  `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`; never emit
+  `CustomerContent`) and a `Purpose` (`FeatureInsight` / `BusinessInsight` /
+  `PerformanceAndHealth`); the classifier also reads the optional `Endpoint` and `IsMeasurement`
+  members.
 - **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
-  `prefix.noun.verb` naming convention.
+  `prefix.noun.verb` value convention. It must be an exported string `const` whose Go identifier
+  contains `Event` (end it with `Prefix` for a prefix-match group) so the classifier
+  discovers it.
 - **Emit** at the call site via `tracing.Start` (spans/events) plus `tracing.SetUsageAttributes`
-  or `span.SetAttributes` (attributes).
+  or `span.SetAttributes` (attributes). Always pass a `fields.AttributeKey` method
+  (e.g. `fields.MyKey.String(v)` / `.Bool(v)` / `.Int(v)`) — never a raw
+  `attribute.String("my.key", v)`. The GDPR classifier discovers fields by statically scanning
+  the `fields` package for exported `AttributeKey` vars; a raw literal key is invisible to it, so the
+  property reaches App Insights but its data-catalog row stays Unclassified / `Complete=false`. Enforced by
+  `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`); dynamic
+  `ext.*` keys are the only sanctioned exception.
 - **Hash user-derived values** with `fields.StringHashed` / `fields.StringSliceHashed`
   (`cli/azd/internal/tracing/fields/key.go`). Hash anything that embeds a user-chosen name, path,
   repo URL, or project / env / service / layer identifier (e.g. `exegraph.step.name`, `hooks.name`).
-  Emit raw only for fixed enums or compile-time literals.
+  Emit raw only for fixed enums or compile-time literals (the key itself must
+  still be a `fields.AttributeKey`, per **Emit** above).
 
 **2. Documentation — keep all of these in sync**
 
@@ -363,11 +400,14 @@ This project uses Go 1.26. Use modern standard library features:
 - **Search for prior art before adding helpers**: Search `test/`, `pkg/osutil`, and the package under test before adding cleanup, retry, process, or platform-specific helpers. Reuse or promote existing behavior and extract shared test utilities instead of creating parallel implementations
 - **Isolate persistent user state**: Functional tests that install extensions or mutate config, auth, cache, or other user-level state must set `AZD_CONFIG_DIR` to a dedicated `tempDirWithDiagnostics(t)` directory on the CLI env, preserving both the parent environment and existing CLI env (`append(os.Environ(), cli.Env...)`) and setting `AZURE_DEV_COLLECT_TELEMETRY=no` so the telemetry background writer doesn't hold files open in the temp dir. Tests that only use the existing login should leave `AZD_CONFIG_DIR` unset
 - **Make cleanup process-safe**: Wait for spawned commands to finish, register cleanup when state is created, and report failures. Use `osutil.RemoveAll` for directories containing executed binaries because Windows may retain transient locks; keep retries at the filesystem boundary instead of adding test sleeps. Since `t.Context()` is canceled before cleanup runs, use a separate bounded context when cleanup needs one
+- **Isolate Docker client state**: Functional tests that run local Docker builds or logins should set `DOCKER_CONFIG` to a directory under `tempDirWithDiagnostics(t)`. This prevents parallel tests and Docker Desktop from sharing mutable context metadata or credentials
 - **Guard fixture type assertions**: Check presence and type with `require` before casting values loaded from maps, JSON, environment files, or recordings. A raw type assertion panic can abort the package and hide the initiating failure
 - **Use correct env vars for testing**:
   - Non-interactive mode: `AZD_FORCE_TTY=false` (not `AZD_DEBUG_FORCE_NO_TTY`, which doesn't exist)
   - No-prompt mode: use the `--no-prompt` flag for core azd commands; `AZD_NO_PROMPT=true` is only used for propagating no-prompt into extension subprocesses
   - Suppress color: `NO_COLOR=1` — always set in test environments to prevent ANSI escape codes from breaking assertions
+  - Recording setup: use `AZD_TEST_AZURE_SUBSCRIPTION_ID`, `AZD_TEST_TENANT_ID`, and `AZD_TEST_AZURE_LOCATION`. For multi-tenant user logins, also set `AZURE_TENANT_ID` to prevent azd's tenant picker
+- **Keep provision validation consistent between record and playback**: `validation.provision` is a user config key, not an environment variable. Do not disable it only while recording a cassette; either keep it enabled and handle possible warning prompts deterministically or ensure playback uses the same config
 - **TypeScript test patterns**: Use `catch (e: unknown)` with type assertions, not `catch (e: any)` which bypasses strict mode
 - **Reasonable timeouts**: Set test timeouts proportional to expected execution time. Don't use 5-minute timeouts for tests that shell out to `azd --help` (which completes in seconds)
 - **Efficient directory checks**: To check if a directory is empty, use `os.Open` + `f.Readdirnames(1)` instead of `os.ReadDir` which reads the entire listing into memory
@@ -389,6 +429,13 @@ Go module version tags (`cli/azd/vX.Y.Z`) are created alongside each CLI release
 
 When cutting a release, `eng/scripts/Update-CliVersion.ps1` automatically updates both `cli/version.txt` and `pkg/azdext/version.go` to keep versions in sync.
 
+### Go Dependency Version Synchronization
+
+`cli/azd/go.mod` is the source of truth for dependencies directly shared by core and first-party Go extensions.
+Run `mage checkDependencyVersions` to validate alignment or `mage syncDependencyVersions` to update unapproved
+mismatches. Temporary exceptions must be exact, issue-linked entries in `dependency-versions.json`. See
+`docs/dependency-version-sync.md` for the policy and workflow.
+
 ## Extensions
 
 First-party azd extensions live in `cli/azd/extensions/`.
@@ -409,7 +456,9 @@ go build
 
 Feature-specific docs are in `docs/` — refer to them as needed. Some key docs include:
 
-- `docs/style-guidelines/azd-style-guide.md` - CLI style guide (colors, spinners, progress states, terminal UX)
+- `docs/style-guidelines/azd-style-guide.md` - Core azd CLI style guide (colors, spinners, progress states, terminal UX)
+- `docs/style-guidelines/responsive-layout-style-guide.md` - Responsive list and table layouts
+- `docs/style-guidelines/agentic-ux-style-guide.md` - Agentic UX patterns (magenta styling and status symbols)
 - `docs/style-guidelines/new-azd-command.md` - Adding new commands
 - `docs/extensions/extension-framework.md` - Extension development using gRPC extension framework
 - `docs/style-guidelines/guiding-principles.md` - Design principles

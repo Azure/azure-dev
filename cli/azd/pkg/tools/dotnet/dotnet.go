@@ -202,17 +202,27 @@ func (cli *Cli) PublishAppHostManifest(
 
 	runArgs = runArgs.WithCwd(filepath.Dir(hostProject))
 
+	// Disable MSBuild node reuse for this invocation. `dotnet run --publisher manifest` builds the AppHost via
+	// MSBuild, which by default spawns persistent worker nodes (nodeReuse:true) that survive after `dotnet run`
+	// exits. Those worker nodes inherit the stdout/stderr pipe that azd's command runner reads from, so the pipe
+	// never reaches EOF and cmd.Wait() blocks forever even though the manifest was already produced. This is the
+	// os/exec deadlock described in https://github.com/golang/go/issues/23019 and reported in azd issue #9295
+	// (hangs with 0% CPU on large solutions where many worker nodes are spawned). Disabling node reuse makes the
+	// worker nodes terminate when the build completes, closing the inherited pipe.
+	envArgs := []string{
+		"MSBUILDDISABLENODEREUSE=1",
+		// AspireUseCliBundle enables an MSBuild run hook that delegates `dotnet run` to `aspire run`.
+		// Manifest generation must run the AppHost directly because `aspire run` is a long-running command.
+		"ASPIRE_SUPPRESS_CLI_RUN_HOOK=true",
+	}
+
 	// AppHost may conditionalize their infrastructure based on the environment, so we need to pass the environment when we
 	// are `dotnet run`ing the app host project to produce its manifest.
-	var envArgs []string
-
 	if dotnetEnv != "" {
 		envArgs = append(envArgs, fmt.Sprintf("DOTNET_ENVIRONMENT=%s", dotnetEnv))
 	}
 
-	if envArgs != nil {
-		runArgs = runArgs.WithEnv(envArgs)
-	}
+	runArgs = runArgs.WithEnv(envArgs)
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {

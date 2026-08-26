@@ -476,12 +476,23 @@ func TestIsTerminal_NonTTY(t *testing.T) {
 type helpersProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
 	project *azdext.ProjectConfig
+	err     error
 }
 
 func (s *helpersProjectServer) Get(
 	_ context.Context, _ *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+func (s *helpersProjectServer) GetServiceConfigValue(
+	_ context.Context,
+	_ *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{}, nil
 }
 
 // helpersPromptServer is a fake PromptServiceServer that records Select calls
@@ -490,6 +501,7 @@ type helpersPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	selectIndex int32
 	selectCalls atomic.Int32
+	lastSelect  *azdext.SelectRequest
 }
 
 type helpersFailingEnvironmentServer struct {
@@ -507,6 +519,7 @@ func (s *helpersPromptServer) Select(
 	_ context.Context, req *azdext.SelectRequest,
 ) (*azdext.SelectResponse, error) {
 	s.selectCalls.Add(1)
+	s.lastSelect = req
 	idx := s.selectIndex
 	return &azdext.SelectResponse{Value: &idx}, nil
 }
@@ -957,40 +970,69 @@ func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
 		"resolveAgentProtocol should trigger exactly one prompt")
 }
 
-func TestLoadServiceRunEnvironmentUsesRawValues(t *testing.T) {
+// fakeServiceConfigReader stands in for the project client so the
+// declared-env read can be exercised without a live RPC.
+type fakeServiceConfigReader struct {
+	found bool
+	err   error
+}
+
+func (f fakeServiceConfigReader) GetServiceConfigValue(
+	_ context.Context,
+	_ *azdext.GetServiceConfigValueRequest,
+	_ ...grpc.CallOption,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &azdext.GetServiceConfigValueResponse{Found: f.found}, nil
+}
+
+// TestServiceEnvDeclaredFailsClosed pins that a read failure is
+// surfaced instead of being reported as "no env: declared". The
+// false return is what mergeAgentRunEnvironment reads as legacy,
+// so swallowing the error would inject the whole azd environment
+// into the agent process, which is the leak this scope closes.
+func TestServiceEnvDeclaredFailsClosed(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "azure.yaml"),
-		[]byte(`services:
-  agent:
-    host: azure.ai.agent
-    env:
-      PROJECT: ${{project.endpoint}}
-      ENABLED: true
-      SHARED: direct
-`),
-		0o600,
-	))
-	svc := &azdext.ServiceConfig{
-		Name: "agent",
-		Environment: map[string]string{
-			"PROJECT": "",
-			"ENABLED": "",
-			"SHARED":  "expanded",
+	declared, err := serviceEnvDeclared(
+		t.Context(),
+		fakeServiceConfigReader{
+			err: status.Error(codes.Unavailable, "project service unavailable"),
 		},
+		"my-agent",
+	)
+	require.Error(t, err)
+	require.False(t, declared)
+	require.ErrorContains(t, err, `reading env for service "my-agent"`)
+}
+
+// TestServiceEnvDeclaredReportsFound pins that a missing env: is
+// still a successful read, so a legacy service keeps its full
+// azd environment fallback.
+func TestServiceEnvDeclaredReportsFound(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		found bool
+	}{
+		{name: "env declared", found: true},
+		{name: "env omitted", found: false},
 	}
 
-	env, err := loadServiceRunEnvironment(
-		root,
-		svc,
-		map[string]string{"CONFIG_ONLY": "config", "SHARED": "config"},
-	)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, err)
-	require.Equal(t, "${{project.endpoint}}", env["PROJECT"])
-	require.Equal(t, "true", env["ENABLED"])
-	require.Equal(t, "direct", env["SHARED"])
-	require.Equal(t, "config", env["CONFIG_ONLY"])
+			declared, err := serviceEnvDeclared(
+				t.Context(),
+				fakeServiceConfigReader{found: tt.found},
+				"my-agent",
+			)
+			require.NoError(t, err)
+			require.Equal(t, tt.found, declared)
+		})
+	}
 }

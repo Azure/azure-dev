@@ -495,7 +495,9 @@ func TestDeploymentResultJSON(t *testing.T) {
 	result := DeploymentResult{
 		Timestamp: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
 		Services: map[string]*project.ServiceDeployResult{
-			"api": {},
+			"api": {
+				Warnings: []string{"status did not change for 5m0s"},
+			},
 			"web": {},
 		},
 	}
@@ -510,6 +512,14 @@ func TestDeploymentResultJSON(t *testing.T) {
 	services, ok := parsed["services"].(map[string]any)
 	require.True(t, ok, "services should be a map")
 	require.Len(t, services, 2)
+
+	api, ok := services["api"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, []any{"status did not change for 5m0s"}, api["warnings"])
+
+	web, ok := services["web"].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, web, "warnings")
 }
 
 func TestResolveDAGConcurrency(t *testing.T) {

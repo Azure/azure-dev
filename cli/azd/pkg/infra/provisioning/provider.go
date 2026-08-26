@@ -26,6 +26,19 @@ const (
 	Test         ProviderKind = "test"
 )
 
+// Arm, Pulumi and Test are omitted because azd defines the kinds but registers no implementation.
+// Keep in sync with the providers registered in pkg/azd.
+var builtInProviderKinds = []ProviderKind{
+	Bicep,
+	Terraform,
+}
+
+// BuiltInProviderKinds returns the provisioning providers implemented by azd itself, as opposed to
+// those supplied by an extension.
+func BuiltInProviderKinds() []ProviderKind {
+	return builtInProviderKinds
+}
+
 type Mode string
 
 const (
@@ -37,12 +50,12 @@ const (
 
 // Options for a provisioning provider.
 type Options struct {
-	Provider         ProviderKind   `yaml:"provider,omitempty"`
-	Path             string         `yaml:"path,omitempty"`
-	Module           string         `yaml:"module,omitempty"`
-	Name             string         `yaml:"name,omitempty"`
-	Hooks            HooksConfig    `yaml:"hooks,omitempty"`
-	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
+	Provider         ProviderKind            `yaml:"provider,omitempty"`
+	Path             string                  `yaml:"path,omitempty"`
+	Module           string                  `yaml:"module,omitempty"`
+	Name             string                  `yaml:"name,omitempty"`
+	Hooks            HooksConfig             `yaml:"hooks,omitempty"`
+	DeploymentStacks *DeploymentStacksConfig `yaml:"deploymentStacks,omitempty"`
 	// Config holds provider-specific configuration options
 	Config map[string]any `yaml:"config,omitempty"`
 	// DependsOn lists the names of other layers this layer must wait for

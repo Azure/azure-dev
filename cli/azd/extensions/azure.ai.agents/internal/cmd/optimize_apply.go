@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/pkg/projectconfig"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -196,33 +198,13 @@ func (a *OptimizeApplyAction) apply(
 		return fmt.Errorf("failed to read agent definition: %w", err)
 	} else if found {
 		fmt.Fprintf(out, "  Updating agent definition in azure.yaml...\n")
-		if err := projectpkg.UpsertAgentEnvVars(svc, envUpdates); err != nil {
-			return fmt.Errorf("failed to update agent definition: %w", err)
-		}
-		// Read the current `uses:` value before replacing the whole service entry.
-		// AddService writes back the proto ServiceConfig shape, which doesn't carry
-		// the `uses:` field (a core azd-only field). Reading it first and restoring
-		// it after avoids silently dropping dependency edges that were written by
-		// `setServiceUses` via SetServiceConfigValue.
-		prevUses, err := azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
-			ServiceName: svc.Name,
-			Path:        "uses",
-		})
-		if err != nil {
-			return fmt.Errorf("failed to read uses for service %q: %w", svc.Name, err)
-		}
-		if _, err := azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: svc}); err != nil {
-			return fmt.Errorf("failed to persist agent definition: %w", err)
-		}
-		// Restore `uses:` if it was set before the replacement.
-		if prevUses.GetFound() && prevUses.GetValue() != nil {
-			if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-				ServiceName: svc.Name,
-				Path:        "uses",
-				Value:       prevUses.GetValue(),
-			}); err != nil {
-				return fmt.Errorf("failed to restore uses for service %q: %w", svc.Name, err)
-			}
+		if err := persistInlineAgentEnvironment(
+			ctx,
+			azdClient,
+			svc,
+			envUpdates,
+		); err != nil {
+			return err
 		}
 	} else {
 		agentYamlPath := filepath.Join(serviceDir, "agent.yaml")
@@ -270,6 +252,129 @@ func (a *OptimizeApplyAction) apply(
 	fmt.Fprintf(out, "    Optimized: %s\n", color.CyanString(candidatePath))
 
 	return nil
+}
+
+func persistInlineAgentEnvironment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+	envUpdates map[string]string,
+) error {
+	_, _, found, source, err := projectpkg.AgentDefinitionFromService(svc)
+	if err != nil {
+		return fmt.Errorf("failed to read agent definition: %w", err)
+	}
+	if !found {
+		return fmt.Errorf(
+			"service %q does not carry an inline agent definition",
+			svc.GetName(),
+		)
+	}
+
+	// Build the env to persist from raw templates only, never from the
+	// core-expanded svc.Environment. AddService escapes env values to
+	// literals, so routing templates through it would freeze a ${VAR}
+	// template (or snapshot an already-expanded value) into azure.yaml.
+	legacyEnv, err := projectpkg.InlineAgentEnvironmentVariables(svc)
+	if err != nil {
+		return fmt.Errorf("failed to read agent environment: %w", err)
+	}
+	existingEnv, err := getRawServiceEnv(ctx, azdClient, svc)
+	if err != nil {
+		return err
+	}
+	// Merge order mirrors deploy-time precedence in toContainerAgent:
+	// the top-level env overlays legacy environmentVariables, then the
+	// new updates win.
+	mergedEnv := map[string]string{}
+	maps.Copy(mergedEnv, legacyEnv)
+	maps.Copy(mergedEnv, existingEnv)
+	maps.Copy(mergedEnv, envUpdates)
+
+	if err := setServiceEnvironment(ctx, azdClient, svc.Name, mergedEnv); err != nil {
+		return err
+	}
+
+	environmentPath := "environmentVariables"
+	if source == projectpkg.AgentDefinitionSourceLegacyConfig {
+		environmentPath = "config.environmentVariables"
+	}
+	if _, err := azdClient.Project().UnsetServiceConfig(
+		ctx,
+		&azdext.UnsetServiceConfigRequest{
+			ServiceName: svc.Name,
+			Path:        environmentPath,
+		},
+	); err != nil {
+		return fmt.Errorf(
+			"removing deprecated environmentVariables from service %q: %w",
+			svc.Name,
+			err,
+		)
+	}
+	return nil
+}
+
+// getRawServiceEnv reads the service's existing env section as raw,
+// unexpanded templates. GetServiceConfigValue returns the on-disk
+// config, so callers can rewrite env without losing ${VAR}/$${{...}}
+// templates.
+func getRawServiceEnv(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+) (map[string]string, error) {
+	serviceName := svc.GetName()
+	resp, err := azdClient.Project().GetServiceConfigValue(
+		ctx,
+		&azdext.GetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        "env",
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to read env for service %q: %w", serviceName, err)
+	}
+	if !resp.GetFound() || resp.GetValue() == nil {
+		return nil, nil
+	}
+	raw, ok := resp.GetValue().AsInterface().(map[string]any)
+	if !ok {
+		return nil, nil
+	}
+	originalRaw := maps.Clone(raw)
+	properties := map[string]any{"env": raw}
+	if err := projectconfig.NormalizeEnvironment(properties); err != nil {
+		return nil, fmt.Errorf(
+			"normalizing env for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
+	env := make(map[string]string, len(raw))
+	for key, value := range raw {
+		if original, wasString := originalRaw[key].(string); wasString {
+			env[key] = original
+			continue
+		}
+		if forwarded, found := svc.GetEnvironment()[key]; found {
+			env[key] = forwarded
+			continue
+		}
+		str, ok := value.(string)
+		if ok {
+			env[key] = str
+			continue
+		}
+		return nil, fmt.Errorf(
+			"normalizing env %q for service %q produced %T",
+			key,
+			serviceName,
+			value,
+		)
+	}
+	return env, nil
 }
 
 // agentConfigMetadata is the YAML structure written as metadata.yaml in each

@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"google.golang.org/grpc"
 )
 
 // aiRoutineHost is the azure.yaml service host kind owned by this extension. A
@@ -30,17 +31,24 @@ var _ azdext.ServiceTargetProvider = (*routineServiceTarget)(nil)
 // and Publish are no-ops because a routine has no build artifact.
 type routineServiceTarget struct {
 	azdClient     *azdext.AzdClient
-	serviceConfig *azdext.ServiceConfig
+	projectClient serviceConfigReader
 }
 
 // newRoutineServiceTarget creates the azure.ai.routine service-target provider.
-func newRoutineServiceTarget(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
-	return &routineServiceTarget{azdClient: azdClient}
+func newRoutineServiceTarget(
+	azdClient *azdext.AzdClient,
+) azdext.ServiceTargetProvider {
+	return &routineServiceTarget{
+		azdClient:     azdClient,
+		projectClient: azdClient.Project(),
+	}
 }
 
-// Initialize stores the service configuration; no other setup is required.
-func (p *routineServiceTarget) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
-	p.serviceConfig = serviceConfig
+// Initialize requires no setup.
+func (p *routineServiceTarget) Initialize(
+	_ context.Context,
+	_ *azdext.ServiceConfig,
+) error {
 	return nil
 }
 
@@ -111,14 +119,16 @@ func (p *routineServiceTarget) Deploy(
 	// The service key is the routine identity; ignore any name in the body.
 	body.Name = serviceConfig.GetName()
 
-	// Resolve ${VAR} references in the routine's action input against the azd
-	// environment, leaving Foundry server-side ${{...}} expressions untouched.
+	// Resolve ${VAR} against the service environment forwarded by azd.
 	if body.Action != nil {
-		env, err := p.currentEnvValues(ctx)
+		environment, err := p.environmentValues(ctx, serviceConfig)
 		if err != nil {
 			return nil, err
 		}
-		body.Action.Input = expandRoutineValue(body.Action.Input, env)
+		body.Action.Input = expandRoutineValue(
+			body.Action.Input,
+			environment,
+		)
 	}
 
 	if progress != nil {
@@ -185,16 +195,66 @@ func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
 	), nil
 }
 
-// currentEnvValues loads all key-value pairs from the active azd environment, used to
-// resolve ${VAR} references in routine fields at deploy time.
-func (p *routineServiceTarget) currentEnvValues(ctx context.Context) (map[string]string, error) {
-	current, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+// serviceConfigReader is the slice of azdext.ProjectServiceClient
+// this target uses. Depending on the interface rather than the
+// concrete *azdext.AzdClient lets tests supply a fake: the client's
+// project field is unexported and no option overrides it.
+type serviceConfigReader interface {
+	GetServiceConfigValue(
+		ctx context.Context,
+		in *azdext.GetServiceConfigValueRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.GetServiceConfigValueResponse, error)
+}
+
+func serviceEnvDeclared(
+	ctx context.Context,
+	projectClient serviceConfigReader,
+	serviceName string,
+) (bool, error) {
+	resp, err := projectClient.GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "env",
+	})
+	if err != nil {
+		return false, fmt.Errorf("reading env for service %q: %w", serviceName, err)
+	}
+	return resp.GetFound(), nil
+}
+
+func (p *routineServiceTarget) environmentValues(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+) (map[string]string, error) {
+	environment := serviceConfig.GetEnvironment()
+	if len(environment) > 0 {
+		return environment, nil
+	}
+	// An explicit empty env: {} declares an isolated scope.
+	// Core forwards it as an empty map, indistinguishable from
+	// an omitted env, so consult the raw config before falling
+	// back to the full azd environment.
+	declared, err := serviceEnvDeclared(ctx, p.projectClient, serviceConfig.GetName())
+	if err != nil {
+		return nil, err
+	}
+	if declared {
+		return environment, nil
+	}
+
+	current, err := p.azdClient.Environment().GetCurrent(
+		ctx,
+		&azdext.EmptyRequest{},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("resolving current azd environment: %w", err)
 	}
-	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: current.GetEnvironment().GetName(),
-	})
+	resp, err := p.azdClient.Environment().GetValues(
+		ctx,
+		&azdext.GetEnvironmentRequest{
+			Name: current.GetEnvironment().GetName(),
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("loading azd environment values: %w", err)
 	}
@@ -205,9 +265,7 @@ func (p *routineServiceTarget) currentEnvValues(ctx context.Context) (map[string
 	return values, nil
 }
 
-// expandRoutineValue recursively expands ${VAR} references in every string within a
-// routine value (maps, slices, scalars) against the azd environment, preserving Foundry
-// server-side ${{...}} expressions.
+// expandRoutineValue expands ${VAR} in nested routine values.
 func expandRoutineValue(value any, env map[string]string) any {
 	switch typed := value.(type) {
 	case string:

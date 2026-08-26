@@ -321,10 +321,10 @@ func prepareStandaloneHostedDefinition(
 			environment[variable.Name] = resolved
 		}
 	}
-	if agentDefinition.Toolbox != nil {
-		environment["TOOLBOX_NAME"] = agentDefinition.Toolbox.Name
-		if agentDefinition.Toolbox.Version != "" {
-			environment["TOOLBOX_VERSION"] = agentDefinition.Toolbox.Version
+if agentDefinition.Toolbox != nil {
+		environment["TOOLBOX_NAME"] = strings.TrimSpace(agentDefinition.Toolbox.Name)
+		if version := strings.TrimSpace(agentDefinition.Toolbox.Version); version != "" {
+			environment["TOOLBOX_VERSION"] = version
 		}
 	}
 

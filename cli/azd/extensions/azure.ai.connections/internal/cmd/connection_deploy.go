@@ -101,6 +101,15 @@ func connectionDeployFlags(path, output string) (*connectionCreateFlags, error) 
 		return nil, err
 	}
 
+	scopes := make([]string, len(input.Scopes))
+	for i, scope := range input.Scopes {
+		scopes[i], err = expand(fmt.Sprintf("scopes[%d]", i), scope)
+		if err != nil {
+			return nil, err
+		}
+		scopes[i] = strings.TrimSpace(scopes[i])
+	}
+
 	flags := &connectionCreateFlags{
 		name:             strings.TrimSpace(input.Name),
 		kind:             strings.TrimSpace(input.Category),
@@ -112,7 +121,7 @@ func connectionDeployFlags(path, output string) (*connectionCreateFlags, error) 
 		authorizationURL: strings.TrimSpace(authorizationURL),
 		tokenURL:         strings.TrimSpace(tokenURL),
 		refreshURL:       strings.TrimSpace(refreshURL),
-		scopes:           slices.Clone(input.Scopes),
+		scopes:           scopes,
 		connectorName:    strings.TrimSpace(connectorName),
 	}
 	if flags.authType == "" {

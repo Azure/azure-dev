@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"reflect"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -23,7 +24,7 @@ func TestLooksLikePromptAgentManifest(t *testing.T) {
 		},
 		{
 			name:    "prompt agent with harness",
-			content: "kind: prompt\nname: my-agent\nmodel: gpt-4.1-mini\nharness: github-copilot\n",
+			content: "kind: prompt\nname: my-agent\nmodel: gpt-4.1-mini\nharness:\n  type: github-copilot\n",
 			want:    true,
 		},
 		{
@@ -63,8 +64,10 @@ func TestLoadPromptAgentManifest(t *testing.T) {
 			"name: triage-agent\n" +
 			"description: Triages incoming issues\n" +
 			"model: gpt-4.1\n" +
-			"harness: github-copilot\n" +
+			"harness:\n  type: github-copilot\n  skills:\n    - name: summarize\n      version: \"2\"\n" +
 			"instructions: You triage issues.\n" +
+			"displayName: Triage Agent\n" +
+			"metadata:\n  tags:\n    - Prompt Agent\n" +
 			"skills:\n  - summarize\n" +
 			"tools:\n  - type: code_interpreter\n",
 	)
@@ -85,11 +88,27 @@ func TestLoadPromptAgentManifest(t *testing.T) {
 	if got := manifest.instructions(); got != "You triage issues." {
 		t.Errorf("instructions = %q", got)
 	}
-	if got := manifest.definition.Harness; got != agent_api.ManagedAgentHarnessGitHubCopilot {
+	if got := manifest.definition.HarnessType(); got != agent_api.ManagedAgentHarnessGitHubCopilot {
 		t.Errorf("harness = %q", got)
+	}
+	wantHarnessSkills := []agent_yaml.HarnessSkillRef{{Name: "summarize", Version: "2"}}
+	if got := manifest.definition.Harness.Skills; !reflect.DeepEqual(got, wantHarnessSkills) {
+		t.Errorf("harness skills = %+v, want %+v", got, wantHarnessSkills)
 	}
 	if len(manifest.definition.Skills) != 1 || len(manifest.definition.Tools) != 1 {
 		t.Errorf("skills/tools were not carried through: %+v", manifest.definition)
+	}
+	// displayName and metadata are the catalog labels a hosted agent carries in
+	// azure.yaml. They reach the same CreateAgentRequest fields for a prompt
+	// agent, so the scaffold must not drop them.
+	if manifest.definition.DisplayName == nil || *manifest.definition.DisplayName != "Triage Agent" {
+		t.Errorf("displayName was not carried through: %+v", manifest.definition.DisplayName)
+	}
+	if manifest.definition.Metadata == nil {
+		t.Fatal("metadata was not carried through")
+	}
+	if got := (*manifest.definition.Metadata)["tags"]; !reflect.DeepEqual(got, []any{"Prompt Agent"}) {
+		t.Errorf("metadata tags = %+v", got)
 	}
 }
 
@@ -133,10 +152,23 @@ func TestResolveManifestInitHarness(t *testing.T) {
 		want            string
 		wantErr         bool
 	}{
-		{name: "manifest harness is honored", manifestHarness: "github-copilot", want: "github-copilot"},
+		{
+			name:            "manifest harness is honored",
+			manifestHarness: "github-copilot",
+			want:            "github-copilot",
+		},
 		{name: "no harness anywhere means plain prompt agent"},
-		{name: "harness flag wins", harnessFlag: "github-copilot", manifestHarness: "", want: "github-copilot"},
-		{name: "harness none overrides manifest", harnessFlag: "none", manifestHarness: "github-copilot", want: ""},
+		{
+			name:        "harness flag wins",
+			harnessFlag: "github-copilot",
+			want:        "github-copilot",
+		},
+		{
+			name:            "harness none overrides manifest",
+			harnessFlag:     "none",
+			manifestHarness: "github-copilot",
+			want:            "",
+		},
 		{name: "unknown flag value", harnessFlag: "bogus", wantErr: true},
 		{name: "unknown manifest value", manifestHarness: "bogus", wantErr: true},
 	}

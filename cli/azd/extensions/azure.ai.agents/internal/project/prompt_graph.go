@@ -148,7 +148,7 @@ func newPromptGraph(
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(managed.Harness) != "" {
+	if managed.HarnessType() != "" {
 		// An explicit toolbox: reference is a separate feature from skills: it
 		// attaches an existing shared toolbox as an mcp tool. Skills are never
 		// routed through a toolbox of azd's making — the harness already has a

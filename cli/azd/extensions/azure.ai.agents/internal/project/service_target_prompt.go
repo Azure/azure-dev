@@ -231,7 +231,28 @@ func validatePromptAgentRawFields(data []byte) error {
 			)
 		}
 	}
+	// `harness` used to be the harness name on its own. It is an object now, so
+	// the typed decode below would reject a string with a decoder-level type
+	// error that names neither the old shape nor the new one.
+	if harness, ok := probe["harness"].(string); ok {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent.yaml sets harness to the string %q, but harness is now a block", harness),
+			fmt.Sprintf("replace it with:\n  harness:\n    type: %s", promptHarnessTypeFor(harness)),
+		)
+	}
 	return nil
+}
+
+// promptHarnessTypeFor maps an old bare harness name to the type to write in the
+// new block, so the suggestion above is copy-pasteable even when the name itself
+// was also renamed.
+func promptHarnessTypeFor(harness string) string {
+	harness = strings.TrimSpace(harness)
+	if replacement, removed := agent_api.RemovedManagedAgentHarnesses[harness]; removed {
+		return replacement
+	}
+	return harness
 }
 
 // deployPromptAgent creates (or updates) the prompt agent on the managed

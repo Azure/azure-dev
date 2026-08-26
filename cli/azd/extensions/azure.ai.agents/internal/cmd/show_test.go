@@ -406,6 +406,17 @@ func TestDisplayHarness(t *testing.T) {
 	assert.Equal(t, "custom-harness", displayHarness("custom-harness"))
 }
 
+// TestHarnessTypeFromMap covers both shapes `show` can be handed: agents
+// created before the harness became a block still carry a bare string.
+func TestHarnessTypeFromMap(t *testing.T) {
+	assert.Equal(t, "github-copilot", harnessTypeFromMap(map[string]any{
+		"harness": map[string]any{"type": "github-copilot"},
+	}))
+	assert.Equal(t, "ghcp", harnessTypeFromMap(map[string]any{"harness": "ghcp"}))
+	assert.Equal(t, "", harnessTypeFromMap(map[string]any{"harness": map[string]any{}}))
+	assert.Equal(t, "", harnessTypeFromMap(nil))
+}
+
 func TestPromptDefinitionMap(t *testing.T) {
 	version := agent_api.AgentVersionObject{
 		Definition: map[string]any{"harness": "github-copilot"},

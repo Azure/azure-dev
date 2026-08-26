@@ -150,7 +150,7 @@ func TestPromptAgent_ValidateHarness(t *testing.T) {
 		{name: "whitespace is treated as absent", harness: "   "},
 		{name: "current spelling is accepted", harness: "github-copilot"},
 		{
-			name:        "removed spelling names its replacement",
+			name:        "abbreviated spelling names its replacement",
 			harness:     "ghcp",
 			wantErrPart: "github-copilot",
 		},
@@ -164,7 +164,7 @@ func TestPromptAgent_ValidateHarness(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := PromptAgent{Harness: tc.harness}.ValidateHarness()
+			err := PromptAgent{Harness: NewPromptHarness(tc.harness)}.ValidateHarness()
 			if tc.wantErrPart == "" {
 				require.NoError(t, err)
 				return
@@ -238,7 +238,7 @@ func TestValidateHarnessFeatures(t *testing.T) {
 			t.Parallel()
 
 			agent := tc.agent
-			agent.Harness = tc.harness
+			agent.Harness = NewPromptHarness(tc.harness)
 
 			if len(tc.wantRejected) == 0 {
 				require.NoError(t, agent.ValidateHarnessFeatures())
@@ -275,7 +275,7 @@ func TestUnsupportedHarnessFeatures_ReportingOrder(t *testing.T) {
 	// A harness-less agent is never gated, whatever the switch says.
 	require.NoError(t, agent.ValidateHarnessFeatures())
 
-	agent.Harness = "github-copilot"
+	agent.Harness = NewPromptHarness("github-copilot")
 	err := agent.ValidateHarnessFeatures()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "github-copilot")

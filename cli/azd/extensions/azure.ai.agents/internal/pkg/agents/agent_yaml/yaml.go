@@ -245,6 +245,74 @@ type ContainerAgent struct {
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
 }
 
+// HarnessSkillRef is a skill pinned onto a harnessed agent by name and,
+// optionally, version.
+//
+// The deploy graph fills the version in from the publish it just performed,
+// because the service rejects a reference that omits it. An author writing the
+// reference by hand may leave it out and take the skill's current default.
+type HarnessSkillRef struct {
+	Name    string `json:"name" yaml:"name"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
+// PromptHarness is the `harness:` block of a prompt agent's agent.yaml.
+//
+// It is an object rather than the bare harness name it used to be, because the
+// harness owns configuration of its own: which skills are provisioned into its
+// sandbox, how large that sandbox is, and which of its built-in capabilities the
+// agent is allowed to reach. Only Type is required; a block that names nothing
+// else is equivalent to the old `harness: <name>` string.
+type PromptHarness struct {
+	// Type is the harness discriminator, e.g.
+	// agent_api.ManagedAgentHarnessGitHubCopilot ("github-copilot").
+	// It is passed through verbatim: azd keeps no allowlist of harness names, so
+	// a harness the service gains later needs no change here.
+	Type string `json:"type" yaml:"type"`
+
+	// Skills pins published Foundry skills into the harness sandbox. Skills live
+	// here rather than on the definition because a skill is instructions plus the
+	// scripts they reference, so it needs the sandbox to run at all — a
+	// harness-less prompt agent gets no skill execution.
+	Skills []HarnessSkillRef `json:"skills,omitempty" yaml:"skills,omitempty"`
+
+	// Environment sizes the sandbox. Optional; the platform defaults it.
+	Environment *PromptHarnessEnvironment `json:"environment,omitempty" yaml:"environment,omitempty"`
+
+	// BuiltinTools narrows the harness's built-in capabilities. Optional; every
+	// capability is available when it is omitted.
+	BuiltinTools *PromptHarnessBuiltInTools `json:"builtin_tools,omitempty" yaml:"builtin_tools,omitempty"`
+}
+
+// PromptHarnessEnvironment sizes a harnessed agent's sandbox.
+//
+// The harness supplies its own image, packages, and startup commands, so unlike
+// a hosted agent none of those are customer-configurable here.
+type PromptHarnessEnvironment struct {
+	// Cpu and Memory are the sandbox's compute allocation (e.g. "1" and "2Gi").
+	// The service treats them as a pair: setting one without the other is an
+	// error rather than a partial override.
+	Cpu    string `json:"cpu,omitempty" yaml:"cpu,omitempty"`
+	Memory string `json:"memory,omitempty" yaml:"memory,omitempty"`
+
+	// IdleTimeoutSeconds is how long an idle sandbox is kept warm. A pointer so
+	// an explicit 0 (reclaim immediately) is distinguishable from "not set",
+	// which leaves the service default in place.
+	IdleTimeoutSeconds *int `json:"idle_timeout_seconds,omitempty" yaml:"idle_timeout_seconds,omitempty"`
+}
+
+// PromptHarnessBuiltInTools narrows the built-in capabilities the harness
+// exposes to the agent. The effective set is (Allowed, defaulting to all) minus
+// Excluded; see harnessBuiltInCapabilities for the recognized names.
+//
+// Both fields are pointers to slices so an explicit `allowed: []`, which turns
+// every built-in capability off, stays distinguishable from an omitted
+// `allowed`, which leaves them all on.
+type PromptHarnessBuiltInTools struct {
+	Allowed  *[]string `json:"allowed,omitempty" yaml:"allowed,omitempty"`
+	Excluded *[]string `json:"excluded,omitempty" yaml:"excluded,omitempty"`
+}
+
 // PromptAgent represents a Foundry "prompt" agent — a PES (Prompt Execution
 // Service) backed agent. The customer declares the model and instructions; the
 // platform manages the runtime, lifecycle, and orchestration.
@@ -253,20 +321,10 @@ type ContainerAgent struct {
 // code; the only required fields are ModelDeploymentName and Instructions.
 //
 // The optional Harness field selects between the two prompt-agent flavors:
-//   - Harness empty — a plain prompt agent. Foundry runs model + instructions
-//   - tools directly; there is no sandbox to provision.
-//   - Harness set (e.g. "github-copilot") — a managed agent whose Brain+Hand
-//     sandbox is provisioned by the platform on demand and driven by the named
-//     harness.
-//
-// HarnessSkillRef is a published skill pinned onto a harnessed agent, resolved
-// to the version that was actually uploaded. The version is carried explicitly
-// because the service rejects a skill reference that omits it.
-type HarnessSkillRef struct {
-	Name    string
-	Version string
-}
-
+//   - Harness nil — a plain prompt agent. Foundry runs model + instructions +
+//     tools directly; there is no sandbox to provision.
+//   - Harness set — a managed agent whose Brain+Hand sandbox is provisioned by
+//     the platform on demand and driven by the named harness.
 type PromptAgent struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
 
@@ -279,11 +337,10 @@ type PromptAgent struct {
 	// Foundry prompt-agent API expects on the wire.
 	Model string `json:"model" yaml:"model"`
 
-	// Harness names the execution harness the platform runs the agent on, for
-	// example agent_api.ManagedAgentHarnessGitHubCopilot ("github-copilot").
-	// Leave it empty for a plain prompt agent with no harness; the field is then
-	// omitted from the create request entirely.
-	Harness string `json:"harness,omitempty" yaml:"harness,omitempty"`
+	// Harness selects and configures the execution harness the platform runs
+	// the agent on. Leave it nil for a plain prompt agent with no harness; the
+	// field is then omitted from the create request entirely.
+	Harness *PromptHarness `json:"harness,omitempty" yaml:"harness,omitempty"`
 
 	// Instructions is the system/developer message inserted into the model's
 	// context. It is declared inline, matching the prompt-agent API schema.
@@ -295,7 +352,7 @@ type PromptAgent struct {
 	// HarnessSkills carries the skills a harnessed agent runs, resolved to the
 	// exact versions that were published. It is populated by the deploy graph
 	// from the agent's skills/ folder, never authored, and is therefore excluded
-	// from both YAML and JSON.
+	// from both YAML and JSON — an author pins skills through Harness.Skills.
 	//
 	// It exists separately from Skills because the two land in different places
 	// on the wire: a harnessed agent's skills nest under `harness`, where the

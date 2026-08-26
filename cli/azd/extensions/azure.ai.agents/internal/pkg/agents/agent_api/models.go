@@ -304,16 +304,24 @@ type ManagedEnvironment struct {
 	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
 }
 
-// ManagedAgentHarnessGitHubCopilot is the execution harness identifier sent in
-// the managed agent definition's `harness` field to run the agent on the
-// GitHub Copilot harness.
+// ManagedAgentHarnessGitHubCopilot is the discriminator sent in the managed
+// agent definition's `harness.type` field to run the agent on the GitHub
+// Copilot harness.
+//
+// The managed-agent spec writes the wire discriminator as
+// "github_copilot_preview". azd deliberately keeps the preview-free spelling
+// until the service confirms the versioned one, so that a manifest does not
+// have to be rewritten twice.
 const ManagedAgentHarnessGitHubCopilot = "github-copilot"
 
-// ManagedAgentHarnessGitHubCopilotRemoved is the abbreviated spelling this
-// harness used previously. It is retained only so validation can name the
-// replacement when it encounters an old manifest; it is never sent on the wire
-// and never accepted as input.
-const ManagedAgentHarnessGitHubCopilotRemoved = "ghcp"
+// RemovedManagedAgentHarnesses maps a harness spelling the service no longer
+// accepts to the spelling that replaced it.
+//
+// These are retained only so validation can name the replacement when it meets
+// an old manifest; none of them is ever sent on the wire or accepted as input.
+var RemovedManagedAgentHarnesses = map[string]string{
+	"ghcp": ManagedAgentHarnessGitHubCopilot,
+}
 
 // HarnessSkillReference pins one published Foundry skill onto a harnessed
 // agent's definition.
@@ -338,8 +346,41 @@ type HarnessSkillReference struct {
 // service accepts that field but never resolves it, so a name written there is
 // silently inert (including a name that matches no skill at all).
 type ManagedAgentHarness struct {
-	Type   string                  `json:"type"`
-	Skills []HarnessSkillReference `json:"skills,omitempty"`
+	Type         string                  `json:"type"`
+	Skills       []HarnessSkillReference `json:"skills,omitempty"`
+	Environment  *HarnessEnvironment     `json:"environment,omitempty"`
+	BuiltinTools *HarnessBuiltInTools    `json:"builtin_tools,omitempty"`
+}
+
+// HarnessEnvironment sizes the sandbox the harness runs the agent in.
+//
+// This is deliberately far narrower than ManagedEnvironment: the harness owns
+// its own image, packages, and startup, so the only knobs a customer gets are
+// how much compute the sandbox is given and how long it survives idle.
+//
+// Every field is a pointer so an unset knob leaves the service default in place
+// rather than pinning it to a zero value.
+type HarnessEnvironment struct {
+	// CPU and Memory size the sandbox (e.g. "1" and "2Gi"). The service treats
+	// them as a pair and rejects one without the other.
+	CPU    *string `json:"cpu,omitempty"`
+	Memory *string `json:"memory,omitempty"`
+
+	// IdleTimeoutSeconds is how long an idle sandbox is kept warm before it is
+	// reclaimed.
+	IdleTimeoutSeconds *int `json:"idle_timeout_seconds,omitempty"`
+}
+
+// HarnessBuiltInTools narrows the capabilities the harness exposes to the agent
+// out of the box.
+//
+// The effective set is (Allowed, defaulting to every capability) minus Excluded.
+// Both fields are pointers to slices so an explicitly empty `allowed: []`,
+// which turns every built-in capability off, stays distinguishable from an
+// omitted `allowed`, which leaves them all on.
+type HarnessBuiltInTools struct {
+	Allowed  *[]string `json:"allowed,omitempty"`
+	Excluded *[]string `json:"excluded,omitempty"`
 }
 
 // UnmarshalJSON accepts either the object form or the bare string form the
@@ -348,8 +389,7 @@ type ManagedAgentHarness struct {
 func (h *ManagedAgentHarness) UnmarshalJSON(data []byte) error {
 	var asString string
 	if err := json.Unmarshal(data, &asString); err == nil {
-		h.Type = asString
-		h.Skills = nil
+		*h = ManagedAgentHarness{Type: asString}
 		return nil
 	}
 	type harnessAlias ManagedAgentHarness

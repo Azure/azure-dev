@@ -12,8 +12,15 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
+
+// testPromptHarness returns a minimal harness block. Each caller gets its own
+// value because the deploy graph writes skills back onto the agent.
+func testPromptHarness() *agent_yaml.PromptHarness {
+	return agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot)
+}
 
 // fakeToolboxBuilder records calls and returns a fixed MCP url.
 type fakeToolboxBuilder struct {
@@ -312,7 +319,7 @@ func TestSkillsHarnessNode_NoneReturnsNil(t *testing.T) {
 // references, and nothing is added to tools. A skill is not a tool, and the
 // toolbox that used to carry them is service-owned.
 func TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool(t *testing.T) {
-	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: "github-copilot"}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	pub := &fakeHarnessSkillPublisher{}
@@ -357,7 +364,7 @@ func TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool(t *testing.T) {
 // the service returning 500 for a reference with no version: azd always sends
 // the version it just published, whether or not SKILL.md pinned one.
 func TestSkillsHarnessNode_PinsVersionEvenWhenUnpinned(t *testing.T) {
-	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: "github-copilot"}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	pub := &fakeHarnessSkillPublisher{
 		published: []publishedSkill{{Name: "skill-a", Version: "3", Pinned: false}},
@@ -380,7 +387,7 @@ func TestSkillsHarnessNode_ResolveIsIdempotent(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{
 		Model:         "m",
 		Instructions:  "i",
-		Harness:       "github-copilot",
+		Harness:       testPromptHarness(),
 		HarnessSkills: []agent_yaml.HarnessSkillRef{{Name: "skill-a", Version: "7"}},
 	}
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
@@ -400,7 +407,7 @@ func TestSkillsHarnessNode_ResolveIsIdempotent(t *testing.T) {
 }
 
 func TestSkillsHarnessNode_RejectsEmptyInstructions(t *testing.T) {
-	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: "github-copilot"}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	pub := &fakeHarnessSkillPublisher{}
 
@@ -420,7 +427,7 @@ func TestSkillsHarnessNode_RejectsEmptyInstructions(t *testing.T) {
 }
 
 func TestSkillsHarnessNode_PublisherErrorPropagates(t *testing.T) {
-	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: "github-copilot"}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	pub := &fakeHarnessSkillPublisher{err: errors.New("boom")}
 

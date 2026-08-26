@@ -182,7 +182,7 @@ func TestCreatePromptAgentAPIRequest_Harness(t *testing.T) {
 					Name: "my-agent",
 				},
 				Model:        "gpt-4.1-mini",
-				Harness:      tc.harness,
+				Harness:      NewPromptHarness(tc.harness),
 				Instructions: "Be helpful.",
 			}
 
@@ -226,7 +226,7 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
 		Model:           "gpt-4.1-mini",
 		Instructions:    "Be helpful.",
-		Harness:         agent_api.ManagedAgentHarnessGitHubCopilot,
+		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
 		Skills:          []string{"duplicate-check"},
 		HarnessSkills: []HarnessSkillRef{
 			{Name: "duplicate-check", Version: "3"},

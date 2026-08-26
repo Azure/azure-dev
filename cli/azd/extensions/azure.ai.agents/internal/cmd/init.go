@@ -1072,7 +1072,7 @@ azure.yaml is adopted as the project manifest and its referenced files are
 placed at the project root. When -m points at an agent manifest instead, the
 project's azure.yaml is generated from it. An agent manifest that declares
 kind: prompt scaffolds a prompt agent (or a managed agent when it also declares
-harness: github-copilot), carrying over its model, instructions, skills, and tools.
+a harness), carrying over its model, instructions, skills, and tools.
 
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
@@ -1239,10 +1239,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return runInitManaged(ctx, flags, azdClient, harness, promptManifest)
 			case promptManifest != nil:
 				// No --kind: the manifest's own harness decides the flavor, so a
-				// `harness: github-copilot` template scaffolds a managed agent and a
+				// template with a `harness:` block scaffolds a managed agent and a
 				// harness-less one a plain prompt agent. --harness still wins.
 				harness, harnessErr := resolveManifestInitHarness(
-					flags.harness, promptManifest.definition.Harness,
+					flags.harness, promptManifest.definition.HarnessType(),
 				)
 				if harnessErr != nil {
 					return harnessErr
@@ -1694,8 +1694,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"interactively. With --no-prompt, 'prompt' and 'managed' require --agent-name and "+
 			"either --model or --model-deployment (unless supplied by --manifest).")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
-		"Execution harness for a prompt agent: 'github-copilot' (GitHub Copilot Brain+Hand) or 'none'. "+
-			"Overrides the harness implied by --kind. Ignored for hosted agents.")
+		"Execution harness for a prompt agent: 'github-copilot' (GitHub Copilot Brain+Hand) "+
+			"or 'none'. Overrides the harness implied by --kind. Ignored for hosted agents.")
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml into ./infra/. "+
 			"A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets "+

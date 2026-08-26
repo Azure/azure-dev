@@ -255,10 +255,10 @@ func printPromptShowTable(agent *agent_api.AgentObject, settings *projectpkg.Pro
 	def := promptDefinitionMap(latest)
 
 	// Harness is the execution harness the platform runs the agent on, taken
-	// from the deployed definition's `harness` field (e.g. "github-copilot").
-	// The previous implementation printed settings.BaseURL here, which is the
-	// harness *API base URL*, not the harness itself.
-	if harness := stringFromMap(def, "harness"); harness != "" {
+	// from the deployed definition's `harness` block. The previous
+	// implementation printed settings.BaseURL here, which is the harness *API
+	// base URL*, not the harness itself.
+	if harness := harnessTypeFromMap(def); harness != "" {
 		fmt.Fprintf(w, "Harness:\t%s\n", displayHarness(harness))
 	}
 
@@ -295,6 +295,27 @@ func stringFromMap(m map[string]any, key string) string {
 		return strings.TrimSpace(v)
 	}
 	return ""
+}
+
+// harnessTypeFromMap returns the harness discriminator from a deployed
+// definition.
+//
+// Both shapes are handled because the field changed: agents created by earlier
+// versions of azd carry a bare string, current ones carry an object with a
+// `type`. Reading only one shape would blank the Harness row for half the
+// agents in a project.
+func harnessTypeFromMap(def map[string]any) string {
+	if def == nil {
+		return ""
+	}
+	switch harness := def["harness"].(type) {
+	case string:
+		return strings.TrimSpace(harness)
+	case map[string]any:
+		return stringFromMap(harness, "type")
+	default:
+		return ""
+	}
 }
 
 // displayHarness maps a harness identifier to a friendlier label, preserving

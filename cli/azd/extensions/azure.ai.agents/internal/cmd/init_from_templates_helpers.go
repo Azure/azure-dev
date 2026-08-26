@@ -120,7 +120,8 @@ const (
 	// AgentKindChoiceManaged is the managed-agent path — a prompt agent that
 	// additionally names an execution harness (GitHub Copilot), so Foundry
 	// provisions a Brain+Hand sandbox for it. The scaffolded agent.yaml still
-	// uses kind: prompt; the only difference is `harness: github-copilot`.
+	// uses kind: prompt; the only difference is a `harness:` block naming the
+	// harness type.
 	AgentKindChoiceManaged agentKindChoice = "managed"
 )
 
@@ -140,8 +141,8 @@ const harnessNone = "none"
 
 // resolveInitHarness resolves the harness written to the scaffolded agent.yaml.
 // An explicit --harness value always wins over the harness implied by the kind
-// choice, so `--kind prompt --harness github-copilot` and `--kind managed` are
-// equivalent.
+// choice, so `--kind prompt --harness github-copilot` and
+// `--kind managed` are equivalent.
 func resolveInitHarness(harnessFlag string, choice agentKindChoice) (string, error) {
 	harness := strings.ToLower(strings.TrimSpace(harnessFlag))
 	switch harness {
@@ -151,24 +152,23 @@ func resolveInitHarness(harnessFlag string, choice agentKindChoice) (string, err
 		return "", nil
 	case agent_api.ManagedAgentHarnessGitHubCopilot:
 		return agent_api.ManagedAgentHarnessGitHubCopilot, nil
-	case agent_api.ManagedAgentHarnessGitHubCopilotRemoved:
+	}
+
+	if replacement, removed := agent_api.RemovedManagedAgentHarnesses[harness]; removed {
 		// Named separately from the generic "unknown value" case so the error
 		// tells the user what to type instead of only what is allowed.
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"--harness %q is no longer accepted",
-				agent_api.ManagedAgentHarnessGitHubCopilotRemoved,
-			),
-			fmt.Sprintf("use --harness %s instead", agent_api.ManagedAgentHarnessGitHubCopilot),
-		)
-	default:
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("unknown --harness value %q", harnessFlag),
-			fmt.Sprintf("supported values are: %s, %s", agent_api.ManagedAgentHarnessGitHubCopilot, harnessNone),
+			fmt.Sprintf("--harness %q is no longer accepted", harness),
+			fmt.Sprintf("use --harness %s instead", replacement),
 		)
 	}
+
+	return "", exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("unknown --harness value %q", harnessFlag),
+		fmt.Sprintf("supported values are: %s, %s", agent_api.ManagedAgentHarnessGitHubCopilot, harnessNone),
+	)
 }
 
 // promptAgentKind asks the user which agent kind to initialize. In no-prompt

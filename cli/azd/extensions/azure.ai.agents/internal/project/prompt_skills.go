@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 
@@ -340,7 +341,8 @@ func skillsShellNode(
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
 					"toolbox: is only available to an agent that names a harness",
-					"add 'harness: github-copilot' to agent.yaml, or remove 'toolbox:' and put the "+
+					"add a 'harness:' block with type "+agent_api.ManagedAgentHarnessGitHubCopilot+
+						" to agent.yaml, or remove 'toolbox:' and put the "+
 						"skills in a skills/ folder next to agent.yaml",
 				)
 			}

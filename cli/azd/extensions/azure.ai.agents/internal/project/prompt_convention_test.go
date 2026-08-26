@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
 
@@ -127,7 +128,7 @@ func TestResolvePromptAgentGraph_HarnessFeatureGate(t *testing.T) {
 		agent := &agent_yaml.PromptAgent{
 			Model:        "gpt-4.1-mini",
 			Instructions: "ok",
-			Harness:      harness,
+			Harness:      agent_yaml.NewPromptHarness(harness),
 			Policies: []agent_yaml.Policy{
 				{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: "/subscriptions/sub/raiPolicies/strict"},
 			},
@@ -137,7 +138,7 @@ func TestResolvePromptAgentGraph_HarnessFeatureGate(t *testing.T) {
 		return agent
 	}
 
-	for _, harness := range []string{"github-copilot", ""} {
+	for _, harness := range []string{agent_api.ManagedAgentHarnessGitHubCopilot, ""} {
 		agent := newAgent(harness, nil)
 		if _, err := p.resolvePromptAgentGraph(t.Context(), agent, nil, nil, nil); err != nil {
 			t.Errorf("harness %q should accept guardrails: %v", harness, err)
@@ -150,7 +151,8 @@ func TestResolvePromptAgentGraph_HarnessFeatureGate(t *testing.T) {
 		t.Errorf("a plain prompt agent should accept knowledge: %v", err)
 	}
 
-	_, err := p.resolvePromptAgentGraph(t.Context(), newAgent("github-copilot", grounding), nil, nil, nil)
+	_, err := p.resolvePromptAgentGraph(
+		t.Context(), newAgent(agent_api.ManagedAgentHarnessGitHubCopilot, grounding), nil, nil, nil)
 	if err == nil {
 		t.Fatal("a harnessed agent declaring knowledge should be rejected")
 	}

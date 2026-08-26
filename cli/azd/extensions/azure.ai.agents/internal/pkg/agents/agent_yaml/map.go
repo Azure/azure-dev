@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -469,38 +470,89 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 // published from the skills/ folder, and are matched by name so a manifest entry
 // naming a folder-published skill does not produce a duplicate reference.
 func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
-	harnessType := strings.TrimSpace(promptAgent.Harness)
+	harnessType := promptAgent.HarnessType()
 	if harnessType == "" {
 		return nil
 	}
 
-	harness := &agent_api.ManagedAgentHarness{Type: harnessType}
+	harness := &agent_api.ManagedAgentHarness{
+		Type:         harnessType,
+		Environment:  mapHarnessEnvironment(promptAgent.Harness.Environment),
+		BuiltinTools: mapHarnessBuiltInTools(promptAgent.Harness.BuiltinTools),
+	}
+
 	seen := make(map[string]struct{}, len(promptAgent.HarnessSkills))
-	for _, skill := range promptAgent.HarnessSkills {
-		name := strings.TrimSpace(skill.Name)
+	addSkill := func(name, version string) {
+		name = strings.TrimSpace(name)
 		if name == "" {
-			continue
+			return
+		}
+		if _, dup := seen[name]; dup {
+			return
 		}
 		seen[name] = struct{}{}
 		harness.Skills = append(harness.Skills, agent_api.HarnessSkillReference{
 			Name:    name,
-			Version: strings.TrimSpace(skill.Version),
+			Version: strings.TrimSpace(version),
 		})
 	}
+
+	// Graph-published skills go first: they are the only ones azd knows a version
+	// for, and the dedupe below keeps a hand-written reference to the same name
+	// from replacing a pinned version with an unpinned one.
+	for _, skill := range promptAgent.HarnessSkills {
+		addSkill(skill.Name, skill.Version)
+	}
+	for _, skill := range promptAgent.Harness.Skills {
+		addSkill(skill.Name, skill.Version)
+	}
 	for _, name := range promptAgent.Skills {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		if _, dup := seen[name]; dup {
-			continue
-		}
-		seen[name] = struct{}{}
-		// No version: this name came from the manifest, not from a publish, so
-		// azd has nothing to pin it to and defers to the service's default.
-		harness.Skills = append(harness.Skills, agent_api.HarnessSkillReference{Name: name})
+		// No version: this name came from the definition-level `skills` field, not
+		// from a publish, so azd has nothing to pin it to and defers to the
+		// service's default.
+		addSkill(name, "")
 	}
 	return harness
+}
+
+// mapHarnessEnvironment converts the authored sandbox sizing to its API shape.
+// Empty strings become nil so an omitted knob leaves the service default in
+// place rather than pinning it to "".
+func mapHarnessEnvironment(env *PromptHarnessEnvironment) *agent_api.HarnessEnvironment {
+	if env == nil {
+		return nil
+	}
+	mapped := &agent_api.HarnessEnvironment{IdleTimeoutSeconds: env.IdleTimeoutSeconds}
+	if cpu := strings.TrimSpace(env.Cpu); cpu != "" {
+		mapped.CPU = new(cpu)
+	}
+	if memory := strings.TrimSpace(env.Memory); memory != "" {
+		mapped.Memory = new(memory)
+	}
+	if mapped.CPU == nil && mapped.Memory == nil && mapped.IdleTimeoutSeconds == nil {
+		return nil
+	}
+	return mapped
+}
+
+// mapHarnessBuiltInTools converts the authored built-in capability filter to its
+// API shape, preserving the distinction between an explicitly empty list (turn
+// every capability off) and an omitted one (leave them all on).
+func mapHarnessBuiltInTools(builtin *PromptHarnessBuiltInTools) *agent_api.HarnessBuiltInTools {
+	if builtin == nil {
+		return nil
+	}
+	if builtin.Allowed == nil && builtin.Excluded == nil {
+		return nil
+	}
+	mapped := &agent_api.HarnessBuiltInTools{}
+	if builtin.Allowed != nil {
+		mapped.Allowed = new(slices.Clone(*builtin.Allowed))
+	}
+	if builtin.Excluded != nil {
+		mapped.Excluded = new(slices.Clone(*builtin.Excluded))
+	}
+	return mapped
 }
 
 // API CreateAgentRequest expected by the Foundry prompt-agent endpoint.
@@ -509,10 +561,10 @@ func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
 // model + instructions (plus optional skills/policies), so no image/cpu/memory
 // fields are required from the customer for the minimum case.
 //
-// The agent's Harness is omitted entirely when empty: a harness-less prompt
+// The agent's Harness is omitted entirely when nil: a harness-less prompt
 // agent is run directly by Foundry, while a managed agent names its harness
-// (e.g. "github-copilot") and the platform provisions a Brain+Hand sandbox for
-// it.
+// (e.g. "github-copilot") and the platform provisions a Brain+Hand
+// sandbox for it.
 func CreatePromptAgentAPIRequest(
 	promptAgent PromptAgent,
 	buildConfig *AgentBuildConfig,
@@ -524,6 +576,9 @@ func CreatePromptAgentAPIRequest(
 		return nil, fmt.Errorf("prompt agent requires non-empty instructions")
 	}
 	if err := promptAgent.ValidateHarness(); err != nil {
+		return nil, err
+	}
+	if err := promptAgent.ValidateHarnessBlock(); err != nil {
 		return nil, err
 	}
 	if err := promptAgent.ValidateHarnessFeatures(); err != nil {

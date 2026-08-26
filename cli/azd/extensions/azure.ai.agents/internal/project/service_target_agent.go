@@ -208,6 +208,10 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 			"run 'azd init' to initialize your project",
 		)
 	}
+	// Read the include directive before resolving it away: ResolveServiceConfigInPlace
+	// replaces the `$ref` key with the referenced file's contents, so this is the
+	// only point where the file the definition came from is still knowable.
+	declaredRef := declaredAgentDefinitionRef(p.serviceConfig)
 	if err := ResolveServiceConfigInPlace(
 		p.serviceConfig,
 		proj.Project.Path,
@@ -241,7 +245,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	// their entire deploy target in the service config, so skip the
 	// subscription/tenant/credential resolution the hosted path needs.
 	if serviceIsPromptAgent(p.serviceConfig) {
-		return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath)
+		return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
 	}
 
 	// Get subscription ID from environment
@@ -294,14 +298,18 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	p.projectPath = proj.Project.Path
 	p.servicePath = fullPath
 
-	return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath)
+	return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
 }
 
 // resolveAgentDefinitionPath locates the agent definition (agent.yaml/agent.yml
 // or the AGENT_DEFINITION_PATH override) for the service and stores it on the
 // provider. It is shared by the hosted and prompt-agent Initialize paths.
+//
+// declaredRef is the root `$ref` the service entry carried in azure.yaml before
+// the include machinery expanded it, or "" when the service declares none.
 func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 	projectPath, servicePath, fullPath string,
+	declaredRef string,
 ) error {
 	// Check if user has specified agent definition path via environment variable
 	if envPath := os.Getenv("AGENT_DEFINITION_PATH"); envPath != "" {
@@ -330,24 +338,26 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 		return nil
 	}
 
-	// Explicit reference: `manifest:` on the service entry names the agent
-	// definition file. It wins over both the inline shape and the agent.yaml
-	// convention, so a developer who wants to name the file something else --
-	// or keep several manifests side by side in one folder -- can say so in
-	// azure.yaml instead of relying on a filename azd hardcodes.
-	if declared := declaredAgentManifest(p.serviceConfig); declared != "" {
-		resolved, err := resolveDeclaredManifestPath(projectPath, servicePath, declared, p.serviceConfig.Name)
+	// Explicit reference: a root `$ref:` on the service entry names the file that
+	// supplies the agent definition. The shared include machinery has already
+	// merged that file's contents onto the service entry, so a hosted agent needs
+	// nothing more. A prompt agent does: it reads the raw YAML and anchors the
+	// skills/ and vector-assets/ convention folders next to the file, so record
+	// where the file actually lives.
+	if declaredRef != "" && serviceIsPromptAgent(p.serviceConfig) {
+		resolved, err := resolveDeclaredRefPath(projectPath, declaredRef, p.serviceConfig.Name)
 		if err != nil {
 			return err
 		}
 		if _, statErr := os.Stat(resolved); statErr != nil {
-			// A declared-but-missing manifest is a typo, not an opt-out.
-			// Falling back to the convention here would deploy a different
-			// manifest than the one azure.yaml names.
+			// A declared-but-missing target is a typo, not an opt-out. Falling
+			// back to the convention here would deploy a different file than the
+			// one azure.yaml names.
 			return exterrors.Dependency(
 				exterrors.CodeAgentDefinitionNotFound,
-				fmt.Sprintf("agent manifest %q declared by service %q does not exist", declared, p.serviceConfig.Name),
-				"correct the manifest: path in azure.yaml, or remove it to use the default agent.yaml",
+				fmt.Sprintf("agent definition %q referenced by service %q does not exist",
+					declaredRef, p.serviceConfig.Name),
+				"correct the $ref: path in azure.yaml, or remove it to use the default agent.yaml",
 			)
 		}
 		p.agentDefinitionPath = resolved
@@ -404,20 +414,29 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 		exterrors.CodeAgentDefinitionNotFound,
 		fmt.Sprintf("agent definition file not found: no agent.yaml or agent.yml found in %s", fullPath),
 		"add an agent.yaml/agent.yml file to the service directory, "+
-			"declare manifest: <file> on the service in azure.yaml, or set AGENT_DEFINITION_PATH",
+			"declare $ref: <file> on the service in azure.yaml, or set AGENT_DEFINITION_PATH",
 	)
 }
 
-// AgentManifestServiceKey is the azure.yaml service key that points at the
-// agent manifest file, relative to the service's project directory.
-const AgentManifestServiceKey = "manifest"
+// AgentDefinitionRefKey is the azure.yaml service key that points at the file
+// supplying the agent definition, relative to the project directory.
+//
+// It is the standard Foundry file-include directive rather than a key azd
+// invents: the same `$ref` every other Foundry resource uses, resolved by the
+// same machinery (see [foundry.ResolveFileRefs]). Reusing it means one spelling,
+// one set of path rules, and one schema for "this entry lives in another file".
+const AgentDefinitionRefKey = "$ref"
 
-// declaredAgentManifest returns the manifest path declared on the service entry
-// in azure.yaml, or "" when the service relies on the agent.yaml convention.
+// declaredAgentDefinitionRef returns the root `$ref` declared on the service
+// entry in azure.yaml, or "" when the service relies on the agent.yaml
+// convention or carries its definition inline.
+//
+// It must be called before [ResolveServiceConfigInPlace], which expands the
+// directive and removes the key.
 //
 // Service-level properties are checked before the nested config block so the
 // unified shape wins, matching how the inline agent definition is resolved.
-func declaredAgentManifest(svc *azdext.ServiceConfig) string {
+func declaredAgentDefinitionRef(svc *azdext.ServiceConfig) string {
 	if svc == nil {
 		return ""
 	}
@@ -425,7 +444,7 @@ func declaredAgentManifest(svc *azdext.ServiceConfig) string {
 		if props == nil {
 			continue
 		}
-		value, ok := props.GetFields()[AgentManifestServiceKey]
+		value, ok := props.GetFields()[AgentDefinitionRefKey]
 		if !ok {
 			continue
 		}
@@ -436,54 +455,37 @@ func declaredAgentManifest(svc *azdext.ServiceConfig) string {
 	return ""
 }
 
-// resolveDeclaredManifestPath resolves a `manifest:` value against the service
-// directory and confines it there.
+// resolveDeclaredRefPath resolves a `$ref` value against the project root and
+// confines it there.
 //
-// Confinement is to the *service* directory rather than the project root: a
-// manifest is part of one service's source, and letting it reach across into a
-// sibling service's folder makes the two services silently share state that
-// neither declares.
-func resolveDeclaredManifestPath(projectPath, servicePath, declared, serviceName string) (string, error) {
+// The project root — not the service directory — is the anchor because that is
+// what [foundry.ResolveFileRefs] already uses when it expands the same value.
+// Anchoring differently here would make the file azd reads for the convention
+// folders a different file from the one whose contents were merged onto the
+// service entry.
+func resolveDeclaredRefPath(projectPath, declared, serviceName string) (string, error) {
 	if filepath.IsAbs(declared) || strings.HasPrefix(declared, "/") || strings.HasPrefix(declared, `\`) {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("manifest %q on service %q must be a relative path", declared, serviceName),
-			"use a path relative to the service's project directory (e.g. manifest: agents/triage.yaml)",
+			fmt.Sprintf("$ref %q on service %q must be a relative path", declared, serviceName),
+			"use a path relative to the directory holding azure.yaml (e.g. $ref: ./agents/triage.yaml)",
 		)
 	}
 
-	serviceDir, err := paths.JoinAllowRoot(projectPath, servicePath)
+	resolved, err := paths.JoinAllowRoot(projectPath, filepath.FromSlash(declared))
 	if err != nil {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid project path for service %q: %s", serviceName, err),
-			"update azure.yaml so the service's project directory stays within the project",
-		)
-	}
-
-	resolved, err := paths.JoinAllowRoot(projectPath, servicePath, filepath.FromSlash(declared))
-	if err != nil {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid manifest path %q on service %q: %s", declared, serviceName, err),
-			"update azure.yaml so the manifest stays within the service's project directory",
-		)
-	}
-
-	rel, err := filepath.Rel(serviceDir, resolved)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("manifest %q on service %q resolves outside the service directory", declared, serviceName),
-			"point manifest: at a file inside the service's project directory",
+			fmt.Sprintf("invalid $ref path %q on service %q: %s", declared, serviceName, err),
+			"update azure.yaml so the $ref stays within the project directory",
 		)
 	}
 
 	if ext := strings.ToLower(filepath.Ext(resolved)); ext != ".yaml" && ext != ".yml" {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("manifest %q on service %q must be a YAML file (.yaml or .yml)", declared, serviceName),
-			"point manifest: at a .yaml or .yml file",
+			fmt.Sprintf("$ref %q on service %q must be a YAML file (.yaml or .yml)", declared, serviceName),
+			"point $ref: at a .yaml or .yml file",
 		)
 	}
 

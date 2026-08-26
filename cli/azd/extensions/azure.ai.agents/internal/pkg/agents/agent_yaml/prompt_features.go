@@ -120,7 +120,7 @@ func (p PromptAgent) declares(feature PromptFeature) bool {
 // its harness cannot honor, in a stable order. It returns nil for a harness-less
 // prompt agent, which supports all of them.
 func (p PromptAgent) UnsupportedHarnessFeatures() []PromptFeature {
-	if strings.TrimSpace(p.Harness) == "" {
+	if !p.harnessed() {
 		return nil
 	}
 
@@ -153,7 +153,7 @@ func (p PromptAgent) ValidateHarnessFeatures() error {
 
 	return fmt.Errorf(
 		"agent.yaml configures %s, which the %q harness does not support yet",
-		strings.Join(names, ", "), strings.TrimSpace(p.Harness),
+		strings.Join(names, ", "), p.HarnessType(),
 	)
 }
 
@@ -207,16 +207,14 @@ func (p PromptAgent) ValidatePolicies() error {
 // has never heard of may simply be newer than this build, and hard-failing
 // would make every new Foundry harness a breaking change in azd. Only spellings
 // known to be wrong are refused, and each one names its replacement.
-var removedHarnesses = map[string]string{
-	agent_api.ManagedAgentHarnessGitHubCopilotRemoved: agent_api.ManagedAgentHarnessGitHubCopilot,
-}
+var removedHarnesses = agent_api.RemovedManagedAgentHarnesses
 
 // ValidateHarness rejects harness spellings that have been replaced. The value
 // is passed to the service verbatim, and the service ignores a harness it does
 // not recognize rather than erroring — so an outdated spelling would otherwise
 // publish a plain prompt agent while the manifest claims a managed one.
 func (p PromptAgent) ValidateHarness() error {
-	harness := strings.TrimSpace(p.Harness)
+	harness := p.HarnessType()
 	if harness == "" {
 		return nil
 	}

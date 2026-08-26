@@ -24,11 +24,16 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// promptAgentManifestFileName is the manifest filename `init` scaffolds. It is
-// also written into azure.yaml as the service's `manifest:` value, so the link
-// between the service and its manifest is visible in the project file rather
-// than implied by a filename azd happens to look for.
+// promptAgentManifestFileName is the agent definition filename `init`
+// scaffolds. It is also referenced from azure.yaml through the service's `$ref`
+// include, so the link between the service and its definition is visible in the
+// project file rather than implied by a filename azd happens to look for.
 const promptAgentManifestFileName = "agent.yaml"
+
+// promptAgentManifestRef is the `$ref` value written into azure.yaml. `$ref`
+// paths resolve against the directory holding azure.yaml, and the explicit
+// leading "./" marks it as a relative path rather than a bare name.
+const promptAgentManifestRef = "./" + promptAgentManifestFileName
 
 // promptAgentManifest is a prompt-agent definition supplied through
 // `--manifest` (or a positional template pointer), pre-loaded so runInitManaged
@@ -155,9 +160,9 @@ func loadPromptManifestFromPointer(
 
 // resolveManifestInitHarness resolves the harness for a prompt-agent manifest
 // adopted without an explicit --kind. An explicit --harness always wins;
-// otherwise the manifest's own harness is honored, so a template that declares
-// `harness: github-copilot` scaffolds a managed agent and one that declares none
-// scaffolds a plain prompt agent.
+// otherwise the manifest's own harness type is honored, so a template that
+// declares one scaffolds a managed agent and one that declares none scaffolds a
+// plain prompt agent.
 func resolveManifestInitHarness(harnessFlag, manifestHarness string) (string, error) {
 	if strings.TrimSpace(harnessFlag) != "" {
 		return resolveInitHarness(harnessFlag, AgentKindChoicePrompt)
@@ -314,9 +319,9 @@ func runInitManaged(
 			Kind: agent_yaml.AgentKindPrompt,
 		},
 		Model: model,
-		// An empty harness is omitted from agent.yaml entirely, which is what
+		// A nil harness is omitted from agent.yaml entirely, which is what
 		// distinguishes a plain prompt agent from a managed (harnessed) one.
-		Harness: harness,
+		Harness: promptScaffoldHarness(harness, manifest),
 		// Instructions are inline, matching the prompt-agent API schema.
 		Instructions: promptScaffoldInstructions(instructions),
 	}
@@ -324,6 +329,12 @@ func runInitManaged(
 	// Tools, skills, connections, and the toolbox reference are the reason a
 	// user supplies a template at all; dropping them would silently produce a
 	// bare agent that does not match the template they asked for.
+	//
+	// displayName and metadata come along for the same reason: a hosted agent's
+	// azure.yaml carries description and metadata.tags straight from its
+	// template, and both reach the same CreateAgentRequest fields for a prompt
+	// agent, so a prompt agent scaffolded from a template should not silently
+	// lose the catalog labels the template author wrote.
 	if manifest != nil {
 		promptAgent.Skills = manifest.definition.Skills
 		promptAgent.Tools = manifest.definition.Tools
@@ -333,6 +344,8 @@ func runInitManaged(
 		promptAgent.Connections = manifest.definition.Connections
 		promptAgent.Toolbox = manifest.definition.Toolbox
 		promptAgent.Memory = manifest.definition.Memory
+		promptAgent.AgentDefinition.DisplayName = manifest.definition.DisplayName
+		promptAgent.AgentDefinition.Metadata = manifest.definition.Metadata
 	}
 	if strings.TrimSpace(description) != "" {
 		desc := strings.TrimSpace(description)
@@ -421,12 +434,13 @@ func addPromptAgentService(
 		return fmt.Errorf("marshaling prompt agent service config: %w", err)
 	}
 
-	// Name the manifest explicitly on the service entry. Deploy would find
-	// agent.yaml by convention anyway, but writing it makes the service -> manifest
-	// edge readable in azure.yaml and gives the developer one line to edit when
-	// they want a different filename.
+	// Reference the definition file explicitly on the service entry. Deploy would
+	// find agent.yaml by convention anyway, but the `$ref` include makes the
+	// service -> definition edge readable in azure.yaml, gives the developer one
+	// line to edit when they want a different filename, and is the same directive
+	// every other Foundry resource uses to live in its own file.
 	serviceProps, err := structpb.NewStruct(map[string]any{
-		project.AgentManifestServiceKey: promptAgentManifestFileName,
+		project.AgentDefinitionRefKey: promptAgentManifestRef,
 	})
 	if err != nil {
 		return fmt.Errorf("marshaling prompt agent service properties: %w", err)
@@ -736,6 +750,27 @@ func promptScaffoldInstructions(instructions string) string {
 		return trimmed
 	}
 	return "You are a helpful AI assistant."
+}
+
+// promptScaffoldHarness builds the `harness:` block for a scaffolded agent.yaml,
+// or nil for a plain prompt agent so the key is omitted entirely.
+//
+// harnessType is already resolved from --harness and --kind, so it wins over the
+// manifest's own type. The manifest's remaining harness configuration — pinned
+// skills, sandbox sizing, built-in capability filter — is carried through, since
+// dropping it would scaffold an agent that does not match the template the user
+// asked for.
+func promptScaffoldHarness(harnessType string, manifest *promptAgentManifest) *agent_yaml.PromptHarness {
+	harness := agent_yaml.NewPromptHarness(harnessType)
+	if harness == nil {
+		return nil
+	}
+	if manifest != nil && manifest.definition.Harness != nil {
+		harness.Skills = manifest.definition.Harness.Skills
+		harness.Environment = manifest.definition.Harness.Environment
+		harness.BuiltinTools = manifest.definition.Harness.BuiltinTools
+	}
+	return harness
 }
 
 // scaffoldPromptConventionFolders writes the convention-based authoring layout

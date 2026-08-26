@@ -5,6 +5,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
@@ -145,17 +146,20 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 }
 
 // SuggestExtensionForProvider returns the id of a registry extension that declares the named
-// provisioning provider when no installed extension does, or an empty string when the provider is
-// unknown to the registry, already declared by an installed extension, or the lookup fails.
-func (a *ExtensionActivator) SuggestExtensionForProvider(ctx context.Context, providerName string) string {
+// provisioning provider when no installed extension does. An empty id with a nil error means the
+// provider is unknown to the registry, already declared by an installed extension, or the lookup
+// failed for a reason other than azd compatibility.
+// An *extensions.ExtensionAzdVersionIncompatibleError is returned when matching releases exist
+// but none are compatible with the current azd version.
+func (a *ExtensionActivator) SuggestExtensionForProvider(ctx context.Context, providerName string) (string, error) {
 	if strings.TrimSpace(providerName) == "" {
-		return ""
+		return "", nil
 	}
 
 	// An installed extension declares this provider, so an install suggestion would be misleading.
 	if installed, err := a.extensionManager.ListInstalled(); err == nil {
 		if len(extensionsForProviders(installed, []string{providerName})) > 0 {
-			return ""
+			return "", nil
 		}
 	}
 
@@ -166,11 +170,14 @@ func (a *ExtensionActivator) SuggestExtensionForProvider(ctx context.Context, pr
 			Provider:   providerName,
 		}},
 	)
+	if compatibilityErr, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+		return "", compatibilityErr
+	}
 	if err != nil || len(matches) == 0 {
-		return ""
+		return "", nil
 	}
 
-	return matches[0].Id
+	return matches[0].Id, nil
 }
 
 // providerResolvable reports whether the named provisioning provider already resolves from the

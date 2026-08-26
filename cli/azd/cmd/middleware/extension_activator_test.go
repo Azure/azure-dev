@@ -4,6 +4,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 
@@ -28,8 +29,8 @@ func stubProviderRegistry(mockCtx *mocks.MockContext, extensionID, providerName 
 		Version:      "1.0.0",
 		Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
 		Providers: []extensions.Provider{{
-			Type: extensions.ProvisioningProviderType,
 			Name: providerName,
+			Type: extensions.ProvisioningProviderType,
 		}},
 	}})
 }
@@ -199,7 +200,7 @@ func Test_SuggestExtensionForProvider(t *testing.T) {
 	t.Run("EmptyName", func(t *testing.T) {
 		mockCtx := mocks.NewMockContext(t.Context())
 		activator := newTestExtensionActivator(t, mockCtx, nil)
-		require.Empty(t, activator.SuggestExtensionForProvider(t.Context(), "  "))
+		requireSuggestedExtension(t, activator, "  ", "")
 	})
 
 	// An installed extension already declares the provider, so an install suggestion would be
@@ -214,7 +215,7 @@ func Test_SuggestExtensionForProvider(t *testing.T) {
 			},
 		}
 		activator := newTestExtensionActivator(t, mockCtx, installed)
-		require.Empty(t, activator.SuggestExtensionForProvider(t.Context(), "microsoft.foundry"))
+		requireSuggestedExtension(t, activator, "microsoft.foundry", "")
 	})
 
 	// No installed extension declares the provider, but the registry does: suggest that extension.
@@ -222,7 +223,7 @@ func Test_SuggestExtensionForProvider(t *testing.T) {
 		mockCtx := mocks.NewMockContext(t.Context())
 		stubProviderRegistry(mockCtx, "azure.ai.agents", "microsoft.foundry")
 		activator := newTestExtensionActivator(t, mockCtx, nil)
-		require.Equal(t, "azure.ai.agents", activator.SuggestExtensionForProvider(t.Context(), "microsoft.foundry"))
+		requireSuggestedExtension(t, activator, "microsoft.foundry", "azure.ai.agents")
 	})
 
 	// No installed extension and no registry match yields no suggestion.
@@ -230,23 +231,26 @@ func Test_SuggestExtensionForProvider(t *testing.T) {
 		mockCtx := mocks.NewMockContext(t.Context())
 		stubProviderRegistry(mockCtx, "azure.ai.agents", "microsoft.foundry")
 		activator := newTestExtensionActivator(t, mockCtx, nil)
-		require.Empty(t, activator.SuggestExtensionForProvider(t.Context(), "unknown.provider"))
+		requireSuggestedExtension(t, activator, "unknown.provider", "")
 	})
 
 	t.Run("UsesCompatibleVersion", func(t *testing.T) {
 		mockCtx := mocks.NewMockContext(t.Context())
+		foundry := []extensions.Provider{{
+			Name: "microsoft.foundry",
+			Type: extensions.ProvisioningProviderType,
+		}}
 		stubProviderRegistryVersions(mockCtx, "azure.ai.agents", []extensions.ExtensionVersion{
 			{
 				Version:      "1.0.0",
 				Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-				Providers: []extensions.Provider{{
-					Type: extensions.ProvisioningProviderType,
-					Name: "microsoft.foundry",
-				}},
+				Providers:    foundry,
 			},
 			{
 				Version:            "2.0.0",
 				RequiredAzdVersion: ">=2.0.0",
+				Capabilities:       []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+				Providers:          foundry,
 			},
 		})
 		manager := createExtensionsManagerWithOptions(
@@ -262,11 +266,49 @@ func Test_SuggestExtensionForProvider(t *testing.T) {
 			&internal.GlobalCommandOptions{},
 		)
 
-		require.Equal(t, "azure.ai.agents", activator.SuggestExtensionForProvider(
-			t.Context(),
-			"microsoft.foundry",
-		))
+		requireSuggestedExtension(t, activator, "microsoft.foundry", "azure.ai.agents")
 	})
+
+	t.Run("IncompatibleOnly", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		stubProviderRegistryVersions(mockCtx, "azure.ai.agents", []extensions.ExtensionVersion{
+			{
+				Version:            "2.0.0",
+				RequiredAzdVersion: ">=2.0.0",
+				Capabilities:       []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+				Providers: []extensions.Provider{{
+					Name: "microsoft.foundry",
+					Type: extensions.ProvisioningProviderType,
+				}},
+			},
+		})
+		manager := createExtensionsManagerWithOptions(
+			t,
+			mockCtx,
+			nil,
+			extensions.ManagerOptions{AzdVersion: semver.MustParse("1.0.0")},
+		)
+		activator := NewExtensionActivator(
+			mockCtx.Container,
+			manager,
+			extensions.NewRunner(exec.NewCommandRunner(nil)),
+			&internal.GlobalCommandOptions{},
+		)
+
+		id, err := activator.SuggestExtensionForProvider(t.Context(), "microsoft.foundry")
+		require.Empty(t, id)
+		compatibilityErr, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err)
+		require.True(t, ok)
+		require.Contains(t, compatibilityErr.Error(), "microsoft.foundry")
+		require.Contains(t, compatibilityErr.Suggestion(), `satisfies ">=2.0.0"`)
+	})
+}
+
+func requireSuggestedExtension(t *testing.T, activator *ExtensionActivator, provider, wantID string) {
+	t.Helper()
+	id, err := activator.SuggestExtensionForProvider(t.Context(), provider)
+	require.NoError(t, err)
+	require.Equal(t, wantID, id)
 }
 
 func Test_providerFromExtension(t *testing.T) {

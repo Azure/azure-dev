@@ -112,6 +112,119 @@ func Test_ResolveExtensions_MissingVersionReportsCompatibleAlternative(t *testin
 	require.NotContains(t, versionErr.Suggestion(), "--version 2.0.0")
 }
 
+func Test_ResolveExtensions_UnsatisfiedRangeConstraintDoesNotSuggestInstall(t *testing.T) {
+	t.Parallel()
+
+	extension := &ExtensionMetadata{
+		Id:     "test.extension",
+		Source: "local",
+		Versions: []ExtensionVersion{
+			{Version: "1.0.0"},
+		},
+	}
+	source := &mockSource{name: "local", extensions: []*ExtensionMetadata{extension}}
+	manager := newTestManager(t)
+	manager.sources = []Source{source}
+
+	matches, err := manager.FindInstallableExtensions(t.Context(), &InstallResolutionOptions{
+		FilterOptions: FilterOptions{
+			Id:      extension.Id,
+			Version: ">=5.0.0",
+			Source:  source.name,
+		},
+	})
+
+	require.Nil(t, matches)
+	versionErr, ok := errors.AsType[*ExtensionVersionNotFoundError](err)
+	require.True(t, ok)
+	require.Contains(t, versionErr.Suggestion(), "requiredVersions.extensions")
+	require.NotContains(t, versionErr.Suggestion(), "extension install")
+}
+
+func Test_ExtensionVersionNotFoundError_ConstraintSuggestion(t *testing.T) {
+	t.Parallel()
+
+	matches := []*ExtensionMetadata{
+		{
+			Id:     "test.extension",
+			Source: "local",
+			Versions: []ExtensionVersion{
+				{Version: "1.0.0"},
+			},
+		},
+		{
+			Id:     "test.extension",
+			Source: "other",
+			Versions: []ExtensionVersion{
+				{Version: "1.1.0"},
+			},
+		},
+	}
+
+	t.Run("single source", func(t *testing.T) {
+		versionErr := &ExtensionVersionNotFoundError{
+			ExtensionId: "test.extension",
+			Version:     ">=5.0.0",
+			Matches:     matches[:1],
+		}
+		require.Contains(t, versionErr.Suggestion(), "azd extension show test.extension")
+		require.Contains(t, versionErr.Suggestion(), "requiredVersions.extensions")
+		require.NotContains(t, versionErr.Suggestion(), "extension install")
+		require.NotContains(t, versionErr.Suggestion(), "--version")
+	})
+
+	t.Run("multiple sources", func(t *testing.T) {
+		versionErr := &ExtensionVersionNotFoundError{
+			ExtensionId: "test.extension",
+			Version:     ">=5.0.0",
+			Matches:     matches,
+		}
+		require.Greater(t, len(versionErr.Alternatives()), 1)
+		require.Contains(t, versionErr.Suggestion(), "requiredVersions.extensions")
+		require.NotContains(t, versionErr.Suggestion(), "--source")
+		require.NotContains(t, versionErr.Suggestion(), "extension install")
+	})
+
+	t.Run("no alternatives", func(t *testing.T) {
+		versionErr := &ExtensionVersionNotFoundError{
+			ExtensionId: "test.extension",
+			Version:     ">=5.0.0",
+			AzdVersion:  semver.MustParse("1.0.0"),
+			Matches: []*ExtensionMetadata{{
+				Id: "test.extension",
+				Versions: []ExtensionVersion{{
+					Version:            "6.0.0",
+					RequiredAzdVersion: ">=2.0.0",
+				}},
+			}},
+		}
+		require.Empty(t, versionErr.Alternatives())
+		require.Contains(t, versionErr.Suggestion(), "requiredVersions.extensions")
+		require.NotContains(t, versionErr.Suggestion(), "compatible with a published release")
+	})
+}
+
+func Test_ExtensionAzdVersionIncompatibleError_UpperBoundSuggestion(t *testing.T) {
+	t.Parallel()
+
+	compatibilityErr := &ExtensionAzdVersionIncompatibleError{
+		Version: "1.0.0",
+		Matches: []*ExtensionMetadata{{
+			Versions: []ExtensionVersion{{
+				Version:            "1.0.0",
+				RequiredAzdVersion: "<2.0.0",
+			}},
+		}},
+	}
+
+	require.Equal(
+		t,
+		`Use an azd version that satisfies "<2.0.0", then retry.`,
+		compatibilityErr.Suggestion(),
+	)
+	require.NotContains(t, compatibilityErr.Suggestion(), "Update")
+}
+
 func Test_ResolveExtensions_ReportsAzdIncompatibility(t *testing.T) {
 	extension := &ExtensionMetadata{
 		Id: "test.extension",

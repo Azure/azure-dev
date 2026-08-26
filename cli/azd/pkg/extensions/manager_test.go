@@ -496,6 +496,35 @@ func Test_MatchesVersionConstraint(t *testing.T) {
 	}
 }
 
+func TestIsVersionRange(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		Name string
+		Expr string
+		Want bool
+	}{
+		{Name: "empty", Expr: "", Want: false},
+		{Name: "latest", Expr: "latest", Want: false},
+		{Name: "Latest case-insensitive", Expr: "Latest", Want: false},
+		{Name: "semver", Expr: "1.2.3", Want: false},
+		{Name: "prerelease", Expr: "1.2.3-preview.1", Want: false},
+		{Name: "non-semver tag", Expr: "nightly", Want: false},
+		{Name: "greater-or-equal", Expr: ">=1.2.3", Want: true},
+		{Name: "tilde", Expr: "~1.2.0", Want: true},
+		{Name: "caret", Expr: "^1.2.0", Want: true},
+		{Name: "wildcard", Expr: "1.x", Want: true},
+		{Name: "compound comma", Expr: ">=1.0.0, <2.0.0", Want: true},
+		{Name: "or", Expr: "1.0.0 || 2.0.0", Want: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			require.Equal(t, tc.Want, IsVersionRange(tc.Expr))
+		})
+	}
+}
+
 func TestResolveExtensionVersionNil(t *testing.T) {
 	version, err := ResolveExtensionVersion(nil, "", nil)
 

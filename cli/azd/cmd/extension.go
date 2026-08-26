@@ -3422,20 +3422,7 @@ func displayVersionCompatibilityWarning(
 }
 
 func validateExactVersionFlag(version string) error {
-	if version == "" || strings.EqualFold(version, "latest") {
-		return nil
-	}
-
-	if _, err := semver.NewVersion(version); err == nil {
-		return nil
-	}
-
-	hasWildcardPart := slices.ContainsFunc(strings.Split(version, "."), func(part string) bool {
-		return part == "x" || part == "X" || part == "*"
-	})
-	if strings.ContainsAny(version, "<>=^~*, ") ||
-		strings.Contains(version, "||") ||
-		hasWildcardPart {
+	if extensions.IsVersionRange(version) {
 		return fmt.Errorf("--version requires an exact version, not a version constraint: %s", version)
 	}
 

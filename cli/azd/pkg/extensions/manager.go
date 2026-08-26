@@ -268,6 +268,26 @@ type FilterOptions struct {
 type sourceFilterPredicate func(config *SourceConfig) bool
 type extensionFilterPredicate func(extension *ExtensionMetadata) bool
 
+// IsVersionRange reports whether expr is a semver constraint rather than an exact
+// version, empty preference, or "latest". Exact non-semver tags such as "nightly" are
+// not ranges. The operator set matches CLI --version validation, including compound
+// constraints that use comma or space (">=1.0.0, <2.0.0").
+func IsVersionRange(expr string) bool {
+	if expr == "" || strings.EqualFold(expr, "latest") {
+		return false
+	}
+	if _, err := semver.NewVersion(expr); err == nil {
+		return false
+	}
+
+	hasWildcardPart := slices.ContainsFunc(strings.Split(expr, "."), func(part string) bool {
+		return part == "x" || part == "X" || part == "*"
+	})
+	return strings.ContainsAny(expr, "<>=^~*, ") ||
+		strings.Contains(expr, "||") ||
+		hasWildcardPart
+}
+
 // matchesVersionConstraint reports whether candidate satisfies expr.
 // Empty, "latest", semver constraints, and exact non-semver tags are supported.
 func matchesVersionConstraint(expr, candidate string) bool {

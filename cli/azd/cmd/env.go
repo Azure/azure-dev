@@ -1107,7 +1107,7 @@ func newEnvRefreshCmd() *cobra.Command {
 // refresh consumes; it exists so tests can stub extension activation.
 type provisioningProviderActivator interface {
 	EnsureProvisioningProviders(ctx context.Context, providerNames []string, environmentName string) (func(), error)
-	SuggestExtensionForProvider(ctx context.Context, providerName string) string
+	SuggestExtensionForProvider(ctx context.Context, providerName string) (string, error)
 }
 
 type envRefreshAction struct {
@@ -1159,19 +1159,47 @@ func newEnvRefreshAction(
 }
 
 // suggestionForUnresolvedProvider returns the id of a registry extension to suggest installing
-// when err is a provider-resolution failure; any other initialization error skips the registry
-// lookup and returns an empty string.
+// when err is a provider-resolution failure. Any other initialization error skips the registry
+// lookup. A non-nil error is *extensions.ExtensionAzdVersionIncompatibleError when matching
+// releases require a different azd version.
 func suggestionForUnresolvedProvider(
 	ctx context.Context,
 	err error,
 	activator provisioningProviderActivator,
 	providerName string,
-) string {
+) (string, error) {
 	if !errors.Is(err, ioc.ErrResolveInstance) {
-		return ""
+		return "", nil
 	}
 
 	return activator.SuggestExtensionForProvider(ctx, providerName)
+}
+
+// errorForUnresolvedProvider attaches install or azd-compatibility guidance to a provider
+// initialization failure. lookupErr is joined with initErr so both the original resolve
+// context and the typed explanation are preserved.
+func errorForUnresolvedProvider(
+	initErr error,
+	providerName string,
+	extensionId string,
+	lookupErr error,
+) error {
+	if lookupErr != nil {
+		return internal.WrapErrorWithSuggestion(fmt.Errorf("%w: %w", initErr, lookupErr))
+	}
+	if extensionId != "" {
+		return &internal.ErrorWithSuggestion{
+			Err: initErr,
+			Suggestion: fmt.Sprintf(
+				"Provisioning provider '%s' is supplied by the '%s' extension. To install it, run %s",
+				providerName,
+				extensionId,
+				output.WithHighLightFormat("azd extension install %s", extensionId),
+			),
+		}
+	}
+
+	return initErr
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -1244,20 +1272,10 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 			// A resolution failure for a provider that a registry (non-installed) extension
 			// declares is almost certainly the missing extension: suggest installing it.
-			if extensionId := suggestionForUnresolvedProvider(
-				ctx, err, ef.extensionActivator, string(layer.Provider)); extensionId != "" {
-				return nil, &internal.ErrorWithSuggestion{
-					Err: err,
-					Suggestion: fmt.Sprintf(
-						"Provisioning provider '%s' is supplied by the '%s' extension. To install it, run %s",
-						layer.Provider,
-						extensionId,
-						output.WithHighLightFormat("azd extension install %s", extensionId),
-					),
-				}
-			}
-
-			return nil, err
+			// When matching releases require another azd version, surface that typed error.
+			extensionId, lookupErr := suggestionForUnresolvedProvider(
+				ctx, err, ef.extensionActivator, string(layer.Provider))
+			return nil, errorForUnresolvedProvider(err, string(layer.Provider), extensionId, lookupErr)
 		}
 
 		stateOptions := provisioning.NewStateOptions(ef.flags.hint)

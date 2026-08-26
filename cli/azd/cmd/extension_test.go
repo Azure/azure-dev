@@ -214,6 +214,8 @@ func TestValidateExactVersionFlag(t *testing.T) {
 		{name: "range", version: ">=1.2.3", wantErr: true},
 		{name: "tilde", version: "~1.2.0", wantErr: true},
 		{name: "wildcard", version: "1.x", wantErr: true},
+		{name: "compound", version: ">=1.0.0, <2.0.0", wantErr: true},
+		{name: "or", version: "1.0.0 || 2.0.0", wantErr: true},
 	}
 
 	for _, tt := range tests {

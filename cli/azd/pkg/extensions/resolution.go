@@ -62,7 +62,17 @@ func (e *ExtensionVersionNotFoundError) Error() string {
 }
 
 // Suggestion returns guidance for installing an available compatible version.
+// Range constraints (for example from requiredVersions.extensions) skip the install
+// command: installing unconstrained latest would still fail the project constraint.
 func (e *ExtensionVersionNotFoundError) Suggestion() string {
+	if IsVersionRange(e.Version) {
+		return fmt.Sprintf(
+			"Inspect published versions with 'azd extension show %s' and update "+
+				"requiredVersions.extensions in azure.yaml so the constraint matches a published release.",
+			e.ExtensionId,
+		)
+	}
+
 	latestVersions := e.latestVersions()
 	if len(latestVersions) == 0 {
 		return "Use an azd version compatible with a published release, or choose another extension source."
@@ -172,7 +182,7 @@ func (e *ExtensionAzdVersionIncompatibleError) Suggestion() string {
 	}
 	slices.Sort(constraints)
 	if len(constraints) == 1 {
-		return fmt.Sprintf("Update azd to a version that satisfies %q, then retry.", constraints[0])
+		return fmt.Sprintf("Use an azd version that satisfies %q, then retry.", constraints[0])
 	}
 	return "Use an azd version compatible with the extension, then retry."
 }

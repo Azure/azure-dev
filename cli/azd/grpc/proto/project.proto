@@ -62,6 +62,9 @@ service ProjectService {
 
   // Removes service configuration by path.
   rpc UnsetServiceConfig(UnsetServiceConfigRequest) returns (EmptyResponse);
+
+  // Creates or patches a service under one process-local mutation lock.
+  rpc PatchServiceConfig(PatchServiceConfigRequest) returns (EmptyResponse);
 }
 
 // GetProjectResponse message definition
@@ -174,6 +177,30 @@ message SetServiceConfigValueRequest {
 message UnsetServiceConfigRequest {
   string service_name = 1;
   string path = 2;
+}
+
+// Request message for PatchServiceConfig.
+message PatchServiceConfigRequest {
+  // Literal service map key. Dots are not treated as path separators.
+  string service_name = 1;
+  // Required ownership discriminator. Existing services must have this host;
+  // newly created services receive it. The patch cannot modify host.
+  string required_host = 2;
+  // Creates the service when it does not exist.
+  bool create_if_missing = 3;
+  // Service-relative dot paths to set. Null values on extension-owned fields
+  // are stored as YAML null; typed service fields reject null.
+  map<string, google.protobuf.Value> set_values = 4;
+  // Service-relative dot paths to remove. Removals run before sets.
+  repeated string unset_paths = 5;
+  // Optional optimistic concurrency guard. When present, the patch is aborted
+  // unless the service's current uses list matches exactly. A missing uses
+  // field is equivalent to an empty list.
+  StringListValue expected_uses = 6;
+}
+
+message StringListValue {
+  repeated string values = 1;
 }
 
 // Request message for GetServiceTargetResource

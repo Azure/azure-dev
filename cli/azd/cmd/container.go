@@ -1005,8 +1005,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// gRPC Server
+	container.MustRegisterSingleton(grpcserver.NewProjectConfigMutationLocker)
 	container.MustRegisterScoped(grpcserver.NewServer)
-	container.MustRegisterScoped(grpcserver.NewProjectService)
+	container.MustRegisterScoped(grpcserver.NewProjectServiceWithLock)
 	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
 	container.MustRegisterScoped(grpcserver.NewPromptService)
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
@@ -1014,7 +1015,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(grpcserver.NewContainerService)
 	container.MustRegisterSingleton(grpcserver.NewAccountService)
 	container.MustRegisterSingleton(grpcserver.NewUserConfigService)
-	container.MustRegisterSingleton(grpcserver.NewComposeService)
+	container.MustRegisterSingleton(grpcserver.NewComposeServiceWithLock)
 	container.MustRegisterSingleton(grpcserver.NewWorkflowService)
 	container.MustRegisterSingleton(grpcserver.NewExtensionService)
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)

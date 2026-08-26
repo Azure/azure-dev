@@ -46,6 +46,11 @@ class ProjectServiceStub(object):
                 request_serializer=project__pb2.AddServiceRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
+        self.PatchServiceConfig = channel.unary_unary(
+                '/azdext.ProjectService/PatchServiceConfig',
+                request_serializer=project__pb2.PatchServiceConfigRequest.SerializeToString,
+                response_deserializer=models__pb2.EmptyResponse.FromString,
+                _registered_method=True)
 
 
 class ProjectServiceServicer(object):
@@ -66,6 +71,13 @@ class ProjectServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PatchServiceConfig(self, request, context):
+        """Creates or patches a service under one process-local mutation lock.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ProjectServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -77,6 +89,11 @@ def add_ProjectServiceServicer_to_server(servicer, server):
             'AddService': grpc.unary_unary_rpc_method_handler(
                     servicer.AddService,
                     request_deserializer=project__pb2.AddServiceRequest.FromString,
+                    response_serializer=models__pb2.EmptyResponse.SerializeToString,
+            ),
+            'PatchServiceConfig': grpc.unary_unary_rpc_method_handler(
+                    servicer.PatchServiceConfig,
+                    request_deserializer=project__pb2.PatchServiceConfigRequest.FromString,
                     response_serializer=models__pb2.EmptyResponse.SerializeToString,
             ),
     }
@@ -134,6 +151,33 @@ class ProjectService(object):
             target,
             '/azdext.ProjectService/AddService',
             project__pb2.AddServiceRequest.SerializeToString,
+            models__pb2.EmptyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PatchServiceConfig(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/azdext.ProjectService/PatchServiceConfig',
+            project__pb2.PatchServiceConfigRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,
             channel_credentials,

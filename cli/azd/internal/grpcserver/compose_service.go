@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -21,9 +22,10 @@ import (
 // composeService exposes features of the AZD composability model to the Extensions Framework layer.
 type composeService struct {
 	azdext.UnimplementedComposeServiceServer
-	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
-	lazyEnv        *lazy.Lazy[*environment.Environment]
-	lazyEnvManger  *lazy.Lazy[environment.Manager]
+	lazyAzdContext   *lazy.Lazy[*azdcontext.AzdContext]
+	lazyEnv          *lazy.Lazy[*environment.Environment]
+	lazyEnvManger    *lazy.Lazy[environment.Manager]
+	configMutationMu sync.Locker
 }
 
 func NewComposeService(
@@ -31,10 +33,26 @@ func NewComposeService(
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	lazyEnvManger *lazy.Lazy[environment.Manager],
 ) azdext.ComposeServiceServer {
+	return NewComposeServiceWithLock(
+		lazyAzdContext,
+		lazyEnv,
+		lazyEnvManger,
+		NewProjectConfigMutationLocker(),
+	)
+}
+
+// NewComposeServiceWithLock creates a compose service using the shared project mutation lock.
+func NewComposeServiceWithLock(
+	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnvManger *lazy.Lazy[environment.Manager],
+	mutationLock ProjectConfigMutationLocker,
+) azdext.ComposeServiceServer {
 	return &composeService{
-		lazyAzdContext: lazyAzdContext,
-		lazyEnv:        lazyEnv,
-		lazyEnvManger:  lazyEnvManger,
+		lazyAzdContext:   lazyAzdContext,
+		lazyEnv:          lazyEnv,
+		lazyEnvManger:    lazyEnvManger,
+		configMutationMu: mutationLock,
 	}
 }
 
@@ -57,6 +75,9 @@ func (c *composeService) AddResource(
 	if err != nil {
 		return nil, err
 	}
+
+	c.configMutationMu.Lock()
+	defer c.configMutationMu.Unlock()
 
 	projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
 	if err != nil {

@@ -23,9 +23,10 @@ _sym_db = _symbol_database.Default()
 
 
 import models_pb2 as models__pb2
+from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rproject.proto\x12\x06\x61zdext\x1a\x0cmodels.proto\"<\n\x12GetProjectResponse\x12&\n\x07project\x18\x01 \x01(\x0b\x32\x15.azdext.ProjectConfig\";\n\x11\x41\x64\x64ServiceRequest\x12&\n\x07service\x18\x01 \x01(\x0b\x32\x15.azdext.ServiceConfig2\x89\x01\n\x0eProjectService\x12\x37\n\x03Get\x12\x14.azdext.EmptyRequest\x1a\x1a.azdext.GetProjectResponse\x12>\n\nAddService\x12\x19.azdext.AddServiceRequest\x1a\x15.azdext.EmptyResponseBFZ4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rproject.proto\x12\x06\x61zdext\x1a\x0cmodels.proto\x1a\x1cgoogle/protobuf/struct.proto\"<\n\x12GetProjectResponse\x12&\n\x07project\x18\x01 \x01(\x0b\x32\x15.azdext.ProjectConfig\";\n\x11\x41\x64\x64ServiceRequest\x12&\n\x07service\x18\x01 \x01(\x0b\x32\x15.azdext.ServiceConfig\"\xb8\x02\n\x19PatchServiceConfigRequest\x12\x14\n\x0cservice_name\x18\x01 \x01(\t\x12\x15\n\rrequired_host\x18\x02 \x01(\t\x12\x19\n\x11\x63reate_if_missing\x18\x03 \x01(\x08\x12\x44\n\nset_values\x18\x04 \x03(\x0b\x32\x30.azdext.PatchServiceConfigRequest.SetValuesEntry\x12\x13\n\x0bunset_paths\x18\x05 \x03(\t\x12.\n\rexpected_uses\x18\x06 \x01(\x0b\x32\x17.azdext.StringListValue\x1aH\n\x0eSetValuesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12%\n\x05value\x18\x02 \x01(\x0b\x32\x16.google.protobuf.Value:\x02\x38\x01\"!\n\x0fStringListValue\x12\x0e\n\x06values\x18\x01 \x03(\t2\xd9\x01\n\x0eProjectService\x12\x37\n\x03Get\x12\x14.azdext.EmptyRequest\x1a\x1a.azdext.GetProjectResponse\x12>\n\nAddService\x12\x19.azdext.AddServiceRequest\x1a\x15.azdext.EmptyResponse\x12N\n\x12PatchServiceConfig\x12!.azdext.PatchServiceConfigRequest\x1a\x15.azdext.EmptyResponseBFZ4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,10 +34,18 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'project_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\252\002\rMicrosoft.Azd'
-  _globals['_GETPROJECTRESPONSE']._serialized_start=39
-  _globals['_GETPROJECTRESPONSE']._serialized_end=99
-  _globals['_ADDSERVICEREQUEST']._serialized_start=101
-  _globals['_ADDSERVICEREQUEST']._serialized_end=160
-  _globals['_PROJECTSERVICE']._serialized_start=163
-  _globals['_PROJECTSERVICE']._serialized_end=300
+  _globals['_PATCHSERVICECONFIGREQUEST_SETVALUESENTRY']._loaded_options = None
+  _globals['_PATCHSERVICECONFIGREQUEST_SETVALUESENTRY']._serialized_options = b'8\001'
+  _globals['_GETPROJECTRESPONSE']._serialized_start=69
+  _globals['_GETPROJECTRESPONSE']._serialized_end=129
+  _globals['_ADDSERVICEREQUEST']._serialized_start=131
+  _globals['_ADDSERVICEREQUEST']._serialized_end=190
+  _globals['_PATCHSERVICECONFIGREQUEST']._serialized_start=193
+  _globals['_PATCHSERVICECONFIGREQUEST']._serialized_end=505
+  _globals['_PATCHSERVICECONFIGREQUEST_SETVALUESENTRY']._serialized_start=433
+  _globals['_PATCHSERVICECONFIGREQUEST_SETVALUESENTRY']._serialized_end=505
+  _globals['_STRINGLISTVALUE']._serialized_start=507
+  _globals['_STRINGLISTVALUE']._serialized_end=540
+  _globals['_PROJECTSERVICE']._serialized_start=543
+  _globals['_PROJECTSERVICE']._serialized_end=760
 # @@protoc_insertion_point(module_scope)

@@ -6,6 +6,7 @@ option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
 option csharp_namespace = "Microsoft.Azd";
 
 import "models.proto";
+import "google/protobuf/struct.proto";
 
 // ProjectService defines methods for managing projects and their configurations.
 service ProjectService {
@@ -14,6 +15,9 @@ service ProjectService {
 
   // AddService adds a new service to the project.
   rpc AddService(AddServiceRequest) returns (EmptyResponse);
+
+  // Creates or patches a service under one process-local mutation lock.
+  rpc PatchServiceConfig(PatchServiceConfigRequest) returns (EmptyResponse);
 }
 
 // GetProjectResponse message definition
@@ -24,4 +28,17 @@ message GetProjectResponse {
 // AddServiceRequest message definition
 message AddServiceRequest {
   ServiceConfig service = 1;
+}
+
+message PatchServiceConfigRequest {
+  string service_name = 1;
+  string required_host = 2;
+  bool create_if_missing = 3;
+  map<string, google.protobuf.Value> set_values = 4;
+  repeated string unset_paths = 5;
+  StringListValue expected_uses = 6;
+}
+
+message StringListValue {
+  repeated string values = 1;
 }

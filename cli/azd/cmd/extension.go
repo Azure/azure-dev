@@ -2889,17 +2889,10 @@ func upgradeActionResult(
 	summary := extensions.NewUpgradeSummary(results)
 
 	if summary.Failed > 0 {
-		return &actions.ActionResult{
-				Message: &actions.ResultMessage{
-					Header: fmt.Sprintf(
-						"%d of %d extensions failed to update",
-						summary.Failed, summary.Total,
-					),
-				},
-			}, fmt.Errorf(
-				"%d of %d extensions failed to update",
-				summary.Failed, summary.Total,
-			)
+		return nil, fmt.Errorf(
+			"%d of %d extensions failed to update",
+			summary.Failed, summary.Total,
+		)
 	}
 
 	return &actions.ActionResult{

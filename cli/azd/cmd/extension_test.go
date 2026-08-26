@@ -458,14 +458,10 @@ func TestUpgradeActionResult(t *testing.T) {
 			}
 			actionResult, err := upgradeActionResult(results)
 			require.Error(t, err)
-			require.NotNil(t, actionResult)
+			require.Nil(t, actionResult)
 			assert.Contains(
 				t, err.Error(),
 				"2 of 3 extensions failed to update",
-			)
-			assert.Contains(
-				t, actionResult.Message.Header,
-				"2 of 3 extensions failed",
 			)
 		},
 	)
@@ -479,7 +475,7 @@ func TestUpgradeActionResult(t *testing.T) {
 			}
 			actionResult, err := upgradeActionResult(results)
 			require.Error(t, err)
-			require.NotNil(t, actionResult)
+			require.Nil(t, actionResult)
 			assert.Contains(
 				t, err.Error(),
 				"1 of 1 extensions failed",

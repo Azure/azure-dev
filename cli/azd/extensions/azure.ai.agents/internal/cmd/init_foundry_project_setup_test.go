@@ -97,3 +97,23 @@ func TestConfigureFoundryProjectRejectsAcrConnectionForHeadlessNewProject(t *tes
 		})
 	}
 }
+
+func TestConfigureFoundryProjectRejectsAcrConnectionForInteractiveNewProject(t *testing.T) {
+	promptServer := &helpersPromptServer{selectIndex: 1}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, promptServer)
+
+	_, err := configureFoundryProject(
+		t.Context(),
+		azdClient,
+		&azdext.AzureContext{Scope: &azdext.AzureScope{}},
+		"test-env",
+		"",
+		"registry-connection",
+		false,
+		false,
+		false,
+	)
+
+	require.ErrorContains(t, err, "requires an existing Foundry project")
+	require.Equal(t, int32(1), promptServer.selectCalls.Load())
+}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,6 +25,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 // fakeTokenCredential satisfies azcore.TokenCredential for tests.
@@ -99,6 +101,52 @@ func TestEvalContextFlagsOptions(t *testing.T) {
 	assert.Equal(t, flags.projectEndpoint, options.projectEndpoint)
 	assert.True(t, options.noPrompt)
 	assert.False(t, options.requireAgent)
+}
+
+func TestEvalCommandsPropagateNoPromptContext(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	promptServer := &helpersPromptServer{}
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, &helpersProjectServer{})
+	azdext.RegisterPromptServiceServer(grpcServer, promptServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	t.Setenv("NO_COLOR", "1")
+
+	commands := map[string]func(*azdext.ExtensionContext) *cobra.Command{
+		"run":    newEvalRunCommand,
+		"update": newEvalUpdateCommand,
+		"list":   newEvalListCommand,
+		"show":   newEvalShowCommand,
+	}
+
+	for name, newCommand := range commands {
+		t.Run(name, func(t *testing.T) {
+			cmd := newCommand(&azdext.ExtensionContext{NoPrompt: true})
+			err := cmd.ExecuteContext(t.Context())
+			require.ErrorContains(t, err, "--project-endpoint is required")
+
+			cmd = newCommand(&azdext.ExtensionContext{NoPrompt: true})
+			cmd.SetArgs([]string{
+				"--project-endpoint", "://explicit-endpoint",
+				"--agent", "explicit-agent",
+			})
+			err = cmd.ExecuteContext(t.Context())
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "--project-endpoint is required")
+			require.NotContains(t, err.Error(), "agent context could not be resolved")
+		})
+	}
+
+	require.Zero(t, promptServer.promptCalls.Load())
 }
 
 func TestResolveEvalAgentService_RejectsUnknownExplicitService(t *testing.T) {

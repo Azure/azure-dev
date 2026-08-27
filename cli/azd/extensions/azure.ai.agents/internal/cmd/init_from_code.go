@@ -308,6 +308,14 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		return nil, err
 	}
 
+	if a.flags.projectResourceId == "" {
+		projectResourceId, err := getEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_PROJECT_ID")
+		if err != nil {
+			return nil, fmt.Errorf("failed to read AZURE_AI_PROJECT_ID: %w", err)
+		}
+		a.flags.projectResourceId = projectResourceId
+	}
+
 	if err := validateAcrConnectionInput(
 		a.flags.acrConnection,
 		deployMode == "code" || a.flags.image != "",
@@ -443,6 +451,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				fmt.Println(output.WithGrayFormat(
 					"No existing Foundry project was selected. Falling back to creating new resources.",
 				))
+				if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
+					return nil, err
+				}
 				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
@@ -456,6 +467,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				}
 			}
 		default:
+			if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
+				return nil, err
+			}
 			newCred, err := ensureSubscriptionAndLocation(
 				ctx, a.azdClient, a.azureContext, a.environment.Name,
 				"Select an Azure subscription to look up available models and provision your Foundry project resources.",

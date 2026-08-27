@@ -195,6 +195,9 @@ func configureFoundryProject(
 				_, _ = color.New(color.Faint).Println(
 					"No existing Foundry project was selected. Falling back to creating new resources.",
 				)
+				if err := validateAcrConnectionInput(acrConnection, false, true); err != nil {
+					return nil, err
+				}
 				if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
@@ -213,6 +216,9 @@ func configureFoundryProject(
 				}
 			}
 		default:
+			if err := validateAcrConnectionInput(acrConnection, false, true); err != nil {
+				return nil, err
+			}
 			newCred, err := ensureSubscriptionAndLocation(
 				ctx, azdClient, azureContext, envName,
 				"Select an Azure subscription to provision your agent and Foundry project resources.",

@@ -528,6 +528,39 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 	}
 }
 
+func TestCreateDefinitionFromLocalAgent_LoadsPersistedProjectBeforeAcrValidation(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0o600))
+
+	const envName = "agent-dev"
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			envName: {"AZURE_AI_PROJECT_ID": "invalid-project-id"},
+		},
+	}
+	action := &InitFromCodeAction{
+		azdClient:   newTestAzdClient(t, envServer, &testWorkflowServiceServer{}),
+		environment: &azdext.Environment{Name: envName},
+		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{
+			SubscriptionId: "subscription-id",
+			Location:       "eastus2",
+		}},
+		flags: &initFlags{
+			noPrompt:      true,
+			env:           envName,
+			agentName:     "test-agent",
+			acrConnection: "registry-connection",
+			deployMode:    "container",
+		},
+	}
+
+	_, err := action.createDefinitionFromLocalAgent(t.Context())
+
+	require.ErrorContains(t, err, "invalid --project-id value")
+	require.Equal(t, "invalid-project-id", action.flags.projectResourceId)
+}
+
 func TestFoundryDeploymentInfo(t *testing.T) {
 	t.Parallel()
 

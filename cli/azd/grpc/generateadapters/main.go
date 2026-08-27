@@ -242,6 +242,7 @@ package grpcserver
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"google.golang.org/grpc"
 
@@ -407,29 +408,21 @@ func writeOverrideInterface(output *bytes.Buffer, service service, method method
 }
 
 func writeOverrideValidator(output *bytes.Buffer, service service) {
-	fmt.Fprintf(output, "func validateBeta%sOverride(override any) error {\n", service.name)
-	output.WriteString("\tif override == nil {\n\t\treturn nil\n\t}\n")
-	fmt.Fprintf(output, "\tif _, ok := override.(v1beta.%sServer); ok {\n", service.name)
 	fmt.Fprintf(
 		output,
-		"\t\treturn fmt.Errorf(%q)\n",
-		"beta override for "+service.name+
-			" must implement focused method override interfaces, not v1beta."+service.name+"Server",
+		"func validateBeta%sOverride(override any) error {\n",
+		service.name,
 	)
-	output.WriteString("\t}\n")
+	fmt.Fprintf(output, "\treturn validateBetaServiceOverride(\n\t\t%q,\n", service.name)
+	fmt.Fprintf(output, "\t\toverride,\n\t\treflect.TypeFor[v1beta.%sServer](),\n", service.name)
 	for _, method := range service.methods {
 		fmt.Fprintf(
 			output,
-			"\tif _, ok := override.(%s); ok {\n\t\treturn nil\n\t}\n",
+			"\t\treflect.TypeFor[%s](),\n",
 			overrideInterfaceName(service, method),
 		)
 	}
-	fmt.Fprintf(
-		output,
-		"\treturn fmt.Errorf(%q)\n",
-		"beta override for "+service.name+" does not implement a generated focused method override interface",
-	)
-	output.WriteString("}\n\n")
+	output.WriteString("\t)\n}\n\n")
 }
 
 func writeAdapterMethod(
@@ -482,34 +475,17 @@ func writeUnaryAdapterMethod(
 		return
 	}
 
-	fmt.Fprintf(output, "\tstableRequest := new(v1.%s)\n", stableMethod.request)
-	fmt.Fprintf(output, "\tif err := transcodeBetaRequest(req, stableRequest); err != nil {\n")
 	fmt.Fprintf(
 		output,
-		"\t\treturn nil, fmt.Errorf(%q, err)\n",
-		"convert "+service.name+"."+betaMethod.name+" request from beta to stable: %w",
-	)
-	output.WriteString("\t}\n")
-	fmt.Fprintf(
-		output,
-		"\tstableResponse, err := a.stable.%s(ctx, stableRequest)\n",
+		"\treturn adaptBetaUnary(\n"+
+			"\t\tctx,\n\t\treq,\n\t\tnew(v1.%s),\n\t\ta.stable.%s,\n"+
+			"\t\tnew(v1beta.%s),\n\t\t%q,\n\t)\n",
+		stableMethod.request,
 		stableMethod.name,
+		betaMethod.response,
+		service.name+"."+betaMethod.name,
 	)
-	output.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
-	fmt.Fprintf(
-		output,
-		"\tif stableResponse == nil {\n\t\treturn nil, fmt.Errorf(%q)\n\t}\n",
-		"stable "+service.name+"."+stableMethod.name+" returned a nil response",
-	)
-	fmt.Fprintf(output, "\tbetaResponse := new(v1beta.%s)\n", betaMethod.response)
-	output.WriteString("\tif err := transcodeStableResponse(stableResponse, betaResponse); err != nil {\n")
-	fmt.Fprintf(
-		output,
-		"\t\treturn nil, fmt.Errorf(%q, err)\n",
-		"convert "+service.name+"."+betaMethod.name+" response from stable to beta: %w",
-	)
-	output.WriteString("\t}\n")
-	output.WriteString("\treturn betaResponse, nil\n}\n\n")
+	output.WriteString("}\n\n")
 }
 
 func writeBidiAdapterMethod(

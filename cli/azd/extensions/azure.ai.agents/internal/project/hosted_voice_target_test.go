@@ -56,8 +56,8 @@ func TestFetchAndValidateHostedVoiceTargetClassifiesCompatibilityFailure(t *test
 		version.Status = "failed"
 		return version, nil
 	})
-	var localErr *azdext.LocalError
-	require.True(t, errors.As(err, &localErr))
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
 	require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
 }
 

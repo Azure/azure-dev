@@ -494,7 +494,8 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 							len(agent.Include) > 0 || len(agent.Handoff) > 0 {
 							errors = append(errors,
 								"input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, "+
-									"parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent")
+									"parallel_tool_calls, max_output_tokens, include, and handoff belong to the "+
+									"target hosted agent")
 						}
 					} else {
 						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {

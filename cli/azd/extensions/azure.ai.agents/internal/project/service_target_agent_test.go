@@ -649,6 +649,28 @@ func TestInitializeValidatesRegistryConnectionLifecycle(t *testing.T) {
 	}
 }
 
+func TestInitializeValidatesRegistryLifecycleFromRef(t *testing.T) {
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "agent.yaml"),
+		[]byte("kind: hosted\nname: ref-agent\nregistryConnectionId: private-registry\n"),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./agent.yaml"})
+	require.NoError(t, err)
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	err = provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name:                 "ref-agent",
+		Host:                 foundryAgentHost,
+		Image:                "registry.example.com/team/agent:v1",
+		AdditionalProperties: props,
+	})
+	require.ErrorContains(t, err, "requires docker.imagePassthrough: true")
+}
+
 func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 

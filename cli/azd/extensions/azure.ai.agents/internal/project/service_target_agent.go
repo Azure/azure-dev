@@ -210,7 +210,22 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 // only when a deploy-time entrypoint needs it.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	p.adoptServiceConfig(serviceConfig)
-	return validateRegistryConnectionServiceConfig(serviceConfig)
+	props := ServiceConfigProps(serviceConfig)
+	if props != nil && props.GetFields()["$ref"] != nil {
+		proj, err := p.azdClient.Project().Get(ctx, nil)
+		if err != nil {
+			return exterrors.Dependency(
+				exterrors.CodeProjectNotFound,
+				fmt.Sprintf("failed to get project while resolving agent service: %s", err),
+				"run 'azd init' to initialize your project",
+			)
+		}
+		p.projectPath = proj.GetProject().GetPath()
+		if err := p.resolveServiceConfig(); err != nil {
+			return err
+		}
+	}
+	return validateRegistryConnectionServiceConfig(p.serviceConfig)
 }
 
 func validateRegistryConnectionServiceConfig(serviceConfig *azdext.ServiceConfig) error {

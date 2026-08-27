@@ -982,12 +982,21 @@ func validateHostedVoiceServiceNamesForProject(
 }
 
 func (a *InitFromCodeAction) addHostedVoiceWrapper(ctx context.Context, targetServiceName string) error {
-	return addHostedVoiceWrapperToProject(ctx, a.azdClient, targetServiceName)
+	noPrompt := false
+	if a.flags != nil {
+		noPrompt = a.flags.noPrompt
+	}
+	return addHostedVoiceWrapperToProject(
+		ctx, a.azdClient, a.environment, a.credential, noPrompt, targetServiceName,
+	)
 }
 
 func addHostedVoiceWrapperToProject(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	environment *azdext.Environment,
+	credential azcore.TokenCredential,
+	noPrompt bool,
 	targetServiceName string,
 ) error {
 	wrapperName := hostedVoiceWrapperName(targetServiceName)
@@ -1005,6 +1014,14 @@ func addHostedVoiceWrapperToProject(
 	projectServiceName := existingProjectServiceKey(ctx, azdClient)
 	if projectServiceName == "" {
 		return fmt.Errorf("cannot resolve the azure.ai.project service for hosted voice wrapper %q", wrapperName)
+	}
+	if environment != nil && credential != nil {
+		wrapperName, err = resolveExistingAgentNameConflict(
+			ctx, azdClient, environment, credential, noPrompt, wrapperName,
+		)
+		if err != nil {
+			return err
+		}
 	}
 	store := false
 	description := "Voice wrapper for hosted target " + targetServiceName

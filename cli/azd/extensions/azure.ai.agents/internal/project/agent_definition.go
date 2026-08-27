@@ -183,7 +183,6 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 		ParallelToolCalls: va.ParallelToolCalls,
 		MaxOutputTokens:   va.MaxOutputTokens,
 		Include:           va.Include,
-		Policies:          va.Policies,
 	}
 }
 
@@ -208,7 +207,6 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 		ParallelToolCalls: d.ParallelToolCalls,
 		MaxOutputTokens:   d.MaxOutputTokens,
 		Include:           d.Include,
-		Policies:          d.Policies,
 	}
 }
 
@@ -805,6 +803,22 @@ func agentDefinitionFromStruct(
 	if inline.Kind != agent_yaml.AgentKindHosted {
 		definition := any(s.AsMap())
 		if inline.Kind == agent_yaml.AgentKindPromptVoice {
+			if len(inline.Policies) > 0 {
+				for _, policy := range inline.Policies {
+					if policy.InvocationsModeration != nil {
+						return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+							exterrors.CodeInvalidAgentManifest,
+							"invocationsModeration is only supported for 'hosted' agents",
+							"remove invocationsModeration from the prompt voice agent or move it to a hosted target",
+						)
+					}
+				}
+				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"policies are not supported on prompt voice agents",
+					"configure content policy fields supported by the Voice API, or move target-owned policy configuration to the hosted target",
+				)
+			}
 			definition = inline.toVoiceAgent()
 		}
 		if err := validateAgentServiceDefinition(definition); err != nil {

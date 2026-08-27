@@ -212,7 +212,6 @@ type Workflow struct {
 // ModelType defaults to "managed" when omitted; BYOM uses "self_deployed".
 type VoiceAgent struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
-	Policies        []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
 	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.
 	ModelType VoiceModelType `json:"modelType,omitempty" yaml:"model_type,omitempty"`
 	// Model names the speech-to-speech model (e.g. "gpt-realtime"). Reuses the

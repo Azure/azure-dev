@@ -2287,7 +2287,9 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 		if strings.EqualFold(a.flags.kind, kindFlagHostedVoice) {
-			if err := addHostedVoiceWrapperToProject(ctx, a.azdClient, a.serviceNameOverride); err != nil {
+			if err := addHostedVoiceWrapperToProject(
+				ctx, a.azdClient, a.environment, a.credential, a.flags.noPrompt, a.serviceNameOverride,
+			); err != nil {
 				return err
 			}
 		}

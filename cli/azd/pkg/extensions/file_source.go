@@ -14,12 +14,7 @@ import (
 
 // newFileSource creates a new file base registry source.
 func newFileSource(name string, path string) (Source, error) {
-	absolutePath, err := getAbsolutePath(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed converting path '%s' to absolute path, %w", path, err)
-	}
-
-	registryBytes, err := os.ReadFile(absolutePath)
+	registryBytes, err := readSourceFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading file '%s', %w", path, err)
 	}
@@ -27,28 +22,18 @@ func newFileSource(name string, path string) (Source, error) {
 	return newJsonSource(name, string(registryBytes))
 }
 
-// getAbsolutePath converts a relative path to an absolute path.
-func getAbsolutePath(filePath string) (string, error) {
-	// Check if the path is absolute
+func readSourceFile(filePath string) ([]byte, error) {
 	if filepath.IsAbs(filePath) {
-		return filePath, nil
+		return os.ReadFile(filePath)
 	}
 
-	roots := []string{}
-
-	// Get the current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
 	azdConfigPath, err := config.GetUserConfigDir()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
-	roots = append(roots, cwd)
-	roots = append(roots, azdConfigPath)
-
-	return osutil.ResolveContainedPath(roots, filePath)
+	return osutil.ReadContainedFile([]string{cwd, azdConfigPath}, filePath)
 }

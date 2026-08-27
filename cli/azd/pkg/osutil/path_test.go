@@ -4,8 +4,11 @@
 package osutil
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -105,6 +108,95 @@ func Test_ResolveContainedPath(t *testing.T) {
 				require.Equal(t, filepath.Clean(tt.wantPath), filepath.Clean(result))
 			}
 		})
+	}
+}
+
+func Test_ReadContainedFile(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "subdir"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "subdir", "file.txt"), []byte("found"), 0o600))
+
+	for _, filePath := range []string{"subdir/file.txt", `subdir\file.txt`} {
+		data, err := ReadContainedFile([]string{filepath.Join(t.TempDir(), "missing"), root}, filePath)
+		require.NoError(t, err)
+		require.Equal(t, []byte("found"), data)
+	}
+
+	secondRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(secondRoot, "fallback.txt"), []byte("fallback"), 0o600))
+	data, err := ReadContainedFile([]string{root, secondRoot}, "fallback.txt")
+	require.NoError(t, err)
+	require.Equal(t, []byte("fallback"), data)
+
+	_, err = ReadContainedFile([]string{root, secondRoot}, "missing.txt")
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	for _, filePath := range []string{
+		"", "subdir/../file.txt", `..\outside`, "/outside/file.txt",
+		`C:\outside\file.txt`, `\\server\share\file.txt`,
+	} {
+		_, err := ReadContainedFile([]string{root}, filePath)
+		require.ErrorContains(t, err, "resolves outside all root directories")
+	}
+}
+
+func Test_ReadContainedFileRejectsSymlinkEscape(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "root")
+	outside := filepath.Join(parent, "outside")
+	require.NoError(t, os.MkdirAll(root, 0o750))
+	require.NoError(t, os.MkdirAll(outside, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "file.txt"), []byte("outside"), 0o600))
+	createPathSymlinkOrSkip(t, outside, filepath.Join(root, "linked"))
+
+	_, err := ReadContainedFile([]string{root}, "linked/file.txt")
+	require.Error(t, err)
+}
+
+func Test_ReadContainedFileAllowsContainedSymlink(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	require.NoError(t, os.MkdirAll(target, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(target, "file.txt"), []byte("inside"), 0o600))
+	createPathSymlinkOrSkip(t, "target", filepath.Join(root, "linked"))
+
+	data, err := ReadContainedFile([]string{root}, "linked/file.txt")
+	require.NoError(t, err)
+	require.Equal(t, []byte("inside"), data)
+}
+
+func Test_ReadContainedFileRejectsLiteralBackslashSibling(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows file names cannot contain a backslash")
+	}
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "root")
+	outside := filepath.Join(parent, `root\outside`)
+	require.NoError(t, os.MkdirAll(root, 0o750))
+	require.NoError(t, os.MkdirAll(outside, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "file.txt"), []byte("outside"), 0o600))
+	createPathSymlinkOrSkip(t, outside, filepath.Join(root, "linked"))
+
+	_, err := ReadContainedFile([]string{root}, "linked/file.txt")
+	require.Error(t, err)
+}
+
+func createPathSymlinkOrSkip(t *testing.T, oldName, newName string) {
+	t.Helper()
+	if err := os.Symlink(oldName, newName); err != nil {
+		if errors.Is(err, os.ErrPermission) || os.IsPermission(err) ||
+			strings.Contains(strings.ToLower(err.Error()), "privilege") {
+			t.Skipf("symlink creation not permitted: %v", err)
+		}
+		require.NoError(t, err)
 	}
 }
 

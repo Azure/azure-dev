@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -1049,7 +1050,9 @@ func runInitFromAzureYaml(
 	// resolved deploy mode: a container agent on an existing project
 	// needs AZURE_CONTAINER_REGISTRY_ENDPOINT set here, while a code
 	// agent (or a user-supplied --image) does not.
-	projectNeedsACR, err := applyDeployModeToAdoptedProject(ctx, flags, azdClient)
+	projectNeedsACR, configuredSourceContainers, err := applyDeployModeToAdoptedProjectWithSources(
+		ctx, flags, azdClient,
+	)
 	if err != nil {
 		return err
 	}
@@ -1079,12 +1082,30 @@ func runInitFromAzureYaml(
 	// azure.ai.project service so the provisioning provider recognizes the
 	// brownfield signal and reuses the project instead of creating a new one.
 	if result.FoundryProject != nil {
-		if flags.registryConnection != "" {
+		if err := finalizeAdoptedSourceContainerNetwork(
+			ctx,
+			azdClient,
+			configuredSourceContainers,
+			result.FoundryProject.NetworkInjected,
+		); err != nil {
+			return err
+		}
+		projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return fmt.Errorf("reading adopted project registry connections: %w", err)
+		}
+		externalConnections, err := adoptedExternalRegistryConnections(
+			projectResponse.GetProject(), flags.registryConnection,
+		)
+		if err != nil {
+			return err
+		}
+		for _, connectionRef := range externalConnections {
 			if err := verifyRegistryConnectionOnProject(
 				ctx,
 				result.Credential,
 				*result.FoundryProject,
-				strings.TrimSpace(flags.registryConnection),
+				connectionRef,
 			); err != nil {
 				return err
 			}
@@ -1556,14 +1577,23 @@ func applyDeployModeToAdoptedProject(
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
 ) (bool, error) {
+	projectNeedsACR, _, err := applyDeployModeToAdoptedProjectWithSources(ctx, flags, azdClient)
+	return projectNeedsACR, err
+}
+
+func applyDeployModeToAdoptedProjectWithSources(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+) (bool, []string, error) {
 	// Validate --image flag early (incompatible with --deploy-mode code).
 	if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
-		return false, err
+		return false, nil, err
 	}
 
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return false, fmt.Errorf("reading adopted project: %w", err)
+		return false, nil, fmt.Errorf("reading adopted project: %w", err)
 	}
 
 	// Collect all agent services in the adopted project.
@@ -1579,13 +1609,17 @@ func applyDeployModeToAdoptedProject(
 	}
 	if len(agentServices) == 0 {
 		// No agent service found -- nothing to configure.
-		return false, nil
+		return false, nil, nil
 	}
 
 	// Apply configuration to each agent service, tracking whether the project
-	// contains any source container that requires an ACR.
+	// contains any source container that requires an ACR. Record only source
+	// containers configured by this init so their remote-build decision can be
+	// finalized after Foundry project network discovery.
 	projectNeedsACR := false
+	var configuredSourceContainers []string
 	for _, agent := range agentServices {
+		hadDockerConfig := adoptedServiceHasDocker(agent.svc)
 		serviceNeedsACR, err := applyDeployModeToService(
 			ctx,
 			flags,
@@ -1595,11 +1629,101 @@ func applyDeployModeToAdoptedProject(
 			agent.svc,
 		)
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
 		projectNeedsACR = projectNeedsACR || serviceNeedsACR
+		if serviceNeedsACR && (flags.deployMode != "" || !hadDockerConfig) {
+			configuredSourceContainers = append(configuredSourceContainers, agent.name)
+		}
 	}
-	return projectNeedsACR, nil
+	return projectNeedsACR, configuredSourceContainers, nil
+}
+
+func finalizeAdoptedSourceContainerNetwork(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceNames []string,
+	networkInjected bool,
+) error {
+	if len(serviceNames) == 0 {
+		return nil
+	}
+	dockerMap, err := dockerProjectMapForHostedContainer("", networkInjected)
+	if err != nil {
+		return err
+	}
+	for _, serviceName := range serviceNames {
+		dockerValue, err := structpb.NewValue(dockerMap)
+		if err != nil {
+			return fmt.Errorf("encoding finalized docker configuration: %w", err)
+		}
+		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        "docker",
+			Value:       dockerValue,
+		}); err != nil {
+			return fmt.Errorf("finalizing docker property on agent service %q: %w", serviceName, err)
+		}
+	}
+	return nil
+}
+
+func adoptedExternalRegistryConnections(
+	projectConfig *azdext.ProjectConfig,
+	flagConnection string,
+) ([]string, error) {
+	if projectConfig == nil {
+		return nil, nil
+	}
+
+	siblingConnections := map[string]struct{}{}
+	for serviceName, service := range projectConfig.GetServices() {
+		if service.GetHost() != AiConnectionHost {
+			continue
+		}
+		siblingConnections[serviceName] = struct{}{}
+		props, err := resolvedResourceServiceProps(service, projectConfig.GetPath())
+		if err != nil {
+			return nil, fmt.Errorf("resolving connection service %q: %w", serviceName, err)
+		}
+		if props == nil {
+			continue
+		}
+		var connection *project.Connection
+		if err := project.UnmarshalStruct(props, &connection); err != nil {
+			return nil, fmt.Errorf("parsing connection service %q: %w", serviceName, err)
+		}
+		if connection != nil && strings.TrimSpace(connection.Name) != "" {
+			siblingConnections[strings.TrimSpace(connection.Name)] = struct{}{}
+		}
+	}
+
+	externalConnections := map[string]struct{}{}
+	flagConnection = strings.TrimSpace(flagConnection)
+	for serviceName, service := range projectConfig.GetServices() {
+		if service.GetHost() != AiAgentHost {
+			continue
+		}
+		connectionRef := flagConnection
+		if connectionRef == "" {
+			resolvedAgent, _, hasDefinition, _, err := project.AgentDefinitionFromResolvedService(
+				service, projectConfig.GetPath(),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("reading adopted agent service %q: %w", serviceName, err)
+			}
+			if hasDefinition {
+				connectionRef = strings.TrimSpace(resolvedAgent.RegistryConnectionID)
+			}
+		}
+		if connectionRef == "" {
+			continue
+		}
+		if _, ok := siblingConnections[connectionRef]; !ok {
+			externalConnections[connectionRef] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(externalConnections)), nil
 }
 
 // applyDeployModeToService applies deploy-mode configuration to a

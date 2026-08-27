@@ -2120,15 +2120,12 @@ func (a *InitAction) Run(ctx context.Context) error {
 			}
 		}
 
-		if err := a.applyAndValidateRegistryConnection(agentManifest); err != nil {
-			return err
-		}
+		// A non-empty raw image, including a parameter placeholder, selects the
+		// pre-built-image provisioning path. Validate the resolved value only
+		// after manifest parameters are processed below.
 		preBuiltImage := ""
 		if !a.isCodeDeploy {
 			preBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image)
-			if err := validateHostedContainerImage(preBuiltImage); err != nil {
-				return err
-			}
 		}
 		a.usesPreBuiltImage = preBuiltImage != ""
 
@@ -2162,6 +2159,18 @@ func (a *InitAction) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to process manifest parameters: %w", err)
 		}
+
+		if err := a.applyAndValidateRegistryConnection(agentManifest); err != nil {
+			return err
+		}
+		preBuiltImage = ""
+		if !a.isCodeDeploy {
+			preBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image)
+			if err := validateHostedContainerImage(preBuiltImage); err != nil {
+				return err
+			}
+		}
+		a.usesPreBuiltImage = preBuiltImage != ""
 
 		if err := a.verifyRegistryConnection(ctx, agentManifest); err != nil {
 			return err

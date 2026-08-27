@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestValidateRegistryConnectionDependency(t *testing.T) {
@@ -22,6 +23,13 @@ func TestValidateRegistryConnectionDependency(t *testing.T) {
 		return &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, Uses: uses}
 	}
 	connection := &azdext.ServiceConfig{Name: "private-registry", Host: foundryConnectionHost}
+	configuredName, err := structpb.NewStruct(map[string]any{"name": "configured-registry"})
+	require.NoError(t, err)
+	configuredConnection := &azdext.ServiceConfig{
+		Name:                 "connection-service",
+		Host:                 foundryConnectionHost,
+		AdditionalProperties: configuredName,
+	}
 
 	t.Run("external connection reference does not require uses", func(t *testing.T) {
 		t.Parallel()
@@ -46,6 +54,39 @@ func TestValidateRegistryConnectionDependency(t *testing.T) {
 			t.Context(), agent("private-registry"), "private-registry",
 			map[string]*azdext.ServiceConfig{"private-registry": connection}, nil,
 		))
+	})
+
+	t.Run("configured connection name resolves to service key", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, validateRegistryConnectionDependency(
+			t.Context(), agent("connection-service"), "configured-registry",
+			map[string]*azdext.ServiceConfig{"connection-service": configuredConnection}, nil,
+		))
+	})
+
+	t.Run("configured connection name requires service key in uses", func(t *testing.T) {
+		t.Parallel()
+		err := validateRegistryConnectionDependency(
+			t.Context(), agent("configured-registry"), "configured-registry",
+			map[string]*azdext.ServiceConfig{"connection-service": configuredConnection}, nil,
+		)
+		require.ErrorContains(t, err, "connection-service")
+		require.ErrorContains(t, err, "uses")
+	})
+
+	t.Run("configured connection name checks service key condition", func(t *testing.T) {
+		t.Parallel()
+		var checkedName string
+		err := validateRegistryConnectionDependency(
+			t.Context(), agent("connection-service"), "configured-registry",
+			map[string]*azdext.ServiceConfig{"connection-service": configuredConnection},
+			func(_ context.Context, name string) (bool, error) {
+				checkedName = name
+				return false, nil
+			},
+		)
+		require.Equal(t, "connection-service", checkedName)
+		require.ErrorContains(t, err, "disabled")
 	})
 
 	t.Run("sibling service must be a Foundry connection", func(t *testing.T) {

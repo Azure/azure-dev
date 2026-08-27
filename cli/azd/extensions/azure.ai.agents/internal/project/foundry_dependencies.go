@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
 	"slices"
 	"strconv"
@@ -39,10 +40,30 @@ type foundryDependencyFailure struct {
 	requiresMigration bool
 }
 
+func findRegistryConnectionService(
+	connectionRef string,
+	services map[string]*azdext.ServiceConfig,
+) (string, *azdext.ServiceConfig, bool) {
+	if dependency, exists := services[connectionRef]; exists {
+		return connectionRef, dependency, true
+	}
+	for _, serviceName := range slices.Sorted(maps.Keys(services)) {
+		service := services[serviceName]
+		if service.GetHost() != foundryConnectionHost || service.GetAdditionalProperties() == nil {
+			continue
+		}
+		name := service.GetAdditionalProperties().GetFields()["name"]
+		if name != nil && strings.TrimSpace(name.GetStringValue()) == connectionRef {
+			return serviceName, service, true
+		}
+	}
+	return "", nil, false
+}
+
 // validateRegistryConnectionDependency ensures a registry connection declared
 // as a sibling azd service is wired through uses. References that do not match a
-// local service are external Foundry connection names or IDs and are left to the
-// service to resolve.
+// local service key or configured connection name are external Foundry connection
+// names or IDs and are left to the service to resolve.
 func validateRegistryConnectionDependency(
 	ctx context.Context,
 	agent *azdext.ServiceConfig,
@@ -55,7 +76,7 @@ func validateRegistryConnectionDependency(
 		return nil
 	}
 
-	dependency, exists := services[connectionRef]
+	dependencyName, dependency, exists := findRegistryConnectionService(connectionRef, services)
 	if !exists {
 		return nil
 	}
@@ -72,17 +93,17 @@ func validateRegistryConnectionDependency(
 				strconv.Quote(connectionRef), strconv.Quote(foundryConnectionHost)),
 		)
 	}
-	if !slices.Contains(agent.GetUses(), connectionRef) {
+	if !slices.Contains(agent.GetUses(), dependencyName) {
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("registry connection service %s is not declared in %s uses",
-				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+				strconv.Quote(dependencyName), strconv.Quote(agent.GetName())),
 			fmt.Sprintf("add %s to the %s service uses list, run 'azd provision', then retry the agent deployment",
-				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+				strconv.Quote(dependencyName), strconv.Quote(agent.GetName())),
 		)
 	}
 	if isEnabled != nil {
-		enabled, err := isEnabled(ctx, connectionRef)
+		enabled, err := isEnabled(ctx, dependencyName)
 		if err != nil {
 			return err
 		}
@@ -90,7 +111,7 @@ func validateRegistryConnectionDependency(
 			return exterrors.Dependency(
 				exterrors.CodeFoundryDependencyNotReady,
 				fmt.Sprintf("registry connection service %s is disabled by its deployment condition",
-					strconv.Quote(connectionRef)),
+					strconv.Quote(dependencyName)),
 				"enable the registry connection dependency or use an external Foundry connection reference",
 			)
 		}

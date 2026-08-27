@@ -329,6 +329,100 @@ Details:
 
 Use `azd ai agent init --infra` to generate editable Foundry Bicep or Terraform. Existing project infrastructure is preserved as a separate layer. See [Customize Foundry infrastructure with `--infra`](docs/infrastructure-eject.md) for migration behavior, file-conflict rules, resource-group ownership, layer dependencies, and limitations.
 
+## Private container registry connections
+
+A hosted agent can reference a pre-built image in a private registry through a
+Foundry project connection. The image must be fully qualified, and
+`docker.imagePassthrough: true` is required so azd preserves the remote image
+reference instead of pulling, building, or publishing it.
+
+The Foundry connection must use metadata understood by the hosted-agent service
+and credentials that let the Foundry project identity authenticate to the
+registry. For OAuth token exchange, configure the registry's identity provider,
+audience, token endpoint, and project-identity binding before deploying.
+
+### External connection
+
+For a connection that already exists in the Foundry project, set
+`registryConnectionId` to its Foundry name or resource ID. An external connection
+does not belong in `uses`:
+
+```yaml
+services:
+  existing-project:
+    host: azure.ai.project
+    endpoint: https://example.services.ai.azure.com/api/projects/example-project
+
+  private-image-agent:
+    host: azure.ai.agent
+    uses:
+      - existing-project
+    kind: hosted
+    name: private-image-agent
+    image: registry.example.com/team/agent:v1
+    docker:
+      imagePassthrough: true
+    registryConnectionId: production-registry
+    protocols:
+      - protocol: invocations
+        version: 1.0.0
+```
+
+You can create the external connection before deployment with
+`azd ai connection create`, or create it through the Foundry portal or API. The
+connection must exist on the selected project before `azd deploy` runs.
+
+### Declarative sibling connection
+
+To let `azd provision` create the connection, declare an
+`azure.ai.connection` sibling. The agent's `registryConnectionId` identifies the
+configured Foundry connection, while `uses` contains the sibling's azure.yaml
+service key so provisioning runs in dependency order:
+
+```yaml
+services:
+  existing-project:
+    host: azure.ai.project
+    endpoint: https://example.services.ai.azure.com/api/projects/example-project
+
+  private-registry:
+    host: azure.ai.connection
+    uses:
+      - existing-project
+    name: production-registry
+    category: CustomKeys
+    target: https://registry.example.com
+    authType: CustomKeys
+    credentials:
+      keys:
+        audience: ${REGISTRY_AUDIENCE}
+        tokenEndpoint: /oauth/token
+        body.provider_name: ${REGISTRY_PROVIDER}
+    metadata:
+      type: registry_connection
+      mode: oauth_token_exchange
+
+  private-image-agent:
+    host: azure.ai.agent
+    uses:
+      - existing-project
+      - private-registry
+    kind: hosted
+    name: private-image-agent
+    image: registry.example.com/team/agent:v1
+    docker:
+      imagePassthrough: true
+    registryConnectionId: production-registry
+    protocols:
+      - protocol: invocations
+        version: 1.0.0
+```
+
+Set the referenced credential environment values, run `azd provision`, and then
+run `azd deploy`. Omitting the sibling from `uses`, disabling it with a deployment
+condition, or omitting image passthrough causes validation to fail before agent
+deployment.
+
 ## Private networking for `host: azure.ai.project`
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.

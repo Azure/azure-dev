@@ -21,6 +21,32 @@ type foundryProjectSetupResult struct {
 	FoundryProject *FoundryProjectInfo
 }
 
+func validateAcrConnectionInput(acrConnection string, skipACR, createsNewProject bool) error {
+	if acrConnection == "" {
+		return nil
+	}
+
+	if skipACR {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--acr-connection cannot be used because the selected agent mode skips "+
+				"Azure Container Registry configuration",
+			"Remove --acr-connection, or use a Dockerfile-based container deployment "+
+				"with an existing Foundry project.",
+		)
+	}
+
+	if createsNewProject {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--acr-connection requires an existing Foundry project",
+			"Pass --project-id for an existing project, or omit --acr-connection to create a new project.",
+		)
+	}
+
+	return nil
+}
+
 // configureFoundryProject runs the interactive (or headless) subscription and
 // Foundry project selection flow. It handles three modes:
 //
@@ -43,6 +69,14 @@ func configureFoundryProject(
 	skipACR bool,
 	filterHostedRegions bool,
 ) (*foundryProjectSetupResult, error) {
+	if err := validateAcrConnectionInput(
+		acrConnection,
+		skipACR,
+		noPrompt && projectResourceId == "",
+	); err != nil {
+		return nil, err
+	}
+
 	result := &foundryProjectSetupResult{}
 
 	// When --project-id is provided, validate the ARM format and extract the

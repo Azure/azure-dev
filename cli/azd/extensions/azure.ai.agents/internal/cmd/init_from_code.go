@@ -308,6 +308,14 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		return nil, err
 	}
 
+	if err := validateAcrConnectionInput(
+		a.flags.acrConnection,
+		deployMode == "code" || a.flags.image != "",
+		a.flags.noPrompt && a.flags.projectResourceId == "",
+	); err != nil {
+		return nil, err
+	}
+
 	// If code deploy, prompt for code configuration details
 	var codeConfig *agent_yaml.CodeConfiguration
 	if deployMode == "code" {

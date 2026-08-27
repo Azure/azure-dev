@@ -1889,7 +1889,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
 	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "",
-		"Foundry Azure Container Registry connection name to use for an existing project")
+		"Foundry Azure Container Registry connection name to use for an existing project; "+
+			"incompatible with code deploy, --image, and prompt-voice agents")
 
 	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
@@ -2469,6 +2470,14 @@ func (a *InitAction) configureModelChoice(
 				"Using Foundry project from environment: %s", existing.Value,
 			))
 		}
+	}
+
+	if err := validateAcrConnectionInput(
+		a.flags.acrConnection,
+		a.skipACR(),
+		a.flags.noPrompt && a.flags.projectResourceId == "",
+	); err != nil {
+		return nil, err
 	}
 
 	// If --project-id is provided (or reused from environment), validate the ARM
@@ -4455,6 +4464,13 @@ func extractConnectionConfigs(
 func (a *InitAction) validateCodeDeployFlags() error {
 	// First validate image flag (it has incompatibilities with other flags)
 	if err := validateImageFlag(a.flags.image, a.flags.deployMode); err != nil {
+		return err
+	}
+	skipACR := a.flags.deployMode == "code" ||
+		a.flags.image != "" ||
+		a.isVoiceAgent ||
+		strings.EqualFold(a.flags.kind, kindFlagPromptVoice)
+	if err := validateAcrConnectionInput(a.flags.acrConnection, skipACR, false); err != nil {
 		return err
 	}
 	return validateCodeDeployInput(

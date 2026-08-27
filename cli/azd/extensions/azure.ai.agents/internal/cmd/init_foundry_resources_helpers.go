@@ -429,6 +429,10 @@ func configureFoundryProjectEnv(
 	skipACR bool,
 	bicepless bool,
 ) error {
+	if err := validateAcrConnectionInput(acrConnection, skipACR, false); err != nil {
+		return err
+	}
+
 	resourceId := project.ResourceId
 	if resourceId == "" {
 		resourceId = fmt.Sprintf(

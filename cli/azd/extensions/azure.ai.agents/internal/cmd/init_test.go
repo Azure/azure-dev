@@ -3027,6 +3027,18 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "code deploy with ACR connection fails",
+			flags: initFlags{
+				noPrompt:      true,
+				deployMode:    "code",
+				runtime:       "python_3_13",
+				entryPoint:    "app.py",
+				acrConnection: "registry-connection",
+			},
+			wantErr:        true,
+			wantErrContain: "--acr-connection cannot be used",
+		},
+		{
 			name:           "code deploy without runtime fails",
 			flags:          initFlags{noPrompt: true, deployMode: "code", entryPoint: "app.py"},
 			wantErr:        true,

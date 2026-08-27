@@ -32,6 +32,38 @@ backward compatibility with existing templates:
 **Package and publish steps always run in parallel** regardless of `uses:`
 declarations — only deploy ordering is affected by the fallback.
 
+### .NET build isolation
+
+Parallel .NET publishes can share transitive `ProjectReference` outputs even
+when each command has a different final `--output` directory. Without further
+isolation, those commands can contend on source-tree `bin` and `obj` files.
+
+The service graph coordinates local .NET builds without adding dependency
+edges:
+
+- Standard .NET package and publish operations use an opaque `"dotnet"`
+  coordination key.
+- With .NET SDK 8.0.100 or later, each concurrent operation receives a unique
+  temporary `--artifacts-path`. Intermediate outputs are isolated while the
+  existing final package output or container image remains unchanged.
+- With an older SDK, a failed SDK capability probe, or a temporary-directory
+  creation failure, standard .NET operations sharing the key use the same
+  mutex. The lock is held only around the `dotnet publish` subprocess, not the
+  subsequent Azure deployment.
+- The temporary artifacts tree is removed after the operation succeeds or
+  fails.
+
+The standard .NET package/publish gate is enabled only when at least two
+standard .NET services in the graph can build concurrently and effective graph
+concurrency is not `1`. This gate does not count as explicit deploy ordering,
+so standard services without `uses:` retain the sequential deploy fallback
+described above.
+
+Projects that explicitly override the MSBuild `BaseOutputPath` or
+`BaseIntermediateOutputPath` properties may bypass the SDK's
+`--artifacts-path` isolation. Set `AZD_DEPLOY_CONCURRENCY=1` for `azd deploy`
+or `AZD_UP_CONCURRENCY=1` for `azd up` when such projects share build outputs.
+
 ### How `uses:` enables parallel deployment
 
 In `azure.yaml`, the `uses:` field on a service declares deploy-time

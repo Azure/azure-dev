@@ -42,12 +42,12 @@ pkg/exegraph/                     ← Pure engine (zero azd deps except OTel tra
 
 internal/cmd/
   provision_graph.go   (942)      ← Provision DAG: unified path; single-layer = one-node graph, multi-layer = N-node graph with per-layer env clones
-  deploy.go            (548)      ← Deploy graph: unified path; package→publish→deploy per service (including N=1)
+  deploy.go            (548)      ← Deploy graph and standard .NET package/publish gate policy
   deploy_progress.go   (258)      ← Progress table (interactive rewrite / CI line mode)
-  service_graph.go     (279)      ← Shared service-step builder used by deploy + up (ecosystem-agnostic; gate policy injected via serviceGraphOptions.buildGateKey)
+  service_graph.go     (279)      ← Shared service-step builder used by deploy + up (ecosystem-agnostic; gate policies are injected)
   up_graph.go          (469)      ← Unified DAG: cmdhook-preprovision → provision → cmdhook-postprovision → cmdhook-predeploy → event-predeploy → publish/deploy → event-postdeploy → cmdhook-postdeploy, with a parallel cmdhook-prepackage → event-prepackage → package-<svc> → event-postpackage → cmdhook-postpackage chain that gates event-predeploy
   project_hooks.go      (65)      ← runProjectCommandHook helper for cmdhook-* DAG nodes
-  aspire_gate.go        (30)      ← Aspire build-gate policy (aspireBuildGateKey); the only Aspire-specific file in the exegraph call-graph — isolated so it can move with Aspire when Aspire becomes an extension
+  aspire_gate.go        (30)      ← Aspire deploy build-gate policy (aspireBuildGateKey)
 
 pkg/infra/provisioning/bicep/
   layer_deps.go        (262)      ← Static Bicep dependency analysis
@@ -173,17 +173,23 @@ Activates unconditionally. Per service, creates three steps:
 3. **`deploy-<svc>`** — depends on `publish-<svc>`; runs `serviceManager.Deploy` with
    `deployTimeout` context deadline
 
-**Build gate (soft serialization)**: `serviceGraphOptions.buildGateKey` is an
-optional callback that returns an opaque string grouping for each service.
-Services sharing a non-empty key serialize on a "first wins, rest wait" basis
-— the first service in the group runs free, every later service in the same
-group depends on that first deploy step. Services returning `""` (or when the
-callback is nil) run in full parallelism. The graph builder is agnostic to
-the policy; today both `azd deploy` and `azd up` supply the
-`aspireBuildGateKey` callback (returns `"aspire"` for services with
-`DotNetContainerApp != nil`) to serialize the shared .NET AppHost build.
-Independent groups can coexist — keys are only compared within the set, never
-across.
+**Build isolation coordination**:
+`serviceGraphOptions.packagePublishBuildGateKey` is an optional callback for
+standard .NET package and publish operations. Before execution, the graph
+creates one mutex per opaque key and injects the same pointer into matching
+package and publish contexts. This runtime coordination does not add graph
+edges.
+
+The standard .NET policy returns `"dotnet"`. With .NET SDK 8.0.100 or later,
+each operation receives a unique temporary `--artifacts-path`. SDK 6/7, failed
+capability probes, and temporary-directory failures acquire the standard .NET
+mutex around `dotnet publish` instead. The gate activates only when at least
+two standard .NET services share the key and scheduler concurrency is not `1`.
+It does not alter deploy ordering.
+
+The existing `serviceGraphOptions.buildGateKey` deploy policy remains
+independent. Aspire services continue to use their existing `"aspire"` gate
+and target-specific image-preparation behavior.
 
 Progress displayed via `deployProgressTracker` — interactive mode rewrites lines with ANSI;
 non-interactive mode prints one line per event. `RenderFinal` is a no-op in non-interactive
@@ -216,9 +222,8 @@ Deploy chain:
   `postpackage`-before-`predeploy` ordering is preserved)
 - `publish-<svc>` depends on `package-<svc>` + `event-predeploy` (and therefore
   transitively on all provisioning via the cmdhook-predeploy gate)
-- `deploy-<svc>` depends on `publish-<svc>` (plus any edge added by
-  `serviceGraphOptions.buildGateKey` — today that's the Aspire build-gate for
-  `DotNetContainerApp` services)
+- `deploy-<svc>` depends on `publish-<svc>` and any declared service `uses:`
+  edges. Build isolation is carried in the step context and adds no graph edge.
 - `event-postdeploy` — fires `project.EventDeploy` After listeners (depends on
   all `deploy-<svc>` nodes)
 - `cmdhook-postdeploy` (depends on event-postdeploy)
@@ -303,6 +308,12 @@ the scheduler's `RunOptions.MaxConcurrency` field.
    and the synthetic `cmdhook-*` node integration. Projects using only project
    command hooks (no custom workflow) take the unified DAG path with `cmdhook-*`
    nodes.
+
+3. **Custom .NET output paths** — Projects that explicitly override the
+   MSBuild `BaseOutputPath` or `BaseIntermediateOutputPath` properties may
+   bypass the SDK's `--artifacts-path` isolation. Use
+   `AZD_DEPLOY_CONCURRENCY=1` for `azd deploy` or `AZD_UP_CONCURRENCY=1` for
+   `azd up` when such projects share build outputs.
 
 ## Semantic Differences from the Legacy Sequential Path
 
@@ -409,17 +420,13 @@ Things a reader of the code should know before editing:
    override. The merge / reload helpers are extracted as
    `mergeLayerOutputsLocked` / `reloadSharedEnvLocked` and tested directly.
 
-9. **Build gate is policy-driven, not Aspire-specific.** The DAG builder
-   (`service_graph.go`) is ecosystem-agnostic: it consumes an opaque-string
-   `buildGateKey` callback on `serviceGraphOptions`. Services returning the
-   same non-empty key serialize on the first one — "first wins, rest wait" —
-   and services returning `""` run in full parallelism. Today the only gate
-   in use is `aspireBuildGateKey` (in `cli/azd/internal/cmd/aspire_gate.go`),
-   which returns `"aspire"` for services whose `DotNetContainerApp` options
-   are populated by the Aspire importer. That gate exists because the .NET
-   AppHost build is shared state, not because deploy itself can't
-   parallelize. When Aspire moves into an extension, only that helper — not
-   the DAG builder — has to move with it.
+9. **Build isolation is policy-driven.** The DAG builder (`service_graph.go`)
+   is ecosystem-agnostic. Standard .NET package/publish operations use
+   `packagePublishBuildGateKey` and an independent mutex map. SDK 8.0.100 or
+   later uses a unique `--artifacts-path`; older SDKs or setup failures lock
+   around `dotnet publish`. This policy never changes deploy topology. The
+   existing `buildGateKey` deploy policy remains separate and continues to
+   carry Aspire-specific behavior through `aspireBuildGateKey`.
 
 10. **`deploy_progress.go` renders differently in interactive vs CI.**
     Interactive mode rewrites terminal lines with ANSI escapes;

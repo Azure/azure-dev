@@ -24,7 +24,11 @@ import (
 // stubServiceManager is a minimal ServiceManager that succeeds for all
 // operations. It is purpose-built for graph-topology tests where we only
 // care about which steps get wired, not what they do.
-type stubServiceManager struct{}
+type stubServiceManager struct {
+	packageFn func(context.Context, *project.ServiceConfig)
+	publishFn func(context.Context, *project.ServiceConfig)
+	deployFn  func(context.Context, *project.ServiceConfig)
+}
 
 func (s *stubServiceManager) GetRequiredTools(
 	_ context.Context, _ *project.ServiceConfig,
@@ -51,21 +55,30 @@ func (s *stubServiceManager) Build(
 	return nil, nil
 }
 func (s *stubServiceManager) Package(
-	_ context.Context, _ *project.ServiceConfig, _ *project.ServiceContext,
+	ctx context.Context, svc *project.ServiceConfig, _ *project.ServiceContext,
 	_ *async.Progress[project.ServiceProgress], _ *project.PackageOptions,
 ) (*project.ServicePackageResult, error) {
+	if s.packageFn != nil {
+		s.packageFn(ctx, svc)
+	}
 	return &project.ServicePackageResult{}, nil
 }
 func (s *stubServiceManager) Publish(
-	_ context.Context, _ *project.ServiceConfig, _ *project.ServiceContext,
+	ctx context.Context, svc *project.ServiceConfig, _ *project.ServiceContext,
 	_ *async.Progress[project.ServiceProgress], _ *project.PublishOptions,
 ) (*project.ServicePublishResult, error) {
+	if s.publishFn != nil {
+		s.publishFn(ctx, svc)
+	}
 	return &project.ServicePublishResult{}, nil
 }
 func (s *stubServiceManager) Deploy(
-	_ context.Context, _ *project.ServiceConfig, _ *project.ServiceContext,
+	ctx context.Context, svc *project.ServiceConfig, _ *project.ServiceContext,
 	_ *async.Progress[project.ServiceProgress],
 ) (*project.ServiceDeployResult, error) {
+	if s.deployFn != nil {
+		s.deployFn(ctx, svc)
+	}
 	return &project.ServiceDeployResult{}, nil
 }
 func (s *stubServiceManager) GetTargetResource(
@@ -380,5 +393,130 @@ func TestBuildGateMultipleKeys(t *testing.T) {
 				t.Errorf("deploy step %q depends on %q; multi-key gates should NOT produce edges", s.Name, dep)
 			}
 		}
+	}
+}
+
+func TestDotNetPackageBuildGateSharedAcrossPackageAndPublish(t *testing.T) {
+	t.Parallel()
+
+	services := []*project.ServiceConfig{
+		{Name: "api", Language: project.ServiceLanguageCsharp},
+		{Name: "worker", Language: project.ServiceLanguageFsharp},
+	}
+
+	var mu sync.Mutex
+	packageGates := make(map[string]*sync.Mutex)
+	publishGates := make(map[string]*sync.Mutex)
+	deployGates := make(map[string]*sync.Mutex)
+	record := func(target map[string]*sync.Mutex) func(context.Context, *project.ServiceConfig) {
+		return func(ctx context.Context, svc *project.ServiceConfig) {
+			mu.Lock()
+			defer mu.Unlock()
+			target[svc.Name] = project.BuildGateFromContext(ctx)
+		}
+	}
+
+	opts, g := newGraphOpts(services)
+	manager := opts.serviceManager.(*stubServiceManager)
+	manager.packageFn = record(packageGates)
+	manager.publishFn = record(publishGates)
+	manager.deployFn = record(deployGates)
+	opts.packagePublishBuildGateKey = dotNetPackagePublishBuildGateKey
+
+	_, err := addServiceStepsToGraph(g, opts)
+	require.NoError(t, err)
+	require.NoError(t, exegraph.Run(t.Context(), g, exegraph.RunOptions{}))
+
+	require.NotNil(t, packageGates["api"])
+	require.Same(t, packageGates["api"], packageGates["worker"])
+	require.Same(t, packageGates["api"], publishGates["api"])
+	require.Same(t, packageGates["api"], publishGates["worker"])
+	require.Nil(t, deployGates["api"])
+	require.Nil(t, deployGates["worker"])
+}
+
+func TestDotNetPackageBuildGatePreservesSequentialDeployFallback(t *testing.T) {
+	t.Parallel()
+
+	services := []*project.ServiceConfig{
+		{Name: "api", Language: project.ServiceLanguageCsharp},
+		{Name: "web", Language: project.ServiceLanguageDotNet},
+	}
+
+	opts, g := newGraphOpts(services)
+	opts.packagePublishBuildGateKey = dotNetPackagePublishBuildGateKey
+	_, err := addServiceStepsToGraph(g, opts)
+	require.NoError(t, err)
+
+	stepMap := make(map[string]*exegraph.Step)
+	for _, step := range g.Steps() {
+		stepMap[step.Name] = step
+	}
+	require.Contains(t, stepMap["deploy-web"].DependsOn, "deploy-api")
+
+	manager := opts.serviceManager.(*stubServiceManager)
+	var mu sync.Mutex
+	packageGates := make(map[string]*sync.Mutex)
+	manager.packageFn = func(ctx context.Context, svc *project.ServiceConfig) {
+		mu.Lock()
+		defer mu.Unlock()
+		packageGates[svc.Name] = project.BuildGateFromContext(ctx)
+	}
+
+	require.NoError(t, exegraph.Run(t.Context(), g, exegraph.RunOptions{}))
+	require.NotNil(t, packageGates["api"])
+	require.Same(t, packageGates["api"], packageGates["web"])
+}
+
+func TestDotNetPackageBuildGateDisabledWithoutConcurrency(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		services       []*project.ServiceConfig
+		maxConcurrency int
+	}{
+		{
+			name: "single standard .NET candidate",
+			services: []*project.ServiceConfig{
+				{Name: "api", Language: project.ServiceLanguageDotNet},
+				{Name: "web", Language: project.ServiceLanguageJavaScript},
+			},
+		},
+		{
+			name: "concurrency one",
+			services: []*project.ServiceConfig{
+				{Name: "api", Language: project.ServiceLanguageDotNet},
+				{Name: "web", Language: project.ServiceLanguageCsharp},
+			},
+			maxConcurrency: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts, g := newGraphOpts(tt.services)
+			opts.maxConcurrency = tt.maxConcurrency
+			opts.packagePublishBuildGateKey = dotNetPackagePublishBuildGateKey
+
+			manager := opts.serviceManager.(*stubServiceManager)
+			var mu sync.Mutex
+			gates := make(map[string]*sync.Mutex)
+			manager.packageFn = func(ctx context.Context, svc *project.ServiceConfig) {
+				mu.Lock()
+				defer mu.Unlock()
+				gates[svc.Name] = project.BuildGateFromContext(ctx)
+			}
+
+			_, err := addServiceStepsToGraph(g, opts)
+			require.NoError(t, err)
+			require.NoError(t, exegraph.Run(t.Context(), g, exegraph.RunOptions{
+				MaxConcurrency: tt.maxConcurrency,
+			}))
+
+			for _, svc := range tt.services {
+				require.Nil(t, gates[svc.Name])
+			}
+		})
 	}
 }

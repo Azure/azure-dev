@@ -475,10 +475,13 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						}
 					}
 					if agent.ModelType == VoiceModelTypeHostedAgent {
-						if agent.TargetAgent == nil || strings.TrimSpace(agent.TargetAgent.Service) == "" {
-							errors = append(errors, "template.target_agent.service is required when model_type is 'hosted_agent'")
+						if agent.TargetAgent == nil ||
+							strings.TrimSpace(agent.TargetAgent.Service) == "" {
+							errors = append(errors,
+								"template.target_agent.service is required when model_type is 'hosted_agent'")
 						}
-						if agent.TargetAgent != nil && agent.TargetAgent.Version != "" && agent.TargetAgent.Version != "deployed" {
+						if agent.TargetAgent != nil && agent.TargetAgent.Version != "" &&
+							agent.TargetAgent.Version != "deployed" {
 							errors = append(errors, "template.target_agent.version must be 'deployed' when specified")
 						}
 						if agent.Model != nil {
@@ -486,7 +489,8 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						}
 						if agent.InputSchema != nil || agent.OutputSchema != nil || agent.Instructions != nil ||
 							len(agent.StructuredInputs) > 0 || len(agent.Tools) > 0 ||
-							agent.ToolChoice != nil || agent.ParallelToolCalls != nil || agent.MaxOutputTokens != nil ||
+							agent.ToolChoice != nil || agent.ParallelToolCalls != nil ||
+							agent.MaxOutputTokens != nil ||
 							len(agent.Include) > 0 || len(agent.Handoff) > 0 {
 							errors = append(errors,
 								"input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, "+

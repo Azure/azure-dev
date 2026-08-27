@@ -816,7 +816,8 @@ func agentDefinitionFromStruct(
 				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
 					"policies are not supported on prompt voice agents",
-					"configure content policy fields supported by the Voice API, or move target-owned policy configuration to the hosted target",
+					"configure content policy fields supported by the Voice API, or move target-owned policy "+
+						"configuration to the hosted target",
 				)
 			}
 			definition = inline.toVoiceAgent()

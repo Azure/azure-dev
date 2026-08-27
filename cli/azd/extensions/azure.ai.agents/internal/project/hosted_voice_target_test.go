@@ -4,15 +4,90 @@
 package project
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFetchAndValidateHostedVoiceTarget(t *testing.T) {
+	t.Parallel()
+	target := &hostedVoiceTarget{AgentName: "target", AgentVersion: "7"}
+	called := false
+	err := fetchAndValidateHostedVoiceTarget(t.Context(), target, func(
+		_ context.Context, name, version, apiVersion string,
+	) (*agent_api.AgentVersionObject, error) {
+		called = true
+		require.Equal(t, "target", name)
+		require.Equal(t, "7", version)
+		require.Equal(t, agent_api.AgentEndpointAPIVersion, apiVersion)
+		return compatibleHostedVoiceVersion(), nil
+	})
+	require.NoError(t, err)
+	require.True(t, called)
+}
+
+func TestFetchAndValidateHostedVoiceTargetClassifiesAzureFailure(t *testing.T) {
+	t.Parallel()
+	err := fetchAndValidateHostedVoiceTarget(t.Context(), &hostedVoiceTarget{}, func(
+		context.Context, string, string, string,
+	) (*agent_api.AgentVersionObject, error) {
+		return nil, &azcore.ResponseError{StatusCode: http.StatusForbidden}
+	})
+	var serviceErr *azdext.ServiceError
+	require.ErrorAs(t, err, &serviceErr)
+	require.Contains(t, serviceErr.Message, "getting hosted voice target version")
+}
+
+func TestFetchAndValidateHostedVoiceTargetClassifiesCompatibilityFailure(t *testing.T) {
+	t.Parallel()
+	err := fetchAndValidateHostedVoiceTarget(t.Context(), &hostedVoiceTarget{}, func(
+		context.Context, string, string, string,
+	) (*agent_api.AgentVersionObject, error) {
+		version := compatibleHostedVoiceVersion()
+		version.Status = "failed"
+		return version, nil
+	})
+	var localErr *azdext.LocalError
+	require.True(t, errors.As(err, &localErr))
+	require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+}
+
+func TestHostedVoiceTargetMarkers(t *testing.T) {
+	t.Parallel()
+	target := &hostedVoiceTarget{AgentName: "target", AgentVersion: "7"}
+	require.Equal(t, "target", hostedVoiceTargetName(target))
+	require.Equal(t, "7", hostedVoiceTargetVersion(target))
+	require.Empty(t, hostedVoiceTargetName(nil))
+	require.Empty(t, hostedVoiceTargetVersion(nil))
+}
+
+func compatibleHostedVoiceVersion() *agent_api.AgentVersionObject {
+	return &agent_api.AgentVersionObject{
+		Name:    "target",
+		Version: "7",
+		Status:  "active",
+		Metadata: map[string]string{
+			"voiceLiveCompatible":   "true",
+			"bridgeProtocolVersion": "1.0",
+		},
+		Definition: map[string]any{
+			"kind": "hosted",
+			"protocol_versions": []any{map[string]any{
+				"protocol": "invocations_ws",
+				"version":  "1.0.0",
+			}},
+		},
+	}
+}
 
 func TestResolveHostedVoiceTarget(t *testing.T) {
 	targetProps, err := AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{

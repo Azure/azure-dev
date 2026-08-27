@@ -462,7 +462,10 @@ func resolveHostedVoiceTarget(
 			targetServiceName, strconv.Quote(targetServiceName))
 	}
 	if !sameProjectEndpoint(projectEndpoint, env["FOUNDRY_PROJECT_ENDPOINT"]) {
-		return nil, fmt.Errorf("hosted voice target service %q is deployed to a different Foundry project", targetServiceName)
+		return nil, fmt.Errorf(
+			"hosted voice target service %q is deployed to a different Foundry project",
+			targetServiceName,
+		)
 	}
 
 	return &hostedVoiceTarget{

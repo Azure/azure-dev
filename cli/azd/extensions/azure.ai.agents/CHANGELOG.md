@@ -1,5 +1,22 @@
 # Release History
 
+## 1.0.0-beta.13 (2026-08-27)
+
+### Features Added
+
+- [[#9586]](https://github.com/Azure/azure-dev/pull/9586) Add support for private non-ACR registry connections when authoring and deploying hosted agents.
+- [[#9634]](https://github.com/Azure/azure-dev/pull/9634) Update prompt voice agents to use the unified Agents API with versioned voice endpoints.
+- [[#9655]](https://github.com/Azure/azure-dev/pull/9655) Add advanced prompt voice settings for audio, turn detection, modalities, tools, and service features.
+- [[#9683]](https://github.com/Azure/azure-dev/pull/9683) Add editable Bicep and Terraform infrastructure ejection for existing Foundry projects while preserving ownership of existing resources.
+
+### Bugs Fixed
+
+- [[#9680]](https://github.com/Azure/azure-dev/pull/9680) Fix Doctor and next-step diagnostics for unified Foundry connections and invalid connection conditions.
+
+### Other Changes
+
+- [[#9726]](https://github.com/Azure/azure-dev/pull/9726) Add Microsoft Foundry Skill User-Agent attribution to extension requests when enabled.
+
 ## 1.0.0-beta.12 (2026-08-24)
 
 ### Features Added

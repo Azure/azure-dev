@@ -14,6 +14,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
+	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 
@@ -130,6 +131,7 @@ type AgentDefinitionInline struct {
 	Language                   string                             `json:"language,omitempty"`
 	Toolbox                    *agent_yaml.ToolboxReference       `json:"toolbox,omitempty"`
 	Protocols                  []agent_yaml.ProtocolVersionRecord `json:"protocols,omitempty"`
+	RegistryConnectionID       string                             `json:"registryConnectionId,omitempty"`
 	// EnvironmentVariables reads the deprecated inline shape.
 	EnvironmentVariables *[]agent_yaml.EnvironmentVariable `json:"environmentVariables,omitempty"`
 	AgentEndpoint        *agent_yaml.AgentEndpoint         `json:"agentEndpoint,omitempty"`
@@ -140,35 +142,68 @@ type AgentDefinitionInline struct {
 
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
-	ModelType    agent_yaml.VoiceModelType `json:"modelType,omitempty"`
-	Model        *agent_yaml.Model         `json:"model,omitempty"`
-	Instructions *string                   `json:"instructions,omitempty"`
-	Voice        *string                   `json:"voice,omitempty"`
-	Store        *bool                     `json:"store,omitempty"`
+	ModelType         agent_yaml.VoiceModelType `json:"modelType,omitempty"`
+	Model             *agent_yaml.Model         `json:"model,omitempty"`
+	Instructions      *string                   `json:"instructions,omitempty"`
+	Voice             *string                   `json:"voice,omitempty"`
+	StructuredInputs  map[string]any            `json:"structuredInputs,omitempty"`
+	Audio             *agent_yaml.VoiceAudio    `json:"audio,omitempty"`
+	OutputModalities  []string                  `json:"outputModalities,omitempty"`
+	Store             *bool                     `json:"store,omitempty"`
+	Tools             []map[string]any          `json:"tools,omitempty"`
+	Avatar            map[string]any            `json:"avatar,omitempty"`
+	Greeting          map[string]any            `json:"greeting,omitempty"`
+	Handoff           map[string]any            `json:"handoff,omitempty"`
+	ToolChoice        any                       `json:"toolChoice,omitempty"`
+	ParallelToolCalls *bool                     `json:"parallelToolCalls,omitempty"`
+	MaxOutputTokens   any                       `json:"maxOutputTokens,omitempty"`
+	Include           []string                  `json:"include,omitempty"`
 }
 
 // voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
 // written to azure.yaml. Voice agents carry no container/image/code config.
 func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInline {
 	return AgentDefinitionInline{
-		AgentDefinition: va.AgentDefinition,
-		ModelType:       va.ModelType,
-		Model:           va.Model,
-		Instructions:    va.Instructions,
-		Voice:           va.Voice,
-		Store:           va.Store,
+		AgentDefinition:   va.AgentDefinition,
+		ModelType:         va.ModelType,
+		Model:             va.Model,
+		Instructions:      va.Instructions,
+		Voice:             va.Voice,
+		StructuredInputs:  va.StructuredInputs,
+		Audio:             va.Audio,
+		OutputModalities:  va.OutputModalities,
+		Store:             va.Store,
+		Tools:             va.Tools,
+		Avatar:            va.Avatar,
+		Greeting:          va.Greeting,
+		Handoff:           va.Handoff,
+		ToolChoice:        va.ToolChoice,
+		ParallelToolCalls: va.ParallelToolCalls,
+		MaxOutputTokens:   va.MaxOutputTokens,
+		Include:           va.Include,
 	}
 }
 
 // toVoiceAgent rebuilds an agent_yaml.VoiceAgent from the inline definition.
 func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 	return agent_yaml.VoiceAgent{
-		AgentDefinition: d.AgentDefinition,
-		ModelType:       d.ModelType,
-		Model:           d.Model,
-		Instructions:    d.Instructions,
-		Voice:           d.Voice,
-		Store:           d.Store,
+		AgentDefinition:   d.AgentDefinition,
+		ModelType:         d.ModelType,
+		Model:             d.Model,
+		Instructions:      d.Instructions,
+		Voice:             d.Voice,
+		StructuredInputs:  d.StructuredInputs,
+		Audio:             d.Audio,
+		OutputModalities:  d.OutputModalities,
+		Store:             d.Store,
+		Tools:             d.Tools,
+		Avatar:            d.Avatar,
+		Greeting:          d.Greeting,
+		Handoff:           d.Handoff,
+		ToolChoice:        d.ToolChoice,
+		ParallelToolCalls: d.ParallelToolCalls,
+		MaxOutputTokens:   d.MaxOutputTokens,
+		Include:           d.Include,
 	}
 }
 
@@ -186,6 +221,7 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 		AgentCard:            ca.AgentCard,
 		CodeConfiguration:    ca.CodeConfiguration,
 		Policies:             ca.Policies,
+		RegistryConnectionID: ca.RegistryConnectionID,
 		SessionConfiguration: ca.SessionConfiguration,
 	}
 
@@ -224,6 +260,7 @@ func (d AgentDefinitionInline) toContainerAgent(
 		Language:             d.Language,
 		Toolbox:              d.Toolbox,
 		Image:                image,
+		RegistryConnectionID: d.RegistryConnectionID,
 		Protocols:            d.Protocols,
 		EnvironmentVariables: environmentVariables,
 		AgentEndpoint:        d.AgentEndpoint,
@@ -776,7 +813,7 @@ func agentDefinitionFromStruct(
 		return agent_yaml.ContainerAgent{}, false, err
 	}
 
-	if ca.Image != "" && !containerImageRefRe.MatchString(ca.Image) {
+	if ca.Image != "" && !containerref.IsValid(ca.Image) {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid container image reference in agent service config: %q", ca.Image),
@@ -882,7 +919,7 @@ func parseContainerAgentYAML(data []byte) (agent_yaml.ContainerAgent, bool, erro
 		)
 	}
 
-	if agentDef.Image != "" && !containerImageRefRe.MatchString(agentDef.Image) {
+	if agentDef.Image != "" && !containerref.IsValid(agentDef.Image) {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),

@@ -117,7 +117,8 @@ name: image-agent
 template:
   kind: hosted
   name: image-agent
-  image: myregistry.azurecr.io/myimage:v1
+  image: registry.example.com/myimage:v1
+  registryConnectionId: private-registry
   protocols:
     - protocol: invocations
       version: 1.0.0
@@ -145,8 +146,11 @@ template:
 		t.Fatalf("Expected ContainerAgent, got %T", agent)
 	}
 
-	if containerAgent.Image != "myregistry.azurecr.io/myimage:v1" {
-		t.Errorf("Expected image 'myregistry.azurecr.io/myimage:v1', got '%s'", containerAgent.Image)
+	if containerAgent.Image != "registry.example.com/myimage:v1" {
+		t.Errorf("Expected image 'registry.example.com/myimage:v1', got '%s'", containerAgent.Image)
+	}
+	if containerAgent.RegistryConnectionID != "private-registry" {
+		t.Errorf("Expected registry connection 'private-registry', got '%s'", containerAgent.RegistryConnectionID)
 	}
 
 	if containerAgent.AgentEndpoint == nil {
@@ -167,8 +171,11 @@ template:
 		t.Fatalf("Failed to marshal ContainerAgent: %v", err)
 	}
 
-	if !strings.Contains(string(marshaled), "myregistry.azurecr.io/myimage:v1") {
+	if !strings.Contains(string(marshaled), "registry.example.com/myimage:v1") {
 		t.Errorf("Marshaled YAML should contain image value, got:\n%s", string(marshaled))
+	}
+	if !strings.Contains(string(marshaled), "registryConnectionId: private-registry") {
+		t.Errorf("Marshaled YAML should contain registry connection, got:\n%s", string(marshaled))
 	}
 }
 

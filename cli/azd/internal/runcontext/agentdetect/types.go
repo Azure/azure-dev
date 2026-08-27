@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 // Package agentdetect provides functionality to detect when azd is invoked
-// by known AI coding agents (Claude Code, GitHub Copilot, Gemini, OpenCode)
+// by known AI coding agents (Claude Code, Codex, Cursor, GitHub Copilot, Gemini, OpenCode)
 // and enables automatic adjustment of behavior (e.g., no-prompt mode).
 package agentdetect
 
@@ -14,6 +14,10 @@ const (
 	AgentTypeUnknown AgentType = ""
 	// AgentTypeClaudeCode is Anthropic's Claude Code agent.
 	AgentTypeClaudeCode AgentType = "claude-code"
+	// AgentTypeCodex is OpenAI's Codex agent.
+	AgentTypeCodex AgentType = "codex"
+	// AgentTypeCursor is Cursor's coding agent.
+	AgentTypeCursor AgentType = "cursor"
 	// AgentTypeGitHubCopilotCLI is GitHub's Copilot CLI agent.
 	AgentTypeGitHubCopilotCLI AgentType = "github-copilot-cli"
 	// AgentTypeGitHubCopilotApp is GitHub's Copilot App agent.
@@ -38,6 +42,10 @@ func (a AgentType) DisplayName() string {
 	switch a {
 	case AgentTypeClaudeCode:
 		return "Claude Code"
+	case AgentTypeCodex:
+		return "Codex"
+	case AgentTypeCursor:
+		return "Cursor"
 	case AgentTypeGitHubCopilotCLI:
 		return "GitHub Copilot CLI"
 	case AgentTypeGitHubCopilotApp:

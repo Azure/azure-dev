@@ -281,7 +281,7 @@ OTel events and attributes added:
 | Test file | Tests | Coverage |
 |-----------|-------|----------|
 | `pkg/exegraph/graph_test.go` | 15 | Mutation rules, ordering, cycles, priority, tags |
-| `pkg/exegraph/scheduler_test.go` | 48 | Execution semantics, cancellation, skip propagation, global and group concurrency bounds, group fairness, panic recovery, goroutine cleanup, timing, per-step timeout |
+| `pkg/exegraph/scheduler_test.go` | 49 | Execution semantics, cancellation, skip propagation, global and group concurrency bounds, group fairness, deterministic ordering, panic recovery, goroutine cleanup, timing, per-step timeout |
 | `internal/cmd/concurrency_test.go` | 4 | Environment parsing, phase fallback precedence, global ceiling precedence |
 | `pkg/infra/provisioning/bicep/layer_deps_test.go` | 12 | Temp file fixtures, cycles, env-skip, missing refs |
 | `internal/cmd/provision_graph_test.go` | 7 | Graph build, execution ordering, `dependsOn` edge ordering, env merge (preserves subprocess writes + concurrent merges converge), reload (refreshes `deps.env` from disk for downstream-layer clones) |
@@ -290,7 +290,7 @@ OTel events and attributes added:
 | `internal/cmd/deploy_progress_test.go` | 13 | Interactive/non-interactive rendering, truncation, final render |
 | `pkg/tools/bicep/bicep_cache_test.go` | 6 | Cache hit/miss, hash stability, module resolution |
 
-**63 exegraph engine tests** (15 graph + 48 scheduler). Additional integration tests across
+**64 exegraph engine tests** (15 graph + 49 scheduler). Additional integration tests across
 provisioning, deployment, and thread-safety modules (see individual package `*_test.go` files).
 
 ## Environment Variables

@@ -486,6 +486,64 @@ func TestRun_GroupConcurrencyFairAcrossReadyGroups(t *testing.T) {
 	require.NoError(t, <-done)
 }
 
+func TestRun_GroupConcurrencyPreservesInsertionOrderForPriorityTies(t *testing.T) {
+	g := NewGraph()
+	var started []string
+
+	for _, step := range []*Step{
+		{
+			Name:             "root",
+			ConcurrencyGroup: "package",
+			Action: func(_ context.Context) error {
+				started = append(started, "root")
+				return nil
+			},
+		},
+		{
+			Name:             "package-a",
+			DependsOn:        []string{"root"},
+			ConcurrencyGroup: "package",
+			Action: func(_ context.Context) error {
+				started = append(started, "package-a")
+				return nil
+			},
+		},
+		{
+			Name:             "package-b",
+			DependsOn:        []string{"root"},
+			ConcurrencyGroup: "package",
+			Action: func(_ context.Context) error {
+				started = append(started, "package-b")
+				return nil
+			},
+		},
+		{
+			Name:             "provision-a",
+			DependsOn:        []string{"root"},
+			ConcurrencyGroup: "provision",
+			Action: func(_ context.Context) error {
+				started = append(started, "provision-a")
+				return nil
+			},
+		},
+	} {
+		require.NoError(t, g.AddStep(step))
+	}
+
+	expected := []string{"root", "package-a", "provision-a", "package-b"}
+	for range 100 {
+		started = nil
+		require.NoError(t, Run(t.Context(), g, RunOptions{
+			MaxConcurrency: 1,
+			GroupConcurrency: map[string]int{
+				"package":   1,
+				"provision": 1,
+			},
+		}))
+		assert.Equal(t, expected, started)
+	}
+}
+
 func TestRun_GroupConcurrencyPreservesPriorityWithinGroup(t *testing.T) {
 	g := NewGraph()
 	releaseBlocker := make(chan struct{})

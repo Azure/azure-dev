@@ -846,13 +846,18 @@ func (a *InitFromCodeAction) addToProject(
 		language = "csharp"
 	}
 
+	serviceImage := ""
+	if !isCodeDeploy {
+		serviceImage = strings.TrimSpace(definition.Image)
+	}
+
 	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	serviceConfig := &azdext.ServiceConfig{
 		Name:                 agentServiceName,
 		RelativePath:         targetDir,
 		Host:                 AiAgentHost,
 		Language:             language,
-		Image:                definition.Image,
+		Image:                serviceImage,
 		AdditionalProperties: agentProps,
 	}
 
@@ -860,12 +865,16 @@ func (a *InitFromCodeAction) addToProject(
 	// unless the Foundry account is VNET-injected.
 	if !isCodeDeploy {
 		networkInjected := a.selectedFoundryProject != nil && a.selectedFoundryProject.NetworkInjected
-		serviceConfig.Docker = dockerProjectOptionsForHostedContainer(definition.Image, networkInjected)
+		dockerOptions, err := dockerProjectOptionsForHostedContainer(serviceImage, networkInjected)
+		if err != nil {
+			return err
+		}
+		serviceConfig.Docker = dockerOptions
 	}
 
 	// Set AZD_AGENT_SKIP_ACR so legacy Bicep knows whether to create a container registry.
 	// Set before AddService so env state is consistent even if AddService fails.
-	skipACR := isCodeDeploy || strings.TrimSpace(definition.Image) != ""
+	skipACR := isCodeDeploy || serviceImage != ""
 	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, skipACR); err != nil {
 		return err
 	}

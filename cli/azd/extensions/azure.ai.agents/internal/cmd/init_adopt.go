@@ -1620,6 +1620,14 @@ func applyDeployModeToService(
 	hasCodeConfig := adoptedServiceHasCodeConfig(svc) ||
 		(hasDefinition && resolvedAgent.CodeConfiguration != nil)
 
+	effectiveImage := strings.TrimSpace(flags.image)
+	if effectiveImage == "" {
+		effectiveImage = strings.TrimSpace(svc.GetImage())
+	}
+	if effectiveImage == "" && hasDefinition {
+		effectiveImage = strings.TrimSpace(resolvedAgent.Image)
+	}
+
 	connectionRef := strings.TrimSpace(flags.registryConnection)
 	if flags.registryConnection != "" {
 		if connectionRef == "" {
@@ -1636,7 +1644,8 @@ func applyDeployModeToService(
 				"use a registry connection with a hosted agent that supplies a pre-built image",
 			)
 		}
-		if flags.image == "" && hasCodeConfig {
+		if flags.deployMode == "code" ||
+			(flags.deployMode == "" && flags.image == "" && hasCodeConfig) {
 			return false, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"a registry connection cannot be used with code deploy",
@@ -1644,13 +1653,6 @@ func applyDeployModeToService(
 			)
 		}
 
-		effectiveImage := strings.TrimSpace(flags.image)
-		if effectiveImage == "" {
-			effectiveImage = strings.TrimSpace(svc.GetImage())
-		}
-		if effectiveImage == "" && hasDefinition {
-			effectiveImage = strings.TrimSpace(resolvedAgent.Image)
-		}
 		if effectiveImage == "" {
 			return false, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
@@ -1658,18 +1660,27 @@ func applyDeployModeToService(
 				"pass --image <registry/image:tag> or provide an image in the hosted-agent manifest",
 			)
 		}
+		if err := validateHostedContainerImage(effectiveImage); err != nil {
+			return false, err
+		}
+	}
 
+	writeRegistryConnection := func() error {
+		if connectionRef == "" {
+			return nil
+		}
 		connectionValue, err := structpb.NewValue(connectionRef)
 		if err != nil {
-			return false, fmt.Errorf("encoding registry connection value: %w", err)
+			return fmt.Errorf("encoding registry connection value: %w", err)
 		}
 		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
 			ServiceName: serviceName,
 			Path:        "registryConnectionId",
 			Value:       connectionValue,
 		}); err != nil {
-			return false, fmt.Errorf("writing registry connection to agent service %q: %w", serviceName, err)
+			return fmt.Errorf("writing registry connection to agent service %q: %w", serviceName, err)
 		}
+		return nil
 	}
 
 	// Apply --image override to the agent service when provided.
@@ -1691,6 +1702,9 @@ func applyDeployModeToService(
 		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, flags.image); err != nil {
 			return false, err
 		}
+		if err := writeRegistryConnection(); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 
@@ -1703,10 +1717,30 @@ func applyDeployModeToService(
 	}
 
 	// An adopted service that already declares an image also uses passthrough,
-	// even when --image was not supplied during this init. An explicit code mode
-	// overrides a leftover image.
-	if strings.TrimSpace(svc.GetImage()) != "" && flags.deployMode != "code" {
-		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, svc.GetImage()); err != nil {
+	// even when --image was not supplied during this init. Legacy definitions
+	// may carry the image in extension properties, so promote the resolved value
+	// to the core service image field. An explicit code mode overrides a leftover image.
+	if effectiveImage != "" && flags.deployMode != "code" {
+		if err := validateHostedContainerImage(effectiveImage); err != nil {
+			return false, err
+		}
+		if strings.TrimSpace(svc.GetImage()) == "" {
+			imageValue, err := structpb.NewValue(effectiveImage)
+			if err != nil {
+				return false, fmt.Errorf("encoding resolved image value: %w", err)
+			}
+			if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+				ServiceName: serviceName,
+				Path:        "image",
+				Value:       imageValue,
+			}); err != nil {
+				return false, fmt.Errorf("promoting resolved image on agent service %q: %w", serviceName, err)
+			}
+		}
+		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, effectiveImage); err != nil {
+			return false, err
+		}
+		if err := writeRegistryConnection(); err != nil {
 			return false, err
 		}
 		return false, nil
@@ -1876,7 +1910,10 @@ func applyContainerDeployToService(
 	svc *azdext.ServiceConfig,
 	image string,
 ) error {
-	dockerMap := dockerProjectMapForHostedContainer(image, false)
+	dockerMap, err := dockerProjectMapForHostedContainer(image, false)
+	if err != nil {
+		return err
+	}
 	dockerValue, err := structpb.NewValue(dockerMap)
 	if err != nil {
 		return fmt.Errorf("encoding docker configuration: %w", err)

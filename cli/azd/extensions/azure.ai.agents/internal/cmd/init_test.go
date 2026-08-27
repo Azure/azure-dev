@@ -327,6 +327,14 @@ func TestApplyAndValidateRegistryConnection(t *testing.T) {
 			"requires a pre-built image")
 	})
 
+	t.Run("unqualified manifest image is rejected", func(t *testing.T) {
+		t.Parallel()
+		action := &InitAction{flags: &initFlags{registryConnection: "private-registry"}}
+		require.ErrorContains(t,
+			action.applyAndValidateRegistryConnection(manifest("agent:v1", "")),
+			"must be in format registry/image[:tag]")
+	})
+
 	t.Run("code deploy is rejected", func(t *testing.T) {
 		t.Parallel()
 		action := &InitAction{
@@ -707,6 +715,31 @@ func TestAddToProjectPreBuiltImageEnablesPassthrough(t *testing.T) {
 			require.False(t, hasInlineEnvironment)
 		})
 	}
+}
+
+func TestAddToProjectRejectsUnqualifiedManifestImage(t *testing.T) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	action := &InitAction{
+		azdClient:           client,
+		environment:         &azdext.Environment{Name: "test-env"},
+		flags:               &initFlags{noPrompt: true},
+		serviceNameOverride: "my-agent",
+	}
+	manifest := &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "my-agent",
+		},
+		Image: "agent:v1",
+	}}
+
+	err := action.addToProject(t.Context(), "src/my-agent", manifest)
+	require.ErrorContains(t, err, "must be in format registry/image[:tag]")
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.added)
 }
 
 func TestValidateInitAgentName(t *testing.T) {

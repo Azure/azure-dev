@@ -2086,7 +2086,14 @@ func (a *InitAction) Run(ctx context.Context) error {
 		if err := a.applyAndValidateRegistryConnection(agentManifest); err != nil {
 			return err
 		}
-		a.usesPreBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image) != ""
+		preBuiltImage := ""
+		if !a.isCodeDeploy {
+			preBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image)
+			if err := validateHostedContainerImage(preBuiltImage); err != nil {
+				return err
+			}
+		}
+		a.usesPreBuiltImage = preBuiltImage != ""
 
 		// Model configuration: prompt user for "use existing" vs "deploy new"
 		agentManifest, err = a.configureModelChoice(ctx, agentManifest)
@@ -3295,6 +3302,14 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return a.addVoiceAgentToProject(ctx, targetDir, agentManifest)
 	}
 
+	preBuiltImage := ""
+	if !a.isCodeDeploy {
+		preBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image)
+		if err := validateHostedContainerImage(preBuiltImage); err != nil {
+			return err
+		}
+	}
+
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
 	resourceDetails := []project.Resource{}
@@ -3375,8 +3390,6 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		}
 	}
 
-	preBuiltImage := preBuiltImageForInit(agentManifest, a.flags.image)
-
 	// Detect startup command. Skipped for code deploy (uses ZIP packaging) and
 	// when the agent uses a pre-built container image, since the image's own
 	// entrypoint runs and no startup command applies.
@@ -3447,7 +3460,11 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 			// Pre-built images stay in their source registry. Source builds use ACR Tasks
 			// unless the Foundry account is VNET-injected.
 			networkInjected := a.selectedFoundryProject != nil && a.selectedFoundryProject.NetworkInjected
-			serviceConfig.Docker = dockerProjectOptionsForHostedContainer(preBuiltImage, networkInjected)
+			dockerOptions, err := dockerProjectOptionsForHostedContainer(preBuiltImage, networkInjected)
+			if err != nil {
+				return err
+			}
+			serviceConfig.Docker = dockerOptions
 		}
 	}
 
@@ -4521,12 +4538,16 @@ func (a *InitAction) applyAndValidateRegistryConnection(agentManifest *agent_yam
 			"Use the registry connection with a pre-built image or remove it",
 		)
 	}
-	if preBuiltImageForInit(agentManifest, a.flags.image) == "" {
+	effectiveImage := preBuiltImageForInit(agentManifest, a.flags.image)
+	if effectiveImage == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"a registry connection requires a pre-built image",
 			"Pass --image <registry/image:tag> or provide an image in the hosted-agent manifest",
 		)
+	}
+	if err := validateHostedContainerImage(effectiveImage); err != nil {
+		return err
 	}
 
 	containerAgent.RegistryConnectionID = connectionRef

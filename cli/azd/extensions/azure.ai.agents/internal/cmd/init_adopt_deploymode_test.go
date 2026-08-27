@@ -98,16 +98,30 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 	preBuiltService.Image = "registry.example.com/team/agent:v1"
 	mixedCodeService := agentServiceConfig(t, svcName, codeProps)
 	mixedCodeService.Image = "registry.example.com/team/agent:v1"
+	legacyImageProps := map[string]any{
+		"kind":  "hosted",
+		"name":  svcName,
+		"image": "registry.example.com/team/legacy-agent:v1",
+	}
+	legacyCodeImageProps := map[string]any{
+		"kind":              "hosted",
+		"name":              svcName,
+		"image":             "registry.example.com/team/legacy-agent:v1",
+		"codeConfiguration": map[string]any{"runtime": "python_3_13", "entryPoint": "app.py"},
+	}
 
 	tests := []struct {
-		name         string
-		flags        *initFlags
-		service      *azdext.ServiceConfig
-		wantNeedsACR bool
-		wantLanguage any
-		wantDocker   map[string]any
-		wantCodeSet  bool
-		wantRegistry string
+		name          string
+		flags         *initFlags
+		service       *azdext.ServiceConfig
+		wantNeedsACR  bool
+		wantLanguage  any
+		wantDocker    map[string]any
+		wantCodeSet   bool
+		wantCodeUnset bool
+		wantRegistry  string
+		wantImage     string
+		wantErr       string
 	}{
 		{
 			name:         "explicit container flag wires ACR",
@@ -154,6 +168,35 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			wantDocker:   map[string]any{"imagePassthrough": true},
 		},
 		{
+			name:         "resolved legacy image is promoted and uses passthrough",
+			flags:        &initFlags{},
+			service:      agentServiceConfig(t, svcName, legacyImageProps),
+			wantNeedsACR: false,
+			wantLanguage: "docker",
+			wantDocker:   map[string]any{"imagePassthrough": true},
+			wantImage:    "registry.example.com/team/legacy-agent:v1",
+		},
+		{
+			name: "resolved legacy image applies registry connection",
+			flags: &initFlags{
+				registryConnection: "private-registry",
+			},
+			service:      agentServiceConfig(t, svcName, legacyImageProps),
+			wantNeedsACR: false,
+			wantLanguage: "docker",
+			wantDocker:   map[string]any{"imagePassthrough": true},
+			wantRegistry: "private-registry",
+			wantImage:    "registry.example.com/team/legacy-agent:v1",
+		},
+		{
+			name:  "unqualified resolved legacy image is rejected",
+			flags: &initFlags{},
+			service: agentServiceConfig(t, svcName, map[string]any{
+				"kind": "hosted", "name": svcName, "image": "agent:v1",
+			}),
+			wantErr: "must be in format registry/image[:tag]",
+		},
+		{
 			name:         "respects sample docker config",
 			flags:        &initFlags{},
 			service:      agentServiceConfig(t, svcName, dockerProps),
@@ -166,10 +209,29 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			wantNeedsACR: false,
 		},
 		{
+			name:         "resolved code config takes precedence over resolved legacy image",
+			flags:        &initFlags{},
+			service:      agentServiceConfig(t, svcName, legacyCodeImageProps),
+			wantNeedsACR: false,
+		},
+		{
 			name:         "code config takes precedence over existing image",
 			flags:        &initFlags{},
 			service:      mixedCodeService,
 			wantNeedsACR: false,
+		},
+		{
+			name: "explicit container mode overrides code config for registry image",
+			flags: &initFlags{
+				deployMode:         "container",
+				registryConnection: "private-registry",
+			},
+			service:       mixedCodeService,
+			wantNeedsACR:  false,
+			wantLanguage:  "docker",
+			wantDocker:    map[string]any{"imagePassthrough": true},
+			wantCodeUnset: true,
+			wantRegistry:  "private-registry",
 		},
 	}
 
@@ -182,6 +244,11 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			client := newProjectRecorderClient(t, server)
 
 			needsACR, err := applyDeployModeToAdoptedProject(t.Context(), tc.flags, client)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				assert.Empty(t, server.sets[svcName])
+				return
+			}
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantNeedsACR, needsACR)
 
@@ -195,11 +262,18 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			if tc.wantCodeSet {
 				assert.Contains(t, sets, "codeConfiguration")
 			}
+			if tc.wantCodeUnset {
+				assert.Contains(t, server.unsets[svcName], "codeConfiguration")
+			}
 			if tc.wantRegistry != "" {
 				assert.Equal(t, tc.wantRegistry, sets["registryConnectionId"])
 			}
+			if tc.wantImage != "" {
+				assert.Equal(t, tc.wantImage, sets["image"])
+			}
 			// A respected sample config must not be rewritten.
-			if tc.wantDocker == nil && !tc.wantCodeSet && tc.wantLanguage == nil && tc.wantRegistry == "" {
+			if tc.wantDocker == nil && !tc.wantCodeSet && tc.wantLanguage == nil &&
+				tc.wantRegistry == "" && tc.wantImage == "" {
 				assert.Empty(t, sets)
 			}
 		})
@@ -226,6 +300,13 @@ func TestApplyDeployModeToAdoptedProject_ValidatesRegistryConnection(t *testing.
 			}),
 			wantContain: "cannot be used with code deploy",
 		},
+		{
+			name: "rejects unqualified resolved legacy image before writing connection",
+			service: agentServiceConfig(t, svcName, map[string]any{
+				"kind": "hosted", "name": svcName, "image": "agent:v1",
+			}),
+			wantContain: "must be in format registry/image[:tag]",
+		},
 	}
 
 	for _, test := range tests {
@@ -240,6 +321,7 @@ func TestApplyDeployModeToAdoptedProject_ValidatesRegistryConnection(t *testing.
 				registryConnection: "private-registry",
 			}, client)
 			require.ErrorContains(t, err, test.wantContain)
+			assert.Empty(t, server.sets[svcName])
 		})
 	}
 }

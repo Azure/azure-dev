@@ -134,6 +134,11 @@ func TestHostedVoiceWrapperName(t *testing.T) {
 	got := hostedVoiceWrapperName(long)
 	require.Len(t, got, 63)
 	require.True(t, strings.HasSuffix(got, "-voice"))
+	boundary := strings.Repeat("a", 57) + "-voice"
+	boundaryWrapper := hostedVoiceWrapperName(boundary)
+	require.Len(t, boundaryWrapper, 63)
+	require.NotEqual(t, boundary, boundaryWrapper)
+	require.True(t, strings.HasSuffix(boundaryWrapper, "-wrapper"))
 }
 
 func TestAddHostedVoiceWrapper(t *testing.T) {

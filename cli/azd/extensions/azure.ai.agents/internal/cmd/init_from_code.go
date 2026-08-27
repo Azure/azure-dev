@@ -1073,7 +1073,14 @@ func hostedVoiceWrapperName(targetServiceName string) string {
 	if base == "" {
 		base = "agent"
 	}
-	return base + suffix
+	wrapperName := base + suffix
+	if wrapperName != targetServiceName {
+		return wrapperName
+	}
+
+	const distinctSuffix = "-wrapper"
+	base = strings.TrimRight(targetServiceName[:63-len(distinctSuffix)], "-")
+	return base + distinctSuffix
 }
 
 // promptCodeConfiguration prompts the user for code deploy configuration settings.

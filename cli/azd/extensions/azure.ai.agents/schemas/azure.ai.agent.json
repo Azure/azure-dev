@@ -66,8 +66,11 @@
     },
     "modelType": {
       "type": "string",
-      "description": "Voice agent (kind: prompt-voice) model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' (BYOM) references an existing Foundry model deployment.",
-      "enum": ["managed", "self_deployed"]
+      "description": "Voice agent model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' references a Foundry model deployment; 'hosted_agent' routes turns to a deployed hosted agent service.",
+      "enum": ["managed", "self_deployed", "hosted_agent"]
+    },
+    "targetAgent": {
+      "$ref": "#/definitions/VoiceTargetAgent"
     },
     "model": {
       "type": "object",
@@ -206,18 +209,56 @@
   "additionalProperties": true,
   "allOf": [
     {
-      "$comment": "A prompt-voice agent must declare a speech-to-speech model and cannot use the hosted-agent toolbox reference, which the voice deployment path does not support.",
+      "$comment": "A hosted-agent voice wrapper references a deployed hosted service; other voice modes declare a model. Prompt voice agents cannot use the hosted-agent toolbox reference.",
       "if": {
         "properties": {
-          "kind": { "const": "prompt-voice" }
+          "kind": { "const": "prompt-voice" },
+          "modelType": { "const": "hosted_agent" }
         },
-        "required": ["kind"]
+        "required": ["kind", "modelType"]
       },
       "then": {
-        "required": ["model"],
+        "required": ["targetAgent"],
         "not": {
-          "required": ["toolbox"]
+          "anyOf": [
+            { "required": ["model"] },
+            { "required": ["instructions"] },
+            { "required": ["structuredInputs"] },
+            { "required": ["tools"] },
+            { "required": ["toolChoice"] },
+            { "required": ["parallelToolCalls"] },
+            { "required": ["maxOutputTokens"] },
+            { "required": ["include"] },
+            { "required": ["handoff"] },
+            { "required": ["toolbox"] }
+          ]
         }
+      },
+      "else": {
+        "if": {
+          "properties": { "kind": { "const": "prompt-voice" } },
+          "required": ["kind"]
+        },
+        "then": {
+          "required": ["model"],
+          "not": {
+            "anyOf": [
+              { "required": ["targetAgent"] },
+              { "required": ["toolbox"] }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "targetAgent is only valid for a hosted-agent voice wrapper.",
+      "if": { "required": ["targetAgent"] },
+      "then": {
+        "properties": {
+          "kind": { "const": "prompt-voice" },
+          "modelType": { "const": "hosted_agent" }
+        },
+        "required": ["kind", "modelType"]
       }
     },
     {
@@ -293,6 +334,16 @@
     }
   ],
   "definitions": {
+    "VoiceTargetAgent": {
+      "type": "object",
+      "description": "Hosted agent service used as the conversation target for a voice wrapper.",
+      "properties": {
+        "service": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "azure.yaml service name of the target hosted agent." },
+        "version": { "type": "string", "enum": ["deployed"], "default": "deployed", "description": "Pin the wrapper to the target version deployed by this azd environment." }
+      },
+      "required": ["service"],
+      "additionalProperties": false
+    },
     "ActivitySettings": {
       "type": "object",
       "description": "Activity-protocol Teams configuration. Omit digitalWorkerType for simple mode; m365 applies Digital Worker constraints via allOf.",

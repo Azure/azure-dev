@@ -107,6 +107,9 @@ const (
 	// (managed) voice agent. It maps to the same synthesized-manifest fast path
 	// as `azd ai agent init --kind prompt-voice`.
 	initModeVoice = "prompt_voice"
+	// initModeHostedVoice creates a Voice Bridge hosted target from local code
+	// plus a declarative Voice wrapper that references the target service.
+	initModeHostedVoice = "hosted_voice"
 )
 
 // voiceInitChoice is the interactive menu entry for creating a prompt voice agent.
@@ -115,6 +118,11 @@ const (
 var voiceInitChoice = &azdext.SelectChoice{
 	Label: "Create a prompt voice agent",
 	Value: initModeVoice,
+}
+
+var hostedVoiceInitChoice = &azdext.SelectChoice{
+	Label: "Create a hosted voice agent from the code in the current directory",
+	Value: initModeHostedVoice,
 }
 
 // promptInitMode asks the user whether to use existing code, start from a
@@ -157,6 +165,9 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 	}
 	if voicePreviewEnabled {
 		choices = append(choices, voiceInitChoice)
+		if !empty {
+			choices = append(choices, hostedVoiceInitChoice)
+		}
 	}
 
 	defaultIndex := int32(0)

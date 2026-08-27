@@ -12,12 +12,20 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 type dependencyEnabled func(context.Context, string) (bool, error)
+
+type hostedVoiceTarget struct {
+	ServiceName     string
+	AgentName       string
+	AgentVersion    string
+	ProjectEndpoint string
+}
 
 const (
 	foundryProjectHost    = "azure.ai.project"
@@ -405,6 +413,64 @@ func validateFoundryAgentDependency(service *azdext.ServiceConfig, env map[strin
 		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", projectKey)
 	}
 	return ""
+}
+
+func resolveHostedVoiceTarget(
+	wrapper *azdext.ServiceConfig,
+	voiceAgentTarget *agent_yaml.VoiceTargetAgent,
+	services map[string]*azdext.ServiceConfig,
+	env map[string]string,
+	projectRoot string,
+) (*hostedVoiceTarget, error) {
+	if voiceAgentTarget == nil || strings.TrimSpace(voiceAgentTarget.Service) == "" {
+		return nil, fmt.Errorf("targetAgent.service is required when modelType is hosted_agent")
+	}
+	targetServiceName := strings.TrimSpace(voiceAgentTarget.Service)
+	if !slices.Contains(wrapper.GetUses(), targetServiceName) {
+		return nil, fmt.Errorf(
+			"hosted voice target service %q must be declared in the %q service uses list",
+			targetServiceName, wrapper.GetName())
+	}
+	targetService, ok := services[targetServiceName]
+	if !ok {
+		return nil, fmt.Errorf("hosted voice target service %q was not found in azure.yaml", targetServiceName)
+	}
+	if targetService.GetHost() != foundryAgentHost {
+		return nil, fmt.Errorf(
+			"hosted voice target service %q must use host %q, got %q",
+			targetServiceName, foundryAgentHost, targetService.GetHost())
+	}
+	_, isHosted, _, err := LoadAgentDefinition(targetService, projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("loading hosted voice target service %q: %w", targetServiceName, err)
+	}
+	if !isHosted {
+		return nil, fmt.Errorf("hosted voice target service %q must have kind hosted", targetServiceName)
+	}
+
+	key := normalizeAgentServiceKey(targetServiceName)
+	name := strings.TrimSpace(env[fmt.Sprintf("AGENT_%s_NAME", key)])
+	version := strings.TrimSpace(env[fmt.Sprintf("AGENT_%s_VERSION", key)])
+	projectEndpoint := strings.TrimSpace(env[envkey.AgentProjectEndpoint(targetServiceName)])
+	baseEndpoint := strings.TrimSpace(env[fmt.Sprintf("AGENT_%s_ENDPOINT", key)])
+	if projectEndpoint == "" && endpointBelongsToProject(baseEndpoint, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		projectEndpoint = strings.TrimRight(strings.TrimSpace(env["FOUNDRY_PROJECT_ENDPOINT"]), "/")
+	}
+	if name == "" || version == "" || projectEndpoint == "" {
+		return nil, fmt.Errorf(
+			"hosted voice target service %q is not deployed; run 'azd deploy %s' or 'azd deploy --all'",
+			targetServiceName, strconv.Quote(targetServiceName))
+	}
+	if !sameProjectEndpoint(projectEndpoint, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		return nil, fmt.Errorf("hosted voice target service %q is deployed to a different Foundry project", targetServiceName)
+	}
+
+	return &hostedVoiceTarget{
+		ServiceName:     targetServiceName,
+		AgentName:       name,
+		AgentVersion:    version,
+		ProjectEndpoint: projectEndpoint,
+	}, nil
 }
 
 func endpointBelongsToProject(resourceEndpoint, projectEndpoint string) bool {

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 	"context"
 	"os"
 	"path/filepath"
@@ -124,6 +125,38 @@ func TestSanitizeAgentName(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHostedVoiceWrapperName(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "voice-target-voice", hostedVoiceWrapperName("voice-target"))
+	long := strings.Repeat("a", 63)
+	got := hostedVoiceWrapperName(long)
+	require.Len(t, got, 63)
+	require.True(t, strings.HasSuffix(got, "-voice"))
+}
+
+func TestAddHostedVoiceWrapper(t *testing.T) {
+	server := &recordingProjectServer{existing: map[string]*azdext.ServiceConfig{
+		"foundry-project": {Name: "foundry-project", Host: AiProjectHost},
+	}}
+	client := newProjectRecorderClient(t, server)
+	action := &InitFromCodeAction{azdClient: client}
+
+	require.NoError(t, action.addHostedVoiceWrapper(t.Context(), "voice-target"))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.added, 1)
+	wrapper := server.added[0]
+	require.Equal(t, "voice-target-voice", wrapper.Name)
+	voiceAgent, found, err := project.VoiceAgentFromResolvedService(wrapper, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceModelTypeHostedAgent, voiceAgent.ModelType)
+	require.Equal(t, "voice-target", voiceAgent.TargetAgent.Service)
+	require.Equal(t, "deployed", voiceAgent.TargetAgent.Version)
+	require.ElementsMatch(t, []string{"foundry-project", "voice-target"}, server.uses[wrapper.Name])
 }
 
 func TestNormalizeForFuzzyMatch(t *testing.T) {

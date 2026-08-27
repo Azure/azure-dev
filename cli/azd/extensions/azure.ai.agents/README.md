@@ -290,6 +290,70 @@ keys throughout this block (`invocations_moderation`, `response_mode`,
 `input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
 (`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
 
+### Hosted voice wrapper (preview)
+
+A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
+and text-to-speech while routing conversation logic to a hosted agent in the
+same Foundry project. Hosted Voice samples use the same standard Agent Manifest
+flow as other Hosted Agent and `invocations_ws` samples:
+
+```powershell
+azd ai agent init -m <PUBLIC_AGENT_MANIFEST_URL>
+```
+
+When the sample source is already present, run `azd ai agent init` from its
+directory and accept the detected local manifest. azd reuses a parent project
+when the source is already inside an existing azd project.
+
+Init generates both services and references the target by its `azure.yaml`
+service name:
+
+```yaml
+services:
+  voice-target:
+    host: azure.ai.agent
+    project: ./src/voice-target
+    language: csharp
+    kind: hosted
+    name: voice-target
+    protocols:
+      - protocol: invocations_ws
+        version: 1.0.0
+    metadata:
+      voiceLiveCompatible: "true"
+      bridgeProtocolVersion: "1.0"
+    codeConfiguration:
+      runtime: dotnet_10
+      entryPoint: VoiceHostedAgent.dll
+      dependencyResolution: bundled
+
+  voice:
+    host: azure.ai.agent
+    kind: prompt-voice
+    name: voice
+    uses:
+      - voice-target
+    modelType: hosted_agent
+    targetAgent:
+      service: voice-target
+      version: deployed
+    store: false
+    audio:
+      output:
+        voice:
+          type: azure_standard
+          name: en-US-JennyNeural
+```
+
+The `uses` edge deploys the target before the wrapper. `version: deployed`
+pins the wrapper to the target version produced by the current azd environment.
+Hosted voice wrappers use the unified Voice API.
+
+The target must be active, declare `invocations_ws/1.0.0`, and include
+`voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
+instructions, tools, and other conversation controls belong to the target;
+the wrapper owns audio, voice, store, avatar, and greeting configuration.
+
 ## Session idle timeout
 
 A hosted agent's runtime session sandbox is suspended by Foundry after a period

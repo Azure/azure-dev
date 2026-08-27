@@ -329,3 +329,47 @@ include:
 		t.Fatalf("expected azure-speech include config to be valid, got: %v", err)
 	}
 }
+
+func TestValidateAgentDefinition_HostedVoiceAccepted(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-wrapper
+model_type: hosted_agent
+target_agent:
+  service: voice-target
+  version: deployed
+`)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected hosted voice definition to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_HostedVoiceRequiresTarget(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-wrapper
+model_type: hosted_agent
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "target_agent.service is required") {
+		t.Fatalf("expected target agent validation error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_HostedVoiceRejectsTargetOwnedFields(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-wrapper
+model_type: hosted_agent
+target_agent:
+  service: voice-target
+model:
+  id: gpt-realtime
+instructions: not allowed
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "belong to the target hosted agent") ||
+		!strings.Contains(err.Error(), "model is not allowed") {
+		t.Fatalf("expected target-owned field validation errors, got: %v", err)
+	}
+}

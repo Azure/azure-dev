@@ -608,3 +608,60 @@ func TestCreateVoiceAgentAPIRequest_InvalidModelType(t *testing.T) {
 		t.Error("expected error for unsupported model_type")
 	}
 }
+
+func TestCreateHostedVoiceAgentAPIRequest(t *testing.T) {
+	t.Parallel()
+	store := false
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-wrapper"},
+		ModelType:       VoiceModelTypeHostedAgent,
+		TargetAgent:     &VoiceTargetAgent{Service: "voice-target", Version: "deployed"},
+		Store:           &store,
+	}
+	req, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{
+		Name:    "deployed-target",
+		Version: "7",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	if def.ModelType != agent_api.VoiceModelTypeHostedAgent {
+		t.Fatalf("ModelType = %q, want hosted_agent", def.ModelType)
+	}
+	if def.TargetAgent == nil || def.TargetAgent.Name != "deployed-target" || def.TargetAgent.Version != "7" {
+		t.Fatalf("TargetAgent = %+v", def.TargetAgent)
+	}
+	if def.Model != "" || def.Instructions != "" || len(def.Tools) != 0 {
+		t.Fatalf("hosted wrapper contains target-owned fields: %+v", def)
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	definition := wire["definition"].(map[string]any)
+	if _, exists := definition["model"]; exists {
+		t.Fatalf("hosted wrapper wire payload contains model: %s", data)
+	}
+	if _, exists := definition["instructions"]; exists {
+		t.Fatalf("hosted wrapper wire payload contains instructions: %s", data)
+	}
+	if _, exists := definition["tools"]; exists {
+		t.Fatalf("hosted wrapper wire payload contains tools: %s", data)
+	}
+}
+
+func TestCreateHostedVoiceAgentAPIRequestRequiresResolvedTarget(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-wrapper"},
+		ModelType:       VoiceModelTypeHostedAgent,
+	}
+	if _, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{}); err == nil {
+		t.Fatal("expected missing resolved target error")
+	}
+}

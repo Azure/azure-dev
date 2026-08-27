@@ -69,6 +69,33 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	require.Equal(t, store, *got.Store)
 }
 
+func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPromptVoice,
+			Name: "voice-wrapper",
+		},
+		ModelType: agent_yaml.VoiceModelTypeHostedAgent,
+		TargetAgent: &agent_yaml.VoiceTargetAgent{
+			Service: "voice-target",
+			Version: "deployed",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice-wrapper",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceModelTypeHostedAgent, got.ModelType)
+	require.Equal(t, "voice-target", got.TargetAgent.Service)
+	require.Equal(t, "deployed", got.TargetAgent.Version)
+}
+
 func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
 		name         string

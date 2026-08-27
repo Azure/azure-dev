@@ -379,7 +379,6 @@ func resolveAgentNameFromManifestPointer(
 		flags.agentName = validated
 		return validated, nil
 	}
-
 	peeked := peekManifestName(ctx, manifestPointer, httpClient)
 	if peeked == "" {
 		// Defer to the inner flow which has access to the fully-loaded manifest.
@@ -832,6 +831,7 @@ func synthesizeImageManifestFile(agentName, image string, flagProtocols []string
 
 // kindFlagPromptVoice is the accepted --kind value for a declarative voice agent.
 const kindFlagPromptVoice = "prompt-voice"
+const kindFlagHostedVoice = "hosted-voice"
 
 // synthesizeVoiceManifestFile writes a temporary declarative (managed) voice
 // agent manifest (kind: prompt-voice) to a temp dir and returns its path plus a
@@ -1209,6 +1209,8 @@ func agentDefiningFlagsSet(flags *initFlags, srcBlocksReuse bool) bool {
 		flags.projectResourceId != "" ||
 		flags.image != "" ||
 		flags.registryConnection != "" ||
+		flags.kind != "" ||
+		flags.voice != "" ||
 		srcBlocksReuse ||
 		len(flags.protocols) > 0
 }
@@ -1376,11 +1378,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// when the other runs first (e.g. --kind prompt-voice --image would
 			// otherwise silently create a hosted image agent).
 			if flags.kind != "" {
-				if !strings.EqualFold(flags.kind, kindFlagPromptVoice) {
+				if !strings.EqualFold(flags.kind, kindFlagPromptVoice) &&
+					!strings.EqualFold(flags.kind, kindFlagHostedVoice) {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						fmt.Sprintf("unsupported --kind value %q", flags.kind),
-						fmt.Sprintf("the only supported --kind value is %q", kindFlagPromptVoice),
+						fmt.Sprintf("supported --kind values are %q and %q", kindFlagPromptVoice, kindFlagHostedVoice),
 					)
 				}
 				if !promptVoicePreviewEnabled() {
@@ -1390,14 +1393,28 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						fmt.Sprintf("set %s=true to enable prompt voice init", promptVoicePreviewEnvVar),
 					)
 				}
-				if flags.image != "" {
+				if strings.EqualFold(flags.kind, kindFlagHostedVoice) && flags.image != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--kind hosted-voice cannot be combined with --image",
+						"hosted voice init requires local Voice Bridge source code; drop --image",
+					)
+				}
+				if strings.EqualFold(flags.kind, kindFlagHostedVoice) && flags.manifestPointer != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--kind hosted-voice cannot be combined with --manifest",
+						"hosted voice init generates the target and wrapper from local code; drop --manifest",
+					)
+				}
+				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.image != "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						"--kind prompt-voice cannot be combined with --image",
 						"a voice agent is managed and has no container image; drop --image",
 					)
 				}
-				if flags.manifestPointer != "" {
+				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.manifestPointer != "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						"--kind prompt-voice cannot be combined with --manifest",
@@ -1443,7 +1460,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// language prompts and code scaffolding). Mirrors the --image fast path.
 			// --kind value and --image incompatibility are validated above, before
 			// either synthesis branch.
-			if flags.kind != "" && flags.manifestPointer == "" {
+			if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.manifestPointer == "" {
 				if flags.agentName == "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
@@ -1746,7 +1763,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			} else {
 				// No manifest provided - prompt user for init mode
-				initMode, err := promptInitMode(ctx, azdClient, flags.noPrompt)
+				initMode := ""
+				var err error
+				if strings.EqualFold(flags.kind, kindFlagHostedVoice) {
+					initMode = initModeHostedVoice
+				} else {
+					initMode, err = promptInitMode(ctx, azdClient, flags.noPrompt)
+				}
 				if err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -1913,6 +1936,20 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 
+				case initModeHostedVoice:
+					flags.kind = kindFlagHostedVoice
+					action := &InitFromCodeAction{
+						azdClient:  azdClient,
+						flags:      flags,
+						httpClient: httpClient,
+					}
+					if err := action.Run(ctx); err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+
 				default:
 					// initModeFromCode - use existing code in current directory
 					action := &InitFromCodeAction{
@@ -1987,9 +2024,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Requires a pre-built image and is incompatible with code deploy.")
 
 	cmd.Flags().StringVar(&flags.kind, "kind", "",
-		"Agent kind to initialize non-interactively. Currently supports 'prompt-voice' to create a "+
-			"declarative (managed) voice agent, skipping template/language selection and code scaffolding. "+
-			"Use --model to name the speech-to-speech model and --voice to set the output voice.")
+		"Agent kind to initialize. Supports 'prompt-voice' and 'hosted-voice'. "+
+			"Hosted voice uses local code for a Voice Bridge target and creates a Voice wrapper.")
 
 	cmd.Flags().StringVar(&flags.voice, "voice", "",
 		"Output voice name for private prompt-voice automation. Hidden until public preview.")
@@ -2066,6 +2102,14 @@ func (a *InitAction) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("downloading agent.yaml: %w", err)
 		}
+		if _, hostedVoice, err := hostedVoiceManifestTarget(agentManifest); err != nil {
+			return err
+		} else if hostedVoice {
+			a.flags.kind = kindFlagHostedVoice
+			if err := validateHostedVoiceServiceNamesForProject(ctx, a.azdClient, a.serviceNameOverride); err != nil {
+				return err
+			}
+		}
 
 		// Prompt for deploy mode (code vs container) for hosted agents.
 		// Code deploy is supported for Python and .NET projects.
@@ -2089,10 +2133,27 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 			if a.isCodeDeploy {
 				// Prompt for code configuration and update the manifest
-				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
+				codeOptions := codeDeployOptions{
 					runtime:       a.flags.runtime,
 					entryPoint:    a.flags.entryPoint,
 					depResolution: a.flags.depResolution,
+				}
+				if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok &&
+					hostedAgent.CodeConfiguration != nil {
+					if codeOptions.runtime == "" {
+						codeOptions.runtime = hostedAgent.CodeConfiguration.Runtime
+					}
+					if codeOptions.entryPoint == "" {
+						codeOptions.entryPoint = hostedAgent.CodeConfiguration.EntryPoint
+					}
+					if codeOptions.depResolution == "" && hostedAgent.CodeConfiguration.DependencyResolution != nil {
+						codeOptions.depResolution = *hostedAgent.CodeConfiguration.DependencyResolution
+					}
+				}
+				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
+					runtime:       codeOptions.runtime,
+					entryPoint:    codeOptions.entryPoint,
+					depResolution: codeOptions.depResolution,
 				}, a.userProvidedManifest)
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
@@ -2217,6 +2278,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// Add the agent to the azd project (azure.yaml) services
 		if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
+		}
+		if strings.EqualFold(a.flags.kind, kindFlagHostedVoice) {
+			if err := addHostedVoiceWrapperToProject(ctx, a.azdClient, a.serviceNameOverride); err != nil {
+				return fmt.Errorf("adding hosted voice wrapper: %w", err)
+			}
 		}
 
 		// Run post-init validations (advisory warnings only)
@@ -4704,8 +4770,15 @@ func (a *InitAction) validateCodeDeployFlags() error {
 	); err != nil {
 		return err
 	}
+	noPrompt := a.flags.noPrompt
+	if a.flags.manifestPointer != "" {
+		// A standard manifest can provide runtime, entry point, and dependency
+		// resolution. Validate values now and enforce completeness after the
+		// manifest has been loaded and merged with explicit CLI overrides.
+		noPrompt = false
+	}
 	return validateCodeDeployInput(
-		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
+		noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
 }
 
 // validateImageFlag checks that --image is valid when provided.

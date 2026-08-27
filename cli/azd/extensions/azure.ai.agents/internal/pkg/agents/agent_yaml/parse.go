@@ -459,15 +459,33 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 									"remove it from the agent definition")
 						}
 					}
-					if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
-						errors = append(errors, "template.model.id is required for a prompt-voice agent")
+					if agent.ModelType == VoiceModelTypeHostedAgent {
+						if agent.TargetAgent == nil || strings.TrimSpace(agent.TargetAgent.Service) == "" {
+							errors = append(errors, "template.target_agent.service is required when model_type is 'hosted_agent'")
+						}
+						if agent.TargetAgent != nil && agent.TargetAgent.Version != "" && agent.TargetAgent.Version != "deployed" {
+							errors = append(errors, "template.target_agent.version must be 'deployed' when specified")
+						}
+						if agent.Model != nil {
+							errors = append(errors, "template.model is not allowed when model_type is 'hosted_agent'")
+						}
+						if agent.Instructions != nil || len(agent.StructuredInputs) > 0 || len(agent.Tools) > 0 ||
+							agent.ToolChoice != nil || agent.ParallelToolCalls != nil || agent.MaxOutputTokens != nil ||
+							len(agent.Include) > 0 || len(agent.Handoff) > 0 {
+							errors = append(errors, "instructions, structured_inputs, tools, tool_choice, parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent")
+						}
+					} else {
+						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
+							errors = append(errors, "template.model.id is required for a prompt-voice agent")
+						}
+						if agent.TargetAgent != nil {
+							errors = append(errors, "template.target_agent is only valid when model_type is 'hosted_agent'")
 					}
-					if agent.ModelType != "" &&
-						agent.ModelType != VoiceModelTypeManaged &&
-						agent.ModelType != VoiceModelTypeSelfDeployed {
+					if agent.ModelType != "" && agent.ModelType != VoiceModelTypeManaged &&
+						agent.ModelType != VoiceModelTypeSelfDeployed && agent.ModelType != VoiceModelTypeHostedAgent {
 						errors = append(errors, fmt.Sprintf(
-							"template.model_type '%s' is not supported; use '%s' or '%s'",
-							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
+							"template.model_type '%s' is not supported; use '%s', '%s', or '%s'",
+							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed, VoiceModelTypeHostedAgent))
 					}
 					errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
 				} else {

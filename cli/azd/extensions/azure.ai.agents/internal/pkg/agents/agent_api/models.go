@@ -363,7 +363,14 @@ type VoiceModelType string
 const (
 	VoiceModelTypeManaged      VoiceModelType = "managed"
 	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
+	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
 )
+
+// VoiceTargetAgentReference pins a voice wrapper to a hosted agent version.
+type VoiceTargetAgentReference struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
 
 // VoiceAudioFormat describes a PCM audio stream format (e.g. audio/pcm @ 24 kHz).
 type VoiceAudioFormat struct {
@@ -446,21 +453,22 @@ type VoiceAudioConfig struct {
 // prompt voice agent. Its Kind is always AgentKindVoice ("voice").
 type VoiceAgentDefinition struct {
 	AgentDefinition
-	ModelType         VoiceModelType    `json:"model_type"`
-	Model             string            `json:"model"`
-	Instructions      string            `json:"instructions,omitempty"`
-	StructuredInputs  map[string]any    `json:"structured_inputs,omitempty"`
-	Audio             *VoiceAudioConfig `json:"audio,omitempty"`
-	OutputModalities  []string          `json:"output_modalities,omitempty"`
-	Store             *bool             `json:"store,omitempty"`
-	Tools             []map[string]any  `json:"tools,omitempty"`
-	Avatar            map[string]any    `json:"avatar,omitempty"`
-	Greeting          map[string]any    `json:"greeting,omitempty"`
-	Handoff           map[string]any    `json:"handoff,omitempty"`
-	ToolChoice        any               `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool             `json:"parallel_tool_calls,omitempty"`
-	MaxOutputTokens   any               `json:"max_output_tokens,omitempty"`
-	Include           []string          `json:"include,omitempty"`
+	ModelType         VoiceModelType             `json:"model_type"`
+	Model             string                     `json:"model,omitempty"`
+	TargetAgent       *VoiceTargetAgentReference `json:"target_agent,omitempty"`
+	Instructions      string                     `json:"instructions,omitempty"`
+	StructuredInputs  map[string]any             `json:"structured_inputs,omitempty"`
+	Audio             *VoiceAudioConfig          `json:"audio,omitempty"`
+	OutputModalities  []string                   `json:"output_modalities,omitempty"`
+	Store             *bool                      `json:"store,omitempty"`
+	Tools             []map[string]any           `json:"tools,omitempty"`
+	Avatar            map[string]any             `json:"avatar,omitempty"`
+	Greeting          map[string]any             `json:"greeting,omitempty"`
+	Handoff           map[string]any             `json:"handoff,omitempty"`
+	ToolChoice        any                        `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool                      `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens   any                        `json:"max_output_tokens,omitempty"`
+	Include           []string                   `json:"include,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version

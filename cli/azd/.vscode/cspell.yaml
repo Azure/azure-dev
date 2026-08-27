@@ -1,8 +1,6 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
   - braydonk
-  - builtin
-  - subagents
   - osutil
   - upserted
   - upserting

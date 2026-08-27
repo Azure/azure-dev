@@ -2578,6 +2578,19 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	if isBatchOrNoPrompt || len(matches) == 1 {
 		res := resolution.ResolveUpgradeSource(installed, a.flags.source)
 		if res == nil {
+			resolutionErr := resolution.ErrorForUpgradeSources(
+				installed,
+				a.flags.source,
+			)
+			if resolutionErr != nil {
+				versionErr, ok := errors.AsType[*extensions.ExtensionVersionNotFoundError](
+					resolutionErr,
+				)
+				if ok {
+					return fail(versionMismatchError(versionErr))
+				}
+				return fail(resolutionErr)
+			}
 			return fail(upgradeSourceResolutionError(
 				extensionId, a.flags.source, installed.Source,
 			))

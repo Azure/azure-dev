@@ -244,6 +244,64 @@ func TestUpgradeOneExtension_InteractiveFailurePreservesRetryFlags(t *testing.T)
 	require.NotContains(t, rendered, "Retry with:")
 }
 
+func TestUpgradeOneExtension_VersionMismatchIgnoresUnrelatedSource(t *testing.T) {
+	t.Parallel()
+
+	const (
+		storedRegistryURL = "https://stored.example.com/registry.json"
+		otherRegistryURL  = "https://other.example.com/registry.json"
+	)
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	manager, sourceManager := createUpgradeTestManagerWithSources(
+		t,
+		mockCtx,
+		map[string]*extensions.Extension{
+			"ext-a": {Id: "ext-a", Version: "0.5.0", Source: "test"},
+		},
+		map[string]upgradeTestSource{
+			"test": {
+				url:      storedRegistryURL,
+				registry: testRegistry(testExtMeta("ext-a", "1.0.0", "test")),
+			},
+			"other": {
+				url:      otherRegistryURL,
+				registry: testRegistry(testExtMeta("ext-a", "2.0.0", "other")),
+			},
+		},
+		extensions.ManagerOptions{},
+	)
+
+	action := &extensionUpgradeAction{
+		args: []string{"ext-a"},
+		flags: &extensionUpgradeFlags{
+			version: "2.0.0",
+			global:  &internal.GlobalCommandOptions{NoPrompt: true},
+		},
+		formatter:        &output.JsonFormatter{},
+		writer:           &bytes.Buffer{},
+		console:          mockinput.NewMockConsole(),
+		sourceManager:    sourceManager,
+		extensionManager: manager,
+	}
+
+	result := action.upgradeOneExtension(t.Context(), "ext-a", 0, true)
+
+	require.Equal(t, extensions.UpgradeStatusFailed, result.Status)
+	require.EqualError(
+		t,
+		result.Error,
+		"extension 'ext-a' version '2.0.0' not available in source 'test', "+
+			"latest compatible version is '1.0.0'",
+	)
+	require.Contains(
+		t,
+		result.Suggestion,
+		"azd extension update ext-a --source test --version 1.0.0",
+	)
+	require.NotContains(t, result.Error.Error(), "other")
+}
+
 func TestUpgradeOneExtension_IncompatibleInstalledVersionDoesNotAnnounceDowngrade(t *testing.T) {
 	t.Parallel()
 
@@ -420,6 +478,32 @@ func createUpgradeTestManagerWithOptions(
 	registry extensions.Registry,
 	managerOptions extensions.ManagerOptions,
 ) (*extensions.Manager, *extensions.SourceManager) {
+	return createUpgradeTestManagerWithSources(
+		t,
+		mockCtx,
+		installed,
+		map[string]upgradeTestSource{
+			"test": {
+				url:      registryURL,
+				registry: registry,
+			},
+		},
+		managerOptions,
+	)
+}
+
+type upgradeTestSource struct {
+	url      string
+	registry extensions.Registry
+}
+
+func createUpgradeTestManagerWithSources(
+	t *testing.T,
+	mockCtx *mocks.MockContext,
+	installed map[string]*extensions.Extension,
+	sources map[string]upgradeTestSource,
+	managerOptions extensions.ManagerOptions,
+) (*extensions.Manager, *extensions.SourceManager) {
 	t.Helper()
 
 	userConfigManager := config.NewUserConfigManager(mockCtx.ConfigManager)
@@ -434,26 +518,27 @@ func createUpgradeTestManagerWithOptions(
 	cfg, err := userConfigManager.Load()
 	require.NoError(t, err)
 
-	err = cfg.Set("extension.sources.test", map[string]any{
-		"name":     "test",
-		"type":     "url",
-		"location": registryURL,
-	})
-	require.NoError(t, err)
+	for name, source := range sources {
+		err = cfg.Set("extension.sources."+name, map[string]any{
+			"name":     name,
+			"type":     "url",
+			"location": source.url,
+		})
+		require.NoError(t, err)
+
+		mockCtx.HttpClient.When(func(request *http.Request) bool {
+			return request.URL.String() == source.url
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(
+				request, http.StatusOK, source.registry,
+			)
+		})
+	}
 
 	if installed != nil {
 		err = cfg.Set("extension.installed", installed)
 		require.NoError(t, err)
 	}
-
-	// Mock registry HTTP
-	mockCtx.HttpClient.When(func(request *http.Request) bool {
-		return request.URL.String() == registryURL
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(
-			request, http.StatusOK, registry,
-		)
-	})
 
 	manager, err := extensions.NewManagerWithOptions(
 		userConfigManager, sourceManager, lazyRunner, mockCtx.HttpClient, managerOptions,

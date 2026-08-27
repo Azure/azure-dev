@@ -4,6 +4,7 @@
 package extensions
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -68,6 +69,38 @@ func (r *InstallResolutionResult) ResolveUpgradeSource(installed *Extension, fla
 	})
 }
 
+// ErrorForUpgradeSources returns a typed resolution error scoped to sources
+// that an update can select without an explicit source change.
+func (r *InstallResolutionResult) ErrorForUpgradeSources(installed *Extension, flagSource string) error {
+	if r == nil {
+		return nil
+	}
+
+	eligibleSources := upgradeEligibleSources(installed, flagSource)
+	filterMatches := func(matches []*ExtensionMetadata) []*ExtensionMetadata {
+		filtered := make([]*ExtensionMetadata, 0, len(matches))
+		for _, match := range matches {
+			if match != nil && slices.ContainsFunc(eligibleSources, func(source string) bool {
+				return strings.EqualFold(match.Source, source)
+			}) {
+				filtered = append(filtered, match)
+			}
+		}
+		return filtered
+	}
+
+	options := r.Options
+	options.Source = flagSource
+	scoped := &InstallResolutionResult{
+		Matches:             filterMatches(r.Matches),
+		VersionMismatches:   filterMatches(r.VersionMismatches),
+		IncompatibleMatches: filterMatches(r.IncompatibleMatches),
+		Options:             options,
+		AzdVersion:          r.AzdVersion,
+	}
+	return scoped.Error()
+}
+
 // ResolveUpgradeSource selects among sources that still have a compatible published version.
 func (e *ExtensionVersionNotFoundError) ResolveUpgradeSource(
 	installed *Extension,
@@ -94,6 +127,21 @@ func (e *ExtensionVersionNotFoundError) ResolveUpgradeSource(
 		}
 		return selected[strings.ToLower(extension.Source)]
 	})
+}
+
+func upgradeEligibleSources(installed *Extension, flagSource string) []string {
+	if flagSource != "" {
+		return []string{flagSource}
+	}
+
+	storedSource := MainRegistryName
+	if installed != nil && installed.Source != "" {
+		storedSource = installed.Source
+	}
+	if strings.EqualFold(storedSource, MainRegistryName) {
+		return []string{MainRegistryName}
+	}
+	return []string{storedSource, MainRegistryName}
 }
 
 func resolveUpgradeSource(

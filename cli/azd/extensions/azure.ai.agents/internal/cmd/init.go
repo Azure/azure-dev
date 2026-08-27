@@ -1335,16 +1335,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
-					var env map[string]string
-					needsEnv, err := infraEjectNeedsEnvironment(gate.projectRoot)
+					env, err := readInfraEjectEnvironment(ctx, azdClient)
 					if err != nil {
 						return err
-					}
-					if needsEnv {
-						env, err = readInfraEjectEnvironment(ctx, azdClient)
-						if err != nil {
-							return err
-						}
 					}
 					return ejectInfra(gate.projectRoot, infraProvider, env)
 				}

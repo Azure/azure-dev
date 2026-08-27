@@ -282,6 +282,7 @@ func Synthesize(in Input) (*Result, error) {
 		root.Services,
 		svc,
 		in.ProjectRoot,
+		in.Env,
 	)
 	if err != nil {
 		return nil, err
@@ -352,7 +353,12 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 		return nil, errors.New("synthesis: existing Foundry project endpoint is empty")
 	}
 
-	includeAcr, err := deriveIncludeAcr(root.Services, svc, in.ProjectRoot)
+	includeAcr, err := deriveIncludeAcr(
+		root.Services,
+		svc,
+		in.ProjectRoot,
+		in.Env,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -380,11 +386,14 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 	}, NetworkMode: NetworkModeNone}, nil
 }
 
-// ConnectionEnvironmentScopes returns services that declare env.
-// An empty env block still establishes an isolated service scope.
+// ConnectionEnvironmentScopes returns enabled connection services
+// that declare env. An empty env block still establishes an
+// isolated service scope. Disabled connections are omitted so
+// on-disk Bicep does not treat them as managed inputs.
 func ConnectionEnvironmentScopes(
 	raw []byte,
 	projectRoot string,
+	env map[string]string,
 ) (map[string]bool, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
@@ -396,19 +405,19 @@ func ConnectionEnvironmentScopes(
 	}
 
 	scopes := map[string]bool{}
-	for name, node := range root.Services {
-		node, matches, err := serviceForHost(
-			node,
-			projectRoot,
-			name,
-			aiConnectionHost,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if matches && connectionEnvDeclared(node) {
-			scopes[name] = true
-		}
+	err := visitEnabledConnectionServices(
+		root.Services,
+		projectRoot,
+		env,
+		func(name string, node yaml.Node) error {
+			if connectionEnvDeclared(node) {
+				scopes[name] = true
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
 	return scopes, nil
 }
@@ -657,14 +666,28 @@ func deriveIncludeAcr(
 	services map[string]yaml.Node,
 	svc projectService,
 	projectRoot string,
+	env map[string]string,
 ) (bool, error) {
 	if slices.ContainsFunc(svc.Agents, agentNeedsAcr) {
 		return true, nil
 	}
 
+	lookup := projectConditionLookup(env)
 	for serviceName, node := range services {
+		// A ref-only connection has no host to filter yet.
+		skip, err := skipDisabledConnectionWithoutRef(node, lookup)
+		if err != nil {
+			return false, fmt.Errorf(
+				"services.%s.condition: %w",
+				serviceName,
+				err,
+			)
+		}
+		if skip {
+			continue
+		}
+
 		var matches bool
-		var err error
 		node, matches, err = serviceForHost(
 			node,
 			projectRoot,
@@ -724,9 +747,11 @@ func agentNeedsAcr(a agentBlock) bool {
 	return kind == "" || strings.EqualFold(kind, "hosted")
 }
 
-// collectConnections scans all services for host: azure.ai.connection entries
-// (the service key is the connection name) and returns them sorted by name so
-// the synthesized parameter is deterministic regardless of YAML map order.
+// collectConnections scans enabled host: azure.ai.connection services
+// (the service key is the connection name) and returns them sorted by
+// name so the synthesized parameter is deterministic regardless of
+// YAML map order. Disabled services are omitted before payload
+// expansion so their ${VAR} values cannot fail provision.
 //
 // Provisioning resolves ${VAR} from service env when present.
 // Legacy services use project and process values.
@@ -739,66 +764,227 @@ func collectConnections(
 	projectRoot string,
 ) ([]Connection, error) {
 	connections := []Connection{}
+	err := visitEnabledConnectionServices(
+		services,
+		projectRoot,
+		env,
+		func(name string, node yaml.Node) error {
+			var svc connectionService
+			if err := node.Decode(&svc); err != nil {
+				return fmt.Errorf(
+					"services.%s: decode connection: %w",
+					name,
+					err,
+				)
+			}
 
-	for name, node := range services {
-		var matches bool
-		var err error
-		node, matches, err = serviceForHost(
-			node,
-			projectRoot,
-			name,
-			aiConnectionHost,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if !matches {
-			continue
-		}
-		var svc connectionService
-		if err := node.Decode(&svc); err != nil {
-			return nil, fmt.Errorf("services.%s: decode connection: %w", name, err)
-		}
+			declared := len(serviceEnvironments[name]) > 0 ||
+				connectionEnvDeclared(node)
+			mapping := connectionEnvironmentMapping(
+				env,
+				serviceEnvironments[name],
+				declared,
+			)
+			target, err := maybeExpand(svc.Target, mapping, resolve)
+			if err != nil {
+				return fmt.Errorf("services.%s.target: %w", name, err)
+			}
 
-		declared := len(serviceEnvironments[name]) > 0 || connectionEnvDeclared(node)
-		mapping := connectionEnvironmentMapping(
-			env,
-			serviceEnvironments[name],
-			declared,
-		)
-		target, err := maybeExpand(svc.Target, mapping, resolve)
-		if err != nil {
-			return nil, fmt.Errorf("services.%s.target: %w", name, err)
-		}
+			credentials, err := expandCredentials(
+				svc.Credentials,
+				mapping,
+				resolve,
+			)
+			if err != nil {
+				return fmt.Errorf(
+					"services.%s.credentials: %w",
+					name,
+					err,
+				)
+			}
 
-		credentials, err := expandCredentials(
-			svc.Credentials,
-			mapping,
-			resolve,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("services.%s.credentials: %w", name, err)
-		}
+			metadata, err := expandMetadata(
+				svc.Metadata,
+				mapping,
+				resolve,
+			)
+			if err != nil {
+				return fmt.Errorf(
+					"services.%s.metadata: %w",
+					name,
+					err,
+				)
+			}
 
-		metadata, err := expandMetadata(svc.Metadata, mapping, resolve)
-		if err != nil {
-			return nil, fmt.Errorf("services.%s.metadata: %w", name, err)
-		}
-
-		connections = append(connections, Connection{
-			Name:        name,
-			Category:    svc.Category,
-			Target:      target,
-			AuthType:    svc.AuthType,
-			Credentials: credentials,
-			Metadata:    metadata,
-		})
+			connections = append(connections, Connection{
+				Name:        name,
+				Category:    svc.Category,
+				Target:      target,
+				AuthType:    svc.AuthType,
+				Credentials: credentials,
+				Metadata:    metadata,
+			})
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	slices.SortFunc(connections, func(a, b Connection) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 	return connections, nil
+}
+
+// visitEnabledConnectionServices walks azure.ai.connection services
+// whose condition is enabled. Condition uses the project environment,
+// not the connection service env: block. A root host plus an
+// explicit false condition skips payload $ref resolution.
+func visitEnabledConnectionServices(
+	services map[string]yaml.Node,
+	projectRoot string,
+	env map[string]string,
+	visit func(name string, node yaml.Node) error,
+) error {
+	lookup := projectConditionLookup(env)
+	for name, node := range services {
+		skip, err := skipDisabledConnectionWithoutRef(node, lookup)
+		if err != nil {
+			return fmt.Errorf("services.%s.condition: %w", name, err)
+		}
+		if skip {
+			continue
+		}
+
+		resolved, matches, err := serviceForHost(
+			node,
+			projectRoot,
+			name,
+			aiConnectionHost,
+		)
+		if err != nil {
+			return err
+		}
+		if !matches {
+			continue
+		}
+
+		if err := validateConnectionCondition(node, resolved, name); err != nil {
+			return err
+		}
+		enabled, err := serviceNodeEnabled(resolved, lookup)
+		if err != nil {
+			return fmt.Errorf("services.%s.condition: %w", name, err)
+		}
+		if !enabled {
+			continue
+		}
+		if err := visit(name, resolved); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func skipDisabledConnectionWithoutRef(
+	node yaml.Node,
+	lookup func(string) string,
+) (bool, error) {
+	var selector struct {
+		Host string `yaml:"host"`
+		Ref  string `yaml:"$ref"`
+	}
+	if err := node.Decode(&selector); err != nil {
+		return false, nil
+	}
+	if selector.Host != "" && selector.Host != aiConnectionHost {
+		return false, nil
+	}
+	if selector.Host == "" && selector.Ref == "" {
+		return false, nil
+	}
+	value, present, err := serviceConditionValue(node)
+	if err != nil {
+		return false, err
+	}
+	if !present {
+		return false, nil
+	}
+	enabled, err := evaluateCondition(value, lookup)
+	if err != nil {
+		return false, err
+	}
+	return !enabled, nil
+}
+
+func validateConnectionCondition(
+	rootNode yaml.Node,
+	resolvedNode yaml.Node,
+	serviceName string,
+) error {
+	_, rootPresent, err := serviceConditionValue(rootNode)
+	if err != nil {
+		return err
+	}
+	if rootPresent {
+		return nil
+	}
+
+	_, resolvedPresent, err := serviceConditionValue(resolvedNode)
+	if err != nil {
+		return err
+	}
+	if resolvedPresent {
+		return fmt.Errorf(
+			"services.%s: put condition beside host in azure.yaml; "+
+				"referenced payloads must not define condition",
+			serviceName,
+		)
+	}
+	return nil
+}
+
+func serviceNodeEnabled(
+	node yaml.Node,
+	lookup func(string) string,
+) (bool, error) {
+	value, present, err := serviceConditionValue(node)
+	if err != nil {
+		return false, err
+	}
+	if !present {
+		return true, nil
+	}
+	return evaluateCondition(value, lookup)
+}
+
+func serviceConditionValue(node yaml.Node) (string, bool, error) {
+	var fields map[string]yaml.Node
+	if err := node.Decode(&fields); err != nil {
+		return "", false, nil
+	}
+	cond, ok := fields["condition"]
+	if !ok {
+		return "", false, nil
+	}
+	if cond.Kind != yaml.ScalarNode {
+		return "", true, fmt.Errorf("condition must be a scalar")
+	}
+	if cond.Tag == "!!null" {
+		return "", true, nil
+	}
+	return cond.Value, true, nil
+}
+
+func projectConditionLookup(env map[string]string) func(string) string {
+	return func(name string) string {
+		if value, found := env[name]; found {
+			return value
+		}
+		value, _ := os.LookupEnv(name)
+		return value
+	}
 }
 
 // connectionEnvDeclared reports whether the service node

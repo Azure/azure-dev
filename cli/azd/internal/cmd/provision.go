@@ -230,14 +230,6 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	startTime := time.Now()
 
-	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
-		return nil, err
-	}
-
-	if err := p.projectManager.EnsureAllTools(ctx, p.projectConfig, nil); err != nil {
-		return nil, err
-	}
-
 	// Apply --subscription and --location flags to the environment before provisioning
 	envChanged := false
 	if p.flags.subscription != "" {
@@ -268,6 +260,19 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if err := p.envManager.Save(ctx, p.env); err != nil {
 			return nil, fmt.Errorf("saving environment: %w", err)
 		}
+	}
+
+	services, err := p.importManager.ServiceStableFiltered(ctx, p.projectConfig, "", p.env.Getenv)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := p.projectManager.InitializeServices(ctx, services); err != nil {
+		return nil, err
+	}
+
+	if err := p.projectManager.EnsureAllTools(ctx, services); err != nil {
+		return nil, err
 	}
 
 	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)

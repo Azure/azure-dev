@@ -1374,17 +1374,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// when a template adds a subfolder to an existing project.
 			existingProject := fileExists("azure.yaml")
 
-			if err := validateRegistryConnectionFlag(
-				flags.registryConnection,
-				flags.image,
-				flags.manifestPointer != "",
-				flags.deployMode,
-				flags.kind,
-			); err != nil {
-				return err
-			}
-			flags.registryConnection = strings.TrimSpace(flags.registryConnection)
-
 			// Validate --kind and its incompatible options before either synthesis
 			// branch. The image and prompt-voice fast paths both mutate
 			// flags.manifestPointer, so validating inside one branch is unreachable
@@ -1518,6 +1507,19 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					}
 				}
 			}
+
+			// Validate the registry connection after local manifest discovery so a
+			// no-prompt init can use an auto-detected manifest image.
+			if err := validateRegistryConnectionFlag(
+				flags.registryConnection,
+				flags.image,
+				flags.manifestPointer != "",
+				flags.deployMode,
+				flags.kind,
+			); err != nil {
+				return err
+			}
+			flags.registryConnection = strings.TrimSpace(flags.registryConnection)
 
 			// When the project's own manifest already declares agent
 			// service(s), the values init would prompt for (agent name,
@@ -2127,7 +2129,8 @@ func (a *InitAction) Run(ctx context.Context) error {
 		if !a.isCodeDeploy {
 			preBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image)
 		}
-		a.usesPreBuiltImage = preBuiltImage != ""
+		provisionalPreBuiltImage := preBuiltImage != ""
+		a.usesPreBuiltImage = provisionalPreBuiltImage
 
 		// Model configuration: prompt user for "use existing" vs "deploy new"
 		agentManifest, err = a.configureModelChoice(ctx, agentManifest)
@@ -2166,6 +2169,13 @@ func (a *InitAction) Run(ctx context.Context) error {
 		preBuiltImage = ""
 		if !a.isCodeDeploy {
 			preBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image)
+			if provisionalPreBuiltImage && preBuiltImage == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"pre-built image resolved to an empty value",
+					"Provide a non-empty, fully qualified image URL like 'myacr.azurecr.io/agent:v1'",
+				)
+			}
 			if err := validateHostedContainerImage(preBuiltImage); err != nil {
 				return err
 			}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"gopkg.in/yaml.v3"
@@ -44,4 +45,23 @@ func hostedVoiceManifestTarget(manifest *agent_yaml.AgentManifest) (*agent_yaml.
 		return nil, false, nil
 	}
 	return &target, true, nil
+}
+
+func applyHostedVoiceManifestKind(flags *initFlags, manifest *agent_yaml.AgentManifest) error {
+	explicitHostedVoice := flags != nil && strings.EqualFold(flags.kind, kindFlagHostedVoice)
+	_, compatible, err := hostedVoiceManifestTarget(manifest)
+	if err != nil {
+		return err
+	}
+	if explicitHostedVoice && !compatible {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"the detected manifest is not compatible with Hosted Voice",
+			"use a hosted manifest with invocations_ws/1.0.0, voiceLiveCompatible=true, and bridgeProtocolVersion=1.0",
+		)
+	}
+	if compatible {
+		flags.kind = kindFlagHostedVoice
+	}
+	return nil
 }

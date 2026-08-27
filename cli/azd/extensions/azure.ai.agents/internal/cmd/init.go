@@ -2109,10 +2109,10 @@ func (a *InitAction) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("downloading agent.yaml: %w", err)
 		}
-		if _, hostedVoice, err := hostedVoiceManifestTarget(agentManifest); err != nil {
+		if err := applyHostedVoiceManifestKind(a.flags, agentManifest); err != nil {
 			return err
-		} else if hostedVoice {
-			a.flags.kind = kindFlagHostedVoice
+		}
+		if strings.EqualFold(a.flags.kind, kindFlagHostedVoice) {
 			if err := validateHostedVoiceServiceNamesForProject(ctx, a.azdClient, a.serviceNameOverride); err != nil {
 				return err
 			}

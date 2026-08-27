@@ -378,6 +378,17 @@ func TestRequestedDeployModeForManifest(t *testing.T) {
 		{name: "unspecified container manifest", agent: containerAgent},
 		{name: "code manifest", agent: codeAgent, wantMode: "code"},
 		{
+			name: "manifest image selects container", agent: agent_yaml.ContainerAgent{
+				Image: "registry.example.com/team/agent:v1",
+			}, wantMode: "container",
+		},
+		{
+			name: "authored code config precedes manifest image", agent: agent_yaml.ContainerAgent{
+				CodeConfiguration: &agent_yaml.CodeConfiguration{},
+				Image:             "registry.example.com/team/agent:v1",
+			}, wantMode: "code",
+		},
+		{
 			name: "manifest registry selects container", agent: agent_yaml.ContainerAgent{
 				RegistryConnectionID: "private-registry",
 			}, wantMode: "container",

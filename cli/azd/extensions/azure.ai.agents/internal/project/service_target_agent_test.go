@@ -671,6 +671,28 @@ func TestInitializeValidatesRegistryLifecycleFromRef(t *testing.T) {
 	require.ErrorContains(t, err, "requires docker.imagePassthrough: true")
 }
 
+func TestInitializeValidatesRegistryLifecycleFromLegacyDiskDefinition(t *testing.T) {
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: hosted\nname: disk-agent\nregistryConnectionId: private-registry\n"),
+		0o600,
+	))
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name:         "disk-agent",
+		Host:         foundryAgentHost,
+		RelativePath: "svc",
+		Image:        "registry.example.com/team/agent:v1",
+	})
+	require.ErrorContains(t, err, "requires docker.imagePassthrough: true")
+}
+
 func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 

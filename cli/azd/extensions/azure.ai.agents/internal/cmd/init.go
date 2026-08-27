@@ -728,6 +728,9 @@ func requestedDeployModeForManifest(
 		}
 		return "code", nil
 	}
+	if strings.TrimSpace(hostedAgent.Image) != "" {
+		return "container", nil
+	}
 	if hasRegistryConnection {
 		return "container", nil
 	}

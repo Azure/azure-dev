@@ -211,7 +211,10 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	p.adoptServiceConfig(serviceConfig)
 	props := ServiceConfigProps(serviceConfig)
-	if props != nil && props.GetFields()["$ref"] != nil {
+	hasRef := props != nil && props.GetFields()["$ref"] != nil
+	needsLegacyLifecycleCheck := props == nil && strings.TrimSpace(serviceConfig.GetImage()) != "" &&
+		!serviceConfig.GetDocker().GetImagePassthrough()
+	if hasRef || needsLegacyLifecycleCheck {
 		proj, err := p.azdClient.Project().Get(ctx, nil)
 		if err != nil {
 			return exterrors.Dependency(
@@ -221,8 +224,22 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 			)
 		}
 		p.projectPath = proj.GetProject().GetPath()
-		if err := p.resolveServiceConfig(); err != nil {
-			return err
+		if hasRef {
+			if err := p.resolveServiceConfig(); err != nil {
+				return err
+			}
+		} else {
+			agentDef, _, source, err := LoadAgentDefinition(serviceConfig, p.projectPath)
+			if err != nil {
+				return err
+			}
+			if source.IsLegacy() && strings.TrimSpace(agentDef.RegistryConnectionID) != "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidServiceConfig,
+					"registryConnectionId requires docker.imagePassthrough: true",
+					"enable docker.imagePassthrough for the private pre-built image",
+				)
+			}
 		}
 	}
 	return validateRegistryConnectionServiceConfig(p.serviceConfig)

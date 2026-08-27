@@ -375,9 +375,10 @@ connection must exist on the selected project before `azd deploy` runs.
 ### Declarative sibling connection
 
 To let `azd provision` create the connection, declare an
-`azure.ai.connection` sibling. The agent's `registryConnectionId` identifies the
-configured Foundry connection, while `uses` contains the sibling's azure.yaml
-service key so provisioning runs in dependency order:
+`azure.ai.connection` sibling. For this declarative path, both the agent's
+`registryConnectionId` and `uses` identify the sibling's azure.yaml service key,
+which is also the Foundry connection name provisioned by the current Projects
+extension:
 
 ```yaml
 services:
@@ -389,7 +390,6 @@ services:
     host: azure.ai.connection
     uses:
       - existing-project
-    name: production-registry
     category: CustomKeys
     target: https://registry.example.com
     authType: CustomKeys
@@ -412,7 +412,7 @@ services:
     image: registry.example.com/team/agent:v1
     docker:
       imagePassthrough: true
-    registryConnectionId: production-registry
+    registryConnectionId: private-registry
     protocols:
       - protocol: invocations
         version: 1.0.0

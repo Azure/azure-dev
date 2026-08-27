@@ -459,6 +459,21 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 									"remove it from the agent definition")
 						}
 					}
+					var policyEnvelope struct {
+						Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
+					}
+					if err := yaml.Unmarshal(templateBytes, &policyEnvelope); err == nil &&
+						len(policyEnvelope.Policies) > 0 {
+						hasModeration := false
+						for _, policy := range policyEnvelope.Policies {
+							hasModeration = hasModeration || policy.InvocationsModeration != nil
+						}
+						if !hasModeration {
+							errors = append(errors,
+								"template.policies is not supported for prompt-voice agents; "+
+									"move target-owned policies to the hosted target")
+						}
+					}
 					if agent.ModelType == VoiceModelTypeHostedAgent {
 						if agent.TargetAgent == nil || strings.TrimSpace(agent.TargetAgent.Service) == "" {
 							errors = append(errors, "template.target_agent.service is required when model_type is 'hosted_agent'")
@@ -469,10 +484,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						if agent.Model != nil {
 							errors = append(errors, "template.model is not allowed when model_type is 'hosted_agent'")
 						}
-						if agent.Instructions != nil || len(agent.StructuredInputs) > 0 || len(agent.Tools) > 0 ||
+						if agent.InputSchema != nil || agent.OutputSchema != nil || agent.Instructions != nil ||
+							len(agent.StructuredInputs) > 0 || len(agent.Tools) > 0 ||
 							agent.ToolChoice != nil || agent.ParallelToolCalls != nil || agent.MaxOutputTokens != nil ||
 							len(agent.Include) > 0 || len(agent.Handoff) > 0 {
-							errors = append(errors, "instructions, structured_inputs, tools, tool_choice, parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent")
+							errors = append(errors, "input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent")
 						}
 					} else {
 						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {

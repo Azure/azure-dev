@@ -1389,7 +1389,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if !promptVoicePreviewEnabled() {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"prompt voice agent init is private preview",
+						fmt.Sprintf("%s agent init is private preview", flags.kind),
 						fmt.Sprintf("set %s=true to enable prompt voice init", promptVoicePreviewEnvVar),
 					)
 				}

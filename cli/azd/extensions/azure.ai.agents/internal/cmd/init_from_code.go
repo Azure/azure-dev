@@ -1023,6 +1023,13 @@ func addHostedVoiceWrapperToProject(
 			return err
 		}
 	}
+	if _, exists := response.Project.Services[wrapperName]; exists {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("resolved hosted voice wrapper service %q already exists", wrapperName),
+			"choose a different target agent name so the resolved wrapper name is unique in azure.yaml",
+		)
+	}
 	store := false
 	description := "Voice wrapper for hosted target " + targetServiceName
 	voiceAgent := agent_yaml.VoiceAgent{

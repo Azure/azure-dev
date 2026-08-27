@@ -373,3 +373,37 @@ instructions: not allowed
 		t.Fatalf("expected target-owned field validation errors, got: %v", err)
 	}
 }
+
+func TestValidateAgentDefinition_HostedVoiceRejectsSchemas(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-wrapper
+model_type: hosted_agent
+target_agent:
+  service: voice-target
+inputSchema:
+  properties: []
+outputSchema:
+  properties: []
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "input_schema, output_schema") {
+		t.Fatalf("expected target-owned schema validation error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoiceRejectsPolicies(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice
+model:
+  id: gpt-realtime
+policies:
+  - type: rai_policy
+    rai_policy_name: policy
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "policies is not supported") {
+		t.Fatalf("expected prompt voice policy validation error, got: %v", err)
+	}
+}

@@ -222,6 +222,8 @@
         "not": {
           "anyOf": [
             { "required": ["model"] },
+            { "required": ["inputSchema"] },
+            { "required": ["outputSchema"] },
             { "required": ["instructions"] },
             { "required": ["structuredInputs"] },
             { "required": ["tools"] },

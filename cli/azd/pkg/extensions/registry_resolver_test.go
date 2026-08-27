@@ -395,35 +395,68 @@ func TestInstallResolutionResult_ResolveUpgradeSourceUsesSelectedCompatibleVersi
 }
 
 func TestExtensionVersionNotFoundError_ResolveUpgradeSourceUsesAlternatives(t *testing.T) {
-	stored := &ExtensionMetadata{
-		Id:     "test.ext",
-		Source: "dev",
-		Versions: []ExtensionVersion{
-			{Version: "2.0.0", RequiredAzdVersion: ">=99.0.0"},
-		},
-	}
-	main := &ExtensionMetadata{
-		Id:       "test.ext",
-		Source:   MainRegistryName,
-		Versions: []ExtensionVersion{{Version: "1.0.0"}},
-	}
-	versionErr := &ExtensionVersionNotFoundError{
-		ExtensionId: "test.ext",
-		Version:     "0.1.0",
-		Matches:     []*ExtensionMetadata{stored, main},
-		AzdVersion:  semver.MustParse("1.0.0"),
-	}
-	installed := &Extension{Id: "test.ext", Source: "dev"}
+	t.Run("falls back when stored source has no compatible alternative", func(t *testing.T) {
+		stored := &ExtensionMetadata{
+			Id:     "test.ext",
+			Source: "dev",
+			Versions: []ExtensionVersion{
+				{Version: "2.0.0", RequiredAzdVersion: ">=99.0.0"},
+			},
+		}
+		main := &ExtensionMetadata{
+			Id:       "test.ext",
+			Source:   MainRegistryName,
+			Versions: []ExtensionVersion{{Version: "1.0.0"}},
+		}
+		versionErr := &ExtensionVersionNotFoundError{
+			ExtensionId: "test.ext",
+			Version:     "0.1.0",
+			Matches:     []*ExtensionMetadata{stored, main},
+			AzdVersion:  semver.MustParse("1.0.0"),
+		}
+		installed := &Extension{Id: "test.ext", Source: "dev"}
 
-	require.Equal(t, []ExtensionVersionAlternative{{
-		Source:  MainRegistryName,
-		Version: "1.0.0",
-	}}, versionErr.Alternatives())
+		require.Equal(t, []ExtensionVersionAlternative{{
+			Source:  MainRegistryName,
+			Version: "1.0.0",
+		}}, versionErr.Alternatives())
 
-	resolved := versionErr.ResolveUpgradeSource(installed, "")
-	require.NotNil(t, resolved)
-	require.Equal(t, MainRegistryName, resolved.NewSource)
+		resolved := versionErr.ResolveUpgradeSource(installed, "")
+		require.NotNil(t, resolved)
+		require.Equal(t, MainRegistryName, resolved.NewSource)
 
-	unfiltered := ResolveUpgradeSource(installed, versionErr.Matches, "")
-	require.Equal(t, "dev", unfiltered.NewSource)
+		unfiltered := ResolveUpgradeSource(installed, versionErr.Matches, "")
+		require.Equal(t, "dev", unfiltered.NewSource)
+	})
+
+	t.Run("stays on stored source when its compatible alternative is newer", func(t *testing.T) {
+		stored := &ExtensionMetadata{
+			Id:       "test.ext",
+			Source:   "dev",
+			Versions: []ExtensionVersion{{Version: "1.5.0"}},
+		}
+		main := &ExtensionMetadata{
+			Id:     "test.ext",
+			Source: MainRegistryName,
+			Versions: []ExtensionVersion{
+				{Version: "1.2.0"},
+				{Version: "3.0.0", RequiredAzdVersion: ">=99.0.0"},
+			},
+		}
+		versionErr := &ExtensionVersionNotFoundError{
+			ExtensionId: "test.ext",
+			Version:     "0.1.0",
+			Matches:     []*ExtensionMetadata{stored, main},
+			AzdVersion:  semver.MustParse("1.0.0"),
+		}
+
+		resolved := versionErr.ResolveUpgradeSource(
+			&Extension{Id: "test.ext", Source: "dev"},
+			"",
+		)
+
+		require.NotNil(t, resolved)
+		require.False(t, resolved.IsPromotion)
+		require.Equal(t, "dev", resolved.NewSource)
+	})
 }

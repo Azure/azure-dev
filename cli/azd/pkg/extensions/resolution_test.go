@@ -112,6 +112,73 @@ func Test_ResolveExtensions_MissingVersionReportsCompatibleAlternative(t *testin
 	require.NotContains(t, versionErr.Suggestion(), "--version 2.0.0")
 }
 
+func Test_ExtensionVersionNotFoundError_ReportsCompatibleAlternatives(t *testing.T) {
+	t.Parallel()
+
+	t.Run("multiple sources require source selection", func(t *testing.T) {
+		versionErr := &ExtensionVersionNotFoundError{
+			ExtensionId: "test.extension",
+			Version:     "9.0.0",
+			AzdVersion:  semver.MustParse("1.0.0"),
+			Matches: []*ExtensionMetadata{
+				{
+					Id:     "test.extension",
+					Source: "dev",
+					Versions: []ExtensionVersion{
+						{Version: "1.5.0"},
+						{Version: "3.0.0", RequiredAzdVersion: ">=2.0.0"},
+					},
+				},
+				{
+					Id:       "test.extension",
+					Source:   MainRegistryName,
+					Versions: []ExtensionVersion{{Version: "1.2.0"}},
+				},
+			},
+		}
+
+		require.Equal(
+			t,
+			`extension "test.extension" version "9.0.0" was not found; `+
+				`compatible versions: "1.5.0" from dev, "1.2.0" from azd`,
+			versionErr.Error(),
+		)
+		require.Equal(
+			t,
+			"Use --source to choose a source, then select one of its published versions.",
+			versionErr.Suggestion(),
+		)
+	})
+
+	t.Run("no compatible alternative explains the azd requirement", func(t *testing.T) {
+		versionErr := &ExtensionVersionNotFoundError{
+			ExtensionId: "test.extension",
+			Version:     "9.0.0",
+			AzdVersion:  semver.MustParse("1.0.0"),
+			Matches: []*ExtensionMetadata{{
+				Id:     "test.extension",
+				Source: MainRegistryName,
+				Versions: []ExtensionVersion{{
+					Version:            "2.0.0",
+					RequiredAzdVersion: ">=2.0.0",
+				}},
+			}},
+		}
+
+		require.Equal(
+			t,
+			`extension "test.extension" version "9.0.0" was not found; `+
+				`no published version is compatible with azd 1.0.0`,
+			versionErr.Error(),
+		)
+		require.Equal(
+			t,
+			"Use a compatible azd version or choose another extension source, then retry.",
+			versionErr.Suggestion(),
+		)
+	})
+}
+
 func Test_ResolveExtensions_UnsatisfiedRangeConstraintDoesNotSuggestInstall(t *testing.T) {
 	t.Parallel()
 

@@ -60,8 +60,21 @@ These are set once at process startup via `resource.New()` and attached to every
 | Runtime version | `process.runtime.version` | SystemMetadata | PerformanceAndHealth | Go version |
 | Machine ID | `machine.id` | EndUserPseudonymizedInformation | BusinessInsight | MAC address hash |
 | Dev Device ID | `machine.devdeviceid` | EndUserPseudonymizedInformation | BusinessInsight | SQM User ID |
-| Execution environment | `execution.environment` | SystemMetadata | BusinessInsight | CI system detection |
+| Execution environment | `execution.environment` | SystemMetadata | BusinessInsight | Bounded execution-context value; see allowed values below |
 | Installer | `service.installer` | SystemMetadata | FeatureInsight | How azd was installed |
+
+#### Execution environment allowed values
+
+`execution.environment` contains one base environment and may include semicolon-separated modifiers:
+
+- Local and hosted environments: `Desktop`, `Visual Studio`, `Visual Studio Code`,
+  `VS Code Azure GitHub Copilot`, `Azure CloudShell`, `GitHub Codespaces`.
+- AI coding agents: `Claude Code`, `Codex`, `Cursor`, `GitHub Copilot CLI`, `GitHub Copilot App`,
+  `GitHub Copilot VSCode`, `Gemini`, `OpenCode`.
+- CI environments: `UnknownCI`, `Azure Pipelines`, `GitHub Actions`, `AppVeyor`, `Bamboo`,
+  `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`,
+  `TeamCity`, `JetBrains Space`.
+- Optional modifiers: `Azure App Spaces Portal`, `Microsoft Foundry Skill`.
 
 ### Experimentation
 

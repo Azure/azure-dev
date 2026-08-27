@@ -60,6 +60,46 @@ integration.
 | `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | Sets the App Service deployment slot target for a service. Replace `{SERVICE}` with the uppercase service name (hyphens become underscores). Set to `production` to deploy to the main app, or a slot name (e.g., `staging`). When slots exist and this is not set, `--no-prompt` mode fails with an error listing available targets. Applies to `host: appservice` only; Function Apps always deploy to the main site. |
 | `AZD_DEPLOY_{SERVICE}_SKIP_STATUS_CHECK` | If `true`, skips deployment status tracking for the named Linux App Service after the zip deployment request is accepted. By default, azd waits up to five minutes without a deployment status change. Each new status resets the five-minute wait. If the status remains unchanged, azd completes deployment with a warning. Useful when the target web app is intentionally stopped. Parsed as a boolean (`true`/`false`/`1`/`0`). `{SERVICE}` follows the same naming rules as `AZD_DEPLOY_{SERVICE}_SLOT_NAME`. |
 
+## AI Agent Detection
+
+`azd` detects when it is launched by a known AI coding agent and adjusts its behavior. Unless
+explicitly overridden, agent detection automatically enables no-prompt mode and treats the session
+as non-TTY. Detection checks the environment-variable markers below first, followed by known
+substrings in [`AZURE_DEV_USER_AGENT`](#telemetry--tracing), and then parent-process names.
+
+These markers are normally set by the agents; `azd` only reads them. When several markers are set,
+the first matching row wins. Exact-value markers must match the documented string and do not use the
+general boolean parsing convention. All other markers must contain a non-empty value.
+
+When the detected agent determines `execution.environment`, `azd` records only the fixed base value
+in the last column; fixed environment modifiers may be appended. Marker values are not added to
+telemetry by the agent-detection path.
+
+| Variable | Match | Detected agent (`execution.environment`) |
+| --- | --- | --- |
+| `AI_AGENT` | Exactly `github_copilot_app_agent` | GitHub Copilot App |
+| `AI_AGENT` | Exactly `github_copilot_vscode_agent` | GitHub Copilot VSCode |
+| `CODEX_CI` | Exactly `1` | Codex |
+| `CODEX_THREAD_ID` | Non-empty | Codex |
+| `CODEX_SESSION_ID` | Non-empty | Codex |
+| `CURSOR_AGENT` | Exactly `1` | Cursor |
+| `CURSOR_CONVERSATION_ID` | Non-empty | Cursor |
+| `CLAUDE_CODE` | Non-empty | Claude Code |
+| `CLAUDE_CODE_ENTRYPOINT` | Non-empty | Claude Code |
+| `GITHUB_COPILOT_CLI` | Non-empty | GitHub Copilot CLI |
+| `GH_COPILOT` | Non-empty | GitHub Copilot CLI |
+| `COPILOT_CLI` | Non-empty | GitHub Copilot CLI |
+| `GEMINI_CLI` | Non-empty | Gemini |
+| `GEMINI_CLI_NO_RELAUNCH` | Non-empty | Gemini |
+| `OPENCODE` | Non-empty | OpenCode |
+
+As a last resort, parent-process detection recognizes the `codex`, `claude`, `gemini`, `opencode`,
+and GitHub Copilot CLI executable names. It intentionally does not recognize `Cursor.exe`, because
+that name also identifies the regular Cursor desktop application.
+
+To disable all agent detection, set `AZD_DISABLE_AGENT_DETECT` to any non-empty value. This override
+is intended for tests and tooling and is unsupported for general use.
+
 ## azd exec
 
 The `azd exec` command runs commands and scripts with the active azd environment loaded into the child
@@ -182,7 +222,7 @@ specific version of the tool installed on the machine.
 | Variable | Description |
 | --- | --- |
 | `AZURE_DEV_COLLECT_TELEMETRY` | If false, disables telemetry collection. Telemetry is enabled by default. |
-| `AZURE_DEV_USER_AGENT` | Appends a custom string to the `User-Agent` header sent with Azure requests. |
+| `AZURE_DEV_USER_AGENT` | Appends a custom string to the `User-Agent` header sent with Azure requests. It is also inspected for [AI agent detection](#ai-agent-detection) using case-insensitive substring matching. |
 | `TRACEPARENT` | The W3C Trace Context `traceparent` header for distributed tracing. Automatically set by `azd` on extension processes for trace propagation. Not typically set by users. |
 | `TRACESTATE` | The W3C Trace Context `tracestate` header for vendor-specific trace data. Automatically set by `azd` alongside `TRACEPARENT`. Not typically set by users. |
 

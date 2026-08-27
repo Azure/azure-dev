@@ -32,10 +32,8 @@ var knownEnvVarPatterns = []envVarPattern{
 		agentType:     AgentTypeGitHubCopilotVSCode,
 	},
 
-	// Claude Code - Anthropic's coding agent
-	{envVar: "CLAUDE_CODE", agentType: AgentTypeClaudeCode},
-	{envVar: "CLAUDE_CODE_ENTRYPOINT", agentType: AgentTypeClaudeCode},
-
+	// Session-scoped Codex and Cursor markers take precedence over Claude markers
+	// that may be inherited by nested tools.
 	// Codex - OpenAI's coding agent
 	{envVar: "CODEX_CI", expectedValue: "1", agentType: AgentTypeCodex},
 	{envVar: "CODEX_THREAD_ID", agentType: AgentTypeCodex},
@@ -44,6 +42,10 @@ var knownEnvVarPatterns = []envVarPattern{
 	// Cursor - Cursor's coding agent
 	{envVar: "CURSOR_AGENT", expectedValue: "1", agentType: AgentTypeCursor},
 	{envVar: "CURSOR_CONVERSATION_ID", agentType: AgentTypeCursor},
+
+	// Claude Code - Anthropic's coding agent
+	{envVar: "CLAUDE_CODE", agentType: AgentTypeClaudeCode},
+	{envVar: "CLAUDE_CODE_ENTRYPOINT", agentType: AgentTypeClaudeCode},
 
 	// GitHub Copilot CLI
 	{envVar: "GITHUB_COPILOT_CLI", agentType: AgentTypeGitHubCopilotCLI},
@@ -62,7 +64,7 @@ var knownEnvVarPatterns = []envVarPattern{
 func detectFromEnvVars() AgentInfo {
 	for _, pattern := range knownEnvVarPatterns {
 		value, exists := os.LookupEnv(pattern.envVar)
-		if !exists || (pattern.expectedValue != "" && value != pattern.expectedValue) {
+		if !exists || value == "" || (pattern.expectedValue != "" && value != pattern.expectedValue) {
 			continue
 		}
 

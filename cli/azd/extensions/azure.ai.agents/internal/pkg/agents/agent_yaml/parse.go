@@ -557,7 +557,7 @@ func validateVoiceMaxOutputTokens(value any) error {
 	}
 	switch v := value.(type) {
 	case string:
-		if strings.TrimSpace(v) == "inf" {
+		if v == "inf" {
 			return nil
 		}
 	case int:

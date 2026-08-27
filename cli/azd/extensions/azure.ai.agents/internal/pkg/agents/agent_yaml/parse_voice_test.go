@@ -257,6 +257,7 @@ func TestValidateAgentDefinition_PromptVoice_MaxOutputTokensValidation(t *testin
 		wantErr   bool
 	}{
 		{name: "string inf", valueYaml: "inf", wantErr: false},
+		{name: "padded string inf", valueYaml: `" inf "`, wantErr: true},
 		{name: "unsupported string", valueYaml: "unlimited", wantErr: true},
 		{name: "integer", valueYaml: "4096", wantErr: false},
 		{name: "zero", valueYaml: "0", wantErr: true},

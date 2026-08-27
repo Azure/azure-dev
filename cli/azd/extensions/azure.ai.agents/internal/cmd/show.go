@@ -7,14 +7,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"slices"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -46,8 +49,8 @@ func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show the status of a hosted agent.",
-		Long: `Show the status of a hosted agent.
+		Short: "Show the status of an agent.",
+		Long: `Show the status of an agent.
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name
@@ -74,6 +77,18 @@ configuration and the current azd environment. Optionally specify the service na
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			// Prompt (kind=managed) agents are azd services too, but they live
+			// on the harness rather than the Foundry service. Resolve the
+			// service and, when it is a prompt agent, query the harness for
+			// status instead of the Foundry agent endpoint.
+			if pctx, isPrompt, pErr := resolvePromptAgentService(
+				ctx, azdClient, flags.name, extCtx.NoPrompt,
+			); pErr != nil {
+				return pErr
+			} else if isPrompt {
+				return runPromptShow(ctx, flags, pctx)
+			}
 
 			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
 			if err != nil {
@@ -194,6 +209,246 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	}
 
 	return printShowResult(result, a.flags.output, suggestions)
+}
+
+// runPromptShow handles `azd ai agent show` for a prompt (kind=prompt) agent.
+// It is dispatched from RunE when the resolved azure.ai.agent service resolves
+// to a prompt-agent definition. The status comes from the harness GetAgent API
+// rather than the Foundry agent endpoint.
+func runPromptShow(ctx context.Context, flags *showFlags, pctx *promptServiceContext) error {
+	agentName := pctx.AgentName()
+	client, err := pctx.newClient()
+	if err != nil {
+		return err
+	}
+
+	agent, err := client.GetAgent(ctx, agentName, pctx.Settings.EffectiveAPIVersion())
+	if err != nil {
+		return fmt.Errorf("failed to get prompt agent %q: %w", agentName, err)
+	}
+
+	switch flags.output {
+	case "json":
+		data, jsonErr := json.MarshalIndent(agent, "", "  ")
+		if jsonErr != nil {
+			return fmt.Errorf("failed to marshal response: %w", jsonErr)
+		}
+		fmt.Println(string(data))
+	default:
+		printPromptShowTable(agent, pctx)
+	}
+	return nil
+}
+
+// printPromptShowTable renders a concise status table for a prompt agent.
+func printPromptShowTable(agent *agent_api.AgentObject, pctx *promptServiceContext) {
+	latest := agent.Versions.Latest
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "Name:\t%s\n", agent.Name)
+	fmt.Fprintf(w, "Kind:\t%s\n", "prompt")
+	if latest.Version != "" {
+		fmt.Fprintf(w, "Version:\t%s\n", latest.Version)
+	}
+	if latest.Status != "" {
+		fmt.Fprintf(w, "Status:\t%s\n", latest.Status)
+	}
+
+	def := promptDefinitionMap(latest)
+
+	// Harness is the execution harness the platform runs the agent on, taken
+	// from the deployed definition's `harness` block. The previous
+	// implementation printed settings.BaseURL here, which is the harness *API
+	// base URL*, not the harness itself.
+	printPromptHarness(w, promptHarnessFromMap(def), pctx.Agent.Harness)
+
+	// Project endpoint is where the agent is actually served/invoked. This is
+	// the useful "where does this live" value that Harness was standing in for.
+	if endpoint := promptAgentEndpoint(pctx.Settings); endpoint != "" {
+		fmt.Fprintf(w, "Project Endpoint:\t%s\n", endpoint)
+	}
+
+	if latest.Error != nil && latest.Error.Message != "" {
+		fmt.Fprintf(w, "Error:\t%s (%s)\n", latest.Error.Message, latest.Error.Code)
+	}
+
+	printPromptToolboxTools(w, def)
+	_ = w.Flush()
+}
+
+// promptDefinitionMap extracts the deployed agent version's definition as a
+// generic map. The API models Definition as `any`, which decodes from JSON into
+// a map[string]any; returns nil when the definition is absent or another shape.
+func promptDefinitionMap(version agent_api.AgentVersionObject) map[string]any {
+	if def, ok := version.Definition.(map[string]any); ok {
+		return def
+	}
+	return nil
+}
+
+// stringFromMap returns m[key] as a trimmed string, or "" when absent/non-string.
+func stringFromMap(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	if v, ok := m[key].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+// promptHarnessFromMap decodes the `harness` block of a deployed definition.
+//
+// Both shapes are handled because the field changed: agents created by earlier
+// versions of azd carry a bare harness name, current ones carry an object.
+// Reading only one shape would blank the Harness row for half the agents in a
+// project.
+func promptHarnessFromMap(def map[string]any) *agent_yaml.PromptHarness {
+	if def == nil {
+		return nil
+	}
+	switch harness := def["harness"].(type) {
+	case string:
+		return &agent_yaml.PromptHarness{Type: strings.TrimSpace(harness)}
+	case map[string]any:
+		data, err := json.Marshal(harness)
+		if err != nil {
+			return nil
+		}
+		var out agent_yaml.PromptHarness
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil
+		}
+		return &out
+	default:
+		return nil
+	}
+}
+
+// harnessTypeFromMap returns the harness discriminator from a deployed
+// definition.
+func harnessTypeFromMap(def map[string]any) string {
+	harness := promptHarnessFromMap(def)
+	if harness == nil {
+		return ""
+	}
+	return strings.TrimSpace(harness.Type)
+}
+
+// printPromptHarness renders the execution harness the agent runs on: its type
+// plus the sandbox configuration the harness owns (pinned skills, compute size,
+// and which built-in capabilities the agent may reach).
+//
+// The deployed block wins because it describes what is actually running, but the
+// locally authored one is used as a fallback so the rows stay populated for an
+// agent whose deployed definition predates the `harness:` object.
+func printPromptHarness(w io.Writer, deployed, local *agent_yaml.PromptHarness) {
+	harness := deployed
+	if harness == nil || strings.TrimSpace(harness.Type) == "" {
+		harness = local
+	}
+	if harness == nil || strings.TrimSpace(harness.Type) == "" {
+		return
+	}
+
+	fmt.Fprintf(w, "Harness:\t%s\n", displayHarness(strings.TrimSpace(harness.Type)))
+
+	if len(harness.Skills) > 0 {
+		names := make([]string, 0, len(harness.Skills))
+		for _, skill := range harness.Skills {
+			if version := strings.TrimSpace(skill.Version); version != "" {
+				names = append(names, fmt.Sprintf("%s@%s", skill.Name, version))
+				continue
+			}
+			names = append(names, skill.Name)
+		}
+		fmt.Fprintf(w, "  Skills:\t%s\n", strings.Join(names, ", "))
+	}
+
+	if env := harness.Environment; env != nil {
+		if cpu := strings.TrimSpace(env.Cpu); cpu != "" {
+			fmt.Fprintf(w, "  CPU:\t%s\n", cpu)
+		}
+		if memory := strings.TrimSpace(env.Memory); memory != "" {
+			fmt.Fprintf(w, "  Memory:\t%s\n", memory)
+		}
+		if env.IdleTimeoutSeconds != nil {
+			fmt.Fprintf(w, "  Idle Timeout:\t%ds\n", *env.IdleTimeoutSeconds)
+		}
+	}
+
+	// An explicit empty list is meaningful (`allowed: []` turns every built-in
+	// capability off), so a non-nil pointer always prints, even when empty.
+	if tools := harness.BuiltinTools; tools != nil {
+		if tools.Allowed != nil {
+			fmt.Fprintf(w, "  Built-in Tools Allowed:\t%s\n", displayToolList(*tools.Allowed))
+		}
+		if tools.Excluded != nil {
+			fmt.Fprintf(w, "  Built-in Tools Excluded:\t%s\n", displayToolList(*tools.Excluded))
+		}
+	}
+}
+
+// displayToolList renders a built-in capability list, naming the empty case so
+// "none allowed" is not mistaken for "not configured".
+func displayToolList(tools []string) string {
+	if len(tools) == 0 {
+		return "(none)"
+	}
+	return strings.Join(tools, ", ")
+}
+
+// displayHarness maps a harness identifier to a friendlier label, preserving
+// the raw identifier in parentheses for unambiguous reference.
+func displayHarness(harness string) string {
+	switch harness {
+	case agent_api.ManagedAgentHarnessGitHubCopilot:
+		return fmt.Sprintf("GitHub Copilot (%s)", harness)
+	default:
+		return harness
+	}
+}
+
+// promptAgentEndpoint returns the Foundry project endpoint the prompt agent is
+// served from, falling back to the harness base URL when unset.
+func promptAgentEndpoint(settings *projectpkg.PromptAgentSettings) string {
+	if settings == nil {
+		return ""
+	}
+	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
+		return pe
+	}
+	return strings.TrimSpace(settings.BaseURL)
+}
+
+// printPromptToolboxTools lists the mcp/toolbox tools attached to the deployed
+// prompt agent, including the backing project connection that authenticates the
+// agent to each toolbox. This surfaces the toolbox created during deploy without
+// mutating the authored agent.yaml.
+func printPromptToolboxTools(w io.Writer, def map[string]any) {
+	if def == nil {
+		return
+	}
+	rawTools, ok := def["tools"].([]any)
+	if !ok || len(rawTools) == 0 {
+		return
+	}
+	for _, raw := range rawTools {
+		tool, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if stringFromMap(tool, "type") != "mcp" {
+			continue
+		}
+		label := stringFromMap(tool, "server_label")
+		if label == "" {
+			label = "mcp"
+		}
+		fmt.Fprintf(w, "Toolbox (%s):\t%s\n", label, stringFromMap(tool, "server_url"))
+		if conn := stringFromMap(tool, "project_connection_id"); conn != "" {
+			fmt.Fprintf(w, "  Connection:\t%s\n", conn)
+		}
+	}
 }
 
 func printShowResult(result *showResult, output string, suggestions []nextstep.Suggestion) error {

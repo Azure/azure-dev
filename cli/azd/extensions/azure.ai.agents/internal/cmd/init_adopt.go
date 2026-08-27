@@ -1076,11 +1076,16 @@ func runInitFromAzureYaml(
 		return err
 	}
 
-	// When an existing project was selected, stamp its endpoint onto the
-	// azure.ai.project service so the provisioning provider recognizes the
-	// brownfield signal and reuses the project instead of creating a new one.
+	// When an existing project was selected, record its endpoint in the azd
+	// environment and stamp the portable reference onto the azure.ai.project
+	// service so the provisioning provider recognizes the brownfield signal and
+	// reuses the project instead of creating a new one.
 	if result.FoundryProject != nil {
-		if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
+		endpointRef, err := recordFoundryProjectEnv(ctx, azdClient, env.Name, result.FoundryProject)
+		if err != nil {
+			return err
+		}
+		if err := stampProjectEndpoint(ctx, azdClient, endpointRef); err != nil {
 			return err
 		}
 		if err := confirmAdoptedAgentNameConflicts(

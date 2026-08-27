@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -212,6 +213,7 @@ func TestProjectLifecycleHandlerUsesCommandEnvironment(t *testing.T) {
 		t.Context(),
 		client,
 		" selected ",
+		"deploy",
 		&azdext.ProjectEventArgs{
 			Project: &azdext.ProjectConfig{
 				Services: map[string]*azdext.ServiceConfig{
@@ -269,16 +271,22 @@ func TestProjectLifecycleHandlerMissingEnvironmentIsActionable(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		envName    string
-		currentErr error
+		name        string
+		envName     string
+		currentErr  error
+		command     string
+		wantExample string
 	}{
 		{
-			name:       "no current environment selected",
-			currentErr: errors.New("no current azd environment is selected"),
+			name:        "preprovision without current environment",
+			currentErr:  errors.New("no current azd environment is selected"),
+			command:     "provision",
+			wantExample: "azd -e dev provision",
 		},
 		{
-			name: "environment has no name",
+			name:        "predeploy environment has no name",
+			command:     "deploy",
+			wantExample: "azd -e dev deploy",
 		},
 	}
 
@@ -292,9 +300,11 @@ func TestProjectLifecycleHandlerMissingEnvironmentIsActionable(t *testing.T) {
 			}
 			client := newProjectEnvironmentClient(t, envServer)
 
-			err := projectLifecycleHandler(
+			err := projectLifecycleHandlerForEnvironment(
 				t.Context(),
 				client,
+				"",
+				test.command,
 				&azdext.ProjectEventArgs{
 					Project: &azdext.ProjectConfig{
 						Services: map[string]*azdext.ServiceConfig{
@@ -310,8 +320,9 @@ func TestProjectLifecycleHandlerMissingEnvironmentIsActionable(t *testing.T) {
 			require.ErrorAs(t, err, &local)
 			assert.Equal(t, exterrors.CodeEnvironmentNotFound, local.Code)
 			assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
-			assert.Contains(t, local.Suggestion, "azd -e dev up")
-			assert.Contains(t, local.Suggestion, `$env:AZD_ENVIRONMENT = "dev"; azd up`)
+			assert.Contains(t, local.Suggestion, test.wantExample)
+			assert.Contains(t, local.Suggestion,
+				fmt.Sprintf(`$env:AZD_ENVIRONMENT = "dev"; azd %s`, test.command))
 			assert.Contains(t, local.Suggestion, "azd env select dev")
 
 			wrapped := azdext.WrapError(err)

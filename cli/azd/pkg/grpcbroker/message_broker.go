@@ -485,9 +485,9 @@ func (mb *MessageBroker[TMessage]) Run(ctx context.Context) error {
 				return fmt.Errorf("stream receive failed: %w", err)
 			}
 
-			// Process the received message asynchronously
-			// This allows the dispatcher to continue receiving while handlers execute
-			go mb.processMessage(ctx, resp)
+			// Route received messages in stream order. Request handlers remain
+			// asynchronous so the dispatcher can continue receiving while they execute.
+			mb.processMessage(ctx, resp)
 		}
 	}
 }
@@ -546,8 +546,9 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 		}
 	}
 
-	// No channel found, try to route to handler (server pattern - incoming request)
-	mb.processHandlerRequest(ctx, resp, requestId, msgType)
+	// No channel found, route to a handler asynchronously (server pattern -
+	// incoming request) so one long-running handler does not block the stream.
+	go mb.processHandlerRequest(ctx, resp, requestId, msgType)
 }
 
 // processHandlerRequest extracts the inner message, finds the appropriate handler,

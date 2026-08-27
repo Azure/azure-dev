@@ -394,14 +394,8 @@ func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
 	// Register handler with progress
 	handler := func(ctx context.Context, req *TestRequest, progress ProgressFunc) (*TestMessage, error) {
 		progress("Starting...")
-		// justified: these sleeps simulate work between progress updates so the test
-		// can observe the intermediate progress messages being delivered to the client
-		// before the handler returns its final response.
-		time.Sleep(10 * time.Millisecond)
 		progress("50% done")
-		time.Sleep(10 * time.Millisecond)
 		progress("Almost there...")
-		time.Sleep(10 * time.Millisecond) // Give time for progress message to be sent before returning
 		return &TestMessage{
 			InnerMsg: &TestResponse{Result: "done"},
 		}, nil
@@ -442,10 +436,6 @@ func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
 	resp, err := clientBroker.SendAndWaitWithProgress(ctx, requestMsg, progressCb)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
-
-	// Give a small delay to ensure all progress messages are delivered
-	// (the final progress message might still be in flight when SendAndWaitWithProgress returns)
-	time.Sleep(20 * time.Millisecond)
 
 	// Verify progress updates were received
 	progressMu.Lock()

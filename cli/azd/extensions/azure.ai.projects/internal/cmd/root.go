@@ -78,7 +78,13 @@ func configureExtensionHostForEnvironment(host *azdext.ExtensionHost, environmen
 				ctx context.Context,
 				args *azdext.ProjectEventArgs,
 			) error {
-				return projectLifecycleHandlerForEnvironment(ctx, azdClient, environmentName, args)
+				return projectLifecycleHandlerForEnvironment(
+					ctx,
+					azdClient,
+					environmentName,
+					"provision",
+					args,
+				)
 			},
 		).
 		WithProjectEventHandler(
@@ -87,7 +93,13 @@ func configureExtensionHostForEnvironment(host *azdext.ExtensionHost, environmen
 				ctx context.Context,
 				args *azdext.ProjectEventArgs,
 			) error {
-				return projectLifecycleHandlerForEnvironment(ctx, azdClient, environmentName, args)
+				return projectLifecycleHandlerForEnvironment(
+					ctx,
+					azdClient,
+					environmentName,
+					"deploy",
+					args,
+				)
 			},
 		)
 }

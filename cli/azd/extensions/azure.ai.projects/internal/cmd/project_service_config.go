@@ -30,13 +30,14 @@ func projectLifecycleHandler(
 	azdClient *azdext.AzdClient,
 	args *azdext.ProjectEventArgs,
 ) error {
-	return projectLifecycleHandlerForEnvironment(ctx, azdClient, "", args)
+	return projectLifecycleHandlerForEnvironment(ctx, azdClient, "", "up", args)
 }
 
 func projectLifecycleHandlerForEnvironment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	environmentName string,
+	command string,
 	args *azdext.ProjectEventArgs,
 ) error {
 	if args == nil || args.Project == nil {
@@ -63,7 +64,7 @@ func projectLifecycleHandlerForEnvironment(
 		if err != nil {
 			return exterrors.MissingEnvironmentName(
 				exterrors.CodeEnvironmentNotFound,
-				"up",
+				command,
 				err,
 			)
 		}
@@ -71,7 +72,7 @@ func projectLifecycleHandlerForEnvironment(
 		if envName == "" {
 			return exterrors.MissingEnvironmentName(
 				exterrors.CodeEnvironmentNotFound,
-				"up",
+				command,
 				nil,
 			)
 		}

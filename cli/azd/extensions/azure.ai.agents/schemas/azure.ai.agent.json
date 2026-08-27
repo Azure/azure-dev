@@ -224,6 +224,7 @@
             { "required": ["model"] },
             { "required": ["inputSchema"] },
             { "required": ["outputSchema"] },
+            { "required": ["policies"] },
             { "required": ["instructions"] },
             { "required": ["structuredInputs"] },
             { "required": ["tools"] },
@@ -246,7 +247,8 @@
           "not": {
             "anyOf": [
               { "required": ["targetAgent"] },
-              { "required": ["toolbox"] }
+              { "required": ["toolbox"] },
+              { "required": ["policies"] }
             ]
           }
         }

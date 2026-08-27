@@ -1407,6 +1407,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						"hosted voice init generates the target and wrapper from local code; drop --manifest",
 					)
 				}
+				if strings.EqualFold(flags.kind, kindFlagHostedVoice) && flags.voice != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--kind hosted-voice cannot be combined with --voice",
+						"configure the wrapper output voice in azure.yaml after initialization, or drop --voice",
+					)
+				}
 				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.image != "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
@@ -2281,7 +2288,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 		if strings.EqualFold(a.flags.kind, kindFlagHostedVoice) {
 			if err := addHostedVoiceWrapperToProject(ctx, a.azdClient, a.serviceNameOverride); err != nil {
-				return fmt.Errorf("adding hosted voice wrapper: %w", err)
+				return err
 			}
 		}
 

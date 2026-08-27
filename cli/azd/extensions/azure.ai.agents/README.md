@@ -298,8 +298,11 @@ same Foundry project. Hosted Voice samples use the same standard Agent Manifest
 flow as other Hosted Agent and `invocations_ws` samples:
 
 ```powershell
-azd ai agent init -m <PUBLIC_AGENT_MANIFEST_URL>
+azd ai agent init -m .\path\to\agent.manifest.yaml
 ```
+
+The manifest path can be replaced with its public GitHub URL after the sample
+is published.
 
 When the sample source is already present, run `azd ai agent init` from its
 directory and accept the detected local manifest. azd reuses a parent project
@@ -310,12 +313,17 @@ service name:
 
 ```yaml
 services:
+  ai-project:
+    host: azure.ai.project
+
   voice-target:
     host: azure.ai.agent
     project: ./src/voice-target
     language: csharp
     kind: hosted
     name: voice-target
+    uses:
+      - ai-project
     protocols:
       - protocol: invocations_ws
         version: 1.0.0
@@ -327,22 +335,18 @@ services:
       entryPoint: VoiceHostedAgent.dll
       dependencyResolution: bundled
 
-  voice:
+  voice-target-voice:
     host: azure.ai.agent
     kind: prompt-voice
-    name: voice
+    name: voice-target-voice
     uses:
+      - ai-project
       - voice-target
     modelType: hosted_agent
     targetAgent:
       service: voice-target
       version: deployed
     store: false
-    audio:
-      output:
-        voice:
-          type: azure_standard
-          name: en-US-JennyNeural
 ```
 
 The `uses` edge deploys the target before the wrapper. `version: deployed`

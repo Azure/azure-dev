@@ -643,7 +643,14 @@ func TestCreateHostedVoiceAgentAPIRequest(t *testing.T) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		t.Fatal(err)
 	}
-	definition := wire["definition"].(map[string]any)
+	definitionValue, exists := wire["definition"]
+	if !exists {
+		t.Fatalf("hosted wrapper wire payload is missing definition: %s", data)
+	}
+	definition, ok := definitionValue.(map[string]any)
+	if !ok {
+		t.Fatalf("hosted wrapper definition has type %T, want object: %s", definitionValue, data)
+	}
 	if _, exists := definition["model"]; exists {
 		t.Fatalf("hosted wrapper wire payload contains model: %s", data)
 	}

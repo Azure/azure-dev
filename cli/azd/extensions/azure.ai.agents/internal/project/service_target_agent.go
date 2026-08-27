@@ -2490,7 +2490,13 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	agentClient := agent_api.NewAgentClient(projectEndpoint, p.credential)
 	if hostedTarget != nil {
 		progress("Validating hosted voice target")
-		if err := validateHostedVoiceTarget(ctx, agentClient, hostedTarget); err != nil {
+		version, getErr := agentClient.GetAgentVersion(
+			ctx, hostedTarget.AgentName, hostedTarget.AgentVersion, agent_api.AgentEndpointAPIVersion,
+		)
+		if getErr != nil {
+			return nil, exterrors.ServiceFromAzure(getErr, "getting hosted voice target version")
+		}
+		if err := validateHostedVoiceTargetVersion(version); err != nil {
 			return nil, exterrors.Dependency(
 				exterrors.CodeFoundryDependencyNotReady,
 				fmt.Sprintf("hosted voice target is not compatible: %s", err),
@@ -2560,20 +2566,6 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}}
 
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
-}
-
-func validateHostedVoiceTarget(
-	ctx context.Context,
-	agentClient *agent_api.AgentClient,
-	target *hostedVoiceTarget,
-) error {
-	version, err := agentClient.GetAgentVersion(
-		ctx, target.AgentName, target.AgentVersion, agent_api.AgentEndpointAPIVersion,
-	)
-	if err != nil {
-		return fmt.Errorf("getting target %s:%s: %w", target.AgentName, target.AgentVersion, err)
-	}
-	return validateHostedVoiceTargetVersion(version)
 }
 
 func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) error {

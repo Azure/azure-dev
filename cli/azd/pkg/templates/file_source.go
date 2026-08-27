@@ -14,12 +14,7 @@ import (
 
 // newFileTemplateSource creates a new template source from a file.
 func newFileTemplateSource(name string, path string) (Source, error) {
-	absolutePath, err := getAbsolutePath(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed converting path '%s' to absolute path, %w", path, err)
-	}
-
-	templateBytes, err := os.ReadFile(absolutePath)
+	templateBytes, err := readTemplateFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading file '%s', %w", path, err)
 	}
@@ -27,27 +22,18 @@ func newFileTemplateSource(name string, path string) (Source, error) {
 	return newJsonTemplateSource(name, string(templateBytes))
 }
 
-func getAbsolutePath(filePath string) (string, error) {
-	// Check if the path is absolute
+func readTemplateFile(filePath string) ([]byte, error) {
 	if filepath.IsAbs(filePath) {
-		return filePath, nil
+		return os.ReadFile(filePath)
 	}
 
-	roots := []string{}
-
-	// Get the current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
 	azdConfigPath, err := config.GetUserConfigDir()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
-	roots = append(roots, cwd)
-	roots = append(roots, azdConfigPath)
-
-	return osutil.ResolveContainedPath(roots, filePath)
+	return osutil.ReadContainedFile([]string{cwd, azdConfigPath}, filePath)
 }

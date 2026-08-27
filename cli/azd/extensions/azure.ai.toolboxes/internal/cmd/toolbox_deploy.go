@@ -93,8 +93,13 @@ func runToolboxDeployWith(
 	}
 
 	mcpURL := buildToolboxMcpURL(endpoint, name, created.Version)
-	if err := setToolboxEndpointEnvFunc(ctx, name, mcpURL, endpoint); err != nil {
-		return err
+	// An explicit endpoint may target a project other than the active azd
+	// environment. In that case, return the endpoint without changing the
+	// active environment's project-scoped marker.
+	if strings.TrimSpace(parent.projectEndpoint) == "" {
+		if err := setToolboxEndpointEnvFunc(ctx, name, mcpURL, endpoint); err != nil {
+			return err
+		}
 	}
 	return emitDeployResult(name, created.Version, path, parent.output, mcpURL)
 }

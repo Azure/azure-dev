@@ -46,6 +46,26 @@ func TestRunToolboxDeployWithCreatesVersion(t *testing.T) {
 	assert.Equal(t, "https://example.test/project", (*envCalls)[0].projectScope)
 }
 
+func TestRunToolboxDeployWithExplicitEndpointDoesNotSyncEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), definition.DefaultPath)
+	require.NoError(t, definition.Save(path, &definition.Definition{
+		Name:  "support-tools",
+		Tools: []map[string]any{{"type": "web_search"}},
+	}))
+
+	const endpoint = "https://project-b.services.ai.azure.com/api/projects/project-b"
+	client := newMockToolboxClient(endpoint)
+	envCalls := stubToolboxEndpointEnv(t)
+
+	err := runToolboxDeployWith(
+		t.Context(), client, newStubConnectionResolver(), endpoint, path,
+		toolboxFlags{output: "json", projectEndpoint: endpoint},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Empty(t, *envCalls)
+}
+
 func TestRunToolboxDeployWithRequiresName(t *testing.T) {
 	path := filepath.Join(t.TempDir(), definition.DefaultPath)
 	require.NoError(t, definition.Save(path, &definition.Definition{

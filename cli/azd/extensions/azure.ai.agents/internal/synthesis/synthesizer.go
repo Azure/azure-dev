@@ -141,8 +141,12 @@ func SplitConnectionCredentials(
 	withoutCredentials := slices.Clone(connections)
 	credentials := map[string]map[string]any{}
 	for i := range withoutCredentials {
-		if len(withoutCredentials[i].Credentials) > 0 {
-			credentials[withoutCredentials[i].Name] = withoutCredentials[i].Credentials
+		if len(withoutCredentials[i].Credentials) > 0 || strings.EqualFold(withoutCredentials[i].AuthType, "OAuth2") {
+			value := withoutCredentials[i].Credentials
+			if value == nil {
+				value = map[string]any{}
+			}
+			credentials[withoutCredentials[i].Name] = value
 			withoutCredentials[i].Credentials = nil
 		}
 	}

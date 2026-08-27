@@ -206,7 +206,7 @@
   "additionalProperties": true,
   "allOf": [
     {
-      "$comment": "A prompt-voice agent must declare a speech-to-speech model; the deploy path rejects a voice service whose model.id is missing. Keep editor/schema validation aligned with that runtime requirement.",
+      "$comment": "A prompt-voice agent must declare a speech-to-speech model and cannot use the hosted-agent toolbox reference, which the voice deployment path does not support.",
       "if": {
         "properties": {
           "kind": { "const": "prompt-voice" }
@@ -214,7 +214,10 @@
         "required": ["kind"]
       },
       "then": {
-        "required": ["model"]
+        "required": ["model"],
+        "not": {
+          "required": ["toolbox"]
+        }
       }
     },
     {

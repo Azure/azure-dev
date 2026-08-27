@@ -825,6 +825,53 @@ services:
 	})
 }
 
+func TestSplitConnectionCredentialsPreservesEmptyOAuth2Object(t *testing.T) {
+	t.Parallel()
+
+	public, secure := SplitConnectionCredentials([]Connection{
+		{Name: "managed-oauth", AuthType: "OAuth2", Credentials: map[string]any{}},
+		{Name: "oauth-without-credentials", AuthType: "OAuth2"},
+		{Name: "none", AuthType: "None", Credentials: map[string]any{}},
+	})
+	require.Len(t, public, 3)
+	assert.Nil(t, public[0].Credentials)
+	assert.Contains(t, secure, "managed-oauth")
+	assert.Empty(t, secure["managed-oauth"])
+	assert.Contains(t, secure, "oauth-without-credentials")
+	assert.Empty(t, secure["oauth-without-credentials"])
+	assert.NotContains(t, secure, "none")
+}
+
+func TestSynthesize_ManagedOAuth2PreservesEmptyCredentials(t *testing.T) {
+	const inputYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  managed-oauth:
+    host: azure.ai.connection
+    uses: [my-project]
+    category: RemoteTool
+    target: https://mcp.example.com/mcp
+    authType: OAuth2
+    connectorName: managed-mcp
+`
+	result, err := Synthesize(Input{
+		RawAzureYAML:  []byte(inputYAML),
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+	})
+	require.NoError(t, err)
+
+	public, ok := result.Parameters["connections"].([]Connection)
+	require.True(t, ok)
+	require.Len(t, public, 1)
+	assert.Nil(t, public[0].Credentials)
+	secure, ok := result.Parameters["connectionCredentials"].(map[string]map[string]any)
+	require.True(t, ok)
+	assert.Contains(t, secure, "managed-oauth")
+	assert.Empty(t, secure["managed-oauth"])
+}
+
 // TestBrownfieldConnections verifies connection services are collected for a
 // brownfield (endpoint:) project, with ${VAR} resolved (brownfield provisions
 // so references must be concrete) and Foundry ${{...}} preserved.

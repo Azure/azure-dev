@@ -557,23 +557,54 @@ func validateVoiceMaxOutputTokens(value any) error {
 	}
 	switch v := value.(type) {
 	case string:
-		if strings.TrimSpace(v) == "" {
-			return fmt.Errorf("template.max_output_tokens must be a non-empty string or an integer")
+		if strings.TrimSpace(v) == "inf" {
+			return nil
 		}
-		return nil
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return nil
+	case int:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int8:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int16:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int32:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int64:
+		return validateVoiceMaxOutputTokensInt64(v)
+	case uint:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint8:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint16:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint32:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint64:
+		return validateVoiceMaxOutputTokensUint64(v)
 	case float32:
 		f := float64(v)
-		if !math.IsInf(f, 0) && !math.IsNaN(f) && math.Trunc(f) == f {
-			return nil
+		if isFinite(f) && math.Trunc(f) == f {
+			return validateVoiceMaxOutputTokensInt64(int64(f))
 		}
 	case float64:
-		if !math.IsInf(v, 0) && !math.IsNaN(v) && math.Trunc(v) == v {
-			return nil
+		if isFinite(v) && math.Trunc(v) == v {
+			return validateVoiceMaxOutputTokensInt64(int64(v))
 		}
 	}
-	return fmt.Errorf("template.max_output_tokens must be a string or an integer")
+	return fmt.Errorf("template.max_output_tokens must be an integer from 1 to 2147483647 or the string inf")
+}
+
+func validateVoiceMaxOutputTokensInt64(value int64) error {
+	if value < 1 || value > math.MaxInt32 {
+		return fmt.Errorf("template.max_output_tokens must be an integer from 1 to 2147483647 or the string inf")
+	}
+	return nil
+}
+
+func validateVoiceMaxOutputTokensUint64(value uint64) error {
+	if value < 1 || value > math.MaxInt32 {
+		return fmt.Errorf("template.max_output_tokens must be an integer from 1 to 2147483647 or the string inf")
+	}
+	return nil
 }
 
 func validateVoiceIncludeTranscriptionCompatibility(agent VoiceAgent, transcriptionModel string) []string {

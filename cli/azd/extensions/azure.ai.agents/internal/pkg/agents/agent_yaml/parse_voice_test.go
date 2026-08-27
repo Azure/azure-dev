@@ -257,7 +257,12 @@ func TestValidateAgentDefinition_PromptVoice_MaxOutputTokensValidation(t *testin
 		wantErr   bool
 	}{
 		{name: "string inf", valueYaml: "inf", wantErr: false},
+		{name: "unsupported string", valueYaml: "unlimited", wantErr: true},
 		{name: "integer", valueYaml: "4096", wantErr: false},
+		{name: "zero", valueYaml: "0", wantErr: true},
+		{name: "negative", valueYaml: "-1", wantErr: true},
+		{name: "int32 max", valueYaml: "2147483647", wantErr: false},
+		{name: "above int32 max", valueYaml: "2147483648", wantErr: true},
 		{name: "integer valued float", valueYaml: "4096.0", wantErr: false},
 		{name: "empty string", valueYaml: `""`, wantErr: true},
 		{name: "non integer float", valueYaml: "1.5", wantErr: true},

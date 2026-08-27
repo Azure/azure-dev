@@ -14,6 +14,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
+	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 
@@ -128,6 +129,7 @@ func orphanedConfigEnvNames(svc *azdext.ServiceConfig) []string {
 type AgentDefinitionInline struct {
 	agent_yaml.AgentDefinition `json:",inline"`
 	Protocols                  []agent_yaml.ProtocolVersionRecord `json:"protocols,omitempty"`
+	RegistryConnectionID       string                             `json:"registryConnectionId,omitempty"`
 	// EnvironmentVariables reads the deprecated inline shape.
 	EnvironmentVariables *[]agent_yaml.EnvironmentVariable `json:"environmentVariables,omitempty"`
 	AgentEndpoint        *agent_yaml.AgentEndpoint         `json:"agentEndpoint,omitempty"`
@@ -215,6 +217,7 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 		AgentCard:            ca.AgentCard,
 		CodeConfiguration:    ca.CodeConfiguration,
 		Policies:             ca.Policies,
+		RegistryConnectionID: ca.RegistryConnectionID,
 		SessionConfiguration: ca.SessionConfiguration,
 	}
 
@@ -251,6 +254,7 @@ func (d AgentDefinitionInline) toContainerAgent(
 	ca := agent_yaml.ContainerAgent{
 		AgentDefinition:      d.AgentDefinition,
 		Image:                image,
+		RegistryConnectionID: d.RegistryConnectionID,
 		Protocols:            d.Protocols,
 		EnvironmentVariables: environmentVariables,
 		AgentEndpoint:        d.AgentEndpoint,
@@ -803,7 +807,7 @@ func agentDefinitionFromStruct(
 		return agent_yaml.ContainerAgent{}, false, err
 	}
 
-	if ca.Image != "" && !containerImageRefRe.MatchString(ca.Image) {
+	if ca.Image != "" && !containerref.IsValid(ca.Image) {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid container image reference in agent service config: %q", ca.Image),
@@ -909,7 +913,7 @@ func parseContainerAgentYAML(data []byte) (agent_yaml.ContainerAgent, bool, erro
 		)
 	}
 
-	if agentDef.Image != "" && !containerImageRefRe.MatchString(agentDef.Image) {
+	if agentDef.Image != "" && !containerref.IsValid(agentDef.Image) {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),

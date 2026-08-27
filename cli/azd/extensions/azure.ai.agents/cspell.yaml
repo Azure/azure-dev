@@ -58,6 +58,7 @@ words:
   - azuresdk
   - bicepless
   - CLIENTSECRET
+  - containerref
   - curr
   - dataagent
   - envkey

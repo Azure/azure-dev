@@ -161,7 +161,8 @@ func TestHostedAgentDefinition_ContainerImage_RoundTrip(t *testing.T) {
 		CPU:    "0.5",
 		Memory: "1Gi",
 		ContainerConfiguration: &ContainerConfigurationAPI{
-			Image: "myregistry.azurecr.io/agent:latest",
+			Image:                "registry.example.com/agent:latest",
+			RegistryConnectionID: "private-registry",
 		},
 	}
 
@@ -175,8 +176,19 @@ func TestHostedAgentDefinition_ContainerImage_RoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &rawMap); err != nil {
 		t.Fatalf("unmarshal to map: %v", err)
 	}
-	if _, ok := rawMap["container_configuration"]; !ok {
-		t.Error("expected top-level \"container_configuration\" key")
+	containerRaw, ok := rawMap["container_configuration"]
+	if !ok {
+		t.Fatal("expected top-level \"container_configuration\" key")
+	}
+	var containerMap map[string]json.RawMessage
+	if err := json.Unmarshal(containerRaw, &containerMap); err != nil {
+		t.Fatalf("unmarshal container configuration: %v", err)
+	}
+	if _, ok := containerMap["registry_connection_id"]; !ok {
+		t.Error("expected nested \"registry_connection_id\" key")
+	}
+	if _, ok := rawMap["registry_connection_id"]; ok {
+		t.Error("unexpected top-level \"registry_connection_id\" key")
 	}
 	if _, ok := rawMap["protocol_versions"]; !ok {
 		t.Error("expected top-level \"protocol_versions\" key")
@@ -197,8 +209,33 @@ func TestHostedAgentDefinition_ContainerImage_RoundTrip(t *testing.T) {
 	if got.ContainerConfiguration == nil || got.ContainerConfiguration.Image != original.ContainerConfiguration.Image {
 		t.Errorf("ContainerConfiguration.Image = %v, want %q", got.ContainerConfiguration, original.ContainerConfiguration.Image)
 	}
+	if got.ContainerConfiguration.RegistryConnectionID != original.ContainerConfiguration.RegistryConnectionID {
+		t.Errorf("ContainerConfiguration.RegistryConnectionID = %q, want %q",
+			got.ContainerConfiguration.RegistryConnectionID, original.ContainerConfiguration.RegistryConnectionID)
+	}
 	if got.CPU != "0.5" {
 		t.Errorf("CPU = %q, want %q", got.CPU, "0.5")
+	}
+}
+
+func TestHostedAgentDefinition_ContainerImage_OmitsEmptyRegistryConnection(t *testing.T) {
+	t.Parallel()
+
+	definition := HostedAgentDefinition{
+		AgentDefinition: AgentDefinition{Kind: AgentKindHosted},
+		CPU:             "0.5",
+		Memory:          "1Gi",
+		ContainerConfiguration: &ContainerConfigurationAPI{
+			Image: "registry.example.com/agent:latest",
+		},
+	}
+
+	data, err := json.Marshal(definition)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(data), "registry_connection_id") {
+		t.Errorf("empty registry connection should be omitted: %s", data)
 	}
 }
 

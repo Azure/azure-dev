@@ -150,6 +150,12 @@
       "description": "Invocation protocols the agent implements (e.g., responses, invocations, invocations_ws, a2a).",
       "items": { "$ref": "#/definitions/ProtocolVersionRecord" }
     },
+    "registryConnectionId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Name or ID of a Foundry project connection used to pull a private pre-built container image."
+    },
     "agentEndpoint": {
       "type": "object",
       "description": "Agent endpoint configuration (protocols, version selection, auth).",
@@ -222,6 +228,21 @@
               }
             }
           }
+        }
+      }
+    },
+    {
+      "$comment": "A registry connection applies only to a hosted container agent, not code or managed voice deploy.",
+      "if": {
+        "required": ["registryConnectionId"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "const": "hosted" }
+        },
+        "required": ["kind"],
+        "not": {
+          "required": ["codeConfiguration"]
         }
       }
     }

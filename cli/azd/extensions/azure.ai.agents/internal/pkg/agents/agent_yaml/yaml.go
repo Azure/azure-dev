@@ -437,6 +437,7 @@ type Policy struct {
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
 	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`
+	RegistryConnectionID string                  `json:"registryConnectionId,omitempty" yaml:"registryConnectionId,omitempty"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`

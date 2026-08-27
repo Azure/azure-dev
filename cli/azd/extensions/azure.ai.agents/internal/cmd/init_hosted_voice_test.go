@@ -57,6 +57,23 @@ func TestHostedVoiceManifestTargetRejectsGenericInvocationsWS(t *testing.T) {
 	require.False(t, compatible)
 }
 
+func TestHostedVoiceManifestTargetRejectsNonStringMetadata(t *testing.T) {
+	t.Parallel()
+	metadata := map[string]any{
+		"voiceLiveCompatible":   true,
+		"bridgeProtocolVersion": 1.0,
+	}
+	manifest := &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted, Name: "voice", Metadata: &metadata,
+		},
+		Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "invocations_ws", Version: "1.0.0"}},
+	}}
+	_, compatible, err := hostedVoiceManifestTarget(manifest)
+	require.NoError(t, err)
+	require.False(t, compatible)
+}
+
 func TestApplyHostedVoiceManifestKindRejectsExplicitIncompatibleManifest(t *testing.T) {
 	t.Parallel()
 	manifest := &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{

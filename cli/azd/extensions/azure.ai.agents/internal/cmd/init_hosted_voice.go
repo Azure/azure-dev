@@ -39,8 +39,13 @@ func hostedVoiceManifestTarget(manifest *agent_yaml.AgentManifest) (*agent_yaml.
 		return nil, false, nil
 	}
 	metadata := *target.Metadata
-	voiceCompatible := strings.EqualFold(strings.TrimSpace(fmt.Sprint(metadata["voiceLiveCompatible"])), "true")
-	bridgeVersion := strings.TrimSpace(fmt.Sprint(metadata["bridgeProtocolVersion"]))
+	voiceCompatibleValue, voiceCompatibleIsString := metadata["voiceLiveCompatible"].(string)
+	bridgeVersionValue, bridgeVersionIsString := metadata["bridgeProtocolVersion"].(string)
+	if !voiceCompatibleIsString || !bridgeVersionIsString {
+		return nil, false, nil
+	}
+	voiceCompatible := strings.EqualFold(strings.TrimSpace(voiceCompatibleValue), "true")
+	bridgeVersion := strings.TrimSpace(bridgeVersionValue)
 	if !voiceCompatible || bridgeVersion != "1.0" {
 		return nil, false, nil
 	}

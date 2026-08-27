@@ -82,6 +82,48 @@ func TestBundleSourceName(t *testing.T) {
 	require.Equal(t, "bundle", bundleSourceName("bundle.zip"))
 }
 
+func TestExtensionInstall_BundleRejectsVersion(t *testing.T) {
+	t.Parallel()
+
+	localBundle := filepath.Join(t.TempDir(), "bundle.zip")
+	require.NoError(t, os.WriteFile(localBundle, []byte("not a valid zip"), 0600))
+
+	tests := []struct {
+		name      string
+		bundleArg string
+	}{
+		{name: "local", bundleArg: localBundle},
+		{name: "remote", bundleArg: "https://example.com/bundle.zip?sig=secret"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			action := &extensionInstallAction{
+				args:    []string{test.bundleArg},
+				flags:   &extensionInstallFlags{version: "1.0.0"},
+				console: mockinput.NewMockConsole(),
+			}
+
+			_, err := action.Run(t.Context())
+			require.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
+
+			suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+			require.True(t, ok)
+			require.Equal(
+				t,
+				"Install the bundle without --version. "+
+					"The bundle contains the extension version to install.",
+				suggestionErr.Suggestion,
+			)
+			require.Empty(t, action.bundleSourceName)
+			require.Empty(t, action.bundleTempDir)
+			require.Empty(t, action.bundleTempZip)
+		})
+	}
+}
+
 func TestPrepareBundleInstall_LongNameUsesValidTransientSource(t *testing.T) {
 	t.Parallel()
 

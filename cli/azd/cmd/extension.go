@@ -828,7 +828,13 @@ func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
 		"The extension source to use for installs. Accepts a registered source name "+
 			"or a registry location (URL or file path) to register and install from.")
-	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to install")
+	cmd.Flags().StringVarP(
+		&flags.version,
+		"version",
+		"v",
+		"",
+		"The version of the extension to install. Cannot be used with an extension bundle",
+	)
 	cmd.Flags().
 		BoolVarP(&flags.force, "force", "f", false, "Force installation, including downgrades and reinstalls")
 	cmd.Flags().BoolVar(&flags.noDependencies, "no-dependencies", false,
@@ -882,11 +888,23 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		TitleNote: "Installs the specified extension onto the local machine",
 	})
 
+	bundleInstall := isBundleArg(a.args)
+	if bundleInstall && a.flags.version != "" {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"cannot specify --version when installing an extension bundle: %w",
+				internal.ErrInvalidFlagCombination,
+			),
+			Suggestion: "Install the bundle without --version. " +
+				"The bundle contains the extension version to install.",
+		}
+	}
+
 	// A single .zip argument is a self-contained bundle: extract it, register an
 	// ephemeral source, and queue its extensions for install (this rewrites
 	// a.args/a.flags.source for the loop below). The deferred cleanup removes the
 	// ephemeral source and temp dir afterwards.
-	if isBundleArg(a.args) {
+	if bundleInstall {
 		if err := a.prepareBundleInstall(ctx, a.args[0]); err != nil {
 			a.cleanupBundleInstall(ctx)
 			return nil, err
@@ -2262,17 +2280,23 @@ func upgradeSourceResolutionError(extensionId, flagSource, installedSource strin
 
 // upgradeVersionResolutionError builds a user-facing error when the selected
 // upgrade source contains the extension but not the requested version.
-func upgradeVersionResolutionError(extensionId, version, source string) error {
+func upgradeVersionResolutionError(extensionId, version, source, compatibleVersion string) error {
+	var message string
 	if source == "" || strings.EqualFold(source, extensions.MainRegistryName) {
-		return fmt.Errorf(
+		message = fmt.Sprintf(
 			"extension '%s' version '%s' not available in the main registry",
 			extensionId, version,
 		)
+	} else {
+		message = fmt.Sprintf(
+			"extension '%s' version '%s' not available in source '%s'",
+			extensionId, version, source,
+		)
 	}
-	return fmt.Errorf(
-		"extension '%s' version '%s' not available in source '%s'",
-		extensionId, version, source,
-	)
+	if compatibleVersion != "" {
+		message += fmt.Sprintf(", latest compatible version is '%s'", compatibleVersion)
+	}
+	return errors.New(message)
 }
 
 // upgradeRetryCommand returns a retry command that preserves the source and
@@ -2443,14 +2467,16 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 				extensionId, a.flags.source, installed.Source,
 			)
 		}
-		resolutionErr := upgradeVersionResolutionError(
-			extensionId, a.flags.version, res.NewSource,
-		)
 		for _, alternative := range versionErr.Alternatives() {
 			if strings.EqualFold(alternative.Source, res.NewSource) {
 				command := upgradeRetryCommand(extensionId, res.NewSource, alternative.Version)
 				return &internal.ErrorWithSuggestion{
-					Err: resolutionErr,
+					Err: upgradeVersionResolutionError(
+						extensionId,
+						a.flags.version,
+						res.NewSource,
+						alternative.Version,
+					),
 					Suggestion: fmt.Sprintf(
 						"Run '%s' to update to the latest compatible version.",
 						command,
@@ -2458,7 +2484,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 				}
 			}
 		}
-		return resolutionErr
+		return upgradeVersionResolutionError(extensionId, a.flags.version, res.NewSource, "")
 	}
 
 	resolution, err := a.extensionManager.ResolveExtensions(ctx, allMatchOptions)

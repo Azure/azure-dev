@@ -122,17 +122,19 @@ func TestUpgradeResolutionErrors(t *testing.T) {
 		},
 		{
 			name: "version in named source",
-			err:  upgradeVersionResolutionError("ext-a", "3.0.0", "test"),
-			want: "extension 'ext-a' version '3.0.0' not available in source 'test'",
+			err:  upgradeVersionResolutionError("ext-a", "3.0.0", "test", "2.0.0"),
+			want: "extension 'ext-a' version '3.0.0' not available in source 'test', " +
+				"latest compatible version is '2.0.0'",
 		},
 		{
 			name: "version in main source",
-			err:  upgradeVersionResolutionError("ext-a", "3.0.0", "AZD"),
-			want: "extension 'ext-a' version '3.0.0' not available in the main registry",
+			err:  upgradeVersionResolutionError("ext-a", "3.0.0", "AZD", "2.0.0"),
+			want: "extension 'ext-a' version '3.0.0' not available in the main registry, " +
+				"latest compatible version is '2.0.0'",
 		},
 		{
 			name: "version with missing source defaults to main",
-			err:  upgradeVersionResolutionError("ext-a", "3.0.0", ""),
+			err:  upgradeVersionResolutionError("ext-a", "3.0.0", "", ""),
 			want: "extension 'ext-a' version '3.0.0' not available in the main registry",
 		},
 	}
@@ -212,8 +214,28 @@ func TestUpgradeOneExtension_InteractiveFailurePreservesRetryFlags(t *testing.T)
 	result := action.upgradeOneExtension(t.Context(), "ext-a", 0, false)
 
 	require.Equal(t, extensions.UpgradeStatusFailed, result.Status)
-	require.EqualError(t, result.Error, "extension 'ext-a' version '3.0.0' not available in source 'test'")
+	require.EqualError(
+		t,
+		result.Error,
+		"extension 'ext-a' version '3.0.0' not available in source 'test', "+
+			"latest compatible version is '2.0.0'",
+	)
 	require.Contains(t, result.Suggestion, "azd extension update ext-a --source test --version 2.0.0")
+
+	jsonResult, err := json.Marshal(result)
+	require.NoError(t, err)
+	require.JSONEq(
+		t,
+		`{
+			"name": "ext-a",
+			"status": "failed",
+			"fromVersion": "1.0.0",
+			"fromSource": "test",
+			"error": "extension 'ext-a' version '3.0.0' not available in source 'test', `+
+			`latest compatible version is '2.0.0'"
+		}`,
+		string(jsonResult),
+	)
 
 	rendered := strings.Join(console.Output(), "\n")
 	require.Contains(t, rendered, result.Error.Error())

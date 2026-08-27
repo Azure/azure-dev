@@ -283,7 +283,9 @@ func (p *FoundryProvisioningProvider) Initialize(
 
 	// endpoint: selects the existing-project graph. Both project graphs deploy
 	// at subscription scope and use the same embedded/on-disk template pipeline.
-	endpoint, err := foundryServiceEndpointAtRoot(rawYAML, projectRoot, svcName)
+	// ${VAR} references are resolved against the azd environment, so an endpoint
+	// whose variables are all unset means greenfield.
+	endpoint, err := foundryServiceEndpointAtRoot(rawYAML, projectRoot, svcName, p.networkEnvMap(ctx))
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -606,28 +608,43 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 		log.Printf("[debug] foundry provider: no azd client; network ${VAR} uses process env only")
 		return out
 	}
+	// Planned (virtual) values win over the persisted environment so a value the
+	// current provision is about to write is not shadowed by a stale one.
+	for key, value := range azdEnvMap(ctx, p.azdClient) {
+		if _, planned := out[key]; !planned {
+			out[key] = value
+		}
+	}
+	return out
+}
 
-	envClient := p.azdClient.Environment()
+// azdEnvMap returns a best-effort name -> value map of the current azd
+// environment. On any failure it returns nil and callers fall back to the
+// process environment.
+func azdEnvMap(ctx context.Context, azdClient *azdext.AzdClient) map[string]string {
+	if azdClient == nil {
+		return nil
+	}
+	envClient := azdClient.Environment()
 	if envClient == nil {
-		log.Printf("[debug] foundry provider: no environment client; network ${VAR} uses process env only")
-		return out
+		log.Printf("[debug] foundry provider: no environment client; ${VAR} uses process env only")
+		return nil
 	}
 	curr, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil || curr.GetEnvironment() == nil {
 		log.Printf("[debug] foundry provider: no current azd environment (%v); "+
-			"network ${VAR} uses process env only", err)
-		return out
+			"${VAR} uses process env only", err)
+		return nil
 	}
 	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: curr.GetEnvironment().GetName()})
 	if err != nil {
-		log.Printf("[debug] foundry provider: GetValues failed (%s); network ${VAR} uses process env only", err)
-		return out
+		log.Printf("[debug] foundry provider: GetValues failed (%s); ${VAR} uses process env only", err)
+		return nil
 	}
+	out := make(map[string]string, len(resp.GetKeyValues()))
 	for _, kv := range resp.GetKeyValues() {
 		if kv != nil {
-			if _, planned := out[kv.Key]; !planned {
-				out[kv.Key] = kv.Value
-			}
+			out[kv.Key] = kv.Value
 		}
 	}
 	return out
@@ -743,10 +760,18 @@ func (p *FoundryProvisioningProvider) onDiskModuleName() string {
 	return onDiskModule
 }
 
+// foundryServiceEndpointAtRoot returns the endpoint: declared on a Foundry
+// project service, with ${VAR} references resolved from env (falling back to
+// the process environment). Callers must pass the azd environment: the endpoint
+// is normally written as ${AZURE_AI_PROJECT_ENDPOINT}, and every brownfield
+// consumer parses the account and project names out of this value, so returning
+// the raw reference would build an ARM template with empty name segments.
+// An endpoint whose variables are all unset resolves to "" (greenfield).
 func foundryServiceEndpointAtRoot(
 	rawYAML []byte,
 	projectRoot string,
 	svcName string,
+	env map[string]string,
 ) (string, error) {
 	type svc struct {
 		Endpoint string `yaml:"endpoint,omitempty"`
@@ -780,7 +805,21 @@ func foundryServiceEndpointAtRoot(
 	if err := yaml.Unmarshal(data, &service); err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(service.Endpoint), nil
+	endpoint := strings.TrimSpace(service.Endpoint)
+	if endpoint == "" {
+		return "", nil
+	}
+	expanded, err := foundry.ExpandEnv(endpoint, func(name string) string {
+		if v, ok := env[name]; ok {
+			return v
+		}
+		v, _ := os.LookupEnv(name)
+		return v
+	})
+	if err != nil {
+		return "", fmt.Errorf("expand endpoint: %w", err)
+	}
+	return strings.TrimSpace(expanded), nil
 }
 
 // defaultResourceGroupName returns the default resource group azd provisions

@@ -1276,6 +1276,7 @@ services:
 				[]byte(tt.yaml),
 				"",
 				tt.svcName,
+				nil,
 			)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -1311,6 +1312,7 @@ func TestFoundryServiceEndpointAtRoot_ResolvesFileRef(
 		raw,
 		root,
 		"foundry",
+		nil,
 	)
 
 	require.NoError(t, err)
@@ -1319,6 +1321,42 @@ func TestFoundryServiceEndpointAtRoot_ResolvesFileRef(
 		"https://acct.services.ai.azure.com/api/projects/existing",
 		endpoint,
 	)
+}
+
+// TestFoundryServiceEndpointAtRoot_ExpandsEnvRef covers the portable form that
+// `azd ai agent init` writes. Returning the raw ${VAR} literal used to flow
+// straight into the brownfield ARM template, where projectNameFromEndpoint
+// found no /api/projects/<name> suffix and the deployment failed with an
+// invalid two-segment resource name (<account>/).
+func TestFoundryServiceEndpointAtRoot_ExpandsEnvRef(t *testing.T) {
+	// Not parallel: the greenfield case pins AZURE_AI_PROJECT_ENDPOINT to empty
+	// via t.Setenv so a developer who exports it locally still sees the unset
+	// behavior, and t.Setenv is incompatible with t.Parallel.
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/my-project"
+	raw := []byte(`services:
+  foundry:
+    host: azure.ai.project
+    endpoint: ${AZURE_AI_PROJECT_ENDPOINT}
+`)
+
+	t.Run("set variable resolves to the real endpoint", func(t *testing.T) {
+		got, err := foundryServiceEndpointAtRoot(raw, "", "foundry", map[string]string{
+			"AZURE_AI_PROJECT_ENDPOINT": endpoint,
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, endpoint, got)
+		assert.Equal(t, "my-project", projectNameFromEndpoint(got))
+	})
+
+	t.Run("unset variable is greenfield", func(t *testing.T) {
+		t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "")
+
+		got, err := foundryServiceEndpointAtRoot(raw, "", "foundry", nil)
+
+		require.NoError(t, err)
+		assert.Empty(t, got)
+	})
 }
 
 func TestProjectNameFromEndpoint(t *testing.T) {

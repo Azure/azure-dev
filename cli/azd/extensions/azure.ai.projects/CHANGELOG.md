@@ -1,5 +1,11 @@
 # Release History
 
+## Unreleased
+
+### Bugs Fixed
+
+- A Foundry project service whose `endpoint:` is written as an environment reference (for example `endpoint: ${AZURE_AI_PROJECT_ENDPOINT}`, which `azd ai agent init` now generates so `azure.yaml` stays portable) is resolved against the azd environment before it is used. Previously the unexpanded `${...}` literal was carried into the brownfield deployment, which failed with `InvalidTemplate` because the project name segment came out empty. An endpoint whose variables are all unset now means "create a new project" instead of "reuse an existing one".
+
 ## 1.0.0-beta.7 (2026-08-24)
 
 ### Other Changes

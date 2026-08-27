@@ -6,6 +6,7 @@ package github
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -170,9 +171,36 @@ func (gh *GitHubCli) CreateRelease(cwd string, tagName string, opts map[string]s
 	// Define boolean flags that should be added without values
 	booleanFlags := map[string]bool{"prerelease": true, "draft": true}
 
-	// Add optional arguments (skip boolean flags)
+	// Release notes can be large (e.g. an entire CHANGELOG.md). Passing them
+	// inline via "--notes <body>" overflows the command-line length limit on
+	// Windows (error 206: "The filename or extension is too long."). Spill the
+	// notes to a temp file and use "--notes-file" instead, which gh reads
+	// directly. The file is removed after the command runs.
+	var notesFile string
+	defer func() {
+		if notesFile != "" {
+			_ = os.Remove(notesFile)
+		}
+	}()
+	if notes := opts["notes"]; notes != "" {
+		f, err := os.CreateTemp("", "azd-release-notes-*.md")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create temp file for release notes: %w", err)
+		}
+		notesFile = f.Name()
+		if _, err := f.WriteString(notes); err != nil {
+			_ = f.Close()
+			return nil, fmt.Errorf("failed to write release notes to temp file: %w", err)
+		}
+		if err := f.Close(); err != nil {
+			return nil, fmt.Errorf("failed to close release notes temp file: %w", err)
+		}
+		args = append(args, "--notes-file", notesFile)
+	}
+
+	// Add optional arguments (skip boolean flags and notes, which is handled above)
 	for key, value := range opts {
-		if value != "" && !booleanFlags[key] {
+		if value != "" && !booleanFlags[key] && key != "notes" {
 			args = append(args, fmt.Sprintf("--%s", key), value)
 		}
 	}

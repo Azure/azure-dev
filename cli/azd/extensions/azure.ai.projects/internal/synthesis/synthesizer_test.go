@@ -131,6 +131,34 @@ services:
 			wantIncludeAcr: false,
 		},
 		{
+			// `azd ai agent init` writes a promptAgent: block under config: and
+			// omits kind:, so the promptAgent block is the only marker that this
+			// service is not a container agent.
+			name: "sibling prompt agent without kind => no ACR",
+			yaml: `
+services:
+  my-prompt-agent:
+    host: azure.ai.agent
+    project: .
+    config:
+      promptAgent:
+        apiVersion: v1
+        baseUrl: https://ai.azure.com/api
+        resourceGroup: my-rg
+        subscriptionId: 00000000-0000-0000-0000-000000000000
+        workspace: my-workspace
+  my-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4o-mini
+        model: {format: OpenAI, name: gpt-4o-mini, version: "2024-07-18"}
+        sku: {capacity: 50, name: GlobalStandard}
+`,
+			serviceName:    "my-project",
+			wantDeployLen:  1,
+			wantIncludeAcr: false,
+		},
+		{
 			name: "greenfield hosted agent runtime-only (no docker) => ACR on",
 			yaml: `
 name: my-foundry-agent
@@ -1103,7 +1131,7 @@ services:
     host: azure.ai.connection
     $ref: ./connection.yaml
 `
-	endpoint, err := ProjectEndpoint([]byte(yaml), "project", root)
+	endpoint, err := ProjectEndpoint([]byte(yaml), "project", root, nil)
 	require.NoError(t, err)
 	assert.Equal(
 		t,

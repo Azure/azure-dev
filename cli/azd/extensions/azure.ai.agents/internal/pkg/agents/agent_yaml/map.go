@@ -611,8 +611,10 @@ func voiceWireLocale(voice *agent_api.VoiceConfig) string {
 }
 
 func defaultVoiceAudioFormat() *agent_api.VoiceAudioFormat {
-	rate := defaultVoiceAudioRate
-	return &agent_api.VoiceAudioFormat{Type: defaultVoiceAudioType, Rate: &rate}
+	return &agent_api.VoiceAudioFormat{
+		Type: defaultVoiceAudioType,
+		Rate: new(defaultVoiceAudioRate),
+	}
 }
 
 func mapVoiceAudioFormat(format *VoiceAudioFormat, fallback *agent_api.VoiceAudioFormat) *agent_api.VoiceAudioFormat {

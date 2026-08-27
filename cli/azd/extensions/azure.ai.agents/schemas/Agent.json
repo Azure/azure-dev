@@ -169,9 +169,83 @@
             "tools":       true,
             "skill":       true,
             "metadata":    true,
+            "model": {
+              "type": "string",
+              "description": "Name of the model deployment the agent runs on (for example \"gpt-4.1-mini\"). Must match a deployment declared on the sibling azure.ai.project service."
+            },
             "instructions": {
               "type": "string",
-              "description": "Inline prompt text or a relative path to a markdown file the extension reads at deploy time."
+              "description": "The system/developer message inserted into the model's context. Declared inline."
+            },
+            "temperature": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "description": "Sampling temperature. Lower values make output more deterministic. Omit to use the model default; prefer setting either temperature or top_p, not both."
+            },
+            "top_p": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Nucleus sampling cutoff. Omit to use the model default; prefer setting either temperature or top_p, not both."
+            },
+            "text": {
+              "type": "object",
+              "description": "Configuration for the model's text response, most commonly the structured output format (for example text.format.type: json_schema)."
+            },
+            "reasoning": {
+              "type": "object",
+              "description": "Configuration for reasoning-model behavior (for example reasoning.effort). Only meaningful on models that support reasoning."
+            },
+            "memory": {
+              "type": "object",
+              "description": "Durable recall carried across invocations, backed by a Foundry memory store. The store is created if it does not exist, and a memory_search_preview tool bound to it is added to the agent's tools automatically.",
+              "required": ["store", "chat_model", "embedding_model"],
+              "additionalProperties": false,
+              "properties": {
+                "store": {
+                  "type": "string",
+                  "description": "Name of the memory store. Created if it does not already exist, reused if it does."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description recorded on the memory store when it is created."
+                },
+                "chat_model": {
+                  "type": "string",
+                  "description": "Model deployment name the store uses to summarize conversations into memories."
+                },
+                "embedding_model": {
+                  "type": "string",
+                  "description": "Model deployment name the store uses to embed memories for retrieval."
+                },
+                "scope": {
+                  "type": "string",
+                  "description": "Namespace that isolates memories, typically per user. Defaults to \"{{$userId}}\", which resolves the caller's object ID at runtime so one user's memories never surface in another's conversation."
+                },
+                "update_delay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Seconds of conversation inactivity to wait before extracting memories. Omit to use the service default (300). Low values extract on nearly every turn and are intended for demos."
+                },
+                "max_memories": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Maximum number of memories a single search returns. Omit to use the service default."
+                },
+                "options": {
+                  "type": "object",
+                  "description": "Toggles for which memory kinds the store extracts. Omitted toggles keep the service default.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "chat_summary_enabled": { "type": "boolean" },
+                    "user_profile_enabled": { "type": "boolean" },
+                    "procedural_memory_enabled": { "type": "boolean" },
+                    "default_ttl_seconds": { "type": "integer", "minimum": 0 },
+                    "user_profile_details": { "type": "string" }
+                  }
+                }
+              }
             }
           }
         }

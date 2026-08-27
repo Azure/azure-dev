@@ -4,6 +4,8 @@
 package grpcserver
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -104,6 +106,60 @@ func TestTranscodeBetaRequestDiscardsUnknownPreviewFields(t *testing.T) {
 	require.Equal(t, request.GetEventName(), stableRequest.GetEventName())
 	require.Equal(t, request.GetAttributes(), stableRequest.GetAttributes())
 	require.Empty(t, stableRequest.ProtoReflect().GetUnknown())
+}
+
+func TestAdaptBetaUnary(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Success", func(t *testing.T) {
+		t.Parallel()
+
+		response, err := adaptBetaUnary(
+			t.Context(),
+			&v1beta.ReportUsageRequest{EventName: "deploy.completed"},
+			new(v1.ReportUsageRequest),
+			func(_ context.Context, request *v1.ReportUsageRequest) (*v1.ReportUsageResponse, error) {
+				return &v1.ReportUsageResponse{Accepted: request.GetEventName() == "deploy.completed"}, nil
+			},
+			new(v1beta.ReportUsageResponse),
+			"TelemetryService.ReportUsage",
+		)
+		require.NoError(t, err)
+		require.True(t, response.GetAccepted())
+	})
+
+	t.Run("StableError", func(t *testing.T) {
+		t.Parallel()
+
+		stableErr := errors.New("stable failure")
+		_, err := adaptBetaUnary(
+			t.Context(),
+			new(v1beta.ReportUsageRequest),
+			new(v1.ReportUsageRequest),
+			func(context.Context, *v1.ReportUsageRequest) (*v1.ReportUsageResponse, error) {
+				return nil, stableErr
+			},
+			new(v1beta.ReportUsageResponse),
+			"TelemetryService.ReportUsage",
+		)
+		require.ErrorIs(t, err, stableErr)
+	})
+
+	t.Run("NilStableResponse", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := adaptBetaUnary(
+			t.Context(),
+			new(v1beta.ReportUsageRequest),
+			new(v1.ReportUsageRequest),
+			func(context.Context, *v1.ReportUsageRequest) (*v1.ReportUsageResponse, error) {
+				return nil, nil
+			},
+			new(v1beta.ReportUsageResponse),
+			"TelemetryService.ReportUsage",
+		)
+		require.ErrorContains(t, err, "returned a nil response")
+	})
 }
 
 func TestTranslateBetaStatusDetails(t *testing.T) {

@@ -4,9 +4,11 @@
 package grpcserver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -39,6 +41,34 @@ func WithBetaServiceOverride(service BetaService, override any) ServerOption {
 		}
 		server.betaServiceOverrides[service] = override
 	}
+}
+
+func validateBetaServiceOverride(
+	service string,
+	override any,
+	wholeServer reflect.Type,
+	focusedOverrides ...reflect.Type,
+) error {
+	if override == nil {
+		return nil
+	}
+
+	overrideType := reflect.TypeOf(override)
+	if overrideType.Implements(wholeServer) {
+		return fmt.Errorf(
+			"beta override for %s must implement focused method override interfaces, not v1beta.%sServer",
+			service,
+			service,
+		)
+	}
+	if slices.ContainsFunc(focusedOverrides, overrideType.Implements) {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"beta override for %s does not implement a generated focused method override interface",
+		service,
+	)
 }
 
 func (s *Server) registerServices() error {
@@ -112,6 +142,38 @@ func transcodeVersionedMessage(source, destination proto.Message, discardUnknown
 	}
 
 	return nil
+}
+
+func adaptBetaUnary[
+	BetaRequest proto.Message,
+	StableRequest proto.Message,
+	StableResponse proto.Message,
+	BetaResponse proto.Message,
+](
+	ctx context.Context,
+	betaRequest BetaRequest,
+	stableRequest StableRequest,
+	invokeStable func(context.Context, StableRequest) (StableResponse, error),
+	betaResponse BetaResponse,
+	operation string,
+) (BetaResponse, error) {
+	var zero BetaResponse
+	if err := transcodeBetaRequest(betaRequest, stableRequest); err != nil {
+		return zero, fmt.Errorf("convert %s request from beta to stable: %w", operation, err)
+	}
+
+	stableResponse, err := invokeStable(ctx, stableRequest)
+	if err != nil {
+		return zero, err
+	}
+	if isNilProtoMessage(stableResponse) {
+		return zero, fmt.Errorf("stable %s returned a nil response", operation)
+	}
+	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
+		return zero, fmt.Errorf("convert %s response from stable to beta: %w", operation, err)
+	}
+
+	return betaResponse, nil
 }
 
 func isNilProtoMessage(message proto.Message) bool {

@@ -97,9 +97,6 @@ As a last resort, parent-process detection recognizes the `codex`, `claude`, `ge
 and GitHub Copilot CLI executable names. It intentionally does not recognize `Cursor.exe`, because
 that name also identifies the regular Cursor desktop application.
 
-To disable all agent detection, set `AZD_DISABLE_AGENT_DETECT` to any non-empty value. This override
-is intended for tests and tooling and is unsupported for general use.
-
 ## azd exec
 
 The `azd exec` command runs commands and scripts with the active azd environment loaded into the child
@@ -308,6 +305,7 @@ These variables are used by the Terraform provider integration to authenticate w
 | `AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES` | If true, ignores unsupported resources in Aspire app host. |
 | `AZD_DEBUG_SERVER_DEBUG_ENDPOINTS` | If true, enables debug endpoints in server mode. |
 | `AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT` | Overrides the experimentation TAS endpoint URL. |
+| `AZD_DISABLE_AGENT_DETECT` | If set to any non-empty value, disables AI agent detection. Used by tests and tooling that need interactive behavior. |
 | `AZD_SUBSCRIPTIONS_FETCH_MAX_CONCURRENCY` | Limits the maximum concurrency when fetching subscriptions. |
 | `DEPLOYMENT_STACKS_BYPASS_STACK_OUT_OF_SYNC_ERROR` | If true, bypasses Deployment Stacks out-of-sync errors. |
 

@@ -86,6 +86,32 @@ func TestGitHubRepositoryStatusChecker(t *testing.T) {
 		require.True(t, status.Archived)
 	})
 
+	t.Run("GitHubHostTakesPrecedenceOverServerURL", func(t *testing.T) {
+		t.Setenv("GH_HOST", "github.primary.contoso.com")
+		t.Setenv("GITHUB_SERVER_URL", "https://github.fallback.contoso.com")
+		t.Setenv("GH_ENTERPRISE_TOKEN", "server-token")
+		mockTransport := mockhttp.NewMockHttpUtil()
+		mockTransport.When(func(req *http.Request) bool {
+			return req.URL.String() == "https://github.primary.contoso.com/api/v3/repos/contoso/template"
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			require.NotEmpty(t, req.Header.Get("Authorization"))
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK, map[string]any{
+				"archived": false,
+			})
+		})
+
+		checker := NewGitHubRepositoryStatusChecker(mockTransport)
+		status, err := checker.Check(t.Context(), "https://github.primary.contoso.com/contoso/template")
+
+		require.NoError(t, err)
+		require.NotNil(t, status)
+
+		status, err = checker.Check(t.Context(), "https://github.fallback.contoso.com/contoso/template")
+
+		require.NoError(t, err)
+		require.Nil(t, status)
+	})
+
 	t.Run("UnsupportedRepositoryHost", func(t *testing.T) {
 		checker := NewGitHubRepositoryStatusChecker(mockhttp.NewMockHttpUtil())
 		status, err := checker.Check(t.Context(), "https://gitlab.com/contoso/template")

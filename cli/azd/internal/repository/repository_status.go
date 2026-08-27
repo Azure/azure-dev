@@ -58,10 +58,11 @@ func NewGitHubRepositoryStatusChecker(transport policy.Transporter) RepositorySt
 			token:      cloudToken,
 		},
 	}
-	if host := normalizeGitHubHost(os.Getenv("GH_HOST")); host != "" && host != "github.com" {
+	host := normalizeGitHubHost(os.Getenv("GH_HOST"))
+	if host != "" && host != "github.com" {
 		hosts[host] = githubHostConfiguration(host, cloudToken, enterpriseServerToken)
-	}
-	if serverURL := os.Getenv("GITHUB_SERVER_URL"); serverURL != "" {
+	} else if host == "" {
+		serverURL := os.Getenv("GITHUB_SERVER_URL")
 		if parsed, err := url.Parse(serverURL); err == nil {
 			if host := normalizeGitHubHost(parsed.Hostname()); host != "" && host != "github.com" {
 				hosts[host] = githubHostConfiguration(host, cloudToken, enterpriseServerToken)

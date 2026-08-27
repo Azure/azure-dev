@@ -405,9 +405,10 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 		// deploy → no deps → packaging overlaps with anything upstream).
 		pkgSvc := svc
 		if err := g.AddStep(&exegraph.Step{
-			Name:      pkgStepName,
-			DependsOn: opts.packageExtraDeps,
-			Tags:      []string{"package"},
+			Name:             pkgStepName,
+			DependsOn:        opts.packageExtraDeps,
+			Tags:             []string{"package"},
+			ConcurrencyGroup: packageConcurrencyGroup,
 			Action: func(ctx context.Context) error {
 				sc := project.NewServiceContext()
 
@@ -450,9 +451,10 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 
 		pubSvc := svc
 		if err := g.AddStep(&exegraph.Step{
-			Name:      publishStepName,
-			DependsOn: publishDeps,
-			Tags:      []string{"publish"},
+			Name:             publishStepName,
+			DependsOn:        publishDeps,
+			Tags:             []string{"publish"},
+			ConcurrencyGroup: deployConcurrencyGroup,
 			Action: func(stepCtx context.Context) error {
 				sc := opts.state.LoadContext(pubSvc.Name)
 
@@ -561,9 +563,10 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 
 		depSvc := svc
 		if err := g.AddStep(&exegraph.Step{
-			Name:      deployStepName,
-			DependsOn: deployDeps,
-			Tags:      []string{"deploy"},
+			Name:             deployStepName,
+			DependsOn:        deployDeps,
+			Tags:             []string{"deploy"},
+			ConcurrencyGroup: deployConcurrencyGroup,
 			Action: func(stepCtx context.Context) error {
 				sc := opts.state.LoadContext(depSvc.Name)
 

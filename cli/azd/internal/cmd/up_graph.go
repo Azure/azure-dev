@@ -11,7 +11,6 @@ import (
 	"log"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -276,7 +275,7 @@ func (u *UpGraphAction) Run(
 	if err != nil {
 		return nil, err
 	}
-	maxConcurrency := u.resolveDAGConcurrency()
+	opts := u.runOptions()
 
 	// 3. Resolve deploy timeout (honors --timeout flag and AZD_DEPLOY_TIMEOUT
 	// env var for parity with stand-alone `azd deploy`).
@@ -425,7 +424,7 @@ func (u *UpGraphAction) Run(
 		services:                   stableServices,
 		serviceManager:             u.serviceManager,
 		deployTimeout:              deployTimeout,
-		maxConcurrency:             maxConcurrency,
+		maxConcurrency:             opts.MaxConcurrency,
 		packagePublishBuildGateKey: dotNetPackagePublishBuildGateKey,
 		buildGateKey:               aspireBuildGateKey,
 		// `azd up` never takes a --from-package flag; leave empty.
@@ -585,7 +584,6 @@ func (u *UpGraphAction) Run(
 		}
 	}
 
-	opts := u.runOptions(maxConcurrency)
 	baseOnStepStart := opts.OnStepStart
 	baseOnStepDone := opts.OnStepDone
 
@@ -896,9 +894,10 @@ func (u *UpGraphAction) addProvisionSteps(
 
 		layerIdx := i
 		if err := g.AddStep(&exegraph.Step{
-			Name:      stepNames[i],
-			DependsOn: deps,
-			Tags:      []string{"provision"},
+			Name:             stepNames[i],
+			DependsOn:        deps,
+			Tags:             []string{"provision"},
+			ConcurrencyGroup: provisionConcurrencyGroup,
 			Action: func(ctx context.Context) error {
 				return provisionSingleLayer(
 					ctx, provDeps, layers[layerIdx],
@@ -928,41 +927,16 @@ func (u *UpGraphAction) addProvisionSteps(
 	return provisionSinks, nil
 }
 
-// resolveDAGConcurrency resolves the scheduler concurrency for the unified
-// graph. AZD_UP_CONCURRENCY takes precedence over AZD_DEPLOY_CONCURRENCY.
-func (u *UpGraphAction) resolveDAGConcurrency() int {
-	if v, ok := os.LookupEnv("AZD_UP_CONCURRENCY"); ok {
-		if n, parseErr := strconv.Atoi(v); parseErr != nil {
-			log.Printf("warning: ignoring invalid AZD_UP_CONCURRENCY=%q: %v", v, parseErr)
-		} else if n > 0 {
-			clamped := min(n, 64)
-			if clamped < n {
-				log.Printf("clamping up concurrency from %d to %d", n, clamped)
-			}
-			return clamped
-		}
-	} else if v, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
-		if n, parseErr := strconv.Atoi(v); parseErr != nil {
-			log.Printf("warning: ignoring invalid AZD_DEPLOY_CONCURRENCY=%q: %v", v, parseErr)
-		} else if n > 0 {
-			clamped := min(n, 64)
-			if clamped < n {
-				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)
-			}
-			return clamped
-		}
-	}
-
-	return 0
-}
-
 // runOptions returns the execution options for the unified graph, including
-// error policy, concurrency limit, and step lifecycle callbacks.
-func (u *UpGraphAction) runOptions(maxConcurrency int) exegraph.RunOptions {
+// error policy, optional concurrency limit, and step lifecycle callbacks.
+func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 	opts := exegraph.RunOptions{
-		ErrorPolicy:    exegraph.FailFast,
-		MaxConcurrency: maxConcurrency,
+		ErrorPolicy: exegraph.FailFast,
 	}
+
+	concurrency := resolveUpGraphConcurrency(os.LookupEnv)
+	opts.MaxConcurrency = concurrency.max
+	opts.GroupConcurrency = concurrency.groups
 
 	opts.OnStepStart = func(stepName string) {
 		log.Printf("up-graph: starting %s", stepName)

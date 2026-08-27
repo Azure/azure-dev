@@ -292,7 +292,7 @@ func (da *DeployAction) deployServicesGraph(
 	if err != nil {
 		return nil, err
 	}
-	maxConcurrency := da.resolveDAGConcurrency()
+	concurrency := resolveDeployGraphConcurrency(os.LookupEnv)
 
 	// Wrap console for thread-safe output during parallel deployment.
 	// Graph step callbacks may call ShowSpinner/StopSpinner/Message which are
@@ -343,7 +343,7 @@ func (da *DeployAction) deployServicesGraph(
 		services:                   stableServices,
 		serviceManager:             da.serviceManager,
 		deployTimeout:              deployTimeout,
-		maxConcurrency:             maxConcurrency,
+		maxConcurrency:             concurrency.max,
 		fromPackage:                da.flags.fromPackage,
 		state:                      state,
 		packagePublishBuildGateKey: packagePublishBuildGateKey,
@@ -365,8 +365,9 @@ func (da *DeployAction) deployServicesGraph(
 	// Wire progress tracker to graph step lifecycle callbacks.
 	// Step names are "package-<svc>", "publish-<svc>", "deploy-<svc>".
 	opts := exegraph.RunOptions{
-		MaxConcurrency: maxConcurrency,
-		ErrorPolicy:    exegraph.FailFast,
+		MaxConcurrency:   concurrency.max,
+		GroupConcurrency: concurrency.groups,
+		ErrorPolicy:      exegraph.FailFast,
 		OnStepStart: func(stepName string) {
 			if svc, ok := strings.CutPrefix(stepName, "package-"); ok {
 				da.updateProgress(svc, phasePackaging, "")
@@ -498,23 +499,6 @@ func (da *DeployAction) deployServicesGraph(
 			),
 		},
 	}, nil
-}
-
-// resolveDAGConcurrency reads AZD_DEPLOY_CONCURRENCY from the environment.
-// Returns 0 (the scheduler default) if the variable is unset or invalid.
-func (da *DeployAction) resolveDAGConcurrency() int {
-	if envVal, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
-		if n, err := strconv.Atoi(envVal); err != nil {
-			log.Printf("warning: ignoring invalid AZD_DEPLOY_CONCURRENCY=%q: %v", envVal, err)
-		} else if n > 0 {
-			clamped := min(n, 64)
-			if clamped < n {
-				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)
-			}
-			return clamped
-		}
-	}
-	return 0
 }
 
 func (da *DeployAction) resolveDeployTimeout() (time.Duration, error) {

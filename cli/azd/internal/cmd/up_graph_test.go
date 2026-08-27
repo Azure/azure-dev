@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
@@ -86,7 +87,7 @@ func TestPhaseTimingBreakdown(t *testing.T) {
 	}
 }
 
-func TestUpGraphResolveDAGConcurrency(t *testing.T) {
+func TestUpGraphRunOptionsConcurrency(t *testing.T) {
 	tests := []struct {
 		name        string
 		upValue     *string
@@ -103,7 +104,10 @@ func TestUpGraphResolveDAGConcurrency(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ostest.Unsetenvs(t, []string{"AZD_UP_CONCURRENCY", "AZD_DEPLOY_CONCURRENCY"})
+			ostest.Unsetenvs(t, []string{
+				concurrencyMaxEnvVar, packageConcurrencyEnvVar, provisionConcurrencyEnvVar,
+				upConcurrencyEnvVar, deployConcurrencyEnvVar,
+			})
 			if tt.upValue != nil {
 				t.Setenv("AZD_UP_CONCURRENCY", *tt.upValue)
 			}
@@ -111,10 +115,8 @@ func TestUpGraphResolveDAGConcurrency(t *testing.T) {
 				t.Setenv("AZD_DEPLOY_CONCURRENCY", *tt.deployValue)
 			}
 
-			action := &UpGraphAction{}
-			concurrency := action.resolveDAGConcurrency()
-			require.Equal(t, tt.expected, concurrency)
-			require.Equal(t, concurrency, action.runOptions(concurrency).MaxConcurrency)
+			action := &UpGraphAction{env: environment.New("test")}
+			require.Equal(t, tt.expected, action.runOptions().MaxConcurrency)
 		})
 	}
 }

@@ -763,7 +763,10 @@ func createVoiceAgentAPIRequest(
 			voiceAgent.Instructions != nil || len(voiceAgent.StructuredInputs) > 0 ||
 			len(voiceAgent.Tools) > 0 || voiceAgent.ToolChoice != nil || voiceAgent.ParallelToolCalls != nil ||
 			voiceAgent.MaxOutputTokens != nil || len(voiceAgent.Include) > 0 || len(voiceAgent.Handoff) > 0 {
-			return nil, fmt.Errorf("model, input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent")
+			return nil, fmt.Errorf(
+				"model, input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, " +
+					"parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent",
+			)
 		}
 	} else if modelType != agent_api.VoiceModelTypeManaged && modelType != agent_api.VoiceModelTypeSelfDeployed {
 		return nil, fmt.Errorf(

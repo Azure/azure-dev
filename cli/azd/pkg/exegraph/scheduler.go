@@ -226,6 +226,14 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 	// group preserves the graph's critical-path priority. The group cursor
 	// rotates after every admission so a continuously ready group cannot starve
 	// another group, while an uncontested group can still consume all capacity.
+	priorityOrder := g.priorityOrder()
+	priorityRank := make(map[string]int, len(priorityOrder))
+	for rank, name := range priorityOrder {
+		priorityRank[name] = rank
+	}
+	compareReady := func(a, b string) int {
+		return cmp.Compare(priorityRank[a], priorityRank[b])
+	}
 	readyByGroup := make(map[string][]string)
 	var groupOrder []string
 	groupActive := make(map[string]int)
@@ -234,6 +242,9 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 	inflight := 0
 
 	enqueueReady := func(names []string) {
+		names = slices.Clone(names)
+		slices.SortFunc(names, compareReady)
+
 		touchedGroups := make(map[string]struct{})
 		for _, name := range names {
 			group := g.steps[name].ConcurrencyGroup
@@ -245,11 +256,7 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 			readyCount++
 		}
 		for group := range touchedGroups {
-			// Stable sort so ties are deterministic across runs (tests rely on
-			// this, and users benefit from reproducible scheduling order).
-			slices.SortStableFunc(readyByGroup[group], func(a, b string) int {
-				return cmp.Compare(g.Priority(b), g.Priority(a))
-			})
+			slices.SortFunc(readyByGroup[group], compareReady)
 		}
 	}
 
@@ -295,7 +302,6 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 
 	// Seed ready queues with zero in-degree steps, sorted by transitive
 	// dependent count descending (critical-path heuristic).
-	priorityOrder := g.priorityOrder()
 	var initialReady []string
 	for _, name := range priorityOrder {
 		if inDegree[name] == 0 {

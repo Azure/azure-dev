@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -241,6 +242,61 @@ func TestUpgradeOneExtension_InteractiveFailurePreservesRetryFlags(t *testing.T)
 	require.Contains(t, rendered, result.Error.Error())
 	require.Contains(t, rendered, "azd extension update ext-a --source test --version 2.0.0")
 	require.NotContains(t, rendered, "Retry with:")
+}
+
+func TestUpgradeOneExtension_IncompatibleInstalledVersionDoesNotAnnounceDowngrade(t *testing.T) {
+	t.Parallel()
+
+	const registryURL = "https://test.example.com/registry.json"
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	manager, sourceManager := createUpgradeTestManagerWithOptions(
+		t,
+		mockCtx,
+		map[string]*extensions.Extension{
+			"ext-a": {Id: "ext-a", Version: "2.0.0", Source: "test"},
+		},
+		registryURL,
+		testRegistry(&extensions.ExtensionMetadata{
+			Id:     "ext-a",
+			Source: "test",
+			Versions: []extensions.ExtensionVersion{
+				{Version: "1.0.0"},
+				{Version: "2.0.0", RequiredAzdVersion: ">=2.0.0"},
+			},
+		}),
+		extensions.ManagerOptions{AzdVersion: semver.MustParse("1.0.0")},
+	)
+
+	console := mockinput.NewMockConsole()
+	action := &extensionUpgradeAction{
+		args: []string{"ext-a"},
+		flags: &extensionUpgradeFlags{
+			global: &internal.GlobalCommandOptions{NoPrompt: true},
+		},
+		formatter:        &output.NoneFormatter{},
+		writer:           &bytes.Buffer{},
+		console:          console,
+		sourceManager:    sourceManager,
+		extensionManager: manager,
+	}
+
+	result := action.upgradeOneExtension(t.Context(), "ext-a", 0, false)
+
+	require.Equal(t, extensions.UpgradeStatusSkipped, result.Status)
+	require.Equal(
+		t,
+		"installed 2.0.0 is incompatible and newer than compatible version 1.0.0",
+		result.SkipReason,
+	)
+
+	rendered := strings.Join(console.Output(), "\n")
+	require.NotContains(t, rendered, "using 1.0.0 instead")
+	require.Contains(
+		t,
+		rendered,
+		"azd extension install ext-a --source test --version 1.0.0 --force",
+	)
 }
 
 func TestDisplayDependencyUpgradeResultsFailedSuggestion(t *testing.T) {
@@ -497,8 +553,10 @@ func TestUpgradeOneExtension(t *testing.T) {
 		wantErr                string
 		wantErrSubstr          string
 		wantSkipReason         string
+		wantSuggestion         string
 		wantFromSourceCategory extensions.SourceCategory
 		wantToSourceCategory   extensions.SourceCategory
+		azdVersion             string
 	}{
 		{
 			name:        "skip_already_up_to_date",
@@ -536,6 +594,29 @@ func TestUpgradeOneExtension(t *testing.T) {
 			},
 			wantStatus:     extensions.UpgradeStatusSkipped,
 			wantSkipReason: "installed 3.0.0 is newer than 2.0.0",
+		},
+		{
+			name:        "skip_installed_incompatible_version_requires_downgrade",
+			extensionId: "ext-a",
+			installed: map[string]*extensions.Extension{
+				"ext-a": {Id: "ext-a", Version: "2.0.0", Source: "test"},
+			},
+			registry: testRegistry(&extensions.ExtensionMetadata{
+				Id:     "ext-a",
+				Source: "test",
+				Versions: []extensions.ExtensionVersion{
+					{Version: "1.0.0"},
+					{Version: "2.0.0", RequiredAzdVersion: ">=2.0.0"},
+				},
+			}),
+			flags: extensionUpgradeFlags{
+				global: &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			wantStatus:     extensions.UpgradeStatusSkipped,
+			wantSkipReason: "installed 2.0.0 is incompatible and newer than compatible version 1.0.0",
+			wantSuggestion: "Use a compatible azd version, or run " +
+				"'azd extension install ext-a --source test --version 1.0.0 --force' to downgrade.",
+			azdVersion: "1.0.0",
 		},
 		{
 			name:        "skipped_delisted_extension",
@@ -637,7 +718,8 @@ func TestUpgradeOneExtension(t *testing.T) {
 				global:  &internal.GlobalCommandOptions{NoPrompt: true},
 			},
 			wantStatus: extensions.UpgradeStatusFailed,
-			wantErr:    "extension 'ext-a' version '3.0.0' not available in source 'test'",
+			wantErr: "extension 'ext-a' version '3.0.0' not available in source 'test', " +
+				"latest compatible version is '2.0.0'",
 		},
 		{
 			name:        "failed_stored_source_version_not_found",
@@ -653,7 +735,8 @@ func TestUpgradeOneExtension(t *testing.T) {
 				global:  &internal.GlobalCommandOptions{NoPrompt: true},
 			},
 			wantStatus: extensions.UpgradeStatusFailed,
-			wantErr:    "extension 'ext-a' version '3.0.0' not available in source 'test'",
+			wantErr: "extension 'ext-a' version '3.0.0' not available in source 'test', " +
+				"latest compatible version is '2.0.0'",
 		},
 		{
 			name:        "failed_version_and_source_not_found",
@@ -691,8 +774,12 @@ func TestUpgradeOneExtension(t *testing.T) {
 			t.Parallel()
 
 			mockCtx := mocks.NewMockContext(context.Background())
-			manager, sourceManager := createUpgradeTestManager(
-				t, mockCtx, tt.installed, registryURL, tt.registry,
+			managerOptions := extensions.ManagerOptions{}
+			if tt.azdVersion != "" {
+				managerOptions.AzdVersion = semver.MustParse(tt.azdVersion)
+			}
+			manager, sourceManager := createUpgradeTestManagerWithOptions(
+				t, mockCtx, tt.installed, registryURL, tt.registry, managerOptions,
 			)
 
 			action := &extensionUpgradeAction{
@@ -725,6 +812,9 @@ func TestUpgradeOneExtension(t *testing.T) {
 
 			if tt.wantSkipReason != "" {
 				assert.Equal(t, tt.wantSkipReason, result.SkipReason)
+			}
+			if tt.wantSuggestion != "" {
+				assert.Equal(t, tt.wantSuggestion, result.Suggestion)
 			}
 			if tt.wantFromSourceCategory != "" {
 				assert.Equal(t, tt.wantFromSourceCategory, result.FromSourceCategory)

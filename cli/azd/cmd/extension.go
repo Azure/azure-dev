@@ -2321,6 +2321,34 @@ func upgradeFailureDetails(err error) (string, error) {
 	return "", wrappedErr
 }
 
+func findPublishedExtensionVersion(
+	matches []*extensions.ExtensionMetadata,
+	source string,
+	version string,
+) *extensions.ExtensionVersion {
+	if source == "" {
+		source = extensions.MainRegistryName
+	}
+
+	requestedVersion, err := semver.NewVersion(version)
+	if err != nil {
+		return nil
+	}
+
+	for _, match := range matches {
+		if !strings.EqualFold(match.Source, source) {
+			continue
+		}
+		for i := range match.Versions {
+			publishedVersion, err := semver.NewVersion(match.Versions[i].Version)
+			if err == nil && publishedVersion.Equal(requestedVersion) {
+				return &match.Versions[i]
+			}
+		}
+	}
+	return nil
+}
+
 // upgradeOneExtension processes a single extension upgrade and returns
 // the result. It never returns an error — failures are captured in
 // the returned UpgradeResult. A telemetry span is emitted for every
@@ -2575,16 +2603,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 
 	candidate := resolution.Candidate(selectedExt)
-	if !isJsonOutput && shouldWarnNewerIncompatible(a.flags.version, candidate) {
-		a.console.StopSpinner(ctx, stepMsg, input.Step)
-		displayVersionCompatibilityWarning(
-			ctx, a.console,
-			candidate.LatestOverall,
-			candidate.LatestCompatible,
-			resolution.AzdVersion,
-		)
-		a.console.ShowSpinner(ctx, stepMsg, input.Step)
-	}
+	hasNewerIncompatible := shouldWarnNewerIncompatible(a.flags.version, candidate)
 
 	// Determine the target version
 	var targetVersionStr string
@@ -2614,21 +2633,72 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	// Compare versions
 	if installedErr == nil && targetErr == nil && installedSemver.GreaterThan(targetSemver) {
 		baseResult.Status = extensions.UpgradeStatusSkipped
-		baseResult.SkipReason = fmt.Sprintf(
-			"installed %s is newer than %s",
-			installed.Version, targetVersionStr,
+		skipMessage := fmt.Sprintf(
+			"Installed version %s is newer than %s",
+			installed.Version,
+			targetVersionStr,
 		)
+		if hasNewerIncompatible {
+			installedRelease := findPublishedExtensionVersion(
+				resolution.Matches,
+				installed.Source,
+				installed.Version,
+			)
+			if installedRelease != nil &&
+				!extensions.VersionIsCompatible(installedRelease, resolution.AzdVersion) {
+				baseResult.SkipReason = fmt.Sprintf(
+					"installed %s is incompatible and newer than compatible version %s",
+					installed.Version,
+					targetVersionStr,
+				)
+				skipMessage = fmt.Sprintf(
+					"Installed %s is incompatible and newer than %s",
+					installed.Version,
+					targetVersionStr,
+				)
+				command := fmt.Sprintf(
+					"azd extension install %s --source %s --version %s --force",
+					extensionId,
+					newSource,
+					targetVersionStr,
+				)
+				baseResult.Suggestion = fmt.Sprintf(
+					"Use a compatible azd version, or run '%s' to downgrade.",
+					command,
+				)
+			}
+		}
+		if baseResult.SkipReason == "" {
+			baseResult.SkipReason = fmt.Sprintf(
+				"installed %s is newer than %s",
+				installed.Version,
+				targetVersionStr,
+			)
+		}
 		if !isJsonOutput {
 			skipMsg := stepMsg + output.WithGrayFormat(
-				" (Installed version %s is newer than %s)",
-				installed.Version, targetVersionStr,
+				" (%s)",
+				skipMessage,
 			)
 			a.console.StopSpinner(
 				ctx, skipMsg, input.StepSkipped,
 			)
-
+			if baseResult.Suggestion != "" {
+				a.console.Message(ctx, fmt.Sprintf("  %s", baseResult.Suggestion))
+			}
 		}
 		return baseResult
+	}
+
+	if !isJsonOutput && hasNewerIncompatible {
+		a.console.StopSpinner(ctx, stepMsg, input.Step)
+		displayVersionCompatibilityWarning(
+			ctx, a.console,
+			candidate.LatestOverall,
+			candidate.LatestCompatible,
+			resolution.AzdVersion,
+		)
+		a.console.ShowSpinner(ctx, stepMsg, input.Step)
 	}
 
 	versionsEqual := installed.Version == targetVersionStr

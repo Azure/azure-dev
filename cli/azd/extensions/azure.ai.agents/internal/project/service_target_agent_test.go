@@ -555,6 +555,83 @@ func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
 	require.Equal(t, filepath.Join(serviceDir, "agent.yaml"), provider.agentDefinitionPath)
 }
 
+// TestInitializeResolvesPromptAgentFileRef pins the `$ref` include as the way a
+// service entry names its agent definition file. A prompt agent needs the file's
+// location, not just its contents: it reads the raw YAML and anchors the skills/
+// and vector-assets/ convention folders next to it.
+func TestInitializeResolvesPromptAgentFileRef(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "triage.yaml"),
+		[]byte("kind: prompt\nname: triage\nmodel: gpt-4.1-mini\ninstructions: hi\n"),
+		0o600,
+	))
+
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./svc/triage.yaml"})
+	require.NoError(t, err)
+	config, err := structpb.NewStruct(map[string]any{
+		"promptAgent": map[string]any{"projectEndpoint": "https://example.test"},
+	})
+	require.NoError(t, err)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name:                 "triage",
+		Host:                 "azure.ai.agent",
+		RelativePath:         "svc",
+		AdditionalProperties: props,
+		Config:               config,
+	}))
+
+	require.NoError(t, provider.ensureDeployContext(t.Context()))
+	require.Equal(t, filepath.Join(serviceDir, "triage.yaml"), provider.agentDefinitionPath)
+}
+
+// TestInitializeRejectsMissingPromptAgentFileRef pins that a `$ref` naming a file
+// that is not there is a typo, not an opt-out: falling back to the agent.yaml
+// convention would deploy a different definition than azure.yaml names.
+func TestInitializeRejectsMissingPromptAgentFileRef(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: prompt\nname: triage\nmodel: gpt-4.1-mini\ninstructions: hi\n"),
+		0o600,
+	))
+
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./svc/missing.yaml"})
+	require.NoError(t, err)
+	config, err := structpb.NewStruct(map[string]any{
+		"promptAgent": map[string]any{"projectEndpoint": "https://example.test"},
+	})
+	require.NoError(t, err)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name:                 "triage",
+		Host:                 "azure.ai.agent",
+		RelativePath:         "svc",
+		AdditionalProperties: props,
+		Config:               config,
+	}))
+
+	err = provider.ensureDeployContext(t.Context())
+
+	require.Error(t, err)
+	require.Empty(t, provider.agentDefinitionPath)
+}
+
 func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 

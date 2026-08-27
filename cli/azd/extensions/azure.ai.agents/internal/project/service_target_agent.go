@@ -280,6 +280,10 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 			"run 'azd init' to initialize your project",
 		)
 	}
+	// Read the include directive before resolving it away: ResolveServiceConfigInPlace
+	// replaces the `$ref` key with the referenced file's contents, so this is the
+	// only point where the file the definition came from is still knowable.
+	declaredRef := declaredAgentDefinitionRef(p.serviceConfig)
 	p.projectPath = proj.Project.Path
 	p.projectServices = proj.GetProject().GetServices()
 	p.dependencyEnabled = p.isDependencyEnabled
@@ -298,6 +302,20 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 
 	if err := p.ensureEnv(ctx); err != nil {
 		return err
+	}
+
+	// Recorded before the prompt-agent branch below returns: with the definition
+	// carried inline there is no agent.yaml to anchor the skills/ and
+	// vector-assets/ convention folders, so the service directory is what locates
+	// them.
+	p.servicePath = fullPath
+
+	// Prompt (kind=prompt) agents target the managed harness, not an ARM
+	// Foundry project. They self-authenticate via the harness client and carry
+	// their entire deploy target in the service config, so skip the
+	// subscription/tenant/credential resolution the hosted path needs.
+	if ServiceIsPromptAgent(p.serviceConfig) {
+		return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
 	}
 
 	// Get subscription ID from environment
@@ -347,8 +365,19 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 	p.credential = cred
 
-	p.servicePath = fullPath
+	return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
+}
 
+// resolveAgentDefinitionPath locates the agent definition (agent.yaml/agent.yml
+// or the AGENT_DEFINITION_PATH override) for the service and stores it on the
+// provider. It is shared by the hosted and prompt-agent Initialize paths.
+//
+// declaredRef is the root `$ref` the service entry carried in azure.yaml before
+// the include machinery expanded it, or "" when the service declares none.
+func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
+	projectPath, servicePath, fullPath string,
+	declaredRef string,
+) error {
 	// Check if user has specified agent definition path via environment variable
 	if envPath := os.Getenv("AGENT_DEFINITION_PATH"); envPath != "" {
 		// Verify the file exists and has correct extension
@@ -376,11 +405,39 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 		return nil
 	}
 
+	// Explicit reference: a root `$ref:` on the service entry names the file that
+	// supplies the agent definition. The shared include machinery has already
+	// merged that file's contents onto the service entry, so a hosted agent needs
+	// nothing more. A prompt agent does: it reads the raw YAML and anchors the
+	// skills/ and vector-assets/ convention folders next to the file, so record
+	// where the file actually lives.
+	if declaredRef != "" && ServiceIsPromptAgent(p.serviceConfig) {
+		resolved, err := resolveDeclaredRefPath(projectPath, declaredRef, p.serviceConfig.Name)
+		if err != nil {
+			return err
+		}
+		if _, statErr := os.Stat(resolved); statErr != nil {
+			// A declared-but-missing target is a typo, not an opt-out. Falling
+			// back to the convention here would deploy a different file than the
+			// one azure.yaml names.
+			return exterrors.Dependency(
+				exterrors.CodeAgentDefinitionNotFound,
+				fmt.Sprintf("agent definition %q referenced by service %q does not exist",
+					declaredRef, p.serviceConfig.Name),
+				"correct the $ref: path in azure.yaml, or remove it to use the default agent.yaml",
+			)
+		}
+		p.agentDefinitionPath = resolved
+		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(resolved))
+		p.deployContextReady = true
+		return nil
+	}
+
 	// Unified shape: the agent definition is carried inline on the service entry,
 	// so no on-disk agent.yaml is required.
 	if _, _, found, _, defErr := AgentDefinitionFromResolvedService(
 		p.serviceConfig,
-		proj.Project.Path,
+		projectPath,
 	); defErr != nil {
 		return defErr
 	} else if found {
@@ -388,8 +445,21 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 		return nil
 	}
 
+	// The call above answers for hosted agents only: it reports found=false when
+	// the entry declares a different kind. Ask the prompt resolver as well, so an
+	// inline prompt agent is not sent looking for a file it does not have.
+	if _, found, promptErr := PromptAgentFromResolvedService(
+		p.serviceConfig,
+		projectPath,
+	); promptErr != nil {
+		return promptErr
+	} else if found {
+		p.deployContextReady = true
+		return nil
+	}
+
 	// Legacy shape: look for agent.yaml or agent.yml in the service directory root
-	agentYamlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yaml")
+	agentYamlPath, err := paths.JoinAllowRoot(projectPath, servicePath, "agent.yaml")
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -397,7 +467,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 			"update azure.yaml so the agent definition stays within the project directory",
 		)
 	}
-	agentYmlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yml")
+	agentYmlPath, err := paths.JoinAllowRoot(projectPath, servicePath, "agent.yml")
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -423,8 +493,83 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	return exterrors.Dependency(
 		exterrors.CodeAgentDefinitionNotFound,
 		fmt.Sprintf("agent definition file not found: no agent.yaml or agent.yml found in %s", fullPath),
-		"add an agent.yaml/agent.yml file to the service directory or set AGENT_DEFINITION_PATH",
+		"add an agent.yaml/agent.yml file to the service directory, "+
+			"declare $ref: <file> on the service in azure.yaml, or set AGENT_DEFINITION_PATH",
 	)
+}
+
+// AgentDefinitionRefKey is the azure.yaml service key that points at the file
+// supplying the agent definition, relative to the project directory.
+//
+// It is the standard Foundry file-include directive rather than a key azd
+// invents: the same `$ref` every other Foundry resource uses, resolved by the
+// same machinery (see [foundry.ResolveFileRefs]). Reusing it means one spelling,
+// one set of path rules, and one schema for "this entry lives in another file".
+const AgentDefinitionRefKey = "$ref"
+
+// declaredAgentDefinitionRef returns the root `$ref` declared on the service
+// entry in azure.yaml, or "" when the service relies on the agent.yaml
+// convention or carries its definition inline.
+//
+// It must be called before [ResolveServiceConfigInPlace], which expands the
+// directive and removes the key.
+//
+// Service-level properties are checked before the nested config block so the
+// unified shape wins, matching how the inline agent definition is resolved.
+func declaredAgentDefinitionRef(svc *azdext.ServiceConfig) string {
+	if svc == nil {
+		return ""
+	}
+	for _, props := range []*structpb.Struct{svc.GetAdditionalProperties(), svc.GetConfig()} {
+		if props == nil {
+			continue
+		}
+		value, ok := props.GetFields()[AgentDefinitionRefKey]
+		if !ok {
+			continue
+		}
+		if declared := strings.TrimSpace(value.GetStringValue()); declared != "" {
+			return declared
+		}
+	}
+	return ""
+}
+
+// resolveDeclaredRefPath resolves a `$ref` value against the project root and
+// confines it there.
+//
+// The project root — not the service directory — is the anchor because that is
+// what [foundry.ResolveFileRefs] already uses when it expands the same value.
+// Anchoring differently here would make the file azd reads for the convention
+// folders a different file from the one whose contents were merged onto the
+// service entry.
+func resolveDeclaredRefPath(projectPath, declared, serviceName string) (string, error) {
+	if filepath.IsAbs(declared) || strings.HasPrefix(declared, "/") || strings.HasPrefix(declared, `\`) {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("$ref %q on service %q must be a relative path", declared, serviceName),
+			"use a path relative to the directory holding azure.yaml (e.g. $ref: ./agents/triage.yaml)",
+		)
+	}
+
+	resolved, err := paths.JoinAllowRoot(projectPath, filepath.FromSlash(declared))
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid $ref path %q on service %q: %s", declared, serviceName, err),
+			"update azure.yaml so the $ref stays within the project directory",
+		)
+	}
+
+	if ext := strings.ToLower(filepath.Ext(resolved)); ext != ".yaml" && ext != ".yml" {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("$ref %q on service %q must be a YAML file (.yaml or .yml)", declared, serviceName),
+			"point $ref: at a .yaml or .yml file",
+		)
+	}
+
+	return resolved, nil
 }
 
 // ensureEnv lazily populates p.env from the azd host. Idempotent and cheap
@@ -517,6 +662,16 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	serviceConfig *azdext.ServiceConfig,
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
+	// Prompt agents expose a single workspace-rooted Responses endpoint on the
+	// harness. Build it from the service config, resolved against the azd
+	// environment so `azd show` reports the same target deploy published.
+	if p.isPromptAgentService() {
+		settings, err := p.resolvedPromptAgentSettings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return []string{promptAgentResponsesEndpoint(settings)}, nil
+	}
 	if err := p.ensureEnv(ctx); err != nil {
 		return nil, err
 	}
@@ -622,6 +777,29 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
 	p.adoptServiceConfig(serviceConfig)
+	// Prompt agents target the managed harness, not an ARM Foundry project.
+	// Synthesize a target resource from the harness workspace tuple so core
+	// azd has something to display without resolving a CognitiveServices
+	// project that does not exist for this flow. Resolve against the azd
+	// environment first so non-guided projects do not display the placeholder
+	// tuple stored in azure.yaml.
+	if p.isPromptAgentService() {
+		settings, err := p.resolvedPromptAgentSettings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &azdext.TargetResource{
+			SubscriptionId:    settings.SubscriptionID,
+			ResourceGroupName: settings.ResourceGroup,
+			ResourceName:      settings.Workspace,
+			ResourceType:      "Microsoft.MachineLearningServices/workspaces",
+			Metadata: map[string]string{
+				"workspace": settings.Workspace,
+				"baseUrl":   settings.BaseURL,
+			},
+		}, nil
+	}
+
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
@@ -686,6 +864,12 @@ func (p *AgentServiceTargetProvider) Package(
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
 	p.adoptServiceConfig(serviceConfig)
+	// Prompt agents have no container/code to build — the harness owns the
+	// runtime. Skip packaging entirely.
+	if p.isPromptAgentService() {
+		return &azdext.ServicePackageResult{}, nil
+	}
+
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
@@ -794,6 +978,12 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
+	p.adoptServiceConfig(serviceConfig)
+	// Prompt agents have no container image to publish.
+	if p.isPromptAgentService() {
+		return &azdext.ServicePublishResult{}, nil
+	}
+
 	// A pre-built image does not start a container publish operation. Preserve
 	// this fast path; Activity Bot selection still runs in Deploy because the
 	// deployed agent identity is required to prefer an already-bound bot.
@@ -1294,6 +1484,18 @@ func (p *AgentServiceTargetProvider) Deploy(
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
 	p.adoptServiceConfig(serviceConfig)
+	// Prompt agents are created on the managed harness, not the Foundry
+	// service. Dispatch to the dedicated harness deploy path before any
+	// ARM/Foundry resolution the hosted path requires. The deploy context still
+	// has to be resolved first: deployPromptAgent loads agent.yaml through
+	// p.agentDefinitionPath, which is empty until ensureDeployContext runs.
+	if p.isPromptAgentService() {
+		if err := p.ensureDeployContext(ctx); err != nil {
+			return nil, err
+		}
+		return p.deployPromptAgent(ctx, p.serviceConfig, progress)
+	}
+
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
@@ -1709,61 +1911,26 @@ func validateMemoryStores(stores []MemoryStore) error {
 	return nil
 }
 
-// memoryStoreDefinitionDrift returns a human-readable list of the fields where the declared
-// definition diverges from the live store. Only fields the user explicitly declared are
-// compared, so unset options (which fall back to service defaults) never report false drift.
-func memoryStoreDefinitionDrift(declared, live azure.MemoryStoreDefinition) []string {
-	var drift []string
-
-	if declared.ChatModel != live.ChatModel {
-		drift = append(drift, fmt.Sprintf("chatModel (declared %q, current %q)",
-			declared.ChatModel, live.ChatModel))
-	}
-	if declared.EmbeddingModel != live.EmbeddingModel {
-		drift = append(drift, fmt.Sprintf("embeddingModel (declared %q, current %q)",
-			declared.EmbeddingModel, live.EmbeddingModel))
-	}
-
-	if declared.Options == nil {
-		return drift
-	}
-
-	var liveOpts azure.MemoryStoreOptions
-	if live.Options != nil {
-		liveOpts = *live.Options
-	}
-
-	if boolPtrDiffers(declared.Options.ChatSummaryEnabled, liveOpts.ChatSummaryEnabled) {
-		drift = append(drift, fmt.Sprintf("options.chatSummaryEnabled (declared %v)",
-			*declared.Options.ChatSummaryEnabled))
-	}
-	if boolPtrDiffers(declared.Options.UserProfileEnabled, liveOpts.UserProfileEnabled) {
-		drift = append(drift, fmt.Sprintf("options.userProfileEnabled (declared %v)",
-			*declared.Options.UserProfileEnabled))
-	}
-	if boolPtrDiffers(declared.Options.ProceduralMemoryEnabled, liveOpts.ProceduralMemoryEnabled) {
-		drift = append(drift, fmt.Sprintf("options.proceduralMemoryEnabled (declared %v)",
-			*declared.Options.ProceduralMemoryEnabled))
-	}
-	if declared.Options.DefaultTTLSeconds != nil &&
-		(liveOpts.DefaultTTLSeconds == nil || *declared.Options.DefaultTTLSeconds != *liveOpts.DefaultTTLSeconds) {
-		drift = append(drift, fmt.Sprintf("options.defaultTtlSeconds (declared %d)",
-			*declared.Options.DefaultTTLSeconds))
-	}
-	if declared.Options.UserProfileDetails != "" &&
-		declared.Options.UserProfileDetails != liveOpts.UserProfileDetails {
-		drift = append(drift, "options.userProfileDetails")
-	}
-
-	return drift
+// azureYamlMemoryStoreLabels maps the wire field paths reported by
+// diffMemoryStoreDefinition to the camelCase keys used under an agent service's
+// memoryStores: list, so a drift warning names the key as authored.
+var azureYamlMemoryStoreLabels = map[string]string{
+	"chat_model":                        "chatModel",
+	"embedding_model":                   "embeddingModel",
+	"options.chat_summary_enabled":      "options.chatSummaryEnabled",
+	"options.user_profile_enabled":      "options.userProfileEnabled",
+	"options.procedural_memory_enabled": "options.proceduralMemoryEnabled",
+	"options.default_ttl_seconds":       "options.defaultTtlSeconds",
+	"options.user_profile_details":      "options.userProfileDetails",
 }
 
-// boolPtrDiffers reports whether a declared bool pointer is set and differs from the live value.
-func boolPtrDiffers(declared, live *bool) bool {
-	if declared == nil {
-		return false
-	}
-	return live == nil || *declared != *live
+// memoryStoreDefinitionDrift returns a human-readable list of the fields where the declared
+// definition diverges from the live store, named with the azure.yaml keys.
+func memoryStoreDefinitionDrift(declared, live azure.MemoryStoreDefinition) []string {
+	return describeMemoryStoreDrift(
+		diffMemoryStoreDefinition(declared, live),
+		azureYamlMemoryStoreLabels,
+	)
 }
 
 // writeMemoryStoreDriftWarning warns that azure.yaml changes were not applied to an existing store.
@@ -1778,29 +1945,19 @@ func writeMemoryStoreDriftWarning(name string, drift []string) {
 
 // mapMemoryStoreOptions converts the azure.yaml memory store options into the API request shape.
 // It returns nil when no options are configured (or all fields are unset) so the service applies
-// its own defaults, rather than sending an empty options object that the service might treat
-// differently from an omitted one.
+// its own defaults.
 func mapMemoryStoreOptions(options *MemoryStoreOptions) *azure.MemoryStoreOptions {
-	if options == nil || memoryStoreOptionsEmpty(options) {
+	if options == nil {
 		return nil
 	}
 
-	return &azure.MemoryStoreOptions{
+	return memoryStoreOptionsOrNil(&azure.MemoryStoreOptions{
 		ChatSummaryEnabled:      options.ChatSummaryEnabled,
 		UserProfileEnabled:      options.UserProfileEnabled,
 		ProceduralMemoryEnabled: options.ProceduralMemoryEnabled,
 		DefaultTTLSeconds:       options.DefaultTtlSeconds,
 		UserProfileDetails:      options.UserProfileDetails,
-	}
-}
-
-// memoryStoreOptionsEmpty reports whether every memory store option field is unset.
-func memoryStoreOptionsEmpty(options *MemoryStoreOptions) bool {
-	return options.ChatSummaryEnabled == nil &&
-		options.UserProfileEnabled == nil &&
-		options.ProceduralMemoryEnabled == nil &&
-		options.DefaultTtlSeconds == nil &&
-		options.UserProfileDetails == ""
+	})
 }
 
 // shouldUsePreBuiltImage determines whether to use a pre-built image.

@@ -19,6 +19,36 @@ it protects are co-located by convention.
 
 ---
 
+## Scheduler limits and phase groups
+
+The graph scheduler applies a hard global ceiling and optional limits for named
+groups. It admits ready work in round-robin order across groups while preserving
+critical-path priority within each group. Limits are maxima, not reservations.
+When other groups have no ready work, one group can use every available global
+slot up to its own limit.
+
+The scheduler coordinator enforces all limits before dispatch. Workers never
+wait for group capacity, so package work cannot occupy every worker while it
+waits for another package step to finish. Active work is not preempted, but a
+continuously ready group cannot starve another ready group when slots become
+available.
+
+| Command | Hard global ceiling | Phase groups |
+|---------|---------------------|--------------|
+| `azd up` | `AZD_CONCURRENCY_MAX`, then `AZD_UP_CONCURRENCY`, then `AZD_DEPLOY_CONCURRENCY`, then the scheduler default | Package: `AZD_PACKAGE_CONCURRENCY`, then `AZD_UP_CONCURRENCY`; provision: `AZD_PROVISION_CONCURRENCY`, then `AZD_UP_CONCURRENCY`; publish and deploy: `AZD_DEPLOY_CONCURRENCY`, then `AZD_UP_CONCURRENCY` |
+| `azd deploy` | `AZD_CONCURRENCY_MAX`, then `AZD_DEPLOY_CONCURRENCY`, then the scheduler default | Package: `AZD_PACKAGE_CONCURRENCY`, then `AZD_DEPLOY_CONCURRENCY`; publish and deploy: `AZD_DEPLOY_CONCURRENCY` |
+| `azd provision` | `AZD_CONCURRENCY_MAX`, then `AZD_PROVISION_CONCURRENCY`, then the scheduler default | Provision: `AZD_PROVISION_CONCURRENCY` |
+
+Package and provision work in `azd up` can overlap while retaining independent
+limits. Publish and deploy share one budget because both are part of the
+deployment phase. Standalone `azd package` remains sequential.
+
+All configured values are positive integers clamped to `64`. An explicitly set
+invalid or non-positive value disables that limit and blocks fallback. Fallback
+occurs only when the higher-precedence variable is unset.
+
+---
+
 ## Service Deploy Ordering
 
 Service deployment uses a **sequential-by-default** model to preserve

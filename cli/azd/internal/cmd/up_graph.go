@@ -11,7 +11,6 @@ import (
 	"log"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -893,9 +892,10 @@ func (u *UpGraphAction) addProvisionSteps(
 
 		layerIdx := i
 		if err := g.AddStep(&exegraph.Step{
-			Name:      stepNames[i],
-			DependsOn: deps,
-			Tags:      []string{"provision"},
+			Name:             stepNames[i],
+			DependsOn:        deps,
+			Tags:             []string{"provision"},
+			ConcurrencyGroup: provisionConcurrencyGroup,
 			Action: func(ctx context.Context) error {
 				return provisionSingleLayer(
 					ctx, provDeps, layers[layerIdx],
@@ -932,31 +932,9 @@ func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 		ErrorPolicy: exegraph.FailFast,
 	}
 
-	// Optional concurrency limit from environment. AZD_UP_CONCURRENCY is the
-	// canonical name for `azd up`; AZD_DEPLOY_CONCURRENCY is honored as a
-	// fallback so that users who already tuned `azd deploy` parallelism don't
-	// get unlimited concurrency when they switch to `azd up`.
-	if v, ok := os.LookupEnv("AZD_UP_CONCURRENCY"); ok {
-		if n, parseErr := strconv.Atoi(v); parseErr != nil {
-			log.Printf("warning: ignoring invalid AZD_UP_CONCURRENCY=%q: %v", v, parseErr)
-		} else if n > 0 {
-			clamped := min(n, 64)
-			if clamped < n {
-				log.Printf("clamping up concurrency from %d to %d", n, clamped)
-			}
-			opts.MaxConcurrency = clamped
-		}
-	} else if v, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
-		if n, parseErr := strconv.Atoi(v); parseErr != nil {
-			log.Printf("warning: ignoring invalid AZD_DEPLOY_CONCURRENCY=%q: %v", v, parseErr)
-		} else if n > 0 {
-			clamped := min(n, 64)
-			if clamped < n {
-				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)
-			}
-			opts.MaxConcurrency = clamped
-		}
-	}
+	concurrency := resolveUpGraphConcurrency(os.LookupEnv)
+	opts.MaxConcurrency = concurrency.max
+	opts.GroupConcurrency = concurrency.groups
 
 	opts.OnStepStart = func(stepName string) {
 		log.Printf("up-graph: starting %s", stepName)

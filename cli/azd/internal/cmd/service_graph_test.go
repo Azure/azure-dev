@@ -94,6 +94,22 @@ func newGraphOpts(services []*project.ServiceConfig) (serviceGraphOptions, *exeg
 	}, g
 }
 
+func TestServiceGraphConcurrencyGroups(t *testing.T) {
+	services := []*project.ServiceConfig{{Name: "api"}}
+	opts, g := newGraphOpts(services)
+
+	_, err := addServiceStepsToGraph(g, opts)
+	require.NoError(t, err)
+
+	groups := make(map[string]string)
+	for _, step := range g.Steps() {
+		groups[step.Name] = step.ConcurrencyGroup
+	}
+	require.Equal(t, packageConcurrencyGroup, groups["package-api"])
+	require.Equal(t, deployConcurrencyGroup, groups["publish-api"])
+	require.Equal(t, deployConcurrencyGroup, groups["deploy-api"])
+}
+
 // TestSelfRefUses verifies that a service with uses: [self] does not
 // create a self-referencing deploy step edge — the graph builder
 // filters self-references out.

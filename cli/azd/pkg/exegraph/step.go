@@ -75,6 +75,10 @@ type Step struct {
 	// Tags are optional labels for querying related steps (e.g., "provision", "deploy").
 	Tags []string
 
+	// ConcurrencyGroup optionally assigns the step to a named concurrency budget.
+	// Steps in the same group share the limit configured in [RunOptions.GroupConcurrency].
+	ConcurrencyGroup string
+
 	// Action is the function to execute when all dependencies are satisfied.
 	Action StepFunc
 }

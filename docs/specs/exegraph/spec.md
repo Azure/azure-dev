@@ -70,8 +70,9 @@ follow-up edits. Directory layout and file responsibilities are stable.
 Defines the unit of work:
 
 - **StepFunc** — `func(ctx context.Context) error`
-- **Step** — `Name string`, `DependsOn []string`, `Tags []string`, `Action StepFunc`
-  (per-step timeout is expressed via `RunOptions.StepTimeout`, not a `Step` field)
+- **Step** — `Name string`, `DependsOn []string`, `Tags []string`,
+  `ConcurrencyGroup string`, `Action StepFunc` (per-step timeout is expressed via
+  `RunOptions.StepTimeout`, not a `Step` field)
 - **StepStatus** — `Pending → Running → Done | Failed | Skipped`
 - **StepSkippedError** — returned by a step to mark itself skipped; downstream steps skip too
 - **RunResult** — per-step timing (`StepTiming`), status, error, plus aggregate duration
@@ -84,14 +85,18 @@ Insertion-order-deterministic DAG:
 - **Validate** — DFS cycle detection + missing-dependency check
 - **Priority** — transitive-dependent count heuristic (steps with more downstream work run first)
 - **Steps** — returns steps in insertion order (deterministic scheduling)
+- **ConcurrencyGroup** — optional step group used by the scheduler for per-group admission limits
 
 ### Scheduler (`scheduler.go`)
 
 Event-driven bounded worker pool:
 
 - **Concurrency** — `MaxConcurrency=0` (default) caps workers at `min(stepCount, GOMAXPROCS×2)`.
-  Explicit positive values override this (values larger than `min(stepCount, GOMAXPROCS×2)`
-  have no effect; the worker count never exceeds the natural cap).
+  An explicit positive value replaces the CPU-based default and is capped only by the step count.
+- **Concurrency groups** — `GroupConcurrency` limits active steps in each named
+  `Step.ConcurrencyGroup` beneath the global `MaxConcurrency` ceiling. The coordinator
+  admits ready groups in work-conserving round-robin order. Group limits do not reserve
+  capacity, and workers never wait for group capacity.
 - **Error policies** — `FailFast` cancels all on first error; `ContinueOnError` runs remaining independent steps
 - **Per-step timeout** — uniform `RunOptions.StepTimeout` wraps every step's context with
   `context.WithTimeout`. Zero (the default) means no deadline. A step that exceeds the
@@ -159,7 +164,8 @@ In-memory `sync.Map` cache keyed by SHA-256 of the full Bicep file tree:
    validation-cancel / JSON state dump / OpenAI-access / Responsible-AI wrappers are
    applied exactly once
 6. `FailFast` error policy
-7. Concurrency limit configurable via `AZD_PROVISION_CONCURRENCY` env var
+7. Hard concurrency limit configurable via `AZD_CONCURRENCY_MAX`, falling back to
+   `AZD_PROVISION_CONCURRENCY`; provision steps use the `provision` group
 8. Wraps console output in `syncConsole` (mutex-wrapped message/spinner methods)
 
 ### Graph-Driven Deploy (`deploy.go`)
@@ -172,6 +178,11 @@ Activates unconditionally. Per service, creates three steps:
    block due to eventual consistency after provisioning)
 3. **`deploy-<svc>`** — depends on `publish-<svc>`; runs `serviceManager.Deploy` with
    `deployTimeout` context deadline
+
+Package steps use the `package` concurrency group. Publish and deploy steps share the
+`deploy` group so their combined active count cannot exceed `AZD_DEPLOY_CONCURRENCY`.
+`AZD_CONCURRENCY_MAX` is the hard limit for all active graph steps, falling back to
+`AZD_DEPLOY_CONCURRENCY` when unset.
 
 **Build gate (soft serialization)**: `serviceGraphOptions.buildGateKey` is an
 optional callback that returns an opaque string grouping for each service.
@@ -223,6 +234,11 @@ Deploy chain:
   all `deploy-<svc>` nodes)
 - `cmdhook-postdeploy` (depends on event-postdeploy)
 
+Provision, package, and combined publish/deploy steps use the `provision`, `package`,
+and `deploy` concurrency groups. The groups can overlap and share idle global capacity.
+`AZD_CONCURRENCY_MAX` is the hard limit across the unified graph, falling back to
+`AZD_UP_CONCURRENCY` and then to `AZD_DEPLOY_CONCURRENCY` when unset.
+
 Deploy timeout honors `--timeout` / `AZD_DEPLOY_TIMEOUT` via the shared
 `resolveDeployTimeout` helper.
 
@@ -265,7 +281,8 @@ OTel events and attributes added:
 | Test file | Tests | Coverage |
 |-----------|-------|----------|
 | `pkg/exegraph/graph_test.go` | 15 | Mutation rules, ordering, cycles, priority, tags |
-| `pkg/exegraph/scheduler_test.go` | 33 | Execution semantics, cancellation, skip propagation, concurrency bounds, panic recovery, goroutine cleanup, timing, per-step timeout |
+| `pkg/exegraph/scheduler_test.go` | 48 | Execution semantics, cancellation, skip propagation, global and group concurrency bounds, group fairness, panic recovery, goroutine cleanup, timing, per-step timeout |
+| `internal/cmd/concurrency_test.go` | 4 | Environment parsing, phase fallback precedence, global ceiling precedence |
 | `pkg/infra/provisioning/bicep/layer_deps_test.go` | 12 | Temp file fixtures, cycles, env-skip, missing refs |
 | `internal/cmd/provision_graph_test.go` | 7 | Graph build, execution ordering, `dependsOn` edge ordering, env merge (preserves subprocess writes + concurrent merges converge), reload (refreshes `deps.env` from disk for downstream-layer clones) |
 | `internal/cmd/provision_security_test.go` | 2 | Env serialization, clone isolation |
@@ -273,21 +290,24 @@ OTel events and attributes added:
 | `internal/cmd/deploy_progress_test.go` | 13 | Interactive/non-interactive rendering, truncation, final render |
 | `pkg/tools/bicep/bicep_cache_test.go` | 6 | Cache hit/miss, hash stability, module resolution |
 
-**48 exegraph engine tests** (15 graph + 33 scheduler). Additional integration tests across
+**63 exegraph engine tests** (15 graph + 48 scheduler). Additional integration tests across
 provisioning, deployment, and thread-safety modules (see individual package `*_test.go` files).
 
 ## Environment Variables
 
 | Variable | Scope | Default | Effect |
 |----------|-------|---------|--------|
-| `AZD_PROVISION_CONCURRENCY` | `azd provision` (multi-layer) | `0` (unlimited, capped at `min(layerCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for layer provisioning. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
-| `AZD_DEPLOY_CONCURRENCY` | `azd deploy` | `0` (unlimited, capped at `min(stepCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for package/publish/deploy steps. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
-| `AZD_UP_CONCURRENCY` | `azd up` (unified DAG) | `0` (unlimited, capped at `min(stepCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for the unified up DAG. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
+| `AZD_CONCURRENCY_MAX` | `azd up`, `azd deploy`, `azd provision` | Command-specific limit, then scheduler default | Hard maximum across all active graph steps. |
+| `AZD_PACKAGE_CONCURRENCY` | Package group in `azd up` and `azd deploy` | `AZD_UP_CONCURRENCY` or `AZD_DEPLOY_CONCURRENCY` | Limits active package steps. Standalone `azd package` remains sequential. |
+| `AZD_PROVISION_CONCURRENCY` | Provision group in `azd up` and `azd provision` | `AZD_UP_CONCURRENCY` during `azd up`; unlimited group during `azd provision` | Limits active infrastructure layer steps. It is also the `azd provision` hard-limit fallback. |
+| `AZD_DEPLOY_CONCURRENCY` | Shared publish/deploy group in `azd up` and `azd deploy` | `AZD_UP_CONCURRENCY` during `azd up`; unlimited group during `azd deploy` | Limits the combined active publish and deploy steps. It is also the package and hard-limit fallback during `azd deploy`, and the last hard-limit fallback during `azd up`. |
+| `AZD_UP_CONCURRENCY` | `azd up` | Scheduler default | Per-group fallback and hard-limit fallback for the unified graph. |
 | `AZD_DEPLOY_TIMEOUT` | `azd deploy` / `azd up` | `1200` (20 minutes) | Per-service deploy timeout in whole seconds. Precedence: `--timeout` CLI flag first, then `AZD_DEPLOY_TIMEOUT`, then the default. Invalid or non-positive values cause an immediate error. |
 
-No new environment variables are introduced at the graph engine layer — `pkg/exegraph` is
-configuration-neutral. All three concurrency knobs live in the command layer and map to
-the scheduler's `RunOptions.MaxConcurrency` field.
+Concurrency values are positive integers clamped to `64`. An explicitly set invalid or
+non-positive value disables that limit and blocks fallback; only an unset variable falls
+back. The graph engine remains configuration-neutral. Command-layer values map to
+`RunOptions.MaxConcurrency` and `RunOptions.GroupConcurrency`.
 
 ## Known Limitations
 

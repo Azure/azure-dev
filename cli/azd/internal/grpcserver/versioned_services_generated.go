@@ -8,6 +8,7 @@ package grpcserver
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"google.golang.org/grpc"
 
@@ -65,19 +66,13 @@ type BetaAccountServiceLookupTenantOverride interface {
 }
 
 func validateBetaAccountServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.AccountServiceServer); ok {
-		return fmt.Errorf("beta override for AccountService must implement focused method override interfaces, not v1beta.AccountServiceServer")
-	}
-	if _, ok := override.(BetaAccountServiceListSubscriptionsOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaAccountServiceLookupTenantOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for AccountService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"AccountService",
+		override,
+		reflect.TypeFor[v1beta.AccountServiceServer](),
+		reflect.TypeFor[BetaAccountServiceListSubscriptionsOverride](),
+		reflect.TypeFor[BetaAccountServiceLookupTenantOverride](),
+	)
 }
 
 // BetaAiModelServiceListModelsOverride overrides the beta AiModelService.ListModels method before stable adaptation.
@@ -106,28 +101,16 @@ type BetaAiModelServiceListModelLocationsWithQuotaOverride interface {
 }
 
 func validateBetaAiModelServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.AiModelServiceServer); ok {
-		return fmt.Errorf("beta override for AiModelService must implement focused method override interfaces, not v1beta.AiModelServiceServer")
-	}
-	if _, ok := override.(BetaAiModelServiceListModelsOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaAiModelServiceResolveModelDeploymentsOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaAiModelServiceListUsagesOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaAiModelServiceListLocationsWithQuotaOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaAiModelServiceListModelLocationsWithQuotaOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for AiModelService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"AiModelService",
+		override,
+		reflect.TypeFor[v1beta.AiModelServiceServer](),
+		reflect.TypeFor[BetaAiModelServiceListModelsOverride](),
+		reflect.TypeFor[BetaAiModelServiceResolveModelDeploymentsOverride](),
+		reflect.TypeFor[BetaAiModelServiceListUsagesOverride](),
+		reflect.TypeFor[BetaAiModelServiceListLocationsWithQuotaOverride](),
+		reflect.TypeFor[BetaAiModelServiceListModelLocationsWithQuotaOverride](),
+	)
 }
 
 // BetaComposeServiceListResourcesOverride overrides the beta ComposeService.ListResources method before stable adaptation.
@@ -156,28 +139,16 @@ type BetaComposeServiceAddResourceOverride interface {
 }
 
 func validateBetaComposeServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.ComposeServiceServer); ok {
-		return fmt.Errorf("beta override for ComposeService must implement focused method override interfaces, not v1beta.ComposeServiceServer")
-	}
-	if _, ok := override.(BetaComposeServiceListResourcesOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaComposeServiceGetResourceOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaComposeServiceListResourceTypesOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaComposeServiceGetResourceTypeOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaComposeServiceAddResourceOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for ComposeService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"ComposeService",
+		override,
+		reflect.TypeFor[v1beta.ComposeServiceServer](),
+		reflect.TypeFor[BetaComposeServiceListResourcesOverride](),
+		reflect.TypeFor[BetaComposeServiceGetResourceOverride](),
+		reflect.TypeFor[BetaComposeServiceListResourceTypesOverride](),
+		reflect.TypeFor[BetaComposeServiceGetResourceTypeOverride](),
+		reflect.TypeFor[BetaComposeServiceAddResourceOverride](),
+	)
 }
 
 // BetaContainerServiceBuildOverride overrides the beta ContainerService.Build method before stable adaptation.
@@ -196,22 +167,14 @@ type BetaContainerServicePublishOverride interface {
 }
 
 func validateBetaContainerServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.ContainerServiceServer); ok {
-		return fmt.Errorf("beta override for ContainerService must implement focused method override interfaces, not v1beta.ContainerServiceServer")
-	}
-	if _, ok := override.(BetaContainerServiceBuildOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaContainerServicePackageOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaContainerServicePublishOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for ContainerService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"ContainerService",
+		override,
+		reflect.TypeFor[v1beta.ContainerServiceServer](),
+		reflect.TypeFor[BetaContainerServiceBuildOverride](),
+		reflect.TypeFor[BetaContainerServicePackageOverride](),
+		reflect.TypeFor[BetaContainerServicePublishOverride](),
+	)
 }
 
 // BetaCopilotServiceInitializeOverride overrides the beta CopilotService.Initialize method before stable adaptation.
@@ -250,34 +213,18 @@ type BetaCopilotServiceGetMessagesOverride interface {
 }
 
 func validateBetaCopilotServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.CopilotServiceServer); ok {
-		return fmt.Errorf("beta override for CopilotService must implement focused method override interfaces, not v1beta.CopilotServiceServer")
-	}
-	if _, ok := override.(BetaCopilotServiceInitializeOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaCopilotServiceListSessionsOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaCopilotServiceSendMessageOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaCopilotServiceGetUsageMetricsOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaCopilotServiceGetFileChangesOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaCopilotServiceStopSessionOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaCopilotServiceGetMessagesOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for CopilotService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"CopilotService",
+		override,
+		reflect.TypeFor[v1beta.CopilotServiceServer](),
+		reflect.TypeFor[BetaCopilotServiceInitializeOverride](),
+		reflect.TypeFor[BetaCopilotServiceListSessionsOverride](),
+		reflect.TypeFor[BetaCopilotServiceSendMessageOverride](),
+		reflect.TypeFor[BetaCopilotServiceGetUsageMetricsOverride](),
+		reflect.TypeFor[BetaCopilotServiceGetFileChangesOverride](),
+		reflect.TypeFor[BetaCopilotServiceStopSessionOverride](),
+		reflect.TypeFor[BetaCopilotServiceGetMessagesOverride](),
+	)
 }
 
 // BetaDeploymentServiceGetDeploymentOverride overrides the beta DeploymentService.GetDeployment method before stable adaptation.
@@ -291,19 +238,13 @@ type BetaDeploymentServiceGetDeploymentContextOverride interface {
 }
 
 func validateBetaDeploymentServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.DeploymentServiceServer); ok {
-		return fmt.Errorf("beta override for DeploymentService must implement focused method override interfaces, not v1beta.DeploymentServiceServer")
-	}
-	if _, ok := override.(BetaDeploymentServiceGetDeploymentOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaDeploymentServiceGetDeploymentContextOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for DeploymentService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"DeploymentService",
+		override,
+		reflect.TypeFor[v1beta.DeploymentServiceServer](),
+		reflect.TypeFor[BetaDeploymentServiceGetDeploymentOverride](),
+		reflect.TypeFor[BetaDeploymentServiceGetDeploymentContextOverride](),
+	)
 }
 
 // BetaEnvironmentServiceGetCurrentOverride overrides the beta EnvironmentService.GetCurrent method before stable adaptation.
@@ -367,49 +308,23 @@ type BetaEnvironmentServiceUnsetConfigOverride interface {
 }
 
 func validateBetaEnvironmentServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.EnvironmentServiceServer); ok {
-		return fmt.Errorf("beta override for EnvironmentService must implement focused method override interfaces, not v1beta.EnvironmentServiceServer")
-	}
-	if _, ok := override.(BetaEnvironmentServiceGetCurrentOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceListOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceGetOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceSelectOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceGetValuesOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceGetValueOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceSetValueOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceGetConfigOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceGetConfigStringOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceGetConfigSectionOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceSetConfigOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaEnvironmentServiceUnsetConfigOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for EnvironmentService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"EnvironmentService",
+		override,
+		reflect.TypeFor[v1beta.EnvironmentServiceServer](),
+		reflect.TypeFor[BetaEnvironmentServiceGetCurrentOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceListOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceGetOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceSelectOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceGetValuesOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceGetValueOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceSetValueOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceGetConfigOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceGetConfigStringOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceGetConfigSectionOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceSetConfigOverride](),
+		reflect.TypeFor[BetaEnvironmentServiceUnsetConfigOverride](),
+	)
 }
 
 // BetaEventServiceEventStreamOverride overrides the beta EventService.EventStream method before stable adaptation.
@@ -418,16 +333,12 @@ type BetaEventServiceEventStreamOverride interface {
 }
 
 func validateBetaEventServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.EventServiceServer); ok {
-		return fmt.Errorf("beta override for EventService must implement focused method override interfaces, not v1beta.EventServiceServer")
-	}
-	if _, ok := override.(BetaEventServiceEventStreamOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for EventService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"EventService",
+		override,
+		reflect.TypeFor[v1beta.EventServiceServer](),
+		reflect.TypeFor[BetaEventServiceEventStreamOverride](),
+	)
 }
 
 // BetaExtensionServiceReadyOverride overrides the beta ExtensionService.Ready method before stable adaptation.
@@ -441,19 +352,13 @@ type BetaExtensionServiceReportErrorOverride interface {
 }
 
 func validateBetaExtensionServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.ExtensionServiceServer); ok {
-		return fmt.Errorf("beta override for ExtensionService must implement focused method override interfaces, not v1beta.ExtensionServiceServer")
-	}
-	if _, ok := override.(BetaExtensionServiceReadyOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaExtensionServiceReportErrorOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for ExtensionService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"ExtensionService",
+		override,
+		reflect.TypeFor[v1beta.ExtensionServiceServer](),
+		reflect.TypeFor[BetaExtensionServiceReadyOverride](),
+		reflect.TypeFor[BetaExtensionServiceReportErrorOverride](),
+	)
 }
 
 // BetaFrameworkServiceStreamOverride overrides the beta FrameworkService.Stream method before stable adaptation.
@@ -462,16 +367,12 @@ type BetaFrameworkServiceStreamOverride interface {
 }
 
 func validateBetaFrameworkServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.FrameworkServiceServer); ok {
-		return fmt.Errorf("beta override for FrameworkService must implement focused method override interfaces, not v1beta.FrameworkServiceServer")
-	}
-	if _, ok := override.(BetaFrameworkServiceStreamOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for FrameworkService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"FrameworkService",
+		override,
+		reflect.TypeFor[v1beta.FrameworkServiceServer](),
+		reflect.TypeFor[BetaFrameworkServiceStreamOverride](),
+	)
 }
 
 // BetaProjectServiceGetOverride overrides the beta ProjectService.Get method before stable adaptation.
@@ -550,58 +451,26 @@ type BetaProjectServiceUnsetServiceConfigOverride interface {
 }
 
 func validateBetaProjectServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.ProjectServiceServer); ok {
-		return fmt.Errorf("beta override for ProjectService must implement focused method override interfaces, not v1beta.ProjectServiceServer")
-	}
-	if _, ok := override.(BetaProjectServiceGetOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceGetServiceTargetResourceOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceAddServiceOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceGetResolvedServicesOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceParseGitHubUrlOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceGetConfigSectionOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceGetConfigValueOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceSetConfigSectionOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceSetConfigValueOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceUnsetConfigOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceGetServiceConfigSectionOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceGetServiceConfigValueOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceSetServiceConfigSectionOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceSetServiceConfigValueOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaProjectServiceUnsetServiceConfigOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for ProjectService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"ProjectService",
+		override,
+		reflect.TypeFor[v1beta.ProjectServiceServer](),
+		reflect.TypeFor[BetaProjectServiceGetOverride](),
+		reflect.TypeFor[BetaProjectServiceGetServiceTargetResourceOverride](),
+		reflect.TypeFor[BetaProjectServiceAddServiceOverride](),
+		reflect.TypeFor[BetaProjectServiceGetResolvedServicesOverride](),
+		reflect.TypeFor[BetaProjectServiceParseGitHubUrlOverride](),
+		reflect.TypeFor[BetaProjectServiceGetConfigSectionOverride](),
+		reflect.TypeFor[BetaProjectServiceGetConfigValueOverride](),
+		reflect.TypeFor[BetaProjectServiceSetConfigSectionOverride](),
+		reflect.TypeFor[BetaProjectServiceSetConfigValueOverride](),
+		reflect.TypeFor[BetaProjectServiceUnsetConfigOverride](),
+		reflect.TypeFor[BetaProjectServiceGetServiceConfigSectionOverride](),
+		reflect.TypeFor[BetaProjectServiceGetServiceConfigValueOverride](),
+		reflect.TypeFor[BetaProjectServiceSetServiceConfigSectionOverride](),
+		reflect.TypeFor[BetaProjectServiceSetServiceConfigValueOverride](),
+		reflect.TypeFor[BetaProjectServiceUnsetServiceConfigOverride](),
+	)
 }
 
 // BetaPromptServicePromptSubscriptionOverride overrides the beta PromptService.PromptSubscription method before stable adaptation.
@@ -670,52 +539,24 @@ type BetaPromptServicePromptAiModelLocationWithQuotaOverride interface {
 }
 
 func validateBetaPromptServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.PromptServiceServer); ok {
-		return fmt.Errorf("beta override for PromptService must implement focused method override interfaces, not v1beta.PromptServiceServer")
-	}
-	if _, ok := override.(BetaPromptServicePromptSubscriptionOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServicePromptLocationOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServicePromptResourceGroupOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServiceConfirmOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServicePromptOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServiceSelectOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServiceMultiSelectOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServicePromptSubscriptionResourceOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServicePromptResourceGroupResourceOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServicePromptAiModelOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServicePromptAiDeploymentOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServicePromptAiLocationWithQuotaOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaPromptServicePromptAiModelLocationWithQuotaOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for PromptService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"PromptService",
+		override,
+		reflect.TypeFor[v1beta.PromptServiceServer](),
+		reflect.TypeFor[BetaPromptServicePromptSubscriptionOverride](),
+		reflect.TypeFor[BetaPromptServicePromptLocationOverride](),
+		reflect.TypeFor[BetaPromptServicePromptResourceGroupOverride](),
+		reflect.TypeFor[BetaPromptServiceConfirmOverride](),
+		reflect.TypeFor[BetaPromptServicePromptOverride](),
+		reflect.TypeFor[BetaPromptServiceSelectOverride](),
+		reflect.TypeFor[BetaPromptServiceMultiSelectOverride](),
+		reflect.TypeFor[BetaPromptServicePromptSubscriptionResourceOverride](),
+		reflect.TypeFor[BetaPromptServicePromptResourceGroupResourceOverride](),
+		reflect.TypeFor[BetaPromptServicePromptAiModelOverride](),
+		reflect.TypeFor[BetaPromptServicePromptAiDeploymentOverride](),
+		reflect.TypeFor[BetaPromptServicePromptAiLocationWithQuotaOverride](),
+		reflect.TypeFor[BetaPromptServicePromptAiModelLocationWithQuotaOverride](),
+	)
 }
 
 // BetaProvisioningServiceStreamOverride overrides the beta ProvisioningService.Stream method before stable adaptation.
@@ -724,16 +565,12 @@ type BetaProvisioningServiceStreamOverride interface {
 }
 
 func validateBetaProvisioningServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.ProvisioningServiceServer); ok {
-		return fmt.Errorf("beta override for ProvisioningService must implement focused method override interfaces, not v1beta.ProvisioningServiceServer")
-	}
-	if _, ok := override.(BetaProvisioningServiceStreamOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for ProvisioningService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"ProvisioningService",
+		override,
+		reflect.TypeFor[v1beta.ProvisioningServiceServer](),
+		reflect.TypeFor[BetaProvisioningServiceStreamOverride](),
+	)
 }
 
 // BetaServiceTargetServiceStreamOverride overrides the beta ServiceTargetService.Stream method before stable adaptation.
@@ -742,16 +579,12 @@ type BetaServiceTargetServiceStreamOverride interface {
 }
 
 func validateBetaServiceTargetServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.ServiceTargetServiceServer); ok {
-		return fmt.Errorf("beta override for ServiceTargetService must implement focused method override interfaces, not v1beta.ServiceTargetServiceServer")
-	}
-	if _, ok := override.(BetaServiceTargetServiceStreamOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for ServiceTargetService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"ServiceTargetService",
+		override,
+		reflect.TypeFor[v1beta.ServiceTargetServiceServer](),
+		reflect.TypeFor[BetaServiceTargetServiceStreamOverride](),
+	)
 }
 
 // BetaTelemetryServiceReportUsageOverride overrides the beta TelemetryService.ReportUsage method before stable adaptation.
@@ -760,16 +593,12 @@ type BetaTelemetryServiceReportUsageOverride interface {
 }
 
 func validateBetaTelemetryServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.TelemetryServiceServer); ok {
-		return fmt.Errorf("beta override for TelemetryService must implement focused method override interfaces, not v1beta.TelemetryServiceServer")
-	}
-	if _, ok := override.(BetaTelemetryServiceReportUsageOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for TelemetryService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"TelemetryService",
+		override,
+		reflect.TypeFor[v1beta.TelemetryServiceServer](),
+		reflect.TypeFor[BetaTelemetryServiceReportUsageOverride](),
+	)
 }
 
 // BetaUserConfigServiceGetOverride overrides the beta UserConfigService.Get method before stable adaptation.
@@ -798,28 +627,16 @@ type BetaUserConfigServiceUnsetOverride interface {
 }
 
 func validateBetaUserConfigServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.UserConfigServiceServer); ok {
-		return fmt.Errorf("beta override for UserConfigService must implement focused method override interfaces, not v1beta.UserConfigServiceServer")
-	}
-	if _, ok := override.(BetaUserConfigServiceGetOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaUserConfigServiceGetStringOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaUserConfigServiceGetSectionOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaUserConfigServiceSetOverride); ok {
-		return nil
-	}
-	if _, ok := override.(BetaUserConfigServiceUnsetOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for UserConfigService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"UserConfigService",
+		override,
+		reflect.TypeFor[v1beta.UserConfigServiceServer](),
+		reflect.TypeFor[BetaUserConfigServiceGetOverride](),
+		reflect.TypeFor[BetaUserConfigServiceGetStringOverride](),
+		reflect.TypeFor[BetaUserConfigServiceGetSectionOverride](),
+		reflect.TypeFor[BetaUserConfigServiceSetOverride](),
+		reflect.TypeFor[BetaUserConfigServiceUnsetOverride](),
+	)
 }
 
 // BetaValidationServiceStreamOverride overrides the beta ValidationService.Stream method before stable adaptation.
@@ -828,16 +645,12 @@ type BetaValidationServiceStreamOverride interface {
 }
 
 func validateBetaValidationServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.ValidationServiceServer); ok {
-		return fmt.Errorf("beta override for ValidationService must implement focused method override interfaces, not v1beta.ValidationServiceServer")
-	}
-	if _, ok := override.(BetaValidationServiceStreamOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for ValidationService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"ValidationService",
+		override,
+		reflect.TypeFor[v1beta.ValidationServiceServer](),
+		reflect.TypeFor[BetaValidationServiceStreamOverride](),
+	)
 }
 
 // BetaWorkflowServiceRunOverride overrides the beta WorkflowService.Run method before stable adaptation.
@@ -846,16 +659,12 @@ type BetaWorkflowServiceRunOverride interface {
 }
 
 func validateBetaWorkflowServiceOverride(override any) error {
-	if override == nil {
-		return nil
-	}
-	if _, ok := override.(v1beta.WorkflowServiceServer); ok {
-		return fmt.Errorf("beta override for WorkflowService must implement focused method override interfaces, not v1beta.WorkflowServiceServer")
-	}
-	if _, ok := override.(BetaWorkflowServiceRunOverride); ok {
-		return nil
-	}
-	return fmt.Errorf("beta override for WorkflowService does not implement a generated focused method override interface")
+	return validateBetaServiceOverride(
+		"WorkflowService",
+		override,
+		reflect.TypeFor[v1beta.WorkflowServiceServer](),
+		reflect.TypeFor[BetaWorkflowServiceRunOverride](),
+	)
 }
 
 func registerBetaServices(
@@ -1122,22 +931,14 @@ func (a *betaAccountServiceAdapter) ListSubscriptions(
 	if override, ok := a.override.(BetaAccountServiceListSubscriptionsOverride); ok {
 		return override.ListSubscriptions(ctx, req)
 	}
-	stableRequest := new(v1.ListSubscriptionsRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert AccountService.ListSubscriptions request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ListSubscriptions(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable AccountService.ListSubscriptions returned a nil response")
-	}
-	betaResponse := new(v1beta.ListSubscriptionsResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert AccountService.ListSubscriptions response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ListSubscriptionsRequest),
+		a.stable.ListSubscriptions,
+		new(v1beta.ListSubscriptionsResponse),
+		"AccountService.ListSubscriptions",
+	)
 }
 
 func (a *betaAccountServiceAdapter) LookupTenant(
@@ -1147,22 +948,14 @@ func (a *betaAccountServiceAdapter) LookupTenant(
 	if override, ok := a.override.(BetaAccountServiceLookupTenantOverride); ok {
 		return override.LookupTenant(ctx, req)
 	}
-	stableRequest := new(v1.LookupTenantRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert AccountService.LookupTenant request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.LookupTenant(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable AccountService.LookupTenant returned a nil response")
-	}
-	betaResponse := new(v1beta.LookupTenantResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert AccountService.LookupTenant response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.LookupTenantRequest),
+		a.stable.LookupTenant,
+		new(v1beta.LookupTenantResponse),
+		"AccountService.LookupTenant",
+	)
 }
 
 type betaAiModelServiceAdapter struct {
@@ -1180,22 +973,14 @@ func (a *betaAiModelServiceAdapter) ListModels(
 	if override, ok := a.override.(BetaAiModelServiceListModelsOverride); ok {
 		return override.ListModels(ctx, req)
 	}
-	stableRequest := new(v1.ListModelsRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert AiModelService.ListModels request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ListModels(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable AiModelService.ListModels returned a nil response")
-	}
-	betaResponse := new(v1beta.ListModelsResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert AiModelService.ListModels response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ListModelsRequest),
+		a.stable.ListModels,
+		new(v1beta.ListModelsResponse),
+		"AiModelService.ListModels",
+	)
 }
 
 func (a *betaAiModelServiceAdapter) ResolveModelDeployments(
@@ -1205,22 +990,14 @@ func (a *betaAiModelServiceAdapter) ResolveModelDeployments(
 	if override, ok := a.override.(BetaAiModelServiceResolveModelDeploymentsOverride); ok {
 		return override.ResolveModelDeployments(ctx, req)
 	}
-	stableRequest := new(v1.ResolveModelDeploymentsRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert AiModelService.ResolveModelDeployments request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ResolveModelDeployments(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable AiModelService.ResolveModelDeployments returned a nil response")
-	}
-	betaResponse := new(v1beta.ResolveModelDeploymentsResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert AiModelService.ResolveModelDeployments response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ResolveModelDeploymentsRequest),
+		a.stable.ResolveModelDeployments,
+		new(v1beta.ResolveModelDeploymentsResponse),
+		"AiModelService.ResolveModelDeployments",
+	)
 }
 
 func (a *betaAiModelServiceAdapter) ListUsages(
@@ -1230,22 +1007,14 @@ func (a *betaAiModelServiceAdapter) ListUsages(
 	if override, ok := a.override.(BetaAiModelServiceListUsagesOverride); ok {
 		return override.ListUsages(ctx, req)
 	}
-	stableRequest := new(v1.ListUsagesRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert AiModelService.ListUsages request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ListUsages(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable AiModelService.ListUsages returned a nil response")
-	}
-	betaResponse := new(v1beta.ListUsagesResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert AiModelService.ListUsages response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ListUsagesRequest),
+		a.stable.ListUsages,
+		new(v1beta.ListUsagesResponse),
+		"AiModelService.ListUsages",
+	)
 }
 
 func (a *betaAiModelServiceAdapter) ListLocationsWithQuota(
@@ -1255,22 +1024,14 @@ func (a *betaAiModelServiceAdapter) ListLocationsWithQuota(
 	if override, ok := a.override.(BetaAiModelServiceListLocationsWithQuotaOverride); ok {
 		return override.ListLocationsWithQuota(ctx, req)
 	}
-	stableRequest := new(v1.ListLocationsWithQuotaRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert AiModelService.ListLocationsWithQuota request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ListLocationsWithQuota(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable AiModelService.ListLocationsWithQuota returned a nil response")
-	}
-	betaResponse := new(v1beta.ListLocationsWithQuotaResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert AiModelService.ListLocationsWithQuota response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ListLocationsWithQuotaRequest),
+		a.stable.ListLocationsWithQuota,
+		new(v1beta.ListLocationsWithQuotaResponse),
+		"AiModelService.ListLocationsWithQuota",
+	)
 }
 
 func (a *betaAiModelServiceAdapter) ListModelLocationsWithQuota(
@@ -1280,22 +1041,14 @@ func (a *betaAiModelServiceAdapter) ListModelLocationsWithQuota(
 	if override, ok := a.override.(BetaAiModelServiceListModelLocationsWithQuotaOverride); ok {
 		return override.ListModelLocationsWithQuota(ctx, req)
 	}
-	stableRequest := new(v1.ListModelLocationsWithQuotaRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert AiModelService.ListModelLocationsWithQuota request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ListModelLocationsWithQuota(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable AiModelService.ListModelLocationsWithQuota returned a nil response")
-	}
-	betaResponse := new(v1beta.ListModelLocationsWithQuotaResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert AiModelService.ListModelLocationsWithQuota response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ListModelLocationsWithQuotaRequest),
+		a.stable.ListModelLocationsWithQuota,
+		new(v1beta.ListModelLocationsWithQuotaResponse),
+		"AiModelService.ListModelLocationsWithQuota",
+	)
 }
 
 type betaComposeServiceAdapter struct {
@@ -1313,22 +1066,14 @@ func (a *betaComposeServiceAdapter) ListResources(
 	if override, ok := a.override.(BetaComposeServiceListResourcesOverride); ok {
 		return override.ListResources(ctx, req)
 	}
-	stableRequest := new(v1.EmptyRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ComposeService.ListResources request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ListResources(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ComposeService.ListResources returned a nil response")
-	}
-	betaResponse := new(v1beta.ListResourcesResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ComposeService.ListResources response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.EmptyRequest),
+		a.stable.ListResources,
+		new(v1beta.ListResourcesResponse),
+		"ComposeService.ListResources",
+	)
 }
 
 func (a *betaComposeServiceAdapter) GetResource(
@@ -1338,22 +1083,14 @@ func (a *betaComposeServiceAdapter) GetResource(
 	if override, ok := a.override.(BetaComposeServiceGetResourceOverride); ok {
 		return override.GetResource(ctx, req)
 	}
-	stableRequest := new(v1.GetResourceRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ComposeService.GetResource request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetResource(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ComposeService.GetResource returned a nil response")
-	}
-	betaResponse := new(v1beta.GetResourceResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ComposeService.GetResource response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetResourceRequest),
+		a.stable.GetResource,
+		new(v1beta.GetResourceResponse),
+		"ComposeService.GetResource",
+	)
 }
 
 func (a *betaComposeServiceAdapter) ListResourceTypes(
@@ -1363,22 +1100,14 @@ func (a *betaComposeServiceAdapter) ListResourceTypes(
 	if override, ok := a.override.(BetaComposeServiceListResourceTypesOverride); ok {
 		return override.ListResourceTypes(ctx, req)
 	}
-	stableRequest := new(v1.EmptyRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ComposeService.ListResourceTypes request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ListResourceTypes(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ComposeService.ListResourceTypes returned a nil response")
-	}
-	betaResponse := new(v1beta.ListResourceTypesResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ComposeService.ListResourceTypes response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.EmptyRequest),
+		a.stable.ListResourceTypes,
+		new(v1beta.ListResourceTypesResponse),
+		"ComposeService.ListResourceTypes",
+	)
 }
 
 func (a *betaComposeServiceAdapter) GetResourceType(
@@ -1388,22 +1117,14 @@ func (a *betaComposeServiceAdapter) GetResourceType(
 	if override, ok := a.override.(BetaComposeServiceGetResourceTypeOverride); ok {
 		return override.GetResourceType(ctx, req)
 	}
-	stableRequest := new(v1.GetResourceTypeRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ComposeService.GetResourceType request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetResourceType(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ComposeService.GetResourceType returned a nil response")
-	}
-	betaResponse := new(v1beta.GetResourceTypeResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ComposeService.GetResourceType response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetResourceTypeRequest),
+		a.stable.GetResourceType,
+		new(v1beta.GetResourceTypeResponse),
+		"ComposeService.GetResourceType",
+	)
 }
 
 func (a *betaComposeServiceAdapter) AddResource(
@@ -1413,22 +1134,14 @@ func (a *betaComposeServiceAdapter) AddResource(
 	if override, ok := a.override.(BetaComposeServiceAddResourceOverride); ok {
 		return override.AddResource(ctx, req)
 	}
-	stableRequest := new(v1.AddResourceRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ComposeService.AddResource request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.AddResource(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ComposeService.AddResource returned a nil response")
-	}
-	betaResponse := new(v1beta.AddResourceResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ComposeService.AddResource response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.AddResourceRequest),
+		a.stable.AddResource,
+		new(v1beta.AddResourceResponse),
+		"ComposeService.AddResource",
+	)
 }
 
 type betaContainerServiceAdapter struct {
@@ -1446,22 +1159,14 @@ func (a *betaContainerServiceAdapter) Build(
 	if override, ok := a.override.(BetaContainerServiceBuildOverride); ok {
 		return override.Build(ctx, req)
 	}
-	stableRequest := new(v1.ContainerBuildRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ContainerService.Build request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Build(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ContainerService.Build returned a nil response")
-	}
-	betaResponse := new(v1beta.ContainerBuildResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ContainerService.Build response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ContainerBuildRequest),
+		a.stable.Build,
+		new(v1beta.ContainerBuildResponse),
+		"ContainerService.Build",
+	)
 }
 
 func (a *betaContainerServiceAdapter) Package(
@@ -1471,22 +1176,14 @@ func (a *betaContainerServiceAdapter) Package(
 	if override, ok := a.override.(BetaContainerServicePackageOverride); ok {
 		return override.Package(ctx, req)
 	}
-	stableRequest := new(v1.ContainerPackageRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ContainerService.Package request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Package(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ContainerService.Package returned a nil response")
-	}
-	betaResponse := new(v1beta.ContainerPackageResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ContainerService.Package response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ContainerPackageRequest),
+		a.stable.Package,
+		new(v1beta.ContainerPackageResponse),
+		"ContainerService.Package",
+	)
 }
 
 func (a *betaContainerServiceAdapter) Publish(
@@ -1496,22 +1193,14 @@ func (a *betaContainerServiceAdapter) Publish(
 	if override, ok := a.override.(BetaContainerServicePublishOverride); ok {
 		return override.Publish(ctx, req)
 	}
-	stableRequest := new(v1.ContainerPublishRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ContainerService.Publish request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Publish(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ContainerService.Publish returned a nil response")
-	}
-	betaResponse := new(v1beta.ContainerPublishResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ContainerService.Publish response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ContainerPublishRequest),
+		a.stable.Publish,
+		new(v1beta.ContainerPublishResponse),
+		"ContainerService.Publish",
+	)
 }
 
 type betaCopilotServiceAdapter struct {
@@ -1529,22 +1218,14 @@ func (a *betaCopilotServiceAdapter) Initialize(
 	if override, ok := a.override.(BetaCopilotServiceInitializeOverride); ok {
 		return override.Initialize(ctx, req)
 	}
-	stableRequest := new(v1.InitializeCopilotRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.Initialize request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Initialize(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable CopilotService.Initialize returned a nil response")
-	}
-	betaResponse := new(v1beta.InitializeCopilotResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.Initialize response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.InitializeCopilotRequest),
+		a.stable.Initialize,
+		new(v1beta.InitializeCopilotResponse),
+		"CopilotService.Initialize",
+	)
 }
 
 func (a *betaCopilotServiceAdapter) ListSessions(
@@ -1554,22 +1235,14 @@ func (a *betaCopilotServiceAdapter) ListSessions(
 	if override, ok := a.override.(BetaCopilotServiceListSessionsOverride); ok {
 		return override.ListSessions(ctx, req)
 	}
-	stableRequest := new(v1.ListCopilotSessionsRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.ListSessions request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ListSessions(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable CopilotService.ListSessions returned a nil response")
-	}
-	betaResponse := new(v1beta.ListCopilotSessionsResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.ListSessions response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ListCopilotSessionsRequest),
+		a.stable.ListSessions,
+		new(v1beta.ListCopilotSessionsResponse),
+		"CopilotService.ListSessions",
+	)
 }
 
 func (a *betaCopilotServiceAdapter) SendMessage(
@@ -1579,22 +1252,14 @@ func (a *betaCopilotServiceAdapter) SendMessage(
 	if override, ok := a.override.(BetaCopilotServiceSendMessageOverride); ok {
 		return override.SendMessage(ctx, req)
 	}
-	stableRequest := new(v1.SendCopilotMessageRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.SendMessage request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.SendMessage(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable CopilotService.SendMessage returned a nil response")
-	}
-	betaResponse := new(v1beta.SendCopilotMessageResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.SendMessage response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SendCopilotMessageRequest),
+		a.stable.SendMessage,
+		new(v1beta.SendCopilotMessageResponse),
+		"CopilotService.SendMessage",
+	)
 }
 
 func (a *betaCopilotServiceAdapter) GetUsageMetrics(
@@ -1604,22 +1269,14 @@ func (a *betaCopilotServiceAdapter) GetUsageMetrics(
 	if override, ok := a.override.(BetaCopilotServiceGetUsageMetricsOverride); ok {
 		return override.GetUsageMetrics(ctx, req)
 	}
-	stableRequest := new(v1.GetCopilotUsageMetricsRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.GetUsageMetrics request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetUsageMetrics(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable CopilotService.GetUsageMetrics returned a nil response")
-	}
-	betaResponse := new(v1beta.GetCopilotUsageMetricsResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.GetUsageMetrics response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetCopilotUsageMetricsRequest),
+		a.stable.GetUsageMetrics,
+		new(v1beta.GetCopilotUsageMetricsResponse),
+		"CopilotService.GetUsageMetrics",
+	)
 }
 
 func (a *betaCopilotServiceAdapter) GetFileChanges(
@@ -1629,22 +1286,14 @@ func (a *betaCopilotServiceAdapter) GetFileChanges(
 	if override, ok := a.override.(BetaCopilotServiceGetFileChangesOverride); ok {
 		return override.GetFileChanges(ctx, req)
 	}
-	stableRequest := new(v1.GetCopilotFileChangesRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.GetFileChanges request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetFileChanges(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable CopilotService.GetFileChanges returned a nil response")
-	}
-	betaResponse := new(v1beta.GetCopilotFileChangesResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.GetFileChanges response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetCopilotFileChangesRequest),
+		a.stable.GetFileChanges,
+		new(v1beta.GetCopilotFileChangesResponse),
+		"CopilotService.GetFileChanges",
+	)
 }
 
 func (a *betaCopilotServiceAdapter) StopSession(
@@ -1654,22 +1303,14 @@ func (a *betaCopilotServiceAdapter) StopSession(
 	if override, ok := a.override.(BetaCopilotServiceStopSessionOverride); ok {
 		return override.StopSession(ctx, req)
 	}
-	stableRequest := new(v1.StopCopilotSessionRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.StopSession request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.StopSession(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable CopilotService.StopSession returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.StopSession response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.StopCopilotSessionRequest),
+		a.stable.StopSession,
+		new(v1beta.EmptyResponse),
+		"CopilotService.StopSession",
+	)
 }
 
 func (a *betaCopilotServiceAdapter) GetMessages(
@@ -1679,22 +1320,14 @@ func (a *betaCopilotServiceAdapter) GetMessages(
 	if override, ok := a.override.(BetaCopilotServiceGetMessagesOverride); ok {
 		return override.GetMessages(ctx, req)
 	}
-	stableRequest := new(v1.GetCopilotMessagesRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.GetMessages request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetMessages(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable CopilotService.GetMessages returned a nil response")
-	}
-	betaResponse := new(v1beta.GetCopilotMessagesResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert CopilotService.GetMessages response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetCopilotMessagesRequest),
+		a.stable.GetMessages,
+		new(v1beta.GetCopilotMessagesResponse),
+		"CopilotService.GetMessages",
+	)
 }
 
 type betaDeploymentServiceAdapter struct {
@@ -1712,22 +1345,14 @@ func (a *betaDeploymentServiceAdapter) GetDeployment(
 	if override, ok := a.override.(BetaDeploymentServiceGetDeploymentOverride); ok {
 		return override.GetDeployment(ctx, req)
 	}
-	stableRequest := new(v1.EmptyRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert DeploymentService.GetDeployment request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetDeployment(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable DeploymentService.GetDeployment returned a nil response")
-	}
-	betaResponse := new(v1beta.GetDeploymentResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert DeploymentService.GetDeployment response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.EmptyRequest),
+		a.stable.GetDeployment,
+		new(v1beta.GetDeploymentResponse),
+		"DeploymentService.GetDeployment",
+	)
 }
 
 func (a *betaDeploymentServiceAdapter) GetDeploymentContext(
@@ -1737,22 +1362,14 @@ func (a *betaDeploymentServiceAdapter) GetDeploymentContext(
 	if override, ok := a.override.(BetaDeploymentServiceGetDeploymentContextOverride); ok {
 		return override.GetDeploymentContext(ctx, req)
 	}
-	stableRequest := new(v1.EmptyRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert DeploymentService.GetDeploymentContext request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetDeploymentContext(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable DeploymentService.GetDeploymentContext returned a nil response")
-	}
-	betaResponse := new(v1beta.GetDeploymentContextResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert DeploymentService.GetDeploymentContext response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.EmptyRequest),
+		a.stable.GetDeploymentContext,
+		new(v1beta.GetDeploymentContextResponse),
+		"DeploymentService.GetDeploymentContext",
+	)
 }
 
 type betaEnvironmentServiceAdapter struct {
@@ -1770,22 +1387,14 @@ func (a *betaEnvironmentServiceAdapter) GetCurrent(
 	if override, ok := a.override.(BetaEnvironmentServiceGetCurrentOverride); ok {
 		return override.GetCurrent(ctx, req)
 	}
-	stableRequest := new(v1.EmptyRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetCurrent request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetCurrent(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.GetCurrent returned a nil response")
-	}
-	betaResponse := new(v1beta.EnvironmentResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetCurrent response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.EmptyRequest),
+		a.stable.GetCurrent,
+		new(v1beta.EnvironmentResponse),
+		"EnvironmentService.GetCurrent",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) List(
@@ -1795,22 +1404,14 @@ func (a *betaEnvironmentServiceAdapter) List(
 	if override, ok := a.override.(BetaEnvironmentServiceListOverride); ok {
 		return override.List(ctx, req)
 	}
-	stableRequest := new(v1.EmptyRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.List request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.List(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.List returned a nil response")
-	}
-	betaResponse := new(v1beta.EnvironmentListResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.List response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.EmptyRequest),
+		a.stable.List,
+		new(v1beta.EnvironmentListResponse),
+		"EnvironmentService.List",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) Get(
@@ -1820,22 +1421,14 @@ func (a *betaEnvironmentServiceAdapter) Get(
 	if override, ok := a.override.(BetaEnvironmentServiceGetOverride); ok {
 		return override.Get(ctx, req)
 	}
-	stableRequest := new(v1.GetEnvironmentRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.Get request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Get(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.Get returned a nil response")
-	}
-	betaResponse := new(v1beta.EnvironmentResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.Get response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetEnvironmentRequest),
+		a.stable.Get,
+		new(v1beta.EnvironmentResponse),
+		"EnvironmentService.Get",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) Select(
@@ -1845,22 +1438,14 @@ func (a *betaEnvironmentServiceAdapter) Select(
 	if override, ok := a.override.(BetaEnvironmentServiceSelectOverride); ok {
 		return override.Select(ctx, req)
 	}
-	stableRequest := new(v1.SelectEnvironmentRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.Select request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Select(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.Select returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.Select response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SelectEnvironmentRequest),
+		a.stable.Select,
+		new(v1beta.EmptyResponse),
+		"EnvironmentService.Select",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) GetValues(
@@ -1870,22 +1455,14 @@ func (a *betaEnvironmentServiceAdapter) GetValues(
 	if override, ok := a.override.(BetaEnvironmentServiceGetValuesOverride); ok {
 		return override.GetValues(ctx, req)
 	}
-	stableRequest := new(v1.GetEnvironmentRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetValues request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetValues(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.GetValues returned a nil response")
-	}
-	betaResponse := new(v1beta.KeyValueListResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetValues response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetEnvironmentRequest),
+		a.stable.GetValues,
+		new(v1beta.KeyValueListResponse),
+		"EnvironmentService.GetValues",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) GetValue(
@@ -1895,22 +1472,14 @@ func (a *betaEnvironmentServiceAdapter) GetValue(
 	if override, ok := a.override.(BetaEnvironmentServiceGetValueOverride); ok {
 		return override.GetValue(ctx, req)
 	}
-	stableRequest := new(v1.GetEnvRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetValue request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetValue(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.GetValue returned a nil response")
-	}
-	betaResponse := new(v1beta.KeyValueResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetValue response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetEnvRequest),
+		a.stable.GetValue,
+		new(v1beta.KeyValueResponse),
+		"EnvironmentService.GetValue",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) SetValue(
@@ -1920,22 +1489,14 @@ func (a *betaEnvironmentServiceAdapter) SetValue(
 	if override, ok := a.override.(BetaEnvironmentServiceSetValueOverride); ok {
 		return override.SetValue(ctx, req)
 	}
-	stableRequest := new(v1.SetEnvRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.SetValue request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.SetValue(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.SetValue returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.SetValue response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SetEnvRequest),
+		a.stable.SetValue,
+		new(v1beta.EmptyResponse),
+		"EnvironmentService.SetValue",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) GetConfig(
@@ -1945,22 +1506,14 @@ func (a *betaEnvironmentServiceAdapter) GetConfig(
 	if override, ok := a.override.(BetaEnvironmentServiceGetConfigOverride); ok {
 		return override.GetConfig(ctx, req)
 	}
-	stableRequest := new(v1.GetConfigRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetConfig request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetConfig(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.GetConfig returned a nil response")
-	}
-	betaResponse := new(v1beta.GetConfigResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetConfig response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetConfigRequest),
+		a.stable.GetConfig,
+		new(v1beta.GetConfigResponse),
+		"EnvironmentService.GetConfig",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) GetConfigString(
@@ -1970,22 +1523,14 @@ func (a *betaEnvironmentServiceAdapter) GetConfigString(
 	if override, ok := a.override.(BetaEnvironmentServiceGetConfigStringOverride); ok {
 		return override.GetConfigString(ctx, req)
 	}
-	stableRequest := new(v1.GetConfigStringRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetConfigString request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetConfigString(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.GetConfigString returned a nil response")
-	}
-	betaResponse := new(v1beta.GetConfigStringResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetConfigString response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetConfigStringRequest),
+		a.stable.GetConfigString,
+		new(v1beta.GetConfigStringResponse),
+		"EnvironmentService.GetConfigString",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) GetConfigSection(
@@ -1995,22 +1540,14 @@ func (a *betaEnvironmentServiceAdapter) GetConfigSection(
 	if override, ok := a.override.(BetaEnvironmentServiceGetConfigSectionOverride); ok {
 		return override.GetConfigSection(ctx, req)
 	}
-	stableRequest := new(v1.GetConfigSectionRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetConfigSection request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetConfigSection(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.GetConfigSection returned a nil response")
-	}
-	betaResponse := new(v1beta.GetConfigSectionResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.GetConfigSection response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetConfigSectionRequest),
+		a.stable.GetConfigSection,
+		new(v1beta.GetConfigSectionResponse),
+		"EnvironmentService.GetConfigSection",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) SetConfig(
@@ -2020,22 +1557,14 @@ func (a *betaEnvironmentServiceAdapter) SetConfig(
 	if override, ok := a.override.(BetaEnvironmentServiceSetConfigOverride); ok {
 		return override.SetConfig(ctx, req)
 	}
-	stableRequest := new(v1.SetConfigRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.SetConfig request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.SetConfig(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.SetConfig returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.SetConfig response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SetConfigRequest),
+		a.stable.SetConfig,
+		new(v1beta.EmptyResponse),
+		"EnvironmentService.SetConfig",
+	)
 }
 
 func (a *betaEnvironmentServiceAdapter) UnsetConfig(
@@ -2045,22 +1574,14 @@ func (a *betaEnvironmentServiceAdapter) UnsetConfig(
 	if override, ok := a.override.(BetaEnvironmentServiceUnsetConfigOverride); ok {
 		return override.UnsetConfig(ctx, req)
 	}
-	stableRequest := new(v1.UnsetConfigRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.UnsetConfig request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.UnsetConfig(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable EnvironmentService.UnsetConfig returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert EnvironmentService.UnsetConfig response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.UnsetConfigRequest),
+		a.stable.UnsetConfig,
+		new(v1beta.EmptyResponse),
+		"EnvironmentService.UnsetConfig",
+	)
 }
 
 type betaEventServiceAdapter struct {
@@ -2118,22 +1639,14 @@ func (a *betaExtensionServiceAdapter) Ready(
 	if override, ok := a.override.(BetaExtensionServiceReadyOverride); ok {
 		return override.Ready(ctx, req)
 	}
-	stableRequest := new(v1.ReadyRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ExtensionService.Ready request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Ready(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ExtensionService.Ready returned a nil response")
-	}
-	betaResponse := new(v1beta.ReadyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ExtensionService.Ready response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ReadyRequest),
+		a.stable.Ready,
+		new(v1beta.ReadyResponse),
+		"ExtensionService.Ready",
+	)
 }
 
 func (a *betaExtensionServiceAdapter) ReportError(
@@ -2143,22 +1656,14 @@ func (a *betaExtensionServiceAdapter) ReportError(
 	if override, ok := a.override.(BetaExtensionServiceReportErrorOverride); ok {
 		return override.ReportError(ctx, req)
 	}
-	stableRequest := new(v1.ReportErrorRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ExtensionService.ReportError request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ReportError(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ExtensionService.ReportError returned a nil response")
-	}
-	betaResponse := new(v1beta.ReportErrorResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ExtensionService.ReportError response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ReportErrorRequest),
+		a.stable.ReportError,
+		new(v1beta.ReportErrorResponse),
+		"ExtensionService.ReportError",
+	)
 }
 
 type betaFrameworkServiceAdapter struct {
@@ -2216,22 +1721,14 @@ func (a *betaProjectServiceAdapter) Get(
 	if override, ok := a.override.(BetaProjectServiceGetOverride); ok {
 		return override.Get(ctx, req)
 	}
-	stableRequest := new(v1.EmptyRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.Get request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Get(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.Get returned a nil response")
-	}
-	betaResponse := new(v1beta.GetProjectResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.Get response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.EmptyRequest),
+		a.stable.Get,
+		new(v1beta.GetProjectResponse),
+		"ProjectService.Get",
+	)
 }
 
 func (a *betaProjectServiceAdapter) GetServiceTargetResource(
@@ -2241,22 +1738,14 @@ func (a *betaProjectServiceAdapter) GetServiceTargetResource(
 	if override, ok := a.override.(BetaProjectServiceGetServiceTargetResourceOverride); ok {
 		return override.GetServiceTargetResource(ctx, req)
 	}
-	stableRequest := new(v1.GetServiceTargetResourceRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetServiceTargetResource request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetServiceTargetResource(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.GetServiceTargetResource returned a nil response")
-	}
-	betaResponse := new(v1beta.GetServiceTargetResourceResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetServiceTargetResource response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetServiceTargetResourceRequest),
+		a.stable.GetServiceTargetResource,
+		new(v1beta.GetServiceTargetResourceResponse),
+		"ProjectService.GetServiceTargetResource",
+	)
 }
 
 func (a *betaProjectServiceAdapter) AddService(
@@ -2266,22 +1755,14 @@ func (a *betaProjectServiceAdapter) AddService(
 	if override, ok := a.override.(BetaProjectServiceAddServiceOverride); ok {
 		return override.AddService(ctx, req)
 	}
-	stableRequest := new(v1.AddServiceRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.AddService request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.AddService(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.AddService returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.AddService response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.AddServiceRequest),
+		a.stable.AddService,
+		new(v1beta.EmptyResponse),
+		"ProjectService.AddService",
+	)
 }
 
 func (a *betaProjectServiceAdapter) GetResolvedServices(
@@ -2291,22 +1772,14 @@ func (a *betaProjectServiceAdapter) GetResolvedServices(
 	if override, ok := a.override.(BetaProjectServiceGetResolvedServicesOverride); ok {
 		return override.GetResolvedServices(ctx, req)
 	}
-	stableRequest := new(v1.EmptyRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetResolvedServices request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetResolvedServices(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.GetResolvedServices returned a nil response")
-	}
-	betaResponse := new(v1beta.GetResolvedServicesResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetResolvedServices response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.EmptyRequest),
+		a.stable.GetResolvedServices,
+		new(v1beta.GetResolvedServicesResponse),
+		"ProjectService.GetResolvedServices",
+	)
 }
 
 func (a *betaProjectServiceAdapter) ParseGitHubUrl(
@@ -2316,22 +1789,14 @@ func (a *betaProjectServiceAdapter) ParseGitHubUrl(
 	if override, ok := a.override.(BetaProjectServiceParseGitHubUrlOverride); ok {
 		return override.ParseGitHubUrl(ctx, req)
 	}
-	stableRequest := new(v1.ParseGitHubUrlRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.ParseGitHubUrl request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ParseGitHubUrl(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.ParseGitHubUrl returned a nil response")
-	}
-	betaResponse := new(v1beta.ParseGitHubUrlResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.ParseGitHubUrl response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ParseGitHubUrlRequest),
+		a.stable.ParseGitHubUrl,
+		new(v1beta.ParseGitHubUrlResponse),
+		"ProjectService.ParseGitHubUrl",
+	)
 }
 
 func (a *betaProjectServiceAdapter) GetConfigSection(
@@ -2341,22 +1806,14 @@ func (a *betaProjectServiceAdapter) GetConfigSection(
 	if override, ok := a.override.(BetaProjectServiceGetConfigSectionOverride); ok {
 		return override.GetConfigSection(ctx, req)
 	}
-	stableRequest := new(v1.GetProjectConfigSectionRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetConfigSection request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetConfigSection(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.GetConfigSection returned a nil response")
-	}
-	betaResponse := new(v1beta.GetProjectConfigSectionResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetConfigSection response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetProjectConfigSectionRequest),
+		a.stable.GetConfigSection,
+		new(v1beta.GetProjectConfigSectionResponse),
+		"ProjectService.GetConfigSection",
+	)
 }
 
 func (a *betaProjectServiceAdapter) GetConfigValue(
@@ -2366,22 +1823,14 @@ func (a *betaProjectServiceAdapter) GetConfigValue(
 	if override, ok := a.override.(BetaProjectServiceGetConfigValueOverride); ok {
 		return override.GetConfigValue(ctx, req)
 	}
-	stableRequest := new(v1.GetProjectConfigValueRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetConfigValue request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetConfigValue(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.GetConfigValue returned a nil response")
-	}
-	betaResponse := new(v1beta.GetProjectConfigValueResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetConfigValue response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetProjectConfigValueRequest),
+		a.stable.GetConfigValue,
+		new(v1beta.GetProjectConfigValueResponse),
+		"ProjectService.GetConfigValue",
+	)
 }
 
 func (a *betaProjectServiceAdapter) SetConfigSection(
@@ -2391,22 +1840,14 @@ func (a *betaProjectServiceAdapter) SetConfigSection(
 	if override, ok := a.override.(BetaProjectServiceSetConfigSectionOverride); ok {
 		return override.SetConfigSection(ctx, req)
 	}
-	stableRequest := new(v1.SetProjectConfigSectionRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.SetConfigSection request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.SetConfigSection(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.SetConfigSection returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.SetConfigSection response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SetProjectConfigSectionRequest),
+		a.stable.SetConfigSection,
+		new(v1beta.EmptyResponse),
+		"ProjectService.SetConfigSection",
+	)
 }
 
 func (a *betaProjectServiceAdapter) SetConfigValue(
@@ -2416,22 +1857,14 @@ func (a *betaProjectServiceAdapter) SetConfigValue(
 	if override, ok := a.override.(BetaProjectServiceSetConfigValueOverride); ok {
 		return override.SetConfigValue(ctx, req)
 	}
-	stableRequest := new(v1.SetProjectConfigValueRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.SetConfigValue request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.SetConfigValue(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.SetConfigValue returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.SetConfigValue response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SetProjectConfigValueRequest),
+		a.stable.SetConfigValue,
+		new(v1beta.EmptyResponse),
+		"ProjectService.SetConfigValue",
+	)
 }
 
 func (a *betaProjectServiceAdapter) UnsetConfig(
@@ -2441,22 +1874,14 @@ func (a *betaProjectServiceAdapter) UnsetConfig(
 	if override, ok := a.override.(BetaProjectServiceUnsetConfigOverride); ok {
 		return override.UnsetConfig(ctx, req)
 	}
-	stableRequest := new(v1.UnsetProjectConfigRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.UnsetConfig request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.UnsetConfig(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.UnsetConfig returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.UnsetConfig response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.UnsetProjectConfigRequest),
+		a.stable.UnsetConfig,
+		new(v1beta.EmptyResponse),
+		"ProjectService.UnsetConfig",
+	)
 }
 
 func (a *betaProjectServiceAdapter) GetServiceConfigSection(
@@ -2466,22 +1891,14 @@ func (a *betaProjectServiceAdapter) GetServiceConfigSection(
 	if override, ok := a.override.(BetaProjectServiceGetServiceConfigSectionOverride); ok {
 		return override.GetServiceConfigSection(ctx, req)
 	}
-	stableRequest := new(v1.GetServiceConfigSectionRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetServiceConfigSection request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetServiceConfigSection(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.GetServiceConfigSection returned a nil response")
-	}
-	betaResponse := new(v1beta.GetServiceConfigSectionResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetServiceConfigSection response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetServiceConfigSectionRequest),
+		a.stable.GetServiceConfigSection,
+		new(v1beta.GetServiceConfigSectionResponse),
+		"ProjectService.GetServiceConfigSection",
+	)
 }
 
 func (a *betaProjectServiceAdapter) GetServiceConfigValue(
@@ -2491,22 +1908,14 @@ func (a *betaProjectServiceAdapter) GetServiceConfigValue(
 	if override, ok := a.override.(BetaProjectServiceGetServiceConfigValueOverride); ok {
 		return override.GetServiceConfigValue(ctx, req)
 	}
-	stableRequest := new(v1.GetServiceConfigValueRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetServiceConfigValue request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetServiceConfigValue(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.GetServiceConfigValue returned a nil response")
-	}
-	betaResponse := new(v1beta.GetServiceConfigValueResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.GetServiceConfigValue response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetServiceConfigValueRequest),
+		a.stable.GetServiceConfigValue,
+		new(v1beta.GetServiceConfigValueResponse),
+		"ProjectService.GetServiceConfigValue",
+	)
 }
 
 func (a *betaProjectServiceAdapter) SetServiceConfigSection(
@@ -2516,22 +1925,14 @@ func (a *betaProjectServiceAdapter) SetServiceConfigSection(
 	if override, ok := a.override.(BetaProjectServiceSetServiceConfigSectionOverride); ok {
 		return override.SetServiceConfigSection(ctx, req)
 	}
-	stableRequest := new(v1.SetServiceConfigSectionRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.SetServiceConfigSection request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.SetServiceConfigSection(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.SetServiceConfigSection returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.SetServiceConfigSection response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SetServiceConfigSectionRequest),
+		a.stable.SetServiceConfigSection,
+		new(v1beta.EmptyResponse),
+		"ProjectService.SetServiceConfigSection",
+	)
 }
 
 func (a *betaProjectServiceAdapter) SetServiceConfigValue(
@@ -2541,22 +1942,14 @@ func (a *betaProjectServiceAdapter) SetServiceConfigValue(
 	if override, ok := a.override.(BetaProjectServiceSetServiceConfigValueOverride); ok {
 		return override.SetServiceConfigValue(ctx, req)
 	}
-	stableRequest := new(v1.SetServiceConfigValueRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.SetServiceConfigValue request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.SetServiceConfigValue(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.SetServiceConfigValue returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.SetServiceConfigValue response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SetServiceConfigValueRequest),
+		a.stable.SetServiceConfigValue,
+		new(v1beta.EmptyResponse),
+		"ProjectService.SetServiceConfigValue",
+	)
 }
 
 func (a *betaProjectServiceAdapter) UnsetServiceConfig(
@@ -2566,22 +1959,14 @@ func (a *betaProjectServiceAdapter) UnsetServiceConfig(
 	if override, ok := a.override.(BetaProjectServiceUnsetServiceConfigOverride); ok {
 		return override.UnsetServiceConfig(ctx, req)
 	}
-	stableRequest := new(v1.UnsetServiceConfigRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.UnsetServiceConfig request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.UnsetServiceConfig(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable ProjectService.UnsetServiceConfig returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert ProjectService.UnsetServiceConfig response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.UnsetServiceConfigRequest),
+		a.stable.UnsetServiceConfig,
+		new(v1beta.EmptyResponse),
+		"ProjectService.UnsetServiceConfig",
+	)
 }
 
 type betaPromptServiceAdapter struct {
@@ -2599,22 +1984,14 @@ func (a *betaPromptServiceAdapter) PromptSubscription(
 	if override, ok := a.override.(BetaPromptServicePromptSubscriptionOverride); ok {
 		return override.PromptSubscription(ctx, req)
 	}
-	stableRequest := new(v1.PromptSubscriptionRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptSubscription request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.PromptSubscription(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.PromptSubscription returned a nil response")
-	}
-	betaResponse := new(v1beta.PromptSubscriptionResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptSubscription response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.PromptSubscriptionRequest),
+		a.stable.PromptSubscription,
+		new(v1beta.PromptSubscriptionResponse),
+		"PromptService.PromptSubscription",
+	)
 }
 
 func (a *betaPromptServiceAdapter) PromptLocation(
@@ -2624,22 +2001,14 @@ func (a *betaPromptServiceAdapter) PromptLocation(
 	if override, ok := a.override.(BetaPromptServicePromptLocationOverride); ok {
 		return override.PromptLocation(ctx, req)
 	}
-	stableRequest := new(v1.PromptLocationRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptLocation request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.PromptLocation(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.PromptLocation returned a nil response")
-	}
-	betaResponse := new(v1beta.PromptLocationResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptLocation response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.PromptLocationRequest),
+		a.stable.PromptLocation,
+		new(v1beta.PromptLocationResponse),
+		"PromptService.PromptLocation",
+	)
 }
 
 func (a *betaPromptServiceAdapter) PromptResourceGroup(
@@ -2649,22 +2018,14 @@ func (a *betaPromptServiceAdapter) PromptResourceGroup(
 	if override, ok := a.override.(BetaPromptServicePromptResourceGroupOverride); ok {
 		return override.PromptResourceGroup(ctx, req)
 	}
-	stableRequest := new(v1.PromptResourceGroupRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptResourceGroup request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.PromptResourceGroup(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.PromptResourceGroup returned a nil response")
-	}
-	betaResponse := new(v1beta.PromptResourceGroupResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptResourceGroup response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.PromptResourceGroupRequest),
+		a.stable.PromptResourceGroup,
+		new(v1beta.PromptResourceGroupResponse),
+		"PromptService.PromptResourceGroup",
+	)
 }
 
 func (a *betaPromptServiceAdapter) Confirm(
@@ -2674,22 +2035,14 @@ func (a *betaPromptServiceAdapter) Confirm(
 	if override, ok := a.override.(BetaPromptServiceConfirmOverride); ok {
 		return override.Confirm(ctx, req)
 	}
-	stableRequest := new(v1.ConfirmRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.Confirm request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Confirm(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.Confirm returned a nil response")
-	}
-	betaResponse := new(v1beta.ConfirmResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.Confirm response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ConfirmRequest),
+		a.stable.Confirm,
+		new(v1beta.ConfirmResponse),
+		"PromptService.Confirm",
+	)
 }
 
 func (a *betaPromptServiceAdapter) Prompt(
@@ -2699,22 +2052,14 @@ func (a *betaPromptServiceAdapter) Prompt(
 	if override, ok := a.override.(BetaPromptServicePromptOverride); ok {
 		return override.Prompt(ctx, req)
 	}
-	stableRequest := new(v1.PromptRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.Prompt request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Prompt(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.Prompt returned a nil response")
-	}
-	betaResponse := new(v1beta.PromptResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.Prompt response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.PromptRequest),
+		a.stable.Prompt,
+		new(v1beta.PromptResponse),
+		"PromptService.Prompt",
+	)
 }
 
 func (a *betaPromptServiceAdapter) Select(
@@ -2724,22 +2069,14 @@ func (a *betaPromptServiceAdapter) Select(
 	if override, ok := a.override.(BetaPromptServiceSelectOverride); ok {
 		return override.Select(ctx, req)
 	}
-	stableRequest := new(v1.SelectRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.Select request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Select(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.Select returned a nil response")
-	}
-	betaResponse := new(v1beta.SelectResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.Select response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SelectRequest),
+		a.stable.Select,
+		new(v1beta.SelectResponse),
+		"PromptService.Select",
+	)
 }
 
 func (a *betaPromptServiceAdapter) MultiSelect(
@@ -2749,22 +2086,14 @@ func (a *betaPromptServiceAdapter) MultiSelect(
 	if override, ok := a.override.(BetaPromptServiceMultiSelectOverride); ok {
 		return override.MultiSelect(ctx, req)
 	}
-	stableRequest := new(v1.MultiSelectRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.MultiSelect request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.MultiSelect(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.MultiSelect returned a nil response")
-	}
-	betaResponse := new(v1beta.MultiSelectResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.MultiSelect response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.MultiSelectRequest),
+		a.stable.MultiSelect,
+		new(v1beta.MultiSelectResponse),
+		"PromptService.MultiSelect",
+	)
 }
 
 func (a *betaPromptServiceAdapter) PromptSubscriptionResource(
@@ -2774,22 +2103,14 @@ func (a *betaPromptServiceAdapter) PromptSubscriptionResource(
 	if override, ok := a.override.(BetaPromptServicePromptSubscriptionResourceOverride); ok {
 		return override.PromptSubscriptionResource(ctx, req)
 	}
-	stableRequest := new(v1.PromptSubscriptionResourceRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptSubscriptionResource request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.PromptSubscriptionResource(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.PromptSubscriptionResource returned a nil response")
-	}
-	betaResponse := new(v1beta.PromptSubscriptionResourceResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptSubscriptionResource response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.PromptSubscriptionResourceRequest),
+		a.stable.PromptSubscriptionResource,
+		new(v1beta.PromptSubscriptionResourceResponse),
+		"PromptService.PromptSubscriptionResource",
+	)
 }
 
 func (a *betaPromptServiceAdapter) PromptResourceGroupResource(
@@ -2799,22 +2120,14 @@ func (a *betaPromptServiceAdapter) PromptResourceGroupResource(
 	if override, ok := a.override.(BetaPromptServicePromptResourceGroupResourceOverride); ok {
 		return override.PromptResourceGroupResource(ctx, req)
 	}
-	stableRequest := new(v1.PromptResourceGroupResourceRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptResourceGroupResource request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.PromptResourceGroupResource(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.PromptResourceGroupResource returned a nil response")
-	}
-	betaResponse := new(v1beta.PromptResourceGroupResourceResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptResourceGroupResource response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.PromptResourceGroupResourceRequest),
+		a.stable.PromptResourceGroupResource,
+		new(v1beta.PromptResourceGroupResourceResponse),
+		"PromptService.PromptResourceGroupResource",
+	)
 }
 
 func (a *betaPromptServiceAdapter) PromptAiModel(
@@ -2824,22 +2137,14 @@ func (a *betaPromptServiceAdapter) PromptAiModel(
 	if override, ok := a.override.(BetaPromptServicePromptAiModelOverride); ok {
 		return override.PromptAiModel(ctx, req)
 	}
-	stableRequest := new(v1.PromptAiModelRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptAiModel request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.PromptAiModel(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.PromptAiModel returned a nil response")
-	}
-	betaResponse := new(v1beta.PromptAiModelResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptAiModel response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.PromptAiModelRequest),
+		a.stable.PromptAiModel,
+		new(v1beta.PromptAiModelResponse),
+		"PromptService.PromptAiModel",
+	)
 }
 
 func (a *betaPromptServiceAdapter) PromptAiDeployment(
@@ -2849,22 +2154,14 @@ func (a *betaPromptServiceAdapter) PromptAiDeployment(
 	if override, ok := a.override.(BetaPromptServicePromptAiDeploymentOverride); ok {
 		return override.PromptAiDeployment(ctx, req)
 	}
-	stableRequest := new(v1.PromptAiDeploymentRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptAiDeployment request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.PromptAiDeployment(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.PromptAiDeployment returned a nil response")
-	}
-	betaResponse := new(v1beta.PromptAiDeploymentResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptAiDeployment response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.PromptAiDeploymentRequest),
+		a.stable.PromptAiDeployment,
+		new(v1beta.PromptAiDeploymentResponse),
+		"PromptService.PromptAiDeployment",
+	)
 }
 
 func (a *betaPromptServiceAdapter) PromptAiLocationWithQuota(
@@ -2874,22 +2171,14 @@ func (a *betaPromptServiceAdapter) PromptAiLocationWithQuota(
 	if override, ok := a.override.(BetaPromptServicePromptAiLocationWithQuotaOverride); ok {
 		return override.PromptAiLocationWithQuota(ctx, req)
 	}
-	stableRequest := new(v1.PromptAiLocationWithQuotaRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptAiLocationWithQuota request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.PromptAiLocationWithQuota(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.PromptAiLocationWithQuota returned a nil response")
-	}
-	betaResponse := new(v1beta.PromptAiLocationWithQuotaResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptAiLocationWithQuota response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.PromptAiLocationWithQuotaRequest),
+		a.stable.PromptAiLocationWithQuota,
+		new(v1beta.PromptAiLocationWithQuotaResponse),
+		"PromptService.PromptAiLocationWithQuota",
+	)
 }
 
 func (a *betaPromptServiceAdapter) PromptAiModelLocationWithQuota(
@@ -2899,22 +2188,14 @@ func (a *betaPromptServiceAdapter) PromptAiModelLocationWithQuota(
 	if override, ok := a.override.(BetaPromptServicePromptAiModelLocationWithQuotaOverride); ok {
 		return override.PromptAiModelLocationWithQuota(ctx, req)
 	}
-	stableRequest := new(v1.PromptAiModelLocationWithQuotaRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptAiModelLocationWithQuota request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.PromptAiModelLocationWithQuota(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable PromptService.PromptAiModelLocationWithQuota returned a nil response")
-	}
-	betaResponse := new(v1beta.PromptAiModelLocationWithQuotaResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert PromptService.PromptAiModelLocationWithQuota response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.PromptAiModelLocationWithQuotaRequest),
+		a.stable.PromptAiModelLocationWithQuota,
+		new(v1beta.PromptAiModelLocationWithQuotaResponse),
+		"PromptService.PromptAiModelLocationWithQuota",
+	)
 }
 
 type betaProvisioningServiceAdapter struct {
@@ -3012,22 +2293,14 @@ func (a *betaTelemetryServiceAdapter) ReportUsage(
 	if override, ok := a.override.(BetaTelemetryServiceReportUsageOverride); ok {
 		return override.ReportUsage(ctx, req)
 	}
-	stableRequest := new(v1.ReportUsageRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert TelemetryService.ReportUsage request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.ReportUsage(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable TelemetryService.ReportUsage returned a nil response")
-	}
-	betaResponse := new(v1beta.ReportUsageResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert TelemetryService.ReportUsage response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.ReportUsageRequest),
+		a.stable.ReportUsage,
+		new(v1beta.ReportUsageResponse),
+		"TelemetryService.ReportUsage",
+	)
 }
 
 type betaUserConfigServiceAdapter struct {
@@ -3045,22 +2318,14 @@ func (a *betaUserConfigServiceAdapter) Get(
 	if override, ok := a.override.(BetaUserConfigServiceGetOverride); ok {
 		return override.Get(ctx, req)
 	}
-	stableRequest := new(v1.GetUserConfigRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert UserConfigService.Get request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Get(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable UserConfigService.Get returned a nil response")
-	}
-	betaResponse := new(v1beta.GetUserConfigResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert UserConfigService.Get response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetUserConfigRequest),
+		a.stable.Get,
+		new(v1beta.GetUserConfigResponse),
+		"UserConfigService.Get",
+	)
 }
 
 func (a *betaUserConfigServiceAdapter) GetString(
@@ -3070,22 +2335,14 @@ func (a *betaUserConfigServiceAdapter) GetString(
 	if override, ok := a.override.(BetaUserConfigServiceGetStringOverride); ok {
 		return override.GetString(ctx, req)
 	}
-	stableRequest := new(v1.GetUserConfigStringRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert UserConfigService.GetString request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetString(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable UserConfigService.GetString returned a nil response")
-	}
-	betaResponse := new(v1beta.GetUserConfigStringResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert UserConfigService.GetString response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetUserConfigStringRequest),
+		a.stable.GetString,
+		new(v1beta.GetUserConfigStringResponse),
+		"UserConfigService.GetString",
+	)
 }
 
 func (a *betaUserConfigServiceAdapter) GetSection(
@@ -3095,22 +2352,14 @@ func (a *betaUserConfigServiceAdapter) GetSection(
 	if override, ok := a.override.(BetaUserConfigServiceGetSectionOverride); ok {
 		return override.GetSection(ctx, req)
 	}
-	stableRequest := new(v1.GetUserConfigSectionRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert UserConfigService.GetSection request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.GetSection(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable UserConfigService.GetSection returned a nil response")
-	}
-	betaResponse := new(v1beta.GetUserConfigSectionResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert UserConfigService.GetSection response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetUserConfigSectionRequest),
+		a.stable.GetSection,
+		new(v1beta.GetUserConfigSectionResponse),
+		"UserConfigService.GetSection",
+	)
 }
 
 func (a *betaUserConfigServiceAdapter) Set(
@@ -3120,22 +2369,14 @@ func (a *betaUserConfigServiceAdapter) Set(
 	if override, ok := a.override.(BetaUserConfigServiceSetOverride); ok {
 		return override.Set(ctx, req)
 	}
-	stableRequest := new(v1.SetUserConfigRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert UserConfigService.Set request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Set(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable UserConfigService.Set returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert UserConfigService.Set response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SetUserConfigRequest),
+		a.stable.Set,
+		new(v1beta.EmptyResponse),
+		"UserConfigService.Set",
+	)
 }
 
 func (a *betaUserConfigServiceAdapter) Unset(
@@ -3145,22 +2386,14 @@ func (a *betaUserConfigServiceAdapter) Unset(
 	if override, ok := a.override.(BetaUserConfigServiceUnsetOverride); ok {
 		return override.Unset(ctx, req)
 	}
-	stableRequest := new(v1.UnsetUserConfigRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert UserConfigService.Unset request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Unset(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable UserConfigService.Unset returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert UserConfigService.Unset response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.UnsetUserConfigRequest),
+		a.stable.Unset,
+		new(v1beta.EmptyResponse),
+		"UserConfigService.Unset",
+	)
 }
 
 type betaValidationServiceAdapter struct {
@@ -3218,20 +2451,12 @@ func (a *betaWorkflowServiceAdapter) Run(
 	if override, ok := a.override.(BetaWorkflowServiceRunOverride); ok {
 		return override.Run(ctx, req)
 	}
-	stableRequest := new(v1.RunWorkflowRequest)
-	if err := transcodeBetaRequest(req, stableRequest); err != nil {
-		return nil, fmt.Errorf("convert WorkflowService.Run request from beta to stable: %w", err)
-	}
-	stableResponse, err := a.stable.Run(ctx, stableRequest)
-	if err != nil {
-		return nil, err
-	}
-	if stableResponse == nil {
-		return nil, fmt.Errorf("stable WorkflowService.Run returned a nil response")
-	}
-	betaResponse := new(v1beta.EmptyResponse)
-	if err := transcodeStableResponse(stableResponse, betaResponse); err != nil {
-		return nil, fmt.Errorf("convert WorkflowService.Run response from stable to beta: %w", err)
-	}
-	return betaResponse, nil
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.RunWorkflowRequest),
+		a.stable.Run,
+		new(v1beta.EmptyResponse),
+		"WorkflowService.Run",
+	)
 }

@@ -63,10 +63,11 @@ func TestGenerateCodeAllowsAdditiveBetaMethod(t *testing.T) {
 	require.Contains(t, code, "type BetaExampleServicePreviewOverride interface")
 	require.Contains(t, code, "if override, ok := a.override.(BetaExampleServicePreviewOverride)")
 	require.Contains(t, code, "return a.UnimplementedExampleServiceServer.Preview(ctx, req)")
-	require.Contains(t, code, "stableResponse, err := a.stable.Shared(ctx, stableRequest)")
+	require.Contains(t, code, "return adaptBetaUnary(")
+	require.Contains(t, code, "a.stable.Shared")
 	require.Contains(t, code, "v1beta.RegisterPreviewServer")
 	require.Contains(t, code, "return a.UnimplementedPreviewServer.OnlyBeta(ctx, req)")
-	require.Contains(t, code, "must implement focused method override interfaces")
+	require.Contains(t, code, "return validateBetaServiceOverride(")
 }
 
 func TestGenerateCodeRejectsSharedMethodStreamShapeChange(t *testing.T) {

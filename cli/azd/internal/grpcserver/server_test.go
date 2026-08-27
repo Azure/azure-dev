@@ -8,11 +8,13 @@
 package grpcserver
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -26,6 +28,9 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/dynamicpb"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -37,6 +42,77 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 )
+
+func TestServer_AllBetaAdaptersDispatchToStable(t *testing.T) {
+	server := newServerWithContainerService(azdext.UnimplementedContainerServiceServer{})
+	serverInfo, err := server.Start()
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, server.Stop())
+	}()
+
+	extension := &extensions.Extension{Id: "azd.internal.test", Namespace: "test"}
+	accessToken, err := GenerateExtensionToken(extension, serverInfo)
+	require.NoError(t, err)
+
+	connection, err := grpc.NewClient(
+		serverInfo.Address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, connection.Close())
+	}()
+
+	var services []protoreflect.ServiceDescriptor
+	protoregistry.GlobalFiles.RangeFiles(func(file protoreflect.FileDescriptor) bool {
+		if file.Package() != "azd.extensions.v1beta" {
+			return true
+		}
+		for serviceIndex := range file.Services().Len() {
+			services = append(services, file.Services().Get(serviceIndex))
+		}
+		return true
+	})
+	slices.SortFunc(services, func(left, right protoreflect.ServiceDescriptor) int {
+		return cmp.Compare(left.FullName(), right.FullName())
+	})
+	require.NotEmpty(t, services)
+
+	ctx := azdext.WithAccessToken(t.Context(), accessToken)
+	methodCount := 0
+	for _, service := range services {
+		for methodIndex := range service.Methods().Len() {
+			method := service.Methods().Get(methodIndex)
+			methodCount++
+			fullMethod := fmt.Sprintf("/%s/%s", service.FullName(), method.Name())
+
+			t.Run(string(service.Name())+"/"+string(method.Name()), func(t *testing.T) {
+				request := dynamicpb.NewMessage(method.Input())
+				response := dynamicpb.NewMessage(method.Output())
+
+				if !method.IsStreamingClient() && !method.IsStreamingServer() {
+					err := connection.Invoke(ctx, fullMethod, request, response)
+					require.Equal(t, codes.Unimplemented, status.Code(err))
+					return
+				}
+
+				require.True(t, method.IsStreamingClient())
+				require.True(t, method.IsStreamingServer())
+				stream, err := connection.NewStream(ctx, &grpc.StreamDesc{
+					StreamName:    string(method.Name()),
+					ClientStreams: true,
+					ServerStreams: true,
+				}, fullMethod)
+				require.NoError(t, err)
+				require.NoError(t, stream.SendMsg(request))
+				require.NoError(t, stream.CloseSend())
+				require.Equal(t, codes.Unimplemented, status.Code(stream.RecvMsg(response)))
+			})
+		}
+	}
+	require.Positive(t, methodCount)
+}
 
 type echoValidationService struct {
 	azdext.UnimplementedValidationServiceServer

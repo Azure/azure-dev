@@ -316,7 +316,10 @@ func TestApplyAndValidateRegistryConnection(t *testing.T) {
 		agentManifest := manifest("registry.example.com/org/agent:v1", "manifest-connection")
 		action := &InitAction{flags: &initFlags{}}
 		require.NoError(t, action.applyAndValidateRegistryConnection(agentManifest))
-		require.Equal(t, "manifest-connection", action.flags.registryConnection)
+		require.Empty(t, action.flags.registryConnection,
+			"a manifest-authored connection must not be recorded as an explicit CLI flag")
+		require.Equal(t, "manifest-connection",
+			agentManifest.Template.(agent_yaml.ContainerAgent).RegistryConnectionID)
 	})
 
 	t.Run("missing image is rejected", func(t *testing.T) {
@@ -354,6 +357,104 @@ func TestInitCommandRegistersRegistryConnectionFlag(t *testing.T) {
 	flag := cmd.Flags().Lookup("registry-connection")
 	require.NotNil(t, flag)
 	require.Equal(t, "", flag.DefValue)
+}
+
+func TestRequestedDeployModeForManifest(t *testing.T) {
+	t.Parallel()
+
+	codeAgent := agent_yaml.ContainerAgent{
+		CodeConfiguration: &agent_yaml.CodeConfiguration{},
+	}
+	containerAgent := agent_yaml.ContainerAgent{}
+
+	tests := []struct {
+		name           string
+		flagMode       string
+		flagConnection string
+		agent          agent_yaml.ContainerAgent
+		wantMode       string
+		wantErr        string
+	}{
+		{name: "unspecified container manifest", agent: containerAgent},
+		{name: "code manifest", agent: codeAgent, wantMode: "code"},
+		{
+			name: "manifest registry selects container", agent: agent_yaml.ContainerAgent{
+				RegistryConnectionID: "private-registry",
+			}, wantMode: "container",
+		},
+		{
+			name: "flag registry selects container", agent: containerAgent,
+			flagConnection: "private-registry", wantMode: "container",
+		},
+		{
+			name: "code manifest rejects manifest registry", agent: agent_yaml.ContainerAgent{
+				CodeConfiguration:    &agent_yaml.CodeConfiguration{},
+				RegistryConnectionID: "private-registry",
+			}, wantErr: "cannot be used with code deploy",
+		},
+		{
+			name: "code manifest rejects flag registry", agent: codeAgent,
+			flagConnection: "private-registry", wantErr: "cannot be used with code deploy",
+		},
+		{
+			name: "explicit container overrides code manifest with registry", agent: agent_yaml.ContainerAgent{
+				CodeConfiguration:    &agent_yaml.CodeConfiguration{},
+				RegistryConnectionID: "private-registry",
+			}, flagMode: "container", wantMode: "container",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			mode, err := requestedDeployModeForManifest(
+				test.flagMode, test.flagConnection, test.agent,
+			)
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.wantMode, mode)
+		})
+	}
+}
+
+func TestManifestDeclaresRegistryConnection(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.ContainerAgent{RegistryConnectionID: "Private Registry"},
+		Resources: []any{agent_yaml.ConnectionResource{
+			Resource: agent_yaml.Resource{Name: "Private Registry"},
+		}},
+	}
+
+	require.Equal(t, "Private Registry", registryConnectionForManifest("", manifest))
+	require.Equal(t, "flag-registry", registryConnectionForManifest("flag-registry", manifest))
+	require.True(t, manifestDeclaresConnection(manifest, "Private Registry"))
+	require.False(t, manifestDeclaresConnection(manifest, "private-registry"),
+		"matching must use the Foundry connection name, not the sanitized service key")
+	require.False(t, manifestDeclaresConnection(manifest, "external-registry"))
+}
+
+func TestVerifyRegistryConnectionSkipsManifestSibling(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.ContainerAgent{RegistryConnectionID: "private-registry"},
+		Resources: []any{agent_yaml.ConnectionResource{
+			Resource: agent_yaml.Resource{Name: "private-registry"},
+		}},
+	}
+	action := &InitAction{
+		flags:                  &initFlags{},
+		selectedFoundryProject: &FoundryProjectInfo{},
+	}
+	require.NoError(t, action.verifyRegistryConnection(t.Context(), manifest))
+
+	action.flags.registryConnection = "private-registry"
+	require.NoError(t, action.verifyRegistryConnection(t.Context(), manifest))
 }
 
 func TestPreBuiltImageForInit(t *testing.T) {

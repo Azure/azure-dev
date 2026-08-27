@@ -700,6 +700,40 @@ func preBuiltImageForInit(agentManifest *agent_yaml.AgentManifest, flagImage str
 	return strings.TrimSpace(ca.Image)
 }
 
+func requestedDeployModeForManifest(
+	flagMode string,
+	flagConnection string,
+	hostedAgent agent_yaml.ContainerAgent,
+) (string, error) {
+	hasRegistryConnection := strings.TrimSpace(flagConnection) != "" ||
+		strings.TrimSpace(hostedAgent.RegistryConnectionID) != ""
+
+	if flagMode != "" {
+		if flagMode == "code" && hasRegistryConnection {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"a registry connection cannot be used with code deploy",
+				"Use the registry connection with a pre-built image or remove it",
+			)
+		}
+		return flagMode, nil
+	}
+	if hostedAgent.CodeConfiguration != nil {
+		if hasRegistryConnection {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"a registry connection cannot be used with code deploy",
+				"Use the registry connection with a pre-built image or remove it",
+			)
+		}
+		return "code", nil
+	}
+	if hasRegistryConnection {
+		return "container", nil
+	}
+	return "", nil
+}
+
 func protocolRecordsForImageManifest(flagProtocols []string) ([]agent_yaml.ProtocolVersionRecord, error) {
 	if len(flagProtocols) == 0 {
 		return []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}, nil
@@ -2039,10 +2073,13 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// Code deploy is supported for Python and .NET projects.
 		if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
 			showCodeDeploy := supportsCodeDeploy(targetDir)
-			requestedDeployMode := a.flags.deployMode
-			if requestedDeployMode == "" &&
-				(a.flags.registryConnection != "" || strings.TrimSpace(hostedAgent.RegistryConnectionID) != "") {
-				requestedDeployMode = "container"
+			requestedDeployMode, err := requestedDeployModeForManifest(
+				a.flags.deployMode,
+				a.flags.registryConnection,
+				hostedAgent,
+			)
+			if err != nil {
+				return err
 			}
 			deployMode, err := promptDeployMode(
 				ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, requestedDeployMode, a.userProvidedManifest,
@@ -2101,10 +2138,6 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("configuring model choice: %w", err)
 		}
 
-		if err := a.verifyRegistryConnection(ctx); err != nil {
-			return err
-		}
-
 		// For hosted agents, prompt for container resources before writing agent.yaml
 		// so the selected values are persisted into the definition file.
 		if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
@@ -2128,6 +2161,10 @@ func (a *InitAction) Run(ctx context.Context) error {
 		)
 		if err != nil {
 			return fmt.Errorf("failed to process manifest parameters: %w", err)
+		}
+
+		if err := a.verifyRegistryConnection(ctx, agentManifest); err != nil {
+			return err
 		}
 
 		// Inject toolbox MCP endpoint env vars into hosted agent definitions
@@ -4552,15 +4589,57 @@ func (a *InitAction) applyAndValidateRegistryConnection(agentManifest *agent_yam
 
 	containerAgent.RegistryConnectionID = connectionRef
 	agentManifest.Template = containerAgent
-	a.flags.registryConnection = connectionRef
 	return nil
 }
 
+func registryConnectionForManifest(
+	flagConnection string,
+	agentManifest *agent_yaml.AgentManifest,
+) string {
+	if connectionRef := strings.TrimSpace(flagConnection); connectionRef != "" {
+		return connectionRef
+	}
+	if agentManifest == nil {
+		return ""
+	}
+	if containerAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+		return strings.TrimSpace(containerAgent.RegistryConnectionID)
+	}
+	return ""
+}
+
+func manifestDeclaresConnection(
+	agentManifest *agent_yaml.AgentManifest,
+	connectionRef string,
+) bool {
+	if agentManifest == nil || connectionRef == "" {
+		return false
+	}
+	for _, resource := range agentManifest.Resources {
+		switch connection := resource.(type) {
+		case agent_yaml.ConnectionResource:
+			if strings.TrimSpace(connection.Name) == connectionRef {
+				return true
+			}
+		case *agent_yaml.ConnectionResource:
+			if connection != nil && strings.TrimSpace(connection.Name) == connectionRef {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // verifyRegistryConnection checks an explicitly selected existing project for
-// the generic connection name or ID. Foundry remains authoritative for the
-// connection's registry vendor, authentication fields, and token exchange.
-func (a *InitAction) verifyRegistryConnection(ctx context.Context) error {
-	if a.flags.registryConnection == "" || a.selectedFoundryProject == nil {
+// an external connection name or ID. Connections declared by the manifest are
+// provisioned later as sibling services and therefore are not remotely verified.
+func (a *InitAction) verifyRegistryConnection(
+	ctx context.Context,
+	agentManifest *agent_yaml.AgentManifest,
+) error {
+	connectionRef := registryConnectionForManifest(a.flags.registryConnection, agentManifest)
+	if connectionRef == "" || a.selectedFoundryProject == nil ||
+		manifestDeclaresConnection(agentManifest, connectionRef) {
 		return nil
 	}
 
@@ -4568,7 +4647,7 @@ func (a *InitAction) verifyRegistryConnection(ctx context.Context) error {
 		ctx,
 		a.credential,
 		*a.selectedFoundryProject,
-		a.flags.registryConnection,
+		connectionRef,
 	)
 }
 

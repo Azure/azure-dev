@@ -29,26 +29,61 @@ type promptServiceContext struct {
 	Agent       agent_yaml.PromptAgent
 }
 
-// promptSettingsFromService extracts the prompt-agent harness settings from a
-// service config. The bool is false when the service is not a prompt agent
-// (no promptAgent block), letting callers fall back to the hosted path.
-func promptSettingsFromService(svc *azdext.ServiceConfig) (*project.PromptAgentSettings, bool) {
+// promptSettingsFromService extracts the optional `promptAgent` override block
+// from a service config.
+//
+// A nil result is the normal case: `azd ai agent init` no longer writes the
+// block, because everything it carried is read from the azd environment. It is
+// returned as-is (not resolved) so the caller can layer it the same way deploy
+// does. It is NOT a prompt-agent discriminator — use
+// [project.ServiceIsPromptAgent] or the resolved definition for that.
+func promptSettingsFromService(svc *azdext.ServiceConfig) *project.PromptAgentSettings {
 	if svc == nil || svc.Config == nil {
-		return nil, false
+		return nil
 	}
 	var cfg project.ServiceTargetAgentConfig
 	if err := project.UnmarshalStruct(svc.Config, &cfg); err != nil {
-		return nil, false
+		return nil
 	}
-	if cfg.PromptAgent == nil {
-		return nil, false
+	return cfg.PromptAgent
+}
+
+// promptDefinitionForService returns the prompt-agent definition backing a
+// service, and whether the service is a prompt agent at all.
+//
+// The definition is normally inline on the azure.yaml service entry, which is
+// also where `kind: prompt` identifies it; a `$ref:` include is expanded by the
+// same call. Projects that predate the inline shape declare no kind and keep
+// their definition in an on-disk agent.yaml, so those are recognized by their
+// `promptAgent` config block and read from the file.
+func promptDefinitionForService(
+	svc *azdext.ServiceConfig,
+	projectPath, serviceDir string,
+) (agent_yaml.PromptAgent, bool) {
+	if def, found, err := project.PromptAgentFromResolvedService(svc, projectPath); err == nil && found {
+		return def, true
 	}
-	return cfg.PromptAgent, true
+
+	if !project.ServiceIsPromptAgent(svc) {
+		return agent_yaml.PromptAgent{}, false
+	}
+
+	// Legacy shape. Best-effort: an unreadable file still leaves a usable
+	// context, since the service key doubles as the agent identity.
+	if serviceDir != "" {
+		if data, err := os.ReadFile(filepath.Join(serviceDir, "agent.yaml")); err == nil {
+			var def agent_yaml.PromptAgent
+			if yaml.Unmarshal(data, &def) == nil {
+				return def, true
+			}
+		}
+	}
+	return agent_yaml.PromptAgent{}, true
 }
 
 // resolvePromptAgentService resolves the named (or sole) azure.ai.agent service
 // and, when it is a prompt (kind=prompt) agent, returns its harness settings
-// and parsed agent.yaml. The bool is false when the resolved service is NOT a
+// and parsed definition. The bool is false when the resolved service is NOT a
 // prompt agent, so callers can fall back to the hosted code path.
 func resolvePromptAgentService(
 	ctx context.Context,
@@ -61,32 +96,38 @@ func resolvePromptAgentService(
 		return nil, false, err
 	}
 
-	settings, ok := promptSettingsFromService(svc)
-	if !ok {
+	projectPath := ""
+	serviceDir := ""
+	if proj != nil {
+		projectPath = proj.Path
+		if dir, joinErr := paths.JoinAllowRoot(proj.Path, svc.RelativePath); joinErr == nil {
+			serviceDir = dir
+		}
+	}
+
+	agentDef, isPrompt := promptDefinitionForService(svc, projectPath, serviceDir)
+	if !isPrompt {
 		return nil, false, nil
 	}
 
-	// Resolve the block exactly as deploy does. azure.yaml carries ${VAR}
-	// references so the project stays portable, so the raw config holds literal
-	// "${AZURE_AI_PROJECT_ENDPOINT}" strings; without expansion these commands
-	// fail with "is not a valid absolute URL" instead of reaching the harness.
-	// The azd environment is best-effort — when it cannot be read, expansion
-	// falls back to the process environment and unset references collapse to the
+	// Resolve the harness target exactly as deploy does: the subscription,
+	// resource group, workspace, and project endpoint come from the azd
+	// environment, and the optional promptAgent block is layered on top. The
+	// environment read is best-effort — when it cannot be read, expansion falls
+	// back to the process environment and unset references collapse to the
 	// defaults, which is what lets these commands run in a project that has not
 	// been provisioned yet.
 	envValues, envErr := promptEnvValues(ctx, azdClient)
-	resolved, err := project.ResolvePromptAgentSettings(settings, envValues)
+	settings, err := project.ResolvePromptAgentSettings(promptSettingsFromService(svc), envValues)
 	if err != nil {
 		return nil, false, err
 	}
-	settings = resolved
 
 	// Apply the same azd environment-derived target resolution that deploy uses
 	// so lifecycle commands (show/invoke/list/delete) hit the identical managed
 	// workspace route (<account>@<project>@AML) the agent was created on. Without
-	// this, these commands resolve promptAgent.workspace from azure.yaml verbatim
-	// and query a non-existent workspace, yielding an HTML 404 the client cannot
-	// parse.
+	// this, these commands resolve the workspace verbatim and query a
+	// non-existent one, yielding an HTML 404 the client cannot parse.
 	if envErr == nil {
 		if _, mapErr := project.ResolvePromptTargetFromEnv(settings, envValues); mapErr != nil {
 			return nil, false, mapErr
@@ -95,53 +136,35 @@ func resolvePromptAgentService(
 
 	pctx := &promptServiceContext{
 		ServiceName: svc.Name,
+		ServiceDir:  serviceDir,
 		Settings:    settings,
+		Agent:       agentDef,
 	}
-
-	if proj != nil {
-		if dir, joinErr := paths.JoinAllowRoot(proj.Path, svc.RelativePath); joinErr == nil {
-			pctx.ServiceDir = dir
-		}
-	}
-
-	// Parse the agent.yaml that backs the service to recover the model and
-	// (default) agent name. Best-effort: the service Name is used as the agent
-	// identity when agent.yaml cannot be read.
-	pctx.Agent.Name = svc.Name
-	if pctx.ServiceDir != "" {
-		if data, readErr := os.ReadFile(filepath.Join(pctx.ServiceDir, "agent.yaml")); readErr == nil {
-			var promptDef agent_yaml.PromptAgent
-			if yaml.Unmarshal(data, &promptDef) == nil && promptDef.Name != "" {
-				pctx.Agent = promptDef
-			}
-		}
+	if strings.TrimSpace(pctx.Agent.Name) == "" {
+		pctx.Agent.Name = svc.Name
 	}
 
 	return pctx, true, nil
 }
 
 // promptAgentNameForService returns the harness agent identity for a prompt
-// service: the `name` declared in its agent.yaml, falling back to the
-// azure.yaml service key when agent.yaml is absent or declares no name. It is
-// the lightweight counterpart of promptServiceContext.AgentName for callers
-// (like the down handlers) that only have a ServiceConfig.
+// service: the `name` its definition declares, falling back to the azure.yaml
+// service key. It is the lightweight counterpart of
+// promptServiceContext.AgentName for callers (like the down handlers) that only
+// have a ServiceConfig.
 func promptAgentNameForService(svc *azdext.ServiceConfig, projectPath string) string {
 	if svc == nil {
 		return ""
 	}
-	dir, err := paths.JoinAllowRoot(projectPath, svc.RelativePath)
-	if err != nil {
-		return svc.Name
+	serviceDir := ""
+	if dir, err := paths.JoinAllowRoot(projectPath, svc.RelativePath); err == nil {
+		serviceDir = dir
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "agent.yaml"))
-	if err != nil {
-		return svc.Name
+	def, _ := promptDefinitionForService(svc, projectPath, serviceDir)
+	if name := strings.TrimSpace(def.Name); name != "" {
+		return name
 	}
-	var def agent_yaml.PromptAgent
-	if err := yaml.Unmarshal(data, &def); err != nil || strings.TrimSpace(def.Name) == "" {
-		return svc.Name
-	}
-	return def.Name
+	return svc.Name
 }
 
 // AgentName returns the harness agent identity for the resolved service.

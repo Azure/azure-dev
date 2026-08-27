@@ -304,11 +304,17 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 		return err
 	}
 
-	// Prompt (kind=managed) agents target the managed harness, not an ARM
+	// Recorded before the prompt-agent branch below returns: with the definition
+	// carried inline there is no agent.yaml to anchor the skills/ and
+	// vector-assets/ convention folders, so the service directory is what locates
+	// them.
+	p.servicePath = fullPath
+
+	// Prompt (kind=prompt) agents target the managed harness, not an ARM
 	// Foundry project. They self-authenticate via the harness client and carry
 	// their entire deploy target in the service config, so skip the
 	// subscription/tenant/credential resolution the hosted path needs.
-	if serviceIsPromptAgent(p.serviceConfig) {
+	if ServiceIsPromptAgent(p.serviceConfig) {
 		return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
 	}
 
@@ -359,8 +365,6 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 	p.credential = cred
 
-	p.servicePath = fullPath
-
 	return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
 }
 
@@ -407,7 +411,7 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 	// nothing more. A prompt agent does: it reads the raw YAML and anchors the
 	// skills/ and vector-assets/ convention folders next to the file, so record
 	// where the file actually lives.
-	if declaredRef != "" && serviceIsPromptAgent(p.serviceConfig) {
+	if declaredRef != "" && ServiceIsPromptAgent(p.serviceConfig) {
 		resolved, err := resolveDeclaredRefPath(projectPath, declaredRef, p.serviceConfig.Name)
 		if err != nil {
 			return err
@@ -436,6 +440,19 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 		projectPath,
 	); defErr != nil {
 		return defErr
+	} else if found {
+		p.deployContextReady = true
+		return nil
+	}
+
+	// The call above answers for hosted agents only: it reports found=false when
+	// the entry declares a different kind. Ask the prompt resolver as well, so an
+	// inline prompt agent is not sent looking for a file it does not have.
+	if _, found, promptErr := PromptAgentFromResolvedService(
+		p.serviceConfig,
+		projectPath,
+	); promptErr != nil {
+		return promptErr
 	} else if found {
 		p.deployContextReady = true
 		return nil

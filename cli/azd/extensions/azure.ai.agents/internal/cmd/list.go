@@ -34,8 +34,9 @@ func newListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "List prompt agents on the harness.",
 		Long: `List the prompt agents registered on the managed harness.
 
-The target harness is read from the azure.ai.agent service config in azure.yaml
-(written by 'azd ai agent init'). This command targets prompt agents only.`,
+The target harness is derived from the azd environment (subscription, resource
+group, and Foundry project). This command targets prompt agents only, meaning an
+azure.ai.agent service declaring 'kind: prompt' in azure.yaml.`,
 		Example: `  # List prompt agents on the configured harness
   azd ai agent list
 
@@ -80,7 +81,8 @@ func (a *ListAction) Run(ctx context.Context) error {
 	}
 	if !isPrompt {
 		return fmt.Errorf(
-			"the azure.ai.agent service is not a prompt agent; `azd ai agent list` targets prompt agents only",
+			"the azure.ai.agent service is not a prompt agent; " +
+				"`azd ai agent list` targets services declaring `kind: prompt` in azure.yaml",
 		)
 	}
 

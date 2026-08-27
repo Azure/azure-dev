@@ -343,7 +343,11 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 	env map[string]string,
 	progress azdext.ProgressReporter,
 ) (map[string]any, error) {
-	agentDir := ""
+	// The skills/ and vector-assets/ convention folders sit next to the file
+	// that supplies the definition. With the definition inline on the service
+	// entry there is no such file, so they are anchored at the service
+	// directory instead — the same place `azd ai agent init` scaffolds them.
+	agentDir := p.servicePath
 	if p.agentDefinitionPath != "" {
 		agentDir = filepath.Dir(p.agentDefinitionPath)
 	}

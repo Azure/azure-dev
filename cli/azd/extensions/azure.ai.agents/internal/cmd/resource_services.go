@@ -60,29 +60,10 @@ const (
 
 	// projectWorkspaceEnvVar carries the AML workspace name backing the Foundry
 	// project (<account>@<project>@AML). The managed control plane's agent
-	// routes are workspace-scoped, so the promptAgent block references it
-	// instead of embedding the tenant-specific name in azure.yaml.
+	// routes are workspace-scoped, so the deploy path reads it from the azd
+	// environment rather than from azure.yaml.
 	projectWorkspaceEnvVar = "AZURE_AI_WORKSPACE"
 )
-
-// promptAgentEnvRefs returns the promptAgent block `azd ai agent init` writes
-// into azure.yaml. Every field is a ${VAR} reference rather than a literal, so
-// the file carries no subscription, resource group, or workspace of its own and
-// can be copied between Foundry projects unchanged: `azd up` in a new
-// environment resolves each field from that environment.
-//
-// The deploy path expands these references against the azd environment and
-// falls back to the built-in defaults for any variable that is unset, so a
-// project cloned without an environment still initializes.
-func promptAgentEnvRefs() *project.PromptAgentSettings {
-	return &project.PromptAgentSettings{
-		BaseURL:         "${" + project.PromptBaseURLEnvVar + "}",
-		SubscriptionID:  "${AZURE_SUBSCRIPTION_ID}",
-		ResourceGroup:   "${AZURE_RESOURCE_GROUP}",
-		Workspace:       "${" + projectWorkspaceEnvVar + "}",
-		ProjectEndpoint: projectEndpointRef,
-	}
-}
 
 // promptResourceServices derives the sibling Foundry services a prompt or
 // managed agent needs from its scaffolded definition and folder layout, so a

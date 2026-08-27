@@ -26,13 +26,31 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// serviceIsPromptAgent reports whether the service config describes a prompt
-// (kind=managed) agent. Prompt agents carry a populated `promptAgent` block in
-// their azure.yaml service config; hosted/workflow agents leave it nil.
-func serviceIsPromptAgent(serviceConfig *azdext.ServiceConfig) bool {
-	if serviceConfig == nil || serviceConfig.Config == nil {
+// ServiceIsPromptAgent reports whether the service config describes a prompt
+// (kind=prompt) agent.
+//
+// The definition is carried inline on the service entry, so `kind` names the
+// flavor directly. A `$ref:` include is merged onto the entry by
+// resolveServiceConfig before this runs, so a definition that lives in its own
+// file is classified the same way.
+func ServiceIsPromptAgent(serviceConfig *azdext.ServiceConfig) bool {
+	if serviceConfig == nil {
+		return false
+	}
+	for _, props := range []*structpb.Struct{
+		serviceConfig.GetAdditionalProperties(),
+		serviceConfig.GetConfig(),
+	} {
+		if kind := structKind(props); kind != "" {
+			return strings.EqualFold(kind, string(agent_yaml.AgentKindPrompt))
+		}
+	}
+	// Projects scaffolded before the definition moved inline declare no kind on
+	// the service entry and are identified by their promptAgent config block.
+	if serviceConfig.Config == nil {
 		return false
 	}
 	var cfg ServiceTargetAgentConfig
@@ -45,7 +63,7 @@ func serviceIsPromptAgent(serviceConfig *azdext.ServiceConfig) bool {
 // isPromptAgentService reports whether the provider's current service is a
 // prompt agent.
 func (p *AgentServiceTargetProvider) isPromptAgentService() bool {
-	return serviceIsPromptAgent(p.serviceConfig)
+	return ServiceIsPromptAgent(p.serviceConfig)
 }
 
 // promptAgentSettings extracts and validates the prompt-agent harness settings
@@ -71,16 +89,19 @@ func (p *AgentServiceTargetProvider) promptAgentSettings(env map[string]string) 
 	return ResolvePromptAgentSettings(cfg.PromptAgent, env)
 }
 
-// ResolvePromptAgentSettings turns a raw promptAgent block from azure.yaml into
-// settings that can address the harness: ${VAR} references are expanded against
-// env, the result is layered over the defaults, process-environment overrides
-// are applied, and the whole is validated.
+// ResolvePromptAgentSettings produces the settings that address the harness.
 //
-// Every caller that talks to the harness must go through this. The block is
-// written with ${...} references so azure.yaml stays portable, which means the
-// raw config carries literal "${AZURE_AI_PROJECT_ENDPOINT}" strings — usable as
-// a URL only after expansion. Skipping this step fails at the point of use with
-// a message about a malformed URL rather than a missing variable.
+// The Foundry target is read from the azd environment, which is the only thing
+// that knows it: `azd provision` writes the subscription, resource group,
+// workspace, and project endpoint there, and they change per environment. That
+// is why azure.yaml carries no promptAgent block — the values would be either a
+// copy of the environment or a set of ${VAR} references pointing back at it.
+//
+// A hand-authored promptAgent block still wins, layered on top, so a developer
+// can pin a field or set one of the advanced knobs (apiVersion, modelEndpoint)
+// that the environment does not carry. Its ${VAR} references are expanded
+// against the same environment first, keeping older projects working unchanged.
+// Process-environment AZD_MANAGED_AGENT_* overrides are applied last.
 func ResolvePromptAgentSettings(
 	configured *PromptAgentSettings,
 	env map[string]string,
@@ -90,12 +111,31 @@ func ResolvePromptAgentSettings(
 		return nil, err
 	}
 	settings := DefaultPromptAgentSettings()
+	settings.overlay(promptAgentSettingsFromEnv(env))
 	settings.overlay(expanded)
 	settings.ApplyEnvOverrides()
 	if err := settings.Validate(); err != nil {
 		return nil, err
 	}
 	return &settings, nil
+}
+
+// promptAgentSettingsFromEnv reads the Foundry target out of the azd
+// environment using the standard variable names `azd provision` records.
+//
+// Only the fields the environment actually knows are returned; an unset
+// variable is left empty so overlay() keeps the default in place, which is what
+// lets a project be cloned and inspected before it has been provisioned.
+func promptAgentSettingsFromEnv(env map[string]string) *PromptAgentSettings {
+	if env == nil {
+		return nil
+	}
+	return &PromptAgentSettings{
+		SubscriptionID:  strings.TrimSpace(env["AZURE_SUBSCRIPTION_ID"]),
+		ResourceGroup:   strings.TrimSpace(env["AZURE_RESOURCE_GROUP"]),
+		Workspace:       strings.TrimSpace(env["AZURE_AI_WORKSPACE"]),
+		ProjectEndpoint: strings.TrimSpace(env["AZURE_AI_PROJECT_ENDPOINT"]),
+	}
 }
 
 // expandPromptAgentSettings returns a copy of src with ${VAR} references in
@@ -264,14 +304,37 @@ func (p *AgentServiceTargetProvider) resolvedPromptAgentSettings(
 	return settings, nil
 }
 
-// loadPromptAgentDefinition reads the agent.yaml as a bare PromptAgent.
+// loadPromptAgentDefinition returns the service's prompt-agent definition.
+//
+// The definition is normally inline on the azure.yaml service entry, which is
+// what `azd ai agent init` scaffolds. agentDefinitionPath is set only when the
+// definition lives in its own file — a `$ref:` include, the AGENT_DEFINITION_PATH
+// override, or the legacy agent.yaml convention — and that file is then the
+// authority, because it is also what anchors the skills/ and vector-assets/
+// convention folders.
 func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.PromptAgent, error) {
+	if p.agentDefinitionPath == "" {
+		promptDef, found, err := PromptAgentFromResolvedService(p.serviceConfig, p.projectPath)
+		if err != nil {
+			return agent_yaml.PromptAgent{}, err
+		}
+		if !found {
+			return agent_yaml.PromptAgent{}, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("service %q carries no prompt agent definition", p.serviceConfig.GetName()),
+				"add the agent definition to the service entry in azure.yaml, "+
+					"or re-run `azd ai agent init`",
+			)
+		}
+		return promptDef, nil
+	}
+
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
 		return agent_yaml.PromptAgent{}, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("failed to read agent manifest file: %s", err),
-			"verify the agent.yaml file exists and is readable",
+			"verify the agent definition file exists and is readable",
 		)
 	}
 	if err := validatePromptAgentRawFields(data); err != nil {

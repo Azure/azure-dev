@@ -755,10 +755,12 @@ func agentNeedsAcr(a agentBlock) bool {
 	if a.CodeConfiguration != nil || strings.TrimSpace(a.Image) != "" {
 		return false
 	}
-	// A promptAgent: block means Foundry runs the agent from its definition; there
-	// is nothing to build. `azd ai agent init` omits kind: from the service config,
-	// so without this check the default-to-hosted fallback below would provision an
-	// ACR (and an AcrPull role assignment) the prompt agent never uses.
+	// A promptAgent: block is the pre-inline marker for a prompt agent, whose
+	// service entry carried no kind:. Foundry runs those from their definition,
+	// so without this check the default-to-hosted fallback below would provision
+	// an ACR (and an AcrPull role assignment) the agent never uses. Entries
+	// scaffolded since the definition moved inline declare kind: prompt and are
+	// handled by the check below.
 	if a.PromptAgent != nil {
 		return false
 	}

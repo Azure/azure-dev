@@ -92,13 +92,12 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 			if isHostedAgentService(svc, args.Project) {
 				hostedAgentCount++
 			}
-			// Prompt (kind=managed) agents have no container to provision
+			// Prompt (kind=prompt) agents have no container to provision
 			// settings for — the harness owns the runtime. But they DO carry a
 			// model deployment in their service config, so still run envUpdate
 			// (which translates `deployments` into AI_PROJECT_DEPLOYMENTS for
 			// Bicep). Only the container-settings step is hosted-specific.
-			_, isPrompt := promptSettingsFromService(svc)
-			if !isPrompt {
+			if !project.ServiceIsPromptAgent(svc) {
 				if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
 					return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 				}
@@ -287,11 +286,11 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		return err
 	}
 
-	// Prompt (kind=managed) agents have no container settings — the harness owns
+	// Prompt (kind=prompt) agents have no container settings — the harness owns
 	// the runtime. Without this guard SetAgentContainerSettings writes default
 	// memory/cpu onto the service and persists them into azure.yaml for an agent
 	// azd does not host.
-	if _, isPrompt := promptSettingsFromService(svc); !isPrompt {
+	if !project.ServiceIsPromptAgent(svc) {
 		if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
 			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 		}
@@ -626,8 +625,14 @@ func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azde
 		if svc.Host != AiAgentHost {
 			continue
 		}
-		settings, isPrompt := promptSettingsFromService(svc)
-		if !isPrompt {
+		if !project.ServiceIsPromptAgent(svc) {
+			continue
+		}
+		// Resolved the same way deploy does: the harness target comes from the
+		// azd environment, with the optional promptAgent block layered on top.
+		settings, err := project.ResolvePromptAgentSettings(promptSettingsFromService(svc), envValues)
+		if err != nil {
+			log.Printf("predown: skipping harness delete for %q: %v", svc.Name, err)
 			continue
 		}
 		deletePromptAgentOnDown(ctx, svc, settings, args.Project.Path, envValues)
@@ -646,24 +651,20 @@ func deletePromptAgentOnDown(
 	projectPath string,
 	envValues map[string]string,
 ) {
-	settings.ApplyEnvOverrides()
-	if err := settings.Validate(); err != nil {
-		log.Printf("predown: skipping harness delete for %q: %v", svc.Name, err)
-		return
-	}
 	// Apply the same azd environment-derived target resolution deploy and the
 	// other lifecycle commands use. Without it a non-guided project keeps the
-	// placeholder workspace tuple from azure.yaml and the delete is routed at a
-	// workspace that never existed.
+	// placeholder workspace tuple and the delete is routed at a workspace that
+	// never existed.
 	if envValues != nil {
 		if _, mapErr := project.ResolvePromptTargetFromEnv(settings, envValues); mapErr != nil {
 			log.Printf("predown: skipping harness delete for %q: %v", svc.Name, mapErr)
 			return
 		}
 	}
-	// Delete by the agent.yaml name — the identity every other prompt lifecycle
-	// path uses. The azure.yaml service key only matches when agent.yaml omits
-	// `name:`, which is true for scaffolded projects but not for renamed agents.
+	// Delete by the definition's `name` — the identity every other prompt
+	// lifecycle path uses. The azure.yaml service key only matches when the
+	// definition omits `name:`, which is true for scaffolded projects but not for
+	// renamed agents.
 	agentName := promptAgentNameForService(svc, projectPath)
 	client, err := project.NewPromptAgentClient(settings)
 	if err != nil {

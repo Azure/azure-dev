@@ -4,10 +4,8 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,19 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/fatih/color"
 	"go.yaml.in/yaml/v3"
-	"google.golang.org/protobuf/types/known/structpb"
 )
-
-// promptAgentManifestFileName is the agent definition filename `init`
-// scaffolds. It is also referenced from azure.yaml through the service's `$ref`
-// include, so the link between the service and its definition is visible in the
-// project file rather than implied by a filename azd happens to look for.
-const promptAgentManifestFileName = "agent.yaml"
-
-// promptAgentManifestRef is the `$ref` value written into azure.yaml. `$ref`
-// paths resolve against the directory holding azure.yaml, and the explicit
-// leading "./" marks it as a relative path rather than a bare name.
-const promptAgentManifestRef = "./" + promptAgentManifestFileName
 
 // promptAgentManifest is a prompt-agent definition supplied through
 // `--manifest` (or a positional template pointer), pre-loaded so runInitManaged
@@ -360,9 +346,6 @@ func runInitManaged(
 	if err := applyRaiPolicySelection(ctx, azdClient, env.Name, &promptAgent, raiPolicy); err != nil {
 		return err
 	}
-	if err := writePromptAgentYAML(serviceRelPath, &promptAgent); err != nil {
-		return err
-	}
 
 	// Scaffold the convention-based authoring layout (empty skills/ and
 	// vector-assets/ folders) so the deploy engine's folder conventions are
@@ -371,7 +354,7 @@ func runInitManaged(
 		return err
 	}
 
-	if err := addPromptAgentService(ctx, azdClient, agentName, serviceRelPath); err != nil {
+	if err := addPromptAgentService(ctx, azdClient, agentName, serviceRelPath, &promptAgent); err != nil {
 		return err
 	}
 
@@ -415,24 +398,20 @@ func runInitManaged(
 }
 
 // addPromptAgentService registers the prompt agent as an azure.yaml service
-// entry with Host=azure.ai.agent and a promptAgent config block. Unlike hosted
-// agents there is no Docker/Language — the harness owns the runtime.
-//
-// Model deployments are deliberately NOT recorded here: they belong to the
-// sibling azure.ai.project service that emitPromptResourceServices writes, the
-// same shape hosted agents use.
-// addPromptAgentService registers the prompt agent as an azure.yaml service
 // entry with Host=azure.ai.agent. Unlike hosted agents there is no
-// Docker/Language -- the harness owns the runtime.
+// Docker/Language — the harness owns the runtime.
 //
-// The config: block carries a promptAgent entry whose every field is a ${VAR}
-// reference (see promptAgentEnvRefs). Its presence is the structural marker
-// that distinguishes a prompt agent from a hosted one -- `azd ai agent init`
-// writes no explicit kind: into the service config, and both the deploy provider
-// and the provisioning synthesizer key off this block. Writing references rather
-// than literals keeps the shape of the configuration visible while leaving the
-// tenant-specific values in the azd environment, so the project can be copied to
-// another subscription and deployed unchanged.
+// The agent definition is written inline as service-level properties, the same
+// unified shape hosted and voice agents use, so the whole agent is authored in
+// azure.yaml and `kind: prompt` on the entry is what identifies it. Deploy also
+// accepts a definition behind a `$ref:` include; init does not scaffold one
+// because a second file adds nothing when there is only one agent to describe.
+//
+// No promptAgent config block is written. Every value it used to carry —
+// subscription, resource group, workspace, project endpoint — is recorded in
+// the azd environment by `azd provision` and read from there at deploy time, so
+// the block could only have held a copy of the environment or a set of ${VAR}
+// references pointing back at it.
 //
 // Model deployments are deliberately NOT recorded here: they belong to the
 // sibling azure.ai.project service that emitResourceServices writes, the
@@ -441,25 +420,11 @@ func addPromptAgentService(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	agentName, serviceRelPath string,
+	promptAgent *agent_yaml.PromptAgent,
 ) error {
-	agentConfig := project.ServiceTargetAgentConfig{
-		PromptAgent: promptAgentEnvRefs(),
-	}
-	configStruct, err := project.MarshalStruct(&agentConfig)
+	agentProps, err := project.PromptAgentDefinitionToServiceProperties(*promptAgent)
 	if err != nil {
-		return fmt.Errorf("marshaling prompt agent service config: %w", err)
-	}
-
-	// Reference the definition file explicitly on the service entry. Deploy would
-	// find agent.yaml by convention anyway, but the `$ref` include makes the
-	// service -> definition edge readable in azure.yaml, gives the developer one
-	// line to edit when they want a different filename, and is the same directive
-	// every other Foundry resource uses to live in its own file.
-	serviceProps, err := structpb.NewStruct(map[string]any{
-		project.AgentDefinitionRefKey: promptAgentManifestRef,
-	})
-	if err != nil {
-		return fmt.Errorf("marshaling prompt agent service properties: %w", err)
+		return err
 	}
 
 	req := &azdext.AddServiceRequest{
@@ -467,8 +432,7 @@ func addPromptAgentService(
 			Name:                 agentName,
 			RelativePath:         serviceRelPath,
 			Host:                 AiAgentHost,
-			Config:               configStruct,
-			AdditionalProperties: serviceProps,
+			AdditionalProperties: agentProps,
 		},
 	}
 	if _, err := azdClient.Project().AddService(ctx, req); err != nil {
@@ -747,32 +711,8 @@ func promptManagedAgentInstructions(
 	return instructions, nil
 }
 
-// writePromptAgentYAML serializes the PromptAgent and writes it to
-// <targetDir>/agent.yaml. A schema annotation comment is prepended for editor
-// validation parity with the hosted agent flow.
-func writePromptAgentYAML(targetDir string, promptAgent *agent_yaml.PromptAgent) error {
-	content, err := yaml.Marshal(promptAgent)
-	if err != nil {
-		return fmt.Errorf("marshaling prompt agent to YAML: %w", err)
-	}
-
-	annotation := "# yaml-language-server: " +
-		"$schema=https://raw.githubusercontent.com/microsoft/AgentSchema/refs/heads/main/schemas/v1.0/PromptAgent.yaml"
-	buf := bytes.NewBufferString(annotation + "\n\n")
-	if _, err := buf.Write(content); err != nil {
-		return fmt.Errorf("preparing agent.yaml file contents: %w", err)
-	}
-
-	filePath := filepath.Join(targetDir, promptAgentManifestFileName)
-	if err := os.WriteFile(filePath, buf.Bytes(), osutil.PermissionFile); err != nil {
-		return fmt.Errorf("saving file to %s: %w", filePath, err)
-	}
-	log.Printf("Wrote prompt agent.yaml at %s", filePath)
-	return nil
-}
-
 // promptScaffoldInstructions returns the instructions to write inline into a
-// scaffolded agent.yaml, falling back to a neutral default so a freshly
+// scaffolded agent definition, falling back to a neutral default so a freshly
 // initialized agent is deployable without editing.
 func promptScaffoldInstructions(instructions string) string {
 	if trimmed := strings.TrimSpace(instructions); trimmed != "" {

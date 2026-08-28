@@ -6,6 +6,8 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -13,6 +15,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type terminalThenErrorReader struct {
+	stream *strings.Reader
+	err    error
+}
+
+func (r *terminalThenErrorReader) Read(p []byte) (int, error) {
+	if r.stream.Len() > 0 {
+		return r.stream.Read(p)
+	}
+	return 0, r.err
+}
 
 func TestReadResponsesSSEBackground(t *testing.T) {
 	t.Parallel()
@@ -154,6 +168,31 @@ func TestReadResponsesSSEFailedTerminalDoesNotRenderSnapshot(t *testing.T) {
 	assert.True(t, progress[0].Terminal)
 }
 
+func TestReadResponsesSSEReturnsAfterTerminalEvent(t *testing.T) {
+	t.Parallel()
+
+	readerErr := errors.New("reader should not be called after terminal event")
+	reader := &terminalThenErrorReader{
+		stream: strings.NewReader(
+			"event: response.completed\n" +
+				`data: {"response":{"id":"resp_123","status":"completed"},"sequence_number":1}` +
+				"\n\n",
+		),
+		err: readerErr,
+	}
+
+	var progress []responsesStreamProgress
+	err := readResponsesSSE(t.Context(), reader, io.Discard, "agent", true,
+		func(value responsesStreamProgress) error {
+			progress = append(progress, value)
+			return nil
+		})
+
+	require.NoError(t, err)
+	require.Len(t, progress, 1)
+	assert.True(t, progress[0].Terminal)
+}
+
 func TestReadResponsesSSEResumedTerminalUsesInitialIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -201,6 +240,63 @@ func TestReadResponsesSSESuppressesDuplicateSequence(t *testing.T) {
 	err := readResponsesSSE(context.Background(), strings.NewReader(stream), &output, "agent", false, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "[agent] one\n", output.String())
+}
+
+func TestReadResponsesSSEValidatesIdentityBeforeSuppressingDuplicate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		responseID string
+		wantErr    string
+	}{
+		{
+			name:       "same response ID",
+			responseID: "resp_123",
+		},
+		{
+			name:       "mismatched response ID",
+			responseID: "resp_other",
+			wantErr:    `Responses stream changed response ID from "resp_123" to "resp_other"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stream := "event: response.in_progress\n" +
+				fmt.Sprintf(
+					`data: {"response":{"id":%q,"status":"in_progress"},"sequence_number":1}`,
+					tt.responseID,
+				) + "\n\n"
+			initial := &responsesStreamInitialState{
+				ResponseID: "resp_123",
+				Cursor:     new(int64(1)),
+				Status:     "in_progress",
+			}
+			var progress []responsesStreamProgress
+			err := readResponsesSSEWithInitialState(
+				t.Context(),
+				strings.NewReader(stream),
+				io.Discard,
+				"agent",
+				false,
+				initial,
+				func(value responsesStreamProgress) error {
+					progress = append(progress, value)
+					return nil
+				},
+			)
+
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Empty(t, progress)
+		})
+	}
 }
 
 func TestReadResponsesSSEEventSizeLimit(t *testing.T) {

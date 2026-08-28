@@ -17,6 +17,7 @@ const (
 	// UserConfig read-modify-write for every SSE event. Identity, lifecycle, and terminal events
 	// persist immediately, and normal exits flush pending state.
 	backgroundCursorPersistInterval   = 3 * time.Second
+	backgroundCursorPersistTimeout    = 30 * time.Second
 	backgroundCursorPersistEventCount = 64
 )
 
@@ -63,6 +64,7 @@ type backgroundProgressPersister struct {
 	printedResponseID  bool
 	dirty              bool
 	timerFactory       backgroundPersistTimerFactory
+	timerContext       func(context.Context) (context.Context, context.CancelFunc)
 	timer              backgroundPersistTimer
 	timerGeneration    uint64
 	pendingTimerErr    error
@@ -85,6 +87,9 @@ func newBackgroundProgressPersister(
 		now:            time.Now,
 		timerFactory: func(delay time.Duration, callback func()) backgroundPersistTimer {
 			return time.AfterFunc(delay, callback)
+		},
+		timerContext: func(ctx context.Context) (context.Context, context.CancelFunc) {
+			return context.WithTimeout(context.WithoutCancel(ctx), backgroundCursorPersistTimeout)
 		},
 	}
 }
@@ -120,7 +125,7 @@ func (p *backgroundProgressPersister) Apply(ctx context.Context, progress respon
 		p.eventsSincePersist >= backgroundCursorPersistEventCount ||
 		(!p.lastPersistedAt.IsZero() && now.Sub(p.lastPersistedAt) >= backgroundCursorPersistInterval)
 	if !shouldPersist {
-		p.scheduleTimerLocked(ctx)
+		p.scheduleTimerLocked(ctx, now)
 		return nil
 	}
 	return p.persistLocked(ctx, now)
@@ -155,16 +160,19 @@ func (p *backgroundProgressPersister) Close() error {
 	return p.takeTimerErrorLocked()
 }
 
-func (p *backgroundProgressPersister) scheduleTimerLocked(ctx context.Context) {
+func (p *backgroundProgressPersister) scheduleTimerLocked(ctx context.Context, now time.Time) {
 	if p.timer != nil || !p.dirty {
 		return
 	}
 
+	delay := backgroundCursorPersistInterval
+	if !p.lastPersistedAt.IsZero() {
+		delay = max(backgroundCursorPersistInterval-now.Sub(p.lastPersistedAt), 0)
+	}
 	p.timerGeneration++
 	generation := p.timerGeneration
-	persistCtx := context.WithoutCancel(ctx)
-	p.timer = p.timerFactory(backgroundCursorPersistInterval, func() {
-		p.persistFromTimer(persistCtx, generation)
+	p.timer = p.timerFactory(delay, func() {
+		p.persistFromTimer(ctx, generation)
 	})
 }
 
@@ -179,7 +187,9 @@ func (p *backgroundProgressPersister) persistFromTimer(ctx context.Context, gene
 	if !p.dirty || p.pendingTimerErr != nil {
 		return
 	}
-	if err := p.persistLocked(ctx, p.now()); err != nil {
+	persistCtx, cancel := p.timerContext(ctx)
+	defer cancel()
+	if err := p.persistLocked(persistCtx, p.now()); err != nil {
 		p.pendingTimerErr = err
 	}
 }

@@ -31,16 +31,18 @@ func TestInvokeCommandBackgroundFlagRegistered(t *testing.T) {
 }
 
 type orderingResponseStore struct {
-	saved   bool
-	saveErr error
-	saves   []savedBackgroundResponse
+	saved        bool
+	saveErr      error
+	saves        []savedBackgroundResponse
+	saveContexts []context.Context
 }
 
 func (s *orderingResponseStore) Get(context.Context, string) (*savedBackgroundResponse, error) {
 	return nil, nil
 }
 
-func (s *orderingResponseStore) Save(_ context.Context, _ string, record savedBackgroundResponse) error {
+func (s *orderingResponseStore) Save(ctx context.Context, _ string, record savedBackgroundResponse) error {
+	s.saveContexts = append(s.saveContexts, ctx)
 	if s.saveErr != nil {
 		return s.saveErr
 	}
@@ -79,6 +81,7 @@ type manualPersistTimer struct {
 
 type manualPersistTimerCapture struct {
 	timer *manualPersistTimer
+	delay time.Duration
 }
 
 func (t *manualPersistTimer) Stop() bool {
@@ -115,7 +118,7 @@ func useManualPersistTimer(t *testing.T, persister *backgroundProgressPersister)
 
 	capture := &manualPersistTimerCapture{}
 	persister.timerFactory = func(delay time.Duration, callback func()) backgroundPersistTimer {
-		assert.Equal(t, backgroundCursorPersistInterval, delay)
+		capture.delay = delay
 		capture.timer = &manualPersistTimer{callback: callback}
 		return capture.timer
 	}
@@ -265,7 +268,8 @@ func TestBackgroundProgressPersisterTimerFlushesQuietStreamOnce(t *testing.T) {
 	t.Parallel()
 
 	store := &orderingResponseStore{}
-	persister := newTestProgressPersister(store, io.Discard, time.Now)
+	now := time.Unix(1_000, 0)
+	persister := newTestProgressPersister(store, io.Discard, func() time.Time { return now })
 	timer := useManualPersistTimer(t, persister)
 	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
 		ResponseID: "resp_123", Cursor: new(int64(0)), Status: "in_progress", EventType: "response.created",
@@ -275,13 +279,64 @@ func TestBackgroundProgressPersisterTimerFlushesQuietStreamOnce(t *testing.T) {
 	}))
 	require.Len(t, store.saves, 1)
 	require.NotNil(t, timer.timer)
+	assert.Equal(t, backgroundCursorPersistInterval, timer.delay)
 
 	timer.timer.Fire()
 
 	require.Len(t, store.saves, 2)
 	assert.Equal(t, int64(1), *store.saves[1].LastSequenceNumber)
+	require.Len(t, store.saveContexts, 2)
+	deadline, ok := store.saveContexts[1].Deadline()
+	require.True(t, ok)
+	remaining := time.Until(deadline)
+	assert.Positive(t, remaining)
+	assert.LessOrEqual(t, remaining, backgroundCursorPersistTimeout)
+	assert.ErrorIs(t, store.saveContexts[1].Err(), context.Canceled)
 	require.NoError(t, persister.Flush(t.Context()))
 	assert.Len(t, store.saves, 2)
+	require.NoError(t, persister.Close())
+}
+
+func TestBackgroundProgressPersisterTimerUsesRemainingInterval(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{}
+	now := time.Unix(1_000, 0)
+	persister := newTestProgressPersister(store, io.Discard, func() time.Time { return now })
+	timer := useManualPersistTimer(t, persister)
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(0)), Status: "in_progress", EventType: "response.created",
+	}))
+
+	now = now.Add(backgroundCursorPersistInterval - 100*time.Millisecond)
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(1)), Status: "in_progress", EventType: "response.output_text.delta",
+	}))
+
+	require.NotNil(t, timer.timer)
+	assert.Equal(t, 100*time.Millisecond, timer.delay)
+	require.NoError(t, persister.Close())
+}
+
+func TestBackgroundProgressPersisterPersistsImmediatelyAtInterval(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{}
+	now := time.Unix(1_000, 0)
+	persister := newTestProgressPersister(store, io.Discard, func() time.Time { return now })
+	timer := useManualPersistTimer(t, persister)
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(0)), Status: "in_progress", EventType: "response.created",
+	}))
+
+	now = now.Add(backgroundCursorPersistInterval)
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(1)), Status: "in_progress", EventType: "response.output_text.delta",
+	}))
+
+	assert.Nil(t, timer.timer)
+	require.Len(t, store.saves, 2)
+	assert.Equal(t, int64(1), *store.saves[1].LastSequenceNumber)
 	require.NoError(t, persister.Close())
 }
 
@@ -399,9 +454,21 @@ func TestInvokeCommandBackgroundEndpointRequiresPersistentStateAtRuntime(t *test
 	cmd.SetErr(io.Discard)
 
 	err := cmd.Execute()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "background Responses require persistent azd state")
+	requireBackgroundResponseStateUnavailable(t, err)
+	localErr, _ := errors.AsType[*azdext.LocalError](err)
+	assert.Contains(t, localErr.Message, "read background responses")
 	assert.NotContains(t, err.Error(), "--background is not supported with --agent-endpoint")
+}
+
+func requireBackgroundResponseStateUnavailable(t *testing.T, err error) {
+	t.Helper()
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+	assert.Equal(t, exterrors.CodeBackgroundResponseStateUnavailable, localErr.Code)
+	assert.Contains(t, localErr.Message, "background Responses require persistent azd state")
+	assert.Contains(t, localErr.Suggestion, "through azd")
 }
 
 type capturedBackgroundRequest struct {
@@ -579,7 +646,5 @@ func TestResponsesRemoteBackgroundEndpointWithoutPersistentState(t *testing.T) {
 	}
 
 	err := action.responsesRemote(t.Context())
-	require.EqualError(t, err,
-		"background Responses require persistent azd state; "+
-			"run through azd instead of the extension executable directly")
+	requireBackgroundResponseStateUnavailable(t, err)
 }

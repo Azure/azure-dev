@@ -179,9 +179,6 @@ func readResponsesSSEWithInitialStateAndLimit(
 		if event.name == "" {
 			event.name = envelope.Type
 		}
-		if envelope.SequenceNumber != nil && cursor != nil && *envelope.SequenceNumber <= *cursor {
-			return nil
-		}
 
 		var snapshot responsesSnapshot
 		if len(envelope.Response) > 0 {
@@ -198,6 +195,9 @@ func readResponsesSSEWithInitialStateAndLimit(
 			if responseID != "" {
 				identity = responseID
 			}
+		}
+		if envelope.SequenceNumber != nil && cursor != nil && *envelope.SequenceNumber <= *cursor {
+			return nil
 		}
 		if snapshot.Status == "" {
 			switch event.name {
@@ -293,6 +293,9 @@ func readResponsesSSEWithInitialStateAndLimit(
 		if line == "" {
 			if err := dispatch(); err != nil {
 				return err
+			}
+			if terminal {
+				return nil
 			}
 			continue
 		}

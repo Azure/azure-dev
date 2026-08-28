@@ -68,6 +68,8 @@ const (
 	CodePromptFailed              = "prompt_failed"
 )
 
+const CodeBackgroundResponseStateUnavailable = "background_response_state_unavailable"
+
 // Error codes for ACR dependency errors.
 const (
 	CodePrivateACRNetworkAccessFailed = "private_acr_network_access_failed"

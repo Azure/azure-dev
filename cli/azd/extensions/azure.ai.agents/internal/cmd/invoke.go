@@ -1194,13 +1194,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	var responseStore responseStateStore
 	if a.flags.background {
 		if rc.azdClient == nil || agentKey == "" {
-			return fmt.Errorf(
-				"background Responses require persistent azd state; run through azd instead of the extension executable directly",
-			)
+			return backgroundResponseStateUnavailable(nil)
 		}
 		responseStore = newUserConfigResponseStateStore(rc.azdClient)
 		if _, err := responseStore.Get(ctx, agentKey); err != nil {
-			return fmt.Errorf("background Responses require persistent azd state: %w", err)
+			return backgroundResponseStateUnavailable(err)
 		}
 	}
 
@@ -1391,6 +1389,18 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	printInvokeTiming(writer, totalDuration, ttfb)
 	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	return nil
+}
+
+func backgroundResponseStateUnavailable(cause error) error {
+	message := "background Responses require persistent azd state"
+	if cause != nil {
+		message = fmt.Sprintf("%s: %v", message, cause)
+	}
+	return exterrors.Dependency(
+		exterrors.CodeBackgroundResponseStateUnavailable,
+		message,
+		"run this command through azd instead of executing the extension binary directly",
+	)
 }
 
 func (a *InvokeAction) invocationsLocal(ctx context.Context) error {

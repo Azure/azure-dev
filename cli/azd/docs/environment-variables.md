@@ -169,6 +169,20 @@ specific version of the tool installed on the machine.
 | `AZD_PACK_TOOL_PATH` | The `pack` tool override path. The direct path to `pack` or `pack.exe`. |
 | `AZD_COPILOT_CLI_PATH` | The Copilot CLI tool override path. When set, skips automatic download and uses the specified path. |
 
+### GitHub Repository Access
+
+These GitHub-compatible variables are used when `azd init --template` checks repository metadata before cloning.
+Metadata requests are unauthenticated when no matching token is set.
+
+| Variable | Description |
+| --- | --- |
+| `GH_TOKEN` | Token used to request repository metadata from `github.com` and GitHub Enterprise Cloud `*.ghe.com` hosts. Takes precedence over `GITHUB_TOKEN`. |
+| `GITHUB_TOKEN` | Token used to request repository metadata from `github.com` and `*.ghe.com` when `GH_TOKEN` is not set. |
+| `GH_HOST` | GitHub Enterprise host recognized for repository metadata checks. |
+| `GITHUB_SERVER_URL` | GitHub server URL recognized for repository metadata checks when `GH_HOST` is not set. |
+| `GH_ENTERPRISE_TOKEN` | Token used to request repository metadata from a recognized GitHub Enterprise Server host. Takes precedence over `GITHUB_ENTERPRISE_TOKEN`. |
+| `GITHUB_ENTERPRISE_TOKEN` | Token used for a recognized GitHub Enterprise Server host when `GH_ENTERPRISE_TOKEN` is not set. |
+
 ## Extension Configuration
 
 | Variable | Description |

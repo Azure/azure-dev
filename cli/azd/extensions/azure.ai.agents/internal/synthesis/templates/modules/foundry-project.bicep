@@ -18,6 +18,12 @@ type connectionType = {
   category: string
   target: string
   authType: string
+  audience: string?
+  authorizationUrl: string?
+  tokenUrl: string?
+  refreshUrl: string?
+  scopes: string[]?
+  connectorName: string?
   metadata: object?
 }
 
@@ -86,6 +92,15 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
         authType: c.authType
       },
       contains(connectionCredentials, c.name) ? { credentials: connectionCredentials[c.name] } : {},
+      toLower(c.authType) == 'oauth2' && !contains(connectionCredentials, c.name)
+        ? { credentials: {} }
+        : {},
+      !empty(c.?audience) ? { audience: c.?audience } : {},
+      c.?authorizationUrl != null ? { authorizationUrl: c.?authorizationUrl } : {},
+      c.?tokenUrl != null ? { tokenUrl: c.?tokenUrl } : {},
+      c.?refreshUrl != null ? { refreshUrl: c.?refreshUrl } : {},
+      c.?scopes != null ? { scopes: c.?scopes } : {},
+      !empty(c.?connectorName) ? { connectorName: c.?connectorName } : {},
       c.?metadata != null ? { metadata: c.?metadata } : {}
     )
   }

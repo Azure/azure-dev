@@ -762,6 +762,15 @@ func Test_MapError(t *testing.T) {
 					"internal.no_extensions_available"),
 			},
 		},
+		{
+			name: "WithErrNoExtensionVersionsAvailable",
+			err: fmt.Errorf(
+				"%w for extension %q",
+				internal.ErrNoExtensionVersionsAvailable,
+				"test.extension",
+			),
+			wantErrReason: "internal.no_extension_versions_available",
+		},
 		// ErrExtensionTokenFailed: kept naked with %w —
 		// matches real usage in extensions.go:233
 		{

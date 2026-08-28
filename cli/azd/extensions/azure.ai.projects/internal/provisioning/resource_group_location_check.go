@@ -200,10 +200,16 @@ func (c *ResourceGroupLocationCheck) existingProjectCreatesResourceGroup(ctx con
 	if err != nil {
 		return false
 	}
+	environment := readEnvironmentValues(
+		ctx,
+		c.azdClient.Environment(),
+		envName,
+	)
 	result, err := synthesis.SynthesizeExistingProject(synthesis.Input{
 		RawAzureYAML:  rawYAML,
 		ServiceName:   serviceName,
 		AcceptedHosts: FoundryProvisioningServiceHosts,
+		Env:           environment,
 		ProjectRoot:   projectPath,
 	})
 	if err != nil {
@@ -211,6 +217,27 @@ func (c *ResourceGroupLocationCheck) existingProjectCreatesResourceGroup(ctx con
 	}
 	includeAcr, _ := result.Parameters["includeAcr"].(bool)
 	return includeAcr
+}
+
+func readEnvironmentValues(
+	ctx context.Context,
+	envClient azdext.EnvironmentServiceClient,
+	envName string,
+) map[string]string {
+	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: envName,
+	})
+	if err != nil {
+		return nil
+	}
+
+	values := make(map[string]string, len(resp.GetKeyValues()))
+	for _, keyValue := range resp.GetKeyValues() {
+		if keyValue != nil {
+			values[keyValue.Key] = keyValue.Value
+		}
+	}
+	return values
 }
 
 // armResourceGroupLocation is the production resourceGroupLocationLookup. It

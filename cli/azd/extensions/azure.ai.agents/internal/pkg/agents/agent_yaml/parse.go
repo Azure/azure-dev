@@ -451,6 +451,14 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			case AgentKindPromptVoice:
 				var agent VoiceAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					var fields map[string]yaml.Node
+					if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+						if _, hasToolbox := fields["toolbox"]; hasToolbox {
+							errors = append(errors,
+								"template.toolbox is not supported for a prompt-voice agent; "+
+									"remove it from the agent definition")
+						}
+					}
 					if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
 						errors = append(errors, "template.model.id is required for a prompt-voice agent")
 					}

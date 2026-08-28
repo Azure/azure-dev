@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "6633403746269170516"
+      "templateHash": "4017347415588586555"
     }
   },
   "definitions": {
@@ -78,6 +78,33 @@
         },
         "authType": {
           "type": "string"
+        },
+        "audience": {
+          "type": "string",
+          "nullable": true
+        },
+        "authorizationUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "tokenUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "refreshUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "nullable": true
+        },
+        "connectorName": {
+          "type": "string",
+          "nullable": true
         },
         "metadata": {
           "type": "object",
@@ -347,7 +374,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "9663028600979689998"
+              "templateHash": "14181853768779234991"
             }
           },
           "definitions": {
@@ -419,6 +446,33 @@
                 },
                 "authType": {
                   "type": "string"
+                },
+                "audience": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "authorizationUrl": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "tokenUrl": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "refreshUrl": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "nullable": true
+                },
+                "connectorName": {
+                  "type": "string",
+                  "nullable": true
                 },
                 "metadata": {
                   "type": "object",
@@ -1449,7 +1503,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.46.1.21595",
-                      "templateHash": "13263232618571910387"
+                      "templateHash": "3600354597134725502"
                     }
                   },
                   "definitions": {
@@ -1478,6 +1532,51 @@
                           "type": "string",
                           "metadata": {
                             "description": "Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ..."
+                          }
+                        },
+                        "audience": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional token audience for identity-based authentication."
+                          }
+                        },
+                        "authorizationUrl": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional OAuth2 authorization endpoint."
+                          }
+                        },
+                        "tokenUrl": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional OAuth2 token endpoint."
+                          }
+                        },
+                        "refreshUrl": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional OAuth2 refresh endpoint."
+                          }
+                        },
+                        "scopes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional OAuth2 scopes."
+                          }
+                        },
+                        "connectorName": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional managed connector name for OAuth2 authentication."
                           }
                         },
                         "metadata": {
@@ -1551,7 +1650,7 @@
                       "type": "Microsoft.CognitiveServices/accounts/projects/connections",
                       "apiVersion": "2025-04-01-preview",
                       "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), parameters('connections')[copyIndex()].name)]",
-                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
+                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(and(equals(toLower(parameters('connections')[copyIndex()].authType), 'oauth2'), not(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name))), createObject('credentials', createObject()), createObject()), if(not(empty(tryGet(parameters('connections')[copyIndex()], 'audience'))), createObject('audience', tryGet(parameters('connections')[copyIndex()], 'audience')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'authorizationUrl'), null())), createObject('authorizationUrl', tryGet(parameters('connections')[copyIndex()], 'authorizationUrl')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'tokenUrl'), null())), createObject('tokenUrl', tryGet(parameters('connections')[copyIndex()], 'tokenUrl')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'refreshUrl'), null())), createObject('refreshUrl', tryGet(parameters('connections')[copyIndex()], 'refreshUrl')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'scopes'), null())), createObject('scopes', tryGet(parameters('connections')[copyIndex()], 'scopes')), createObject()), if(not(empty(tryGet(parameters('connections')[copyIndex()], 'connectorName'))), createObject('connectorName', tryGet(parameters('connections')[copyIndex()], 'connectorName')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
                     }
                   },
                   "outputs": {

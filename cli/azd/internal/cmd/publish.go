@@ -214,15 +214,15 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		Image: pa.flags.To,
 	}
 
-	if err := pa.projectManager.Initialize(ctx, pa.projectConfig); err != nil {
-		return nil, err
-	}
-
 	stableServices, err := pa.importManager.ServiceStableFiltered(ctx, pa.projectConfig, targetServiceName, pa.env.Getenv)
 	if err != nil {
 		return nil, err
 	}
 	if err := validateImagePassthroughPublishFlags(stableServices, pa.flags); err != nil {
+		return nil, err
+	}
+
+	if err := pa.projectManager.InitializeServices(ctx, stableServices); err != nil {
 		return nil, err
 	}
 
@@ -237,9 +237,7 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 	}
 
-	if err := pa.projectManager.EnsureServiceTargetTools(ctx, pa.projectConfig, func(svc *project.ServiceConfig) bool {
-		return targetServiceName == "" || svc.Name == targetServiceName
-	}); err != nil {
+	if err := pa.projectManager.EnsureServiceTargetTools(ctx, stableServices); err != nil {
 		return nil, err
 	}
 

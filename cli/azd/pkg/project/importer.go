@@ -111,6 +111,8 @@ func (im *ImportManager) ServiceStableFiltered(
 		return nil, err
 	}
 
+	setProjectServiceTargets(allServices)
+
 	// If targeting a specific service, check if it exists and is enabled
 	if targetServiceName != "" {
 		for _, svc := range allServices {

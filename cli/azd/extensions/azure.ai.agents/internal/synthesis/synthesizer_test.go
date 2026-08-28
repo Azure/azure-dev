@@ -6,6 +6,7 @@ package synthesis
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -665,6 +666,221 @@ services:
 		assert.Equal(t, "", c.Target)
 		keys := c.Credentials["keys"].(map[string]any)
 		assert.Equal(t, "", keys["x-api-key"])
+	})
+}
+
+func TestSynthesize_ConnectionExtendedFields(t *testing.T) {
+	const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  mcp-conn:
+    host: azure.ai.connection
+    uses: [my-project]
+    category: RemoteTool
+    target: https://mcp.example.com/mcp
+    authType: OAuth2
+    audience: ${OAUTH_AUDIENCE}
+    connectorName: ${OAUTH_CONNECTOR_NAME}
+`
+	env := map[string]string{
+		"OAUTH_AUDIENCE":       "https://mcp.example.com",
+		"OAUTH_CONNECTOR_NAME": "managed-mcp",
+	}
+
+	t.Run("provision resolves fields", func(t *testing.T) {
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(yaml),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			Env:           env,
+		})
+		require.NoError(t, err)
+		conn := resultConnections(t, res)[0]
+		assert.Equal(t, env["OAUTH_AUDIENCE"], conn.Audience)
+		assert.Equal(t, env["OAUTH_CONNECTOR_NAME"], conn.ConnectorName)
+	})
+
+	t.Run("eject preserves references", func(t *testing.T) {
+		res, err := Synthesize(Input{
+			RawAzureYAML:    []byte(yaml),
+			ServiceName:     "my-project",
+			AcceptedHosts:   []string{"azure.ai.project"},
+			Env:             env,
+			PreserveVarRefs: true,
+		})
+		require.NoError(t, err)
+		conn := resultConnections(t, res)[0]
+		assert.Equal(t, "${OAUTH_AUDIENCE}", conn.Audience)
+		assert.Equal(t, "${OAUTH_CONNECTOR_NAME}", conn.ConnectorName)
+	})
+}
+
+func TestSynthesizeNormalizesLegacyAgenticIdentity(t *testing.T) {
+	const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  token-conn:
+    host: azure.ai.connection
+    uses: [my-project]
+    category: RemoteTool
+    target: https://mcp.example.com/mcp
+    authType: AgenticIdentity
+`
+
+	res, err := Synthesize(Input{
+		RawAzureYAML:  []byte(yaml),
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+	})
+	require.NoError(t, err)
+	connections := resultConnections(t, res)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "AgenticIdentityToken", connections[0].AuthType)
+}
+
+func TestSynthesize_ConnectionConditions(t *testing.T) {
+	t.Run("whitespace condition disables connection", func(t *testing.T) {
+		const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  whitespace-conn:
+    host: azure.ai.connection
+    condition: "  "
+    target: ${MISSING_TARGET}
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(yaml),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			Env:           map[string]string{},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, resultConnections(t, res))
+	})
+
+	t.Run("numeric condition preserves YAML text", func(t *testing.T) {
+		const yamlTemplate = `
+services:
+  my-project:
+    host: azure.ai.project
+  numeric-conn:
+    host: azure.ai.connection
+    condition: %s
+    target: https://example
+`
+		for _, condition := range []string{"1.0", "01", "0x1"} {
+			t.Run(condition, func(t *testing.T) {
+				res, err := Synthesize(Input{
+					RawAzureYAML: fmt.Appendf(nil, yamlTemplate, condition),
+					ServiceName:  "my-project",
+					AcceptedHosts: []string{
+						"azure.ai.project",
+					},
+				})
+				require.NoError(t, err)
+				assert.Empty(t, resultConnections(t, res))
+			})
+		}
+	})
+
+	t.Run("root false skips missing payload ref", func(t *testing.T) {
+		const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  skipped-conn:
+    host: azure.ai.connection
+    condition: false
+    $ref: ./missing-connection.yaml
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(yaml),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			ProjectRoot:   t.TempDir(),
+		})
+		require.NoError(t, err)
+		assert.Empty(t, resultConnections(t, res))
+	})
+
+	t.Run("ref-only false skips missing payload ref", func(t *testing.T) {
+		const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  skipped-conn:
+    condition: false
+    $ref: ./missing-connection.yaml
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(yaml),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			ProjectRoot:   t.TempDir(),
+		})
+		require.NoError(t, err)
+		assert.Empty(t, resultConnections(t, res))
+	})
+
+	t.Run("root condition wins over payload condition", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "connection.yaml"),
+			[]byte(`host: azure.ai.connection
+condition: false
+category: ApiKey
+target: https://example
+`),
+			0o600,
+		))
+		raw := []byte(`services:
+  my-project:
+    host: azure.ai.project
+  root-conditioned:
+    host: azure.ai.connection
+    condition: true
+    $ref: ./connection.yaml
+`)
+
+		res, err := Synthesize(Input{
+			RawAzureYAML:  raw,
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			ProjectRoot:   root,
+		})
+		require.NoError(t, err)
+		assert.Len(t, resultConnections(t, res), 1)
+	})
+
+	t.Run("ref-only condition returns configuration error", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "connection.yaml"),
+			[]byte(`host: azure.ai.connection
+condition: false
+category: ApiKey
+target: https://example
+`),
+			0o600,
+		))
+		raw := []byte(`services:
+  my-project:
+    host: azure.ai.project
+  ref-only:
+    $ref: ./connection.yaml
+`)
+
+		_, err := Synthesize(Input{
+			RawAzureYAML:  raw,
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			ProjectRoot:   root,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "put condition beside host in azure.yaml")
 	})
 }
 

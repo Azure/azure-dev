@@ -43,6 +43,8 @@ const (
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
+const CodeInvalidBackgroundResponseState = "invalid_background_response_state"
+
 // CodeInvalidEnvironmentVariableName identifies a hosted-agent
 // environment variable name rejected by the service contract.
 const CodeInvalidEnvironmentVariableName = "invalid_environment_variable_name"

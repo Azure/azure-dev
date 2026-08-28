@@ -28,6 +28,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type invokeFlags struct {
@@ -1198,7 +1200,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		}
 		responseStore = newUserConfigResponseStateStore(rc.azdClient)
 		if _, err := responseStore.Get(ctx, agentKey); err != nil {
-			return backgroundResponseStateUnavailable(err)
+			return classifyBackgroundResponseStateReadError(err)
 		}
 	}
 
@@ -1400,6 +1402,24 @@ func backgroundResponseStateUnavailable(cause error) error {
 		exterrors.CodeBackgroundResponseStateUnavailable,
 		message,
 		"run this command through azd instead of executing the extension binary directly",
+	)
+}
+
+func classifyBackgroundResponseStateReadError(cause error) error {
+	if code := status.Code(cause); code == codes.Unavailable || code == codes.Unimplemented {
+		return backgroundResponseStateUnavailable(cause)
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidBackgroundResponseState,
+		fmt.Sprintf(
+			"saved background Response state at %q could not be read: %v",
+			backgroundResponsesConfigPath,
+			cause,
+		),
+		fmt.Sprintf(
+			"clear the invalid state with `azd config unset %s`, or repair that config value before invoking",
+			backgroundResponsesConfigPath,
+		),
 	)
 }
 

@@ -471,6 +471,20 @@ func requireBackgroundResponseStateUnavailable(t *testing.T, err error) {
 	assert.Contains(t, localErr.Suggestion, "through azd")
 }
 
+func requireInvalidBackgroundResponseState(t *testing.T, err error) {
+	t.Helper()
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+	assert.Equal(t, exterrors.CodeInvalidBackgroundResponseState, localErr.Code)
+	assert.Contains(t, localErr.Message, backgroundResponsesConfigPath)
+	assert.Contains(t, localErr.Message, "read background responses")
+	assert.Contains(t, localErr.Suggestion,
+		"azd config unset "+backgroundResponsesConfigPath)
+	assert.NotContains(t, localErr.Suggestion, "try again")
+}
+
 type capturedBackgroundRequest struct {
 	method string
 	path   string
@@ -647,4 +661,34 @@ func TestResponsesRemoteBackgroundEndpointWithoutPersistentState(t *testing.T) {
 
 	err := action.responsesRemote(t.Context())
 	requireBackgroundResponseStateUnavailable(t, err)
+}
+
+func TestResponsesRemoteBackgroundInvalidPersistedState(t *testing.T) {
+	userConfig := newInvokeUserConfigServer()
+	userConfig.values[backgroundResponsesConfigPath] = []byte("{invalid")
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	action := &InvokeAction{
+		flags: &invokeFlags{
+			message:    "long task",
+			background: true,
+			outputFmt:  outputDefault,
+		},
+		resolveRemoteContextFn: func(context.Context) (*remoteContext, error) {
+			return &remoteContext{
+				name:            "test-agent",
+				agentKey:        "stable-agent-key",
+				projectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
+				azdClient:       azdClient,
+			}, nil
+		},
+		acquireBearerTokenFn: func(context.Context) (string, error) {
+			t.Fatal("auth must not run when saved background state is invalid")
+			return "", nil
+		},
+	}
+
+	err := action.responsesRemote(t.Context())
+	requireInvalidBackgroundResponseState(t, err)
+	localErr, _ := errors.AsType[*azdext.LocalError](err)
+	assert.Contains(t, localErr.Message, "invalid character")
 }

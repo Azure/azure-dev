@@ -5,7 +5,6 @@ package agent_yaml
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -356,37 +355,8 @@ type InvocationsModeration struct {
 // InvocationsModeration is optional and only valid for agents exposing the invocations protocol.
 type Policy struct {
 	Type                  PolicyType             `json:"type" yaml:"type"`
-	RaiPolicyName         string                 `json:"rai_policy_name,omitempty" yaml:"rai_policy_name,omitempty"`
+	RaiPolicyName         string                 `json:"raiPolicyName,omitempty" yaml:"rai_policy_name,omitempty"`
 	InvocationsModeration *InvocationsModeration `json:"invocationsModeration,omitempty" yaml:"invocations_moderation,omitempty"`
-}
-
-// UnmarshalJSON accepts the legacy camelCase `raiPolicyName` alongside the
-// current `rai_policy_name`.
-//
-// The field is spelled `rai_policy_name` everywhere it is authored or sent —
-// agent.yaml, the azure.yaml service entry, and the service's own
-// `rai_config` — but inline azure.yaml entries went through the JSON tag, which
-// used to be camelCase. Projects written against that spelling keep deploying.
-func (p *Policy) UnmarshalJSON(data []byte) error {
-	// The alias sheds the method set so this does not recurse.
-	type policyAlias Policy
-	var alias policyAlias
-	if err := json.Unmarshal(data, &alias); err != nil {
-		return err
-	}
-	*p = Policy(alias)
-
-	if p.RaiPolicyName != "" {
-		return nil
-	}
-	var legacy struct {
-		RaiPolicyName string `json:"raiPolicyName"`
-	}
-	if err := json.Unmarshal(data, &legacy); err != nil {
-		return err
-	}
-	p.RaiPolicyName = legacy.RaiPolicyName
-	return nil
 }
 
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.

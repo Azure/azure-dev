@@ -427,7 +427,8 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 							raiPolicyCount++
 							if policy.RaiPolicyName == "" {
 								errors = append(errors, fmt.Sprintf(
-									"policies[%d] of type '%s' requires a policy name ('rai_policy_name')",
+									"policies[%d] of type '%s' requires a policy name "+
+										"('raiPolicyName' in azure.yaml, 'rai_policy_name' in agent.yaml)",
 									i, policy.Type))
 							} else if err := ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
 								errors = append(errors, fmt.Sprintf("policies[%d]: %v", i, err))

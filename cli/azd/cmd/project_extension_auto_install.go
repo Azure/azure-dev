@@ -156,15 +156,17 @@ func findExtensionForProvider(
 	capability extensions.CapabilityType,
 	provider string,
 ) ([]*extensions.ExtensionMetadata, error) {
-	matches, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
-		Capability: capability,
-		Provider:   provider,
+	matches, err := extensionManager.FindInstallableExtensions(ctx, &extensions.InstallResolutionOptions{
+		FilterOptions: extensions.FilterOptions{
+			Capability: capability,
+			Provider:   provider,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("finding extension for provider %q: %w", provider, err)
 	}
 
-	candidates := lookup.partition(filterExtensionsForProvider(matches, capability, provider))
+	candidates := lookup.partition(matches)
 	if len(candidates.installable) == 0 {
 		return nil, candidates.conflictError()
 	}
@@ -250,10 +252,9 @@ func resolveExtensionRequirementDependencies(
 	for _, requirement := range sortedProjectExtensionRequirements(requirements) {
 		var common map[string]resolvedExtensionDependency
 		for _, candidate := range requirementCandidates(requirement) {
-			version, err := extensions.ResolveExtensionVersion(
+			version, err := extensionManager.ResolveVersion(
 				candidate,
 				requirement.versionPreference,
-				nil,
 			)
 			if err != nil {
 				common = map[string]resolvedExtensionDependency{}
@@ -356,7 +357,7 @@ func resolveExtensionDependencies(
 			continue
 		}
 
-		version, err := extensions.ResolveExtensionVersion(dependencyExtension, dependency.Version, nil)
+		version, err := extensionManager.ResolveVersion(dependencyExtension, dependency.Version)
 		if err != nil {
 			continue
 		}
@@ -400,25 +401,11 @@ func extensionProvidesProvider(
 	capability extensions.CapabilityType,
 	providerName string,
 ) bool {
-	expectedType, hasProviderType := providerTypeForCapability(capability)
-	if !hasProviderType || !slices.Contains(capabilities, capability) {
-		return false
-	}
-
-	return slices.ContainsFunc(providers, func(provider extensions.Provider) bool {
-		return provider.Type == expectedType && strings.EqualFold(provider.Name, providerName)
-	})
-}
-
-func providerTypeForCapability(capability extensions.CapabilityType) (extensions.ProviderType, bool) {
-	switch capability {
-	case extensions.ServiceTargetProviderCapability:
-		return extensions.ServiceTargetProviderType, true
-	case extensions.ProvisioningProviderCapability:
-		return extensions.ProvisioningProviderType, true
-	default:
-		return "", false
-	}
+	return extensions.VersionProvidesProvider(
+		&extensions.ExtensionVersion{Capabilities: capabilities, Providers: providers},
+		capability,
+		providerName,
+	)
 }
 
 // providerIsBuiltIn reports whether azd itself implements the named provider. Core registers these
@@ -434,27 +421,6 @@ func providerIsBuiltIn(capability extensions.CapabilityType, provider string) bo
 	default:
 		return false
 	}
-}
-
-// filterExtensionsForProvider keeps the extensions whose selected version supplies the provider.
-// Earlier versions are ignored: a publisher that drops a provider in a later release has superseded
-// the versions carrying it, so installing one would be a downgrade.
-func filterExtensionsForProvider(
-	matches []*extensions.ExtensionMetadata,
-	capability extensions.CapabilityType,
-	providerName string,
-) []*extensions.ExtensionMetadata {
-	filtered := make([]*extensions.ExtensionMetadata, 0, len(matches))
-	for _, extension := range matches {
-		selectedVersion, err := extensions.ResolveExtensionVersion(extension, "", nil)
-		if err != nil {
-			continue
-		}
-		if extensionVersionProvidesProvider(selectedVersion, capability, providerName) {
-			filtered = append(filtered, extension)
-		}
-	}
-	return filtered
 }
 
 func extensionVersionProvidesProvider(
@@ -486,7 +452,7 @@ func extensionCandidateProvidesProvider(
 	capability extensions.CapabilityType,
 	provider string,
 ) (bool, error) {
-	version, err := extensions.ResolveExtensionVersion(candidate, versionPreference, nil)
+	version, err := extensionManager.ResolveVersion(candidate, versionPreference)
 	if err != nil {
 		return false, err
 	}
@@ -512,9 +478,7 @@ func extensionCandidateProvidesProvider(
 	return false, nil
 }
 
-// extensionForProvider narrows an extension to every version supplying the provider. Unlike
-// filterExtensionsForProvider this ignores which version would be selected, so callers can tell an
-// extension that cannot supply the provider from one whose selected version happens not to.
+// extensionForProvider returns every release that supplies the requested provider.
 func extensionForProvider(
 	extension *extensions.ExtensionMetadata,
 	capability extensions.CapabilityType,
@@ -552,10 +516,13 @@ func missingProjectExtensions(
 				continue
 			}
 
-			matches, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
-				Id:      extensionId,
-				Version: versionPreference,
-			})
+			matches, err := extensionManager.FindInstallableExtensions(
+				ctx,
+				&extensions.InstallResolutionOptions{FilterOptions: extensions.FilterOptions{
+					Id:      extensionId,
+					Version: versionPreference,
+				}},
+			)
 			if err != nil {
 				return nil, fmt.Errorf("finding required extension %s: %w", extensionId, err)
 			}
@@ -563,9 +530,8 @@ func missingProjectExtensions(
 				return nil, &internal.ErrorWithSuggestion{
 					Err: fmt.Errorf("required extension %s not found", extensionId),
 					Suggestion: fmt.Sprintf(
-						"Check the extension id and version constraint declared under "+
-							"requiredVersions.extensions in azure.yaml, then run "+
-							"'azd extension source list' to confirm a configured source publishes %s.",
+						"Check requiredVersions.extensions in azure.yaml, then run "+
+							"'azd extension source list' to verify that a configured source publishes %s.",
 						extensionId,
 					),
 				}
@@ -628,10 +594,9 @@ func missingProjectExtensions(
 			if !hasProviderVersion {
 				continue
 			}
-			selectedVersion, err := extensions.ResolveExtensionVersion(
+			selectedVersion, err := extensionManager.ResolveVersion(
 				requirement.extension,
 				requirement.versionPreference,
-				nil,
 			)
 			if err != nil {
 				return fmt.Errorf("resolving required extension %s: %w", extensionId, err)
@@ -799,6 +764,7 @@ func tryAutoInstallProjectExtensions(
 }
 
 func displayAutoInstallError(ctx context.Context, console input.Console, err error) {
+	err = internal.WrapErrorWithSuggestion(err)
 	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		console.Message(ctx, "")
 		console.MessageUxItem(ctx, &ux.ErrorWithSuggestion{

@@ -131,7 +131,7 @@ Shows detailed information for a specific extension, including description, tags
 
 Installs one or more extensions from any configured extension source.
 
-- `-v, --version` Specifies the exact version to install.
+- `-v, --version` Specifies the exact version to install. It cannot be used with an extension bundle.
 - `-s, --source` Specifies the extension source used for installations. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source, prompting for a name and confirming first for URLs, then installs from it:
 
   ```bash

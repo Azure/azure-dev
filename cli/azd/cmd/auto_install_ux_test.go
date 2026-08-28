@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -542,11 +543,20 @@ func TestManualInstallErrorIncludesResolvedVersion(t *testing.T) {
 		"azd",
 		extensions.SourceCategoryAzd,
 	)
-	candidate.Versions = append(candidate.Versions, extensions.ExtensionVersion{Version: "2.0.0"})
+	candidate.Versions = append(candidate.Versions, extensions.ExtensionVersion{
+		Version:            "2.0.0",
+		RequiredAzdVersion: ">=2.0.0",
+	})
 	requirement := autoInstallTestRequirement(candidate)
 	requirement.versionPreference = ">=1.0.0 <2.0.0"
+	manager := &fakeExtensionAutoInstallManager{
+		available:  []*extensions.ExtensionMetadata{candidate},
+		installed:  map[string]*extensions.Extension{},
+		azdVersion: semver.MustParse("1.0.0"),
+	}
 
 	err := manualInstallError(
+		manager,
 		[]projectExtensionRequirement{requirement},
 		"Manual installation required.",
 	)

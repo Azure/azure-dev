@@ -620,7 +620,23 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return security.NewManager(cwd)
 	})
 
-	container.MustRegisterSingleton(repository.NewInitializer)
+	container.MustRegisterSingleton(func(
+		console input.Console,
+		gitCli *git.Cli,
+		dotnetCli *dotnet.Cli,
+		features *alpha.FeatureManager,
+		lazyEnvManager *lazy.Lazy[environment.Manager],
+		transport policy.Transporter,
+	) *repository.Initializer {
+		return repository.NewInitializerWithRepositoryStatusChecker(
+			console,
+			gitCli,
+			dotnetCli,
+			features,
+			lazyEnvManager,
+			repository.NewGitHubRepositoryStatusChecker(transport),
+		)
+	})
 	container.MustRegisterSingleton(alpha.NewFeaturesManager)
 	container.MustRegisterSingleton(config.NewUserConfigManager)
 	container.MustRegisterSingleton(config.NewManager)

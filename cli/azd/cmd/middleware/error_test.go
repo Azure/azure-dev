@@ -296,6 +296,53 @@ func Test_ErrorMiddleware_ExtensionErrorWithSuggestion_BypassesPipeline(t *testi
 	require.Equal(t, extErr.Suggestion, azdext.ErrorSuggestion(err))
 }
 
+func Test_ErrorMiddleware_WrapsSuggestionMethod(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(t.Context())
+	cfg := config.NewEmptyConfig()
+	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
+	global := &internal.GlobalCommandOptions{
+		NoPrompt: true,
+	}
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
+	middleware := NewErrorMiddleware(
+		&Options{Name: "test"},
+		mockContext.Console,
+		nil,
+		global,
+		featureManager,
+		userConfigManager,
+		errorPipeline,
+	)
+
+	compatErr := &extensions.ExtensionAzdVersionIncompatibleError{
+		ExtensionId: "test.ext",
+		Version:     "2.0.0",
+		Matches: []*extensions.ExtensionMetadata{{
+			Id: "test.ext",
+			Versions: []extensions.ExtensionVersion{{
+				Version:            "2.0.0",
+				RequiredAzdVersion: ">=2.0.0",
+			}},
+		}},
+	}
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		return nil, fmt.Errorf("failed to find extension: %w", compatErr)
+	}
+
+	result, err := middleware.Run(*mockContext.Context, nextFn)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	wrapped, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+	require.True(t, ok, "expected Suggestion() errors to be wrapped")
+	require.Equal(t, compatErr.Suggestion(), wrapped.Suggestion)
+	require.ErrorIs(t, wrapped.Err, compatErr)
+}
+
 func Test_ErrorMiddleware_StructuredExtensionErrorWithoutSuggestion_BypassesPipeline(t *testing.T) {
 	t.Parallel()
 

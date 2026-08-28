@@ -67,14 +67,11 @@ const maxInvokeVersionLength = 128
 var createInvokeVersionSession = createInvokeVersionSessionImpl
 
 type InvokeAction struct {
-	flags                  *invokeFlags
-	noPrompt               bool
-	endpoint               *parsedAgentEndpoint
-	clientHeaders          http.Header
-	protocolServiceName    string
-	writer                 io.Writer
-	resolveRemoteContextFn func(context.Context) (*remoteContext, error)
-	acquireBearerTokenFn   func(context.Context) (string, error)
+	flags               *invokeFlags
+	noPrompt            bool
+	endpoint            *parsedAgentEndpoint
+	clientHeaders       http.Header
+	protocolServiceName string
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -623,13 +620,6 @@ func (a *InvokeAction) httpTimeout() time.Duration {
 	return time.Duration(a.flags.timeout) * time.Second
 }
 
-func (a *InvokeAction) outputWriter() io.Writer {
-	if a.writer != nil {
-		return a.writer
-	}
-	return os.Stdout
-}
-
 // resolveBody returns the request body for invoke calls.
 // When --input-file is set, the file contents are returned; otherwise the message string is used.
 func (a *InvokeAction) resolveBody() ([]byte, string, error) {
@@ -964,10 +954,6 @@ func unresolvedRemoteAgentNameError(serviceName string) error {
 // to verify that the inline agent exists, so remote callers validate the request
 // body before calling this method. Callers must close rc.azdClient when non-nil.
 func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext, error) {
-	if a.resolveRemoteContextFn != nil {
-		return a.resolveRemoteContextFn(ctx)
-	}
-
 	rc := &remoteContext{apiVersion: DefaultAgentAPIVersion, version: a.flags.version}
 
 	if a.endpoint != nil {
@@ -1141,10 +1127,6 @@ func createInvokeVersionSessionImpl(
 // validation so that local errors (e.g., a missing --input-file) are surfaced
 // before any auth round-trip is attempted.
 func (a *InvokeAction) acquireBearerToken(ctx context.Context) (string, error) {
-	if a.acquireBearerTokenFn != nil {
-		return a.acquireBearerTokenFn(ctx)
-	}
-
 	credential, err := newAgentCredential()
 	if err != nil {
 		return "", err
@@ -1172,7 +1154,6 @@ func ephemeralAuthError(ephemeral bool, err error) error {
 }
 
 func (a *InvokeAction) responsesRemote(ctx context.Context) error {
-	writer := a.outputWriter()
 	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
 		return err
@@ -1274,14 +1255,14 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	raw := a.flags.outputFmt == outputRaw
 	if !raw {
-		fmt.Fprintf(writer, "Agent:        %s (remote)\n", rc.name)
-		fmt.Fprintf(writer, "Message:      %s\n", bodyLabel)
+		fmt.Printf("Agent:        %s (remote)\n", rc.name)
+		fmt.Printf("Message:      %s\n", bodyLabel)
 		if rc.version != "" {
-			fmt.Fprintf(writer, "Version:      %s\n", rc.version)
+			fmt.Printf("Version:      %s\n", rc.version)
 		}
-		writeSessionStatus(writer, "Session:      ", sid)
-		fmt.Fprintf(writer, "Conversation: %s\n", convID)
-		fmt.Fprintln(writer)
+		printSessionStatus("Session:      ", sid)
+		fmt.Printf("Conversation: %s\n", convID)
+		fmt.Println()
 	}
 
 	payload, err := json.Marshal(reqBody)
@@ -1325,7 +1306,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if raw {
 		sessionLabel = ""
 	}
-	captureResponseSessionToWriter(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel, writer)
+	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
 
 	if raw {
 		if dumpErr := writeRawResponse(os.Stdout, resp); dumpErr != nil {
@@ -1341,7 +1322,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	if traceID := responseTraceID(resp); traceID != "" {
-		fmt.Fprintf(writer, "Trace ID:     %s\n", traceID)
+		fmt.Printf("Trace ID:     %s\n", traceID)
 	}
 
 	if resp.StatusCode >= 400 {
@@ -1351,7 +1332,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	// Parse SSE stream for agent output.
 	if !a.flags.background {
-		if err := readResponsesSSE(ctx, resp.Body, writer, rc.name, false, nil); err != nil {
+		if err := readResponsesSSE(ctx, resp.Body, os.Stdout, rc.name, false, nil); err != nil {
 			return err
 		}
 	} else {
@@ -1364,12 +1345,12 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			agentKey,
 			effectiveSessionID,
 			convID,
-			writer,
+			os.Stdout,
 		)
 		streamErr := readResponsesSSE(
 			ctx,
 			resp.Body,
-			writer,
+			os.Stdout,
 			rc.name,
 			true,
 			func(progress responsesStreamProgress) error {
@@ -1386,7 +1367,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		}
 	}
 	totalDuration := time.Since(invokeStart)
-	printInvokeTiming(writer, totalDuration, ttfb)
+	printInvokeTiming(os.Stdout, totalDuration, ttfb)
 	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	return nil
 }

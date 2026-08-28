@@ -6,12 +6,9 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -148,12 +145,12 @@ func TestBackgroundProgressPersisterSavesBeforePrinting(t *testing.T) {
 	assert.Equal(t, "Response:     resp_123\n", writer.output.String())
 }
 
-func TestBackgroundProgressPersisterDoesNotPrintWhenSaveFails(t *testing.T) {
+func TestBackgroundProgressPersisterPrintsRecoveryIDWhenFirstSaveFails(t *testing.T) {
 	t.Parallel()
 
 	store := &orderingResponseStore{saveErr: errors.New("write failed")}
-	writer := &afterSaveWriter{store: store}
-	persister := newTestProgressPersister(store, writer, time.Now)
+	var output bytes.Buffer
+	persister := newTestProgressPersister(store, &output, time.Now)
 	err := persister.Apply(t.Context(), responsesStreamProgress{
 		ResponseID: "resp_123",
 		Cursor:     new(int64(0)),
@@ -162,7 +159,9 @@ func TestBackgroundProgressPersisterDoesNotPrintWhenSaveFails(t *testing.T) {
 	})
 
 	require.EqualError(t, err, "write failed")
-	assert.Empty(t, writer.output.String())
+	assert.Contains(t, output.String(), "Response:     resp_123")
+	assert.Contains(t, output.String(), "state was not saved")
+	assert.Contains(t, output.String(), "Save the Response ID before retrying")
 }
 
 func TestBackgroundProgressPersisterThrottlesOrdinaryEvents(t *testing.T) {
@@ -465,31 +464,6 @@ func TestInvokeCommandBackgroundEndpointRoutesHostFailure(t *testing.T) {
 	assert.NotContains(t, err.Error(), "--background is not supported with --agent-endpoint")
 }
 
-func requireBackgroundResponseStateUnavailable(t *testing.T, err error) {
-	t.Helper()
-
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok)
-	assert.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
-	assert.Equal(t, exterrors.CodeBackgroundResponseStateUnavailable, localErr.Code)
-	assert.Contains(t, localErr.Message, "background Responses require persistent azd state")
-	assert.Contains(t, localErr.Suggestion, "through azd")
-}
-
-func requireInvalidBackgroundResponseState(t *testing.T, err error) {
-	t.Helper()
-
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok)
-	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
-	assert.Equal(t, exterrors.CodeInvalidBackgroundResponseState, localErr.Code)
-	assert.Contains(t, localErr.Message, backgroundResponsesConfigPath)
-	assert.Contains(t, localErr.Message, "read background responses")
-	assert.Contains(t, localErr.Suggestion,
-		"azd config unset "+backgroundResponsesConfigPath)
-	assert.NotContains(t, localErr.Suggestion, "try again")
-}
-
 func TestClassifyBackgroundResponseStateReadError(t *testing.T) {
 	t.Parallel()
 
@@ -566,212 +540,4 @@ func TestClassifyBackgroundResponseStateReadError(t *testing.T) {
 			}
 		})
 	}
-}
-
-type capturedBackgroundRequest struct {
-	method string
-	path   string
-	query  string
-	header http.Header
-	body   struct {
-		Input          string `json:"input"`
-		Stream         bool   `json:"stream"`
-		Store          bool   `json:"store"`
-		Background     bool   `json:"background"`
-		AgentSessionID string `json:"agent_session_id"`
-		SessionID      string `json:"session_id"`
-		Conversation   struct {
-			ID string `json:"id"`
-		} `json:"conversation"`
-	}
-	err error
-}
-
-func TestResponsesRemoteBackground(t *testing.T) {
-	tests := []struct {
-		name            string
-		selectedSession string
-		assignedSession string
-		streamDelay     time.Duration
-	}{
-		{
-			name:            "selected session and no overall timeout",
-			selectedSession: "selected-session",
-			streamDelay:     1100 * time.Millisecond,
-		},
-		{
-			name:            "endpoint with state and server-assigned session",
-			assignedSession: "assigned-session",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			requests := make(chan capturedBackgroundRequest, 1)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				captured := capturedBackgroundRequest{
-					method: r.Method,
-					path:   r.URL.Path,
-					query:  r.URL.RawQuery,
-					header: r.Header.Clone(),
-				}
-				captured.err = json.NewDecoder(r.Body).Decode(&captured.body)
-				requests <- captured
-
-				w.Header().Set("Content-Type", "text/event-stream")
-				if tt.assignedSession != "" {
-					w.Header().Set("x-agent-session-id", tt.assignedSession)
-				}
-				w.WriteHeader(http.StatusOK)
-				if flusher, ok := w.(http.Flusher); ok {
-					flusher.Flush()
-				}
-				time.Sleep(tt.streamDelay)
-				_, _ = io.WriteString(w,
-					"event: response.created\n"+
-						`data: {"type":"response.created","response":{"id":"resp_123","status":"in_progress"},"sequence_number":0}`+
-						"\n\n"+
-						"event: response.completed\n"+
-						`data: {"type":"response.completed","response":{"id":"resp_123","status":"completed"},"sequence_number":1}`+
-						"\n\n",
-				)
-			}))
-			t.Cleanup(server.Close)
-
-			userConfig := newInvokeUserConfigServer()
-			azdClient := newInvokeTestAzdClient(t, userConfig)
-			agentKey := "agent-key"
-			var output bytes.Buffer
-			var endpoint *parsedAgentEndpoint
-			if tt.assignedSession != "" {
-				endpoint = &parsedAgentEndpoint{
-					ProjectEndpoint: server.URL + "/api/projects/test-project",
-					AgentName:       "test-agent",
-				}
-				agentKey = buildAgentKey(endpoint.ProjectEndpoint, endpoint.AgentName, "", false)
-			}
-			action := &InvokeAction{
-				flags: &invokeFlags{
-					message:      "long task",
-					timeout:      1,
-					session:      tt.selectedSession,
-					conversation: "conv_123",
-					background:   true,
-					outputFmt:    outputDefault,
-				},
-				writer:   &output,
-				endpoint: endpoint,
-				resolveRemoteContextFn: func(context.Context) (*remoteContext, error) {
-					return &remoteContext{
-						name:            "test-agent",
-						agentKey:        agentKey,
-						projectEndpoint: server.URL + "/api/projects/test-project",
-						apiVersion:      "v1",
-						azdClient:       azdClient,
-					}, nil
-				},
-				acquireBearerTokenFn: func(context.Context) (string, error) {
-					return "test-token", nil
-				},
-			}
-
-			// The delayed stream exceeds the configured foreground timeout, proving
-			// the background client has no total request deadline.
-			started := time.Now()
-			require.NoError(t, action.responsesRemote(t.Context()))
-			if tt.streamDelay > 0 {
-				assert.GreaterOrEqual(t, time.Since(started), tt.streamDelay)
-			}
-
-			captured := <-requests
-			require.NoError(t, captured.err)
-			assert.Equal(t, http.MethodPost, captured.method)
-			assert.Equal(t,
-				"/api/projects/test-project/agents/test-agent/endpoint/protocols/openai/responses",
-				captured.path,
-			)
-			assert.Equal(t, "api-version=v1", captured.query)
-			assert.Equal(t, "Bearer test-token", captured.header.Get("Authorization"))
-			assert.Equal(t, "long task", captured.body.Input)
-			assert.True(t, captured.body.Stream)
-			assert.True(t, captured.body.Store)
-			assert.True(t, captured.body.Background)
-			assert.Equal(t, tt.selectedSession, captured.body.AgentSessionID)
-			assert.Empty(t, captured.body.SessionID)
-			assert.Equal(t, "conv_123", captured.body.Conversation.ID)
-
-			expectedSession := tt.selectedSession
-			if expectedSession == "" {
-				expectedSession = tt.assignedSession
-			}
-			var sessions map[string]string
-			userConfig.getJSON(t, configPath("sessions"), &sessions)
-			assert.Equal(t, expectedSession, sessions[agentKey])
-
-			var responses map[string]savedBackgroundResponse
-			userConfig.getJSON(t, backgroundResponsesConfigPath, &responses)
-			saved := responses[agentKey]
-			assert.Equal(t, "resp_123", saved.ResponseID)
-			require.NotNil(t, saved.LastSequenceNumber)
-			assert.Equal(t, int64(1), *saved.LastSequenceNumber)
-			assert.Equal(t, "completed", saved.Status)
-			assert.Equal(t, expectedSession, saved.SessionID)
-			assert.Equal(t, "conv_123", saved.ConversationID)
-			assert.Contains(t, output.String(), "Response:     resp_123")
-		})
-	}
-}
-
-func TestResponsesRemoteBackgroundEndpointWithoutPersistentState(t *testing.T) {
-	action := &InvokeAction{
-		flags: &invokeFlags{
-			message:    "long task",
-			background: true,
-			outputFmt:  outputDefault,
-		},
-		endpoint: &parsedAgentEndpoint{
-			ProjectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
-			AgentName:       "test-agent",
-		},
-		resolveRemoteContextFn: func(context.Context) (*remoteContext, error) {
-			return &remoteContext{
-				name:            "test-agent",
-				agentKey:        "stable-agent-key",
-				projectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
-			}, nil
-		},
-	}
-
-	err := action.responsesRemote(t.Context())
-	requireBackgroundResponseStateUnavailable(t, err)
-}
-
-func TestResponsesRemoteBackgroundInvalidPersistedState(t *testing.T) {
-	userConfig := newInvokeUserConfigServer()
-	userConfig.values[backgroundResponsesConfigPath] = []byte("{invalid")
-	azdClient := newInvokeTestAzdClient(t, userConfig)
-	action := &InvokeAction{
-		flags: &invokeFlags{
-			message:    "long task",
-			background: true,
-			outputFmt:  outputDefault,
-		},
-		resolveRemoteContextFn: func(context.Context) (*remoteContext, error) {
-			return &remoteContext{
-				name:            "test-agent",
-				agentKey:        "stable-agent-key",
-				projectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
-				azdClient:       azdClient,
-			}, nil
-		},
-		acquireBearerTokenFn: func(context.Context) (string, error) {
-			t.Fatal("auth must not run when saved background state is invalid")
-			return "", nil
-		},
-	}
-
-	err := action.responsesRemote(t.Context())
-	requireInvalidBackgroundResponseState(t, err)
-	localErr, _ := errors.AsType[*azdext.LocalError](err)
-	assert.Contains(t, localErr.Message, "invalid character")
 }

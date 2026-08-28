@@ -325,14 +325,10 @@ func resolveStoredIDFromPath(
 // printSessionStatus prints the session line for the invoke banner.
 // label is the formatted prefix (e.g. "Session:  " or "Session:      ").
 func printSessionStatus(label, sid string) {
-	writeSessionStatus(os.Stdout, label, sid)
-}
-
-func writeSessionStatus(writer io.Writer, label, sid string) {
 	if sid != "" {
-		fmt.Fprintf(writer, "%s%s\n", label, sid)
+		fmt.Printf("%s%s\n", label, sid)
 	} else {
-		fmt.Fprintf(writer, "%s(new -- server will assign)\n", label)
+		fmt.Printf("%s(new -- server will assign)\n", label)
 	}
 }
 
@@ -349,25 +345,13 @@ func captureResponseSession(
 	resp *http.Response,
 	label string,
 ) {
-	captureResponseSessionToWriter(ctx, azdClient, agentKey, sid, resp, label, os.Stdout)
-}
-
-func captureResponseSessionToWriter(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	agentKey string,
-	sid string,
-	resp *http.Response,
-	label string,
-	writer io.Writer,
-) {
 	if sid != "" || azdClient == nil {
 		return
 	}
 	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
 		saveContextValue(ctx, azdClient, agentKey, newSid, "sessions")
 		if label != "" {
-			fmt.Fprintf(writer, "%s%s (assigned by server)\n", label, newSid)
+			fmt.Printf("%s%s (assigned by server)\n", label, newSid)
 		}
 	}
 }

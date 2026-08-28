@@ -74,6 +74,39 @@ func TestReadResponsesSSEDataOnlyAndMultiline(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestReadResponsesSSEMalformedEventHandling(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		stream  string
+		wantErr bool
+	}{
+		{
+			name:    "data-only event",
+			stream:  "data: {not-json}\n\n",
+			wantErr: true,
+		},
+		{
+			name:   "explicit unknown event",
+			stream: "event: response.future_extension\ndata: {not-json}\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := readResponsesSSE(t.Context(), strings.NewReader(tt.stream), io.Discard, "agent", false, nil)
+			if tt.wantErr {
+				require.ErrorContains(t, err, "decode Responses SSE event")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestReadResponsesSSEBackgroundRequiresTerminal(t *testing.T) {
 	t.Parallel()
 
@@ -336,11 +369,11 @@ func TestReadResponsesSSEEventSizeLimit(t *testing.T) {
 		},
 		{
 			name:   "empty data fields count newline separators",
-			stream: strings.Repeat("data:\n", limit+1) + "\n",
+			stream: "event: ignored\n" + strings.Repeat("data:\n", limit+1) + "\n",
 		},
 		{
 			name:    "many empty data fields exceed limit",
-			stream:  strings.Repeat("data:\n", limit+2) + "\n",
+			stream:  "event: ignored\n" + strings.Repeat("data:\n", limit+2) + "\n",
 			wantErr: true,
 		},
 	}

@@ -177,7 +177,7 @@ func readResponsesSSEWithInitialStateAndLimit(
 			if event.name == "error" {
 				return fmt.Errorf("agent stream error: %s", event.data)
 			}
-			if !isKnownResponsesEvent(event.name) {
+			if event.name != "" && !isKnownResponsesEvent(event.name) {
 				return nil
 			}
 			return fmt.Errorf("decode Responses SSE event: %w", err)

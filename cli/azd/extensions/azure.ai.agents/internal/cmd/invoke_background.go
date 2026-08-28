@@ -212,6 +212,15 @@ func (p *backgroundProgressPersister) takeTimerErrorLocked() error {
 func (p *backgroundProgressPersister) persistLocked(ctx context.Context, now time.Time) error {
 	p.stopTimerLocked()
 	if err := p.store.Save(ctx, p.agentKey, p.latest); err != nil {
+		if !p.printedResponseID {
+			_, _ = fmt.Fprintf(
+				p.writer,
+				"Response:     %s\nWARNING: This background Response was accepted, but its state was not saved. "+
+					"Save the Response ID before retrying.\n",
+				p.latest.ResponseID,
+			)
+			p.printedResponseID = true
+		}
 		return err
 	}
 	if !p.printedResponseID {

@@ -59,3 +59,43 @@ func TestUserConfigResponseStateStoreCursorIsMonotonic(t *testing.T) {
 	assert.Equal(t, int64(10), *got.LastSequenceNumber)
 	assert.Equal(t, "completed", got.Status)
 }
+
+func TestCleanupAgentStateForKey(t *testing.T) {
+	t.Parallel()
+
+	const (
+		agentKey = "agent-key"
+		otherKey = "other-agent-key"
+	)
+	server := newInvokeUserConfigServer()
+	server.setJSON(t, configPath("sessions"), map[string]string{
+		agentKey: "sess_123",
+		otherKey: "sess_other",
+	})
+	server.setJSON(t, configPath("conversations"), map[string]string{
+		agentKey: "conv_123",
+		otherKey: "conv_other",
+	})
+	server.setJSON(t, backgroundResponsesConfigPath, map[string]savedBackgroundResponse{
+		agentKey: {ResponseID: "resp_123"},
+		otherKey: {ResponseID: "resp_other"},
+	})
+	client := newInvokeTestAzdClient(t, server)
+
+	require.True(t, cleanupAgentStateForKey(t.Context(), client, agentKey))
+
+	var sessions map[string]string
+	server.getJSON(t, configPath("sessions"), &sessions)
+	assert.NotContains(t, sessions, agentKey)
+	assert.Equal(t, "sess_other", sessions[otherKey])
+
+	var conversations map[string]string
+	server.getJSON(t, configPath("conversations"), &conversations)
+	assert.NotContains(t, conversations, agentKey)
+	assert.Equal(t, "conv_other", conversations[otherKey])
+
+	var responses map[string]savedBackgroundResponse
+	server.getJSON(t, backgroundResponsesConfigPath, &responses)
+	assert.NotContains(t, responses, agentKey)
+	assert.Equal(t, "resp_other", responses[otherKey].ResponseID)
+}

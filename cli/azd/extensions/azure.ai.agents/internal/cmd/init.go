@@ -2032,7 +2032,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 	cmd.Flags().StringVar(&flags.kind, "kind", "",
 		"Agent kind to initialize. Supports 'prompt-voice' and 'hosted-voice'. "+
-			"Hosted voice uses local code for a Voice Bridge target and creates a Voice wrapper.")
+			"Prompt voice creates a managed declarative Voice Agent without code scaffolding. "+
+			"Hosted voice uses local code for a Voice Bridge target and creates a managed Voice wrapper.")
 
 	cmd.Flags().StringVar(&flags.voice, "voice", "",
 		"Output voice name for private prompt-voice automation. Hidden until public preview.")

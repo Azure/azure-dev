@@ -366,7 +366,9 @@ const (
 	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
 )
 
-// VoiceTargetAgentReference pins a voice wrapper to a hosted agent version.
+// VoiceTargetAgentReference is the data-plane target_agent object on a managed
+// voice wrapper. Name identifies the hosted agent that receives Voice Bridge
+// turns; Version optionally pins the wrapper to one immutable hosted version.
 type VoiceTargetAgentReference struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`

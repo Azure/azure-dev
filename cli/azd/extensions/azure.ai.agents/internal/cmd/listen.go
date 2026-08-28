@@ -504,6 +504,8 @@ func resolveAgentServiceConfigWithProjectOverrides(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (*azdext.ServiceConfig, error) {
+	// Resolve project-relative fields on an isolated protobuf copy so listen
+	// does not mutate the shared project service configuration.
 	resolvedSvc := proto.Clone(svc).(*azdext.ServiceConfig)
 	if err := project.ResolveServiceConfigInPlace(resolvedSvc, projectRoot); err != nil {
 		return nil, err

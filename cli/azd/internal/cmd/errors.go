@@ -342,6 +342,8 @@ func classifySentinel(err error) string {
 		return "internal.service_not_found"
 	case errors.Is(err, internal.ErrNoExtensionsAvailable):
 		return "internal.no_extensions_available"
+	case errors.Is(err, internal.ErrNoExtensionVersionsAvailable):
+		return "internal.no_extension_versions_available"
 	case errors.Is(err, internal.ErrValidationFailed):
 		return "internal.validation_failed"
 	case errors.Is(err, internal.ErrUnsupportedOperation):

@@ -8,9 +8,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -346,6 +344,8 @@ func TestTelemetryFieldConstants(t *testing.T) {
 // Legitimately excluded from the scan:
 //   - *_test.go files (test fixtures build raw attributes on purpose): Tests is
 //     false, so go/packages does not load them.
+//   - Platform-specific files for other operating systems are covered by the
+//     native Linux, Windows, and macOS CI jobs.
 //   - Nested modules (extensions/*, test/evals, test data samples) have their own
 //     go.mod and are not matched by the "./..." pattern. Extension telemetry is
 //     out of scope by design, not merely by mechanics: extensions are separate
@@ -353,53 +353,18 @@ func TestTelemetryFieldConstants(t *testing.T) {
 //     the extension that reports them, per docs/specs/metrics-audit/
 //     privacy-review-checklist.md, rather than against the core fields catalog.
 func TestNoRawTelemetryAttributes(t *testing.T) {
-	t.Parallel()
+	// This test loads and type-checks the full module for the host platform.
+	// Keep it serial so it does not compete with the cmd package's parallel tests.
 
 	// The test runs with its package directory (cli/azd/cmd) as the working
 	// directory, so the module root is one level up.
 	azdRoot, err := filepath.Abs("..")
 	require.NoError(t, err)
 
-	// The guard is a repository-wide invariant, but go/packages only loads the
-	// files that the active GOOS and build tags select. A raw attribute added to
-	// platform-specific product code (for example a *_windows.go file) would slip
-	// past a scan that runs under a single GOOS, because Linux CI never compiles
-	// the Windows-only files. Scan under every shipped GOOS so the invariant covers
-	// all code that ships. The host GOOS is scanned strictly: a load/type-check
-	// error fails the test, because a package that does not type-check can silently
-	// hide a violation. The cross-compiled GOOS runs are best-effort — packages
-	// that need a cross C toolchain (cgo, e.g. pkg/oneauth) or are otherwise
-	// host-bound can legitimately fail to load off their own platform, so their
-	// load errors are tolerated while every file that does load is still scanned.
-	goosSet := map[string]bool{"linux": true, "windows": true, "darwin": true}
-	goosSet[runtime.GOOS] = true
-	targets := make([]string, 0, len(goosSet))
-	for goos := range goosSet {
-		targets = append(targets, goos)
-	}
-	sort.Strings(targets)
-
-	seen := map[string]bool{}
-	var violations []string
-	for _, goos := range targets {
-		strict := goos == runtime.GOOS
-		found, loadErrors := scanModuleForRawAttributes(azdRoot, goos, strict)
-
-		// A package that failed to type-check under the host GOOS would silently
-		// hide violations, so a load error there is a failure rather than a false
-		// pass. Cross-compiled runs tolerate load errors (see above).
-		if strict {
-			require.Empty(t, loadErrors,
-				"packages failed to load/type-check under GOOS=%s:\n%s",
-				goos, strings.Join(loadErrors, "\n"))
-		}
-		for _, v := range found {
-			if !seen[v] {
-				seen[v] = true
-				violations = append(violations, v)
-			}
-		}
-	}
+	violations, loadErrors := scanModuleForRawAttributes(azdRoot)
+	require.Empty(t, loadErrors,
+		"packages failed to load/type-check:\n%s",
+		strings.Join(loadErrors, "\n"))
 	sort.Strings(violations)
 
 	if len(violations) > 0 {
@@ -415,33 +380,23 @@ func TestNoRawTelemetryAttributes(t *testing.T) {
 	}
 }
 
-// scanModuleForRawAttributes loads the cli/azd module for the given GOOS and runs
-// the raw-attribute guard over every file that resolves with type information. It
-// returns the violation messages and, separately, any package load/type-check
-// errors so the caller can decide whether they are fatal (host GOOS) or tolerated
-// (cross-compiled GOOS). Cross-compiled runs disable cgo so a missing cross C
-// toolchain does not abort the load; the affected packages surface as tolerated
-// load errors instead.
-func scanModuleForRawAttributes(azdRoot, goos string, strict bool) (violations, loadErrors []string) {
-	env := os.Environ()
-	env = append(env, "GOOS="+goos)
-	if !strict {
-		env = append(env, "CGO_ENABLED=0")
-	}
-
+// scanModuleForRawAttributes loads the cli/azd module for the host platform and
+// runs the raw-attribute guard over every file that resolves with type
+// information. Native Linux, Windows, and macOS CI jobs collectively cover the
+// platform-specific files for every shipped operating system.
+func scanModuleForRawAttributes(azdRoot string) (violations, loadErrors []string) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
 			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
 		Dir:   azdRoot,
 		Tests: false,
-		Env:   env,
 	}
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
-		return nil, []string{fmt.Sprintf("  GOOS=%s: %s", goos, err.Error())}
+		return nil, []string{fmt.Sprintf("  %s", err.Error())}
 	}
 	if len(pkgs) == 0 {
-		return nil, []string{fmt.Sprintf("  GOOS=%s: no packages loaded from the cli/azd module", goos)}
+		return nil, []string{"  no packages loaded from the cli/azd module"}
 	}
 
 	for _, pkg := range pkgs {

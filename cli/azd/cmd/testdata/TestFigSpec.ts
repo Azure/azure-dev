@@ -5985,7 +5985,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--version', '-v'],
-							description: 'The version of the extension to install',
+							description: 'The version of the extension to install. Cannot be used with an extension bundle',
 							args: [
 								{
 									name: 'version',

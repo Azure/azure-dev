@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -88,6 +89,100 @@ func runActionSafe(ctx context.Context, action *initAction) (retErr error) {
 
 	_, err := action.Run(ctx)
 	return err
+}
+
+func TestInitializeExtensionsAppliesAzdCompatibility(t *testing.T) {
+	const registryURL = "https://test.example.com/registry.json"
+
+	tests := []struct {
+		name              string
+		versionConstraint string
+		versions          []extensions.ExtensionVersion
+		expectedVersion   string
+		wantErr           string
+	}{
+		{
+			name:              "installs exact compatible version",
+			versionConstraint: "1.0.0",
+			versions: []extensions.ExtensionVersion{
+				{
+					Version:      "1.0.0",
+					Dependencies: []extensions.ExtensionDependency{{Id: "test.child"}},
+				},
+				{
+					Version:            "2.0.0",
+					RequiredAzdVersion: ">=2.0.0",
+					Dependencies:       []extensions.ExtensionDependency{{Id: "test.child"}},
+				},
+			},
+			expectedVersion: "1.0.0",
+		},
+		{
+			name:              "rejects exact incompatible version",
+			versionConstraint: "2.0.0",
+			versions: []extensions.ExtensionVersion{
+				{
+					Version:            "2.0.0",
+					RequiredAzdVersion: ">=2.0.0",
+					Dependencies:       []extensions.ExtensionDependency{{Id: "test.child"}},
+				},
+			},
+			wantErr: `extension "test.pack" version "2.0.0" is not compatible with azd 1.0.0`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockCtx := mocks.NewMockContext(t.Context())
+			manager, _ := createUpgradeTestManagerWithOptions(
+				t,
+				mockCtx,
+				map[string]*extensions.Extension{
+					"test.child": {
+						Id:      "test.child",
+						Version: "1.0.0",
+						Source:  "test",
+					},
+				},
+				registryURL,
+				extensions.Registry{
+					SchemaVersion: extensions.CurrentRegistrySchemaVersion,
+					Extensions: []*extensions.ExtensionMetadata{{
+						Id:       "test.pack",
+						Versions: test.versions,
+					}},
+				},
+				extensions.ManagerOptions{AzdVersion: semver.MustParse("1.0.0")},
+			)
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			require.NoError(t, project.Save(t.Context(), &project.ProjectConfig{
+				Name: "test-project",
+				RequiredVersions: &project.RequiredVersions{
+					Extensions: map[string]*string{
+						"test.pack": new(test.versionConstraint),
+					},
+				},
+			}, azdCtx.ProjectPath()))
+			action := &initAction{
+				console:           mockCtx.Console,
+				extensionsManager: manager,
+				flags: &initFlags{
+					global: &internal.GlobalCommandOptions{},
+				},
+			}
+
+			err := action.initializeExtensions(t.Context(), azdCtx)
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			installed, err := manager.GetInstalled(extensions.FilterOptions{Id: "test.pack"})
+			require.NoError(t, err)
+			require.Equal(t, test.expectedVersion, installed.Version)
+		})
+	}
 }
 
 func TestInitNoPromptRequiresMode(t *testing.T) {

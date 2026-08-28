@@ -42,8 +42,8 @@ func TestFetchAndValidateHostedVoiceTargetClassifiesAzureFailure(t *testing.T) {
 	) (*agent_api.AgentVersionObject, error) {
 		return nil, &azcore.ResponseError{StatusCode: http.StatusForbidden}
 	})
-	var serviceErr *azdext.ServiceError
-	require.ErrorAs(t, err, &serviceErr)
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
 	require.Contains(t, serviceErr.Message, "getting hosted voice target version")
 }
 

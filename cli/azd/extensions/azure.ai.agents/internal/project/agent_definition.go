@@ -803,6 +803,13 @@ func agentDefinitionFromStruct(
 	if inline.Kind != agent_yaml.AgentKindHosted {
 		definition := any(s.AsMap())
 		if inline.Kind == agent_yaml.AgentKindPromptVoice {
+			if inline.Toolbox != nil {
+				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"toolbox is not supported on prompt voice agents",
+					"remove toolbox from the prompt voice agent definition",
+				)
+			}
 			if len(inline.Policies) > 0 {
 				for _, policy := range inline.Policies {
 					if policy.InvocationsModeration != nil {

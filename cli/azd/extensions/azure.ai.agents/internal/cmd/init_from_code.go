@@ -1001,8 +1001,11 @@ func addHostedVoiceWrapperToProject(
 ) error {
 	wrapperName := hostedVoiceWrapperName(targetServiceName)
 	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil || response.Project == nil {
+	if err != nil {
 		return fmt.Errorf("loading project services before adding hosted voice wrapper: %w", err)
+	}
+	if response == nil || response.Project == nil {
+		return fmt.Errorf("loading project services before adding hosted voice wrapper: project response is empty")
 	}
 	if _, exists := response.Project.Services[wrapperName]; exists {
 		return exterrors.Validation(

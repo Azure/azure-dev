@@ -330,6 +330,10 @@ services:
     metadata:
       voiceLiveCompatible: "true"
       bridgeProtocolVersion: "1.0"
+    container:
+      resources:
+        cpu: "1"
+        memory: 2Gi
     codeConfiguration:
       runtime: dotnet_10
       entryPoint: VoiceHostedAgent.dll

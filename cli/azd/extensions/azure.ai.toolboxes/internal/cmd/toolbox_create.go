@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/foundry/projectctx"
 	"azure.ai.toolboxes/internal/pkg/azure"
@@ -117,67 +118,24 @@ func runToolboxCreateWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
 	}
 
-	description := ""
-	entries := []map[string]any{}
-	skillEntries := []map[string]any{}
-	var policies *azure.ToolboxPolicies
-
+	input := &definition.Definition{}
 	if strings.TrimSpace(verb.fromFile) != "" {
-		var input toolboxCreateFile
-		if err := parseToolboxFile(verb.fromFile, &input); err != nil {
-			return err
-		}
-		description = input.Description
-		resolvedEntries, err := resolveConnectionSpecs(ctx, resolver, endpoint, input.Connections)
+		loaded, err := loadLocalToolboxDefinition(verb.fromFile)
 		if err != nil {
 			return err
 		}
-		entries = append(entries, resolvedEntries...)
-		for _, s := range input.Skills {
-			if err := validateSkillName(s.Name); err != nil {
-				return err
-			}
-			skillEntries = append(skillEntries, buildSkillEntry(skillSpec{
-				Name:    strings.TrimSpace(s.Name),
-				Version: strings.TrimSpace(s.Version),
-			}))
-		}
-
-		rawEntries, err := validateRawToolEntries(input.Tools)
-		if err != nil {
-			return err
-		}
-		entries = append(entries, rawEntries...)
-
-		policies, err = buildToolboxPolicies(input.Policies)
-		if err != nil {
-			return err
-		}
+		input = loaded
 	}
-
-	if len(entries) == 0 {
+	if input.Name != "" && input.Name != name {
 		return exterrors.Validation(
 			exterrors.CodeInvalidToolboxName,
-			"toolbox create requires at least one tool entry",
-			"pass --from-file with a non-empty 'connections' or 'tools' list",
+			fmt.Sprintf("toolbox name %q in %q does not match command name %q", input.Name, verb.fromFile, name),
+			"use the same toolbox name in the definition and command, or remove 'name' from the definition",
 		)
 	}
-
-	if err := validateNoDuplicateConnectionIDs(entries); err != nil {
+	req, err := buildToolboxVersionRequest(ctx, resolver, endpoint, input)
+	if err != nil {
 		return err
-	}
-	if err := validateNoDuplicateSkills(skillEntries); err != nil {
-		return err
-	}
-	if err := validateNoDuplicateToolNames(entries); err != nil {
-		return err
-	}
-
-	req := &azure.CreateToolboxVersionRequest{
-		Description: description,
-		Tools:       entries,
-		Skills:      skillEntries,
-		Policies:    policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, name, req)
 	if err != nil {
@@ -192,6 +150,65 @@ func runToolboxCreateWith(
 	}
 
 	return emitCreateResult(name, created.Version, parent.output, mcpURL)
+}
+
+func buildToolboxVersionRequest(
+	ctx context.Context,
+	resolver connectionResolver,
+	endpoint string,
+	input *definition.Definition,
+) (*azure.CreateToolboxVersionRequest, error) {
+	entries, err := resolveConnectionSpecs(ctx, resolver, endpoint, input.Connections)
+	if err != nil {
+		return nil, err
+	}
+
+	skillEntries := make([]map[string]any, 0, len(input.Skills))
+	for _, skill := range input.Skills {
+		if err := validateSkillName(skill.Name); err != nil {
+			return nil, err
+		}
+		skillEntries = append(skillEntries, buildSkillEntry(skillSpec{
+			Name:    strings.TrimSpace(skill.Name),
+			Version: strings.TrimSpace(skill.Version),
+		}))
+	}
+
+	rawEntries, err := validateRawToolEntries(input.Tools)
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, rawEntries...)
+
+	policies, err := buildToolboxPolicies(input.Policies)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(entries) == 0 && len(skillEntries) == 0 {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidToolboxName,
+			"toolbox definition requires at least one tool or skill entry",
+			"add a connection, skill, or raw tool to the toolbox definition",
+		)
+	}
+	if err := validateNoDuplicateConnectionIDs(entries); err != nil {
+		return nil, err
+	}
+	if err := validateNoDuplicateSkills(skillEntries); err != nil {
+		return nil, err
+	}
+	if err := validateNoDuplicateToolNames(entries); err != nil {
+		return nil, err
+	}
+
+	return &azure.CreateToolboxVersionRequest{
+		Description: input.Description,
+		Metadata:    input.Metadata,
+		Tools:       entries,
+		Skills:      skillEntries,
+		Policies:    policies,
+	}, nil
 }
 
 func emitCreateResult(name, version, output, mcpURL string) error {
@@ -267,7 +284,7 @@ func buildToolboxPolicies(spec *toolboxPoliciesSpec) (*azure.ToolboxPolicies, er
 	if spec == nil || spec.RaiConfig == nil {
 		return nil, nil
 	}
-	name := spec.RaiConfig.resolvedPolicyName()
+	name := spec.RaiConfig.ResolvedPolicyName()
 	if name == "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,

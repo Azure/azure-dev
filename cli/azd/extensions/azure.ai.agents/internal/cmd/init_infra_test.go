@@ -1986,6 +1986,53 @@ services:
 	assert.NoDirExists(t, filepath.Join(nestedDir, "infra"))
 }
 
+func TestEjectInfraAfterInit_UsesActiveEnvironmentForCondition(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	t.Setenv("ENABLE_CONNECTION", "true")
+	projectRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: test
+services:
+  ai-project:
+    host: azure.ai.project
+  active-connection:
+    host: azure.ai.connection
+    condition: ${ENABLE_CONNECTION}
+    category: ApiKey
+    target: https://example.test
+`)
+	t.Chdir(projectRoot)
+
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values: map[string]map[string]string{
+			"dev": {"ENABLE_CONNECTION": "false"},
+		},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfraAfterInit(t.Context(), "bicep", azdClient))
+	})
+
+	// G304: the test path comes from t.TempDir.
+	//nolint:gosec
+	raw, err := os.ReadFile(filepath.Join(projectRoot, "infra", "main.parameters.json"))
+	require.NoError(t, err)
+	var doc struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &doc))
+
+	require.Contains(t, doc.Parameters, "connections")
+	connections, ok := doc.Parameters["connections"].Value.([]any)
+	require.True(t, ok, "connections should be an array, got %T",
+		doc.Parameters["connections"].Value)
+	assert.Empty(t, connections,
+		"the active azd environment must override the process environment")
+}
+
 func TestInitInfra_StandaloneEjectResolvesParentProject(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	projectRoot := t.TempDir()
@@ -1997,6 +2044,13 @@ services:
 	nestedDir := filepath.Join(projectRoot, "src", "agent")
 	require.NoError(t, os.MkdirAll(nestedDir, 0750))
 	t.Chdir(nestedDir)
+	t.Setenv("AZD_SERVER", newTestAzdServer(
+		t,
+		&testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "dev"},
+		},
+		&testWorkflowServiceServer{},
+	))
 
 	cmd := newInitCommand(&azdext.ExtensionContext{})
 	cmd.SetArgs([]string{"--infra"})

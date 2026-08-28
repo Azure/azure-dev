@@ -34,6 +34,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/botservice"
+	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 
@@ -182,7 +183,7 @@ type AgentServiceTargetProvider struct {
 	// its local $ref includes expanded. Cleared whenever a newer
 	// config is adopted.
 	serviceConfigResolved bool
-	credential            *azidentity.AzureDeveloperCLICredential
+	credential            azcore.TokenCredential
 	tenantId              string
 	env                   *azdext.Environment
 	foundryProject        *arm.ResourceID
@@ -194,12 +195,6 @@ type AgentServiceTargetProvider struct {
 const (
 	preBuiltImageArtifactSourceKey = "azure.ai.agents.imageSource"
 	preBuiltImageArtifactSource    = "agent.yaml"
-)
-
-// containerImageRefRe is a basic pattern for container image references:
-// [registry/]repository[:tag|@digest]
-var containerImageRefRe = regexp.MustCompile(
-	`^[a-zA-Z0-9]([a-zA-Z0-9._-]*/)*[a-zA-Z0-9][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+|@sha256:[0-9a-fA-F]{64})?$`,
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
@@ -215,6 +210,71 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 // only when a deploy-time entrypoint needs it.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	p.adoptServiceConfig(serviceConfig)
+	props := ServiceConfigProps(serviceConfig)
+	hasRef := props != nil && props.GetFields()["$ref"] != nil
+	needsLegacyLifecycleCheck := props == nil && strings.TrimSpace(serviceConfig.GetImage()) != "" &&
+		!serviceConfig.GetDocker().GetImagePassthrough()
+	if hasRef || needsLegacyLifecycleCheck {
+		proj, err := p.azdClient.Project().Get(ctx, nil)
+		if err != nil {
+			return exterrors.Dependency(
+				exterrors.CodeProjectNotFound,
+				fmt.Sprintf("failed to get project while resolving agent service: %s", err),
+				"run 'azd init' to initialize your project",
+			)
+		}
+		p.projectPath = proj.GetProject().GetPath()
+		if hasRef {
+			if err := p.resolveServiceConfig(); err != nil {
+				return err
+			}
+		} else {
+			agentDef, _, source, err := LoadAgentDefinition(serviceConfig, p.projectPath)
+			if err != nil {
+				return err
+			}
+			if source.IsLegacy() && strings.TrimSpace(agentDef.RegistryConnectionID) != "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidServiceConfig,
+					"registryConnectionId requires docker.imagePassthrough: true",
+					"enable docker.imagePassthrough for the private pre-built image",
+				)
+			}
+		}
+	}
+	return validateRegistryConnectionServiceConfig(p.serviceConfig)
+}
+
+func validateRegistryConnectionServiceConfig(serviceConfig *azdext.ServiceConfig) error {
+	props := ServiceConfigProps(serviceConfig)
+	if props == nil || props.GetFields()["registryConnectionId"] == nil {
+		return nil
+	}
+
+	dockerOptions := serviceConfig.GetDocker()
+	if !dockerOptions.GetImagePassthrough() {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId requires docker.imagePassthrough: true",
+			"enable docker.imagePassthrough for the private pre-built image",
+		)
+	}
+	if dockerOptions.GetRemoteBuild() {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId cannot be combined with docker.remoteBuild",
+			"remove docker.remoteBuild and use image passthrough",
+		)
+	}
+
+	agentDef, _, found, _, err := AgentDefinitionFromService(serviceConfig)
+	if err != nil {
+		return err
+	}
+	if found {
+		return validateRegistryConnectionDefinition(agentDef)
+	}
+
 	return nil
 }
 
@@ -690,8 +750,19 @@ func (p *AgentServiceTargetProvider) Package(
 		return nil, err
 	}
 	serviceConfig = p.serviceConfig
-	// Code deploy: ZIP the source directory
-	if p.isCodeDeployAgent() {
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
+		return &azdext.ServicePackageResult{}, nil
+	}
+	if err := validateRegistryConnectionDefinition(agentDef); err != nil {
+		return nil, err
+	}
+
+	// Code deploy takes precedence over stale or mixed image configuration.
+	if agentDef.CodeConfiguration != nil {
 		progress("Packaging code")
 		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
 		if err != nil {
@@ -713,12 +784,22 @@ func (p *AgentServiceTargetProvider) Package(
 		}, nil
 	}
 
-	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
-	if err != nil {
-		return nil, err
-	}
-	if !isContainerAgent {
-		return &azdext.ServicePackageResult{}, nil
+	// Core image passthrough owns the artifact lifecycle for all pre-built images,
+	// whether the source registry is public or accessed through a Foundry connection.
+	if serviceConfig.GetDocker().GetImagePassthrough() {
+		// The core Docker framework packages before this target and adds its artifact
+		// to the shared context. Do not return it again from the target.
+		if findImagePassthroughArtifact(serviceContext.Package) != nil {
+			return &azdext.ServicePackageResult{}, nil
+		}
+
+		// Keep direct extension callers compatible when core has not packaged first.
+		progress("Packaging pre-built container image")
+		artifacts, err := p.packageContainer(ctx, serviceConfig, serviceContext)
+		if err != nil {
+			return nil, err
+		}
+		return &azdext.ServicePackageResult{Artifacts: artifacts}, nil
 	}
 
 	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
@@ -766,23 +847,33 @@ func (p *AgentServiceTargetProvider) Package(
 			serviceContext.Build = append(serviceContext.Build, buildResponse.Result.Artifacts...)
 		}
 
-		packageRequest := &azdext.ContainerPackageRequest{
-			ServiceName:    serviceConfig.Name,
-			ServiceContext: serviceContext,
-		}
-		packageResponse, err := p.azdClient.
-			Container().
-			Package(ctx, packageRequest)
+		artifacts, err := p.packageContainer(ctx, serviceConfig, serviceContext)
 		if err != nil {
-			return nil, exterrors.FromHost(err, exterrors.OpContainerPackage, "container package failed")
+			return nil, err
 		}
 
-		newArtifacts = append(newArtifacts, packageResponse.Result.Artifacts...)
+		newArtifacts = append(newArtifacts, artifacts...)
 	}
 
 	return &azdext.ServicePackageResult{
 		Artifacts: newArtifacts,
 	}, nil
+}
+
+func (p *AgentServiceTargetProvider) packageContainer(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	serviceContext *azdext.ServiceContext,
+) ([]*azdext.Artifact, error) {
+	packageResponse, err := p.azdClient.Container().Package(ctx, &azdext.ContainerPackageRequest{
+		ServiceName:    serviceConfig.Name,
+		ServiceContext: serviceContext,
+	})
+	if err != nil {
+		return nil, exterrors.FromHost(err, exterrors.OpContainerPackage, "container package failed")
+	}
+
+	return packageResponse.Result.Artifacts, nil
 }
 
 // Publish performs the publish operation for the agent service
@@ -794,6 +885,20 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
+	p.adoptServiceConfig(serviceConfig)
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
+	serviceConfig = p.serviceConfig
+
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent || agentDef.CodeConfiguration != nil {
+		return &azdext.ServicePublishResult{}, nil
+	}
+
 	// A pre-built image does not start a container publish operation. Preserve
 	// this fast path; Activity Bot selection still runs in Deploy because the
 	// deployed agent identity is required to prefer an already-bound bot.
@@ -802,24 +907,6 @@ func (p *AgentServiceTargetProvider) Publish(
 		return &azdext.ServicePublishResult{
 			Artifacts: []*azdext.Artifact{preBuiltArtifact},
 		}, nil
-	}
-
-	p.adoptServiceConfig(serviceConfig)
-	if err := p.ensureDeployContext(ctx); err != nil {
-		return nil, err
-	}
-	serviceConfig = p.serviceConfig
-	// Code deploy skips Publish (no ACR needed)
-	if p.isCodeDeployAgent() {
-		return &azdext.ServicePublishResult{}, nil
-	}
-
-	_, isContainerAgent, err := p.loadContainerAgentDefinition()
-	if err != nil {
-		return nil, err
-	}
-	if !isContainerAgent {
-		return &azdext.ServicePublishResult{}, nil
 	}
 
 	progress("Publishing container")
@@ -1114,6 +1201,19 @@ func findPreBuiltImageArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
 	return nil
 }
 
+func findImagePassthroughArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
+	for _, artifact := range artifacts {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE &&
+			artifact.Location != "" &&
+			artifact.Metadata["imagePassthrough"] == "true" {
+			return artifact
+		}
+	}
+
+	return nil
+}
+
 func findPreBuiltImageArtifactInContext(serviceContext *azdext.ServiceContext) *azdext.Artifact {
 	if serviceContext == nil {
 		return nil
@@ -1327,6 +1427,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 		); err != nil {
 			return nil, err
 		}
+		if err := validateRegistryConnectionDefinition(agentDef); err != nil {
+			return nil, err
+		}
 	}
 
 	// Ensure Foundry project is loaded
@@ -1370,6 +1473,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if serviceTargetConfig != nil {
 		fmt.Println("Loaded custom service target configuration")
 	}
+	addAgentToolboxDependency(serviceTargetConfig, agentDef.Toolbox)
 	activityProfile, err := ResolveActivityProfileWithSettings(agentDef, serviceTargetConfig.Activity)
 	if err != nil {
 		return nil, exterrors.Validation(
@@ -1383,6 +1487,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Fprintln(os.Stderr, warning)
 	}
 	progress("Validating service dependencies")
+	if err := validateRegistryConnectionDependency(
+		ctx, serviceConfig, agentDef.RegistryConnectionID, p.projectServices, p.dependencyEnabled,
+	); err != nil {
+		return nil, err
+	}
 	if err := validateFoundryDependencies(
 		ctx, serviceConfig, serviceTargetConfig, p.projectServices, azdEnv, p.dependencyEnabled,
 	); err != nil {
@@ -1568,6 +1677,25 @@ func (p *AgentServiceTargetProvider) Deploy(
 		activityProfile,
 		serviceTargetConfig.Activity,
 	)
+}
+
+func addAgentToolboxDependency(
+	config *ServiceTargetAgentConfig,
+	reference *agent_yaml.ToolboxReference,
+) {
+	if config == nil || reference == nil {
+		return
+	}
+	toolboxName := strings.TrimSpace(reference.Name)
+	if toolboxName == "" {
+		return
+	}
+	for _, toolbox := range config.Toolboxes {
+		if toolbox.Name == toolboxName {
+			return
+		}
+	}
+	config.Toolboxes = append(config.Toolboxes, Toolbox{Name: toolboxName})
 }
 
 func activityBotOwnership(
@@ -1803,9 +1931,48 @@ func memoryStoreOptionsEmpty(options *MemoryStoreOptions) bool {
 		options.UserProfileDetails == ""
 }
 
+func validateRegistryConnectionDefinition(agentDef agent_yaml.ContainerAgent) error {
+	rawConnectionRef := agentDef.RegistryConnectionID
+	connectionRef := strings.TrimSpace(rawConnectionRef)
+	if rawConnectionRef == "" {
+		return nil
+	}
+	if connectionRef == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId cannot be empty or whitespace",
+			"set registryConnectionId to a Foundry project connection name or ID, or remove it",
+		)
+	}
+	if agentDef.CodeConfiguration != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId cannot be used with codeConfiguration",
+			"use registryConnectionId with a pre-built image or remove it for code deploy",
+		)
+	}
+	image := strings.TrimSpace(agentDef.Image)
+	if image == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId requires a pre-built container image",
+			"set image on the azure.ai.agent service or remove registryConnectionId",
+		)
+	}
+	if !containerref.IsFullyQualified(image) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId requires an image with an explicit registry host and repository",
+			"set image to a fully qualified reference such as registry.example.com/team/agent:v1",
+		)
+	}
+	return nil
+}
+
 // shouldUsePreBuiltImage determines whether to use a pre-built image.
 //
 // Behavior:
+//   - A registry connection requires an image and always selects that pre-built image.
 //   - If no image is configured in the loaded agent definition, always build from Dockerfile.
 //     The image usually comes from the azure.yaml service image field, but can come from
 //     a legacy agent.yaml fallback.
@@ -1818,20 +1985,30 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	ctx context.Context,
 	agentDef agent_yaml.ContainerAgent,
 ) (bool, error) {
-	imageURL := agentDef.Image
+	imageURL := strings.TrimSpace(agentDef.Image)
+	if agentDef.RegistryConnectionID != "" {
+		if err := validateRegistryConnectionDefinition(agentDef); err != nil {
+			return false, err
+		}
+		log.Printf("registryConnectionId is configured: using pre-built image from agent definition")
+		return true, nil
+	}
 	if imageURL == "" {
 		return false, nil
 	}
 
-	if p.shouldSkipACRForEnvironment(ctx) {
-		log.Printf("AZD_AGENT_SKIP_ACR=true: using pre-built image from agent definition")
+	// Releases before docker.imagePassthrough represented init --image with a
+	// top-level image plus AZD_AGENT_SKIP_ACR=true. The docker property may be
+	// absent, so preserve that environment marker as the legacy compatibility
+	// contract. New projects use docker.imagePassthrough and do not enter this fallback.
+	if !p.serviceConfig.GetDocker().GetImagePassthrough() &&
+		p.shouldSkipACRForEnvironment(ctx) {
+		log.Printf("legacy pre-built image configuration detected: using configured image")
 		return true, nil
 	}
 
-	// Default to build so the pre-built path requires an explicit choice.
-	// In non-interactive mode (--no-prompt), the framework returns the default
-	// selection (index 0 = build) automatically unless AZD_AGENT_SKIP_ACR=true
-	// was set by init --image.
+	// Default to build so the legacy pre-built path requires an explicit choice.
+	// New projects use docker.imagePassthrough and do not enter this fallback.
 	choices := []*azdext.SelectChoice{
 		{Value: "build", Label: "Build a new image for me"},
 		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},
@@ -1865,16 +2042,6 @@ func (p *AgentServiceTargetProvider) shouldSkipACRForEnvironment(ctx context.Con
 	}
 
 	return strings.EqualFold(strings.TrimSpace(resp.Value), "true")
-}
-
-// isCodeDeployAgent returns true if the agent definition has code_configuration (code deploy mode)
-func (p *AgentServiceTargetProvider) isCodeDeployAgent() bool {
-	agentDef, isHosted, err := p.loadContainerAgentDefinition()
-	if err != nil || !isHosted {
-		return false
-	}
-
-	return agentDef.CodeConfiguration != nil
 }
 
 // deployPrepResult holds the common outputs from prepareDeploy, used by both

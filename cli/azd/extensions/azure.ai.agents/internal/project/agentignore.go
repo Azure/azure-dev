@@ -25,7 +25,13 @@ const (
 // Generated from DefaultAgentIgnoreContent() to maintain a single source of truth.
 var defaultExclusionsContent = DefaultAgentIgnoreContent()
 
-const generatedTeamsArtifactsIgnoreContent = `# azd-generated Teams app artifacts
+const azdManagedExclusionsContent = `# azd-managed resource definitions
+connection.yaml
+connection.yml
+toolbox.yaml
+toolbox.yml
+
+# azd-generated Teams app artifacts
 appPackage.zip
 .appPackage.zip.azd-generated
 TEAMS_APP_SETUP.md
@@ -113,7 +119,7 @@ func loadAgentIgnore(ctx context.Context, srcDir string) (gitignore.GitIgnore, e
 
 	// Strip UTF-8 BOM
 	data = bytes.TrimPrefix(data, utf8BOM)
-	data = append([]byte(generatedTeamsArtifactsIgnoreContent+"\n"), data...)
+	data = append([]byte(azdManagedExclusionsContent+"\n"), data...)
 
 	return gitignore.New(bytes.NewReader(data), srcDir, nil), nil
 }
@@ -131,6 +137,10 @@ func DefaultAgentIgnoreContent() string {
 agent.yaml
 agent.manifest.yaml
 azure.yaml
+connection.yaml
+connection.yml
+toolbox.yaml
+toolbox.yml
 .agentignore
 appPackage.zip
 .appPackage.zip.azd-generated

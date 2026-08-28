@@ -298,10 +298,13 @@ func (p *FoundryProvisioningProvider) Initialize(
 	onDisk := p.onDiskTemplatePresent()
 	if !onDisk && endpoint == "" {
 		// Validate embedded config before any interactive prompts.
+		// Pass the current env so connection conditions evaluate
+		// even when payload ${VAR} refs are preserved.
 		_, validationErr := synthesis.Synthesize(synthesis.Input{
 			RawAzureYAML:    rawYAML,
 			ServiceName:     svcName,
 			AcceptedHosts:   FoundryProvisioningServiceHosts,
+			Env:             p.networkEnvMap(ctx),
 			PreserveVarRefs: true,
 			ProjectRoot:     projectRoot,
 		})
@@ -312,7 +315,11 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	p.connectionEnvironmentScopes, err =
-		synthesis.ConnectionEnvironmentScopes(rawYAML, projectRoot)
+		synthesis.ConnectionEnvironmentScopes(
+			rawYAML,
+			projectRoot,
+			p.networkEnvMap(ctx),
+		)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -328,6 +335,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			RawAzureYAML:    rawYAML,
 			ServiceName:     svcName,
 			AcceptedHosts:   FoundryProvisioningServiceHosts,
+			Env:             p.networkEnvMap(ctx),
 			PreserveVarRefs: true,
 			ProjectRoot:     projectRoot,
 		})
@@ -342,7 +350,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 			return p.resolveEnvName(ctx)
 		}
 	}
-
 	// Resolve the environment before reading service values. azd core
 	// expands ${VAR} in service env against the environment, so
 	// reading them first would capture empty strings for values the

@@ -96,7 +96,7 @@ func TestRleClientPreservesEnvironmentRequest(t *testing.T) {
 		if request.Method != http.MethodPost {
 			t.Fatalf("expected POST, got %s", request.Method)
 		}
-		if request.URL.RawQuery != "after=cursor&api-version=2025-11-15-preview" {
+		if request.URL.RawQuery != "api-version=2025-11-15-preview&continuationToken=cursor" {
 			t.Fatalf("expected unchanged query and API version, got %q", request.URL.RawQuery)
 		}
 		if string(body) != `{"value":"same-body"}` {
@@ -117,7 +117,7 @@ func TestRleClientPreservesEnvironmentRequest(t *testing.T) {
 	err := client.do(
 		t.Context(),
 		http.MethodPost,
-		environmentCollectionPath+"/echo/versions/1.0.0?after=cursor",
+		environmentCollectionPath+"/echo/versions/1.0.0?continuationToken=cursor",
 		map[string]string{"value": "same-body"},
 		nil,
 	)

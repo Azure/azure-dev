@@ -242,13 +242,17 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 	}
 
-	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
+	stableServices, err := da.importManager.ServiceStableFiltered(
+		ctx, da.projectConfig, targetServiceName, da.env.Getenv)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := da.projectManager.EnsureServiceTargetTools(ctx, da.projectConfig, func(svc *project.ServiceConfig) bool {
-		return targetServiceName == "" || svc.Name == targetServiceName
-	}); err != nil {
+	if err := da.projectManager.InitializeServices(ctx, stableServices); err != nil {
+		return nil, err
+	}
+
+	if err := da.projectManager.EnsureServiceTargetTools(ctx, stableServices); err != nil {
 		return nil, err
 	}
 
@@ -258,11 +262,6 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	})
 
 	startTime := time.Now()
-
-	stableServices, err := da.importManager.ServiceStableFiltered(ctx, da.projectConfig, targetServiceName, da.env.Getenv)
-	if err != nil {
-		return nil, err
-	}
 
 	// Always deploy through the service execution graph. The graph handles
 	// any service count (including N=1) with a uniform progress tracker

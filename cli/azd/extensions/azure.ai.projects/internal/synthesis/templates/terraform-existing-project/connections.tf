@@ -13,6 +13,10 @@ resource "azapi_resource_action" "connection" {
         authType = each.value.authType
       },
       each.value.audience != null && each.value.audience != "" ? { audience = each.value.audience } : {},
+      each.value.authorizationUrl != null ? { authorizationUrl = each.value.authorizationUrl } : {},
+      each.value.tokenUrl != null ? { tokenUrl = each.value.tokenUrl } : {},
+      each.value.refreshUrl != null ? { refreshUrl = each.value.refreshUrl } : {},
+      each.value.scopes != null ? { scopes = each.value.scopes } : {},
       each.value.connectorName != null && each.value.connectorName != "" ? { connectorName = each.value.connectorName } : {},
       each.value.metadata != null ? { metadata = each.value.metadata } : {}
     )

@@ -26,10 +26,22 @@ type connectionType = {
   @description('Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ...')
   authType: string
 
-  @description('Optional token audience for UserEntraToken, AgenticIdentityToken, or ProjectManagedIdentity connections.')
+  @description('Optional token audience for identity-based authentication.')
   audience: string?
 
-  @description('Optional connector name for OAuth2 connections.')
+  @description('Optional OAuth2 authorization endpoint.')
+  authorizationUrl: string?
+
+  @description('Optional OAuth2 token endpoint.')
+  tokenUrl: string?
+
+  @description('Optional OAuth2 refresh endpoint.')
+  refreshUrl: string?
+
+  @description('Optional OAuth2 scopes.')
+  scopes: string[]?
+
+  @description('Optional managed connector name for OAuth2 authentication.')
   connectorName: string?
 
   @description('Optional metadata key-value pairs.')
@@ -66,7 +78,7 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
   }
 }
 
-// OAuth2 also requires an empty credentials object when none are supplied.
+// Optional credentials and metadata are emitted only when supplied.
 resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview' = [
   for c in connections: {
     parent: foundryAccount::project
@@ -77,14 +89,18 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
         target: c.target
         authType: c.authType
       },
-      !empty(c.?audience) ? { audience: c.?audience } : {},
-      !empty(c.?connectorName) ? { connectorName: c.?connectorName } : {},
       contains(connectionCredentials, c.name)
         ? { credentials: connectionCredentials[c.name] }
         : {},
       toLower(c.authType) == 'oauth2' && !contains(connectionCredentials, c.name)
         ? { credentials: {} }
         : {},
+      !empty(c.?audience) ? { audience: c.?audience } : {},
+      c.?authorizationUrl != null ? { authorizationUrl: c.?authorizationUrl } : {},
+      c.?tokenUrl != null ? { tokenUrl: c.?tokenUrl } : {},
+      c.?refreshUrl != null ? { refreshUrl: c.?refreshUrl } : {},
+      c.?scopes != null ? { scopes: c.?scopes } : {},
+      !empty(c.?connectorName) ? { connectorName: c.?connectorName } : {},
       c.?metadata != null ? { metadata: c.?metadata } : {}
     )
   }

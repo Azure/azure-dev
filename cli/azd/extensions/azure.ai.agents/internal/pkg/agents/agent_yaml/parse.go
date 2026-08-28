@@ -503,6 +503,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						}
 						if agent.TargetAgent != nil {
 							errors = append(errors, "template.target_agent is only valid when model_type is 'hosted_agent'")
+						}
 					}
 					if agent.ModelType != "" && agent.ModelType != VoiceModelTypeManaged &&
 						agent.ModelType != VoiceModelTypeSelfDeployed && agent.ModelType != VoiceModelTypeHostedAgent {

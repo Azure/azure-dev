@@ -26,6 +26,24 @@ type connectionType = {
   @description('Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ...')
   authType: string
 
+  @description('Optional token audience for identity-based authentication.')
+  audience: string?
+
+  @description('Optional OAuth2 authorization endpoint.')
+  authorizationUrl: string?
+
+  @description('Optional OAuth2 token endpoint.')
+  tokenUrl: string?
+
+  @description('Optional OAuth2 refresh endpoint.')
+  refreshUrl: string?
+
+  @description('Optional OAuth2 scopes.')
+  scopes: string[]?
+
+  @description('Optional managed connector name for OAuth2 authentication.')
+  connectorName: string?
+
   @description('Optional metadata key-value pairs.')
   metadata: object?
 }
@@ -74,6 +92,12 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
       contains(connectionCredentials, c.name)
         ? { credentials: connectionCredentials[c.name] }
         : {},
+      c.?audience != null ? { audience: c.?audience } : {},
+      c.?authorizationUrl != null ? { authorizationUrl: c.?authorizationUrl } : {},
+      c.?tokenUrl != null ? { tokenUrl: c.?tokenUrl } : {},
+      c.?refreshUrl != null ? { refreshUrl: c.?refreshUrl } : {},
+      c.?scopes != null ? { scopes: c.?scopes } : {},
+      c.?connectorName != null ? { connectorName: c.?connectorName } : {},
       c.?metadata != null ? { metadata: c.?metadata } : {}
     )
   }

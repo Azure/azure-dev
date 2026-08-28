@@ -29,6 +29,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azdignore"
+	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
@@ -74,6 +75,10 @@ type initFlags struct {
 	// connection prompts. Requires --agent-name when no --manifest is given. Incompatible
 	// with --deploy-mode code.
 	image string
+	// registryConnection identifies an existing Foundry project connection used
+	// to pull a private pre-built image. The value is passed through as a generic
+	// connection name or ID; azd does not inspect registry-specific configuration.
+	registryConnection string
 	// kind selects the agent kind to initialize non-interactively, bypassing the
 	// interactive init-mode/template prompts. Currently the only accepted value is
 	// "prompt-voice", which synthesizes a declarative (managed) voice agent
@@ -132,6 +137,7 @@ type InitAction struct {
 	// addToProject can disable remote build for VNET-injected accounts
 	// without issuing a second account read.
 	selectedFoundryProject *FoundryProjectInfo
+	usesPreBuiltImage      bool
 
 	// userProvidedManifest is true when the init flow is driven by a manifest —
 	// either explicitly via the -m flag/positional argument, or when the user
@@ -143,20 +149,22 @@ type InitAction struct {
 // skipACR returns true when ACR provisioning and configuration should be skipped.
 // This happens when:
 // - Code deploy mode is selected (ZIP upload, no container build)
-// - Pre-built image is provided via --image flag (user manages their own registry)
+// - Pre-built image is provided via a flag or manifest (user manages their own registry)
+// - A registry connection is provided for a pre-built image
 // - The manifest is a prompt-voice agent (managed, no container image)
 func (a *InitAction) skipACR() bool {
-	return a.isCodeDeploy || a.flags.image != "" || a.isVoiceAgent
+	return a.isCodeDeploy || a.usesPreBuiltImage || a.flags.image != "" ||
+		a.flags.registryConnection != "" || a.isVoiceAgent
 }
 
 // isHostedAgent reports whether the agent is deployed as an azd hosted agent
-// (code deploy or a pre-built --image). Hosted agents must land in a Foundry
+// (code deploy or a pre-built image). Hosted agents must land in a Foundry
 // project whose region supports hosted agents, so this gates the region filter
 // in selectFoundryProject. It is deliberately distinct from skipACR: a
 // prompt-voice agent also skips ACR, but is managed rather than hosted and must
 // not be constrained to hosted-agent regions.
 func (a *InitAction) isHostedAgent() bool {
-	return a.isCodeDeploy || a.flags.image != ""
+	return a.isCodeDeploy || a.usesPreBuiltImage || a.flags.image != "" || a.flags.registryConnection != ""
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -693,6 +701,43 @@ func preBuiltImageForInit(agentManifest *agent_yaml.AgentManifest, flagImage str
 	return strings.TrimSpace(ca.Image)
 }
 
+func requestedDeployModeForManifest(
+	flagMode string,
+	flagConnection string,
+	hostedAgent agent_yaml.ContainerAgent,
+) (string, error) {
+	hasRegistryConnection := strings.TrimSpace(flagConnection) != "" ||
+		strings.TrimSpace(hostedAgent.RegistryConnectionID) != ""
+
+	if flagMode != "" {
+		if flagMode == "code" && hasRegistryConnection {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"a registry connection cannot be used with code deploy",
+				"Use the registry connection with a pre-built image or remove it",
+			)
+		}
+		return flagMode, nil
+	}
+	if hostedAgent.CodeConfiguration != nil {
+		if hasRegistryConnection {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"a registry connection cannot be used with code deploy",
+				"Use the registry connection with a pre-built image or remove it",
+			)
+		}
+		return "code", nil
+	}
+	if strings.TrimSpace(hostedAgent.Image) != "" {
+		return "container", nil
+	}
+	if hasRegistryConnection {
+		return "container", nil
+	}
+	return "", nil
+}
+
 func protocolRecordsForImageManifest(flagProtocols []string) ([]agent_yaml.ProtocolVersionRecord, error) {
 	if len(flagProtocols) == 0 {
 		return []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}, nil
@@ -1165,6 +1210,7 @@ func agentDefiningFlagsSet(flags *initFlags, srcBlocksReuse bool) bool {
 		flags.projectResourceId != "" ||
 		flags.acrConnection != "" ||
 		flags.image != "" ||
+		flags.registryConnection != "" ||
 		srcBlocksReuse ||
 		len(flags.protocols) > 0
 }
@@ -1226,7 +1272,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
   # Bring your own pre-built image (no template/language selection, Dockerfile, or ACR setup)
   azd ai agent init --no-prompt --agent-name my-agent \
-    --image myacr.azurecr.io/agents/my-agent:v1`,
+    --image myacr.azurecr.io/agents/my-agent:v1
+
+  # Use an existing Foundry connection for a private pre-built image
+  azd ai agent init --no-prompt --agent-name my-agent --project-id "<resource-id>" \
+    --image registry.example.com/agents/my-agent:v1 --registry-connection production-registry`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -1288,16 +1338,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
-					var env map[string]string
-					needsEnv, err := infraEjectNeedsEnvironment(gate.projectRoot)
+					env, err := readInfraEjectEnvironment(ctx, azdClient)
 					if err != nil {
 						return err
-					}
-					if needsEnv {
-						env, err = readInfraEjectEnvironment(ctx, azdClient)
-						if err != nil {
-							return err
-						}
 					}
 					return ejectInfra(gate.projectRoot, infraProvider, env)
 				}
@@ -1463,6 +1506,19 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					}
 				}
 			}
+
+			// Validate the registry connection after local manifest discovery so a
+			// no-prompt init can use an auto-detected manifest image.
+			if err := validateRegistryConnectionFlag(
+				flags.registryConnection,
+				flags.image,
+				flags.manifestPointer != "",
+				flags.deployMode,
+				flags.kind,
+			); err != nil {
+				return err
+			}
+			flags.registryConnection = strings.TrimSpace(flags.registryConnection)
 
 			// When the project's own manifest already declares agent
 			// service(s), the values init would prompt for (agent name,
@@ -1933,6 +1989,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Dockerfile generation, and ACR setup, and requires --agent-name. "+
 			"Incompatible with --deploy-mode code.")
 
+	cmd.Flags().StringVar(&flags.registryConnection, "registry-connection", "",
+		"Name or ID of an existing Foundry project connection used to pull a private pre-built container image. "+
+			"Requires a pre-built image and is incompatible with code deploy.")
+
 	cmd.Flags().StringVar(&flags.kind, "kind", "",
 		"Agent kind to initialize non-interactively. Currently supports 'prompt-voice' to create a "+
 			"declarative (managed) voice agent, skipping template/language selection and code scaffolding. "+
@@ -2016,9 +2076,19 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 		// Prompt for deploy mode (code vs container) for hosted agents.
 		// Code deploy is supported for Python and .NET projects.
-		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+		if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
 			showCodeDeploy := supportsCodeDeploy(targetDir)
-			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode, a.userProvidedManifest)
+			requestedDeployMode, err := requestedDeployModeForManifest(
+				a.flags.deployMode,
+				a.flags.registryConnection,
+				hostedAgent,
+			)
+			if err != nil {
+				return err
+			}
+			deployMode, err := promptDeployMode(
+				ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, requestedDeployMode, a.userProvidedManifest,
+			)
 			if err != nil {
 				return fmt.Errorf("prompting for deploy mode: %w", err)
 			}
@@ -2043,19 +2113,27 @@ func (a *InitAction) Run(ctx context.Context) error {
 					removeContainerFiles(targetDir)
 				}
 
-				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
 				hostedAgent.CodeConfiguration = codeConfig
 				agentManifest.Template = hostedAgent
 			} else {
 				// Container mode: ensure any pre-existing code_configuration is removed
 				// (e.g. when switching from code deploy back to container)
-				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
 				if hostedAgent.CodeConfiguration != nil {
 					hostedAgent.CodeConfiguration = nil
 					agentManifest.Template = hostedAgent
 				}
 			}
 		}
+
+		// A non-empty raw image, including a parameter placeholder, selects the
+		// pre-built-image provisioning path. Validate the resolved value only
+		// after manifest parameters are processed below.
+		preBuiltImage := ""
+		if !a.isCodeDeploy {
+			preBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image)
+		}
+		provisionalPreBuiltImage := preBuiltImage != ""
+		a.usesPreBuiltImage = provisionalPreBuiltImage
 
 		// Model configuration: prompt user for "use existing" vs "deploy new"
 		agentManifest, err = a.configureModelChoice(ctx, agentManifest)
@@ -2086,6 +2164,29 @@ func (a *InitAction) Run(ctx context.Context) error {
 		)
 		if err != nil {
 			return fmt.Errorf("failed to process manifest parameters: %w", err)
+		}
+
+		if err := a.applyAndValidateRegistryConnection(agentManifest); err != nil {
+			return err
+		}
+		preBuiltImage = ""
+		if !a.isCodeDeploy {
+			preBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image)
+			if provisionalPreBuiltImage && preBuiltImage == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"pre-built image resolved to an empty value",
+					"Provide a non-empty, fully qualified image URL like 'myacr.azurecr.io/agent:v1'",
+				)
+			}
+			if err := validateHostedContainerImage(preBuiltImage); err != nil {
+				return err
+			}
+		}
+		a.usesPreBuiltImage = preBuiltImage != ""
+
+		if err := a.verifyRegistryConnection(ctx, agentManifest); err != nil {
+			return err
 		}
 
 		// Inject toolbox MCP endpoint env vars into hosted agent definitions
@@ -3276,6 +3377,14 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return a.addVoiceAgentToProject(ctx, targetDir, agentManifest)
 	}
 
+	preBuiltImage := ""
+	if !a.isCodeDeploy {
+		preBuiltImage = preBuiltImageForInit(agentManifest, a.flags.image)
+		if err := validateHostedContainerImage(preBuiltImage); err != nil {
+			return err
+		}
+	}
+
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
 	resourceDetails := []project.Resource{}
@@ -3356,8 +3465,6 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		}
 	}
 
-	preBuiltImage := preBuiltImageForInit(agentManifest, a.flags.image)
-
 	// Detect startup command. Skipped for code deploy (uses ZIP packaging) and
 	// when the agent uses a pre-built container image, since the image's own
 	// entrypoint runs and no startup command applies.
@@ -3395,6 +3502,9 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if err := yaml.Unmarshal(templateYAML, &containerDef); err != nil {
 		return fmt.Errorf("parsing agent definition: %w", err)
 	}
+	if a.flags.registryConnection != "" {
+		containerDef.RegistryConnectionID = a.flags.registryConnection
+	}
 
 	agentProps, err := project.AgentDefinitionToServiceProperties(containerDef, &agentConfig)
 	if err != nil {
@@ -3422,10 +3532,14 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 				serviceConfig.Language = "csharp"
 			}
 		} else {
-			// Disable remote build when the Foundry account is VNET-injected; remote
-			// build runs on worker IPs that can't reach a registry in the VNET.
+			// Pre-built images stay in their source registry. Source builds use ACR Tasks
+			// unless the Foundry account is VNET-injected.
 			networkInjected := a.selectedFoundryProject != nil && a.selectedFoundryProject.NetworkInjected
-			serviceConfig.Docker = &azdext.DockerProjectOptions{RemoteBuild: !networkInjected}
+			dockerOptions, err := dockerProjectOptionsForHostedContainer(preBuiltImage, networkInjected)
+			if err != nil {
+				return err
+			}
+			serviceConfig.Docker = dockerOptions
 		}
 	}
 
@@ -4465,10 +4579,142 @@ func extractConnectionConfigs(
 	return connections, credentialEnvVars, nil
 }
 
+// applyAndValidateRegistryConnection resolves the effective registry connection
+// from an explicit flag or a hosted-agent manifest and applies it to the manifest.
+func (a *InitAction) applyAndValidateRegistryConnection(agentManifest *agent_yaml.AgentManifest) error {
+	containerAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent)
+	rawConnectionRef := a.flags.registryConnection
+	if rawConnectionRef == "" && ok {
+		rawConnectionRef = containerAgent.RegistryConnectionID
+	}
+	connectionRef := strings.TrimSpace(rawConnectionRef)
+	if rawConnectionRef != "" && connectionRef == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"registry connection cannot be empty or whitespace",
+			"Provide the name or ID of an existing Foundry project connection",
+		)
+	}
+	if connectionRef == "" {
+		return nil
+	}
+
+	if !ok {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"a registry connection is only valid for hosted container agents",
+			"Use a registry connection with a hosted agent that supplies a pre-built image",
+		)
+	}
+	if a.isCodeDeploy || containerAgent.CodeConfiguration != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"a registry connection cannot be used with code deploy",
+			"Use the registry connection with a pre-built image or remove it",
+		)
+	}
+	effectiveImage := preBuiltImageForInit(agentManifest, a.flags.image)
+	if effectiveImage == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"a registry connection requires a pre-built image",
+			"Pass --image <registry/image:tag> or provide an image in the hosted-agent manifest",
+		)
+	}
+	if err := validateHostedContainerImage(effectiveImage); err != nil {
+		return err
+	}
+
+	containerAgent.RegistryConnectionID = connectionRef
+	agentManifest.Template = containerAgent
+	return nil
+}
+
+func registryConnectionForManifest(
+	flagConnection string,
+	agentManifest *agent_yaml.AgentManifest,
+) string {
+	if connectionRef := strings.TrimSpace(flagConnection); connectionRef != "" {
+		return connectionRef
+	}
+	if agentManifest == nil {
+		return ""
+	}
+	if containerAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+		return strings.TrimSpace(containerAgent.RegistryConnectionID)
+	}
+	return ""
+}
+
+func manifestDeclaresConnection(
+	agentManifest *agent_yaml.AgentManifest,
+	connectionRef string,
+) bool {
+	if agentManifest == nil || connectionRef == "" {
+		return false
+	}
+	for _, resource := range agentManifest.Resources {
+		switch connection := resource.(type) {
+		case agent_yaml.ConnectionResource:
+			if strings.TrimSpace(connection.Name) == connectionRef {
+				return true
+			}
+		case *agent_yaml.ConnectionResource:
+			if connection != nil && strings.TrimSpace(connection.Name) == connectionRef {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// verifyRegistryConnection checks an explicitly selected existing project for
+// an external connection name or ID. Connections declared by the manifest are
+// provisioned later as sibling services and therefore are not remotely verified.
+func (a *InitAction) verifyRegistryConnection(
+	ctx context.Context,
+	agentManifest *agent_yaml.AgentManifest,
+) error {
+	connectionRef := registryConnectionForManifest(a.flags.registryConnection, agentManifest)
+	if connectionRef == "" || a.selectedFoundryProject == nil ||
+		manifestDeclaresConnection(agentManifest, connectionRef) {
+		return nil
+	}
+
+	return verifyRegistryConnectionOnProject(
+		ctx,
+		a.credential,
+		*a.selectedFoundryProject,
+		connectionRef,
+	)
+}
+
+func verifyRegistryConnectionOnProject(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	foundryProject FoundryProjectInfo,
+	connectionRef string,
+) error {
+	if err := verifyFoundryProjectConnection(
+		ctx,
+		credential,
+		foundryProject,
+		connectionRef,
+		listFoundryProjectConnections,
+	); err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("failed to verify registry connection %q: %s", connectionRef, err),
+			"Create the connection on the selected Foundry project or pass the name or ID of an existing connection",
+		)
+	}
+	return nil
+}
+
 // validateCodeDeployFlags checks that required flags are present when using
 // --deploy-mode code in --no-prompt mode.
 func (a *InitAction) validateCodeDeployFlags() error {
-	// First validate image flag (it has incompatibilities with other flags)
+	// First validate image and registry flags (they have incompatibilities with other flags).
 	if err := validateImageFlag(a.flags.image, a.flags.deployMode); err != nil {
 		return err
 	}
@@ -4479,17 +4725,18 @@ func (a *InitAction) validateCodeDeployFlags() error {
 	if err := validateAcrConnectionInput(a.flags.acrConnection, skipACR, false); err != nil {
 		return err
 	}
+	if err := validateRegistryConnectionFlag(
+		a.flags.registryConnection,
+		a.flags.image,
+		a.flags.manifestPointer != "",
+		a.flags.deployMode,
+		a.flags.kind,
+	); err != nil {
+		return err
+	}
 	return validateCodeDeployInput(
 		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
 }
-
-var initImageRefRe = regexp.MustCompile(
-	`^(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?::[0-9]+)?|` +
-		`localhost(?::[0-9]+)?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:[0-9]+)/` +
-		`[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*` +
-		`(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*` +
-		`(?::[\w][\w.-]{0,127}|@sha256:[0-9a-fA-F]{64})?$`,
-)
 
 // validateImageFlag checks that --image is valid when provided.
 // Returns an error if:
@@ -4512,7 +4759,7 @@ func validateImageFlag(image, deployMode string) error {
 	// Require a fully-qualified image reference with an explicit registry host,
 	// e.g. "myacr.azurecr.io/agent", "docker.io/myorg/agent:v1", or
 	// "localhost:5000/agent@sha256:<digest>".
-	if !initImageRefRe.MatchString(image) {
+	if !containerref.IsFullyQualified(image) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("invalid image URL %q: must be in format registry/image[:tag]", image),
@@ -4520,6 +4767,50 @@ func validateImageFlag(image, deployMode string) error {
 		)
 	}
 
+	return nil
+}
+
+// validateRegistryConnectionFlag validates combinations that can be resolved
+// before a manifest is loaded. Manifest-backed image validation is deferred
+// until the effective hosted-agent definition is available.
+func validateRegistryConnectionFlag(
+	connectionRef string,
+	image string,
+	hasManifest bool,
+	deployMode string,
+	kind string,
+) error {
+	if connectionRef == "" {
+		return nil
+	}
+	if strings.TrimSpace(connectionRef) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--registry-connection cannot be empty",
+			"Pass the name or ID of an existing Foundry project connection",
+		)
+	}
+	if deployMode == "code" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--registry-connection cannot be used with --deploy-mode code",
+			"Use --registry-connection with a pre-built image or remove the option",
+		)
+	}
+	if kind != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--registry-connection is only valid for hosted container agents",
+			"Remove --kind or omit --registry-connection",
+		)
+	}
+	if image == "" && !hasManifest {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--registry-connection requires --image when no manifest is provided",
+			"Pass --image <registry/image:tag> or provide a hosted-agent manifest with an image",
+		)
+	}
 	return nil
 }
 

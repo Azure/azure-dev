@@ -22,6 +22,12 @@ type connectionType = {
   category: string
   target: string
   authType: string
+  audience: string?
+  authorizationUrl: string?
+  tokenUrl: string?
+  refreshUrl: string?
+  scopes: string[]?
+  connectorName: string?
   metadata: object?
 }
 

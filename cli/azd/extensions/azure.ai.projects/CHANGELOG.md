@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.8 (2026-08-27)
+
+### Features Added
+
+- [[#9683]](https://github.com/Azure/azure-dev/pull/9683) Add editable Bicep and Terraform infrastructure ejection for existing Foundry projects while preserving ownership of existing resources.
+
 ## 1.0.0-beta.7 (2026-08-24)
 
 ### Other Changes

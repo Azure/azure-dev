@@ -9,11 +9,67 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
+
+func TestValidateRegistryConnectionDependency(t *testing.T) {
+	t.Parallel()
+
+	agent := func(uses ...string) *azdext.ServiceConfig {
+		return &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, Uses: uses}
+	}
+	connection := &azdext.ServiceConfig{Name: "private-registry", Host: foundryConnectionHost}
+
+	t.Run("external connection reference does not require uses", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, validateRegistryConnectionDependency(
+			t.Context(), agent(), "/connections/external-registry", nil, nil,
+		))
+	})
+
+	t.Run("sibling connection requires uses", func(t *testing.T) {
+		t.Parallel()
+		err := validateRegistryConnectionDependency(
+			t.Context(), agent(), "private-registry",
+			map[string]*azdext.ServiceConfig{"private-registry": connection}, nil,
+		)
+		require.ErrorContains(t, err, "is not declared")
+		require.ErrorContains(t, err, "uses")
+	})
+
+	t.Run("sibling connection with uses is valid", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, validateRegistryConnectionDependency(
+			t.Context(), agent("private-registry"), "private-registry",
+			map[string]*azdext.ServiceConfig{"private-registry": connection}, nil,
+		))
+	})
+
+	t.Run("sibling service must be a Foundry connection", func(t *testing.T) {
+		t.Parallel()
+		err := validateRegistryConnectionDependency(
+			t.Context(), agent("private-registry"), "private-registry",
+			map[string]*azdext.ServiceConfig{
+				"private-registry": {Name: "private-registry", Host: foundryToolboxHost},
+			}, nil,
+		)
+		require.ErrorContains(t, err, foundryConnectionHost)
+	})
+
+	t.Run("disabled sibling connection is rejected", func(t *testing.T) {
+		t.Parallel()
+		err := validateRegistryConnectionDependency(
+			t.Context(), agent("private-registry"), "private-registry",
+			map[string]*azdext.ServiceConfig{"private-registry": connection},
+			func(context.Context, string) (bool, error) { return false, nil },
+		)
+		require.ErrorContains(t, err, "disabled")
+	})
+}
 
 func TestValidateFoundryDependencies(t *testing.T) {
 	t.Parallel()
@@ -286,6 +342,17 @@ func TestValidateFoundryDependenciesSplitToolboxReference(t *testing.T) {
 	require.True(t, ok)
 	require.NotContains(t, localErr.Message, "legacy bundled toolbox")
 	require.Contains(t, localErr.Suggestion, `azd deploy "tools"`)
+}
+
+func TestAddAgentToolboxDependency(t *testing.T) {
+	t.Parallel()
+
+	config := &ServiceTargetAgentConfig{}
+	reference := &agent_yaml.ToolboxReference{Name: " support-tools ", Version: "2"}
+	addAgentToolboxDependency(config, reference)
+	addAgentToolboxDependency(config, reference)
+
+	require.Equal(t, []Toolbox{{Name: "support-tools"}}, config.Toolboxes)
 }
 
 func TestValidateFoundryDependenciesUnwiredSplitToolbox(t *testing.T) {

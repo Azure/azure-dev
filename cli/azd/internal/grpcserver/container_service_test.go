@@ -4,10 +4,15 @@
 package grpcserver
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -273,4 +278,99 @@ func TestContainerService_Publish_ServiceManagerError(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "service manager error")
+}
+
+func TestMapContainerPublishError_RemoteBuildRun(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		status armcontainerregistry.RunStatus
+		code   string
+	}{
+		{
+			name:   "failed",
+			status: armcontainerregistry.RunStatusFailed,
+			code:   "container_publish_acr_run_failed",
+		},
+		{
+			name:   "error",
+			status: armcontainerregistry.RunStatusError,
+			code:   "container_publish_acr_run_error",
+		},
+		{
+			name:   "timeout",
+			status: armcontainerregistry.RunStatusTimeout,
+			code:   "container_publish_acr_run_timeout",
+		},
+		{
+			name:   "canceled",
+			status: armcontainerregistry.RunStatusCanceled,
+			code:   "container_publish_acr_run_canceled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := fmt.Errorf("publish wrapper: %w", &containerregistry.RemoteBuildRunError{
+				Status: tt.status,
+			})
+			mapped := mapContainerPublishError(err)
+
+			var localErr *azdext.LocalError
+			require.ErrorAs(t, mapped, &localErr)
+			require.Equal(t, tt.code, localErr.Code)
+			require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+			require.Equal(t, err.Error(), localErr.Message)
+		})
+	}
+}
+
+func TestMapContainerPublishError_PreservesUnclassifiedErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "unknown remote build status",
+			err: fmt.Errorf("publish wrapper: %w", &containerregistry.RemoteBuildRunError{
+				Status: armcontainerregistry.RunStatusSucceeded,
+			}),
+		},
+		{
+			name: "plain error",
+			err:  errors.New("publish failed"),
+		},
+		{
+			name: "canceled",
+			err:  fmt.Errorf("publish canceled: %w", context.Canceled),
+		},
+		{
+			name: "deadline exceeded",
+			err:  fmt.Errorf("publish deadline: %w", context.DeadlineExceeded),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Same(t, tt.err, mapContainerPublishError(tt.err))
+		})
+	}
+}
+
+func TestMapContainerPublishError_PreservesResponseError(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{StatusCode: 500}
+	remoteBuildErr := &containerregistry.RemoteBuildRunError{
+		Status: armcontainerregistry.RunStatusFailed,
+	}
+	err := errors.Join(responseErr, remoteBuildErr)
+
+	require.Same(t, err, mapContainerPublishError(err))
 }

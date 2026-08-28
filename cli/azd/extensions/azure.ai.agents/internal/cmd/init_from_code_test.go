@@ -471,6 +471,29 @@ func TestWriteAgentIgnoreToSrcDir(t *testing.T) {
 	})
 }
 
+func TestInitFromCodeAddToProjectRejectsUnqualifiedImage(t *testing.T) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	action := &InitFromCodeAction{
+		azdClient: client,
+		flags:     &initFlags{noPrompt: true},
+	}
+	definition := &agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "my-agent",
+		},
+		Image: "agent:v1",
+	}
+
+	err := action.addToProject(t.Context(), "src/my-agent", definition, false)
+	require.ErrorContains(t, err, "must be in format registry/image[:tag]")
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.added)
+}
+
 func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

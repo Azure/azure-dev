@@ -852,8 +852,9 @@ func (a *InitFromCodeAction) addToProject(
 
 	agentConfig.Deployments = a.deploymentDetails
 
-	// Detect startup command (container deploy only; code deploy does not use startupCommand)
-	if !isCodeDeploy {
+	// Detect startup command only for source-container deploys. Code deploy and
+	// pre-built images do not use it.
+	if !isCodeDeploy && strings.TrimSpace(definition.Image) == "" {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err
@@ -883,27 +884,36 @@ func (a *InitFromCodeAction) addToProject(
 		language = "csharp"
 	}
 
+	serviceImage := ""
+	if !isCodeDeploy {
+		serviceImage = strings.TrimSpace(definition.Image)
+	}
+
 	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	serviceConfig := &azdext.ServiceConfig{
 		Name:                 agentServiceName,
 		RelativePath:         targetDir,
 		Host:                 AiAgentHost,
 		Language:             language,
-		Image:                definition.Image,
+		Image:                serviceImage,
 		AdditionalProperties: agentProps,
 	}
 
-	// For hosted container-based agents, enable remote build by default. It is
-	// silently disabled when the target Foundry account has VNET network injection
-	// configured, since it cannot reach a registry in the VNET.
+	// Pre-built images stay in their source registry. Source builds use ACR Tasks
+	// unless the Foundry account is VNET-injected.
 	if !isCodeDeploy {
 		networkInjected := a.selectedFoundryProject != nil && a.selectedFoundryProject.NetworkInjected
-		serviceConfig.Docker = &azdext.DockerProjectOptions{RemoteBuild: !networkInjected}
+		dockerOptions, err := dockerProjectOptionsForHostedContainer(serviceImage, networkInjected)
+		if err != nil {
+			return err
+		}
+		serviceConfig.Docker = dockerOptions
 	}
 
-	// Set AZD_AGENT_SKIP_ACR so Bicep knows whether to create a container registry.
+	// Set AZD_AGENT_SKIP_ACR so legacy Bicep knows whether to create a container registry.
 	// Set before AddService so env state is consistent even if AddService fails.
-	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, isCodeDeploy); err != nil {
+	skipACR := isCodeDeploy || serviceImage != ""
+	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, skipACR); err != nil {
 		return err
 	}
 

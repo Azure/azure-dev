@@ -197,11 +197,10 @@ type Workflow struct {
 // pipeline. The map layer translates this into a data-plane VoiceAgentDefinition
 // whose service kind is "voice".
 //
-// v1 keeps authoring lightweight: only the model and (optionally) a voice name,
-// instructions, model type, and store flag are author-facing. ModelType defaults
-// to "managed" when omitted; BYOM uses "self_deployed". The audio pipeline (PCM16 @
-// 24 kHz, server VAD turn detection, input transcription) is defaulted by the
-// map layer so authors don't have to specify it.
+// Simple authoring can rely on defaults for omitted audio/runtime settings.
+// Advanced projects can override the audio pipeline, structured inputs, tools,
+// greeting, avatar, handoff, and response options supported by the service.
+// ModelType defaults to "managed" when omitted; BYOM uses "self_deployed".
 type VoiceAgent struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
 	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.
@@ -214,9 +213,98 @@ type VoiceAgent struct {
 	// Voice is the output voice name (e.g. "en-US-Ava:DragonHDLatestNeural" for
 	// an Azure Neural voice, or "alloy" for an OpenAI realtime voice).
 	Voice *string `json:"voice,omitempty" yaml:"voice,omitempty"`
+	// StructuredInputs declares template inputs used by voice instructions and greeting.
+	StructuredInputs map[string]any `json:"structuredInputs,omitempty" yaml:"structured_inputs,omitempty"`
+	// Audio customizes the input and output voice pipeline. Missing fields keep azd defaults.
+	Audio *VoiceAudio `json:"audio,omitempty" yaml:"audio,omitempty"`
+	// OutputModalities declares response modalities such as audio, text, animation, or avatar.
+	OutputModalities []string `json:"outputModalities,omitempty" yaml:"output_modalities,omitempty"`
 	// Store toggles server-side logging (transcript + per-turn audio). Optional;
 	// the service defaults to false when omitted.
 	Store *bool `json:"store,omitempty" yaml:"store,omitempty"`
+	// Tools are passed through to the prompt voice service. Supported direct tool
+	// types include function, mcp, system, and toolbox.
+	Tools []map[string]any `json:"tools,omitempty" yaml:"tools,omitempty"`
+	// Avatar customizes voice avatar output for services that support it.
+	Avatar map[string]any `json:"avatar,omitempty" yaml:"avatar,omitempty"`
+	// Greeting configures initial greeting behavior for services that support it.
+	Greeting map[string]any `json:"greeting,omitempty" yaml:"greeting,omitempty"`
+	// Handoff configures voice handoff behavior for services that support it.
+	Handoff map[string]any `json:"handoff,omitempty" yaml:"handoff,omitempty"`
+	// ToolChoice configures service tool choice behavior, such as auto/none/required.
+	ToolChoice any `json:"toolChoice,omitempty" yaml:"tool_choice,omitempty"`
+	// ParallelToolCalls toggles parallel tool calls.
+	ParallelToolCalls *bool `json:"parallelToolCalls,omitempty" yaml:"parallel_tool_calls,omitempty"`
+	// MaxOutputTokens limits response output tokens. Use an integer or service-supported string such as "inf".
+	MaxOutputTokens any `json:"maxOutputTokens,omitempty" yaml:"max_output_tokens,omitempty"`
+	// Include requests additional service response fields.
+	Include []string `json:"include,omitempty" yaml:"include,omitempty"`
+}
+
+// VoiceAudio bundles optional prompt voice input/output audio overrides.
+type VoiceAudio struct {
+	Input  *VoiceAudioInput  `json:"input,omitempty" yaml:"input,omitempty"`
+	Output *VoiceAudioOutput `json:"output,omitempty" yaml:"output,omitempty"`
+}
+
+// VoiceAudioInput customizes caller-to-agent audio.
+type VoiceAudioInput struct {
+	Format           *VoiceAudioFormat    `json:"format,omitempty" yaml:"format,omitempty"`
+	NoiseReduction   *VoiceNoiseReduction `json:"noiseReduction,omitempty" yaml:"noise_reduction,omitempty"`
+	EchoCancellation map[string]any       `json:"echoCancellation,omitempty" yaml:"echo_cancellation,omitempty"`
+	TurnDetection    *VoiceTurnDetection  `json:"turnDetection,omitempty" yaml:"turn_detection,omitempty"`
+	Transcription    *VoiceTranscription  `json:"transcription,omitempty" yaml:"transcription,omitempty"`
+}
+
+// VoiceAudioOutput customizes agent-to-caller audio.
+type VoiceAudioOutput struct {
+	Format *VoiceAudioFormat `json:"format,omitempty" yaml:"format,omitempty"`
+	Voice  *VoiceConfig      `json:"voice,omitempty" yaml:"voice,omitempty"`
+	Speed  *float64          `json:"speed,omitempty" yaml:"speed,omitempty"`
+}
+
+// VoiceAudioFormat describes an audio stream format.
+type VoiceAudioFormat struct {
+	Type string `json:"type" yaml:"type"`
+	Rate *int   `json:"rate,omitempty" yaml:"rate,omitempty"`
+}
+
+// VoiceNoiseReduction configures input audio noise reduction.
+type VoiceNoiseReduction struct {
+	Type string `json:"type" yaml:"type"`
+}
+
+// VoiceTurnDetection configures server-side turn detection.
+type VoiceTurnDetection struct {
+	Type              string   `json:"type" yaml:"type"`
+	Threshold         *float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+	PrefixPaddingMs   *int     `json:"prefixPaddingMs,omitempty" yaml:"prefix_padding_ms,omitempty"`
+	SilenceDurationMs *int     `json:"silenceDurationMs,omitempty" yaml:"silence_duration_ms,omitempty"`
+	CreateResponse    *bool    `json:"createResponse,omitempty" yaml:"create_response,omitempty"`
+	Eagerness         *string  `json:"eagerness,omitempty" yaml:"eagerness,omitempty"`
+	SpeechDurationMs  *int     `json:"speechDurationMs,omitempty" yaml:"speech_duration_ms,omitempty"`
+	RemoveFillerWords *bool    `json:"removeFillerWords,omitempty" yaml:"remove_filler_words,omitempty"`
+	InterruptResponse *bool    `json:"interruptResponse,omitempty" yaml:"interrupt_response,omitempty"`
+	Languages         []string `json:"languages,omitempty" yaml:"languages,omitempty"`
+	AutoTruncate      *bool    `json:"autoTruncate,omitempty" yaml:"auto_truncate,omitempty"`
+}
+
+// VoiceTranscription configures input transcription.
+type VoiceTranscription struct {
+	Model    string  `json:"model,omitempty" yaml:"model,omitempty"`
+	Language *string `json:"language,omitempty" yaml:"language,omitempty"`
+	Prompt   *string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+}
+
+// VoiceConfig selects the output voice.
+type VoiceConfig struct {
+	Type   string  `json:"type" yaml:"type"`
+	Name   string  `json:"name" yaml:"name"`
+	Style  *string `json:"style,omitempty" yaml:"style,omitempty"`
+	Pitch  *string `json:"pitch,omitempty" yaml:"pitch,omitempty"`
+	Rate   *string `json:"rate,omitempty" yaml:"rate,omitempty"`
+	Locale *string `json:"locale,omitempty" yaml:"locale,omitempty"`
+	Volume *string `json:"volume,omitempty" yaml:"volume,omitempty"`
 }
 
 // ContainerResources represents the resource allocation for a containerized agent.
@@ -348,7 +436,10 @@ type Policy struct {
 //     Dockerfile) is used automatically.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
+	Language             string                  `json:"language,omitempty" yaml:"language,omitempty"`
+	Toolbox              *ToolboxReference       `json:"toolbox,omitempty" yaml:"toolbox,omitempty"`
 	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`
+	RegistryConnectionID string                  `json:"registryConnectionId,omitempty" yaml:"registryConnectionId,omitempty"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
@@ -357,6 +448,13 @@ type ContainerAgent struct {
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
 	SessionConfiguration *SessionConfiguration   `json:"sessionConfiguration,omitempty" yaml:"session_configuration,omitempty"`
+}
+
+// ToolboxReference identifies the Foundry toolbox consumed by an agent.
+// Version is optional; omitting it follows the toolbox's default version.
+type ToolboxReference struct {
+	Name    string `json:"name" yaml:"name"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

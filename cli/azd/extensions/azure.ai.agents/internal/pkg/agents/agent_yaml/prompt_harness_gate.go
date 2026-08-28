@@ -12,9 +12,9 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
-// The gates in this file apply *only* to harnessed prompt agents. A harness-less
-// prompt agent keeps every field and tool type it accepts today — the harness
-// spec constrains the sandboxed execution environment, not the base agent.
+// The gates in this file apply only to the github_copilot_preview harness. A
+// plain prompt agent or unknown future harness keeps every field and tool type
+// it accepts today.
 //
 // These are rejections rather than warnings because the spec is explicit that
 // the service does not silently ignore them: a manifest carrying one of these
@@ -106,6 +106,9 @@ func (p PromptAgent) ValidateHarnessBlock() error {
 			agent_api.ManagedAgentHarnessGitHubCopilot,
 		)
 	}
+	if p.HarnessType() != agent_api.ManagedAgentHarnessGitHubCopilot {
+		return nil
+	}
 	if err := p.validateHarnessEnvironment(); err != nil {
 		return err
 	}
@@ -187,7 +190,7 @@ func (p PromptAgent) validateHarnessBuiltInTools() error {
 // own response format, so an author-supplied temperature, top_p, tool_choice or
 // text block would be overridden rather than applied.
 func (p PromptAgent) ValidateHarnessFields() error {
-	if !p.harnessed() {
+	if p.HarnessType() != agent_api.ManagedAgentHarnessGitHubCopilot {
 		return nil
 	}
 
@@ -249,7 +252,7 @@ func (p PromptAgent) validateHarnessReasoning() error {
 // cannot run. Structurally malformed entries are skipped — ValidateTools
 // reports those, with a better message.
 func (p PromptAgent) ValidateHarnessTools() error {
-	if !p.harnessed() {
+	if p.HarnessType() != agent_api.ManagedAgentHarnessGitHubCopilot {
 		return nil
 	}
 

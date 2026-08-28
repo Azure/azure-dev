@@ -238,6 +238,11 @@ func TestValidateHarnessFeatures(t *testing.T) {
 			agent:        fullyFeatured,
 			wantRejected: []PromptFeature{PromptFeatureMemory, PromptFeatureKnowledge},
 		},
+		{
+			name:    "future harness is not given GitHub Copilot restrictions",
+			harness: "some_future_harness",
+			agent:   fullyFeatured,
+		},
 	}
 
 	for _, tc := range tests {

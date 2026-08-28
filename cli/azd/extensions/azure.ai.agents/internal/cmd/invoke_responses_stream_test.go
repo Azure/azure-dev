@@ -116,9 +116,21 @@ func TestReadResponsesSSEDiscardsPartialFrameAtEOF(t *testing.T) {
 			stream: `data: {"type":"response.output_text.delta","delta":"partial","sequence_number":1}` + "\n",
 		},
 		{
-			name:         "blank-line-delimited frame",
+			name:         "blank-line-delimited text followed by EOF",
 			stream:       `data: {"type":"response.output_text.delta","delta":"complete","sequence_number":1}` + "\n\n",
-			wantOutput:   "[agent] complete",
+			wantOutput:   "[agent] complete\n",
+			wantProgress: 1,
+		},
+		{
+			name: "delimited text then unterminated frame",
+			stream: `data: {"type":"response.output_text.delta","delta":"complete","sequence_number":1}` + "\n\n" +
+				`data: {"type":"response.output_text.delta","delta":"partial","sequence_number":2}` + "\n",
+			wantOutput:   "[agent] complete\n",
+			wantProgress: 1,
+		},
+		{
+			name:         "delimited event without text",
+			stream:       `data: {"type":"response.in_progress","response":{"id":"resp_123"}}` + "\n\n",
 			wantProgress: 1,
 		},
 	}
@@ -174,23 +186,28 @@ func TestReadResponsesSSEReturnsAfterTerminalEvent(t *testing.T) {
 	readerErr := errors.New("reader should not be called after terminal event")
 	reader := &terminalThenErrorReader{
 		stream: strings.NewReader(
-			"event: response.completed\n" +
-				`data: {"response":{"id":"resp_123","status":"completed"},"sequence_number":1}` +
+			"event: response.output_text.delta\n" +
+				`data: {"response":{"id":"resp_123","status":"in_progress"},"delta":"done","sequence_number":1}` +
+				"\n\n" +
+				"event: response.completed\n" +
+				`data: {"response":{"id":"resp_123","status":"completed"},"sequence_number":2}` +
 				"\n\n",
 		),
 		err: readerErr,
 	}
 
 	var progress []responsesStreamProgress
-	err := readResponsesSSE(t.Context(), reader, io.Discard, "agent", true,
+	var output bytes.Buffer
+	err := readResponsesSSE(t.Context(), reader, &output, "agent", true,
 		func(value responsesStreamProgress) error {
 			progress = append(progress, value)
 			return nil
 		})
 
 	require.NoError(t, err)
-	require.Len(t, progress, 1)
-	assert.True(t, progress[0].Terminal)
+	require.Len(t, progress, 2)
+	assert.True(t, progress[1].Terminal)
+	assert.Equal(t, "[agent] done\n", output.String())
 }
 
 func TestReadResponsesSSEResumedTerminalUsesInitialIdentity(t *testing.T) {

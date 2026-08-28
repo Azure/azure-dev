@@ -255,7 +255,10 @@ Request body:
 }
 ```
 
-The exact hosted-session property must be verified before implementation. The existing CLI sends `session_id`; current hosted-agent long-running references use `agent_session_id`. See [Session compatibility investigation](#session-compatibility-investigation). The request examples in this specification use `agent_session_id` provisionally and are not the compatibility decision.
+Live validation against the hosted stored-background Responses endpoint confirms that the compatible
+property is `agent_session_id`. Background create, follow, and steering requests send that property
+and do not also send `session_id`. Existing foreground remote Responses and local Responses requests
+continue to use `session_id`.
 
 The command parses and renders SSE until a terminal event or a user interruption. As soon as an identity-bearing lifecycle event arrives, it prints and saves the Response ID before rendering later output.
 
@@ -553,24 +556,22 @@ For `--continue` or `--cancel`:
 
 Follow and cancel must not create a new hosted-agent session or conversation while resolving existing work. They must bypass normal-invoke helpers that auto-create version-backed sessions or conversations when saved state is absent.
 
-## Session compatibility investigation
+## Session compatibility conclusion
 
-Before implementation finalizes request construction, verify which body property is accepted by every supported path:
+Live service validation established the session property for each supported path:
 
 ```text
 session_id
 agent_session_id
 ```
 
-Test at least:
+- Hosted stored-background Responses uses `agent_session_id`; background create,
+  follow, and steering send only this property.
+- Existing foreground remote Responses and local AgentServer Responses continue
+  to use `session_id`.
 
-- Current deployed hosted-agent Responses endpoint.
-- The long-running Responses reference agent.
-- Current local AgentServer Responses package.
-
-The public hosted long-running examples use `agent_session_id`. Existing local and remote azd code uses `session_id`. Do not send both unless the protocol schema explicitly permits it.
-
-The selected property must route steering and follow-up turns to the same hosted session. Update existing remote Responses requests only if compatibility is verified; local behavior may require a separate field.
+Live tests confirmed that `agent_session_id` routes stored background work and
+follow-up turns to the same hosted session. The request never sends both fields.
 
 ## HTTP clients and timeout behavior
 

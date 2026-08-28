@@ -28,8 +28,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type invokeFlags struct {
@@ -1406,8 +1404,12 @@ func backgroundResponseStateUnavailable(cause error) error {
 }
 
 func classifyBackgroundResponseStateReadError(cause error) error {
-	if code := status.Code(cause); code == codes.Unavailable || code == codes.Unimplemented {
-		return backgroundResponseStateUnavailable(cause)
+	if _, ok := errors.AsType[*azdext.ConfigError](cause); !ok {
+		return exterrors.FromHost(
+			cause,
+			exterrors.OpReadBackgroundResponseState,
+			"reading saved background Response state failed",
+		)
 	}
 	return exterrors.Validation(
 		exterrors.CodeInvalidBackgroundResponseState,

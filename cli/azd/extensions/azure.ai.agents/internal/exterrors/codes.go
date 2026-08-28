@@ -218,6 +218,8 @@ const (
 	OpPublishTeamsApp       = "publish_teams_app"
 )
 
+const OpReadBackgroundResponseState = "read_background_response_state"
+
 // Error codes for eval and optimize operations.
 const (
 	CodeEvalRunFailed      = "eval_run_failed"

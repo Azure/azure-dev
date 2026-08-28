@@ -137,7 +137,7 @@ func readResponsesSSEWithInitialStateAndLimit(
 	initialState *responsesStreamInitialState,
 	onProgress func(responsesStreamProgress) error,
 	maxEventBytes int,
-) error {
+) (returnErr error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxEventBytes+len("data: ")+1)
 
@@ -149,6 +149,12 @@ func readResponsesSSEWithInitialStateAndLimit(
 	var cursor *int64
 	var status string
 	var terminal bool
+	defer func() {
+		if printed && !terminal {
+			_, err := fmt.Fprintln(writer)
+			returnErr = errors.Join(returnErr, err)
+		}
+	}()
 	if initialState != nil {
 		identity = initialState.ResponseID
 		cursor = initialState.Cursor

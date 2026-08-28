@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestInvokeCommandBackgroundFlagRegistered(t *testing.T) {
@@ -440,7 +443,7 @@ func TestInvokeCommandBackgroundValidation(t *testing.T) {
 	}
 }
 
-func TestInvokeCommandBackgroundEndpointRequiresPersistentStateAtRuntime(t *testing.T) {
+func TestInvokeCommandBackgroundEndpointRoutesHostFailure(t *testing.T) {
 	isolateFromAzdDaemon(t)
 
 	cmd := newInvokeCommand(nil)
@@ -454,9 +457,11 @@ func TestInvokeCommandBackgroundEndpointRequiresPersistentStateAtRuntime(t *test
 	cmd.SetErr(io.Discard)
 
 	err := cmd.Execute()
-	requireBackgroundResponseStateUnavailable(t, err)
-	localErr, _ := errors.AsType[*azdext.LocalError](err)
-	assert.Contains(t, localErr.Message, "read background responses")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+	assert.Equal(t, exterrors.OpReadBackgroundResponseState, localErr.Code)
+	assert.Empty(t, localErr.Suggestion)
 	assert.NotContains(t, err.Error(), "--background is not supported with --agent-endpoint")
 }
 
@@ -483,6 +488,84 @@ func requireInvalidBackgroundResponseState(t *testing.T, err error) {
 	assert.Contains(t, localErr.Suggestion,
 		"azd config unset "+backgroundResponsesConfigPath)
 	assert.NotContains(t, localErr.Suggestion, "try again")
+}
+
+func TestClassifyBackgroundResponseStateReadError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		cause            error
+		wantCategory     azdext.LocalErrorCategory
+		wantCode         string
+		wantMessage      string
+		wantSuggestion   string
+		rejectSuggestion string
+	}{
+		{
+			name: "config error",
+			cause: fmt.Errorf("read background responses: %w", &azdext.ConfigError{
+				Path:   backgroundResponsesConfigPath,
+				Reason: azdext.ConfigReasonInvalidFormat,
+				Err:    errors.New("invalid JSON"),
+			}),
+			wantCategory:   azdext.LocalErrorCategoryValidation,
+			wantCode:       exterrors.CodeInvalidBackgroundResponseState,
+			wantMessage:    "invalid JSON",
+			wantSuggestion: "azd config unset " + backgroundResponsesConfigPath,
+		},
+		{
+			name:             "context cancellation",
+			cause:            fmt.Errorf("read background responses: %w", context.Canceled),
+			wantCategory:     azdext.LocalErrorCategoryUser,
+			wantCode:         exterrors.CodeCancelled,
+			wantMessage:      "was cancelled",
+			rejectSuggestion: "config unset",
+		},
+		{
+			name:             "permission denied",
+			cause:            status.Error(codes.PermissionDenied, "access denied"),
+			wantCategory:     azdext.LocalErrorCategoryInternal,
+			wantCode:         exterrors.OpReadBackgroundResponseState,
+			wantMessage:      "access denied",
+			rejectSuggestion: "config unset",
+		},
+		{
+			name:             "deadline exceeded",
+			cause:            status.Error(codes.DeadlineExceeded, "deadline exceeded"),
+			wantCategory:     azdext.LocalErrorCategoryInternal,
+			wantCode:         exterrors.OpReadBackgroundResponseState,
+			wantMessage:      "deadline exceeded",
+			rejectSuggestion: "config unset",
+		},
+		{
+			name:             "transient unavailable",
+			cause:            status.Error(codes.Unavailable, "host unavailable"),
+			wantCategory:     azdext.LocalErrorCategoryInternal,
+			wantCode:         exterrors.OpReadBackgroundResponseState,
+			wantMessage:      "host unavailable",
+			rejectSuggestion: "config unset",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := classifyBackgroundResponseStateReadError(tt.cause)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, tt.wantCategory, localErr.Category)
+			assert.Equal(t, tt.wantCode, localErr.Code)
+			assert.Contains(t, localErr.Message, tt.wantMessage)
+			if tt.wantSuggestion != "" {
+				assert.Contains(t, localErr.Suggestion, tt.wantSuggestion)
+			}
+			if tt.rejectSuggestion != "" {
+				assert.NotContains(t, localErr.Suggestion, tt.rejectSuggestion)
+			}
+		})
+	}
 }
 
 type capturedBackgroundRequest struct {

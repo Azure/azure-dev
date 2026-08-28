@@ -353,7 +353,8 @@ func TestTelemetryFieldConstants(t *testing.T) {
 //     the extension that reports them, per docs/specs/metrics-audit/
 //     privacy-review-checklist.md, rather than against the core fields catalog.
 func TestNoRawTelemetryAttributes(t *testing.T) {
-	t.Parallel()
+	// Each GOOS scan type-checks the entire module. Keep this test serial so it
+	// does not compete with the rest of the cmd suite for compiler resources.
 
 	// The test runs with its package directory (cli/azd/cmd) as the working
 	// directory, so the module root is one level up.

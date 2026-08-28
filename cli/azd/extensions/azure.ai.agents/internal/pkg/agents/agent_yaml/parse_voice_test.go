@@ -407,3 +407,17 @@ policies:
 		t.Fatalf("expected prompt voice policy validation error, got: %v", err)
 	}
 }
+
+func TestValidateAgentDefinition_PromptVoiceRejectsMalformedPolicies(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice
+model:
+  id: gpt-realtime
+policies: invalid
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "template.policies is not valid") {
+		t.Fatalf("expected malformed policy validation error, got: %v", err)
+	}
+}

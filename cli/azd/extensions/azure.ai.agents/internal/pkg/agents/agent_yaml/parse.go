@@ -462,8 +462,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					var policyEnvelope struct {
 						Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
 					}
-					if err := yaml.Unmarshal(templateBytes, &policyEnvelope); err == nil &&
-						len(policyEnvelope.Policies) > 0 {
+					if err := yaml.Unmarshal(templateBytes, &policyEnvelope); err != nil {
+						errors = append(errors, fmt.Sprintf("template.policies is not valid: %v", err))
+					} else if len(policyEnvelope.Policies) > 0 {
 						hasModeration := false
 						for _, policy := range policyEnvelope.Policies {
 							hasModeration = hasModeration || policy.InvocationsModeration != nil

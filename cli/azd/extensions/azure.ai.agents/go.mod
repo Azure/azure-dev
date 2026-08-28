@@ -2,9 +2,6 @@ module azureaiagent
 
 go 1.26.4
 
-// TEMPORARY: use the in-tree azd core until this helper is released.
-replace github.com/azure/azure-dev/cli/azd => ../../
-
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0

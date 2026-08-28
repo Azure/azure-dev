@@ -956,7 +956,7 @@ func skipDisabledConnectionWithoutRef(
 	if !present {
 		return false, nil
 	}
-	enabled, err := foundry.EvaluateCondition(value, lookup)
+	enabled, err := evaluateCondition(value, lookup)
 	if err != nil {
 		return false, err
 	}
@@ -1001,7 +1001,7 @@ func serviceNodeEnabled(
 	if !present {
 		return true, nil
 	}
-	return foundry.EvaluateCondition(value, lookup)
+	return evaluateCondition(value, lookup)
 }
 
 func serviceConditionValue(node yaml.Node) (string, bool, error) {

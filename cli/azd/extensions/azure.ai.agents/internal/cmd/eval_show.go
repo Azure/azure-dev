@@ -22,11 +22,11 @@ import (
 
 // evalShowFlags holds CLI flags for the eval show command.
 type evalShowFlags struct {
-	evalContextFlags
-	envName   string // explicit environment name (from -e flag)
-	evalRunID string // specific eval run to show
-	limit     int    // maximum number of runs to display
-	output    string // export results to JSON file
+	envName         string // explicit environment name (from -e flag)
+	projectEndpoint string // explicit project endpoint (from --project-endpoint flag)
+	evalRunID       string // specific eval run to show
+	limit           int    // maximum number of runs to display
+	output          string // export results to JSON file
 }
 
 func newEvalShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -51,7 +51,7 @@ If eval-id is omitted, the most recent eval from the current environment is used
 			return runEvalShow(ctx, evalID, flags, extCtx.NoPrompt)
 		},
 	}
-	addEvalContextFlags(cmd, &flags.evalContextFlags)
+	addEvalProjectEndpointFlag(cmd, &flags.projectEndpoint)
 	cmd.Flags().StringVar(&flags.evalRunID, "eval-run-id", "", "Show details for a specific eval run")
 	cmd.Flags().IntVar(&flags.limit, "limit", 20, "Maximum number of runs to show")
 	cmd.Flags().StringVarP(&flags.output, "out-file", "O", "", "Export full run results to a JSON file")
@@ -59,7 +59,12 @@ If eval-id is omitted, the most recent eval from the current environment is used
 }
 
 func runEvalShow(ctx context.Context, evalID string, flags *evalShowFlags, noPrompt bool) error {
-	resolved, err := resolveEvalContext(ctx, flags.evalContextFlags.options(flags.envName, noPrompt, false))
+	resolved, err := resolveEvalContext(ctx, evalContextOptions{
+		envName:         flags.envName,
+		projectEndpoint: flags.projectEndpoint,
+		skipAgent:       true,
+		noPrompt:        noPrompt,
+	})
 	if err != nil {
 		return err
 	}

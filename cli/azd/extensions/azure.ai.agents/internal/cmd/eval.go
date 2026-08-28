@@ -75,6 +75,7 @@ type evalContextOptions struct {
 	envName         string // explicit environment name (from -e flag)
 	agent           string // explicit agent name (from --agent flag)
 	projectEndpoint string // explicit project endpoint (from --project-endpoint flag)
+	skipAgent       bool   // skip agent service and deployment metadata resolution
 	requireAgent    bool   // fail if agent name cannot be resolved
 	noPrompt        bool   // skip interactive prompts
 }
@@ -91,8 +92,12 @@ func addEvalContextFlags(cmd *cobra.Command, flags *evalContextFlags) {
 		"",
 		"Agent service name from azure.yaml, or Foundry agent name outside a project",
 	)
+	addEvalProjectEndpointFlag(cmd, &flags.projectEndpoint)
+}
+
+func addEvalProjectEndpointFlag(cmd *cobra.Command, projectEndpoint *string) {
 	cmd.Flags().StringVarP(
-		&flags.projectEndpoint,
+		projectEndpoint,
 		"project-endpoint",
 		"p",
 		"",
@@ -192,22 +197,26 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 		return v.Value
 	}
 
-	var svc *azdext.ServiceConfig
-	var info *AgentServiceInfo
-	svc, err = resolveEvalAgentService(ctx, azdClient, options)
-	if err != nil {
-		azdClient.Close()
-		return nil, err
-	}
-	if svc != nil {
-		// Resolve deployed agent name/version from azd environment.
-		info = &AgentServiceInfo{ServiceName: svc.Name}
-		serviceKey := toServiceKey(svc.Name)
-		if v := getEnvValue(fmt.Sprintf("AGENT_%s_NAME", serviceKey)); v != "" {
-			info.AgentName = v
+	var (
+		svc  *azdext.ServiceConfig
+		info *AgentServiceInfo
+	)
+	if !options.skipAgent {
+		svc, err = resolveEvalAgentService(ctx, azdClient, options)
+		if err != nil {
+			azdClient.Close()
+			return nil, err
 		}
-		if v := getEnvValue(fmt.Sprintf("AGENT_%s_VERSION", serviceKey)); v != "" {
-			info.Version = v
+		if svc != nil {
+			// Resolve deployed agent name/version from azd environment.
+			info = &AgentServiceInfo{ServiceName: svc.Name}
+			serviceKey := toServiceKey(svc.Name)
+			if v := getEnvValue(fmt.Sprintf("AGENT_%s_NAME", serviceKey)); v != "" {
+				info.AgentName = v
+			}
+			if v := getEnvValue(fmt.Sprintf("AGENT_%s_VERSION", serviceKey)); v != "" {
+				info.Version = v
+			}
 		}
 	}
 

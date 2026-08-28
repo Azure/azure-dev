@@ -72,14 +72,26 @@ func TestEvalCommandsExposeContextFlags(t *testing.T) {
 		"generate": newEvalGenerateCommand(&azdext.ExtensionContext{}),
 		"run":      newEvalRunCommand(&azdext.ExtensionContext{}),
 		"update":   newEvalUpdateCommand(&azdext.ExtensionContext{}),
-		"list":     newEvalListCommand(&azdext.ExtensionContext{}),
-		"show":     newEvalShowCommand(&azdext.ExtensionContext{}),
 	}
 
 	for name, cmd := range commands {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			require.NotNil(t, cmd.Flags().Lookup("agent"))
+			endpointFlag := cmd.Flags().Lookup("project-endpoint")
+			require.NotNil(t, endpointFlag)
+			assert.Equal(t, "p", endpointFlag.Shorthand)
+		})
+	}
+
+	projectCommands := map[string]*cobra.Command{
+		"list": newEvalListCommand(&azdext.ExtensionContext{}),
+		"show": newEvalShowCommand(&azdext.ExtensionContext{}),
+	}
+	for name, cmd := range projectCommands {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Nil(t, cmd.Flags().Lookup("agent"))
 			endpointFlag := cmd.Flags().Lookup("project-endpoint")
 			require.NotNil(t, endpointFlag)
 			assert.Equal(t, "p", endpointFlag.Shorthand)
@@ -121,24 +133,30 @@ func TestEvalCommandsPropagateNoPromptContext(t *testing.T) {
 	t.Setenv("AZD_SERVER", listener.Addr().String())
 	t.Setenv("NO_COLOR", "1")
 
-	commands := map[string]func(*azdext.ExtensionContext) *cobra.Command{
-		"run":    newEvalRunCommand,
-		"update": newEvalUpdateCommand,
-		"list":   newEvalListCommand,
-		"show":   newEvalShowCommand,
+	commands := map[string]struct {
+		newCommand func(*azdext.ExtensionContext) *cobra.Command
+		usesAgent  bool
+	}{
+		"run":    {newCommand: newEvalRunCommand, usesAgent: true},
+		"update": {newCommand: newEvalUpdateCommand, usesAgent: true},
+		"list":   {newCommand: newEvalListCommand},
+		"show":   {newCommand: newEvalShowCommand},
 	}
 
-	for name, newCommand := range commands {
+	for name, test := range commands {
 		t.Run(name, func(t *testing.T) {
-			cmd := newCommand(&azdext.ExtensionContext{NoPrompt: true})
+			cmd := test.newCommand(&azdext.ExtensionContext{NoPrompt: true})
 			err := cmd.ExecuteContext(t.Context())
 			require.ErrorContains(t, err, "--project-endpoint is required")
 
-			cmd = newCommand(&azdext.ExtensionContext{NoPrompt: true})
-			cmd.SetArgs([]string{
+			cmd = test.newCommand(&azdext.ExtensionContext{NoPrompt: true})
+			args := []string{
 				"--project-endpoint", "://explicit-endpoint",
-				"--agent", "explicit-agent",
-			})
+			}
+			if test.usesAgent {
+				args = append(args, "--agent", "explicit-agent")
+			}
+			cmd.SetArgs(args)
 			err = cmd.ExecuteContext(t.Context())
 			require.Error(t, err)
 			require.NotContains(t, err.Error(), "--project-endpoint is required")

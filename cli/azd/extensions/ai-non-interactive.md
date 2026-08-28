@@ -33,7 +33,8 @@ no non-interactive equivalent is a bug.
 | `ai agent eval generate` | Replace an existing config | `--reset-defaults` | Keeps the existing config unless reset was explicitly requested. |
 | `ai agent eval run` | Agent service and Foundry project | `--agent` and `--project-endpoint` | Uses `eval.yaml` and azd environment state; outside a project the endpoint must be explicit. |
 | `ai agent eval run` | Run name and reuse of an existing eval | `--name`; existing eval state | Uses the config name and reuses the existing eval. |
-| `ai agent eval list`, `show`, `update` | Agent service and Foundry project | `--agent` and `--project-endpoint` | Resolves only from explicit/project/environment state and never prompts. |
+| `ai agent eval list`, `show` | Foundry project | `--project-endpoint` | Resolves the project endpoint from explicit or environment state and never prompts for an agent. |
+| `ai agent eval update` | Agent service and Foundry project | `--agent` and `--project-endpoint` | Resolves only from explicit/project/environment state and never prompts. |
 | `ai agent eval update` | Dataset and evaluator updates | `--dataset-only` or `--evaluator-only` | Updates every locally changed asset type when neither limiting flag is supplied. |
 | `ai agent optimize` | Agent, endpoint, models, dataset, evaluators, and candidate count | Positional agent or `--agent`; `--project-endpoint`; `--config`; `--dataset`; `--eval-model`; `--optimize-model`; repeatable `--evaluator`; `--max-candidates` | Uses config and detected project state; required unresolved values fail with guidance. |
 | `ai agent optimize` | Instruction and skills directory | Instruction/skill paths in the optimize config or detected agent metadata/project directories | Requires an instruction and auto-uses a detected skills directory, or no skills when none is found. |

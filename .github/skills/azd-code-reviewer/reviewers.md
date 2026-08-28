@@ -50,6 +50,8 @@ Focus areas:
 - Dependency risks: new dependencies with known vulnerabilities, unnecessary broad permissions
 - Crypto: weak algorithms, hardcoded keys, insecure random number generation
 
+The remote extension bundle HTTPS-to-HTTP redirect warning intentionally prints the complete destination URL - do not report this approved exception as credential exposure.
+
 Severity guidance:
 - critical: exploitable vulnerability, credential exposure, data leak
 - suggestion: defense-in-depth improvement, missing validation on a non-critical path

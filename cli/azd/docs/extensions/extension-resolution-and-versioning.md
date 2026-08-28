@@ -226,6 +226,10 @@ A bundle can also be installed directly from an `https` URL, so a preview or int
 azd extension install https://example.com/builds/my-ext_1.0.0.zip
 ```
 
+Remote URLs may be shortened or opaque. `azd` downloads the response, then validates it like a local bundle.
+
+`azd` follows redirects without prompting. If an HTTPS download redirects to HTTP, `azd` prints a warning containing the full destination URL and continues.
+
 The install flow treats the bundle as an **installer, not a registry** — nothing about the bundle persists as a configured source once installation finishes:
 
 1. **Download** (URLs only) the bundle to a temporary file. Download failures — an unreachable host or a non-`200` response — are reported as such, separately from a `.zip` that turns out not to be a valid bundle. From here on, remote and local bundles follow the exact same path.
@@ -256,7 +260,7 @@ azd extension install <extension-id> --source <source-name>
 
 ### Trust model
 
-Bundles run arbitrary extension binaries on your machine. The embedded `sha256` checksums verify that each artifact matches the checksum declared in the `registry.json` received in the same bundle. They can detect accidental corruption or inconsistencies within that bundle, but they do not authenticate the publisher or protect against an attacker replacing both the artifacts and their checksums. Bundles are not signed. Only install bundles obtained from a source you trust. Remote bundle installation requires `https` because HTTP downloads can be modified in transit.
+Bundles run arbitrary extension binaries on your machine. The embedded `sha256` checksums verify that each artifact matches the checksum declared in the `registry.json` received in the same bundle. They can detect accidental corruption or inconsistencies within that bundle, but they do not authenticate the publisher or protect against an attacker replacing both the artifacts and their checksums. Bundles are not signed. Only install bundles obtained from a source you trust. Remote bundle installation requires an `https` input URL. `azd` warns if a redirect downgrades the transfer to HTTP, where the bundle can be modified in transit.
 
 ## Declaring Extensions in `azure.yaml`
 

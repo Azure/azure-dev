@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -91,7 +90,7 @@ file path). Locations are queried read-only and are not registered.`,
 	// azd extension install <extension-id>
 	group.Add("install", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "install <extension-id|extension-bundle.zip>",
+			Use:   "install <extension-id|bundle-path-or-url>",
 			Short: "Installs specified extensions.",
 			Long: `Installs one or more extensions by id from a registered extension source.
 
@@ -100,10 +99,10 @@ location is given, azd registers it as a source (prompting for a name, and
 confirming first for a URL) and then installs from it. If the location is already
 registered, azd reuses that source.
 
-You can also pass a self-contained extension bundle (.zip), either as a local
-path or an https URL: azd downloads (when remote) and extracts it, then installs
-the bundled extension. Bundled extensions aren't tracked for updates; reinstall
-from a newer bundle to update.`,
+You can also pass a self-contained extension bundle as a local .zip path or an
+https URL. Remote URLs may be shortened or opaque. azd follows redirects
+automatically and warns when a download redirects from HTTPS to HTTP. Bundle
+installs aren't tracked for updates; install a newer bundle to update.`,
 		},
 		ActionResolver: newExtensionInstallAction,
 		FlagsResolver:  newExtensionInstallFlags,
@@ -900,10 +899,8 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 	}
 
-	// A single .zip argument is a self-contained bundle: extract it, register an
-	// ephemeral source, and queue its extensions for install (this rewrites
-	// a.args/a.flags.source for the loop below). The deferred cleanup removes the
-	// ephemeral source and temp dir afterwards.
+	// A single bundle argument is extracted and registered as an ephemeral source
+	// for the install loop below. Cleanup removes the source and temporary files.
 	if bundleInstall {
 		if err := a.prepareBundleInstall(ctx, a.args[0]); err != nil {
 			a.cleanupBundleInstall(ctx)
@@ -944,6 +941,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		return nil, err
 	}
 
+	installedAny := false
 	for index, extensionId := range extensionIds {
 		if index > 0 {
 			a.console.Message(ctx, "")
@@ -1119,6 +1117,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
 			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		}
+		installedAny = true
 
 		if !a.flags.noDependencies && len(extensionVersion.Dependencies) > 0 {
 			// Render dependencies flat with the parent step.
@@ -1135,6 +1134,10 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		displayExtensionUsageAndExamples(ctx, a.console, extensionVersion)
 	}
 
+	if !installedAny {
+		return &actions.ActionResult{}, nil
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: "Extension(s) installed successfully",
@@ -1146,16 +1149,6 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 // self-contained bundle (.zip) is extracted into during installation. The
 // directory is removed once installation completes.
 const extensionBundleTempPrefix = "azd-extension-bundle-"
-
-type insecureBundleRedirectError struct{}
-
-func (*insecureBundleRedirectError) Error() string {
-	return "extension bundle download redirected to an insecure URL"
-}
-
-func (*insecureBundleRedirectError) NonRetriable() {}
-
-var errInsecureBundleRedirect = &insecureBundleRedirectError{}
 
 // sourceDisplayLabel returns a user-facing label for an extension source. The
 // transient source registered while installing a bundle is an implementation
@@ -1245,7 +1238,7 @@ func (a *extensionInstallAction) confirmReplace(
 		return false, nil
 	}
 
-	a.console.StopSpinner(ctx, stepMessage, input.Step)
+	a.console.StopSpinner(ctx, "", input.Step)
 	a.console.Message(ctx, "")
 	confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
 		Message:      question,
@@ -1274,9 +1267,7 @@ func shouldWarnNewerIncompatible(requestedVersion string, candidate *extensions.
 	return true
 }
 
-// isBundleArg reports whether the provided arguments represent a single
-// self-contained extension bundle (.zip), either as a local path that exists on
-// disk or as an HTTP or HTTPS URL.
+// isBundleArg reports whether args contain one local .zip or HTTP(S) URL.
 func isBundleArg(args []string) bool {
 	if len(args) != 1 {
 		return false
@@ -1294,23 +1285,12 @@ func isBundleArg(args []string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// isRemoteBundleArg reports whether the value is an HTTP or HTTPS URL pointing at a
-// self-contained extension bundle (.zip). Detection is intentionally lexical so
-// malformed URLs still reach generic URL validation instead of being displayed as
-// extension IDs.
+// isRemoteBundleArg reports whether value should be downloaded as a bundle.
+// Lexical detection routes malformed HTTP(S) URLs through URL validation.
 func isRemoteBundleArg(value string) bool {
 	lowerValue := strings.ToLower(value)
-	if !strings.HasPrefix(lowerValue, "http://") &&
-		!strings.HasPrefix(lowerValue, "https://") {
-		return false
-	}
-
-	pathEnd := len(value)
-	if index := strings.IndexAny(value, "?#"); index >= 0 {
-		pathEnd = index
-	}
-
-	return strings.EqualFold(path.Ext(value[:pathEnd]), ".zip")
+	return strings.HasPrefix(lowerValue, "http://") ||
+		strings.HasPrefix(lowerValue, "https://")
 }
 
 // prepareBundleInstall resolves the bundle (downloading it first when the
@@ -1512,6 +1492,7 @@ func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL s
 
 	stepMessage := "Downloading extension bundle"
 	a.console.ShowSpinner(ctx, stepMessage, input.Step)
+	downgradeReported := false
 
 	downloadFailed := func(err error) (string, error) {
 		a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
@@ -1528,18 +1509,24 @@ func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL s
 				"or download the bundle and install it from a local path.",
 		}
 	}
-	insecureRedirect := func() error {
-		return &internal.ErrorWithSuggestion{
-			Err:     errInsecureBundleRedirect,
-			Message: "The extension bundle download was redirected from HTTPS to HTTP.",
-			Suggestion: "Use a bundle URL that remains on HTTPS, or download the bundle and install it " +
-				"from a local path.",
-		}
-	}
-
 	pipeline := azruntime.NewPipeline(
 		"azd-extension-bundle", "1.0.0", azruntime.PipelineOptions{}, &policy.ClientOptions{
-			Transport: bundleTransportWithHTTPSRedirectsOnly(a.transport),
+			Transport: bundleTransportWithRedirectWarning(
+				a.transport,
+				func(ctx context.Context, targetURL *url.URL) {
+					a.console.StopSpinner(ctx, "", input.Step)
+					if !downgradeReported {
+						a.console.EnsureBlankLine(ctx)
+					}
+					a.console.Message(ctx, output.WithWarningFormat(
+						"WARNING: Download redirected to %s",
+						output.WithLinkFormat(targetURL.String()),
+					))
+					a.console.EnsureBlankLine(ctx)
+					a.console.ShowSpinner(ctx, stepMessage, input.Step)
+					downgradeReported = true
+				},
+			),
 		})
 
 	req, err := azruntime.NewRequest(ctx, http.MethodGet, bundleURL)
@@ -1549,17 +1536,9 @@ func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL s
 
 	resp, err := pipeline.Do(req)
 	if err != nil {
-		if errors.Is(err, errInsecureBundleRedirect) {
-			return downloadFailed(insecureRedirect())
-		}
 		return downloadFailed(requestFailed(err))
 	}
 	defer resp.Body.Close()
-
-	if resp.Request != nil && resp.Request.URL != nil &&
-		!strings.EqualFold(resp.Request.URL.Scheme, "https") {
-		return downloadFailed(insecureRedirect())
-	}
 
 	if resp.StatusCode != http.StatusOK {
 		return downloadFailed(&internal.ErrorWithSuggestion{
@@ -1592,7 +1571,13 @@ func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL s
 		})
 	}
 
-	a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+	if downgradeReported {
+		a.console.StopSpinner(ctx, "", input.Step)
+		a.console.EnsureBlankLine(ctx)
+		a.console.MessageUxItem(ctx, &ux.DoneMessage{Message: stepMessage})
+	} else {
+		a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+	}
 
 	return tempFile.Name(), nil
 }
@@ -1612,9 +1597,12 @@ func (e *bundleDownloadError) Unwrap() error {
 	return e.err
 }
 
-// bundleTransportWithHTTPSRedirectsOnly clones an injected HTTP client so the
-// stricter redirect policy applies only to extension bundle downloads.
-func bundleTransportWithHTTPSRedirectsOnly(transport policy.Transporter) policy.Transporter {
+// bundleTransportWithRedirectWarning clones an injected HTTP client so extension
+// bundle downloads can warn before following an HTTPS-to-HTTP redirect.
+func bundleTransportWithRedirectWarning(
+	transport policy.Transporter,
+	warn func(context.Context, *url.URL),
+) policy.Transporter {
 	client, ok := transport.(*http.Client)
 	if !ok {
 		return transport
@@ -1623,14 +1611,18 @@ func bundleTransportWithHTTPSRedirectsOnly(transport policy.Transporter) policy.
 	bundleClient := *client
 	existingCheckRedirect := bundleClient.CheckRedirect
 	bundleClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if req.URL == nil || !strings.EqualFold(req.URL.Scheme, "https") {
-			return errInsecureBundleRedirect
-		}
 		if existingCheckRedirect != nil {
-			return existingCheckRedirect(req, via)
-		}
-		if len(via) >= 10 {
+			if err := existingCheckRedirect(req, via); err != nil {
+				return err
+			}
+		} else if len(via) >= 10 {
 			return errors.New("stopped after 10 redirects")
+		}
+
+		if len(via) > 0 && req.URL != nil && via[len(via)-1].URL != nil &&
+			strings.EqualFold(via[len(via)-1].URL.Scheme, "https") &&
+			strings.EqualFold(req.URL.Scheme, "http") {
+			warn(req.Context(), req.URL)
 		}
 		return nil
 	}

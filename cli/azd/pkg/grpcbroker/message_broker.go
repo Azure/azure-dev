@@ -87,11 +87,18 @@ type handlerWrapper struct {
 	progressIndex int // parameter index for progress callback
 }
 
+const maxPendingResponses = 50
+
+type pendingResponse[TMessage any] struct {
+	message  *TMessage
+	progress bool
+}
+
 type responseDispatcher[TMessage any] struct {
 	ctx     context.Context
 	ch      chan *TMessage
 	mu      sync.Mutex
-	queue   []*TMessage
+	queue   []pendingResponse[TMessage]
 	readyCh chan struct{}
 	doneCh  chan struct{}
 	stopped bool
@@ -108,7 +115,7 @@ func newResponseDispatcher[TMessage any](ctx context.Context, ch chan *TMessage)
 	return dispatcher
 }
 
-func (d *responseDispatcher[TMessage]) enqueue(msg *TMessage) {
+func (d *responseDispatcher[TMessage]) enqueue(msg *TMessage, progress bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -116,7 +123,12 @@ func (d *responseDispatcher[TMessage]) enqueue(msg *TMessage) {
 		return
 	}
 
-	d.queue = append(d.queue, msg)
+	pending := pendingResponse[TMessage]{message: msg, progress: progress}
+	if len(d.queue) < maxPendingResponses {
+		d.queue = append(d.queue, pending)
+	} else if !progress || d.queue[len(d.queue)-1].progress {
+		d.queue[len(d.queue)-1] = pending
+	}
 	select {
 	case d.readyCh <- struct{}{}:
 	default:
@@ -151,7 +163,7 @@ func (d *responseDispatcher[TMessage]) run() {
 					d.mu.Unlock()
 					break
 				}
-				msg := d.queue[0]
+				msg := d.queue[0].message
 				d.queue = d.queue[1:]
 				d.mu.Unlock()
 
@@ -595,7 +607,7 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 				requestId,
 				msgType,
 			)
-			dispatcher.enqueue(resp)
+			dispatcher.enqueue(resp, true)
 		} else {
 			mb.logger.Printf(
 				"[%s] WARNING: No channel found for progress message RequestId=%s, MessageType=%v",
@@ -614,7 +626,7 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 		if dispatcher, ok := mb.responseChans.Load(requestId); ok {
 			mb.logger.Printf("[%s] Dispatching message to channel for RequestId=%s, MessageType=%v",
 				mb.name, requestId, msgType)
-			dispatcher.enqueue(resp)
+			dispatcher.enqueue(resp, false)
 			mb.logger.Printf("[%s] Message dispatched successfully to RequestId=%s, MessageType=%v",
 				mb.name, requestId, msgType)
 			return

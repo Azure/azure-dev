@@ -458,7 +458,8 @@ func TestRun_StalledResponseDoesNotBlockOtherRequests(t *testing.T) {
 	runCtx, cancelRun := context.WithCancel(t.Context())
 	defer cancelRun()
 
-	stalledCh := make(chan *TestMessage, 50)
+	stalledCh := make(chan *TestMessage, 1)
+	stalledCh <- &TestMessage{}
 	stalledDispatcher := newResponseDispatcher(runCtx, stalledCh)
 	broker.responseChans.Store("stalled", stalledDispatcher)
 	defer stalledDispatcher.stop()
@@ -474,9 +475,11 @@ func TestRun_StalledResponseDoesNotBlockOtherRequests(t *testing.T) {
 	}()
 	require.NoError(t, broker.Ready(runCtx))
 
-	for range 51 {
+	for range 100 {
 		sim.serverToClient <- &TestMessage{RequestId: "stalled", IsProgress: true}
 	}
+	stalledFinal := &TestMessage{RequestId: "stalled", InnerMsg: &TestResponse{Result: "stalled done"}}
+	sim.serverToClient <- stalledFinal
 	expected := &TestMessage{RequestId: "ready", InnerMsg: &TestResponse{Result: "done"}}
 	sim.serverToClient <- expected
 
@@ -486,6 +489,28 @@ func TestRun_StalledResponseDoesNotBlockOtherRequests(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("response for another request was blocked by the stalled request")
 	}
+
+	stalledDispatcher.mu.Lock()
+	require.LessOrEqual(t, len(stalledDispatcher.queue), maxPendingResponses)
+	require.Same(t, stalledFinal, stalledDispatcher.queue[len(stalledDispatcher.queue)-1].message)
+	stalledDispatcher.mu.Unlock()
+
+	<-stalledCh
+	finalReceived := false
+	for range maxPendingResponses + 1 {
+		select {
+		case actual := <-stalledCh:
+			if actual == stalledFinal {
+				finalReceived = true
+			}
+		case <-time.After(time.Second):
+			t.Fatal("stalled response dispatch timed out")
+		}
+		if finalReceived {
+			break
+		}
+	}
+	require.True(t, finalReceived, "final response was not retained")
 
 	cancelRun()
 	sim.Close()

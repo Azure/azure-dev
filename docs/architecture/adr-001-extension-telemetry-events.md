@@ -72,6 +72,10 @@ records events from extensions admitted to the official registry.**
   best effort, so an author runs the same code path during local development as
   in production instead of having to swallow an error that only appears in one
   of them. The reason is written to the `azd` log, visible with `--debug`.
+- Rejected and dropped calls are summarized on the command span as a unique,
+  bounded set of `<extension-id>@<reason>` values plus a total count. The host
+  chooses the reason from a fixed enum and never copies caller-controlled event
+  or attribute content into the signal.
 - `extension.source` is still recorded on the span. Once the verified source
   gate has passed it is a useful dimension rather than a filter.
 - Accepted events are recorded on an `ext.usage` span rather than being appended
@@ -160,6 +164,14 @@ appears only during local development, which invites either noisy logging or a
 blanket ignore that also hides real bugs. The response already carries an
 `accepted` flag, so the outcome is stated rather than silent, and the drop
 reason goes to the `azd` log.
+
+**Emit one span for every rejected or dropped report.** Rejected because the
+extension controls call volume, and invalid calls deliberately do not spend the
+accepted-event budget. A reporting loop would therefore create an unbounded
+telemetry loop unless drop spans had a second budget, which would need its own
+dropped-signal behavior. Per-drop rows would also make a looping extension
+dominate the signal. A unique extension-and-reason set per invocation measures
+affected users while a separate bounded measurement preserves total volume.
 
 **Make telemetry a capability.** Rejected per review feedback: capabilities
 signal "this extension provides a customer-facing feature the host needs to

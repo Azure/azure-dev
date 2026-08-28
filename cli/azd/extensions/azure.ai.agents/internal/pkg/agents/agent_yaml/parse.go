@@ -190,12 +190,6 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 				return nil, fmt.Errorf("failed to unmarshal to ConnectionResource: %w", err)
 			}
 			resourceDefs = append(resourceDefs, connDef)
-		case ResourceKindSkill:
-			var skillDef SkillResource
-			if err := yaml.Unmarshal(resourceBytes, &skillDef); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal to SkillResource: %w", err)
-			}
-			resourceDefs = append(resourceDefs, skillDef)
 		case ResourceKindFile:
 			var fileDef FileResource
 			if err := yaml.Unmarshal(resourceBytes, &fileDef); err != nil {

@@ -545,7 +545,7 @@ func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
 		BuiltinTools: mapHarnessBuiltInTools(promptAgent.Harness.BuiltinTools),
 	}
 
-	seen := make(map[string]struct{}, len(promptAgent.HarnessSkills))
+	seen := make(map[string]struct{}, len(promptAgent.Harness.Skills))
 	addSkill := func(name, version string) {
 		name = strings.TrimSpace(name)
 		if name == "" {
@@ -561,20 +561,8 @@ func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
 		})
 	}
 
-	// Graph-published skills go first: they are the only ones azd knows a version
-	// for, and the dedupe below keeps a hand-written reference to the same name
-	// from replacing a pinned version with an unpinned one.
-	for _, skill := range promptAgent.HarnessSkills {
-		addSkill(skill.Name, skill.Version)
-	}
 	for _, skill := range promptAgent.Harness.Skills {
 		addSkill(skill.Name, skill.Version)
-	}
-	for _, name := range promptAgent.Skills {
-		// No version: this name came from the definition-level `skills` field, not
-		// from a publish, so azd has nothing to pin it to and defers to the
-		// service's default.
-		addSkill(name, "")
 	}
 	return harness
 }

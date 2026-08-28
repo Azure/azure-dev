@@ -62,7 +62,6 @@ const (
 	ResourceKindTool       ResourceKind = "tool"
 	ResourceKindToolbox    ResourceKind = "toolbox"
 	ResourceKindConnection ResourceKind = "connection"
-	ResourceKindSkill      ResourceKind = "skill"
 	ResourceKindFile       ResourceKind = "file"
 )
 
@@ -575,17 +574,6 @@ type PromptAgent struct {
 	// Skills is an optional list of Foundry skill names attached to the agent.
 	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
 
-	// HarnessSkills carries the skills a harnessed agent runs, resolved to the
-	// exact versions that were published. It is populated by the deploy graph
-	// from the agent's skills/ folder, never authored, and is therefore excluded
-	// from both YAML and JSON — an author pins skills through Harness.Skills.
-	//
-	// It exists separately from Skills because the two land in different places
-	// on the wire: a harnessed agent's skills nest under `harness`, where the
-	// service provisions them into the sandbox, while the definition-level
-	// `skills` field only ever applies to a harness-less agent.
-	HarnessSkills []HarnessSkillRef `json:"-" yaml:"-"`
-
 	// Tools is an optional list of tool definitions attached to the agent.
 	// Entries are passed through verbatim to the Foundry prompt-agent API, so
 	// author them using the API's snake_case tool schema. Supported types
@@ -638,12 +626,10 @@ type PromptAgent struct {
 	// the API does not define.
 	Memory *PromptMemory `json:"-" yaml:"memory,omitempty"`
 
-	// Connections declares project connections that the agent's tools depend on.
-	// The deploy engine resolves each connection through the resolution ladder
-	// (reference existing, create-if-missing, auto-fill target, provision) and
-	// assigns the required role. Only tools that need external wiring reference a
-	// connection by name; connections themselves are declared here once.
-	Connections []PromptConnection `json:"connections,omitempty" yaml:"connections,omitempty"`
+	// Connections names sibling azure.ai.connection services that must be ready
+	// before this agent is deployed. Tools reference the same Foundry connection
+	// names in their service-defined configuration.
+	Connections []string `json:"connections,omitempty" yaml:"connections,omitempty"`
 
 	// Toolbox optionally references an existing Foundry toolbox by name and
 	// version. When set, the deploy engine attaches that toolbox's MCP endpoint
@@ -739,36 +725,6 @@ type ToolboxReference struct {
 	// Version is the toolbox version. When empty the toolbox's default version
 	// is used.
 	Version string `json:"version,omitempty" yaml:"version,omitempty"`
-}
-
-// PromptConnection is a project connection declared on a prompt agent. It mirrors
-// the fields the Foundry connection API accepts and is intentionally distinct
-// from the AI-service Connection type used elsewhere in this package. AuthType
-// defaults to Entra (secret-free) when empty; ApiKey auth reads its secret from
-// Credentials.
-type PromptConnection struct {
-	// Name is the connection name, referenced by a tool's connection field.
-	Name string `json:"name" yaml:"name"`
-
-	// Category is the connection category (e.g. "CognitiveSearch", "RemoteTool").
-	Category string `json:"category" yaml:"category"`
-
-	// Target is the endpoint of the backing Azure resource. When empty, the
-	// deploy engine attempts to fill it from provisioning outputs.
-	Target string `json:"target,omitempty" yaml:"target,omitempty"`
-
-	// AuthType selects the authentication mode. Empty means AAD, the
-	// secret-free mode that uses the caller's Entra identity; "Entra" is
-	// accepted as a spelling of it and normalized. Otherwise one of the
-	// AuthType constants, e.g. "ApiKey".
-	AuthType string `json:"authType,omitempty" yaml:"authType,omitempty"`
-
-	// Credentials carries auth material for non-Entra auth (e.g. an API key,
-	// possibly as a ${ENV_VAR} reference resolved at deploy time).
-	Credentials map[string]any `json:"credentials,omitempty" yaml:"credentials,omitempty"`
-
-	// Metadata is optional additional connection metadata.
-	Metadata map[string]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.
@@ -1300,16 +1256,6 @@ type ConnectionResource struct {
 
 	// ConnectorName is the connector name for OAuth2 auth type, where Microsoft provides a managed OAuth2 app
 	ConnectorName string `json:"connectorName,omitempty" yaml:"connectorName,omitempty"`
-}
-
-// SkillResource Represents a skill bundle required by the agent. Skills are
-// normally discovered by convention from a local `skills/` folder, but a
-// manifest may declare one explicitly. Path points at the skill bundle
-// directory (containing SKILL.md); Version pins the registered skill version.
-type SkillResource struct {
-	Resource `json:",inline" yaml:",inline"`
-	Path     string `json:"path,omitempty" yaml:"path,omitempty"`
-	Version  string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
 // FileResource Represents a file (or folder of files) contributed to the

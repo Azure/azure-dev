@@ -27,7 +27,7 @@ func TestReadResponsesSSEBackground(t *testing.T) {
 		"event: response.completed",
 		`data: {"type":"response.completed","response":{"id":"resp_123","status":"completed"},"sequence_number":2}`,
 		"",
-	}, "\n")
+	}, "\n") + "\n"
 
 	var output bytes.Buffer
 	var progress []responsesStreamProgress
@@ -86,6 +86,72 @@ func TestReadResponsesSSEBackgroundTerminalRequiresIdentity(t *testing.T) {
 
 	require.ErrorIs(t, err, errResponsesStreamEndedBeforeIdentity)
 	assert.Empty(t, progress)
+}
+
+func TestReadResponsesSSEDiscardsPartialFrameAtEOF(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		stream       string
+		wantOutput   string
+		wantProgress int
+	}{
+		{
+			name:   "unterminated frame",
+			stream: `data: {"type":"response.output_text.delta","delta":"partial","sequence_number":1}` + "\n",
+		},
+		{
+			name:         "blank-line-delimited frame",
+			stream:       `data: {"type":"response.output_text.delta","delta":"complete","sequence_number":1}` + "\n\n",
+			wantOutput:   "[agent] complete",
+			wantProgress: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var output bytes.Buffer
+			var progress []responsesStreamProgress
+			err := readResponsesSSE(t.Context(), strings.NewReader(tt.stream), &output, "agent", false,
+				func(value responsesStreamProgress) error {
+					progress = append(progress, value)
+					return nil
+				})
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantOutput, output.String())
+			assert.Len(t, progress, tt.wantProgress)
+		})
+	}
+}
+
+func TestReadResponsesSSEFailedTerminalDoesNotRenderSnapshot(t *testing.T) {
+	t.Parallel()
+
+	stream := "event: response.failed\n" +
+		`data: {"response":{"id":"resp_123","status":"failed",` +
+		`"error":{"code":"runtime_error","message":"agent crashed"}},"sequence_number":4}` +
+		"\n\n"
+
+	var output bytes.Buffer
+	var progress []responsesStreamProgress
+	err := readResponsesSSE(t.Context(), strings.NewReader(stream), &output, "agent", true,
+		func(value responsesStreamProgress) error {
+			progress = append(progress, value)
+			return nil
+		})
+
+	require.EqualError(t, err, "agent failed (runtime_error): agent crashed")
+	assert.Empty(t, output.String())
+	require.Len(t, progress, 1)
+	assert.Equal(t, "resp_123", progress[0].ResponseID)
+	require.NotNil(t, progress[0].Cursor)
+	assert.Equal(t, int64(4), *progress[0].Cursor)
+	assert.Equal(t, "failed", progress[0].Status)
+	assert.True(t, progress[0].Terminal)
 }
 
 func TestReadResponsesSSEResumedTerminalUsesInitialIdentity(t *testing.T) {

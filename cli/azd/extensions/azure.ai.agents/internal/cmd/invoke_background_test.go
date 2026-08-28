@@ -65,6 +65,38 @@ func (w *afterSaveWriter) Write(p []byte) (int, error) {
 	return w.output.Write(p)
 }
 
+type inertPersistTimer struct{}
+
+func (inertPersistTimer) Stop() bool {
+	return true
+}
+
+type manualPersistTimer struct {
+	callback func()
+	stopped  bool
+	fired    bool
+}
+
+type manualPersistTimerCapture struct {
+	timer *manualPersistTimer
+}
+
+func (t *manualPersistTimer) Stop() bool {
+	if t.stopped || t.fired {
+		return false
+	}
+	t.stopped = true
+	return true
+}
+
+func (t *manualPersistTimer) Fire() {
+	if t.stopped || t.fired {
+		return
+	}
+	t.fired = true
+	t.callback()
+}
+
 func newTestProgressPersister(
 	store *orderingResponseStore,
 	writer io.Writer,
@@ -72,7 +104,22 @@ func newTestProgressPersister(
 ) *backgroundProgressPersister {
 	persister := newBackgroundProgressPersister(store, "agent-key", "sess_123", "conv_123", writer)
 	persister.now = now
+	persister.timerFactory = func(time.Duration, func()) backgroundPersistTimer {
+		return inertPersistTimer{}
+	}
 	return persister
+}
+
+func useManualPersistTimer(t *testing.T, persister *backgroundProgressPersister) *manualPersistTimerCapture {
+	t.Helper()
+
+	capture := &manualPersistTimerCapture{}
+	persister.timerFactory = func(delay time.Duration, callback func()) backgroundPersistTimer {
+		assert.Equal(t, backgroundCursorPersistInterval, delay)
+		capture.timer = &manualPersistTimer{callback: callback}
+		return capture.timer
+	}
+	return capture
 }
 
 func TestBackgroundProgressPersisterSavesBeforePrinting(t *testing.T) {
@@ -212,6 +259,78 @@ func TestBackgroundProgressPersisterFlushesPendingCursor(t *testing.T) {
 	require.NoError(t, persister.Flush(t.Context()))
 	require.Len(t, store.saves, 2)
 	assert.Equal(t, int64(1), *store.saves[1].LastSequenceNumber)
+}
+
+func TestBackgroundProgressPersisterTimerFlushesQuietStreamOnce(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{}
+	persister := newTestProgressPersister(store, io.Discard, time.Now)
+	timer := useManualPersistTimer(t, persister)
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(0)), Status: "in_progress", EventType: "response.created",
+	}))
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(1)), Status: "in_progress", EventType: "response.output_text.delta",
+	}))
+	require.Len(t, store.saves, 1)
+	require.NotNil(t, timer.timer)
+
+	timer.timer.Fire()
+
+	require.Len(t, store.saves, 2)
+	assert.Equal(t, int64(1), *store.saves[1].LastSequenceNumber)
+	require.NoError(t, persister.Flush(t.Context()))
+	assert.Len(t, store.saves, 2)
+	require.NoError(t, persister.Close())
+}
+
+func TestBackgroundProgressPersisterCloseStopsTimerAfterCancellation(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{}
+	persister := newTestProgressPersister(store, io.Discard, time.Now)
+	timer := useManualPersistTimer(t, persister)
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(0)), Status: "in_progress", EventType: "response.created",
+	}))
+	ctx, cancel := context.WithCancel(t.Context())
+	require.NoError(t, persister.Apply(ctx, responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(1)), Status: "in_progress", EventType: "response.output_text.delta",
+	}))
+	cancel()
+
+	require.NoError(t, persister.Close())
+	timer.timer.Fire()
+	assert.Len(t, store.saves, 1)
+	require.ErrorIs(t, persister.Apply(t.Context(), responsesStreamProgress{}), errBackgroundProgressPersisterClosed)
+}
+
+func TestBackgroundProgressPersisterSurfacesTimerError(t *testing.T) {
+	t.Parallel()
+
+	store := &orderingResponseStore{}
+	persister := newTestProgressPersister(store, io.Discard, time.Now)
+	timer := useManualPersistTimer(t, persister)
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(0)), Status: "in_progress", EventType: "response.created",
+	}))
+	require.NoError(t, persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(1)), Status: "in_progress", EventType: "response.output_text.delta",
+	}))
+	store.saveErr = errors.New("timed write failed")
+
+	timer.timer.Fire()
+
+	store.saveErr = nil
+	err := persister.Apply(t.Context(), responsesStreamProgress{
+		ResponseID: "resp_123", Cursor: new(int64(2)), Status: "in_progress", EventType: "response.output_text.delta",
+	})
+	require.EqualError(t, err, "timed write failed")
+	require.NoError(t, persister.Flush(t.Context()))
+	require.Len(t, store.saves, 2)
+	assert.Equal(t, int64(1), *store.saves[1].LastSequenceNumber)
+	require.NoError(t, persister.Close())
 }
 
 func TestInvokeCommandBackgroundValidation(t *testing.T) {

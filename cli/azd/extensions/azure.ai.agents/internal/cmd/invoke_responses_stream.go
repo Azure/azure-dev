@@ -240,8 +240,10 @@ func readResponsesSSEWithInitialStateAndLimit(
 				if _, err := fmt.Fprintln(writer); err != nil {
 					return err
 				}
-			} else if err := writeResponsesSnapshot(writer, agentName, snapshot, envelope.Response); err != nil {
-				return err
+			} else if snapshot.Status != "failed" {
+				if err := writeResponsesSnapshot(writer, agentName, snapshot, envelope.Response); err != nil {
+					return err
+				}
 			}
 		case "error":
 			var streamErr responsesError
@@ -319,9 +321,6 @@ func readResponsesSSEWithInitialStateAndLimit(
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error reading response stream: %w", err)
-	}
-	if err := dispatch(); err != nil {
-		return err
 	}
 	if requireTerminal && identity == "" {
 		return errResponsesStreamEndedBeforeIdentity

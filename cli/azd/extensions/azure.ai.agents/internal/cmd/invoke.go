@@ -1382,8 +1382,9 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		if ctx.Err() == nil {
 			flushErr = progressPersister.Flush(ctx)
 		}
-		if streamErr != nil || flushErr != nil {
-			return errors.Join(streamErr, flushErr)
+		closeErr := progressPersister.Close()
+		if streamErr != nil || flushErr != nil || closeErr != nil {
+			return errors.Join(streamErr, flushErr, closeErr)
 		}
 	}
 	totalDuration := time.Since(invokeStart)

@@ -5,8 +5,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 )
 
@@ -17,6 +19,14 @@ const (
 	backgroundCursorPersistInterval   = 3 * time.Second
 	backgroundCursorPersistEventCount = 64
 )
+
+var errBackgroundProgressPersisterClosed = errors.New("background progress persister is closed")
+
+type backgroundPersistTimer interface {
+	Stop() bool
+}
+
+type backgroundPersistTimerFactory func(time.Duration, func()) backgroundPersistTimer
 
 func isTerminalResponseStatus(status string) bool {
 	switch status {
@@ -38,6 +48,7 @@ func isResponseLifecycleEvent(eventType string) bool {
 }
 
 type backgroundProgressPersister struct {
+	mu                 sync.Mutex
 	store              responseStateStore
 	agentKey           string
 	sessionID          string
@@ -51,6 +62,11 @@ type backgroundProgressPersister struct {
 	eventsSincePersist int
 	printedResponseID  bool
 	dirty              bool
+	timerFactory       backgroundPersistTimerFactory
+	timer              backgroundPersistTimer
+	timerGeneration    uint64
+	pendingTimerErr    error
+	closed             bool
 }
 
 func newBackgroundProgressPersister(
@@ -67,10 +83,22 @@ func newBackgroundProgressPersister(
 		conversationID: conversationID,
 		writer:         writer,
 		now:            time.Now,
+		timerFactory: func(delay time.Duration, callback func()) backgroundPersistTimer {
+			return time.AfterFunc(delay, callback)
+		},
 	}
 }
 
 func (p *backgroundProgressPersister) Apply(ctx context.Context, progress responsesStreamProgress) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.closed {
+		return errBackgroundProgressPersisterClosed
+	}
+	if err := p.takeTimerErrorLocked(); err != nil {
+		return err
+	}
 	if progress.ResponseID == "" {
 		return nil
 	}
@@ -92,19 +120,87 @@ func (p *backgroundProgressPersister) Apply(ctx context.Context, progress respon
 		p.eventsSincePersist >= backgroundCursorPersistEventCount ||
 		(!p.lastPersistedAt.IsZero() && now.Sub(p.lastPersistedAt) >= backgroundCursorPersistInterval)
 	if !shouldPersist {
+		p.scheduleTimerLocked(ctx)
 		return nil
 	}
-	return p.persist(ctx, now)
+	return p.persistLocked(ctx, now)
 }
 
 func (p *backgroundProgressPersister) Flush(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.closed {
+		return errBackgroundProgressPersisterClosed
+	}
+	p.stopTimerLocked()
+	if err := p.takeTimerErrorLocked(); err != nil {
+		return err
+	}
 	if !p.dirty {
 		return nil
 	}
-	return p.persist(ctx, p.now())
+	return p.persistLocked(ctx, p.now())
 }
 
-func (p *backgroundProgressPersister) persist(ctx context.Context, now time.Time) error {
+// Close stops asynchronous persistence and reports any timer error not already
+// observed by Apply or Flush. It intentionally does not flush dirty state when
+// command cancellation caused the stream to exit.
+func (p *backgroundProgressPersister) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.stopTimerLocked()
+	p.closed = true
+	return p.takeTimerErrorLocked()
+}
+
+func (p *backgroundProgressPersister) scheduleTimerLocked(ctx context.Context) {
+	if p.timer != nil || !p.dirty {
+		return
+	}
+
+	p.timerGeneration++
+	generation := p.timerGeneration
+	persistCtx := context.WithoutCancel(ctx)
+	p.timer = p.timerFactory(backgroundCursorPersistInterval, func() {
+		p.persistFromTimer(persistCtx, generation)
+	})
+}
+
+func (p *backgroundProgressPersister) persistFromTimer(ctx context.Context, generation uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.closed || generation != p.timerGeneration {
+		return
+	}
+	p.timer = nil
+	if !p.dirty || p.pendingTimerErr != nil {
+		return
+	}
+	if err := p.persistLocked(ctx, p.now()); err != nil {
+		p.pendingTimerErr = err
+	}
+}
+
+func (p *backgroundProgressPersister) stopTimerLocked() {
+	if p.timer == nil {
+		return
+	}
+	p.timerGeneration++
+	p.timer.Stop()
+	p.timer = nil
+}
+
+func (p *backgroundProgressPersister) takeTimerErrorLocked() error {
+	err := p.pendingTimerErr
+	p.pendingTimerErr = nil
+	return err
+}
+
+func (p *backgroundProgressPersister) persistLocked(ctx context.Context, now time.Time) error {
+	p.stopTimerLocked()
 	if err := p.store.Save(ctx, p.agentKey, p.latest); err != nil {
 		return err
 	}

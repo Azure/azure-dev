@@ -494,6 +494,8 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.version` | string | Extension version |
 | `extension.grpc.legacy_call_count` | measurement | Number of RPCs made through the temporary legacy `/azdext.*` compatibility bridge during the command |
 | `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined event on a failed lifecycle-hook or service-target `cmd.*` span |
+| `extension.usage.dropped` | string[] | Unique `<extension-id>@<reason>` entries for extension usage reports dropped during the invocation |
+| `extension.usage.dropped.count` | measurement | Total extension usage reports dropped during the invocation |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. First-party concrete keys are declared in `cli/azd/extensions/telemetry/fields.go` |
 | `ext.demo.mode` | string | Demo telemetry mode: currently `sample` (`demo.telemetry.reported`) |
 | `ext.demo.outcome` | string | Demo telemetry outcome: currently `completed` (`demo.telemetry.reported`) |
@@ -547,6 +549,11 @@ privacy reviewed with their extension.
 Only eligible official-registry installations produce these spans. Other
 installations receive a normal response without recording an event, as does
 any report past the limit of 100 spans per `azd` invocation.
+Rejected and dropped calls are summarized
+on the command span using `extension.usage.dropped` and
+`extension.usage.dropped.count`. The list contains only the extension ID and a
+fixed host-defined reason; it never contains caller-supplied event or attribute
+content.
 
 Reviewed first-party extension usage events currently include:
 

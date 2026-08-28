@@ -11,6 +11,9 @@ import (
 )
 
 const (
+	// Periodic cursor persistence bounds duplicate replay after abrupt termination without a
+	// UserConfig read-modify-write for every SSE event. Identity, lifecycle, and terminal events
+	// persist immediately, and normal exits flush pending state.
 	backgroundCursorPersistInterval   = 3 * time.Second
 	backgroundCursorPersistEventCount = 64
 )

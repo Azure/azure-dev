@@ -221,7 +221,7 @@
       }
     },
     {
-      "$comment": "The activity.publish block is shared publish metadata for Activity use cases (including simple). Digital Worker adds stricter requirements: publish must exist, publishScope must be tenant, and agenticUserTemplate is required to carry the persisted blueprint identity.",
+      "$comment": "The activity.publish block is shared publish metadata for Activity use cases (including simple). Digital Worker publish is tenant-only; permission scopes and access boundaries are optional.",
       "if": {
         "properties": {
           "activity": {
@@ -236,13 +236,11 @@
       "then": {
         "properties": {
           "activity": {
-            "required": ["publish"],
             "properties": {
               "publish": {
                 "properties": {
                   "publishScope": { "const": "tenant" }
-                },
-                "required": ["agenticUserTemplate"]
+                }
               }
             }
           }
@@ -273,7 +271,7 @@
         "useCase": { "type": "string", "enum": ["simple", "digital_worker"] },
         "publish": {
           "$ref": "#/definitions/ActivityPublishConfig",
-          "description": "Shared Microsoft 365 app publish metadata used by Activity use cases. For digital_worker, publishScope=tenant and agenticUserTemplate are required."
+          "description": "Shared Microsoft 365 app publish metadata used by Activity use cases. Digital Worker publication is tenant-only."
         }
       },
       "additionalProperties": false
@@ -291,19 +289,40 @@
         "developerWebsiteUrl": { "type": "string", "format": "uri" },
         "privacyUrl": { "type": "string", "format": "uri" },
         "termsOfUseUrl": { "type": "string", "format": "uri" },
-        "agenticUserTemplate": { "$ref": "#/definitions/AgenticUserTemplateConfig" }
+        "optionalPermissionScopes": {
+          "type": "array",
+          "description": "Optional Microsoft 365 permission selections for a Digital Worker.",
+          "items": { "$ref": "#/definitions/Microsoft365PermissionScopes" }
+        },
+        "accessBoundaries": {
+          "type": "array",
+          "description": "Optional Digital Worker access boundaries. An explicit empty array clears existing boundaries.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "read.1on1.developers",
+              "write.1on1.developers",
+              "read.group.developers",
+              "write.group.developers"
+            ]
+          },
+          "uniqueItems": true
+        }
       },
       "additionalProperties": false
     },
-    "AgenticUserTemplateConfig": {
+    "Microsoft365PermissionScopes": {
       "type": "object",
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "file": { "type": "string", "minLength": 1 },
-        "schemaVersion": { "type": "string", "minLength": 1 },
-        "communicationProtocol": { "type": "string", "minLength": 1 }
+        "resourceAppId": { "type": "string", "minLength": 1 },
+        "scopes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        }
       },
-      "required": ["id", "file", "schemaVersion", "communicationProtocol"],
+      "required": ["resourceAppId", "scopes"],
       "additionalProperties": false
     },
     "ProtocolVersionRecord": {

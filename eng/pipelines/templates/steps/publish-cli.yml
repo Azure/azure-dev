@@ -43,6 +43,7 @@ steps:
     - pwsh: |
         gh release create `
           "$(GH_RELEASE_TAG)" `
+          --target "$(Build.SourceVersion)" `
           --title "$(GH_RELEASE_TAG)" `
           --notes-file changelog/CHANGELOG.md `
           --repo $(Build.Repository.Name)

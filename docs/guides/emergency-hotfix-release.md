@@ -30,6 +30,12 @@ version.
 
 Use the normal fork and pull request workflow for changes to the shared hotfix branch.
 
+Azure Pipelines loads its templates from the selected hotfix branch. Confirm that the branch's
+`eng/pipelines/templates/steps/publish-cli.yml` passes `--target "$(Build.SourceVersion)"` to
+`gh release create`. If the source release tag predates that safeguard, include the same pipeline
+change in the hotfix pull request. Without it, GitHub creates the release tag from `main` instead of
+the commit that produced the hotfix artifacts.
+
 ## Apply and review the fix
 
 Cherry-pick only the approved fix commits:

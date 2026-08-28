@@ -71,6 +71,56 @@ func TestReadResponsesSSEBackgroundRequiresTerminal(t *testing.T) {
 	assert.Contains(t, err.Error(), "disconnected before reaching a terminal state")
 }
 
+func TestReadResponsesSSEBackgroundTerminalRequiresIdentity(t *testing.T) {
+	t.Parallel()
+
+	stream := "event: response.completed\n" +
+		`data: {"response":{"status":"completed"},"sequence_number":1}` + "\n\n"
+
+	var progress []responsesStreamProgress
+	err := readResponsesSSE(t.Context(), strings.NewReader(stream), io.Discard, "agent", true,
+		func(value responsesStreamProgress) error {
+			progress = append(progress, value)
+			return nil
+		})
+
+	require.ErrorIs(t, err, errResponsesStreamEndedBeforeIdentity)
+	assert.Empty(t, progress)
+}
+
+func TestReadResponsesSSEResumedTerminalUsesInitialIdentity(t *testing.T) {
+	t.Parallel()
+
+	stream := "event: response.completed\n" +
+		`data: {"response":{"status":"completed"},"sequence_number":2}` + "\n\n"
+	initial := &responsesStreamInitialState{
+		ResponseID: "resp_123",
+		Cursor:     new(int64(1)),
+		Status:     "in_progress",
+	}
+
+	var progress []responsesStreamProgress
+	err := readResponsesSSEWithInitialState(
+		t.Context(),
+		strings.NewReader(stream),
+		io.Discard,
+		"agent",
+		true,
+		initial,
+		func(value responsesStreamProgress) error {
+			progress = append(progress, value)
+			return nil
+		},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, progress, 1)
+	assert.Equal(t, "resp_123", progress[0].ResponseID)
+	assert.Equal(t, int64(2), *progress[0].Cursor)
+	assert.Equal(t, "completed", progress[0].Status)
+	assert.True(t, progress[0].Terminal)
+}
+
 func TestReadResponsesSSESuppressesDuplicateSequence(t *testing.T) {
 	t.Parallel()
 

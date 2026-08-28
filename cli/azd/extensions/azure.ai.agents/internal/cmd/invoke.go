@@ -294,13 +294,6 @@ does not support raw output, and cannot be combined with --timeout.`,
 						"remove --output raw so azd can save the Response identity and cursor",
 					)
 				}
-				if flags.agentEndpoint != "" {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--background is not supported with --agent-endpoint",
-						"run from the azd project so the background Response state can be saved",
-					)
-				}
 			}
 
 			return action.Run(ctx)
@@ -1201,9 +1194,14 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	var responseStore responseStateStore
 	if a.flags.background {
 		if rc.azdClient == nil || agentKey == "" {
-			return fmt.Errorf("background Responses require project-backed local state")
+			return fmt.Errorf(
+				"background Responses require persistent azd state; run through azd instead of the extension executable directly",
+			)
 		}
 		responseStore = newUserConfigResponseStateStore(rc.azdClient)
+		if _, err := responseStore.Get(ctx, agentKey); err != nil {
+			return fmt.Errorf("background Responses require persistent azd state: %w", err)
+		}
 	}
 
 	// Acquire the bearer token after body validation so a local input error

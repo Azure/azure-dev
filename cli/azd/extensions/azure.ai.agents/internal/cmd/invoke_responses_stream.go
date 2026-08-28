@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +16,8 @@ import (
 )
 
 const maxResponsesSSEEventBytes = 4 * 1024 * 1024
+
+var errResponsesStreamEndedBeforeIdentity = errors.New("Responses stream ended before its identity was received")
 
 type responsesStreamProgress struct {
 	ResponseID string
@@ -58,6 +61,12 @@ type responsesSSEEvent struct {
 	data []byte
 }
 
+type responsesStreamInitialState struct {
+	ResponseID string
+	Cursor     *int64
+	Status     string
+}
+
 func readResponsesSSE(
 	ctx context.Context,
 	body io.Reader,
@@ -66,12 +75,33 @@ func readResponsesSSE(
 	requireTerminal bool,
 	onProgress func(responsesStreamProgress) error,
 ) error {
-	return readResponsesSSEWithLimit(
+	return readResponsesSSEWithInitialState(
 		ctx,
 		body,
 		writer,
 		agentName,
 		requireTerminal,
+		nil,
+		onProgress,
+	)
+}
+
+func readResponsesSSEWithInitialState(
+	ctx context.Context,
+	body io.Reader,
+	writer io.Writer,
+	agentName string,
+	requireTerminal bool,
+	initialState *responsesStreamInitialState,
+	onProgress func(responsesStreamProgress) error,
+) error {
+	return readResponsesSSEWithInitialStateAndLimit(
+		ctx,
+		body,
+		writer,
+		agentName,
+		requireTerminal,
+		initialState,
 		onProgress,
 		maxResponsesSSEEventBytes,
 	)
@@ -86,6 +116,28 @@ func readResponsesSSEWithLimit(
 	onProgress func(responsesStreamProgress) error,
 	maxEventBytes int,
 ) error {
+	return readResponsesSSEWithInitialStateAndLimit(
+		ctx,
+		body,
+		writer,
+		agentName,
+		requireTerminal,
+		nil,
+		onProgress,
+		maxEventBytes,
+	)
+}
+
+func readResponsesSSEWithInitialStateAndLimit(
+	ctx context.Context,
+	body io.Reader,
+	writer io.Writer,
+	agentName string,
+	requireTerminal bool,
+	initialState *responsesStreamInitialState,
+	onProgress func(responsesStreamProgress) error,
+	maxEventBytes int,
+) error {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxEventBytes+len("data: ")+1)
 
@@ -97,6 +149,11 @@ func readResponsesSSEWithLimit(
 	var cursor *int64
 	var status string
 	var terminal bool
+	if initialState != nil {
+		identity = initialState.ResponseID
+		cursor = initialState.Cursor
+		status = initialState.Status
+	}
 
 	dispatch := func() error {
 		if !dataSeen {
@@ -153,6 +210,9 @@ func readResponsesSSEWithLimit(
 			case "response.cancelled":
 				snapshot.Status = "cancelled"
 			}
+		}
+		if requireTerminal && identity == "" && isTerminalResponseStatus(snapshot.Status) {
+			return errResponsesStreamEndedBeforeIdentity
 		}
 
 		switch event.name {
@@ -263,10 +323,10 @@ func readResponsesSSEWithLimit(
 	if err := dispatch(); err != nil {
 		return err
 	}
+	if requireTerminal && identity == "" {
+		return errResponsesStreamEndedBeforeIdentity
+	}
 	if requireTerminal && !terminal {
-		if identity == "" {
-			return fmt.Errorf("background Response stream ended before its identity was received")
-		}
 		return fmt.Errorf("background Response %s disconnected before reaching a terminal state", identity)
 	}
 	return nil

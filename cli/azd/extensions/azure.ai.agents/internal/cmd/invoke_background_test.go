@@ -266,6 +266,25 @@ func TestInvokeCommandBackgroundValidation(t *testing.T) {
 	}
 }
 
+func TestInvokeCommandBackgroundEndpointRequiresPersistentStateAtRuntime(t *testing.T) {
+	isolateFromAzdDaemon(t)
+
+	cmd := newInvokeCommand(nil)
+	cmd.SetArgs([]string{
+		"--background",
+		"--agent-endpoint",
+		"https://acct.services.ai.azure.com/api/projects/proj/agents/test-agent/endpoint/protocols/openai/responses",
+		"hello",
+	})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "background Responses require persistent azd state")
+	assert.NotContains(t, err.Error(), "--background is not supported with --agent-endpoint")
+}
+
 type capturedBackgroundRequest struct {
 	method string
 	path   string
@@ -298,7 +317,7 @@ func TestResponsesRemoteBackground(t *testing.T) {
 			streamDelay:     1100 * time.Millisecond,
 		},
 		{
-			name:            "server-assigned session",
+			name:            "endpoint with state and server-assigned session",
 			assignedSession: "assigned-session",
 		},
 	}
@@ -338,8 +357,16 @@ func TestResponsesRemoteBackground(t *testing.T) {
 
 			userConfig := newInvokeUserConfigServer()
 			azdClient := newInvokeTestAzdClient(t, userConfig)
-			const agentKey = "agent-key"
+			agentKey := "agent-key"
 			var output bytes.Buffer
+			var endpoint *parsedAgentEndpoint
+			if tt.assignedSession != "" {
+				endpoint = &parsedAgentEndpoint{
+					ProjectEndpoint: server.URL + "/api/projects/test-project",
+					AgentName:       "test-agent",
+				}
+				agentKey = buildAgentKey(endpoint.ProjectEndpoint, endpoint.AgentName, "", false)
+			}
 			action := &InvokeAction{
 				flags: &invokeFlags{
 					message:      "long task",
@@ -349,7 +376,8 @@ func TestResponsesRemoteBackground(t *testing.T) {
 					background:   true,
 					outputFmt:    outputDefault,
 				},
-				writer: &output,
+				writer:   &output,
+				endpoint: endpoint,
 				resolveRemoteContextFn: func(context.Context) (*remoteContext, error) {
 					return &remoteContext{
 						name:            "test-agent",
@@ -409,4 +437,30 @@ func TestResponsesRemoteBackground(t *testing.T) {
 			assert.Contains(t, output.String(), "Response:     resp_123")
 		})
 	}
+}
+
+func TestResponsesRemoteBackgroundEndpointWithoutPersistentState(t *testing.T) {
+	action := &InvokeAction{
+		flags: &invokeFlags{
+			message:    "long task",
+			background: true,
+			outputFmt:  outputDefault,
+		},
+		endpoint: &parsedAgentEndpoint{
+			ProjectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
+			AgentName:       "test-agent",
+		},
+		resolveRemoteContextFn: func(context.Context) (*remoteContext, error) {
+			return &remoteContext{
+				name:            "test-agent",
+				agentKey:        "stable-agent-key",
+				projectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
+			}, nil
+		},
+	}
+
+	err := action.responsesRemote(t.Context())
+	require.EqualError(t, err,
+		"background Responses require persistent azd state; "+
+			"run through azd instead of the extension executable directly")
 }

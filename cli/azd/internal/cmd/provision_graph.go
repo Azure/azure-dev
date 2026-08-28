@@ -124,7 +124,8 @@ func (p *ProvisionAction) provisionLayersGraph(
 		layerPath := layer.AbsolutePath(p.projectConfig.Path)
 
 		if err := g.AddStep(&exegraph.Step{
-			Name: provisionLayerStepName(layer),
+			Name:             provisionLayerStepName(layer),
+			ConcurrencyGroup: provisionConcurrencyGroup,
 			Action: func(ctx context.Context) error {
 				if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, layer); err != nil {
 					return fmt.Errorf("initializing provisioning manager: %w", err)
@@ -273,8 +274,9 @@ func (p *ProvisionAction) provisionLayersGraph(
 			}
 
 			if err := g.AddStep(&exegraph.Step{
-				Name:      stepNames[i],
-				DependsOn: deps,
+				Name:             stepNames[i],
+				DependsOn:        deps,
+				ConcurrencyGroup: provisionConcurrencyGroup,
 				Action: func(ctx context.Context) error {
 					outcome, err := p.provisionSingleLayerWithOutcome(ctx, layer, stepNames[i])
 					if err != nil {
@@ -504,17 +506,9 @@ func (p *ProvisionAction) graphRunOptions(ctx context.Context, quiet bool) exegr
 		}
 	}
 
-	if v, ok := os.LookupEnv("AZD_PROVISION_CONCURRENCY"); ok {
-		if n, parseErr := strconv.Atoi(v); parseErr != nil {
-			log.Printf("warning: ignoring invalid AZD_PROVISION_CONCURRENCY=%q: %v", v, parseErr)
-		} else if n > 0 {
-			clamped := min(n, 64)
-			if clamped < n {
-				log.Printf("clamping provision concurrency from %d to %d", n, clamped)
-			}
-			opts.MaxConcurrency = clamped
-		}
-	}
+	concurrency := resolveProvisionGraphConcurrency(os.LookupEnv)
+	opts.MaxConcurrency = concurrency.max
+	opts.GroupConcurrency = concurrency.groups
 
 	return opts
 }

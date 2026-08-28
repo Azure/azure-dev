@@ -52,6 +52,11 @@ type RunOptions struct {
 	// Negative values are treated as zero.
 	MaxConcurrency int
 
+	// GroupConcurrency limits the number of simultaneously running steps in each
+	// named [Step.ConcurrencyGroup]. Non-positive limits are ignored. Group limits
+	// are enforced beneath MaxConcurrency and do not reserve worker capacity.
+	GroupConcurrency map[string]int
+
 	// ErrorPolicy determines behavior on step failure.
 	ErrorPolicy ErrorPolicy
 
@@ -67,8 +72,9 @@ type RunOptions struct {
 	// It is invoked from worker goroutines and must be safe for concurrent use.
 	OnStepStart func(stepName string)
 
-	// OnStepDone is called (if non-nil) when a step finishes, with a nil error on success.
-	// It is invoked from worker goroutines and must be safe for concurrent use.
+	// OnStepDone is called (if non-nil) when a step reaches a terminal state,
+	// including when it is skipped. It may be invoked from worker goroutines or
+	// the scheduler coordinator and must be safe for concurrent use.
 	OnStepDone func(stepName string, err error)
 }
 
@@ -118,11 +124,10 @@ func RunWithResult(ctx context.Context, g *Graph, opts RunOptions) (result *RunR
 }
 
 // execute implements an event-driven scheduler with a bounded worker pool.
-// Steps are dispatched as soon as all their predecessors complete, eliminating
-// the head-of-line blocking of a phase-based approach. A fixed pool of worker
-// goroutines pulls ready steps from a queue, executes them, and reports
-// completion back to a single coordinator goroutine that updates in-degrees
-// and enqueues newly unblocked successors.
+// A single coordinator admits ready steps in work-conserving round-robin order
+// across concurrency groups, then workers execute admitted steps and report
+// completion. Capacity is never acquired by workers, so a saturated group
+// cannot occupy workers while waiting for another step in that group to finish.
 func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 	n := g.Len()
 	result := &RunResult{
@@ -217,24 +222,101 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 
 	runStart := time.Now()
 
-	// Seed ready queue with zero in-degree steps, sorted by transitive
-	// dependent count descending (critical-path heuristic). Steps with more
-	// downstream dependents start first, reducing overall wall-clock time
-	// when parallelism is bounded.
-	inflight := 0
+	// Ready steps are partitioned by concurrency group. The order within each
+	// group preserves the graph's critical-path priority. The group cursor
+	// rotates after every admission so a continuously ready group cannot starve
+	// another group, while an uncontested group can still consume all capacity.
 	priorityOrder := g.priorityOrder()
-	for _, name := range priorityOrder {
-		if inDegree[name] == 0 {
-			workQueue <- name
-			inflight++
+	priorityRank := make(map[string]int, len(priorityOrder))
+	for rank, name := range priorityOrder {
+		priorityRank[name] = rank
+	}
+	compareReady := func(a, b string) int {
+		return cmp.Compare(priorityRank[a], priorityRank[b])
+	}
+	readyByGroup := make(map[string][]string)
+	var groupOrder []string
+	groupActive := make(map[string]int)
+	groupCursor := 0
+	readyCount := 0
+	inflight := 0
+
+	enqueueReady := func(names []string) {
+		names = slices.Clone(names)
+		slices.SortFunc(names, compareReady)
+
+		touchedGroups := make(map[string]struct{})
+		for _, name := range names {
+			group := g.steps[name].ConcurrencyGroup
+			if _, ok := readyByGroup[group]; !ok {
+				groupOrder = append(groupOrder, group)
+			}
+			readyByGroup[group] = append(readyByGroup[group], name)
+			touchedGroups[group] = struct{}{}
+			readyCount++
+		}
+		for group := range touchedGroups {
+			slices.SortFunc(readyByGroup[group], compareReady)
 		}
 	}
+
+	groupHasCapacity := func(group string) bool {
+		limit := opts.GroupConcurrency[group]
+		return limit <= 0 || groupActive[group] < limit
+	}
+
+	nextReady := func() (string, bool) {
+		for offset := range len(groupOrder) {
+			index := (groupCursor + offset) % len(groupOrder)
+			group := groupOrder[index]
+			queue := readyByGroup[group]
+			if len(queue) == 0 || !groupHasCapacity(group) {
+				continue
+			}
+
+			name := queue[0]
+			readyByGroup[group] = queue[1:]
+			readyCount--
+			groupCursor = (index + 1) % len(groupOrder)
+			return name, true
+		}
+		return "", false
+	}
+
+	dispatchReady := func() {
+		for inflight < numWorkers && readyCount > 0 {
+			name, ok := nextReady()
+			if !ok {
+				return
+			}
+			groupActive[g.steps[name].ConcurrencyGroup]++
+			inflight++
+			workQueue <- name
+		}
+	}
+
+	releaseCapacity := func(name string) {
+		group := g.steps[name].ConcurrencyGroup
+		groupActive[group]--
+	}
+
+	// Seed ready queues with zero in-degree steps, sorted by transitive
+	// dependent count descending (critical-path heuristic).
+	var initialReady []string
+	for _, name := range priorityOrder {
+		if inDegree[name] == 0 {
+			initialReady = append(initialReady, name)
+		}
+	}
+	enqueueReady(initialReady)
+	dispatchReady()
 
 	// Event loop: process completions as they arrive. Each completion may
 	// unblock successors whose in-degree drops to zero.
 	for inflight > 0 {
 		comp := <-completions
 		inflight--
+		releaseCapacity(comp.name)
 
 		status, isRealFailure := classifyStepResult(comp.err, comp.schedulerCanceled)
 		timingMu.Lock()
@@ -261,6 +343,7 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 				for inflight > 0 {
 					r := <-completions
 					inflight--
+					releaseCapacity(r.name)
 					drainStatus, drainIsReal := classifyStepResult(r.err, r.schedulerCanceled)
 					if drainIsReal {
 						allErrors = append(allErrors, r.err)
@@ -294,7 +377,7 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 		// this with a proper work-stealing queue.
 		deps := dependents[comp.name]
 		needsClone := false
-		var readyBatch []string // collect newly ready steps for priority sorting
+		var readyBatch []string // collect newly ready steps for grouped enqueue
 		for i := 0; i < len(deps); i++ {
 			dep := deps[i]
 			inDegree[dep]--
@@ -331,18 +414,10 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 			}
 		}
 
-		// Sort newly ready steps by priority (critical-path first).
-		// Stable sort so ties are deterministic across runs (tests rely on
-		// this, and users benefit from reproducible scheduling order).
-		if len(readyBatch) > 1 {
-			slices.SortStableFunc(readyBatch, func(a, b string) int {
-				return cmp.Compare(g.Priority(b), g.Priority(a))
-			})
-		}
-		for _, name := range readyBatch {
-			workQueue <- name
-			inflight++
-		}
+		// enqueueReady sorts each touched group by priority, so newly ready
+		// steps merge into their group's queue in critical-path order.
+		enqueueReady(readyBatch)
+		dispatchReady()
 	}
 
 	close(workQueue)
@@ -363,13 +438,14 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 			seen[st.Name] = true
 		}
 		now := time.Now()
-		timingMu.Lock()
+		var skippedSteps []StepTiming
 		for _, name := range g.order {
 			if seen[name] {
 				continue
 			}
 			skipErr := &StepSkippedError{StepName: name}
-			result.Steps = append(result.Steps, StepTiming{
+			safeNotifyDone(opts, name, skipErr)
+			skippedSteps = append(skippedSteps, StepTiming{
 				Name:   name,
 				Status: StepSkipped,
 				Start:  now,
@@ -378,6 +454,8 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 				Err:    skipErr,
 			})
 		}
+		timingMu.Lock()
+		result.Steps = append(result.Steps, skippedSteps...)
 		timingMu.Unlock()
 	}
 

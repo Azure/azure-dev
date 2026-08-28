@@ -179,6 +179,46 @@ func TestRun_FailFast_CancelsRemaining(t *testing.T) {
 	// immediately), but the error should propagate.
 }
 
+func TestRun_FailFast_NotifiesUnadmittedSteps(t *testing.T) {
+	g := NewGraph()
+	for _, step := range []*Step{
+		{
+			Name:   "fail",
+			Action: func(_ context.Context) error { return errors.New("boom") },
+		},
+		{
+			Name:   "not-admitted-a",
+			Action: func(_ context.Context) error { return nil },
+		},
+		{
+			Name:   "not-admitted-b",
+			Action: func(_ context.Context) error { return nil },
+		},
+	} {
+		require.NoError(t, g.AddStep(step))
+	}
+
+	var started []string
+	done := make(map[string]error)
+	err := Run(t.Context(), g, RunOptions{
+		MaxConcurrency: 1,
+		ErrorPolicy:    FailFast,
+		OnStepStart: func(name string) {
+			started = append(started, name)
+		},
+		OnStepDone: func(name string, err error) {
+			done[name] = err
+		},
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, []string{"fail"}, started)
+	require.Len(t, done, 3)
+	assert.Error(t, done["fail"])
+	assert.True(t, IsStepSkipped(done["not-admitted-a"]))
+	assert.True(t, IsStepSkipped(done["not-admitted-b"]))
+}
+
 func TestRun_ContinueOnError_CollectsAll(t *testing.T) {
 	g := NewGraph()
 
@@ -371,6 +411,334 @@ func TestRun_MaxConcurrency(t *testing.T) {
 	require.NoError(t, Run(t.Context(), g, RunOptions{MaxConcurrency: 2}))
 	assert.LessOrEqual(t, maxConcurrent.Load(), int32(2),
 		"should not exceed max concurrency of 2")
+}
+
+func TestRun_GroupConcurrency(t *testing.T) {
+	g := NewGraph()
+	var concurrent atomic.Int32
+	var maxConcurrent atomic.Int32
+
+	for i := range 6 {
+		require.NoError(t, g.AddStep(&Step{
+			Name:             fmt.Sprintf("package-%d", i),
+			ConcurrencyGroup: "package",
+			Action: func(_ context.Context) error {
+				cur := concurrent.Add(1)
+				for {
+					old := maxConcurrent.Load()
+					if cur <= old || maxConcurrent.CompareAndSwap(old, cur) {
+						break
+					}
+				}
+				time.Sleep(20 * time.Millisecond)
+				concurrent.Add(-1)
+				return nil
+			},
+		}))
+	}
+
+	require.NoError(t, Run(t.Context(), g, RunOptions{
+		MaxConcurrency: 6,
+		GroupConcurrency: map[string]int{
+			"package": 2,
+		},
+	}))
+	assert.Equal(t, int32(2), maxConcurrent.Load())
+}
+
+func TestRun_GroupConcurrencyFairAcrossReadyGroups(t *testing.T) {
+	g := NewGraph()
+	started := make(chan string, 4)
+	release := make(chan struct{})
+
+	addBlockingStep := func(name, group string) {
+		require.NoError(t, g.AddStep(&Step{
+			Name:             name,
+			ConcurrencyGroup: group,
+			Action: func(_ context.Context) error {
+				started <- name
+				<-release
+				return nil
+			},
+		}))
+	}
+	addBlockingStep("package-a", "package")
+	addBlockingStep("package-b", "package")
+	addBlockingStep("package-c", "package")
+	addBlockingStep("provision-a", "provision")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(t.Context(), g, RunOptions{
+			MaxConcurrency: 2,
+			GroupConcurrency: map[string]int{
+				"package":   2,
+				"provision": 2,
+			},
+		})
+	}()
+
+	first := <-started
+	second := <-started
+	assert.Contains(t, []string{first, second}, "provision-a",
+		"a ready provision step should receive one of the first global slots")
+	close(release)
+	require.NoError(t, <-done)
+}
+
+func TestRun_GroupConcurrencyPreservesInsertionOrderForPriorityTies(t *testing.T) {
+	g := NewGraph()
+	var started []string
+
+	for _, step := range []*Step{
+		{
+			Name:             "root",
+			ConcurrencyGroup: "package",
+			Action: func(_ context.Context) error {
+				started = append(started, "root")
+				return nil
+			},
+		},
+		{
+			Name:             "package-a",
+			DependsOn:        []string{"root"},
+			ConcurrencyGroup: "package",
+			Action: func(_ context.Context) error {
+				started = append(started, "package-a")
+				return nil
+			},
+		},
+		{
+			Name:             "package-b",
+			DependsOn:        []string{"root"},
+			ConcurrencyGroup: "package",
+			Action: func(_ context.Context) error {
+				started = append(started, "package-b")
+				return nil
+			},
+		},
+		{
+			Name:             "provision-a",
+			DependsOn:        []string{"root"},
+			ConcurrencyGroup: "provision",
+			Action: func(_ context.Context) error {
+				started = append(started, "provision-a")
+				return nil
+			},
+		},
+	} {
+		require.NoError(t, g.AddStep(step))
+	}
+
+	expected := []string{"root", "package-a", "provision-a", "package-b"}
+	for range 100 {
+		started = nil
+		require.NoError(t, Run(t.Context(), g, RunOptions{
+			MaxConcurrency: 1,
+			GroupConcurrency: map[string]int{
+				"package":   1,
+				"provision": 1,
+			},
+		}))
+		assert.Equal(t, expected, started)
+	}
+}
+
+func TestRun_GroupConcurrencyPreservesPriorityWithinGroup(t *testing.T) {
+	g := NewGraph()
+	releaseBlocker := make(chan struct{})
+	releaseProbe := make(chan struct{})
+	probeStarted := make(chan struct{})
+	packageStarted := make(chan string, 2)
+
+	require.NoError(t, g.AddStep(&Step{
+		Name:             "package-blocker",
+		ConcurrencyGroup: "package",
+		Action: func(_ context.Context) error {
+			<-releaseBlocker
+			return nil
+		},
+	}))
+	require.NoError(t, g.AddStep(&Step{
+		Name:             "package-low-priority",
+		ConcurrencyGroup: "package",
+		Action: func(_ context.Context) error {
+			packageStarted <- "package-low-priority"
+			return nil
+		},
+	}))
+	require.NoError(t, g.AddStep(&Step{
+		Name:             "unlock",
+		ConcurrencyGroup: "provision",
+		Action:           func(_ context.Context) error { return nil },
+	}))
+	require.NoError(t, g.AddStep(&Step{
+		Name:             "package-high-priority",
+		DependsOn:        []string{"unlock"},
+		ConcurrencyGroup: "package",
+		Action: func(_ context.Context) error {
+			packageStarted <- "package-high-priority"
+			return nil
+		},
+	}))
+	require.NoError(t, g.AddStep(&Step{
+		Name:      "high-priority-dependent",
+		DependsOn: []string{"package-high-priority"},
+		Action:    func(_ context.Context) error { return nil },
+	}))
+	require.NoError(t, g.AddStep(&Step{
+		Name:             "probe",
+		DependsOn:        []string{"unlock"},
+		ConcurrencyGroup: "provision",
+		Action: func(_ context.Context) error {
+			close(probeStarted)
+			<-releaseProbe
+			return nil
+		},
+	}))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(t.Context(), g, RunOptions{
+			MaxConcurrency: 2,
+			GroupConcurrency: map[string]int{
+				"package":   1,
+				"provision": 1,
+			},
+		})
+	}()
+
+	<-probeStarted
+	close(releaseBlocker)
+	assert.Equal(t, "package-high-priority", <-packageStarted)
+	close(releaseProbe)
+	require.NoError(t, <-done)
+}
+
+func TestRun_GroupConcurrencyBorrowsIdleCapacity(t *testing.T) {
+	g := NewGraph()
+	started := make(chan struct{}, 3)
+	release := make(chan struct{})
+
+	for i := range 3 {
+		require.NoError(t, g.AddStep(&Step{
+			Name:             fmt.Sprintf("package-%d", i),
+			ConcurrencyGroup: "package",
+			Action: func(_ context.Context) error {
+				started <- struct{}{}
+				<-release
+				return nil
+			},
+		}))
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(t.Context(), g, RunOptions{
+			MaxConcurrency: 3,
+			GroupConcurrency: map[string]int{
+				"package": 3,
+			},
+		})
+	}()
+
+	for range 3 {
+		<-started
+	}
+	close(release)
+	require.NoError(t, <-done)
+}
+
+func TestRun_GroupConcurrencySharedAcrossStepKinds(t *testing.T) {
+	g := NewGraph()
+	var concurrent atomic.Int32
+	var maxConcurrent atomic.Int32
+
+	for _, name := range []string{"publish-api", "deploy-web"} {
+		require.NoError(t, g.AddStep(&Step{
+			Name:             name,
+			ConcurrencyGroup: "deploy",
+			Action: func(_ context.Context) error {
+				cur := concurrent.Add(1)
+				for {
+					old := maxConcurrent.Load()
+					if cur <= old || maxConcurrent.CompareAndSwap(old, cur) {
+						break
+					}
+				}
+				time.Sleep(20 * time.Millisecond)
+				concurrent.Add(-1)
+				return nil
+			},
+		}))
+	}
+
+	require.NoError(t, Run(t.Context(), g, RunOptions{
+		MaxConcurrency: 2,
+		GroupConcurrency: map[string]int{
+			"deploy": 1,
+		},
+	}))
+	assert.Equal(t, int32(1), maxConcurrent.Load())
+}
+
+func TestRun_GroupConcurrencyReleasesCapacityAfterFailure(t *testing.T) {
+	g := NewGraph()
+	var completed atomic.Bool
+
+	require.NoError(t, g.AddStep(&Step{
+		Name:             "package-fail",
+		ConcurrencyGroup: "package",
+		Action: func(_ context.Context) error {
+			return errors.New("failed")
+		},
+	}))
+	require.NoError(t, g.AddStep(&Step{
+		Name:             "package-next",
+		ConcurrencyGroup: "package",
+		Action: func(_ context.Context) error {
+			completed.Store(true)
+			return nil
+		},
+	}))
+
+	err := Run(t.Context(), g, RunOptions{
+		MaxConcurrency: 2,
+		GroupConcurrency: map[string]int{
+			"package": 1,
+		},
+		ErrorPolicy: ContinueOnError,
+	})
+	require.Error(t, err)
+	assert.True(t, completed.Load())
+}
+
+func TestRun_GroupConcurrencyNoDeadlockWhenGlobalBelowGroupCount(t *testing.T) {
+	g := NewGraph()
+	var completed atomic.Int32
+
+	for _, group := range []string{"package", "provision", "deploy"} {
+		require.NoError(t, g.AddStep(&Step{
+			Name:             group,
+			ConcurrencyGroup: group,
+			Action: func(_ context.Context) error {
+				completed.Add(1)
+				return nil
+			},
+		}))
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, Run(ctx, g, RunOptions{
+		MaxConcurrency: 1,
+		GroupConcurrency: map[string]int{
+			"package":   1,
+			"provision": 1,
+			"deploy":    1,
+		},
+	}))
+	assert.Equal(t, int32(3), completed.Load())
 }
 
 func TestRun_ContextCancellation(t *testing.T) {

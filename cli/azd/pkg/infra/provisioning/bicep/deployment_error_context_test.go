@@ -153,6 +153,35 @@ func TestAnnotateDeploymentErrorResources_ParameterizedNameFallsBack(t *testing.
 	require.Empty(t, deploymentErr.Details.Inner[0].Inner[0].ResourceType)
 }
 
+func TestAnnotateDeploymentErrorResources_ParameterizedNameUsesFullTarget(t *testing.T) {
+	target := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/ai-account"
+	err := azapi.NewAzureDeploymentError(
+		"Preview Error Details",
+		`{"error":{"code":"DeploymentFailed","details":[`+
+			`{"code":"InsufficientQuota","target":"`+target+`",`+
+			`"message":"Insufficient quota."}]}}`,
+		azapi.DeploymentOperationPreview,
+	)
+	template := azure.RawArmTemplate(`{
+		"$schema":"schema",
+		"contentVersion":"1.0.0.0",
+		"resources":[{
+			"type":"Microsoft.CognitiveServices/accounts",
+			"name":"[parameters('accountName')]"
+		}]
+	}`)
+
+	annotated := annotateDeploymentErrorResources(err, nil, template)
+	deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](annotated)
+	require.True(t, ok)
+	require.Equal(
+		t,
+		"Microsoft.CognitiveServices/accounts",
+		deploymentErr.Details.Inner[0].Inner[0].ResourceType,
+	)
+}
+
 func TestAnnotatePreviewDeploymentErrors(t *testing.T) {
 	template := azure.RawArmTemplate(`{
 		"$schema":"schema",

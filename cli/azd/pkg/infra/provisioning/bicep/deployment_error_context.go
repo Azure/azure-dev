@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 )
@@ -17,10 +18,9 @@ var deploymentResourceNamePattern = regexp.MustCompile(
 	`(?i)\bresource\s+['"]([^'"]+)['"]`,
 )
 
-// annotateDeploymentErrorResources adds resource types to ARM deployment error
-// lines when an error target can be matched to exactly one resolved template
-// resource. The original error is returned unchanged when the context is
-// unavailable or the target is ambiguous.
+// annotateDeploymentErrorResources adds ARM resource types to error lines.
+// It prefers full ARM targets and falls back to unique template matches.
+// The original error is returned unchanged when the target is ambiguous.
 func annotateDeploymentErrorResources(
 	err error,
 	valCtx *validationContext,
@@ -30,16 +30,12 @@ func annotateDeploymentErrorResources(
 		return nil
 	}
 
-	resources := deploymentResources(valCtx, armTemplate)
-	if len(resources) == 0 {
-		return err
-	}
-
 	deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](err)
 	if !ok {
 		return err
 	}
 
+	resources := deploymentResources(valCtx, armTemplate)
 	annotateDeploymentErrorLine(deploymentErr.Details, resources, "")
 	return err
 }
@@ -81,8 +77,11 @@ func annotateDeploymentErrorLine(
 	}
 
 	if line.ResourceType == "" {
-		if resource, ok := uniqueDeploymentResource(target, resources); ok {
-			line.ResourceType = resource.Type
+		line.ResourceType = resourceTypeFromTarget(target)
+		if line.ResourceType == "" {
+			if resource, ok := uniqueDeploymentResource(target, resources); ok {
+				line.ResourceType = resource.Type
+			}
 		}
 	}
 
@@ -97,6 +96,20 @@ func resourceNameFromErrorMessage(message string) string {
 		return strings.TrimSpace(match[1])
 	}
 	return ""
+}
+
+func resourceTypeFromTarget(target string) string {
+	target = strings.Trim(strings.TrimSpace(target), "'\"")
+	if !strings.Contains(strings.ToLower(target), "/providers/") {
+		return ""
+	}
+
+	resourceType, err := arm.ParseResourceType(target)
+	if err != nil {
+		return ""
+	}
+
+	return resourceType.String()
 }
 
 func uniqueDeploymentResource(
@@ -117,8 +130,15 @@ func uniqueDeploymentResource(
 
 func deploymentResourceMatchesTarget(resource armTemplateResource, target string) bool {
 	target = strings.Trim(strings.TrimSpace(target), "'\"")
-	if target == "" || resource.Name == "" ||
-		strings.Contains(resource.Name, "[") {
+	if target == "" {
+		return false
+	}
+
+	if resourceType := resourceTypeFromTarget(target); resourceType != "" {
+		return strings.EqualFold(resource.Type, resourceType)
+	}
+
+	if resource.Name == "" || strings.Contains(resource.Name, "[") {
 		return false
 	}
 

@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/codes"
@@ -230,10 +231,10 @@ func armErrorResponseContainsCognitiveServicesQuota(
 }
 
 func cognitiveServicesResource(value string) bool {
-	return strings.Contains(
-		strings.ToLower(value),
-		cognitiveServicesAccountsResourceType,
-	)
+	value = strings.Trim(strings.TrimSpace(value), "'\"")
+	resourceType, err := arm.ParseResourceType(value)
+	return err == nil &&
+		strings.EqualFold(resourceType.String(), cognitiveServicesAccountsResourceType)
 }
 
 // IsCancellation reports whether an operation was cancelled.

@@ -84,6 +84,41 @@ func TestServiceFromAzure_CognitiveServicesQuotaUsesFoundryGuidance(t *testing.T
 	assert.NotContains(t, serviceErr.Suggestion, "az vm list-usage")
 }
 
+func TestServiceFromAzure_CognitiveServicesChildQuotaUsesGenericGuidance(t *testing.T) {
+	target := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/ai-account/deployments/model"
+	response := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body: io.NopCloser(strings.NewReader(`{
+			"error": {
+				"code": "InvalidTemplateDeployment",
+				"details": [{
+					"code": "InsufficientQuota",
+					"target": "` + target + `",
+					"message": "Insufficient quota."
+				}]
+			}
+		}`)),
+		Request: &http.Request{
+			Host: "management.azure.com",
+			URL:  &url.URL{Scheme: "https", Host: "management.azure.com"},
+		},
+	}
+	err := &azcore.ResponseError{
+		ErrorCode:   "InvalidTemplateDeployment",
+		StatusCode:  http.StatusBadRequest,
+		RawResponse: response,
+	}
+
+	result := ServiceFromAzure(err, OpArmDeploymentCreate)
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](result)
+	require.True(t, ok)
+	assert.Contains(t, serviceErr.Suggestion, "affected resource provider")
+	assert.NotContains(t, serviceErr.Suggestion, "az cognitiveservices usage list")
+	assert.NotContains(t, serviceErr.Suggestion, "AZURE_AI_PROJECT_ID")
+}
+
 func TestServiceFromAzure_UnrelatedErrorHasNoSuggestion(t *testing.T) {
 	response := &http.Response{
 		StatusCode: http.StatusBadRequest,

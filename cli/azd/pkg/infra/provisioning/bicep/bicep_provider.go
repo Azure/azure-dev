@@ -1111,13 +1111,22 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 		planned.Parameters,
 	)
 	if err != nil {
-		return nil, err
+		return nil, annotateDeploymentErrorResources(
+			err,
+			nil,
+			planned.RawArmTemplate,
+		)
 	}
 
 	if deployPreviewResult.Error != nil {
-		return nil, azapi.NewAzureDeploymentErrorFromResponse(
+		err := azapi.NewAzureDeploymentErrorFromResponse(
 			deployPreviewResult.Error,
 			azapi.DeploymentOperationPreview,
+		)
+		return nil, annotateDeploymentErrorResources(
+			err,
+			nil,
+			planned.RawArmTemplate,
 		)
 	}
 

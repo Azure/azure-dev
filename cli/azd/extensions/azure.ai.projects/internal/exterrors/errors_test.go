@@ -104,3 +104,34 @@ func TestServiceFromAzure_UnrelatedErrorHasNoSuggestion(t *testing.T) {
 	require.True(t, ok)
 	assert.Empty(t, serviceErr.Suggestion)
 }
+
+func TestServiceFromAzure_QuotaCodeInResourceNameHasNoSuggestion(t *testing.T) {
+	response := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body: io.NopCloser(strings.NewReader(`{
+			"error": {
+				"code": "InvalidTemplate",
+				"target": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/InsufficientQuota",
+				"message": "The resource name is not valid."
+			}
+		}`)),
+		Request: &http.Request{
+			URL: &url.URL{
+				Scheme: "https",
+				Host:   "management.azure.com",
+				Path:   "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/InsufficientQuota",
+			},
+		},
+	}
+	err := &azcore.ResponseError{
+		ErrorCode:   "InvalidTemplate",
+		StatusCode:  http.StatusBadRequest,
+		RawResponse: response,
+	}
+
+	result := ServiceFromAzure(err, OpArmDeploymentCreate)
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](result)
+	require.True(t, ok)
+	assert.Empty(t, serviceErr.Suggestion)
+}

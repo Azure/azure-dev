@@ -8,6 +8,8 @@ on:
       - .github/workflows/lint-bicep.yml
     
 
+permissions:
+  contents: read
 
 jobs:
   bicep-lint:
@@ -16,14 +18,9 @@ jobs:
       - uses: actions/checkout@v6
       - name: Upgrade bicep
         run: |
-          bicep_path="$(which bicep)"
-          temp_path="$(mktemp)"
-          trap 'rm -f "$temp_path"' EXIT
-          curl --fail --location --retry 5 --retry-all-errors \
-            --retry-delay 2 --retry-max-time 60 \
-            --output "$temp_path" \
-            https://github.com/Azure/bicep/releases/download/v0.45.15/bicep-linux-x64
-          sudo install -m 0755 "$temp_path" "$bicep_path"
+          which bicep
+          sudo curl -o "$(which bicep)" -L https://github.com/Azure/bicep/releases/download/v0.45.15/bicep-linux-x64
+          sudo chmod +x "$(which bicep)"
       - name: Lint .bicep files
         run: $ErrorActionPreference='Continue'; eng/scripts/Test-BicepLint.ps1 -Verbose
         shell: pwsh

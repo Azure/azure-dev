@@ -154,8 +154,7 @@ func quotaSuggestionForResponse(responseErr *azcore.ResponseError) string {
 		}
 	}
 
-	if strings.EqualFold(responseErr.ErrorCode, insufficientQuotaCode) ||
-		strings.Contains(strings.ToLower(responseErr.Error()), strings.ToLower(insufficientQuotaCode)) {
+	if strings.EqualFold(responseErr.ErrorCode, insufficientQuotaCode) {
 		return GenericQuotaSuggestion()
 	}
 

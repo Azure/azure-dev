@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/stretchr/testify/require"
@@ -127,6 +128,89 @@ func TestAnnotateDeploymentErrorResources_AmbiguousTargetFallsBack(t *testing.T)
 	deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](annotated)
 	require.True(t, ok)
 	require.Empty(t, deploymentErr.Details.Inner[0].Inner[0].ResourceType)
+}
+
+func TestAnnotateDeploymentErrorResources_ParameterizedNameFallsBack(t *testing.T) {
+	err := azapi.NewAzureDeploymentError(
+		"Preview Error Details",
+		`{"error":{"code":"DeploymentFailed","details":[`+
+			`{"code":"InsufficientQuota","target":"ai-account",`+
+			`"message":"Insufficient quota."}]}}`,
+		azapi.DeploymentOperationPreview,
+	)
+	template := azure.RawArmTemplate(`{
+		"$schema":"schema",
+		"contentVersion":"1.0.0.0",
+		"resources":[{
+			"type":"Microsoft.CognitiveServices/accounts",
+			"name":"[parameters('accountName')]"
+		}]
+	}`)
+
+	annotated := annotateDeploymentErrorResources(err, nil, template)
+	deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](annotated)
+	require.True(t, ok)
+	require.Empty(t, deploymentErr.Details.Inner[0].Inner[0].ResourceType)
+}
+
+func TestAnnotatePreviewDeploymentErrors(t *testing.T) {
+	template := azure.RawArmTemplate(`{
+		"$schema":"schema",
+		"contentVersion":"1.0.0.0",
+		"resources":[{
+			"type":"Microsoft.CognitiveServices/accounts",
+			"name":"ai-account"
+		}]
+	}`)
+	target := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/ai-account"
+
+	t.Run("DeployPreview error", func(t *testing.T) {
+		err := azapi.NewAzureDeploymentError(
+			"Preview Error Details",
+			`{"error":{"code":"DeploymentFailed","details":[`+
+				`{"code":"InsufficientQuota","target":"`+target+`",`+
+				`"message":"Insufficient quota."}]}}`,
+			azapi.DeploymentOperationPreview,
+		)
+
+		annotated := annotateDeploymentErrorResources(
+			fmt.Errorf("deploying to resource group: %w", err),
+			nil,
+			template,
+		)
+		deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](annotated)
+		require.True(t, ok)
+		require.Equal(
+			t,
+			"Microsoft.CognitiveServices/accounts",
+			deploymentErr.Details.Inner[0].Inner[0].ResourceType,
+		)
+	})
+
+	t.Run("what-if response error", func(t *testing.T) {
+		errResp := &armresources.ErrorResponse{
+			Code: new("DeploymentFailed"),
+			Details: []*armresources.ErrorResponse{{
+				Code:    new("InsufficientQuota"),
+				Target:  new(target),
+				Message: new("Insufficient quota."),
+			}},
+		}
+		err := azapi.NewAzureDeploymentErrorFromResponse(
+			errResp,
+			azapi.DeploymentOperationPreview,
+		)
+
+		annotated := annotateDeploymentErrorResources(err, nil, template)
+		deploymentErr, ok := errors.AsType[*azapi.AzureDeploymentError](annotated)
+		require.True(t, ok)
+		require.Equal(
+			t,
+			"Microsoft.CognitiveServices/accounts",
+			deploymentErr.Details.Inner[0].ResourceType,
+		)
+	})
 }
 
 func TestDeploymentResources_UsesSnapshotBeforeTemplate(t *testing.T) {

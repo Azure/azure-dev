@@ -252,6 +252,188 @@ func TestRunDockerBuildRequestWithLogs_ScheduleRunError(t *testing.T) {
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "BadRequest")
+	var responseErr *azcore.ResponseError
+	require.ErrorAs(t, err, &responseErr)
+}
+
+func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                   string
+		status                 armcontainerregistry.RunStatus
+		missingPropertiesFirst bool
+		missingStatusFirst     bool
+	}{
+		{name: "succeeded", status: armcontainerregistry.RunStatusSucceeded},
+		{name: "failed", status: armcontainerregistry.RunStatusFailed},
+		{name: "error", status: armcontainerregistry.RunStatusError},
+		{name: "timeout", status: armcontainerregistry.RunStatusTimeout},
+		{name: "canceled", status: armcontainerregistry.RunStatusCanceled},
+		{
+			name:                   "missing properties then succeeds",
+			status:                 armcontainerregistry.RunStatusSucceeded,
+			missingPropertiesFirst: true,
+		},
+		{
+			name:               "missing status then succeeds",
+			status:             armcontainerregistry.RunStatusSucceeded,
+			missingStatusFirst: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			const buildLog = "remote build output\n"
+			var logHeadCalls atomic.Int32
+			var runGetCalls atomic.Int32
+
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.Contains(r.URL.Path, "scheduleRun"):
+					response := armcontainerregistry.RegistriesClientScheduleRunResponse{
+						Run: armcontainerregistry.Run{
+							Properties: &armcontainerregistry.RunProperties{RunID: new("run-id")},
+						},
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					require.NoError(t, json.NewEncoder(w).Encode(response))
+
+				case strings.Contains(r.URL.Path, "listLogSasUrl"):
+					logURL := "https://" + r.Host + "/logs/run.log?sig=abc"
+					response := armcontainerregistry.RunGetLogResult{LogLink: &logURL}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					require.NoError(t, json.NewEncoder(w).Encode(response))
+
+				case strings.HasSuffix(r.URL.Path, "/logs/run.log"):
+					w.Header().Set("Content-Length", fmt.Sprint(len(buildLog)))
+					if r.Method == http.MethodHead {
+						if logHeadCalls.Add(1) > 1 {
+							w.Header().Set("x-ms-meta-complete", "true")
+						}
+						w.WriteHeader(http.StatusOK)
+					} else {
+						w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-%d/%d", len(buildLog)-1, len(buildLog)))
+						w.WriteHeader(http.StatusPartialContent)
+						_, _ = io.WriteString(w, buildLog)
+					}
+
+				case strings.Contains(r.URL.Path, "/runs/run-id"):
+					runGetCall := runGetCalls.Add(1)
+					runProperties := &armcontainerregistry.RunProperties{Status: &tt.status}
+					if runGetCall == 1 {
+						switch {
+						case tt.missingPropertiesFirst:
+							runProperties = nil
+						case tt.missingStatusFirst:
+							runProperties.Status = nil
+						}
+					}
+					response := armcontainerregistry.Run{
+						Properties: runProperties,
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					require.NoError(t, json.NewEncoder(w).Encode(response))
+
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(srv.Close)
+
+			transport := &rewritingTransport{
+				inner: srv.Client(),
+				host:  mustParseURL(srv.URL).Host,
+			}
+			armOpts := armOptionsNoRetry(transport)
+			credProvider := mockaccount.SubscriptionCredentialProviderFunc(
+				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+					return &mocks.MockCredentials{}, nil
+				},
+			)
+			mgr := NewRemoteBuildManager(credProvider, armOpts)
+
+			var output strings.Builder
+			err := mgr.RunDockerBuildRequestWithLogs(
+				t.Context(), testSubscriptionID, testResourceGroup, testRegistryName,
+				&armcontainerregistry.DockerBuildRequest{}, &output,
+			)
+
+			require.Equal(t, int32(2), logHeadCalls.Load())
+			expectedRunGetCalls := int32(1)
+			if tt.missingPropertiesFirst || tt.missingStatusFirst {
+				expectedRunGetCalls = 2
+			}
+			require.Equal(t, expectedRunGetCalls, runGetCalls.Load())
+			require.Equal(t, buildLog, output.String())
+			if tt.status == armcontainerregistry.RunStatusSucceeded {
+				require.NoError(t, err)
+				return
+			}
+
+			var remoteBuildErr *RemoteBuildRunError
+			require.ErrorAs(t, err, &remoteBuildErr)
+			require.Equal(t, tt.status, remoteBuildErr.Status)
+			require.Equal(t, "remote build failed: "+buildLog, err.Error())
+		})
+	}
+}
+
+func TestRemoteBuildRunError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		status         armcontainerregistry.RunStatus
+		diagnosticCode string
+	}{
+		{
+			name:           "failed",
+			status:         armcontainerregistry.RunStatusFailed,
+			diagnosticCode: "acr_run_failed",
+		},
+		{
+			name:           "error",
+			status:         armcontainerregistry.RunStatusError,
+			diagnosticCode: "acr_run_error",
+		},
+		{
+			name:           "timeout",
+			status:         armcontainerregistry.RunStatusTimeout,
+			diagnosticCode: "acr_run_timeout",
+		},
+		{
+			name:           "canceled",
+			status:         armcontainerregistry.RunStatusCanceled,
+			diagnosticCode: "acr_run_canceled",
+		},
+		{
+			name:   "unknown",
+			status: armcontainerregistry.RunStatus("unknown"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := &RemoteBuildRunError{
+				Status:   tt.status,
+				buildLog: "remote output",
+			}
+			require.Equal(t, "remote build failed: remote output", err.Error())
+			require.Equal(t, tt.diagnosticCode, err.DiagnosticCode())
+		})
+	}
+
+	var nilErr *RemoteBuildRunError
+	require.Equal(t, "remote build failed", nilErr.Error())
+	require.Empty(t, nilErr.DiagnosticCode())
 }
 
 func TestTerminalContainerRegistryRunStates(t *testing.T) {

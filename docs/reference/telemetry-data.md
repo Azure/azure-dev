@@ -268,14 +268,17 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 
 ### Service Attributes (Azure API Calls)
 
+These attributes are emitted as classified error details. `MapError` prefixes their declared
+`service.*` keys with `error.`, so the table lists the runtime keys used in queries.
+
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `service.host` | string | Azure service host |
-| `service.name` | string | Azure service name (on service call spans) |
-| `service.statusCode` | measurement | HTTP status code |
-| `service.method` | string | HTTP method |
-| `service.errorCode` | measurement | Service-specific error code |
-| `service.correlationId` | string | Azure correlation ID |
+| `error.service.host` | string | Azure service host |
+| `error.service.name` | string | Azure service name associated with the failure |
+| `error.service.statusCode` | measurement or string | Numeric HTTP/service status code; AAD authentication errors use a string OAuth status such as `invalid_grant` |
+| `error.service.method` | string | HTTP method |
+| `error.service.errorCode` | string | Service-specific error code; some ARM deployment errors encode structured JSON |
+| `error.service.correlationId` | string | Azure correlation ID |
 
 ### Tool Invocation Attributes (External CLI Tools)
 
@@ -574,7 +577,7 @@ The first-run middleware is not currently registered, so these fields are not em
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `exegraph.step.count` | measurement | Total steps in graph |
-| `exegraph.max_concurrency` | string | Effective concurrency limit |
+| `exegraph.max_concurrency` | measurement | Effective concurrency limit |
 | `exegraph.error_policy` | string | `fail_fast` or `continue_on_error` |
 | `exegraph.step.name` | string | Step name. **SHA-256 hashed** — embeds user-defined service/layer names from `azure.yaml` |
 | `exegraph.step.deps` | string[] | Step dependencies (other step names). **SHA-256 hashed** for the same reason |
@@ -618,7 +621,7 @@ The first-run middleware is not currently registered, so these fields are not em
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `agent.fix.attempts` | string | Number of fix attempts |
+| `agent.fix.attempts` | measurement | Number of fix attempts |
 </details>
 
 ### Execution Environments
@@ -634,6 +637,8 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `GitHub Copilot VSCode` | GitHub Copilot in VS Code |
 | `Azure CloudShell` | Azure Cloud Shell |
 | `Claude Code` | Claude Code AI agent |
+| `Codex` | Codex AI agent |
+| `Cursor` | Cursor AI agent |
 | `GitHub Copilot CLI` | GitHub Copilot CLI |
 | `GitHub Copilot App` | GitHub Copilot App |
 | `Gemini` | Gemini AI agent |
@@ -767,7 +772,7 @@ Many failed commands produce the catch-all result code `internal.errors_errorStr
 
 **To investigate these errors:**
 1. Check `error.chain.types` (if available) for the full error type chain
-2. Correlate with `service.errorCode` or `service.statusCode` for Azure API failures
+2. Correlate with `error.service.errorCode` or `error.service.statusCode` for Azure API failures
 3. Look at surrounding span context (same `OperationId`) for additional detail
 
 ### Hashed Fields and Template Joins

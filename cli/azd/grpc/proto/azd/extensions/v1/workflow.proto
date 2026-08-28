@@ -9,7 +9,7 @@ option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;
 import "azd/extensions/v1/models.proto";
 
 service WorkflowService {
-  // ListResources retrieves all configured composability resources in the current project.
+  // Run executes a workflow.
   rpc Run(RunWorkflowRequest) returns (EmptyResponse);
 }
 

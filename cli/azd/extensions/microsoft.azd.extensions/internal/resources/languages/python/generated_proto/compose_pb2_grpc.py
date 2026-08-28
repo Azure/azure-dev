@@ -36,27 +36,27 @@ class ComposeServiceStub(object):
             channel: A grpc.Channel.
         """
         self.ListResources = channel.unary_unary(
-                '/azdext.ComposeService/ListResources',
+                '/azd.extensions.v1.ComposeService/ListResources',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=compose__pb2.ListResourcesResponse.FromString,
                 _registered_method=True)
         self.GetResource = channel.unary_unary(
-                '/azdext.ComposeService/GetResource',
+                '/azd.extensions.v1.ComposeService/GetResource',
                 request_serializer=compose__pb2.GetResourceRequest.SerializeToString,
                 response_deserializer=compose__pb2.GetResourceResponse.FromString,
                 _registered_method=True)
         self.ListResourceTypes = channel.unary_unary(
-                '/azdext.ComposeService/ListResourceTypes',
+                '/azd.extensions.v1.ComposeService/ListResourceTypes',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=compose__pb2.ListResourceTypesResponse.FromString,
                 _registered_method=True)
         self.GetResourceType = channel.unary_unary(
-                '/azdext.ComposeService/GetResourceType',
+                '/azd.extensions.v1.ComposeService/GetResourceType',
                 request_serializer=compose__pb2.GetResourceTypeRequest.SerializeToString,
                 response_deserializer=compose__pb2.GetResourceTypeResponse.FromString,
                 _registered_method=True)
         self.AddResource = channel.unary_unary(
-                '/azdext.ComposeService/AddResource',
+                '/azd.extensions.v1.ComposeService/AddResource',
                 request_serializer=compose__pb2.AddResourceRequest.SerializeToString,
                 response_deserializer=compose__pb2.AddResourceResponse.FromString,
                 _registered_method=True)
@@ -130,9 +130,9 @@ def add_ComposeServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azdext.ComposeService', rpc_method_handlers)
+            'azd.extensions.v1.ComposeService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azdext.ComposeService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1.ComposeService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -153,7 +153,7 @@ class ComposeService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ComposeService/ListResources',
+            '/azd.extensions.v1.ComposeService/ListResources',
             models__pb2.EmptyRequest.SerializeToString,
             compose__pb2.ListResourcesResponse.FromString,
             options,
@@ -180,7 +180,7 @@ class ComposeService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ComposeService/GetResource',
+            '/azd.extensions.v1.ComposeService/GetResource',
             compose__pb2.GetResourceRequest.SerializeToString,
             compose__pb2.GetResourceResponse.FromString,
             options,
@@ -207,7 +207,7 @@ class ComposeService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ComposeService/ListResourceTypes',
+            '/azd.extensions.v1.ComposeService/ListResourceTypes',
             models__pb2.EmptyRequest.SerializeToString,
             compose__pb2.ListResourceTypesResponse.FromString,
             options,
@@ -234,7 +234,7 @@ class ComposeService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ComposeService/GetResourceType',
+            '/azd.extensions.v1.ComposeService/GetResourceType',
             compose__pb2.GetResourceTypeRequest.SerializeToString,
             compose__pb2.GetResourceTypeResponse.FromString,
             options,
@@ -261,7 +261,7 @@ class ComposeService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ComposeService/AddResource',
+            '/azd.extensions.v1.ComposeService/AddResource',
             compose__pb2.AddResourceRequest.SerializeToString,
             compose__pb2.AddResourceResponse.FromString,
             options,

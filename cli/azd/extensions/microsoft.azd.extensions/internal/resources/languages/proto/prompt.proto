@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package azdext;
+package azd.extensions.v1;
 
-option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1";
 option csharp_namespace = "Microsoft.Azd";
 
 import "models.proto";
@@ -96,7 +96,7 @@ message PromptSubscriptionResourceRequest {
 }
 
 message PromptSubscriptionResourceResponse {
-  azdext.ResourceExtended resource = 1;
+  azd.extensions.v1.ResourceExtended resource = 1;
 }
 
 message PromptResourceGroupResourceRequest {
@@ -105,7 +105,7 @@ message PromptResourceGroupResourceRequest {
 }
 
 message PromptResourceGroupResourceResponse {
-  azdext.ResourceExtended resource = 1;
+  azd.extensions.v1.ResourceExtended resource = 1;
 }
 
 message ConfirmOptions {

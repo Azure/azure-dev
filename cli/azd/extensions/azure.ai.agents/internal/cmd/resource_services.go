@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -108,6 +109,7 @@ func emitResourceServices(
 	// Connection and toolbox services depend on the project service so the
 	// project is provisioned first.
 	siblingUses := []string{projectServiceName}
+	connectionServiceNames := map[string]string{}
 
 	for i := range connections {
 		conn := connections[i]
@@ -129,6 +131,7 @@ func emitResourceServices(
 		if err := addResourceService(ctx, azdClient, connName, AiConnectionHost, connCfg, siblingUses); err != nil {
 			return 0, err
 		}
+		connectionServiceNames[conn.Name] = connName
 		agentUses = append(agentUses, connName)
 		emittedConnections++
 	}
@@ -150,7 +153,14 @@ func emitResourceServices(
 		if err != nil {
 			return 0, fmt.Errorf("marshaling toolbox service %q config: %w", toolboxName, err)
 		}
-		if err := addResourceService(ctx, azdClient, toolboxName, AiToolboxHost, toolboxCfg, siblingUses); err != nil {
+		toolboxUses := slices.Clone(siblingUses)
+		for _, connectionName := range toolboxConnectionReferences(toolbox.Tools) {
+			if connectionServiceName, ok := connectionServiceNames[connectionName]; ok &&
+				!slices.Contains(toolboxUses, connectionServiceName) {
+				toolboxUses = append(toolboxUses, connectionServiceName)
+			}
+		}
+		if err := addResourceService(ctx, azdClient, toolboxName, AiToolboxHost, toolboxCfg, toolboxUses); err != nil {
 			return 0, err
 		}
 		agentUses = append(agentUses, toolboxName)
@@ -164,6 +174,32 @@ func emitResourceServices(
 	}
 
 	return emittedConnections, nil
+}
+
+func toolboxConnectionReferences(tools []map[string]any) []string {
+	references := map[string]struct{}{}
+	for _, tool := range tools {
+		collectToolboxConnectionReference(tool, references)
+	}
+	return slices.Sorted(maps.Keys(references))
+}
+
+func collectToolboxConnectionReference(value any, references map[string]struct{}) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if (key == "connection" || key == "project_connection_id") && child != nil {
+				if name, ok := child.(string); ok && strings.TrimSpace(name) != "" {
+					references[strings.TrimSpace(name)] = struct{}{}
+				}
+			}
+			collectToolboxConnectionReference(child, references)
+		}
+	case []any:
+		for _, child := range typed {
+			collectToolboxConnectionReference(child, references)
+		}
+	}
 }
 
 // resolveProjectServiceKey picks the azure.yaml service key for the single

@@ -135,6 +135,7 @@ func (a *ConnectionShowAction) Run(ctx context.Context) error {
 	}
 
 	result := connectionDetailResult{
+		ID:       deref(armResp.ID),
 		Name:     deref(armResp.Name),
 		Kind:     categoryStr(props.Category),
 		AuthType: authTypeStr(props.AuthType),
@@ -200,6 +201,7 @@ type connectionCreateFlags struct {
 	metadata         []string
 	force            bool
 	projectEndpoint  string
+	output           string
 	clientID         string   // OAuth2 client ID
 	clientSecret     string   // OAuth2 client secret
 	audience         string   // Token audience for user-entra-token / agentic-identity / project-managed-identity
@@ -386,9 +388,7 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateConnection)
 	}
 
-	fmt.Printf("Connection %q created in project %q.\n",
-		a.flags.name, connCtx.project)
-	return nil
+	return emitConnectionCreateResult(a.flags.name, connCtx.project, a.flags.output)
 }
 
 func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -409,6 +409,7 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
+			flags.output = extCtx.OutputFormat
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return action.Run(ctx)
@@ -446,7 +447,25 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 		"OAuth2 scopes (repeatable or comma-separated, e.g. --scopes read:user,user:email)")
 	cmd.Flags().StringVar(&flags.connectorName, "connector-name", "",
 		"Managed connector name (for OAuth2 connectors)")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name: "output", AllowedValues: []string{"json", "table"}, Default: "table",
+	})
 	return cmd
+}
+
+func emitConnectionCreateResult(name, project, output string) error {
+	if output == "json" {
+		data, err := json.MarshalIndent(map[string]string{
+			"name": name, "project": project, "state": "created",
+		}, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal result: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+	fmt.Printf("Connection %q created in project %q.\n", name, project)
+	return nil
 }
 
 // --- UPDATE ---
@@ -757,6 +776,7 @@ type connectionListItem struct {
 }
 
 type connectionDetailResult struct {
+	ID             string             `json:"id"`
 	Name           string             `json:"name"`
 	Kind           string             `json:"kind"`
 	AuthType       string             `json:"authType"`
@@ -971,6 +991,8 @@ func normalizeAuthType(armAuthType string) string {
 	case "ProjectManagedIdentity":
 		return "project-managed-identity"
 	case "AgenticIdentityToken":
+		return "agentic-identity"
+	case "AgenticIdentity":
 		return "agentic-identity"
 	default:
 		return armAuthType

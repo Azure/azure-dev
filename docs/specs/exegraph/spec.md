@@ -170,8 +170,11 @@ Activates unconditionally. Per service, creates three steps:
 2. **`publish-<svc>`** — depends on `package-<svc>`; runs `serviceManager.Publish` with
    `deployTimeout` context deadline (resolves target resource via Azure API calls that can
    block due to eventual consistency after provisioning)
-3. **`deploy-<svc>`** — depends on `publish-<svc>`; runs `serviceManager.Deploy` with
-   `deployTimeout` context deadline
+3. **`deploy-<svc>`** — depends on `publish-<svc>` and declared service-level
+   `uses:` edges; when the graph has no such edge and no deploy build-gate
+   policy applies, deploy nodes also chain in the service order supplied to the
+   graph as a backward-compatible sequential fallback. Runs
+   `serviceManager.Deploy` with a `deployTimeout` context deadline
 
 **Build isolation coordination**:
 `serviceGraphOptions.packagePublishBuildGateKey` is an optional callback for
@@ -180,16 +183,24 @@ creates one mutex per opaque key and injects the same pointer into matching
 package and publish contexts. This runtime coordination does not add graph
 edges.
 
-The standard .NET policy returns `"dotnet"`. With .NET SDK 8.0.100 or later,
-each operation receives a unique temporary `--artifacts-path`. SDK 6/7, failed
-capability probes, and temporary-directory failures acquire the standard .NET
-mutex around `dotnet publish` instead. The gate activates only when at least
-two standard .NET services share the key and scheduler concurrency is not `1`.
-It does not alter deploy ordering.
+The standard policy returns `"dotnet"` for every non-Aspire service whose
+configured language is .NET. Its isolation helper is consumed by standard
+.NET package operations, including Functions and App Service, and by .NET
+container publishing when no Dockerfile is present. Generic restore/build and
+explicit Dockerfile paths are unchanged. When the gate is present and the SDK
+is 8.0.100 or later, each local `dotnet publish` receives a unique temporary
+`--artifacts-path`. SDK 6/7, failed capability probes, and temporary-directory
+failures acquire the standard .NET mutex around `dotnet publish` instead. The
+gate activates only when at least two services receive the key and scheduler
+concurrency is not `1`. It is disabled for `azd deploy --from-package` and
+does not alter deploy ordering.
 
 The existing `serviceGraphOptions.buildGateKey` deploy policy remains
 independent. Aspire services continue to use their existing `"aspire"` gate
-and target-specific image-preparation behavior.
+and target-specific image-preparation behavior. The importer currently rejects
+an Aspire AppHost alongside another explicitly configured service, and all
+services imported from its manifest are Aspire-managed; therefore, these gate
+populations do not coexist in a normal project graph.
 
 Progress displayed via `deployProgressTracker` — interactive mode rewrites lines with ANSI;
 non-interactive mode prints one line per event. `RenderFinal` is a no-op in non-interactive
@@ -223,7 +234,10 @@ Deploy chain:
 - `publish-<svc>` depends on `package-<svc>` + `event-predeploy` (and therefore
   transitively on all provisioning via the cmdhook-predeploy gate)
 - `deploy-<svc>` depends on `publish-<svc>` and any declared service `uses:`
-  edges. Build isolation is carried in the step context and adds no graph edge.
+  edges. When no service declares a service-level `uses:` edge and no deploy
+  build-gate policy applies, deploy nodes also chain in the service order
+  supplied to the graph as a backward-compatible sequential fallback. Build
+  isolation is carried in the step context and adds no graph edge.
 - `event-postdeploy` — fires `project.EventDeploy` After listeners (depends on
   all `deploy-<svc>` nodes)
 - `cmdhook-postdeploy` (depends on event-postdeploy)

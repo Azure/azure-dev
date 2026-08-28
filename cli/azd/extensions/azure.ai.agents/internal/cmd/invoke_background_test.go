@@ -4,13 +4,20 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"azureaiagent/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -211,9 +218,10 @@ func TestInvokeCommandBackgroundValidation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		args []string
-		want string
+		name     string
+		args     []string
+		want     string
+		wantCode string
 	}{
 		{
 			name: "rejects local",
@@ -224,6 +232,18 @@ func TestInvokeCommandBackgroundValidation(t *testing.T) {
 			name: "rejects explicit invocations protocol",
 			args: []string{"--background", "--protocol", "invocations", "hello"},
 			want: "--background is not supported with the invocations protocol",
+		},
+		{
+			name:     "rejects explicit timeout",
+			args:     []string{"--background", "--timeout", "1", "hello"},
+			want:     "--timeout cannot be used with --background",
+			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name:     "rejects explicitly set default timeout",
+			args:     []string{"--background", "--timeout", "1800", "hello"},
+			want:     "--timeout cannot be used with --background",
+			wantCode: exterrors.CodeConflictingArguments,
 		},
 	}
 
@@ -237,6 +257,156 @@ func TestInvokeCommandBackgroundValidation(t *testing.T) {
 			err := cmd.Execute()
 			require.Error(t, err)
 			assert.True(t, strings.Contains(err.Error(), tt.want), "error %q should contain %q", err, tt.want)
+			if tt.wantCode != "" {
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, tt.wantCode, localErr.Code)
+			}
+		})
+	}
+}
+
+type capturedBackgroundRequest struct {
+	method string
+	path   string
+	query  string
+	header http.Header
+	body   struct {
+		Input          string `json:"input"`
+		Stream         bool   `json:"stream"`
+		Store          bool   `json:"store"`
+		Background     bool   `json:"background"`
+		AgentSessionID string `json:"agent_session_id"`
+		SessionID      string `json:"session_id"`
+		Conversation   struct {
+			ID string `json:"id"`
+		} `json:"conversation"`
+	}
+	err error
+}
+
+func TestResponsesRemoteBackground(t *testing.T) {
+	tests := []struct {
+		name            string
+		selectedSession string
+		assignedSession string
+		streamDelay     time.Duration
+	}{
+		{
+			name:            "selected session and no overall timeout",
+			selectedSession: "selected-session",
+			streamDelay:     1100 * time.Millisecond,
+		},
+		{
+			name:            "server-assigned session",
+			assignedSession: "assigned-session",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := make(chan capturedBackgroundRequest, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				captured := capturedBackgroundRequest{
+					method: r.Method,
+					path:   r.URL.Path,
+					query:  r.URL.RawQuery,
+					header: r.Header.Clone(),
+				}
+				captured.err = json.NewDecoder(r.Body).Decode(&captured.body)
+				requests <- captured
+
+				w.Header().Set("Content-Type", "text/event-stream")
+				if tt.assignedSession != "" {
+					w.Header().Set("x-agent-session-id", tt.assignedSession)
+				}
+				w.WriteHeader(http.StatusOK)
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+				time.Sleep(tt.streamDelay)
+				_, _ = io.WriteString(w,
+					"event: response.created\n"+
+						`data: {"type":"response.created","response":{"id":"resp_123","status":"in_progress"},"sequence_number":0}`+
+						"\n\n"+
+						"event: response.completed\n"+
+						`data: {"type":"response.completed","response":{"id":"resp_123","status":"completed"},"sequence_number":1}`+
+						"\n\n",
+				)
+			}))
+			t.Cleanup(server.Close)
+
+			userConfig := newInvokeUserConfigServer()
+			azdClient := newInvokeTestAzdClient(t, userConfig)
+			const agentKey = "agent-key"
+			var output bytes.Buffer
+			action := &InvokeAction{
+				flags: &invokeFlags{
+					message:      "long task",
+					timeout:      1,
+					session:      tt.selectedSession,
+					conversation: "conv_123",
+					background:   true,
+					outputFmt:    outputDefault,
+				},
+				writer: &output,
+				resolveRemoteContextFn: func(context.Context) (*remoteContext, error) {
+					return &remoteContext{
+						name:            "test-agent",
+						agentKey:        agentKey,
+						projectEndpoint: server.URL + "/api/projects/test-project",
+						apiVersion:      "v1",
+						azdClient:       azdClient,
+					}, nil
+				},
+				acquireBearerTokenFn: func(context.Context) (string, error) {
+					return "test-token", nil
+				},
+			}
+
+			// The delayed stream exceeds the configured foreground timeout, proving
+			// the background client has no total request deadline.
+			started := time.Now()
+			require.NoError(t, action.responsesRemote(t.Context()))
+			if tt.streamDelay > 0 {
+				assert.GreaterOrEqual(t, time.Since(started), tt.streamDelay)
+			}
+
+			captured := <-requests
+			require.NoError(t, captured.err)
+			assert.Equal(t, http.MethodPost, captured.method)
+			assert.Equal(t,
+				"/api/projects/test-project/agents/test-agent/endpoint/protocols/openai/responses",
+				captured.path,
+			)
+			assert.Equal(t, "api-version=v1", captured.query)
+			assert.Equal(t, "Bearer test-token", captured.header.Get("Authorization"))
+			assert.Equal(t, "long task", captured.body.Input)
+			assert.True(t, captured.body.Stream)
+			assert.True(t, captured.body.Store)
+			assert.True(t, captured.body.Background)
+			assert.Equal(t, tt.selectedSession, captured.body.AgentSessionID)
+			assert.Empty(t, captured.body.SessionID)
+			assert.Equal(t, "conv_123", captured.body.Conversation.ID)
+
+			expectedSession := tt.selectedSession
+			if expectedSession == "" {
+				expectedSession = tt.assignedSession
+			}
+			var sessions map[string]string
+			userConfig.getJSON(t, configPath("sessions"), &sessions)
+			assert.Equal(t, expectedSession, sessions[agentKey])
+
+			var responses map[string]savedBackgroundResponse
+			userConfig.getJSON(t, backgroundResponsesConfigPath, &responses)
+			saved := responses[agentKey]
+			assert.Equal(t, "resp_123", saved.ResponseID)
+			require.NotNil(t, saved.LastSequenceNumber)
+			assert.Equal(t, int64(1), *saved.LastSequenceNumber)
+			assert.Equal(t, "completed", saved.Status)
+			assert.Equal(t, expectedSession, saved.SessionID)
+			assert.Equal(t, "conv_123", saved.ConversationID)
+			assert.Contains(t, output.String(), "Response:     resp_123")
 		})
 	}
 }

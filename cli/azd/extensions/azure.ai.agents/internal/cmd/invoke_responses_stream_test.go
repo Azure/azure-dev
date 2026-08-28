@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -84,4 +85,55 @@ func TestReadResponsesSSESuppressesDuplicateSequence(t *testing.T) {
 	err := readResponsesSSE(context.Background(), strings.NewReader(stream), &output, "agent", false, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "[agent] one\n", output.String())
+}
+
+func TestReadResponsesSSEEventSizeLimit(t *testing.T) {
+	t.Parallel()
+
+	const limit = 32
+	tests := []struct {
+		name    string
+		stream  string
+		wantErr bool
+	}{
+		{
+			name:   "exact retained data limit",
+			stream: "event: ignored\ndata: " + strings.Repeat("x", limit) + "\n\n",
+		},
+		{
+			name:    "retained data exceeds limit",
+			stream:  "event: ignored\ndata: " + strings.Repeat("x", limit+1) + "\n\n",
+			wantErr: true,
+		},
+		{
+			name:   "empty data fields count newline separators",
+			stream: strings.Repeat("data:\n", limit+1) + "\n",
+		},
+		{
+			name:    "many empty data fields exceed limit",
+			stream:  strings.Repeat("data:\n", limit+2) + "\n",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := readResponsesSSEWithLimit(
+				t.Context(),
+				strings.NewReader(tt.stream),
+				io.Discard,
+				"agent",
+				false,
+				nil,
+				limit,
+			)
+			if tt.wantErr {
+				require.EqualError(t, err, "Responses SSE event exceeds 32 bytes")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

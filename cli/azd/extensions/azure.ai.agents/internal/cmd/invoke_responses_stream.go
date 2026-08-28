@@ -66,12 +66,32 @@ func readResponsesSSE(
 	requireTerminal bool,
 	onProgress func(responsesStreamProgress) error,
 ) error {
+	return readResponsesSSEWithLimit(
+		ctx,
+		body,
+		writer,
+		agentName,
+		requireTerminal,
+		onProgress,
+		maxResponsesSSEEventBytes,
+	)
+}
+
+func readResponsesSSEWithLimit(
+	ctx context.Context,
+	body io.Reader,
+	writer io.Writer,
+	agentName string,
+	requireTerminal bool,
+	onProgress func(responsesStreamProgress) error,
+	maxEventBytes int,
+) error {
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxResponsesSSEEventBytes)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxEventBytes+len("data: ")+1)
 
 	var eventName string
-	var dataLines []string
-	var eventBytes int
+	var eventData bytes.Buffer
+	var dataSeen bool
 	var printed bool
 	var identity string
 	var cursor *int64
@@ -79,16 +99,15 @@ func readResponsesSSE(
 	var terminal bool
 
 	dispatch := func() error {
-		if len(dataLines) == 0 {
+		if !dataSeen {
 			eventName = ""
-			eventBytes = 0
 			return nil
 		}
 
-		event := responsesSSEEvent{name: eventName, data: []byte(strings.Join(dataLines, "\n"))}
+		event := responsesSSEEvent{name: eventName, data: eventData.Bytes()}
 		eventName = ""
-		dataLines = nil
-		eventBytes = 0
+		dataSeen = false
+		defer eventData.Reset()
 
 		var envelope responsesEventEnvelope
 		if err := json.Unmarshal(event.data, &envelope); err != nil {
@@ -224,11 +243,18 @@ func readResponsesSSE(
 		case "event":
 			eventName = value
 		case "data":
-			eventBytes += len(value)
-			if eventBytes > maxResponsesSSEEventBytes {
-				return fmt.Errorf("Responses SSE event exceeds %d bytes", maxResponsesSSEEventBytes)
+			addedBytes := len(value)
+			if dataSeen {
+				addedBytes++
 			}
-			dataLines = append(dataLines, value)
+			if addedBytes > maxEventBytes-eventData.Len() {
+				return fmt.Errorf("Responses SSE event exceeds %d bytes", maxEventBytes)
+			}
+			if dataSeen {
+				eventData.WriteByte('\n')
+			}
+			eventData.WriteString(value)
+			dataSeen = true
 		}
 	}
 	if err := scanner.Err(); err != nil {

@@ -449,6 +449,49 @@ func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
 	<-clientDone
 }
 
+func TestRun_StalledResponseDoesNotBlockOtherRequests(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	sim.serverToClient = make(chan *TestMessage, 100)
+	defer sim.Close()
+
+	broker := NewMessageBroker(sim.ClientStream(), &SimpleMessageEnvelope{}, "client", nil)
+	runCtx, cancelRun := context.WithCancel(t.Context())
+	defer cancelRun()
+
+	stalledCh := make(chan *TestMessage, 50)
+	stalledDispatcher := newResponseDispatcher(runCtx, stalledCh)
+	broker.responseChans.Store("stalled", stalledDispatcher)
+	defer stalledDispatcher.stop()
+
+	readyCh := make(chan *TestMessage, 1)
+	readyDispatcher := newResponseDispatcher(runCtx, readyCh)
+	broker.responseChans.Store("ready", readyDispatcher)
+	defer readyDispatcher.stop()
+
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- broker.Run(runCtx)
+	}()
+	require.NoError(t, broker.Ready(runCtx))
+
+	for range 51 {
+		sim.serverToClient <- &TestMessage{RequestId: "stalled", IsProgress: true}
+	}
+	expected := &TestMessage{RequestId: "ready", InnerMsg: &TestResponse{Result: "done"}}
+	sim.serverToClient <- expected
+
+	select {
+	case actual := <-readyCh:
+		assert.Same(t, expected, actual)
+	case <-time.After(time.Second):
+		t.Fatal("response for another request was blocked by the stalled request")
+	}
+
+	cancelRun()
+	sim.Close()
+	<-runDone
+}
+
 // TestEndToEnd_HandlerReturnsError tests error propagation from handler to client
 func TestEndToEnd_HandlerReturnsError(t *testing.T) {
 	sim := NewSimulatedBidiStream()
@@ -663,7 +706,7 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 	// Wait for both response channels to register in responseChans.
 	require.Eventually(t, func() bool {
 		count := 0
-		broker.responseChans.Range(func(_ string, _ chan *TestMessage) bool {
+		broker.responseChans.Range(func(_ string, _ *responseDispatcher[TestMessage]) bool {
 			count++
 			return true
 		})
@@ -675,7 +718,7 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 
 	// Verify all channels are removed
 	count := 0
-	broker.responseChans.Range(func(_ string, _ chan *TestMessage) bool {
+	broker.responseChans.Range(func(_ string, _ *responseDispatcher[TestMessage]) bool {
 		count++
 		return true
 	})

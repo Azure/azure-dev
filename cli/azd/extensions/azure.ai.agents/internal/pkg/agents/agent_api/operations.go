@@ -89,6 +89,14 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 	}
 }
 
+// DigitalWorkerPreviewFeature opts agent definition operations into the
+// preview Digital Worker contract.
+const DigitalWorkerPreviewFeature = "DigitalWorker=V1Preview"
+
+func setDigitalWorkerPreviewFeature(req *policy.Request) {
+	req.Raw().Header.Set("Foundry-Features", DigitalWorkerPreviewFeature)
+}
+
 // GetAgent retrieves a specific agent by name
 func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
@@ -97,6 +105,7 @@ func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	setDigitalWorkerPreviewFeature(req)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -134,6 +143,7 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	setDigitalWorkerPreviewFeature(req)
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
@@ -296,6 +306,7 @@ func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	setDigitalWorkerPreviewFeature(req)
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
@@ -481,6 +492,7 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	setDigitalWorkerPreviewFeature(req)
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
@@ -599,6 +611,7 @@ func (c *AgentClient) zipDeployRequest(
 
 	// Required headers
 	req.Raw().Header.Set("x-ms-code-zip-sha256", sha256Hex)
+	setDigitalWorkerPreviewFeature(req)
 	if agentName != "" {
 		req.Raw().Header.Set("x-ms-agent-name", agentName)
 	}
@@ -634,6 +647,7 @@ func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersi
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	setDigitalWorkerPreviewFeature(req)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

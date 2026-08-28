@@ -84,14 +84,13 @@ func teamsPackScopeFlags() []string {
 // loudly when the agent is missing, is not an activity agent, or has not been
 // deployed yet.
 type teamsPackContext struct {
-	proj              *azdext.ProjectConfig
-	svc               *azdext.ServiceConfig
-	agentName         string
-	botArmID          string
-	blueprintClientID string
-	agentClient       *agent_api.AgentClient
-	activityProfile   project.ActivityProfile
-	activitySettings  *project.ActivitySettings
+	proj             *azdext.ProjectConfig
+	svc              *azdext.ServiceConfig
+	agentName        string
+	botArmID         string
+	agentClient      *agent_api.AgentClient
+	activityProfile  project.ActivityProfile
+	activitySettings *project.ActivitySettings
 }
 
 // resolveTeamsPackContext resolves the target activity agent and derives the Azure
@@ -180,21 +179,32 @@ func resolveTeamsPackContext(
 		)
 	}
 
-	botArmID := ""
-	blueprintClientID := ""
-	if activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
-		blueprintClientID, err = readEnvValue(
-			ctx, azdClient, envName, envkey.AgentBlueprintClientID(svc.Name),
+	endpoint, err := resolveAgentEndpoint(ctx, "", "")
+	if err != nil {
+		return nil, err
+	}
+	credential, err := newAgentCredential()
+	if err != nil {
+		return nil, err
+	}
+	agentClient := agent_api.NewAgentClient(endpoint, credential)
+	remoteVersion, err := agentClient.GetAgentVersion(
+		ctx, agentName, version, agent_api.AgentEndpointAPIVersion,
+	)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)
+	}
+	activityProfile, err = project.ResolveDeployedActivityProfile(activityProfile, remoteVersion.DigitalWorkerType)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			err.Error(),
+			"redeploy the agent so its service-side digital_worker_type matches activity.useCase",
 		)
-		if err != nil {
-			return nil, exterrors.Dependency(
-				exterrors.CodeAgentNotDeployed,
-				fmt.Sprintf("agent %q has no recorded blueprint client ID in environment %q", agentName, envName),
-				"run 'azd deploy' first; the blueprint client ID is required before "+
-					"publishing a digital_worker agent",
-			)
-		}
-	} else {
+	}
+
+	botArmID := ""
+	if activityProfile.UseCase != project.ActivityUseCaseDigitalWorker {
 		subscriptionID, readErr := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
 		if readErr != nil {
 			return nil, readErr
@@ -221,24 +231,14 @@ func resolveTeamsPackContext(
 		}
 	}
 
-	endpoint, err := resolveAgentEndpoint(ctx, "", "")
-	if err != nil {
-		return nil, err
-	}
-	credential, err := newAgentCredential()
-	if err != nil {
-		return nil, err
-	}
-
 	return &teamsPackContext{
-		proj:              proj,
-		svc:               svc,
-		agentName:         agentName,
-		botArmID:          botArmID,
-		blueprintClientID: blueprintClientID,
-		agentClient:       agent_api.NewAgentClient(endpoint, credential),
-		activityProfile:   activityProfile,
-		activitySettings:  serviceTargetConfig.Activity,
+		proj:             proj,
+		svc:              svc,
+		agentName:        agentName,
+		botArmID:         botArmID,
+		agentClient:      agentClient,
+		activityProfile:  activityProfile,
+		activitySettings: serviceTargetConfig.Activity,
 	}, nil
 }
 
@@ -263,13 +263,14 @@ func teamsBotArmID(subscriptionID, defaultResourceGroup, botName, botResourceGro
 // app package/publish request. Zero-value fields fall back to sensible defaults
 // derived from the agent name.
 type teamsAppRequestOptions struct {
-	scope             teamsPackScope
-	agentName         string
-	useCase           project.ActivityUseCase
-	displayName       string
-	appVersion        string
-	blueprintClientID string
-	publish           *project.ActivityPublishConfig
+	scope                    teamsPackScope
+	agentName                string
+	useCase                  project.ActivityUseCase
+	displayName              string
+	appVersion               string
+	publish                  *project.ActivityPublishConfig
+	optionalPermissionScopes []agent_api.Microsoft365PermissionScopes
+	accessBoundaries         *[]string
 }
 
 // buildTeamsAppPackageRequest assembles the Microsoft 365 request body shared by
@@ -322,20 +323,12 @@ func buildTeamsAppPackageRequest(
 		TermsOfUseURL:            "https://learn.microsoft.com/azure/ai-foundry/",
 		CanRespondWithoutMention: true,
 	}
+	if opts.useCase == project.ActivityUseCaseDigitalWorker {
+		request.PublishAsAutopilot = true
+		request.OptionalPermissionScopes = opts.optionalPermissionScopes
+		request.AccessBoundaries = opts.accessBoundaries
+	}
 	if publish != nil {
-		if opts.useCase == project.ActivityUseCaseDigitalWorker {
-			request.PublishAsAutopilot = publish.PublishAsAutopilot
-			request.UseAgenticUserTemplate = publish.AgenticUserTemplate != nil
-		}
-		if opts.useCase == project.ActivityUseCaseDigitalWorker && publish.AgenticUserTemplate != nil {
-			request.AgenticUserTemplate = &agent_api.AgenticUserTemplate{
-				ID:                       publish.AgenticUserTemplate.ID,
-				File:                     publish.AgenticUserTemplate.File,
-				SchemaVersion:            publish.AgenticUserTemplate.SchemaVersion,
-				AgentIdentityBlueprintID: opts.blueprintClientID,
-				CommunicationProtocol:    publish.AgenticUserTemplate.CommunicationProtocol,
-			}
-		}
 		if request.AgentDisplayName == "" && strings.TrimSpace(publish.AgentDisplayName) != "" {
 			request.AgentDisplayName = publish.AgentDisplayName
 		}

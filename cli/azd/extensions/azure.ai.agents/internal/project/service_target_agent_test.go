@@ -1306,10 +1306,7 @@ func TestRegisterAgentEnvironmentVariables_PersistsDigitalWorkerBlueprintClientI
 		azdClient: newEnvTestClient(t, envStub),
 		env:       &azdext.Environment{Name: "test-env"},
 	}
-	publish := &ActivityPublishConfig{
-		PublishAsAutopilot: true,
-		PublishScope:       "tenant",
-	}
+	publish := &ActivityPublishConfig{PublishScope: "tenant"}
 
 	err := provider.registerAgentEnvironmentVariables(
 		t.Context(),
@@ -1927,6 +1924,7 @@ func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
 		Name:                 "basic-agent",
 		AdditionalProperties: props,
 	}
+
 	provider := &AgentServiceTargetProvider{}
 
 	prep, err := provider.prepareDeploy(
@@ -1945,6 +1943,32 @@ func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, DefaultCpu, definition.CPU)
 	require.Equal(t, DefaultMemory, definition.Memory)
+}
+
+func TestPrepareDeploySetsDigitalWorkerType(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	props, err := AgentDefinitionToServiceProperties(agentDef, &ServiceTargetAgentConfig{
+		Activity: &ActivitySettings{UseCase: ActivityUseCaseDigitalWorker},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "digital-worker",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/worker:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, agent_api.DigitalWorkerTypeM365, prep.request.DigitalWorkerType)
 }
 
 func TestValidateRegistryConnectionDefinition(t *testing.T) {

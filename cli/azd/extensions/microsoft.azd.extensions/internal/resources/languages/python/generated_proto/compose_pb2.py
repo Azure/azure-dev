@@ -25,34 +25,34 @@ _sym_db = _symbol_database.Default()
 import models_pb2 as models__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rcompose.proto\x12\x06\x61zdext\x1a\x0cmodels.proto\"D\n\x15ListResourcesResponse\x12+\n\tresources\x18\x01 \x03(\x0b\x32\x18.azdext.ComposedResource\"\"\n\x12GetResourceRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\"A\n\x13GetResourceResponse\x12*\n\x08resource\x18\x01 \x01(\x0b\x32\x18.azdext.ComposedResource\"Q\n\x19ListResourceTypesResponse\x12\x34\n\x0eresource_types\x18\x01 \x03(\x0b\x32\x1c.azdext.ComposedResourceType\"+\n\x16GetResourceTypeRequest\x12\x11\n\ttype_name\x18\x01 \x01(\t\"N\n\x17GetResourceTypeResponse\x12\x33\n\rresource_type\x18\x01 \x01(\x0b\x32\x1c.azdext.ComposedResourceType\"@\n\x12\x41\x64\x64ResourceRequest\x12*\n\x08resource\x18\x01 \x01(\x0b\x32\x18.azdext.ComposedResource\"A\n\x13\x41\x64\x64ResourceResponse\x12*\n\x08resource\x18\x01 \x01(\x0b\x32\x18.azdext.ComposedResource\"L\n\x10\x43omposedResource\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0e\n\x06\x63onfig\x18\x03 \x01(\x0c\x12\x0c\n\x04uses\x18\x04 \x03(\t\"9\n\x14\x43omposedResourceType\x12\x11\n\ttype_name\x18\x01 \x01(\t\x12\x0e\n\x06schema\x18\x02 \x01(\x0c\x32\x88\x03\n\x0e\x43omposeService\x12\x44\n\rListResources\x12\x14.azdext.EmptyRequest\x1a\x1d.azdext.ListResourcesResponse\x12\x46\n\x0bGetResource\x12\x1a.azdext.GetResourceRequest\x1a\x1b.azdext.GetResourceResponse\x12L\n\x11ListResourceTypes\x12\x14.azdext.EmptyRequest\x1a!.azdext.ListResourceTypesResponse\x12R\n\x0fGetResourceType\x12\x1e.azdext.GetResourceTypeRequest\x1a\x1f.azdext.GetResourceTypeResponse\x12\x46\n\x0b\x41\x64\x64Resource\x12\x1a.azdext.AddResourceRequest\x1a\x1b.azdext.AddResourceResponseBFZ4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rcompose.proto\x12\x11\x61zd.extensions.v1\x1a\x0cmodels.proto\"O\n\x15ListResourcesResponse\x12\x36\n\tresources\x18\x01 \x03(\x0b\x32#.azd.extensions.v1.ComposedResource\"\"\n\x12GetResourceRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\"L\n\x13GetResourceResponse\x12\x35\n\x08resource\x18\x01 \x01(\x0b\x32#.azd.extensions.v1.ComposedResource\"\\\n\x19ListResourceTypesResponse\x12?\n\x0eresource_types\x18\x01 \x03(\x0b\x32\'.azd.extensions.v1.ComposedResourceType\"+\n\x16GetResourceTypeRequest\x12\x11\n\ttype_name\x18\x01 \x01(\t\"Y\n\x17GetResourceTypeResponse\x12>\n\rresource_type\x18\x01 \x01(\x0b\x32\'.azd.extensions.v1.ComposedResourceType\"K\n\x12\x41\x64\x64ResourceRequest\x12\x35\n\x08resource\x18\x01 \x01(\x0b\x32#.azd.extensions.v1.ComposedResource\"L\n\x13\x41\x64\x64ResourceResponse\x12\x35\n\x08resource\x18\x01 \x01(\x0b\x32#.azd.extensions.v1.ComposedResource\"L\n\x10\x43omposedResource\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0e\n\x06\x63onfig\x18\x03 \x01(\x0c\x12\x0c\n\x04uses\x18\x04 \x03(\t\"9\n\x14\x43omposedResourceType\x12\x11\n\ttype_name\x18\x01 \x01(\t\x12\x0e\n\x06schema\x18\x02 \x01(\x0c\x32\xf6\x03\n\x0e\x43omposeService\x12Z\n\rListResources\x12\x1f.azd.extensions.v1.EmptyRequest\x1a(.azd.extensions.v1.ListResourcesResponse\x12\\\n\x0bGetResource\x12%.azd.extensions.v1.GetResourceRequest\x1a&.azd.extensions.v1.GetResourceResponse\x12\x62\n\x11ListResourceTypes\x12\x1f.azd.extensions.v1.EmptyRequest\x1a,.azd.extensions.v1.ListResourceTypesResponse\x12h\n\x0fGetResourceType\x12).azd.extensions.v1.GetResourceTypeRequest\x1a*.azd.extensions.v1.GetResourceTypeResponse\x12\\\n\x0b\x41\x64\x64Resource\x12%.azd.extensions.v1.AddResourceRequest\x1a&.azd.extensions.v1.AddResourceResponseBOZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'compose_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\252\002\rMicrosoft.Azd'
-  _globals['_LISTRESOURCESRESPONSE']._serialized_start=39
-  _globals['_LISTRESOURCESRESPONSE']._serialized_end=107
-  _globals['_GETRESOURCEREQUEST']._serialized_start=109
-  _globals['_GETRESOURCEREQUEST']._serialized_end=143
-  _globals['_GETRESOURCERESPONSE']._serialized_start=145
-  _globals['_GETRESOURCERESPONSE']._serialized_end=210
-  _globals['_LISTRESOURCETYPESRESPONSE']._serialized_start=212
-  _globals['_LISTRESOURCETYPESRESPONSE']._serialized_end=293
-  _globals['_GETRESOURCETYPEREQUEST']._serialized_start=295
-  _globals['_GETRESOURCETYPEREQUEST']._serialized_end=338
-  _globals['_GETRESOURCETYPERESPONSE']._serialized_start=340
-  _globals['_GETRESOURCETYPERESPONSE']._serialized_end=418
-  _globals['_ADDRESOURCEREQUEST']._serialized_start=420
-  _globals['_ADDRESOURCEREQUEST']._serialized_end=484
-  _globals['_ADDRESOURCERESPONSE']._serialized_start=486
-  _globals['_ADDRESOURCERESPONSE']._serialized_end=551
-  _globals['_COMPOSEDRESOURCE']._serialized_start=553
-  _globals['_COMPOSEDRESOURCE']._serialized_end=629
-  _globals['_COMPOSEDRESOURCETYPE']._serialized_start=631
-  _globals['_COMPOSEDRESOURCETYPE']._serialized_end=688
-  _globals['_COMPOSESERVICE']._serialized_start=691
-  _globals['_COMPOSESERVICE']._serialized_end=1083
+  _globals['DESCRIPTOR']._serialized_options = b'Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\252\002\rMicrosoft.Azd'
+  _globals['_LISTRESOURCESRESPONSE']._serialized_start=50
+  _globals['_LISTRESOURCESRESPONSE']._serialized_end=129
+  _globals['_GETRESOURCEREQUEST']._serialized_start=131
+  _globals['_GETRESOURCEREQUEST']._serialized_end=165
+  _globals['_GETRESOURCERESPONSE']._serialized_start=167
+  _globals['_GETRESOURCERESPONSE']._serialized_end=243
+  _globals['_LISTRESOURCETYPESRESPONSE']._serialized_start=245
+  _globals['_LISTRESOURCETYPESRESPONSE']._serialized_end=337
+  _globals['_GETRESOURCETYPEREQUEST']._serialized_start=339
+  _globals['_GETRESOURCETYPEREQUEST']._serialized_end=382
+  _globals['_GETRESOURCETYPERESPONSE']._serialized_start=384
+  _globals['_GETRESOURCETYPERESPONSE']._serialized_end=473
+  _globals['_ADDRESOURCEREQUEST']._serialized_start=475
+  _globals['_ADDRESOURCEREQUEST']._serialized_end=550
+  _globals['_ADDRESOURCERESPONSE']._serialized_start=552
+  _globals['_ADDRESOURCERESPONSE']._serialized_end=628
+  _globals['_COMPOSEDRESOURCE']._serialized_start=630
+  _globals['_COMPOSEDRESOURCE']._serialized_end=706
+  _globals['_COMPOSEDRESOURCETYPE']._serialized_start=708
+  _globals['_COMPOSEDRESOURCETYPE']._serialized_end=765
+  _globals['_COMPOSESERVICE']._serialized_start=768
+  _globals['_COMPOSESERVICE']._serialized_end=1270
 # @@protoc_insertion_point(module_scope)

@@ -29,7 +29,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WorkflowServiceClient interface {
-	// ListResources retrieves all configured composability resources in the current project.
+	// Run executes a workflow.
 	Run(ctx context.Context, in *RunWorkflowRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
 }
 
@@ -55,7 +55,7 @@ func (c *workflowServiceClient) Run(ctx context.Context, in *RunWorkflowRequest,
 // All implementations must embed UnimplementedWorkflowServiceServer
 // for forward compatibility.
 type WorkflowServiceServer interface {
-	// ListResources retrieves all configured composability resources in the current project.
+	// Run executes a workflow.
 	Run(context.Context, *RunWorkflowRequest) (*EmptyResponse, error)
 	mustEmbedUnimplementedWorkflowServiceServer()
 }

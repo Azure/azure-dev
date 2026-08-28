@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package synthesis
+package foundry
 
 import (
 	"testing"
@@ -35,6 +35,11 @@ func TestEvaluateCondition(t *testing.T) {
 			want:  false,
 		},
 		{
+			name:  "whitespace condition is disabled",
+			value: " ",
+			want:  false,
+		},
+		{
 			name:    "Foundry expression is malformed",
 			value:   "${{connections.foo}}",
 			wantErr: "malformed condition template",
@@ -48,7 +53,7 @@ func TestEvaluateCondition(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := evaluateCondition(tt.value, func(name string) string {
+			got, err := EvaluateCondition(tt.value, func(name string) string {
 				return tt.env[name]
 			})
 			if tt.wantErr != "" {
@@ -61,4 +66,11 @@ func TestEvaluateCondition(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestEvaluateConditionWithNilEnvironmentLookup(t *testing.T) {
+	got, err := EvaluateCondition("${MISSING}", nil)
+
+	require.NoError(t, err)
+	assert.False(t, got)
 }

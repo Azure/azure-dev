@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package synthesis
+package foundry
 
 import (
 	"fmt"
@@ -9,9 +9,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-// evaluateCondition matches project.ServiceConfig.IsEnabled.
-// Foundry expressions are not valid in condition values.
-func evaluateCondition(
+// EvaluateCondition reports whether a string condition enables a service.
+// An empty condition is enabled.
+func EvaluateCondition(
 	value string,
 	getenv func(string) string,
 ) (bool, error) {

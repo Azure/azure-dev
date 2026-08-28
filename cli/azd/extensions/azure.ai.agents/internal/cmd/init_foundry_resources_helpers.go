@@ -567,8 +567,7 @@ func configureFoundryProjectEnv(
 
 // configureExistingProjectAcr discovers the ACR connections on an existing
 // Foundry project and runs the ACR selection/question for a container agent in
-// the bicepless flow. A failure to list connections is non-fatal: configureAcrConnection
-// then prompts for a login server (or to create one during provision).
+// the bicepless flow.
 func configureExistingProjectAcr(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -578,21 +577,29 @@ func configureExistingProjectAcr(
 	subscriptionId string,
 	acrConnection string,
 ) error {
+	return configureExistingProjectAcrWithConnectionsLoader(
+		ctx, azdClient, credential, envName, project, subscriptionId, acrConnection, listFoundryProjectConnections,
+	)
+}
+
+func configureExistingProjectAcrWithConnectionsLoader(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	credential azcore.TokenCredential,
+	envName string,
+	project FoundryProjectInfo,
+	subscriptionId string,
+	acrConnection string,
+	loadConnections foundryConnectionsLoader,
+) error {
 	var acrConnections []azure.Connection
-	foundryClient, err := azure.NewFoundryProjectsClient(project.AccountName, project.ProjectName, credential)
+	connections, err := loadConnections(ctx, credential, project.AccountName, project.ProjectName)
 	if err != nil {
-		return fmt.Errorf("creating Foundry client: %w", err)
+		return fmt.Errorf("listing connections on project %q: %w", project.ProjectName, err)
 	}
-	connections, err := foundryClient.GetAllConnections(ctx)
-	if err != nil {
-		fmt.Printf(
-			"Could not get Microsoft Foundry project connections: %v. "+
-				"You will be asked to provide a container registry.\n", err)
-	} else {
-		for _, conn := range connections {
-			if conn.Type == azure.ConnectionTypeContainerRegistry {
-				acrConnections = append(acrConnections, conn)
-			}
+	for _, conn := range connections {
+		if conn.Type == azure.ConnectionTypeContainerRegistry {
+			acrConnections = append(acrConnections, conn)
 		}
 	}
 

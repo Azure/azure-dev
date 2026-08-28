@@ -1173,3 +1173,28 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigureExistingProjectAcrPreservesConnectionDiscoveryError(t *testing.T) {
+	discoveryErr := errors.New("connection discovery failed")
+	loadConnections := func(
+		context.Context,
+		azcore.TokenCredential,
+		string,
+		string,
+	) ([]azure.Connection, error) {
+		return nil, discoveryErr
+	}
+
+	err := configureExistingProjectAcrWithConnectionsLoader(
+		t.Context(),
+		nil,
+		nil,
+		"",
+		FoundryProjectInfo{ProjectName: "project"},
+		"",
+		"",
+		loadConnections,
+	)
+
+	require.ErrorIs(t, err, discoveryErr)
+}

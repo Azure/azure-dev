@@ -451,32 +451,13 @@ After it becomes terminal:
 | `invoke --continue` | Replay or retrieve the terminal result |
 | `invoke --cancel` | Report terminal status without failing |
 
-### Active current Response
+### Message-bearing continuation
 
-If message-bearing `--continue` finds the saved Response `queued` or `in_progress`, create a replacement with:
+Message-bearing `--continue` always creates a new stored background Response in the saved conversation and hosted session:
 
 ```json
 {
   "input": "revised requirements",
-  "stream": true,
-  "store": true,
-  "background": true,
-  "previous_response_id": "resp_123",
-  "agent_session_id": "sess_123"
-}
-```
-
-Do not include `conversation`; the Responses contract treats it as mutually exclusive with `previous_response_id`.
-
-Use the session and conversation bound to the saved current record. Save the replacement over that record after its identity event arrives. The superseded Response becoming `cancelled`, including with no partial output, is an expected steering outcome. Classify non-steerable conversation conflicts, stale predecessor failures, and full steering queues as actionable service errors.
-
-### Terminal current Response
-
-If message-bearing `--continue` finds the saved Response `completed`, `failed`, `incomplete`, or `cancelled`, create a normal next background turn in the saved current conversation:
-
-```json
-{
-  "input": "next requirements",
   "stream": true,
   "store": true,
   "background": true,
@@ -485,17 +466,9 @@ If message-bearing `--continue` finds the saved Response `completed`, `failed`, 
 }
 ```
 
-Replace the saved record when the new identity event arrives. Both steer and next-turn forms remain attached until terminal completion, interruption, or reconnect exhaustion.
+azd uses one consistent conversation-based history mechanism for ordinary, background, and steering turns. It does not send `previous_response_id`. If the saved conversation is busy and the agent enables `steerable_conversations`, the service queues the new turn and cooperatively winds down the active handler. If the conversation is idle, the same request starts the normal next turn. The request shape therefore does not depend on a potentially stale local Response status and has no active-to-terminal predecessor race.
 
-### Active-to-terminal race
-
-The saved Response can complete between status retrieval and replacement creation. If the service rejects the predecessor as stale or no longer active:
-
-1. Retrieve status once more.
-2. If now terminal, create a normal next background turn in the saved conversation.
-3. Otherwise return the service error.
-
-Do not retry a replacement POST blindly.
+Use the session and conversation bound to the saved current record. Save the new Response over that record after its identity event arrives and remain attached until completion, interruption, or reconnect exhaustion. A superseded Response may become `cancelled`, `failed`, or another documented terminal status, possibly with no partial output; the new Response determines the command result. Classify conversation-lock and steering-queue failures as actionable service errors.
 
 ### Session and conversation support
 
@@ -605,7 +578,7 @@ Background create/follow operations ignore the existing total `--timeout` and us
 
 Use a 30-second bound for response-header acquisition, status GET, cancel POST, and individual reconnect setup. Token acquisition continues to use the credential implementation's context and timeout behavior.
 
-Use transport-level response-header timeouts rather than a total request timeout. Reconnect sleeps must observe command context cancellation. If a user explicitly supplies `--timeout` with a background operation, accept it but print a debug diagnostic that the value is ignored; normal output remains unchanged.
+Use transport-level response-header timeouts rather than a total request timeout. Reconnect sleeps must observe command context cancellation. Reject an explicitly supplied `--timeout` with a background lifecycle operation because those operations do not honor an overall request timeout.
 
 Existing timeout behavior remains unchanged for foreground Responses, local invoke, Invocations, and A2A.
 
@@ -669,7 +642,7 @@ Add stable extension error codes for at least:
 - Response identity not received.
 - Reconnect exhausted.
 - Replay unavailable with no retrievable snapshot.
-- Steering rejected as stale or conflicting.
+- Steering rejected because the saved conversation is locked, unavailable, or its steering queue is full.
 
 Context errors must include the valid next action:
 
@@ -777,11 +750,11 @@ Build on the existing in-process UserConfig gRPC test server. Cover:
 Cover:
 
 - An active current Response blocks ordinary and background new turns.
-- Active message-bearing `--continue` creates a replacement with `previous_response_id` and no `conversation`.
-- Replacement uses the saved current session and replaces the saved record.
-- Superseded cancellation is expected.
-- Terminal message-bearing `--continue` creates a normal next turn in the saved conversation.
-- Active-to-terminal race falls back once to normal next-turn creation.
+- Active and terminal message-bearing `--continue` use the same saved `conversation.id` and compatible `agent_session_id` request shape.
+- Message-bearing `--continue` never sends `previous_response_id`.
+- A busy steerable conversation interrupts or winds down the active turn and completes the replacement.
+- An idle conversation starts the normal next background turn with the same request shape.
+- Two consecutive steering cycles remain in one conversation without a fork or forwarding error.
 - Active session/conversation changes are rejected; terminal changes clear the record after success.
 
 ### Cancellation tests
@@ -905,7 +878,7 @@ The MVP blind GET requires no capability discovery because it makes no claim abo
 
 1. Add message-bearing `--continue` for active replacement and terminal next-turn creation.
 2. Refresh active status before blocking competing turns.
-3. Handle active-to-terminal races and superseded cancellation.
+3. Validate repeated conversation-based steering and superseded terminal outcomes.
 4. Validate steering against the hosted Responses reference agent.
 
 ### PR 4 — Invocations one-shot retrieval

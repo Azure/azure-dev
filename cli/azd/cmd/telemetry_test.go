@@ -238,6 +238,14 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "extension.event", string(kv.Key))
 		require.Equal(t, "deploy.completed", kv.Value.AsString())
 
+		dropped := fields.ExtensionUsageDropped.StringSlice(
+			[]string{"contoso.tools@attribute_value_too_long"},
+		)
+		require.Equal(t, "extension.usage.dropped", string(dropped.Key))
+
+		droppedCount := fields.ExtensionUsageDroppedCount.Int64(2)
+		require.Equal(t, "extension.usage.dropped.count", string(droppedCount.Key))
+
 		category := fields.ExtensionSourceCategory.String("local")
 		require.Equal(t, "extension.source.category", string(category.Key))
 

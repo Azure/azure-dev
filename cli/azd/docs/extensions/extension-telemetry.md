@@ -134,7 +134,9 @@ extension author:
 
 Error messages do not echo attribute values. When a valid key has an oversized
 value, the key is included so you can identify the failing field; invalid keys
-are not echoed. Use the status code plus your own call site to diagnose.
+are not echoed. Use the status code plus your own call site to diagnose. Hosts
+that support dropped-report telemetry also record the bounded reason described
+in [Diagnosing dropped reports](#diagnosing-dropped-reports).
 
 ## When your event is not recorded
 
@@ -146,13 +148,70 @@ Two outcomes are deliberately **not** errors. The call succeeds and
 | Your configured source does not match the verified official `azd` registry | Attribute values are never reviewed at runtime, so registry admission is what keeps unchecked content out of `azd`'s pipeline |
 | The per-invocation event budget is spent | `ReportUsage` can be called in a loop, and the per-event bounds do not limit how many events arrive |
 
-Run `azd` with `--debug` to see which one applied.
+Run `azd` with `--debug` to see which one applied. Hosts that support
+dropped-report telemetry also record the bounded reason described in
+[Diagnosing dropped reports](#diagnosing-dropped-reports).
 
 This means **your events are not recorded while you develop locally**, because
 an extension installed with `--source dev` or from a file path does not pass the
 gate. You can still verify your integration end to end: the call succeeds and
 `Accepted` comes back `false`. Because it is not an error, your code runs the
 same path in development as in production — do not branch on `Accepted`.
+
+## Diagnosing dropped reports
+
+`azd` aggregates rejected and dropped calls on the command span that hosted the
+extension. It records two fields:
+
+| Attribute | Meaning |
+|---|---|
+| `extension.usage.dropped` | Unique `<extension-id>@<reason>` values for the invocation |
+| `extension.usage.dropped.count` | Total reports dropped during the invocation |
+
+The reason is always one of these host-defined values:
+
+| Reason | Cause |
+|---|---|
+| `event_name_invalid` | The event name is missing or exceeds 128 UTF-8 bytes |
+| `attribute_count_exceeded` | The report contains more than 32 attributes |
+| `attribute_key_invalid` | An attribute key is empty or exceeds 128 UTF-8 bytes |
+| `attribute_value_too_long` | An attribute value exceeds 512 UTF-8 bytes |
+| `not_installed` | The calling extension is not installed |
+| `lookup_failed` | `azd` could not read the installed extension record |
+| `source_check_failed` | `azd` could not verify the configured registry source |
+| `source_ineligible` | The configured source is not the verified official registry |
+| `budget_exhausted` | The invocation has already recorded 100 extension usage events |
+| `unauthenticated` | The request did not contain validated extension claims |
+
+No event name, key, value, source, or other caller-controlled content is copied
+into the signal. Repeated failures add to the count but do not add duplicate
+values to the list, so a reporting loop cannot create an unbounded property.
+
+Use this query to find how many invocations were affected by each extension and
+reason:
+
+```kusto
+requests
+| where isnotempty(tostring(customDimensions["extension.usage.dropped"]))
+| extend dropped = parse_json(tostring(customDimensions["extension.usage.dropped"]))
+| mv-expand dropped
+| extend parts = split(tostring(dropped), "@")
+| summarize affected_invocations=dcount(operation_Id)
+    by extension_id=tostring(parts[0]), reason=tostring(parts[1])
+```
+
+To inspect total volume separately, sum
+`customMeasurements["extension.usage.dropped.count"]`. The count covers all
+reasons in an invocation, so do not assign it to one reason when the list
+contains several values.
+
+Accepted `ext.usage` spans and the command span share `operation_Id`. Use that
+field with `extension.id` to compare affected invocations with invocations that
+successfully recorded at least one report.
+
+For a long-running server command, such as `azd vs-server`, the invocation ends
+when the `azd` process exits. Its aggregate therefore covers the process
+lifetime rather than one RPC.
 
 ## Where the data lands
 

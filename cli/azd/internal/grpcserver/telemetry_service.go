@@ -43,6 +43,23 @@ const (
 	maxUsageEventsPerInvocation = 100
 )
 
+type extensionUsageDropReason string
+
+const (
+	extensionUsageDropReasonEventNameInvalid       extensionUsageDropReason = "event_name_invalid"
+	extensionUsageDropReasonAttributeCountExceeded extensionUsageDropReason = "attribute_count_exceeded"
+	extensionUsageDropReasonAttributeKeyInvalid    extensionUsageDropReason = "attribute_key_invalid"
+	extensionUsageDropReasonAttributeValueTooLong  extensionUsageDropReason = "attribute_value_too_long"
+	extensionUsageDropReasonNotInstalled           extensionUsageDropReason = "not_installed"
+	extensionUsageDropReasonLookupFailed           extensionUsageDropReason = "lookup_failed"
+	extensionUsageDropReasonSourceCheckFailed      extensionUsageDropReason = "source_check_failed"
+	extensionUsageDropReasonSourceIneligible       extensionUsageDropReason = "source_ineligible"
+	extensionUsageDropReasonBudgetExhausted        extensionUsageDropReason = "budget_exhausted"
+	extensionUsageDropReasonUnauthenticated        extensionUsageDropReason = "unauthenticated"
+
+	unknownExtensionId = "unknown"
+)
+
 // installedExtensionLookup resolves the installed extension record for a
 // signed extension id. *extensions.Manager satisfies it.
 type installedExtensionLookup interface {
@@ -92,24 +109,29 @@ func (s *telemetryService) ReportUsage(
 ) (*azdext.ReportUsageResponse, error) {
 	claims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
+		recordExtensionUsageDrop(unknownExtensionId, extensionUsageDropReasonUnauthenticated)
 		return nil, status.Error(codes.Unauthenticated, "validated extension claims are required")
 	}
 
-	if err := validateUsageRequest(req); err != nil {
+	if reason, err := validateUsageRequest(req); err != nil {
+		recordExtensionUsageDrop(claims.Subject, reason)
 		return nil, err
 	}
 
 	extension, err := s.extensions.GetInstalled(extensions.FilterOptions{Id: claims.Subject})
 	if err != nil {
 		if errors.Is(err, extensions.ErrInstalledExtensionNotFound) {
+			recordExtensionUsageDrop(claims.Subject, extensionUsageDropReasonNotInstalled)
 			return nil, status.Error(codes.PermissionDenied, "extension is not installed")
 		}
 
+		recordExtensionUsageDrop(claims.Subject, extensionUsageDropReasonLookupFailed)
 		return nil, status.Error(codes.Internal, "failed to verify installed extension")
 	}
 
 	official, err := s.extensions.IsOfficialRegistrySource(ctx, extension.Source)
 	if err != nil {
+		recordExtensionUsageDrop(extension.Id, extensionUsageDropReasonSourceCheckFailed)
 		log.Printf(
 			"telemetry: failed to verify source %q for %s: %v",
 			extension.Source, extension.Id, err)
@@ -117,6 +139,7 @@ func (s *telemetryService) ReportUsage(
 	}
 
 	if !official {
+		recordExtensionUsageDrop(extension.Id, extensionUsageDropReasonSourceIneligible)
 		log.Printf(
 			"telemetry: dropping usage event from %s installed from source %q",
 			extension.Id, extension.Source)
@@ -141,6 +164,7 @@ func (s *telemetryService) ReportUsage(
 	// a container singleton, which makes it a per-invocation budget
 	// even when a composite command such as up runs several actions.
 	if s.recorded.Add(1) > maxUsageEventsPerInvocation {
+		recordExtensionUsageDrop(extension.Id, extensionUsageDropReasonBudgetExhausted)
 		log.Printf(
 			"telemetry: dropping usage event %q from %s, limit of %d reached",
 			req.EventName, extension.Id, maxUsageEventsPerInvocation)
@@ -158,31 +182,40 @@ func (s *telemetryService) ReportUsage(
 	return &azdext.ReportUsageResponse{Accepted: true}, nil
 }
 
-func validateUsageRequest(req *azdext.ReportUsageRequest) error {
+func recordExtensionUsageDrop(extensionId string, reason extensionUsageDropReason) {
+	tracing.AppendUsageAttributeUnique(
+		fields.ExtensionUsageDropped.String(extensionId + "@" + string(reason)),
+	)
+	tracing.IncrementUsageAttribute(fields.ExtensionUsageDroppedCount.Int64(1))
+}
+
+func validateUsageRequest(req *azdext.ReportUsageRequest) (extensionUsageDropReason, error) {
 	if req == nil || req.EventName == "" || len(req.EventName) > maxUsageEventNameBytes {
-		return status.Errorf(codes.InvalidArgument,
+		return extensionUsageDropReasonEventNameInvalid, status.Errorf(codes.InvalidArgument,
 			"event name is required and must be at most %d UTF-8 bytes",
 			maxUsageEventNameBytes)
 	}
 
 	if len(req.Attributes) > maxUsageAttributes {
-		return status.Errorf(codes.InvalidArgument,
+		return extensionUsageDropReasonAttributeCountExceeded, status.Errorf(codes.InvalidArgument,
 			"event declares more than %d attributes", maxUsageAttributes)
 	}
 
-	for key, value := range req.Attributes {
+	for key := range req.Attributes {
 		if key == "" || len(key) > maxUsageKeyBytes {
-			return status.Errorf(codes.InvalidArgument,
+			return extensionUsageDropReasonAttributeKeyInvalid, status.Errorf(codes.InvalidArgument,
 				"attribute keys are required and must be at most %d UTF-8 bytes",
 				maxUsageKeyBytes)
 		}
+	}
 
+	for key, value := range req.Attributes {
 		if len(value) > maxUsageValueBytes {
-			return status.Errorf(codes.InvalidArgument,
+			return extensionUsageDropReasonAttributeValueTooLong, status.Errorf(codes.InvalidArgument,
 				"attribute value for key %q must be at most %d UTF-8 bytes",
 				key, maxUsageValueBytes)
 		}
 	}
 
-	return nil
+	return "", nil
 }

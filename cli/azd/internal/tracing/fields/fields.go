@@ -1227,6 +1227,21 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// ExtensionUsageDropped records each extension and fixed reason for which
+	// at least one usage report was dropped during the invocation.
+	ExtensionUsageDropped = AttributeKey{
+		Key:            attribute.Key("extension.usage.dropped"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+	// ExtensionUsageDroppedCount is the total number of extension usage reports
+	// dropped during the invocation.
+	ExtensionUsageDroppedCount = AttributeKey{
+		Key:            attribute.Key("extension.usage.dropped.count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
 	// The list of installed extensions, each formatted as "id@version".
 	ExtensionsInstalled = AttributeKey{
 		Key:            attribute.Key("extension.installed"),

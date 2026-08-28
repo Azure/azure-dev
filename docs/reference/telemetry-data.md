@@ -472,6 +472,8 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
 | `extension.event` | string | Extension-chosen event name on an `ext.usage` span |
+| `extension.usage.dropped` | string[] | Unique `<extension-id>@<reason>` entries for extension usage reports dropped during the invocation |
+| `extension.usage.dropped.count` | measurement | Total extension usage reports dropped during the invocation |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
 | `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
@@ -503,7 +505,11 @@ registry name, type, and normalized URL produce these spans, which is what ties
 the recorded values to that privacy review. A report from any other install
 source succeeds but records nothing, as does any report past the limit of 100
 spans per `azd` invocation. This is a configuration-based admission check, not
-a cryptographic provenance guarantee.
+a cryptographic provenance guarantee. Rejected and dropped calls are summarized
+on the command span using `extension.usage.dropped` and
+`extension.usage.dropped.count`. The list contains only the extension ID and a
+fixed host-defined reason; it never contains caller-supplied event or attribute
+content.
 
 Reviewed first-party extension usage events currently include:
 

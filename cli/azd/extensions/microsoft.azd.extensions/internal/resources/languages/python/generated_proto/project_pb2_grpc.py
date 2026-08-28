@@ -37,12 +37,12 @@ class ProjectServiceStub(object):
             channel: A grpc.Channel.
         """
         self.Get = channel.unary_unary(
-                '/azdext.ProjectService/Get',
+                '/azd.extensions.v1.ProjectService/Get',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=project__pb2.GetProjectResponse.FromString,
                 _registered_method=True)
         self.AddService = channel.unary_unary(
-                '/azdext.ProjectService/AddService',
+                '/azd.extensions.v1.ProjectService/AddService',
                 request_serializer=project__pb2.AddServiceRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
@@ -81,9 +81,9 @@ def add_ProjectServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azdext.ProjectService', rpc_method_handlers)
+            'azd.extensions.v1.ProjectService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azdext.ProjectService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1.ProjectService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -105,7 +105,7 @@ class ProjectService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ProjectService/Get',
+            '/azd.extensions.v1.ProjectService/Get',
             models__pb2.EmptyRequest.SerializeToString,
             project__pb2.GetProjectResponse.FromString,
             options,
@@ -132,7 +132,7 @@ class ProjectService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ProjectService/AddService',
+            '/azd.extensions.v1.ProjectService/AddService',
             project__pb2.AddServiceRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,

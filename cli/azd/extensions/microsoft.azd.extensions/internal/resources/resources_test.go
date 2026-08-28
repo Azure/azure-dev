@@ -5,7 +5,9 @@ package resources
 
 import (
 	"bytes"
+	"io/fs"
 	"regexp"
+	"strings"
 	"testing"
 	"text/template"
 
@@ -79,6 +81,39 @@ func TestGoScaffoldPinsReleasedAzdModule(t *testing.T) {
 		"the scaffolded go.mod must pin a released cli/azd module tag, not a pseudo-version, got %q",
 		version,
 	)
+}
+
+func TestNonGoScaffoldsUseStableGrpcPackage(t *testing.T) {
+	roots := []string{
+		"languages/proto",
+		"languages/javascript/generated/proto",
+		"languages/python/generated_proto",
+	}
+
+	for _, root := range roots {
+		t.Run(root, func(t *testing.T) {
+			err := fs.WalkDir(Languages, root, func(path string, entry fs.DirEntry, err error) error {
+				require.NoError(t, err)
+				if entry.IsDir() {
+					return nil
+				}
+
+				contents, err := Languages.ReadFile(path)
+				require.NoError(t, err)
+				text := string(contents)
+				require.NotContains(t, text, "package azdext;", path)
+				require.NotContains(t, text, "/azdext.", path)
+				require.NotContains(t, text, "proto.azdext", path)
+
+				if (strings.HasSuffix(path, "_grpc_pb.js") || strings.HasSuffix(path, "_pb2_grpc.py")) &&
+					!strings.Contains(path, "/models_") {
+					require.Contains(t, text, "/azd.extensions.v1.", path)
+				}
+				return nil
+			})
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestGoScaffoldReadmeMatchesCapabilities(t *testing.T) {

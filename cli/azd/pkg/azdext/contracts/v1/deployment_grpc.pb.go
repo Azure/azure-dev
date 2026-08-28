@@ -30,7 +30,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DeploymentServiceClient interface {
-	// Gets the current environment.
+	// GetDeployment retrieves the current deployment.
 	GetDeployment(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*GetDeploymentResponse, error)
 	// GetDeploymentContext retrieves the current deployment context.
 	GetDeploymentContext(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*GetDeploymentContextResponse, error)
@@ -68,7 +68,7 @@ func (c *deploymentServiceClient) GetDeploymentContext(ctx context.Context, in *
 // All implementations must embed UnimplementedDeploymentServiceServer
 // for forward compatibility.
 type DeploymentServiceServer interface {
-	// Gets the current environment.
+	// GetDeployment retrieves the current deployment.
 	GetDeployment(context.Context, *EmptyRequest) (*GetDeploymentResponse, error)
 	// GetDeploymentContext retrieves the current deployment context.
 	GetDeploymentContext(context.Context, *EmptyRequest) (*GetDeploymentContextResponse, error)

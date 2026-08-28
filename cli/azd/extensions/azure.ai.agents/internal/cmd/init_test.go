@@ -2213,6 +2213,45 @@ func TestConfigureModelChoice_NoPromptMissingAzureContextDefersModelResources(t 
 	}
 }
 
+func TestConfigureModelChoiceRejectsAcrConnectionForInteractiveNewProject(t *testing.T) {
+	const envName = "test-env"
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	promptServer := &helpersPromptServer{selectIndex: 1}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, promptServer, envServer)
+	manifest := &agent_yaml.AgentManifest{
+		Name: "test-hosted",
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Name: "test-hosted",
+				Kind: agent_yaml.AgentKindHosted,
+			},
+		},
+		Resources: []any{
+			agent_yaml.ModelResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-model",
+					Kind: agent_yaml.ResourceKindModel,
+				},
+				Id: "gpt-4o",
+			},
+		},
+	}
+	action := &InitAction{
+		azdClient:    azdClient,
+		environment:  &azdext.Environment{Name: envName},
+		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{}},
+		flags:        &initFlags{acrConnection: "registry-connection"},
+	}
+
+	_, err := action.configureModelChoice(t.Context(), manifest)
+
+	require.ErrorContains(t, err, "requires an existing Foundry project")
+	require.Equal(t, int32(1), promptServer.selectCalls.Load())
+}
+
 func TestResolvePositionalArg(t *testing.T) {
 	t.Parallel()
 

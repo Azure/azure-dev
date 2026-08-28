@@ -2644,6 +2644,9 @@ func (a *InitAction) configureModelChoice(
 				fmt.Println(output.WithGrayFormat(
 					"No existing Foundry project was selected. Falling back to creating new resources.",
 				))
+				if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
+					return nil, err
+				}
 				if err := setEnvValue(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 				); err != nil {
@@ -2660,6 +2663,9 @@ func (a *InitAction) configureModelChoice(
 				}
 			}
 		default:
+			if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
+				return nil, err
+			}
 			newCred, err := ensureSubscriptionAndLocation(
 				ctx, a.azdClient, a.azureContext, a.environment.Name,
 				"Select an Azure subscription to look up available models and provision your Foundry project resources.",

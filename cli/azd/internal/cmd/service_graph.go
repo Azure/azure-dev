@@ -118,7 +118,7 @@ type serviceGraphOptions struct {
 	deployTimeout time.Duration
 
 	// maxConcurrency is the scheduler concurrency used to execute this graph.
-	// Zero means unlimited.
+	// Zero selects the scheduler's bounded default worker count.
 	maxConcurrency int
 
 	// fromPackage — when non-empty — creates a synthetic package artifact at

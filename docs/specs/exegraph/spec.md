@@ -90,8 +90,8 @@ Insertion-order-deterministic DAG:
 Event-driven bounded worker pool:
 
 - **Concurrency** — `MaxConcurrency=0` (default) caps workers at `min(stepCount, GOMAXPROCS×2)`.
-  Explicit positive values override this (values larger than `min(stepCount, GOMAXPROCS×2)`
-  have no effect; the worker count never exceeds the natural cap).
+  An explicit positive value changes the cap to `min(stepCount, MaxConcurrency)`,
+  so it can either raise or lower the default worker count.
 - **Error policies** — `FailFast` cancels all on first error; `ContinueOnError` runs remaining independent steps
 - **Per-step timeout** — uniform `RunOptions.StepTimeout` wraps every step's context with
   `context.WithTimeout`. Zero (the default) means no deadline. A step that exceeds the
@@ -299,9 +299,9 @@ provisioning, deployment, and thread-safety modules (see individual package `*_t
 
 | Variable | Scope | Default | Effect |
 |----------|-------|---------|--------|
-| `AZD_PROVISION_CONCURRENCY` | `azd provision` (multi-layer) | `0` (unlimited, capped at `min(layerCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for layer provisioning. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
-| `AZD_DEPLOY_CONCURRENCY` | `azd deploy` | `0` (unlimited, capped at `min(stepCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for package/publish/deploy steps. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
-| `AZD_UP_CONCURRENCY` | `azd up` (unified DAG) | `0` (unlimited, capped at `min(stepCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for the unified up DAG. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
+| `AZD_PROVISION_CONCURRENCY` | `azd provision` (multi-layer) | `0` (scheduler default: `min(layerCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for layer provisioning. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
+| `AZD_DEPLOY_CONCURRENCY` | `azd deploy` | `0` (scheduler default: `min(stepCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for package/publish/deploy steps. `1` serializes all three phases. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
+| `AZD_UP_CONCURRENCY` | `azd up` (unified DAG) | `0` (scheduler default: `min(stepCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for the unified up DAG. `1` serializes the graph. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
 | `AZD_DEPLOY_TIMEOUT` | `azd deploy` / `azd up` | `1200` (20 minutes) | Per-service deploy timeout in whole seconds. Precedence: `--timeout` CLI flag first, then `AZD_DEPLOY_TIMEOUT`, then the default. Invalid or non-positive values cause an immediate error. |
 
 No new environment variables are introduced at the graph engine layer — `pkg/exegraph` is

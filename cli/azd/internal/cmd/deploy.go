@@ -502,7 +502,7 @@ func (da *DeployAction) deployServicesGraph(
 }
 
 // resolveDAGConcurrency reads AZD_DEPLOY_CONCURRENCY from the environment.
-// Returns 0 (unlimited) if the variable is unset or invalid.
+// Returns 0 (the scheduler default) if the variable is unset or invalid.
 func (da *DeployAction) resolveDAGConcurrency() int {
 	if envVal, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
 		if n, err := strconv.Atoi(envVal); err != nil {

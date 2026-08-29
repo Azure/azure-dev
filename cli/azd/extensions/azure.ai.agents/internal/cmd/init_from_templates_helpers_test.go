@@ -92,25 +92,21 @@ func TestResolveInitHarness(t *testing.T) {
 	}
 }
 
-// TestAgentKindMenuHasNoManagedKind guards the invariant behind removing the
-// managed kind: the harnessed row is a prompt agent that carries a harness, not
-// a kind of its own. A row reintroducing one would scaffold an agent.yaml the
-// schema rejects.
-func TestAgentKindMenuHasNoManagedKind(t *testing.T) {
+func TestAgentKindMenuUsesManagedForHarness(t *testing.T) {
 	t.Parallel()
 
 	var harnessed int
 	for _, entry := range agentKindMenu {
 		require.Contains(
 			t,
-			[]agentKindChoice{AgentKindChoiceHosted, AgentKindChoicePrompt},
+			[]agentKindChoice{AgentKindChoiceHosted, AgentKindChoicePrompt, AgentKindChoiceManaged},
 			entry.kind,
 			"menu entry %q uses an unsupported kind", entry.label,
 		)
 		if entry.harness != "" {
 			harnessed++
-			require.Equal(t, AgentKindChoicePrompt, entry.kind,
-				"only a prompt agent can carry a harness")
+			require.Equal(t, AgentKindChoiceManaged, entry.kind,
+				"only the managed CLI choice can carry a harness")
 		}
 	}
 

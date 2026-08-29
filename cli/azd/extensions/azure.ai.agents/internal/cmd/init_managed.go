@@ -304,7 +304,7 @@ func runInitManaged(
 			Kind: agent_yaml.AgentKindPrompt,
 		},
 		Model: model,
-		// A nil harness is omitted from agent.yaml entirely, which is what
+		// A nil harness is omitted from azure.yaml entirely, which is what
 		// distinguishes a plain prompt agent from a managed (harnessed) one.
 		Harness: promptScaffoldHarness(harness, manifest),
 		// Instructions are inline, matching the prompt-agent API schema.
@@ -343,9 +343,7 @@ func runInitManaged(
 		return err
 	}
 
-	// Scaffold the convention-based authoring layout (empty skills/ and
-	// vector-assets/ folders) so the deploy engine's folder conventions are
-	// discoverable from a fresh init.
+	// Scaffold the convention-based skills authoring layout.
 	if err := scaffoldPromptConventionFolders(serviceRelPath); err != nil {
 		return err
 	}
@@ -773,11 +771,7 @@ func printManagedInitSummary(
 ) {
 	color.Green("\nInitialized prompt agent %q.", agentName)
 
-	agentFile := "agent.yaml"
-	if serviceRelPath != "." {
-		agentFile = filepath.ToSlash(filepath.Join(serviceRelPath, "agent.yaml"))
-	}
-	fmt.Printf("  Agent file:    %s\n", agentFile)
+	fmt.Println("  Agent config:  azure.yaml")
 	fmt.Printf("  Model:         %s\n", model)
 	fmt.Printf("  Service entry: added to azure.yaml (host: %s)\n", AiAgentHost)
 	if harness != "" {
@@ -797,7 +791,7 @@ func printManagedInitSummary(
 	}
 	fmt.Println()
 	fmt.Println("Authoring layout (edit these to add capabilities):")
-	fmt.Printf("  %s%-16s the agent's instructions\n", dirPrefix, "agent.yaml")
+	fmt.Printf("  %-16s the agent's definition and instructions\n", "azure.yaml")
 	fmt.Printf("  %s%-16s add a subfolder per skill (each with a SKILL.md)\n", dirPrefix, "skills/")
 
 	fmt.Println()

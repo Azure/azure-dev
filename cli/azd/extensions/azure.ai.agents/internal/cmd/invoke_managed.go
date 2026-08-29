@@ -47,10 +47,7 @@ type managedResponsesRequest struct {
 // service (promptServiceContext), so prompt agents invoke through the same
 // service resolution as hosted agents.
 func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceContext) error {
-	agentName := a.flags.name
-	if agentName == "" {
-		agentName = pctx.AgentName()
-	}
+	agentName := pctx.AgentName()
 	if strings.TrimSpace(agentName) == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentName,

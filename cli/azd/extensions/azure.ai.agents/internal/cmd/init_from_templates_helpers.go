@@ -116,9 +116,7 @@ const (
 // runtimes: hosted (the container/code-deploy flow) and prompt (a Foundry
 // prompt agent).
 //
-// There is deliberately no "managed" choice. A managed agent is a prompt agent
-// that names an execution harness, so the harness is an independent dimension
-// (--harness) rather than a kind of its own; both scaffold `kind: prompt`.
+// Managed is a CLI-only choice that scaffolds kind: prompt plus a harness.
 type agentKindChoice string
 
 const (
@@ -131,6 +129,8 @@ const (
 	// uses kind: prompt (see agent_yaml.AgentKindPrompt). Whether it also names
 	// a `harness:` is decided separately, by --harness or the kind menu entry.
 	AgentKindChoicePrompt agentKindChoice = "prompt"
+	// AgentKindChoiceManaged scaffolds a prompt agent with an execution harness.
+	AgentKindChoiceManaged agentKindChoice = "managed"
 )
 
 // harnessNone is the --harness value that explicitly opts out of a harness,
@@ -198,7 +198,7 @@ var agentKindMenu = []kindMenuEntry{
 	{
 		label: "Prompt agent with GitHub Copilot harness (preview) — " +
 			"Configure a model, instructions, tools, and skills",
-		kind:    AgentKindChoicePrompt,
+		kind:    AgentKindChoiceManaged,
 		harness: agent_api.ManagedAgentHarnessGitHubCopilot,
 	},
 }
@@ -240,9 +240,7 @@ func promptAgentKind(
 		return "", "", fmt.Errorf("failed to prompt for agent kind: %w", err)
 	}
 
-	// Two menu rows share the value "prompt", so the answer is resolved by
-	// index. Guard it: a missing or out-of-range index would otherwise pick a
-	// harness at random or panic.
+	// Resolve by index so each row can carry its implied harness.
 	if resp == nil || resp.Value == nil {
 		return "", "", fmt.Errorf("agent kind selection returned no value")
 	}

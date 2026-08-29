@@ -666,6 +666,20 @@ func deletePromptAgentOnDown(
 	// definition omits `name:`, which is true for scaffolded projects but not for
 	// renamed agents.
 	agentName := promptAgentNameForService(svc, projectPath)
+	serviceKey := toServiceKey(svc.Name)
+	deployedName := strings.TrimSpace(envValues[fmt.Sprintf("AGENT_%s_NAME", serviceKey)])
+	if deployedName == "" || deployedName != agentName {
+		log.Printf("predown: skipping prompt agent %q because its deployed-name ownership marker does not match", agentName)
+		return
+	}
+	projectMarker := strings.TrimSpace(envValues[envkey.AgentProjectEndpoint(svc.Name)])
+	if projectMarker == "" || !strings.EqualFold(
+		strings.TrimRight(projectMarker, "/"),
+		strings.TrimRight(strings.TrimSpace(settings.ProjectEndpoint), "/"),
+	) {
+		log.Printf("predown: skipping prompt agent %q because its project ownership marker does not match", agentName)
+		return
+	}
 	client, err := project.NewPromptAgentClient(settings)
 	if err != nil {
 		log.Printf("predown: failed to build harness client for %q: %v", svc.Name, err)

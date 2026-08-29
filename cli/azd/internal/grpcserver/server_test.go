@@ -452,6 +452,9 @@ func Test_Server_Start(t *testing.T) {
 	})
 
 	t.Run("TelemetryMissingToken", func(t *testing.T) {
+		tracing.ResetUsageAttributesForTest()
+		t.Cleanup(tracing.ResetUsageAttributesForTest)
+
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
@@ -462,6 +465,8 @@ func Test_Server_Start(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.Unauthenticated, st.Code())
+		requireUsageDrop(t, unattributedExtensionId,
+			[]extensionUsageDropReason{extensionUsageDropReasonUnauthenticated}, 1)
 	})
 }
 

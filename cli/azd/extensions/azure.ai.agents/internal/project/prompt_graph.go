@@ -11,6 +11,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -58,7 +59,8 @@ type promptGraph struct {
 	settings *PromptAgentSettings
 
 	// env is a snapshot of azd environment values used to resolve targets.
-	env map[string]string
+	env        map[string]string
+	credential azcore.TokenCredential
 
 	// bindings holds symbolic outputs produced by resolved nodes (for example
 	// "toolbox_mcp_url") that later nodes read.
@@ -74,6 +76,13 @@ type promptGraph struct {
 
 	// nodes is the ordered set of dependencies to validate and resolve.
 	nodes []promptNode
+}
+
+func (g *promptGraph) projectEndpoint() string {
+	if g.settings != nil && strings.TrimSpace(g.settings.ProjectEndpoint) != "" {
+		return g.settings.ProjectEndpoint
+	}
+	return g.env["FOUNDRY_PROJECT_ENDPOINT"]
 }
 
 // warnf reports a non-fatal finding discovered while resolving the graph.
@@ -101,13 +110,15 @@ func newPromptGraph(
 	managed *agent_yaml.PromptAgent,
 	settings *PromptAgentSettings,
 	env map[string]string,
+	credential azcore.TokenCredential,
 ) (*promptGraph, error) {
 	g := &promptGraph{
-		agentDir: agentDir,
-		managed:  managed,
-		settings: settings,
-		env:      env,
-		bindings: map[string]any{},
+		agentDir:   agentDir,
+		managed:    managed,
+		settings:   settings,
+		env:        env,
+		credential: credential,
+		bindings:   map[string]any{},
 	}
 
 	// The model deployment is resolved first: create-if-missing so the harness
@@ -121,7 +132,7 @@ func newPromptGraph(
 	// A declared memory: block provisions a memory store and contributes the
 	// memory_search_preview tool that reads from it.
 	if node := memoryNode(g, managed.Memory, func() (memoryStoreEnsurer, error) {
-		return newFoundryMemoryStoreEnsurer(settings)
+		return newFoundryMemoryStoreEnsurer(settings, credential)
 	}); node != nil {
 		g.nodes = append(g.nodes, *node)
 	}
@@ -144,7 +155,7 @@ func newPromptGraph(
 		// service-owned system toolbox whose name, version and lifecycle the
 		// customer does not manage.
 		if node := toolboxNode(g, managed.Toolbox, func() (toolboxBuilder, error) {
-			return newFoundryToolboxBuilder(settings)
+			return newFoundryToolboxBuilder(settings, credential)
 		}); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
@@ -167,7 +178,9 @@ func newPromptGraph(
 	// not exist is reported by name instead of as an opaque service rejection
 	// from the create call, and is replaced with the account's built-in default
 	// rather than failing the deploy.
-	if node := policiesNode(g, azureRaiPolicyLister); node != nil {
+	if node := policiesNode(g, func() (raiPolicyLister, error) {
+		return azureRaiPolicyLister(credential)
+	}); node != nil {
 		g.nodes = append(g.nodes, *node)
 	}
 
@@ -330,7 +343,7 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 	// entry there is no such file, so they are anchored at the service
 	// directory instead — the same place `azd ai agent init` scaffolds them.
 	agentDir := p.servicePath
-	g, err := newPromptGraph(agentDir, managed, settings, env)
+	g, err := newPromptGraph(agentDir, managed, settings, env, p.credential)
 	if err != nil {
 		return nil, err
 	}

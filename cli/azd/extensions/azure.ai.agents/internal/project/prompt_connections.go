@@ -14,12 +14,12 @@ import (
 
 // siblingOwnsConnection reports whether an azure.ai.connection sibling
 // provisioned name into the same Foundry project targeted by this agent.
-func siblingOwnsConnection(name string, env map[string]string) bool {
+func siblingOwnsConnection(name, projectEndpoint string, env map[string]string) bool {
 	if env == nil {
 		return false
 	}
 	declared := strings.TrimSpace(env[envkey.ConnectionProjectEndpoint])
-	if declared != "" && !sameProjectEndpoint(declared, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+	if declared != "" && !sameProjectEndpoint(declared, projectEndpoint) {
 		return false
 	}
 	for entry := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
@@ -58,7 +58,7 @@ func connectionsNode(g *promptGraph) *promptNode {
 		},
 		Resolve: func(context.Context) error {
 			for _, name := range connections {
-				if !siblingOwnsConnection(name, g.env) {
+				if !siblingOwnsConnection(name, g.projectEndpoint(), g.env) {
 					return exterrors.Dependency(
 						exterrors.CodeFoundryDependencyNotReady,
 						fmt.Sprintf("connection %q has not been provisioned by an azure.ai.connection service", name),

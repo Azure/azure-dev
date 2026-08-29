@@ -53,6 +53,24 @@ func TestConnectionsNodeRejectsCrossProjectMarker(t *testing.T) {
 	}
 }
 
+func TestConnectionsNodeUsesResolvedPromptProject(t *testing.T) {
+	agent := &agent_yaml.PromptAgent{Connections: []string{"search"}}
+	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/explicit"
+	graph := &promptGraph{
+		managed:  agent,
+		settings: &PromptAgentSettings{ProjectEndpoint: projectEndpoint},
+		env: map[string]string{
+			"AZURE_AI_PROJECT_CONNECTION_NAMES": "search",
+			"FOUNDRY_PROJECT_ENDPOINT":          "https://acct.services.ai.azure.com/api/projects/environment",
+			envkey.ConnectionProjectEndpoint:    projectEndpoint,
+		},
+	}
+
+	if err := connectionsNode(graph).Resolve(t.Context()); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+}
+
 func TestConnectionsNodeIncludesToolboxConnection(t *testing.T) {
 	agent := &agent_yaml.PromptAgent{Toolbox: &agent_yaml.ToolboxReference{Name: "tools", Connection: "tools-conn"}}
 	graph := &promptGraph{

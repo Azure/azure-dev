@@ -215,7 +215,10 @@ func (s *PromptAgentSettings) ApplyEnvOverrides() {
 }
 
 // NewPromptAgentClient constructs the unified project-scoped agent client.
-func NewPromptAgentClient(settings *PromptAgentSettings) (*agent_api.AgentClient, error) {
+func NewPromptAgentClient(
+	settings *PromptAgentSettings,
+	credential azcore.TokenCredential,
+) (*agent_api.AgentClient, error) {
 	if settings == nil {
 		return nil, fmt.Errorf("NewPromptAgentClient: settings is nil")
 	}
@@ -232,7 +235,7 @@ func NewPromptAgentClient(settings *PromptAgentSettings) (*agent_api.AgentClient
 			"run `azd up` to provision a Foundry project",
 		)
 	}
-	return agent_api.NewAgentClient(projectEndpoint, promptCredential()), nil
+	return agent_api.NewAgentClient(projectEndpoint, credential), nil
 }
 
 // promptScopesForBaseURL selects auth scopes by target endpoint.
@@ -249,22 +252,18 @@ func NewPromptAgentClient(settings *PromptAgentSettings) (*agent_api.AgentClient
 // error from the service (401/403) becomes the user-visible failure mode —
 // that error is more actionable than a generic "failed to create credential"
 // wrap.
-func promptCredential() azcore.TokenCredential {
+func promptCredential(tenantID string) *azidentity.AzureDeveloperCLICredential {
 	if isTruthyEnvValue(os.Getenv(PromptNoAuthEnvVar)) {
 		return nil
 	}
 	c, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{},
+		&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenantID,
+			AdditionallyAllowedTenants: []string{"*"},
+		},
 	)
 	if err == nil {
 		return c
-	}
-
-	// Fall back to Azure CLI tokens when azd credential construction is not
-	// available in the current process context.
-	azCred, azErr := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{})
-	if azErr == nil {
-		return azCred
 	}
 
 	return nil

@@ -18,6 +18,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -472,6 +473,9 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 			"run `azd provision` to create the Foundry project",
 		)
 	}
+	if err := p.ensurePromptCredential(ctx, settings); err != nil {
+		return nil, err
+	}
 
 	// Resolve the prompt agent's dependency graph. This validates the whole
 	// graph (model + instructions, and — as later stages land — folders,
@@ -491,7 +495,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		)
 	}
 
-	client, err := NewPromptAgentClient(settings)
+	client, err := NewPromptAgentClient(settings, p.credential)
 	if err != nil {
 		return nil, err
 	}
@@ -524,6 +528,46 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		progress("Prompt agent deployed")
 	}
 	return &azdext.ServiceDeployResult{}, nil
+}
+
+func (p *AgentServiceTargetProvider) ensurePromptCredential(
+	ctx context.Context,
+	settings *PromptAgentSettings,
+) error {
+	if isTruthyEnvValue(os.Getenv(PromptNoAuthEnvVar)) {
+		p.credential = nil
+		return nil
+	}
+	if p.credential != nil {
+		return nil
+	}
+	if strings.TrimSpace(settings.SubscriptionID) == "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			"AZURE_SUBSCRIPTION_ID is required for prompt agent authentication",
+			"run `azd provision` to resolve the Foundry project subscription",
+		)
+	}
+	tenant, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: settings.SubscriptionID,
+	})
+	if err != nil {
+		return exterrors.Auth(
+			exterrors.CodeTenantLookupFailed,
+			fmt.Sprintf("failed to get tenant for subscription %s: %s", settings.SubscriptionID, err),
+			"verify your Azure login with `azd auth login`",
+		)
+	}
+	p.tenantId = tenant.TenantId
+	p.credential = promptCredential(p.tenantId)
+	if p.credential == nil {
+		return exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			"failed to create a credential for prompt agent deployment",
+			"run `azd auth login` to authenticate",
+		)
+	}
+	return nil
 }
 
 func promptAgentRequestHeaders(
@@ -732,25 +776,37 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	if agentName == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
 	}
+	if version == "" {
+		return fmt.Errorf("agent version is empty; cannot register environment variables")
+	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	endpoint := promptAgentResponsesEndpoint(settings)
-	envVars := map[string]string{
-		fmt.Sprintf("AGENT_%s_NAME", serviceKey):     agentName,
-		fmt.Sprintf("AGENT_%s_VERSION", serviceKey):  version,
-		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey): endpoint,
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	envVars := []azdext.SetEnvRequest{
+		{EnvName: p.env.Name, Key: versionKey, Value: ""},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentName},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey), Value: endpoint},
 	}
 	if storeName, ok := bindings[memoryStoreBindingKey].(string); ok && strings.TrimSpace(storeName) != "" {
-		envVars[fmt.Sprintf("AGENT_%s_MEMORY_STORE_NAME", serviceKey)] = storeName
-	}
-
-	for key, value := range envVars {
-		if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		envVars = append(envVars, azdext.SetEnvRequest{
 			EnvName: p.env.Name,
-			Key:     key,
-			Value:   value,
-		}); err != nil {
-			return fmt.Errorf("failed to set environment variable %s: %w", key, err)
+			Key:     fmt.Sprintf("AGENT_%s_MEMORY_STORE_NAME", serviceKey),
+			Value:   storeName,
+		})
+	}
+	envVars = append(envVars,
+		azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     envkey.AgentProjectEndpoint(serviceConfig.Name),
+			Value:   strings.TrimRight(settings.ProjectEndpoint, "/"),
+		},
+		azdext.SetEnvRequest{EnvName: p.env.Name, Key: versionKey, Value: version},
+	)
+
+	for i := range envVars {
+		if _, err := p.azdClient.Environment().SetValue(ctx, &envVars[i]); err != nil {
+			return fmt.Errorf("failed to set environment variable %s: %w", envVars[i].Key, err)
 		}
 	}
 	return nil

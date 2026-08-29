@@ -475,7 +475,7 @@ func TestResolveSkillMarkers_RejectsCrossProjectVersion(t *testing.T) {
 	env["FOUNDRY_PROJECT_ENDPOINT"] = "https://mine.services.ai.azure.com/api/projects/mine"
 
 	skills := []skillBundle{{Dir: "skill-a", Meta: skillMeta{Name: "skill-a"}}}
-	if _, err := resolveSkillMarkers(skills, env); err == nil {
+	if _, err := resolveSkillMarkers(skills, env["FOUNDRY_PROJECT_ENDPOINT"], env); err == nil {
 		t.Fatal("expected a marker from another project to be rejected")
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 )
 
 // raiPolicyLister returns every Responsible AI policy on the account named by
@@ -110,8 +112,7 @@ func raiPolicyPresent(policies []azure.RaiPolicyInfo, name string) bool {
 
 // azureRaiPolicyLister lists the account's policies from ARM using the same
 // credential the rest of the prompt deploy path uses.
-func azureRaiPolicyLister() (raiPolicyLister, error) {
-	credential := promptCredential()
+func azureRaiPolicyLister(credential azcore.TokenCredential) (raiPolicyLister, error) {
 	if credential == nil {
 		return nil, fmt.Errorf("no Azure credential is available")
 	}

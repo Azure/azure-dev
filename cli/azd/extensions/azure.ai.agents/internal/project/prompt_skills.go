@@ -17,6 +17,8 @@ import (
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/envkey"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+
 	"github.com/braydonk/yaml"
 )
 
@@ -385,7 +387,7 @@ func skillsShellNode(
 			return validateSkillBundleInstructions(skills)
 		},
 		Resolve: func(_ context.Context) error {
-			resolved, err := resolveSkillMarkers(skills, g.env)
+			resolved, err := resolveSkillMarkers(skills, g.projectEndpoint(), g.env)
 			if err != nil {
 				return err
 			}
@@ -419,7 +421,7 @@ func skillsHarnessNode(
 		ID:       promptSkillsDirName,
 		Validate: func() error { return validateSkillBundleInstructions(skills) },
 		Resolve: func(_ context.Context) error {
-			resolved, err := resolveSkillMarkers(skills, g.env)
+			resolved, err := resolveSkillMarkers(skills, g.projectEndpoint(), g.env)
 			if err != nil {
 				return err
 			}
@@ -502,7 +504,7 @@ func toolboxNode(
 			// Prefer the endpoint the sibling azure.ai.toolbox service published
 			// over one synthesized from the name, so the two extensions cannot
 			// disagree about where the toolbox lives.
-			mcpEndpoint, err := siblingToolboxEndpoint(ref.Name, g.env)
+			mcpEndpoint, err := siblingToolboxEndpoint(ref.Name, g.projectEndpoint(), g.env)
 			if err != nil {
 				return err
 			}
@@ -548,7 +550,11 @@ type resolvedSkill struct {
 // resulting versioned reference to the agent. A bundle with no marker means its
 // service is missing from azure.yaml or has not been deployed yet, both of which
 // the author has to fix.
-func resolveSkillMarkers(skills []skillBundle, env map[string]string) ([]resolvedSkill, error) {
+func resolveSkillMarkers(
+	skills []skillBundle,
+	projectEndpoint string,
+	env map[string]string,
+) ([]resolvedSkill, error) {
 	resolved := make([]resolvedSkill, 0, len(skills))
 	for _, s := range skills {
 		name := strings.TrimSpace(s.Meta.Name)
@@ -575,7 +581,7 @@ func resolveSkillMarkers(skills []skillBundle, env map[string]string) ([]resolve
 		// generic failure at run time rather than at deploy.
 		projectKey := envkey.SkillProjectEndpoint(name)
 		if declared := strings.TrimSpace(env[projectKey]); declared != "" &&
-			!sameProjectEndpoint(declared, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+			!sameProjectEndpoint(declared, projectEndpoint) {
 			return nil, exterrors.Dependency(
 				exterrors.CodeFoundryDependencyNotReady,
 				fmt.Sprintf("skill %q was published to a different Foundry project (%s)", name, projectKey),
@@ -595,14 +601,14 @@ func resolveSkillMarkers(skills []skillBundle, env map[string]string) ([]resolve
 // project it deployed into alongside the endpoint, and an endpoint belonging to
 // a different project would silently point the agent at a toolbox it cannot
 // reach.
-func siblingToolboxEndpoint(name string, env map[string]string) (string, error) {
+func siblingToolboxEndpoint(name, projectEndpoint string, env map[string]string) (string, error) {
 	endpoint := strings.TrimSpace(env[envkey.ToolboxMCPEndpoint(name)])
 	if endpoint == "" {
 		return "", nil
 	}
 	projectKey := envkey.ToolboxProjectEndpoint(name)
 	if declared := strings.TrimSpace(env[projectKey]); declared != "" &&
-		!sameProjectEndpoint(declared, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		!sameProjectEndpoint(declared, projectEndpoint) {
 		return "", exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("toolbox %q was deployed to a different Foundry project (%s)", name, projectKey),
@@ -644,7 +650,10 @@ func (b *foundryToolboxBuilder) mcpURL(name, version string) string {
 const toolboxMcpApiVersion = "v1"
 
 // newFoundryToolboxBuilder constructs the live builder from prompt settings.
-func newFoundryToolboxBuilder(settings *PromptAgentSettings) (toolboxBuilder, error) {
+func newFoundryToolboxBuilder(
+	settings *PromptAgentSettings,
+	credential azcore.TokenCredential,
+) (toolboxBuilder, error) {
 	if settings == nil || strings.TrimSpace(settings.ProjectEndpoint) == "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -653,7 +662,7 @@ func newFoundryToolboxBuilder(settings *PromptAgentSettings) (toolboxBuilder, er
 		)
 	}
 	return &foundryToolboxBuilder{
-		toolboxes:       azure.NewFoundryToolboxClient(settings.ProjectEndpoint, promptCredential()),
+		toolboxes:       azure.NewFoundryToolboxClient(settings.ProjectEndpoint, credential),
 		projectEndpoint: settings.ProjectEndpoint,
 	}, nil
 }

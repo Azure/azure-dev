@@ -27,7 +27,7 @@ func TestNewPromptAgentClientUsesFoundryProject(t *testing.T) {
 	t.Setenv(PromptNoAuthEnvVar, "true")
 	settings := DefaultPromptAgentSettings()
 	settings.ProjectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
-	client, err := NewPromptAgentClient(&settings)
+	client, err := NewPromptAgentClient(&settings, nil)
 	require.NoError(t, err)
 	require.NotNil(t, client)
 }

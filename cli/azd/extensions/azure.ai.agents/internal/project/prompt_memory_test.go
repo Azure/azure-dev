@@ -215,9 +215,9 @@ func TestMemoryNode_ResolveWrapsError(t *testing.T) {
 func TestNewFoundryMemoryStoreEnsurer_RequiresEndpoint(t *testing.T) {
 	t.Parallel()
 
-	_, err := newFoundryMemoryStoreEnsurer(nil)
+	_, err := newFoundryMemoryStoreEnsurer(nil, nil)
 	require.ErrorContains(t, err, "project endpoint")
 
-	_, err = newFoundryMemoryStoreEnsurer(&PromptAgentSettings{})
+	_, err = newFoundryMemoryStoreEnsurer(&PromptAgentSettings{}, nil)
 	require.ErrorContains(t, err, "project endpoint")
 }

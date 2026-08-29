@@ -57,7 +57,7 @@ const (
 	extensionUsageDropReasonBudgetExhausted        extensionUsageDropReason = "budget_exhausted"
 	extensionUsageDropReasonUnauthenticated        extensionUsageDropReason = "unauthenticated"
 
-	unknownExtensionId = "unknown"
+	unattributedExtensionId = "unattributed"
 )
 
 // installedExtensionLookup resolves the installed extension record for a
@@ -109,29 +109,24 @@ func (s *telemetryService) ReportUsage(
 ) (*azdext.ReportUsageResponse, error) {
 	claims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
-		recordExtensionUsageDrop(unknownExtensionId, extensionUsageDropReasonUnauthenticated)
+		recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonUnauthenticated)
 		return nil, status.Error(codes.Unauthenticated, "validated extension claims are required")
-	}
-
-	if reason, err := validateUsageRequest(req); err != nil {
-		recordExtensionUsageDrop(claims.Subject, reason)
-		return nil, err
 	}
 
 	extension, err := s.extensions.GetInstalled(extensions.FilterOptions{Id: claims.Subject})
 	if err != nil {
 		if errors.Is(err, extensions.ErrInstalledExtensionNotFound) {
-			recordExtensionUsageDrop(claims.Subject, extensionUsageDropReasonNotInstalled)
+			recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonNotInstalled)
 			return nil, status.Error(codes.PermissionDenied, "extension is not installed")
 		}
 
-		recordExtensionUsageDrop(claims.Subject, extensionUsageDropReasonLookupFailed)
+		recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonLookupFailed)
 		return nil, status.Error(codes.Internal, "failed to verify installed extension")
 	}
 
 	official, err := s.extensions.IsOfficialRegistrySource(ctx, extension.Source)
 	if err != nil {
-		recordExtensionUsageDrop(extension.Id, extensionUsageDropReasonSourceCheckFailed)
+		recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonSourceCheckFailed)
 		log.Printf(
 			"telemetry: failed to verify source %q for %s: %v",
 			extension.Source, extension.Id, err)
@@ -139,12 +134,17 @@ func (s *telemetryService) ReportUsage(
 	}
 
 	if !official {
-		recordExtensionUsageDrop(extension.Id, extensionUsageDropReasonSourceIneligible)
+		recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonSourceIneligible)
 		log.Printf(
 			"telemetry: dropping usage event from %s installed from source %q",
 			extension.Id, extension.Source)
 
 		return &azdext.ReportUsageResponse{Accepted: false}, nil
+	}
+
+	if reason, err := validateUsageRequest(req); err != nil {
+		recordExtensionUsageDrop(extension.Id, reason)
+		return nil, err
 	}
 
 	attributes := []attribute.KeyValue{

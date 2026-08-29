@@ -165,7 +165,7 @@ extension. It records two fields:
 
 | Attribute | Meaning |
 |---|---|
-| `extension.usage.dropped` | Unique `<extension-id>@<reason>` values for the invocation |
+| `extension.usage.dropped` | Unique `<extension-id-or-unattributed>@<reason>` values for the invocation |
 | `extension.usage.dropped.count` | Total reports dropped during the invocation |
 
 The reason is always one of these host-defined values:
@@ -186,6 +186,9 @@ The reason is always one of these host-defined values:
 No event name, key, value, source, or other caller-controlled content is copied
 into the signal. Repeated failures add to the count but do not add duplicate
 values to the list, so a reporting loop cannot create an unbounded property.
+The extension ID appears only after `azd` verifies the installed record against
+the official registry source. Earlier failures use the fixed value
+`unattributed`.
 
 Use this query to find how many invocations were affected by each extension and
 reason:
@@ -201,9 +204,10 @@ requests
 ```
 
 To inspect total volume separately, sum
-`customMeasurements["extension.usage.dropped.count"]`. The count covers all
-reasons in an invocation, so do not assign it to one reason when the list
-contains several values.
+`customMeasurements["extension.usage.dropped.count"]`. The fields appear only
+on the command span that hosted the extension; synthetic phase spans created by
+`azd up` do not copy them. The count covers all reasons in an invocation, so do
+not assign it to one reason when the list contains several values.
 
 Accepted `ext.usage` spans and the command span share `operation_Id`. Use that
 field with `extension.id` to compare affected invocations with invocations that

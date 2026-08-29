@@ -235,6 +235,9 @@ func (s *Server) tokenAuthInterceptor(serverInfo *ServerInfo) grpc.UnaryServerIn
 	) (any, error) {
 		ctx, err := s.validateAuthToken(ctx, serverInfo)
 		if err != nil {
+			if info.FullMethod == azdext.TelemetryService_ReportUsage_FullMethodName {
+				recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonUnauthenticated)
+			}
 			return nil, err
 		}
 

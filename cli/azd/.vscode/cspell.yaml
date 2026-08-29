@@ -501,6 +501,10 @@ overrides:
   - filename: internal/cmd/up_graph.go
     words:
       - finalizer
+  - filename: docs/extensions/extension-telemetry.md
+    words:
+      - dcount
+      - isnotempty
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

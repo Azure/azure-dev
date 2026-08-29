@@ -192,7 +192,7 @@ func (u *UpGraphAction) Run(
 		// Apply usage attributes (e.g. EnvNameKey) at end so they include
 		// any values set during Run. Globals (e.g. SubscriptionIdKey) are
 		// applied automatically by wrapperSpan.End().
-		usageAttrs := tracing.GetUsageAttributes()
+		usageAttrs := syntheticUpUsageAttributes()
 
 		// Reflect the real package-phase outcome. Before this, the synthetic
 		// span always closed with an Unset status (=> Success in the AppInsights
@@ -798,6 +798,16 @@ func changedFlagNames(fs *pflag.FlagSet) []string {
 		}
 	})
 	return names
+}
+
+// syntheticUpUsageAttributes returns usage attributes for the synthetic
+// cmd.package, cmd.provision, and cmd.deploy spans. Extension drop attributes
+// stay on the hosting cmd.up span so invocation totals are not duplicated.
+func syntheticUpUsageAttributes() []attribute.KeyValue {
+	return slices.DeleteFunc(tracing.GetUsageAttributes(), func(attr attribute.KeyValue) bool {
+		return attr.Key == fields.ExtensionUsageDropped.Key ||
+			attr.Key == fields.ExtensionUsageDroppedCount.Key
+	})
 }
 
 // initializeServices enumerates services, initializes the project, and ensures

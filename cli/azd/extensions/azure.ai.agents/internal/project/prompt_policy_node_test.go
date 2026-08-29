@@ -128,10 +128,8 @@ func TestPoliciesNodeAbsent(t *testing.T) {
 	require.Nil(t, policiesNode(g, nil))
 }
 
-// TestPoliciesNodeMissingPolicyFallsBack verifies a policy the account does not
-// have is replaced with the account's built-in default and reported, rather
-// than failing a deploy over a value the author can edit afterwards.
-func TestPoliciesNodeMissingPolicyFallsBack(t *testing.T) {
+// TestPoliciesNodeMissingPolicyFails verifies an explicit policy is required.
+func TestPoliciesNodeMissingPolicyFails(t *testing.T) {
 	t.Parallel()
 
 	g := &promptGraph{managed: &agent_yaml.PromptAgent{
@@ -139,37 +137,21 @@ func TestPoliciesNodeMissingPolicyFallsBack(t *testing.T) {
 			{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID},
 		},
 	}}
-	var warnings []string
-	g.warn = func(message string) { warnings = append(warnings, message) }
-
-	const defaultID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" +
-		"my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.Default"
-
 	node := policiesNode(g, func() (raiPolicyLister, error) {
 		return func(context.Context, azure.RaiPolicyRef) ([]azure.RaiPolicyInfo, error) {
 			return []azure.RaiPolicyInfo{
 				{Name: "team-strict", ResourceID: "/custom"},
-				{Name: "Microsoft.Default", ResourceID: defaultID, SystemManaged: true},
+				{Name: "Microsoft.Default", SystemManaged: true},
 			}, nil
 		}, nil
 	})
 	require.NotNil(t, node)
 	require.NoError(t, node.Validate())
-	require.NoError(t, node.Resolve(t.Context()))
-
-	// The agent keeps a guardrail, and it is the built-in rather than the
-	// custom policy that happened to be on the account.
-	require.Equal(t, defaultID, g.managed.Policies[0].RaiPolicyName)
-	require.Len(t, warnings, 1)
-	require.Contains(t, warnings[0], "Microsoft.DefaultV2")
-	require.Contains(t, warnings[0], "my-account")
-	require.Contains(t, warnings[0], "Microsoft.Default")
+	require.ErrorContains(t, node.Resolve(t.Context()), "Microsoft.DefaultV2")
+	require.Equal(t, raiPolicyID, g.managed.Policies[0].RaiPolicyName)
 }
 
-// TestPoliciesNodeMissingPolicyWithoutFallback verifies an account carrying no
-// built-in policy publishes without guardrails instead of failing. The
-// account's own default content filters still apply.
-func TestPoliciesNodeMissingPolicyWithoutFallback(t *testing.T) {
+func TestPoliciesNodeMissingPolicyWithoutFallbackFails(t *testing.T) {
 	t.Parallel()
 
 	g := &promptGraph{managed: &agent_yaml.PromptAgent{
@@ -177,20 +159,14 @@ func TestPoliciesNodeMissingPolicyWithoutFallback(t *testing.T) {
 			{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID},
 		},
 	}}
-	var warnings []string
-	g.warn = func(message string) { warnings = append(warnings, message) }
-
 	node := policiesNode(g, func() (raiPolicyLister, error) {
 		return func(context.Context, azure.RaiPolicyRef) ([]azure.RaiPolicyInfo, error) {
 			return nil, nil
 		}, nil
 	})
 	require.NotNil(t, node)
-	require.NoError(t, node.Resolve(t.Context()))
-
-	require.Empty(t, g.managed.Policies)
-	require.Len(t, warnings, 1)
-	require.Contains(t, warnings[0], "Microsoft.DefaultV2")
+	require.ErrorContains(t, node.Resolve(t.Context()), "Microsoft.DefaultV2")
+	require.Equal(t, raiPolicyID, g.managed.Policies[0].RaiPolicyName)
 }
 
 // TestPoliciesNodePresentPolicy verifies a policy that exists resolves cleanly
@@ -216,10 +192,7 @@ func TestPoliciesNodePresentPolicy(t *testing.T) {
 	require.Equal(t, raiPolicyID, g.managed.Policies[0].RaiPolicyName)
 }
 
-// TestPoliciesNodeLookupFailureIsNotFatal verifies a developer without the role
-// to read policies can still deploy: the service remains the authority on
-// whether the policy is usable.
-func TestPoliciesNodeLookupFailureIsNotFatal(t *testing.T) {
+func TestPoliciesNodeLookupFailureIsFatal(t *testing.T) {
 	t.Parallel()
 
 	g := &promptGraph{managed: &agent_yaml.PromptAgent{
@@ -234,11 +207,7 @@ func TestPoliciesNodeLookupFailureIsNotFatal(t *testing.T) {
 		}, nil
 	})
 	require.NotNil(t, node)
-	require.NoError(t, node.Resolve(t.Context()))
-
-	// The declared policy is left in place: the service is still the authority
-	// on whether it is usable, and azd could not read the account to know
-	// otherwise.
+	require.ErrorContains(t, node.Resolve(t.Context()), "authorization failed")
 	require.Equal(t, raiPolicyID, g.managed.Policies[0].RaiPolicyName)
 }
 

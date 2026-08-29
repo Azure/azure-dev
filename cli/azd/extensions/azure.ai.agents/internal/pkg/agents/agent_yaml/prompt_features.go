@@ -63,9 +63,9 @@ var knowledgeToolTypes = map[string]bool{
 	"work_iq_preview":              true,
 }
 
-// harnessedPromptFeatures records whether each capability is honored by a
-// *harnessed* prompt agent — a managed agent that names a harness such as
-// "github_copilot_preview" and runs in a platform-provisioned sandbox.
+// harnessedPromptFeatures records whether each capability is honored by the
+// github_copilot_preview harness. Unknown future harnesses are left to the
+// service rather than inheriting this harness's restrictions.
 //
 // This map is the switch, and it follows the harness spec literally: a
 // capability is enabled only where the spec says the harness honors it.
@@ -116,11 +116,13 @@ func (p PromptAgent) declares(feature PromptFeature) bool {
 	}
 }
 
-// UnsupportedHarnessFeatures lists the capabilities this agent configures that
-// its harness cannot honor, in a stable order. It returns nil for a harness-less
-// prompt agent, which supports all of them.
+// UnsupportedHarnessFeatures lists capabilities the GitHub Copilot harness
+// cannot honor, in stable order. Other harnesses are not constrained here.
 func (p PromptAgent) UnsupportedHarnessFeatures() []PromptFeature {
 	if !p.harnessed() {
+		return nil
+	}
+	if p.HarnessType() != agent_api.ManagedAgentHarnessGitHubCopilot {
 		return nil
 	}
 

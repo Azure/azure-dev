@@ -17,6 +17,8 @@ import (
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/envkey"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+
 	"github.com/braydonk/yaml"
 )
 
@@ -54,8 +56,9 @@ type skillBundle struct {
 
 // toolboxRef identifies an existing toolbox to attach by reference.
 type toolboxRef struct {
-	Name    string
-	Version string
+	Name       string
+	Version    string
+	Connection string
 	// MCPEndpoint is the toolbox's MCP url as published by its sibling
 	// `host: azure.ai.toolbox` service, when that service deployed in this
 	// environment. It is authoritative: the toolboxes extension owns the
@@ -384,7 +387,7 @@ func skillsShellNode(
 			return validateSkillBundleInstructions(skills)
 		},
 		Resolve: func(_ context.Context) error {
-			resolved, err := resolveSkillMarkers(skills, g.env)
+			resolved, err := resolveSkillMarkers(skills, g.projectEndpoint(), g.env)
 			if err != nil {
 				return err
 			}
@@ -418,12 +421,12 @@ func skillsHarnessNode(
 		ID:       promptSkillsDirName,
 		Validate: func() error { return validateSkillBundleInstructions(skills) },
 		Resolve: func(_ context.Context) error {
-			resolved, err := resolveSkillMarkers(skills, g.env)
+			resolved, err := resolveSkillMarkers(skills, g.projectEndpoint(), g.env)
 			if err != nil {
 				return err
 			}
 			for _, s := range resolved {
-				if slices.ContainsFunc(g.managed.HarnessSkills, func(existing agent_yaml.HarnessSkillRef) bool {
+				if slices.ContainsFunc(g.managed.Harness.Skills, func(existing agent_yaml.HarnessSkillRef) bool {
 					return existing.Name == s.Name
 				}) {
 					continue
@@ -432,7 +435,7 @@ func skillsHarnessNode(
 				// the author did not pin one in SKILL.md. The service returns a
 				// 500 for a skill reference with no version, so "follow the
 				// default" is not an option the wire format actually offers.
-				g.managed.HarnessSkills = append(g.managed.HarnessSkills, agent_yaml.HarnessSkillRef{
+				g.managed.Harness.Skills = append(g.managed.Harness.Skills, agent_yaml.HarnessSkillRef{
 					Name:    s.Name,
 					Version: s.Version,
 				})
@@ -484,6 +487,13 @@ func toolboxNode(
 					"set toolbox.name in agent.yaml",
 				)
 			}
+			if strings.TrimSpace(ref.Connection) == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("toolbox %q is missing its connection reference", ref.Name),
+					"set toolbox.connection to the sibling azure.ai.connection service name",
+				)
+			}
 			return nil
 		},
 		Resolve: func(ctx context.Context) error {
@@ -494,13 +504,14 @@ func toolboxNode(
 			// Prefer the endpoint the sibling azure.ai.toolbox service published
 			// over one synthesized from the name, so the two extensions cannot
 			// disagree about where the toolbox lives.
-			mcpEndpoint, err := siblingToolboxEndpoint(ref.Name, g.env)
+			mcpEndpoint, err := siblingToolboxEndpoint(ref.Name, g.projectEndpoint(), g.env)
 			if err != nil {
 				return err
 			}
 			attachment, err := builder.ResolveToolbox(ctx, toolboxRef{
 				Name:        ref.Name,
 				Version:     ref.Version,
+				Connection:  ref.Connection,
 				MCPEndpoint: mcpEndpoint,
 			})
 			if err != nil {
@@ -519,10 +530,6 @@ func toolboxNode(
 // and pinned on the harness, never registered into a toolbox.
 type foundryToolboxBuilder struct {
 	toolboxes       *azure.FoundryToolboxClient
-	connections     *azure.FoundryConnectionsARMClient
-	resourceGroup   string
-	accountName     string
-	projectName     string
 	projectEndpoint string
 }
 
@@ -543,7 +550,11 @@ type resolvedSkill struct {
 // resulting versioned reference to the agent. A bundle with no marker means its
 // service is missing from azure.yaml or has not been deployed yet, both of which
 // the author has to fix.
-func resolveSkillMarkers(skills []skillBundle, env map[string]string) ([]resolvedSkill, error) {
+func resolveSkillMarkers(
+	skills []skillBundle,
+	projectEndpoint string,
+	env map[string]string,
+) ([]resolvedSkill, error) {
 	resolved := make([]resolvedSkill, 0, len(skills))
 	for _, s := range skills {
 		name := strings.TrimSpace(s.Meta.Name)
@@ -570,7 +581,7 @@ func resolveSkillMarkers(skills []skillBundle, env map[string]string) ([]resolve
 		// generic failure at run time rather than at deploy.
 		projectKey := envkey.SkillProjectEndpoint(name)
 		if declared := strings.TrimSpace(env[projectKey]); declared != "" &&
-			!sameProjectEndpoint(declared, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+			!sameProjectEndpoint(declared, projectEndpoint) {
 			return nil, exterrors.Dependency(
 				exterrors.CodeFoundryDependencyNotReady,
 				fmt.Sprintf("skill %q was published to a different Foundry project (%s)", name, projectKey),
@@ -590,14 +601,14 @@ func resolveSkillMarkers(skills []skillBundle, env map[string]string) ([]resolve
 // project it deployed into alongside the endpoint, and an endpoint belonging to
 // a different project would silently point the agent at a toolbox it cannot
 // reach.
-func siblingToolboxEndpoint(name string, env map[string]string) (string, error) {
+func siblingToolboxEndpoint(name, projectEndpoint string, env map[string]string) (string, error) {
 	endpoint := strings.TrimSpace(env[envkey.ToolboxMCPEndpoint(name)])
 	if endpoint == "" {
 		return "", nil
 	}
 	projectKey := envkey.ToolboxProjectEndpoint(name)
 	if declared := strings.TrimSpace(env[projectKey]); declared != "" &&
-		!sameProjectEndpoint(declared, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		!sameProjectEndpoint(declared, projectEndpoint) {
 		return "", exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("toolbox %q was deployed to a different Foundry project (%s)", name, projectKey),
@@ -607,70 +618,16 @@ func siblingToolboxEndpoint(name string, env map[string]string) (string, error) 
 	return endpoint, nil
 }
 
-// ResolveToolbox confirms an existing toolbox and returns its MCP url plus the
-// backing project connection. The url published by the toolbox's sibling
-// azure.ai.toolbox service wins when present; otherwise the toolbox is looked up
-// directly and its url derived from the reference -- the version-specific
-// (developer) endpoint when the reference pins a version, else the consumer
-// endpoint that always serves the default_version.
-func (b *foundryToolboxBuilder) ResolveToolbox(ctx context.Context, ref toolboxRef) (toolboxAttachment, error) {
-	mcpURL := ref.MCPEndpoint
-	if mcpURL == "" {
-		if _, err := b.toolboxes.GetToolbox(ctx, ref.Name); err != nil {
-			return toolboxAttachment{}, fmt.Errorf("resolving toolbox %q: %w", ref.Name, err)
-		}
-		mcpURL = b.mcpURL(ref.Name, ref.Version)
+// ResolveToolbox consumes endpoint and connection outputs from sibling services.
+func (b *foundryToolboxBuilder) ResolveToolbox(_ context.Context, ref toolboxRef) (toolboxAttachment, error) {
+	if ref.MCPEndpoint == "" {
+		return toolboxAttachment{}, exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("toolbox %q has not been deployed by an azure.ai.toolbox service", ref.Name),
+			fmt.Sprintf("add %q to the agent service's uses list and run 'azd deploy --all'", ref.Name),
+		)
 	}
-	connName, err := b.ensureToolboxConnection(ctx, ref.Name, mcpURL)
-	if err != nil {
-		return toolboxAttachment{}, err
-	}
-	return toolboxAttachment{McpURL: mcpURL, ConnectionName: connName}, nil
-}
-
-// toolboxConnectionCategory is the Foundry connection category for a toolbox's
-// MCP endpoint, consistent with the RemoteTool category used for MCP tools.
-const toolboxConnectionCategory = "RemoteTool"
-
-// toolboxConnectionAuthType authenticates the agent to a toolbox hosted in the
-// same Foundry project via the project's managed identity.
-const toolboxConnectionAuthType = "ProjectManagedIdentity"
-
-// ensureToolboxConnection creates (or updates) a project connection that fronts
-// the toolbox MCP endpoint and returns its name for use as the agent tool's
-// project_connection_id. Without this connection the agent has no credential to
-// reach the toolbox and its skills are never invoked. When no connections client
-// is configured (e.g. missing ARM identifiers), it returns an empty name so
-// callers degrade to a connection-less mcp tool rather than failing the deploy.
-func (b *foundryToolboxBuilder) ensureToolboxConnection(
-	ctx context.Context, toolboxName, mcpURL string,
-) (string, error) {
-	if b.connections == nil {
-		return "", nil
-	}
-	connName := toolboxConnectionName(toolboxName)
-	// Use the MCP endpoint without its query string as the connection target;
-	// the api-version belongs on the tool's server_url, not the connection.
-	target := mcpURL
-	if i := strings.IndexByte(target, '?'); i >= 0 {
-		target = target[:i]
-	}
-	if err := b.connections.UpsertProjectConnection(
-		ctx, b.resourceGroup, b.accountName, b.projectName, connName,
-		azure.ProjectConnectionProperties{
-			Category: toolboxConnectionCategory,
-			Target:   target,
-			AuthType: toolboxConnectionAuthType,
-		},
-	); err != nil {
-		return "", fmt.Errorf("creating toolbox connection %q: %w", connName, err)
-	}
-	return connName, nil
-}
-
-// toolboxConnectionName derives a stable connection name for a toolbox.
-func toolboxConnectionName(toolboxName string) string {
-	return toolboxName + "-toolbox"
+	return toolboxAttachment{McpURL: ref.MCPEndpoint, ConnectionName: ref.Connection}, nil
 }
 
 // mcpURL builds the toolbox MCP endpoint. With a version it returns the
@@ -693,7 +650,10 @@ func (b *foundryToolboxBuilder) mcpURL(name, version string) string {
 const toolboxMcpApiVersion = "v1"
 
 // newFoundryToolboxBuilder constructs the live builder from prompt settings.
-func newFoundryToolboxBuilder(settings *PromptAgentSettings) (toolboxBuilder, error) {
+func newFoundryToolboxBuilder(
+	settings *PromptAgentSettings,
+	credential azcore.TokenCredential,
+) (toolboxBuilder, error) {
 	if settings == nil || strings.TrimSpace(settings.ProjectEndpoint) == "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -701,29 +661,8 @@ func newFoundryToolboxBuilder(settings *PromptAgentSettings) (toolboxBuilder, er
 			"run `azd up` to provision a Foundry project, or remove the 'toolbox:' block from agent.yaml",
 		)
 	}
-	cred := promptCredential()
-	// A control-plane connections client creates the connection that fronts the
-	// toolbox MCP endpoint (the data plane is read-only for connections). Parse
-	// the account/project from the endpoint; when the ARM identifiers are
-	// available the builder wires the connection, otherwise it degrades to a
-	// connection-less mcp tool (ensureToolboxConnection no-ops on a nil client).
-	var (
-		connections *azure.FoundryConnectionsARMClient
-		accountName string
-		projectName string
-	)
-	if account, project, err := parseAccountProject(settings.ProjectEndpoint); err == nil {
-		accountName, projectName = account, project
-		if strings.TrimSpace(settings.SubscriptionID) != "" && strings.TrimSpace(settings.ResourceGroup) != "" {
-			connections, _ = azure.NewFoundryConnectionsARMClient(settings.SubscriptionID, cred)
-		}
-	}
 	return &foundryToolboxBuilder{
-		toolboxes:       azure.NewFoundryToolboxClient(settings.ProjectEndpoint, cred),
-		connections:     connections,
-		resourceGroup:   settings.ResourceGroup,
-		accountName:     accountName,
-		projectName:     projectName,
+		toolboxes:       azure.NewFoundryToolboxClient(settings.ProjectEndpoint, credential),
 		projectEndpoint: settings.ProjectEndpoint,
 	}, nil
 }

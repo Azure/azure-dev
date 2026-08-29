@@ -57,7 +57,7 @@ func TestToolboxNode_PrefersSiblingEndpoint(t *testing.T) {
 	}}
 
 	builder := &fakeToolboxBuilder{}
-	node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "tb"}, func() (toolboxBuilder, error) {
+	node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "tb", Connection: "tb-conn"}, func() (toolboxBuilder, error) {
 		return builder, nil
 	})
 	if err := node.Resolve(context.Background()); err != nil {
@@ -79,7 +79,7 @@ func TestToolboxNode_RejectsCrossProjectEndpoint(t *testing.T) {
 		"FOUNDRY_PROJECT_ENDPOINT":          "https://acct.services.ai.azure.com/api/projects/p",
 	}}
 
-	node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "tb"}, func() (toolboxBuilder, error) {
+	node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "tb", Connection: "tb-conn"}, func() (toolboxBuilder, error) {
 		return &fakeToolboxBuilder{}, nil
 	})
 	if err := node.Resolve(context.Background()); err == nil {
@@ -257,7 +257,7 @@ func TestToolboxNode_ReferenceExisting(t *testing.T) {
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	fake := &fakeToolboxBuilder{connName: "agent-toolbox"}
 
-	ref := &agent_yaml.ToolboxReference{Name: "existing-tb", Version: "2"}
+	ref := &agent_yaml.ToolboxReference{Name: "existing-tb", Version: "2", Connection: "agent-toolbox"}
 	node := toolboxNode(g, ref, func() (toolboxBuilder, error) { return fake, nil })
 	if node == nil {
 		t.Fatal("expected a toolbox node")
@@ -357,8 +357,8 @@ func TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool(t *testing.T) {
 		{Name: "skill-a", Version: "7"},
 		{Name: "skill-b", Version: "7"},
 	}
-	if !slices.Equal(managed.HarnessSkills, want) {
-		t.Errorf("harness skills: got %+v, want %+v", managed.HarnessSkills, want)
+	if !slices.Equal(managed.Harness.Skills, want) {
+		t.Errorf("harness skills: got %+v, want %+v", managed.Harness.Skills, want)
 	}
 	if len(managed.Tools) != 0 {
 		t.Errorf("a skill must not become a tool, got %+v", managed.Tools)
@@ -387,18 +387,18 @@ func TestSkillsHarnessNode_PinsVersionEvenWhenUnpinned(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 
-	if len(managed.HarnessSkills) != 1 || managed.HarnessSkills[0].Version != "3" {
-		t.Errorf("expected the published version pinned, got %+v", managed.HarnessSkills)
+	if len(managed.Harness.Skills) != 1 || managed.Harness.Skills[0].Version != "3" {
+		t.Errorf("expected the published version pinned, got %+v", managed.Harness.Skills)
 	}
 }
 
 func TestSkillsHarnessNode_ResolveIsIdempotent(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{
-		Model:         "m",
-		Instructions:  "i",
-		Harness:       testPromptHarness(),
-		HarnessSkills: []agent_yaml.HarnessSkillRef{{Name: "skill-a", Version: "7"}},
+		Model:        "m",
+		Instructions: "i",
+		Harness:      testPromptHarness(),
 	}
+	managed.Harness.Skills = []agent_yaml.HarnessSkillRef{{Name: "skill-a", Version: "7"}}
 	g := &promptGraph{
 		managed:  managed,
 		bindings: map[string]any{},
@@ -413,8 +413,8 @@ func TestSkillsHarnessNode_ResolveIsIdempotent(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 
-	if len(managed.HarnessSkills) != 1 {
-		t.Errorf("expected no duplicate reference, got %+v", managed.HarnessSkills)
+	if len(managed.Harness.Skills) != 1 {
+		t.Errorf("expected no duplicate reference, got %+v", managed.Harness.Skills)
 	}
 }
 
@@ -461,8 +461,8 @@ func TestSkillsHarnessNode_MissingMarkerFails(t *testing.T) {
 	if !strings.Contains(svcErr.Suggestion, "azure.ai.skill") {
 		t.Errorf("suggestion should name the host to declare, got: %v", svcErr.Suggestion)
 	}
-	if len(managed.HarnessSkills) != 0 {
-		t.Errorf("failed resolve must leave the definition untouched, got %+v", managed.HarnessSkills)
+	if len(managed.Harness.Skills) != 0 {
+		t.Errorf("failed resolve must leave the definition untouched, got %+v", managed.Harness.Skills)
 	}
 }
 
@@ -475,7 +475,7 @@ func TestResolveSkillMarkers_RejectsCrossProjectVersion(t *testing.T) {
 	env["FOUNDRY_PROJECT_ENDPOINT"] = "https://mine.services.ai.azure.com/api/projects/mine"
 
 	skills := []skillBundle{{Dir: "skill-a", Meta: skillMeta{Name: "skill-a"}}}
-	if _, err := resolveSkillMarkers(skills, env); err == nil {
+	if _, err := resolveSkillMarkers(skills, env["FOUNDRY_PROJECT_ENDPOINT"], env); err == nil {
 		t.Fatal("expected a marker from another project to be rejected")
 	}
 }
@@ -489,7 +489,7 @@ func TestSkillsShellNode_RejectsToolboxReference(t *testing.T) {
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 
-	ref := &agent_yaml.ToolboxReference{Name: "existing-tb", Version: "2"}
+	ref := &agent_yaml.ToolboxReference{Name: "existing-tb", Version: "2", Connection: "agent-toolbox"}
 	node := skillsShellNode(g, nil, ref)
 	if node == nil {
 		t.Fatal("expected a skills node")

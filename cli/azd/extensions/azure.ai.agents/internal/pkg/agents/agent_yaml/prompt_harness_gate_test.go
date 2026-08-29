@@ -97,6 +97,13 @@ func TestValidateHarnessFields(t *testing.T) {
 				Reasoning: "medium",
 			},
 		},
+		{
+			name: "future harness is not given GitHub Copilot field restrictions",
+			agent: PromptAgent{
+				Harness:     NewPromptHarness("some_future_harness"),
+				Temperature: &temperature,
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -191,6 +198,13 @@ func TestValidateHarnessTools(t *testing.T) {
 			agent: PromptAgent{
 				Harness: testHarness,
 				Tools:   []any{"not-a-mapping"},
+			},
+		},
+		{
+			name: "future harness is not given GitHub Copilot tool restrictions",
+			agent: PromptAgent{
+				Harness: NewPromptHarness("some_future_harness"),
+				Tools:   []any{map[string]any{"type": "function", "name": "future_tool"}},
 			},
 		},
 	}
@@ -297,6 +311,16 @@ func TestValidateHarnessBlock(t *testing.T) {
 			}},
 			wantErr:     true,
 			wantMessage: "harness.builtin_tools.allowed.filesystem_reed",
+		},
+		{
+			name: "future harness is not given GitHub Copilot block restrictions",
+			agent: PromptAgent{Harness: &PromptHarness{
+				Type:        "some_future_harness",
+				Environment: &PromptHarnessEnvironment{Cpu: "future-size"},
+				BuiltinTools: &PromptHarnessBuiltInTools{
+					Allowed: &[]string{"future_capability"},
+				},
+			}},
 		},
 	}
 

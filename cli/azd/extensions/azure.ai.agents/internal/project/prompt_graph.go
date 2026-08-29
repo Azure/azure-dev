@@ -6,12 +6,12 @@ package project
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -25,7 +25,6 @@ const (
 	nodeDeployment  promptNodeKind = "deployment"
 	nodeConnection  promptNodeKind = "connection"
 	nodeRBAC        promptNodeKind = "rbac"
-	nodeFileStore   promptNodeKind = "file_store"
 	nodeMemoryStore promptNodeKind = "memory_store"
 	nodeSkill       promptNodeKind = "skill"
 	nodeToolbox     promptNodeKind = "toolbox"
@@ -49,22 +48,22 @@ type promptNode struct {
 // validated as a whole, then resolved in registration (dependency) order. None
 // of this machinery is exposed in the YAML.
 type promptGraph struct {
-	// agentDir is the folder holding agent.yaml plus any convention folders
-	// (vector-assets/, skills/).
+	// agentDir is the folder holding agent.yaml plus its skills/ folder.
 	agentDir string
 
 	// managed is the parsed agent definition. Nodes may enrich managed.Tools
-	// with resolved bindings (e.g. a file_search or mcp tool) before publish.
+	// with resolved bindings before publish.
 	managed *agent_yaml.PromptAgent
 
 	// settings holds the resolved harness/connection target for the agent.
 	settings *PromptAgentSettings
 
 	// env is a snapshot of azd environment values used to resolve targets.
-	env map[string]string
+	env        map[string]string
+	credential azcore.TokenCredential
 
 	// bindings holds symbolic outputs produced by resolved nodes (for example
-	// "vector_store_id" or "toolbox_mcp_url") that later nodes read.
+	// "toolbox_mcp_url") that later nodes read.
 	bindings map[string]any
 
 	// warn reports a non-fatal finding to the user. It is set for the duration
@@ -77,6 +76,13 @@ type promptGraph struct {
 
 	// nodes is the ordered set of dependencies to validate and resolve.
 	nodes []promptNode
+}
+
+func (g *promptGraph) projectEndpoint() string {
+	if g.settings != nil && strings.TrimSpace(g.settings.ProjectEndpoint) != "" {
+		return g.settings.ProjectEndpoint
+	}
+	return g.env["FOUNDRY_PROJECT_ENDPOINT"]
 }
 
 // warnf reports a non-fatal finding discovered while resolving the graph.
@@ -104,13 +110,15 @@ func newPromptGraph(
 	managed *agent_yaml.PromptAgent,
 	settings *PromptAgentSettings,
 	env map[string]string,
+	credential azcore.TokenCredential,
 ) (*promptGraph, error) {
 	g := &promptGraph{
-		agentDir: agentDir,
-		managed:  managed,
-		settings: settings,
-		env:      env,
-		bindings: map[string]any{},
+		agentDir:   agentDir,
+		managed:    managed,
+		settings:   settings,
+		env:        env,
+		credential: credential,
+		bindings:   map[string]any{},
 	}
 
 	// The model deployment is resolved first: create-if-missing so the harness
@@ -121,22 +129,10 @@ func newPromptGraph(
 		g.nodes = append(g.nodes, *node)
 	}
 
-	// Convention: a non-empty vector-assets/ folder contributes a file_search
-	// tool backed by an uploaded vector store.
-	files, err := scanFilesDir(agentDir)
-	if err != nil {
-		return nil, err
-	}
-	if node := fileStoreNode(g, files, func() (vectorStoreBuilder, error) {
-		return newFoundryVectorStoreBuilder(settings)
-	}); node != nil {
-		g.nodes = append(g.nodes, *node)
-	}
-
 	// A declared memory: block provisions a memory store and contributes the
 	// memory_search_preview tool that reads from it.
 	if node := memoryNode(g, managed.Memory, func() (memoryStoreEnsurer, error) {
-		return newFoundryMemoryStoreEnsurer(settings)
+		return newFoundryMemoryStoreEnsurer(settings, credential)
 	}); node != nil {
 		g.nodes = append(g.nodes, *node)
 	}
@@ -159,7 +155,7 @@ func newPromptGraph(
 		// service-owned system toolbox whose name, version and lifecycle the
 		// customer does not manage.
 		if node := toolboxNode(g, managed.Toolbox, func() (toolboxBuilder, error) {
-			return newFoundryToolboxBuilder(settings)
+			return newFoundryToolboxBuilder(settings, credential)
 		}); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
@@ -172,12 +168,9 @@ func newPromptGraph(
 		}
 	}
 
-	// Declared connections are resolved last among the feature stages: existing
-	// connections are used as-is, missing ones are created (Entra default), and
-	// each referenced tool's required role is assigned.
-	if node := connectionsNode(g, func() (connectionResolver, error) {
-		return newFoundryConnectionResolver(settings)
-	}); node != nil {
+	// Connections are provisioned by sibling azure.ai.connection services. This
+	// node only verifies their deployment markers before publishing the agent.
+	if node := connectionsNode(g); node != nil {
 		g.nodes = append(g.nodes, *node)
 	}
 
@@ -185,7 +178,9 @@ func newPromptGraph(
 	// not exist is reported by name instead of as an opaque service rejection
 	// from the create call, and is replaced with the account's built-in default
 	// rather than failing the deploy.
-	if node := policiesNode(g, azureRaiPolicyLister); node != nil {
+	if node := policiesNode(g, func() (raiPolicyLister, error) {
+		return azureRaiPolicyLister(credential)
+	}); node != nil {
 		g.nodes = append(g.nodes, *node)
 	}
 
@@ -343,26 +338,14 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 	env map[string]string,
 	progress azdext.ProgressReporter,
 ) (map[string]any, error) {
-	// The skills/ and vector-assets/ convention folders sit next to the file
+	// The skills/ convention folder sits next to the file
 	// that supplies the definition. With the definition inline on the service
 	// entry there is no such file, so they are anchored at the service
 	// directory instead — the same place `azd ai agent init` scaffolds them.
 	agentDir := p.servicePath
-	if p.agentDefinitionPath != "" {
-		agentDir = filepath.Dir(p.agentDefinitionPath)
-	}
-	g, err := newPromptGraph(agentDir, managed, settings, env)
+	g, err := newPromptGraph(agentDir, managed, settings, env, p.credential)
 	if err != nil {
 		return nil, err
-	}
-	// Seed the vector store binding from the previous deploy. Without it the
-	// file-store node always mints a new store, orphaning the old store and
-	// every file object it referenced on every single deploy.
-	if p.serviceConfig != nil {
-		key := fmt.Sprintf("AGENT_%s_VECTOR_STORE_ID", p.getServiceKey(p.serviceConfig.Name))
-		if storeID := strings.TrimSpace(env[key]); storeID != "" {
-			g.bindings[vectorStoreBindingKey] = storeID
-		}
 	}
 	if err := g.resolve(ctx, progress); err != nil {
 		return nil, err

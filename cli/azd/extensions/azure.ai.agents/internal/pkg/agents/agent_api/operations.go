@@ -64,9 +64,9 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
-			// Include request/response bodies in logs when debug mode is enabled.
-			// Sensitive data is sanitized in internal/cmd/debug.go.
-			IncludeBody: true,
+			// Agent bodies contain customer-authored instructions, tool inputs, and
+			// model output. Keep them out of debug logs.
+			IncludeBody: false,
 		},
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
@@ -91,11 +91,24 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 
 // GetAgent retrieves a specific agent by name
 func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string) (*AgentObject, error) {
+	return c.GetAgentWithHeaders(ctx, agentName, apiVersion, nil)
+}
+
+// GetAgentWithHeaders retrieves an agent and applies additional service headers.
+func (c *AgentClient) GetAgentWithHeaders(
+	ctx context.Context,
+	agentName string,
+	apiVersion string,
+	headers map[string]string,
+) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	for key, value := range headers {
+		req.Raw().Header.Set(key, value)
 	}
 
 	resp, err := c.pipeline.Do(req)
@@ -123,6 +136,16 @@ func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string
 
 // CreateAgent creates a new agent
 func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentRequest, apiVersion string) (*AgentObject, error) {
+	return c.CreateAgentWithHeaders(ctx, request, apiVersion, nil)
+}
+
+// CreateAgentWithHeaders creates a new agent and applies additional service headers.
+func (c *AgentClient) CreateAgentWithHeaders(
+	ctx context.Context,
+	request *CreateAgentRequest,
+	apiVersion string,
+	headers map[string]string,
+) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents?api-version=%s", c.endpoint, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -133,6 +156,9 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	for key, value := range headers {
+		req.Raw().Header.Set(key, value)
 	}
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
@@ -285,6 +311,17 @@ func (c *AgentClient) UpdateVoiceAgent(
 
 // UpdateAgent updates an existing agent
 func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request *UpdateAgentRequest, apiVersion string) (*AgentObject, error) {
+	return c.UpdateAgentWithHeaders(ctx, agentName, request, apiVersion, nil)
+}
+
+// UpdateAgentWithHeaders updates an agent and applies additional service headers.
+func (c *AgentClient) UpdateAgentWithHeaders(
+	ctx context.Context,
+	agentName string,
+	request *UpdateAgentRequest,
+	apiVersion string,
+	headers map[string]string,
+) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -295,6 +332,9 @@ func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request
 	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	for key, value := range headers {
+		req.Raw().Header.Set(key, value)
 	}
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {

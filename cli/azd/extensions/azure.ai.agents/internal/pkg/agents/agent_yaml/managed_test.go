@@ -228,10 +228,10 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 		Instructions:    "Be helpful.",
 		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
 		Skills:          []string{"duplicate-check"},
-		HarnessSkills: []HarnessSkillRef{
-			{Name: "duplicate-check", Version: "3"},
-			{Name: "severity-triage", Version: "1"},
-		},
+	}
+	promptDef.Harness.Skills = []HarnessSkillRef{
+		{Name: "duplicate-check", Version: "3"},
+		{Name: "severity-triage", Version: "1"},
 	}
 
 	req, err := CreatePromptAgentAPIRequest(promptDef, nil)

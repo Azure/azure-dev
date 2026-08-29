@@ -16,7 +16,7 @@ import (
 )
 
 // raiPolicyID is a representative RAI policy ARM resource ID, the value users
-// put in `rai_policy_name`.
+// put in `raiPolicyName` in azure.yaml.
 const raiPolicyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" +
 	"my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2"
 
@@ -38,7 +38,7 @@ func inlineAgentService(t *testing.T, values map[string]any) *azdext.ServiceConf
 
 // TestAgentPoliciesRoundTrip verifies governance policies survive a marshal into
 // the inline service properties and back, and that they are persisted under the
-// `rai_policy_name` key the service, agent.yaml and azure.yaml all share.
+// `raiPolicyName` key used by azure.yaml.
 func TestAgentPoliciesRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -54,9 +54,7 @@ func TestAgentPoliciesRoundTrip(t *testing.T) {
 	require.Len(t, policies, 1)
 	policy := policies[0].GetStructValue().GetFields()
 	require.Equal(t, "rai_policy", policy["type"].GetStringValue())
-	require.Equal(t, raiPolicyID, policy["rai_policy_name"].GetStringValue())
-	require.NotContains(t, policy, "raiPolicyName",
-		"azure.yaml uses the same rai_policy_name key as the service")
+	require.Equal(t, raiPolicyID, policy["raiPolicyName"].GetStringValue())
 
 	svc := &azdext.ServiceConfig{
 		Name:                 "rai-agent",
@@ -109,8 +107,8 @@ func TestAgentPoliciesReachRaiConfig(t *testing.T) {
 				"name": "rai-agent",
 				"policies": []any{
 					map[string]any{
-						"type":            "rai_policy",
-						"rai_policy_name": raiPolicyID,
+						"type":          "rai_policy",
+						"raiPolicyName": raiPolicyID,
 					},
 				},
 			}
@@ -159,7 +157,7 @@ func TestAgentPoliciesNoRaiConfigWhenAbsent(t *testing.T) {
 
 // TestAgentPoliciesValidation verifies malformed policies authored inline in
 // azure.yaml are rejected, and that the missing-name error names the
-// `rai_policy_name` key.
+// `raiPolicyName` key.
 func TestAgentPoliciesValidation(t *testing.T) {
 	t.Parallel()
 
@@ -171,11 +169,11 @@ func TestAgentPoliciesValidation(t *testing.T) {
 		{
 			name:         "missing policy name",
 			policy:       map[string]any{"type": "rai_policy"},
-			wantErrSubst: "requires a policy name ('rai_policy_name')",
+			wantErrSubst: "requires a policy name",
 		},
 		{
 			name:         "missing type",
-			policy:       map[string]any{"rai_policy_name": raiPolicyID},
+			policy:       map[string]any{"raiPolicyName": raiPolicyID},
 			wantErrSubst: "policies[0] requires a type",
 		},
 		{
@@ -271,8 +269,8 @@ func TestAgentPoliciesInvocationsModerationReachesRaiConfig(t *testing.T) {
 		"protocols": []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
 		"policies": []any{
 			map[string]any{
-				"type":            "rai_policy",
-				"rai_policy_name": raiPolicyID,
+				"type":          "rai_policy",
+				"raiPolicyName": raiPolicyID,
 				"invocationsModeration": map[string]any{
 					"responseMode": "non_streaming",
 					"inputPaths":   []any{"$.input"},
@@ -352,7 +350,7 @@ func TestAgentPoliciesInvocationsModerationInlineValidation(t *testing.T) {
 				"policies": []any{
 					map[string]any{
 						"type":                  "rai_policy",
-						"rai_policy_name":       raiPolicyID,
+						"raiPolicyName":         raiPolicyID,
 						"invocationsModeration": test.moderation,
 					},
 				},
@@ -378,8 +376,8 @@ func TestAgentPoliciesInvocationsModerationNonHostedInline(t *testing.T) {
 				"name": "rai-agent",
 				"policies": []any{
 					map[string]any{
-						"type":            "rai_policy",
-						"rai_policy_name": raiPolicyID,
+						"type":          "rai_policy",
+						"raiPolicyName": raiPolicyID,
 						"invocationsModeration": map[string]any{
 							"responseMode": "non_streaming",
 							"inputPaths":   []any{"$.input"},
@@ -403,17 +401,15 @@ func TestAgentPoliciesSingleRaiPolicyInline(t *testing.T) {
 		"name":  "rai-agent",
 		"image": "myregistry.azurecr.io/agent:v1",
 		"policies": []any{
-			map[string]any{"type": "rai_policy", "rai_policy_name": raiPolicyID},
-			map[string]any{"type": "rai_policy", "rai_policy_name": raiPolicyID + "-2"},
+			map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID},
+			map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID + "-2"},
 		},
 	}))
 	require.ErrorContains(t, err, "only one is supported")
 }
 
-// TestAgentPoliciesLegacyRaiPolicyNameKey covers azure.yaml files written before
-// the key was aligned with the service: inline entries used to be marshalled
-// through the camelCase JSON tag, so `raiPolicyName` must keep deploying.
-func TestAgentPoliciesLegacyRaiPolicyNameKey(t *testing.T) {
+// TestAgentPoliciesRaiPolicyNameKey covers the azure.yaml camelCase shape.
+func TestAgentPoliciesRaiPolicyNameKey(t *testing.T) {
 	t.Parallel()
 
 	agentDef, _, found, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{

@@ -11,6 +11,8 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 )
 
 // memorySearchToolType is the wire `type` of the tool that lets an agent recall
@@ -225,7 +227,10 @@ func injectMemorySearchTool(managed *agent_yaml.PromptAgent, storeName string, m
 // newFoundryMemoryStoreEnsurer constructs the live ensurer from prompt settings.
 // It requires a resolved project endpoint (data-plane) to reach the memory
 // stores API.
-func newFoundryMemoryStoreEnsurer(settings *PromptAgentSettings) (memoryStoreEnsurer, error) {
+func newFoundryMemoryStoreEnsurer(
+	settings *PromptAgentSettings,
+	credential azcore.TokenCredential,
+) (memoryStoreEnsurer, error) {
 	if settings == nil || strings.TrimSpace(settings.ProjectEndpoint) == "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -233,5 +238,5 @@ func newFoundryMemoryStoreEnsurer(settings *PromptAgentSettings) (memoryStoreEns
 			"run `azd up` to provision a Foundry project, or remove the 'memory:' block from agent.yaml",
 		)
 	}
-	return azure.NewFoundryMemoryStoreClient(settings.ProjectEndpoint, promptCredential()), nil
+	return azure.NewFoundryMemoryStoreClient(settings.ProjectEndpoint, credential), nil
 }

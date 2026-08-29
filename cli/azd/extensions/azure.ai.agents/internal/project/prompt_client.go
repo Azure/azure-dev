@@ -244,16 +244,8 @@ func (s *PromptAgentSettings) ApplyEnvOverrides() {
 	}
 }
 
-// NewPromptAgentClient constructs a ManagedAgentClient from the given prompt
-// settings. Environment overrides are applied first, then the settings are
-// validated. Set AZD_MANAGED_AGENT_NO_AUTH=true to skip attaching a bearer
-// token.
-//
-// Routing target:
-//   - When ProjectEndpoint is set, all operations target the Foundry project
-//     data-plane: https://<account>.services.ai.azure.com/api/projects/<project>/agents?api-version=v1
-//   - Otherwise it falls back to the legacy workspace-rooted management route.
-func NewPromptAgentClient(settings *PromptAgentSettings) (*agent_api.ManagedAgentClient, error) {
+// NewPromptAgentClient constructs the unified project-scoped agent client.
+func NewPromptAgentClient(settings *PromptAgentSettings) (*agent_api.AgentClient, error) {
 	if settings == nil {
 		return nil, fmt.Errorf("NewPromptAgentClient: settings is nil")
 	}
@@ -262,30 +254,15 @@ func NewPromptAgentClient(settings *PromptAgentSettings) (*agent_api.ManagedAgen
 		return nil, err
 	}
 
-	baseURL := settings.BaseURL
-	var prefix string
-	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
-		b, p, err := agent_api.SplitProjectEndpoint(pe)
-		if err != nil {
-			return nil, err
-		}
-		baseURL, prefix = b, p
-	} else {
-		p, err := agent_api.BuildWorkspaceRoutePrefix(
-			settings.SubscriptionID, settings.ResourceGroup, settings.Workspace,
+	projectEndpoint := strings.TrimRight(strings.TrimSpace(settings.ProjectEndpoint), "/")
+	if projectEndpoint == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"a Foundry project endpoint is required for prompt agent operations",
+			"run `azd up` to provision a Foundry project",
 		)
-		if err != nil {
-			return nil, fmt.Errorf("building workspace route prefix: %w", err)
-		}
-		prefix = p
 	}
-
-	return agent_api.NewManagedAgentClient(agent_api.ManagedAgentClientOptions{
-		BaseURL:     baseURL,
-		RoutePrefix: prefix,
-		Credential:  promptCredential(),
-		Scopes:      promptScopesForBaseURL(baseURL),
-	})
+	return agent_api.NewAgentClient(projectEndpoint, promptCredential()), nil
 }
 
 // promptScopesForBaseURL selects auth scopes by target endpoint.

@@ -232,30 +232,13 @@ func TestResolvePromptAgentSettings(t *testing.T) {
 func TestNewPromptAgentClient_BuildsClient(t *testing.T) {
 	t.Setenv(PromptNoAuthEnvVar, "true")
 	s := DefaultPromptAgentSettings()
+	s.ProjectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
 	client, err := NewPromptAgentClient(&s)
 	if err != nil {
 		t.Fatalf("NewPromptAgentClient: %v", err)
 	}
 	if client == nil {
 		t.Fatal("expected non-nil client")
-	}
-}
-
-// TestPromptAgentResponsesEndpoint asserts the workspace-rooted Responses URL is
-// assembled correctly.
-func TestPromptAgentResponsesEndpoint(t *testing.T) {
-	s := PromptAgentSettings{
-		BaseURL:        "http://localhost:5000",
-		SubscriptionID: "sub-1",
-		ResourceGroup:  "rg-x",
-		Workspace:      "ws-y",
-		APIVersion:     "v1",
-	}
-	got := promptAgentResponsesEndpoint(&s)
-	want := "http://localhost:5000/agents/v2.0/subscriptions/sub-1/resourceGroups/rg-x/" +
-		"providers/Microsoft.MachineLearningServices/workspaces/ws-y/openai/responses?api-version=v1"
-	if got != want {
-		t.Errorf("endpoint:\n got %q\nwant %q", got, want)
 	}
 }
 

@@ -62,10 +62,8 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 		Harness: &agent_yaml.PromptHarness{
 			Type: "github_copilot_preview",
 		},
-		Tools: []any{map[string]any{"type": "code_interpreter"}},
-		Connections: []agent_yaml.PromptConnection{
-			{Name: "search", Category: "CognitiveSearch"},
-		},
+		Tools:       []any{map[string]any{"type": "code_interpreter"}},
+		Connections: []string{"search"},
 	}
 
 	props, err := PromptAgentDefinitionToServiceProperties(original)
@@ -84,10 +82,9 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	require.Equal(t, "github_copilot_preview", got.Harness.Type)
 	require.Len(t, got.Tools, 1)
 	require.Len(t, got.Connections, 1)
-	require.Equal(t, "search", got.Connections[0].Name)
+	require.Equal(t, "search", got.Connections[0])
 
 	// Never authored: the deploy graph resolves it from the skills/ folder.
-	require.Empty(t, got.HarnessSkills)
 }
 
 // TestPromptAgentFromResolvedServiceIgnoresOtherKinds confirms a hosted or voice

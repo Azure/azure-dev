@@ -172,12 +172,9 @@ func newPromptGraph(
 		}
 	}
 
-	// Declared connections are resolved last among the feature stages: existing
-	// connections are used as-is, missing ones are created (Entra default), and
-	// each referenced tool's required role is assigned.
-	if node := connectionsNode(g, func() (connectionResolver, error) {
-		return newFoundryConnectionResolver(settings)
-	}); node != nil {
+	// Connections are provisioned by sibling azure.ai.connection services. This
+	// node only verifies their deployment markers before publishing the agent.
+	if node := connectionsNode(g); node != nil {
 		g.nodes = append(g.nodes, *node)
 	}
 

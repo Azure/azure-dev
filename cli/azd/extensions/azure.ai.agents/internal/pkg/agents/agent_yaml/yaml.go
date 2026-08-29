@@ -725,6 +725,10 @@ type ToolboxReference struct {
 	// Version is the toolbox version. When empty the toolbox's default version
 	// is used.
 	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+
+	// Connection names the sibling azure.ai.connection service that authorizes
+	// the agent to call this toolbox's MCP endpoint.
+	Connection string `json:"connection" yaml:"connection"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

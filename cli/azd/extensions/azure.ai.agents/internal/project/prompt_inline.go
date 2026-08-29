@@ -25,9 +25,6 @@ import (
 // PromptAgent straight into service properties would silently drop an authored
 // memory block. Re-declaring Memory at depth zero shadows the embedded field
 // for azure.yaml while leaving the wire type untouched.
-//
-// HarnessSkills is deliberately not restored: it is resolved by the deploy
-// graph from the skills/ folder and is never authored.
 type PromptAgentInline struct {
 	agent_yaml.PromptAgent
 

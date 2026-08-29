@@ -711,7 +711,7 @@ func overlayPromptSettingsFromProjectResourceID(settings *PromptAgentSettings, e
 // version object, or a typed error on failure/timeout.
 func (p *AgentServiceTargetProvider) waitForPromptAgentActive(
 	ctx context.Context,
-	client *agent_api.ManagedAgentClient,
+	client *agent_api.AgentClient,
 	agentName string,
 	settings *PromptAgentSettings,
 	progress azdext.ProgressReporter,
@@ -814,23 +814,12 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	return nil
 }
 
-// promptAgentResponsesEndpoint builds the Responses URL the harness exposes for
-// invoking a prompt agent. When a Foundry project data-plane endpoint is
-// configured it is used directly; otherwise it falls back to the legacy
-// workspace-rooted route. Best-effort: returns the base URL when neither can be
-// built.
+// promptAgentResponsesEndpoint builds the project-scoped Responses URL.
 func promptAgentResponsesEndpoint(settings *PromptAgentSettings) string {
 	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
 		return strings.TrimRight(pe, "/") + "/openai/v1/responses"
 	}
-	prefix, err := agent_api.BuildWorkspaceRoutePrefix(
-		settings.SubscriptionID, settings.ResourceGroup, settings.Workspace,
-	)
-	if err != nil {
-		return settings.BaseURL
-	}
-	return strings.TrimRight(settings.BaseURL, "/") + prefix + "/openai/responses?api-version=" +
-		settings.EffectiveAPIVersion()
+	return ""
 }
 
 // azdEnvValues returns the current azd environment as a key/value map. Used to
@@ -1003,7 +992,7 @@ func isAgentConflictError(err error) bool {
 // version.
 func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 	ctx context.Context,
-	client *agent_api.ManagedAgentClient,
+	client *agent_api.AgentClient,
 	request *agent_api.CreateAgentRequest,
 	settings *PromptAgentSettings,
 	headers map[string]string,

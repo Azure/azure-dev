@@ -172,6 +172,11 @@ telemetry loop unless drop spans had a second budget, which would need its own
 dropped-signal behavior. Per-drop rows would also make a looping extension
 dominate the signal. A unique extension-and-reason set per invocation measures
 affected users while a separate bounded measurement preserves total volume.
+The extension ID is included only after the installed record passes the
+official-source gate; failures before admission use a fixed `unattributed`
+identity. The aggregate remains on the hosting command span rather than being
+copied to synthetic `azd up` phase spans, which prevents one invocation from
+multiplying its count downstream.
 
 **Make telemetry a capability.** Rejected per review feedback: capabilities
 signal "this extension provides a customer-facing feature the host needs to

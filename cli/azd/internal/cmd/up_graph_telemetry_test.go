@@ -10,10 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -636,6 +639,28 @@ func TestEmitDeploySpan_ErrorPath(t *testing.T) {
 	assert.NotEmpty(t, span.Status().Description, "failure must carry a ResultCode")
 	assert.True(t, start.Equal(span.StartTime()), "start = %s, want %s", span.StartTime(), start)
 	assert.True(t, end.Equal(span.EndTime()), "end = %s, want %s", span.EndTime(), end)
+}
+
+func TestSyntheticUpUsageAttributesExcludeExtensionDrops(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+	t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+	const retainedKey = attribute.Key("test.retained")
+	tracing.SetUsageAttributes(
+		retainedKey.String("value"),
+		fields.ExtensionUsageDropped.StringSlice([]string{"publisher.extension@budget_exhausted"}),
+		fields.ExtensionUsageDroppedCount.Int64(1),
+	)
+
+	attrs := syntheticUpUsageAttributes()
+	indexed := map[attribute.Key]attribute.Value{}
+	for _, attr := range attrs {
+		indexed[attr.Key] = attr.Value
+	}
+
+	require.Contains(t, indexed, retainedKey)
+	assert.NotContains(t, indexed, fields.ExtensionUsageDropped.Key)
+	assert.NotContains(t, indexed, fields.ExtensionUsageDroppedCount.Key)
 }
 
 // TestEmitDeploySpan_OmittedWhenDeployDidNotRun verifies the other half of the

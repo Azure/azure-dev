@@ -20,7 +20,7 @@ func loadAgentToolboxReference(path string) (*agent_yaml.ToolboxReference, error
 		return nil, exterrors.Dependency(
 			exterrors.CodeAgentDefinitionNotFound,
 			fmt.Sprintf("failed to read agent definition %q: %s", path, err),
-			"run the command from the agent directory or pass --file <path>",
+			"run the command from the agent directory or pass the definition path to azd ai agent deploy <path>",
 		)
 	}
 	var value struct {

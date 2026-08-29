@@ -6,12 +6,16 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/gofrs/flock"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +44,7 @@ func newAgentAddDependencyCommand(
 		Short: fmt.Sprintf("Add a %s service dependency to an agent service.", dependencyType),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			agentServiceName, dependencyServiceName := normalizeAgentDependencyNames(flags.agent, args[0])
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
 				return exterrors.Internal(
@@ -50,23 +55,25 @@ func newAgentAddDependencyCommand(
 			defer azdClient.Close()
 
 			added, err := addAgentServiceDependency(
-				cmd.Context(), azdClient, flags.agent, args[0], dependencyType, expectedHost,
+				cmd.Context(), azdClient, agentServiceName, dependencyServiceName, dependencyType, expectedHost,
 			)
 			if err != nil {
 				return err
 			}
 			if extCtx.OutputFormat == "json" {
 				return emitJSON(map[string]any{
-					"agent":      flags.agent,
+					"agent":      agentServiceName,
 					"type":       dependencyType,
-					"dependency": args[0],
+					"dependency": dependencyServiceName,
 					"added":      added,
 				})
 			}
 			if added {
-				fmt.Printf("Added %s service %q to agent service %q.\n", dependencyType, args[0], flags.agent)
+				fmt.Printf("Added %s service %q to agent service %q.\n",
+					dependencyType, dependencyServiceName, agentServiceName)
 			} else {
-				fmt.Printf("Agent service %q already uses %s service %q.\n", flags.agent, dependencyType, args[0])
+				fmt.Printf("Agent service %q already uses %s service %q.\n",
+					agentServiceName, dependencyType, dependencyServiceName)
 			}
 			return nil
 		},
@@ -86,8 +93,7 @@ func addAgentServiceDependency(
 	dependencyType string,
 	expectedHost string,
 ) (bool, error) {
-	agentServiceName = strings.TrimSpace(agentServiceName)
-	dependencyServiceName = strings.TrimSpace(dependencyServiceName)
+	agentServiceName, dependencyServiceName = normalizeAgentDependencyNames(agentServiceName, dependencyServiceName)
 	if agentServiceName == "" {
 		return false, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -105,13 +111,29 @@ func addAgentServiceDependency(
 
 	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
+		return false, err
+	}
+	projectConfig := response.GetProject()
+	if projectConfig == nil {
 		return false, exterrors.Dependency(
 			exterrors.CodeProjectNotFound,
-			fmt.Sprintf("failed to read the azd project: %s", err),
+			"the current directory does not contain an azd project",
 			"run the command from a directory containing azure.yaml",
 		)
 	}
-	projectConfig := response.GetProject()
+	projectLock, err := acquireAgentAddProjectLock(ctx, projectConfig.GetPath())
+	if err != nil {
+		return false, err
+	}
+	if projectLock != nil {
+		defer func() { _ = projectLock.Unlock() }()
+	}
+
+	response, err = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return false, err
+	}
+	projectConfig = response.GetProject()
 	if projectConfig == nil {
 		return false, exterrors.Dependency(
 			exterrors.CodeProjectNotFound,
@@ -134,7 +156,11 @@ func addAgentServiceDependency(
 	if dependencyService.GetHost() != expectedHost {
 		return false, invalidServiceHostError(dependencyServiceName, dependencyService.GetHost(), expectedHost)
 	}
-	if slices.Contains(agentService.GetUses(), dependencyServiceName) {
+	currentUses, err := getServiceUses(ctx, azdClient, agentServiceName)
+	if err != nil {
+		return false, err
+	}
+	if slices.Contains(currentUses, dependencyServiceName) {
 		return false, nil
 	}
 	if serviceDependsOn(services, dependencyServiceName, agentServiceName, map[string]bool{}) {
@@ -146,15 +172,72 @@ func addAgentServiceDependency(
 		)
 	}
 
-	uses := append(slices.Clone(agentService.GetUses()), dependencyServiceName)
+	uses := append(currentUses, dependencyServiceName)
 	if err := setServiceUses(ctx, azdClient, agentServiceName, uses); err != nil {
-		return false, exterrors.Internal(
-			exterrors.CodeAzdClientFailed,
-			fmt.Sprintf("failed to add %s service %q to agent service %q: %s",
-				dependencyType, dependencyServiceName, agentServiceName, err),
-		)
+		return false, err
 	}
 	return true, nil
+}
+
+func normalizeAgentDependencyNames(agentServiceName, dependencyServiceName string) (string, string) {
+	return strings.TrimSpace(agentServiceName), strings.TrimSpace(dependencyServiceName)
+}
+
+func getServiceUses(ctx context.Context, azdClient *azdext.AzdClient, serviceName string) ([]string, error) {
+	response, err := azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "uses",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !response.GetFound() {
+		return nil, nil
+	}
+	value := response.GetValue()
+	if value == nil {
+		return nil, invalidServiceUsesError(serviceName, "has no value")
+	}
+	items, ok := value.AsInterface().([]any)
+	if !ok {
+		return nil, invalidServiceUsesError(serviceName, "is not a list")
+	}
+	uses := make([]string, 0, len(items))
+	for _, item := range items {
+		value, ok := item.(string)
+		if !ok {
+			return nil, invalidServiceUsesError(serviceName, "contains a non-string value")
+		}
+		uses = append(uses, value)
+	}
+	return uses, nil
+}
+
+func invalidServiceUsesError(serviceName, reason string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidServiceConfig,
+		fmt.Sprintf("service %q has an invalid uses value that %s", serviceName, reason),
+		"set uses to a list of service names in azure.yaml",
+	)
+}
+
+func acquireAgentAddProjectLock(ctx context.Context, projectPath string) (*flock.Flock, error) {
+	if projectPath == "" {
+		return nil, nil
+	}
+	lockDirectory := filepath.Join(projectPath, ".azure")
+	if err := os.MkdirAll(lockDirectory, 0o700); err != nil {
+		return nil, fmt.Errorf("creating agent dependency lock directory: %w", err)
+	}
+	projectLock := flock.New(filepath.Join(lockDirectory, "agent-add.lock"))
+	locked, err := projectLock.TryLockContext(ctx, 100*time.Millisecond)
+	if err != nil {
+		return nil, fmt.Errorf("locking agent dependency configuration: %w", err)
+	}
+	if !locked {
+		return nil, fmt.Errorf("locking agent dependency configuration: %w", ctx.Err())
+	}
+	return projectLock, nil
 }
 
 func serviceDependsOn(

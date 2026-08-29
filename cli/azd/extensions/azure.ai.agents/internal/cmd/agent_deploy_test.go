@@ -13,6 +13,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +22,16 @@ type recordingDependencyRunner struct {
 	args   []string
 	output []byte
 	err    error
+}
+
+func TestLoadAgentToolboxReferenceUsesDeployPathSuggestion(t *testing.T) {
+	t.Parallel()
+
+	_, err := loadAgentToolboxReference(filepath.Join(t.TempDir(), "missing-agent.yaml"))
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Contains(t, localErr.Suggestion, "azd ai agent deploy <path>")
+	assert.NotContains(t, localErr.Suggestion, "--file")
 }
 
 func (r *recordingDependencyRunner) Run(_ context.Context, args ...string) ([]byte, error) {

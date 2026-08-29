@@ -97,6 +97,17 @@ func setDigitalWorkerPreviewFeature(req *policy.Request) {
 	req.Raw().Header.Set("Foundry-Features", DigitalWorkerPreviewFeature)
 }
 
+func hasDigitalWorkerType(request any) bool {
+	switch request := request.(type) {
+	case *CreateAgentRequest:
+		return request != nil && request.DigitalWorkerType != ""
+	case *CreateAgentVersionRequest:
+		return request != nil && request.DigitalWorkerType != ""
+	default:
+		return false
+	}
+}
+
 // GetAgent retrieves a specific agent by name
 func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
@@ -143,7 +154,9 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setDigitalWorkerPreviewFeature(req)
+	if hasDigitalWorkerType(request) {
+		setDigitalWorkerPreviewFeature(req)
+	}
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
@@ -306,7 +319,6 @@ func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setDigitalWorkerPreviewFeature(req)
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
@@ -492,7 +504,9 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setDigitalWorkerPreviewFeature(req)
+	if hasDigitalWorkerType(request) {
+		setDigitalWorkerPreviewFeature(req)
+	}
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
@@ -611,7 +625,9 @@ func (c *AgentClient) zipDeployRequest(
 
 	// Required headers
 	req.Raw().Header.Set("x-ms-code-zip-sha256", sha256Hex)
-	setDigitalWorkerPreviewFeature(req)
+	if agentName != "" && hasDigitalWorkerType(metadata) {
+		setDigitalWorkerPreviewFeature(req)
+	}
 	if agentName != "" {
 		req.Raw().Header.Set("x-ms-agent-name", agentName)
 	}

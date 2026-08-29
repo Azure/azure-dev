@@ -2192,6 +2192,9 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		foundryAgentConfig.Activity != nil &&
 		foundryAgentConfig.Activity.UseCase == ActivityUseCaseDigitalWorker {
 		request.DigitalWorkerType = agent_api.DigitalWorkerTypeM365
+		ensureActivityEndpointAuthScheme(request, agent_api.AgentEndpointAuthSchemeBotServiceTenant)
+	} else if IsActivityProtocol(agentDef) {
+		ensureActivityEndpointAuthScheme(request, agent_api.AgentEndpointAuthSchemeBotServiceRbac)
 	}
 
 	// Default to "responses" protocol when none specified in agent.yaml.
@@ -2207,6 +2210,52 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		request:         request,
 		protocols:       protocols,
 	}, nil
+}
+
+func ensureActivityEndpointAuthScheme(
+	request *agent_api.CreateAgentRequest,
+	schemeType agent_api.AgentEndpointAuthorizationSchemeType,
+) {
+	if request.AgentEndpoint == nil {
+		request.AgentEndpoint = &agent_api.AgentEndpoint{}
+	}
+
+	hasActivity := false
+	for _, protocol := range request.AgentEndpoint.Protocols {
+		if protocol == agent_api.AgentEndpointProtocolActivity {
+			hasActivity = true
+			break
+		}
+	}
+	if !hasActivity {
+		request.AgentEndpoint.Protocols = append(
+			request.AgentEndpoint.Protocols,
+			agent_api.AgentEndpointProtocolActivity,
+		)
+	}
+
+	schemes := request.AgentEndpoint.AuthorizationSchemes[:0]
+	hasTarget := false
+	for _, scheme := range request.AgentEndpoint.AuthorizationSchemes {
+		if scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac ||
+			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceTenant {
+			if scheme.Type == schemeType && !hasTarget {
+				schemes = append(schemes, scheme)
+				hasTarget = true
+			}
+			continue
+		}
+		if scheme.Type == schemeType {
+			hasTarget = true
+		}
+		schemes = append(schemes, scheme)
+	}
+	if !hasTarget {
+		schemes = append(schemes, agent_api.AgentEndpointAuthorizationScheme{
+			Type: schemeType,
+		})
+	}
+	request.AgentEndpoint.AuthorizationSchemes = schemes
 }
 
 // deployResult holds the intermediate results from a deploy method (code or container)

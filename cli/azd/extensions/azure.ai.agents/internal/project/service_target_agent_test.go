@@ -1949,6 +1949,13 @@ func TestPrepareDeploySetsDigitalWorkerType(t *testing.T) {
 	t.Parallel()
 
 	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = &agent_yaml.AgentEndpoint{
+		Protocols: []string{"activity"},
+		AuthorizationSchemes: []agent_yaml.AuthorizationScheme{
+			{Type: string(agent_api.AgentEndpointAuthSchemeBotServiceRbac)},
+		},
+	}
 	props, err := AgentDefinitionToServiceProperties(agentDef, &ServiceTargetAgentConfig{
 		Activity: &ActivitySettings{UseCase: ActivityUseCaseDigitalWorker},
 	})
@@ -1969,6 +1976,56 @@ func TestPrepareDeploySetsDigitalWorkerType(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, agent_api.DigitalWorkerTypeM365, prep.request.DigitalWorkerType)
+	require.NotNil(t, prep.request.AgentEndpoint)
+	require.Equal(
+		t,
+		[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+		prep.request.AgentEndpoint.Protocols,
+	)
+	require.Len(t, prep.request.AgentEndpoint.AuthorizationSchemes, 1)
+	require.Equal(
+		t,
+		agent_api.AgentEndpointAuthSchemeBotServiceTenant,
+		prep.request.AgentEndpoint.AuthorizationSchemes[0].Type,
+	)
+}
+
+func TestPrepareDeployUsesRbacForSimpleActivityEndpoint(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = &agent_yaml.AgentEndpoint{Protocols: []string{"activity"}}
+	props, err := AgentDefinitionToServiceProperties(agentDef, nil)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "simple-activity",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/activity:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, prep.request.DigitalWorkerType)
+	require.NotNil(t, prep.request.AgentEndpoint)
+	require.Equal(
+		t,
+		[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+		prep.request.AgentEndpoint.Protocols,
+	)
+	require.Len(t, prep.request.AgentEndpoint.AuthorizationSchemes, 1)
+	require.Equal(
+		t,
+		agent_api.AgentEndpointAuthSchemeBotServiceRbac,
+		prep.request.AgentEndpoint.AuthorizationSchemes[0].Type,
+	)
 }
 
 func TestValidateRegistryConnectionDefinition(t *testing.T) {

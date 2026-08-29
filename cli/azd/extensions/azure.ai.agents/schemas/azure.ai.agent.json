@@ -248,6 +248,45 @@
       }
     },
     {
+      "$comment": "Optional permission scopes and access boundaries apply only to Digital Workers. An omitted activity.useCase defaults to simple.",
+      "if": {
+        "properties": {
+          "activity": {
+            "anyOf": [
+              {
+                "properties": {
+                  "useCase": { "const": "simple" }
+                },
+                "required": ["useCase"]
+              },
+              {
+                "not": {
+                  "required": ["useCase"]
+                }
+              }
+            ]
+          }
+        },
+        "required": ["activity"]
+      },
+      "then": {
+        "properties": {
+          "activity": {
+            "properties": {
+              "publish": {
+                "not": {
+                  "anyOf": [
+                    { "required": ["optionalPermissionScopes"] },
+                    { "required": ["accessBoundaries"] }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "$comment": "A registry connection applies only to a hosted container agent, not code or managed voice deploy.",
       "if": {
         "required": ["registryConnectionId"]

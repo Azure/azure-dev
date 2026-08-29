@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1183,6 +1184,68 @@ func setupContainerRegistryMocks(mockContext *mocks.MockContext, mockContainerRe
 		Return(nil)
 }
 
+func Test_ContainerHelper_RunDotnetPublish_UsesIsolatedArtifacts(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.CommandRunner.MockToolInPath("docker", nil)
+
+	var publishArgs exec.RunArgs
+	mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "dotnet" && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).Respond(exec.NewRunResult(0, "8.0.100", ""))
+	mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "dotnet" && len(args.Args) > 0 && args.Args[0] == "publish"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		publishArgs = args
+		return exec.NewRunResult(0, `{"config":{"ExposedPorts":{"8080/tcp":{}}}}`, ""), nil
+	})
+
+	registryService := &mockContainerRegistryService{}
+	registryService.On(
+		"Credentials",
+		mock.Anything,
+		"SUBSCRIPTION_ID",
+		"contoso.azurecr.io",
+	).Return(&azapi.DockerCredentials{
+		Username:    "user",
+		Password:    "password",
+		LoginServer: "contoso.azurecr.io",
+	}, nil)
+
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
+	containerHelper := NewContainerHelper(
+		clock.NewMock(),
+		registryService,
+		nil,
+		mockContext.CommandRunner,
+		docker.NewCli(mockContext.CommandRunner),
+		dotNetCli,
+		mockContext.Console,
+		cloud.AzurePublic(),
+	)
+	env := environment.NewWithValues("dev", map[string]string{
+		environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
+	})
+	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageCsharp)
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"CONTAINER_APP",
+		"Microsoft.App/containerApps",
+	)
+	ctx := ContextWithBuildGate(*mockContext.Context, &sync.Mutex{})
+
+	remoteImage, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (string, error) {
+		return containerHelper.runDotnetPublish(ctx, serviceConfig, targetResource, env, progress)
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "contoso.azurecr.io/test-app/api-dev:azd-deploy-0", remoteImage)
+	artifactsPath := dotnetArtifactsPathArg(publishArgs.Args)
+	require.NotEmpty(t, artifactsPath)
+	_, statErr := os.Stat(artifactsPath)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
 func setupDockerMocks(mockContext *mocks.MockContext) map[string]exec.RunArgs {
 	mockResults := map[string]exec.RunArgs{}
 
@@ -1244,6 +1307,15 @@ func setupDockerMocks(mockContext *mocks.MockContext) map[string]exec.RunArgs {
 	})
 
 	return mockResults
+}
+
+func dotnetArtifactsPathArg(args []string) string {
+	for i, arg := range args {
+		if arg == "--artifacts-path" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 type mockContainerRegistryService struct {

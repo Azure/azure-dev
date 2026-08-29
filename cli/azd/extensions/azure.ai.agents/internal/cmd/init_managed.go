@@ -206,17 +206,13 @@ func runInitManaged(
 		flags.model = manifest.model()
 	}
 
-	// The harness base URL is where the agent runtime lives (env-overridable).
-	// Independently of that, the prompt-agent init experience mirrors hosted:
+	// The prompt-agent init experience mirrors hosted:
 	// we always walk subscription -> Foundry project -> model so the workspace
 	// tuple and model endpoint come from a real project. In --no-prompt the
 	// same walk runs unattended, resolving each step from flags and the azd
 	// environment (AZURE_SUBSCRIPTION_ID, AZURE_LOCATION, --project-id,
 	// --model-deployment, --model) instead of prompting.
 	settings := project.DefaultPromptAgentSettings()
-	if envBaseURL := strings.TrimSpace(os.Getenv(project.PromptBaseURLEnvVar)); envBaseURL != "" {
-		settings.BaseURL = envBaseURL
-	}
 
 	// Decide where the project lives and where the agent.yaml goes within it.
 	// When an azd project already exists in the cwd we add the agent as a new
@@ -747,8 +743,6 @@ func promptScaffoldHarness(harnessType string, manifest *promptAgentManifest) *a
 // from a fresh init:
 //
 //   - skills/        — add one subfolder per skill (each with a SKILL.md).
-//   - vector-assets/ — drop documents here to ground the agent; deploy uploads
-//     them to a vector store and attaches a file_search tool.
 //
 // The empty folders are kept with a .gitkeep placeholder. The deploy scanners
 // ignore dotfiles, so .gitkeep never contributes content.
@@ -756,7 +750,7 @@ func promptScaffoldHarness(harnessType string, manifest *promptAgentManifest) *a
 // Instructions are not scaffolded here: they are written inline into
 // agent.yaml, matching the prompt-agent API schema.
 func scaffoldPromptConventionFolders(targetDir string) error {
-	for _, sub := range []string{"skills", "vector-assets"} {
+	for _, sub := range []string{"skills"} {
 		dir := filepath.Join(targetDir, sub)
 		if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {
 			return fmt.Errorf("creating %s folder: %w", sub, err)
@@ -789,11 +783,8 @@ func printManagedInitSummary(
 	if harness != "" {
 		fmt.Printf("  Harness:       %s\n", harness)
 	}
-	fmt.Printf("  Harness URL:   %s\n", settings.BaseURL)
-	// Surface the resolved Foundry target when it isn't the local-dev default
-	// (i.e. the guided subscription -> project -> model path ran).
-	if settings.Workspace != project.DefaultPromptWorkspace {
-		fmt.Printf("  Workspace:     %s\n", settings.Workspace)
+	if settings.ProjectEndpoint != "" {
+		fmt.Printf("  Project:       %s\n", settings.ProjectEndpoint)
 	}
 	if settings.ModelEndpoint != "" && settings.ModelEndpoint != project.DefaultPromptModelEndpoint {
 		fmt.Printf("  Model endpoint: %s\n", settings.ModelEndpoint)
@@ -808,7 +799,6 @@ func printManagedInitSummary(
 	fmt.Println("Authoring layout (edit these to add capabilities):")
 	fmt.Printf("  %s%-16s the agent's instructions\n", dirPrefix, "agent.yaml")
 	fmt.Printf("  %s%-16s add a subfolder per skill (each with a SKILL.md)\n", dirPrefix, "skills/")
-	fmt.Printf("  %s%-16s drop documents here to ground the agent\n", dirPrefix, "vector-assets/")
 
 	fmt.Println()
 	fmt.Println("Next steps:")

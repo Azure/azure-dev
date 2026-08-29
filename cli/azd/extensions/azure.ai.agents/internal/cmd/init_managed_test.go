@@ -16,8 +16,8 @@ func TestScaffoldPromptConventionFolders_CreatesLayout(t *testing.T) {
 		t.Fatalf("scaffoldPromptConventionFolders: %v", err)
 	}
 
-	// skills/ and vector-assets/ exist with a .gitkeep placeholder.
-	for _, sub := range []string{"skills", "vector-assets"} {
+	// skills/ exists with a .gitkeep placeholder.
+	for _, sub := range []string{"skills"} {
 		info, statErr := os.Stat(filepath.Join(dir, sub))
 		if statErr != nil || !info.IsDir() {
 			t.Errorf("%s/ should be a directory: %v", sub, statErr)

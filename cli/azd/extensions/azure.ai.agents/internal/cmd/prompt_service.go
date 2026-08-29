@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,18 +178,11 @@ func (p *promptServiceContext) AgentName() string {
 // state (the last response id) for this prompt service. It mirrors the hosted
 // key scheme (buildAgentKey) so lookups and cleanup share one code path.
 func (p *promptServiceContext) agentKey(agentName string) string {
-	endpoint := strings.TrimSpace(p.Settings.ProjectEndpoint)
-	if endpoint == "" {
-		endpoint = fmt.Sprintf(
-			"%s/%s/%s",
-			p.Settings.SubscriptionID, p.Settings.ResourceGroup, p.Settings.Workspace,
-		)
-	}
-	return buildAgentKey(endpoint, agentName, "", false)
+	return buildAgentKey(strings.TrimSpace(p.Settings.ProjectEndpoint), agentName, "", false)
 }
 
 // newClient builds a harness client for the resolved prompt service.
-func (p *promptServiceContext) newClient() (*agent_api.ManagedAgentClient, error) {
+func (p *promptServiceContext) newClient() (*agent_api.AgentClient, error) {
 	return project.NewPromptAgentClient(p.Settings)
 }
 

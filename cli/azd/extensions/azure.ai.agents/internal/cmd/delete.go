@@ -250,7 +250,6 @@ func (a *DeleteAction) cleanupEnvVars(
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
-		fmt.Sprintf("AGENT_%s_VECTOR_STORE_ID", serviceKey),
 		envkey.AgentProjectEndpoint(serviceName),
 	}
 	for _, protocol := range project.DisplayableProtocolEnvSuffixes() {

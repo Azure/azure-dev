@@ -112,7 +112,7 @@ func (a *ListAction) Run(ctx context.Context) error {
 // printPromptListTable renders a concise table of prompt agents.
 func printPromptListTable(list *agent_api.AgentList, settings *project.PromptAgentSettings) {
 	if list == nil || len(list.Data) == 0 {
-		fmt.Printf("No prompt agents found on %s.\n", settings.BaseURL)
+		fmt.Printf("No prompt agents found on %s.\n", settings.ProjectEndpoint)
 		return
 	}
 

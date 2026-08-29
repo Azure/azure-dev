@@ -217,7 +217,7 @@ func (s *PromptAgentSettings) ApplyEnvOverrides() {
 // NewPromptAgentClient constructs the unified project-scoped agent client.
 func NewPromptAgentClient(
 	settings *PromptAgentSettings,
-	credential azcore.TokenCredential,
+	credentials ...azcore.TokenCredential,
 ) (*agent_api.AgentClient, error) {
 	if settings == nil {
 		return nil, fmt.Errorf("NewPromptAgentClient: settings is nil")
@@ -234,6 +234,12 @@ func NewPromptAgentClient(
 			"a Foundry project endpoint is required for prompt agent operations",
 			"run `azd up` to provision a Foundry project",
 		)
+	}
+	var credential azcore.TokenCredential
+	if len(credentials) > 0 {
+		credential = credentials[0]
+	} else {
+		credential = promptCredential("")
 	}
 	return agent_api.NewAgentClient(projectEndpoint, credential), nil
 }

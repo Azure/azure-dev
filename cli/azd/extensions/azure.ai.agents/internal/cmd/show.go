@@ -409,15 +409,12 @@ func displayHarness(harness string) string {
 }
 
 // promptAgentEndpoint returns the Foundry project endpoint the prompt agent is
-// served from, falling back to the harness base URL when unset.
+// served from.
 func promptAgentEndpoint(settings *projectpkg.PromptAgentSettings) string {
 	if settings == nil {
 		return ""
 	}
-	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
-		return pe
-	}
-	return strings.TrimSpace(settings.BaseURL)
+	return strings.TrimSpace(settings.ProjectEndpoint)
 }
 
 // printPromptToolboxTools lists the mcp/toolbox tools attached to the deployed

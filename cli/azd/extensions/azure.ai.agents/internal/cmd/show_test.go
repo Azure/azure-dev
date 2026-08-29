@@ -538,9 +538,6 @@ func TestPromptAgentEndpoint(t *testing.T) {
 	assert.Equal(t, "https://proj/api/projects/p", promptAgentEndpoint(
 		&projectpkg.PromptAgentSettings{ProjectEndpoint: "https://proj/api/projects/p"},
 	))
-	// Falls back to BaseURL when ProjectEndpoint is unset.
-	assert.Equal(t, "https://ai.azure.com/api", promptAgentEndpoint(
-		&projectpkg.PromptAgentSettings{BaseURL: "https://ai.azure.com/api"},
-	))
+	assert.Equal(t, "", promptAgentEndpoint(&projectpkg.PromptAgentSettings{}))
 	assert.Equal(t, "", promptAgentEndpoint(nil))
 }

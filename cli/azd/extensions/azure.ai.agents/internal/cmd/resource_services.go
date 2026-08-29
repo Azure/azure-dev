@@ -57,12 +57,6 @@ const (
 	// azure.ai.project service. Synthesize expands it before deciding
 	// brownfield vs greenfield, so an unset variable resolves to "" (greenfield).
 	projectEndpointRef = "${" + projectEndpointEnvVar + "}"
-
-	// projectWorkspaceEnvVar carries the AML workspace name backing the Foundry
-	// project (<account>@<project>@AML). The managed control plane's agent
-	// routes are workspace-scoped, so the deploy path reads it from the azd
-	// environment rather than from azure.yaml.
-	projectWorkspaceEnvVar = "AZURE_AI_WORKSPACE"
 )
 
 // promptResourceServices derives the sibling Foundry services a prompt or
@@ -89,15 +83,11 @@ func promptResourceServices(
 ) (foundryResources, error) {
 	resources := foundryResources{}
 
-	for _, conn := range promptAgent.Connections {
-		resources.Connections = append(resources.Connections, project.Connection{
-			Name:        conn.Name,
-			Category:    conn.Category,
-			Target:      conn.Target,
-			AuthType:    conn.AuthType,
-			Credentials: conn.Credentials,
-			Metadata:    conn.Metadata,
-		})
+	for _, connection := range promptAgent.Connections {
+		name := sanitizeServiceName(connection)
+		if name != "" && serviceHasHost(ctx, azdClient, name, AiConnectionHost) {
+			resources.ExtraUses = append(resources.ExtraUses, name)
+		}
 	}
 
 	bundles, err := project.ScanSkillBundles(serviceRelPath)
@@ -118,6 +108,12 @@ func promptResourceServices(
 	if promptAgent.Toolbox != nil {
 		name := sanitizeServiceName(promptAgent.Toolbox.Name)
 		if name != "" && serviceHasHost(ctx, azdClient, name, AiToolboxHost) {
+			resources.ExtraUses = append(resources.ExtraUses, name)
+		}
+	}
+	if promptAgent.Toolbox != nil {
+		name := sanitizeServiceName(promptAgent.Toolbox.Connection)
+		if name != "" && serviceHasHost(ctx, azdClient, name, AiConnectionHost) {
 			resources.ExtraUses = append(resources.ExtraUses, name)
 		}
 	}
@@ -362,8 +358,8 @@ func existingProjectServiceKey(ctx context.Context, azdClient *azdext.AzdClient)
 }
 
 // recordFoundryProjectEnv stores the concrete Foundry project coordinates that
-// azure.yaml only references by name -- the data-plane endpoint and the backing
-// AML workspace -- in the azd environment, and returns the portable ${VAR}
+// azure.yaml only references by name -- the data-plane endpoint -- in the azd
+// environment, and returns the portable ${VAR}
 // reference to write as endpoint: on the project service.
 //
 // A nil or incomplete project (the "create a new project" path) writes nothing
@@ -380,12 +376,6 @@ func recordFoundryProjectEnv(
 	}
 	if err := setEnvValue(ctx, azdClient, envName, projectEndpointEnvVar, endpoint); err != nil {
 		return "", fmt.Errorf("recording %s: %w", projectEndpointEnvVar, err)
-	}
-	// Managed agent CRUD routes are workspace-scoped; for Foundry projects the
-	// backing AML workspace name is <account>@<project>@AML.
-	workspace := fmt.Sprintf("%s@%s@AML", foundryProject.AccountName, foundryProject.ProjectName)
-	if err := setEnvValue(ctx, azdClient, envName, projectWorkspaceEnvVar, workspace); err != nil {
-		return "", fmt.Errorf("recording %s: %w", projectWorkspaceEnvVar, err)
 	}
 	return projectEndpointRef, nil
 }

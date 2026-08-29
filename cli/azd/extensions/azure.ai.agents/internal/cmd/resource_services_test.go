@@ -706,17 +706,13 @@ func TestPromptResourceServices(t *testing.T) {
 
 		client := newProjectRecorderClient(t, &recordingProjectServer{})
 		agent := &agent_yaml.PromptAgent{
-			Connections: []agent_yaml.PromptConnection{
-				{Name: "search", Category: "CognitiveSearch", Target: "https://example"},
-			},
+			Connections: []string{"search"},
 		}
 
 		got, err := promptResourceServices(t.Context(), client, agent, dir)
 		require.NoError(t, err)
 
-		require.Len(t, got.Connections, 1)
-		assert.Equal(t, "search", got.Connections[0].Name)
-		assert.Equal(t, "CognitiveSearch", got.Connections[0].Category)
+		require.Empty(t, got.Connections)
 
 		// archive: points at the bundle folder so the whole bundle -- scripts and
 		// references included -- travels with the instructions.

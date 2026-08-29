@@ -105,8 +105,8 @@ func resolvePromptHarnessTarget(
 		if err := updatePendingProjectSignal(ctx, azdClient, env.Name, false); err != nil {
 			log.Printf("warning: failed to update project provision signal: %v", err)
 		}
-		// A new project is provisioned by `azd up`; the harness workspace tuple
-		// is filled from the provisioned env values at deploy time (overlay).
+		// A new project is provisioned by `azd up`; its endpoint is resolved from
+		// the provisioned environment at deploy time.
 		deployment, err := resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
 		return deployment, nil, cred, err
 	}
@@ -115,7 +115,6 @@ func resolvePromptHarnessTarget(
 	// from the project (no location prompt).
 	settings.SubscriptionID = proj.SubscriptionId
 	settings.ResourceGroup = proj.ResourceGroupName
-	settings.Workspace = proj.ProjectName
 	settings.ModelEndpoint = fmt.Sprintf("https://%s.services.ai.azure.com", proj.AccountName)
 	// Record the Foundry project data-plane endpoint so all managed agent
 	// operations route to https://<account>.services.ai.azure.com/api/projects/<project>/agents.

@@ -12,18 +12,15 @@ import (
 	"net/url"
 	"os"
 	"runtime/debug"
-	"slices"
 	"strings"
 	"time"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -133,7 +130,6 @@ func promptAgentSettingsFromEnv(env map[string]string) *PromptAgentSettings {
 	return &PromptAgentSettings{
 		SubscriptionID:  strings.TrimSpace(env["AZURE_SUBSCRIPTION_ID"]),
 		ResourceGroup:   strings.TrimSpace(env["AZURE_RESOURCE_GROUP"]),
-		Workspace:       strings.TrimSpace(env["AZURE_AI_WORKSPACE"]),
 		ProjectEndpoint: strings.TrimSpace(env["AZURE_AI_PROJECT_ENDPOINT"]),
 	}
 }
@@ -157,10 +153,8 @@ func expandPromptAgentSettings(
 	}
 	expanded := *src
 	for name, field := range map[string]*string{
-		"baseUrl":         &expanded.BaseURL,
 		"subscriptionId":  &expanded.SubscriptionID,
 		"resourceGroup":   &expanded.ResourceGroup,
-		"workspace":       &expanded.Workspace,
 		"projectEndpoint": &expanded.ProjectEndpoint,
 		"apiVersion":      &expanded.APIVersion,
 		"modelEndpoint":   &expanded.ModelEndpoint,
@@ -449,11 +443,8 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	// The azd environment is read before the settings because azure.yaml states
 	// the promptAgent block as ${VAR} references that resolve against it.
 	//
-	// A failed env read is fatal: skipping it would also skip
-	// ResolvePromptTargetFromEnv and its AZURE_AI_PROJECT_ID validation, leaving
-	// the placeholder tuple in place so the create call goes out against a
-	// workspace that never existed and the user sees WorkspaceNotFound instead of
-	// the real cause.
+	// A failed env read is fatal because the provisioned Foundry project endpoint
+	// is resolved from this environment.
 	env, err := p.azdEnvValues(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("reading the azd environment: %w", err)
@@ -471,53 +462,15 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		return nil, err
 	}
 
-	// Overlay the provisioned Foundry project values from the azd environment
-	// onto any settings still at their default placeholder. This makes the
-	// "create a new Foundry project" init path work: `azd up` provisions the
-	// project, and the deploy targets it. The overlay is a no-op unless the azd
-	// environment actually holds a resolved project (AZURE_AI_PROJECT_NAME),
-	// so the local-dev fake tuple is preserved when no project was provisioned.
-
-	projectScopedTarget := false
-	mappedFromProjectID, mapErr := ResolvePromptTargetFromEnv(settings, env)
-	if mapErr != nil {
+	if _, mapErr := ResolvePromptTargetFromEnv(settings, env); mapErr != nil {
 		return nil, mapErr
 	}
-	projectScopedTarget = mappedFromProjectID
-	if projectScopedTarget {
-		fmt.Fprintf(
-			os.Stderr,
-			"Resolved managed prompt target from AZURE_AI_PROJECT_ID: subscription=%q resourceGroup=%q workspace=%q.\n",
-			settings.SubscriptionID,
-			settings.ResourceGroup,
-			settings.Workspace,
+	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeInvalidServiceConfig,
+			"a Foundry project endpoint is required to deploy a prompt agent",
+			"run `azd provision` to create the Foundry project",
 		)
-	}
-
-	// When the service already has an explicit non-placeholder workspace,
-	// trust it and avoid the RG-wide discovery path entirely.
-	workspaceKnown := strings.TrimSpace(settings.Workspace) != "" &&
-		settings.Workspace != DefaultPromptWorkspace
-
-	if !workspaceKnown && !projectScopedTarget {
-		if ws, ok := p.resolvePromptWorkspaceFromAzure(ctx, settings, env); ok {
-			if !strings.EqualFold(ws, settings.Workspace) {
-				fmt.Fprintf(os.Stderr, "Resolved prompt workspace to %q (was %q).\n", ws, settings.Workspace)
-				settings.Workspace = ws
-			}
-		} else {
-			// No AML workspace found — provision one. The managed harness API
-			// requires Microsoft.MachineLearningServices/workspaces/{name} to exist.
-			if progress != nil {
-				progress(fmt.Sprintf("Workspace %q not found; provisioning an AML workspace now", settings.Workspace))
-			}
-			if createErr := ensurePromptWorkspaceExists(ctx, settings, env, progress); createErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: AML workspace provisioning failed: %v\n", createErr)
-			}
-		}
-	} else if workspaceKnown && !projectScopedTarget {
-		// Keep the explicit workspace from azure.yaml / env and skip discovery.
-		fmt.Fprintf(os.Stderr, "Using configured prompt workspace %q.\n", settings.Workspace)
 	}
 
 	// Resolve the prompt agent's dependency graph. This validates the whole
@@ -546,28 +499,15 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	if progress != nil {
 		progress("Creating prompt agent on the harness")
 	}
-	headers := map[string]string{
-		"x-model-endpoint": settings.EffectiveModelEndpoint(),
-	}
+	headers := promptAgentRequestHeaders(&managed, settings)
 	agent, err := p.createOrUpdatePromptAgent(ctx, client, request, settings, headers)
-	if err != nil && isWorkspaceNotFoundError(err) && !projectScopedTarget {
-		// Workspace provisioning may not have finished or may have raced; retry once.
-		if env2, envErr2 := p.azdEnvValues(ctx); envErr2 == nil {
-			if createErr := ensurePromptWorkspaceExists(ctx, settings, env2, progress); createErr == nil {
-				fmt.Fprintf(os.Stderr, "Retrying agent creation after workspace provisioning.\n")
-				if client2, clientErr := NewPromptAgentClient(settings); clientErr == nil {
-					agent, err = p.createOrUpdatePromptAgent(ctx, client2, request, settings, headers)
-				}
-			}
-		}
-	}
 	if err != nil {
 		return nil, promptCreateError(err, &managed)
 	}
 
 	latest := agent.Versions.Latest
 	if latest.Status != "active" {
-		polled, pollErr := p.waitForPromptAgentActive(ctx, client, request.Name, settings, progress)
+		polled, pollErr := p.waitForPromptAgentActive(ctx, client, request.Name, settings, headers, progress)
 		if pollErr != nil {
 			return nil, pollErr
 		}
@@ -584,6 +524,17 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		progress("Prompt agent deployed")
 	}
 	return &azdext.ServiceDeployResult{}, nil
+}
+
+func promptAgentRequestHeaders(
+	managed *agent_yaml.PromptAgent,
+	settings *PromptAgentSettings,
+) map[string]string {
+	headers := map[string]string{"x-model-endpoint": settings.EffectiveModelEndpoint()}
+	if managed != nil && managed.HarnessType() == agent_api.ManagedAgentHarnessGitHubCopilot {
+		headers["Foundry-Features"] = "GitHubCopilot=V1Preview"
+	}
+	return headers
 }
 
 // ProjectEndpointAPIVersion is the api-version used by the Foundry project
@@ -688,19 +639,12 @@ func overlayPromptSettingsFromProjectResourceID(settings *PromptAgentSettings, e
 	if parsedResource.Parent != nil {
 		accountName := strings.TrimSpace(parsedResource.Parent.Name)
 		if accountName != "" {
-			// Managed CreateAgent routes are workspace-scoped. For Foundry projects,
-			// the backing AML workspace name follows: <account>@<project>@AML.
-			settings.Workspace = fmt.Sprintf("%s@%s@AML", accountName, parsedResource.Name)
 			sameAsDefault := strings.TrimSpace(settings.ModelEndpoint) == "" ||
 				strings.EqualFold(strings.TrimSpace(settings.ModelEndpoint), DefaultPromptModelEndpoint)
 			if sameAsDefault {
 				settings.ModelEndpoint = fmt.Sprintf("https://%s.services.ai.azure.com", accountName)
 			}
-		} else {
-			settings.Workspace = parsedResource.Name
 		}
-	} else {
-		settings.Workspace = parsedResource.Name
 	}
 
 	return true, nil
@@ -714,6 +658,7 @@ func (p *AgentServiceTargetProvider) waitForPromptAgentActive(
 	client *agent_api.AgentClient,
 	agentName string,
 	settings *PromptAgentSettings,
+	headers map[string]string,
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
 	const pollInterval = 5 * time.Second
@@ -738,7 +683,7 @@ func (p *AgentServiceTargetProvider) waitForPromptAgentActive(
 			progress(fmt.Sprintf("Polling prompt agent status (attempt %d)", attempt))
 		}
 
-		agent, err := client.GetAgent(ctx, agentName, settings.EffectiveAPIVersion())
+		agent, err := client.GetAgentWithHeaders(ctx, agentName, settings.EffectiveAPIVersion(), headers)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
 			continue
@@ -795,9 +740,6 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey):  version,
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey): endpoint,
 	}
-	if storeID, ok := bindings[vectorStoreBindingKey].(string); ok && strings.TrimSpace(storeID) != "" {
-		envVars[fmt.Sprintf("AGENT_%s_VECTOR_STORE_ID", serviceKey)] = storeID
-	}
 	if storeName, ok := bindings[memoryStoreBindingKey].(string); ok && strings.TrimSpace(storeName) != "" {
 		envVars[fmt.Sprintf("AGENT_%s_MEMORY_STORE_NAME", serviceKey)] = storeName
 	}
@@ -844,122 +786,6 @@ func (p *AgentServiceTargetProvider) azdEnvValues(ctx context.Context) (map[stri
 		values[kv.Key] = kv.Value
 	}
 	return values, nil
-}
-
-// resolvePromptWorkspaceFromAzure discovers a valid AML workspace name for
-// managed prompt routes from the target resource group.
-//
-// Selection order:
-//  1. Keep the configured workspace when it already exists.
-//  2. Prefer env-derived candidates that exist (project/account names).
-//  3. Use the only workspace in the RG when exactly one exists.
-func (p *AgentServiceTargetProvider) resolvePromptWorkspaceFromAzure(
-	ctx context.Context,
-	settings *PromptAgentSettings,
-	env map[string]string,
-) (string, bool) {
-	// No panic recovery here on purpose. A panic in discovery used to be
-	// converted into ("", false), which the caller cannot tell apart from "no
-	// workspace exists" -- so a crash silently became a request to provision a
-	// new workspace. It masked a nil credential reaching armresources.NewClient
-	// for the entire life of this function. deployPromptAgent already recovers
-	// at the RPC boundary and reports the panic as a deploy error.
-
-	if settings == nil {
-		return "", false
-	}
-
-	// Prompt agents skip the hosted credential-init path so p.credential is nil.
-	// Fall back to the prompt harness credential so workspace discovery works.
-	//
-	// The nil check is on the concrete pointer, not on the interface. Assigning a
-	// nil *AzureDeveloperCLICredential into azcore.TokenCredential produces an
-	// interface that is non-nil but carries a nil pointer, so comparing the
-	// interface to nil never succeeds and the fallback below never runs.
-	var cred azcore.TokenCredential
-	if p.credential != nil {
-		cred = p.credential
-	}
-	if cred == nil {
-		cred = promptCredential()
-	}
-	if cred == nil {
-		return "", false
-	}
-
-	resourcesClient, err := armresources.NewClient(settings.SubscriptionID, cred, azure.NewArmClientOptions())
-	if err != nil {
-		return "", false
-	}
-
-	pager := resourcesClient.NewListByResourceGroupPager(settings.ResourceGroup, &armresources.ClientListByResourceGroupOptions{
-		Filter: new("resourceType eq 'Microsoft.MachineLearningServices/workspaces'"),
-	})
-
-	workspaceNames := []string{}
-	for pager.More() {
-		page, pageErr := pager.NextPage(ctx)
-		if pageErr != nil {
-			return "", false
-		}
-		for _, resource := range page.Value {
-			if resource == nil || resource.Name == nil {
-				continue
-			}
-			name := strings.TrimSpace(*resource.Name)
-			if name == "" {
-				continue
-			}
-			workspaceNames = append(workspaceNames, name)
-		}
-	}
-
-	if len(workspaceNames) == 0 {
-		return "", false
-	}
-
-	containsFold := func(target string) bool {
-		return slices.ContainsFunc(workspaceNames, func(n string) bool { return strings.EqualFold(n, strings.TrimSpace(target)) })
-	}
-
-	if containsFold(settings.Workspace) {
-		return settings.Workspace, true
-	}
-
-	candidates := []string{
-		strings.TrimSpace(env["AZURE_AI_PROJECT_NAME"]),
-		strings.TrimSpace(env["AZURE_AI_ACCOUNT_NAME"]),
-	}
-	for _, candidate := range candidates {
-		if candidate == "" {
-			continue
-		}
-		if containsFold(candidate) {
-			return candidate, true
-		}
-	}
-
-	if len(workspaceNames) == 1 {
-		return workspaceNames[0], true
-	}
-
-	return "", false
-}
-
-func isWorkspaceNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-		if strings.EqualFold(strings.TrimSpace(respErr.ErrorCode), "WorkspaceNotFound") {
-			return true
-		}
-	}
-
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "workspacenotfound") ||
-		strings.Contains(msg, "workspace not found")
 }
 
 // isAgentConflictError reports whether err is a 409 Conflict from the managed

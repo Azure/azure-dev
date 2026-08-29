@@ -6,7 +6,6 @@ package project
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -25,7 +24,6 @@ const (
 	nodeDeployment  promptNodeKind = "deployment"
 	nodeConnection  promptNodeKind = "connection"
 	nodeRBAC        promptNodeKind = "rbac"
-	nodeFileStore   promptNodeKind = "file_store"
 	nodeMemoryStore promptNodeKind = "memory_store"
 	nodeSkill       promptNodeKind = "skill"
 	nodeToolbox     promptNodeKind = "toolbox"
@@ -49,12 +47,11 @@ type promptNode struct {
 // validated as a whole, then resolved in registration (dependency) order. None
 // of this machinery is exposed in the YAML.
 type promptGraph struct {
-	// agentDir is the folder holding agent.yaml plus any convention folders
-	// (vector-assets/, skills/).
+	// agentDir is the folder holding agent.yaml plus its skills/ folder.
 	agentDir string
 
 	// managed is the parsed agent definition. Nodes may enrich managed.Tools
-	// with resolved bindings (e.g. a file_search or mcp tool) before publish.
+	// with resolved bindings before publish.
 	managed *agent_yaml.PromptAgent
 
 	// settings holds the resolved harness/connection target for the agent.
@@ -64,7 +61,7 @@ type promptGraph struct {
 	env map[string]string
 
 	// bindings holds symbolic outputs produced by resolved nodes (for example
-	// "vector_store_id" or "toolbox_mcp_url") that later nodes read.
+	// "toolbox_mcp_url") that later nodes read.
 	bindings map[string]any
 
 	// warn reports a non-fatal finding to the user. It is set for the duration
@@ -117,18 +114,6 @@ func newPromptGraph(
 	// has a model to bind to before the agent version is published.
 	if node := deploymentNode(g, func() (deploymentResolver, error) {
 		return provisionedDeploymentResolver{}, nil
-	}); node != nil {
-		g.nodes = append(g.nodes, *node)
-	}
-
-	// Convention: a non-empty vector-assets/ folder contributes a file_search
-	// tool backed by an uploaded vector store.
-	files, err := scanFilesDir(agentDir)
-	if err != nil {
-		return nil, err
-	}
-	if node := fileStoreNode(g, files, func() (vectorStoreBuilder, error) {
-		return newFoundryVectorStoreBuilder(settings)
 	}); node != nil {
 		g.nodes = append(g.nodes, *node)
 	}
@@ -340,26 +325,14 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 	env map[string]string,
 	progress azdext.ProgressReporter,
 ) (map[string]any, error) {
-	// The skills/ and vector-assets/ convention folders sit next to the file
+	// The skills/ convention folder sits next to the file
 	// that supplies the definition. With the definition inline on the service
 	// entry there is no such file, so they are anchored at the service
 	// directory instead — the same place `azd ai agent init` scaffolds them.
 	agentDir := p.servicePath
-	if p.agentDefinitionPath != "" {
-		agentDir = filepath.Dir(p.agentDefinitionPath)
-	}
 	g, err := newPromptGraph(agentDir, managed, settings, env)
 	if err != nil {
 		return nil, err
-	}
-	// Seed the vector store binding from the previous deploy. Without it the
-	// file-store node always mints a new store, orphaning the old store and
-	// every file object it referenced on every single deploy.
-	if p.serviceConfig != nil {
-		key := fmt.Sprintf("AGENT_%s_VECTOR_STORE_ID", p.getServiceKey(p.serviceConfig.Name))
-		if storeID := strings.TrimSpace(env[key]); storeID != "" {
-			g.bindings[vectorStoreBindingKey] = storeID
-		}
 	}
 	if err := g.resolve(ctx, progress); err != nil {
 		return nil, err

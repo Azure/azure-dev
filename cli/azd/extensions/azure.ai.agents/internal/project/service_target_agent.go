@@ -777,27 +777,8 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
 	p.adoptServiceConfig(serviceConfig)
-	// Prompt agents target the managed harness, not an ARM Foundry project.
-	// Synthesize a target resource from the harness workspace tuple so core
-	// azd has something to display without resolving a CognitiveServices
-	// project that does not exist for this flow. Resolve against the azd
-	// environment first so non-guided projects do not display the placeholder
-	// tuple stored in azure.yaml.
 	if p.isPromptAgentService() {
-		settings, err := p.resolvedPromptAgentSettings(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return &azdext.TargetResource{
-			SubscriptionId:    settings.SubscriptionID,
-			ResourceGroupName: settings.ResourceGroup,
-			ResourceName:      settings.Workspace,
-			ResourceType:      "Microsoft.MachineLearningServices/workspaces",
-			Metadata: map[string]string{
-				"workspace": settings.Workspace,
-				"baseUrl":   settings.BaseURL,
-			},
-		}, nil
+		return defaultResolver()
 	}
 
 	if err := p.ensureDeployContext(ctx); err != nil {

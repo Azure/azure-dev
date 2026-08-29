@@ -47,34 +47,3 @@ connections:
 		t.Fatalf("round-tripped connections: got %d, want 2", len(again.Connections))
 	}
 }
-
-// TestExtractResourceDefinitions_FileKind verifies files remain agent-owned.
-func TestExtractResourceDefinitions_FileKind(t *testing.T) {
-	manifest := []byte(`
-name: m
-resources:
-  - kind: file
-    name: handbook
-    path: files/handbook.pdf
-    purpose: assistants
-`)
-
-	resources, err := ExtractResourceDefinitions(manifest)
-	if err != nil {
-		t.Fatalf("ExtractResourceDefinitions: %v", err)
-	}
-	if len(resources) != 1 {
-		t.Fatalf("resources: got %d, want 1", len(resources))
-	}
-
-	file, ok := resources[0].(FileResource)
-	if !ok {
-		t.Fatalf("resource[0]: got %T, want FileResource", resources[0])
-	}
-	if file.Kind != ResourceKindFile || file.Path != "files/handbook.pdf" {
-		t.Errorf("file resource: got %+v", file)
-	}
-	if file.Purpose != "assistants" {
-		t.Errorf("file purpose: got %q", file.Purpose)
-	}
-}

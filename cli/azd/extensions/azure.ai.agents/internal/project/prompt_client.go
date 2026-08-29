@@ -21,10 +21,8 @@ import (
 // the azure.yaml service config so developers can temporarily retarget the
 // harness without editing the project file.
 const (
-	PromptBaseURLEnvVar         = "AZD_MANAGED_AGENT_BASE_URL"
 	PromptSubscriptionEnvVar    = "AZD_MANAGED_AGENT_SUBSCRIPTION_ID"
 	PromptResourceGroupEnvVar   = "AZD_MANAGED_AGENT_RESOURCE_GROUP"
-	PromptWorkspaceEnvVar       = "AZD_MANAGED_AGENT_WORKSPACE"
 	PromptProjectEndpointEnvVar = "AZD_MANAGED_AGENT_PROJECT_ENDPOINT"
 	PromptAPIVersionEnvVar      = "AZD_MANAGED_AGENT_API_VERSION"
 	PromptModelEndpointEnvVar   = "AZD_MANAGED_AGENT_MODEL_ENDPOINT"
@@ -34,18 +32,9 @@ const (
 	PromptNoAuthEnvVar = "AZD_MANAGED_AGENT_NO_AUTH"
 )
 
-// DefaultPromptBaseURL is the public managed prompt-agent control plane base
-// URL prefix. The deploy path appends /<region> (from AZURE_LOCATION) when
-// this default is still in use.
-const DefaultPromptBaseURL = "https://ai.azure.com/api"
-
-// Default ARM workspace tuple placeholders used when prompt init runs in
-// non-guided mode. Guided init and env overlays replace these with real
-// provisioned values.
 const (
 	DefaultPromptSubscriptionID = "00000000-0000-0000-0000-000000000001"
 	DefaultPromptResourceGroup  = "test-rg"
-	DefaultPromptWorkspace      = "test-ws"
 )
 
 // DefaultPromptAPIVersion is the api-version query parameter sent on every
@@ -77,17 +66,11 @@ const DefaultPromptModelEndpoint = "https://va-dev-fdp-resource.services.ai.azur
 // information but looks like configuration a developer must fill in, and
 // overlay() treats an empty value as "not configured" in either case.
 type PromptAgentSettings struct {
-	// BaseURL is the harness origin (scheme + host [+ port]).
-	BaseURL string `json:"baseUrl,omitempty"`
-
 	// SubscriptionID is the Azure subscription containing the workspace.
 	SubscriptionID string `json:"subscriptionId,omitempty"`
 
 	// ResourceGroup is the Azure resource group containing the workspace.
 	ResourceGroup string `json:"resourceGroup,omitempty"`
-
-	// Workspace is the Azure ML / Foundry workspace name.
-	Workspace string `json:"workspace,omitempty"`
 
 	// ProjectEndpoint is the Foundry project data-plane root
 	// (https://<account>.services.ai.azure.com/api/projects/<project>). When set,
@@ -112,10 +95,8 @@ type PromptAgentSettings struct {
 // non-guided init.
 func DefaultPromptAgentSettings() PromptAgentSettings {
 	return PromptAgentSettings{
-		BaseURL:        DefaultPromptBaseURL,
 		SubscriptionID: DefaultPromptSubscriptionID,
 		ResourceGroup:  DefaultPromptResourceGroup,
-		Workspace:      DefaultPromptWorkspace,
 		APIVersion:     DefaultPromptAPIVersion,
 		ModelEndpoint:  DefaultPromptModelEndpoint,
 	}
@@ -133,10 +114,8 @@ func (s *PromptAgentSettings) overlay(src *PromptAgentSettings) {
 		dst *string
 		src string
 	}{
-		{&s.BaseURL, src.BaseURL},
 		{&s.SubscriptionID, src.SubscriptionID},
 		{&s.ResourceGroup, src.ResourceGroup},
-		{&s.Workspace, src.Workspace},
 		{&s.ProjectEndpoint, src.ProjectEndpoint},
 		{&s.APIVersion, src.APIVersion},
 		{&s.ModelEndpoint, src.ModelEndpoint},
@@ -157,17 +136,14 @@ func (s *PromptAgentSettings) Validate() error {
 		)
 	}
 	var missing []string
-	if strings.TrimSpace(s.BaseURL) == "" {
-		missing = append(missing, "baseUrl")
-	}
 	if strings.TrimSpace(s.SubscriptionID) == "" {
 		missing = append(missing, "subscriptionId")
 	}
 	if strings.TrimSpace(s.ResourceGroup) == "" {
 		missing = append(missing, "resourceGroup")
 	}
-	if strings.TrimSpace(s.Workspace) == "" {
-		missing = append(missing, "workspace")
+	if strings.TrimSpace(s.ProjectEndpoint) == "" {
+		missing = append(missing, "projectEndpoint")
 	}
 	if len(missing) > 0 {
 		return exterrors.Validation(
@@ -221,17 +197,11 @@ func (s *PromptAgentSettings) ApplyEnvOverrides() {
 	if s == nil {
 		return
 	}
-	if v := strings.TrimSpace(os.Getenv(PromptBaseURLEnvVar)); v != "" {
-		s.BaseURL = v
-	}
 	if v := strings.TrimSpace(os.Getenv(PromptSubscriptionEnvVar)); v != "" {
 		s.SubscriptionID = v
 	}
 	if v := strings.TrimSpace(os.Getenv(PromptResourceGroupEnvVar)); v != "" {
 		s.ResourceGroup = v
-	}
-	if v := strings.TrimSpace(os.Getenv(PromptWorkspaceEnvVar)); v != "" {
-		s.Workspace = v
 	}
 	if v := strings.TrimSpace(os.Getenv(PromptProjectEndpointEnvVar)); v != "" {
 		s.ProjectEndpoint = v
@@ -272,21 +242,6 @@ func NewPromptAgentClient(settings *PromptAgentSettings) (*agent_api.AgentClient
 //   - management.azure.com uses ARM audience tokens.
 //
 // Local/custom harness endpoints continue to use cognitive-services scope.
-func promptScopesForBaseURL(baseURL string) []string {
-	parsed, err := url.Parse(strings.TrimSpace(baseURL))
-	if err == nil {
-		host := strings.ToLower(parsed.Hostname())
-		if strings.HasSuffix(host, "ai.azure.com") || strings.HasSuffix(host, ".api.azureml.ms") {
-			return []string{"https://ai.azure.com/.default"}
-		}
-		if strings.HasSuffix(host, "management.azure.com") {
-			return []string{"https://management.azure.com/.default"}
-		}
-	}
-
-	return []string{"https://cognitiveservices.azure.com/.default"}
-}
-
 // promptCredential returns the bearer-token credential to attach to harness
 // requests, or nil when AZD_MANAGED_AGENT_NO_AUTH is truthy.
 //
@@ -342,11 +297,6 @@ func (s *PromptAgentSettings) OverlayAzdProjectEnv(env map[string]string) {
 	if s == nil || env == nil {
 		return
 	}
-	if strings.TrimSpace(s.BaseURL) == DefaultPromptBaseURL {
-		if location := strings.ToLower(strings.TrimSpace(env["AZURE_LOCATION"])); location != "" {
-			s.BaseURL = fmt.Sprintf("%s/%s", DefaultPromptBaseURL, location)
-		}
-	}
 	// Gate on a resolved/provisioned project. Without one there is nothing to
 	// overlay and placeholder tuple values must be preserved.
 	if strings.TrimSpace(env["AZURE_AI_PROJECT_NAME"]) == "" {
@@ -360,11 +310,6 @@ func (s *PromptAgentSettings) OverlayAzdProjectEnv(env map[string]string) {
 	if strings.TrimSpace(s.ResourceGroup) == "" || s.ResourceGroup == DefaultPromptResourceGroup {
 		if v := strings.TrimSpace(env["AZURE_RESOURCE_GROUP"]); v != "" {
 			s.ResourceGroup = v
-		}
-	}
-	if strings.TrimSpace(s.Workspace) == "" || s.Workspace == DefaultPromptWorkspace {
-		if v := strings.TrimSpace(env["AZURE_AI_PROJECT_NAME"]); v != "" {
-			s.Workspace = v
 		}
 	}
 	if strings.TrimSpace(s.ModelEndpoint) == "" || s.ModelEndpoint == DefaultPromptModelEndpoint {

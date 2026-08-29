@@ -4,12 +4,12 @@
 package project
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"slices"
 	"strings"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 )
@@ -68,10 +68,8 @@ func policiesNode(g *promptGraph, newLister func() (raiPolicyLister, error)) *pr
 		Resolve: func(ctx context.Context) error {
 			lister, err := newLister()
 			if err != nil {
-				g.warnf("could not verify Responsible AI policies: %v", err)
-				return nil
+				return fmt.Errorf("creating Responsible AI policy client: %w", err)
 			}
-			var dropped []int
 			for _, i := range declared {
 				ref, ok := azure.ParseRaiPolicyResourceID(g.managed.Policies[i].RaiPolicyName)
 				if !ok {
@@ -81,50 +79,19 @@ func policiesNode(g *promptGraph, newLister func() (raiPolicyLister, error)) *pr
 				}
 				existing, err := lister(ctx, ref)
 				if err != nil {
-					// A missing read permission must not block a deploy that
-					// would otherwise succeed: the service is still the
-					// authority on whether the policy is usable.
-					g.warnf(
-						"could not verify Responsible AI policy %q on account %q: %v",
-						ref.PolicyName, ref.AccountName, err,
-					)
-					continue
+					return fmt.Errorf(
+						"verifying Responsible AI policy %q on account %q: %w",
+						ref.PolicyName, ref.AccountName, err)
 				}
 				if raiPolicyPresent(existing, ref.PolicyName) {
 					continue
 				}
-
-				fallback, ok := defaultRaiPolicy(existing)
-				if !ok {
-					dropped = append(dropped, i)
-					g.warnf(
-						"Responsible AI policy %q was not found on Foundry account %q and the account "+
-							"carries no built-in policy to fall back to; publishing without guardrails, "+
-							"which leaves the account's default content filters in force. Point "+
-							"policies[].raiPolicyName in agent.yaml at a policy that exists and redeploy.",
-						ref.PolicyName, ref.AccountName,
-					)
-					continue
-				}
-				g.managed.Policies[i].RaiPolicyName = fallback.ResourceID
-				g.warnf(
-					"Responsible AI policy %q was not found on Foundry account %q; using the built-in "+
-						"%q instead. Point policies[].raiPolicyName in agent.yaml at the policy you "+
-						"want and redeploy, or create it with: az cognitiveservices account rai-policy "+
-						"create --name %s --resource-group %s --rai-policy-name %s",
-					ref.PolicyName, ref.AccountName, fallback.Name,
-					ref.AccountName, ref.ResourceGroup, ref.PolicyName,
+				return exterrors.Dependency(
+					exterrors.CodeRaiPolicyNotFound,
+					fmt.Sprintf("Responsible AI policy %q was not found on Foundry account %q",
+						ref.PolicyName, ref.AccountName),
+					"create the policy or update policies[].raiPolicyName to an existing policy resource ID",
 				)
-			}
-			if len(dropped) > 0 {
-				kept := make([]agent_yaml.Policy, 0, len(g.managed.Policies))
-				for i, policy := range g.managed.Policies {
-					if slices.Contains(dropped, i) {
-						continue
-					}
-					kept = append(kept, policy)
-				}
-				g.managed.Policies = kept
 			}
 			return nil
 		},
@@ -139,49 +106,6 @@ func raiPolicyPresent(policies []azure.RaiPolicyInfo, name string) bool {
 	return slices.ContainsFunc(policies, func(policy azure.RaiPolicyInfo) bool {
 		return strings.EqualFold(policy.Name, name)
 	})
-}
-
-// defaultRaiPolicy picks the policy to substitute when the declared one is not
-// on the account.
-//
-// Only the service-supplied built-ins are eligible. Attaching a policy someone
-// else authored would apply content filters nobody asked for and that azd
-// cannot reason about, whereas the built-ins are the same filters the account
-// already applies to an agent that names no policy.
-func defaultRaiPolicy(policies []azure.RaiPolicyInfo) (azure.RaiPolicyInfo, bool) {
-	builtIn := make([]azure.RaiPolicyInfo, 0, len(policies))
-	for _, policy := range policies {
-		if policy.SystemManaged {
-			builtIn = append(builtIn, policy)
-		}
-	}
-	if len(builtIn) == 0 {
-		return azure.RaiPolicyInfo{}, false
-	}
-	// Newest built-in first, so an account carrying both lands on the current
-	// defaults. Ties break by name so the choice does not vary with the order
-	// the service happened to return.
-	slices.SortFunc(builtIn, func(a, b azure.RaiPolicyInfo) int {
-		if rank := cmp.Compare(raiPolicyRank(a.Name), raiPolicyRank(b.Name)); rank != 0 {
-			return rank
-		}
-		return cmp.Compare(a.Name, b.Name)
-	})
-	return builtIn[0], true
-}
-
-// raiPolicyRank orders the service's built-in policies newest first. Anything
-// unrecognized sorts last rather than being excluded, so an account whose
-// built-ins are renamed still yields a fallback.
-func raiPolicyRank(name string) int {
-	switch {
-	case strings.EqualFold(name, "Microsoft.DefaultV2"):
-		return 0
-	case strings.EqualFold(name, "Microsoft.Default"):
-		return 1
-	default:
-		return 2
-	}
 }
 
 // azureRaiPolicyLister lists the account's policies from ARM using the same

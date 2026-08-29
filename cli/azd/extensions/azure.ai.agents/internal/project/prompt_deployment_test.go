@@ -88,7 +88,7 @@ func TestGraphResolve_ValidatesAllBeforeAnyMutation(t *testing.T) {
 		bindings: map[string]any{},
 		nodes: []promptNode{
 			{
-				Kind:     nodeFileStore,
+				Kind:     nodeMemoryStore,
 				Validate: func() error { return nil },
 				Resolve: func(context.Context) error {
 					resolved++

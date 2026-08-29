@@ -233,7 +233,6 @@ func TestResolvePromptAgentSettingsWithoutConfigBlock(t *testing.T) {
 	env := map[string]string{
 		"AZURE_SUBSCRIPTION_ID":     "sub-1",
 		"AZURE_RESOURCE_GROUP":      "rg-1",
-		"AZURE_AI_WORKSPACE":        "acct@proj@AML",
 		"AZURE_AI_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com/api/projects/p",
 	}
 
@@ -241,9 +240,7 @@ func TestResolvePromptAgentSettingsWithoutConfigBlock(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "sub-1", settings.SubscriptionID)
 	require.Equal(t, "rg-1", settings.ResourceGroup)
-	require.Equal(t, "acct@proj@AML", settings.Workspace)
 	require.Equal(t, "https://proj.services.ai.azure.com/api/projects/p", settings.ProjectEndpoint)
-	require.NotEmpty(t, settings.BaseURL, "base URL comes from the built-in default")
 }
 
 // TestResolvePromptAgentSettingsConfigBlockWins confirms a hand-authored block
@@ -253,9 +250,9 @@ func TestResolvePromptAgentSettingsConfigBlockWins(t *testing.T) {
 	t.Parallel()
 
 	env := map[string]string{
-		"AZURE_SUBSCRIPTION_ID": "sub-from-env",
-		"AZURE_RESOURCE_GROUP":  "rg-from-env",
-		"AZURE_AI_WORKSPACE":    "ws-from-env",
+		"AZURE_SUBSCRIPTION_ID":     "sub-from-env",
+		"AZURE_RESOURCE_GROUP":      "rg-from-env",
+		"AZURE_AI_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com/api/projects/p",
 	}
 	configured := &PromptAgentSettings{
 		ResourceGroup: "rg-pinned",
@@ -276,21 +273,21 @@ func TestResolvePromptAgentSettingsExpandsLegacyRefs(t *testing.T) {
 	t.Parallel()
 
 	env := map[string]string{
-		"AZURE_SUBSCRIPTION_ID": "sub-1",
-		"AZURE_RESOURCE_GROUP":  "rg-1",
-		"AZURE_AI_WORKSPACE":    "ws-1",
+		"AZURE_SUBSCRIPTION_ID":     "sub-1",
+		"AZURE_RESOURCE_GROUP":      "rg-1",
+		"AZURE_AI_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com/api/projects/p",
 	}
 	legacy := &PromptAgentSettings{
-		SubscriptionID: "${AZURE_SUBSCRIPTION_ID}",
-		ResourceGroup:  "${AZURE_RESOURCE_GROUP}",
-		Workspace:      "${AZURE_AI_WORKSPACE}",
+		SubscriptionID:  "${AZURE_SUBSCRIPTION_ID}",
+		ResourceGroup:   "${AZURE_RESOURCE_GROUP}",
+		ProjectEndpoint: "${AZURE_AI_PROJECT_ENDPOINT}",
 	}
 
 	settings, err := ResolvePromptAgentSettings(legacy, env)
 	require.NoError(t, err)
 	require.Equal(t, "sub-1", settings.SubscriptionID)
 	require.Equal(t, "rg-1", settings.ResourceGroup)
-	require.Equal(t, "ws-1", settings.Workspace)
+	require.Equal(t, env["AZURE_AI_PROJECT_ENDPOINT"], settings.ProjectEndpoint)
 }
 
 // TestServiceIsPromptAgent covers both the inline marker and the pre-inline

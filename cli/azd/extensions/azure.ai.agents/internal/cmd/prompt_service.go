@@ -22,6 +22,7 @@ import (
 // (show/invoke/list/delete) need to talk to the harness for a resolved
 // azure.ai.agent service of kind=prompt.
 type promptServiceContext struct {
+	AzdClient   *azdext.AzdClient
 	ServiceName string
 	ServiceDir  string
 	Settings    *project.PromptAgentSettings
@@ -134,6 +135,7 @@ func resolvePromptAgentService(
 	}
 
 	pctx := &promptServiceContext{
+		AzdClient:   azdClient,
 		ServiceName: svc.Name,
 		ServiceDir:  serviceDir,
 		Settings:    settings,
@@ -182,8 +184,12 @@ func (p *promptServiceContext) agentKey(agentName string) string {
 }
 
 // newClient builds a harness client for the resolved prompt service.
-func (p *promptServiceContext) newClient() (*agent_api.AgentClient, error) {
-	return project.NewPromptAgentClient(p.Settings)
+func (p *promptServiceContext) newClient(ctx context.Context) (*agent_api.AgentClient, error) {
+	credential, err := project.ResolvePromptCredential(ctx, p.AzdClient, p.Settings)
+	if err != nil {
+		return nil, err
+	}
+	return project.NewPromptAgentClient(p.Settings, credential)
 }
 
 // promptEnvValues returns the current azd environment as a key/value map. It is

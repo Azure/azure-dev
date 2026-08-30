@@ -635,7 +635,7 @@ func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azde
 			log.Printf("predown: skipping harness delete for %q: %v", svc.Name, err)
 			continue
 		}
-		deletePromptAgentOnDown(ctx, svc, settings, args.Project.Path, envValues)
+		deletePromptAgentOnDown(ctx, azdClient, svc, settings, args.Project.Path, envValues)
 	}
 
 	return nil
@@ -646,6 +646,7 @@ func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azde
 // project should not be blocked by a harness hiccup.
 func deletePromptAgentOnDown(
 	ctx context.Context,
+	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
 	settings *project.PromptAgentSettings,
 	projectPath string,
@@ -680,7 +681,12 @@ func deletePromptAgentOnDown(
 		log.Printf("predown: skipping prompt agent %q because its project ownership marker does not match", agentName)
 		return
 	}
-	client, err := project.NewPromptAgentClient(settings)
+	credential, err := project.ResolvePromptCredential(ctx, azdClient, settings)
+	if err != nil {
+		log.Printf("predown: failed to resolve prompt credential for %q: %v", svc.Name, err)
+		return
+	}
+	client, err := project.NewPromptAgentClient(settings, credential)
 	if err != nil {
 		log.Printf("predown: failed to build harness client for %q: %v", svc.Name, err)
 		return

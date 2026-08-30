@@ -4,6 +4,7 @@
 package project
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -14,7 +15,46 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
+
+// ResolvePromptCredential creates a tenant-aware credential for the Foundry
+// project subscription, matching the prompt deployment path.
+func ResolvePromptCredential(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	settings *PromptAgentSettings,
+) (*azidentity.AzureDeveloperCLICredential, error) {
+	if isTruthyEnvValue(os.Getenv(PromptNoAuthEnvVar)) {
+		return nil, nil
+	}
+	if settings == nil || strings.TrimSpace(settings.SubscriptionID) == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			"AZURE_SUBSCRIPTION_ID is required for prompt agent authentication",
+			"run `azd provision` to resolve the Foundry project subscription",
+		)
+	}
+	tenant, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: settings.SubscriptionID,
+	})
+	if err != nil {
+		return nil, exterrors.Auth(
+			exterrors.CodeTenantLookupFailed,
+			fmt.Sprintf("failed to get tenant for subscription %s: %s", settings.SubscriptionID, err),
+			"verify your Azure login with `azd auth login`",
+		)
+	}
+	credential := promptCredential(tenant.TenantId)
+	if credential == nil {
+		return nil, exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			"failed to create a credential for prompt agent operations",
+			"run `azd auth login` to authenticate",
+		)
+	}
+	return credential, nil
+}
 
 // Environment-variable overrides for the prompt-agent (managed) harness
 // client. When set, these take precedence over the corresponding fields in
@@ -77,7 +117,7 @@ type PromptAgentSettings struct {
 	// it is the authoritative routing target for ALL managed agent operations
 	// (CRUD and Responses) and supersedes the legacy workspace tuple. It is
 	// populated from the interactive init selection or, in --no-prompt flows,
-	// from AZURE_AI_PROJECT_ENDPOINT in the azd environment.
+	// from FOUNDRY_PROJECT_ENDPOINT in the azd environment.
 	ProjectEndpoint string `json:"projectEndpoint,omitempty"`
 
 	// APIVersion is the api-version query parameter sent on every request.

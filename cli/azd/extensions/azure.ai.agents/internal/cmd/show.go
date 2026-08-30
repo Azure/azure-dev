@@ -217,7 +217,7 @@ func (a *ShowAction) Run(ctx context.Context) error {
 // rather than the Foundry agent endpoint.
 func runPromptShow(ctx context.Context, flags *showFlags, pctx *promptServiceContext) error {
 	agentName := pctx.AgentName()
-	client, err := pctx.newClient()
+	client, err := pctx.newClient(ctx)
 	if err != nil {
 		return err
 	}

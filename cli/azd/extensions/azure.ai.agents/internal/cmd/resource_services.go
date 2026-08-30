@@ -51,7 +51,7 @@ const (
 	// azd environment. azure.yaml references it instead of embedding the URL so
 	// the project stays portable: set it to reuse an existing project, leave it
 	// unset to have `azd provision` create a new one.
-	projectEndpointEnvVar = "AZURE_AI_PROJECT_ENDPOINT"
+	projectEndpointEnvVar = "FOUNDRY_PROJECT_ENDPOINT"
 
 	// projectEndpointRef is the portable reference written as endpoint: on the
 	// azure.ai.project service. Synthesize expands it before deciding
@@ -382,7 +382,7 @@ func recordFoundryProjectEnv(
 
 // stampProjectEndpoint writes endpointRef as endpoint: on the existing
 // azure.ai.project service in azure.yaml. Callers pass the portable
-// ${AZURE_AI_PROJECT_ENDPOINT} reference returned by recordFoundryProjectEnv, not
+// ${FOUNDRY_PROJECT_ENDPOINT} reference returned by recordFoundryProjectEnv, not
 // a literal URL. This is a no-op when endpointRef is empty (a new project) or
 // when no azure.ai.project service exists yet.
 func stampProjectEndpoint(ctx context.Context, azdClient *azdext.AzdClient, endpointRef string) error {

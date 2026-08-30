@@ -921,7 +921,7 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 // non-empty projectEndpoint is written as endpoint: on the ai-project service
 // (the brownfield signal provision reads to reuse the project) and that an
 // empty endpoint (new project) leaves the field unset. Callers pass the
-// portable ${AZURE_AI_PROJECT_ENDPOINT} reference, never a literal URL.
+// portable ${FOUNDRY_PROJECT_ENDPOINT} reference, never a literal URL.
 func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 	t.Parallel()
 
@@ -941,7 +941,7 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 		require.Equal(t, aiProjectServiceName, projSvc.Name)
 		require.NotNil(t, projSvc.AdditionalProperties)
 		assert.Equal(t,
-			"${AZURE_AI_PROJECT_ENDPOINT}",
+			"${FOUNDRY_PROJECT_ENDPOINT}",
 			projSvc.AdditionalProperties.Fields["endpoint"].GetStringValue(),
 		)
 	})

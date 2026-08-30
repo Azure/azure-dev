@@ -279,7 +279,7 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, ErrServiceNotFound
 	}
 	// endpoint: is expanded before the emptiness test so a portable
-	// `endpoint: ${AZURE_AI_PROJECT_ENDPOINT}` collapses to "" (greenfield) when
+	// `endpoint: ${FOUNDRY_PROJECT_ENDPOINT}` collapses to "" (greenfield) when
 	// the variable is unset, instead of routing the caller down the brownfield
 	// path with an unresolvable literal. Expansion is unconditional: this is a
 	// control-flow decision, not a value the eject path writes out, so

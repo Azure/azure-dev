@@ -1251,7 +1251,7 @@ func TestStampProjectEndpoint_WritesEndpoint(t *testing.T) {
 	// azure.yaml gets the ${VAR} reference, never the literal URL: the concrete
 	// endpoint lives in the azd environment so the project stays portable.
 	require.Equal(t, "ai-project", server.configValues["endpoint"].serviceName)
-	require.Equal(t, "${AZURE_AI_PROJECT_ENDPOINT}", server.configValues["endpoint"].value)
+	require.Equal(t, "${FOUNDRY_PROJECT_ENDPOINT}", server.configValues["endpoint"].value)
 }
 
 // TestStampProjectEndpoint_NilProject verifies stampProjectEndpoint is a no-op

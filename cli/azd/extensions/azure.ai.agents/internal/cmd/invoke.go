@@ -430,13 +430,14 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to create azd client: %w", err)
 		}
+		defer azdClient.Close()
 		pctx, isPrompt, pErr := resolvePromptAgentService(ctx, azdClient, a.flags.name, a.noPrompt)
-		azdClient.Close()
-		if pErr == nil && isPrompt {
+		if pErr != nil {
+			return fmt.Errorf("failed to resolve prompt agent service: %w", pErr)
+		}
+		if isPrompt {
 			return a.runPromptInvoke(ctx, pctx)
 		}
-		// pErr (e.g. no azure.yaml) is non-fatal here: fall through to the
-		// existing hosted/local resolution which surfaces its own errors.
 	}
 
 	protocol, err := a.resolveProtocol(ctx)

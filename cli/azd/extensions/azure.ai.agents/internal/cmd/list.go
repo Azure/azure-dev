@@ -86,7 +86,7 @@ func (a *ListAction) Run(ctx context.Context) error {
 		)
 	}
 
-	client, err := pctx.newClient()
+	client, err := pctx.newClient(ctx)
 	if err != nil {
 		return err
 	}

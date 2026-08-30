@@ -95,7 +95,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		return fmt.Errorf("building prompt invoke request: %w", err)
 	}
 
-	client, err := pctx.newClient()
+	client, err := pctx.newClient(ctx)
 	if err != nil {
 		return err
 	}

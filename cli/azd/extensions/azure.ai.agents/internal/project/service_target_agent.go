@@ -778,7 +778,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 ) (*azdext.TargetResource, error) {
 	p.adoptServiceConfig(serviceConfig)
 	if p.isPromptAgentService() {
-		return defaultResolver()
+		return &azdext.TargetResource{SubscriptionId: subscriptionId}, nil
 	}
 
 	if err := p.ensureDeployContext(ctx); err != nil {

@@ -2044,6 +2044,29 @@ func TestPublish_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 	require.Contains(t, progressMessages, "Using pre-built container image, skipping publish")
 }
 
+func TestGetTargetResource_PromptAgentDoesNotUseTaggedResourceResolver(t *testing.T) {
+	provider := &AgentServiceTargetProvider{}
+	service := &azdext.ServiceConfig{
+		Name: "prompt-agent",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"name":         "prompt-agent",
+			"model":        "gpt-5-mini",
+			"instructions": "Be helpful.",
+		}),
+	}
+	defaultCalled := false
+
+	target, err := provider.GetTargetResource(t.Context(), "subscription", service, func() (*azdext.TargetResource, error) {
+		defaultCalled = true
+		return nil, errors.New("tagged resource not found")
+	})
+
+	require.NoError(t, err)
+	require.False(t, defaultCalled)
+	require.Equal(t, "subscription", target.SubscriptionId)
+}
+
 func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 	t.Parallel()
 

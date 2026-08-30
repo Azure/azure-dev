@@ -776,6 +776,16 @@ func validateInvocationsModeration(
 			errors = append(errors, fmt.Sprintf(
 				"%s.streamSelectors[%d].eventType is required and must be non-empty", prefix, i))
 		}
+
+		// textField names a field on the event payload; it is not a selector expression.
+		// A '$'-prefixed value matches no field, which yields no text and silently disables
+		// moderation for every frame the selector covers, so reject it rather than deploy it.
+		if strings.HasPrefix(strings.TrimSpace(selector.TextField), "$") {
+			errors = append(errors, fmt.Sprintf(
+				"%s.streamSelectors[%d].textField must be a field name such as 'delta', "+
+					"not a selector expression like '%s'",
+				prefix, i, strings.TrimSpace(selector.TextField)))
+		}
 	}
 
 	return errors

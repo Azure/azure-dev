@@ -210,7 +210,7 @@ func sampleInvocationsModeration() *agent_yaml.InvocationsModeration {
 		InputPaths:        []string{"$.input"},
 		OutputPaths:       []string{"$.output"},
 		StreamSelectors: []agent_yaml.SseTextSelector{
-			{EventType: "response.output_text.delta", TextField: "$.delta"},
+			{EventType: "response.output_text.delta", TextField: "delta"},
 		},
 	}
 }

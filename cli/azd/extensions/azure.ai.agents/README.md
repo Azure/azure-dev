@@ -228,7 +228,7 @@ services:
             - $.output
           streamSelectors:
             - eventType: response.output_text.delta
-              textField: $.delta
+              textField: delta
 ```
 
 Fields:
@@ -238,9 +238,33 @@ Fields:
 | `responseMode` | yes | `non_streaming`, `streaming`, or `both`. |
 | `inputContentType` | no | `json` (default) or `text`. |
 | `outputContentType` | no | `json` (default) or `text`. |
-| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
-| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the buffered response text. |
-| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. |
+| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | Selector expressions locating the request text. |
+| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | Selector expressions locating the buffered response text. |
+| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. See [Selectors and field names](#selectors-and-field-names). |
+
+#### Selectors and field names
+
+`inputPaths` and `outputPaths` are **selector expressions**. They support `$` for
+the document root, dotted members, array indexes, and `[*]` wildcards — for
+example `$.messages[*].content`. They are not a full JSONPath implementation.
+
+`textField` is **not** a selector: it is the plain **name of a field** on the
+matched event payload. Write `delta`, not `$.delta`. It defaults to `delta` when
+omitted.
+
+`eventType` is matched against the value of the `type` field *inside* the event's
+`data:` payload, not against the SSE `event:` line. So for a frame like
+
+```text
+data: {"type": "response.output_text.delta", "delta": "Hi"}
+```
+
+the selector is `eventType: response.output_text.delta` with `textField: delta`.
+
+> **Why this matters:** a `textField` that names no field on the payload yields no
+> text, so that event contributes nothing to moderation. A `$.`-prefixed value
+> therefore silently disables screening for every frame it applies to. azd rejects
+> `$`-prefixed values for this reason.
 
 `invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
 includes `invocations`. Declaring it elsewhere — on another agent kind, or on an

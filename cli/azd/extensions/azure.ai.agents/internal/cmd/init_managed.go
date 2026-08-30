@@ -674,6 +674,9 @@ func promptManagedAgentInstructions(
 	flags *initFlags,
 	manifest *promptAgentManifest,
 ) (string, error) {
+	if instructions := strings.TrimSpace(flags.instructions); instructions != "" {
+		return instructions, nil
+	}
 	if manifestInstructions := manifest.instructions(); manifestInstructions != "" {
 		return manifestInstructions, nil
 	}

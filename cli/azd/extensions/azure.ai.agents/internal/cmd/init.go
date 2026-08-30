@@ -78,6 +78,8 @@ type initFlags struct {
 	// prompt-voice automation. Public interactive flows use the default and let
 	// users edit azure.yaml for customization.
 	voice string
+	// instructions overrides system instructions for prompt and managed agents.
+	instructions string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
 	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
@@ -1422,6 +1424,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					}
 				}
 			}
+			if strings.TrimSpace(flags.instructions) != "" {
+				return promptOnlyInstructionsError()
+			}
 
 			// Track whether a project already exists so the cd hint is
 			// only shown for brand-new top-level project folders, not
@@ -1998,6 +2003,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 	cmd.Flags().StringVar(&flags.description, "description", "",
 		"Description to write to agent.yaml. Used as the agent's human-readable summary.")
+	cmd.Flags().StringVar(&flags.instructions, "instructions", "",
+		"System instructions for a prompt or managed agent. Not supported for hosted agents.")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
@@ -2091,6 +2098,33 @@ func validateInitKindHarness(requestedKind agentKindChoice, rawKind, harness str
 		)
 	}
 	return nil
+}
+
+func validateInitInstructions(
+	requestedKind agentKindChoice,
+	rawKind string,
+	instructions string,
+	isPromptVoice bool,
+) error {
+	if strings.TrimSpace(instructions) == "" {
+		return nil
+	}
+	if requestedKind == AgentKindChoiceHosted || isPromptVoice {
+		return promptOnlyInstructionsError()
+	}
+	if strings.TrimSpace(rawKind) != "" &&
+		requestedKind != AgentKindChoicePrompt && requestedKind != AgentKindChoiceManaged {
+		return promptOnlyInstructionsError()
+	}
+	return nil
+}
+
+func promptOnlyInstructionsError() error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"--instructions is only supported for prompt and managed agents",
+		"use --kind prompt or --kind managed, or remove --instructions for a hosted agent",
+	)
 }
 
 func (a *InitAction) Run(ctx context.Context) error {

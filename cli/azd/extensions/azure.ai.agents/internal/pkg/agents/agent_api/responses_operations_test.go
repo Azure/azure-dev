@@ -70,3 +70,27 @@ func TestResponseLifecycleUsesProjectEndpoint(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateResponseStreamAtUsesExplicitEndpoint(t *testing.T) {
+	client, transport := newCaptureClient(http.StatusOK, "event: response.completed\n\n")
+	endpoint := "https://test.example.com/api/projects/proj/agents/managed/endpoint/protocols/openai/responses?api-version=v1"
+
+	stream, _, err := client.CreateResponseStreamAt(
+		t.Context(), endpoint, []byte(`{"input":"hello"}`),
+		map[string]string{"Foundry-Features": "GitHubCopilot=V1Preview"})
+	if err != nil {
+		t.Fatalf("CreateResponseStreamAt: %v", err)
+	}
+	defer stream.Close()
+
+	if len(transport.requests) != 1 {
+		t.Fatalf("requests: got %d", len(transport.requests))
+	}
+	request := transport.requests[0]
+	if request.URL.String() != endpoint {
+		t.Errorf("endpoint: got %q, want %q", request.URL.String(), endpoint)
+	}
+	if request.Header.Get("Foundry-Features") != "GitHubCopilot=V1Preview" {
+		t.Errorf("feature header: got %q", request.Header.Get("Foundry-Features"))
+	}
+}

@@ -28,6 +28,20 @@ func TestScaffoldPromptConventionFolders_CreatesLayout(t *testing.T) {
 	}
 }
 
+func TestPromptManagedAgentInstructionsFlagWins(t *testing.T) {
+	flags := &initFlags{instructions: " flag instructions "}
+	manifest := &promptAgentManifest{}
+	manifest.definition.Instructions = "manifest instructions"
+
+	got, err := promptManagedAgentInstructions(t.Context(), nil, flags, manifest)
+	if err != nil {
+		t.Fatalf("promptManagedAgentInstructions: %v", err)
+	}
+	if got != "flag instructions" {
+		t.Errorf("instructions: got %q", got)
+	}
+}
+
 // Instructions are written inline into agent.yaml, so a scaffold with nothing
 // authored still produces a deployable agent rather than an empty prompt.
 func TestPromptScaffoldInstructions_DefaultsWhenBlank(t *testing.T) {

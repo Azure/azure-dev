@@ -4,9 +4,34 @@
 package cmd
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+func TestManagedResponsesRequestAgentReference(t *testing.T) {
+	plain, err := json.Marshal(managedResponsesRequest{
+		Model: "model",
+		AgentReference: &managedAgentReference{
+			Type: "agent_reference",
+			Name: "plain",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal plain request: %v", err)
+	}
+	if !strings.Contains(string(plain), `"agent_reference"`) {
+		t.Errorf("plain request must carry agent_reference: %s", plain)
+	}
+
+	harnessed, err := json.Marshal(managedResponsesRequest{Model: "model"})
+	if err != nil {
+		t.Fatalf("marshal harnessed request: %v", err)
+	}
+	if strings.Contains(string(harnessed), `"agent_reference"`) {
+		t.Errorf("harnessed request must omit agent_reference: %s", harnessed)
+	}
+}
 
 // TestStreamManagedSSE_TextDeltas asserts only output_text.delta events are
 // rendered, in order, with a trailing newline, and that lifecycle events are

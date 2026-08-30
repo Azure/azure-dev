@@ -29,11 +29,11 @@ type managedAgentReference struct {
 // managedResponsesRequest is the OpenAI-shape Responses request body sent to
 // the workspace-rooted /openai/responses endpoint for a managed agent.
 type managedResponsesRequest struct {
-	Model          string                `json:"model"`
-	Input          string                `json:"input"`
-	Stream         bool                  `json:"stream"`
-	AgentReference managedAgentReference `json:"agent_reference"`
-	Tools          []any                 `json:"tools"`
+	Model          string                 `json:"model"`
+	Input          string                 `json:"input"`
+	Stream         bool                   `json:"stream"`
+	AgentReference *managedAgentReference `json:"agent_reference,omitempty"`
+	Tools          []any                  `json:"tools"`
 	// PreviousResponseID chains this turn to the previous one so the harness
 	// restores prior conversation context (multi-turn memory). Empty on the
 	// first turn of a conversation; omitted from the payload when empty.
@@ -83,14 +83,17 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		}
 	}
 
-	payload, err := json.Marshal(managedResponsesRequest{
+	request := managedResponsesRequest{
 		Model:              pctx.Agent.Model,
 		Input:              string(body),
 		Stream:             true,
-		AgentReference:     managedAgentReference{Type: "agent_reference", Name: agentName},
 		Tools:              []any{},
 		PreviousResponseID: previousResponseID,
-	})
+	}
+	if pctx.Agent.HarnessType() == "" {
+		request.AgentReference = &managedAgentReference{Type: "agent_reference", Name: agentName}
+	}
+	payload, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("building prompt invoke request: %w", err)
 	}
@@ -106,7 +109,17 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		"x-model-endpoint": pctx.Settings.EffectiveModelEndpoint(),
 	}
 
-	stream, _, err := client.CreateResponseStream(ctx, payload, headers)
+	var stream io.ReadCloser
+	if pctx.Agent.HarnessType() == "" {
+		stream, _, err = client.CreateResponseStream(ctx, payload, headers)
+	} else {
+		endpoint := fmt.Sprintf(
+			"%s/agents/%s/endpoint/protocols/openai/responses?api-version=v1",
+			strings.TrimRight(pctx.Settings.ProjectEndpoint, "/"), agentName,
+		)
+		headers["Foundry-Features"] = "GitHubCopilot=V1Preview"
+		stream, _, err = client.CreateResponseStreamAt(ctx, endpoint, payload, headers)
+	}
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}

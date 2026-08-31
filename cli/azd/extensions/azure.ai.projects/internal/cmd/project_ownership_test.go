@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -430,6 +431,20 @@ func TestFillEmptyAzureScope(t *testing.T) {
 		assert.Empty(t, target.Scope.SubscriptionId)
 		assert.Empty(t, target.Scope.Location)
 	})
+}
+
+func TestResolveDeploymentAzureContextRequiresSubscription(t *testing.T) {
+	_, err := resolveDeploymentAzureContext(
+		t.Context(),
+		nil,
+		map[string]string{"AZURE_AI_DEPLOYMENTS_LOCATION": "eastus"},
+		true,
+	)
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeMissingAzureSubscription, localErr.Code)
 }
 
 func TestDeploymentNoMatchErrorsAreRecoverable(t *testing.T) {

@@ -163,22 +163,11 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 				"before adding managed deployments",
 		)
 	}
-	azureContext := &azdext.AzureContext{
-		Scope: &azdext.AzureScope{
-			TenantId:       values["AZURE_TENANT_ID"],
-			SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
-			Location:       values["AZURE_AI_DEPLOYMENTS_LOCATION"],
-		},
-	}
-	if azureContext.Scope.Location == "" {
-		azureContext.Scope.Location = values["AZURE_LOCATION"]
-	}
-	if azureContext.Scope.SubscriptionId == "" {
-		if deploymentContext, contextErr := client.Deployment().GetDeploymentContext(
-			ctx, &azdext.EmptyRequest{},
-		); contextErr == nil && deploymentContext.GetAzureContext() != nil {
-			fillEmptyAzureScope(azureContext, deploymentContext.AzureContext)
-		}
+	azureContext, err := resolveDeploymentAzureContext(
+		ctx, client, values, a.noPrompt(),
+	)
+	if err != nil {
+		return err
 	}
 	model := delegatedModel{
 		Name:           a.flags.model,
@@ -276,6 +265,45 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		fmt.Printf("Managed deployment %q %s.\n", selected.Deployment.Name, mutation)
 	}
 	return nil
+}
+
+func resolveDeploymentAzureContext(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	values map[string]string,
+	noPrompt bool,
+) (*azdext.AzureContext, error) {
+	azureContext := &azdext.AzureContext{
+		Scope: &azdext.AzureScope{
+			TenantId:       values["AZURE_TENANT_ID"],
+			SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
+			Location:       values["AZURE_AI_DEPLOYMENTS_LOCATION"],
+		},
+	}
+	if azureContext.Scope.Location == "" {
+		azureContext.Scope.Location = values["AZURE_LOCATION"]
+	}
+	if azureContext.Scope.SubscriptionId != "" {
+		return azureContext, nil
+	}
+	if noPrompt {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			"an Azure subscription is required to resolve model deployments",
+			"set AZURE_SUBSCRIPTION_ID in the active azd environment and retry",
+		)
+	}
+	subscriptionID, userTenantID, err := resolveInteractiveSubscription(
+		ctx, client, values,
+	)
+	if err != nil {
+		return nil, err
+	}
+	azureContext.Scope.SubscriptionId = subscriptionID
+	if userTenantID != "" {
+		azureContext.Scope.TenantId = userTenantID
+	}
+	return azureContext, nil
 }
 
 func fillEmptyAzureScope(dst, src *azdext.AzureContext) {

@@ -185,7 +185,17 @@ func newEvalListCommand() *cobra.Command {
 			if pageSize <= 0 {
 				pageSize = defaultEvalPageSize
 			}
-			page, err := ec.evalClient.ListOpenAIEvalsPage(ctx, pageSize, pageToken)
+
+			// A filter that only searched the page in hand would answer "no
+			// such eval" for one sitting on the next, which is the opposite of
+			// what it is for. The service filters nothing, so finding a name
+			// costs the full walk; reading a page does not.
+			var page *eval_api.OpenAIEvalList
+			if nameFilter != "" {
+				page, err = ec.evalClient.ListOpenAIEvals(ctx, limit)
+			} else {
+				page, err = ec.evalClient.ListOpenAIEvalsPage(ctx, pageSize, pageToken)
+			}
 			if err != nil {
 				return messages.ListingEvals(err)
 			}
@@ -224,7 +234,7 @@ func newEvalListCommand() *cobra.Command {
 	cmd.Flags().IntVar(&limit, "limit", 0,
 		"Rows per page. Defaults to 50.")
 	cmd.Flags().StringVar(&nameFilter, "name", "",
-		"Only evals whose name contains this, compared without case.")
+		"Only evals whose name contains this, compared without case. Searches every page.")
 	cmd.Flags().StringVar(&pageToken, "pagination-token", "",
 		"Continue from the token the previous page printed.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")

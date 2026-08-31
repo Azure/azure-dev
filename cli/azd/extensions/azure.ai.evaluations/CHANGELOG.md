@@ -1,5 +1,13 @@
 # Release History
 
+## 1.0.29-beta (2026-08-31)
+
+### Bugs Fixed
+
+- `eval list --name` searches every page. It filtered only the page in hand,
+  so a name sitting on a later page came back as no such eval -- which is the
+  opposite of what the filter is for.
+
 ## 1.0.28-beta (2026-08-31)
 
 ### Bugs Fixed

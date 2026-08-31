@@ -146,7 +146,7 @@ func newRunOutputShowCommand() *cobra.Command {
 			if len(args) == 0 {
 				return messages.OutputItemRequired(groupName)
 			}
-			return cobra.ExactArgs(1)(cmd, args)
+			return requiredArgs(1)(cmd, args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			itemID := args[0]

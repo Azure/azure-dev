@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 )
 
@@ -42,6 +41,11 @@ type responsesSnapshot struct {
 	Error          *responsesError       `json:"error"`
 }
 
+type responseSnapshotResult struct {
+	snapshot responsesSnapshot
+	raw      []byte
+}
+
 type responsesOutputItem struct {
 	Content []responsesContent `json:"content"`
 }
@@ -67,79 +71,21 @@ type responsesStreamInitialState struct {
 	Status     string
 }
 
+type responsesSSEOptions struct {
+	requireTerminal bool
+	initialState    *responsesStreamInitialState
+	onProgress      func(responsesStreamProgress) error
+}
+
 func readResponsesSSE(
 	ctx context.Context,
 	body io.Reader,
 	writer io.Writer,
 	agentName string,
-	requireTerminal bool,
-	onProgress func(responsesStreamProgress) error,
-) error {
-	return readResponsesSSEWithInitialState(
-		ctx,
-		body,
-		writer,
-		agentName,
-		requireTerminal,
-		nil,
-		onProgress,
-	)
-}
-
-func readResponsesSSEWithInitialState(
-	ctx context.Context,
-	body io.Reader,
-	writer io.Writer,
-	agentName string,
-	requireTerminal bool,
-	initialState *responsesStreamInitialState,
-	onProgress func(responsesStreamProgress) error,
-) error {
-	return readResponsesSSEWithInitialStateAndLimit(
-		ctx,
-		body,
-		writer,
-		agentName,
-		requireTerminal,
-		initialState,
-		onProgress,
-		maxResponsesSSEEventBytes,
-	)
-}
-
-func readResponsesSSEWithLimit(
-	ctx context.Context,
-	body io.Reader,
-	writer io.Writer,
-	agentName string,
-	requireTerminal bool,
-	onProgress func(responsesStreamProgress) error,
-	maxEventBytes int,
-) error {
-	return readResponsesSSEWithInitialStateAndLimit(
-		ctx,
-		body,
-		writer,
-		agentName,
-		requireTerminal,
-		nil,
-		onProgress,
-		maxEventBytes,
-	)
-}
-
-func readResponsesSSEWithInitialStateAndLimit(
-	ctx context.Context,
-	body io.Reader,
-	writer io.Writer,
-	agentName string,
-	requireTerminal bool,
-	initialState *responsesStreamInitialState,
-	onProgress func(responsesStreamProgress) error,
-	maxEventBytes int,
+	options responsesSSEOptions,
 ) (returnErr error) {
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxEventBytes+len("data: ")+1)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxResponsesSSEEventBytes+len("data: ")+2)
 
 	var eventName string
 	var eventData bytes.Buffer
@@ -155,10 +101,10 @@ func readResponsesSSEWithInitialStateAndLimit(
 			returnErr = errors.Join(returnErr, err)
 		}
 	}()
-	if initialState != nil {
-		identity = initialState.ResponseID
-		cursor = initialState.Cursor
-		status = initialState.Status
+	if options.initialState != nil {
+		identity = options.initialState.ResponseID
+		cursor = options.initialState.Cursor
+		status = options.initialState.Status
 	}
 
 	dispatch := func() error {
@@ -217,7 +163,7 @@ func readResponsesSSEWithInitialStateAndLimit(
 				snapshot.Status = "cancelled"
 			}
 		}
-		if requireTerminal && identity == "" && isTerminalResponseStatus(snapshot.Status) {
+		if options.requireTerminal && identity == "" && isTerminalResponseStatus(snapshot.Status) {
 			return errResponsesStreamEndedBeforeIdentity
 		}
 
@@ -247,7 +193,10 @@ func readResponsesSSEWithInitialStateAndLimit(
 					return err
 				}
 			} else if snapshot.Status != "failed" {
-				if err := writeResponsesSnapshot(writer, agentName, snapshot, envelope.Response); err != nil {
+				if err := renderResponseSnapshot(writer, agentName, responseSnapshotResult{
+					snapshot: snapshot,
+					raw:      envelope.Response,
+				}); err != nil {
 					return err
 				}
 			}
@@ -268,8 +217,8 @@ func readResponsesSSEWithInitialStateAndLimit(
 		if isTerminalResponseStatus(status) {
 			terminal = true
 		}
-		if onProgress != nil {
-			if err := onProgress(responsesStreamProgress{
+		if options.onProgress != nil {
+			if err := options.onProgress(responsesStreamProgress{
 				ResponseID: identity,
 				Cursor:     cursor,
 				Status:     status,
@@ -285,8 +234,11 @@ func readResponsesSSEWithInitialStateAndLimit(
 			}
 			return fmt.Errorf("agent returned failed status")
 		}
-		if snapshot.Status == "incomplete" && requireTerminal {
+		if snapshot.Status == "incomplete" && options.requireTerminal {
 			return fmt.Errorf("agent returned incomplete status")
+		}
+		if snapshot.Status == "cancelled" && options.requireTerminal {
+			return errors.New("response was cancelled")
 		}
 		return nil
 	}
@@ -318,8 +270,8 @@ func readResponsesSSEWithInitialStateAndLimit(
 			if dataSeen {
 				addedBytes++
 			}
-			if addedBytes > maxEventBytes-eventData.Len() {
-				return fmt.Errorf("Responses SSE event exceeds %d bytes", maxEventBytes)
+			if addedBytes > maxResponsesSSEEventBytes-eventData.Len() {
+				return fmt.Errorf("Responses SSE event exceeds %d bytes", maxResponsesSSEEventBytes)
 			}
 			if dataSeen {
 				eventData.WriteByte('\n')
@@ -331,23 +283,22 @@ func readResponsesSSEWithInitialStateAndLimit(
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error reading response stream: %w", err)
 	}
-	if requireTerminal && identity == "" {
+	if options.requireTerminal && identity == "" {
 		return errResponsesStreamEndedBeforeIdentity
 	}
-	if requireTerminal && !terminal {
+	if options.requireTerminal && !terminal {
 		return fmt.Errorf("background Response %s disconnected before reaching a terminal state", identity)
 	}
 	return nil
 }
 
-func writeResponsesSnapshot(
+func renderResponseSnapshot(
 	writer io.Writer,
 	agentName string,
-	snapshot responsesSnapshot,
-	raw json.RawMessage,
+	result responseSnapshotResult,
 ) error {
 	var printed bool
-	for _, item := range snapshot.Output {
+	for _, item := range result.snapshot.Output {
 		for _, content := range item.Content {
 			if content.Type == "output_text" {
 				if _, err := fmt.Fprintf(writer, "[%s] %s\n", agentName, content.Text); err != nil {
@@ -357,13 +308,13 @@ func writeResponsesSnapshot(
 			}
 		}
 	}
-	if printed || len(raw) == 0 {
+	if printed || len(result.raw) == 0 {
 		return nil
 	}
 
 	var formatted bytes.Buffer
-	if err := json.Indent(&formatted, raw, "", "  "); err != nil {
-		_, err = fmt.Fprintln(writer, string(raw))
+	if err := json.Indent(&formatted, result.raw, "", "  "); err != nil {
+		_, err = fmt.Fprintln(writer, string(result.raw))
 		return err
 	}
 	_, err := fmt.Fprintln(writer, formatted.String())
@@ -378,8 +329,4 @@ func isKnownResponsesEvent(event string) bool {
 	default:
 		return false
 	}
-}
-
-func readSSEStream(body io.Reader, agentName string) error {
-	return readResponsesSSE(context.Background(), body, os.Stdout, agentName, false, nil)
 }

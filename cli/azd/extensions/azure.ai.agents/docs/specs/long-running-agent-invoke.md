@@ -22,7 +22,7 @@ The MVP adds these capabilities to `azd ai agent invoke`:
 5. Submit revised input that steers the active current Response, or starts the next turn when it is terminal.
 6. Cancel the saved current background Response without stopping its hosted-agent session.
 7. Preserve existing foreground Responses, local invoke, Invocations create/poll, and A2A behavior.
-8. For remote Invocations, save the latest invocation context and let message-free `--continue` perform one best-effort GET without applying Responses lifecycle semantics.
+8. For remote Invocations, save the latest invocation context and let `--continue` without input perform one best-effort GET without applying Responses lifecycle semantics.
 
 ## Non-goals
 
@@ -52,9 +52,9 @@ These deviations are called out in [MVP limitations](#mvp-limitations) and [Futu
 The implementation is delivered as four independently useful, stacked pull requests:
 
 1. **Attached background Responses:** add `--background`, typed SSE processing, and saved Response identity/cursor state. The command remains attached until terminal completion or interruption. Active-turn enforcement is deferred until users have follow/cancel recovery in PR 2.
-2. **Responses detach, reconnect, and cancel:** add `--no-wait`, message-free `--continue`, cursor replay, transport recovery, snapshot fallback, and `--cancel`.
-3. **Responses steering:** add message-bearing `--continue`, replacement turns, terminal next-turn behavior, and service-refreshed active-turn enforcement.
-4. **Invocations retrieval:** save the latest remote invocation context and add message-free `--continue` as exactly one best-effort GET with no polling, status interpretation, replay, steering, or cancellation.
+2. **Responses detach, reconnect, and cancel:** add `--no-wait`, `--continue` without input, cursor replay, transport recovery, snapshot fallback, and `--cancel`.
+3. **Responses steering:** add `--continue` with input, replacement turns, terminal next-turn behavior, and service-refreshed active-turn enforcement.
+4. **Invocations retrieval:** save the latest remote invocation context and add `--continue` without input as exactly one best-effort GET with no polling, status interpretation, replay, steering, or cancellation.
 
 PR 3 and PR 4 depend on PR 2 and can be reviewed in parallel. Each PR includes focused unit tests and live validation against the corresponding hosted reference agent.
 
@@ -71,7 +71,7 @@ azd ai agent invoke "revised requirements" --continue
 azd ai agent invoke --cancel
 ```
 
-Message-free operations in multi-agent projects use an explicit selector:
+Operations without input use an explicit selector in multi-agent projects:
 
 ```bash
 azd ai agent invoke --continue --agent-name my-agent
@@ -84,7 +84,7 @@ The existing named-message form remains valid:
 azd ai agent invoke my-agent "revised requirements" --continue
 ```
 
-Because the existing grammar treats one positional argument as a message, `azd ai agent invoke my-agent --continue` sends the text `my-agent`; it does not select that agent. Help and validation examples must direct message-free multi-agent operations to `--agent-name`.
+Because the existing grammar treats one positional argument as input, `azd ai agent invoke my-agent --continue` sends the text `my-agent`; it does not select that agent. Help and validation examples must direct `--continue` and `--cancel` without input to `--agent-name` for explicit agent selection.
 
 ## Existing implementation
 
@@ -163,9 +163,9 @@ agentName    string
 
 ### Positional parsing
 
-Preserve the current `[name] [message]` positional grammar for message operations. Do not reinterpret a single positional argument differently only because `--continue` or `--cancel` is present.
+Preserve the current `[name] [message]` positional grammar for operations with input. Do not reinterpret a single positional argument differently only because `--continue` or `--cancel` is present.
 
-For message-free operations:
+For `--continue` and `--cancel` without input:
 
 - Agent auto-detection remains the default.
 - `--agent-name` explicitly selects an agent in a multi-agent project.
@@ -182,23 +182,23 @@ Perform structural validation before project resolution, followed by protocol va
 | `--no-wait` without `--background` | Reject |
 | `--continue` with `--cancel` | Reject |
 | `--cancel` with a message or `--input-file` | Reject |
-| Message-free `--continue` with `--input-file` | Reject |
+| Responses `--continue` with `--input-file` | Accept as continuation with input |
 | `--background` with `--continue` or `--cancel` | Reject |
 | `--no-wait` with `--continue` or `--cancel` | Reject |
 | `--continue` or `--cancel` with `--session-id` or `--new-session` | Reject; use the saved response context |
 | `--continue` or `--cancel` with `--conversation-id` or `--new-conversation` | Reject; use the saved response context |
 | `--agent-name` with a positional agent name | Reject |
 | New lifecycle operation with `--local` | Reject |
-| Message-free `--continue` with remote Invocations | Accept; perform one best-effort GET of the saved invocation |
-| Message-bearing `--continue` with Invocations | Reject; steering is not defined |
+| `--continue` without input with remote Invocations | Accept; perform one best-effort GET of the saved invocation |
+| `--continue` with input with remote Invocations | Reject; steering is not defined |
 | `--background`, `--no-wait`, or `--cancel` with Invocations | Reject |
 | New lifecycle operation with A2A | Reject after protocol resolution |
 | New lifecycle operation with `--output raw` | Reject before network access |
-| Message-free operation in an ambiguous project without `--agent-name` and without prompts | Reject with agent-selection guidance |
+| Operation without input in an ambiguous project without `--agent-name` and without prompts | Reject with agent-selection guidance |
 
 ## Invocations one-shot retrieval contract
 
-For a remote Invocations agent, message-free `azd ai agent invoke --continue` loads the latest saved invocation for the selected agent context and sends exactly one authenticated request:
+For a remote Invocations agent, `azd ai agent invoke --continue` without input loads the latest saved invocation for the selected agent context and sends exactly one authenticated request:
 
 ```text
 GET {projectEndpoint}/agents/{agent}/endpoint/protocols/invocations/{invocationId}?api-version={apiVersion}[&agent_session_id={sessionId}]
@@ -255,10 +255,11 @@ Request body:
 }
 ```
 
-Live validation against the hosted stored-background Responses endpoint confirms that the compatible
-property is `agent_session_id`. Background create, follow, and steering requests send that property
-and do not also send `session_id`. Existing foreground remote Responses and local Responses requests
-continue to use `session_id`.
+Live validation confirms that hosted Responses accepts both `agent_session_id` and `session_id` for
+foreground and background requests and routes either property to the requested hosted session. The
+Vienna service contract defines `agent_session_id` as the canonical wire name and retains `session_id`
+only for backward compatibility. azd uses `agent_session_id` for remote ordinary, background, and
+steering Responses requests.
 
 The command parses and renders SSE until a terminal event or a user interruption. As soon as an identity-bearing lifecycle event arrives, it prints and saves the Response ID before rendering later output.
 
@@ -288,7 +289,9 @@ Accept: text/event-stream
 
 Use the saved cursor for the current Response when available; otherwise omit `starting_after` and replay retained events from the beginning. The server uses strict-after semantics: when azd supplies its saved cursor, the first accepted event must have a greater sequence number.
 
-If the Response is terminal and replay has drained, print the terminal status/result and return. If replay is unavailable, retrieve the Response without `stream=true`; render its authoritative snapshot and status.
+If the saved local record is already terminal, azd has already consumed the terminal event and all preceding output. Print the saved status and return without a network request so output is not duplicated.
+
+If a nonterminal follow returns no events, retrieve the Response without `stream=true` to resolve the ambiguity. If the authoritative snapshot is terminal, render its output and status and return success. If it remains `queued` or `in_progress`, return an error with `--continue` guidance. A clean empty follow is not an established transient-disconnect signal, so do not automatically reconnect.
 
 ### Cancel a Response
 
@@ -351,10 +354,11 @@ response.in_progress
 response.completed
 response.failed
 response.incomplete
+response.cancelled
 error
 ```
 
-Cancellation may be observed as a Response status from a snapshot or fallback GET rather than a distinct SSE event.
+Cancellation may be observed through `response.cancelled` or as a Response status from a snapshot or fallback GET. For an attached background invocation, `completed` is successful completion; `failed`, `incomplete`, and `cancelled` are terminal errors after their status and cursor are persisted. The explicit `--cancel` command still succeeds when cancellation reaches a terminal state.
 
 ### Cursor commitment
 
@@ -454,9 +458,9 @@ After it becomes terminal:
 | `invoke --continue` | Replay or retrieve the terminal result |
 | `invoke --cancel` | Report terminal status without failing |
 
-### Message-bearing continuation
+### Continuation with input
 
-Message-bearing `--continue` always creates a new stored background Response in the saved conversation and hosted session:
+`--continue` with input always creates a new stored background Response in the saved conversation and hosted session:
 
 ```json
 {
@@ -558,20 +562,12 @@ Follow and cancel must not create a new hosted-agent session or conversation whi
 
 ## Session compatibility conclusion
 
-Live service validation established the session property for each supported path:
-
-```text
-session_id
-agent_session_id
-```
-
-- Hosted stored-background Responses uses `agent_session_id`; background create,
-  follow, and steering send only this property.
-- Existing foreground remote Responses and local AgentServer Responses continue
-  to use `session_id`.
-
-Live tests confirmed that `agent_session_id` routes stored background work and
-follow-up turns to the same hosted session. The request never sends both fields.
+Live service validation established that hosted Responses accepts both `agent_session_id` and the
+deprecated `session_id` alias for foreground and background requests. All four combinations returned
+HTTP 200, reached `response.completed`, and returned the requested hosted session ID. Vienna gives
+`agent_session_id` precedence when both are present and identifies it as the canonical API field. azd
+therefore sends only `agent_session_id` for remote foreground, background, and steering Responses
+requests.
 
 ## HTTP clients and timeout behavior
 
@@ -699,7 +695,7 @@ A mechanical split of unrelated existing invoke code is optional and must not bl
 
 ### Command and validation tests
 
-Add table-driven coverage for every validation row, including named-agent message-free forms, endpoint mode, protocol auto-detection, raw rejection, and existing foreground regression behavior.
+Add table-driven coverage for every validation row, including named-agent operations without input, endpoint mode, protocol auto-detection, raw rejection, and existing foreground regression behavior.
 
 ### SSE decoder tests
 
@@ -751,8 +747,8 @@ Build on the existing in-process UserConfig gRPC test server. Cover:
 Cover:
 
 - An active current Response blocks ordinary and background new turns.
-- Active and terminal message-bearing `--continue` use the same saved `conversation.id` and compatible `agent_session_id` request shape.
-- Message-bearing `--continue` never sends `previous_response_id`.
+- Active and terminal `--continue` with input use the same saved `conversation.id` and `agent_session_id` request shape.
+- `--continue` with input never sends `previous_response_id`.
 - A busy steerable conversation interrupts or winds down the active turn and completes the replacement.
 - An idle conversation starts the normal next background turn with the same request shape.
 - Two consecutive steering cycles remain in one conversation without a fork or forwarding error.
@@ -870,14 +866,14 @@ The MVP blind GET requires no capability discovery because it makes no claim abo
 ### PR 2 — Responses detach, reconnect, and cancel
 
 1. Add `--no-wait` after identity capture.
-2. Add message-free `--continue`, strict-after cursor replay, and automatic reconnect.
+2. Add `--continue` without input, strict-after cursor replay, and automatic reconnect.
 3. Add snapshot fallback, recovery reset rendering, and token refresh.
 4. Add `--cancel` without stopping the hosted session.
 5. Validate detach, reconnect, recovery, and cancel against the hosted Responses reference agent.
 
 ### PR 3 — Responses steering
 
-1. Add message-bearing `--continue` for active replacement and terminal next-turn creation.
+1. Add `--continue` with input for active replacement and terminal next-turn creation.
 2. Refresh active status before blocking competing turns.
 3. Validate repeated conversation-based steering and superseded terminal outcomes.
 4. Validate steering against the hosted Responses reference agent.
@@ -885,7 +881,7 @@ The MVP blind GET requires no capability discovery because it makes no claim abo
 ### PR 4 — Invocations one-shot retrieval
 
 1. Save the latest successful remote invocation ID, effective session, and API version.
-2. Route message-free Invocations `--continue` to exactly one opaque GET.
+2. Route Invocations `--continue` without input to exactly one opaque GET.
 3. Reject unsupported background, steering, replay, and cancellation combinations.
 4. Validate one-shot retrieval against the hosted Invocations reference agent.
 

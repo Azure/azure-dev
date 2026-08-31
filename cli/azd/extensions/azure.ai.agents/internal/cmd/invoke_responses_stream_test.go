@@ -28,6 +28,36 @@ func (r *terminalThenErrorReader) Read(p []byte) (int, error) {
 	return 0, r.err
 }
 
+func readResponsesSSEForTest(
+	ctx context.Context,
+	body io.Reader,
+	writer io.Writer,
+	agentName string,
+	requireTerminal bool,
+	onProgress func(responsesStreamProgress) error,
+) error {
+	return readResponsesSSE(ctx, body, writer, agentName, responsesSSEOptions{
+		requireTerminal: requireTerminal,
+		onProgress:      onProgress,
+	})
+}
+
+func readResponsesSSEWithInitialStateForTest(
+	ctx context.Context,
+	body io.Reader,
+	writer io.Writer,
+	agentName string,
+	requireTerminal bool,
+	initialState *responsesStreamInitialState,
+	onProgress func(responsesStreamProgress) error,
+) error {
+	return readResponsesSSE(ctx, body, writer, agentName, responsesSSEOptions{
+		requireTerminal: requireTerminal,
+		initialState:    initialState,
+		onProgress:      onProgress,
+	})
+}
+
 func TestReadResponsesSSEBackground(t *testing.T) {
 	t.Parallel()
 
@@ -45,7 +75,7 @@ func TestReadResponsesSSEBackground(t *testing.T) {
 
 	var output bytes.Buffer
 	var progress []responsesStreamProgress
-	err := readResponsesSSE(t.Context(), strings.NewReader(stream), &output, "agent", true,
+	err := readResponsesSSEForTest(t.Context(), strings.NewReader(stream), &output, "agent", true,
 		func(value responsesStreamProgress) error {
 			progress = append(progress, value)
 			return nil
@@ -70,7 +100,7 @@ func TestReadResponsesSSEDataOnlyAndMultiline(t *testing.T) {
 		"data: \"sequence_number\":0}\n\n"
 
 	var output bytes.Buffer
-	err := readResponsesSSE(t.Context(), strings.NewReader(stream), &output, "agent", true, nil)
+	err := readResponsesSSEForTest(t.Context(), strings.NewReader(stream), &output, "agent", true, nil)
 	require.NoError(t, err)
 }
 
@@ -97,7 +127,7 @@ func TestReadResponsesSSEMalformedEventHandling(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := readResponsesSSE(t.Context(), strings.NewReader(tt.stream), io.Discard, "agent", false, nil)
+			err := readResponsesSSEForTest(t.Context(), strings.NewReader(tt.stream), io.Discard, "agent", false, nil)
 			if tt.wantErr {
 				require.ErrorContains(t, err, "decode Responses SSE event")
 			} else {
@@ -113,7 +143,7 @@ func TestReadResponsesSSEBackgroundRequiresTerminal(t *testing.T) {
 	stream := "event: response.created\n" +
 		`data: {"response":{"id":"resp_123","status":"in_progress"},"sequence_number":0}` + "\n\n"
 
-	err := readResponsesSSE(t.Context(), strings.NewReader(stream), &bytes.Buffer{}, "agent", true, nil)
+	err := readResponsesSSEForTest(t.Context(), strings.NewReader(stream), &bytes.Buffer{}, "agent", true, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "disconnected before reaching a terminal state")
 }
@@ -125,7 +155,7 @@ func TestReadResponsesSSEBackgroundTerminalRequiresIdentity(t *testing.T) {
 		`data: {"response":{"status":"completed"},"sequence_number":1}` + "\n\n"
 
 	var progress []responsesStreamProgress
-	err := readResponsesSSE(t.Context(), strings.NewReader(stream), io.Discard, "agent", true,
+	err := readResponsesSSEForTest(t.Context(), strings.NewReader(stream), io.Discard, "agent", true,
 		func(value responsesStreamProgress) error {
 			progress = append(progress, value)
 			return nil
@@ -174,7 +204,7 @@ func TestReadResponsesSSEDiscardsPartialFrameAtEOF(t *testing.T) {
 
 			var output bytes.Buffer
 			var progress []responsesStreamProgress
-			err := readResponsesSSE(t.Context(), strings.NewReader(tt.stream), &output, "agent", false,
+			err := readResponsesSSEForTest(t.Context(), strings.NewReader(tt.stream), &output, "agent", false,
 				func(value responsesStreamProgress) error {
 					progress = append(progress, value)
 					return nil
@@ -197,7 +227,7 @@ func TestReadResponsesSSEFailedTerminalDoesNotRenderSnapshot(t *testing.T) {
 
 	var output bytes.Buffer
 	var progress []responsesStreamProgress
-	err := readResponsesSSE(t.Context(), strings.NewReader(stream), &output, "agent", true,
+	err := readResponsesSSEForTest(t.Context(), strings.NewReader(stream), &output, "agent", true,
 		func(value responsesStreamProgress) error {
 			progress = append(progress, value)
 			return nil
@@ -211,6 +241,53 @@ func TestReadResponsesSSEFailedTerminalDoesNotRenderSnapshot(t *testing.T) {
 	assert.Equal(t, int64(4), *progress[0].Cursor)
 	assert.Equal(t, "failed", progress[0].Status)
 	assert.True(t, progress[0].Terminal)
+}
+
+func TestReadResponsesSSECancelledOutcome(t *testing.T) {
+	t.Parallel()
+
+	stream := "event: response.output_text.delta\n" +
+		`data: {"response":{"id":"resp_123","status":"in_progress"},"delta":"partial","sequence_number":1}` +
+		"\n\n" +
+		"event: response.cancelled\n" +
+		`data: {"response":{"id":"resp_123","status":"cancelled"},"sequence_number":2}` + "\n\n"
+
+	for _, tt := range []struct {
+		name            string
+		requireTerminal bool
+		wantErr         string
+	}{
+		{name: "attached background returns error", requireTerminal: true, wantErr: "response was cancelled"},
+		{name: "foreground compatibility", requireTerminal: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var output bytes.Buffer
+			var progress []responsesStreamProgress
+			err := readResponsesSSEForTest(
+				t.Context(),
+				strings.NewReader(stream),
+				&output,
+				"agent",
+				tt.requireTerminal,
+				func(value responsesStreamProgress) error {
+					progress = append(progress, value)
+					return nil
+				},
+			)
+
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, tt.wantErr)
+			}
+			assert.Equal(t, "[agent] partial\n", output.String())
+			require.Len(t, progress, 2)
+			assert.Equal(t, "cancelled", progress[1].Status)
+			assert.Equal(t, int64(2), *progress[1].Cursor)
+			assert.True(t, progress[1].Terminal)
+		})
+	}
 }
 
 func TestReadResponsesSSEReturnsAfterTerminalEvent(t *testing.T) {
@@ -231,7 +308,7 @@ func TestReadResponsesSSEReturnsAfterTerminalEvent(t *testing.T) {
 
 	var progress []responsesStreamProgress
 	var output bytes.Buffer
-	err := readResponsesSSE(t.Context(), reader, &output, "agent", true,
+	err := readResponsesSSEForTest(t.Context(), reader, &output, "agent", true,
 		func(value responsesStreamProgress) error {
 			progress = append(progress, value)
 			return nil
@@ -255,7 +332,7 @@ func TestReadResponsesSSEResumedTerminalUsesInitialIdentity(t *testing.T) {
 	}
 
 	var progress []responsesStreamProgress
-	err := readResponsesSSEWithInitialState(
+	err := readResponsesSSEWithInitialStateForTest(
 		t.Context(),
 		strings.NewReader(stream),
 		io.Discard,
@@ -287,7 +364,7 @@ func TestReadResponsesSSESuppressesDuplicateSequence(t *testing.T) {
 		`data: {"response":{"id":"resp_1","status":"completed"},"sequence_number":2}` + "\n\n"
 
 	var output bytes.Buffer
-	err := readResponsesSSE(context.Background(), strings.NewReader(stream), &output, "agent", false, nil)
+	err := readResponsesSSEForTest(t.Context(), strings.NewReader(stream), &output, "agent", false, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "[agent] one\n", output.String())
 }
@@ -326,7 +403,7 @@ func TestReadResponsesSSEValidatesIdentityBeforeSuppressingDuplicate(t *testing.
 				Status:     "in_progress",
 			}
 			var progress []responsesStreamProgress
-			err := readResponsesSSEWithInitialState(
+			err := readResponsesSSEWithInitialStateForTest(
 				t.Context(),
 				strings.NewReader(stream),
 				io.Discard,
@@ -352,7 +429,7 @@ func TestReadResponsesSSEValidatesIdentityBeforeSuppressingDuplicate(t *testing.
 func TestReadResponsesSSEEventSizeLimit(t *testing.T) {
 	t.Parallel()
 
-	const limit = 32
+	const limit = maxResponsesSSEEventBytes
 	tests := []struct {
 		name    string
 		stream  string
@@ -382,17 +459,11 @@ func TestReadResponsesSSEEventSizeLimit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := readResponsesSSEWithLimit(
-				t.Context(),
-				strings.NewReader(tt.stream),
-				io.Discard,
-				"agent",
-				false,
-				nil,
-				limit,
+			err := readResponsesSSE(
+				t.Context(), strings.NewReader(tt.stream), io.Discard, "agent", responsesSSEOptions{},
 			)
 			if tt.wantErr {
-				require.EqualError(t, err, "Responses SSE event exceeds 32 bytes")
+				require.EqualError(t, err, "Responses SSE event exceeds 4194304 bytes")
 			} else {
 				require.NoError(t, err)
 			}

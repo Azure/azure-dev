@@ -196,7 +196,7 @@ func TestReadSSEStream(t *testing.T) {
 			t.Parallel()
 
 			reader := strings.NewReader(tt.input)
-			err := readSSEStream(reader, "test-agent")
+			err := readResponsesSSE(t.Context(), reader, io.Discard, "test-agent", responsesSSEOptions{})
 
 			if tt.wantErr {
 				if err == nil {

@@ -123,9 +123,10 @@ behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
 
-Use --background with the Responses protocol to start stored background work
-and remain attached until it finishes. Background invocation is remote-only,
-does not support raw output, and cannot be combined with --timeout.`,
+Use --background with the Responses protocol to start work that continues running in
+the service if this command disconnects. The command remains attached until the work
+finishes. Background invocation is remote-only, does not support raw output, and cannot
+be combined with --timeout.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -153,7 +154,8 @@ does not support raw output, and cannot be combined with --timeout.`,
   # Invoke a specific agent locally (useful in multi-agent projects)
   azd ai agent invoke my-agent --local "Hello!"
 
-  # Start stored background work and remain attached until it finishes
+  # Start work that continues in the service if this command disconnects,
+  # while remaining attached until it finishes
   azd ai agent invoke --background "Run the long task"
 
   # Start a new session (discard conversation history)
@@ -346,7 +348,7 @@ does not support raw output, and cannot be combined with --timeout.`,
 		&flags.background,
 		"background",
 		false,
-		"Run a stored background Response and remain attached until it finishes",
+		"Start work that continues in the service if the command disconnects; remain attached until it finishes",
 	)
 
 	// Register `raw` as an additional allowed value on the inherited global
@@ -1175,7 +1177,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	var responseStore responseStateStore
 	if a.flags.background {
 		if rc.azdClient == nil || agentKey == "" {
-			return backgroundResponseStateUnavailable(nil)
+			return responseStateUnavailable(nil)
 		}
 		responseStore = newUserConfigResponseStateStore(rc.azdClient)
 		if _, err := responseStore.Get(ctx, agentKey); err != nil {
@@ -1206,11 +1208,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return err
 	}
 	if sid != "" {
-		if a.flags.background {
-			reqBody["agent_session_id"] = sid
-		} else {
-			reqBody["session_id"] = sid
-		}
+		reqBody["agent_session_id"] = sid
 	}
 	if a.flags.background {
 		reqBody["store"] = true
@@ -1332,7 +1330,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	// Parse SSE stream for agent output.
 	if !a.flags.background {
-		if err := readResponsesSSE(ctx, resp.Body, os.Stdout, rc.name, false, nil); err != nil {
+		if err := readResponsesSSE(ctx, resp.Body, os.Stdout, rc.name, responsesSSEOptions{}); err != nil {
 			return err
 		}
 	} else {
@@ -1352,9 +1350,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			resp.Body,
 			os.Stdout,
 			rc.name,
-			true,
-			func(progress responsesStreamProgress) error {
-				return progressPersister.Apply(ctx, progress)
+			responsesSSEOptions{
+				requireTerminal: true,
+				onProgress: func(progress responsesStreamProgress) error {
+					return progressPersister.Apply(ctx, progress)
+				},
 			},
 		)
 		var flushErr error
@@ -1372,13 +1372,13 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	return nil
 }
 
-func backgroundResponseStateUnavailable(cause error) error {
-	message := "background Responses require persistent azd state"
+func responseStateUnavailable(cause error) error {
+	message := "remote Responses require access to azd state"
 	if cause != nil {
 		message = fmt.Sprintf("%s: %v", message, cause)
 	}
 	return exterrors.Dependency(
-		exterrors.CodeBackgroundResponseStateUnavailable,
+		exterrors.CodeResponseStateUnavailable,
 		message,
 		"run this command through azd instead of executing the extension binary directly",
 	)
@@ -1643,7 +1643,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		// handleInvocationSSE returning fmt.Errorf("agent error...")) is
 		// an agent-level error; the platform's SessionErrorCode vocabulary
 		// doesn't apply, and the responses protocol's equivalent
-		// (printAgentResponse / readSSEStream agent errors) is also
+		// (printAgentResponse / readResponsesSSE agent errors) is also
 		// not wired. Keeps the two protocols' UX consistent.
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), sessionCode)

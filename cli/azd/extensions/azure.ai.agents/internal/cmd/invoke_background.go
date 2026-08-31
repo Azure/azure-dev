@@ -38,11 +38,15 @@ func isTerminalResponseStatus(status string) bool {
 	}
 }
 
+// isResponseLifecycleEvent reports whether an event marks a Response being created,
+// queued, started, or entering a terminal state.
 func isResponseLifecycleEvent(eventType string) bool {
 	switch eventType {
 	case "response.created", "response.queued", "response.in_progress",
 		"response.completed", "response.failed", "response.incomplete", "response.cancelled":
 		return true
+	// Output deltas use throttled persistence. Unknown future events remain
+	// non-lifecycle until explicitly supported.
 	default:
 		return false
 	}

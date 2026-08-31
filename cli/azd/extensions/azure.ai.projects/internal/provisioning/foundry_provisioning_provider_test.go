@@ -1321,6 +1321,42 @@ func TestFoundryServiceEndpointAtRoot_ResolvesFileRef(
 	)
 }
 
+func TestResolvedFoundryServiceEndpointAtRoot_ResolvesEnvRef(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`services:
+  foundry:
+    host: azure.ai.project
+    endpoint: ${FOUNDRY_PROJECT_ENDPOINT}
+`)
+	want := "https://acct.services.ai.azure.com/api/projects/existing"
+
+	endpoint, err := resolvedFoundryServiceEndpointAtRoot(
+		raw,
+		"",
+		"foundry",
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": want},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, want, endpoint)
+}
+
+func TestResolvedFoundryServiceEndpointAtRoot_UnsetEnvRefIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`services:
+  foundry:
+    host: azure.ai.project
+    endpoint: ${MISSING_PROJECT_ENDPOINT}
+`)
+
+	endpoint, err := resolvedFoundryServiceEndpointAtRoot(raw, "", "foundry", nil)
+
+	require.NoError(t, err)
+	assert.Empty(t, endpoint)
+}
+
 func TestProjectNameFromEndpoint(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "my-project", projectNameFromEndpoint(

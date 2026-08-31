@@ -294,6 +294,28 @@ func (p *FoundryProvisioningProvider) Initialize(
 			"fix the project service configuration in azure.yaml",
 		)
 	}
+	if endpoint != "" {
+		endpoint, err = resolvedFoundryServiceEndpointAtRoot(
+			rawYAML,
+			projectRoot,
+			svcName,
+			p.networkEnvMap(ctx),
+		)
+		if err != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAzureYaml,
+				fmt.Sprintf("resolve Foundry project endpoint: %s", err),
+				"fix the project service endpoint in azure.yaml",
+			)
+		}
+		if endpoint == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				"Foundry project service endpoint resolved to an empty value",
+				"set the endpoint environment variable referenced in azure.yaml",
+			)
+		}
+	}
 
 	onDisk := p.onDiskTemplatePresent()
 	if !onDisk && endpoint == "" {
@@ -781,6 +803,15 @@ func foundryServiceEndpointAtRoot(
 		return "", err
 	}
 	return strings.TrimSpace(service.Endpoint), nil
+}
+
+func resolvedFoundryServiceEndpointAtRoot(
+	rawYAML []byte,
+	projectRoot string,
+	svcName string,
+	env map[string]string,
+) (string, error) {
+	return synthesis.ProjectEndpoint(rawYAML, svcName, projectRoot, env)
 }
 
 // defaultResourceGroupName returns the default resource group azd provisions

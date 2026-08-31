@@ -251,6 +251,33 @@ func TestAgentDefinitionFromService_PromptAgentStringModel(t *testing.T) {
 	require.False(t, isHosted)
 }
 
+func TestAgentDefinitionFromService_PromptAgentRaiPolicy(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":         "prompt",
+		"name":         "my-prompt-agent",
+		"model":        "gpt-5-mini",
+		"instructions": "Be helpful.",
+		"policies": []any{map[string]any{
+			"type":          "rai_policy",
+			"raiPolicyName": "${RAI_POLICY_ID}",
+		}},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "my-prompt-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+
+	_, isHosted, found, _, err := AgentDefinitionFromService(svc)
+
+	require.NoError(t, err)
+	require.True(t, found)
+	require.False(t, isHosted)
+}
+
 func TestResolveAgentEnvironmentVariable(t *testing.T) {
 	t.Parallel()
 

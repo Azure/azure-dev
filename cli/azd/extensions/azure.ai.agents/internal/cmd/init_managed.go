@@ -343,11 +343,6 @@ func runInitManaged(
 		return err
 	}
 
-	// Scaffold the convention-based skills authoring layout.
-	if err := scaffoldPromptConventionFolders(serviceRelPath); err != nil {
-		return err
-	}
-
 	if err := addPromptAgentService(ctx, azdClient, agentName, serviceRelPath, &promptAgent); err != nil {
 		return err
 	}
@@ -739,33 +734,6 @@ func promptScaffoldHarness(harnessType string, manifest *promptAgentManifest) *a
 	return harness
 }
 
-// scaffoldPromptConventionFolders writes the convention-based authoring layout
-// next to agent.yaml so the deploy engine's folder conventions are discoverable
-// from a fresh init:
-//
-//   - skills/        — add one subfolder per skill (each with a SKILL.md).
-//
-// The empty folders are kept with a .gitkeep placeholder. The deploy scanners
-// ignore dotfiles, so .gitkeep never contributes content.
-//
-// Instructions are not scaffolded here: they are written inline into
-// agent.yaml, matching the prompt-agent API schema.
-func scaffoldPromptConventionFolders(targetDir string) error {
-	for _, sub := range []string{"skills"} {
-		dir := filepath.Join(targetDir, sub)
-		if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {
-			return fmt.Errorf("creating %s folder: %w", sub, err)
-		}
-		keep := filepath.Join(dir, ".gitkeep")
-		if !fileExists(keep) {
-			if err := os.WriteFile(keep, []byte{}, osutil.PermissionFile); err != nil {
-				return fmt.Errorf("writing %s/.gitkeep: %w", sub, err)
-			}
-		}
-	}
-	return nil
-}
-
 // printManagedInitSummary prints a concise summary plus next-step hint.
 func printManagedInitSummary(
 	agentName, model, harness, serviceRelPath, projectTargetDir string,
@@ -787,15 +755,9 @@ func printManagedInitSummary(
 		fmt.Printf("  Model endpoint: %s\n", settings.ModelEndpoint)
 	}
 
-	// Point at the convention-based authoring layout the scaffold created.
-	dirPrefix := ""
-	if serviceRelPath != "." {
-		dirPrefix = filepath.ToSlash(serviceRelPath) + "/"
-	}
 	fmt.Println()
-	fmt.Println("Authoring layout (edit these to add capabilities):")
+	fmt.Println("Authoring:")
 	fmt.Printf("  %-16s the agent's definition and instructions\n", "azure.yaml")
-	fmt.Printf("  %s%-16s add a subfolder per skill (each with a SKILL.md)\n", dirPrefix, "skills/")
 
 	fmt.Println()
 	fmt.Println("Next steps:")

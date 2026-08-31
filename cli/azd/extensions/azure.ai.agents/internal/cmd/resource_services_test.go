@@ -944,6 +944,8 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 			"${FOUNDRY_PROJECT_ENDPOINT}",
 			projSvc.AdditionalProperties.Fields["endpoint"].GetStringValue(),
 		)
+		require.NotContains(t, server.env, aiProjectServiceName,
+			"the project endpoint must resolve from the azd environment, not a self-referential service env")
 	})
 
 	t.Run("new project omits endpoint", func(t *testing.T) {

@@ -421,7 +421,10 @@ func addResourceService(
 	cfg *structpb.Struct,
 	uses []string,
 ) error {
-	environment := serviceEnvironmentTemplates(cfg)
+	var environment map[string]string
+	if host != AiProjectHost {
+		environment = serviceEnvironmentTemplates(cfg)
+	}
 	svc := &azdext.ServiceConfig{
 		Name:                 name,
 		Host:                 host,

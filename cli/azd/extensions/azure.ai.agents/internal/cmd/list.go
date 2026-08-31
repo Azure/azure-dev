@@ -91,7 +91,7 @@ func (a *ListAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	list, err := client.ListAgents(ctx, nil, pctx.Settings.EffectiveAPIVersion())
+	list, err := client.ListAgents(ctx, promptListQuery(), pctx.Settings.EffectiveAPIVersion())
 	if err != nil {
 		return fmt.Errorf("failed to list prompt agents: %w", err)
 	}
@@ -107,6 +107,11 @@ func (a *ListAction) Run(ctx context.Context) error {
 		printPromptListTable(list, pctx.Settings)
 	}
 	return nil
+}
+
+func promptListQuery() *agent_api.ListAgentQueryParameters {
+	kind := agent_api.AgentKindPrompt
+	return &agent_api.ListAgentQueryParameters{Kind: &kind}
 }
 
 // printPromptListTable renders a concise table of prompt agents.

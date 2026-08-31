@@ -40,7 +40,8 @@ func newDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Delete an agent.",
 		Long: `Delete an agent and all of its versions.
 
-If --version is specified, only that version is deleted (the agent itself remains).
+For hosted agents, --version deletes only that version. Prompt agents do not
+support version deletion and are always deleted as a whole.
 
 If the agent has active sessions, deletion will fail unless --force is passed.
 Use --force to terminate active sessions and delete the agent.
@@ -52,7 +53,7 @@ The agent name is resolved from the azd environment when omitted.`,
   # Delete a specific agent by name
   azd ai agent delete my-agent
 
-  # Delete a specific version only
+  # Delete a specific hosted-agent version only
   azd ai agent delete my-agent --version 2
 
   # Force-delete even if active sessions exist

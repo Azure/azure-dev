@@ -3,30 +3,7 @@
 
 package cmd
 
-import (
-	"os"
-	"path/filepath"
-	"testing"
-)
-
-func TestScaffoldPromptConventionFolders_CreatesLayout(t *testing.T) {
-	dir := t.TempDir()
-
-	if err := scaffoldPromptConventionFolders(dir); err != nil {
-		t.Fatalf("scaffoldPromptConventionFolders: %v", err)
-	}
-
-	// skills/ exists with a .gitkeep placeholder.
-	for _, sub := range []string{"skills"} {
-		info, statErr := os.Stat(filepath.Join(dir, sub))
-		if statErr != nil || !info.IsDir() {
-			t.Errorf("%s/ should be a directory: %v", sub, statErr)
-		}
-		if _, keepErr := os.Stat(filepath.Join(dir, sub, ".gitkeep")); keepErr != nil {
-			t.Errorf("%s/.gitkeep should exist: %v", sub, keepErr)
-		}
-	}
-}
+import "testing"
 
 func TestPromptManagedAgentInstructionsFlagWins(t *testing.T) {
 	flags := &initFlags{instructions: " flag instructions "}

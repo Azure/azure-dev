@@ -2056,12 +2056,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Path or URI to an agent manifest (hosted or 'kind: prompt'), or to a sample's unified azure.yaml to adopt as the project manifest")
 
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
-		"Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.")
+		"Foundry agent name to write to azure.yaml. Reusing a name creates a new version of the existing agent.")
 
 	cmd.Flags().StringVar(&flags.description, "description", "",
-		"Description to write to agent.yaml. Used as the agent's human-readable summary.")
+		"Prompt-agent description to write to azure.yaml. Used as the agent's human-readable summary.")
 	cmd.Flags().StringVar(&flags.instructions, "instructions", "",
-		"System instructions for a prompt or managed agent. Not supported for hosted agents.")
+		"System instructions for a prompt agent, including one using --harness. Written to azure.yaml; not supported for hosted agents.")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")

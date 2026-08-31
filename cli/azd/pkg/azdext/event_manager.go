@@ -27,6 +27,10 @@ type EventManager struct {
 
 type ProjectEventArgs struct {
 	Project *ProjectConfig
+
+	// FollowUp is optional text for the parent command's
+	// completion message.
+	FollowUp string
 }
 
 type ServiceEventArgs struct {
@@ -238,6 +242,8 @@ func (em *EventManager) onInvokeProjectHandler(
 		handlerMessage = err.Error()
 		handlerError = WrapError(err)
 		log.Printf("invokeProjectHandler error for event %s: %v", req.EventName, err)
+	} else {
+		handlerMessage = args.FollowUp
 	}
 
 	// Return status message

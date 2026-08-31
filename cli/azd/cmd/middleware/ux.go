@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -23,13 +24,20 @@ type UxMiddleware struct {
 	options         *Options
 	console         input.Console
 	featuresManager *alpha.FeatureManager
+	formatter       output.Formatter
 }
 
-func NewUxMiddleware(options *Options, console input.Console, featuresManager *alpha.FeatureManager) Middleware {
+func NewUxMiddleware(
+	options *Options,
+	console input.Console,
+	featuresManager *alpha.FeatureManager,
+	formatter output.Formatter,
+) Middleware {
 	return &UxMiddleware{
 		options:         options,
 		console:         console,
 		featuresManager: featuresManager,
+		formatter:       formatter,
 	}
 }
 
@@ -39,6 +47,8 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		return next(ctx)
 	}
 
+	collector := commandresult.NewFollowUpCollector()
+	ctx = commandresult.WithFollowUpCollector(ctx, collector)
 	actionResult, err := next(ctx)
 
 	// Stop the spinner always to un-hide cursor
@@ -120,6 +130,22 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		}
 	}
 
+	collectedFollowUp := collector.Text()
+	if err == nil &&
+		(m.formatter == nil || m.formatter.Kind() != output.JsonFormat) &&
+		collectedFollowUp != "" {
+		if actionResult == nil {
+			actionResult = &actions.ActionResult{}
+		}
+		if actionResult.Message == nil {
+			actionResult.Message = &actions.ResultMessage{}
+		}
+		actionResult.Message.FollowUp = mergeFollowUp(
+			actionResult.Message.FollowUp,
+			collectedFollowUp,
+		)
+	}
+
 	if actionResult != nil && actionResult.Message != nil {
 		displayResult := &ux.ActionResult{
 			SuccessMessage: actionResult.Message.Header,
@@ -130,4 +156,18 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	}
 
 	return actionResult, err
+}
+
+func mergeFollowUp(existing, added string) string {
+	added = strings.TrimSpace(added)
+	if added == "" {
+		return existing
+	}
+
+	existing = strings.TrimSpace(existing)
+	if existing == "" {
+		return added
+	}
+
+	return existing + "\n\n" + added
 }

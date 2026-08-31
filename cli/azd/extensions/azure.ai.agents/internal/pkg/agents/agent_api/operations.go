@@ -116,7 +116,6 @@ func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setDigitalWorkerPreviewFeature(req)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -655,15 +654,38 @@ func (c *AgentClient) zipDeployRequest(
 	return &agentObj, nil
 }
 
-// GetAgentVersion retrieves a specific version of an agent
+// GetAgentVersion retrieves a specific version of an agent using the standard contract.
 func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersion, apiVersion string) (*AgentVersionObject, error) {
+	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, false)
+}
+
+// GetAgentVersionWithDigitalWorkerType retrieves a specific version and opts
+// into the preview contract that returns digital_worker_type.
+func (c *AgentClient) GetAgentVersionWithDigitalWorkerType(
+	ctx context.Context,
+	agentName string,
+	agentVersion string,
+	apiVersion string,
+) (*AgentVersionObject, error) {
+	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, true)
+}
+
+func (c *AgentClient) getAgentVersion(
+	ctx context.Context,
+	agentName string,
+	agentVersion string,
+	apiVersion string,
+	includeDigitalWorkerType bool,
+) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setDigitalWorkerPreviewFeature(req)
+	if includeDigitalWorkerType {
+		setDigitalWorkerPreviewFeature(req)
+	}
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

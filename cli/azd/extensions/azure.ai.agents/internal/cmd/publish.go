@@ -243,8 +243,14 @@ func resolveDigitalWorkerPublishInputs(
 	}
 	if flags.accessBoundariesSet {
 		values := make([]string, 0, len(flags.accessBoundaries))
+		seen := make(map[string]struct{}, len(flags.accessBoundaries))
 		for _, boundary := range flags.accessBoundaries {
-			values = append(values, strings.TrimSpace(boundary))
+			boundary = strings.TrimSpace(boundary)
+			if _, ok := seen[boundary]; ok {
+				continue
+			}
+			seen[boundary] = struct{}{}
+			values = append(values, boundary)
 		}
 		if err := project.ValidateDigitalWorkerAccessBoundaries(values); err != nil {
 			return nil, nil, exterrors.Validation(

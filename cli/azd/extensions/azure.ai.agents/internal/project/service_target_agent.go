@@ -1556,7 +1556,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Read the deployed version so post-deploy behavior uses the service-side
 	// Digital Worker classification rather than only the local authoring intent.
-	deployedVersion, err := agentClient.GetAgentVersion(
+	deployedVersion, err := agentClient.GetAgentVersionWithDigitalWorkerType(
 		ctx,
 		result.agentName,
 		result.agentVersion.Version,

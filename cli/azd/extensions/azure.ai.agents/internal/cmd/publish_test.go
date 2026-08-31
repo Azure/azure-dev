@@ -310,7 +310,7 @@ func TestResolveDigitalWorkerPublishInputs(t *testing.T) {
 	permissions, boundaries, err = resolveDigitalWorkerPublishInputs(&publishFlags{
 		optionalPermissionScopes:    []string{"flag-app=Flag.Scope"},
 		optionalPermissionScopesSet: true,
-		accessBoundaries:            []string{"write.group.developers"},
+		accessBoundaries:            []string{" write.group.developers ", "write.group.developers"},
 		accessBoundariesSet:         true,
 	}, packCtx)
 	require.NoError(t, err)

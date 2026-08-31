@@ -838,6 +838,18 @@ func TestCreateAgentVersion_SimpleContractOmitsDigitalWorkerPreview(t *testing.T
 	require.NotContains(t, string(transport.lastBody), "digital_worker_type")
 }
 
+func TestGetAgent_StandardContractOmitsDigitalWorkerPreview(t *testing.T) {
+	transport := &capturingTransport{
+		statusCode: http.StatusOK,
+		respBody:   `{"name":"simple-agent","versions":{"latest":{"version":"1"}}}`,
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	_, err := client.GetAgent(t.Context(), "simple-agent", "v1")
+	require.NoError(t, err)
+	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
+}
+
 func TestUpdateAgent_OmitsDigitalWorkerPreview(t *testing.T) {
 	transport := &capturingTransport{
 		statusCode: http.StatusOK,
@@ -862,10 +874,22 @@ func TestGetAgentVersion_DigitalWorkerContract(t *testing.T) {
 	}
 	client := newTestClient("https://test.example.com/api/projects/proj", transport)
 
-	got, err := client.GetAgentVersion(t.Context(), "worker", "1", "v1")
+	got, err := client.GetAgentVersionWithDigitalWorkerType(t.Context(), "worker", "1", "v1")
 	require.NoError(t, err)
 	require.Equal(t, DigitalWorkerTypeM365, got.DigitalWorkerType)
 	require.Equal(t, DigitalWorkerPreviewFeature, transport.lastReq.Header.Get("Foundry-Features"))
+}
+
+func TestGetAgentVersion_StandardContractOmitsDigitalWorkerPreview(t *testing.T) {
+	transport := &capturingTransport{
+		statusCode: http.StatusOK,
+		respBody:   `{"name":"simple-agent","version":"1"}`,
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	_, err := client.GetAgentVersion(t.Context(), "simple-agent", "1", "v1")
+	require.NoError(t, err)
+	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
 }
 
 func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {

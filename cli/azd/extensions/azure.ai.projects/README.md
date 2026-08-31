@@ -83,6 +83,32 @@ azd env set AZURE_AI_PROJECT_ID "/subscriptions/<subscription-id>/resourceGroups
 
 `azd ai agent init` sets this value when initialized against an existing project. An endpoint-only service with no resources to reconcile does not require it.
 
+## Eject existing-project infrastructure
+
+Generate editable infrastructure for an existing Foundry project with its full
+ARM resource ID:
+
+```sh
+azd ai project init --project-id "<project-resource-id>" --infra
+azd ai project init --project-id "<project-resource-id>" --infra=terraform
+```
+
+The default format is Bicep. The generated infrastructure references the
+existing account and project without taking ownership of them. It manages only
+declared model deployments, project connections, and any required container
+registry resources. Endpoint-only initialization cannot eject infrastructure;
+rerun it with the full project resource ID.
+
+When an agent needs a registry, ejection preserves the registry state selected
+during initialization: it creates a registry when none exists, connects an
+existing registry when needed, or references an existing project connection
+without managing it. Terraform registry output is always named
+`container-registry.tf`; Bicep uses `modules/container-registry.bicep`.
+
+Terraform ejection does not support private networking and cannot adopt a
+registry already created by the `microsoft.foundry` provider. After ejection,
+future `azd provision` runs use the generated files.
+
 When provisioning reports insufficient Cognitive Services quota, check usage for the target region with
 `az cognitiveservices usage list --location <region>` or request a quota increase in the Azure portal. If an
 existing Foundry project should be reused instead, configure its endpoint and set `AZURE_AI_PROJECT_ID` to the

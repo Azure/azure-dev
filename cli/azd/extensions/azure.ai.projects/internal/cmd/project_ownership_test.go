@@ -563,6 +563,22 @@ func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot retain managed model deployments")
 }
 
+func TestExistingEndpointModeRejectsInfrastructureWithoutProjectID(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+
+	err := validateExistingEndpointMode(nil, endpoint, "bicep", nil, nil)
+	require.Error(t, err)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(
+		t,
+		exterrors.CodeInfraEjectRequiresProjectID,
+		localErr.Code,
+	)
+	assert.Contains(t, localErr.Suggestion, "--project-id <resource-id> --infra`")
+}
+
 func TestExistingEndpointModeAllowsNetworkOnlyService(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
 	service := &projectServiceInfo{
@@ -577,6 +593,24 @@ func TestExistingEndpointModeAllowsNetworkOnlyService(t *testing.T) {
 	}
 
 	require.NoError(t, validateExistingEndpointMode(service, endpoint, "", nil, nil))
+}
+
+func TestProjectEjectIdentityRejectsEndpointMismatch(t *testing.T) {
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	err := func() error {
+		_, err := projectEjectIdentity(
+			"https://other.services.ai.azure.com/api/projects/project",
+			resourceID,
+			nil,
+		)
+		return err
+	}()
+	require.Error(t, err)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
 }
 
 func TestExistingEndpointModeRejectsConnections(t *testing.T) {
@@ -1353,7 +1387,7 @@ services:
 		extCtx: &azdext.ExtensionContext{Environment: "test"},
 	}
 	require.Error(t, action.Run(t.Context()))
-	assert.Equal(t, 1, envServer.setCalls)
+	assert.Equal(t, 2, envServer.setCalls)
 	assert.Nil(t, projectServer.setRequest)
 	_, err = os.Stat(filepath.Join(root, "infra"))
 	assert.ErrorIs(t, err, os.ErrNotExist)

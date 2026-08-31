@@ -229,26 +229,71 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 	}
 	identityChanged := !equalProjectEndpoint(oldEndpoint, target.Endpoint) ||
 		!strings.EqualFold(oldValues["AZURE_AI_PROJECT_ID"], target.ResourceId)
+	oldProvider, oldPath := projectInfraConfig(projectConfig)
+	infraDeclaration, err := readProjectInfraDeclaration(projectConfig)
+	if err != nil {
+		return err
+	}
+	providerChanged := target.Mode != projectModeExistingEndpoint &&
+		oldProvider == "" && infraDeclaration.layerCount == 0
 	if target.Mode != projectModeExistingEndpoint &&
 		(projectConfig.GetInfra() == nil || projectConfig.GetInfra().GetProvider() == "") {
 		if err := writeFoundryProvider(ctx, client, projectConfig); err != nil {
 			return err
 		}
 	}
-	serviceName, mutation, err := reconciler.reconcileEndpoint(
+	restoreProvider := func() error {
+		if !providerChanged {
+			return nil
+		}
+		return restoreProjectInfraConfig(
+			ctx, client, oldProvider, oldPath,
+		)
+	}
+	restoreInfra := func() error {
+		var restoreErrs []error
+		if infra := infraFromRequest(request, a.flags); infra != "" {
+			if err := restoreProjectInfraConfig(
+				ctx, client, oldProvider, oldPath,
+			); err != nil {
+				restoreErrs = append(restoreErrs, err)
+			}
+			if infraDeclaration.layerCount > 0 {
+				if err := restoreProjectInfraLayers(
+					ctx, client, infraDeclaration.layers,
+				); err != nil {
+					restoreErrs = append(restoreErrs, err)
+				}
+			}
+		}
+		return errors.Join(restoreErrs...)
+	}
+	serviceName, mutation, restoreService, err := reconciler.reconcileEndpoint(
 		ctx, serviceProjectName, target.Endpoint, target.Mode,
 	)
 	if err != nil {
-		return err
+		return rollbackProjectInit(err, restoreProvider)
 	}
-	if err := reconcileProjectEnvironment(
+	restoreEnvironment, err := reconcileProjectEnvironmentWithRollback(
 		ctx, client, envName, target.Mode, target, identityChanged,
-	); err != nil {
-		return err
+	)
+	if err != nil {
+		return rollbackProjectInit(err, restoreService, restoreProvider)
 	}
 	if infra := infraFromRequest(request, a.flags); infra != "" {
-		if err := ejectProjectInfra(ctx, client, projectRoot, serviceName, infra); err != nil {
-			return err
+		if err := ejectProjectInfraWithTarget(
+			ctx,
+			client,
+			projectRoot,
+			serviceName,
+			infra,
+			target.Endpoint,
+			target.ResourceId,
+			oldValues,
+		); err != nil {
+			return rollbackProjectInit(
+				err, restoreEnvironment, restoreService, restoreInfra,
+			)
 		}
 	}
 
@@ -264,6 +309,7 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 	if request != nil {
 		return nil
 	}
+
 	if a.flags.output == "none" {
 		return nil
 	}
@@ -276,6 +322,25 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 		fmt.Printf("Foundry project configuration %s in services.%s.\n", mutation, serviceName)
 	}
 	return nil
+}
+
+func rollbackProjectInit(
+	operationErr error,
+	rollbacks ...func() error,
+) error {
+	var rollbackErrs []error
+	for _, rollback := range rollbacks {
+		if err := rollback(); err != nil {
+			rollbackErrs = append(
+				rollbackErrs,
+				fmt.Errorf("rollback project initialization: %w", err),
+			)
+		}
+	}
+	if len(rollbackErrs) == 0 {
+		return operationErr
+	}
+	return errors.Join(append([]error{operationErr}, rollbackErrs...)...)
 }
 
 func (a *ProjectInitAction) loadRequest() (*projectInitRequest, error) {
@@ -1318,9 +1383,9 @@ func validateExistingEndpointMode(
 ) error {
 	if infra != "" {
 		return exterrors.Dependency(
-			"managed_deployment_requires_project_id",
+			exterrors.CodeInfraEjectRequiresProjectID,
 			"infrastructure ejection requires a verified Foundry project resource ID",
-			"rerun `azd ai project init --project-id <resource-id> --infra",
+			"rerun `azd ai project init --project-id <resource-id> --infra`",
 		)
 	}
 	if hasProjectConnections(project) || hasPendingAcrProvision(values) {
@@ -1910,6 +1975,9 @@ func renderTerraformOutputs(destination string, includeAcr, layer bool) error {
 }
 
 func copyEmbeddedTree(files fs.FS, root, destination string, skip map[string]struct{}) error {
+	if err := os.MkdirAll(destination, 0755); err != nil {
+		return err
+	}
 	return fs.WalkDir(files, root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr

@@ -157,10 +157,10 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 	ctx context.Context,
 	projectName, endpoint string,
 	mode projectMode,
-) (string, string, error) {
+) (string, string, func() error, error) {
 	service, project, err := r.discoverProjectService(ctx)
 	if err != nil {
-		return "", "", err
+		return "", "", func() error { return nil }, err
 	}
 	if service == nil {
 		name := projectServiceName(projectName, project.GetServices())
@@ -169,55 +169,107 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 			body["endpoint"] = endpoint
 		}
 		if err := r.addService(ctx, name, body); err != nil {
-			return "", "", err
+			return "", "", func() error { return nil }, err
 		}
-		return name, "created", nil
+		return name, "created", func() error {
+			return removeProjectService(ctx, r.client, name)
+		}, nil
 	}
 
 	// Copy legacy services instead of editing them in place.
 	// A service-level ref cannot use the shallow overlay RPC.
 	if service.Legacy {
 		if service.ServiceRef != "" {
-			return "", "", projectServiceRefError(service.Name, service.ServiceRef)
+			return "", "", func() error { return nil },
+				projectServiceRefError(service.Name, service.ServiceRef)
 		}
 		body, err := legacyProjectServiceBody(service.Raw, endpoint)
 		if err != nil {
-			return "", "", fmt.Errorf(
+			return "", "", func() error { return nil }, fmt.Errorf(
 				"copy legacy project service %q: %w", service.Name, err,
 			)
 		}
 		name := projectServiceName(projectName, project.GetServices())
 		if err := r.addService(ctx, name, body); err != nil {
-			return "", "", err
+			return "", "", func() error { return nil }, err
 		}
-		return name, "migrated", nil
+		return name, "migrated", func() error {
+			return removeProjectService(ctx, r.client, name)
+		}, nil
 	}
 
 	currentEndpoint := serviceEndpoint(service.Resolved)
 	if endpoint != "" {
 		normalized, _, err := validateProjectEndpoint(endpoint)
 		if err != nil {
-			return "", "", err
+			return "", "", func() error { return nil }, err
 		}
 		endpoint = normalized
 	}
 	if equalProjectEndpoint(currentEndpoint, endpoint) {
-		return service.Name, "unchanged", nil
+		return service.Name, "unchanged", func() error { return nil }, nil
 	}
 	if service.ServiceRef != "" {
-		return "", "", projectServiceRefError(service.Name, service.ServiceRef)
+		return "", "", func() error { return nil },
+			projectServiceRefError(service.Name, service.ServiceRef)
 	}
 
+	previous, err := cloneMap(service.Raw)
+	if err != nil {
+		return "", "", func() error { return nil }, fmt.Errorf(
+			"copy project service %q for rollback: %w", service.Name, err,
+		)
+	}
 	if endpoint == "" {
 		if _, ok := service.Raw["endpoint"]; !ok {
-			return service.Name, "unchanged", nil
+			return service.Name, "unchanged", func() error { return nil }, nil
 		}
 	}
 	if err := setProjectServiceEndpoint(ctx, r.client, service.Name, endpoint); err != nil {
-		return "", "", err
+		return "", "", func() error { return nil }, err
 	}
 	_ = mode
-	return service.Name, "updated", nil
+	return service.Name, "updated", func() error {
+		return restoreProjectServiceConfig(
+			ctx, r.client, service.Name, previous,
+		)
+	}, nil
+}
+
+func removeProjectService(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	name string,
+) error {
+	if err := unsetProjectConfigValue(ctx, client, "services."+name); err != nil {
+		return fmt.Errorf("remove project service %q: %w", name, err)
+	}
+	return nil
+}
+
+func restoreProjectServiceConfig(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	name string,
+	raw map[string]any,
+) error {
+	if raw == nil {
+		raw = map[string]any{}
+	}
+	section, err := structpb.NewStruct(raw)
+	if err != nil {
+		return fmt.Errorf("encode project service %q rollback: %w", name, err)
+	}
+	if _, err := client.Project().SetServiceConfigSection(
+		ctx,
+		&azdext.SetServiceConfigSectionRequest{
+			ServiceName: name,
+			Section:     section,
+		},
+	); err != nil {
+		return fmt.Errorf("restore project service %q: %w", name, err)
+	}
+	return nil
 }
 
 func setProjectServiceEndpoint(

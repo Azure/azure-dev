@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -121,10 +122,24 @@ func reconcileProjectEnvironment(
 	project *resolvedProject,
 	identityChanged bool,
 ) error {
+	_, err := reconcileProjectEnvironmentWithRollback(
+		ctx, client, envName, mode, project, identityChanged,
+	)
+	return err
+}
+
+func reconcileProjectEnvironmentWithRollback(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	envName string,
+	mode projectMode,
+	project *resolvedProject,
+	identityChanged bool,
+) (func() error, error) {
 	response, err := client.Environment().GetValues(ctx,
 		&azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {
-		return exterrors.Dependency(
+		return func() error { return nil }, exterrors.Dependency(
 			exterrors.CodeEnvironmentValuesFailed,
 			fmt.Sprintf("read project environment %q: %s", envName, err),
 			"select or create an azd environment before initializing a project",
@@ -148,7 +163,13 @@ func reconcileProjectEnvironment(
 			Key:     key,
 			Value:   plan.Sets[key],
 		}); err != nil {
-			return fmt.Errorf("set project environment value %s: %w", key, err)
+			operationErr := fmt.Errorf(
+				"set project environment value %s: %w", key, err,
+			)
+			return func() error { return nil },
+				rollbackProjectEnvironment(
+					ctx, client, envName, old, plan, operationErr,
+				)
 		}
 	}
 	for _, key := range plan.Unsets {
@@ -157,10 +178,77 @@ func reconcileProjectEnvironment(
 			Key:     key,
 			Value:   "",
 		}); err != nil {
-			return fmt.Errorf("clear project environment value %s: %w", key, err)
+			operationErr := fmt.Errorf(
+				"clear project environment value %s: %w", key, err,
+			)
+			return func() error { return nil },
+				rollbackProjectEnvironment(
+					ctx, client, envName, old, plan, operationErr,
+				)
 		}
 	}
-	return nil
+	return func() error {
+		return restoreProjectEnvironment(ctx, client, envName, old, plan)
+	}, nil
+}
+
+func rollbackProjectEnvironment(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	envName string,
+	old map[string]string,
+	plan environmentPlan,
+	operationErr error,
+) error {
+	if restoreErr := restoreProjectEnvironment(
+		ctx, client, envName, old, plan,
+	); restoreErr != nil {
+		return errors.Join(operationErr, restoreErr)
+	}
+	return operationErr
+}
+
+func restoreProjectEnvironment(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	envName string,
+	old map[string]string,
+	plan environmentPlan,
+) error {
+	keys := make([]string, 0, len(plan.Sets)+len(plan.Unsets))
+	seen := map[string]struct{}{}
+	for key := range plan.Sets {
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	for _, key := range plan.Unsets {
+		if _, exists := seen[key]; !exists {
+			seen[key] = struct{}{}
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	var restoreErrs []error
+	for _, key := range keys {
+		value := ""
+		if oldValue, exists := old[key]; exists {
+			value = oldValue
+		}
+		if _, err := client.Environment().SetValue(
+			ctx,
+			&azdext.SetEnvRequest{
+				EnvName: envName,
+				Key:     key,
+				Value:   value,
+			},
+		); err != nil {
+			restoreErrs = append(
+				restoreErrs,
+				fmt.Errorf("restore project environment value %s: %w", key, err),
+			)
+		}
+	}
+	return errors.Join(restoreErrs...)
 }
 
 func currentProjectEnvironment(

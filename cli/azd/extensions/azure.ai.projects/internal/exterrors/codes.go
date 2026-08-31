@@ -20,6 +20,7 @@ const (
 	CodeOnDiskParametersInvalid  = "ondisk_parameters_invalid"
 	CodeOnDiskTemplateMissing    = "ondisk_template_missing"
 	CodeArmWhatIfFailed          = "arm_what_if_failed"
+	CodeInfraEjectWriteFailed    = "infra_eject_write_failed"
 )
 
 // Error codes commonly used for dependency errors.
@@ -33,6 +34,7 @@ const (
 	CodeMissingAzureSubscription    = "missing_azure_subscription_id"
 	CodeMissingAzureLocation        = "missing_azure_location"
 	CodeProvisioningServiceNotFound = "provisioning_service_not_found"
+	CodeInfraEjectRequiresProjectID = "infra_eject_requires_project_id"
 )
 
 const (

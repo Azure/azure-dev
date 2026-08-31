@@ -96,9 +96,10 @@ host.WithProjectEventHandler("postdeploy",
 
 The host appends this text to the parent command's human-readable completion
 message. It treats the text as opaque, collects only successful project
-`post*` events, and leaves JSON output unchanged. Keep the field empty if the
-extension has no command-level next step. Do not use it for service-level
-events or for error messages.
+`post*` events, and leaves JSON output unchanged. Within one command, a later
+completed `post*` result replaces the earlier result from that extension; an
+empty value retracts it. Other extensions and existing core follow-up text are
+preserved. Do not use it for service-level events or for error messages.
 
 ## Extension Design Guidelines
 

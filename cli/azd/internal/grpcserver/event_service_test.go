@@ -436,6 +436,7 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 		eventName string
 		status    string
 		message   string
+		initial   string
 		want      string
 		wantError bool
 	}{
@@ -444,25 +445,45 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 			eventName: "postdeploy",
 			status:    "completed",
 			message:   "Run azd show",
+			initial:   "old guidance",
 			want:      "Run azd show",
 		},
 		{
-			name:      "completed pre event",
+			name:      "completed pre event with empty message",
 			eventName: "predeploy",
 			status:    "completed",
-			message:   "not a follow-up",
+			initial:   "old guidance",
+			want:      "old guidance",
 		},
 		{
 			name:      "completed post event with empty message",
 			eventName: "postdeploy",
 			status:    "completed",
+			initial:   "old guidance",
+		},
+		{
+			name:      "completed post event with whitespace message",
+			eventName: "postdeploy",
+			status:    "completed",
+			message:   " \n\t ",
+			initial:   "old guidance",
 		},
 		{
 			name:      "failed post event",
 			eventName: "postdeploy",
 			status:    "failed",
 			message:   "hook failed",
+			initial:   "old guidance",
+			want:      "old guidance",
 			wantError: true,
+		},
+		{
+			name:      "incomplete post event",
+			eventName: "postdeploy",
+			status:    "running",
+			message:   "not complete",
+			initial:   "old guidance",
+			want:      "old guidance",
 		},
 	}
 
@@ -500,6 +521,7 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 				broker,
 			)
 			collector := commandresult.NewFollowUpCollector()
+			collector.Add(extension.Id, tt.initial)
 			ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
 
 			err = handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})

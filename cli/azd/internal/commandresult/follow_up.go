@@ -37,14 +37,22 @@ func FollowUpCollectorFromContext(ctx context.Context) *FollowUpCollector {
 	return collector
 }
 
-// Add records follow-up text for an extension.
+// Add records follow-up text for an extension. An empty value
+// clears that extension's contribution.
 func (c *FollowUpCollector) Add(extensionID, followUp string) {
-	if c == nil || strings.TrimSpace(followUp) == "" {
+	if c == nil {
 		return
 	}
 
+	isBlank := strings.TrimSpace(followUp) == ""
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if isBlank {
+		delete(c.contributions, extensionID)
+		return
+	}
+
 	if c.contributions == nil {
 		c.contributions = make(map[string]string)
 	}

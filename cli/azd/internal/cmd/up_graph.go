@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -934,7 +933,7 @@ func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 		ErrorPolicy: exegraph.FailFast,
 	}
 
-	concurrency := resolveUpGraphConcurrency(os.LookupEnv)
+	concurrency := resolveUpGraphConcurrency(u.env.LookupEnv)
 	opts.MaxConcurrency = concurrency.max
 	opts.GroupConcurrency = concurrency.groups
 

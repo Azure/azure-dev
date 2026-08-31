@@ -1559,6 +1559,31 @@ func TestSetStepSpanAttributes(t *testing.T) {
 	assert.Equal(t, []string{"deploy"}, tagsVal.AsStringSlice())
 }
 
+func TestSetRunSpanAttributes_RecordsPhaseConcurrency(t *testing.T) {
+	span := &mocktracing.Span{}
+	g := NewGraph()
+	require.NoError(t, g.AddStep(&Step{
+		Name:   "package-api",
+		Action: func(context.Context) error { return nil },
+	}))
+
+	setRunSpanAttributes(span, g, RunOptions{
+		MaxConcurrency: 8,
+		ErrorPolicy:    FailFast,
+		GroupConcurrency: map[string]int{
+			"package":   2,
+			"provision": 3,
+			"deploy":    4,
+			"custom":    5,
+		},
+	})
+
+	assert.Equal(t, int64(2), stepAttr(t, span, fields.ExeGraphPackageConcurrencyKey.Key).AsInt64())
+	assert.Equal(t, int64(3), stepAttr(t, span, fields.ExeGraphProvisionConcurrencyKey.Key).AsInt64())
+	assert.Equal(t, int64(4), stepAttr(t, span, fields.ExeGraphDeployConcurrencyKey.Key).AsInt64())
+	assert.NotContains(t, span.Attributes, attribute.Int("exegraph.custom_concurrency", 5))
+}
+
 // stepAttr returns the value of the attribute with the given key set on span.
 func stepAttr(t *testing.T, span *mocktracing.Span, key attribute.Key) attribute.Value {
 	t.Helper()

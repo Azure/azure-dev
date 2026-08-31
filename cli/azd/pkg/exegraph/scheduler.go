@@ -104,11 +104,7 @@ func RunWithResult(ctx context.Context, g *Graph, opts RunOptions) (result *RunR
 		return result
 	}
 
-	span.SetAttributes(
-		fields.ExeGraphStepCountKey.Int(g.Len()),
-		fields.ExeGraphMaxConcurrencyKey.Int(opts.MaxConcurrency),
-		fields.ExeGraphErrorPolicyKey.String(opts.ErrorPolicy.String()),
-	)
+	setRunSpanAttributes(span, g, opts)
 
 	if g.Len() == 0 {
 		return result
@@ -500,7 +496,25 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 	return result
 }
 
-// runStep executes a single step with panic recovery, tracing, and callbacks.
+// setRunSpanAttributes records scheduler configuration on the run span.
+func setRunSpanAttributes(span tracing.Span, g *Graph, opts RunOptions) {
+	span.SetAttributes(
+		fields.ExeGraphStepCountKey.Int(g.Len()),
+		fields.ExeGraphMaxConcurrencyKey.Int(opts.MaxConcurrency),
+		fields.ExeGraphErrorPolicyKey.String(opts.ErrorPolicy.String()),
+	)
+
+	if limit, ok := opts.GroupConcurrency["package"]; ok {
+		span.SetAttributes(fields.ExeGraphPackageConcurrencyKey.Int(limit))
+	}
+	if limit, ok := opts.GroupConcurrency["provision"]; ok {
+		span.SetAttributes(fields.ExeGraphProvisionConcurrencyKey.Int(limit))
+	}
+	if limit, ok := opts.GroupConcurrency["deploy"]; ok {
+		span.SetAttributes(fields.ExeGraphDeployConcurrencyKey.Int(limit))
+	}
+}
+
 // setStepSpanAttributes records identifying attributes for step on span. The step
 // name and DependsOn entries embed user-chosen identifiers from azure.yaml (service
 // names, layer names) and are hashed before emission per
@@ -516,6 +530,7 @@ func setStepSpanAttributes(span tracing.Span, step *Step) {
 	}
 }
 
+// runStep executes a single step with panic recovery, tracing, and callbacks.
 func runStep(ctx context.Context, step *Step, opts RunOptions) (stepErr error) {
 	ctx, span := tracing.Start(ctx, events.ExeGraphStepEvent)
 

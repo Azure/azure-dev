@@ -48,6 +48,12 @@ func resolveConcurrencySetting(lookup environmentLookup, envName string) concurr
 		return setting
 	}
 	if value <= 0 {
+		log.Printf(
+			"warning: ignoring invalid %s=%q: value must be greater than zero; "+
+				"lower-precedence concurrency settings will not apply",
+			envName,
+			envValue,
+		)
 		return setting
 	}
 

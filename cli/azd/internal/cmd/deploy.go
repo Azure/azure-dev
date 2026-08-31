@@ -292,7 +292,7 @@ func (da *DeployAction) deployServicesGraph(
 	if err != nil {
 		return nil, err
 	}
-	concurrency := resolveDeployGraphConcurrency(os.LookupEnv)
+	concurrency := resolveDeployGraphConcurrency(da.env.LookupEnv)
 
 	// Wrap console for thread-safe output during parallel deployment.
 	// Graph step callbacks may call ShowSpinner/StopSpinner/Message which are

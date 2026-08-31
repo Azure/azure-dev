@@ -506,7 +506,7 @@ func (p *ProvisionAction) graphRunOptions(ctx context.Context, quiet bool) exegr
 		}
 	}
 
-	concurrency := resolveProvisionGraphConcurrency(os.LookupEnv)
+	concurrency := resolveProvisionGraphConcurrency(p.env.LookupEnv)
 	opts.MaxConcurrency = concurrency.max
 	opts.GroupConcurrency = concurrency.groups
 

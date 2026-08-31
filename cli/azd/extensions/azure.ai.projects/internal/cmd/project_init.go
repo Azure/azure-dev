@@ -719,8 +719,11 @@ func resolveAzureContextForInit(
 	if target == nil || target.Mode == projectModeExistingEndpoint {
 		return nil
 	}
-	needSubscription := target.SubscriptionId == "" && values["AZURE_SUBSCRIPTION_ID"] == ""
-	needLocation := target.Location == "" && values["AZURE_LOCATION"] == ""
+	targetSubscriptionID := strings.TrimSpace(target.SubscriptionId)
+	needSubscription := targetSubscriptionID == "" &&
+		strings.TrimSpace(values["AZURE_SUBSCRIPTION_ID"]) == ""
+	needLocation := strings.TrimSpace(target.Location) == "" &&
+		strings.TrimSpace(values["AZURE_LOCATION"]) == ""
 	if !required && (noPrompt || (!needSubscription && !needLocation)) {
 		return nil
 	}
@@ -732,27 +735,25 @@ func resolveAzureContextForInit(
 		if needLocation {
 			missing = append(missing, "AZURE_LOCATION")
 		}
+		code := exterrors.CodeMissingAzureLocation
+		if needSubscription {
+			code = exterrors.CodeMissingAzureSubscription
+		}
 		return exterrors.Dependency(
-			exterrors.CodeMissingAzureSubscription,
+			code,
 			fmt.Sprintf("Azure context is incomplete; missing %s", strings.Join(missing, ", ")),
 			"set the missing values in the active azd environment and retry",
 		)
 	}
-	if needSubscription {
-		response, err := client.Prompt().PromptSubscription(ctx,
-			&azdext.PromptSubscriptionRequest{})
+	if needSubscription || (needLocation && targetSubscriptionID == "") {
+		subscriptionID, userTenantID, err := resolveInteractiveSubscription(
+			ctx, client, values,
+		)
 		if err != nil {
-			return fmt.Errorf("select Azure subscription: %w", err)
+			return err
 		}
-		if response.GetSubscription() == nil || response.Subscription.GetId() == "" {
-			return exterrors.Dependency(
-				exterrors.CodeMissingAzureSubscription,
-				"no Azure subscription was selected",
-				"select an Azure subscription and retry",
-			)
-		}
-		target.SubscriptionId = response.Subscription.GetId()
-		target.UserTenantId = response.Subscription.GetUserTenantId()
+		target.SubscriptionId = subscriptionID
+		target.UserTenantId = userTenantID
 	}
 	if needLocation {
 		azureContext := &azdext.AzureContext{

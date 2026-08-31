@@ -578,6 +578,9 @@ The first-run middleware is not currently registered, so these fields are not em
 |-----------|------|-------------|
 | `exegraph.step.count` | measurement | Total steps in graph |
 | `exegraph.max_concurrency` | measurement | Effective concurrency limit |
+| `exegraph.package_concurrency` | measurement | Resolved package phase concurrency limit, when package concurrency is configured for the graph |
+| `exegraph.provision_concurrency` | measurement | Resolved provision phase concurrency limit, when provision concurrency is configured for the graph |
+| `exegraph.deploy_concurrency` | measurement | Resolved deploy phase concurrency limit, when deploy concurrency is configured for the graph |
 | `exegraph.error_policy` | string | `fail_fast` or `continue_on_error` |
 | `exegraph.step.name` | string | Step name. **SHA-256 hashed** — embeds user-defined service/layer names from `azure.yaml` |
 | `exegraph.step.deps` | string[] | Step dependencies (other step names). **SHA-256 hashed** for the same reason |

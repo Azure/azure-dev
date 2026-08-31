@@ -270,6 +270,9 @@ OTel events and attributes added:
 | `exegraph.step` | Child span per step |
 | `exegraph.step.count` | Number of steps in graph |
 | `exegraph.max_concurrency` | Effective worker count |
+| `exegraph.package_concurrency` | Resolved package phase concurrency limit |
+| `exegraph.provision_concurrency` | Resolved provision phase concurrency limit |
+| `exegraph.deploy_concurrency` | Resolved deploy phase concurrency limit |
 | `exegraph.error_policy` | `FailFast` or `ContinueOnError` |
 | `exegraph.step.name` | Step name |
 | `exegraph.step.deps` | Step dependency list |

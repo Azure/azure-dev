@@ -416,6 +416,9 @@ The execution graph powers the parallel `up` / `provision` / `deploy` engine.
 |-------|----------|----------------|---------|-------|
 | Step count | `exegraph.step.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of steps in the graph |
 | Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — effective concurrency limit used for the run |
+| Package concurrency | `exegraph.package_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved package phase concurrency limit; `0` means no dedicated phase limit |
+| Provision concurrency | `exegraph.provision_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved provision phase concurrency limit; `0` means no dedicated phase limit |
+| Deploy concurrency | `exegraph.deploy_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved deploy phase concurrency limit; `0` means no dedicated phase limit |
 | Error policy | `exegraph.error_policy` | SystemMetadata | PerformanceAndHealth | `fail_fast` or `continue_on_error` |
 | Step name | `exegraph.step.name` | SystemMetadata | PerformanceAndHealth | **Hashed** via `fields.StringHashed` — step names embed user-chosen service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
 | Step deps | `exegraph.step.deps` | SystemMetadata | PerformanceAndHealth | **Hashed slice** via `fields.StringSliceHashed` — each entry is another step name that embeds user-chosen identifiers |

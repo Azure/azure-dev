@@ -804,6 +804,30 @@ var (
 		IsMeasurement:  true,
 	}
 
+	// ExeGraphPackageConcurrencyKey records the resolved package phase concurrency limit.
+	ExeGraphPackageConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.package_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphProvisionConcurrencyKey records the resolved provision phase concurrency limit.
+	ExeGraphProvisionConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.provision_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphDeployConcurrencyKey records the resolved deploy phase concurrency limit.
+	ExeGraphDeployConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.deploy_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
 	// ExeGraphErrorPolicyKey records the error policy (fail_fast or continue_on_error).
 	ExeGraphErrorPolicyKey = AttributeKey{
 		Key:            attribute.Key("exegraph.error_policy"),

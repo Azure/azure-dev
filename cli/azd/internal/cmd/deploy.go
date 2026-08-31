@@ -352,7 +352,7 @@ func (da *DeployAction) deployServicesGraph(
 
 	// Wire progress tracker to graph step lifecycle callbacks.
 	// Step names are "package-<svc>", "publish-<svc>", "deploy-<svc>".
-	concurrency := resolveDeployGraphConcurrency(os.LookupEnv)
+	concurrency := resolveDeployGraphConcurrency(da.env.LookupEnv)
 	opts := exegraph.RunOptions{
 		MaxConcurrency:   concurrency.max,
 		GroupConcurrency: concurrency.groups,

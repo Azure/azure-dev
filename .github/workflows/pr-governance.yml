@@ -21,11 +21,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
 
       - name: Check linked issue
         id: issue-check
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             const script = require('./.github/scripts/pr-governance-issue-check.js');
@@ -33,7 +33,7 @@ jobs:
 
       - name: Check issue priority
         if: steps.issue-check.outputs.skipped != 'true' && steps.issue-check.outcome == 'success'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         env:
           PROJECT_TOKEN: ${{ secrets.PROJECT_READ_TOKEN }}
           ISSUE_NUMBERS: ${{ steps.issue-check.outputs.issue_numbers }}

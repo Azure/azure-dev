@@ -12,7 +12,7 @@ jobs:
     environment: copilot
     steps:
       - name: Install azd
-        uses: Azure/setup-azd@v2
+        uses: Azure/setup-azd@0b7e3a35ab00f2eee7080c845eb39c3f0ebfa553  # v2.4.0
       - name: Azure login
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5
         with:

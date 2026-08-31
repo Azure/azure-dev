@@ -109,7 +109,7 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   verb + " <name>",
 		Short: short,
-		Args:  cobra.ExactArgs(1),
+		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if !validAssetName(name) {
@@ -273,7 +273,7 @@ func newDatasetVersionsListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list <name>",
 		Short: "List the versions of a dataset.",
-		Args:  cobra.ExactArgs(1),
+		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if !validAssetName(name) {
@@ -335,7 +335,7 @@ func newDatasetShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <name>",
 		Short: "Show a dataset version.",
-		Args:  cobra.ExactArgs(1),
+		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if !validAssetName(name) {
@@ -407,7 +407,7 @@ func newDatasetDeleteCommand() *cobra.Command {
 		Long: "Delete a dataset version.\n\n" +
 			"Asks before removing it. With --no-prompt, or with JSON output, " +
 			"--force is required.",
-		Args: cobra.ExactArgs(1),
+		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if !validAssetName(name) {

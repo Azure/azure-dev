@@ -213,9 +213,13 @@ func newInitCommand() *cobra.Command {
 				evaluators: evaluators,
 				judgeModel: judgeModel,
 				rubricName: target + "-quality",
-				evalDir:    path,
+				evalDir:    evalDir,
 				cfg:        cfg,
 			})
+
+			if err := refuseDuplicateEval(path, plan.eval); err != nil {
+				return err
+			}
 
 			if err := project.ApplyScaffold(path, project.ScaffoldWrite{
 				RemoveEval: replacedEval,
@@ -541,6 +545,44 @@ func addEvaluatorDecl(cfg *project.EvalConfig, decl project.EvaluatorDecl) {
 	cfg.Evaluators = append(cfg.Evaluators, decl)
 }
 
+// refuseDuplicateEval stops `init` writing an eval that differs from one
+// already declared only by name.
+//
+// Deploying refuses the pair, because the environment records an id against
+// each eval's substance and a shared substance makes that lookup ambiguous.
+// That refusal names the whole file, so the entry `init` had just written
+// stayed there: `run start` went on offering it, and choosing it reported an
+// eval that was declared but never deployed. Refusing before the write is what
+// leaves nothing to clean up.
+//
+// Reads the configuration off disk and makes no service call. A configuration
+// that cannot be read is not this check's business -- deploying will say so
+// with better context -- so it is skipped rather than guessed at.
+func refuseDuplicateEval(location string, planned *project.Eval) error {
+	if planned == nil {
+		return nil
+	}
+	cfg, err := project.OpenEvalConfig(location)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	digest, err := project.FingerprintGroup(*planned)
+	if err != nil {
+		return nil
+	}
+	for _, existing := range cfg.Evals {
+		if existing.Name == planned.Name {
+			continue
+		}
+		other, err := project.FingerprintGroup(existing)
+		if err != nil || other != digest {
+			continue
+		}
+		return messages.EvalWouldDuplicate(planned.Name, existing.Name)
+	}
+	return nil
+}
+
 // declaredSoFar seeds the accumulator with the names the configuration already
 // declares, so planScaffold can tell an addition from a duplicate.
 //
@@ -658,7 +700,10 @@ func relativeToConfig(path, evalDir string) string {
 	if err != nil {
 		return path
 	}
-	absOut, err := filepath.Abs(evalDir)
+	// The location is the directory before anything is written and the
+	// configuration file once it exists, so a second `init` rebased every path
+	// against the file and put a `..` in front of it.
+	absOut, err := filepath.Abs(project.EvalDirOf(evalDir))
 	if err != nil {
 		return path
 	}

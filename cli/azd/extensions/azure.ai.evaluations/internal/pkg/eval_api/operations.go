@@ -459,6 +459,29 @@ func (c *EvalClient) ListOpenAIEvals(ctx context.Context, limit int) (*OpenAIEva
 	return all, nil
 }
 
+// ListOpenAIEvalsPage lists one page of eval definitions and returns the
+// service's cursor with them.
+//
+// Separate from ListOpenAIEvals, and deliberately. Resolution has to see every
+// page -- "is this name ambiguous?" is decided from these rows, so a listing
+// that stopped early would turn a refusal into a wrong choice. A reader looking
+// at a table wants the first rows now, and a shared project runs to hundreds.
+// after is the cursor from a previous call, empty for the first page.
+func (c *EvalClient) ListOpenAIEvalsPage(
+	ctx context.Context,
+	limit int,
+	after string,
+) (*OpenAIEvalList, error) {
+	query := map[string]string{}
+	if limit > 0 {
+		query["limit"] = strconv.Itoa(limit)
+	}
+	if after != "" {
+		query["after"] = after
+	}
+	return doRequestTyped[OpenAIEvalList](c, ctx, http.MethodGet, pathOpenAIEvals, query, nil, "")
+}
+
 // collectPages walks an OpenAI-shaped listing until the service stops offering
 // a cursor, or until limit rows have been gathered.
 //

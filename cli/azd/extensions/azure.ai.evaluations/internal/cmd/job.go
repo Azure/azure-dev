@@ -184,7 +184,7 @@ func newJobShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <job-id>",
 		Short: "Show a generation job.",
-		Args:  cobra.ExactArgs(1),
+		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
 			kind, err := sel.kind()
@@ -227,7 +227,7 @@ func newJobCancelCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cancel <job-id>",
 		Short: "Cancel an in-flight generation job.",
-		Args:  cobra.ExactArgs(1),
+		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
 			kind, err := sel.kind()
@@ -271,7 +271,7 @@ func newJobDeleteCommand() *cobra.Command {
 		Long: "Delete a generation job record.\n\n" +
 			"The artifact the job produced is already registered as its own version " +
 			"and is not affected.",
-		Args: cobra.ExactArgs(1),
+		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
 			kind, err := sel.kind()

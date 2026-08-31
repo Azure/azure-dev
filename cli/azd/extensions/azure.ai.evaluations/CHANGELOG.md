@@ -1,5 +1,37 @@
 # Release History
 
+## 1.0.28-beta (2026-08-31)
+
+### Bugs Fixed
+
+- A dataset inside the eval directory is no longer reached with a `..`. Paths
+  were rebased against the location, which is the directory before anything is
+  written and the configuration file once it exists -- so a second `init` wrote
+  `../datasets/rows.jsonl` and the deploy looked for the rows beside the
+  project. Reported as 5558481.
+- `init` refuses an eval that would differ from one already declared only by
+  name, instead of writing it and leaving a deploy to reject the whole file.
+  The entry used to stay behind, was offered by `run start`, and then reported
+  itself as declared but never deployed. Reported as 5558468.
+- A row where every evaluator passed shows why. The reason was only captured
+  for evaluators that failed, so a clean run printed an empty REASON column,
+  and the evaluators column now says `all passed` rather than a bare dash.
+  Reported as 5558666.
+
+### Other Changes
+
+- `eval list` returns a page at a time, 50 rows by default, and prints the
+  token for the next one. It walked every page, which on a shared project
+  meant seconds of waiting to read your own evals out of hundreds. `--name`
+  filters by substring, and the filter is applied before either view renders
+  so `-o json` and the table cannot disagree.
+- `run start` says it is waiting, and names `--no-wait`. The wait stays the
+  default, because `--fail-on` needs the verdict.
+- Every run-scoped command takes `--run`, which is the flag the fallback line
+  now names.
+- A command missing an argument names it, taken from its own usage line,
+  rather than reporting `accepts 1 arg(s), received 0`.
+
 ## 1.0.27-beta (2026-08-26)
 
 ### Bugs Fixed

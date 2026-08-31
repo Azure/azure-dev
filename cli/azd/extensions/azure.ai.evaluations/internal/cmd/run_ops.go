@@ -112,6 +112,7 @@ func newRunShowCommand() *cobra.Command {
 		groupName   string
 		wait        bool
 		failOn      string
+		runFlag     string
 	)
 
 	cmd := &cobra.Command{
@@ -138,6 +139,9 @@ func newRunShowCommand() *cobra.Command {
 			}
 
 			runID := firstArg(args)
+			if runID == "" {
+				runID = runFlag
+			}
 			run, err := ec.latestOrNamedRun(cmd, evalID, runID, true)
 			if err != nil {
 				return err
@@ -223,6 +227,7 @@ func newRunShowCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&wait, "wait", false,
 		"Block until the run reaches a terminal state before reporting.")
 	addFailOnFlag(cmd, &failOn)
+	addRunFlag(cmd, &runFlag)
 	addEvalFlag(cmd, &groupName)
 	// Registered wherever a declared name is resolved, so a configuration
 	// outside ./evals can be addressed by every command, not just `run start`.
@@ -255,6 +260,7 @@ func newRunCancelCommand() *cobra.Command {
 	var (
 		endpointFlg string
 		groupName   string
+		runFlag     string
 	)
 
 	cmd := &cobra.Command{
@@ -275,6 +281,9 @@ func newRunCancelCommand() *cobra.Command {
 			}
 
 			runID := firstArg(args)
+			if runID == "" {
+				runID = runFlag
+			}
 			// Cancelling changes a run, so this settles for the one named or the
 			// one this environment started, and never the newest one listed.
 			target, err := ec.latestOrNamedRun(cmd, evalID, runID, false)
@@ -303,6 +312,7 @@ func newRunCancelCommand() *cobra.Command {
 			return nil
 		},
 	}
+	addRunFlag(cmd, &runFlag)
 	addEvalFlag(cmd, &groupName)
 	// Registered wherever a declared name is resolved, so a configuration
 	// outside ./evals can be addressed by every command, not just `run start`.
@@ -330,7 +340,7 @@ func newRunDeleteCommand() *cobra.Command {
 		Long: "Delete a run.\n\n" +
 			"The run's results go with it. Asks before removing it; with " +
 			"--no-prompt, or with JSON output, --force is required.",
-		Args: cobra.ExactArgs(1),
+		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			runID := args[0]

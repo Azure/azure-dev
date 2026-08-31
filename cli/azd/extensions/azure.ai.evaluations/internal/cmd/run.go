@@ -242,6 +242,9 @@ func buildRunCommand(use, short string) *cobra.Command {
 				return nil
 			}
 
+			if !isJSON(cmd) {
+				fmt.Fprint(out, messages.WaitingForRun(run.ID))
+			}
 			final, err := ec.pollRun(ctx, evalID, run.ID, out, isJSON(cmd))
 			if errors.Is(err, errWaitBudgetSpent) {
 				// A gate asked for a verdict that never arrived. Exiting 0 here

@@ -164,12 +164,14 @@ func newEvalCreateCommand() *cobra.Command {
 func newEvalListCommand() *cobra.Command {
 	var (
 		limit       int
+		nameFilter  string
+		pageToken   string
 		endpointFlg string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List the project's evals.",
+		Short: "List the project's evals, a page at a time.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -179,29 +181,75 @@ func newEvalListCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			list, err := ec.evalClient.ListOpenAIEvals(ctx, limit)
+			pageSize := limit
+			if pageSize <= 0 {
+				pageSize = defaultEvalPageSize
+			}
+			page, err := ec.evalClient.ListOpenAIEvalsPage(ctx, pageSize, pageToken)
 			if err != nil {
 				return messages.ListingEvals(err)
 			}
 
+			// Filtered before either view renders, so `-o json` and the table
+			// answer the same question.
+			total := len(page.Data)
+			matched := filterEvalsByName(page.Data, nameFilter)
+
 			if isJSON(cmd) {
-				return emitJSONList(cmd.OutOrStdout(), list.Data)
+				return emitJSONList(cmd.OutOrStdout(), matched)
 			}
-			if len(list.Data) == 0 {
-				fmt.Fprint(cmd.OutOrStdout(), messages.NoEvals())
+			out := cmd.OutOrStdout()
+			if len(matched) == 0 {
+				if nameFilter != "" && total > 0 {
+					fmt.Fprint(out, messages.NoEvalsMatching(nameFilter, total))
+				} else {
+					fmt.Fprint(out, messages.NoEvals())
+				}
 				return nil
 			}
-			rows := make([][]string, 0, len(list.Data))
-			for _, e := range list.Data {
+			rows := make([][]string, 0, len(matched))
+			for _, e := range matched {
 				rows = append(rows, []string{e.ID, e.Name})
 			}
-			return emitTable(cmd.OutOrStdout(), []string{"EVAL ID", "NAME"}, rows)
+			if err := emitTable(out, []string{"EVAL ID", "NAME"}, rows); err != nil {
+				return err
+			}
+			if page.HasMore && page.LastID != "" {
+				fmt.Fprint(out, messages.MoreEvalsToList(page.LastID))
+			}
+			return nil
 		},
 	}
 
-	cmd.Flags().IntVar(&limit, "limit", 0, "Cap the number of evals returned.")
+	cmd.Flags().IntVar(&limit, "limit", 0,
+		"Rows per page. Defaults to 50.")
+	cmd.Flags().StringVar(&nameFilter, "name", "",
+		"Only evals whose name contains this, compared without case.")
+	cmd.Flags().StringVar(&pageToken, "pagination-token", "",
+		"Continue from the token the previous page printed.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+// defaultEvalPageSize keeps the first page quick on a shared project, which
+// runs to hundreds of evals. Walking all of them took seconds and buried the
+// reader's own rows.
+const defaultEvalPageSize = 50
+
+// filterEvalsByName keeps the evals whose name contains the filter. An empty
+// filter keeps everything, so the caller does not branch.
+func filterEvalsByName(evals []eval_api.OpenAIEval, name string) []eval_api.OpenAIEval {
+	if name == "" {
+		return evals
+	}
+	needle := strings.ToLower(name)
+	out := make([]eval_api.OpenAIEval, 0, len(evals))
+	for _, e := range evals {
+		if strings.Contains(strings.ToLower(e.Name), needle) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func newEvalShowCommand() *cobra.Command {
@@ -210,7 +258,7 @@ func newEvalShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <eval>",
 		Short: "Show an eval definition.",
-		Args:  cobra.ExactArgs(1),
+		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			evalID := args[0]
 
@@ -302,7 +350,7 @@ func newEvalDeleteCommand() *cobra.Command {
 			"An eval owns its runs, so deleting one discards their results too.\n\n" +
 			"Asks before removing it. With --no-prompt, or with JSON output, " +
 			"--force is required.",
-		Args: cobra.ExactArgs(1),
+		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			evalID := args[0]
 

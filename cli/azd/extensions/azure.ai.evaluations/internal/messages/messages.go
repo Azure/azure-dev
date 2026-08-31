@@ -192,6 +192,19 @@ func WaitInterrupted(runID string, err error) error {
 		runID, err, runID)
 }
 
+// WaitingForRun says a run has started and this command is now watching it.
+//
+// The wait is the default because a gate needs the verdict, but a run can take
+// minutes and the poll only speaks when the status changes, so without this the
+// terminal looks hung. It names the way out rather than leaving the reader to
+// find it in --help.
+func WaitingForRun(runID string) string {
+	return fmt.Sprintf(
+		"Waiting for run %s. Ctrl-C leaves it running; `--no-wait` starts "+
+			"without watching.\n",
+		runID)
+}
+
 // RunStatusLine reports a status change seen while polling.
 func RunStatusLine(status string) string {
 	return fmt.Sprintf("  status: %s\n", status)
@@ -338,6 +351,61 @@ func ReadingRunResults(runID string, err error) error {
 	return fmt.Errorf("reading the results of run %s: %w", runID, err)
 }
 
+// MissingArgs names the arguments a command was not given.
+//
+// Cobra's own "accepts 1 arg(s), received 0" is a count, and a reader who did
+// not know what to pass still does not. The names come from the command's Use
+// line, so this cannot drift from what --help documents.
+func MissingArgs(commandPath string, missing []string) error {
+	if len(missing) == 0 {
+		return fmt.Errorf("%s is missing an argument", commandPath)
+	}
+	named := make([]string, 0, len(missing))
+	for _, m := range missing {
+		named = append(named, "<"+m+">")
+	}
+	return fmt.Errorf(
+		"%s is missing %s. Run `%s --help` for what it takes",
+		commandPath, strings.Join(named, " and "), commandPath)
+}
+
+// TooManyArgs reports more positional values than a command takes.
+func TooManyArgs(commandPath string, names []string, given int) error {
+	takes := "no arguments"
+	if len(names) > 0 {
+		named := make([]string, 0, len(names))
+		for _, n := range names {
+			named = append(named, "<"+n+">")
+		}
+		takes = strings.Join(named, " ")
+	}
+	return fmt.Errorf(
+		"%s takes %s, and was given %d values. Quote a value that contains spaces",
+		commandPath, takes, given)
+}
+
+// MoreEvalsToList says a page ended with the service still holding rows.
+func MoreEvalsToList(token string) string {
+	return fmt.Sprintf(
+		"\nMore evals to come. Next page: --pagination-token %s\n", token)
+}
+
+// OutputItemRequired reports `run output show` reached without the row to show.
+//
+// Cobra's own "accepts 1 arg(s), received 0" says nothing about what the
+// argument is or where to find one, and the value is the ITEM column of the
+// listing -- which reads like a row number rather than an id.
+func OutputItemRequired(evalFlag string) error {
+	which := "--eval <eval>"
+	if evalFlag != "" {
+		which = "--eval " + shellArg(evalFlag)
+	}
+	return fmt.Errorf(
+		"name the row to show: `azd ai eval run output list %s` lists them, and "+
+			"the value under ITEM is what this command takes",
+		which)
+}
+
 // OutputItemNotFound reports an output item the run does not hold.
 func OutputItemNotFound(itemID, runID string) error {
 	return fmt.Errorf(
@@ -469,7 +537,8 @@ func OutputFileCannotHoldBothArtifacts(outputDir string) error {
 //
 // Written to stderr so it does not land in a redirected listing.
 func UsingLastRun(runID string) string {
-	return fmt.Sprintf("Using last run: %s\n", runID)
+	return fmt.Sprintf(
+		"Using last run: %s (select a specific run with --run)\n", runID)
 }
 
 // PortalLinkAfterRows closes a per-sample listing with the run's one link.
@@ -1579,6 +1648,13 @@ func NoEvals() string {
 	return "No evals found.\n"
 }
 
+// NoEvalsMatching reports a filter that excluded everything the project holds.
+func NoEvalsMatching(name string, total int) string {
+	return fmt.Sprintf(
+		"No eval name contains %q. The project has %d; drop --name to see them.\n",
+		name, total)
+}
+
 // EvalNotFound reports an eval id the project does not hold.
 func EvalNotFound(evalID string) error {
 	return fmt.Errorf(
@@ -2065,6 +2141,18 @@ func EvalNameRequired(index int) error {
 // DuplicateEvalName reports two evals answering to the same name.
 func DuplicateEvalName(index int, eval string) error {
 	return fmt.Errorf("evals[%d]: duplicate eval name %q", index, eval)
+}
+
+// EvalWouldDuplicate reports a scaffold that would differ from an eval already
+// declared only by name. Deploying refuses such a pair, so writing it would
+// leave an entry no command could use.
+func EvalWouldDuplicate(planned, existing string) error {
+	return fmt.Errorf(
+		"eval %q would be identical to %q apart from its name, and a deploy "+
+			"refuses two evals it cannot tell apart. Give it different evaluators, "+
+			"a dataset or settings, or run `azd ai eval run start --eval %s` to use "+
+			"the one already declared",
+		planned, existing, shellArg(existing))
 }
 
 // EvalsIdenticalApartFromName reports two evals nothing can tell apart once deployed.

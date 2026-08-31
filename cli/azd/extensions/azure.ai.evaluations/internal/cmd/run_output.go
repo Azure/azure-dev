@@ -42,6 +42,7 @@ func newRunOutputListCommand() *cobra.Command {
 		outFile     string
 		endpointFlg string
 		groupName   string
+		runFlag     string
 	)
 
 	cmd := &cobra.Command{
@@ -62,6 +63,9 @@ func newRunOutputListCommand() *cobra.Command {
 			}
 
 			runID := firstArg(args)
+			if runID == "" {
+				runID = runFlag
+			}
 			run, err := ec.latestOrNamedRun(cmd, evalID, runID, true)
 			if err != nil {
 				return err
@@ -115,6 +119,7 @@ func newRunOutputListCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&failedOnly, "failed-only", false, "Show only the rows that failed.")
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write JSON results to this path.")
+	addRunFlag(cmd, &runFlag)
 	addEvalFlag(cmd, &groupName)
 	// Registered wherever a declared name is resolved, so a configuration
 	// outside ./evals can be addressed by every command, not just `run start`.
@@ -136,8 +141,13 @@ func newRunOutputShowCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show <output-item>",
-		Short: "Show a single evaluated row.",
-		Args:  cobra.ExactArgs(1),
+		Short: "Show a single evaluated row. The id is the ITEM column of `run output list`.",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return messages.OutputItemRequired(groupName)
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			itemID := args[0]
 
@@ -172,7 +182,7 @@ func newRunOutputShowCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&runID, "run", "", "Run the item belongs to. Defaults to the most recent run.")
+	addRunFlag(cmd, &runID)
 	addEvalFlag(cmd, &groupName)
 	// Registered wherever a declared name is resolved, so a configuration
 	// outside ./evals can be addressed by every command, not just `run start`.
@@ -206,6 +216,7 @@ func newRunOutputExportCommand() *cobra.Command {
 		outFile     string
 		endpointFlg string
 		groupName   string
+		runFlag     string
 	)
 
 	cmd := &cobra.Command{
@@ -237,6 +248,9 @@ func newRunOutputExportCommand() *cobra.Command {
 			}
 
 			runID := firstArg(args)
+			if runID == "" {
+				runID = runFlag
+			}
 			run, err := ec.latestOrNamedRun(cmd, evalID, runID, true)
 			if err != nil {
 				return err
@@ -264,6 +278,7 @@ func newRunOutputExportCommand() *cobra.Command {
 		},
 	}
 
+	addRunFlag(cmd, &runFlag)
 	cmd.Flags().StringVar(&format, "format", formatCSV,
 		fmt.Sprintf("Output format: %s, %s or %s.", formatCSV, formatJSON, formatJSONL))
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write to this path instead of stdout.")
@@ -580,19 +595,29 @@ func renderResults(
 			// ones the sample failed states something about the sample that
 			// nothing measured.
 			var failed, unjudged []string
-			reason := ""
+			// A failing verdict explains the row; a passing one explains the
+			// score. Taking whichever came first meant a passing evaluator's
+			// reason could stand in front of the failure the reader is here
+			// for, and a run where everything passed showed no reason at all.
+			failedReason, anyReason := "", ""
 			for _, r := range it.Results {
 				switch {
 				case !r.Judged():
 					unjudged = append(unjudged, r.Name)
 				case r.DidPass():
-					continue
 				default:
 					failed = append(failed, r.Name)
+					if failedReason == "" {
+						failedReason = r.Reason
+					}
 				}
-				if reason == "" {
-					reason = r.Reason
+				if anyReason == "" {
+					anyReason = r.Reason
 				}
+			}
+			reason := failedReason
+			if reason == "" {
+				reason = anyReason
 			}
 			// The same predicate `-o json` filters on, so the two views of
 			// --failed-only cannot disagree about which rows went wrong.
@@ -609,7 +634,9 @@ func renderResults(
 				}
 			}
 			if verdicts == "" {
-				verdicts = "-"
+				// The column carries what is worth a second look. Saying so
+				// beats a dash, which reads like the row failed to render.
+				verdicts = "all passed"
 			}
 			if len(failed) > 0 {
 				rowsFailed++

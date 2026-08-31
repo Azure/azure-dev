@@ -4,7 +4,10 @@
 package agent_yaml
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"slices"
 
 	"go.yaml.in/yaml/v3"
@@ -16,6 +19,11 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
+	// AgentKindPrompt is the Foundry "prompt" agent kind backed by the
+	// Prompt Execution Service (PES) Brain+Hand sandbox architecture.
+	// Lifecycle and response APIs live behind the same data-plane routes
+	// as the other Foundry kinds, with a "kind": "prompt" discriminator.
+	AgentKindPrompt AgentKind = "prompt"
 	// AgentKindPromptVoice is the authoring (agent.yaml) kind for a declarative
 	// voice (speech-to-speech) agent. It is intentionally distinct from the
 	// data-plane service kind "voice": the map layer translates prompt-voice ->
@@ -42,6 +50,7 @@ func ValidAgentKinds() []AgentKind {
 	return []AgentKind{
 		AgentKindHosted,
 		AgentKindWorkflow,
+		AgentKindPrompt,
 		AgentKindPromptVoice,
 	}
 }
@@ -53,6 +62,7 @@ const (
 	ResourceKindTool       ResourceKind = "tool"
 	ResourceKindToolbox    ResourceKind = "toolbox"
 	ResourceKindConnection ResourceKind = "connection"
+	ResourceKindFile       ResourceKind = "file"
 )
 
 type ToolKind string
@@ -112,13 +122,25 @@ const (
 	AuthTypeSAS                  AuthType = "SAS"
 )
 
+// AuthTypeEntra is the name authors reach for when they mean "no secret, use
+// the caller's Entra identity", and is what azd's own documentation and
+// scaffolding have used. The service has never accepted it: its discriminator
+// for that mode is AAD. Sent verbatim it fails provisioning with a bad-request
+// listing twenty-one auth types, none of which explains that Entra and AAD are
+// the same thing. It is normalized rather than rejected because it names the
+// right concept.
+const AuthTypeEntra AuthType = "Entra"
+
 // NormalizeConnectionAuthType maps auth types accepted in agent.yaml to
 // the management-plane value required for project connection provisioning.
 // Legacy AgenticIdentity values are normalized to AgenticIdentityToken
-// for API compatibility.
+// for API compatibility, and Entra to AAD.
 func NormalizeConnectionAuthType(authType AuthType) AuthType {
-	if authType == AuthTypeAgenticIdentity {
+	switch authType {
+	case AuthTypeAgenticIdentity:
 		return AuthTypeAgenticIdentityToken
+	case AuthTypeEntra:
+		return AuthTypeAAD
 	}
 
 	return authType
@@ -446,6 +468,352 @@ type ContainerAgent struct {
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
 	SessionConfiguration *SessionConfiguration   `json:"sessionConfiguration,omitempty" yaml:"session_configuration,omitempty"`
+}
+
+// HarnessSkillRef is a skill pinned onto a harnessed agent by name and,
+// optionally, version.
+//
+// The deploy graph fills the version in from the publish it just performed,
+// because the service rejects a reference that omits it. An author writing the
+// reference by hand may leave it out and take the skill's current default.
+type HarnessSkillRef struct {
+	Name    string `json:"name" yaml:"name"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
+// PromptHarness is the `harness:` block of a prompt agent's agent.yaml.
+//
+// It is an object rather than the bare harness name it used to be, because the
+// harness owns configuration of its own: which skills are provisioned into its
+// sandbox, how large that sandbox is, and which of its built-in capabilities the
+// agent is allowed to reach. Only Type is required; a block that names nothing
+// else is equivalent to the old `harness: <name>` string.
+type PromptHarness struct {
+	// Type is the harness discriminator, e.g.
+	// agent_api.ManagedAgentHarnessGitHubCopilot ("github_copilot_preview").
+	// It is passed through verbatim: azd keeps no allowlist of harness names, so
+	// a harness the service gains later needs no change here.
+	Type string `json:"type" yaml:"type"`
+
+	// Skills pins published Foundry skills into the harness sandbox. Skills live
+	// here rather than on the definition because a skill is instructions plus the
+	// scripts they reference, so it needs the sandbox to run at all — a
+	// harness-less prompt agent gets no skill execution.
+	Skills []HarnessSkillRef `json:"skills,omitempty" yaml:"skills,omitempty"`
+
+	// Environment sizes the sandbox. Optional; the platform defaults it.
+	Environment *PromptHarnessEnvironment `json:"environment,omitempty" yaml:"environment,omitempty"`
+
+	// BuiltinTools narrows the harness's built-in capabilities. Optional; every
+	// capability is available when it is omitted.
+	BuiltinTools *PromptHarnessBuiltInTools `json:"builtin_tools,omitempty" yaml:"builtin_tools,omitempty"`
+}
+
+// PromptHarnessEnvironment sizes a harnessed agent's sandbox.
+//
+// The harness supplies its own image, packages, and startup commands, so unlike
+// a hosted agent none of those are customer-configurable here.
+type PromptHarnessEnvironment struct {
+	// Cpu and Memory are the sandbox's compute allocation (e.g. "1" and "2Gi").
+	// The service treats them as a pair: setting one without the other is an
+	// error rather than a partial override.
+	Cpu    string `json:"cpu,omitempty" yaml:"cpu,omitempty"`
+	Memory string `json:"memory,omitempty" yaml:"memory,omitempty"`
+
+	// IdleTimeoutSeconds is how long an idle sandbox is kept warm. A pointer so
+	// an explicit 0 (reclaim immediately) is distinguishable from "not set",
+	// which leaves the service default in place.
+	IdleTimeoutSeconds *int `json:"idle_timeout_seconds,omitempty" yaml:"idle_timeout_seconds,omitempty"`
+}
+
+// PromptHarnessBuiltInTools narrows the built-in capabilities the harness
+// exposes to the agent. The effective set is (Allowed, defaulting to all) minus
+// Excluded; see harnessBuiltInCapabilities for the recognized names.
+//
+// Both fields are pointers to slices so an explicit `allowed: []`, which turns
+// every built-in capability off, stays distinguishable from an omitted
+// `allowed`, which leaves them all on.
+type PromptHarnessBuiltInTools struct {
+	Allowed  *[]string `json:"allowed,omitempty" yaml:"allowed,omitempty"`
+	Excluded *[]string `json:"excluded,omitempty" yaml:"excluded,omitempty"`
+}
+
+// harnessTypeGitHubCopilotPreview duplicates
+// agent_api.ManagedAgentHarnessGitHubCopilot. It is repeated here rather than
+// imported because agent_api already depends on this package.
+const harnessTypeGitHubCopilotPreview = "github_copilot_preview"
+
+// harnessTypeObsoleteAbbreviation is the pre-release spelling of
+// harnessTypeGitHubCopilotPreview. It is rejected by name so an author who
+// copied an older sample is told what to write instead, rather than having the
+// value forwarded to a service that reports it as an opaque bad request.
+const harnessTypeObsoleteAbbreviation = "ghcp"
+
+// UnmarshalYAML decodes the `harness:` block.
+//
+// Two things happen here that a plain struct decode would not do:
+//
+//   - A scalar is rejected with the block that replaces it. `harness:` used to
+//     be a bare string, so an author carrying a manifest forward would otherwise
+//     get go-yaml's "cannot unmarshal !!str into agent_yaml.PromptHarness",
+//     which names a Go type and no fix.
+//   - Unknown keys are rejected. Every field of this block changes what the
+//     sandbox can do, so a typo that silently binds nothing — `builtin_tool:`
+//     for `builtin_tools:` — would deploy an agent with capabilities the author
+//     believed they had turned off. Tools stay `[]any` and are unaffected, so a
+//     tool type newer than this build still passes through.
+func (h *PromptHarness) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		return errHarnessStringForm(value.Value)
+	}
+
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("harness must be a block with a `type:` key, got %s", nodeKindName(value.Kind))
+	}
+
+	// A distinct type so this method is not inherited, which would recurse.
+	type harnessFields PromptHarness
+	var decoded harnessFields
+	if err := decodeStrict(value, &decoded); err != nil {
+		return fmt.Errorf("harness: %w", err)
+	}
+
+	if decoded.Type == harnessTypeObsoleteAbbreviation {
+		return errHarnessObsoleteType()
+	}
+
+	*h = PromptHarness(decoded)
+	return nil
+}
+
+// decodeStrict decodes node into out, rejecting keys that bind to no field.
+//
+// yaml.Node.Decode has no strict mode, so the node is re-serialized and run
+// through a Decoder that does. Nested blocks are covered by the same pass;
+// fields typed `any` are not, which is what keeps pass-through fields such as
+// PromptAgent.Tools forward-compatible.
+func decodeStrict(node *yaml.Node, out any) error {
+	raw, err := yaml.Marshal(node)
+	if err != nil {
+		return fmt.Errorf("failed to re-encode: %w", err)
+	}
+
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(out); err != nil {
+		if errors.Is(err, io.EOF) {
+			// An empty block leaves the zero value in place.
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// nodeKindName renders a yaml.Node kind for an error message, so a reader sees
+// "a list" rather than the bit value go-yaml uses internally.
+func nodeKindName(kind yaml.Kind) string {
+	switch kind {
+	case yaml.SequenceNode:
+		return "a list"
+	case yaml.ScalarNode:
+		return "a value"
+	case yaml.AliasNode:
+		return "an alias"
+	case yaml.DocumentNode:
+		return "a document"
+	default:
+		return "an unsupported node"
+	}
+}
+
+// PromptAgent represents a Foundry "prompt" agent — a PES (Prompt Execution
+// Service) backed agent. The customer declares the model and instructions; the
+// platform manages the runtime, lifecycle, and orchestration.
+//
+// Unlike ContainerAgent, the customer does not provide a container image or
+// code; the only required fields are ModelDeploymentName and Instructions.
+//
+// The optional Harness field selects between the two prompt-agent flavors:
+//   - Harness nil — a plain prompt agent. Foundry runs model + instructions +
+//     tools directly; there is no sandbox to provision.
+//   - Harness set — a managed agent whose Brain+Hand sandbox is provisioned by
+//     the platform on demand and driven by the named harness.
+type PromptAgent struct {
+	AgentDefinition `json:",inline" yaml:",inline"`
+
+	// Model is the name of the model deployment the agent runs on (e.g.
+	// "gpt-4.1-mini") — not a model id. It must match a deployment declared
+	// under the sibling azure.ai.project service in azure.yaml, which
+	// `azd provision` creates.
+	//
+	// The key is `model` in both YAML and JSON, matching the field name the
+	// Foundry prompt-agent API expects on the wire.
+	Model string `json:"model" yaml:"model"`
+
+	// Harness selects and configures the execution harness the platform runs
+	// the agent on. Leave it nil for a plain prompt agent with no harness; the
+	// field is then omitted from the create request entirely.
+	Harness *PromptHarness `json:"harness,omitempty" yaml:"harness,omitempty"`
+
+	// Instructions is the system/developer message inserted into the model's
+	// context. It is declared inline, matching the prompt-agent API schema.
+	Instructions string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+
+	// Skills is an optional list of Foundry skill names attached to the agent.
+	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
+
+	// Tools is an optional list of tool definitions attached to the agent.
+	// Entries are passed through verbatim to the Foundry prompt-agent API, so
+	// author them using the API's snake_case tool schema. Supported types
+	// include (but are not limited to): function, code_interpreter, file_search,
+	// web_search, image_generation, mcp, azure_ai_search, azure_function,
+	// openapi, bing_grounding, bing_custom_search_preview,
+	// sharepoint_grounding_preview, memory_search_preview, fabric_iq_preview,
+	// fabric_dataagent_preview, work_iq_preview, a2a_preview,
+	// computer_use_preview, browser_automation_preview, toolbox_search_preview.
+	Tools []any `json:"tools,omitempty" yaml:"tools,omitempty"`
+
+	// ToolChoice controls how/whether the model calls tools (e.g. "auto",
+	// "required", "none", or a specific tool object). Passed through verbatim.
+	ToolChoice any `json:"tool_choice,omitempty" yaml:"tool_choice,omitempty"`
+
+	// Temperature is the sampling temperature. Pointer so an explicit 0 (fully
+	// deterministic) is distinguishable from "not set", which would otherwise
+	// silently become the service default.
+	Temperature *float64 `json:"temperature,omitempty" yaml:"temperature,omitempty"`
+
+	// TopP is the nucleus-sampling cutoff. Pointer for the same reason as
+	// Temperature. The API accepts both; setting both is usually a mistake.
+	TopP *float64 `json:"top_p,omitempty" yaml:"top_p,omitempty"`
+
+	// Text configures the model's text response, most commonly the structured
+	// output format (e.g. text.format.type: json_schema). Passed through
+	// verbatim rather than modeled, since the shape is the API's to define.
+	Text any `json:"text,omitempty" yaml:"text,omitempty"`
+
+	// Reasoning configures reasoning-model behavior (e.g. reasoning.effort).
+	// Only meaningful on models that support it; passed through verbatim.
+	Reasoning any `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
+
+	// StructuredInputs declares typed inputs the agent accepts per invocation.
+	// Passed through verbatim to the API.
+	StructuredInputs map[string]any `json:"structured_inputs,omitempty" yaml:"structured_inputs,omitempty"`
+
+	// Policies is an optional list of governance policies (e.g. RAI). This is
+	// how the "guardrails" capability is expressed: a rai_policy entry becomes
+	// the definition's rai_config, which is the only guardrail carrier the
+	// prompt-agent API has.
+	Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
+
+	// Memory declares a Foundry memory store the agent recalls from. Unlike
+	// Tools this is NOT passed through: the prompt-agent API has no `memory`
+	// field. azd provisions the named store during deploy and then injects a
+	// memory_search_preview entry into Tools, which is the actual wire carrier.
+	//
+	// It is json:"-" for exactly that reason — emitting it would send a field
+	// the API does not define.
+	Memory *PromptMemory `json:"-" yaml:"memory,omitempty"`
+
+	// Connections names sibling azure.ai.connection services that must be ready
+	// before this agent is deployed. Tools reference the same Foundry connection
+	// names in their service-defined configuration.
+	Connections []string `json:"connections,omitempty" yaml:"connections,omitempty"`
+
+	// Toolbox optionally references an existing Foundry toolbox by name and
+	// version. When set, the deploy engine attaches that toolbox's MCP endpoint
+	// as an mcp tool instead of registering skills from the skills/ folder.
+	Toolbox *ToolboxReference `json:"toolbox,omitempty" yaml:"toolbox,omitempty"`
+}
+
+// PromptMemory declares the Foundry memory store a prompt agent recalls from.
+//
+// Memory is a two-part feature: a memory store is a project-level resource that
+// must exist before the agent references it, and the agent reaches it through a
+// memory_search_preview tool. Authors declare it once here and azd does both —
+// it ensures the store exists at deploy time and injects the tool entry.
+type PromptMemory struct {
+	// Store is the memory store name. Required. azd creates the store if it
+	// does not already exist and reuses it if it does.
+	Store string `json:"store" yaml:"store"`
+
+	// Description is an optional human-readable description recorded on the
+	// store when azd creates it.
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+
+	// ChatModel and EmbeddingModel are the model deployment names the store
+	// uses to summarize conversations and to embed memories. Both are required
+	// to create a store; they are ignored when the store already exists.
+	ChatModel      string `json:"chat_model,omitempty" yaml:"chat_model,omitempty"`
+	EmbeddingModel string `json:"embedding_model,omitempty" yaml:"embedding_model,omitempty"`
+
+	// Scope namespaces memories so they are isolated per user (or per tenant,
+	// session, etc.). Defaults to DefaultMemoryScope, which resolves the caller's
+	// object ID from the request auth header at runtime.
+	Scope string `json:"scope,omitempty" yaml:"scope,omitempty"`
+
+	// UpdateDelay is how many seconds of conversation inactivity to wait before
+	// extracting memories. Nil leaves the service default (300s) in place. Set
+	// it low only for demos — a short delay extracts on nearly every turn.
+	UpdateDelay *int `json:"update_delay,omitempty" yaml:"update_delay,omitempty"`
+
+	// MaxMemories caps how many memories a single search returns. Nil leaves
+	// the service default in place.
+	MaxMemories *int `json:"max_memories,omitempty" yaml:"max_memories,omitempty"`
+
+	// Options toggles which memory kinds the store extracts.
+	Options *PromptMemoryOptions `json:"options,omitempty" yaml:"options,omitempty"`
+}
+
+// UnmarshalYAML decodes the `memory:` block, rejecting keys that bind to no
+// field.
+//
+// Memory is the one block azd acts on rather than forwards — it provisions the
+// store and synthesizes the memory_search_preview tool — so a key that silently
+// binds nothing produces an agent whose recall behavior differs from what the
+// manifest says, with nothing in the deploy output to indicate it.
+func (m *PromptMemory) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("memory must be a block with a `store:` key, got %s", nodeKindName(value.Kind))
+	}
+
+	// A distinct type so this method is not inherited, which would recurse.
+	type memoryFields PromptMemory
+	var decoded memoryFields
+	if err := decodeStrict(value, &decoded); err != nil {
+		return fmt.Errorf("memory: %w", err)
+	}
+
+	*m = PromptMemory(decoded)
+	return nil
+}
+
+// PromptMemoryOptions toggles the extraction behaviors of a memory store. All
+// fields are pointers so an unset toggle leaves the service default rather than
+// forcing false.
+type PromptMemoryOptions struct {
+	ChatSummaryEnabled      *bool  `json:"chat_summary_enabled,omitempty" yaml:"chat_summary_enabled,omitempty"`
+	UserProfileEnabled      *bool  `json:"user_profile_enabled,omitempty" yaml:"user_profile_enabled,omitempty"`
+	ProceduralMemoryEnabled *bool  `json:"procedural_memory_enabled,omitempty" yaml:"procedural_memory_enabled,omitempty"`
+	DefaultTTLSeconds       *int   `json:"default_ttl_seconds,omitempty" yaml:"default_ttl_seconds,omitempty"`
+	UserProfileDetails      string `json:"user_profile_details,omitempty" yaml:"user_profile_details,omitempty"`
+}
+
+// DefaultMemoryScope isolates memories per calling user. Foundry substitutes
+// the object ID from the request's auth header, so a shared agent does not leak
+// one user's memories to another. Authors can override it with a fixed string
+// when they want a shared or per-tenant namespace instead.
+const DefaultMemoryScope = "{{$userId}}"
+
+// ToolboxReference points at an existing Foundry toolbox version so a prompt
+// agent can consume it without the deploy engine registering local skills.
+type ToolboxReference struct {
+	// Name is the toolbox name.
+	Name string `json:"name" yaml:"name"`
+
+	// Version is the toolbox version. When empty the toolbox's default version
+	// is used.
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.
@@ -977,6 +1345,16 @@ type ConnectionResource struct {
 
 	// ConnectorName is the connector name for OAuth2 auth type, where Microsoft provides a managed OAuth2 app
 	ConnectorName string `json:"connectorName,omitempty" yaml:"connectorName,omitempty"`
+}
+
+// FileResource Represents a file (or folder of files) contributed to the
+// agent's vector store. Files are normally discovered by convention from a
+// local `files/` folder, but a manifest may declare one explicitly. Path points
+// at a file or directory; Purpose is the optional Foundry Files purpose.
+type FileResource struct {
+	Resource `json:",inline" yaml:",inline"`
+	Path     string `json:"path,omitempty" yaml:"path,omitempty"`
+	Purpose  string `json:"purpose,omitempty" yaml:"purpose,omitempty"`
 }
 
 // Template Template model for defining prompt templates.

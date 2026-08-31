@@ -68,6 +68,11 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
+	// AgentKindPrompt is the Foundry prompt agent kind backed by the Prompt
+	// Execution Service (PES). "prompt" is the wire discriminator for both the
+	// plain and the harnessed ("managed") flavor — a harness is a property of
+	// the agent, not a kind of its own.
+	AgentKindPrompt AgentKind = "prompt"
 	// AgentKindVoice is the data-plane (service) kind for a declarative voice
 	// (speech-to-speech) agent. The azd manifest authoring kind is "prompt-voice"
 	// (agent_yaml.AgentKindPromptVoice), which the map layer translates to this
@@ -345,6 +350,148 @@ func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// ManagedPackages describes packages to install in the managed agent sandbox.
+type ManagedPackages struct {
+	Pip []string `json:"pip,omitempty"`
+	Apt []string `json:"apt,omitempty"`
+}
+
+// ManagedEnvironment describes the runtime environment for a managed agent's Hand sandbox.
+// All fields are optional; the platform applies sensible defaults when unset.
+type ManagedEnvironment struct {
+	BaseImage            *string           `json:"base_image,omitempty"`
+	Image                *string           `json:"image,omitempty"`
+	Packages             *ManagedPackages  `json:"packages,omitempty"`
+	CPU                  *string           `json:"cpu,omitempty"`
+	Memory               *string           `json:"memory,omitempty"`
+	EgressPolicy         *string           `json:"egress_policy,omitempty"`
+	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
+}
+
+// ManagedAgentHarnessGitHubCopilot is the discriminator sent in the managed
+// agent definition's `harness.type` field to run the agent on the GitHub
+// Copilot harness.
+//
+// This is the spelling the managed-agent spec defines, and the `_preview`
+// suffix is part of it: the harness is in preview and the service will version
+// the discriminator when it leaves preview.
+const ManagedAgentHarnessGitHubCopilot = "github_copilot_preview"
+
+// RemovedManagedAgentHarnesses maps a harness spelling the service no longer
+// accepts to the spelling that replaced it.
+//
+// These are retained only so validation can name the replacement when it meets
+// an old manifest; none of them is ever sent on the wire or accepted as input.
+var RemovedManagedAgentHarnesses = map[string]string{
+	"ghcp":           ManagedAgentHarnessGitHubCopilot,
+	"github-copilot": ManagedAgentHarnessGitHubCopilot,
+}
+
+// HarnessSkillReference pins one published Foundry skill onto a harnessed
+// agent's definition.
+//
+// Version is not optional in practice. The API contract says an omitted version
+// resolves to the skill's current default, but the service currently returns a
+// 500 for a reference without one, so callers must supply the version they
+// published. Skills are published before the agent version is created, so the
+// version is always known by then.
+type HarnessSkillReference struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
+
+// ManagedAgentHarness is the `harness` block of a managed agent definition.
+//
+// Skills hang off the harness rather than off the definition because a skill is
+// instructions plus scripts and assets: it needs the harness execution
+// environment to run at all. Foundry provisions each pinned skill into the
+// sandbox when it starts. A definition-level `skills` field would imply that a
+// prompt agent with no harness could execute one, which it cannot -- the
+// service accepts that field but never resolves it, so a name written there is
+// silently inert (including a name that matches no skill at all).
+type ManagedAgentHarness struct {
+	Type         string                  `json:"type"`
+	Skills       []HarnessSkillReference `json:"skills,omitempty"`
+	Environment  *HarnessEnvironment     `json:"environment,omitempty"`
+	BuiltinTools *HarnessBuiltInTools    `json:"builtin_tools,omitempty"`
+}
+
+// HarnessEnvironment sizes the sandbox the harness runs the agent in.
+//
+// This is deliberately far narrower than ManagedEnvironment: the harness owns
+// its own image, packages, and startup, so the only knobs a customer gets are
+// how much compute the sandbox is given and how long it survives idle.
+//
+// Every field is a pointer so an unset knob leaves the service default in place
+// rather than pinning it to a zero value.
+type HarnessEnvironment struct {
+	// CPU and Memory size the sandbox (e.g. "1" and "2Gi"). The service treats
+	// them as a pair and rejects one without the other.
+	CPU    *string `json:"cpu,omitempty"`
+	Memory *string `json:"memory,omitempty"`
+
+	// IdleTimeoutSeconds is how long an idle sandbox is kept warm before it is
+	// reclaimed.
+	IdleTimeoutSeconds *int `json:"idle_timeout_seconds,omitempty"`
+}
+
+// HarnessBuiltInTools narrows the capabilities the harness exposes to the agent
+// out of the box.
+//
+// The effective set is (Allowed, defaulting to every capability) minus Excluded.
+// Both fields are pointers to slices so an explicitly empty `allowed: []`,
+// which turns every built-in capability off, stays distinguishable from an
+// omitted `allowed`, which leaves them all on.
+type HarnessBuiltInTools struct {
+	Allowed  *[]string `json:"allowed,omitempty"`
+	Excluded *[]string `json:"excluded,omitempty"`
+}
+
+// UnmarshalJSON accepts either the object form or the bare string form the
+// harness was originally sent as, so definitions read back from agents created
+// by earlier versions of azd still decode.
+func (h *ManagedAgentHarness) UnmarshalJSON(data []byte) error {
+	var asString string
+	if err := json.Unmarshal(data, &asString); err == nil {
+		*h = ManagedAgentHarness{Type: asString}
+		return nil
+	}
+	type harnessAlias ManagedAgentHarness
+	var alias harnessAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*h = ManagedAgentHarness(alias)
+	return nil
+}
+
+// ManagedAgentDefinition represents a Foundry "managed" agent — a prompt agent
+// that names an execution harness. Managed agents declare a model plus
+// instructions and optionally tools, skills, and environment overrides. The
+// platform provisions Brain+Hand sandboxes on demand to execute the agent.
+type ManagedAgentDefinition struct {
+	AgentDefinition
+	Model string `json:"model"`
+	// Harness identifies the execution harness the platform should use to run
+	// the managed agent, and carries the skills provisioned into it. Nil for a
+	// plain prompt agent, which Foundry runs directly.
+	Harness      *ManagedAgentHarness `json:"harness,omitempty"`
+	Instructions string               `json:"instructions,omitempty"`
+	Tools        []any                `json:"tools,omitempty"`
+	ToolChoice   any                  `json:"tool_choice,omitempty"`
+	Temperature  *float64             `json:"temperature,omitempty"`
+	TopP         *float64             `json:"top_p,omitempty"`
+	Text         any                  `json:"text,omitempty"`
+	Reasoning    any                  `json:"reasoning,omitempty"`
+	// Skills is the definition-level skill list. It applies only to a
+	// harness-less prompt agent; a harnessed agent carries its skills on
+	// Harness.Skills instead.
+	Skills           []string            `json:"skills,omitempty"`
+	StructuredInputs map[string]any      `json:"structured_inputs,omitempty"`
+	Environment      *ManagedEnvironment `json:"environment,omitempty"`
+	Files            map[string]string   `json:"files,omitempty"`
 }
 
 // VoiceModelType selects the model-inference mode for a voice agent.

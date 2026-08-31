@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -116,6 +117,15 @@ func runEndpointUpdate(
 		return fmt.Errorf("failed to map endpoint/card fields: %w", err)
 	}
 
+	serviceConfig, err := project.LoadServiceTargetAgentConfig(svc)
+	if err != nil {
+		return fmt.Errorf("failed to parse service activity settings: %w", err)
+	}
+	activityProfile, err := project.ResolveActivityProfileWithSettings(agentDef, serviceConfig.Activity)
+	if err != nil {
+		return fmt.Errorf("failed to resolve activity profile: %w", err)
+	}
+
 	// Resolve endpoint and create client.
 	agentContext, err := newAgentContext(ctx, "", "", agentDef.Name, "")
 	if err != nil {
@@ -124,6 +134,17 @@ func runEndpointUpdate(
 
 	agentClient, err := agentContext.NewClient()
 	if err != nil {
+		return err
+	}
+
+	if err := normalizeEndpointAuthSchemesForDeployedProfile(
+		ctx,
+		agentClient,
+		agentDef.Name,
+		activityProfile,
+		apiEndpoint,
+		DefaultAgentAPIVersion,
+	); err != nil {
 		return err
 	}
 
@@ -162,8 +183,8 @@ func warnIfAuthChange(
 	current, err := client.GetAgent(ctx, agentName, DefaultAgentAPIVersion)
 	if err != nil {
 		// Only ignore 404 (agent doesn't exist yet). Other errors should propagate.
-		var respErr *azcore.ResponseError
-		if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+			respErr.StatusCode == http.StatusNotFound {
 			return nil
 		}
 		return fmt.Errorf("failed to check current agent state: %w", err)
@@ -229,4 +250,84 @@ func getIsolationKindFromSchemes(schemes []agent_api.AgentEndpointAuthorizationS
 		}
 	}
 	return ""
+}
+
+func normalizeEndpointAuthSchemesForDeployedProfile(
+	ctx context.Context,
+	client *agent_api.AgentClient,
+	agentName string,
+	localProfile project.ActivityProfile,
+	endpoint *agent_api.AgentEndpoint,
+	apiVersion string,
+) error {
+	if endpoint == nil {
+		return nil
+	}
+
+	deployedAgent, err := client.GetAgentWithDigitalWorkerType(ctx, agentName, apiVersion)
+	if err != nil {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+			respErr.StatusCode == http.StatusNotFound {
+			return nil
+		}
+		return fmt.Errorf("failed to read deployed agent profile: %w", err)
+	}
+
+	resolvedProfile, err := project.ResolveDeployedActivityProfile(localProfile, deployedAgent.DigitalWorkerType)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile activity.useCase with deployed digital_worker_type: %w", err)
+	}
+
+	ensureEndpointAuthSchemeForProfile(endpoint, resolvedProfile)
+	return nil
+}
+
+func ensureEndpointAuthSchemeForProfile(
+	endpoint *agent_api.AgentEndpoint,
+	profile project.ActivityProfile,
+) {
+	if endpoint == nil || !profile.IsActivity {
+		return
+	}
+
+	if profile.UseCase == project.ActivityUseCaseDigitalWorker {
+		ensureEndpointAuthScheme(endpoint, agent_api.AgentEndpointAuthSchemeBotServiceTenant)
+		return
+	}
+
+	ensureEndpointAuthScheme(endpoint, agent_api.AgentEndpointAuthSchemeBotServiceRbac)
+}
+
+func ensureEndpointAuthScheme(
+	endpoint *agent_api.AgentEndpoint,
+	schemeType agent_api.AgentEndpointAuthorizationSchemeType,
+) {
+	if !slices.Contains(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity) {
+		endpoint.Protocols = append(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
+	}
+
+	schemes := endpoint.AuthorizationSchemes[:0]
+	hasTarget := false
+	for _, scheme := range endpoint.AuthorizationSchemes {
+		if scheme.Type == agent_api.AgentEndpointAuthSchemeBotService ||
+			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac ||
+			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceTenant {
+			if scheme.Type == schemeType && !hasTarget {
+				schemes = append(schemes, scheme)
+				hasTarget = true
+			}
+			continue
+		}
+
+		if scheme.Type == schemeType {
+			hasTarget = true
+		}
+		schemes = append(schemes, scheme)
+	}
+
+	if !hasTarget {
+		schemes = append(schemes, agent_api.AgentEndpointAuthorizationScheme{Type: schemeType})
+	}
+
+	endpoint.AuthorizationSchemes = schemes
 }

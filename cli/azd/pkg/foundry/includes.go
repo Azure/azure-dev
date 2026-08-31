@@ -27,6 +27,36 @@ const maxRefDepth = 32
 // are rejected for now; only local YAML/JSON files are supported.
 var remoteRefPattern = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
 
+// ResolveOption configures a call to ResolveFileRefs.
+type ResolveOption func(*resolveOptions)
+
+// resolveOptions carries what the calling extension adds to resolution.
+type resolveOptions struct {
+	// pathKeys are keys whose relative string values name files, beyond the two
+	// core owns.
+	pathKeys map[string]bool
+}
+
+// WithPathKeys declares keys whose relative string values are filesystem paths.
+//
+// Core rebases the path keys it owns -- project and instructions -- so that a
+// value written inside a $ref file still resolves once it has been spliced into
+// a document in another directory. A key core does not know about arrives
+// verbatim, which leaves it resolving against the wrong directory: an evaluator
+// pulled in from evaluators/quality.yaml carries `source: ./quality.json`,
+// which then means quality.json beside the configuration rather than beside the
+// file it was written in. The extension that owns those keys names them here.
+func WithPathKeys(keys ...string) ResolveOption {
+	return func(o *resolveOptions) {
+		if o.pathKeys == nil {
+			o.pathKeys = map[string]bool{}
+		}
+		for _, key := range keys {
+			o.pathKeys[key] = true
+		}
+	}
+}
+
 // ResolveFileRefs resolves $ref file includes within a Foundry resource service configuration.
 //
 // In the separate-services azure.yaml shape every Foundry resource is its own service entry, so
@@ -58,36 +88,8 @@ var remoteRefPattern = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
 // relative or absolute file paths are accepted. Cyclic and excessively deep include chains
 // return an error rather than looping. $ref targets are treated as trusted input, the same
 // trust level as azure.yaml itself.
-// ResolveOption configures a call to ResolveFileRefs.
-type ResolveOption func(*resolveOptions)
-
-// resolveOptions carries what the calling extension adds to resolution.
-type resolveOptions struct {
-	// pathKeys are keys whose relative string values name files, beyond the two
-	// core owns.
-	pathKeys map[string]bool
-}
-
-// WithPathKeys declares keys whose relative string values are filesystem paths.
 //
-// Core rebases the path keys it owns -- project and instructions -- so that a
-// value written inside a $ref file still resolves once it has been spliced into
-// a document in another directory. A key core does not know about arrives
-// verbatim, which leaves it resolving against the wrong directory: an evaluator
-// pulled in from evaluators/quality.yaml carries `source: ./quality.json`,
-// which then means quality.json beside the configuration rather than beside the
-// file it was written in. The extension that owns those keys names them here.
-func WithPathKeys(keys ...string) ResolveOption {
-	return func(o *resolveOptions) {
-		if o.pathKeys == nil {
-			o.pathKeys = map[string]bool{}
-		}
-		for _, key := range keys {
-			o.pathKeys[key] = true
-		}
-	}
-}
-
+// Path keys beyond the two core owns are rebased only when named with WithPathKeys.
 func ResolveFileRefs(cfg map[string]any, projectRoot string, opts ...ResolveOption) (map[string]any, error) {
 	if cfg == nil {
 		return nil, nil

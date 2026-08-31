@@ -276,8 +276,6 @@ func (d *YAMLDocument) servicesNode(create bool) (*yaml.Node, error) {
 	return services, nil
 }
 
-// rootMapping returns the document's root mapping node, optionally initializing an empty
-// document and root mapping.
 // Root returns the document's root mapping, creating it when the document is empty and create
 // is set, or (nil, nil) when it is empty and create is not.
 //
@@ -300,7 +298,12 @@ func (d *YAMLDocument) Find(path string) (*yaml.Node, error) {
 	return yamlnode.Find(root, path)
 }
 
-// Set writes value at a yamlnode path, creating intermediate mappings.
+// Set writes value at a yamlnode path.
+//
+// Absent intermediate nodes are not created unless the path marks them with yamlnode's `?`
+// qualifier, so writing into a section that may not exist yet is Set("catalog?.dataset", v).
+// Comments already on the value being replaced are carried over, since the document belongs to
+// whoever wrote it.
 func (d *YAMLDocument) Set(path string, value any) error {
 	root, err := d.rootMapping(true)
 	if err != nil {
@@ -309,6 +312,11 @@ func (d *YAMLDocument) Set(path string, value any) error {
 	node, err := yamlnode.Encode(value)
 	if err != nil {
 		return err
+	}
+	if old, findErr := yamlnode.Find(root, path); findErr == nil && old != nil {
+		node.HeadComment = old.HeadComment
+		node.LineComment = old.LineComment
+		node.FootComment = old.FootComment
 	}
 	return yamlnode.Set(root, path, node)
 }
@@ -336,6 +344,8 @@ func (d *YAMLDocument) Append(path string, value any) error {
 	return yamlnode.Append(root, path, node)
 }
 
+// rootMapping returns the document's root mapping node, optionally initializing an empty
+// document and root mapping.
 func (d *YAMLDocument) rootMapping(create bool) (*yaml.Node, error) {
 	if d.root.Kind == 0 {
 		if !create {

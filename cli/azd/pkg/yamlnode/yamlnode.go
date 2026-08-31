@@ -111,7 +111,7 @@ func Set(root *yaml.Node, path string, value *yaml.Node) error {
 			return fmt.Errorf("%w: %s is not a sequence node", ErrNodeWrongKind, parts[len(parts)-2].key)
 		}
 
-		if part.idx < 0 || part.idx > len(anchor.Content) {
+		if part.idx < 0 || part.idx >= len(anchor.Content) {
 			return fmt.Errorf("sequence index out of bounds: %d", part.idx)
 		}
 

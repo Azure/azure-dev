@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -2220,13 +2221,7 @@ func ensureActivityEndpointAuthScheme(
 		request.AgentEndpoint = &agent_api.AgentEndpoint{}
 	}
 
-	hasActivity := false
-	for _, protocol := range request.AgentEndpoint.Protocols {
-		if protocol == agent_api.AgentEndpointProtocolActivity {
-			hasActivity = true
-			break
-		}
-	}
+	hasActivity := slices.Contains(request.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
 	if !hasActivity {
 		request.AgentEndpoint.Protocols = append(
 			request.AgentEndpoint.Protocols,

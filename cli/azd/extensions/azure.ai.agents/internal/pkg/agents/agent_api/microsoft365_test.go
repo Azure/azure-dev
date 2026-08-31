@@ -21,7 +21,7 @@ func TestDownloadTeamsAppPackage_Success(t *testing.T) {
 		PublishScope:             "Personal",
 		AgentDisplayName:         "my-agent",
 		AppVersion:               "1.0.0",
-		CanRespondWithoutMention: true,
+		CanRespondWithoutMention: new(true),
 	}
 
 	zipBytes, err := client.DownloadTeamsAppPackage(t.Context(), "my-agent", request, Microsoft365APIVersion)
@@ -77,7 +77,7 @@ func TestPublishTeamsApp_Success(t *testing.T) {
 		PublishScope:             "Shared",
 		AgentDisplayName:         "my-agent",
 		AppVersion:               "1.0.0",
-		CanRespondWithoutMention: true,
+		CanRespondWithoutMention: new(true),
 	}
 
 	result, err := client.PublishTeamsApp(t.Context(), "my-agent", request, Microsoft365APIVersion)
@@ -150,6 +150,17 @@ func TestTeamsAppPackageRequest_AccessBoundaryTriState(t *testing.T) {
 	cleared, err := json.Marshal(TeamsAppPackageRequest{AccessBoundaries: &empty})
 	require.NoError(t, err)
 	require.Contains(t, string(cleared), `"accessBoundaries":[]`)
+}
+
+func TestTeamsAppPackageRequest_CanRespondWithoutMentionTriState(t *testing.T) {
+	omitted, err := json.Marshal(TeamsAppPackageRequest{})
+	require.NoError(t, err)
+	require.NotContains(t, string(omitted), "CanRespondWithoutMention")
+
+	disabled := false
+	configured, err := json.Marshal(TeamsAppPackageRequest{CanRespondWithoutMention: &disabled})
+	require.NoError(t, err)
+	require.Contains(t, string(configured), `"CanRespondWithoutMention":false`)
 }
 
 func TestPublishTeamsApp_ErrorStatus(t *testing.T) {

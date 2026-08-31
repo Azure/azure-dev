@@ -2257,7 +2257,8 @@ func ensureActivityEndpointAuthScheme(
 	schemes := request.AgentEndpoint.AuthorizationSchemes[:0]
 	hasTarget := false
 	for _, scheme := range request.AgentEndpoint.AuthorizationSchemes {
-		if scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac ||
+		if scheme.Type == agent_api.AgentEndpointAuthSchemeBotService ||
+			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac ||
 			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceTenant {
 			if scheme.Type == schemeType && !hasTarget {
 				schemes = append(schemes, scheme)

@@ -2052,6 +2052,48 @@ func TestEnsureActivityEndpointAuthSchemeForPromotedDigitalWorker(t *testing.T) 
 	}, request.AgentEndpoint.AuthorizationSchemes)
 }
 
+func TestEnsureActivityEndpointAuthSchemeReplacesLegacyBotService(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		useCase ActivityUseCase
+		want    agent_api.AgentEndpointAuthorizationSchemeType
+	}{
+		{
+			name:    "digital worker",
+			useCase: ActivityUseCaseDigitalWorker,
+			want:    agent_api.AgentEndpointAuthSchemeBotServiceTenant,
+		},
+		{
+			name:    "simple activity",
+			useCase: ActivityUseCaseSimple,
+			want:    agent_api.AgentEndpointAuthSchemeBotServiceRbac,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+						{Type: agent_api.AgentEndpointAuthSchemeEntra},
+						{Type: agent_api.AgentEndpointAuthSchemeBotService},
+					},
+				},
+			}
+
+			ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+				IsActivity: true,
+				UseCase:    test.useCase,
+			})
+
+			require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeEntra},
+				{Type: test.want},
+			}, request.AgentEndpoint.AuthorizationSchemes)
+		})
+	}
+}
+
 func TestValidateRegistryConnectionDefinition(t *testing.T) {
 	t.Parallel()
 

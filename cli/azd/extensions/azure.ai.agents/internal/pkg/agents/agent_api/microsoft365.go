@@ -59,7 +59,7 @@ type TeamsAppPackageRequest struct {
 	DeveloperWebsiteURL      string                         `json:"DeveloperWebsiteUrl"`
 	PrivacyURL               string                         `json:"PrivacyUrl"`
 	TermsOfUseURL            string                         `json:"TermsOfUseUrl"`
-	CanRespondWithoutMention bool                           `json:"CanRespondWithoutMention"`
+	CanRespondWithoutMention *bool                          `json:"CanRespondWithoutMention,omitempty"`
 	OptionalPermissionScopes []Microsoft365PermissionScopes `json:"optionalPermissionScopes,omitempty"`
 	AccessBoundaries         *[]string                      `json:"accessBoundaries,omitempty"`
 }

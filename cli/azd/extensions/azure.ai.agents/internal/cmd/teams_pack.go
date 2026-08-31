@@ -311,17 +311,16 @@ func buildTeamsAppPackageRequest(
 	}
 
 	request := agent_api.TeamsAppPackageRequest{
-		BotServiceArmID:          botArmID,
-		PublishScope:             opts.scope.api,
-		AgentDisplayName:         displayName,
-		AppVersion:               appVersion,
-		ShortDescription:         fmt.Sprintf("%s agent", displayName),
-		FullDescription:          fmt.Sprintf("%s agent on Microsoft Teams (activity protocol)", displayName),
-		DeveloperName:            "Azure AI Foundry",
-		DeveloperWebsiteURL:      "https://learn.microsoft.com/azure/ai-foundry/",
-		PrivacyURL:               "https://learn.microsoft.com/azure/ai-foundry/",
-		TermsOfUseURL:            "https://learn.microsoft.com/azure/ai-foundry/",
-		CanRespondWithoutMention: true,
+		BotServiceArmID:     botArmID,
+		PublishScope:        opts.scope.api,
+		AgentDisplayName:    displayName,
+		AppVersion:          appVersion,
+		ShortDescription:    fmt.Sprintf("%s agent", displayName),
+		FullDescription:     fmt.Sprintf("%s agent on Microsoft Teams (activity protocol)", displayName),
+		DeveloperName:       "Azure AI Foundry",
+		DeveloperWebsiteURL: "https://learn.microsoft.com/azure/ai-foundry/",
+		PrivacyURL:          "https://learn.microsoft.com/azure/ai-foundry/",
+		TermsOfUseURL:       "https://learn.microsoft.com/azure/ai-foundry/",
 	}
 	if opts.useCase == project.ActivityUseCaseDigitalWorker {
 		request.PublishAsAutopilot = true
@@ -351,7 +350,7 @@ func buildTeamsAppPackageRequest(
 			request.TermsOfUseURL = publish.TermsOfUseURL
 		}
 		if publish.CanRespondWithoutMention != nil {
-			request.CanRespondWithoutMention = *publish.CanRespondWithoutMention
+			request.CanRespondWithoutMention = publish.CanRespondWithoutMention
 		}
 	}
 	return request

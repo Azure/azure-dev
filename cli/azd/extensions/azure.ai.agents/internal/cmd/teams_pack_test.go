@@ -74,8 +74,8 @@ func TestBuildTeamsAppPackageRequest(t *testing.T) {
 	if req.AppVersion != "1.0.0" {
 		t.Errorf("AppVersion = %q, want default 1.0.0", req.AppVersion)
 	}
-	if !req.CanRespondWithoutMention {
-		t.Error("CanRespondWithoutMention = false, want true")
+	if req.CanRespondWithoutMention != nil {
+		t.Error("CanRespondWithoutMention must be omitted when not configured")
 	}
 }
 
@@ -113,6 +113,8 @@ func TestBuildTeamsAppPackageRequest_DigitalWorkerUsesPublishMetadata(t *testing
 	if !req.PublishAsAutopilot {
 		t.Fatal("PublishAsAutopilot = false, want true")
 	}
+	require.NotNil(t, req.CanRespondWithoutMention)
+	require.True(t, *req.CanRespondWithoutMention)
 	require.Equal(t, permissions, req.OptionalPermissionScopes)
 	require.Equal(t, boundaries, *req.AccessBoundaries)
 	if req.PublishScope != "Shared" {

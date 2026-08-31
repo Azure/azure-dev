@@ -325,6 +325,27 @@ func TestResolveDigitalWorkerPublishInputs(t *testing.T) {
 	require.Empty(t, *boundaries)
 }
 
+func TestResolveDigitalWorkerPublishInputsPreservesConfiguredEmptyBoundaries(t *testing.T) {
+	t.Parallel()
+
+	configuredBoundaries := []string{}
+	packCtx := digitalWorkerPackContext("tenant")
+	packCtx.activitySettings.Publish.AccessBoundaries = &configuredBoundaries
+
+	_, boundaries, err := resolveDigitalWorkerPublishInputs(&publishFlags{}, packCtx)
+
+	require.NoError(t, err)
+	require.NotNil(t, boundaries)
+	require.NotNil(t, *boundaries)
+	require.Empty(t, *boundaries)
+
+	payload, err := json.Marshal(struct {
+		AccessBoundaries *[]string `json:"accessBoundaries,omitempty"`
+	}{AccessBoundaries: boundaries})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"accessBoundaries":[]}`, string(payload))
+}
+
 func TestResolveDigitalWorkerPublishInputsValidatesAfterFlagOverrides(t *testing.T) {
 	t.Parallel()
 

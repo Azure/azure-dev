@@ -222,7 +222,8 @@ func resolveDigitalWorkerPublishInputs(
 			})
 		}
 		if publish.AccessBoundaries != nil {
-			values := append([]string(nil), (*publish.AccessBoundaries)...)
+			values := make([]string, len(*publish.AccessBoundaries))
+			copy(values, *publish.AccessBoundaries)
 			boundaries = &values
 		}
 	}

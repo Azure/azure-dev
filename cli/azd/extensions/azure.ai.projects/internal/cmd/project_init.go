@@ -1882,7 +1882,7 @@ func terraformEjectionVariables(parameters map[string]any) (map[string]any, bool
 func copyEmbeddedTerraform(destination string, includeAcr bool) error {
 	skip := map[string]struct{}{"outputs.tf.tmpl": {}}
 	if !includeAcr {
-		skip["acr.tf"] = struct{}{}
+		skip["container-registry.tf"] = struct{}{}
 	}
 	return copyEmbeddedTree(synthesis.TerraformTemplatesFS(), "templates/terraform", destination,
 		skip)

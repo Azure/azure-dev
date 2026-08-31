@@ -163,11 +163,11 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 			assert.Contains(t, string(outputs), "AZURE_AI_PROJECT_ID")
 			if test.includeAcr {
 				assert.Contains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_ENDPOINT")
-				_, err := os.Stat(filepath.Join(infraDir, "acr.tf"))
+				_, err := os.Stat(filepath.Join(infraDir, "container-registry.tf"))
 				assert.NoError(t, err)
 			} else {
 				assert.NotContains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_ENDPOINT")
-				_, err := os.Stat(filepath.Join(infraDir, "acr.tf"))
+				_, err := os.Stat(filepath.Join(infraDir, "container-registry.tf"))
 				assert.ErrorIs(t, err, os.ErrNotExist)
 			}
 

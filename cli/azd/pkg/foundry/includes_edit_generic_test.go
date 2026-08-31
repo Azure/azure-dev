@@ -144,3 +144,33 @@ evals:
 
 	require.NoError(t, doc.Set("evals[0]", map[string]any{"name": "weekly"}))
 }
+
+// The `?` qualifier creates a missing mapping; it cannot conjure a sequence
+// element that is past the end.
+//
+// Marking the path optional took a different route into yamlnode than a plain
+// index did, and that one assigned into the sequence without checking, so both
+// Set and Append panicked where the plain form already returned an error.
+func TestOptionalQualifierRejectsAnIndexPastTheEnd(t *testing.T) {
+	doc := func(t *testing.T) *YAMLDocument {
+		t.Helper()
+		d, err := ParseYAMLDocument("azure.eval.yaml", []byte("evals:\n  - name: nightly\n"))
+		require.NoError(t, err)
+		return d
+	}
+
+	err := doc(t).Set("evals[1]?.name", "weekly")
+	require.Error(t, err, "there is no evals[1] to create a mapping inside")
+	assert.Contains(t, err.Error(), "out of bounds")
+
+	err = doc(t).Append("evals[1]?.items", "x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "out of bounds")
+
+	// The element that does exist is still reachable through the same path shape.
+	d := doc(t)
+	require.NoError(t, d.Set("evals[0]?.dataset", "golden"))
+	out, err := d.Bytes()
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "dataset: golden")
+}

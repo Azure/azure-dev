@@ -217,7 +217,9 @@ func find(current *yaml.Node, parts []pathElem, findOnly bool) (*yaml.Node, erro
 		current.Content = append(current.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: part.key})
 		current.Content = append(current.Content, node)
 	case yaml.SequenceNode:
-		current.Content[part.idx] = node
+		// Only an index past the end reaches here; the traversal above took every
+		// index that exists, so there is no element to make optional.
+		return nil, fmt.Errorf("sequence index out of bounds: %d", part.idx)
 	}
 
 	if len(parts) == 0 {

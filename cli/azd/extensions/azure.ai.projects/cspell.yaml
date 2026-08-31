@@ -2,9 +2,11 @@ import: ../../.vscode/cspell.yaml
 words:
   - alnum
   - exterrors
+  - experimenttracking
   - foundryproject
   - idempotently
   - ondisk
   - purgeable
+  - wandb
   # Contributors
   - hemarina

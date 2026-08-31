@@ -24,7 +24,7 @@ import (
 
 const (
 	defaultAPIVersion = "v1"
-	tokenScope        = "https://ai.azure.com/.default"
+	foundryScope      = "https://ai.azure.com/.default"
 	maxResponseBytes  = 64 << 20
 	defaultTimeout    = 30 * time.Second
 )
@@ -235,7 +235,7 @@ func (c *Client) do(
 		req.Header.Set("api-key", c.apiKey)
 	} else {
 		token, tokenErr := c.credential.GetToken(ctx, policy.TokenRequestOptions{
-			Scopes: []string{tokenScope},
+			Scopes: []string{foundryScope},
 		})
 		if tokenErr != nil {
 			return nil, fmt.Errorf("acquire Foundry access token: %w", tokenErr)

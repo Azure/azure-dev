@@ -799,6 +799,7 @@ func readExperimentInput(file string) ([]byte, error) {
 	if file == "-" {
 		reader = os.Stdin
 	} else {
+		//nolint:gosec // The payload path is explicitly supplied by the user.
 		opened, err := os.Open(file)
 		if err != nil {
 			return nil, exterrors.Dependency(

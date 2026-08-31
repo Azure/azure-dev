@@ -17,10 +17,9 @@ import (
 )
 
 // raiPolicyLister returns every Responsible AI policy on the account named by
-// ref. Listing rather than probing one name at a time answers both of the
-// node's questions from a single call: whether the declared policy is present,
-// and what to fall back to when it is not. It exists as a function type so the
-// node can be exercised without an Azure call.
+// ref. Listing rather than probing one name at a time verifies that the
+// explicitly requested policy exists before publishing. It exists as a
+// function type so the node can be exercised without an Azure call.
 type raiPolicyLister func(ctx context.Context, ref azure.RaiPolicyRef) ([]azure.RaiPolicyInfo, error)
 
 // policiesNode reconciles every declared Responsible AI policy against the
@@ -32,13 +31,8 @@ type raiPolicyLister func(ctx context.Context, ref azure.RaiPolicyRef) ([]azure.
 // end of a deploy. Checking here names the policy and the account it was looked
 // for on.
 //
-// A policy that is absent is a warning, not a failure. The declared name is the
-// author's preference, not a safety floor: the account applies its own default
-// content filters to an agent that names no policy at all, so falling back to
-// the built-in default leaves the agent no less filtered than publishing it
-// without guardrails would. Failing instead would block a deploy over a value
-// that is trivially editable afterwards, and the substitution is reported so
-// the author can point policies[].raiPolicyName somewhere else and redeploy.
+// An explicitly declared policy is required. Failure to read or find it stops
+// deployment rather than silently substituting or removing the guardrail.
 //
 // Returns nil when the agent declares no RAI policy, so the deploy path is
 // unchanged for the agents that do not use one.

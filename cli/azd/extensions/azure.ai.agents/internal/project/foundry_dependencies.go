@@ -39,6 +39,65 @@ type foundryDependencyFailure struct {
 	requiresMigration bool
 }
 
+// validateRegistryConnectionDependency ensures a registry connection declared
+// as a sibling azd service is wired through uses. References that do not match a
+// local service are external Foundry connection names or IDs and are left to the
+// service to resolve.
+func validateRegistryConnectionDependency(
+	ctx context.Context,
+	agent *azdext.ServiceConfig,
+	connectionRef string,
+	services map[string]*azdext.ServiceConfig,
+	isEnabled dependencyEnabled,
+) error {
+	connectionRef = strings.TrimSpace(connectionRef)
+	if connectionRef == "" {
+		return nil
+	}
+
+	dependency, exists := services[connectionRef]
+	if !exists {
+		return nil
+	}
+	if dependency.GetHost() != foundryConnectionHost {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf(
+				"registry connection %s resolves to service host %s instead of %s",
+				strconv.Quote(connectionRef),
+				strconv.Quote(dependency.GetHost()),
+				strconv.Quote(foundryConnectionHost),
+			),
+			fmt.Sprintf("change the %s service host to %s or use an external Foundry connection reference",
+				strconv.Quote(connectionRef), strconv.Quote(foundryConnectionHost)),
+		)
+	}
+	if !slices.Contains(agent.GetUses(), connectionRef) {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("registry connection service %s is not declared in %s uses",
+				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+			fmt.Sprintf("add %s to the %s service uses list, run 'azd provision', then retry the agent deployment",
+				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+		)
+	}
+	if isEnabled != nil {
+		enabled, err := isEnabled(ctx, connectionRef)
+		if err != nil {
+			return err
+		}
+		if !enabled {
+			return exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf("registry connection service %s is disabled by its deployment condition",
+					strconv.Quote(connectionRef)),
+				"enable the registry connection dependency or use an external Foundry connection reference",
+			)
+		}
+	}
+	return nil
+}
+
 func validateFoundryDependencies(
 	ctx context.Context,
 	agent *azdext.ServiceConfig,

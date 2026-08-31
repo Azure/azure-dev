@@ -56,10 +56,9 @@ func TestPromptDefinitionForServiceHosted(t *testing.T) {
 	assert.False(t, isPrompt)
 }
 
-// TestPromptDefinitionForServiceLegacy covers projects scaffolded before the
-// definition moved inline: they declare no kind, are identified by their
-// promptAgent config block, and keep the definition in an on-disk agent.yaml.
-func TestPromptDefinitionForServiceLegacy(t *testing.T) {
+// TestPromptDefinitionForServiceRequiresExplicitKind confirms promptAgent
+// settings and an on-disk definition do not implicitly classify a service.
+func TestPromptDefinitionForServiceRequiresExplicitKind(t *testing.T) {
 	serviceDir := t.TempDir()
 	agentYaml := "kind: prompt\nname: legacy-agent\nmodel: gpt-4o\nharness:\n  type: github_copilot_preview\n"
 	require.NoError(t, os.WriteFile(filepath.Join(serviceDir, "agent.yaml"), []byte(agentYaml), 0600))
@@ -72,11 +71,8 @@ func TestPromptDefinitionForServiceLegacy(t *testing.T) {
 		}),
 	}
 
-	def, isPrompt := promptDefinitionForService(svc, filepath.Dir(serviceDir), serviceDir)
-	require.True(t, isPrompt)
-	assert.Equal(t, "legacy-agent", def.Name)
-	require.NotNil(t, def.Harness)
-	assert.Equal(t, "github_copilot_preview", def.Harness.Type)
+	_, isPrompt := promptDefinitionForService(svc, filepath.Dir(serviceDir), serviceDir)
+	require.False(t, isPrompt)
 }
 
 // TestPromptAgentNameForServicePrefersDefinition asserts the down handlers

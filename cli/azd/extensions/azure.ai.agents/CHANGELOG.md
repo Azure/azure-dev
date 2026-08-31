@@ -64,6 +64,22 @@
 - Fixed a bug where a toolbox attached to a prompt agent (via a `skills/` folder or a `toolbox:` reference) was wired into the agent's `mcp` tool without a `project_connection_id`, leaving the agent with no credential to reach the toolbox MCP endpoint so its skills were never invoked. Deploy now creates (or updates) a `RemoteTool` project connection — via the Microsoft.CognitiveServices control plane, since the data-plane connections API is read-only — that fronts the toolbox endpoint and sets it as the tool's `project_connection_id`.
 - Fixed a bug where `azd up` re-prompted for an Azure region for a prompt agent even after an existing Foundry project was selected during init. Selecting an existing project now seeds `AZURE_LOCATION` from the project's region (in addition to `AZURE_AI_DEPLOYMENTS_LOCATION`), so the model is deployed to the project's region without a redundant prompt.
 - `azd ai agent show` now lists the toolbox tools attached to a prompt agent — each `mcp` tool's server URL and its backing `project_connection_id` — so the toolbox created during deploy is discoverable without inspecting the deployed definition. Also fixed the `Harness` field, which previously printed the harness API base URL instead of the actual execution harness (e.g. `GitHub Copilot (ghcp)`), and added a `Project Endpoint` row showing where the agent is served.
+## 1.0.0-beta.13 (2026-08-27)
+
+### Features Added
+
+- [[#9586]](https://github.com/Azure/azure-dev/pull/9586) Add support for private non-ACR registry connections when authoring and deploying hosted agents.
+- [[#9634]](https://github.com/Azure/azure-dev/pull/9634) Update prompt voice agents to use the unified Agents API with versioned voice endpoints.
+- [[#9655]](https://github.com/Azure/azure-dev/pull/9655) Add advanced prompt voice settings for audio, turn detection, modalities, tools, and service features.
+- [[#9683]](https://github.com/Azure/azure-dev/pull/9683) Add editable Bicep and Terraform infrastructure ejection for existing Foundry projects while preserving ownership of existing resources.
+
+### Bugs Fixed
+
+- [[#9680]](https://github.com/Azure/azure-dev/pull/9680) Fix Doctor and next-step diagnostics for unified Foundry connections and invalid connection conditions.
+
+### Other Changes
+
+- [[#9726]](https://github.com/Azure/azure-dev/pull/9726) Add Microsoft Foundry Skill User-Agent attribution to extension requests when enabled.
 
 ## 1.0.0-beta.12 (2026-08-24)
 

@@ -46,16 +46,7 @@ func ServiceIsPromptAgent(serviceConfig *azdext.ServiceConfig) bool {
 			return strings.EqualFold(kind, string(agent_yaml.AgentKindPrompt))
 		}
 	}
-	// Projects scaffolded before the definition moved inline declare no kind on
-	// the service entry and are identified by their promptAgent config block.
-	if serviceConfig.Config == nil {
-		return false
-	}
-	var cfg ServiceTargetAgentConfig
-	if err := UnmarshalStruct(serviceConfig.Config, &cfg); err != nil {
-		return false
-	}
-	return cfg.PromptAgent != nil
+	return false
 }
 
 // isPromptAgentService reports whether the provider's current service is a
@@ -561,8 +552,8 @@ func promptAgentRequestHeaders(
 // (https://<account>.services.ai.azure.com/api/projects/<project>/agents?api-version=v1).
 const ProjectEndpointAPIVersion = "v1"
 
-// promptProjectEndpointEnvKeys lists the azd environment keys that may carry
-// the Foundry project data-plane endpoint, in precedence order.
+// promptProjectEndpointEnvKey is the canonical azd environment key carrying
+// the Foundry project data-plane endpoint.
 const promptProjectEndpointEnvKey = "FOUNDRY_PROJECT_ENDPOINT"
 
 // ResolvePromptTargetFromEnv applies azd environment-derived overrides to the

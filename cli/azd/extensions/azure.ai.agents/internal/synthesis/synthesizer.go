@@ -190,10 +190,6 @@ type agentBlock struct {
 	Kind              string           `yaml:"kind,omitempty"`
 	Image             string           `yaml:"image,omitempty"`
 	CodeConfiguration *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
-	// PromptAgent is the prompt-agent harness settings block. Its presence is a
-	// structural marker that the service is a prompt agent, which matters because
-	// `azd ai agent init` does not write an explicit kind: into the service config.
-	PromptAgent *yaml.Node `yaml:"promptAgent,omitempty"`
 }
 
 // serviceBlock is the subset of a service entry we inspect for cross-service provisioning inputs.
@@ -278,12 +274,6 @@ func Synthesize(in Input) (*Result, error) {
 	if len(in.AcceptedHosts) > 0 && !slices.Contains(in.AcceptedHosts, svc.Host) {
 		return nil, ErrServiceNotFound
 	}
-	// endpoint: is expanded before the emptiness test so a portable
-	// `endpoint: ${FOUNDRY_PROJECT_ENDPOINT}` collapses to "" (greenfield) when
-	// the variable is unset, instead of routing the caller down the brownfield
-	// path with an unresolvable literal. Expansion is unconditional: this is a
-	// control-flow decision, not a value the eject path writes out, so
-	// PreserveVarRefs must not change which branch is taken.
 	endpoint, err := expandEndpoint(svc.Endpoint, in.Env)
 	if err != nil {
 		return nil, err
@@ -489,10 +479,8 @@ func BrownfieldConnections(
 }
 
 // ProjectEndpoint returns the endpoint configured on a Foundry project service,
-// with ${VAR} references resolved from env (falling back to the process
-// environment). It resolves $ref includes before decoding the service body.
-// An endpoint whose variables are all unset resolves to "", matching how
-// Synthesize treats it as greenfield.
+// with ${VAR} references resolved from env. It resolves $ref includes before
+// decoding the service body.
 func ProjectEndpoint(
 	raw []byte,
 	serviceName string,
@@ -515,10 +503,6 @@ func ProjectEndpoint(
 	return expandEndpoint(svc.Endpoint, env)
 }
 
-// expandEndpoint resolves ${VAR} in a project service's endpoint: and trims the
-// result. Values come from env first, then the process environment. Unset
-// variables expand to the empty string, so a fully unresolved endpoint is
-// indistinguishable from an absent one.
 func expandEndpoint(raw string, env map[string]string) (string, error) {
 	mapping := func(name string) string {
 		if value, found := env[name]; found {
@@ -737,9 +721,6 @@ func deriveIncludeAcr(
 			if agent.CodeConfiguration == nil {
 				agent.CodeConfiguration = service.Config.CodeConfiguration
 			}
-			if agent.PromptAgent == nil {
-				agent.PromptAgent = service.Config.PromptAgent
-			}
 		}
 		if agentNeedsAcr(agent) {
 			return true, nil
@@ -753,15 +734,6 @@ func deriveIncludeAcr(
 // deploys do not; any other hosted agent does.
 func agentNeedsAcr(a agentBlock) bool {
 	if a.CodeConfiguration != nil || strings.TrimSpace(a.Image) != "" {
-		return false
-	}
-	// A promptAgent: block is the pre-inline marker for a prompt agent, whose
-	// service entry carried no kind:. Foundry runs those from their definition,
-	// so without this check the default-to-hosted fallback below would provision
-	// an ACR (and an AcrPull role assignment) the agent never uses. Entries
-	// scaffolded since the definition moved inline declare kind: prompt and are
-	// handled by the check below.
-	if a.PromptAgent != nil {
 		return false
 	}
 	// "hosted" is the only container kind; an empty kind defaults to hosted for

@@ -91,9 +91,7 @@ const DefaultPromptAPIVersion = "2025-05-15-preview"
 // subscription. Do not rely on this constant being reachable.
 const DefaultPromptModelEndpoint = "https://va-dev-fdp-resource.services.ai.azure.com"
 
-// PromptAgentSettings captures the harness connection details for a prompt
-// (kind=managed) agent. It is stored in the azure.yaml service config block
-// (ServiceTargetAgentConfig.PromptAgent) and resolved at deploy/invoke time.
+// PromptAgentSettings captures the harness connection details for a prompt agent.
 //
 // `azd ai agent init` writes every field as a ${VAR} reference rather than a
 // literal, so azure.yaml carries no subscription, resource group, or workspace
@@ -106,10 +104,10 @@ const DefaultPromptModelEndpoint = "https://va-dev-fdp-resource.services.ai.azur
 // information but looks like configuration a developer must fill in, and
 // overlay() treats an empty value as "not configured" in either case.
 type PromptAgentSettings struct {
-	// SubscriptionID is the Azure subscription containing the workspace.
+	// SubscriptionID is the Azure subscription containing the Foundry project.
 	SubscriptionID string `json:"subscriptionId,omitempty"`
 
-	// ResourceGroup is the Azure resource group containing the workspace.
+	// ResourceGroup is the Azure resource group containing the Foundry project.
 	ResourceGroup string `json:"resourceGroup,omitempty"`
 
 	// ProjectEndpoint is the Foundry project data-plane root

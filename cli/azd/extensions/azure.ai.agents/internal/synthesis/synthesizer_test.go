@@ -560,13 +560,15 @@ services:
     credentials:
       keys:
         x-api-key: ${MCP_KEY}
+        body.provider: ${REGISTRY_PROVIDER}
     metadata:
       owner: ${MCP_OWNER}
 `
 	env := map[string]string{
-		"MCP_URL":   "https://mcp.example.com/mcp",
-		"MCP_KEY":   "secret-value",
-		"MCP_OWNER": "team-ai",
+		"MCP_URL":           "https://mcp.example.com/mcp",
+		"MCP_KEY":           "secret-value",
+		"MCP_OWNER":         "team-ai",
+		"REGISTRY_PROVIDER": "generic-provider",
 	}
 
 	getConn := func(t *testing.T, res *Result) Connection {
@@ -590,6 +592,7 @@ services:
 		keys, ok := c.Credentials["keys"].(map[string]any)
 		require.True(t, ok, "keys should be a nested map, got %T", c.Credentials["keys"])
 		assert.Equal(t, "secret-value", keys["x-api-key"])
+		assert.Equal(t, "generic-provider", keys["body.provider"])
 		assert.Equal(t, "team-ai", c.Metadata["owner"])
 
 		publicConnections := res.Parameters["connections"].([]Connection)
@@ -613,6 +616,7 @@ services:
 		keys, ok := c.Credentials["keys"].(map[string]any)
 		require.True(t, ok)
 		assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
+		assert.Equal(t, "${REGISTRY_PROVIDER}", keys["body.provider"])
 		assert.Equal(t, "${MCP_OWNER}", c.Metadata["owner"])
 	})
 

@@ -5,8 +5,6 @@ package cmd
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -15,7 +13,6 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"go.yaml.in/yaml/v3"
 )
 
 // promptServiceContext carries everything the prompt-agent commands
@@ -53,9 +50,8 @@ func promptSettingsFromService(svc *azdext.ServiceConfig) *project.PromptAgentSe
 //
 // The definition is normally inline on the azure.yaml service entry, which is
 // also where `kind: prompt` identifies it; a `$ref:` include is expanded by the
-// same call. Projects that predate the inline shape declare no kind and keep
-// their definition in an on-disk agent.yaml, so those are recognized by their
-// `promptAgent` config block and read from the file.
+// same call. Classification intentionally requires an explicit prompt kind;
+// the optional promptAgent settings block is not a discriminator.
 func promptDefinitionForService(
 	svc *azdext.ServiceConfig,
 	projectPath, serviceDir string,
@@ -68,17 +64,7 @@ func promptDefinitionForService(
 		return agent_yaml.PromptAgent{}, false
 	}
 
-	// Legacy shape. Best-effort: an unreadable file still leaves a usable
-	// context, since the service key doubles as the agent identity.
-	if serviceDir != "" {
-		if data, err := os.ReadFile(filepath.Join(serviceDir, "agent.yaml")); err == nil {
-			var def agent_yaml.PromptAgent
-			if yaml.Unmarshal(data, &def) == nil {
-				return def, true
-			}
-		}
-	}
-	return agent_yaml.PromptAgent{}, true
+	return agent_yaml.PromptAgent{}, false
 }
 
 // resolvePromptAgentService resolves the named (or sole) azure.ai.agent service

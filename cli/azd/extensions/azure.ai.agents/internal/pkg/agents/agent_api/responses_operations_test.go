@@ -70,7 +70,6 @@ func TestResponseLifecycleUsesProjectEndpoint(t *testing.T) {
 		}
 	}
 }
-
 func TestCreateResponseStreamAtUsesExplicitEndpoint(t *testing.T) {
 	client, transport := newCaptureClient(http.StatusOK, "event: response.completed\n\n")
 	endpoint := "https://test.example.com/api/projects/proj/agents/managed/endpoint/protocols/openai/responses?api-version=v1"

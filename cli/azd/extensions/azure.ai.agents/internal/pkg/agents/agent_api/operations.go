@@ -91,11 +91,24 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 
 // GetAgent retrieves a specific agent by name
 func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string) (*AgentObject, error) {
+	return c.GetAgentWithHeaders(ctx, agentName, apiVersion, nil)
+}
+
+// GetAgentWithHeaders retrieves an agent and applies additional service headers.
+func (c *AgentClient) GetAgentWithHeaders(
+	ctx context.Context,
+	agentName string,
+	apiVersion string,
+	headers map[string]string,
+) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	for key, value := range headers {
+		req.Raw().Header.Set(key, value)
 	}
 
 	resp, err := c.pipeline.Do(req)

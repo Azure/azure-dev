@@ -54,6 +54,12 @@ type ServiceTargetAgentConfig struct {
 	MemoryStores    []MemoryStore      `json:"memoryStores,omitempty"`
 	StartupCommand  string             `json:"startupCommand,omitempty"`
 	Activity        *ActivitySettings  `json:"activity,omitempty"`
+	// PromptAgent holds the harness connection details for a "prompt"
+	// (kind=managed) agent service. It is only populated for prompt agents;
+	// hosted/workflow agents leave it nil. The harness has no container/code
+	// to build, so prompt-agent services carry their entire deploy target in
+	// this block instead of a Docker/code configuration.
+	PromptAgent *PromptAgentSettings `json:"promptAgent,omitempty"`
 }
 
 // ActivitySettings configures the Teams hosting model for an Activity-protocol agent.
@@ -159,6 +165,27 @@ func (t *Toolbox) UnmarshalJSON(data []byte) error {
 	}
 	*t = Toolbox(value)
 	return nil
+}
+
+// SkillService is the azure.yaml service-level config for a `host:
+// azure.ai.skill` entry, which the azure.ai.skills extension owns and deploys.
+// Only the fields azd writes are modeled here; the extension's schema also
+// accepts license, compatibility, metadata and tools, which authors may add by
+// hand.
+//
+// The skill's name is the azure.yaml service key rather than a field, and its
+// version is assigned by the service on each deploy and published back to the
+// azd environment as SKILL_<NAME>_VERSION.
+type SkillService struct {
+	// Description is the skill description, taken from the bundle's SKILL.md
+	// frontmatter so azure.yaml reads the same as the folder it points at.
+	Description string `json:"description,omitempty"`
+
+	// Archive is the path, relative to azure.yaml, of the directory containing
+	// SKILL.md. A directory rather than the SKILL.md file itself, so the whole
+	// bundle -- scripts, references, assets -- is packaged with the
+	// instructions instead of only the Markdown body.
+	Archive string `json:"archive"`
 }
 
 // MemoryStore represents a Foundry memory store provisioned (create-if-not-exists)

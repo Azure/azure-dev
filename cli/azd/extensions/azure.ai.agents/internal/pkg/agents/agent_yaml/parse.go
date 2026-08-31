@@ -191,12 +191,6 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 				return nil, fmt.Errorf("failed to unmarshal to ConnectionResource: %w", err)
 			}
 			resourceDefs = append(resourceDefs, connDef)
-		case ResourceKindFile:
-			var fileDef FileResource
-			if err := yaml.Unmarshal(resourceBytes, &fileDef); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal to FileResource: %w", err)
-			}
-			resourceDefs = append(resourceDefs, fileDef)
 		default:
 			return nil, fmt.Errorf("unrecognized resource kind: %s", resourceDef.Kind)
 		}

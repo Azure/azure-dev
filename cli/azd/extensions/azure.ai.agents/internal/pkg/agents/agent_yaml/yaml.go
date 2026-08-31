@@ -62,7 +62,6 @@ const (
 	ResourceKindTool       ResourceKind = "tool"
 	ResourceKindToolbox    ResourceKind = "toolbox"
 	ResourceKindConnection ResourceKind = "connection"
-	ResourceKindFile       ResourceKind = "file"
 )
 
 type ToolKind string
@@ -814,6 +813,10 @@ type ToolboxReference struct {
 	// Version is the toolbox version. When empty the toolbox's default version
 	// is used.
 	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+
+	// Connection names the sibling azure.ai.connection service that authorizes
+	// the agent to call this toolbox's MCP endpoint.
+	Connection string `json:"connection" yaml:"connection"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.
@@ -1345,16 +1348,6 @@ type ConnectionResource struct {
 
 	// ConnectorName is the connector name for OAuth2 auth type, where Microsoft provides a managed OAuth2 app
 	ConnectorName string `json:"connectorName,omitempty" yaml:"connectorName,omitempty"`
-}
-
-// FileResource Represents a file (or folder of files) contributed to the
-// agent's vector store. Files are normally discovered by convention from a
-// local `files/` folder, but a manifest may declare one explicitly. Path points
-// at a file or directory; Purpose is the optional Foundry Files purpose.
-type FileResource struct {
-	Resource `json:",inline" yaml:",inline"`
-	Path     string `json:"path,omitempty" yaml:"path,omitempty"`
-	Purpose  string `json:"purpose,omitempty" yaml:"purpose,omitempty"`
 }
 
 // Template Template model for defining prompt templates.

@@ -16,7 +16,7 @@ import (
 )
 
 // raiPolicyID is a representative RAI policy ARM resource ID, the value users
-// put in `raiPolicyName`.
+// put in `raiPolicyName` in azure.yaml.
 const raiPolicyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" +
 	"my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2"
 
@@ -38,8 +38,7 @@ func inlineAgentService(t *testing.T, values map[string]any) *azdext.ServiceConf
 
 // TestAgentPoliciesRoundTrip verifies governance policies survive a marshal into
 // the inline service properties and back, and that they are persisted under the
-// camelCase `raiPolicyName` key that azure.yaml authors use — not the
-// `rai_policy_name` key of the deprecated on-disk agent.yaml.
+// `raiPolicyName` key used by azure.yaml.
 func TestAgentPoliciesRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -56,8 +55,6 @@ func TestAgentPoliciesRoundTrip(t *testing.T) {
 	policy := policies[0].GetStructValue().GetFields()
 	require.Equal(t, "rai_policy", policy["type"].GetStringValue())
 	require.Equal(t, raiPolicyID, policy["raiPolicyName"].GetStringValue())
-	require.NotContains(t, policy, "rai_policy_name",
-		"azure.yaml uses the camelCase raiPolicyName key")
 
 	svc := &azdext.ServiceConfig{
 		Name:                 "rai-agent",
@@ -160,7 +157,7 @@ func TestAgentPoliciesNoRaiConfigWhenAbsent(t *testing.T) {
 
 // TestAgentPoliciesValidation verifies malformed policies authored inline in
 // azure.yaml are rejected, and that the missing-name error names the
-// azure.yaml key (raiPolicyName) rather than only the agent.yaml one.
+// `raiPolicyName` key.
 func TestAgentPoliciesValidation(t *testing.T) {
 	t.Parallel()
 
@@ -172,7 +169,7 @@ func TestAgentPoliciesValidation(t *testing.T) {
 		{
 			name:         "missing policy name",
 			policy:       map[string]any{"type": "rai_policy"},
-			wantErrSubst: "'raiPolicyName' in azure.yaml",
+			wantErrSubst: "requires a policy name",
 		},
 		{
 			name:         "missing type",
@@ -409,4 +406,21 @@ func TestAgentPoliciesSingleRaiPolicyInline(t *testing.T) {
 		},
 	}))
 	require.ErrorContains(t, err, "only one is supported")
+}
+
+// TestAgentPoliciesRaiPolicyNameKey covers the azure.yaml camelCase shape.
+func TestAgentPoliciesRaiPolicyNameKey(t *testing.T) {
+	t.Parallel()
+
+	agentDef, _, found, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":  "hosted",
+		"name":  "rai-agent",
+		"image": "myregistry.azurecr.io/agent:v1",
+		"policies": []any{
+			map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID},
+		},
+	}))
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, raiPolicyID, agentDef.Policies[0].RaiPolicyName)
 }

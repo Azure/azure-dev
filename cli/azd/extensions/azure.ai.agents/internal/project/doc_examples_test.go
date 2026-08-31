@@ -1033,6 +1033,13 @@ func checkVocabulary(t *testing.T, e docExample, name string, svc map[string]any
 		prop, ok := schema.property(key)
 		require.True(t, ok, undeclaredPropertyMessage(e, name, key))
 		schema.checkValue(t, e, name, key, prop, value)
+
+		// `$ref` points at the file carrying the definition; it is not part of
+		// the definition itself, so it neither makes the inline shape active nor
+		// conflicts with a deprecated config block.
+		if key == AgentDefinitionRefKey {
+			continue
+		}
 		inline[key] = value
 	}
 

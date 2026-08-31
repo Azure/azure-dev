@@ -7,6 +7,8 @@ on:
       - eng/scripts/Test-BicepLint.ps1
       - .github/workflows/lint-bicep.yml
     
+
+
 jobs:
   bicep-lint:
     runs-on: ubuntu-latest

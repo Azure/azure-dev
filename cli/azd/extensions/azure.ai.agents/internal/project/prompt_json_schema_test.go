@@ -29,14 +29,10 @@ func TestPromptJSONSchemaRequiresPromptInstructions(t *testing.T) {
 	}))
 }
 
-func TestPromptJSONSchemaPreservesVoiceAndLegacyConfig(t *testing.T) {
+func TestPromptJSONSchemaPreservesVoiceModel(t *testing.T) {
 	schema := loadDocSchema(t, filepath.Join("..", ".."))
 	require.NoError(t, schema.validate(map[string]any{
 		"kind":  "prompt-voice",
 		"model": map[string]any{"id": "gpt-realtime"},
-		"promptAgent": map[string]any{
-			"baseUrl":   "https://legacy.example.com",
-			"workspace": "legacy-workspace",
-		},
 	}))
 }

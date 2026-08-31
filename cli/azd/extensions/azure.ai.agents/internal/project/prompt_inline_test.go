@@ -117,8 +117,7 @@ func TestPromptAgentFromResolvedServiceNoDefinition(t *testing.T) {
 	t.Parallel()
 
 	svc := &azdext.ServiceConfig{
-		Name:   "legacy",
-		Config: mustStruct(t, map[string]any{"promptAgent": map[string]any{"workspace": "w"}}),
+		Name: "no-definition",
 	}
 	_, found, err := PromptAgentFromResolvedService(svc, t.TempDir())
 	require.NoError(t, err)
@@ -290,9 +289,7 @@ func TestResolvePromptAgentSettingsExpandsLegacyRefs(t *testing.T) {
 	require.Equal(t, env["AZURE_AI_PROJECT_ENDPOINT"], settings.ProjectEndpoint)
 }
 
-// TestServiceIsPromptAgent covers both the inline marker and the pre-inline
-// promptAgent block, since projects scaffolded before this change declare no
-// kind on the service entry.
+// TestServiceIsPromptAgent requires an explicit prompt kind.
 func TestServiceIsPromptAgent(t *testing.T) {
 	t.Parallel()
 
@@ -321,15 +318,6 @@ func TestServiceIsPromptAgent(t *testing.T) {
 				AdditionalProperties: mustStruct(t, map[string]any{"kind": "prompt-voice", "name": "a"}),
 			},
 			want: false,
-		},
-		{
-			name: "pre-inline promptAgent block",
-			svc: &azdext.ServiceConfig{
-				Config: mustStruct(t, map[string]any{
-					"promptAgent": map[string]any{"workspace": "ws"},
-				}),
-			},
-			want: true,
 		},
 		{
 			name: "no definition and no block",

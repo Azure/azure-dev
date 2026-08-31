@@ -51,33 +51,22 @@ const DefaultPromptAPIVersion = "2025-05-15-preview"
 // subscription. Do not rely on this constant being reachable.
 const DefaultPromptModelEndpoint = "https://va-dev-fdp-resource.services.ai.azure.com"
 
-// PromptAgentSettings captures the harness connection details for a prompt
-// (kind=managed) agent. It is stored in the azure.yaml service config block
-// (ServiceTargetAgentConfig.PromptAgent) and resolved at deploy/invoke time.
-//
-// `azd ai agent init` writes every field as a ${VAR} reference rather than a
-// literal, so azure.yaml carries no subscription, resource group, or workspace
-// of its own and can be copied between Foundry projects unchanged. Deploy
-// expands the references against the azd environment and falls back to the
-// built-in defaults for any variable that is unset.
+// PromptAgentSettings captures Foundry project routing for a prompt agent.
 //
 // Every field is omitempty so a field with nothing to say is left out entirely.
 // Persisting empty strings would put a shape into azure.yaml that carries no
 // information but looks like configuration a developer must fill in, and
 // overlay() treats an empty value as "not configured" in either case.
 type PromptAgentSettings struct {
-	// SubscriptionID is the Azure subscription containing the workspace.
+	// SubscriptionID is the Azure subscription containing the Foundry project.
 	SubscriptionID string `json:"subscriptionId,omitempty"`
 
-	// ResourceGroup is the Azure resource group containing the workspace.
+	// ResourceGroup is the Azure resource group containing the Foundry project.
 	ResourceGroup string `json:"resourceGroup,omitempty"`
 
 	// ProjectEndpoint is the Foundry project data-plane root
 	// (https://<account>.services.ai.azure.com/api/projects/<project>). When set,
-	// it is the authoritative routing target for ALL managed agent operations
-	// (CRUD and Responses) and supersedes the legacy workspace tuple. It is
-	// populated from the interactive init selection or, in --no-prompt flows,
-	// from AZURE_AI_PROJECT_ENDPOINT in the azd environment.
+	// it is the authoritative routing target for all prompt-agent operations.
 	ProjectEndpoint string `json:"projectEndpoint,omitempty"`
 
 	// APIVersion is the api-version query parameter sent on every request.
@@ -90,9 +79,7 @@ type PromptAgentSettings struct {
 	ModelEndpoint string `json:"modelEndpoint,omitempty"`
 }
 
-// DefaultPromptAgentSettings returns settings populated with public managed
-// prompt-agent defaults plus placeholder workspace tuple values used by
-// non-guided init.
+// DefaultPromptAgentSettings returns prompt-agent defaults.
 func DefaultPromptAgentSettings() PromptAgentSettings {
 	return PromptAgentSettings{
 		SubscriptionID: DefaultPromptSubscriptionID,

@@ -8,10 +8,6 @@
       "type": "object",
       "description": "Marks the service as a Prompt-family (prompt, prompt-voice, managed) agent and tells azd how to reach the harness that runs it. `azd ai agent init` writes every field as a ${VAR} reference so azure.yaml carries no tenant-specific values.",
       "properties": {
-        "baseUrl": {
-          "type": "string",
-          "description": "Deprecated legacy harness origin. Prompt operations use projectEndpoint."
-        },
         "subscriptionId": {
           "type": "string",
           "description": "Azure subscription containing the Foundry workspace."
@@ -19,10 +15,6 @@
         "resourceGroup": {
           "type": "string",
           "description": "Azure resource group containing the Foundry workspace."
-        },
-        "workspace": {
-          "type": "string",
-          "description": "Deprecated legacy AML workspace name. Prompt operations use projectEndpoint."
         },
         "projectEndpoint": {
           "type": "string",

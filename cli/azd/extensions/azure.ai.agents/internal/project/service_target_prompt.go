@@ -46,16 +46,7 @@ func ServiceIsPromptAgent(serviceConfig *azdext.ServiceConfig) bool {
 			return strings.EqualFold(kind, string(agent_yaml.AgentKindPrompt))
 		}
 	}
-	// Projects scaffolded before the definition moved inline declare no kind on
-	// the service entry and are identified by their promptAgent config block.
-	if serviceConfig.Config == nil {
-		return false
-	}
-	var cfg ServiceTargetAgentConfig
-	if err := UnmarshalStruct(serviceConfig.Config, &cfg); err != nil {
-		return false
-	}
-	return cfg.PromptAgent != nil
+	return false
 }
 
 // isPromptAgentService reports whether the provider's current service is a

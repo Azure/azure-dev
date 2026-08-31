@@ -227,7 +227,17 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	}
 	require.NoError(t, yaml.Unmarshal(azureYamlContent, &config))
 
-	var projectDeployments = config.Services["ai-project"].Deployments
+	projectServiceKey := ""
+	for name, service := range config.Services {
+		if service.Host == "azure.ai.project" {
+			require.Empty(t, projectServiceKey,
+				"expected exactly one Foundry project service")
+			projectServiceKey = name
+		}
+	}
+	require.NotEmpty(t, projectServiceKey,
+		"expected a Foundry project service")
+	projectDeployments := config.Services[projectServiceKey].Deployments
 	require.Len(t, projectDeployments, 1)
 	deployment := projectDeployments[0]
 	require.Equal(t, "${AZURE_AI_MODEL_DEPLOYMENT_NAME}", deployment.Name)

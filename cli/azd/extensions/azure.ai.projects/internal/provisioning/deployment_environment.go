@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -353,10 +354,8 @@ func hasAiErrorReason(err error, reasons ...string) bool {
 		if !ok || info.Domain != azdext.AiErrorDomain {
 			continue
 		}
-		for _, reason := range reasons {
-			if info.Reason == reason {
-				return true
-			}
+		if slices.Contains(reasons, info.Reason) {
+			return true
 		}
 	}
 	return false

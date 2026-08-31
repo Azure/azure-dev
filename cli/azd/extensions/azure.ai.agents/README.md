@@ -190,7 +190,9 @@ Details:
   `Microsoft.DefaultV2` still need the full ID, with the account that hosts them
   in the path.
 - Create or list policies on the Foundry account first — azd does not create the
-  policy, it only associates the agent with an existing one.
+  policy, it only associates the agent with an existing one. For prompt and
+  managed agents, `azd ai agent init` lists the policies on the selected account
+  and can bind one for you; see `--rai-policy`.
 
 > **Note:** In the deprecated on-disk `agent.yaml` shape the key is snake_case
 > (`rai_policy_name`). In `azure.yaml` it is camelCase (`raiPolicyName`), like

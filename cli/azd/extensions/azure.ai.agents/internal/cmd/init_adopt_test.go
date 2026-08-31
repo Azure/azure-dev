@@ -1230,8 +1230,8 @@ services:
 }
 
 // TestStampProjectEndpoint_WritesEndpoint verifies that stampProjectEndpoint
-// writes the endpoint to the existing azure.ai.project service via
-// SetServiceConfigValue when a valid project is provided.
+// writes the portable endpoint reference to the existing azure.ai.project
+// service via SetServiceConfigValue.
 func TestStampProjectEndpoint_WritesEndpoint(t *testing.T) {
 	t.Parallel()
 
@@ -1242,32 +1242,20 @@ func TestStampProjectEndpoint_WritesEndpoint(t *testing.T) {
 	}
 	client := newProjectRecorderClient(t, server)
 
-	selectedProject := &FoundryProjectInfo{
-		AccountName: "myaccount",
-		ProjectName: "myproject",
-	}
-
-	err := stampProjectEndpoint(t.Context(), client, selectedProject)
+	err := stampProjectEndpoint(t.Context(), client, projectEndpointRef)
 	require.NoError(t, err)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
 
-	// The recording server captures SetServiceConfigValue calls in uses map
-	// for "uses" path, but for "endpoint" we check the raw call was made by
-	// verifying through the actual project state. Since recordingProjectServer
-	// returns success, we verify the function didn't error and the endpoint
-	// would have been written. For a deeper assertion, check the call was made
-	// with the correct service name and value by inspecting configValues.
+	// azure.yaml gets the ${VAR} reference, never the literal URL: the concrete
+	// endpoint lives in the azd environment so the project stays portable.
 	require.Equal(t, "ai-project", server.configValues["endpoint"].serviceName)
-	require.Equal(t,
-		"https://myaccount.services.ai.azure.com/api/projects/myproject",
-		server.configValues["endpoint"].value,
-	)
+	require.Equal(t, "${FOUNDRY_PROJECT_ENDPOINT}", server.configValues["endpoint"].value)
 }
 
 // TestStampProjectEndpoint_NilProject verifies stampProjectEndpoint is a no-op
-// when the selected project is nil (user chose "Create new").
+// when there is no endpoint to stamp (user chose "Create new").
 func TestStampProjectEndpoint_NilProject(t *testing.T) {
 	t.Parallel()
 
@@ -1278,12 +1266,12 @@ func TestStampProjectEndpoint_NilProject(t *testing.T) {
 	}
 	client := newProjectRecorderClient(t, server)
 
-	err := stampProjectEndpoint(t.Context(), client, nil)
+	err := stampProjectEndpoint(t.Context(), client, "")
 	require.NoError(t, err)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	require.Empty(t, server.configValues, "no SetServiceConfigValue calls expected for nil project")
+	require.Empty(t, server.configValues, "no SetServiceConfigValue calls expected without an endpoint")
 }
 
 // TestStampProjectEndpoint_NoExistingService verifies stampProjectEndpoint is a
@@ -1298,12 +1286,7 @@ func TestStampProjectEndpoint_NoExistingService(t *testing.T) {
 	}
 	client := newProjectRecorderClient(t, server)
 
-	selectedProject := &FoundryProjectInfo{
-		AccountName: "myaccount",
-		ProjectName: "myproject",
-	}
-
-	err := stampProjectEndpoint(t.Context(), client, selectedProject)
+	err := stampProjectEndpoint(t.Context(), client, projectEndpointRef)
 	require.NoError(t, err)
 
 	server.mu.Lock()

@@ -4,6 +4,7 @@
 package project
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -14,7 +15,46 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
+
+// ResolvePromptCredential creates a tenant-aware credential for the Foundry
+// project subscription, matching the prompt deployment path.
+func ResolvePromptCredential(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	settings *PromptAgentSettings,
+) (*azidentity.AzureDeveloperCLICredential, error) {
+	if isTruthyEnvValue(os.Getenv(PromptNoAuthEnvVar)) {
+		return nil, nil
+	}
+	if settings == nil || strings.TrimSpace(settings.SubscriptionID) == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			"AZURE_SUBSCRIPTION_ID is required for prompt agent authentication",
+			"run `azd provision` to resolve the Foundry project subscription",
+		)
+	}
+	tenant, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: settings.SubscriptionID,
+	})
+	if err != nil {
+		return nil, exterrors.Auth(
+			exterrors.CodeTenantLookupFailed,
+			fmt.Sprintf("failed to get tenant for subscription %s: %s", settings.SubscriptionID, err),
+			"verify your Azure login with `azd auth login`",
+		)
+	}
+	credential := promptCredential(tenant.TenantId)
+	if credential == nil {
+		return nil, exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			"failed to create a credential for prompt agent operations",
+			"run `azd auth login` to authenticate",
+		)
+	}
+	return credential, nil
+}
 
 // Environment-variable overrides for the prompt-agent (managed) harness
 // client. When set, these take precedence over the corresponding fields in
@@ -51,7 +91,13 @@ const DefaultPromptAPIVersion = "2025-05-15-preview"
 // subscription. Do not rely on this constant being reachable.
 const DefaultPromptModelEndpoint = "https://va-dev-fdp-resource.services.ai.azure.com"
 
-// PromptAgentSettings captures Foundry project routing for a prompt agent.
+// PromptAgentSettings captures the harness connection details for a prompt agent.
+//
+// `azd ai agent init` writes every field as a ${VAR} reference rather than a
+// literal, so azure.yaml carries no subscription, resource group, or workspace
+// of its own and can be copied between Foundry projects unchanged. Deploy
+// expands the references against the azd environment and falls back to the
+// built-in defaults for any variable that is unset.
 //
 // Every field is omitempty so a field with nothing to say is left out entirely.
 // Persisting empty strings would put a shape into azure.yaml that carries no
@@ -66,7 +112,10 @@ type PromptAgentSettings struct {
 
 	// ProjectEndpoint is the Foundry project data-plane root
 	// (https://<account>.services.ai.azure.com/api/projects/<project>). When set,
-	// it is the authoritative routing target for all prompt-agent operations.
+	// it is the authoritative routing target for ALL managed agent operations
+	// (CRUD and Responses) and supersedes the legacy workspace tuple. It is
+	// populated from the interactive init selection or, in --no-prompt flows,
+	// from FOUNDRY_PROJECT_ENDPOINT in the azd environment.
 	ProjectEndpoint string `json:"projectEndpoint,omitempty"`
 
 	// APIVersion is the api-version query parameter sent on every request.
@@ -79,7 +128,9 @@ type PromptAgentSettings struct {
 	ModelEndpoint string `json:"modelEndpoint,omitempty"`
 }
 
-// DefaultPromptAgentSettings returns prompt-agent defaults.
+// DefaultPromptAgentSettings returns settings populated with public managed
+// prompt-agent defaults plus placeholder workspace tuple values used by
+// non-guided init.
 func DefaultPromptAgentSettings() PromptAgentSettings {
 	return PromptAgentSettings{
 		SubscriptionID: DefaultPromptSubscriptionID,
@@ -204,7 +255,7 @@ func (s *PromptAgentSettings) ApplyEnvOverrides() {
 // NewPromptAgentClient constructs the unified project-scoped agent client.
 func NewPromptAgentClient(
 	settings *PromptAgentSettings,
-	credential azcore.TokenCredential,
+	credentials ...azcore.TokenCredential,
 ) (*agent_api.AgentClient, error) {
 	if settings == nil {
 		return nil, fmt.Errorf("NewPromptAgentClient: settings is nil")
@@ -221,6 +272,12 @@ func NewPromptAgentClient(
 			"a Foundry project endpoint is required for prompt agent operations",
 			"run `azd up` to provision a Foundry project",
 		)
+	}
+	var credential azcore.TokenCredential
+	if len(credentials) > 0 {
+		credential = credentials[0]
+	} else {
+		credential = promptCredential("")
 	}
 	return agent_api.NewAgentClient(projectEndpoint, credential), nil
 }

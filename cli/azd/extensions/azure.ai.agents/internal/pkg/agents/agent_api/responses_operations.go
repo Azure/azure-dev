@@ -56,7 +56,17 @@ func (c *AgentClient) CreateResponseStream(
 	requestBody []byte,
 	headers map[string]string,
 ) (io.ReadCloser, http.Header, error) {
-	req, err := c.newResponseRequest(ctx, http.MethodPost, "", requestBody, headers)
+	return c.CreateResponseStreamAt(ctx, c.responsesURL(""), requestBody, headers)
+}
+
+// CreateResponseStreamAt invokes an explicit Responses endpoint and returns its SSE stream.
+func (c *AgentClient) CreateResponseStreamAt(
+	ctx context.Context,
+	endpoint string,
+	requestBody []byte,
+	headers map[string]string,
+) (io.ReadCloser, http.Header, error) {
+	req, err := c.newResponseRequestAt(ctx, http.MethodPost, endpoint, requestBody, headers)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -150,7 +160,17 @@ func (c *AgentClient) newResponseRequest(
 			path += "/cancel"
 		}
 	}
-	req, err := runtime.NewRequest(ctx, method, c.responsesURL(path))
+	return c.newResponseRequestAt(ctx, method, c.responsesURL(path), body, headers)
+}
+
+func (c *AgentClient) newResponseRequestAt(
+	ctx context.Context,
+	method string,
+	endpoint string,
+	body []byte,
+	headers map[string]string,
+) (*policy.Request, error) {
+	req, err := runtime.NewRequest(ctx, method, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

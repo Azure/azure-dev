@@ -56,6 +56,21 @@ func TestResolvePromptTargetFromEnv(t *testing.T) {
 	require.Equal(t, "https://acct.services.ai.azure.com", settings.EffectiveModelEndpoint())
 }
 
+func TestPromptAgentSettingsFromEnvUsesFoundryEndpointOnly(t *testing.T) {
+	settings := promptAgentSettingsFromEnv(map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT":  "https://foundry.services.ai.azure.com/api/projects/current",
+		"AZURE_AI_PROJECT_ENDPOINT": "https://legacy.services.ai.azure.com/api/projects/old",
+	})
+	require.Equal(t,
+		"https://foundry.services.ai.azure.com/api/projects/current",
+		settings.ProjectEndpoint)
+
+	settings = promptAgentSettingsFromEnv(map[string]string{
+		"AZURE_AI_PROJECT_ENDPOINT": "https://legacy.services.ai.azure.com/api/projects/old",
+	})
+	require.Empty(t, settings.ProjectEndpoint)
+}
+
 func TestResolvePromptAgentSettingsExpandsConfiguredValues(t *testing.T) {
 	settings, err := ResolvePromptAgentSettings(&PromptAgentSettings{
 		ProjectEndpoint: "${PROJECT_ENDPOINT}",

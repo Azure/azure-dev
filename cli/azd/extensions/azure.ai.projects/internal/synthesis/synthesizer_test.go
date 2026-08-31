@@ -1103,7 +1103,7 @@ services:
     host: azure.ai.connection
     $ref: ./connection.yaml
 `
-	endpoint, err := ProjectEndpoint([]byte(yaml), "project", root)
+	endpoint, err := ProjectEndpoint([]byte(yaml), "project", root, nil)
 	require.NoError(t, err)
 	assert.Equal(
 		t,

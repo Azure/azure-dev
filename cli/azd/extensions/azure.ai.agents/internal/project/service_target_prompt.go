@@ -122,7 +122,7 @@ func promptAgentSettingsFromEnv(env map[string]string) *PromptAgentSettings {
 	return &PromptAgentSettings{
 		SubscriptionID:  strings.TrimSpace(env["AZURE_SUBSCRIPTION_ID"]),
 		ResourceGroup:   strings.TrimSpace(env["AZURE_RESOURCE_GROUP"]),
-		ProjectEndpoint: strings.TrimSpace(env["AZURE_AI_PROJECT_ENDPOINT"]),
+		ProjectEndpoint: strings.TrimSpace(env["FOUNDRY_PROJECT_ENDPOINT"]),
 	}
 }
 
@@ -525,39 +525,14 @@ func (p *AgentServiceTargetProvider) ensurePromptCredential(
 	ctx context.Context,
 	settings *PromptAgentSettings,
 ) error {
-	if isTruthyEnvValue(os.Getenv(PromptNoAuthEnvVar)) {
-		p.credential = nil
-		return nil
-	}
 	if p.credential != nil {
 		return nil
 	}
-	if strings.TrimSpace(settings.SubscriptionID) == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAzureSubscription,
-			"AZURE_SUBSCRIPTION_ID is required for prompt agent authentication",
-			"run `azd provision` to resolve the Foundry project subscription",
-		)
-	}
-	tenant, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-		SubscriptionId: settings.SubscriptionID,
-	})
+	credential, err := ResolvePromptCredential(ctx, p.azdClient, settings)
 	if err != nil {
-		return exterrors.Auth(
-			exterrors.CodeTenantLookupFailed,
-			fmt.Sprintf("failed to get tenant for subscription %s: %s", settings.SubscriptionID, err),
-			"verify your Azure login with `azd auth login`",
-		)
+		return err
 	}
-	p.tenantId = tenant.TenantId
-	p.credential = promptCredential(p.tenantId)
-	if p.credential == nil {
-		return exterrors.Auth(
-			exterrors.CodeCredentialCreationFailed,
-			"failed to create a credential for prompt agent deployment",
-			"run `azd auth login` to authenticate",
-		)
-	}
+	p.credential = credential
 	return nil
 }
 
@@ -577,19 +552,9 @@ func promptAgentRequestHeaders(
 // (https://<account>.services.ai.azure.com/api/projects/<project>/agents?api-version=v1).
 const ProjectEndpointAPIVersion = "v1"
 
-// promptProjectEndpointEnvKeys lists the azd environment keys that may carry
-// the Foundry project data-plane endpoint, in precedence order.
-//
-// FOUNDRY_PROJECT_ENDPOINT is what the microsoft.foundry provisioning provider
-// and `azd ai agent init` write today; AZURE_AI_PROJECT_ENDPOINT is the older
-// name still emitted by hand-authored infra/ templates. Both must be honored:
-// reading only the latter leaves ProjectEndpoint empty after a greenfield
-// provision, and the deploy then falls back to the legacy workspace-rooted
-// harness route, which 404s because a Foundry project is not an AML workspace.
-var promptProjectEndpointEnvKeys = []string{
-	"AZURE_AI_PROJECT_ENDPOINT",
-	"FOUNDRY_PROJECT_ENDPOINT",
-}
+// promptProjectEndpointEnvKey is the canonical azd environment key carrying
+// the Foundry project data-plane endpoint.
+const promptProjectEndpointEnvKey = "FOUNDRY_PROJECT_ENDPOINT"
 
 // ResolvePromptTargetFromEnv applies azd environment-derived overrides to the
 // prompt settings so both deploy and the lifecycle commands (show/invoke/list/
@@ -617,12 +582,7 @@ func ResolvePromptTargetFromEnv(settings *PromptAgentSettings, env map[string]st
 	// Prefer the config-supplied project endpoint (interactive init); otherwise
 	// read it from the azd environment (--no-prompt / provisioned project).
 	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
-		for _, key := range promptProjectEndpointEnvKeys {
-			if pe := strings.TrimSpace(env[key]); pe != "" {
-				settings.ProjectEndpoint = pe
-				break
-			}
-		}
+		settings.ProjectEndpoint = strings.TrimSpace(env[promptProjectEndpointEnvKey])
 	}
 
 	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {

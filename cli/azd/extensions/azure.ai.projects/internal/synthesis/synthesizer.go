@@ -274,7 +274,11 @@ func Synthesize(in Input) (*Result, error) {
 	if len(in.AcceptedHosts) > 0 && !slices.Contains(in.AcceptedHosts, svc.Host) {
 		return nil, ErrServiceNotFound
 	}
-	if strings.TrimSpace(svc.Endpoint) != "" {
+	endpoint, err := expandEndpoint(svc.Endpoint, in.Env)
+	if err != nil {
+		return nil, err
+	}
+	if endpoint != "" {
 		return nil, ErrEndpointBrownfield
 	}
 
@@ -474,12 +478,14 @@ func BrownfieldConnections(
 	)
 }
 
-// ProjectEndpoint returns the endpoint configured on a Foundry project service.
-// It resolves $ref includes before decoding the service body.
+// ProjectEndpoint returns the endpoint configured on a Foundry project service,
+// with ${VAR} references resolved from env. It resolves $ref includes before
+// decoding the service body.
 func ProjectEndpoint(
 	raw []byte,
 	serviceName string,
 	projectRoot string,
+	env map[string]string,
 ) (string, error) {
 	if len(raw) == 0 {
 		return "", errors.New("synthesis: raw azure.yaml is empty")
@@ -494,7 +500,22 @@ func ProjectEndpoint(
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(svc.Endpoint), nil
+	return expandEndpoint(svc.Endpoint, env)
+}
+
+func expandEndpoint(raw string, env map[string]string) (string, error) {
+	mapping := func(name string) string {
+		if value, found := env[name]; found {
+			return value
+		}
+		value, _ := os.LookupEnv(name)
+		return value
+	}
+	expanded, err := maybeExpand(strings.TrimSpace(raw), mapping, true)
+	if err != nil {
+		return "", fmt.Errorf("expand endpoint: %w", err)
+	}
+	return strings.TrimSpace(expanded), nil
 }
 
 // loadProjectService decodes a service after resolving any local $ref includes.

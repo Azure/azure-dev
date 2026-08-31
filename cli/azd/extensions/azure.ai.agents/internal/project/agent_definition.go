@@ -795,6 +795,9 @@ func agentDefinitionFromStruct(
 	// shapes model it as an object. Decoding first would reject a perfectly
 	// valid prompt agent with a type error naming a field it does not have.
 	if structKind(s) != string(agent_yaml.AgentKindHosted) {
+		if structKind(s) == string(agent_yaml.AgentKindPrompt) {
+			return agent_yaml.ContainerAgent{}, false, nil
+		}
 		if err := validateAgentServiceDefinition(s.AsMap()); err != nil {
 			return agent_yaml.ContainerAgent{}, false, err
 		}

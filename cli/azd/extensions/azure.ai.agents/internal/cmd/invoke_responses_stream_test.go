@@ -145,7 +145,7 @@ func TestReadResponsesSSEBackgroundRequiresTerminal(t *testing.T) {
 
 	err := readResponsesSSEForTest(t.Context(), strings.NewReader(stream), &bytes.Buffer{}, "agent", true, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "disconnected before reaching a terminal state")
+	assert.Contains(t, err.Error(), "disconnected before terminal state")
 }
 
 func TestReadResponsesSSEBackgroundTerminalRequiresIdentity(t *testing.T) {
@@ -351,6 +351,144 @@ func TestReadResponsesSSEResumedTerminalUsesInitialIdentity(t *testing.T) {
 	assert.Equal(t, int64(2), *progress[0].Cursor)
 	assert.Equal(t, "completed", progress[0].Status)
 	assert.True(t, progress[0].Terminal)
+}
+
+func TestReadResponsesSSEEmptyBackgroundStreamReturnsSentinel(t *testing.T) {
+	t.Parallel()
+
+	err := readResponsesSSEForTest(t.Context(), strings.NewReader(""), &bytes.Buffer{}, "agent", true, nil)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errResponsesStreamEndedBeforeIdentity))
+}
+
+func TestReadResponsesSSEEmptyResumedStreamReturnsSentinel(t *testing.T) {
+	t.Parallel()
+
+	err := readResponsesSSEWithInitialStateForTest(
+		t.Context(),
+		strings.NewReader(""),
+		&bytes.Buffer{},
+		"agent",
+		true,
+		&responsesStreamInitialState{
+			ResponseID: "resp_123",
+			Cursor:     new(int64(1)),
+			Status:     "in_progress",
+		},
+		nil,
+	)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errResponsesStreamEndedBeforeIdentity))
+}
+
+func TestReadResponsesSSEReplayOnlyResumedStreamReturnsSentinel(t *testing.T) {
+	t.Parallel()
+
+	stream := "event: response.output_text.delta\n" +
+		`data: {"delta":"older","sequence_number":4}` + "\n\n" +
+		"event: response.output_text.delta\n" +
+		`data: {"delta":"duplicate","sequence_number":5}` + "\n\n"
+	err := readResponsesSSEWithInitialStateForTest(
+		t.Context(),
+		strings.NewReader(stream),
+		&bytes.Buffer{},
+		"agent",
+		true,
+		&responsesStreamInitialState{
+			ResponseID: "resp_123",
+			Cursor:     new(int64(5)),
+			Status:     "in_progress",
+		},
+		nil,
+	)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errResponsesStreamEndedBeforeIdentity))
+	assert.False(t, errors.Is(err, errResponsesStreamDisconnected))
+}
+
+func TestReadResponsesSSENonemptyResumedStreamReturnsDisconnected(t *testing.T) {
+	t.Parallel()
+
+	stream := "event: response.output_text.delta\n" +
+		`data: {"delta":"later","sequence_number":2}` + "\n\n"
+	err := readResponsesSSEWithInitialStateForTest(
+		t.Context(),
+		strings.NewReader(stream),
+		&bytes.Buffer{},
+		"agent",
+		true,
+		&responsesStreamInitialState{
+			ResponseID: "resp_123",
+			Cursor:     new(int64(1)),
+			Status:     "in_progress",
+		},
+		nil,
+	)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errResponsesStreamDisconnected))
+	assert.False(t, errors.Is(err, errResponsesStreamEndedBeforeIdentity))
+}
+
+func TestReadResponsesSSERecoverySnapshotResetsOutput(t *testing.T) {
+	t.Parallel()
+
+	stream := "event: response.in_progress\n" +
+		`data: {"response":{"id":"resp_123","status":"in_progress","output":[{"content":[{"type":"output_text","text":"checkpoint"}]}]},"sequence_number":2}` + "\n\n" +
+		"event: response.output_text.delta\n" +
+		`data: {"delta":"later","sequence_number":3}` + "\n\n" +
+		"event: response.completed\n" +
+		`data: {"response":{"id":"resp_123","status":"completed"},"sequence_number":4}` + "\n\n"
+	var output bytes.Buffer
+	err := readResponsesSSEWithInitialStateForTest(
+		t.Context(),
+		strings.NewReader(stream),
+		&output,
+		"agent",
+		true,
+		&responsesStreamInitialState{
+			ResponseID: "resp_123",
+			Cursor:     new(int64(1)),
+			Status:     "in_progress",
+		},
+		nil,
+	)
+
+	require.NoError(t, err)
+	assert.Contains(t, output.String(), "--- RESPONSE RECOVERED: OUTPUT RESET TO LAST CHECKPOINT ---")
+	assert.Contains(t, output.String(), "[agent] checkpoint")
+	assert.Contains(t, output.String(), "[agent] later")
+}
+
+func TestReadResponsesSSEQueuedResumeDoesNotResetOutput(t *testing.T) {
+	t.Parallel()
+
+	stream := "event: response.in_progress\n" +
+		`data: {"response":{"id":"resp_123","status":"in_progress"},"sequence_number":2}` + "\n\n" +
+		"event: response.output_text.delta\n" +
+		`data: {"delta":"later","sequence_number":3}` + "\n\n" +
+		"event: response.completed\n" +
+		`data: {"response":{"id":"resp_123","status":"completed"},"sequence_number":4}` + "\n\n"
+	var output bytes.Buffer
+	err := readResponsesSSEWithInitialStateForTest(
+		t.Context(),
+		strings.NewReader(stream),
+		&output,
+		"agent",
+		true,
+		&responsesStreamInitialState{
+			ResponseID: "resp_123",
+			Cursor:     new(int64(1)),
+			Status:     "queued",
+		},
+		nil,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, "[agent] later\n", output.String())
+	assert.NotContains(t, output.String(), "RESPONSE RECOVERED")
 }
 
 func TestReadResponsesSSESuppressesDuplicateSequence(t *testing.T) {

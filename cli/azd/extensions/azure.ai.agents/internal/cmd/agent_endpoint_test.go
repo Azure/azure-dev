@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseAgentEndpoint(t *testing.T) {
@@ -225,6 +227,36 @@ func TestBuildResponsesURL(t *testing.T) {
 	if got != want {
 		t.Errorf("buildResponsesURL = %q, want %q", got, want)
 	}
+}
+
+func TestBuildResponseLifecycleURLs(t *testing.T) {
+	t.Parallel()
+
+	cursor := int64(42)
+	got := buildResponseLifecycleURL(
+		"https://acct.services.ai.azure.com/api/projects/proj",
+		"echo",
+		"resp/a b",
+		"v1",
+		true,
+		&cursor,
+	)
+	assert.Contains(t, got, "/responses/resp%2Fa%20b?")
+	assert.Contains(t, got, "api-version=v1")
+	assert.Contains(t, got, "starting_after=42")
+	assert.Contains(t, got, "stream=true")
+
+	cancel := buildResponseCancelURL(
+		"https://acct.services.ai.azure.com/api/projects/proj",
+		"echo",
+		"resp_1",
+		"v1",
+	)
+	assert.Equal(t,
+		"https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/"+
+			"responses/resp_1/cancel?api-version=v1",
+		cancel,
+	)
 }
 
 // TestBuildInvocationsURL verifies that the invocations URL builder propagates

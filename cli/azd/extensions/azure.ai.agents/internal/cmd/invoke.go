@@ -49,6 +49,12 @@ type invokeFlags struct {
 	callID          string
 	clientHeaders   []string
 	resumable       bool
+	noWait          bool
+	resume          bool
+	cancel          bool
+	// agentName explicitly selects an agent for message-free lifecycle operations.
+	// A single positional argument remains message input for --resume steering.
+	agentName string
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -125,8 +131,10 @@ suppressed in raw mode.
 
 Use --resumable with the Responses protocol to start work that continues running in
 the service if this command disconnects. The command remains attached until the work
-finishes. Resumable invocation is remote-only, does not support raw output, and cannot
-be combined with --timeout.`,
+finishes. Add --no-wait to detach as soon as the service acknowledges the background
+work. Use --resume to reconnect to saved work and --cancel to cancel it. In multi-agent
+projects, use --agent-name to select the saved work for --resume or --cancel. Resumable
+invocation is remote-only, does not support raw output, and cannot be combined with --timeout.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -157,6 +165,16 @@ be combined with --timeout.`,
   # Start work that continues in the service if this command disconnects,
   # while remaining attached until it finishes
   azd ai agent invoke --resumable "Run the long task"
+
+  # Start resumable work and detach after the service acknowledges it
+  azd ai agent invoke --resumable --no-wait "Run the long task"
+
+  # Resume or cancel saved resumable work
+  azd ai agent invoke --resume
+  azd ai agent invoke --cancel
+
+  # Select an agent when reconnecting to saved work
+  azd ai agent invoke --resume --agent-name my-agent
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
@@ -196,7 +214,20 @@ be combined with --timeout.`,
 					flags.message = args[0]
 				}
 			case 0:
-				// Only valid when -f is provided
+				// Operations that allow empty input are validated below.
+			}
+			// A single positional argument is always message input unless --input-file supplies
+			// the body. Keep --agent-name separate so message-free lifecycle operations can
+			// select an agent without making `invoke foo --resume` ambiguous.
+			if flags.agentName != "" {
+				if flags.name != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--agent-name cannot be combined with a positional agent name",
+						"use --agent-name instead of a positional agent name with --resume or --cancel",
+					)
+				}
+				flags.name = flags.agentName
 			}
 
 			action := &InvokeAction{flags: flags, noPrompt: extCtx.NoPrompt}
@@ -216,19 +247,8 @@ be combined with --timeout.`,
 				action.endpoint = parsed
 			}
 
-			if flags.inputFile != "" && flags.message != "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"cannot use --input-file and a message argument together",
-					"provide either a message argument or --input-file, not both",
-				)
-			}
-			if flags.inputFile == "" && flags.message == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"a message argument or --input-file is required",
-					"provide a message as a positional argument, or use --input-file/-f to send a file",
-				)
+			if err := validateInvokeOperationFlags(cmd, flags); err != nil {
+				return err
 			}
 
 			if err := validateInvokeVersionFlags(cmd, flags); err != nil {
@@ -279,18 +299,20 @@ be combined with --timeout.`,
 						"remove --timeout; background Responses remain attached until completion or interruption",
 					)
 				}
+			}
+			if flags.resumable || flags.resume || flags.cancel {
 				if flags.local {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--resumable is supported only for remote Responses agents",
-						"remove --local and invoke a deployed Responses agent",
+						"resumable operations are supported only for remote Responses agents",
+						"remove --local and use a deployed Responses agent",
 					)
 				}
 				if flags.outputFmt == outputRaw {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--output raw is not supported with --resumable",
-						"remove --output raw so azd can save the Response identity and cursor",
+						"--output raw is not supported with resumable operations",
+						"remove --output raw so azd can manage the Response identity and cursor",
 					)
 				}
 			}
@@ -350,6 +372,10 @@ be combined with --timeout.`,
 		false,
 		"Start resumable work that continues in the service if the command disconnects; remain attached until it finishes",
 	)
+	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Detach after the service acknowledges the resumable work")
+	cmd.Flags().BoolVar(&flags.resume, "resume", false, "Resume saved background work")
+	cmd.Flags().BoolVar(&flags.cancel, "cancel", false, "Cancel the saved current background Response")
+	cmd.Flags().StringVar(&flags.agentName, "agent-name", "", "Agent name for --resume or --cancel")
 
 	// Register `raw` as an additional allowed value on the inherited global
 	// --output/-o flag. The extension SDK forbids extensions from registering
@@ -364,6 +390,81 @@ be combined with --timeout.`,
 	})
 
 	return cmd
+}
+
+func validateInvokeOperationFlags(cmd *cobra.Command, flags *invokeFlags) error {
+	hasInput := flags.message != "" || flags.inputFile != ""
+	continuesOrCancels := flags.resume || flags.cancel
+
+	// An invocation selects exactly one operation.
+	if flags.resume && flags.cancel {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--resume and --cancel are mutually exclusive",
+			"choose one operation",
+		)
+	}
+	if flags.resumable && continuesOrCancels {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--resumable cannot be combined with --resume or --cancel",
+			"choose one operation",
+		)
+	}
+
+	// Dependent flags require their owning operation.
+	if flags.noWait && !flags.resumable {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--no-wait requires --resumable",
+			"add --resumable or remove --no-wait",
+		)
+	}
+
+	// Input must match the selected operation.
+	if flags.inputFile != "" && flags.message != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"cannot use --input-file and a message argument together",
+			"provide either a message argument or --input-file, not both",
+		)
+	}
+	if !hasInput && !continuesOrCancels {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"a message argument or --input-file is required",
+			"provide a message as a positional argument, or use --input-file/-f to send a file",
+		)
+	}
+	if continuesOrCancels && hasInput {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--resume and --cancel do not accept a message or --input-file",
+			"remove the input to reconnect to or cancel the saved Response",
+		)
+	}
+
+	// Operations on saved work own their session, conversation, and timeout.
+	if continuesOrCancels {
+		for _, name := range []string{"session-id", "new-session", "conversation-id", "new-conversation"} {
+			if cmd.Flags().Changed(name) {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--resume and --cancel use the saved session and conversation",
+					"remove session and conversation overrides",
+				)
+			}
+		}
+		if cmd.Flags().Changed("timeout") {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--timeout is not supported with --resume or --cancel",
+				"remove --timeout; attached background work has no overall timeout",
+			)
+		}
+	}
+
+	return nil
 }
 
 func validateInvokeVersionFlags(cmd *cobra.Command, flags *invokeFlags) error {
@@ -471,11 +572,11 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// populated, but a2aRemote never calls applyCustomHeaders — the headers
 	// would be silently dropped, which is the exact silent no-op the guard
 	// intends to prevent.
-	if a.flags.resumable && protocol != agent_api.AgentProtocolResponses {
+	if (a.flags.resumable || a.flags.resume || a.flags.cancel) && protocol != agent_api.AgentProtocolResponses {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--resumable is not supported with the %s protocol", protocol),
-			"use a deployed Responses agent or remove --resumable",
+			fmt.Sprintf("resumable operations are not supported with the %s protocol", protocol),
+			"use a deployed Responses agent or remove the resumable operation",
 		)
 	}
 
@@ -506,6 +607,12 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	case agent_api.AgentProtocolA2A:
 		return a.a2aRemote(ctx)
 	default:
+		if a.flags.resume {
+			return a.responsesResumeRemote(ctx)
+		}
+		if a.flags.cancel {
+			return a.responsesCancelRemote(ctx)
+		}
 		return a.responsesRemote(ctx)
 	}
 }
@@ -1142,6 +1249,19 @@ func (a *InvokeAction) acquireBearerToken(ctx context.Context) (string, error) {
 	return token.Token, nil
 }
 
+func (a *InvokeAction) ensureBearerToken(ctx context.Context, rc *remoteContext) error {
+	if rc.bearerToken != "" {
+		return nil
+	}
+
+	token, err := a.acquireBearerToken(ctx)
+	if err != nil {
+		return err
+	}
+	rc.bearerToken = token
+	return nil
+}
+
 // ephemeralAuthError wraps a token-acquisition failure with a login suggestion when
 // the user is invoking outside an azd project (where mis-configured credentials are common).
 func ephemeralAuthError(ephemeral bool, err error) error {
@@ -1153,6 +1273,54 @@ func ephemeralAuthError(ephemeral bool, err error) error {
 		fmt.Sprintf("failed to get auth token: %v", err),
 		"run `azd auth login` and try again",
 	)
+}
+
+func (a *InvokeAction) ensureNoActiveBackgroundResponse(
+	ctx context.Context,
+	rc *remoteContext,
+	store responseStateStore,
+) error {
+	record, err := store.Get(ctx, rc.agentKey)
+	if err != nil {
+		return classifyBackgroundResponseStateReadError(err)
+	}
+	if record == nil || isTerminalResponseStatus(record.Status) {
+		return nil
+	}
+
+	if err := a.ensureBearerToken(ctx, rc); err != nil {
+		return err
+	}
+	updated, _, err := a.refreshResponseSnapshot(ctx, rc, store, *record, rc.bearerToken)
+	if err != nil {
+		return fmt.Errorf("refresh current background Response: %w", err)
+	}
+	if isTerminalResponseStatus(updated.Status) {
+		return nil
+	}
+	return fmt.Errorf(
+		"background Response %s is still active; reconnect with `azd ai agent invoke --resume` or cancel it with "+
+			"`azd ai agent invoke --cancel`",
+		record.ResponseID,
+	)
+}
+
+func (a *InvokeAction) prepareResponseStateForNewTurn(
+	ctx context.Context,
+	rc *remoteContext,
+) (responseStateStore, error) {
+	if rc.azdClient == nil {
+		// The extension executable was launched directly without a parent azd process.
+		// UserConfig and active-Response conflict detection are unavailable.
+		return nil, responseStateUnavailable(nil)
+	}
+
+	// resolveRemoteContext guarantees a stable agent key when it succeeds.
+	store := newUserConfigResponseStateStore(rc.azdClient)
+	if err := a.ensureNoActiveBackgroundResponse(ctx, rc, store); err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 func (a *InvokeAction) responsesRemote(ctx context.Context) error {
@@ -1170,26 +1338,14 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	agentKey := rc.agentKey
-	if agentKey == "" && rc.azdClient != nil {
-		log.Printf("warning: agent endpoint not available, session state will not be persisted")
-	}
-
-	var responseStore responseStateStore
-	if a.flags.resumable {
-		if rc.azdClient == nil || agentKey == "" {
-			return responseStateUnavailable(nil)
-		}
-		responseStore = newUserConfigResponseStateStore(rc.azdClient)
-		if _, err := responseStore.Get(ctx, agentKey); err != nil {
-			return classifyBackgroundResponseStateReadError(err)
-		}
-	}
-
-	// Acquire the bearer token after body validation so a local input error
-	// (e.g., unreadable --input-file) does not pay an unnecessary auth round-trip
-	// and is surfaced before any auth failure.
-	rc.bearerToken, err = a.acquireBearerToken(ctx)
+	responseStore, err := a.prepareResponseStateForNewTurn(ctx, rc)
 	if err != nil {
+		return err
+	}
+
+	// Acquire the bearer token after local validation so deterministic local errors are
+	// surfaced before any auth round-trip. State preparation may have already acquired it.
+	if err := a.ensureBearerToken(ctx, rc); err != nil {
 		return err
 	}
 
@@ -1316,6 +1472,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 				respURL, resp.StatusCode, resp.Status,
 			)
 		}
+		if responseStore != nil {
+			if err := responseStore.Delete(ctx, agentKey); err != nil {
+				return fmt.Errorf("clear previous background Response: %w", err)
+			}
+		}
 		return nil
 	}
 
@@ -1333,6 +1494,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		if err := readResponsesSSE(ctx, resp.Body, os.Stdout, rc.name, responsesSSEOptions{}); err != nil {
 			return err
 		}
+		if responseStore != nil {
+			if err := responseStore.Delete(ctx, agentKey); err != nil {
+				return fmt.Errorf("clear previous background Response: %w", err)
+			}
+		}
 	} else {
 		effectiveSessionID := sid
 		if assigned := resp.Header.Get("x-agent-session-id"); assigned != "" {
@@ -1345,6 +1511,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			convID,
 			os.Stdout,
 		)
+		var savedStatus string
 		streamErr := readResponsesSSE(
 			ctx,
 			resp.Body,
@@ -1353,16 +1520,32 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			responsesSSEOptions{
 				requireTerminal: true,
 				onProgress: func(progress responsesStreamProgress) error {
-					return progressPersister.Apply(ctx, progress)
+					savedStatus = progress.Status
+					if err := progressPersister.Apply(ctx, progress); err != nil {
+						return err
+					}
+					if a.flags.noWait && progress.ResponseID != "" {
+						return errBackgroundNoWait
+					}
+					return nil
 				},
 			},
 		)
+		if errors.Is(streamErr, errBackgroundNoWait) {
+			fmt.Printf("\nStatus: %s\n\nNext:\n  azd ai agent invoke --resume\n", savedStatus)
+			return nil
+		}
 		var flushErr error
 		if ctx.Err() == nil {
 			flushErr = progressPersister.Flush(ctx)
 		}
 		closeErr := progressPersister.Close()
 		if streamErr != nil || flushErr != nil || closeErr != nil {
+			if streamErr != nil && ctx.Err() == nil && progressPersister.latest.ResponseID != "" &&
+				isRetryableBackgroundStreamError(streamErr) {
+				latest := progressPersister.latest
+				return a.followBackgroundResponse(ctx, rc, responseStore, latest, os.Stdout)
+			}
 			return errors.Join(streamErr, flushErr, closeErr)
 		}
 	}

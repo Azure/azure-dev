@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -296,7 +297,20 @@ func (r *projectServiceReconciler) addService(
 			Section:     properties,
 		},
 	); err != nil {
-		return fmt.Errorf("persist project service %q configuration: %w", name, err)
+		persistErr := fmt.Errorf("persist project service %q configuration: %w", name, err)
+		if rollbackErr := unsetProjectConfigValue(
+			ctx, r.client, "services."+name,
+		); rollbackErr != nil {
+			return errors.Join(
+				persistErr,
+				fmt.Errorf(
+					"remove incomplete project service %q: %w",
+					name,
+					rollbackErr,
+				),
+			)
+		}
+		return persistErr
 	}
 	return nil
 }

@@ -241,15 +241,15 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if infra := infraFromRequest(request, a.flags); infra != "" {
-		if err := ejectProjectInfra(ctx, client, projectRoot, serviceName, infra); err != nil {
-			return err
-		}
-	}
 	if err := reconcileProjectEnvironment(
 		ctx, client, envName, target.Mode, target, identityChanged,
 	); err != nil {
 		return err
+	}
+	if infra := infraFromRequest(request, a.flags); infra != "" {
+		if err := ejectProjectInfra(ctx, client, projectRoot, serviceName, infra); err != nil {
+			return err
+		}
 	}
 
 	result := projectInitOutput{
@@ -680,7 +680,11 @@ func validateAllowedProjectLocation(
 		location = strings.TrimSpace(fallbackLocation)
 	}
 	if location == "" {
-		return nil
+		return exterrors.Validation(
+			"project_location_not_allowed",
+			"the project location is unknown and cannot be checked against the allowed locations",
+			"provide a project with a known Azure location",
+		)
 	}
 	for _, allowedLocation := range allowed {
 		if strings.EqualFold(strings.TrimSpace(allowedLocation), location) {

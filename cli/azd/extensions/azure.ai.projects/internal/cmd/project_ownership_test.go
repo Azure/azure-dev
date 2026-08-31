@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -372,6 +373,63 @@ func TestValidateAllowedProjectLocationUsesFallback(t *testing.T) {
 		[]string{"eastus"},
 		"westus",
 	))
+	require.Error(t, validateAllowedProjectLocation(
+		&resolvedProject{},
+		[]string{"eastus"},
+		"",
+	))
+	require.NoError(t, validateAllowedProjectLocation(
+		&resolvedProject{},
+		nil,
+		"",
+	))
+}
+
+func TestFillEmptyAzureScope(t *testing.T) {
+	t.Run("preserves deployment location", func(t *testing.T) {
+		target := &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				Location: "deployment-location",
+			},
+		}
+		fallback := &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				Location: "fallback-location",
+			},
+		}
+
+		fillEmptyAzureScope(target, fallback)
+
+		assert.Empty(t, target.Scope.SubscriptionId)
+		assert.Equal(t, "deployment-location", target.Scope.Location)
+	})
+	t.Run("fills missing values", func(t *testing.T) {
+		target := &azdext.AzureContext{Scope: &azdext.AzureScope{}}
+		fallback := &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				TenantId:       "tenant",
+				SubscriptionId: "subscription",
+				Location:       "location",
+				ResourceGroup:  "resource-group",
+			},
+		}
+
+		fillEmptyAzureScope(target, fallback)
+
+		assert.Equal(t, "tenant", target.Scope.TenantId)
+		assert.Equal(t, "subscription", target.Scope.SubscriptionId)
+		assert.Equal(t, "location", target.Scope.Location)
+		assert.Equal(t, "resource-group", target.Scope.ResourceGroup)
+	})
+	t.Run("handles missing fallback scope", func(t *testing.T) {
+		target := &azdext.AzureContext{Scope: &azdext.AzureScope{}}
+
+		fillEmptyAzureScope(target, &azdext.AzureContext{})
+
+		assert.Empty(t, target.Scope.TenantId)
+		assert.Empty(t, target.Scope.SubscriptionId)
+		assert.Empty(t, target.Scope.Location)
+	})
 }
 
 func TestDeploymentNoMatchErrorsAreRecoverable(t *testing.T) {
@@ -1003,11 +1061,48 @@ func TestAddServicePersistsCompleteBodyThroughConfigSection(t *testing.T) {
 	assert.Equal(t, "preserve-me", section["customField"])
 }
 
+func TestAddServiceRollsBackHostOnlyService(t *testing.T) {
+	server := grpc.NewServer()
+	projectServer := &recordingProjectServiceServer{
+		sectionErr: errors.New("configuration write failed"),
+	}
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	reconciler := &projectServiceReconciler{client: client}
+	require.Error(t, reconciler.addService(
+		t.Context(),
+		"foundry",
+		map[string]any{
+			"endpoint": "https://account.services.ai.azure.com/api/projects/p",
+		},
+	))
+
+	assert.Equal(t, []string{"services.foundry"}, projectServer.unsetPaths)
+}
+
 type recordingProjectServiceServer struct {
 	azdext.UnimplementedProjectServiceServer
 	request        *azdext.SetServiceConfigValueRequest
 	addRequest     *azdext.AddServiceRequest
 	sectionRequest *azdext.SetServiceConfigSectionRequest
+	sectionErr     error
+	unsetErr       error
+	unsetPaths     []string
 }
 
 type recordingProjectConfigServer struct {
@@ -1021,6 +1116,8 @@ type recordingProjectConfigServer struct {
 type projectInitEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	setCalls int
+	setErr   error
+	values   map[string]string
 }
 
 func (s *projectInitEnvironmentServer) Select(
@@ -1034,7 +1131,14 @@ func (s *projectInitEnvironmentServer) GetValues(
 	context.Context,
 	*azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
-	return &azdext.KeyValueListResponse{}, nil
+	response := &azdext.KeyValueListResponse{}
+	for key, value := range s.values {
+		response.KeyValues = append(response.KeyValues, &azdext.KeyValue{
+			Key:   key,
+			Value: value,
+		})
+	}
+	return response, nil
 }
 
 func (s *projectInitEnvironmentServer) SetValue(
@@ -1042,6 +1146,9 @@ func (s *projectInitEnvironmentServer) SetValue(
 	*azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.setCalls++
+	if s.setErr != nil {
+		return nil, s.setErr
+	}
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -1091,6 +1198,20 @@ func (s *recordingProjectServiceServer) SetServiceConfigSection(
 	request *azdext.SetServiceConfigSectionRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.sectionRequest = request
+	if s.sectionErr != nil {
+		return nil, s.sectionErr
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServiceServer) UnsetConfig(
+	_ context.Context,
+	request *azdext.UnsetProjectConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	s.unsetPaths = append(s.unsetPaths, request.Path)
+	if s.unsetErr != nil {
+		return nil, s.unsetErr
+	}
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -1151,6 +1272,76 @@ func TestProjectInitPersistsProjectBeforeEnvironment(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "add project service")
 	assert.Zero(t, envServer.setCalls)
+}
+
+func TestProjectInitWritesEnvironmentBeforeInfrastructureEjection(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`name: test
+services:
+  foundry:
+    host: azure.ai.project
+`),
+		0600,
+	))
+	section, err := structpb.NewStruct(map[string]any{
+		"foundry": map[string]any{"host": aiProjectHost},
+	})
+	require.NoError(t, err)
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Name: "test",
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"foundry": {Name: "foundry", Host: aiProjectHost},
+			},
+			Infra: &azdext.InfraOptions{Provider: "microsoft.foundry"},
+		},
+		section: section,
+	}
+	envServer := &projectInitEnvironmentServer{
+		setErr: errors.New("environment write failed"),
+		values: map[string]string{
+			"AZURE_SUBSCRIPTION_ID": "subscription",
+			"AZURE_LOCATION":        "eastus",
+		},
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	action := &ProjectInitAction{
+		client: client,
+		flags: &projectInitFlags{
+			infra:    "terraform",
+			noPrompt: true,
+			output:   "none",
+		},
+		extCtx: &azdext.ExtensionContext{Environment: "test"},
+	}
+	require.Error(t, action.Run(t.Context()))
+	assert.Equal(t, 1, envServer.setCalls)
+	assert.Nil(t, projectServer.setRequest)
+	_, err = os.Stat(filepath.Join(root, "infra"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestProjectEnvironmentPreservesLocationWhenProjectLocationIsUnknown(t *testing.T) {

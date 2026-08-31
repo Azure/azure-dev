@@ -177,7 +177,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		if deploymentContext, contextErr := client.Deployment().GetDeploymentContext(
 			ctx, &azdext.EmptyRequest{},
 		); contextErr == nil && deploymentContext.GetAzureContext() != nil {
-			azureContext = deploymentContext.AzureContext
+			fillEmptyAzureScope(azureContext, deploymentContext.AzureContext)
 		}
 	}
 	model := delegatedModel{
@@ -276,6 +276,27 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		fmt.Printf("Managed deployment %q %s.\n", selected.Deployment.Name, mutation)
 	}
 	return nil
+}
+
+func fillEmptyAzureScope(dst, src *azdext.AzureContext) {
+	if dst == nil || src == nil || src.Scope == nil {
+		return
+	}
+	if dst.Scope == nil {
+		dst.Scope = &azdext.AzureScope{}
+	}
+	if dst.Scope.TenantId == "" {
+		dst.Scope.TenantId = src.Scope.TenantId
+	}
+	if dst.Scope.SubscriptionId == "" {
+		dst.Scope.SubscriptionId = src.Scope.SubscriptionId
+	}
+	if dst.Scope.Location == "" {
+		dst.Scope.Location = src.Scope.Location
+	}
+	if dst.Scope.ResourceGroup == "" {
+		dst.Scope.ResourceGroup = src.Scope.ResourceGroup
+	}
 }
 
 func validateConfiguredProjectIdentity(

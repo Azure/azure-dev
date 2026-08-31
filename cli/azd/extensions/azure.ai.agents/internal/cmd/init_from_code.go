@@ -812,7 +812,14 @@ func (a *InitFromCodeAction) addToProject(
 		},
 	}
 
-	agentConfig.Deployments = a.deploymentDetails
+	setEnv := func(ctx context.Context, key, value string) error {
+		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
+	}
+	var err error
+	agentConfig.Deployments, err = persistDeploymentEnvironment(ctx, setEnv, a.deploymentDetails)
+	if err != nil {
+		return fmt.Errorf("persist model deployment environment: %w", err)
+	}
 
 	// Detect startup command only for source-container deploys. Code deploy and
 	// pre-built images do not use it.

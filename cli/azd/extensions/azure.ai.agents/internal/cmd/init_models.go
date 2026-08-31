@@ -1199,5 +1199,5 @@ func persistFirstDeploymentName(
 		return nil
 	}
 
-	return setEnv(ctx, "AZURE_AI_MODEL_DEPLOYMENT_NAME", deployments[0].Name)
+	return setEnv(ctx, deploymentNameEnvKey, deployments[0].Name)
 }

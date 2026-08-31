@@ -67,6 +67,12 @@ type resolveEnvStubPromptServer struct {
 	location        string
 	locationErr     error
 	locationN       int
+	model           *azdext.AiModel
+	modelErr        error
+	modelRequests   []*azdext.PromptAiModelRequest
+	deployment      *azdext.AiModelDeployment
+	deploymentErr   error
+	deployRequests  []*azdext.PromptAiDeploymentRequest
 }
 
 func (s *resolveEnvStubPromptServer) PromptSubscription(
@@ -89,6 +95,26 @@ func (s *resolveEnvStubPromptServer) PromptLocation(
 		return nil, s.locationErr
 	}
 	return &azdext.PromptLocationResponse{Location: &azdext.Location{Name: s.location}}, nil
+}
+
+func (s *resolveEnvStubPromptServer) PromptAiModel(
+	_ context.Context, req *azdext.PromptAiModelRequest,
+) (*azdext.PromptAiModelResponse, error) {
+	s.modelRequests = append(s.modelRequests, req)
+	if s.modelErr != nil {
+		return nil, s.modelErr
+	}
+	return &azdext.PromptAiModelResponse{Model: s.model}, nil
+}
+
+func (s *resolveEnvStubPromptServer) PromptAiDeployment(
+	_ context.Context, req *azdext.PromptAiDeploymentRequest,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	s.deployRequests = append(s.deployRequests, req)
+	if s.deploymentErr != nil {
+		return nil, s.deploymentErr
+	}
+	return &azdext.PromptAiDeploymentResponse{Deployment: s.deployment}, nil
 }
 
 // newResolveEnvTestClient spins up a gRPC server exposing the given environment

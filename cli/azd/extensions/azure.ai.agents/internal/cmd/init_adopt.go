@@ -319,7 +319,7 @@ func verifyAzureYamlDeployments(
 			// Show deployment details and prompt.
 			fmt.Printf("\nModel deployment %s is defined in the azure.yaml:\n", output.WithHighLightFormat("'%s'", dep.Name))
 			fmt.Printf("  Model: %s (%s), version %s\n", dep.Model.Name, dep.Model.Format, dep.Model.Version)
-			fmt.Printf("  SKU: %s, capacity %d\n", dep.Sku.Name, dep.Sku.Capacity)
+			fmt.Printf("  SKU: %s, capacity %v\n", dep.Sku.Name, dep.Sku.Capacity)
 			fmt.Println()
 
 			fmt.Println("Existing deployment(s) using the same model were found in your Foundry project:")
@@ -342,11 +342,13 @@ func verifyAzureYamlDeployments(
 			}
 			// Only offer "deploy as specified" if no existing deployment is an exact match.
 			hasExactMatch := false
+			depCapacity, capacityErr := deploymentCapacity(dep.Sku.Capacity)
 			for _, d := range matchingDeployments {
 				if d.Name == dep.Name &&
 					d.Version == dep.Model.Version &&
 					d.SkuName == dep.Sku.Name &&
-					d.SkuCapacity == dep.Sku.Capacity {
+					capacityErr == nil &&
+					d.SkuCapacity == depCapacity {
 					hasExactMatch = true
 					break
 				}
@@ -458,7 +460,7 @@ func verifyAzureYamlDeployments(
 					output.WithHighLightFormat("'%s'", dep.Name))
 			}
 			fmt.Printf("  Model: %s (%s), version %s\n", dep.Model.Name, dep.Model.Format, dep.Model.Version)
-			fmt.Printf("  SKU: %s, capacity %d\n\n", dep.Sku.Name, dep.Sku.Capacity)
+			fmt.Printf("  SKU: %s, capacity %v\n\n", dep.Sku.Name, dep.Sku.Capacity)
 
 			noMatchChoices := []*azdext.SelectChoice{
 				{Value: "deploy", Label: "Deploy as specified in azure.yaml"},
@@ -1142,7 +1144,7 @@ func runInitFromAzureYaml(
 		}
 
 		// Update the azure.yaml if deployments were modified.
-		if deploymentsModified {
+		if deploymentsModified && len(keptEntries) == 0 {
 			// Group kept deployments by their originating service name.
 			byService := make(map[string][]project.Deployment)
 			for _, entry := range deploymentEntries {
@@ -1162,12 +1164,38 @@ func runInitFromAzureYaml(
 			}
 		}
 
-		// Persist the first referenced deployment name as AZURE_AI_MODEL_DEPLOYMENT_NAME.
 		setEnv := func(ctx context.Context, key, value string) error {
 			return setEnvValue(ctx, azdClient, env.Name, key, value)
 		}
-		if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
-			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		if len(keptEntries) > 0 {
+			deployments := make([]project.Deployment, len(keptEntries))
+			for i, entry := range keptEntries {
+				deployments[i] = entry.Deployment
+			}
+			references, err := persistDeploymentEnvironment(ctx, setEnv, deployments)
+			if err != nil {
+				return fmt.Errorf("persist model deployment environment: %w", err)
+			}
+			for i := range keptEntries {
+				keptEntries[i].Deployment = references[i]
+			}
+
+			byService := make(map[string][]project.Deployment)
+			for _, entry := range deploymentEntries {
+				if _, ok := byService[entry.ServiceName]; !ok {
+					byService[entry.ServiceName] = nil
+				}
+			}
+			for _, kept := range keptEntries {
+				byService[kept.ServiceName] = append(byService[kept.ServiceName], kept.Deployment)
+			}
+			for svcName, deps := range byService {
+				if err := updateAzureYamlDeployments(ctx, azdClient, svcName, deps); err != nil {
+					return err
+				}
+			}
+		} else if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
+			return fmt.Errorf("failed to set %s: %w", deploymentNameEnvKey, err)
 		}
 	}
 

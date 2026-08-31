@@ -55,7 +55,24 @@ func projectLifecycleHandler(
 		return fmt.Errorf("current azd environment has no name")
 	}
 
-	value, err := encodeProjectDeployments(cfg.Deployments)
+	envResponse, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: current.GetEnvironment().GetName(),
+	})
+	if err != nil {
+		return fmt.Errorf("reading current azd environment values: %w", err)
+	}
+	env := make(map[string]string, len(envResponse.GetKeyValues()))
+	for _, value := range envResponse.GetKeyValues() {
+		if value != nil {
+			env[value.GetKey()] = value.GetValue()
+		}
+	}
+	deployments, err := synthesis.ResolveDeployments(cfg.Deployments, env, false)
+	if err != nil {
+		return fmt.Errorf("resolving project model deployments: %w", err)
+	}
+
+	value, err := encodeProjectDeployments(deployments)
 	if err != nil {
 		return err
 	}
@@ -131,6 +148,14 @@ func loadProjectServiceConfig(
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, false, fmt.Errorf(
 			"parsing project service %q config: %w",
+			names[0],
+			err,
+		)
+	}
+	cfg.Deployments, err = synthesis.ResolveDeployments(cfg.Deployments, nil, true)
+	if err != nil {
+		return nil, false, fmt.Errorf(
+			"normalizing project service %q deployments: %w",
 			names[0],
 			err,
 		)

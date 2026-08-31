@@ -27,6 +27,24 @@ services:
 
 When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
 
+Hosted-agent initialization stores generated deployment settings in the active
+azd environment and writes references into `azure.yaml`. The first deployment
+uses these keys; additional deployments use `_2`, `_3`, and so on:
+
+```text
+AZURE_AI_MODEL_DEPLOYMENT_NAME
+AZURE_AI_MODEL_NAME
+AZURE_AI_MODEL_FORMAT
+AZURE_AI_MODEL_VERSION
+AZURE_AI_MODEL_SKU_NAME
+AZURE_AI_MODEL_SKU_CAPACITY
+```
+
+Provisioning validates each complete tuple against the selected subscription,
+region, model catalog, and remaining quota. If the tuple is missing or no
+longer compatible, interactive provisioning selects and persists a replacement.
+Static literal deployments and custom environment references remain supported.
+
 To reconcile deployments, connections, or a pending container registry on an existing project, set the project's full ARM resource ID in the active azd environment:
 
 ```sh

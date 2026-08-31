@@ -359,6 +359,9 @@ func (p *FoundryProvisioningProvider) Initialize(
 	if err != nil {
 		return err
 	}
+	if err := p.reconcileDeploymentEnvironment(ctx, rawYAML, svcName); err != nil {
+		return err
+	}
 	if endpoint != "" {
 		if err := p.resolveExistingProjectResourceGroup(ctx); err != nil {
 			return err

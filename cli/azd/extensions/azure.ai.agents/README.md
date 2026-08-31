@@ -1,5 +1,19 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Hosted-agent model deployments
+
+Hosted-agent initialization stores generated deployment settings in the active
+azd environment and writes references into `azure.yaml`. The first deployment
+uses `AZURE_AI_MODEL_DEPLOYMENT_NAME`, `AZURE_AI_MODEL_NAME`,
+`AZURE_AI_MODEL_FORMAT`, `AZURE_AI_MODEL_VERSION`,
+`AZURE_AI_MODEL_SKU_NAME`, and `AZURE_AI_MODEL_SKU_CAPACITY`. Additional
+deployments append `_2`, `_3`, and so on to each key.
+
+This keeps deployment settings isolated between azd environments. Provisioning
+validates the complete tuple for the selected subscription, region, model
+catalog, and remaining quota before using it. Static literal deployments and
+custom environment references remain supported.
+
 ## Running Local Agents
 
 `azd ai agent run` starts the selected agent locally and, by default, opens the

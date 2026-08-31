@@ -3401,7 +3401,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		agentConfig.Container = a.containerSettings
 	}
 
-	agentConfig.Deployments = a.deploymentDetails
+	setEnv := func(ctx context.Context, key, value string) error {
+		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
+	}
+	agentConfig.Deployments, err = persistDeploymentEnvironment(ctx, setEnv, a.deploymentDetails)
+	if err != nil {
+		return fmt.Errorf("persist model deployment environment: %w", err)
+	}
 	agentConfig.Resources = resourceDetails
 
 	// Process toolbox resources from the manifest

@@ -20,6 +20,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -107,7 +108,7 @@ type DeploymentModel struct {
 // DeploymentSku mirrors the sku field of deploymentType.
 type DeploymentSku struct {
 	Name     string `yaml:"name" json:"name"`
-	Capacity int    `yaml:"capacity" json:"capacity"`
+	Capacity any    `yaml:"capacity" json:"capacity"`
 }
 
 // Connection mirrors the connectionType in modules/connections.bicep: the
@@ -317,6 +318,10 @@ func Synthesize(in Input) (*Result, error) {
 	if deployments == nil {
 		deployments = []Deployment{}
 	}
+	deployments, err = ResolveDeployments(deployments, in.Env, in.PreserveVarRefs)
+	if err != nil {
+		return nil, err
+	}
 
 	connections, err := collectConnections(
 		root.Services,
@@ -402,6 +407,10 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 	if deployments == nil {
 		deployments = []Deployment{}
 	}
+	deployments, err = ResolveDeployments(deployments, in.Env, in.PreserveVarRefs)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Result{Parameters: map[string]any{
 		"deployments":           deployments,
@@ -475,6 +484,94 @@ func BrownfieldDeployments(
 	}
 
 	return svc.Deployments, nil
+}
+
+// ProjectDeployments returns the model deployments declared by a Foundry
+// project service after resolving file references. Environment references are
+// preserved for callers that need to reconcile them before synthesis.
+func ProjectDeployments(raw []byte, serviceName string, projectRoot string) ([]Deployment, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("synthesis: raw azure.yaml is empty")
+	}
+	if serviceName == "" {
+		return nil, errors.New("synthesis: serviceName is empty")
+	}
+
+	var root projectFile
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, fmt.Errorf("parse azure.yaml: %w", err)
+	}
+	svc, err := loadProjectService(root.Services, serviceName, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	return svc.Deployments, nil
+}
+
+// ResolveDeployments expands deployment environment references and normalizes
+// capacities to integers. When preserve is true, references remain unchanged.
+func ResolveDeployments(deployments []Deployment, env map[string]string, preserve bool) ([]Deployment, error) {
+	resolved := slices.Clone(deployments)
+	for i := range resolved {
+		deployment := &resolved[i]
+		fields := []*string{
+			&deployment.Name,
+			&deployment.Model.Name,
+			&deployment.Model.Format,
+			&deployment.Model.Version,
+			&deployment.Sku.Name,
+		}
+		if !preserve {
+			for _, field := range fields {
+				value, err := resolveVars(*field, env)
+				if err != nil {
+					return nil, fmt.Errorf("resolve deployment %d: %w", i+1, err)
+				}
+				*field = value
+			}
+		}
+
+		capacity, err := resolveDeploymentCapacity(deployment.Sku.Capacity, env, preserve)
+		if err != nil {
+			return nil, fmt.Errorf("resolve deployment %d capacity: %w", i+1, err)
+		}
+		deployment.Sku.Capacity = capacity
+	}
+	return resolved, nil
+}
+
+func resolveDeploymentCapacity(value any, env map[string]string, preserve bool) (any, error) {
+	switch capacity := value.(type) {
+	case int:
+		return capacity, nil
+	case int64:
+		return int(capacity), nil
+	case uint64:
+		if capacity > uint64(^uint(0)>>1) {
+			return nil, fmt.Errorf("capacity %d exceeds the supported integer range", capacity)
+		}
+		return int(capacity), nil
+	case float64:
+		if capacity != float64(int(capacity)) {
+			return nil, fmt.Errorf("capacity %v must be an integer", capacity)
+		}
+		return int(capacity), nil
+	case string:
+		if preserve {
+			return capacity, nil
+		}
+		resolved, err := resolveVars(capacity, env)
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := strconv.Atoi(strings.TrimSpace(resolved))
+		if err != nil {
+			return nil, fmt.Errorf("capacity %q must resolve to an integer", capacity)
+		}
+		return parsed, nil
+	default:
+		return nil, fmt.Errorf("capacity has unsupported type %T", value)
+	}
 }
 
 // BrownfieldConnections returns the host: azure.ai.connection services declared

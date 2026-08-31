@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"net"
 	"os"
 	"regexp"
@@ -58,6 +59,11 @@ type Input struct {
 	// Legacy connection services use it when service env is absent.
 	// Missing values may fall back to the process environment.
 	Env map[string]string
+
+	// PreserveDeploymentVarRefs keeps deployment ${VAR} references verbatim
+	// while allowing connection and network values to be resolved normally.
+	// This is used while provisioning waits to reconcile deployment values.
+	PreserveDeploymentVarRefs bool
 
 	// ServiceEnvironments contains core-expanded values by service.
 	// Connection fields prefer these values over the legacy Env map.
@@ -110,6 +116,19 @@ type DeploymentSku struct {
 	Name     string `yaml:"name" json:"name"`
 	Capacity any    `yaml:"capacity" json:"capacity"`
 }
+
+var canonicalDeploymentEnvironmentKeyBases = [...]string{
+	"AZURE_AI_MODEL_DEPLOYMENT_NAME",
+	"AZURE_AI_MODEL_NAME",
+	"AZURE_AI_MODEL_FORMAT",
+	"AZURE_AI_MODEL_VERSION",
+	"AZURE_AI_MODEL_SKU_NAME",
+	"AZURE_AI_MODEL_SKU_CAPACITY",
+}
+
+var exactDeploymentEnvironmentReference = regexp.MustCompile(
+	`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`,
+)
 
 // Connection mirrors the connectionType in modules/connections.bicep: the
 // synthesized shape of a host: azure.ai.connection service, where the service
@@ -318,7 +337,11 @@ func Synthesize(in Input) (*Result, error) {
 	if deployments == nil {
 		deployments = []Deployment{}
 	}
-	deployments, err = ResolveDeployments(deployments, in.Env, in.PreserveVarRefs)
+	deployments, err = ResolveDeployments(
+		deployments,
+		in.Env,
+		in.PreserveVarRefs || in.PreserveDeploymentVarRefs,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -407,7 +430,11 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 	if deployments == nil {
 		deployments = []Deployment{}
 	}
-	deployments, err = ResolveDeployments(deployments, in.Env, in.PreserveVarRefs)
+	deployments, err = ResolveDeployments(
+		deployments,
+		in.Env,
+		in.PreserveVarRefs || in.PreserveDeploymentVarRefs,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -513,6 +540,9 @@ func ResolveDeployments(deployments []Deployment, env map[string]string, preserv
 	resolved := slices.Clone(deployments)
 	for i := range resolved {
 		deployment := &resolved[i]
+		if err := normalizeCanonicalDeployment(deployment); err != nil {
+			return nil, fmt.Errorf("deployment %d: %w", i+1, err)
+		}
 		fields := []*string{
 			&deployment.Name,
 			&deployment.Model.Name,
@@ -539,24 +569,132 @@ func ResolveDeployments(deployments []Deployment, env map[string]string, preserv
 	return resolved, nil
 }
 
+func normalizeCanonicalDeployment(deployment *Deployment) error {
+	values := []string{
+		deployment.Name,
+		deployment.Model.Name,
+		deployment.Model.Format,
+		deployment.Model.Version,
+		deployment.Sku.Name,
+	}
+	if capacity, ok := deployment.Sku.Capacity.(string); ok {
+		values = append(values, capacity)
+	} else {
+		values = append(values, "")
+	}
+
+	index := -1
+	canonicalCount := 0
+	hasOtherReference := false
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		match := exactDeploymentEnvironmentReference.FindStringSubmatch(trimmed)
+		if len(match) == 2 {
+			candidate, ok := canonicalDeploymentEnvironmentKeyIndex(match[1])
+			if !ok {
+				hasOtherReference = true
+				continue
+			}
+			canonicalCount++
+			if index >= 0 && index != candidate {
+				return fmt.Errorf(
+					"canonical environment references use mismatched suffixes",
+				)
+			}
+			index = candidate
+			continue
+		}
+		if strings.Contains(trimmed, "${") {
+			hasOtherReference = true
+		}
+	}
+	if canonicalCount == 0 {
+		return nil
+	}
+	if hasOtherReference || canonicalCount != len(values) {
+		return fmt.Errorf(
+			"deployment must use one complete canonical environment tuple",
+		)
+	}
+
+	deployment.Name = environmentReference(
+		indexedDeploymentEnvironmentKey(
+			"AZURE_AI_MODEL_DEPLOYMENT_NAME", index),
+	)
+	deployment.Model.Name = environmentReference(
+		indexedDeploymentEnvironmentKey("AZURE_AI_MODEL_NAME", index),
+	)
+	deployment.Model.Format = environmentReference(
+		indexedDeploymentEnvironmentKey("AZURE_AI_MODEL_FORMAT", index),
+	)
+	deployment.Model.Version = environmentReference(
+		indexedDeploymentEnvironmentKey("AZURE_AI_MODEL_VERSION", index),
+	)
+	deployment.Sku.Name = environmentReference(
+		indexedDeploymentEnvironmentKey("AZURE_AI_MODEL_SKU_NAME", index),
+	)
+	deployment.Sku.Capacity = environmentReference(
+		indexedDeploymentEnvironmentKey(
+			"AZURE_AI_MODEL_SKU_CAPACITY", index),
+	)
+	return nil
+}
+
+func canonicalDeploymentEnvironmentKeyIndex(key string) (int, bool) {
+	key = strings.TrimSpace(key)
+	for _, base := range canonicalDeploymentEnvironmentKeyBases {
+		if key == base {
+			return 0, true
+		}
+		suffix, ok := strings.CutPrefix(key, base+"_")
+		if !ok || suffix == "" || suffix[0] == '0' {
+			continue
+		}
+		index, err := strconv.Atoi(suffix)
+		if err == nil && index >= 2 {
+			return index - 1, true
+		}
+	}
+	return 0, false
+}
+
+func indexedDeploymentEnvironmentKey(base string, index int) string {
+	if index == 0 {
+		return base
+	}
+	return fmt.Sprintf("%s_%d", base, index+1)
+}
+
+func environmentReference(key string) string {
+	return "${" + key + "}"
+}
+
 func resolveDeploymentCapacity(value any, env map[string]string, preserve bool) (any, error) {
 	switch capacity := value.(type) {
 	case int:
-		return capacity, nil
+		return validateDeploymentCapacity(capacity)
 	case int64:
-		return int(capacity), nil
+		maxInt := int64(^uint(0) >> 1)
+		minInt := -maxInt - 1
+		if capacity > maxInt || capacity < minInt {
+			return nil, fmt.Errorf("capacity %d exceeds the supported integer range", capacity)
+		}
+		return validateDeploymentCapacity(int(capacity))
 	case uint64:
 		if capacity > uint64(^uint(0)>>1) {
 			return nil, fmt.Errorf("capacity %d exceeds the supported integer range", capacity)
 		}
-		return int(capacity), nil
+		return validateDeploymentCapacity(int(capacity))
 	case float64:
-		if capacity != float64(int(capacity)) {
+		maxInt := float64(^uint(0) >> 1)
+		minInt := -maxInt - 1
+		if capacity != math.Trunc(capacity) ||
+			capacity > maxInt || capacity < minInt {
 			return nil, fmt.Errorf("capacity %v must be an integer", capacity)
 		}
-		return int(capacity), nil
+		return validateDeploymentCapacity(int(capacity))
 	case string:
-		if preserve {
+		if preserve && containsVarRef(capacity) {
 			return capacity, nil
 		}
 		resolved, err := resolveVars(capacity, env)
@@ -567,10 +705,17 @@ func resolveDeploymentCapacity(value any, env map[string]string, preserve bool) 
 		if err != nil {
 			return nil, fmt.Errorf("capacity %q must resolve to an integer", capacity)
 		}
-		return parsed, nil
+		return validateDeploymentCapacity(parsed)
 	default:
 		return nil, fmt.Errorf("capacity has unsupported type %T", value)
 	}
+}
+
+func validateDeploymentCapacity(capacity int) (int, error) {
+	if capacity <= 0 {
+		return 0, fmt.Errorf("capacity must be a positive integer")
+	}
+	return capacity, nil
 }
 
 // BrownfieldConnections returns the host: azure.ai.connection services declared

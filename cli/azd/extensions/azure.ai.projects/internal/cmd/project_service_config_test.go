@@ -207,6 +207,50 @@ func TestProjectLifecycleHandlerResolvesDeploymentEnvironment(t *testing.T) {
 	assert.NotContains(t, envServer.value, "${")
 }
 
+func TestProjectLifecycleHandlerBeforeProvisionDefersCanonicalDeployments(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	envServer := &recordingProjectEnvironmentServer{envName: "dev"}
+	client := newProjectEnvironmentClient(t, envServer)
+	props := mustProjectProperties(t, map[string]any{
+		"deployments": []any{map[string]any{
+			"name": "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+			"model": map[string]any{
+				"name":    "${AZURE_AI_MODEL_NAME}",
+				"format":  "${AZURE_AI_MODEL_FORMAT}",
+				"version": "${AZURE_AI_MODEL_VERSION}",
+			},
+			"sku": map[string]any{
+				"name":     "${AZURE_AI_MODEL_SKU_NAME}",
+				"capacity": "${AZURE_AI_MODEL_SKU_CAPACITY}",
+			},
+		}},
+	})
+
+	err := projectLifecycleHandlerBeforeProvision(
+		t.Context(),
+		client,
+		&azdext.ProjectEventArgs{
+			Project: &azdext.ProjectConfig{
+				Services: map[string]*azdext.ServiceConfig{
+					"project": {
+						Host:                 aiProjectHost,
+						AdditionalProperties: props,
+					},
+				},
+			},
+		},
+	)
+
+	require.NoError(t, err)
+	envServer.mu.Lock()
+	defer envServer.mu.Unlock()
+	assert.Empty(t, envServer.value)
+	assert.Empty(t, envServer.key)
+}
+
 func TestProjectLifecycleHandlerClearsEmptyDeployments(t *testing.T) {
 	t.Parallel()
 

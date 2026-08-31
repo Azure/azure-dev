@@ -23,6 +23,15 @@ const agentsV2ModelCapability = "agentsV2"
 
 var exactEnvironmentReference = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`)
 
+var canonicalDeploymentEnvironmentKeyBases = [...]string{
+	"AZURE_AI_MODEL_DEPLOYMENT_NAME",
+	"AZURE_AI_MODEL_NAME",
+	"AZURE_AI_MODEL_FORMAT",
+	"AZURE_AI_MODEL_VERSION",
+	"AZURE_AI_MODEL_SKU_NAME",
+	"AZURE_AI_MODEL_SKU_CAPACITY",
+}
+
 type deploymentReferences struct {
 	deploymentName string
 	modelName      string
@@ -34,9 +43,55 @@ type deploymentReferences struct {
 
 func canonicalDeploymentReferences(
 	deployment synthesis.Deployment,
-	index int,
-) (deploymentReferences, bool) {
-	references := referencesForDeployment(deployment)
+) (deploymentReferences, bool, error) {
+	values := []string{
+		deployment.Name,
+		deployment.Model.Name,
+		deployment.Model.Format,
+		deployment.Model.Version,
+		deployment.Sku.Name,
+	}
+	if capacity, ok := deployment.Sku.Capacity.(string); ok {
+		values = append(values, capacity)
+	} else {
+		values = append(values, "")
+	}
+
+	index := -1
+	canonicalCount := 0
+	hasOtherReference := false
+	for _, value := range values {
+		match := exactEnvironmentReference.FindStringSubmatch(
+			strings.TrimSpace(value),
+		)
+		if len(match) == 2 {
+			candidate, ok := canonicalDeploymentEnvironmentKeyIndex(match[1])
+			if !ok {
+				hasOtherReference = true
+				continue
+			}
+			canonicalCount++
+			if index >= 0 && index != candidate {
+				return deploymentReferences{}, false, fmt.Errorf(
+					"canonical environment references use mismatched suffixes",
+				)
+			}
+			index = candidate
+			continue
+		}
+		if strings.Contains(strings.TrimSpace(value), "${") {
+			hasOtherReference = true
+		}
+	}
+	if canonicalCount == 0 {
+		return deploymentReferences{}, false, nil
+	}
+	if hasOtherReference || canonicalCount != len(values) {
+		return deploymentReferences{}, false, fmt.Errorf(
+			"deployment must use one complete canonical environment tuple",
+		)
+	}
+
 	expected := deploymentReferences{
 		deploymentName: indexedDeploymentKey(
 			"AZURE_AI_MODEL_DEPLOYMENT_NAME", index),
@@ -46,10 +101,7 @@ func canonicalDeploymentReferences(
 		skuName:      indexedDeploymentKey("AZURE_AI_MODEL_SKU_NAME", index),
 		capacity:     indexedDeploymentKey("AZURE_AI_MODEL_SKU_CAPACITY", index),
 	}
-	if references != expected {
-		return deploymentReferences{}, false
-	}
-	return expected, true
+	return expected, true, nil
 }
 
 func indexedDeploymentKey(base string, index int) string {
@@ -67,20 +119,30 @@ func environmentReference(value string) string {
 	return match[1]
 }
 
-func referencesForDeployment(deployment synthesis.Deployment) deploymentReferences {
-	capacity, _ := deployment.Sku.Capacity.(string)
-	return deploymentReferences{
-		deploymentName: environmentReference(deployment.Name),
-		modelName:      environmentReference(deployment.Model.Name),
-		modelFormat:    environmentReference(deployment.Model.Format),
-		modelVersion:   environmentReference(deployment.Model.Version),
-		skuName:        environmentReference(deployment.Sku.Name),
-		capacity:       environmentReference(capacity),
+func canonicalDeploymentEnvironmentKeyIndex(key string) (int, bool) {
+	for _, base := range canonicalDeploymentEnvironmentKeyBases {
+		if key == base {
+			return 0, true
+		}
+		suffix, ok := strings.CutPrefix(key, base+"_")
+		if !ok || suffix == "" || suffix[0] == '0' {
+			continue
+		}
+		number, err := strconv.Atoi(suffix)
+		if err == nil && number >= 2 {
+			return number - 1, true
+		}
 	}
+	return 0, false
+}
+
+func isCanonicalDeploymentEnvironmentKey(key string) bool {
+	_, ok := canonicalDeploymentEnvironmentKeyIndex(key)
+	return ok
 }
 
 func (r deploymentReferences) keys() []string {
-	keys := []string{
+	return []string{
 		r.deploymentName,
 		r.modelName,
 		r.modelFormat,
@@ -88,13 +150,6 @@ func (r deploymentReferences) keys() []string {
 		r.skuName,
 		r.capacity,
 	}
-	nonEmpty := keys[:0]
-	for _, key := range keys {
-		if key != "" {
-			nonEmpty = append(nonEmpty, key)
-		}
-	}
-	return nonEmpty
 }
 
 func (p *FoundryProvisioningProvider) reconcileDeploymentEnvironment(
@@ -102,13 +157,61 @@ func (p *FoundryProvisioningProvider) reconcileDeploymentEnvironment(
 	rawYAML []byte,
 	serviceName string,
 ) error {
+	p.resolvedDeploymentEnv = nil
 	deployments, err := synthesis.ProjectDeployments(rawYAML, serviceName, p.projectPath)
 	if err != nil {
 		return foundrySynthesisError(serviceName, err)
 	}
-	env := p.networkEnvMap(ctx)
+	hasCanonicalDeployment := false
 	for i, deployment := range deployments {
-		references, canonical := canonicalDeploymentReferences(deployment, i)
+		_, canonical, err := canonicalDeploymentReferences(deployment)
+		if err != nil {
+			return fmt.Errorf(
+				"validate model deployment %d references: %w",
+				i+1,
+				err,
+			)
+		}
+		if canonical {
+			hasCanonicalDeployment = true
+			break
+		}
+	}
+	if !hasCanonicalDeployment {
+		return nil
+	}
+
+	env, err := p.deploymentEnvironmentMap(ctx)
+	if err != nil {
+		return err
+	}
+	if p.virtualEnv == nil {
+		p.virtualEnv = map[string]string{}
+	}
+	p.resolvedDeploymentEnv = map[string]string{}
+	for key := range p.virtualEnv {
+		if isCanonicalDeploymentEnvironmentKey(key) {
+			delete(p.virtualEnv, key)
+		}
+	}
+	for key, value := range env {
+		if strings.TrimSpace(value) != "" {
+			trimmed := strings.TrimSpace(value)
+			p.virtualEnv[key] = trimmed
+			if isCanonicalDeploymentEnvironmentKey(key) {
+				p.resolvedDeploymentEnv[key] = trimmed
+			}
+		}
+	}
+	for i, deployment := range deployments {
+		references, canonical, err := canonicalDeploymentReferences(deployment)
+		if err != nil {
+			return fmt.Errorf(
+				"validate model deployment %d references: %w",
+				i+1,
+				err,
+			)
+		}
 		if !canonical {
 			continue
 		}
@@ -163,9 +266,59 @@ func (p *FoundryProvisioningProvider) reconcileDeploymentEnvironment(
 				p.virtualEnv = map[string]string{}
 			}
 			p.virtualEnv[key] = values[key]
+			p.resolvedDeploymentEnv[key] = values[key]
 		}
 	}
 	return nil
+}
+
+// deploymentEnvironmentMap reads the active azd environment without falling
+// back to process variables. Canonical deployment tuples must not be satisfied
+// by values from another environment or shell.
+func (p *FoundryProvisioningProvider) deploymentEnvironmentMap(
+	ctx context.Context,
+) (map[string]string, error) {
+	out := make(map[string]string, len(p.virtualEnv))
+	for key, value := range p.virtualEnv {
+		if !isCanonicalDeploymentEnvironmentKey(key) {
+			out[key] = value
+		}
+	}
+	if p.azdClient == nil || p.azdClient.Environment() == nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeAzdClientFailed,
+			"read model deployment environment: azd environment client is unavailable",
+			"restart azd and retry",
+		)
+	}
+
+	response, err := p.azdClient.Environment().GetValues(
+		ctx,
+		&azdext.GetEnvironmentRequest{Name: p.envName},
+	)
+	if err != nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf(
+				"read model deployment values from azd environment %q: %s",
+				p.envName,
+				err,
+			),
+			"verify the azd environment is accessible, then retry",
+		)
+	}
+	for _, keyValue := range response.GetKeyValues() {
+		if keyValue == nil {
+			continue
+		}
+		value := strings.TrimSpace(keyValue.Value)
+		if isCanonicalDeploymentEnvironmentKey(keyValue.Key) {
+			out[keyValue.Key] = value
+		} else if _, planned := out[keyValue.Key]; !planned {
+			out[keyValue.Key] = value
+		}
+	}
+	return out, nil
 }
 
 type resolvedDeploymentEnvironment struct {
@@ -304,6 +457,40 @@ func (p *FoundryProvisioningProvider) validateDeploymentEnvironment(
 		return false, nil
 	}
 	capacity := int32(capacityValue)
+
+	modelResponse, err := p.azdClient.Ai().ListModels(ctx,
+		&azdext.ListModelsRequest{
+			AzureContext: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{
+					SubscriptionId: p.subID,
+					Location:       p.location,
+				},
+			},
+			Filter: &azdext.AiModelFilterOptions{
+				Locations:    []string{p.location},
+				Capabilities: []string{agentsV2ModelCapability},
+			},
+		},
+	)
+	if err != nil {
+		if hasAiErrorReason(
+			err,
+			azdext.AiErrorReasonNoModelsMatch,
+			azdext.AiErrorReasonModelNotFound,
+		) {
+			return false, nil
+		}
+		return false, err
+	}
+	modelAvailable := slices.ContainsFunc(modelResponse.GetModels(),
+		func(model *azdext.AiModel) bool {
+			return model != nil &&
+				strings.EqualFold(model.GetName(), modelName) &&
+				slices.Contains(model.GetCapabilities(), agentsV2ModelCapability)
+		})
+	if !modelAvailable {
+		return false, nil
+	}
 
 	response, err := p.azdClient.Ai().ResolveModelDeployments(ctx,
 		&azdext.ResolveModelDeploymentsRequest{

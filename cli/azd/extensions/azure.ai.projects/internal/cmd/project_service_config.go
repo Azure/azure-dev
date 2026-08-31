@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"azure.ai.projects/internal/synthesis"
@@ -29,6 +30,25 @@ func projectLifecycleHandler(
 	azdClient *azdext.AzdClient,
 	args *azdext.ProjectEventArgs,
 ) error {
+	return projectLifecycleHandlerWithOptions(ctx, azdClient, args, false)
+}
+
+// projectLifecycleHandlerBeforeProvision defers canonical deployment values
+// until the provisioning provider has reconciled them for the active scope.
+func projectLifecycleHandlerBeforeProvision(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	args *azdext.ProjectEventArgs,
+) error {
+	return projectLifecycleHandlerWithOptions(ctx, azdClient, args, true)
+}
+
+func projectLifecycleHandlerWithOptions(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	args *azdext.ProjectEventArgs,
+	deferCanonicalDeployments bool,
+) error {
 	if args == nil || args.Project == nil {
 		return fmt.Errorf("project lifecycle event has no project")
 	}
@@ -41,6 +61,9 @@ func projectLifecycleHandler(
 		return err
 	}
 	if !found {
+		return nil
+	}
+	if deferCanonicalDeployments && hasCanonicalDeploymentReferences(cfg.Deployments) {
 		return nil
 	}
 
@@ -92,6 +115,59 @@ func projectLifecycleHandler(
 	}
 
 	return nil
+}
+
+func hasCanonicalDeploymentReferences(
+	deployments []synthesis.Deployment,
+) bool {
+	for _, deployment := range deployments {
+		values := []string{
+			deployment.Name,
+			deployment.Model.Name,
+			deployment.Model.Format,
+			deployment.Model.Version,
+			deployment.Sku.Name,
+		}
+		if capacity, ok := deployment.Sku.Capacity.(string); ok {
+			values = append(values, capacity)
+		}
+		for _, value := range values {
+			if isCanonicalDeploymentReference(value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isCanonicalDeploymentReference(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(trimmed, "${") ||
+		!strings.HasSuffix(trimmed, "}") {
+		return false
+	}
+	key := trimmed[2 : len(trimmed)-1]
+	for _, base := range []string{
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME",
+		"AZURE_AI_MODEL_NAME",
+		"AZURE_AI_MODEL_FORMAT",
+		"AZURE_AI_MODEL_VERSION",
+		"AZURE_AI_MODEL_SKU_NAME",
+		"AZURE_AI_MODEL_SKU_CAPACITY",
+	} {
+		if key == base {
+			return true
+		}
+		suffix, ok := strings.CutPrefix(key, base+"_")
+		if !ok || suffix == "" || suffix[0] == '0' {
+			continue
+		}
+		index, err := strconv.Atoi(suffix)
+		if err == nil && index >= 2 {
+			return true
+		}
+	}
+	return false
 }
 
 func loadProjectServiceConfig(

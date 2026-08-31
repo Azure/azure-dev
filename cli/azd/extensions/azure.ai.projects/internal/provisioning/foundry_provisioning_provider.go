@@ -76,7 +76,10 @@ type FoundryProvisioningProvider struct {
 	infraModule                 string
 	isLayer                     bool
 	virtualEnv                  map[string]string
-	synthResult                 *synthesis.Result // nil when onDiskSource != nil
+	resolvedDeploymentEnv       map[string]string
+	synthResult                 *synthesis.Result
+	rawAzureYAML                []byte
+	serviceName                 string
 	serviceEnvironments         map[string]map[string]string
 	connectionEnvironmentScopes map[string]bool
 	envName                     string
@@ -280,6 +283,8 @@ func (p *FoundryProvisioningProvider) Initialize(
 	if err != nil {
 		return err
 	}
+	p.rawAzureYAML = slices.Clone(rawYAML)
+	p.serviceName = svcName
 
 	// endpoint: selects the existing-project graph. Both project graphs deploy
 	// at subscription scope and use the same embedded/on-disk template pipeline.
@@ -332,12 +337,12 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 	if endpoint != "" && !onDisk {
 		connectionOnlyResult, synthErr := synthesis.SynthesizeExistingProject(synthesis.Input{
-			RawAzureYAML:    rawYAML,
-			ServiceName:     svcName,
-			AcceptedHosts:   FoundryProvisioningServiceHosts,
-			Env:             p.networkEnvMap(ctx),
-			PreserveVarRefs: true,
-			ProjectRoot:     projectRoot,
+			RawAzureYAML:              rawYAML,
+			ServiceName:               svcName,
+			AcceptedHosts:             FoundryProvisioningServiceHosts,
+			Env:                       p.networkEnvMap(ctx),
+			PreserveDeploymentVarRefs: true,
+			ProjectRoot:               projectRoot,
 		})
 		if synthErr != nil {
 			return foundrySynthesisError(svcName, synthErr)
@@ -359,9 +364,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 	if err != nil {
 		return err
 	}
-	if err := p.reconcileDeploymentEnvironment(ctx, rawYAML, svcName); err != nil {
-		return err
-	}
 	if endpoint != "" {
 		if err := p.resolveExistingProjectResourceGroup(ctx); err != nil {
 			return err
@@ -374,12 +376,13 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	input := synthesis.Input{
-		RawAzureYAML:        rawYAML,
-		ServiceName:         svcName,
-		AcceptedHosts:       FoundryProvisioningServiceHosts,
-		Env:                 p.networkEnvMap(ctx),
-		ServiceEnvironments: p.serviceEnvironments,
-		ProjectRoot:         projectRoot,
+		RawAzureYAML:              rawYAML,
+		ServiceName:               svcName,
+		AcceptedHosts:             FoundryProvisioningServiceHosts,
+		Env:                       p.networkEnvMap(ctx),
+		ServiceEnvironments:       p.serviceEnvironments,
+		PreserveDeploymentVarRefs: true,
+		ProjectRoot:               projectRoot,
 	}
 	var res *synthesis.Result
 	if endpoint != "" {
@@ -434,6 +437,49 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 	p.armTemplate = tmpl
 
+	return nil
+}
+
+// prepareProvisioning reconciles canonical deployment environment values and
+// builds the resolved synthesis used by preview and deploy.
+func (p *FoundryProvisioningProvider) prepareProvisioning(
+	ctx context.Context,
+) error {
+	if p.existingProjectConnectionOnly || len(p.rawAzureYAML) == 0 ||
+		p.serviceName == "" {
+		return nil
+	}
+
+	if err := p.reconcileDeploymentEnvironment(
+		ctx,
+		p.rawAzureYAML,
+		p.serviceName,
+	); err != nil {
+		return err
+	}
+
+	input := synthesis.Input{
+		RawAzureYAML:        p.rawAzureYAML,
+		ServiceName:         p.serviceName,
+		AcceptedHosts:       FoundryProvisioningServiceHosts,
+		Env:                 p.networkEnvMap(ctx),
+		ServiceEnvironments: p.serviceEnvironments,
+		ProjectRoot:         p.projectPath,
+	}
+
+	var (
+		result *synthesis.Result
+		err    error
+	)
+	if p.brownfieldEndpoint != "" {
+		result, err = synthesis.SynthesizeExistingProject(input)
+	} else {
+		result, err = synthesis.Synthesize(input)
+	}
+	if err != nil {
+		return foundrySynthesisError(p.serviceName, err)
+	}
+	p.synthResult = result
 	return nil
 }
 
@@ -610,8 +656,16 @@ func foundrySynthesisError(serviceName string, err error) error {
 // require resolveEnv to have run; on any failure it returns nil and the
 // synthesizer falls back to the process environment.
 func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[string]string {
-	out := make(map[string]string, len(p.virtualEnv))
-	maps.Copy(out, p.virtualEnv)
+	out := make(map[string]string,
+		len(p.virtualEnv)+len(p.resolvedDeploymentEnv))
+	for key, value := range p.resolvedDeploymentEnv {
+		out[key] = value
+	}
+	for key, value := range p.virtualEnv {
+		if !isCanonicalDeploymentEnvironmentKey(key) {
+			out[key] = value
+		}
+	}
 	if p.azdClient == nil {
 		log.Printf("[debug] foundry provider: no azd client; network ${VAR} uses process env only")
 		return out
@@ -635,7 +689,11 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 	}
 	for _, kv := range resp.GetKeyValues() {
 		if kv != nil {
-			if _, planned := out[kv.Key]; !planned {
+			if isCanonicalDeploymentEnvironmentKey(kv.Key) {
+				if _, resolved := p.resolvedDeploymentEnv[kv.Key]; !resolved {
+					out[kv.Key] = kv.Value
+				}
+			} else if _, planned := out[kv.Key]; !planned {
 				out[kv.Key] = kv.Value
 			}
 		}
@@ -1208,6 +1266,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 		}}, nil
 	}
 	progress("Preparing Foundry provisioning template...")
+	if err := p.prepareProvisioning(ctx); err != nil {
+		return nil, err
+	}
 
 	// provision.network_mode telemetry: none | byo | managed. Lets us measure
 	// secured-agent adoption and the BYO-vs-managed split.
@@ -1321,8 +1382,10 @@ func (p *FoundryProvisioningProvider) resolveConnectionOnlyTenant(ctx context.Co
 
 // envValue reads a single value from the active azd environment, trimmed.
 func (p *FoundryProvisioningProvider) envValue(ctx context.Context, key string) (string, error) {
-	if value := strings.TrimSpace(p.virtualEnv[key]); value != "" {
-		return value, nil
+	if !isCanonicalDeploymentEnvironmentKey(key) {
+		if value := strings.TrimSpace(p.virtualEnv[key]); value != "" {
+			return value, nil
+		}
 	}
 	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: p.envName,
@@ -1332,6 +1395,63 @@ func (p *FoundryProvisioningProvider) envValue(ctx context.Context, key string) 
 		return "", err
 	}
 	return strings.TrimSpace(resp.Value), nil
+}
+
+func (p *FoundryProvisioningProvider) envValues(ctx context.Context) map[string]string {
+	out := make(map[string]string,
+		len(p.virtualEnv)+len(p.resolvedDeploymentEnv)+6)
+	for key, value := range p.resolvedDeploymentEnv {
+		out[key] = value
+	}
+	for key, value := range map[string]string{
+		envKeySubscriptionID: p.subID,
+		envKeyLocation:       p.location,
+		envKeyResourceGroup:  p.rgName,
+		envKeyFoundryRG:      p.rgName,
+		envKeyProjectName:    p.foundryName,
+		envKeyPrincipalID:    p.principalID,
+	} {
+		out[key] = value
+	}
+	for key, value := range p.virtualEnv {
+		if isCanonicalDeploymentEnvironmentKey(key) {
+			continue
+		}
+		if _, canonical := out[key]; !canonical {
+			out[key] = value
+		}
+	}
+	// Also surface the broader azd env. Best-effort: fall back to the
+	// canonical values above if the env service is unavailable.
+	if p.azdClient == nil {
+		return out
+	}
+	envClient := p.azdClient.Environment()
+	if envClient == nil {
+		return out
+	}
+	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: p.envName})
+	if err != nil {
+		log.Printf("[debug] foundry provider: GetValues failed (%s); ${VAR} substitution will use canonical keys only", err)
+		return out
+	}
+	for _, kv := range resp.GetKeyValues() {
+		if kv == nil {
+			continue
+		}
+		if isCanonicalDeploymentEnvironmentKey(kv.Key) {
+			if _, resolved := p.resolvedDeploymentEnv[kv.Key]; !resolved {
+				out[kv.Key] = kv.Value
+			}
+			continue
+		}
+		// Don't overwrite the canonical values we just set.
+		if _, taken := out[kv.Key]; taken {
+			continue
+		}
+		out[kv.Key] = kv.Value
+	}
+	return out
 }
 
 // resolveTemplate returns the on-disk Bicep source if present, else the
@@ -1425,52 +1545,6 @@ func (p *FoundryProvisioningProvider) bicepCli() bicepCompiler {
 	return p.bicepCliInstance
 }
 
-// envValues returns the resolved name -> value map of the azd environment,
-// used for ${VAR} substitution in main.parameters.json and as the env passed
-// to `bicep build-params`. Initialize-resolved values are surfaced under their
-// canonical names so a user's ${AZURE_LOCATION} reference works even before
-// their azd env file persists them.
-func (p *FoundryProvisioningProvider) envValues(ctx context.Context) map[string]string {
-	out := map[string]string{
-		envKeySubscriptionID: p.subID,
-		envKeyLocation:       p.location,
-		envKeyResourceGroup:  p.rgName,
-		envKeyFoundryRG:      p.rgName,
-		envKeyProjectName:    p.foundryName,
-		envKeyPrincipalID:    p.principalID,
-	}
-	for key, value := range p.virtualEnv {
-		if _, canonical := out[key]; !canonical {
-			out[key] = value
-		}
-	}
-	// Also surface the broader azd env. Best-effort: fall back to the
-	// canonical values above if the env service is unavailable.
-	if p.azdClient == nil {
-		return out
-	}
-	envClient := p.azdClient.Environment()
-	if envClient == nil {
-		return out
-	}
-	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: p.envName})
-	if err != nil {
-		log.Printf("[debug] foundry provider: GetValues failed (%s); ${VAR} substitution will use canonical keys only", err)
-		return out
-	}
-	for _, kv := range resp.GetKeyValues() {
-		if kv == nil {
-			continue
-		}
-		// Don't overwrite the canonical values we just set.
-		if _, taken := out[kv.Key]; taken {
-			continue
-		}
-		out[kv.Key] = kv.Value
-	}
-	return out
-}
-
 // Preview runs an ARM what-if against the resolved template (same template
 // and parameter selection as Deploy, but read-only). It returns a structured
 // diff in ProvisioningPreviewResult.Summary AND emits that summary via the
@@ -1495,6 +1569,9 @@ func (p *FoundryProvisioningProvider) Preview(
 		}, nil
 	}
 	progress("Computing deployment plan...")
+	if err := p.prepareProvisioning(ctx); err != nil {
+		return nil, err
+	}
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {

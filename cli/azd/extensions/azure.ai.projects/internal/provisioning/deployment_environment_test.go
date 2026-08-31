@@ -61,6 +61,10 @@ func TestReconcileDeploymentEnvironmentPromptsWithHostedAgentFilters(t *testing.
 	assert.Equal(t, "2025-08-07", env.set["AZURE_AI_MODEL_VERSION"])
 	assert.Equal(t, "GlobalStandard", env.set["AZURE_AI_MODEL_SKU_NAME"])
 	assert.Equal(t, "50", env.set["AZURE_AI_MODEL_SKU_CAPACITY"])
+	resolved := provider.networkEnvMap(t.Context())
+	for key, value := range env.set {
+		assert.Equal(t, value, resolved[key])
+	}
 	require.Len(t, prompt.modelRequests, 1)
 	assert.Equal(t, []string{"eastus2"}, prompt.modelRequests[0].GetFilter().GetLocations())
 	assert.Equal(t, []string{agentsV2ModelCapability}, prompt.modelRequests[0].GetFilter().GetCapabilities())
@@ -134,6 +138,111 @@ func TestReconcileDeploymentEnvironmentKeepsValidTuple(t *testing.T) {
 	assert.Empty(t, env.set)
 }
 
+func TestReconcileDeploymentEnvironmentPrefersActiveValues(
+	t *testing.T,
+) {
+	env := &resolveEnvStubEnvServer{
+		envName: "test",
+		get:     validDeploymentEnvironment(),
+	}
+	prompt := &resolveEnvStubPromptServer{}
+	ai := &resolveEnvStubAiServer{
+		deployments: []*azdext.AiModelDeployment{validDeployment()},
+	}
+	client := newResolveEnvTestClient(t, env, prompt, ai)
+	provider := &FoundryProvisioningProvider{
+		azdClient:   client,
+		projectPath: t.TempDir(),
+		envName:     "test",
+		subID:       "sub",
+		location:    "eastus2",
+		virtualEnv: map[string]string{
+			"AZURE_AI_MODEL_DEPLOYMENT_NAME": "stale-chat",
+			"AZURE_AI_MODEL_NAME":            "stale-model",
+			"AZURE_AI_MODEL_FORMAT":          "stale-format",
+			"AZURE_AI_MODEL_VERSION":         "stale-version",
+			"AZURE_AI_MODEL_SKU_NAME":        "stale-sku",
+			"AZURE_AI_MODEL_SKU_CAPACITY":    "10",
+		},
+	}
+
+	require.NoError(t, provider.reconcileDeploymentEnvironment(
+		t.Context(), []byte(deploymentReferenceYAML), "project",
+	))
+
+	assert.Empty(t, prompt.modelRequests)
+	require.Len(t, ai.requests, 1)
+	assert.Equal(t, "gpt-5-mini", ai.requests[0].GetModelName())
+}
+
+func TestReconcileDeploymentEnvironmentDoesNotUseVirtualCanonicalValues(
+	t *testing.T,
+) {
+	env := &resolveEnvStubEnvServer{
+		envName: "test",
+		get:     map[string]string{},
+	}
+	prompt := &resolveEnvStubPromptServer{
+		modelErr: status.Error(codes.FailedPrecondition, "prompt required"),
+	}
+	client := newResolveEnvTestClient(t, env, prompt)
+	provider := &FoundryProvisioningProvider{
+		azdClient:   client,
+		projectPath: t.TempDir(),
+		envName:     "test",
+		subID:       "sub",
+		location:    "eastus2",
+		virtualEnv:  validDeploymentEnvironment(),
+	}
+
+	err := provider.reconcileDeploymentEnvironment(
+		t.Context(), []byte(deploymentReferenceYAML), "project",
+	)
+
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Contains(t, local.Message, "are missing")
+	assert.Contains(t, local.Message, "AZURE_AI_MODEL_NAME")
+	require.Len(t, prompt.modelRequests, 1)
+}
+
+func TestReconcileDeploymentEnvironmentRejectsPartialCanonicalTuple(
+	t *testing.T,
+) {
+	env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{}}
+	prompt := &resolveEnvStubPromptServer{}
+	client := newResolveEnvTestClient(t, env, prompt)
+	provider := &FoundryProvisioningProvider{
+		azdClient:   client,
+		projectPath: t.TempDir(),
+		envName:     "test",
+		subID:       "sub",
+		location:    "eastus2",
+	}
+	raw := []byte(`services:
+  project:
+    host: azure.ai.project
+    deployments:
+      - name: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+        model:
+          name: gpt-5-mini
+          format: OpenAI
+          version: "2025-08-07"
+        sku:
+          name: GlobalStandard
+          capacity: 50
+`)
+
+	err := provider.reconcileDeploymentEnvironment(
+		t.Context(), raw, "project",
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "complete canonical environment tuple")
+	assert.Empty(t, prompt.modelRequests)
+	assert.Empty(t, env.set)
+}
+
 func TestReconcileDeploymentEnvironmentRepromptsForStaleTuple(t *testing.T) {
 	env := &resolveEnvStubEnvServer{
 		envName: "test",
@@ -179,7 +288,8 @@ func TestReconcileDeploymentEnvironmentTreatsNoMatchAsStale(t *testing.T) {
 					codes.FailedPrecondition, "prompt required"),
 			}
 			ai := &resolveEnvStubAiServer{
-				err: aiReasonError(t, codes.NotFound, reason),
+				deployments: []*azdext.AiModelDeployment{validDeployment()},
+				resolveErr:  aiReasonError(t, codes.NotFound, reason),
 			}
 			client := newResolveEnvTestClient(t, env, prompt, ai)
 			provider := &FoundryProvisioningProvider{

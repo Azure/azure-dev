@@ -135,8 +135,36 @@ func (s *resolveEnvStubPromptServer) PromptAiDeployment(
 type resolveEnvStubAiServer struct {
 	azdext.UnimplementedAiModelServiceServer
 	deployments []*azdext.AiModelDeployment
+	models      []*azdext.AiModel
 	err         error
+	resolveErr  error
 	requests    []*azdext.ResolveModelDeploymentsRequest
+}
+
+func (s *resolveEnvStubAiServer) ListModels(
+	_ context.Context,
+	_ *azdext.ListModelsRequest,
+) (*azdext.ListModelsResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.models != nil {
+		return &azdext.ListModelsResponse{Models: s.models}, nil
+	}
+
+	seen := map[string]bool{}
+	models := make([]*azdext.AiModel, 0, len(s.deployments))
+	for _, deployment := range s.deployments {
+		if deployment == nil || seen[deployment.GetModelName()] {
+			continue
+		}
+		seen[deployment.GetModelName()] = true
+		models = append(models, &azdext.AiModel{
+			Name:         deployment.GetModelName(),
+			Capabilities: []string{agentsV2ModelCapability},
+		})
+	}
+	return &azdext.ListModelsResponse{Models: models}, nil
 }
 
 func (s *resolveEnvStubAiServer) ResolveModelDeployments(
@@ -144,6 +172,9 @@ func (s *resolveEnvStubAiServer) ResolveModelDeployments(
 	req *azdext.ResolveModelDeploymentsRequest,
 ) (*azdext.ResolveModelDeploymentsResponse, error) {
 	s.requests = append(s.requests, req)
+	if s.resolveErr != nil {
+		return nil, s.resolveErr
+	}
 	if s.err != nil {
 		return nil, s.err
 	}

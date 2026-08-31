@@ -201,6 +201,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | Variable | Description |
 | --- | --- |
 | `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID used by the `azure.ai.agents` extension. |
+| `AZURE_AI_PROJECT_API_KEY` | A Microsoft Foundry account API key accepted by the project data plane and used by `azure.ai.projects` experiment-tracking commands. When set in the host process, it takes precedence over bearer authentication. Do not persist this value in project files or source control. |
 | `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.agents` extension. Read first from the active azd environment and, if not present, from the host shell environment as an endpoint-resolution fallback. |
 | `AZURE_AI_PROJECT_PRINCIPAL_ID` | The principal ID associated with the Microsoft Foundry project identity. |
 | `AZURE_AI_ACCOUNT_NAME` | The Microsoft Foundry account name associated with the project. |

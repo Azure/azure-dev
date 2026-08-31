@@ -92,16 +92,21 @@ func TestDestroy_PromptDeclineReturnsCancelled(t *testing.T) {
 }
 
 // TestDestroy_PromptRequiredFallsBackToForce verifies that under `--no-prompt`
-// (the host returns a "prompt required" error) Destroy surfaces the actionable
+// (the host returns a structured prompt-required error) Destroy surfaces the actionable
 // --force guidance instead of proceeding, keeping CI/scripts deterministic.
 func TestDestroy_PromptRequiredFallsBackToForce(t *testing.T) {
+	promptRequired, err := status.New(codes.FailedPrecondition, "confirmation is required").WithDetails(
+		&azdext.ActionableErrorDetail{Suggestion: "run interactively to confirm"},
+	)
+	require.NoError(t, err)
+
 	prompt := &destroyConfirmStubPromptServer{
-		confirmErr: status.Error(codes.FailedPrecondition, "prompt required: no terminal"),
+		confirmErr: promptRequired.Err(),
 	}
 	client := newDestroyConfirmTestClient(t, prompt)
 
 	p := &FoundryProvisioningProvider{azdClient: client, rgName: "rg-foundry-test", rgExplicit: true}
-	_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: false}, func(string) {})
+	_, err = p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: false}, func(string) {})
 
 	require.Error(t, err)
 	var local *azdext.LocalError

@@ -126,6 +126,10 @@ func IsPromptRequired(err error) bool {
 		return false
 	}
 	if grpcStatus, ok := status.FromError(err); ok {
+		if grpcStatus.Code() == codes.FailedPrecondition &&
+			azdext.ActionableErrorDetailFromStatus(grpcStatus) != nil {
+			return true
+		}
 		return strings.Contains(
 			strings.ToLower(grpcStatus.Message()),
 			"prompt required",

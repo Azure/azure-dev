@@ -77,8 +77,28 @@
     },
     "kind": {
       "type": "string",
-      "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt-voice' for a declarative (managed) speech-to-speech voice agent.",
+      "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt' for a declarative prompt agent; 'prompt-voice' for a declarative speech-to-speech voice agent.",
       "enum": ["hosted", "prompt", "prompt-voice"]
+    },
+    "language": {
+      "type": "string",
+      "description": "Implementation language for a hosted agent.",
+      "enum": ["python", "csharp", "docker"]
+    },
+    "toolbox": {
+      "type": "object",
+      "description": "Named Foundry toolbox consumed by the agent.",
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "connection": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Sibling azure.ai.connection service used by prompt agents to call the toolbox MCP endpoint."
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
     },
     "modelType": {
       "type": "string",
@@ -94,7 +114,7 @@
     },
     "instructions": {
       "type": "string",
-      "description": "Voice agent (kind: prompt-voice) system prompt for the assistant."
+      "description": "System prompt for prompt and prompt-voice agents."
     },
     "voice": {
       "type": "string",
@@ -235,7 +255,7 @@
       }
     },
     {
-      "$comment": "A prompt-voice agent must declare a speech-to-speech model; the deploy path rejects a voice service whose model.id is missing. Keep editor/schema validation aligned with that runtime requirement.",
+      "$comment": "A prompt-voice agent must declare a speech-to-speech model and cannot use the hosted-agent toolbox reference, which the voice deployment path does not support.",
       "if": {
         "properties": {
           "kind": { "const": "prompt-voice" }
@@ -246,6 +266,9 @@
         "required": ["model"],
         "properties": {
           "model": { "$ref": "#/definitions/VoiceModel" }
+        },
+        "not": {
+          "required": ["toolbox"]
         }
       }
     },

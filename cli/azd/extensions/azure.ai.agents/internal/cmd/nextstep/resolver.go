@@ -231,7 +231,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		// whose azd-injected TOOLBOX_<NAME>_MCP_ENDPOINT variable is
 		// not yet present in the azd environment. The variable is
 		// written by `azd provision` (listen.go::registerToolboxEnvVars)
-		// after the FoundryToolboxClient publishes the toolbox version,
+		// after the azure.ai.toolbox service target publishes the toolbox version,
 		// so the canonical fix is provision — NOT `azd env set`, which
 		// the generic manual-vars sub-branch below would otherwise
 		// suggest. We also surface `azd ai agent doctor` as a follow-up

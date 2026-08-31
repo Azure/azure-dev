@@ -881,6 +881,21 @@ func TestDocSchemaRegistryConnectionID(t *testing.T) {
 	}))
 }
 
+func TestDocSchemaPromptVoiceRejectsToolbox(t *testing.T) {
+	t.Parallel()
+
+	schema := loadDocSchema(t, extensionRoot(t))
+	require.NoError(t, schema.validate(map[string]any{
+		"kind":  "prompt-voice",
+		"model": map[string]any{"id": "gpt-realtime"},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":    "prompt-voice",
+		"model":   map[string]any{"id": "gpt-realtime"},
+		"toolbox": map[string]any{"name": "support-tools"},
+	}))
+}
+
 func TestActiveDocAgentConfig(t *testing.T) {
 	t.Parallel()
 

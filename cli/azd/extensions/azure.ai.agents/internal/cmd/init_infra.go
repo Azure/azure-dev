@@ -478,39 +478,13 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 	}
 
 	var env map[string]string
-	needsEnv, err := infraEjectNeedsEnvironment(projectRoot)
-	if err != nil {
-		return err
-	}
-	if needsEnv && len(clients) > 0 && clients[0] != nil {
+	if len(clients) > 0 && clients[0] != nil {
 		env, err = readInfraEjectEnvironment(ctx, clients[0])
 		if err != nil {
 			return err
 		}
 	}
 	return ejectInfra(projectRoot, provider, env)
-}
-
-func infraEjectNeedsEnvironment(projectRoot string) (bool, error) {
-	rawYAML, err := readProjectAzureYAML(projectRoot)
-	if err != nil {
-		return false, err
-	}
-	serviceName, err := findFoundryServiceForEject(rawYAML)
-	if err != nil {
-		return false, err
-	}
-	// No azd environment is available yet: this call only decides whether one is
-	// needed, so ${VAR} references fall back to the process environment.
-	endpoint, err := synthesis.ProjectEndpoint(rawYAML, serviceName, projectRoot, nil)
-	if err != nil {
-		return false, exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("read endpoint for foundry project service %q: %s", serviceName, err),
-			"check the endpoint field under your azure.ai.project service",
-		)
-	}
-	return endpoint != "", nil
 }
 
 // ejectInfra synthesizes infrastructure templates from azure.yaml. A project
@@ -569,10 +543,15 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		return err
 	}
 
+	var environment map[string]string
+	if len(environments) > 0 {
+		environment = environments[0]
+	}
 	synthesisInput := synthesis.Input{
 		RawAzureYAML:  rawYAML,
 		ServiceName:   svcName,
 		AcceptedHosts: project.FoundryProvisioningServiceHosts,
+		Env:           environment,
 		ProjectRoot:   projectRoot,
 		// Eject writes a static infra/ tree. Keep ${VAR} references verbatim so
 		// the ejected main.parameters.json stays environment-portable; the
@@ -596,10 +575,7 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 	}
 	acrMode := infraEjectAcrNone
 	if existingProject {
-		var values map[string]string
-		if len(environments) > 0 {
-			values = environments[0]
-		}
+		values := environment
 		acrMode, err = resolveInfraEjectAcrMode(res.Parameters, values)
 		if err != nil {
 			return err

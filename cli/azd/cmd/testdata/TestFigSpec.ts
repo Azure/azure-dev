@@ -896,6 +896,7 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'infra',
+											isOptional: true,
 										},
 									],
 								},
@@ -942,6 +943,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'protocol',
+										},
+									],
+								},
+								{
+									name: ['--registry-connection'],
+									description: 'Name or ID of an existing Foundry project connection used to pull a private pre-built container image. Requires a pre-built image and is incompatible with code deploy.',
+									args: [
+										{
+											name: 'registry-connection',
 										},
 									],
 								},
@@ -5975,7 +5985,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--version', '-v'],
-							description: 'The version of the extension to install',
+							description: 'The version of the extension to install. Cannot be used with an extension bundle',
 							args: [
 								{
 									name: 'version',

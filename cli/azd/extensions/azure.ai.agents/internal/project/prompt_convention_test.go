@@ -123,6 +123,18 @@ func TestResolvePromptAgentGraph_ValidatesModelAndInstructions(t *testing.T) {
 // caught. Memory is covered separately because it needs a live endpoint.
 func TestResolvePromptAgentGraph_HarnessFeatureGate(t *testing.T) {
 	p := &AgentServiceTargetProvider{}
+	validateGraph := func(agent *agent_yaml.PromptAgent) error {
+		graph, err := newPromptGraph(p.servicePath, agent, nil, nil, nil)
+		if err != nil {
+			return err
+		}
+		for _, node := range graph.nodes {
+			if err := node.Validate(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 
 	newAgent := func(harness string, tools []any) *agent_yaml.PromptAgent {
 		agent := &agent_yaml.PromptAgent{
@@ -140,19 +152,18 @@ func TestResolvePromptAgentGraph_HarnessFeatureGate(t *testing.T) {
 
 	for _, harness := range []string{agent_api.ManagedAgentHarnessGitHubCopilot, ""} {
 		agent := newAgent(harness, nil)
-		if _, err := p.resolvePromptAgentGraph(t.Context(), agent, nil, nil, nil); err != nil {
+		if err := validateGraph(agent); err != nil {
 			t.Errorf("harness %q should accept guardrails: %v", harness, err)
 		}
 	}
 
 	grounding := []any{map[string]any{"type": "azure_ai_search"}}
 
-	if _, err := p.resolvePromptAgentGraph(t.Context(), newAgent("", grounding), nil, nil, nil); err != nil {
+	if err := validateGraph(newAgent("", grounding)); err != nil {
 		t.Errorf("a plain prompt agent should accept knowledge: %v", err)
 	}
 
-	_, err := p.resolvePromptAgentGraph(
-		t.Context(), newAgent(agent_api.ManagedAgentHarnessGitHubCopilot, grounding), nil, nil, nil)
+	err := validateGraph(newAgent(agent_api.ManagedAgentHarnessGitHubCopilot, grounding))
 	if err == nil {
 		t.Fatal("a harnessed agent declaring knowledge should be rejected")
 	}

@@ -115,7 +115,7 @@ func TestDetectFromEnvVars(t *testing.T) {
 		},
 		{
 			name:          "Claude Code via CLAUDE_CODE_ENTRYPOINT",
-			envVars:       map[string]string{"CLAUDE_CODE_ENTRYPOINT": "/usr/bin/claude"},
+			envVars:       map[string]string{"CLAUDE_CODE_ENTRYPOINT": "cli"},
 			expectedAgent: AgentTypeClaudeCode,
 			detected:      true,
 		},
@@ -144,6 +144,36 @@ func TestDetectFromEnvVars(t *testing.T) {
 			detected:      false,
 		},
 		{
+			name: "Codex takes precedence over inherited Claude marker",
+			envVars: map[string]string{
+				"CODEX_THREAD_ID":        "thread-id",
+				"CLAUDE_CODE_ENTRYPOINT": "cli",
+			},
+			expectedAgent: AgentTypeCodex,
+			detected:      true,
+		},
+		{
+			name: "Codex takes precedence over Cursor",
+			envVars: map[string]string{
+				"CODEX_THREAD_ID": "thread-id",
+				"CURSOR_AGENT":    "1",
+			},
+			expectedAgent: AgentTypeCodex,
+			detected:      true,
+		},
+		{
+			name:          "Empty Codex thread ID is ignored",
+			envVars:       map[string]string{"CODEX_THREAD_ID": ""},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name:          "Empty Codex session ID is ignored",
+			envVars:       map[string]string{"CODEX_SESSION_ID": ""},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
 			name:          "Cursor via CURSOR_AGENT",
 			envVars:       map[string]string{"CURSOR_AGENT": "1"},
 			expectedAgent: AgentTypeCursor,
@@ -158,6 +188,21 @@ func TestDetectFromEnvVars(t *testing.T) {
 		{
 			name:          "CURSOR_AGENT requires exact value",
 			envVars:       map[string]string{"CURSOR_AGENT": "true"},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name: "Cursor takes precedence over inherited Claude marker",
+			envVars: map[string]string{
+				"CURSOR_AGENT":           "1",
+				"CLAUDE_CODE_ENTRYPOINT": "cli",
+			},
+			expectedAgent: AgentTypeCursor,
+			detected:      true,
+		},
+		{
+			name:          "Empty Cursor conversation ID is ignored",
+			envVars:       map[string]string{"CURSOR_CONVERSATION_ID": ""},
 			expectedAgent: AgentTypeUnknown,
 			detected:      false,
 		},
@@ -321,6 +366,13 @@ func TestMatchProcessToAgent(t *testing.T) {
 			expectedAgent: AgentTypeClaudeCode,
 		},
 		{
+			name: "Codex process name",
+			processInfo: parentProcessInfo{
+				Name: "codex",
+			},
+			expectedAgent: AgentTypeCodex,
+		},
+		{
 			name: "GitHub Copilot CLI process name",
 			processInfo: parentProcessInfo{
 				Name: "gh-copilot",
@@ -372,6 +424,14 @@ func TestMatchProcessToAgent(t *testing.T) {
 			expectedAgent: AgentTypeUnknown,
 		},
 		{
+			name: "Cursor desktop app is not Cursor agent",
+			processInfo: parentProcessInfo{
+				Name:       "Cursor.exe",
+				Executable: `C:\Users\example\AppData\Local\Programs\Cursor\Cursor.exe`,
+			},
+			expectedAgent: AgentTypeUnknown,
+		},
+		{
 			name: "Copilot name in host path does not match",
 			processInfo: parentProcessInfo{
 				Name:       "pwsh.exe",
@@ -383,6 +443,13 @@ func TestMatchProcessToAgent(t *testing.T) {
 			name: "Copilot name substring does not match",
 			processInfo: parentProcessInfo{
 				Name: "my-copilot-wrapper",
+			},
+			expectedAgent: AgentTypeUnknown,
+		},
+		{
+			name: "Codex name substring does not match",
+			processInfo: parentProcessInfo{
+				Name: "codex-wrapper",
 			},
 			expectedAgent: AgentTypeUnknown,
 		},
@@ -435,6 +502,7 @@ func TestMatchProcessToAgent_ExactExecutableNames(t *testing.T) {
 	}{
 		{"claude", AgentTypeClaudeCode},
 		{"claude-code", AgentTypeClaudeCode},
+		{"codex", AgentTypeCodex},
 		{"copilot", AgentTypeGitHubCopilotCLI},
 		{"copilot-cli", AgentTypeGitHubCopilotCLI},
 		{"gh-copilot", AgentTypeGitHubCopilotCLI},

@@ -37,7 +37,7 @@ func TestProvisioningOwnershipMetadata(t *testing.T) {
 	assert.Contains(t, projects.Capabilities, "lifecycle-events")
 	assert.Contains(t, projects.Capabilities, "provisioning-provider")
 	assert.Contains(t, projects.Capabilities, "validation-provider")
-	assert.Equal(t, ">=1.31.1", projects.RequiredAzdVersion)
+	assert.Equal(t, ">=1.32.0", projects.RequiredAzdVersion)
 	assert.True(t, manifestHasProvider(
 		projects,
 		"microsoft.foundry",

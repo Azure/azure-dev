@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -341,6 +342,17 @@ func TestValidateFoundryDependenciesSplitToolboxReference(t *testing.T) {
 	require.True(t, ok)
 	require.NotContains(t, localErr.Message, "legacy bundled toolbox")
 	require.Contains(t, localErr.Suggestion, `azd deploy "tools"`)
+}
+
+func TestAddAgentToolboxDependency(t *testing.T) {
+	t.Parallel()
+
+	config := &ServiceTargetAgentConfig{}
+	reference := &agent_yaml.ToolboxReference{Name: " support-tools ", Version: "2"}
+	addAgentToolboxDependency(config, reference)
+	addAgentToolboxDependency(config, reference)
+
+	require.Equal(t, []Toolbox{{Name: "support-tools"}}, config.Toolboxes)
 }
 
 func TestValidateFoundryDependenciesUnwiredSplitToolbox(t *testing.T) {

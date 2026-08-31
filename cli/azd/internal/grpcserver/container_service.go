@@ -5,11 +5,14 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -25,6 +28,33 @@ type containerService struct {
 	lazyServiceManager  *lazy.Lazy[project.ServiceManager]
 	lazyProject         *lazy.Lazy[*project.ProjectConfig]
 	lazyEnvironment     *lazy.Lazy[*environment.Environment]
+}
+
+func mapContainerPublishError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if _, ok := errors.AsType[*azcore.ResponseError](err); ok ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	remoteBuildErr, ok := errors.AsType[*containerregistry.RemoteBuildRunError](err)
+	if !ok {
+		return err
+	}
+
+	diagnosticCode := remoteBuildErr.DiagnosticCode()
+	if diagnosticCode == "" {
+		return err
+	}
+
+	return &azdext.LocalError{
+		Message:  err.Error(),
+		Code:     "container_publish_" + diagnosticCode,
+		Category: azdext.LocalErrorCategoryInternal,
+	}
 }
 
 func NewContainerService(
@@ -208,7 +238,7 @@ func (c *containerService) Publish(
 
 	publishResult, err := containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, env, progress, nil)
 	if err != nil {
-		return nil, err
+		return nil, mapContainerPublishError(err)
 	}
 
 	// Use mapper to convert ServicePublishResult to proto

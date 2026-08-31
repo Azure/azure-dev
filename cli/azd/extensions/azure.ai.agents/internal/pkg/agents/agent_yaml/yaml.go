@@ -457,6 +457,8 @@ type Policy struct {
 //     Dockerfile) is used automatically.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
+	Language             string                  `json:"language,omitempty" yaml:"language,omitempty"`
+	Toolbox              *ToolboxReference       `json:"toolbox,omitempty" yaml:"toolbox,omitempty"`
 	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`
 	RegistryConnectionID string                  `json:"registryConnectionId,omitempty" yaml:"registryConnectionId,omitempty"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
@@ -804,8 +806,7 @@ type PromptMemoryOptions struct {
 // when they want a shared or per-tenant namespace instead.
 const DefaultMemoryScope = "{{$userId}}"
 
-// ToolboxReference points at an existing Foundry toolbox version so a prompt
-// agent can consume it without the deploy engine registering local skills.
+// ToolboxReference identifies the Foundry toolbox consumed by an agent.
 type ToolboxReference struct {
 	// Name is the toolbox name.
 	Name string `json:"name" yaml:"name"`
@@ -815,8 +816,8 @@ type ToolboxReference struct {
 	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 
 	// Connection names the sibling azure.ai.connection service that authorizes
-	// the agent to call this toolbox's MCP endpoint.
-	Connection string `json:"connection" yaml:"connection"`
+	// a prompt agent to call this toolbox's MCP endpoint.
+	Connection string `json:"connection,omitempty" yaml:"connection,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

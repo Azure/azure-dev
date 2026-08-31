@@ -78,6 +78,21 @@ name: voice-agent
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoice_RejectsToolbox(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+toolbox:
+  name: support-tools
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "toolbox is not supported for a prompt-voice agent") {
+		t.Fatalf("expected unsupported toolbox error, got: %v", err)
+	}
+}
+
 func TestValidateAgentDefinition_PromptVoice_BlankModelID(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice

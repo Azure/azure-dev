@@ -2094,6 +2094,48 @@ func TestEnsureActivityEndpointAuthSchemeReplacesLegacyBotService(t *testing.T) 
 	}
 }
 
+func TestActivityProfileFromCreateRequest(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		request *agent_api.CreateAgentRequest
+		want    ActivityProfile
+	}{
+		{
+			name: "digital worker",
+			request: &agent_api.CreateAgentRequest{
+				CreateAgentVersionRequest: agent_api.CreateAgentVersionRequest{
+					DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+				},
+			},
+			want: ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
+		},
+		{
+			name: "simple activity",
+			request: &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+				},
+			},
+			want: ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple},
+		},
+		{
+			name: "non activity",
+			request: &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
+				},
+			},
+			want: ActivityProfile{},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, activityProfileFromCreateRequest(test.request))
+		})
+	}
+}
+
 func TestValidateRegistryConnectionDefinition(t *testing.T) {
 	t.Parallel()
 

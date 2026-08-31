@@ -5,6 +5,7 @@ package project
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -65,6 +66,60 @@ func ResolveDeployedActivityProfile(
 			"deployed agent has unsupported digital_worker_type %q", digitalWorkerType,
 		)
 	}
+}
+
+// EnsureActivityEndpointAuthSchemeForProfile aligns an Activity endpoint's BotService
+// authorization scheme with the resolved Activity use case.
+func EnsureActivityEndpointAuthSchemeForProfile(
+	endpoint *agent_api.AgentEndpoint,
+	profile ActivityProfile,
+) {
+	if endpoint == nil || !profile.IsActivity {
+		return
+	}
+
+	if profile.UseCase == ActivityUseCaseDigitalWorker {
+		EnsureActivityEndpointAuthScheme(endpoint, agent_api.AgentEndpointAuthSchemeBotServiceTenant)
+		return
+	}
+
+	EnsureActivityEndpointAuthScheme(endpoint, agent_api.AgentEndpointAuthSchemeBotServiceRbac)
+}
+
+// EnsureActivityEndpointAuthScheme ensures the Activity protocol is advertised
+// and keeps exactly one BotService-family authorization scheme on the endpoint.
+func EnsureActivityEndpointAuthScheme(
+	endpoint *agent_api.AgentEndpoint,
+	schemeType agent_api.AgentEndpointAuthorizationSchemeType,
+) {
+	if !slices.Contains(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity) {
+		endpoint.Protocols = append(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
+	}
+
+	schemes := endpoint.AuthorizationSchemes[:0]
+	hasTarget := false
+	for _, scheme := range endpoint.AuthorizationSchemes {
+		if scheme.Type == agent_api.AgentEndpointAuthSchemeBotService ||
+			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac ||
+			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceTenant {
+			if scheme.Type == schemeType && !hasTarget {
+				schemes = append(schemes, scheme)
+				hasTarget = true
+			}
+			continue
+		}
+
+		if scheme.Type == schemeType {
+			hasTarget = true
+		}
+		schemes = append(schemes, scheme)
+	}
+
+	if !hasTarget {
+		schemes = append(schemes, agent_api.AgentEndpointAuthorizationScheme{Type: schemeType})
+	}
+
+	endpoint.AuthorizationSchemes = schemes
 }
 
 // IsActivityProtocol reports whether a hosted agent definition opts into the

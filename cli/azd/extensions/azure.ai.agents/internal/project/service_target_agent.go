@@ -2228,55 +2228,10 @@ func ensureActivityEndpointAuthSchemeForProfile(
 	request *agent_api.CreateAgentRequest,
 	profile ActivityProfile,
 ) {
-	if !profile.IsActivity {
-		return
-	}
-	if profile.UseCase == ActivityUseCaseDigitalWorker {
-		ensureActivityEndpointAuthScheme(request, agent_api.AgentEndpointAuthSchemeBotServiceTenant)
-		return
-	}
-	ensureActivityEndpointAuthScheme(request, agent_api.AgentEndpointAuthSchemeBotServiceRbac)
-}
-
-func ensureActivityEndpointAuthScheme(
-	request *agent_api.CreateAgentRequest,
-	schemeType agent_api.AgentEndpointAuthorizationSchemeType,
-) {
 	if request.AgentEndpoint == nil {
 		request.AgentEndpoint = &agent_api.AgentEndpoint{}
 	}
-
-	hasActivity := slices.Contains(request.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
-	if !hasActivity {
-		request.AgentEndpoint.Protocols = append(
-			request.AgentEndpoint.Protocols,
-			agent_api.AgentEndpointProtocolActivity,
-		)
-	}
-
-	schemes := request.AgentEndpoint.AuthorizationSchemes[:0]
-	hasTarget := false
-	for _, scheme := range request.AgentEndpoint.AuthorizationSchemes {
-		if scheme.Type == agent_api.AgentEndpointAuthSchemeBotService ||
-			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac ||
-			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceTenant {
-			if scheme.Type == schemeType && !hasTarget {
-				schemes = append(schemes, scheme)
-				hasTarget = true
-			}
-			continue
-		}
-		if scheme.Type == schemeType {
-			hasTarget = true
-		}
-		schemes = append(schemes, scheme)
-	}
-	if !hasTarget {
-		schemes = append(schemes, agent_api.AgentEndpointAuthorizationScheme{
-			Type: schemeType,
-		})
-	}
-	request.AgentEndpoint.AuthorizationSchemes = schemes
+	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, profile)
 }
 
 // deployResult holds the intermediate results from a deploy method (code or container)
@@ -3518,7 +3473,18 @@ func (p *AgentServiceTargetProvider) createAgent(
 		p.credential,
 	)
 
-	writeExistingAgentVersionWarningIfPresent(ctx, agentClient, request.Name)
+	updatingExisting, err := reconcileCreateRequestWithDeployedDigitalWorkerType(
+		ctx,
+		agentClient,
+		request,
+		agent_api.AgentEndpointAPIVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if updatingExisting {
+		writeExistingAgentVersionWarning(request.Name)
+	}
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{
@@ -3539,6 +3505,47 @@ func (p *AgentServiceTargetProvider) createAgent(
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
 
 	return agentVersionResponse, nil
+}
+
+func reconcileCreateRequestWithDeployedDigitalWorkerType(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	request *agent_api.CreateAgentRequest,
+	apiVersion string,
+) (bool, error) {
+	existingAgent, getErr := agentClient.GetAgentWithDigitalWorkerType(ctx, request.Name, apiVersion)
+	if getErr != nil {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
+			respErr.StatusCode != http.StatusNotFound {
+			return false, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
+		}
+		return false, nil
+	}
+
+	if _, err := ResolveDeployedActivityProfile(
+		activityProfileFromCreateRequest(request),
+		existingAgent.DigitalWorkerType,
+	); err != nil {
+		return true, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			err.Error(),
+			"delete and recreate the agent so its immutable digital_worker_type matches activity.useCase",
+		)
+	}
+
+	request.DigitalWorkerType = ""
+	return true, nil
+}
+
+func activityProfileFromCreateRequest(request *agent_api.CreateAgentRequest) ActivityProfile {
+	if request.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
+	}
+	if request.AgentEndpoint != nil &&
+		slices.Contains(request.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity) {
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
+	}
+	return ActivityProfile{}
 }
 
 // displayAgentInfo displays information about the agent being deployed

@@ -23,7 +23,7 @@ func TestEnsureEndpointAuthSchemeForProfile_DigitalWorker(t *testing.T) {
 		},
 	}
 
-	ensureEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{
+	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{
 		IsActivity: true,
 		UseCase:    project.ActivityUseCaseDigitalWorker,
 	})
@@ -44,7 +44,7 @@ func TestEnsureEndpointAuthSchemeForProfile_Simple(t *testing.T) {
 		},
 	}
 
-	ensureEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{
+	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{
 		IsActivity: true,
 		UseCase:    project.ActivityUseCaseSimple,
 	})
@@ -64,8 +64,12 @@ func TestEnsureEndpointAuthSchemeForProfile_NonActivityNoop(t *testing.T) {
 		},
 	}
 
-	ensureEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{})
+	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{})
 
 	assert.Equal(t, []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses}, endpoint.Protocols)
-	assert.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{{Type: agent_api.AgentEndpointAuthSchemeEntra}}, endpoint.AuthorizationSchemes)
+	assert.Equal(
+		t,
+		[]agent_api.AgentEndpointAuthorizationScheme{{Type: agent_api.AgentEndpointAuthSchemeEntra}},
+		endpoint.AuthorizationSchemes,
+	)
 }

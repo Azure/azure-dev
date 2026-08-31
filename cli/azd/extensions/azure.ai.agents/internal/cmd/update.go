@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"slices"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -278,56 +277,6 @@ func normalizeEndpointAuthSchemesForDeployedProfile(
 		return fmt.Errorf("failed to reconcile activity.useCase with deployed digital_worker_type: %w", err)
 	}
 
-	ensureEndpointAuthSchemeForProfile(endpoint, resolvedProfile)
+	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, resolvedProfile)
 	return nil
-}
-
-func ensureEndpointAuthSchemeForProfile(
-	endpoint *agent_api.AgentEndpoint,
-	profile project.ActivityProfile,
-) {
-	if endpoint == nil || !profile.IsActivity {
-		return
-	}
-
-	if profile.UseCase == project.ActivityUseCaseDigitalWorker {
-		ensureEndpointAuthScheme(endpoint, agent_api.AgentEndpointAuthSchemeBotServiceTenant)
-		return
-	}
-
-	ensureEndpointAuthScheme(endpoint, agent_api.AgentEndpointAuthSchemeBotServiceRbac)
-}
-
-func ensureEndpointAuthScheme(
-	endpoint *agent_api.AgentEndpoint,
-	schemeType agent_api.AgentEndpointAuthorizationSchemeType,
-) {
-	if !slices.Contains(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity) {
-		endpoint.Protocols = append(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
-	}
-
-	schemes := endpoint.AuthorizationSchemes[:0]
-	hasTarget := false
-	for _, scheme := range endpoint.AuthorizationSchemes {
-		if scheme.Type == agent_api.AgentEndpointAuthSchemeBotService ||
-			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac ||
-			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceTenant {
-			if scheme.Type == schemeType && !hasTarget {
-				schemes = append(schemes, scheme)
-				hasTarget = true
-			}
-			continue
-		}
-
-		if scheme.Type == schemeType {
-			hasTarget = true
-		}
-		schemes = append(schemes, scheme)
-	}
-
-	if !hasTarget {
-		schemes = append(schemes, agent_api.AgentEndpointAuthorizationScheme{Type: schemeType})
-	}
-
-	endpoint.AuthorizationSchemes = schemes
 }

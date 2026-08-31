@@ -45,6 +45,20 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
 
+### Lifecycle follow-up messages
+
+A project lifecycle handler can set `ProjectEventArgs.FollowUp` after a
+successful `post*` event. The host carries this opaque text back through the
+existing handler status message and appends it to the parent command's
+human-readable completion message. The host combines contributions from
+multiple extensions deterministically and does not collect `pre*` or failed
+handler messages.
+
+Follow-up text is not included in `--output json` results. Extensions should
+leave the field empty when they have no command-level guidance to add. Older
+hosts ignore this optional success text, so handlers remain backward
+compatible.
+
 ## Capabilities
 
 Extensions declare their capabilities in `extension.yaml`:

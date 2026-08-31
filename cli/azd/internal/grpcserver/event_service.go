@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -141,6 +143,7 @@ func (s *eventService) createProjectEventHandler(
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
 ) ext.EventHandlerFn[project.ProjectLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
+		var handlerMessage string
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
 			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
@@ -197,9 +200,19 @@ func (s *eventService) createProjectEventHandler(
 					)
 				}
 
+				if statusMsg.ProjectHandlerStatus.Status == "completed" {
+					handlerMessage = statusMsg.ProjectHandlerStatus.Message
+				}
+
 				return nil
 			})
 		}()
+
+		if err == nil && strings.HasPrefix(eventName, "post") {
+			if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
+				collector.Add(extension.Id, handlerMessage)
+			}
+		}
 
 		return extensions.WrapInvocationError(err, extension.Id, extension.Version, eventName)
 	}

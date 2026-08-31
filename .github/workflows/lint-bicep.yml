@@ -7,10 +7,6 @@ on:
       - eng/scripts/Test-BicepLint.ps1
       - .github/workflows/lint-bicep.yml
     
-
-permissions:
-  contents: read
-
 jobs:
   bicep-lint:
     runs-on: ubuntu-latest

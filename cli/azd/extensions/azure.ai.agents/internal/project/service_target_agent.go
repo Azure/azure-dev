@@ -1568,12 +1568,17 @@ func (p *AgentServiceTargetProvider) Deploy(
 	result.agentVersion = deployedVersion
 	activityProfile, err = ResolveDeployedActivityProfile(activityProfile, deployedVersion.DigitalWorkerType)
 	if err != nil {
+		suggestion := "redeploy the agent so its service-side digital_worker_type matches activity.useCase"
+		if agentDef.CodeConfiguration != nil {
+			suggestion = "delete and recreate the agent so its immutable digital_worker_type matches activity.useCase"
+		}
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			err.Error(),
-			"redeploy the agent so its service-side digital_worker_type matches activity.useCase",
+			suggestion,
 		)
 	}
+	ensureActivityEndpointAuthSchemeForProfile(result.request, activityProfile)
 
 	// Patch agent-level endpoint/card fields
 	if result.request.AgentEndpoint != nil || result.request.AgentCard != nil {
@@ -2193,10 +2198,16 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		foundryAgentConfig.Activity != nil &&
 		foundryAgentConfig.Activity.UseCase == ActivityUseCaseDigitalWorker {
 		request.DigitalWorkerType = agent_api.DigitalWorkerTypeM365
-		ensureActivityEndpointAuthScheme(request, agent_api.AgentEndpointAuthSchemeBotServiceTenant)
-	} else if IsActivityProtocol(agentDef) {
-		ensureActivityEndpointAuthScheme(request, agent_api.AgentEndpointAuthSchemeBotServiceRbac)
 	}
+	activityProfile, err := ResolveActivityProfileWithSettings(agentDef, foundryAgentConfig.Activity)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentRequest,
+			fmt.Sprintf("failed to resolve Activity configuration: %s", err),
+			"check the activity configuration in azure.yaml",
+		)
+	}
+	ensureActivityEndpointAuthSchemeForProfile(request, activityProfile)
 
 	// Default to "responses" protocol when none specified in agent.yaml.
 	protocols := agentDef.Protocols
@@ -2211,6 +2222,20 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		request:         request,
 		protocols:       protocols,
 	}, nil
+}
+
+func ensureActivityEndpointAuthSchemeForProfile(
+	request *agent_api.CreateAgentRequest,
+	profile ActivityProfile,
+) {
+	if !profile.IsActivity {
+		return
+	}
+	if profile.UseCase == ActivityUseCaseDigitalWorker {
+		ensureActivityEndpointAuthScheme(request, agent_api.AgentEndpointAuthSchemeBotServiceTenant)
+		return
+	}
+	ensureActivityEndpointAuthScheme(request, agent_api.AgentEndpointAuthSchemeBotServiceRbac)
 }
 
 func ensureActivityEndpointAuthScheme(

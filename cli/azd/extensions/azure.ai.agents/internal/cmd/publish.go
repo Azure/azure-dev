@@ -200,7 +200,8 @@ func resolveDigitalWorkerPublishInputs(
 			return nil, nil, exterrors.Validation(
 				exterrors.CodeInvalidServiceConfig,
 				"Digital Worker permission scopes and access boundaries cannot be used for a simple Activity agent",
-				"remove --optional-permission-scope and --access-boundary, or publish a Digital Worker",
+				"remove --optional-permission-scope, --access-boundary, and --clear-access-boundaries, "+
+					"or publish a Digital Worker",
 			)
 		}
 		return nil, nil, nil

@@ -2028,6 +2028,30 @@ func TestPrepareDeployUsesRbacForSimpleActivityEndpoint(t *testing.T) {
 	)
 }
 
+func TestEnsureActivityEndpointAuthSchemeForPromotedDigitalWorker(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+			AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeEntra},
+				{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+			},
+		},
+	}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+		{Type: agent_api.AgentEndpointAuthSchemeEntra},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
+	}, request.AgentEndpoint.AuthorizationSchemes)
+}
+
 func TestValidateRegistryConnectionDefinition(t *testing.T) {
 	t.Parallel()
 

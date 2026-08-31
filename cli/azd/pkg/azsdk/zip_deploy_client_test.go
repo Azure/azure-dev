@@ -541,6 +541,7 @@ func TestDeployTrackStatus_StatusChangeResetsTimeout(t *testing.T) {
 	registerTrackedDeployMocks(mockContext)
 
 	pollCount := 0
+	polledAfterStatusChange := false
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet &&
 			strings.Contains(request.URL.Path, "/deploymentStatus/")
@@ -548,6 +549,13 @@ func TestDeployTrackStatus_StatusChangeResetsTimeout(t *testing.T) {
 		pollCount++
 		status := armappservice.DeploymentBuildStatusBuildInProgress
 		if pollCount > 1 {
+			if pollCount == 2 {
+				// Leave less than one poll interval on the original deadline. A reset
+				// is required for the next request to occur.
+				time.Sleep(250 * time.Millisecond)
+			} else {
+				polledAfterStatusChange = true
+			}
 			status = armappservice.DeploymentBuildStatusRuntimeStarting
 		}
 
@@ -577,15 +585,15 @@ func TestDeployTrackStatus_StatusChangeResetsTimeout(t *testing.T) {
 		"SUBSCRIPTION_ID",
 		"RESOURCE_GROUP_ID",
 		"APP_NAME",
-		40*time.Millisecond,
-		20*time.Millisecond,
+		750*time.Millisecond,
+		500*time.Millisecond,
 		func(string) {},
 	)
 
 	timeoutErr, ok := errors.AsType[*DeploymentStatusTimeoutError](err)
 	require.True(t, ok)
-	require.Equal(t, 40*time.Millisecond, timeoutErr.Timeout)
-	require.GreaterOrEqual(t, pollCount, 2)
+	require.Equal(t, 750*time.Millisecond, timeoutErr.Timeout)
+	require.True(t, polledAfterStatusChange, "expected another status poll after the timeout reset")
 }
 
 func registerTrackedDeployMocks(mockContext *mocks.MockContext) {

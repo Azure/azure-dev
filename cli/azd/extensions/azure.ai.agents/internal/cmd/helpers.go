@@ -1075,22 +1075,29 @@ func toServiceKey(serviceName string) string {
 	return strings.ToUpper(key)
 }
 
-func missingDeployedAgentStateError(serviceName, state string) error {
-	return missingDeployedAgentStateErrorWithDescription(serviceName, state, "")
+func missingDeployedAgentStateError(serviceName, state, environmentName string) error {
+	return missingDeployedAgentStateErrorWithDescription(serviceName, state, environmentName, "")
 }
 
-func missingCodeDownloadAgentStateError(serviceName string) error {
+func missingCodeDownloadAgentStateError(serviceName, environmentName string) error {
 	return missingDeployedAgentStateErrorWithDescription(
 		serviceName,
 		"name",
+		environmentName,
 		" The positional argument for code download is the azure.yaml service name, not a Foundry agent name.",
 	)
 }
 
-func missingDeployedAgentStateErrorWithDescription(serviceName, state, descriptionSuffix string) error {
+func missingDeployedAgentStateErrorWithDescription(
+	serviceName, state, environmentName, descriptionSuffix string,
+) error {
 	serviceKey := toServiceKey(serviceName)
 	nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	deployCommand := "azd deploy"
+	if environmentName = strings.TrimSpace(environmentName); environmentName != "" {
+		deployCommand = fmt.Sprintf("azd --environment %q deploy", environmentName)
+	}
 
 	inputName := "deployed agent name"
 	expectedKey := nameKey
@@ -1114,7 +1121,7 @@ func missingDeployedAgentStateErrorWithDescription(serviceName, state, descripti
 				{
 					Kind:    exterrors.InputSourceEnvironment,
 					Name:    expectedKey,
-					Example: "azd deploy",
+					Example: deployCommand,
 				},
 			},
 		},

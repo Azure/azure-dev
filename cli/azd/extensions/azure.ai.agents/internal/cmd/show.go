@@ -83,10 +83,10 @@ configuration and the selected azd environment. Optionally specify the service n
 			}
 
 			if info.AgentName == "" {
-				return missingDeployedAgentStateError(info.ServiceName, "name")
+				return missingDeployedAgentStateError(info.ServiceName, "name", extCtx.Environment)
 			}
 			if info.Version == "" {
-				return missingDeployedAgentStateError(info.ServiceName, "version")
+				return missingDeployedAgentStateError(info.ServiceName, "version", extCtx.Environment)
 			}
 
 			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)

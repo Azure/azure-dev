@@ -328,7 +328,7 @@ func TestMissingDeployedAgentStateError(t *testing.T) {
 		t.Run(tt.state, func(t *testing.T) {
 			t.Parallel()
 
-			err := missingDeployedAgentStateError("my-agent", tt.state)
+			err := missingDeployedAgentStateError("my-agent", tt.state, "")
 			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			assert.Contains(t, local.Suggestion, tt.inputName)
@@ -340,13 +340,18 @@ func TestMissingDeployedAgentStateError(t *testing.T) {
 		})
 	}
 
-	codeDownloadErr := missingCodeDownloadAgentStateError("my-agent")
+	selectedEnvErr := missingDeployedAgentStateError("my-agent", "name", " dev ")
+	selectedEnvInput, ok := errors.AsType[*azdext.LocalError](selectedEnvErr)
+	require.True(t, ok)
+	assert.Contains(t, selectedEnvInput.Suggestion, `azd --environment "dev" deploy`)
+
+	codeDownloadErr := missingCodeDownloadAgentStateError("my-agent", "")
 	codeDownloadInput, ok := errors.AsType[*azdext.LocalError](codeDownloadErr)
 	require.True(t, ok)
 	assert.Contains(t, codeDownloadInput.Suggestion,
 		"positional argument for code download is the azure.yaml service name, not a Foundry agent name")
 
-	metacharErr := missingDeployedAgentStateError("api;echo unsafe", "name")
+	metacharErr := missingDeployedAgentStateError("api;echo unsafe", "name", "")
 	metacharLocal, ok := errors.AsType[*azdext.LocalError](metacharErr)
 	require.True(t, ok)
 	assert.Contains(t, metacharLocal.Suggestion, "azd deploy")

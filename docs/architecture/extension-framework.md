@@ -54,6 +54,11 @@ human-readable completion message. The host combines contributions from
 multiple extensions deterministically and does not collect `pre*` or failed
 handler messages.
 
+Within one top-level command, the latest completed project `post*` result from
+an extension replaces its earlier result. Setting `FollowUp` to an empty value
+removes that extension's earlier contribution without affecting other
+extensions or the core command's follow-up text.
+
 Follow-up text is not included in `--output json` results. Extensions should
 leave the field empty when they have no command-level guidance to add. Older
 hosts ignore this optional success text, so handlers remain backward

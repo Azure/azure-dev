@@ -109,6 +109,56 @@ func TestUxMiddleware_MergesCollectedFollowUp(t *testing.T) {
 	require.Equal(t, "existing\n\na\n\nz", result.Message.FollowUp)
 }
 
+func TestUxMiddleware_AzdUpUsesLatestExtensionFollowUp(t *testing.T) {
+	t.Parallel()
+	mockContext := mocks.NewMockContext(t.Context())
+	ux := NewUxMiddleware(
+		&Options{},
+		mockContext.Console,
+		&alpha.FeatureManager{},
+		&output.NoneFormatter{},
+	)
+
+	result, err := ux.Run(*mockContext.Context, func(
+		ctx context.Context,
+	) (*actions.ActionResult, error) {
+		collector := commandresult.FollowUpCollectorFromContext(ctx)
+		collector.Add("azure.ai.agents", "Next:\n  azd deploy")
+		collector.Add("azure.ai.agents", "Next:\n  azd ai agent show")
+		return &actions.ActionResult{}, nil
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "Next:\n  azd ai agent show", result.Message.FollowUp)
+}
+
+func TestUxMiddleware_AzdUpClearsStaleExtensionFollowUp(t *testing.T) {
+	t.Parallel()
+	mockContext := mocks.NewMockContext(t.Context())
+	ux := NewUxMiddleware(
+		&Options{},
+		mockContext.Console,
+		&alpha.FeatureManager{},
+		&output.NoneFormatter{},
+	)
+	actionResult := &actions.ActionResult{
+		Message: &actions.ResultMessage{FollowUp: "core guidance"},
+	}
+
+	result, err := ux.Run(*mockContext.Context, func(
+		ctx context.Context,
+	) (*actions.ActionResult, error) {
+		collector := commandresult.FollowUpCollectorFromContext(ctx)
+		collector.Add("azure.ai.agents", "Next:\n  azd deploy")
+		collector.Add("other.extension", "other guidance")
+		collector.Add("azure.ai.agents", "")
+		return actionResult, nil
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "core guidance\n\nother guidance", result.Message.FollowUp)
+}
+
 func TestUxMiddleware_CreatesResultForCollectedFollowUp(t *testing.T) {
 	t.Parallel()
 	mockContext := mocks.NewMockContext(t.Context())

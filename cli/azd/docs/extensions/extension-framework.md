@@ -218,8 +218,10 @@ host.WithProjectEventHandler("postprovision",
 azd appends the opaque text to the parent command's human-readable completion
 message. It combines contributions from multiple extensions, ignores
 `pre*` and failed handlers, and does not include the text in JSON output.
-Older hosts ignore this optional success message. Leave `FollowUp` empty when
-there is no command-level guidance; service handlers do not contribute to this
+Within one command, a later completed `post*` result replaces the earlier
+result from that extension. An empty `FollowUp` retracts that extension's
+earlier contribution without affecting other extensions. Older hosts ignore
+this optional success message. Service handlers do not contribute to this
 field.
 
 #### Service Target Providers

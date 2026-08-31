@@ -29,12 +29,34 @@ func TestFollowUpCollector_SortsExtensions(t *testing.T) {
 	require.Equal(t, "a\n\nz", collector.Text())
 }
 
-func TestFollowUpCollector_IgnoresBlankText(t *testing.T) {
+func TestFollowUpCollector_BlankTextProducesNoContribution(t *testing.T) {
 	collector := NewFollowUpCollector()
 
 	collector.Add("test.extension", " \n\t ")
 
 	require.Empty(t, collector.Text())
+}
+
+func TestFollowUpCollector_ClearsExistingContribution(t *testing.T) {
+	collector := NewFollowUpCollector()
+
+	collector.Add("test.extension", "first")
+	collector.Add("test.extension", "")
+
+	require.Empty(t, collector.Text())
+}
+
+func TestFollowUpCollector_ClearKeepsOtherContributions(t *testing.T) {
+	collector := NewFollowUpCollector()
+
+	collector.Add("a.extension", "first")
+	collector.Add("b.extension", "other")
+	collector.Add("a.extension", " \n\t ")
+
+	require.Equal(t, "other", collector.Text())
+
+	collector.Add("a.extension", "second")
+	require.Equal(t, "second\n\nother", collector.Text())
 }
 
 func TestFollowUpCollector_ConcurrentWrites(t *testing.T) {

@@ -144,6 +144,7 @@ func (s *eventService) createProjectEventHandler(
 ) ext.EventHandlerFn[project.ProjectLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
 		var handlerMessage string
+		var handlerCompleted bool
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
 			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
@@ -201,6 +202,7 @@ func (s *eventService) createProjectEventHandler(
 				}
 
 				if statusMsg.ProjectHandlerStatus.Status == "completed" {
+					handlerCompleted = true
 					handlerMessage = statusMsg.ProjectHandlerStatus.Message
 				}
 
@@ -208,7 +210,7 @@ func (s *eventService) createProjectEventHandler(
 			})
 		}()
 
-		if err == nil && strings.HasPrefix(eventName, "post") {
+		if err == nil && handlerCompleted && strings.HasPrefix(eventName, "post") {
 			if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
 				collector.Add(extension.Id, handlerMessage)
 			}

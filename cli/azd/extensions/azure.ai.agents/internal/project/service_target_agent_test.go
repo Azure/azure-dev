@@ -2094,6 +2094,16 @@ func TestEnsureActivityEndpointAuthSchemeReplacesLegacyBotService(t *testing.T) 
 	}
 }
 
+func TestEnsureActivityEndpointAuthSchemeForNonActivityDoesNotCreateEndpoint(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
 func TestActivityProfileFromCreateRequest(t *testing.T) {
 	t.Parallel()
 

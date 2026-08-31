@@ -2228,6 +2228,9 @@ func ensureActivityEndpointAuthSchemeForProfile(
 	request *agent_api.CreateAgentRequest,
 	profile ActivityProfile,
 ) {
+	if !profile.IsActivity {
+		return
+	}
 	if request.AgentEndpoint == nil {
 		request.AgentEndpoint = &agent_api.AgentEndpoint{}
 	}

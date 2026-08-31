@@ -4,14 +4,60 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestEndpointUpdateResolvesActivitySettingsFromServiceRef(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	definitionsDir := filepath.Join(projectRoot, "definitions")
+	require.NoError(t, os.MkdirAll(definitionsDir, 0o700))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(definitionsDir, "agent.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: referenced-agent\n"+
+				"protocols:\n"+
+				"  - protocol: activity\n"+
+				"    version: \"2.0.0\"\n"+
+				"agentEndpoint:\n"+
+				"  protocols:\n"+
+				"    - activity\n"+
+				"activity:\n"+
+				"  useCase: digital_worker\n",
+		),
+		0o600,
+	))
+
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./definitions/agent.yaml"})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "agent-service",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+
+	require.NoError(t, project.ResolveServiceConfigInPlace(svc, projectRoot))
+	agentDef, _, _, err := project.LoadAgentDefinition(svc, projectRoot)
+	require.NoError(t, err)
+	serviceConfig, err := project.LoadServiceTargetAgentConfig(svc)
+	require.NoError(t, err)
+
+	profile, err := project.ResolveActivityProfileWithSettings(agentDef, serviceConfig.Activity)
+	require.NoError(t, err)
+	require.Equal(t, project.ActivityUseCaseDigitalWorker, profile.UseCase)
+}
 
 func TestEnsureEndpointAuthSchemeForProfile_DigitalWorker(t *testing.T) {
 	endpoint := &agent_api.AgentEndpoint{

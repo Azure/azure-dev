@@ -90,6 +90,9 @@ func runEndpointUpdate(
 	if err != nil {
 		return err
 	}
+	if err := project.ResolveServiceConfigInPlace(svc, proj.Path); err != nil {
+		return fmt.Errorf("failed to resolve service config: %w", err)
+	}
 
 	// Resolve the agent definition (inline on the service entry, or a legacy
 	// agent.yaml on disk).

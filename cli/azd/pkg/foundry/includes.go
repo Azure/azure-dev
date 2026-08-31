@@ -58,39 +58,74 @@ var remoteRefPattern = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
 // relative or absolute file paths are accepted. Cyclic and excessively deep include chains
 // return an error rather than looping. $ref targets are treated as trusted input, the same
 // trust level as azure.yaml itself.
-func ResolveFileRefs(cfg map[string]any, projectRoot string) (map[string]any, error) {
+// ResolveOption configures a call to ResolveFileRefs.
+type ResolveOption func(*resolveOptions)
+
+// resolveOptions carries what the calling extension adds to resolution.
+type resolveOptions struct {
+	// pathKeys are keys whose relative string values name files, beyond the two
+	// core owns.
+	pathKeys map[string]bool
+}
+
+// WithPathKeys declares keys whose relative string values are filesystem paths.
+//
+// Core rebases the path keys it owns -- project and instructions -- so that a
+// value written inside a $ref file still resolves once it has been spliced into
+// a document in another directory. A key core does not know about arrives
+// verbatim, which leaves it resolving against the wrong directory: an evaluator
+// pulled in from evaluators/quality.yaml carries `source: ./quality.json`,
+// which then means quality.json beside the configuration rather than beside the
+// file it was written in. The extension that owns those keys names them here.
+func WithPathKeys(keys ...string) ResolveOption {
+	return func(o *resolveOptions) {
+		if o.pathKeys == nil {
+			o.pathKeys = map[string]bool{}
+		}
+		for _, key := range keys {
+			o.pathKeys[key] = true
+		}
+	}
+}
+
+func ResolveFileRefs(cfg map[string]any, projectRoot string, opts ...ResolveOption) (map[string]any, error) {
 	if cfg == nil {
 		return nil, nil
 	}
 
+	resolved := &resolveOptions{}
+	for _, opt := range opts {
+		opt(resolved)
+	}
+
 	root := filepath.Clean(projectRoot)
-	resolved, err := resolveValue(cfg, root, root, nil)
+	out, err := resolveValue(cfg, root, root, nil, resolved)
 	if err != nil {
 		return nil, err
 	}
 
-	out, ok := resolved.(map[string]any)
+	mapped, ok := out.(map[string]any)
 	if !ok {
 		// resolveValue always returns a map for a map input; this is unreachable in practice.
 		return nil, fileRefInternal("resolved Foundry config is not a mapping")
 	}
-	return out, nil
+	return mapped, nil
 }
 
 // resolveValue recursively resolves $ref includes in v. baseDir is the directory of the file
 // that holds v (so relative $ref and path values resolve correctly); projectRoot is the
 // azure.yaml directory used to re-anchor rebased paths; chain holds the absolute paths of the
 // $ref files currently being resolved, for cycle detection.
-func resolveValue(v any, baseDir, projectRoot string, chain []string) (any, error) {
+func resolveValue(v any, baseDir, projectRoot string, chain []string, opts *resolveOptions) (any, error) {
 	switch typed := v.(type) {
 	case map[string]any:
 		if _, isRef := typed[refKey]; isRef {
-			return resolveRef(typed, baseDir, projectRoot, chain)
+			return resolveRef(typed, baseDir, projectRoot, chain, opts)
 		}
 
 		out := make(map[string]any, len(typed))
 		for key, child := range typed {
-			resolvedChild, err := resolveMapEntry(key, child, baseDir, projectRoot, chain)
+			resolvedChild, err := resolveMapEntry(key, child, baseDir, projectRoot, chain, opts)
 			if err != nil {
 				return nil, err
 			}
@@ -100,7 +135,7 @@ func resolveValue(v any, baseDir, projectRoot string, chain []string) (any, erro
 	case []any:
 		out := make([]any, len(typed))
 		for i, item := range typed {
-			resolvedItem, err := resolveValue(item, baseDir, projectRoot, chain)
+			resolvedItem, err := resolveValue(item, baseDir, projectRoot, chain, opts)
 			if err != nil {
 				return nil, err
 			}
@@ -115,13 +150,13 @@ func resolveValue(v any, baseDir, projectRoot string, chain []string) (any, erro
 // resolveMapEntry resolves a single key/value of a mapping and rebases it when the key is a
 // path-bearing field (project, instructions) loaded from a $ref file. Inline values authored
 // directly in azure.yaml (baseDir == projectRoot) are left untouched.
-func resolveMapEntry(key string, child any, baseDir, projectRoot string, chain []string) (any, error) {
-	resolvedChild, err := resolveValue(child, baseDir, projectRoot, chain)
+func resolveMapEntry(key string, child any, baseDir, projectRoot string, chain []string, opts *resolveOptions) (any, error) {
+	resolvedChild, err := resolveValue(child, baseDir, projectRoot, chain, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	if value, ok := resolvedChild.(string); ok && baseDir != projectRoot && isPathKey(key, value) {
+	if value, ok := resolvedChild.(string); ok && baseDir != projectRoot && isPathKey(key, value, opts) {
 		return rebasePath(value, baseDir, projectRoot), nil
 	}
 	return resolvedChild, nil
@@ -129,7 +164,7 @@ func resolveMapEntry(key string, child any, baseDir, projectRoot string, chain [
 
 // resolveRef loads the file named by directive[refKey], resolves it relative to its own
 // directory, then overlays the directive's sibling keys on top of the loaded object.
-func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []string) (any, error) {
+func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []string, opts *resolveOptions) (any, error) {
 	ref, ok := directive[refKey].(string)
 	if !ok {
 		return nil, fileRefValidation(
@@ -162,7 +197,7 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 	}
 
 	nextChain := append(slices.Clone(chain), target)
-	resolvedLoaded, err := resolveValue(loaded, filepath.Dir(target), projectRoot, nextChain)
+	resolvedLoaded, err := resolveValue(loaded, filepath.Dir(target), projectRoot, nextChain, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +217,7 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 		if key == refKey {
 			continue
 		}
-		resolvedChild, err := resolveMapEntry(key, child, baseDir, projectRoot, chain)
+		resolvedChild, err := resolveMapEntry(key, child, baseDir, projectRoot, chain, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -245,15 +280,16 @@ func loadRefFile(path string) (map[string]any, error) {
 
 // isPathKey reports whether a string value for key is a filesystem path that should be rebased.
 // project is always a path. instructions is a path only when it looks like one (a single-line
-// .md or .txt reference); otherwise it is inline prose and must be left untouched.
-func isPathKey(key, value string) bool {
+// .md or .txt reference); otherwise it is inline prose and must be left untouched. Keys the
+// calling extension declared with WithPathKeys are paths whenever they are non-empty.
+func isPathKey(key, value string, opts *resolveOptions) bool {
 	switch key {
 	case "project":
 		return value != ""
 	case "instructions":
 		return looksLikeInstructionsPath(value)
 	default:
-		return false
+		return value != "" && opts != nil && opts.pathKeys[key]
 	}
 }
 

@@ -5,6 +5,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
@@ -144,30 +145,35 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 	return cleanup, nil
 }
 
-// SuggestExtensionForProvider returns the id of a registry extension that declares the named
-// provisioning provider when no installed extension does, or an empty string when the provider is
-// unknown to the registry, already declared by an installed extension, or the lookup fails.
-func (a *ExtensionActivator) SuggestExtensionForProvider(ctx context.Context, providerName string) string {
+// SuggestExtensionForProvider finds an installable extension for a missing provisioning provider.
+// It returns a compatibility error when matching releases require another azd version.
+func (a *ExtensionActivator) SuggestExtensionForProvider(ctx context.Context, providerName string) (string, error) {
 	if strings.TrimSpace(providerName) == "" {
-		return ""
+		return "", nil
 	}
 
 	// An installed extension declares this provider, so an install suggestion would be misleading.
 	if installed, err := a.extensionManager.ListInstalled(); err == nil {
 		if len(extensionsForProviders(installed, []string{providerName})) > 0 {
-			return ""
+			return "", nil
 		}
 	}
 
-	matches, err := a.extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
-		Capability: extensions.ProvisioningProviderCapability,
-		Provider:   providerName,
-	})
+	matches, err := a.extensionManager.FindInstallableExtensions(
+		ctx,
+		&extensions.InstallResolutionOptions{FilterOptions: extensions.FilterOptions{
+			Capability: extensions.ProvisioningProviderCapability,
+			Provider:   providerName,
+		}},
+	)
+	if compatibilityErr, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+		return "", compatibilityErr
+	}
 	if err != nil || len(matches) == 0 {
-		return ""
+		return "", nil
 	}
 
-	return matches[0].Id
+	return matches[0].Id, nil
 }
 
 // providerResolvable reports whether the named provisioning provider already resolves from the

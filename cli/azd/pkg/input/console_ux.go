@@ -115,11 +115,12 @@ func newSelectOptions(writer io.Writer, options ConsoleOptions) *uxlib.SelectOpt
 	choices, selectedIndex := selectChoices(options)
 
 	return &uxlib.SelectOptions{
-		Writer:        writer,
-		Message:       options.Message,
-		HelpMessage:   options.Help,
-		Choices:       choices,
-		SelectedIndex: new(selectedIndex),
+		Writer:          writer,
+		Message:         options.Message,
+		HelpMessage:     options.Help,
+		Choices:         choices,
+		SelectedIndex:   new(selectedIndex),
+		EnableFiltering: options.EnableFiltering,
 	}
 }
 
@@ -142,12 +143,17 @@ func newConfirmOptions(writer io.Writer, options ConsoleOptions) *uxlib.ConfirmO
 // Empty selection is allowed to preserve the behavior of the survey-based
 // implementation that callers depend on.
 func newMultiSelectOptions(writer io.Writer, options ConsoleOptions) *uxlib.MultiSelectOptions {
+	allowEmptySelection := options.AllowEmptySelection
+	if allowEmptySelection == nil {
+		allowEmptySelection = new(true)
+	}
+
 	return &uxlib.MultiSelectOptions{
 		Writer:              writer,
 		Message:             options.Message,
 		HelpMessage:         options.Help,
 		Choices:             multiSelectChoices(options),
-		AllowEmptySelection: new(true),
+		AllowEmptySelection: allowEmptySelection,
 	}
 }
 

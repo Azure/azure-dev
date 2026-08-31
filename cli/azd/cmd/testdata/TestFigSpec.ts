@@ -892,10 +892,11 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--infra'],
-									description: 'Eject infrastructure-as-code from azure.yaml into ./infra/. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets infra.provider: terraform; --infra=bicep is explicit Bicep. When azure.yaml already declares a Foundry project service, runs as a standalone eject and skips the init prompts; otherwise init runs first and the eject follows it.',
+									description: 'Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and Foundry files are generated as a separate infra/foundry layer. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets the Foundry layer provider to terraform; Bicep keeps the microsoft.foundry provider. --infra=bicep is explicit Bicep. When azure.yaml already declares a Foundry project service, runs as a standalone eject and skips the init prompts; otherwise init runs first and the eject follows it.',
 									args: [
 										{
 											name: 'infra',
+											isOptional: true,
 										},
 									],
 								},
@@ -910,7 +911,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--model'],
-									description: 'Name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence',
+									description: 'Name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence.',
 									args: [
 										{
 											name: 'model',
@@ -942,6 +943,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'protocol',
+										},
+									],
+								},
+								{
+									name: ['--registry-connection'],
+									description: 'Name or ID of an existing Foundry project connection used to pull a private pre-built container image. Requires a pre-built image and is incompatible with code deploy.',
+									args: [
+										{
+											name: 'registry-connection',
 										},
 									],
 								},
@@ -1442,6 +1452,91 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['pack'],
+							description: 'Build a ready-to-sideload Teams app package for an activity agent.',
+							options: [
+								{
+									name: ['--app-version'],
+									description: 'Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.',
+									args: [
+										{
+											name: 'app-version',
+										},
+									],
+								},
+								{
+									name: ['--display-name'],
+									description: 'Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.',
+									args: [
+										{
+											name: 'display-name',
+										},
+									],
+								},
+								{
+									name: ['--output-dir'],
+									description: 'Directory to write appPackage.zip to (defaults to the agent source directory)',
+									args: [
+										{
+											name: 'output-dir',
+										},
+									],
+								},
+								{
+									name: ['--scope'],
+									description: 'Publish scope for the package (personal: per-user sideload (no admin approval required); shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval))',
+									args: [
+										{
+											name: 'scope',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['publish'],
+							description: 'Publish an activity agent as a Teams app to the Microsoft 365 store.',
+							options: [
+								{
+									name: ['--app-version'],
+									description: 'Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.',
+									args: [
+										{
+											name: 'app-version',
+										},
+									],
+								},
+								{
+									name: ['--display-name'],
+									description: 'Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.',
+									args: [
+										{
+											name: 'display-name',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'none'],
+										},
+									],
+								},
+								{
+									name: ['--scope'],
+									description: 'Microsoft 365 publish scope (shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval; alias: org); Digital Workers require tenant)',
+									args: [
+										{
+											name: 'scope',
 										},
 									],
 								},
@@ -2588,6 +2683,18 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json'],
+										},
+									],
+								},
+							],
 						},
 					],
 				},
@@ -5878,7 +5985,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--version', '-v'],
-							description: 'The version of the extension to install',
+							description: 'The version of the extension to install. Cannot be used with an extension bundle',
 							args: [
 								{
 									name: 'version',
@@ -6366,7 +6473,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['publish'],
-			description: 'Publish a service to a container registry.',
+			description: 'Publish a service image or reuse an existing passthrough image.',
 			options: [
 				{
 					name: ['--all'],

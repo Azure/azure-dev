@@ -69,10 +69,9 @@ const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
 	// AgentKindVoice is the data-plane (service) kind for a declarative voice
-	// (speech-to-speech) agent. Note: this is the wire value posted to the
-	// /voice_agents collection. The azd manifest authoring kind is
-	// "prompt-voice" (agent_yaml.AgentKindPromptVoice), which the map layer
-	// translates to this value.
+	// (speech-to-speech) agent. The azd manifest authoring kind is "prompt-voice"
+	// (agent_yaml.AgentKindPromptVoice), which the map layer translates to this
+	// value before posting through the unified /agents API.
 	AgentKindVoice AgentKind = "voice"
 )
 
@@ -90,9 +89,57 @@ const (
 	AgentEventHandlerDestinationTypeEvals AgentEventHandlerDestinationType = "evals"
 )
 
+// RaiInvocationContentType identifies how the invocations request or response body is encoded,
+// which determines how the content-safety proxy extracts the text it moderates.
+type RaiInvocationContentType string
+
+const (
+	// RaiInvocationContentTypeJSON extracts text from a JSON body using JSONPath expressions.
+	RaiInvocationContentTypeJSON RaiInvocationContentType = "json"
+	// RaiInvocationContentTypeText treats the whole body as the text to moderate.
+	RaiInvocationContentTypeText RaiInvocationContentType = "text"
+)
+
+// RaiInvocationMode declares the response shapes the agent container is able to produce.
+// It is not an "input and output" switch: at runtime the proxy inspects the actual response
+// Content-Type and runs exactly one output gate.
+type RaiInvocationMode string
+
+const (
+	// RaiInvocationModeNonStreaming declares the agent only returns buffered (non-SSE) responses.
+	RaiInvocationModeNonStreaming RaiInvocationMode = "non_streaming"
+	// RaiInvocationModeStreaming declares the agent only returns server-sent event streams.
+	RaiInvocationModeStreaming RaiInvocationMode = "streaming"
+	// RaiInvocationModeBoth declares the agent may return either shape depending on the request.
+	RaiInvocationModeBoth RaiInvocationMode = "both"
+)
+
+// SseTextSelector locates the text to moderate inside a single server-sent event frame.
+type SseTextSelector struct {
+	// EventType is the SSE event name the selector applies to.
+	EventType string `json:"event_type"`
+	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
+	TextField string `json:"text_field,omitempty"`
+}
+
+// InvocationsModeration configures how the content-safety proxy extracts text from
+// invocations-protocol requests and responses so it can be submitted to the RAI policy.
+// Without it a RAI policy attached to an invocations agent has nothing to moderate.
+type InvocationsModeration struct {
+	InputContentType  RaiInvocationContentType `json:"input_content_type,omitempty"`
+	OutputContentType RaiInvocationContentType `json:"output_content_type,omitempty"`
+	ResponseMode      RaiInvocationMode        `json:"response_mode"`
+	InputPaths        []string                 `json:"input_paths,omitempty"`
+	OutputPaths       []string                 `json:"output_paths,omitempty"`
+	StreamSelectors   []SseTextSelector        `json:"stream_selectors,omitempty"`
+}
+
 // RaiConfig represents configuration for Responsible AI content filtering
 type RaiConfig struct {
 	RaiPolicyName string `json:"rai_policy_name"`
+	// InvocationsModeration is optional and only meaningful for agents that expose the
+	// invocations protocol.
+	InvocationsModeration *InvocationsModeration `json:"invocations_moderation,omitempty"`
 }
 
 // AgentDefinition is the base definition for all agent types
@@ -241,7 +288,18 @@ type CodeConfigurationAPI struct {
 // ContainerConfigurationAPI represents the container_configuration block in the API request.
 // Used for container deploy mode to specify the pre-built container image.
 type ContainerConfigurationAPI struct {
-	Image string `json:"image"`
+	Image                string `json:"image"`
+	RegistryConnectionID string `json:"registry_connection_id,omitempty"`
+}
+
+// SessionConfigurationAPI represents the session_configuration block in the API request.
+// It controls hosted-agent session runtime behavior; when omitted the service applies
+// its own defaults.
+type SessionConfigurationAPI struct {
+	// IdleTimeoutSeconds maps to session_configuration.idle_timeout_seconds. Valid
+	// range is 300–3600 (inclusive). When the field is unset the whole
+	// session_configuration block is omitted and the service default (900) applies.
+	IdleTimeoutSeconds int `json:"idle_timeout_seconds"`
 }
 
 // HostedAgentDefinition represents a hosted agent that can be either container-based
@@ -255,6 +313,7 @@ type HostedAgentDefinition struct {
 	EnvironmentVariables   map[string]string          `json:"environment_variables,omitempty"`
 	ContainerConfiguration *ContainerConfigurationAPI `json:"container_configuration,omitempty"` // container deploy only
 	CodeConfiguration      *CodeConfigurationAPI      `json:"code_configuration,omitempty"`      // code deploy only
+	SessionConfiguration   *SessionConfigurationAPI   `json:"session_configuration,omitempty"`   // optional session tuning
 	Image                  string                     `json:"image,omitempty"`                   // deprecated: for backward compat deserialization only
 }
 
@@ -301,7 +360,7 @@ const (
 // VoiceAudioFormat describes a PCM audio stream format (e.g. audio/pcm @ 24 kHz).
 type VoiceAudioFormat struct {
 	Type string `json:"type"`
-	Rate int    `json:"rate"`
+	Rate *int   `json:"rate,omitempty"`
 }
 
 // VoiceTurnDetection configures server-side voice-activity detection so the
@@ -311,32 +370,62 @@ type VoiceTurnDetection struct {
 	Threshold         *float64 `json:"threshold,omitempty"`
 	PrefixPaddingMs   *int     `json:"prefix_padding_ms,omitempty"`
 	SilenceDurationMs *int     `json:"silence_duration_ms,omitempty"`
+	CreateResponse    *bool    `json:"create_response,omitempty"`
+	Eagerness         *string  `json:"eagerness,omitempty"`
+	SpeechDurationMs  *int     `json:"speech_duration_ms,omitempty"`
+	RemoveFillerWords *bool    `json:"remove_filler_words,omitempty"`
+	InterruptResponse *bool    `json:"interrupt_response,omitempty"`
+	Languages         []string `json:"languages,omitempty"`
+	AutoTruncate      *bool    `json:"auto_truncate,omitempty"`
 }
 
 // VoiceTranscription enables user-speech transcription events on the input stream.
 type VoiceTranscription struct {
-	Model string `json:"model,omitempty"`
+	Model    string  `json:"model,omitempty"`
+	Language *string `json:"language,omitempty"`
+	Prompt   *string `json:"prompt,omitempty"`
+}
+
+// VoiceNoiseReduction configures input audio noise reduction.
+type VoiceNoiseReduction struct {
+	Type string `json:"type"`
 }
 
 // VoiceInputConfig is the input (caller -> agent) audio configuration.
 type VoiceInputConfig struct {
-	Format        *VoiceAudioFormat   `json:"format,omitempty"`
-	TurnDetection *VoiceTurnDetection `json:"turn_detection,omitempty"`
-	Transcription *VoiceTranscription `json:"transcription,omitempty"`
+	Format           *VoiceAudioFormat    `json:"format,omitempty"`
+	NoiseReduction   *VoiceNoiseReduction `json:"noise_reduction,omitempty"`
+	EchoCancellation map[string]any       `json:"echo_cancellation,omitempty"`
+	TurnDetection    *VoiceTurnDetection  `json:"turn_detection,omitempty"`
+	Transcription    *VoiceTranscription  `json:"transcription,omitempty"`
 }
 
 // VoiceConfig selects the output voice. Type is "openai" for realtime voices
 // (single lowercase word, e.g. "alloy") or "azure_standard" for Azure Neural
 // voices (e.g. "en-US-Ava:DragonHDLatestNeural").
 type VoiceConfig struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
+	Type   string  `json:"type"`
+	Name   string  `json:"name"`
+	Style  *string `json:"style,omitempty"`
+	Pitch  *string `json:"pitch,omitempty"`
+	Rate   *string `json:"rate,omitempty"`
+	Locale *string `json:"locale,omitempty"`
+	Volume *string `json:"volume,omitempty"`
 }
 
-// VoiceOutputConfig is the output (agent -> caller) audio configuration.
+// VoiceOutputConfig is the output (agent -> caller) audio configuration for the
+// unified /agents voice API. The voice name is a string and provider details are
+// sibling fields.
 type VoiceOutputConfig struct {
-	Format *VoiceAudioFormat `json:"format,omitempty"`
-	Voice  *VoiceConfig      `json:"voice,omitempty"`
+	Format      *VoiceAudioFormat `json:"format,omitempty"`
+	Voice       string            `json:"voice,omitempty"`
+	VoiceType   string            `json:"voice_type,omitempty"`
+	VoiceLocale string            `json:"voice_locale,omitempty"`
+	Style       *string           `json:"style,omitempty"`
+	Pitch       *string           `json:"pitch,omitempty"`
+	Rate        *string           `json:"rate,omitempty"`
+	Volume      *string           `json:"volume,omitempty"`
+	Speed       *float64          `json:"speed,omitempty"`
 }
 
 // VoiceAudioConfig bundles the input and output audio configuration.
@@ -345,17 +434,25 @@ type VoiceAudioConfig struct {
 	Output *VoiceOutputConfig `json:"output,omitempty"`
 }
 
-// VoiceAgentDefinition is the data-plane definition body POSTed to the
-// /voice_agents collection for a declarative (managed) voice agent. Its Kind
-// is always AgentKindVoice ("voice").
+// VoiceAgentDefinition is the data-plane definition body for a declarative
+// prompt voice agent. Its Kind is always AgentKindVoice ("voice").
 type VoiceAgentDefinition struct {
 	AgentDefinition
-	ModelType        VoiceModelType    `json:"model_type"`
-	Model            string            `json:"model"`
-	Instructions     string            `json:"instructions,omitempty"`
-	Audio            *VoiceAudioConfig `json:"audio,omitempty"`
-	OutputModalities []string          `json:"output_modalities,omitempty"`
-	Store            *bool             `json:"store,omitempty"`
+	ModelType         VoiceModelType    `json:"model_type"`
+	Model             string            `json:"model"`
+	Instructions      string            `json:"instructions,omitempty"`
+	StructuredInputs  map[string]any    `json:"structured_inputs,omitempty"`
+	Audio             *VoiceAudioConfig `json:"audio,omitempty"`
+	OutputModalities  []string          `json:"output_modalities,omitempty"`
+	Store             *bool             `json:"store,omitempty"`
+	Tools             []map[string]any  `json:"tools,omitempty"`
+	Avatar            map[string]any    `json:"avatar,omitempty"`
+	Greeting          map[string]any    `json:"greeting,omitempty"`
+	Handoff           map[string]any    `json:"handoff,omitempty"`
+	ToolChoice        any               `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool             `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens   any               `json:"max_output_tokens,omitempty"`
+	Include           []string          `json:"include,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version

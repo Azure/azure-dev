@@ -4,6 +4,7 @@
 package dotnet
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,7 +12,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -105,6 +109,37 @@ func Test_Cli_CheckInstalled(t *testing.T) {
 		err := cli.CheckInstalled(t.Context())
 		require.Error(t, err)
 	})
+
+	t.Run("shares successful SDK probe", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		runner.MockToolInPath("dotnet", nil)
+		var callCount atomic.Int32
+		runner.When(matchDotnetArg0("--version")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				callCount.Add(1)
+				return exec.NewRunResult(0, "8.0.100", ""), nil
+			})
+
+		supported, err := cli.SupportsArtifactsPath(t.Context())
+		require.NoError(t, err)
+		require.True(t, supported)
+		require.NoError(t, cli.CheckInstalled(t.Context()))
+		require.Equal(t, int32(1), callCount.Load())
+	})
+
+	t.Run("checks path when SDK probe is cached", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		runner.When(matchDotnetArg0("--version")).Respond(exec.NewRunResult(0, "8.0.100", ""))
+
+		_, err := cli.SdkVersion(t.Context())
+		require.NoError(t, err)
+
+		wantErr := errors.New("dotnet no longer in path")
+		runner.MockToolInPath("dotnet", wantErr)
+		require.ErrorIs(t, cli.CheckInstalled(t.Context()), wantErr)
+	})
 }
 
 func Test_Cli_SdkVersion(t *testing.T) {
@@ -113,13 +148,23 @@ func Test_Cli_SdkVersion(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 		cli, runner := newCliWithMock(t)
-		runner.When(matchDotnetArg0("--version")).Respond(exec.NewRunResult(0, "8.0.203", ""))
+		var callCount atomic.Int32
+		runner.When(matchDotnetArg0("--version")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				callCount.Add(1)
+				return exec.NewRunResult(0, "8.0.203", ""), nil
+			})
 
 		ver, err := cli.SdkVersion(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, uint64(8), ver.Major)
 		require.Equal(t, uint64(0), ver.Minor)
 		require.Equal(t, uint64(203), ver.Patch)
+
+		cached, err := cli.SdkVersion(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, ver, cached)
+		require.Equal(t, int32(1), callCount.Load())
 	})
 
 	t.Run("run error", func(t *testing.T) {
@@ -142,6 +187,84 @@ func Test_Cli_SdkVersion(t *testing.T) {
 		_, err := cli.SdkVersion(t.Context())
 		require.Error(t, err)
 	})
+
+	t.Run("failed probe retries", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var callCount atomic.Int32
+		runner.When(matchDotnetArg0("--version")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				if callCount.Add(1) == 1 {
+					return exec.RunResult{}, context.Canceled
+				}
+				return exec.NewRunResult(0, "8.0.100", ""), nil
+			})
+
+		_, err := cli.SdkVersion(t.Context())
+		require.ErrorIs(t, err, context.Canceled)
+
+		version, err := cli.SdkVersion(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, "8.0.100", version.String())
+		require.Equal(t, int32(2), callCount.Load())
+	})
+
+	t.Run("concurrent callers share successful probe", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var callCount atomic.Int32
+		runner.When(matchDotnetArg0("--version")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				callCount.Add(1)
+				time.Sleep(10 * time.Millisecond)
+				return exec.NewRunResult(0, "8.0.100", ""), nil
+			})
+
+		const callerCount = 20
+		results := make(chan error, callerCount)
+		ctx := t.Context()
+		var wg sync.WaitGroup
+		for range callerCount {
+			wg.Go(func() {
+				_, err := cli.SdkVersion(ctx)
+				results <- err
+			})
+		}
+		wg.Wait()
+		close(results)
+
+		for err := range results {
+			require.NoError(t, err)
+		}
+		require.Equal(t, int32(1), callCount.Load())
+	})
+}
+
+func Test_Cli_SupportsArtifactsPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{version: "6.0.428", want: false},
+		{version: "7.0.410", want: false},
+		{version: "8.0.99", want: false},
+		{version: "8.0.100", want: true},
+		{version: "9.0.100", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			t.Parallel()
+			cli, runner := newCliWithMock(t)
+			runner.When(matchDotnetArg0("--version")).Respond(exec.NewRunResult(0, tt.version, ""))
+
+			got, err := cli.SupportsArtifactsPath(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func Test_Cli_Restore(t *testing.T) {
@@ -539,6 +662,27 @@ func Test_Cli_PublishContainer(t *testing.T) {
 
 func Test_Cli_ArtifactsPathContext(t *testing.T) {
 	t.Parallel()
+
+	t.Run("Publish appends --artifacts-path from context", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var captured exec.RunArgs
+		runner.When(matchDotnetArg0("publish")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				captured = args
+				return exec.NewRunResult(0, "", ""), nil
+			})
+
+		ctx := ContextWithArtifactsPath(t.Context(), "/tmp/artifacts-package")
+		err := cli.Publish(ctx, "p.csproj", "Release", "/tmp/package", nil)
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"publish", "p.csproj",
+			"-c", "Release",
+			"--output", "/tmp/package",
+			"--artifacts-path", "/tmp/artifacts-package",
+		}, captured.Args)
+	})
 
 	t.Run("PublishContainer appends --artifacts-path from context", func(t *testing.T) {
 		t.Parallel()

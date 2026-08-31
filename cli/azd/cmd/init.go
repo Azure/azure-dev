@@ -257,6 +257,7 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 	// or pass "." to use the current directory (preserving existing behavior).
 	createdProjectDir := ""
 	originalWd := wd
+	cleanupProjectDir := false
 
 	if isTemplateInit {
 		targetDir, err := i.resolveTargetDirectory(wd)
@@ -308,7 +309,7 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 			// Only remove the directory if we created it — don't delete
 			// pre-existing directories the user pointed at.
 			defer func() {
-				if retErr != nil {
+				if retErr != nil || cleanupProjectDir {
 					_ = os.Chdir(originalWd)
 					if !dirExistedBefore {
 						_ = os.RemoveAll(createdProjectDir)
@@ -424,6 +425,11 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
 		template, err := i.initializeTemplate(ctx, azdCtx)
 		if err != nil {
+			if errors.Is(err, repository.ErrArchivedTemplateDeclined) {
+				cleanupProjectDir = true
+				i.console.Message(ctx, output.WithWarningFormat("CANCELLED: Initialization stopped."))
+				return nil, nil
+			}
 			return nil, err
 		}
 
@@ -1130,7 +1136,7 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 	i.console.Message(ctx, "\nInstalling required extensions...")
 
 	for extensionId, versionConstraint := range projectConfig.RequiredVersions.Extensions {
-		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
+		stepMessage := extensionTaskMessage("Installing", extensionId)
 		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		installed, isInstalled := installedExtensions[extensionId]
@@ -1138,52 +1144,59 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 			stepMessage += output.WithGrayFormat(" (version %s already installed)", installed.Version)
 			i.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
-		} else {
-			installConstraint := "latest"
-			if versionConstraint != nil {
-				installConstraint = *versionConstraint
-			}
-
-			// Find the extension first
-			filterOptions := &extensions.FilterOptions{
-				Id: extensionId,
-			}
-
-			extensionMatches, err := i.extensionsManager.FindExtensions(ctx, filterOptions)
-			if err != nil {
-				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return fmt.Errorf("finding extension %s: %w", extensionId, err)
-			}
-
-			if len(extensionMatches) == 0 {
-				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return fmt.Errorf("extension %s not found", extensionId)
-			}
-
-			extensionMetadata, err := selectDistinctExtension(
-				ctx,
-				i.console,
-				extensionId,
-				extensionMatches,
-				i.flags.global,
-			)
-			if err != nil {
-				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return err
-			}
-			if len(extensionMatches) > 1 {
-				i.console.ShowSpinner(ctx, stepMessage, input.Step)
-			}
-
-			extensionVersion, err := i.extensionsManager.Install(ctx, extensionMetadata, installConstraint)
-			if err != nil {
-				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return fmt.Errorf("installing extension %s: %w", extensionId, err)
-			}
-
-			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
-			i.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		}
+
+		installConstraint := "latest"
+		if versionConstraint != nil {
+			installConstraint = *versionConstraint
+		}
+
+		extensionMatches, err := i.extensionsManager.FindInstallableExtensions(
+			ctx,
+			&extensions.InstallResolutionOptions{FilterOptions: extensions.FilterOptions{
+				Id:      extensionId,
+				Version: installConstraint,
+			}},
+		)
+		if err != nil {
+			i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return fmt.Errorf("finding extension %s: %w", extensionId, err)
+		}
+
+		if len(extensionMatches) == 0 {
+			i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return fmt.Errorf("extension %s not found", extensionId)
+		}
+
+		extensionMetadata, err := selectDistinctExtension(
+			ctx,
+			i.console,
+			extensionId,
+			extensionMatches,
+			i.flags.global,
+		)
+		if err != nil {
+			i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return err
+		}
+		if len(extensionMatches) > 1 {
+			i.console.ShowSpinner(ctx, stepMessage, input.Step)
+		}
+
+		extensionVersion, err := i.extensionsManager.InstallWithOptions(
+			ctx,
+			extensionMetadata,
+			extensions.InstallOptions{
+				VersionPreference: installConstraint,
+			},
+		)
+		if err != nil {
+			i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return fmt.Errorf("installing extension %s: %w", extensionId, err)
+		}
+
+		stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
+		i.console.StopSpinner(ctx, stepMessage, input.StepDone)
 	}
 
 	return nil

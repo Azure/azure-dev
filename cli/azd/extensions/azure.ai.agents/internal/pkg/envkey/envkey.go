@@ -100,5 +100,12 @@ func AgentInstanceIdentityPrincipalID(agentName string) string {
 	return fmt.Sprintf("AGENT_%s_INSTANCE_IDENTITY_PRINCIPAL_ID", sanitized)
 }
 
+// AgentBlueprintClientID stores the Blueprint application client ID returned
+// for a Digital Worker agent version.
+func AgentBlueprintClientID(agentName string) string {
+	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))
+	return fmt.Sprintf("AGENT_%s_BLUEPRINT_CLIENT_ID", sanitized)
+}
+
 // ConnectionProjectEndpoint scopes provisioned connection names to a Foundry project.
 const ConnectionProjectEndpoint = "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"

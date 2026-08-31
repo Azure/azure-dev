@@ -25,5 +25,6 @@ func openBrowser(url string) error {
 		command = "xdg-open"
 		args = []string{url}
 	}
-	return exec.Command(command, args...).Start() //nolint:gosec // command is selected from fixed platform defaults; url is passed as an argument.
+	// command is selected from fixed platform defaults; url is passed as an argument.
+	return exec.Command(command, args...).Start() //nolint:gosec
 }

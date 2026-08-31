@@ -249,6 +249,11 @@ func (m *mockDeployProjectManager) Initialize(ctx context.Context, projectConfig
 	return args.Error(0)
 }
 
+func (m *mockDeployProjectManager) InitializeServices(ctx context.Context, services []*project.ServiceConfig) error {
+	args := m.Called(services)
+	return args.Error(0)
+}
+
 func (m *mockDeployProjectManager) InitializeFrameworks(
 	ctx context.Context, projectConfig *project.ProjectConfig,
 ) ([]*project.ServiceConfig, []project.ServiceFrameworkInitFailure, error) {
@@ -270,33 +275,29 @@ func (m *mockDeployProjectManager) DefaultServiceFromWd(
 
 func (m *mockDeployProjectManager) EnsureAllTools(
 	ctx context.Context,
-	projectConfig *project.ProjectConfig,
-	serviceFilterFn project.ServiceFilterPredicate,
+	services []*project.ServiceConfig,
 ) error {
 	return nil
 }
 
 func (m *mockDeployProjectManager) EnsureFrameworkTools(
 	ctx context.Context,
-	projectConfig *project.ProjectConfig,
-	serviceFilterFn project.ServiceFilterPredicate,
+	services []*project.ServiceConfig,
 ) error {
 	return nil
 }
 
 func (m *mockDeployProjectManager) EnsureServiceTargetTools(
 	ctx context.Context,
-	projectConfig *project.ProjectConfig,
-	serviceFilterFn project.ServiceFilterPredicate,
+	services []*project.ServiceConfig,
 ) error {
-	args := m.Called(projectConfig)
+	args := m.Called(services)
 	return args.Error(0)
 }
 
 func (m *mockDeployProjectManager) EnsureRestoreTools(
 	ctx context.Context,
-	projectConfig *project.ProjectConfig,
-	serviceFilterFn project.ServiceFilterPredicate,
+	services []*project.ServiceConfig,
 ) error {
 	return nil
 }
@@ -418,8 +419,8 @@ func newDeployActionForTimeoutTest(
 
 	action := newDeployTimeoutAction(t, flagTimeout)
 	projectManager := &mockDeployProjectManager{}
-	projectManager.On("Initialize", action.projectConfig).Return(nil).Once()
-	projectManager.On("EnsureServiceTargetTools", action.projectConfig).Return(nil).Once()
+	projectManager.On("InitializeServices", mock.Anything).Return(nil).Once()
+	projectManager.On("EnsureServiceTargetTools", mock.Anything).Return(nil).Once()
 	t.Cleanup(func() {
 		projectManager.AssertExpectations(t)
 	})
@@ -495,7 +496,9 @@ func TestDeploymentResultJSON(t *testing.T) {
 	result := DeploymentResult{
 		Timestamp: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
 		Services: map[string]*project.ServiceDeployResult{
-			"api": {},
+			"api": {
+				Warnings: []string{"status did not change for 5m0s"},
+			},
 			"web": {},
 		},
 	}
@@ -510,6 +513,14 @@ func TestDeploymentResultJSON(t *testing.T) {
 	services, ok := parsed["services"].(map[string]any)
 	require.True(t, ok, "services should be a map")
 	require.Len(t, services, 2)
+
+	api, ok := services["api"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, []any{"status did not change for 5m0s"}, api["warnings"])
+
+	web, ok := services["web"].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, web, "warnings")
 }
 
 func TestResolveDAGConcurrency(t *testing.T) {

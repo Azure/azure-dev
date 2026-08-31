@@ -13,6 +13,56 @@ Use `--no-inspector` to run only the local agent process:
 azd ai agent run --no-inspector
 ```
 
+## Publishing a Digital Worker
+
+An Activity-protocol hosted agent can be published as a Microsoft 365 Digital
+Worker. Declare the Digital Worker settings on the `azure.ai.agent` service in
+`azure.yaml`, deploy the agent, and then publish it:
+
+```yaml
+services:
+  my-digital-worker:
+    host: azure.ai.agent
+    project: src/my-digital-worker
+    language: python
+    kind: hosted
+    name: my-digital-worker
+    protocols:
+      - protocol: activity
+        version: 2.0.0
+    activity:
+      useCase: digital_worker
+      publish:
+        publishScope: tenant
+        agentDisplayName: My Digital Worker
+        agenticUserTemplate:
+          id: digitalWorkerTemplate
+          file: agenticUserTemplateManifest.json
+          schemaVersion: 0.1.0-preview
+          communicationProtocol: activityProtocol
+```
+
+The `activity.publish` block is shared Microsoft 365 app publish metadata for
+Activity use cases (including `simple`). For `digital_worker`, azd enforces
+additional constraints: `publish` must be present, `publishScope` must be
+`tenant`, and `agenticUserTemplate` must include `id`, `file`,
+`schemaVersion`, and `communicationProtocol`. The publish request sets
+`publishAsAutopilot` automatically to `true` for this use case; users do not
+need to declare it in YAML. The Agent Identity Blueprint ID is generated during
+deployment and added to the publish request automatically.
+
+```bash
+azd deploy
+azd ai agent publish
+```
+
+For `simple` Activity agents, `publishScope` accepts `shared` or `tenant`. For
+`digital_worker`, `publishScope` is always `tenant`.
+An explicit `azd ai agent publish --scope <scope>` overrides the configured
+value where allowed by the use case. Use `--display-name` and `--app-version`
+to override the corresponding configured publish metadata for one command
+invocation.
+
 The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
 move it, which is what you need when running two agents side by side or when a
 stale process still holds the default port:
@@ -32,6 +82,20 @@ azd also warns, without failing the run, when `--inspector-port` cannot take
 effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
 than the Agent Inspector, and `--port 8087` on its own collides with the
 inspector's own default UI port.
+
+### Local client route telemetry
+
+When installed from the official registry, the extension reports the
+`local_client.route.selected` usage event after `azd ai agent run` resolves the
+service and protocol profile. Its `ext.route` attribute is exactly one of:
+
+- `inspector` for a non-activity agent;
+- `playground` for an activity-protocol agent; or
+- `suppressed` when `--no-client` or the deprecated `--no-inspector` is set.
+
+The event is emitted before checking client availability, starting the local
+agent, or launching a client. It records route selection, not successful client
+launch.
 
 ## Migrating Legacy Agent Configuration
 
@@ -133,6 +197,104 @@ Details:
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
 
+### Moderating invocations-protocol traffic
+
+For agents that expose the `invocations` protocol, the RAI policy alone is not
+enough: the content-safety proxy needs to be told **where the text lives** in the
+request and response bodies. Without that it has nothing to submit to the policy,
+so no content is actually screened. Supply an `invocationsModeration` block on the
+`rai_policy` entry:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    protocols:
+      - protocol: invocations
+        version: "1.0.0"
+    policies:
+      - type: rai_policy
+        raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
+        invocationsModeration:
+          responseMode: both
+          inputContentType: json
+          outputContentType: json
+          inputPaths:
+            - $.input
+          outputPaths:
+            - $.output
+          streamSelectors:
+            - eventType: response.output_text.delta
+              textField: $.delta
+```
+
+Fields:
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `responseMode` | yes | `non_streaming`, `streaming`, or `both`. |
+| `inputContentType` | no | `json` (default) or `text`. |
+| `outputContentType` | no | `json` (default) or `text`. |
+| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
+| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the buffered response text. |
+| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. |
+
+`invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
+includes `invocations`. Declaring it elsewhere — on another agent kind, or on an
+`invocations_ws`-only agent, which does not go through the content-safety HTTP
+proxy — fails validation rather than silently deploying a policy that never runs.
+
+> **Understanding `responseMode`:** it declares which response *shapes* the
+> container can produce, **not** "input and output". Input is always moderated.
+> For the output side the proxy inspects the actual response `Content-Type` and
+> runs exactly one gate: the SSE gate for `text/event-stream`, the buffered gate
+> otherwise. Use `both` only for containers that genuinely answer both ways —
+> if a response arrives in a shape `responseMode` did not declare, the request
+> fails closed rather than skipping moderation.
+
+Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
+the whole body is then moderated and no paths are needed for that direction.
+
+As with `raiPolicyName`, the deprecated on-disk `agent.yaml` shape uses snake_case
+keys throughout this block (`invocations_moderation`, `response_mode`,
+`input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
+(`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
+
+## Session idle timeout
+
+A hosted agent's runtime session sandbox is suspended by Foundry after a period
+of inactivity. The default is 900 seconds. Override it with
+`sessionConfiguration.idleTimeoutSeconds` on the `azure.ai.agent` service entry
+in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    sessionConfiguration:
+      idleTimeoutSeconds: 300
+```
+
+`sessionConfiguration` applies to both deploy modes — container images and code
+deploys (`codeConfiguration`) alike. It is optional; when omitted, the setting
+is left out of the service request and Foundry applies its default (900
+seconds).
+
+Details:
+
+- `idleTimeoutSeconds` must be between **300 and 3600** seconds (inclusive).
+  Values outside that range are rejected at deploy time and by schema
+  validation.
+- In the deprecated on-disk `agent.yaml` shape the keys are snake_case
+  (`session_configuration.idle_timeout_seconds`). In `azure.yaml` they are
+  camelCase, like the other inline agent properties.
+
 ## Session carry-over across deploys
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and
@@ -166,6 +328,100 @@ Details:
 ## Customize infrastructure
 
 Use `azd ai agent init --infra` to generate editable Foundry Bicep or Terraform. Existing project infrastructure is preserved as a separate layer. See [Customize Foundry infrastructure with `--infra`](docs/infrastructure-eject.md) for migration behavior, file-conflict rules, resource-group ownership, layer dependencies, and limitations.
+
+## Private container registry connections
+
+A hosted agent can reference a pre-built image in a private registry through a
+Foundry project connection. The image must be fully qualified, and
+`docker.imagePassthrough: true` is required so azd preserves the remote image
+reference instead of pulling, building, or publishing it.
+
+The Foundry connection must use metadata understood by the hosted-agent service
+and credentials that let the Foundry project identity authenticate to the
+registry. For OAuth token exchange, configure the registry's identity provider,
+audience, token endpoint, and project-identity binding before deploying.
+
+### External connection
+
+For a connection that already exists in the Foundry project, set
+`registryConnectionId` to its Foundry name or resource ID. An external connection
+does not belong in `uses`:
+
+```yaml
+services:
+  existing-project:
+    host: azure.ai.project
+    endpoint: https://example.services.ai.azure.com/api/projects/example-project
+
+  private-image-agent:
+    host: azure.ai.agent
+    uses:
+      - existing-project
+    kind: hosted
+    name: private-image-agent
+    image: registry.example.com/team/agent:v1
+    docker:
+      imagePassthrough: true
+    registryConnectionId: production-registry
+    protocols:
+      - protocol: invocations
+        version: 1.0.0
+```
+
+You can create the external connection before deployment with
+`azd ai connection create`, or create it through the Foundry portal or API. The
+connection must exist on the selected project before `azd deploy` runs.
+
+### Declarative sibling connection
+
+To let `azd provision` create the connection, declare an
+`azure.ai.connection` sibling. For this declarative path, both the agent's
+`registryConnectionId` and `uses` identify the sibling's azure.yaml service key,
+which is also the Foundry connection name provisioned by the current Projects
+extension:
+
+```yaml
+services:
+  existing-project:
+    host: azure.ai.project
+    endpoint: https://example.services.ai.azure.com/api/projects/example-project
+
+  private-registry:
+    host: azure.ai.connection
+    uses:
+      - existing-project
+    category: CustomKeys
+    target: https://registry.example.com
+    authType: CustomKeys
+    credentials:
+      keys:
+        audience: ${REGISTRY_AUDIENCE}
+        tokenEndpoint: /oauth/token
+        body.provider_name: ${REGISTRY_PROVIDER}
+    metadata:
+      type: registry_connection
+      mode: oauth_token_exchange
+
+  private-image-agent:
+    host: azure.ai.agent
+    uses:
+      - existing-project
+      - private-registry
+    kind: hosted
+    name: private-image-agent
+    image: registry.example.com/team/agent:v1
+    docker:
+      imagePassthrough: true
+    registryConnectionId: private-registry
+    protocols:
+      - protocol: invocations
+        version: 1.0.0
+```
+
+Set the referenced credential environment values, run `azd provision`, and then
+run `azd deploy`. Omitting the sibling from `uses`, disabling it with a deployment
+condition, or omitting image passthrough causes validation to fail before agent
+deployment.
 
 ## Private networking for `host: azure.ai.project`
 

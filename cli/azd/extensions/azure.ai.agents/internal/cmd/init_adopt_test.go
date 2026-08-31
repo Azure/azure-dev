@@ -32,8 +32,13 @@ func TestInspectAzureYaml(t *testing.T) {
 services:
   ai-project:
     host: azure.ai.project
+  summarize:
+    host: azure.ai.skill
+    instructions: Summarize the user's input.
   assistant:
     host: azure.ai.agent
+    uses:
+      - summarize
     kind: hosted
 `,
 			wantServices:     true,
@@ -418,6 +423,32 @@ func TestStageAzureYamlTemplate_LocalRenamesToAzureYaml(t *testing.T) {
 	require.True(t, fileExists(filepath.Join(staging, "agents", "main.py")))
 }
 
+func TestStageAzureYamlTemplate_PreservesSkillService(t *testing.T) {
+	sampleDir := t.TempDir()
+	pointer := filepath.Join(sampleDir, "sample.yaml")
+	content := `name: foundry-simple
+services:
+  summarize:
+    host: azure.ai.skill
+    instructions: Summarize the user's input.
+  assistant:
+    host: azure.ai.agent
+    uses:
+      - summarize
+    kind: hosted
+`
+	require.NoError(t, os.WriteFile(pointer, []byte(content), 0600))
+
+	flags := &initFlags{manifestPointer: pointer}
+	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
+	require.NoError(t, err)
+	defer cleanup()
+
+	staged, err := os.ReadFile(filepath.Join(staging, "azure.yaml"))
+	require.NoError(t, err)
+	require.YAMLEq(t, content, string(staged))
+}
+
 func TestAdoptedServiceHasCodeConfig(t *testing.T) {
 	tests := []struct {
 		name string
@@ -777,8 +808,8 @@ func TestAdoptedAgentNameConflictSuggestion(t *testing.T) {
 	t.Parallel()
 
 	suggestion := adoptedAgentNameConflictSuggestion()
+	require.Contains(t, suggestion, "--agent-name")
 	require.Contains(t, suggestion, "adopted azure.yaml")
-	require.NotContains(t, suggestion, "--agent-name")
 }
 
 func newAdoptedAgentNameTestClient(
@@ -936,6 +967,266 @@ func TestUpdateAdoptedAgentNames_UnchangedNamesAreNotWritten(t *testing.T) {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	require.Empty(t, server.configValues)
+}
+
+func TestApplyAdoptedAgentNameOverride_PersistsFlagName(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-service": {
+				Name: "agent-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("echo-activity"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := applyAdoptedAgentNameOverride(t.Context(), client, "test0804")
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "agent-service", server.configValues["name"].serviceName)
+	require.Equal(t, "test0804", server.configValues["name"].value)
+}
+
+func TestApplyAdoptedAgentNameOverride_PersistsFlagNameForRefService(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-service": {
+				Name: "agent-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"$ref": structpb.NewStringValue("./agent.yaml"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := applyAdoptedAgentNameOverride(t.Context(), client, "test0804")
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "agent-service", server.configValues["name"].serviceName)
+	require.Equal(t, "test0804", server.configValues["name"].value)
+}
+
+func TestApplyAdoptedAgentNameOverride_RejectsMultipleAgents(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-a": {
+				Name: "agent-a",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("agent-a"),
+				}},
+			},
+			"agent-b": {
+				Name: "agent-b",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("agent-b"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := applyAdoptedAgentNameOverride(t.Context(), client, "test0804")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "multiple agent services")
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues)
+}
+
+func TestApplyAdoptedAgentNameOverride_RejectsNoAgentService(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"ai-project": {
+				Name: "ai-project",
+				Host: AiProjectHost,
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := applyAdoptedAgentNameOverride(t.Context(), client, "test0804")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no agent service")
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues)
+}
+
+func TestAdoptedAgentNameOverride_IgnoresResolvedDefaultWhenFlagNotExplicit(t *testing.T) {
+	t.Parallel()
+
+	flags := &initFlags{agentName: "resolved-template-default"}
+
+	got, err := adoptedAgentNameOverride(flags)
+	require.NoError(t, err)
+	require.Empty(t, got)
+	require.Equal(t, "resolved-template-default", flags.agentName)
+}
+
+func TestAdoptedAgentNameOverride_UsesExplicitFlag(t *testing.T) {
+	t.Parallel()
+
+	flags := &initFlags{agentName: "test0804", agentNameExplicit: true}
+
+	got, err := adoptedAgentNameOverride(flags)
+	require.NoError(t, err)
+	require.Equal(t, "test0804", got)
+	require.Equal(t, "test0804", flags.agentName)
+}
+
+func TestValidateAdoptedAgentNameOverride_AllowsSingleNamedAgent(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: echo-activity
+`)
+
+	require.NoError(t, validateAdoptedAgentNameOverride(content, ""))
+}
+
+func TestValidateAdoptedAgentNameOverride_AllowsSingleRefAgent(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  agent:
+    host: azure.ai.agent
+    $ref: ./agent.yaml
+`)
+
+	require.NoError(t, validateAdoptedAgentNameOverride(content, ""))
+}
+
+func TestValidateAdoptedAgentNameOverride_AllowsSingleRefOnlyAgent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	refPath := filepath.Join(root, "agent.yaml")
+	require.NoError(t, os.WriteFile(refPath, []byte("host: azure.ai.agent\nkind: hosted\n"), 0o600))
+	content := []byte(`name: sample
+services:
+  agent:
+    $ref: ./agent.yaml
+`)
+
+	require.NoError(t, validateAdoptedAgentNameOverride(content, root))
+}
+
+func TestValidateAdoptedAgentNameOverride_AllowsSingleLegacyNamedAgent(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  agent:
+    host: azure.ai.agent
+    config:
+      kind: hosted
+      name: echo-activity
+`)
+
+	require.NoError(t, validateAdoptedAgentNameOverride(content, ""))
+}
+
+func TestValidateAdoptedAgentNameOverride_RejectsMultipleAgents(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  agent-a:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent-a
+  agent-b:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent-b
+`)
+
+	err := validateAdoptedAgentNameOverride(content, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "multiple agent services")
+}
+
+func TestValidateAdoptedAgentNameOverride_RejectsInlineAndRefAgents(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  agent-a:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent-a
+  agent-b:
+    host: azure.ai.agent
+    $ref: ./agent.yaml
+`)
+
+	err := validateAdoptedAgentNameOverride(content, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "multiple agent services")
+}
+
+func TestValidateAdoptedAgentNameOverride_RejectsInlineAndRefOnlyAgents(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	refPath := filepath.Join(root, "agent-b.yaml")
+	require.NoError(t, os.WriteFile(refPath, []byte("host: azure.ai.agent\nkind: hosted\n"), 0o600))
+	content := []byte(`name: sample
+services:
+  agent-a:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent-a
+  agent-b:
+    $ref: ./agent-b.yaml
+`)
+
+	err := validateAdoptedAgentNameOverride(content, root)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "multiple agent services")
+}
+
+func TestValidateAdoptedAgentNameOverride_RejectsNoAgentService(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  project:
+    host: azure.ai.project
+`)
+
+	err := validateAdoptedAgentNameOverride(content, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no agent service")
 }
 
 // TestStampProjectEndpoint_WritesEndpoint verifies that stampProjectEndpoint

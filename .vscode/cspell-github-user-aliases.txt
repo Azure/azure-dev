@@ -23,12 +23,14 @@ envsubst
 fatih
 fiscaletti
 gofrs
+gimenete
 haoozhang
 hemarina
 huimiu
 hyoshis
 imatiach
 isatty
+jayzhang
 joho
 karolz
 kitsiosk

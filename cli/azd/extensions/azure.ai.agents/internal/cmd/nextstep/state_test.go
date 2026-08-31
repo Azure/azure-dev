@@ -21,12 +21,16 @@ import (
 
 // fakeSource is a hand-rolled Source for table-driven tests.
 type fakeSource struct {
-	envName    string
-	envNameErr error
-	project    *azdext.ProjectConfig
-	projectErr error
-	values     map[string]string
-	valueErr   error
+	envName      string
+	envNameErr   error
+	project      *azdext.ProjectConfig
+	projectErr   error
+	values       map[string]string
+	valueErr     error
+	valueErrors  map[string]error
+	configValues map[string]*structpb.Value
+	configErrors map[string]error
+	calls        map[string]int
 }
 
 func (f *fakeSource) CurrentEnvName(_ context.Context) (string, error) {
@@ -38,10 +42,429 @@ func (f *fakeSource) Project(_ context.Context) (*azdext.ProjectConfig, error) {
 }
 
 func (f *fakeSource) EnvValue(_ context.Context, envName, key string) (string, error) {
+	if f.calls != nil {
+		f.calls[envName+"/"+key]++
+	}
 	if f.valueErr != nil {
 		return "", f.valueErr
 	}
+	if err := f.valueErrors[envName+"/"+key]; err != nil {
+		return "", err
+	}
+
 	return f.values[envName+"/"+key], nil
+}
+
+func (f *fakeSource) ServiceConfigValue(
+	_ context.Context,
+	serviceName string,
+	path string,
+) (*structpb.Value, bool, error) {
+	key := serviceName + "/" + path
+	if err := f.configErrors[key]; err != nil {
+		return nil, false, err
+	}
+	value, found := f.configValues[key]
+	return value, found, nil
+}
+
+func TestAssembleState_SplitToolboxesProbeCanonicalEndpoints(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		values: map[string]string{
+			"dev/TOOLBOX_ALPHA_MCP_ENDPOINT":      "https://alpha.example/mcp",
+			"dev/TOOLBOX_ALPHA_COPY_MCP_ENDPOINT": "https://alpha-copy.example/mcp",
+		},
+		calls: make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"alpha": {
+					Name: "alpha", Host: "azure.ai.toolbox",
+				},
+				"alpha-copy": {
+					Name: "alpha-copy", Host: "azure.ai.toolbox",
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"alpha", "alpha-copy"},
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.True(t, state.ToolboxEndpointsChecked)
+	require.Len(t, state.Toolboxes, 2)
+	require.Equal(t, ToolboxSourceSplit, state.Toolboxes[0].ToolboxSource)
+	require.Equal(t, "alpha", state.Toolboxes[0].Name)
+	require.Empty(t, state.MissingToolboxEndpoints)
+	require.Equal(t, 1, src.calls["dev/TOOLBOX_ALPHA_MCP_ENDPOINT"])
+	require.Equal(t, 1, src.calls["dev/TOOLBOX_ALPHA_COPY_MCP_ENDPOINT"])
+}
+
+func TestAssembleState_SplitToolboxMissingEndpointIsNotManual(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		values: map[string]string{
+			"dev/TOOLBOX_OTHER_MCP_ENDPOINT": "https://other.example/mcp",
+		},
+		configErrors: map[string]error{
+			"missing/condition": errors.New("unreferenced condition must not be read"),
+		},
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"missing": {
+					Name: "missing", Host: "azure.ai.toolbox",
+				},
+				"other": {
+					Name: "other", Host: "azure.ai.toolbox",
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"other"},
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Empty(t, state.MissingManualVars)
+	require.Empty(t, state.MissingToolboxEndpoints)
+	require.Len(t, state.Toolboxes, 1)
+	require.Equal(t, "other", state.Toolboxes[0].Name)
+	require.Equal(t, 0, src.calls["dev/TOOLBOX_MISSING_MCP_ENDPOINT"])
+}
+
+func TestAssembleState_DisabledAgentDoesNotCollectSplitToolbox(t *testing.T) {
+	t.Parallel()
+
+	disabledAgent := newAgentService(t, map[string]any{
+		"kind": "hostedAgent",
+		"environmentVariables": []any{
+			map[string]any{
+				"name":  "TOOLS_ENDPOINT",
+				"value": "${TOOLBOX_TOOLS_MCP_ENDPOINT}",
+			},
+		},
+	})
+	disabledAgent.Name = "disabled-agent"
+	disabledAgent.Uses = []string{"tools"}
+
+	src := &fakeSource{
+		envName: "dev",
+		configValues: map[string]*structpb.Value{
+			"disabled-agent/condition": structpb.NewBoolValue(false),
+		},
+		configErrors: map[string]error{
+			"tools/condition": errors.New("disabled toolbox condition must not be read"),
+		},
+		calls: make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"tools": {
+					Name: "tools", Host: toolboxHost,
+				},
+				"disabled-agent": disabledAgent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Empty(t, state.Toolboxes)
+	require.Empty(t, state.MissingToolboxEndpoints)
+	require.Empty(t, state.MissingManualVars)
+	require.Equal(t, 0, src.calls["dev/TOOLBOX_TOOLS_MCP_ENDPOINT"])
+}
+
+func TestAssembleState_AgentConditionFiltersManualVarsWithoutSplitToolbox(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		condition *structpb.Value
+		wantVars  []string
+		wantCalls int
+	}{
+		{
+			name:      "disabled agent",
+			condition: structpb.NewBoolValue(false),
+		},
+		{
+			name:      "enabled agent",
+			wantVars:  []string{"MANUAL_VALUE"},
+			wantCalls: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			agent := newAgentService(t, map[string]any{
+				"kind": "hostedAgent",
+				"environmentVariables": []any{
+					map[string]any{
+						"name":  "MANUAL_VALUE",
+						"value": "${MANUAL_VALUE}",
+					},
+				},
+			})
+			agent.Name = "agent"
+
+			src := &fakeSource{
+				envName: "dev",
+				configValues: map[string]*structpb.Value{
+					"agent/condition": tt.condition,
+				},
+				calls: make(map[string]int),
+				project: &azdext.ProjectConfig{
+					Path: t.TempDir(),
+					Services: map[string]*azdext.ServiceConfig{
+						"agent": agent,
+					},
+				},
+			}
+
+			state, errs := assembleState(t.Context(), src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantVars, state.MissingManualVars)
+			require.Equal(t, tt.wantCalls, src.calls["dev/MANUAL_VALUE"])
+		})
+	}
+}
+
+func TestAssembleState_SplitToolboxEndpointErrorIsSurfaced(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("grpc: connection refused")
+	src := &fakeSource{
+		envName: "dev",
+		valueErrors: map[string]error{
+			"dev/TOOLBOX_MISSING_MCP_ENDPOINT": wantErr,
+		},
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"missing": {
+					Name: "missing", Host: "azure.ai.toolbox",
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"missing"},
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.True(t, state.ToolboxEndpointsChecked)
+	require.Empty(t, state.MissingToolboxEndpoints)
+	require.Equal(t,
+		[]string{"read toolbox endpoint TOOLBOX_MISSING_MCP_ENDPOINT: grpc: connection refused"},
+		state.ToolboxEndpointErrors,
+	)
+	require.Len(t, errs, 1)
+	require.ErrorContains(t, errs[0], "grpc: connection refused")
+}
+
+func TestPopulateSplitToolboxes_PrefersSplitCanonicalKey(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		Toolboxes: []ResourceRef{
+			{Name: "my+tool", ServiceName: "agent", ToolboxSource: ToolboxSourceLegacyManifest},
+			{Name: "legacy", ServiceName: "agent", ToolboxSource: ToolboxSourceLegacyManifest},
+		},
+	}
+	project := &azdext.ProjectConfig{
+		Services: map[string]*azdext.ServiceConfig{
+			"my-tool": {Name: "my-tool", Host: "azure.ai.toolbox"},
+			"agent": {
+				Name: "agent", Host: agentHost,
+				Uses: []string{"my-tool"},
+			},
+		},
+	}
+
+	var errs []error
+	populateSplitToolboxes(
+		t.Context(),
+		&fakeSource{},
+		"",
+		project,
+		state,
+		&errs,
+	)
+	require.Empty(t, errs)
+	require.Len(t, state.Toolboxes, 2)
+	require.Equal(t, "legacy", state.Toolboxes[0].Name)
+	require.Equal(t, ToolboxSourceLegacyManifest, state.Toolboxes[0].ToolboxSource)
+	require.Equal(t, "my-tool", state.Toolboxes[1].Name)
+	require.Equal(t, ToolboxSourceSplit, state.Toolboxes[1].ToolboxSource)
+}
+
+func TestAssembleState_SplitToolboxConditionDisabled(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		configValues: map[string]*structpb.Value{
+			"disabled/condition": structpb.NewBoolValue(false),
+		},
+		calls: make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"disabled": {
+					Name: "disabled", Host: toolboxHost,
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"disabled"},
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Len(t, errs, 1)
+	require.False(t, state.HasToolboxes)
+	require.Empty(t, state.MissingToolboxEndpoints)
+	require.Len(t, state.ToolboxDependencyErrors, 1)
+	require.Contains(t, state.ToolboxDependencyErrors[0], "disabled")
+	require.Equal(t, 0, src.calls["dev/TOOLBOX_DISABLED_MCP_ENDPOINT"])
+}
+
+func TestAssembleState_InactiveSplitToolboxEndpointIsNotManual(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		condition    *structpb.Value
+		conditionErr error
+	}{
+		"disabled": {
+			condition: structpb.NewBoolValue(false),
+		},
+		"condition read error": {
+			conditionErr: errors.New("condition unavailable"),
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			agent := newAgentService(t, map[string]any{
+				"kind": "hostedAgent",
+				"environmentVariables": []any{
+					map[string]any{
+						"name":  "TOOLS_ENDPOINT",
+						"value": "${TOOLBOX_DISABLED_MCP_ENDPOINT}",
+					},
+				},
+			})
+			agent.Name = "agent"
+			agent.Uses = []string{"disabled"}
+
+			src := &fakeSource{
+				envName: "dev",
+				configValues: map[string]*structpb.Value{
+					"disabled/condition": tt.condition,
+				},
+				configErrors: map[string]error{
+					"disabled/condition": tt.conditionErr,
+				},
+				calls: make(map[string]int),
+				project: &azdext.ProjectConfig{
+					Services: map[string]*azdext.ServiceConfig{
+						"disabled": {
+							Name: "disabled", Host: toolboxHost,
+						},
+						"agent": agent,
+					},
+				},
+			}
+
+			state, errs := assembleState(t.Context(), src)
+			require.Len(t, errs, 1)
+			require.Empty(t, state.MissingManualVars)
+			require.Empty(t, state.MissingToolboxEndpoints)
+			require.Len(t, state.ToolboxDependencyErrors, 1)
+			require.Equal(
+				t,
+				0,
+				src.calls["dev/TOOLBOX_DISABLED_MCP_ENDPOINT"],
+			)
+		})
+	}
+}
+
+func TestAssembleState_SplitToolboxConditionUsesEnvironment(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		values: map[string]string{
+			"dev/ENABLE_TOOLBOX": "false",
+		},
+		configValues: map[string]*structpb.Value{
+			"conditional/condition": structpb.NewStringValue("${ENABLE_TOOLBOX}"),
+		},
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"conditional": {
+					Name: "conditional", Host: toolboxHost,
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"conditional"},
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Len(t, errs, 1)
+	require.Empty(t, state.Toolboxes)
+	require.Len(t, state.ToolboxDependencyErrors, 1)
+	require.Contains(t, state.ToolboxDependencyErrors[0], "conditional")
+}
+
+func TestAssembleState_SplitToolboxConditionErrorIsSurfaced(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		configValues: map[string]*structpb.Value{
+			"malformed/condition": structpb.NewStringValue("${"),
+		},
+		calls: make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"malformed": {
+					Name: "malformed", Host: toolboxHost,
+				},
+				"agent": {
+					Name: "agent", Host: agentHost,
+					Uses: []string{"malformed"},
+				},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Len(t, errs, 1)
+	require.Empty(t, state.Toolboxes)
+	require.Len(t, state.ToolboxDependencyErrors, 1)
+	require.Contains(t, state.ToolboxDependencyErrors[0], "invalid deployment condition")
+	require.Equal(t, 0, src.calls["dev/TOOLBOX_MALFORMED_MCP_ENDPOINT"])
 }
 
 func TestAssembleState(t *testing.T) {
@@ -316,10 +739,10 @@ func TestServiceKey(t *testing.T) {
 	}
 }
 
-// TestIsDeployed_VoiceEndpointFallback verifies that a voice agent — which sets
-// only AGENT_<KEY>_NAME and AGENT_<KEY>_ENDPOINT, never AGENT_<KEY>_VERSION — is
-// still reported as deployed via the base endpoint marker, while an agent with
-// neither version nor endpoint is reported undeployed.
+// TestIsDeployed_VoiceEndpointFallback verifies that voice readiness is based
+// on the base endpoint marker. Legacy voice agents never set VERSION, while
+// prompt voice agents set VERSION before ENDPOINT; in both cases ENDPOINT is
+// the deploy completion marker.
 func TestIsDeployed_VoiceEndpointFallback(t *testing.T) {
 	t.Parallel()
 
@@ -335,8 +758,25 @@ func TestIsDeployed_VoiceEndpointFallback(t *testing.T) {
 			want:   true,
 		},
 		{
-			name:    "no version but base endpoint set: deployed (voice agent)",
-			values:  map[string]string{"env1/AGENT_VOICE_SVC_ENDPOINT": "https://x/voice_agents/a"},
+			name:    "version set but endpoint missing: undeployed (voice agent partial write)",
+			values:  map[string]string{"env1/AGENT_VOICE_SVC_VERSION": "1"},
+			isVoice: true,
+			want:    false,
+		},
+		{
+			name: "version and endpoint set: deployed (prompt voice agent)",
+			values: map[string]string{
+				"env1/AGENT_VOICE_SVC_VERSION":  "1",
+				"env1/AGENT_VOICE_SVC_ENDPOINT": "wss://x/agents/a/endpoint/protocols/voice?api-version=v1",
+			},
+			isVoice: true,
+			want:    true,
+		},
+		{
+			name: "no version but base endpoint set: deployed (voice agent)",
+			values: map[string]string{
+				"env1/AGENT_VOICE_SVC_ENDPOINT": "wss://x/agents/a/endpoint/protocols/voice?api-version=v1",
+			},
 			isVoice: true,
 			want:    true,
 		},

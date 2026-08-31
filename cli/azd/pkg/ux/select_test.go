@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -85,6 +86,27 @@ func TestSelect_Render_initial(t *testing.T) {
 	assert.Contains(t, output, "Alpha")
 	assert.Contains(t, output, "Bravo")
 	assert.Contains(t, output, "Charlie")
+}
+
+func TestSelect_Render_initial_withoutFilteringSeparatesPromptAndChoices(t *testing.T) {
+	var buf bytes.Buffer
+	printer := NewPrinter(&buf)
+
+	s := NewSelect(&SelectOptions{
+		Writer:          io.Discard,
+		Message:         "Choose",
+		Choices:         []*SelectChoice{{Value: "a", Label: "Alpha"}},
+		EnableFiltering: new(false),
+	})
+
+	require.NoError(t, s.Render(printer))
+
+	output := buf.String()
+	promptEnd := strings.Index(output, "\n")
+	require.GreaterOrEqual(t, promptEnd, 0)
+	assert.True(t, strings.HasPrefix(output[promptEnd:], "\n\n"), output)
+	assert.Contains(t, output, "Alpha")
+	assert.NotContains(t, output, "Filter:")
 }
 
 func TestSelect_Render_complete(t *testing.T) {

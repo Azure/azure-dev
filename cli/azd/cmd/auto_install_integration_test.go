@@ -205,6 +205,20 @@ func TestAgentDetectionIntegration(t *testing.T) {
 			description:      "When running under GitHub Copilot CLI, --no-prompt should be auto-enabled",
 		},
 		{
+			name:             "Codex enables no-prompt automatically",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"CODEX_THREAD_ID": "thread-id"},
+			expectedNoPrompt: true,
+			description:      "When running under Codex, --no-prompt should be auto-enabled",
+		},
+		{
+			name:             "Cursor enables no-prompt automatically",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"CURSOR_AGENT": "1"},
+			expectedNoPrompt: true,
+			description:      "When running under Cursor, --no-prompt should be auto-enabled",
+		},
+		{
 			name:             "GitHub Copilot CLI via COPILOT_CLI enables no-prompt automatically",
 			args:             []string{"deploy"},
 			envVars:          map[string]string{"COPILOT_CLI": "true"},
@@ -314,6 +328,10 @@ func clearAgentEnvVarsForTest(t *testing.T) {
 		"AI_AGENT",
 		// Claude Code
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
+		// Codex
+		"CODEX_CI", "CODEX_THREAD_ID", "CODEX_SESSION_ID",
+		// Cursor
+		"CURSOR_AGENT", "CURSOR_CONVERSATION_ID",
 		// GitHub Copilot CLI
 		"GITHUB_COPILOT_CLI", "GH_COPILOT", "COPILOT_CLI",
 		// Gemini CLI

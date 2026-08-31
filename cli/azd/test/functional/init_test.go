@@ -309,14 +309,17 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-	_, err := cli.RunCommandWithStdIn(
+	// The template is archived, so accept the warning before providing the environment name.
+	result, err := cli.RunCommandWithStdIn(
 		ctx,
-		"TESTENV\n",
+		"y\nTESTENV\n",
 		"init",
 		"--template",
 		"cosmos-dotnet-core-todo-app",
 	)
 	require.NoError(t, err)
+	require.Contains(t, result.Stdout, "WARNING: This template repository is archived")
+	require.FileExists(t, getTestEnvPath(dir, "TESTENV"))
 
 	// Functional tests run as subprocesses with piped stdin (non-TTY), so
 	// auto-directory creation does not activate. Files land in CWD directly.

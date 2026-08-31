@@ -18,61 +18,31 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-// mockProjectManager implements project.ProjectManager for testing.
-type mockProjectManager struct {
-	mock.Mock
+type recordingServiceManager struct {
+	project.ServiceManager
+	initializedServices []string
 }
 
-func (m *mockProjectManager) Initialize(ctx context.Context, projectConfig *project.ProjectConfig) error {
-	return m.Called(ctx, projectConfig).Error(0)
+func (m *recordingServiceManager) GetRequiredTools(
+	context.Context, *project.ServiceConfig,
+) ([]tools.ExternalTool, error) {
+	return nil, nil
 }
 
-func (m *mockProjectManager) InitializeFrameworks(
-	ctx context.Context, projectConfig *project.ProjectConfig,
-) ([]*project.ServiceConfig, []project.ServiceFrameworkInitFailure, error) {
-	args := m.Called(ctx, projectConfig)
-	services, _ := args.Get(0).([]*project.ServiceConfig)
-	skipped, _ := args.Get(1).([]project.ServiceFrameworkInitFailure)
-	return services, skipped, args.Error(2)
-}
-
-func (m *mockProjectManager) EnsureAllTools(
-	ctx context.Context, projectConfig *project.ProjectConfig, _ project.ServiceFilterPredicate,
+func (m *recordingServiceManager) Initialize(
+	_ context.Context, serviceConfig *project.ServiceConfig,
 ) error {
-	return m.Called(ctx, projectConfig).Error(0)
-}
-
-func (m *mockProjectManager) DefaultServiceFromWd(
-	ctx context.Context, projectConfig *project.ProjectConfig,
-) (*project.ServiceConfig, error) {
-	args := m.Called(ctx, projectConfig)
-	return args.Get(0).(*project.ServiceConfig), args.Error(1)
-}
-
-func (m *mockProjectManager) EnsureFrameworkTools(
-	ctx context.Context, projectConfig *project.ProjectConfig, _ project.ServiceFilterPredicate,
-) error {
-	return m.Called(ctx, projectConfig).Error(0)
-}
-
-func (m *mockProjectManager) EnsureServiceTargetTools(
-	ctx context.Context, projectConfig *project.ProjectConfig, _ project.ServiceFilterPredicate,
-) error {
-	return m.Called(ctx, projectConfig).Error(0)
-}
-
-func (m *mockProjectManager) EnsureRestoreTools(
-	ctx context.Context, projectConfig *project.ProjectConfig, _ project.ServiceFilterPredicate,
-) error {
-	return m.Called(ctx, projectConfig).Error(0)
+	m.initializedServices = append(m.initializedServices, serviceConfig.Name)
+	return nil
 }
 
 // mockProvider implements provisioning.Provider for testing.
@@ -154,9 +124,8 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 
-	pm := &mockProjectManager{}
-	pm.On("Initialize", mock.Anything, mock.Anything).Return(nil)
-	pm.On("EnsureAllTools", mock.Anything, mock.Anything).Return(nil)
+	serviceManager := &recordingServiceManager{}
+	pm := project.NewProjectManager(nil, serviceManager, project.NewImportManager(nil))
 
 	projectConfig := &project.ProjectConfig{
 		Name: "test-project",
@@ -166,6 +135,18 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 			Path:     "infra",
 			Module:   "main",
 		},
+	}
+	connection := &project.ServiceConfig{
+		Name:      "connection",
+		Host:      project.ServiceTargetKind("azure.ai.connection"),
+		Project:   projectConfig,
+		Condition: osutil.NewExpandableString("false"),
+		AdditionalProperties: map[string]any{
+			"$ref": "missing-connection.yaml",
+		},
+	}
+	projectConfig.Services = map[string]*project.ServiceConfig{
+		connection.Name: connection,
 	}
 	projectConfig.EventDispatcher = ext.NewEventDispatcher[project.ProjectLifecycleEventArgs](
 		project.ProjectEvents...,
@@ -196,5 +177,5 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 	require.Nil(t, result)
 
 	// Verify project manager was called (action didn't exit prematurely)
-	pm.AssertExpectations(t)
+	require.Empty(t, serviceManager.initializedServices)
 }

@@ -4,6 +4,7 @@
 package project
 
 import (
+	"fmt"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -19,8 +20,7 @@ const (
 	// ActivityUseCaseSimple is the default single-tenant Teams bot model whose
 	// msaAppId is the agent instance identity client id.
 	ActivityUseCaseSimple ActivityUseCase = "simple"
-	// ActivityUseCaseDigitalWorker is the blueprint + federated-identity model
-	// (Phase 2). Not yet resolved by ResolveActivityProfile.
+	// ActivityUseCaseDigitalWorker is the blueprint + federated-identity model.
 	ActivityUseCaseDigitalWorker ActivityUseCase = "digital_worker"
 )
 
@@ -55,14 +55,75 @@ func IsActivityProtocol(ca agent_yaml.ContainerAgent) bool {
 	return false
 }
 
-// ResolveActivityProfile derives the ActivityProfile for a hosted agent
-// definition. Phase 1 always resolves the simple use case for activity agents;
-// digital-worker detection is a Phase 2 addition.
+// ResolveActivityProfile preserves the simple default for callers that do not
+// have service-level Activity settings.
 func ResolveActivityProfile(ca agent_yaml.ContainerAgent) ActivityProfile {
 	if !IsActivityProtocol(ca) {
 		return ActivityProfile{}
 	}
 	return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
+}
+
+// ResolveActivityProfileWithSettings derives and validates the Activity use
+// case configured on the azd service. A missing setting preserves the existing
+// simple Activity behavior.
+func ResolveActivityProfileWithSettings(
+	ca agent_yaml.ContainerAgent,
+	settings *ActivitySettings,
+) (ActivityProfile, error) {
+	profile := ResolveActivityProfile(ca)
+	if settings == nil || strings.TrimSpace(string(settings.UseCase)) == "" {
+		return profile, nil
+	}
+
+	if !profile.IsActivity {
+		return ActivityProfile{}, fmt.Errorf("activity.useCase requires an Activity-protocol hosted agent")
+	}
+
+	switch settings.UseCase {
+	case ActivityUseCaseSimple:
+		return profile, nil
+	case ActivityUseCaseDigitalWorker:
+		if settings.Publish == nil {
+			return ActivityProfile{}, fmt.Errorf("activity.publish is required for digital_worker")
+		}
+		// publishAsAutopilot is a derived runtime requirement for the digital_worker
+		// use case. It is inferred automatically and should not be treated as a
+		// user-configurable Azure YAML knob.
+		settings.Publish.PublishAsAutopilot = true
+		publishScope := strings.TrimSpace(settings.Publish.PublishScope)
+		if publishScope != "" && !strings.EqualFold(publishScope, "tenant") {
+			return ActivityProfile{}, fmt.Errorf(
+				"activity.publish.publishScope must be tenant for digital_worker (shared is not supported)",
+			)
+		}
+		template := settings.Publish.AgenticUserTemplate
+		if template == nil {
+			return ActivityProfile{}, fmt.Errorf("activity.publish.agenticUserTemplate is required for digital_worker")
+		}
+		requiredTemplateFields := []struct {
+			name  string
+			value string
+		}{
+			{name: "id", value: template.ID},
+			{name: "file", value: template.File},
+			{name: "schemaVersion", value: template.SchemaVersion},
+			{name: "communicationProtocol", value: template.CommunicationProtocol},
+		}
+		for _, field := range requiredTemplateFields {
+			value := field.value
+			if strings.TrimSpace(value) == "" {
+				return ActivityProfile{}, fmt.Errorf(
+					"activity.publish.agenticUserTemplate.%s is required for digital_worker", field.name,
+				)
+			}
+		}
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}, nil
+	default:
+		return ActivityProfile{}, fmt.Errorf(
+			"activity.useCase must be %q or %q", ActivityUseCaseSimple, ActivityUseCaseDigitalWorker,
+		)
+	}
 }
 
 // ComposeActivityAgentEndpoint folds the Activity endpoint requirements into an

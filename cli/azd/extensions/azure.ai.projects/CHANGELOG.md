@@ -1,5 +1,23 @@
 # Release History
 
+## 1.0.0-beta.8 (2026-08-27)
+
+### Features Added
+
+- [[#9683]](https://github.com/Azure/azure-dev/pull/9683) Add editable Bicep and Terraform infrastructure ejection for existing Foundry projects while preserving ownership of existing resources.
+
+## 1.0.0-beta.7 (2026-08-24)
+
+### Other Changes
+
+- [[#9580]](https://github.com/Azure/azure-dev/pull/9580) Update the azd extension SDK dependency to v1.31.0 for extension telemetry compatibility.
+
+## 1.0.0-beta.6 (2026-08-13)
+
+### Features Added
+
+- [[#9457]](https://github.com/Azure/azure-dev/pull/9457) Support Foundry provisioning as an isolated infrastructure layer with layer paths, virtual outputs, ownership tracking, repeat provisioning, and teardown behavior.
+
 ## 1.0.0-beta.5 (2026-08-06)
 
 ### Features Added

@@ -18,14 +18,14 @@ import (
 
 // readRoutineManifest reads and parses a routine manifest from a YAML or JSON file.
 func readRoutineManifest(path string) (*routines.Routine, error) {
-	// #nosec G304 - path is provided by the user via --file and is intentional
+	// #nosec G304 - --file and local azure.yaml $ref paths are trusted user config.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, exterrors.Dependency(
 				exterrors.CodeFileNotFound,
 				fmt.Sprintf("routine manifest file not found: %s", path),
-				"verify the path or rerun without --file",
+				"verify the path exists and points to a routine manifest",
 			)
 		}
 		return nil, exterrors.Dependency(

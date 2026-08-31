@@ -128,6 +128,13 @@ const (
 	CodeBundledDepsNotFound = "bundled_deps_not_found"
 )
 
+// Error codes for Teams app pack/publish operations.
+const (
+	CodeNotActivityAgent    = "not_activity_agent"
+	CodeAgentNotDeployed    = "agent_not_deployed"
+	CodeInvalidPublishScope = "invalid_publish_scope"
+)
+
 // Error codes for $ref file-include resolution.
 const (
 	CodeInvalidFileRef = "invalid_file_ref"
@@ -187,6 +194,7 @@ const (
 	OpContainerPackage      = "container_package"
 	OpContainerPublish      = "container_publish"
 	OpCreateAgent           = "create_agent"
+	OpGetAgent              = "get_agent"
 	OpUpdateAgent           = "update_agent"
 	OpGetActivityBot        = "get_activity_bot"
 	OpEnsureActivityBot     = "ensure_activity_bot"
@@ -202,6 +210,8 @@ const (
 	OpCreateToolboxVersion  = "create_toolbox_version"
 	OpGetToolbox            = "get_toolbox"
 	OpProvisionMemoryStore  = "provision_memory_store"
+	OpPackTeamsApp          = "pack_teams_app"
+	OpPublishTeamsApp       = "publish_teams_app"
 )
 
 // Error codes for eval and optimize operations.

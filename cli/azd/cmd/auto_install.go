@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
@@ -26,7 +28,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	"github.com/spf13/cobra"
@@ -138,18 +139,22 @@ func findFirstNonFlagArg(args []string, flagsWithValues map[string]bool) (comman
 // from the command arguments. For example, "azd foo demo bar" will check for
 // extensions with namespaces: "foo", "foo.demo", "foo.demo.bar"
 func checkForMatchingExtensions(
-	ctx context.Context, extensionManager *extensions.Manager, args []string) ([]*extensions.ExtensionMetadata, error) {
+	ctx context.Context,
+	extensionManager extensionAutoInstallManager,
+	args []string,
+) ([]*extensions.ExtensionMetadata, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
 
-	options := &extensions.FilterOptions{}
-	registryExtensions, err := extensionManager.FindExtensions(ctx, options)
+	resolution, err := extensionManager.ResolveExtensions(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var matchingExtensions []*extensions.ExtensionMetadata
+	var incompatibleExtensions []*extensions.ExtensionMetadata
+	incompatibleNamespace := ""
 
 	// Generate all possible namespace combinations from the command arguments
 	// For "azd something demo foo" -> check "something", "something.demo", "something.demo.foo"
@@ -157,13 +162,26 @@ func checkForMatchingExtensions(
 		candidateNamespace := strings.Join(args[:i], ".")
 
 		// Check if any extension has this exact namespace
-		for _, ext := range registryExtensions {
+		for _, ext := range resolution.Matches {
 			if ext.Namespace == candidateNamespace {
 				matchingExtensions = append(matchingExtensions, ext)
 			}
 		}
+		for _, ext := range resolution.IncompatibleMatches {
+			if ext.Namespace == candidateNamespace {
+				incompatibleExtensions = append(incompatibleExtensions, ext)
+				incompatibleNamespace = candidateNamespace
+			}
+		}
 	}
 
+	if len(matchingExtensions) == 0 && len(incompatibleExtensions) > 0 {
+		return nil, &extensions.ExtensionAzdVersionIncompatibleError{
+			Namespace:  incompatibleNamespace,
+			AzdVersion: extensionManager.AzdVersion(),
+			Matches:    incompatibleExtensions,
+		}
+	}
 	return matchingExtensions, nil
 }
 
@@ -212,6 +230,55 @@ func promptForExtensionChoice(
 	}
 
 	return matches[choice], nil
+}
+
+// chooseLogicalExtensionCandidates separates the rare choice between different extension IDs from
+// source selection. All source candidates for the selected logical extension are preserved so the
+// auto-install UX can present them after discovery is complete.
+func chooseLogicalExtensionCandidates(
+	ctx context.Context,
+	console input.Console,
+	matches []*extensions.ExtensionMetadata,
+) ([]*extensions.ExtensionMetadata, error) {
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("no extensions to choose from")
+	}
+
+	grouped := map[string][]*extensions.ExtensionMetadata{}
+	for _, match := range matches {
+		id := strings.ToLower(match.Id)
+		grouped[id] = append(grouped[id], match)
+	}
+	for id := range maps.Keys(grouped) {
+		slices.SortFunc(grouped[id], func(a, b *extensions.ExtensionMetadata) int {
+			return strings.Compare(strings.ToLower(a.Source), strings.ToLower(b.Source))
+		})
+	}
+
+	ids := slices.Sorted(maps.Keys(grouped))
+	if len(ids) == 1 {
+		return grouped[ids[0]], nil
+	}
+
+	representatives := make([]*extensions.ExtensionMetadata, 0, len(ids))
+	for _, id := range ids {
+		representatives = append(representatives, grouped[id][0])
+	}
+	chosen, err := promptForExtensionChoice(ctx, console, representatives)
+	if err != nil {
+		return nil, err
+	}
+	return grouped[strings.ToLower(chosen.Id)], nil
+}
+
+func requirementCandidates(requirement projectExtensionRequirement) []*extensions.ExtensionMetadata {
+	if len(requirement.candidates) > 0 {
+		return requirement.candidates
+	}
+	if requirement.extension == nil {
+		return nil
+	}
+	return []*extensions.ExtensionMetadata{requirement.extension}
 }
 
 // isBuiltInCommand checks if the given command is a built-in command by examining
@@ -286,10 +353,10 @@ func tryAutoInstallForPartialNamespace(
 	rootContainer *ioc.NestedContainer,
 	foundCmd *cobra.Command,
 	remainingArgs []string,
-) bool {
+) (autoInstallResult, error) {
 	if _, isExtensionCmd := foundCmd.Annotations["extension.id"]; isExtensionCmd {
 		// Extension commands handle their own args via DisableFlagParsing
-		return false
+		return autoInstallResult{}, nil
 	}
 
 	var firstRemainingArg string
@@ -301,73 +368,74 @@ func tryAutoInstallForPartialNamespace(
 	}
 
 	if firstRemainingArg == "" || hasSubcommand(foundCmd, firstRemainingArg) {
-		return false
+		return autoInstallResult{}, nil
 	}
 
 	argsForMatching := buildNamespaceArgs(foundCmd, remainingArgs)
 	if len(argsForMatching) == 0 {
-		return false
+		return autoInstallResult{}, nil
 	}
 
 	var extensionManager *extensions.Manager
 	var console input.Console
 	if err := rootContainer.Resolve(&extensionManager); err != nil {
 		log.Printf("failed to resolve extension manager: %v", err)
-		return false
+		return autoInstallResult{}, nil
 	}
 	if err := rootContainer.Resolve(&console); err != nil {
 		log.Printf("failed to resolve console: %v", err)
-		return false
+		return autoInstallResult{}, nil
 	}
 
 	extensionMatches, err := checkForMatchingExtensions(ctx, extensionManager, argsForMatching)
 	if err != nil {
+		if _, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+			return autoInstallResult{}, internal.WrapErrorWithSuggestion(err)
+		}
 		log.Printf("failed to check for matching extensions: %v", err)
-		return false
+		return autoInstallResult{}, nil
 	}
 	if len(extensionMatches) == 0 {
-		return false
+		return autoInstallResult{}, nil
 	}
 
-	console.Message(ctx,
-		fmt.Sprintf("Command '%s' was not found, but there's an available extension that provides it\n",
-			strings.Join(argsForMatching, " ")))
-
-	chosenExtension, err := promptForExtensionChoice(ctx, console, extensionMatches)
-	if err != nil {
-		console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
-		return false
-	}
-	if chosenExtension == nil {
-		return false
-	}
-
-	installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, *chosenExtension)
-	if installErr != nil {
-		console.Message(ctx, installErr.Error())
-		return false
-	}
-
-	return installed
-}
-
-// tryAutoInstallExtension attempts to auto-install an extension if the unknown command matches an available
-// extension namespace. Returns true if an extension was found and installed, false otherwise.
-func tryAutoInstallExtension(
-	ctx context.Context,
-	console input.Console,
-	extensionManager extensionAutoInstallManager,
-	extension extensions.ExtensionMetadata) (bool, error) {
-	return tryAutoInstallExtensionVersion(ctx, console, extensionManager, extension, "")
+	return autoInstallCommandMatches(
+		ctx,
+		console,
+		extensionManager,
+		extensionMatches,
+		fmt.Sprintf(
+			"Command '%s' isn't available. Install the required extension to use this command.",
+			strings.Join(argsForMatching, " "),
+		),
+	)
 }
 
 type extensionAutoInstallManager interface {
+	AzdVersion() *semver.Version
 	FindExtensions(ctx context.Context, options *extensions.FilterOptions) ([]*extensions.ExtensionMetadata, error)
-	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
-	Install(
+	FindInstallableExtensions(
 		ctx context.Context,
+		options *extensions.InstallResolutionOptions,
+	) ([]*extensions.ExtensionMetadata, error)
+	ResolveExtensions(
+		ctx context.Context,
+		options *extensions.InstallResolutionOptions,
+	) (*extensions.InstallResolutionResult, error)
+	ResolveVersion(
 		extension *extensions.ExtensionMetadata,
 		versionPreference string,
+	) (*extensions.ExtensionVersion, error)
+	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
+	ResolveDependency(
+		ctx context.Context,
+		parent *extensions.ExtensionMetadata,
+		dependency extensions.ExtensionDependency,
+	) (*extensions.ExtensionMetadata, error)
+	InstallWithOptions(
+		ctx context.Context,
+		extension *extensions.ExtensionMetadata,
+		opts extensions.InstallOptions,
 	) (*extensions.ExtensionVersion, error)
 	ListInstalled() (map[string]*extensions.Extension, error)
 }
@@ -378,6 +446,7 @@ func tryAutoInstallExtensionVersion(
 	extensionManager extensionAutoInstallManager,
 	extension extensions.ExtensionMetadata,
 	versionPreference string,
+	displaySource bool,
 ) (bool, error) {
 	// Check if the extension is already installed
 	installedExtension, err := extensionManager.GetInstalled(extensions.FilterOptions{
@@ -390,44 +459,42 @@ func tryAutoInstallExtensionVersion(
 		return false, nil
 	}
 
-	// Return error if running in CI/CD environment
-	if resource.IsRunningOnCI() {
-		return false,
-			fmt.Errorf(
-				"Auto-installation is not supported in CI/CD environments.\n"+
-					"Run '%s' to install it manually.",
-				fmt.Sprintf("azd extension install %s", extension.Id))
+	installedBefore, err := extensionManager.ListInstalled()
+	if err != nil {
+		return false, fmt.Errorf("listing installed extensions: %w", err)
+	}
+	preInstalledIds := make(map[string]struct{}, len(installedBefore))
+	for id := range installedBefore {
+		preInstalledIds[id] = struct{}{}
 	}
 
-	console.MessageUxItem(ctx, &ux.WarningMessage{
-		Description: "You are about to install an extension!",
-	})
-	console.Message(ctx, fmt.Sprintf("Source: %s", extension.Source))
-	console.Message(ctx, fmt.Sprintf("Id: %s", extension.Id))
-	console.Message(ctx, fmt.Sprintf("Name: %s", extension.DisplayName))
-	console.Message(ctx, fmt.Sprintf("Description: %s", extension.Description))
-
-	// Ask user for permission to auto-install the extension
-	shouldInstall, err := console.Confirm(ctx, input.ConsoleOptions{
-		DefaultValue: true,
-		Message:      "Confirm installation",
+	stepMessage := extensionTaskMessage("Installing", extension.Id)
+	console.ShowSpinner(ctx, stepMessage, input.Step)
+	installedVersion, err := extensionManager.InstallWithOptions(ctx, &extension, extensions.InstallOptions{
+		VersionPreference: versionPreference,
 	})
 	if err != nil {
-		return false, err
-	}
-
-	if !shouldInstall {
-		return false, nil
-	}
-
-	// Install the extension
-	console.Message(ctx, fmt.Sprintf("Installing extension '%s'...\n", extension.Id))
-	_, err = extensionManager.Install(ctx, &extension, versionPreference)
-	if err != nil {
+		console.StopSpinner(ctx, stepMessage, input.StepFailed)
 		return false, fmt.Errorf("failed to install extension: %w", err)
 	}
 
-	console.Message(ctx, fmt.Sprintf("Extension '%s' installed successfully!\n", extension.Id))
+	stepMessage += output.WithGrayFormat(" (%s)", installedVersion.Version)
+	if displaySource {
+		stepMessage += fmt.Sprintf(" from %s", extension.Source)
+	}
+	console.StopSpinner(ctx, stepMessage, input.StepDone)
+	if len(installedVersion.Dependencies) > 0 {
+		displayInstalledDependencies(
+			ctx,
+			console,
+			extensionManager,
+			installedVersion.Dependencies,
+			preInstalledIds,
+			"  ",
+			map[string]struct{}{extension.Id: {}},
+			extension.SourceCategoryOrUnknown(),
+		)
+	}
 	return true, nil
 }
 
@@ -610,6 +677,9 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 				result.Err = err
 				return result
 			}
+			if projectExtensions.declined {
+				return result
+			}
 
 			if projectExtensions.installed {
 				rootCmd = newRootCmdWithoutRegistration(rootContainer)
@@ -622,9 +692,22 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		}
 
 		// Check for partial namespace match (e.g., "ai" found but "ai.agent" not installed)
-		if installed := tryAutoInstallForPartialNamespace(
+		partialNamespace, partialErr := tryAutoInstallForPartialNamespace(
 			ctx, rootContainer, foundCmd, originalArgs,
-		); installed {
+		)
+		if partialErr != nil {
+			if resolveErr := rootContainer.Resolve(&console); resolveErr != nil {
+				fmt.Fprintln(os.Stderr, output.WithErrorFormat("ERROR: %s", partialErr.Error()))
+			} else {
+				displayAutoInstallError(ctx, console, partialErr)
+			}
+			result.Err = partialErr
+			return result
+		}
+		if partialNamespace.declined {
+			return result
+		}
+		if partialNamespace.installed {
 			// Extension was installed, rebuild command tree and execute
 			rootCmd = newRootCmdWithoutRegistration(rootContainer)
 			result.Err = rootCmd.ExecuteContext(ctx)
@@ -660,11 +743,20 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		}
 
 		requiredHost := unsupportedErr.Host
-		availableExtensionsForHost, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
-			Capability: extensions.ServiceTargetProviderCapability,
-			Provider:   requiredHost,
-		})
+		availableExtensionsForHost, err := extensionManager.FindInstallableExtensions(
+			ctx,
+			&extensions.InstallResolutionOptions{FilterOptions: extensions.FilterOptions{
+				Capability: extensions.ServiceTargetProviderCapability,
+				Provider:   requiredHost,
+			}},
+		)
 		if err != nil {
+			if _, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+				wrappedErr := internal.WrapErrorWithSuggestion(err)
+				displayAutoInstallError(ctx, console, wrappedErr)
+				result.Err = wrappedErr
+				return result
+			}
 			// Do not fail if we couldn't check for extensions - just report the command's own failure
 			log.Println("Error: check for extensions. Skipping auto-install:", err)
 			console.Message(ctx, unsupportedErr.ErrorMessage)
@@ -679,13 +771,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			result.Err = commandErr
 			return result
 		}
-		// Offer only the extensions whose selected version supplies the host and that are not
-		// already installed.
-		availableExtensionsForHost = filterExtensionsForProvider(
-			availableExtensionsForHost,
-			extensions.ServiceTargetProviderCapability,
-			requiredHost,
-		)
+		// Remove extensions that are already installed.
 		availableExtensionsForHost = uninstalledExtensionMatches(availableExtensionsForHost, installedExtensions)
 		if len(availableExtensionsForHost) == 0 {
 			// Nothing can be installed to supply the host, so the command's failure stands.
@@ -694,41 +780,30 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			return result
 		}
 
-		console.Message(ctx,
-			fmt.Sprintf("Your project is using host '%s' which is not supported by default.\n", unsupportedErr.Host))
-
-		var extensionIdToInstall extensions.ExtensionMetadata
-		if len(availableExtensionsForHost) == 1 {
-			extensionIdToInstall = *availableExtensionsForHost[0]
-			console.Message(ctx, "An extension was found that provides support for this host.")
-		} else {
-			console.Message(ctx, "There are multiple extensions that provide support for this host.")
-			// Multiple matches found, prompt user to choose
-			chosenExtension, err := promptForExtensionChoice(ctx, console, availableExtensionsForHost)
-			if err != nil {
-				console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
-				result.Err = err
-				return result
-			}
-			extensionIdToInstall = *chosenExtension
-		}
-
-		installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, extensionIdToInstall)
+		autoInstall, installErr := autoInstallCommandMatches(
+			ctx,
+			console,
+			extensionManager,
+			availableExtensionsForHost,
+			fmt.Sprintf(
+				"Your project requires support for host '%s'. Install the required extension to continue.",
+				unsupportedErr.Host,
+			),
+		)
 		if installErr != nil {
-			// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
-			console.Message(ctx, installErr.Error())
+			displayAutoInstallError(ctx, console, installErr)
 			result.Err = installErr
 			return result
 		}
-
-		if installed {
+		if autoInstall.declined {
+			return result
+		}
+		if autoInstall.installed {
 			// Extension was installed, build command tree and execute
 			rootCmd := newRootCmdWithoutRegistration(rootContainer)
 			result.Err = rootCmd.ExecuteContext(ctx)
 			return result
 		}
-
-		// The install was declined, so the command's failure stands.
 		result.Err = commandErr
 		return result
 	}
@@ -810,6 +885,12 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// Check if any commands might match extensions with various namespace lengths
 		extensionMatches, err := checkForMatchingExtensions(ctx, extensionManager, argsForMatching)
 		if err != nil {
+			if _, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+				wrappedErr := internal.WrapErrorWithSuggestion(err)
+				displayAutoInstallError(ctx, console, wrappedErr)
+				result.Err = wrappedErr
+				return result
+			}
 			// Do not fail if we couldn't check for extensions - just proceed to normal execution
 			log.Println("Error: check for extensions. Skipping auto-install:", err)
 			result.Err = rootCmd.ExecuteContext(ctx)
@@ -822,34 +903,25 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 				log.Panic("failed to resolve console for auto-install:", err)
 			}
 
-			console.Message(ctx,
-				fmt.Sprintf("Command '%s' was not found, but there's an available extension that provides it\n",
-					strings.Join(argsForMatching, " ")))
-
-			// Prompt user to choose if multiple extensions match
-			chosenExtension, err := promptForExtensionChoice(ctx, console, extensionMatches)
-			if err != nil {
-				console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
-				result.Err = rootCmd.ExecuteContext(ctx)
-				return result
-			}
-
-			if chosenExtension == nil {
-				// User cancelled selection, proceed to normal execution
-				result.Err = rootCmd.ExecuteContext(ctx)
-				return result
-			}
-
-			// Try to auto-install the chosen extension
-			installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, *chosenExtension)
+			autoInstall, installErr := autoInstallCommandMatches(
+				ctx,
+				console,
+				extensionManager,
+				extensionMatches,
+				fmt.Sprintf(
+					"Command '%s' isn't available. Install the required extension to use this command.",
+					strings.Join(argsForMatching, " "),
+				),
+			)
 			if installErr != nil {
-				// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
-				console.Message(ctx, installErr.Error())
+				displayAutoInstallError(ctx, console, installErr)
 				result.Err = installErr
 				return result
 			}
-
-			if installed {
+			if autoInstall.declined {
+				return result
+			}
+			if autoInstall.installed {
 				// Extension was installed, build command tree and execute
 				rootCmd := newRootCmdWithoutRegistration(rootContainer)
 				result.Err = rootCmd.ExecuteContext(ctx)

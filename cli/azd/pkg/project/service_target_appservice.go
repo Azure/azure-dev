@@ -134,10 +134,12 @@ func (st *appServiceTarget) Publish(
 	var publishResult *ServicePublishResult
 	var err error
 
-	// Check if the package artifact is already a remote image reference
-	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
-		if parsedImage, parseErr := docker.ParseContainerImage(artifact.Location); parseErr == nil {
-			if parsedImage.Registry != "" {
+	// Check if the package artifact is already a remote image reference. Image passthrough
+	// is handled by ContainerHelper.Publish so validation and artifact metadata stay consistent.
+	if !serviceConfig.Docker.ImagePassthrough {
+		if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
+			if parsedImage, parseErr := docker.ParseContainerImage(artifact.Location); parseErr == nil &&
+				parsedImage.Registry != "" {
 				publishResult = &ServicePublishResult{
 					Artifacts: ArtifactCollection{
 						{
@@ -326,6 +328,7 @@ func (st *appServiceTarget) zipDeploy(
 
 	// Deploy to each target
 	hasSlots := len(deployTargets) > 1 || (len(deployTargets) == 1 && deployTargets[0].SlotName != "")
+	var warnings []string
 
 	for _, target := range deployTargets {
 		zipFile, err := os.Open(zipFilePath)
@@ -346,7 +349,8 @@ func (st *appServiceTarget) zipDeploy(
 				progressMsg = "Uploading deployment package"
 			}
 			progress.SetProgress(NewServiceProgress(progressMsg))
-			_, deployErr = st.cli.DeployAppServiceZip(
+			var deployResult *azapi.AppServiceZipDeployResult
+			deployResult, deployErr = st.cli.DeployAppServiceZip(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
@@ -355,6 +359,9 @@ func (st *appServiceTarget) zipDeploy(
 				func(logProgress string) { progress.SetProgress(NewServiceProgress(logProgress)) },
 				skipStatusCheck,
 			)
+			if deployErr == nil && deployResult.RuntimeStatusWarning != "" {
+				warnings = append(warnings, deployResult.RuntimeStatusWarning)
+			}
 		} else {
 			progressMsg := fmt.Sprintf("Uploading deployment package to slot '%s'", target.SlotName)
 			progress.SetProgress(NewServiceProgress(progressMsg))
@@ -397,6 +404,7 @@ func (st *appServiceTarget) zipDeploy(
 
 	return &ServiceDeployResult{
 		Artifacts: artifacts,
+		Warnings:  warnings,
 	}, nil
 }
 

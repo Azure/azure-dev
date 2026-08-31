@@ -5,7 +5,9 @@ package agent_yaml
 
 import (
 	"fmt"
+	"math"
 	"regexp"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -388,19 +390,30 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				errors = append(errors, fmt.Sprintf("template.name not in valid format: %v", err))
 			}
 
+			// Only hosted agents carry policies to the service, so a moderation block on any
+			// other kind would be dropped silently instead of enforced.
+			if agentDef.Kind != AgentKindHosted {
+				errors = append(errors,
+					validateInvocationsModerationKind(templateBytes, agentDef.Kind)...)
+			}
+
 			switch AgentKind(agentDef.Kind) {
 			case AgentKindHosted:
 				var agent ContainerAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					raiPolicyCount := 0
 					for i, policy := range agent.Policies {
 						switch policy.Type {
 						case PolicyTypeRai:
+							raiPolicyCount++
 							if policy.RaiPolicyName == "" {
 								errors = append(errors, fmt.Sprintf(
 									"policies[%d] of type '%s' requires a policy name "+
 										"('raiPolicyName' in azure.yaml, 'rai_policy_name' in agent.yaml)",
 									i, policy.Type))
 							}
+							errors = append(errors,
+								validateInvocationsModeration(i, policy.InvocationsModeration, agent.Protocols)...)
 						case "":
 							errors = append(errors, fmt.Sprintf(
 								"policies[%d] requires a type", i))
@@ -409,6 +422,14 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"policies[%d] has an unsupported type '%s' (supported: %s)",
 								i, policy.Type, PolicyTypeRai))
 						}
+					}
+					// rai_config carries a single policy on the wire, so only the first
+					// rai_policy would ever reach the service. Reject the ambiguity rather
+					// than silently dropping the rest.
+					if raiPolicyCount > 1 {
+						errors = append(errors, fmt.Sprintf(
+							"policies declares %d policies of type '%s', but only one is supported",
+							raiPolicyCount, PolicyTypeRai))
 					}
 					// TODO: Do we need this?
 					// if len(agent.Models) == 0 {
@@ -430,6 +451,14 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			case AgentKindPromptVoice:
 				var agent VoiceAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					var fields map[string]yaml.Node
+					if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+						if _, hasToolbox := fields["toolbox"]; hasToolbox {
+							errors = append(errors,
+								"template.toolbox is not supported for a prompt-voice agent; "+
+									"remove it from the agent definition")
+						}
+					}
 					if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
 						errors = append(errors, "template.model.id is required for a prompt-voice agent")
 					}
@@ -440,6 +469,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 							"template.model_type '%s' is not supported; use '%s' or '%s'",
 							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
 					}
+					errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to VoiceAgent: %v", err))
 				}
@@ -459,6 +489,166 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 	return nil
 }
 
+func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
+	var errors []string
+	if agent.OutputModalities != nil && len(agent.OutputModalities) == 0 {
+		errors = append(errors, "template.output_modalities must not be empty when specified")
+	}
+	for i, modality := range agent.OutputModalities {
+		if strings.TrimSpace(modality) == "" {
+			errors = append(errors, fmt.Sprintf("template.output_modalities[%d] must not be blank", i))
+		}
+	}
+	if agent.ParallelToolCalls != nil {
+		errors = append(errors,
+			"template.parallel_tool_calls is not currently supported by the prompt voice runtime; "+
+				"remove it from the agent definition")
+	}
+	if err := validateVoiceMaxOutputTokens(agent.MaxOutputTokens); err != nil {
+		errors = append(errors, err.Error())
+	}
+
+	if agent.Audio == nil {
+		return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, "")...)
+	}
+	transcriptionModel := ""
+	if agent.Audio.Input != nil {
+		errors = append(errors, validateVoiceAudioFormat("template.audio.input.format", agent.Audio.Input.Format)...)
+		if nr := agent.Audio.Input.NoiseReduction; nr != nil && strings.TrimSpace(nr.Type) == "" {
+			errors = append(errors, "template.audio.input.noise_reduction.type must not be blank")
+		}
+		if td := agent.Audio.Input.TurnDetection; td != nil {
+			if strings.TrimSpace(td.Type) == "" {
+				errors = append(errors, "template.audio.input.turn_detection.type must not be blank")
+			}
+			if td.Threshold != nil && (!isFinite(*td.Threshold) || *td.Threshold <= 0 || *td.Threshold > 1) {
+				errors = append(errors, "template.audio.input.turn_detection.threshold must be greater than 0 and <= 1")
+			}
+			if td.PrefixPaddingMs != nil && *td.PrefixPaddingMs < 0 {
+				errors = append(errors, "template.audio.input.turn_detection.prefix_padding_ms must be >= 0")
+			}
+			if td.SilenceDurationMs != nil && *td.SilenceDurationMs < 0 {
+				errors = append(errors, "template.audio.input.turn_detection.silence_duration_ms must be >= 0")
+			}
+			if td.SpeechDurationMs != nil && *td.SpeechDurationMs < 0 {
+				errors = append(errors, "template.audio.input.turn_detection.speech_duration_ms must be >= 0")
+			}
+		}
+		if agent.Audio.Input.Transcription != nil {
+			transcriptionModel = agent.Audio.Input.Transcription.Model
+		}
+	}
+	if agent.Audio.Output != nil {
+		errors = append(errors, validateVoiceAudioFormat("template.audio.output.format", agent.Audio.Output.Format)...)
+		if voice := agent.Audio.Output.Voice; voice != nil {
+			if strings.TrimSpace(voice.Type) == "" {
+				errors = append(errors, "template.audio.output.voice.type must not be blank")
+			}
+			if strings.TrimSpace(voice.Name) == "" {
+				errors = append(errors, "template.audio.output.voice.name must not be blank")
+			}
+		}
+		if speed := agent.Audio.Output.Speed; speed != nil && (!isFinite(*speed) || *speed < 0.25 || *speed > 1.5) {
+			errors = append(errors, "template.audio.output.speed must be between 0.25 and 1.5")
+		}
+	}
+	return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, transcriptionModel)...)
+}
+
+func isFinite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+func validateVoiceMaxOutputTokens(value any) error {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case string:
+		if v == "inf" {
+			return nil
+		}
+	case int:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int8:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int16:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int32:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int64:
+		return validateVoiceMaxOutputTokensInt64(v)
+	case uint:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint8:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint16:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint32:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint64:
+		return validateVoiceMaxOutputTokensUint64(v)
+	case float32:
+		f := float64(v)
+		if isFinite(f) && math.Trunc(f) == f {
+			return validateVoiceMaxOutputTokensInt64(int64(f))
+		}
+	case float64:
+		if isFinite(v) && math.Trunc(v) == v {
+			return validateVoiceMaxOutputTokensInt64(int64(v))
+		}
+	}
+	return fmt.Errorf("template.max_output_tokens must be an integer from 1 to 2147483647 or the string inf")
+}
+
+func validateVoiceMaxOutputTokensInt64(value int64) error {
+	if value < 1 || value > math.MaxInt32 {
+		return fmt.Errorf("template.max_output_tokens must be an integer from 1 to 2147483647 or the string inf")
+	}
+	return nil
+}
+
+func validateVoiceMaxOutputTokensUint64(value uint64) error {
+	if value < 1 || value > math.MaxInt32 {
+		return fmt.Errorf("template.max_output_tokens must be an integer from 1 to 2147483647 or the string inf")
+	}
+	return nil
+}
+
+func validateVoiceIncludeTranscriptionCompatibility(agent VoiceAgent, transcriptionModel string) []string {
+	if !slices.Contains(agent.Include, "item.input_audio_transcription.phrases") {
+		return nil
+	}
+	model := strings.TrimSpace(transcriptionModel)
+	if model == "" {
+		model = defaultVoiceInputTranscriptionModel
+	}
+	if model == "azure-speech" || model == "azure-fast-transcription" {
+		return nil
+	}
+	return []string{
+		"template.include item.input_audio_transcription.phrases requires " +
+			"template.audio.input.transcription.model to be azure-speech or azure-fast-transcription",
+	}
+}
+
+func validateVoiceAudioFormat(path string, format *VoiceAudioFormat) []string {
+	if format == nil {
+		return nil
+	}
+	var errors []string
+	formatType := strings.TrimSpace(format.Type)
+	if formatType == "" {
+		errors = append(errors, path+".type must not be blank")
+	} else if formatType != "audio/pcm" && formatType != "audio/pcmu" && formatType != "audio/pcma" {
+		errors = append(errors, path+".type must be 'audio/pcm', 'audio/pcmu', or 'audio/pcma'")
+	}
+	if format.Rate != nil && *format.Rate <= 0 {
+		errors = append(errors, path+".rate must be greater than 0")
+	}
+	return errors
+}
+
 // Validate that the agent name matches the expected deployable format
 func ValidateAgentName(name string) error {
 	if name == "" {
@@ -473,4 +663,169 @@ func ValidateAgentName(name string) error {
 	}
 
 	return nil
+}
+
+// validateInvocationsModerationKind reports invocationsModeration blocks declared on a
+// non-hosted agent. Only ContainerAgent carries policies through to the service, so such a
+// block would be dropped silently rather than enforced. It reads a minimal envelope because
+// the kind-specific structs for the other kinds have no policies field at all.
+//
+// The policies are decoded as raw maps rather than into [Policy] because the two authoring
+// surfaces spell the key differently: a standalone agent.yaml uses the snake_case YAML tags,
+// while an inline azure.yaml service is validated from the raw property map and therefore
+// still carries the camelCase keys the user authored. Decoding into [Policy] would only ever
+// match the snake_case spelling and let every inline definition bypass this check.
+func validateInvocationsModerationKind(templateBytes []byte, kind AgentKind) []string {
+	var envelope struct {
+		Policies []map[string]any `json:"policies,omitempty" yaml:"policies,omitempty"`
+	}
+	if err := yaml.Unmarshal(templateBytes, &envelope); err != nil {
+		// A malformed document is reported by the kind-specific parse instead.
+		return nil
+	}
+
+	var errors []string
+	for i, policy := range envelope.Policies {
+		if !hasInvocationsModeration(policy) {
+			continue
+		}
+		errors = append(errors, fmt.Sprintf(
+			"policies[%d] invocationsModeration is only supported for '%s' agents, got kind '%s'",
+			i, AgentKindHosted, kind))
+	}
+	return errors
+}
+
+// hasInvocationsModeration reports whether a raw policy map declares a moderation block under
+// either the camelCase (azure.yaml) or snake_case (agent.yaml) spelling.
+func hasInvocationsModeration(policy map[string]any) bool {
+	for _, key := range []string{"invocationsModeration", "invocations_moderation"} {
+		if value, ok := policy[key]; ok && value != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// validateInvocationsModeration checks a policy's invocations-moderation block against the
+// same structural rules the Agents service applies at create time, so a misconfiguration is
+// caught locally instead of surfacing later as an opaque 'invalid_payload' response.
+//
+// It deliberately does not compile the JSONPath expressions; malformed paths are still
+// reported by the service.
+func validateInvocationsModeration(
+	index int,
+	moderation *InvocationsModeration,
+	protocols []ProtocolVersionRecord,
+) []string {
+	if moderation == nil {
+		return nil
+	}
+
+	prefix := fmt.Sprintf("policies[%d] invocationsModeration", index)
+	var errors []string
+
+	// The rest of the block is meaningless on an agent that never serves the invocations
+	// path, so report only the root cause rather than cascading field-level errors.
+	if !exposesInvocationsProtocol(protocols) {
+		return []string{fmt.Sprintf(
+			"%s is only supported for agents that expose the '%s' protocol; "+
+				"add it to 'protocols' or remove the moderation block",
+			prefix, InvocationsProtocol)}
+	}
+
+	inputContentType, err := resolveInvocationContentType(moderation.InputContentType)
+	if err != nil {
+		errors = append(errors, fmt.Sprintf("%s.inputContentType %v", prefix, err))
+	}
+
+	outputContentType, err := resolveInvocationContentType(moderation.OutputContentType)
+	if err != nil {
+		errors = append(errors, fmt.Sprintf("%s.outputContentType %v", prefix, err))
+	}
+
+	allowsNonStreaming, allowsStreaming, err := resolveInvocationResponseMode(moderation.ResponseMode)
+	if err != nil {
+		errors = append(errors, fmt.Sprintf("%s.responseMode %v", prefix, err))
+	}
+
+	if inputContentType == InvocationContentTypeJSON && len(moderation.InputPaths) == 0 {
+		errors = append(errors, fmt.Sprintf(
+			"%s.inputPaths is required when inputContentType is '%s'",
+			prefix, InvocationContentTypeJSON))
+	}
+
+	if allowsNonStreaming && outputContentType == InvocationContentTypeJSON &&
+		len(moderation.OutputPaths) == 0 {
+		errors = append(errors, fmt.Sprintf(
+			"%s.outputPaths is required when responseMode includes non-streaming "+
+				"and outputContentType is '%s'",
+			prefix, InvocationContentTypeJSON))
+	}
+
+	if allowsStreaming && outputContentType == InvocationContentTypeJSON &&
+		len(moderation.StreamSelectors) == 0 {
+		errors = append(errors, fmt.Sprintf(
+			"%s.streamSelectors is required when responseMode includes streaming "+
+				"and outputContentType is '%s'",
+			prefix, InvocationContentTypeJSON))
+	}
+
+	for i, selector := range moderation.StreamSelectors {
+		if strings.TrimSpace(selector.EventType) == "" {
+			errors = append(errors, fmt.Sprintf(
+				"%s.streamSelectors[%d].eventType is required and must be non-empty", prefix, i))
+		}
+	}
+
+	return errors
+}
+
+// resolveInvocationContentType normalizes an optional content type, defaulting to JSON.
+// An unrecognized value yields an empty type alongside the error so callers naturally skip
+// the downstream rules that depend on it instead of reporting cascading failures. Suppressing
+// those rules is deliberate: the corrected value determines whether paths are required at all,
+// so guessing one here would risk demanding paths a 'text' agent never needs.
+func resolveInvocationContentType(value string) (string, error) {
+	switch value {
+	case "":
+		return InvocationContentTypeJSON, nil
+	case InvocationContentTypeJSON, InvocationContentTypeText:
+		return value, nil
+	default:
+		return "", fmt.Errorf("must be '%s' or '%s', got '%s'",
+			InvocationContentTypeJSON, InvocationContentTypeText, value)
+	}
+}
+
+// resolveInvocationResponseMode reports which output gates a response mode arms. Mode "both"
+// arms both, but the proxy still runs exactly one gate per response, chosen from the actual
+// response Content-Type.
+func resolveInvocationResponseMode(value string) (allowsNonStreaming bool, allowsStreaming bool, err error) {
+	switch value {
+	case "":
+		return false, false, fmt.Errorf("is required (one of '%s', '%s', '%s')",
+			InvocationResponseModeNonStreaming,
+			InvocationResponseModeStreaming,
+			InvocationResponseModeBoth)
+	case InvocationResponseModeNonStreaming:
+		return true, false, nil
+	case InvocationResponseModeStreaming:
+		return false, true, nil
+	case InvocationResponseModeBoth:
+		return true, true, nil
+	default:
+		return false, false, fmt.Errorf("must be one of '%s', '%s', '%s', got '%s'",
+			InvocationResponseModeNonStreaming,
+			InvocationResponseModeStreaming,
+			InvocationResponseModeBoth,
+			value)
+	}
+}
+
+// exposesInvocationsProtocol reports whether the agent declares the HTTP invocations protocol.
+func exposesInvocationsProtocol(protocols []ProtocolVersionRecord) bool {
+	return slices.ContainsFunc(protocols, func(record ProtocolVersionRecord) bool {
+		return record.Protocol == InvocationsProtocol
+	})
 }

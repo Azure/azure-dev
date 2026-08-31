@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -404,15 +405,43 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// configuration pass that can conflict with the deploy-time bot name.
 	envName, endpoint, _, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
 
-	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil &&
-		isHosted && project.ResolveActivityProfile(ca).IsActivity {
+	activityProfile, profileErr := resolveServiceActivityProfile(svc, args.Project.Path)
+	if profileErr != nil {
+		log.Printf("postdeploy: skipping Teams setup for %s: %v", svc.Name, profileErr)
+	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
+		warnLegacySimpleTeamsArtifacts(args.Project, svc)
+	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseSimple {
 		serviceKey := toServiceKey(svc.Name)
 		agentName, nameErr := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
 		botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
 		msaAppID, idErr := readEnvValue(ctx, azdClient, envName, envkey.AgentInstanceIdentityClientID(svc.Name))
 		if nameErr == nil && botErr == nil && idErr == nil {
-			guidePath := writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID)
-			printTeamsNextSteps(botName, msaAppID, guidePath)
+			packagePath := ""
+			if inputErr == nil {
+				subscriptionID, subErr := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
+				resourceGroup, rgErr := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
+				if subErr == nil && rgErr == nil {
+					botResourceGroup := readOptionalEnvValue(
+						ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name),
+					)
+					if botResourceGroup != "" {
+						resourceGroup = botResourceGroup
+					}
+					agentClient := agent_api.NewAgentClient(endpoint, cred)
+					packagePath = writeTeamsAppPackage(
+						ctx, agentClient, args.Project, svc, agentName, subscriptionID, resourceGroup, botName,
+					)
+				} else {
+					log.Printf(
+						"postdeploy: skipping Teams app package for %s: subscription: %v, resource group: %v",
+						svc.Name, subErr, rgErr,
+					)
+				}
+			} else {
+				log.Printf("postdeploy: skipping Teams app package for %s: %v", svc.Name, inputErr)
+			}
+			guidePath := writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID, packagePath)
+			printTeamsNextSteps(botName, msaAppID, guidePath, packagePath)
 		} else {
 			log.Printf(
 				"postdeploy: skipping Teams setup guide for %s: agent name: %v, bot name: %v, instance identity: %v",
@@ -448,6 +477,62 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
 
 	return nil
+}
+
+func resolveServiceActivityProfile(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (project.ActivityProfile, error) {
+	resolvedSvc, err := resolveAgentServiceConfigWithProjectOverrides(svc, projectRoot)
+	if err != nil {
+		return project.ActivityProfile{}, err
+	}
+	agent, isHosted, _, err := project.LoadAgentDefinition(resolvedSvc, projectRoot)
+	if err != nil || !isHosted {
+		return project.ActivityProfile{}, err
+	}
+
+	config, err := project.LoadServiceTargetAgentConfig(resolvedSvc)
+	if err != nil {
+		return project.ActivityProfile{}, err
+	}
+	return project.ResolveActivityProfileWithSettings(agent, config.Activity)
+}
+
+func resolveAgentServiceConfigWithProjectOverrides(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*azdext.ServiceConfig, error) {
+	resolvedSvc := *svc
+	if err := project.ResolveServiceConfigInPlace(&resolvedSvc, projectRoot); err != nil {
+		return nil, err
+	}
+	return &resolvedSvc, nil
+}
+
+func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.ServiceConfig) {
+	if proj == nil || svc == nil {
+		return
+	}
+	artifactDir := filepath.Join(proj.GetPath(), svc.GetRelativePath())
+	artifacts := []string{teamsAppPackageFile, teamsAppPackageMarkerFile, teamsSetupGuideFile}
+	found := make([]string, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		if _, err := os.Stat(filepath.Join(artifactDir, artifact)); err == nil {
+			found = append(found, artifact)
+		}
+	}
+	if len(found) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+		"WARNING: digital worker service %q still has legacy simple-agent Teams artifacts in %q (%s). "+
+			"This transition can leave stale appPackage.zip and TEAMS_APP_SETUP.md files behind. "+
+			"review and remove them manually before retrying the Teams setup flow.\n",
+		svc.GetName(),
+		svc.GetRelativePath(),
+		strings.Join(found, ", "),
+	))
 }
 
 // postdownHandler cleans up config store entries (sessions, conversations) for agent services

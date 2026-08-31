@@ -4,7 +4,6 @@
 package azure
 
 import (
-	"azureaiagent/internal/version"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,6 +16,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+	"azureaiagent/internal/pkg/useragent"
 )
 
 // FoundryProjectsClient provides methods to interact with Microsoft Foundry projects
@@ -42,8 +43,6 @@ func NewFoundryProjectsClient(
 
 	baseEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", accountName, projectName)
 
-	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
-
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
@@ -51,7 +50,7 @@ func NewFoundryProjectsClient(
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
 			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy(userAgent),
+			azsdk.NewUserAgentPolicy(useragent.Default()),
 		},
 	}
 

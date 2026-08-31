@@ -476,11 +476,15 @@ func TestIsTerminal_NonTTY(t *testing.T) {
 type helpersProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
 	project *azdext.ProjectConfig
+	err     error
 }
 
 func (s *helpersProjectServer) Get(
 	_ context.Context, _ *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	return &azdext.GetProjectResponse{Project: s.project}, nil
 }
 

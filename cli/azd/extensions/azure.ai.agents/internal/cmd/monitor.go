@@ -8,11 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type monitorFlags struct {
@@ -47,9 +50,13 @@ specify one explicitly with --session-id.
 Use --follow to stream logs in real-time, or omit it to fetch recent logs and exit.
 This is useful for troubleshooting agent issues or monitoring agent behavior.
 
-The agent name and version are resolved automatically from the azure.yaml service
-configuration and the current azd environment. Optionally specify the service name
-(from azure.yaml) as a positional argument when multiple agent services exist.
+When run from an azd project, the agent name and version are resolved from the
+azure.yaml service configuration and current azd environment. Optionally specify
+the service name as a positional argument when multiple agent services exist.
+
+Outside an azd project, the positional value is treated as the hosted agent name.
+The Foundry project endpoint is resolved from the global project context configured
+by azd ai project set, or from FOUNDRY_PROJECT_ENDPOINT.
 
 For agents configured with header-based isolation, pass --user-identity
 when streaming session logs.`,
@@ -58,6 +65,9 @@ when streaming session logs.`,
 
   # Monitor logs for a specific agent service
   azd ai agent monitor my-agent
+
+  # Monitor a hosted agent outside an azd project
+  azd ai agent monitor my-agent --session-id <session-id>
 
   # Stream logs for a specific session
   azd ai agent monitor --session-id <session-id>
@@ -85,7 +95,7 @@ when streaming session logs.`,
 			}
 			defer azdClient.Close()
 
-			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
+			info, err := resolveMonitorAgentInfo(ctx, azdClient, flags.name, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -100,19 +110,17 @@ when streaming session logs.`,
 
 			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
 			if err != nil {
-				return err
+				return monitorEndpointError(err)
 			}
 
 			// Resolve session ID for session-based logstream.
 			if flags.sessionID == "" {
-				var sessionID string
-				if info.AgentEndpoint != "" {
-					sessionID = resolveMonitorSession(
-						ctx,
-						buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint),
-						legacyKeysForRemote(info.AgentName)...,
-					)
-				}
+				sessionID := resolveMonitorSession(
+					ctx,
+					azdClient,
+					monitorAgentKey(info, agentContext.ProjectEndpoint),
+					legacyKeysForRemote(info.AgentName)...,
+				)
 				if sessionID == "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidSessionId,
@@ -142,6 +150,66 @@ when streaming session logs.`,
 	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
 
 	return cmd
+}
+
+func resolveMonitorAgentInfo(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	name string,
+	noPrompt bool,
+) (*AgentServiceInfo, error) {
+	info, err := resolveAgentServiceFromProject(ctx, azdClient, name, noPrompt)
+	if err == nil {
+		return info, nil
+	}
+	if isMissingAzdProjectError(err) {
+		if name != "" {
+			return &AgentServiceInfo{AgentName: name}, nil
+		}
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentName,
+			"agent name is required outside an azd project",
+			"pass <agent-name> as the positional argument, or run from an azd project",
+		)
+	}
+	return nil, err
+}
+
+func isMissingAzdProjectError(err error) bool {
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		st, ok := status.FromError(current)
+		if !ok {
+			continue
+		}
+		message := strings.ToLower(st.Message())
+		missingProject := strings.Contains(message, "no project exists") ||
+			strings.Contains(message, "project not found")
+		if missingProject && (st.Code() == codes.NotFound || st.Code() == codes.Unknown) {
+			return true
+		}
+	}
+	return false
+}
+
+func monitorAgentKey(info *AgentServiceInfo, projectEndpoint string) string {
+	if info.AgentEndpoint != "" {
+		return buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
+	}
+	return buildAgentKey(projectEndpoint, info.AgentName, info.Version, false)
+}
+
+func monitorEndpointError(err error) error {
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok || localErr.Code != exterrors.CodeMissingProjectEndpoint {
+		return err
+	}
+
+	return exterrors.Dependency(
+		exterrors.CodeMissingProjectEndpoint,
+		"no Foundry project endpoint is configured",
+		"set a default with `azd ai project set <project-endpoint>` to monitor outside an azd project, "+
+			"or run from a directory containing azure.yaml with FOUNDRY_PROJECT_ENDPOINT set in the active azd environment",
+	)
 }
 
 // Run executes the monitor command logic.
@@ -200,12 +268,15 @@ func validateMonitorFlags(flags *monitorFlags) error {
 
 // resolveMonitorSession resolves the session ID from the config store.
 // Returns the session ID if available, or empty string if not found.
-func resolveMonitorSession(ctx context.Context, agentKey string, legacyKeys ...string) string {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
+func resolveMonitorSession(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentKey string,
+	legacyKeys ...string,
+) string {
+	if azdClient == nil {
 		return ""
 	}
-	defer azdClient.Close()
 
 	// Try to trigger migration from legacy file if it exists.
 	migrateFromLegacyFile(ctx, azdClient)

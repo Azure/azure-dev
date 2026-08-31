@@ -268,14 +268,17 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 
 ### Service Attributes (Azure API Calls)
 
+These attributes are emitted as classified error details. `MapError` prefixes their declared
+`service.*` keys with `error.`, so the table lists the runtime keys used in queries.
+
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `service.host` | string | Azure service host |
-| `service.name` | string | Azure service name (on service call spans) |
-| `service.statusCode` | measurement | HTTP status code |
-| `service.method` | string | HTTP method |
-| `service.errorCode` | measurement | Service-specific error code |
-| `service.correlationId` | string | Azure correlation ID |
+| `error.service.host` | string | Azure service host |
+| `error.service.name` | string | Azure service name associated with the failure |
+| `error.service.statusCode` | measurement or string | Numeric HTTP/service status code; AAD authentication errors use a string OAuth status such as `invalid_grant` |
+| `error.service.method` | string | HTTP method |
+| `error.service.errorCode` | string | Service-specific error code; some ARM deployment errors encode structured JSON |
+| `error.service.correlationId` | string | Azure correlation ID |
 
 ### Tool Invocation Attributes (External CLI Tools)
 
@@ -306,6 +309,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 | Field Key | Type | Values |
 |-----------|------|--------|
 | `auth.method` | string | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
+| `auth.cache_clear_failed` | string | `auth`, `subscriptions` — which cache failed to clear during the pre-login cleanup. Emitted on `auth login`. |
 </details>
 
 <details>
@@ -426,6 +430,15 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `container.remoteBuild.count` | measurement | Number of remote container builds performed |
+| `container.remotebuild` | bool | Whether a remote (ACR) build was requested (the configured preference) rather than a local build. |
+</details>
+
+<details>
+<summary><strong>AKS</strong></summary>
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `skip.reason` | string | Why AKS postprovision Kubernetes context setup was skipped. Bounded enum: `cluster_not_provisioned`. Emitted on `aks.postprovision.skip`. |
 </details>
 
 <details>
@@ -460,6 +473,9 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.version` | string | Extension version |
 | `extension.event` | string | Extension-chosen event name on an `ext.usage` span |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
+| `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
+| `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
+| `ext.outcome` | string | Agent Inspector funnel-stage outcome: currently `succeeded` (`inspector.funnel.stage`) |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
 | `extension.installed.source.category` | string[] | Installed extension source categories (`id@category`) |
 | `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |
@@ -488,6 +504,13 @@ the recorded values to that privacy review. A report from any other install
 source succeeds but records nothing, as does any report past the limit of 100
 spans per `azd` invocation. This is a configuration-based admission check, not
 a cryptographic provenance guarantee.
+
+Reviewed first-party extension usage events currently include:
+
+| Extension | `extension.event` | Trigger | Dynamic attributes |
+|-----------|-------------------|---------|--------------------|
+| `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
+| `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage=ui_ready`; `ext.outcome=succeeded`; this does not indicate agent connection |
 
 Source-category fields are classified from the configured source type and location, not the user-defined source name.
 Raw source names, URLs, paths, and hosts are not emitted in those fields.
@@ -554,7 +577,7 @@ The first-run middleware is not currently registered, so these fields are not em
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `exegraph.step.count` | measurement | Total steps in graph |
-| `exegraph.max_concurrency` | string | Effective concurrency limit |
+| `exegraph.max_concurrency` | measurement | Effective concurrency limit |
 | `exegraph.error_policy` | string | `fail_fast` or `continue_on_error` |
 | `exegraph.step.name` | string | Step name. **SHA-256 hashed** — embeds user-defined service/layer names from `azure.yaml` |
 | `exegraph.step.deps` | string[] | Step dependencies (other step names). **SHA-256 hashed** for the same reason |
@@ -598,7 +621,7 @@ The first-run middleware is not currently registered, so these fields are not em
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `agent.fix.attempts` | string | Number of fix attempts |
+| `agent.fix.attempts` | measurement | Number of fix attempts |
 </details>
 
 ### Execution Environments
@@ -614,6 +637,8 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `GitHub Copilot VSCode` | GitHub Copilot in VS Code |
 | `Azure CloudShell` | Azure Cloud Shell |
 | `Claude Code` | Claude Code AI agent |
+| `Codex` | Codex AI agent |
+| `Cursor` | Cursor AI agent |
 | `GitHub Copilot CLI` | GitHub Copilot CLI |
 | `GitHub Copilot App` | GitHub Copilot App |
 | `Gemini` | Gemini AI agent |
@@ -621,7 +646,7 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `GitHub Actions` | GitHub Actions CI |
 | `Azure Pipelines` | Azure Pipelines CI |
 | `GitHub Codespaces` | GitHub Codespaces |
-| Other CI systems | `AppVeyor`, `Bamboo`, `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`, `Google Cloud Build`, `TeamCity`, `JetBrains Space` |
+| Other CI systems | `UnknownCI`, `AppVeyor`, `Bamboo`, `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`, `TeamCity`, `JetBrains Space` |
 
 **Modifiers:** `Azure App Spaces Portal` and `Microsoft Foundry Skill` may be appended as modifiers (`;` separated).
 
@@ -676,6 +701,52 @@ OperationId: 28ce1f2898a4fec84522107e36c22038
 | summarize arg_min(TimeGenerated, *) by OperationId
 ```
 
+### `azd up` Synthetic `cmd.provision` / `cmd.package` / `cmd.deploy` Spans
+
+Since **v1.25.0** the unified `azd up` graph runs provision, package, publish, and
+deploy in-process as `exegraph.step`s rather than as child `azd provision` /
+`azd package` / `azd deploy` commands. To preserve the historical nested-span
+shape, `up` emits **synthetic** phase spans as children of `cmd.up`. The
+`cmd.provision` and `cmd.package` spans have been emitted since **v1.25.0**;
+`cmd.deploy` is emitted only **from the issue #9054 fix onward** (see the version
+window below — before that fix no synthetic `cmd.deploy` span was recorded under
+`up`).
+
+**Success/ResultCode behavior differs by version — mind the window when reading dashboards:**
+
+- **v1.25.0 → the release containing the issue #9054 fix (exclusive):** the
+  synthetic `cmd.provision` and `cmd.package` spans were always closed with an
+  Unset status, which the AppInsights exporter reads as **Success**. In this
+  window their under-`up` success rate is **over-reported** (a failing provision
+  or package still shows Success and drops its ARM/Bicep ResultCode), and **no
+  `cmd.deploy` span is emitted under `up` at all**, so the `cmd.deploy` success
+  rate is **deflated** (it misses the high-success under-`up` deploy population).
+- **From the #9054 fix onward:** each synthetic span carries the **real**
+  per-phase outcome — on failure it gets the status + ResultCode `cmd.MapError`
+  produces for that phase's error. For most failures this matches what the
+  stand-alone `azd provision` / `azd package` / `azd deploy` command reports. One
+  deliberate exception: when a provision error is wrapped with a user-facing
+  suggestion (`ErrorWithSuggestion`), stand-alone `azd provision` reports
+  `error.suggestion`, whereas the synthetic `cmd.provision` span maps the
+  underlying graph-step error so the specific ARM/Bicep ResultCode (e.g.
+  `tool.bicep.failed`, `service.arm.deployment.failed`) is preserved for
+  dashboards. `cmd.deploy` is emitted **only when the deploy phase actually
+  ran**; when provision/package fails first (FailFast skips deploy) no
+  `cmd.deploy` span is emitted, matching legacy `azd up` where the deploy
+  sub-command never ran.
+
+**Correcting historical dashboards for the affected window:** the underlying
+`exegraph.step` spans recorded the correct per-step status throughout, so an
+**approximate** correction is to redirect the provision, package, and deploy
+panels to them, matched on their raw `exegraph.step.tags` (`provision`,
+`package`, `deploy`, `publish`) — **not** on `exegraph.step.name`, which is
+SHA-256 hashed and cannot be filtered by phase. This is only approximate:
+pre/post lifecycle hook and event failures are tagged `cmdhook`/`event` rather
+than a phase tag, and a step canceled by a fail-fast teardown ends its own span
+as an error even when the synthetic phase span deliberately does not blame it.
+For an exact figure, exclude under-`up` `cmd.provision` / `cmd.package` Success
+from reliability aggregates for that version range.
+
 ### `validation.provision` Emitted Twice Per Bicep Provision
 
 The `validation.provision` event is emitted from **two** dispatch sites:
@@ -701,7 +772,7 @@ Many failed commands produce the catch-all result code `internal.errors_errorStr
 
 **To investigate these errors:**
 1. Check `error.chain.types` (if available) for the full error type chain
-2. Correlate with `service.errorCode` or `service.statusCode` for Azure API failures
+2. Correlate with `error.service.errorCode` or `error.service.statusCode` for Azure API failures
 3. Look at surrounding span context (same `OperationId`) for additional detail
 
 ### Hashed Fields and Template Joins
@@ -739,7 +810,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Execution Environment** | All events | `execution.environment` | Usage by environment, CI vs local |
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
-| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
+| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image`, `container.remotebuild` | Build method usage (local vs. remote ACR build), success rates |
 | **App Detection (Aspire polyglot)** | `aspire.apphost.unsupported` | `aspire.apphost.language` (`typescript`/`python`/`go`/`java`/`rust`) | How often an unsupported Aspire polyglot (non-C#) AppHost is encountered, by language. **Emitted only during app detection for `init` and fresh `up` (no existing `azure.yaml`)** — not for already-initialized projects, so absence does not mean zero unsupported AppHosts. |
 | **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.update`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy` | Install/update/uninstall success, update availability |
 

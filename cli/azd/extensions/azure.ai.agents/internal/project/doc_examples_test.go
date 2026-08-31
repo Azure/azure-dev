@@ -278,16 +278,17 @@ func dedent(line string, n int) string {
 // coreDockerFields mirrors project.DockerProjectOptions without importing the
 // full project package into this test-only validator.
 type coreDockerFields struct {
-	Path        string   `yaml:"path"`
-	Context     string   `yaml:"context"`
-	Platform    string   `yaml:"platform"`
-	Target      string   `yaml:"target"`
-	Registry    string   `yaml:"registry"`
-	Image       string   `yaml:"image"`
-	Tag         string   `yaml:"tag"`
-	RemoteBuild bool     `yaml:"remoteBuild"`
-	Network     string   `yaml:"network"`
-	BuildArgs   []string `yaml:"buildArgs"`
+	Path             string   `yaml:"path"`
+	Context          string   `yaml:"context"`
+	Platform         string   `yaml:"platform"`
+	Target           string   `yaml:"target"`
+	Registry         string   `yaml:"registry"`
+	Image            string   `yaml:"image"`
+	Tag              string   `yaml:"tag"`
+	RemoteBuild      bool     `yaml:"remoteBuild"`
+	ImagePassthrough bool     `yaml:"imagePassthrough"`
+	Network          string   `yaml:"network"`
+	BuildArgs        []string `yaml:"buildArgs"`
 }
 
 // coreK8sFields mirrors the azure.yaml-facing portion of project.AksOptions.
@@ -792,6 +793,39 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "session idle timeout min valid",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 300}
+			},
+		},
+		{
+			name: "session idle timeout max valid",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3600}
+			},
+		},
+		{
+			name: "session idle timeout below min",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 299}
+			},
+			wantErr: true,
+		},
+		{
+			name: "session idle timeout above max",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3601}
+			},
+			wantErr: true,
+		},
+		{
+			name: "session idle timeout unknown property",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutMinutes": 5}
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -811,6 +845,55 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDocSchemaRegistryConnectionID(t *testing.T) {
+	t.Parallel()
+
+	schema := loadDocSchema(t, extensionRoot(t))
+	property, exists := schema.property("registryConnectionId")
+	require.True(t, exists)
+	require.Equal(t, "string", property["type"])
+
+	require.NoError(t, schema.validate(map[string]any{
+		"kind":                 "hosted",
+		"registryConnectionId": "private-registry",
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":                 "hosted",
+		"registryConnectionId": "",
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":                 "hosted",
+		"registryConnectionId": 42,
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":                 "prompt-voice",
+		"registryConnectionId": "private-registry",
+		"model":                map[string]any{"id": "gpt-realtime"},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":                 "hosted",
+		"registryConnectionId": "private-registry",
+		"codeConfiguration": map[string]any{
+			"runtime": "python_3_13", "entryPoint": "app.py",
+		},
+	}))
+}
+
+func TestDocSchemaPromptVoiceRejectsToolbox(t *testing.T) {
+	t.Parallel()
+
+	schema := loadDocSchema(t, extensionRoot(t))
+	require.NoError(t, schema.validate(map[string]any{
+		"kind":  "prompt-voice",
+		"model": map[string]any{"id": "gpt-realtime"},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":    "prompt-voice",
+		"model":   map[string]any{"id": "gpt-realtime"},
+		"toolbox": map[string]any{"name": "support-tools"},
+	}))
 }
 
 func TestActiveDocAgentConfig(t *testing.T) {

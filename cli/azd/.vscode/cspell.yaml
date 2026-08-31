@@ -84,6 +84,7 @@ words:
   - protoreflect
   - SNAPPROCESS
   - structpb
+  - statuspb
   - subtest
   - subtests
   - syncmap
@@ -497,6 +498,9 @@ overrides:
     words:
       - forbidigo
       - Logf
+  - filename: internal/cmd/up_graph.go
+    words:
+      - finalizer
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

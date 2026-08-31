@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -25,9 +26,12 @@ func sampleContainerAgent() agent_yaml.ContainerAgent {
 			Name:        "basic-agent",
 			Description: new("A basic agent hosted by Foundry."),
 		},
+		Language: "python",
+		Toolbox:  &agent_yaml.ToolboxReference{Name: "support-tools", Version: "2"},
 		Protocols: []agent_yaml.ProtocolVersionRecord{
 			{Protocol: "responses", Version: "2.0.0"},
 		},
+		RegistryConnectionID: "private-registry",
 		EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
 			{Name: "FOUNDRY_MODEL_DEPLOYMENT_NAME", Value: "gpt-4.1-mini"},
 		},
@@ -55,6 +59,7 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	_, hasInlineEnvironment := props.GetFields()["environmentVariables"]
 	require.False(t, hasInlineEnvironment)
+	require.Equal(t, "private-registry", props.GetFields()["registryConnectionId"].GetStringValue())
 
 	svc := &azdext.ServiceConfig{
 		Name:                 "basic-agent",
@@ -74,6 +79,11 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.NotNil(t, got.Description)
 	require.Equal(t, "A basic agent hosted by Foundry.", *got.Description)
 	require.Equal(t, ca.Protocols, got.Protocols)
+	require.Equal(t, "python", got.Language)
+	require.NotNil(t, got.Toolbox)
+	require.Equal(t, "support-tools", got.Toolbox.Name)
+	require.Equal(t, "2", got.Toolbox.Version)
+	require.Equal(t, ca.RegistryConnectionID, got.RegistryConnectionID)
 	require.NotNil(t, got.EnvironmentVariables)
 	require.Equal(t, *ca.EnvironmentVariables, *got.EnvironmentVariables)
 	// CPU/memory round-trips through the `container` config.
@@ -92,6 +102,30 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.NotNil(t, cfg.Container)
 	require.NotNil(t, cfg.Container.Resources)
 	require.Equal(t, "1", cfg.Container.Resources.Cpu)
+}
+
+// TestAgentDefinitionRoundTrip_SessionConfiguration verifies the optional
+// sessionConfiguration.idleTimeoutSeconds survives the inline marshal/unmarshal.
+func TestAgentDefinitionRoundTrip_SessionConfiguration(t *testing.T) {
+	ca := sampleContainerAgent()
+	ca.SessionConfiguration = &agent_yaml.SessionConfiguration{IdleTimeoutSeconds: new(600)}
+
+	props, err := AgentDefinitionToServiceProperties(ca, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+		Environment:          AgentEnvironment(ca),
+	}
+
+	got, _, found, _, err := AgentDefinitionFromService(svc)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NotNil(t, got.SessionConfiguration)
+	require.NotNil(t, got.SessionConfiguration.IdleTimeoutSeconds)
+	require.Equal(t, 600, *got.SessionConfiguration.IdleTimeoutSeconds)
 }
 
 // TestAgentDefinitionFromService_LegacyConfigShape verifies that a definition
@@ -374,6 +408,30 @@ func TestAgentDefinition_ImageRidesOnCoreServiceField(t *testing.T) {
 	require.Empty(t, gotNoImage.Image)
 }
 
+func TestAgentDefinitionFromService_ValidImages(t *testing.T) {
+	props, err := AgentDefinitionToServiceProperties(sampleContainerAgent(), nil)
+	require.NoError(t, err)
+
+	images := []string{
+		"localhost:5000/agent:v1",
+		"[2001:db8::1]:5000/team/agent:v1",
+		"registry.example.com/agent:v1@sha256:" + strings.Repeat("a", 64),
+	}
+	for _, image := range images {
+		t.Run(image, func(t *testing.T) {
+			svc := &azdext.ServiceConfig{
+				Name:                 "basic-agent",
+				Host:                 "azure.ai.agent",
+				Image:                image,
+				AdditionalProperties: props,
+			}
+			got, _, _, _, err := AgentDefinitionFromService(svc)
+			require.NoError(t, err)
+			require.Equal(t, image, got.Image)
+		})
+	}
+}
+
 // TestAgentDefinitionFromService_InvalidImage verifies the image reference (from
 // the core service field) is still validated for the inline shape.
 func TestAgentDefinitionFromService_InvalidImage(t *testing.T) {
@@ -515,7 +573,9 @@ func TestLoadAgentDefinition_ToolboxServiceReference(t *testing.T) {
 // fallback used during the migration window.
 func TestLoadAgentDefinition_DiskFallback(t *testing.T) {
 	dir := t.TempDir()
-	yaml := "kind: hosted\nname: disk-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0.0\"\n"
+	image := "registry.example.com/agent:v1@sha256:" + strings.Repeat("a", 64)
+	yaml := "kind: hosted\nname: disk-agent\nimage: " + image + "\nregistryConnectionId: private-registry\n" +
+		"protocols:\n  - protocol: responses\n    version: \"1.0.0\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0o600))
 
 	svc := &azdext.ServiceConfig{Name: "disk-agent", Host: "azure.ai.agent", RelativePath: "."}
@@ -525,6 +585,8 @@ func TestLoadAgentDefinition_DiskFallback(t *testing.T) {
 	require.Equal(t, AgentDefinitionSourceDisk, source)
 	require.True(t, source.IsLegacy())
 	require.Equal(t, "disk-agent", got.Name)
+	require.Equal(t, image, got.Image)
+	require.Equal(t, "private-registry", got.RegistryConnectionID)
 }
 
 func TestLoadAgentDefinition_FileRef(t *testing.T) {

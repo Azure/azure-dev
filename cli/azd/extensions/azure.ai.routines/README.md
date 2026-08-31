@@ -2,6 +2,21 @@
 
 Manage Microsoft Foundry Routines from your terminal. (Preview)
 
+## Reference a routine manifest
+
+An `azure.ai.routine` service can load its routine definition from a local YAML
+or JSON file. Properties beside `$ref` override values from the referenced file.
+
+```yaml
+services:
+  nightly-summary:
+    host: azure.ai.routine
+    $ref: ./routines/nightly-summary.yaml
+    enabled: false
+```
+
+References are resolved during `azd deploy`. Remote URLs are not supported.
+
 ## Timeout configuration
 
 Routine read API calls default to a 30-second HTTP request timeout.

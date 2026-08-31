@@ -246,7 +246,7 @@ func runInitManaged(
 	}
 
 	// Scaffold or locate the azd project + infra. On a fresh scaffold this
-	// downloads the starter template and chdirs into the new project folder.
+	// downloads the starter template and changes into the new project folder.
 	if _, err := ensureProject(ctx, flags, azdClient, projectTargetDir); err != nil {
 		return err
 	}

@@ -626,6 +626,9 @@ func CreatePromptAgentAPIRequest(
 	promptAgent PromptAgent,
 	buildConfig *AgentBuildConfig,
 ) (*agent_api.CreateAgentRequest, error) {
+	if err := ValidateAgentName(promptAgent.Name); err != nil {
+		return nil, fmt.Errorf("invalid prompt agent name: %w", err)
+	}
 	if strings.TrimSpace(promptAgent.Model) == "" {
 		return nil, fmt.Errorf("prompt agent requires a non-empty model")
 	}

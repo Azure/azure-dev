@@ -118,7 +118,7 @@ func TestNoProjectEndpointError(t *testing.T) {
 // AZD_FOUNDRY_ENDPOINT_OVERRIDE env var is set, the validator accepts
 // http:// URLs targeting localhost (or any host) with an explicit port. This
 // is the developer-only path used to point the extension at a locally
-// running Foundry backend such as the vienna managed-harness service.
+// running Foundry backend such as a local managed-harness service.
 //
 // The test cannot use t.Parallel() because t.Setenv mutates process-global
 // state; the validator reads the env var on every call.

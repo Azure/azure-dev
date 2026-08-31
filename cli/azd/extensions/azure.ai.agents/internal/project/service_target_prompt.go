@@ -396,7 +396,7 @@ func validatePromptAgentRawFields(data []byte) error {
 }
 
 // promptHarnessTypeFor maps an old bare harness name to the type to write in the
-// new block, so the suggestion above is copy-pasteable even when the name itself
+// new block, so the suggestion above can be pasted even when the name itself
 // was also renamed.
 func promptHarnessTypeFor(harness string) string {
 	harness = strings.TrimSpace(harness)
@@ -429,6 +429,9 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 
 	managed, err := p.loadPromptAgentDefinition()
 	if err != nil {
+		return nil, err
+	}
+	if err := applyPromptAgentServiceName(&managed, p.serviceConfig.GetName()); err != nil {
 		return nil, err
 	}
 
@@ -519,6 +522,20 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		progress("Prompt agent deployed")
 	}
 	return &azdext.ServiceDeployResult{}, nil
+}
+
+func applyPromptAgentServiceName(agent *agent_yaml.PromptAgent, serviceName string) error {
+	if strings.TrimSpace(agent.Name) == "" {
+		agent.Name = serviceName
+	}
+	if err := agent_yaml.ValidateAgentName(agent.Name); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("prompt agent name %q is invalid: %s", agent.Name, err),
+			"set a valid name in the agent definition or use a valid azure.yaml service name",
+		)
+	}
+	return nil
 }
 
 func (p *AgentServiceTargetProvider) ensurePromptCredential(

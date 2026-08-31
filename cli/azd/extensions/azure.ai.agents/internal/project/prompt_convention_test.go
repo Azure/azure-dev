@@ -62,6 +62,17 @@ model: gpt-4.1-mini
 	}
 }
 
+func TestApplyPromptAgentServiceName(t *testing.T) {
+	agent := &agent_yaml.PromptAgent{}
+
+	if err := applyPromptAgentServiceName(agent, "service-agent"); err != nil {
+		t.Fatalf("applyPromptAgentServiceName: %v", err)
+	}
+	if agent.Name != "service-agent" {
+		t.Fatalf("name = %q, want service-agent", agent.Name)
+	}
+}
+
 // TestLoadPromptDef_RejectsContainerFields verifies container-only fields are
 // rejected for a prompt (kind: prompt) agent.
 func TestLoadPromptDef_RejectsContainerFields(t *testing.T) {
@@ -112,6 +123,18 @@ func TestResolvePromptAgentGraph_ValidatesModelAndInstructions(t *testing.T) {
 	complete.Name = "x"
 	if _, err := p.resolvePromptAgentGraph(t.Context(), complete, nil, nil, nil); err != nil {
 		t.Errorf("unexpected error for complete definition: %v", err)
+	}
+}
+
+func TestResolvePromptAgentGraph_ValidatesName(t *testing.T) {
+	p := &AgentServiceTargetProvider{}
+	agent := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini", Instructions: "ok"}
+	agent.Name = "invalid name"
+
+	_, err := p.resolvePromptAgentGraph(t.Context(), agent, nil, nil, nil)
+
+	if err == nil || !strings.Contains(err.Error(), "name") {
+		t.Fatalf("expected invalid name error, got %v", err)
 	}
 }
 

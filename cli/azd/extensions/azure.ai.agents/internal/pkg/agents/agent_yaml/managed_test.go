@@ -150,6 +150,16 @@ instructions: Be helpful.
 	}
 }
 
+func TestCreatePromptAgentAPIRequest_RequiresName(t *testing.T) {
+	promptDef := PromptAgent{Model: "gpt-4.1-mini", Instructions: "Be helpful."}
+
+	_, err := CreatePromptAgentAPIRequest(promptDef, nil)
+
+	if err == nil || !strings.Contains(err.Error(), "invalid prompt agent name") {
+		t.Fatalf("expected invalid prompt agent name error, got %v", err)
+	}
+}
+
 // TestCreatePromptAgentAPIRequest_Harness verifies the prompt create request
 // carries the agent's harness verbatim, and that a plain (harness-less) prompt
 // agent omits the field entirely rather than defaulting to a harness.

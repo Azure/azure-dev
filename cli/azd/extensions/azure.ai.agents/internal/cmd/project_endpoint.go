@@ -42,8 +42,8 @@ const projectEndpointPathPrefix = "/api/projects/"
 // FoundryEndpointOverrideEnvVar is the environment variable that, when set,
 // causes the project-endpoint validator to skip the Foundry host suffix check
 // and accept http:// (in addition to https://). It exists so developers can
-// point the extension at a locally running Foundry backend (e.g. the vienna
-// "managed-harness" service on http://localhost:5000) for end-to-end testing.
+// point the extension at a locally running Foundry backend (for example, a
+// managed-harness service on http://localhost:5000) for end-to-end testing.
 //
 // IMPORTANT: This bypass is for development/testing only. Never document it
 // in user-facing help; it is intentionally undocumented and may change or be

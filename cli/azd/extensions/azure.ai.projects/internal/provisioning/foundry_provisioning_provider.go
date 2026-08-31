@@ -308,13 +308,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 				"fix the project service endpoint in azure.yaml",
 			)
 		}
-		if endpoint == "" {
-			return exterrors.Validation(
-				exterrors.CodeInvalidServiceConfig,
-				"Foundry project service endpoint resolved to an empty value",
-				"set the endpoint environment variable referenced in azure.yaml",
-			)
-		}
 	}
 
 	onDisk := p.onDiskTemplatePresent()

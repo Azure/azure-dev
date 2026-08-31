@@ -23,6 +23,22 @@ func TestPromptAgentSettingsValidateRequiresFoundryProject(t *testing.T) {
 	require.NoError(t, settings.Validate())
 }
 
+func TestPromptAgentSettingsValidateRejectsAuthenticatedCustomEndpoint(t *testing.T) {
+	t.Setenv(PromptNoAuthEnvVar, "")
+	settings := DefaultPromptAgentSettings()
+	settings.ProjectEndpoint = "https://attacker.example/api/projects/project"
+
+	require.ErrorContains(t, settings.Validate(), "HTTPS Foundry project URL")
+}
+
+func TestPromptAgentSettingsValidateAllowsNoAuthCustomEndpoint(t *testing.T) {
+	t.Setenv(PromptNoAuthEnvVar, "true")
+	settings := DefaultPromptAgentSettings()
+	settings.ProjectEndpoint = "http://localhost:5000/api/projects/project"
+
+	require.NoError(t, settings.Validate())
+}
+
 func TestNewPromptAgentClientUsesFoundryProject(t *testing.T) {
 	t.Setenv(PromptNoAuthEnvVar, "true")
 	settings := DefaultPromptAgentSettings()

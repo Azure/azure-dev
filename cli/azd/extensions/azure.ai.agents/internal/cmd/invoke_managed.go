@@ -19,7 +19,7 @@ import (
 )
 
 // managedAgentReference is the body fragment that binds a Responses call to a
-// specific managed agent. It mirrors the shape the vienna harness expects
+// specific managed agent. It mirrors the shape the managed harness expects
 // (see test-e2e-foundry-tools.sh): `agent_reference: {type, name}`.
 type managedAgentReference struct {
 	Type string `json:"type"`
@@ -78,7 +78,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 
 	var previousResponseID string
 	if azdClient != nil && !a.flags.newConversation {
-		if val, gerr := getContextValueWithFallback(ctx, azdClient, "conversations", agentKey, nil); gerr == nil {
+		if val, getErr := getContextValueWithFallback(ctx, azdClient, "conversations", agentKey, nil); getErr == nil {
 			previousResponseID = val
 		}
 	}

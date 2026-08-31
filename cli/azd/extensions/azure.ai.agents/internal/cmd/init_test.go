@@ -3887,7 +3887,7 @@ func TestAbsolutizeRelativeManifestPaths_RelativeLocalManifest(t *testing.T) {
 	}
 	// Regression guard: --src is an output target (where the agent
 	// definition is downloaded to, relative to the project root).
-	// Absolutizing it before ensureProject chdirs into the new project
+	// Resolve it to an absolute path before ensureProject changes into the new project
 	// folder would cause InitAction.Run's filepath.Rel rewrite to produce
 	// "..\src", writing the agent definition outside the new project.
 	if flags.src != "src" {

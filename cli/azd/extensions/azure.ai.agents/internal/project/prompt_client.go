@@ -190,6 +190,25 @@ func (s *PromptAgentSettings) Validate() error {
 			"edit the promptAgent block in azure.yaml, or re-run `azd ai agent init`",
 		)
 	}
+	if !isTruthyEnvValue(os.Getenv(PromptNoAuthEnvVar)) {
+		if err := validateAuthenticatedPromptEndpoint(s.ProjectEndpoint); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAuthenticatedPromptEndpoint(endpoint string) error {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Hostname() == "" ||
+		!strings.HasSuffix(strings.ToLower(u.Hostname()), ".services.ai.azure.com") {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"authenticated prompt agent endpoint must be an HTTPS Foundry project URL",
+			"use https://<account>.services.ai.azure.com/api/projects/<project>, "+
+				"or set AZD_MANAGED_AGENT_NO_AUTH only for a trusted local test service",
+		)
+	}
 	return nil
 }
 

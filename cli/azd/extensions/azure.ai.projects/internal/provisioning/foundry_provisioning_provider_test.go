@@ -1357,6 +1357,23 @@ func TestResolvedFoundryServiceEndpointAtRoot_UnsetEnvRefIsEmpty(t *testing.T) {
 	assert.Empty(t, endpoint)
 }
 
+func TestResolvedFoundryServiceEndpointAtRoot_UnsetPortableEndpointSelectsGreenfield(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+	raw := []byte(`services:
+  foundry:
+    host: azure.ai.project
+    endpoint: ${FOUNDRY_PROJECT_ENDPOINT}
+`)
+
+	configured, err := foundryServiceEndpointAtRoot(raw, "", "foundry")
+	require.NoError(t, err)
+	require.NotEmpty(t, configured)
+
+	resolved, err := resolvedFoundryServiceEndpointAtRoot(raw, "", "foundry", nil)
+	require.NoError(t, err)
+	assert.Empty(t, resolved)
+}
+
 func TestProjectNameFromEndpoint(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "my-project", projectNameFromEndpoint(

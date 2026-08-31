@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -198,6 +199,13 @@ func (g *promptGraph) agentNode() promptNode {
 		Kind: nodeAgent,
 		ID:   g.managed.Name,
 		Validate: func() error {
+			if err := agent_yaml.ValidateAgentName(g.managed.Name); err != nil {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("prompt agent name %q is invalid: %s", g.managed.Name, err),
+					"set a valid prompt agent name",
+				)
+			}
 			if strings.TrimSpace(g.managed.Model) == "" {
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
@@ -343,6 +351,9 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 	// entry there is no such file, so they are anchored at the service
 	// directory instead — the same place `azd ai agent init` scaffolds them.
 	agentDir := p.servicePath
+	if p.agentDefinitionPath != "" {
+		agentDir = filepath.Dir(p.agentDefinitionPath)
+	}
 	g, err := newPromptGraph(agentDir, managed, settings, env, p.credential)
 	if err != nil {
 		return nil, err

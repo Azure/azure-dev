@@ -128,7 +128,7 @@ func TestReportOptimizationDeployments_NoAgents(t *testing.T) {
 
 	// Should complete without calling any API.
 	reportOptimizationDeployments(
-		t.Context(), azdClient, nil, "dev", "https://unused.example.com",
+		t.Context(), azdClient, nil, "dev", "https://unused.example.com", "",
 		newTestOptimizeClient,
 	)
 }
@@ -160,7 +160,7 @@ func TestReportOptimizationDeployments_Success_ClearsCandidate(t *testing.T) {
 	agents := []*azdext.ServiceConfig{{Name: "my-agent"}}
 
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -196,7 +196,7 @@ func TestReportOptimizationDeployments_MissingCandidateID_Skips(t *testing.T) {
 
 	agents := []*azdext.ServiceConfig{{Name: "svc"}}
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -225,7 +225,7 @@ func TestReportOptimizationDeployments_MissingVersion_Skips(t *testing.T) {
 
 	agents := []*azdext.ServiceConfig{{Name: "svc"}}
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -253,7 +253,7 @@ func TestReportOptimizationDeployments_APIFailure_DoesNotClearCandidate(t *testi
 
 	agents := []*azdext.ServiceConfig{{Name: "svc"}}
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -298,7 +298,7 @@ func TestReportOptimizationDeployments_MultipleAgents(t *testing.T) {
 	}
 
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -336,7 +336,7 @@ func TestReportOptimizationDeployments_ServiceNameWithDashes(t *testing.T) {
 
 	agents := []*azdext.ServiceConfig{{Name: "my-cool-agent"}}
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -363,7 +363,7 @@ func TestReportOptimizationDeployments_PanicRecovery(t *testing.T) {
 	// prevent this from crashing the caller.
 	assert.NotPanics(t, func() {
 		reportOptimizationDeployments(
-			t.Context(), azdClient, agents, "dev", "https://unused",
+			t.Context(), azdClient, agents, "dev", "https://unused", "",
 			func(_ string) *optimize_api.OptimizeClient {
 				panic("boom")
 			},

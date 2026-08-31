@@ -28,6 +28,7 @@
 
 - [[#9596]](https://github.com/Azure/azure-dev/pull/9596) Reject agent manifests that declare multiple `rai_policy` entries instead of silently discarding additional policies.
 - [[#9679]](https://github.com/Azure/azure-dev/pull/9679) Prompt users to provision after agent initialization adds a standalone Foundry connection service.
+- [[#9719]](https://github.com/Azure/azure-dev/pull/9719) Advance the local optimization baseline to the promoted candidate after deploy (archiving the previous baseline as `baseline_<job-id>`) so repeated `azd ai agent optimize` rounds build on the deployed configuration instead of restarting from the original.
 
 ## 1.0.0-beta.11 (2026-08-20)
 

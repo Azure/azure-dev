@@ -66,26 +66,24 @@ type ActivitySettings struct {
 // Digital Worker-only fields are applied only when the resolved use case is
 // digital_worker.
 type ActivityPublishConfig struct {
-	PublishAsAutopilot       bool                       `json:"publishAsAutopilot,omitempty"`
-	PublishScope             string                     `json:"publishScope,omitempty"`
-	CanRespondWithoutMention *bool                      `json:"canRespondWithoutMention,omitempty"`
-	AppVersion               string                     `json:"appVersion,omitempty"`
-	AgentDisplayName         string                     `json:"agentDisplayName,omitempty"`
-	ShortDescription         string                     `json:"shortDescription,omitempty"`
-	FullDescription          string                     `json:"fullDescription,omitempty"`
-	DeveloperName            string                     `json:"developerName,omitempty"`
-	DeveloperWebsiteURL      string                     `json:"developerWebsiteUrl,omitempty"`
-	PrivacyURL               string                     `json:"privacyUrl,omitempty"`
-	TermsOfUseURL            string                     `json:"termsOfUseUrl,omitempty"`
-	AgenticUserTemplate      *AgenticUserTemplateConfig `json:"agenticUserTemplate,omitempty"`
+	PublishScope             string                         `json:"publishScope,omitempty"`
+	CanRespondWithoutMention *bool                          `json:"canRespondWithoutMention,omitempty"`
+	AppVersion               string                         `json:"appVersion,omitempty"`
+	AgentDisplayName         string                         `json:"agentDisplayName,omitempty"`
+	ShortDescription         string                         `json:"shortDescription,omitempty"`
+	FullDescription          string                         `json:"fullDescription,omitempty"`
+	DeveloperName            string                         `json:"developerName,omitempty"`
+	DeveloperWebsiteURL      string                         `json:"developerWebsiteUrl,omitempty"`
+	PrivacyURL               string                         `json:"privacyUrl,omitempty"`
+	TermsOfUseURL            string                         `json:"termsOfUseUrl,omitempty"`
+	OptionalPermissionScopes []Microsoft365PermissionScopes `json:"optionalPermissionScopes,omitempty"`
+	AccessBoundaries         *[]string                      `json:"accessBoundaries,omitempty"`
 }
 
-// AgenticUserTemplateConfig identifies the template embedded in a Digital Worker Teams package.
-type AgenticUserTemplateConfig struct {
-	ID                    string `json:"id,omitempty"`
-	File                  string `json:"file,omitempty"`
-	SchemaVersion         string `json:"schemaVersion,omitempty"`
-	CommunicationProtocol string `json:"communicationProtocol,omitempty"`
+// Microsoft365PermissionScopes selects optional permissions from one resource application.
+type Microsoft365PermissionScopes struct {
+	ResourceAppID string   `json:"resourceAppId"`
+	Scopes        []string `json:"scopes"`
 }
 
 // ContainerSettings provides container configuration for the Azure AI Service target

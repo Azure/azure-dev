@@ -84,12 +84,6 @@ func TestResolveServiceActivityProfileUsesConfiguredUseCase(t *testing.T) {
 				"useCase": "digital_worker",
 				"publish": map[string]any{
 					"publishScope": "tenant",
-					"agenticUserTemplate": map[string]any{
-						"id":                    "digitalWorkerTemplate",
-						"file":                  "agenticUserTemplateManifest.json",
-						"schemaVersion":         "0.1.0-preview",
-						"communicationProtocol": "activityProtocol",
-					},
 				},
 			},
 			want: project.ActivityUseCaseDigitalWorker,
@@ -140,11 +134,6 @@ func TestResolveServiceActivityProfileUsesConfiguredUseCaseFromFileRef(t *testin
 		"  useCase: digital_worker",
 		"  publish:",
 		"    publishScope: tenant",
-		"    agenticUserTemplate:",
-		"      id: digitalWorkerTemplate",
-		"      file: agenticUserTemplateManifest.json",
-		"      schemaVersion: 0.1.0-preview",
-		"      communicationProtocol: activityProtocol",
 	}, "\n")
 	require.NoError(t, os.WriteFile(definitionPath, []byte(referenced), 0600))
 
@@ -195,11 +184,6 @@ func TestShouldProvisionActivityBotUsesCanonicalUseCaseResolution(t *testing.T) 
 			"  useCase: digital_worker",
 			"  publish:",
 			"    publishScope: tenant",
-			"    agenticUserTemplate:",
-			"      id: digitalWorkerTemplate",
-			"      file: agenticUserTemplateManifest.json",
-			"      schemaVersion: 0.1.0-preview",
-			"      communicationProtocol: activityProtocol",
 		}, "\n")
 		require.NoError(t, os.WriteFile(definitionPath, []byte(definition), 0600))
 

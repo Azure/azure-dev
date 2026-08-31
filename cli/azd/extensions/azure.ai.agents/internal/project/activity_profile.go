@@ -24,6 +24,13 @@ const (
 	ActivityUseCaseDigitalWorker ActivityUseCase = "digital_worker"
 )
 
+var supportedDigitalWorkerAccessBoundaries = map[string]struct{}{
+	"read.1on1.developers":   {},
+	"write.1on1.developers":  {},
+	"read.group.developers":  {},
+	"write.group.developers": {},
+}
+
 // ActivityProfile summarizes the activity-protocol characteristics of a hosted
 // agent definition. It is the single gate that keeps all Teams/bot-specific
 // behavior off the path of non-activity agents: when IsActivity is false the
@@ -34,6 +41,30 @@ type ActivityProfile struct {
 	// UseCase is the resolved Teams hosting model. Only meaningful when
 	// IsActivity is true. Phase 1 always resolves ActivityUseCaseSimple.
 	UseCase ActivityUseCase
+}
+
+// ResolveDeployedActivityProfile reconciles local authoring intent with the
+// service-side Digital Worker classification, which is authoritative after
+// deployment.
+func ResolveDeployedActivityProfile(
+	local ActivityProfile,
+	digitalWorkerType agent_api.DigitalWorkerType,
+) (ActivityProfile, error) {
+	switch digitalWorkerType {
+	case agent_api.DigitalWorkerTypeM365:
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}, nil
+	case "":
+		if local.UseCase == ActivityUseCaseDigitalWorker {
+			return ActivityProfile{}, fmt.Errorf(
+				"agent is configured as digital_worker but the deployed version has no digital_worker_type",
+			)
+		}
+		return local, nil
+	default:
+		return ActivityProfile{}, fmt.Errorf(
+			"deployed agent has unsupported digital_worker_type %q", digitalWorkerType,
+		)
+	}
 }
 
 // IsActivityProtocol reports whether a hosted agent definition opts into the
@@ -84,38 +115,9 @@ func ResolveActivityProfileWithSettings(
 	case ActivityUseCaseSimple:
 		return profile, nil
 	case ActivityUseCaseDigitalWorker:
-		if settings.Publish == nil {
-			return ActivityProfile{}, fmt.Errorf("activity.publish is required for digital_worker")
-		}
-		// publishAsAutopilot is a derived runtime requirement for the digital_worker
-		// use case. It is inferred automatically and should not be treated as a
-		// user-configurable Azure YAML knob.
-		settings.Publish.PublishAsAutopilot = true
-		publishScope := strings.TrimSpace(settings.Publish.PublishScope)
-		if publishScope != "" && !strings.EqualFold(publishScope, "tenant") {
-			return ActivityProfile{}, fmt.Errorf(
-				"activity.publish.publishScope must be tenant for digital_worker (shared is not supported)",
-			)
-		}
-		template := settings.Publish.AgenticUserTemplate
-		if template == nil {
-			return ActivityProfile{}, fmt.Errorf("activity.publish.agenticUserTemplate is required for digital_worker")
-		}
-		requiredTemplateFields := []struct {
-			name  string
-			value string
-		}{
-			{name: "id", value: template.ID},
-			{name: "file", value: template.File},
-			{name: "schemaVersion", value: template.SchemaVersion},
-			{name: "communicationProtocol", value: template.CommunicationProtocol},
-		}
-		for _, field := range requiredTemplateFields {
-			value := field.value
-			if strings.TrimSpace(value) == "" {
-				return ActivityProfile{}, fmt.Errorf(
-					"activity.publish.agenticUserTemplate.%s is required for digital_worker", field.name,
-				)
+		if settings.Publish != nil {
+			if err := ValidateDigitalWorkerPublishConfig(settings.Publish); err != nil {
+				return ActivityProfile{}, err
 			}
 		}
 		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}, nil
@@ -124,6 +126,53 @@ func ResolveActivityProfileWithSettings(
 			"activity.useCase must be %q or %q", ActivityUseCaseSimple, ActivityUseCaseDigitalWorker,
 		)
 	}
+}
+
+// ValidateDigitalWorkerPublishConfig validates fields that are sent only for
+// Microsoft 365 Digital Worker publication.
+func ValidateDigitalWorkerPublishConfig(publish *ActivityPublishConfig) error {
+	publishScope := strings.TrimSpace(publish.PublishScope)
+	if publishScope != "" && !strings.EqualFold(publishScope, "tenant") {
+		return fmt.Errorf(
+			"activity.publish.publishScope must be tenant for digital_worker (shared is not supported)",
+		)
+	}
+	for i, permission := range publish.OptionalPermissionScopes {
+		if strings.TrimSpace(permission.ResourceAppID) == "" {
+			return fmt.Errorf("activity.publish.optionalPermissionScopes[%d].resourceAppId is required", i)
+		}
+		if len(permission.Scopes) == 0 {
+			return fmt.Errorf("activity.publish.optionalPermissionScopes[%d].scopes must not be empty", i)
+		}
+		for j, scope := range permission.Scopes {
+			if strings.TrimSpace(scope) == "" {
+				return fmt.Errorf(
+					"activity.publish.optionalPermissionScopes[%d].scopes[%d] must not be empty", i, j,
+				)
+			}
+		}
+	}
+	if publish.AccessBoundaries != nil {
+		if err := ValidateDigitalWorkerAccessBoundaries(*publish.AccessBoundaries); err != nil {
+			return fmt.Errorf("activity.publish.accessBoundaries: %w", err)
+		}
+	}
+	return nil
+}
+
+// ValidateDigitalWorkerAccessBoundaries validates the initial azd-supported
+// developer-only boundary set.
+func ValidateDigitalWorkerAccessBoundaries(boundaries []string) error {
+	for _, boundary := range boundaries {
+		if _, ok := supportedDigitalWorkerAccessBoundaries[strings.TrimSpace(boundary)]; !ok {
+			return fmt.Errorf(
+				"unsupported value %q; supported values are read.1on1.developers, "+
+					"write.1on1.developers, read.group.developers, and write.group.developers",
+				boundary,
+			)
+		}
+	}
+	return nil
 }
 
 // ComposeActivityAgentEndpoint folds the Activity endpoint requirements into an

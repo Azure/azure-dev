@@ -4,6 +4,7 @@
 
 ### Features Added
 
+- [[#9776]](https://github.com/Azure/azure-dev/pull/9776) Update Digital Worker agent and Microsoft 365 publish contracts with service-side type detection, optional permission scopes, and access boundaries.
 - [[#9586]](https://github.com/Azure/azure-dev/pull/9586) Add support for private non-ACR registry connections when authoring and deploying hosted agents.
 - [[#9634]](https://github.com/Azure/azure-dev/pull/9634) Update prompt voice agents to use the unified Agents API with versioned voice endpoints.
 - [[#9655]](https://github.com/Azure/azure-dev/pull/9655) Add advanced prompt voice settings for audio, turn detection, modalities, tools, and service features.

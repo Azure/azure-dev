@@ -47,6 +47,16 @@ func (s *resolveEnvStubEnvServer) GetValue(
 	return &azdext.KeyValueResponse{Value: s.get[req.Key]}, nil
 }
 
+func (s *resolveEnvStubEnvServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	values := make([]*azdext.KeyValue, 0, len(s.get))
+	for key, value := range s.get {
+		values = append(values, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: values}, nil
+}
+
 func (s *resolveEnvStubEnvServer) SetValue(
 	_ context.Context, req *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
@@ -72,6 +82,7 @@ type resolveEnvStubPromptServer struct {
 	modelRequests   []*azdext.PromptAiModelRequest
 	deployment      *azdext.AiModelDeployment
 	deploymentErr   error
+	deploymentErrs  []error
 	deployRequests  []*azdext.PromptAiDeploymentRequest
 }
 
@@ -110,11 +121,35 @@ func (s *resolveEnvStubPromptServer) PromptAiModel(
 func (s *resolveEnvStubPromptServer) PromptAiDeployment(
 	_ context.Context, req *azdext.PromptAiDeploymentRequest,
 ) (*azdext.PromptAiDeploymentResponse, error) {
+	index := len(s.deployRequests)
 	s.deployRequests = append(s.deployRequests, req)
+	if index < len(s.deploymentErrs) && s.deploymentErrs[index] != nil {
+		return nil, s.deploymentErrs[index]
+	}
 	if s.deploymentErr != nil {
 		return nil, s.deploymentErr
 	}
 	return &azdext.PromptAiDeploymentResponse{Deployment: s.deployment}, nil
+}
+
+type resolveEnvStubAiServer struct {
+	azdext.UnimplementedAiModelServiceServer
+	deployments []*azdext.AiModelDeployment
+	err         error
+	requests    []*azdext.ResolveModelDeploymentsRequest
+}
+
+func (s *resolveEnvStubAiServer) ResolveModelDeployments(
+	_ context.Context,
+	req *azdext.ResolveModelDeploymentsRequest,
+) (*azdext.ResolveModelDeploymentsResponse, error) {
+	s.requests = append(s.requests, req)
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &azdext.ResolveModelDeploymentsResponse{
+		Deployments: s.deployments,
+	}, nil
 }
 
 // newResolveEnvTestClient spins up a gRPC server exposing the given environment
@@ -123,12 +158,16 @@ func newResolveEnvTestClient(
 	t *testing.T,
 	envSrv azdext.EnvironmentServiceServer,
 	promptSrv azdext.PromptServiceServer,
+	aiSrv ...azdext.AiModelServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	srv := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
 	azdext.RegisterPromptServiceServer(srv, promptSrv)
+	if len(aiSrv) > 0 {
+		azdext.RegisterAiModelServiceServer(srv, aiSrv[0])
+	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

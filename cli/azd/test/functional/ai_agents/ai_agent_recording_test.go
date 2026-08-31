@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // These constants must match the sanitized cassette content exactly (equal-length replacements).
@@ -204,12 +205,38 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	require.Contains(t, envStr, `AZURE_AI_MODEL_DEPLOYMENT_NAME="gpt-4.1"`,
 		"model deployment should be resolved from manifest resource id via ARM catalog")
 
-	// Cross-check: azure.yaml should have the resolved model value inline, not ${...} placeholder.
+	// azure.yaml should keep the deployment environment-specific.
 	azureYamlContent, err := os.ReadFile(filepath.Join(projectDir, "azure.yaml"))
 	require.NoError(t, err)
-	azureYamlStr := string(azureYamlContent)
-	require.NotContains(t, azureYamlStr, "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
-		"azure.yaml should have resolved model name, not azd env placeholder")
+	var config struct {
+		Services map[string]struct {
+			Host        string `yaml:"host"`
+			Deployments []struct {
+				Name  string `yaml:"name"`
+				Model struct {
+					Name    string `yaml:"name"`
+					Format  string `yaml:"format"`
+					Version string `yaml:"version"`
+				} `yaml:"model"`
+				Sku struct {
+					Name     string `yaml:"name"`
+					Capacity string `yaml:"capacity"`
+				} `yaml:"sku"`
+			} `yaml:"deployments"`
+		} `yaml:"services"`
+	}
+	require.NoError(t, yaml.Unmarshal(azureYamlContent, &config))
+
+	var projectDeployments = config.Services["ai-project"].Deployments
+	require.Len(t, projectDeployments, 1)
+	deployment := projectDeployments[0]
+	require.Equal(t, "${AZURE_AI_MODEL_DEPLOYMENT_NAME}", deployment.Name)
+	require.Equal(t, "${AZURE_AI_MODEL_NAME}", deployment.Model.Name)
+	require.Equal(t, "${AZURE_AI_MODEL_FORMAT}", deployment.Model.Format)
+	require.Equal(t, "${AZURE_AI_MODEL_VERSION}", deployment.Model.Version)
+	require.Equal(t, "${AZURE_AI_MODEL_SKU_NAME}", deployment.Sku.Name)
+	require.Equal(t, "${AZURE_AI_MODEL_SKU_CAPACITY}",
+		deployment.Sku.Capacity)
 }
 
 // Test_AIAgent_Init_NegativeControl_BadCassette verifies that the recording cassette is actually

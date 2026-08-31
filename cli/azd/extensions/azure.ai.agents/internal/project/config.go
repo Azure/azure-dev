@@ -128,8 +128,8 @@ type DeploymentSku struct {
 	// Required. The name of the resource model definition representing SKU.
 	Name string `json:"name" yaml:"name"`
 
-	// The capacity of the resource model definition representing SKU. It accepts
-	// legacy integer values and environment references such as ${MODEL_CAPACITY}.
+	// Capacity accepts legacy integers and references such as
+	// ${MODEL_CAPACITY}.
 	Capacity any `json:"capacity" yaml:"capacity"`
 }
 

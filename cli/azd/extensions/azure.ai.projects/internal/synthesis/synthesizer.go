@@ -486,9 +486,8 @@ func BrownfieldDeployments(
 	return svc.Deployments, nil
 }
 
-// ProjectDeployments returns the model deployments declared by a Foundry
-// project service after resolving file references. Environment references are
-// preserved for callers that need to reconcile them before synthesis.
+// ProjectDeployments returns resolved Foundry deployments.
+// It preserves environment references for reconciliation.
 func ProjectDeployments(raw []byte, serviceName string, projectRoot string) ([]Deployment, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
@@ -508,8 +507,8 @@ func ProjectDeployments(raw []byte, serviceName string, projectRoot string) ([]D
 	return svc.Deployments, nil
 }
 
-// ResolveDeployments expands deployment environment references and normalizes
-// capacities to integers. When preserve is true, references remain unchanged.
+// ResolveDeployments expands references and normalizes capacities.
+// References remain unchanged when preserve is true.
 func ResolveDeployments(deployments []Deployment, env map[string]string, preserve bool) ([]Deployment, error) {
 	resolved := slices.Clone(deployments)
 	for i := range resolved {

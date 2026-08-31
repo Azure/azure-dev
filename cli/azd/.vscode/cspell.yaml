@@ -184,6 +184,15 @@ overrides:
   - filename: cmd/mcp.go
     words:
       - internalcmd
+  - filename: cmd/middleware/ux.go
+    words:
+      - commandresult
+  - filename: internal/commandresult/follow_up.go
+    words:
+      - commandresult
+  - filename: internal/grpcserver/event_service.go
+    words:
+      - commandresult
   - filename: cmd/extension.go
     words:
       - compatResult

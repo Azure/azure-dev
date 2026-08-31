@@ -171,6 +171,45 @@ func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
 	assert.Equal(t, "", status.Message)
 }
 
+func TestEventManager_onInvokeProjectHandler_FollowUp(t *testing.T) {
+	ctx := t.Context()
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	eventManager.projectEvents["postprovision"] = func(
+		ctx context.Context,
+		args *ProjectEventArgs,
+	) error {
+		args.FollowUp = "Run azd deploy"
+		return nil
+	}
+
+	resp, err := eventManager.onInvokeProjectHandler(ctx, &InvokeProjectHandler{
+		EventName: "postprovision",
+		Project:   createTestProjectConfigForEvents(),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "Run azd deploy", resp.GetProjectHandlerStatus().Message)
+}
+
+func TestEventManager_onInvokeProjectHandler_EmptyFollowUp(t *testing.T) {
+	ctx := t.Context()
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	eventManager.projectEvents["postprovision"] = func(
+		ctx context.Context,
+		args *ProjectEventArgs,
+	) error {
+		return nil
+	}
+
+	resp, err := eventManager.onInvokeProjectHandler(ctx, &InvokeProjectHandler{
+		EventName: "postprovision",
+		Project:   createTestProjectConfigForEvents(),
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, resp.GetProjectHandlerStatus().Message)
+}
+
 // Test onInvokeProjectHandler with handler error
 func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 	ctx := t.Context()

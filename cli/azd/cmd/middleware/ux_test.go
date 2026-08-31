@@ -10,7 +10,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +21,7 @@ func TestUxMiddleware_ErrAbortedByUser_SwallowsError(t *testing.T) {
 	t.Parallel()
 	mockContext := mocks.NewMockContext(t.Context())
 	featureManager := &alpha.FeatureManager{}
-	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager)
+	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager, &output.NoneFormatter{})
 
 	result, err := ux.Run(*mockContext.Context, func(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, internal.ErrAbortedByUser
@@ -35,7 +37,7 @@ func TestUxMiddleware_ErrAbortedByUser_ChildAction_PassesThrough(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	childCtx := WithChildAction(*mockContext.Context)
 	featureManager := &alpha.FeatureManager{}
-	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager)
+	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager, &output.NoneFormatter{})
 
 	result, err := ux.Run(childCtx, func(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, internal.ErrAbortedByUser
@@ -50,7 +52,7 @@ func TestUxMiddleware_OtherErrors_NotSwallowed(t *testing.T) {
 	t.Parallel()
 	mockContext := mocks.NewMockContext(t.Context())
 	featureManager := &alpha.FeatureManager{}
-	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager)
+	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager, &output.NoneFormatter{})
 	someErr := errors.New("deployment failed")
 
 	_, err := ux.Run(*mockContext.Context, func(ctx context.Context) (*actions.ActionResult, error) {
@@ -65,7 +67,7 @@ func TestUxMiddleware_Success_ShowsActionResult(t *testing.T) {
 	t.Parallel()
 	mockContext := mocks.NewMockContext(t.Context())
 	featureManager := &alpha.FeatureManager{}
-	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager)
+	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager, &output.NoneFormatter{})
 
 	actionResult := &actions.ActionResult{
 		Message: &actions.ResultMessage{
@@ -79,4 +81,114 @@ func TestUxMiddleware_Success_ShowsActionResult(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, actionResult, result)
+}
+
+func TestUxMiddleware_MergesCollectedFollowUp(t *testing.T) {
+	t.Parallel()
+	mockContext := mocks.NewMockContext(t.Context())
+	ux := NewUxMiddleware(
+		&Options{},
+		mockContext.Console,
+		&alpha.FeatureManager{},
+		&output.NoneFormatter{},
+	)
+	actionResult := &actions.ActionResult{
+		Message: &actions.ResultMessage{FollowUp: "existing"},
+	}
+
+	result, err := ux.Run(*mockContext.Context, func(
+		ctx context.Context,
+	) (*actions.ActionResult, error) {
+		collector := commandresult.FollowUpCollectorFromContext(ctx)
+		collector.Add("z.extension", "z")
+		collector.Add("a.extension", "a")
+		return actionResult, nil
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "existing\n\na\n\nz", result.Message.FollowUp)
+}
+
+func TestUxMiddleware_CreatesResultForCollectedFollowUp(t *testing.T) {
+	t.Parallel()
+	mockContext := mocks.NewMockContext(t.Context())
+	ux := NewUxMiddleware(
+		&Options{},
+		mockContext.Console,
+		&alpha.FeatureManager{},
+		&output.NoneFormatter{},
+	)
+
+	result, err := ux.Run(*mockContext.Context, func(
+		ctx context.Context,
+	) (*actions.ActionResult, error) {
+		commandresult.FollowUpCollectorFromContext(ctx).Add(
+			"test.extension",
+			"Run azd deploy",
+		)
+		return nil, nil
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Message)
+	require.Empty(t, result.Message.Header)
+	require.Equal(t, "Run azd deploy", result.Message.FollowUp)
+}
+
+func TestUxMiddleware_DoesNotMergeFollowUpIntoJSON(t *testing.T) {
+	t.Parallel()
+	mockContext := mocks.NewMockContext(t.Context())
+	ux := NewUxMiddleware(
+		&Options{},
+		mockContext.Console,
+		&alpha.FeatureManager{},
+		&output.JsonFormatter{},
+	)
+	actionResult := &actions.ActionResult{
+		Message: &actions.ResultMessage{Header: "complete"},
+	}
+
+	result, err := ux.Run(*mockContext.Context, func(
+		ctx context.Context,
+	) (*actions.ActionResult, error) {
+		commandresult.FollowUpCollectorFromContext(ctx).Add(
+			"test.extension",
+			"Run azd deploy",
+		)
+		return actionResult, nil
+	})
+
+	require.NoError(t, err)
+	require.Same(t, actionResult, result)
+	require.Empty(t, result.Message.FollowUp)
+}
+
+func TestUxMiddleware_DiscardsFollowUpOnError(t *testing.T) {
+	t.Parallel()
+	mockContext := mocks.NewMockContext(t.Context())
+	ux := NewUxMiddleware(
+		&Options{},
+		mockContext.Console,
+		&alpha.FeatureManager{},
+		&output.NoneFormatter{},
+	)
+	actionResult := &actions.ActionResult{
+		Message: &actions.ResultMessage{FollowUp: "existing"},
+	}
+	handlerError := errors.New("failed")
+
+	result, err := ux.Run(*mockContext.Context, func(
+		ctx context.Context,
+	) (*actions.ActionResult, error) {
+		commandresult.FollowUpCollectorFromContext(ctx).Add(
+			"test.extension",
+			"Run azd deploy",
+		)
+		return actionResult, handlerError
+	})
+
+	require.ErrorIs(t, err, handlerError)
+	require.Same(t, actionResult, result)
+	require.Equal(t, "existing", result.Message.FollowUp)
 }

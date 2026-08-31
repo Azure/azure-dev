@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -165,7 +167,8 @@ func (s *eventService) createProjectEventHandler(
 			},
 		}
 
-		return s.runWithEnvReload(ctx, func() error {
+		var handlerMessage string
+		err = s.runWithEnvReload(ctx, func() error {
 			// Use streamCtx which has extension claims for correlation
 			response, err := broker.SendAndWait(streamCtx, invokeMsg)
 			if err != nil {
@@ -196,8 +199,19 @@ func (s *eventService) createProjectEventHandler(
 				)
 			}
 
+			if statusMsg.ProjectHandlerStatus.Status == "completed" {
+				handlerMessage = statusMsg.ProjectHandlerStatus.Message
+			}
+
 			return nil
 		})
+		if err == nil && strings.HasPrefix(eventName, "post") {
+			if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
+				collector.Add(extension.Id, handlerMessage)
+			}
+		}
+
+		return err
 	}
 }
 

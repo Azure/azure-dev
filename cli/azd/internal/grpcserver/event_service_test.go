@@ -9,6 +9,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -425,6 +426,89 @@ func TestEventService_createProjectEventHandler(t *testing.T) {
 	// Test that the handler function is created correctly
 	// We won't execute it since that would require complex async setup with broker
 	assert.NotNil(t, handler)
+}
+
+func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventName string
+		status    string
+		message   string
+		want      string
+		wantError bool
+	}{
+		{
+			name:      "completed post event",
+			eventName: "postdeploy",
+			status:    "completed",
+			message:   "Run azd show",
+			want:      "Run azd show",
+		},
+		{
+			name:      "completed pre event",
+			eventName: "predeploy",
+			status:    "completed",
+			message:   "not a follow-up",
+		},
+		{
+			name:      "completed post event with empty message",
+			eventName: "postdeploy",
+			status:    "completed",
+		},
+		{
+			name:      "failed post event",
+			eventName: "postdeploy",
+			status:    "failed",
+			message:   "hook failed",
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, _ := createTestEventService()
+			extension := createTestExtension()
+			projectConfig, err := service.lazyProject.GetValue()
+			require.NoError(t, err)
+
+			broker, streamCtx, cleanup := createBrokerForEventHandler(
+				t,
+				extension.Id,
+				func(msg *azdext.EventMessage) *azdext.EventMessage {
+					invoke := msg.GetInvokeProjectHandler()
+					require.NotNil(t, invoke)
+
+					return &azdext.EventMessage{
+						MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+							ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+								EventName: tt.eventName,
+								Status:    tt.status,
+								Message:   tt.message,
+							},
+						},
+					}
+				},
+			)
+			defer cleanup()
+
+			handler := service.createProjectEventHandler(
+				streamCtx,
+				extension,
+				tt.eventName,
+				broker,
+			)
+			collector := commandresult.NewFollowUpCollector()
+			ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
+
+			err = handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})
+			if tt.wantError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.want, collector.Text())
+		})
+	}
 }
 
 func TestEventService_createServiceEventHandler(t *testing.T) {

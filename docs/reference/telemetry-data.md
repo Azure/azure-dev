@@ -503,10 +503,10 @@ content, and for having them privacy reviewed with their extension.
 Only extensions whose configured `azd` source matches the verified official
 registry name, type, and normalized URL produce these spans, which is what ties
 the recorded values to that privacy review. A report from any other install
-source succeeds but records nothing, as does any report past the limit of 100
-spans per `azd` invocation. This is a configuration-based admission check, not
-a cryptographic provenance guarantee. Rejected and dropped calls are summarized
-on the command span using `extension.usage.dropped` and
+source succeeds without producing an `ext.usage` span, as does any report past
+the limit of 100 spans per `azd` invocation. This is a configuration-based
+admission check, not a cryptographic provenance guarantee. Rejected and dropped
+calls are summarized on the command span using `extension.usage.dropped` and
 `extension.usage.dropped.count`. The list contains an extension ID only after
 the installed record passes the official-source check; earlier failures use the
 fixed `unattributed` value. It never contains caller-supplied event or attribute

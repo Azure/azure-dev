@@ -931,6 +931,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	//   - provision.preflight=off   → skip the server-side ARM provision validation call.
 	skipValidation := false
 	skipArmPreflight := false
+	var valCtx *validationContext
 	var userConfigManager config.UserConfigManager
 	if err := p.serviceLocator.Resolve(&userConfigManager); err == nil {
 		if userConfig, err := userConfigManager.Load(); err == nil {
@@ -940,7 +941,9 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	if !skipValidation || !skipArmPreflight {
 		p.console.ShowSpinner(ctx, "Validating deployment", input.Step)
-		canceled, validationErr := p.validateProvision(
+		var canceled bool
+		var validationErr error
+		valCtx, canceled, validationErr = p.validateProvision(
 			ctx,
 			deployment,
 			p.path,
@@ -1049,6 +1052,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		planned.Parameters,
 		deploymentTags,
 		optionsMap,
+		valCtx,
 	)
 
 	// Try to atomically claim the "completed" state. If the interrupt
@@ -1107,13 +1111,22 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 		planned.Parameters,
 	)
 	if err != nil {
-		return nil, err
+		return nil, annotateDeploymentErrorResources(
+			err,
+			nil,
+			planned.RawArmTemplate,
+		)
 	}
 
 	if deployPreviewResult.Error != nil {
-		return nil, azapi.NewAzureDeploymentErrorFromResponse(
+		err := azapi.NewAzureDeploymentErrorFromResponse(
 			deployPreviewResult.Error,
 			azapi.DeploymentOperationPreview,
+		)
+		return nil, annotateDeploymentErrorResources(
+			err,
+			nil,
+			planned.RawArmTemplate,
 		)
 	}
 
@@ -2601,7 +2614,7 @@ func resolveProvisionValidationGates(userConfig config.Config) (skipValidation b
 // server-side ARM call runs outside that span so its failures/latency are not attributed
 // to azd's local validation event.
 //
-// It returns (canceled, err) where:
+// It returns (validation context, canceled, err) where:
 //   - canceled=true, err=nil: validation detected issues and provisioning should be skipped
 //     (exit code 0).
 //   - canceled=false, err!=nil: the validation itself failed to run (exit code 1).
@@ -2616,26 +2629,27 @@ func (p *BicepProvider) validateProvision(
 	options map[string]any,
 	skipLocalValidation bool,
 	skipArmPreflight bool,
-) (canceled bool, err error) {
+) (valCtx *validationContext, canceled bool, err error) {
 	// Local (client-side) provision validation, traced under the validation.provision event.
-	canceled, err = p.traceLocalProvisionValidation(
+	valCtx, canceled, err = p.traceLocalProvisionValidation(
 		ctx, target, modulePath, armTemplate, armParameters, skipLocalValidation)
 	if err != nil || canceled {
-		return canceled, err
+		return valCtx, canceled, err
 	}
 
 	// Server-side ARM provision validation. Skipped independently via provision.preflight=off.
 	// This runs outside the validation.provision span on purpose so ARM preflight errors are
 	// not attributed to azd's local validation telemetry.
 	if skipArmPreflight {
-		return false, nil
+		return valCtx, false, nil
 	}
-	return false, target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+	err = target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+	return valCtx, false, annotateDeploymentErrorResources(err, valCtx, armTemplate)
 }
 
 // traceLocalProvisionValidation runs (or skips) azd's local provision validation within the
 // `validation.provision` telemetry span and records the outcome attributes. It returns the
-// same (canceled, err) semantics as validateProvision for the local step.
+// validation context and the same (canceled, err) semantics as validateProvision for the local step.
 func (p *BicepProvider) traceLocalProvisionValidation(
 	ctx context.Context,
 	target infra.Deployment,
@@ -2643,7 +2657,7 @@ func (p *BicepProvider) traceLocalProvisionValidation(
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
 	skipLocalValidation bool,
-) (canceled bool, err error) {
+) (valCtx *validationContext, canceled bool, err error) {
 	ctx, span := tracing.Start(ctx, events.ProvisionValidationEvent)
 	defer func() {
 		span.EndWithStatus(err)
@@ -2662,16 +2676,16 @@ func (p *BicepProvider) traceLocalProvisionValidation(
 		span.SetAttributes(fields.ProvisionValidationDiagnosticsKey.StringSlice([]string{}))
 		span.SetAttributes(fields.ProvisionValidationWarningCountKey.Int(0))
 		span.SetAttributes(fields.ProvisionValidationErrorCountKey.Int(0))
-		return false, nil
+		return nil, false, nil
 	}
 
 	return p.runLocalProvisionValidation(ctx, span, target, modulePath, armTemplate, armParameters)
 }
 
 // runLocalProvisionValidation executes azd's local (client-side) provision validation
-// pipeline and reports findings to the user. It returns (canceled, err) using the same
-// semantics as validateProvision (canceled=true means provisioning should be skipped with
-// exit code 0).
+// pipeline and reports findings to the user. It returns the validation context and
+// (canceled, err) using the same semantics as validateProvision (canceled=true means
+// provisioning should be skipped with exit code 0).
 func (p *BicepProvider) runLocalProvisionValidation(
 	ctx context.Context,
 	span tracing.Span,
@@ -2679,7 +2693,7 @@ func (p *BicepProvider) runLocalProvisionValidation(
 	modulePath string,
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
-) (canceled bool, err error) {
+) (valCtx *validationContext, canceled bool, err error) {
 	// Local validation catches common issues without requiring a network round-trip.
 	// Resolve the environment location for RG-scoped deployments: prefer the actual
 	// resource group location (if the RG already exists), then fall back to AZURE_LOCATION.
@@ -2713,7 +2727,7 @@ func (p *BicepProvider) runLocalProvisionValidation(
 	valCtx, results, err := validator.validate(ctx, p.console, armTemplate, armParameters)
 	if err != nil {
 		p.setProvisionValidationOutcome(span, provisionValidationOutcomeError, nil)
-		return false, fmt.Errorf("local provision validation failed: %w", err)
+		return nil, false, fmt.Errorf("local provision validation failed: %w", err)
 	}
 
 	// Dispatch to extension-provided validation checks for the "arm-provision" check type.
@@ -2825,7 +2839,7 @@ func (p *BicepProvider) runLocalProvisionValidation(
 			// This is not an internal failure, so no error is returned (exit code 0).
 			p.console.Message(ctx, "Validation detected errors, provisioning canceled.")
 			p.setProvisionValidationOutcome(span, provisionValidationOutcomeCanceledByErrors, diagnosticIDs)
-			return true, nil
+			return valCtx, true, nil
 		}
 
 		if report.HasWarnings() {
@@ -2838,14 +2852,14 @@ func (p *BicepProvider) runLocalProvisionValidation(
 				p.setProvisionValidationOutcome(
 					span, provisionValidationOutcomeError, diagnosticIDs,
 				)
-				return false, fmt.Errorf(
+				return valCtx, false, fmt.Errorf(
 					"prompting for validation confirmation: %w", promptErr,
 				)
 			}
 			if !continueDeployment {
 				// User chose not to continue — this is an intentional cancel, not a failure.
 				p.setProvisionValidationOutcome(span, provisionValidationOutcomeCanceledByUser, diagnosticIDs)
-				return true, nil
+				return valCtx, true, nil
 			}
 			p.setProvisionValidationOutcome(span, provisionValidationOutcomeWarningsAccepted, diagnosticIDs)
 		}
@@ -2853,7 +2867,7 @@ func (p *BicepProvider) runLocalProvisionValidation(
 		p.setProvisionValidationOutcome(span, provisionValidationOutcomePassed, nil)
 	}
 
-	return false, nil
+	return valCtx, false, nil
 }
 
 // setProvisionValidationOutcome records the validation outcome on both the span and as a usage-level
@@ -3402,8 +3416,10 @@ func (p *BicepProvider) deployModule(
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
+	valCtx *validationContext,
 ) (*azapi.ResourceDeployment, error) {
-	return target.Deploy(ctx, armTemplate, armParameters, tags, options)
+	deployResult, err := target.Deploy(ctx, armTemplate, armParameters, tags, options)
+	return deployResult, annotateDeploymentErrorResources(err, valCtx, armTemplate)
 }
 
 // inputsParameter generates and updates input parameters for the Azure Resource Manager (ARM) template.

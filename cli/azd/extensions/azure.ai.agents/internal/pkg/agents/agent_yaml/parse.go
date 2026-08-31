@@ -5,6 +5,7 @@ package agent_yaml
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -501,6 +502,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 							"template.model_type '%s' is not supported; use '%s' or '%s'",
 							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
 					}
+					errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to VoiceAgent: %v", err))
 				}
@@ -518,6 +520,166 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 	}
 
 	return nil
+}
+
+func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
+	var errors []string
+	if agent.OutputModalities != nil && len(agent.OutputModalities) == 0 {
+		errors = append(errors, "template.output_modalities must not be empty when specified")
+	}
+	for i, modality := range agent.OutputModalities {
+		if strings.TrimSpace(modality) == "" {
+			errors = append(errors, fmt.Sprintf("template.output_modalities[%d] must not be blank", i))
+		}
+	}
+	if agent.ParallelToolCalls != nil {
+		errors = append(errors,
+			"template.parallel_tool_calls is not currently supported by the prompt voice runtime; "+
+				"remove it from the agent definition")
+	}
+	if err := validateVoiceMaxOutputTokens(agent.MaxOutputTokens); err != nil {
+		errors = append(errors, err.Error())
+	}
+
+	if agent.Audio == nil {
+		return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, "")...)
+	}
+	transcriptionModel := ""
+	if agent.Audio.Input != nil {
+		errors = append(errors, validateVoiceAudioFormat("template.audio.input.format", agent.Audio.Input.Format)...)
+		if nr := agent.Audio.Input.NoiseReduction; nr != nil && strings.TrimSpace(nr.Type) == "" {
+			errors = append(errors, "template.audio.input.noise_reduction.type must not be blank")
+		}
+		if td := agent.Audio.Input.TurnDetection; td != nil {
+			if strings.TrimSpace(td.Type) == "" {
+				errors = append(errors, "template.audio.input.turn_detection.type must not be blank")
+			}
+			if td.Threshold != nil && (!isFinite(*td.Threshold) || *td.Threshold <= 0 || *td.Threshold > 1) {
+				errors = append(errors, "template.audio.input.turn_detection.threshold must be greater than 0 and <= 1")
+			}
+			if td.PrefixPaddingMs != nil && *td.PrefixPaddingMs < 0 {
+				errors = append(errors, "template.audio.input.turn_detection.prefix_padding_ms must be >= 0")
+			}
+			if td.SilenceDurationMs != nil && *td.SilenceDurationMs < 0 {
+				errors = append(errors, "template.audio.input.turn_detection.silence_duration_ms must be >= 0")
+			}
+			if td.SpeechDurationMs != nil && *td.SpeechDurationMs < 0 {
+				errors = append(errors, "template.audio.input.turn_detection.speech_duration_ms must be >= 0")
+			}
+		}
+		if agent.Audio.Input.Transcription != nil {
+			transcriptionModel = agent.Audio.Input.Transcription.Model
+		}
+	}
+	if agent.Audio.Output != nil {
+		errors = append(errors, validateVoiceAudioFormat("template.audio.output.format", agent.Audio.Output.Format)...)
+		if voice := agent.Audio.Output.Voice; voice != nil {
+			if strings.TrimSpace(voice.Type) == "" {
+				errors = append(errors, "template.audio.output.voice.type must not be blank")
+			}
+			if strings.TrimSpace(voice.Name) == "" {
+				errors = append(errors, "template.audio.output.voice.name must not be blank")
+			}
+		}
+		if speed := agent.Audio.Output.Speed; speed != nil && (!isFinite(*speed) || *speed < 0.25 || *speed > 1.5) {
+			errors = append(errors, "template.audio.output.speed must be between 0.25 and 1.5")
+		}
+	}
+	return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, transcriptionModel)...)
+}
+
+func isFinite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+func validateVoiceMaxOutputTokens(value any) error {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case string:
+		if v == "inf" {
+			return nil
+		}
+	case int:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int8:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int16:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int32:
+		return validateVoiceMaxOutputTokensInt64(int64(v))
+	case int64:
+		return validateVoiceMaxOutputTokensInt64(v)
+	case uint:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint8:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint16:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint32:
+		return validateVoiceMaxOutputTokensUint64(uint64(v))
+	case uint64:
+		return validateVoiceMaxOutputTokensUint64(v)
+	case float32:
+		f := float64(v)
+		if isFinite(f) && math.Trunc(f) == f {
+			return validateVoiceMaxOutputTokensInt64(int64(f))
+		}
+	case float64:
+		if isFinite(v) && math.Trunc(v) == v {
+			return validateVoiceMaxOutputTokensInt64(int64(v))
+		}
+	}
+	return fmt.Errorf("template.max_output_tokens must be an integer from 1 to 2147483647 or the string inf")
+}
+
+func validateVoiceMaxOutputTokensInt64(value int64) error {
+	if value < 1 || value > math.MaxInt32 {
+		return fmt.Errorf("template.max_output_tokens must be an integer from 1 to 2147483647 or the string inf")
+	}
+	return nil
+}
+
+func validateVoiceMaxOutputTokensUint64(value uint64) error {
+	if value < 1 || value > math.MaxInt32 {
+		return fmt.Errorf("template.max_output_tokens must be an integer from 1 to 2147483647 or the string inf")
+	}
+	return nil
+}
+
+func validateVoiceIncludeTranscriptionCompatibility(agent VoiceAgent, transcriptionModel string) []string {
+	if !slices.Contains(agent.Include, "item.input_audio_transcription.phrases") {
+		return nil
+	}
+	model := strings.TrimSpace(transcriptionModel)
+	if model == "" {
+		model = defaultVoiceInputTranscriptionModel
+	}
+	if model == "azure-speech" || model == "azure-fast-transcription" {
+		return nil
+	}
+	return []string{
+		"template.include item.input_audio_transcription.phrases requires " +
+			"template.audio.input.transcription.model to be azure-speech or azure-fast-transcription",
+	}
+}
+
+func validateVoiceAudioFormat(path string, format *VoiceAudioFormat) []string {
+	if format == nil {
+		return nil
+	}
+	var errors []string
+	formatType := strings.TrimSpace(format.Type)
+	if formatType == "" {
+		errors = append(errors, path+".type must not be blank")
+	} else if formatType != "audio/pcm" && formatType != "audio/pcmu" && formatType != "audio/pcma" {
+		errors = append(errors, path+".type must be 'audio/pcm', 'audio/pcmu', or 'audio/pcma'")
+	}
+	if format.Rate != nil && *format.Rate <= 0 {
+		errors = append(errors, path+".rate must be greater than 0")
+	}
+	return errors
 }
 
 // Validate that the agent name matches the expected deployable format

@@ -288,6 +288,8 @@ type stubContainerServer struct {
 	buildRequest *azdext.ContainerBuildRequest
 	packRequest  *azdext.ContainerPackageRequest
 	pubRequest   *azdext.ContainerPublishRequest
+	packageImage string
+	publishImage string
 	publishErr   error
 }
 
@@ -313,11 +315,16 @@ func (s *stubContainerServer) Package(
 ) (*azdext.ContainerPackageResponse, error) {
 	s.packageCalls.Add(1)
 	s.packRequest = request
+	image := s.packageImage
+	if image == "" {
+		image = "myregistry.azurecr.io/test-image:latest"
+	}
 	return &azdext.ContainerPackageResponse{
 		Result: &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{{
-				Kind:     azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
-				Location: "myregistry.azurecr.io/test-image:latest",
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+				Location:     image,
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 			}},
 		},
 	}, nil
@@ -333,11 +340,15 @@ func (s *stubContainerServer) Publish(
 		return nil, s.publishErr
 	}
 
+	image := s.publishImage
+	if image == "" {
+		image = "myregistry.azurecr.io/test-image:latest"
+	}
 	return &azdext.ContainerPublishResponse{
 		Result: &azdext.ServicePublishResult{
 			Artifacts: []*azdext.Artifact{{
 				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
-				Location:     "myregistry.azurecr.io/test-image:latest",
+				Location:     image,
 				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 			}},
 		},
@@ -506,6 +517,38 @@ func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *az
 	return newServiceTargetTestClient(t, nil, promptSrv)
 }
 
+type legacyPreBuiltEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func (s *legacyPreBuiltEnvironmentServer) GetValue(
+	_ context.Context,
+	_ *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	return &azdext.KeyValueResponse{Value: "true"}, nil
+}
+
+func newLegacyPreBuiltTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterPromptServiceServer(srv, promptSrv)
+	azdext.RegisterEnvironmentServiceServer(srv, &legacyPreBuiltEnvironmentServer{})
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	return client
+}
+
 func TestInitializeIsCheapAndSideEffectFree(t *testing.T) {
 	// azd-core calls ServiceTargetProvider.Initialize for every service on
 	// every action (provision, deploy, env refresh, show, ...). Initialize
@@ -529,6 +572,125 @@ func TestInitializeIsCheapAndSideEffectFree(t *testing.T) {
 
 	// Same provider, called again with the same service config: still no-op.
 	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+}
+
+func TestInitializeValidatesRegistryConnectionLifecycle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		registry     bool
+		docker       bool
+		passthrough  bool
+		remoteBuild  bool
+		wantContains string
+	}{
+		{name: "registry with passthrough", registry: true, passthrough: true},
+		{
+			name:         "registry without docker",
+			registry:     true,
+			wantContains: "requires docker.imagePassthrough: true",
+		},
+		{
+			name:         "registry with zero-value docker",
+			registry:     true,
+			docker:       true,
+			wantContains: "requires docker.imagePassthrough: true",
+		},
+		{
+			name:         "registry with remote build",
+			registry:     true,
+			passthrough:  true,
+			remoteBuild:  true,
+			wantContains: "cannot be combined with docker.remoteBuild",
+		},
+		{name: "legacy image without docker"},
+		{name: "legacy image with remote build", docker: true, remoteBuild: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			agentDef := sampleContainerAgent()
+			agentDef.Image = "registry.example.com/agents/my-agent:v1"
+			agentDef.RegistryConnectionID = ""
+			if test.registry {
+				agentDef.RegistryConnectionID = "private-registry"
+			}
+			props, err := AgentDefinitionToServiceProperties(agentDef, nil)
+			require.NoError(t, err)
+
+			var dockerOptions *azdext.DockerProjectOptions
+			if test.docker || test.passthrough || test.remoteBuild {
+				dockerOptions = &azdext.DockerProjectOptions{
+					RemoteBuild:      test.remoteBuild,
+					ImagePassthrough: test.passthrough,
+				}
+			}
+			provider := &AgentServiceTargetProvider{}
+			err = provider.Initialize(t.Context(), &azdext.ServiceConfig{
+				Name:                 "my-agent",
+				Host:                 "azure.ai.agent",
+				Image:                agentDef.Image,
+				Docker:               dockerOptions,
+				AdditionalProperties: props,
+			})
+
+			if test.wantContains != "" {
+				require.ErrorContains(t, err, test.wantContains)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Empty(t, provider.agentDefinitionPath)
+			require.Nil(t, provider.credential)
+			require.Empty(t, provider.tenantId)
+		})
+	}
+}
+
+func TestInitializeValidatesRegistryLifecycleFromRef(t *testing.T) {
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "agent.yaml"),
+		[]byte("kind: hosted\nname: ref-agent\nregistryConnectionId: private-registry\n"),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./agent.yaml"})
+	require.NoError(t, err)
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	err = provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name:                 "ref-agent",
+		Host:                 foundryAgentHost,
+		Image:                "registry.example.com/team/agent:v1",
+		AdditionalProperties: props,
+	})
+	require.ErrorContains(t, err, "requires docker.imagePassthrough: true")
+}
+
+func TestInitializeValidatesRegistryLifecycleFromLegacyDiskDefinition(t *testing.T) {
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: hosted\nname: disk-agent\nregistryConnectionId: private-registry\n"),
+		0o600,
+	))
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name:         "disk-agent",
+		Host:         foundryAgentHost,
+		RelativePath: "svc",
+		Image:        "registry.example.com/team/agent:v1",
+	})
+	require.ErrorContains(t, err, "requires docker.imagePassthrough: true")
 }
 
 func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
@@ -555,10 +717,8 @@ func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
 	require.Equal(t, filepath.Join(serviceDir, "agent.yaml"), provider.agentDefinitionPath)
 }
 
-// TestInitializeResolvesPromptAgentFileRef pins the `$ref` include as the way a
-// service entry names its agent definition file. A prompt agent needs the file's
-// location, not just its contents: it reads the raw YAML and anchors the skills/
-// and vector-assets/ convention folders next to it.
+// TestInitializeResolvesPromptAgentFileRef verifies prompt $ref content is
+// expanded into the service definition during initialization.
 func TestInitializeResolvesPromptAgentFileRef(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 
@@ -590,7 +750,8 @@ func TestInitializeResolvesPromptAgentFileRef(t *testing.T) {
 	}))
 
 	require.NoError(t, provider.ensureDeployContext(t.Context()))
-	require.Equal(t, filepath.Join(serviceDir, "triage.yaml"), provider.agentDefinitionPath)
+	require.Empty(t, provider.agentDefinitionPath)
+	require.True(t, ServiceIsPromptAgent(provider.serviceConfig))
 }
 
 // TestInitializeRejectsMissingPromptAgentFileRef pins that a `$ref` naming a file
@@ -618,15 +779,13 @@ func TestInitializeRejectsMissingPromptAgentFileRef(t *testing.T) {
 	provider := &AgentServiceTargetProvider{
 		azdClient: newInitializeTestClient(t, projectRoot),
 	}
-	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{
+	err = provider.Initialize(t.Context(), &azdext.ServiceConfig{
 		Name:                 "triage",
 		Host:                 "azure.ai.agent",
 		RelativePath:         "svc",
 		AdditionalProperties: props,
 		Config:               config,
-	}))
-
-	err = provider.ensureDeployContext(t.Context())
+	})
 
 	require.Error(t, err)
 	require.Empty(t, provider.agentDefinitionPath)
@@ -1689,6 +1848,7 @@ func TestPrepareDeployIncludesServiceEnvironment(t *testing.T) {
 	t.Parallel()
 
 	agentDef := sampleContainerAgent()
+	agentDef.RegistryConnectionID = "private-registry"
 	*agentDef.EnvironmentVariables = append(
 		*agentDef.EnvironmentVariables,
 		agent_yaml.EnvironmentVariable{
@@ -1728,6 +1888,10 @@ func TestPrepareDeployIncludesServiceEnvironment(t *testing.T) {
 	)
 	require.Equal(t, "service", prep.resolvedEnvVars["SHARED"])
 	require.Equal(t, "legacy", prep.resolvedEnvVars["LEGACY_ONLY"])
+	hostedDefinition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.NotNil(t, hostedDefinition.ContainerConfiguration)
+	require.Equal(t, "private-registry", hostedDefinition.ContainerConfiguration.RegistryConnectionID)
 }
 
 func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testing.T) {
@@ -1857,6 +2021,66 @@ func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
 	require.Equal(t, DefaultMemory, definition.Memory)
 }
 
+func TestValidateRegistryConnectionDefinition(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		agent       agent_yaml.ContainerAgent
+		wantContain string
+	}{
+		{name: "unset"},
+		{
+			name: "valid",
+			agent: agent_yaml.ContainerAgent{
+				Image: "registry.example.com/agent:v1", RegistryConnectionID: "private-registry",
+			},
+		},
+		{
+			name: "missing image", agent: agent_yaml.ContainerAgent{RegistryConnectionID: "private-registry"},
+			wantContain: "requires a pre-built container image",
+		},
+		{
+			name: "unqualified image",
+			agent: agent_yaml.ContainerAgent{
+				Image: "agent:v1", RegistryConnectionID: "private-registry",
+			},
+			wantContain: "explicit registry host and repository",
+		},
+		{
+			name: "image URL scheme",
+			agent: agent_yaml.ContainerAgent{
+				Image: "https://registry.example.com/agent:v1", RegistryConnectionID: "private-registry",
+			},
+			wantContain: "explicit registry host and repository",
+		},
+		{
+			name: "code deploy",
+			agent: agent_yaml.ContainerAgent{
+				Image: "registry.example.com/agent:v1", RegistryConnectionID: "private-registry",
+				CodeConfiguration: &agent_yaml.CodeConfiguration{},
+			},
+			wantContain: "codeConfiguration",
+		},
+		{
+			name: "whitespace", agent: agent_yaml.ContainerAgent{RegistryConnectionID: "  "},
+			wantContain: "empty or whitespace",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateRegistryConnectionDefinition(test.agent)
+			if test.wantContain == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, test.wantContain)
+		})
+	}
+}
+
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	t.Parallel()
 
@@ -1865,6 +2089,64 @@ func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{})
 	require.NoError(t, err)
 	require.False(t, result, "should default to build when no image is configured")
+}
+
+func TestShouldUsePreBuiltImage_LegacyInitImageUsesCompatibilityMarker(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		docker *azdext.DockerProjectOptions
+	}{
+		{name: "docker absent"},
+		{name: "mapped zero-value docker", docker: &azdext.DockerProjectOptions{}},
+		{name: "configured docker", docker: &azdext.DockerProjectOptions{RemoteBuild: true}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			promptStub := &stubPromptServer{selectedIndex: 0}
+			provider := &AgentServiceTargetProvider{
+				azdClient: newLegacyPreBuiltTestClient(t, promptStub),
+				env:       &azdext.Environment{Name: "test-env"},
+				serviceConfig: &azdext.ServiceConfig{
+					Docker: test.docker,
+				},
+			}
+
+			result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+				Image: "registry.example.com/agent:v1",
+			})
+			require.NoError(t, err)
+			require.True(t, result)
+			require.Equal(t, int32(0), promptStub.selectCalls.Load())
+		})
+	}
+}
+
+func TestShouldUsePreBuiltImage_RegistryConnectionForcesPreBuilt(t *testing.T) {
+	t.Parallel()
+
+	promptStub := &stubPromptServer{selectedIndex: 0}
+	provider := &AgentServiceTargetProvider{azdClient: newPromptTestClient(t, promptStub)}
+	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+		Image:                "registry.example.com/agent:v1",
+		RegistryConnectionID: "private-registry",
+	})
+	require.NoError(t, err)
+	require.True(t, result)
+	require.Equal(t, int32(0), promptStub.selectCalls.Load(), "registry-backed images must not prompt to build")
+}
+
+func TestShouldUsePreBuiltImage_RegistryConnectionRequiresImage(t *testing.T) {
+	t.Parallel()
+
+	provider := &AgentServiceTargetProvider{}
+	_, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+		RegistryConnectionID: "private-registry",
+	})
+	require.ErrorContains(t, err, "requires a pre-built container image")
 }
 
 func TestShouldUsePreBuiltImage_SelectsPreBuiltImage(t *testing.T) {
@@ -1955,6 +2237,124 @@ func TestShouldUsePreBuiltImage_PromptErrorCanRetry(t *testing.T) {
 	require.Equal(t, int32(2), promptStub.selectCalls.Load())
 }
 
+func TestPackage_DelegatesImagePassthroughToCore(t *testing.T) {
+	const image = "registry.example.com/agents/my-agent:v1"
+	tests := []struct {
+		name               string
+		registryConnection string
+	}{
+		{name: "BYO image"},
+		{name: "private registry image", registryConnection: "production-registry"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			agentPath := filepath.Join(dir, "agent.yaml")
+			content := fmt.Sprintf("kind: hosted\nname: test-agent\nimage: %s\n", image)
+			if test.registryConnection != "" {
+				content += fmt.Sprintf("registryConnectionId: %s\n", test.registryConnection)
+			}
+			require.NoError(t, os.WriteFile(agentPath, []byte(content), 0o600))
+
+			containerStub := &stubContainerServer{packageImage: image}
+			promptStub := &stubPromptServer{selectedIndex: 0}
+			dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
+			provider := &AgentServiceTargetProvider{
+				azdClient:           newServiceTargetTestClient(t, containerStub, promptStub),
+				agentDefinitionPath: agentPath,
+				env:                 &azdext.Environment{Name: "test-env"},
+			}
+
+			result, err := provider.Package(
+				t.Context(),
+				&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+				&azdext.ServiceContext{},
+				func(string) {},
+			)
+
+			require.NoError(t, err)
+			require.Len(t, result.Artifacts, 1)
+			require.Equal(t, image, result.Artifacts[0].Location)
+			require.Equal(t, azdext.LocationKind_LOCATION_KIND_REMOTE, result.Artifacts[0].LocationKind)
+			require.Equal(t, int32(0), containerStub.buildCalls.Load())
+			require.Equal(t, int32(1), containerStub.packageCalls.Load())
+			require.Equal(t, int32(0), promptStub.selectCalls.Load())
+		})
+	}
+}
+
+func TestPackage_ReusesCoreImagePassthroughArtifact(t *testing.T) {
+	t.Parallel()
+
+	const image = "registry.example.com/agents/my-agent:v1"
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, image)
+	containerStub := &stubContainerServer{packageImage: image}
+	dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
+	provider := &AgentServiceTargetProvider{
+		azdClient:           newContainerTestClient(t, containerStub),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+	serviceContext := &azdext.ServiceContext{Package: []*azdext.Artifact{{
+		Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+		Location:     image,
+		LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+		Metadata:     map[string]string{"imagePassthrough": "true"},
+	}}}
+
+	result, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+		serviceContext,
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, result.Artifacts, "core already added the passthrough artifact to the shared context")
+	require.Len(t, serviceContext.Package, 1)
+	require.Equal(t, int32(0), containerStub.packageCalls.Load())
+}
+
+func TestPackage_CodeDeployTakesPrecedenceOverImagePassthrough(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(agentPath, []byte(`kind: hosted
+name: test-agent
+image: registry.example.com/agents/test-agent:v1
+code_configuration:
+  runtime: python_3_13
+  entry_point: app.py
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("print('hello')\n"), 0o600))
+
+	containerStub := &stubContainerServer{}
+	dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
+	provider := &AgentServiceTargetProvider{
+		azdClient:           newContainerTestClient(t, containerStub),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+
+	result, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+		&azdext.ServiceContext{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, azdext.ArtifactKind_ARTIFACT_KIND_ARCHIVE, result.Artifacts[0].Kind)
+	require.Equal(t, "code-zip", result.Artifacts[0].Metadata["type"])
+	require.Equal(t, int32(0), containerStub.buildCalls.Load())
+	require.Equal(t, int32(0), containerStub.packageCalls.Load())
+	t.Cleanup(func() { require.NoError(t, os.Remove(result.Artifacts[0].Location)) })
+}
+
 func TestPackage_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 	t.Parallel()
 
@@ -2018,13 +2418,87 @@ func TestPackage_BuildsWhenUserChoseDockerfile(t *testing.T) {
 	require.Equal(t, int32(1), containerStub.packageCalls.Load())
 }
 
+func TestPublish_DelegatesImagePassthroughToCore(t *testing.T) {
+	t.Parallel()
+
+	const image = "registry.example.com/agents/my-agent:v1"
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, image)
+	containerStub := &stubContainerServer{publishImage: image}
+	dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
+	provider := &AgentServiceTargetProvider{
+		azdClient:           newContainerTestClient(t, containerStub),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+
+	result, err := provider.Publish(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+		&azdext.ServiceContext{Package: []*azdext.Artifact{{
+			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+			Location:     image,
+			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+			Metadata:     map[string]string{"imagePassthrough": "true"},
+		}}},
+		&azdext.TargetResource{},
+		&azdext.PublishOptions{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, image, result.Artifacts[0].Location)
+	require.Equal(t, int32(1), containerStub.publishCalls.Load())
+}
+
+func TestPublish_CodeDeployTakesPrecedenceOverPreBuiltArtifact(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(agentPath, []byte(`kind: hosted
+name: test-agent
+image: registry.example.com/agents/test-agent:v1
+code_configuration:
+  runtime: python_3_13
+  entry_point: app.py
+`), 0o600))
+
+	containerStub := &stubContainerServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient:           newContainerTestClient(t, containerStub),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+
+	result, err := provider.Publish(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc"},
+		&azdext.ServiceContext{Package: []*azdext.Artifact{
+			preBuiltImageArtifact("registry.example.com/agents/test-agent:v1"),
+		}},
+		&azdext.TargetResource{},
+		&azdext.PublishOptions{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, result.Artifacts)
+	require.Equal(t, int32(0), containerStub.publishCalls.Load())
+}
+
 func TestPublish_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 	t.Parallel()
 
 	imageURL := "myregistry.azurecr.io/myimage:v1"
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, imageURL)
 
 	provider := &AgentServiceTargetProvider{
-		env: &azdext.Environment{Name: "test-env"},
+		azdClient:           newContainerTestClient(t, &stubContainerServer{}),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
 	}
 
 	var progressMessages []string

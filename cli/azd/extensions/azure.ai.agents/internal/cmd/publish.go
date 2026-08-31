@@ -210,13 +210,6 @@ func resolveDigitalWorkerPublishInputs(
 	var permissions []agent_api.Microsoft365PermissionScopes
 	var boundaries *[]string
 	if publish != nil {
-		if err := project.ValidateDigitalWorkerPublishConfig(publish); err != nil {
-			return nil, nil, exterrors.Validation(
-				exterrors.CodeInvalidServiceConfig,
-				fmt.Sprintf("invalid Digital Worker publish configuration: %s", err),
-				"fix activity.publish in azure.yaml",
-			)
-		}
 		permissions = make([]agent_api.Microsoft365PermissionScopes, 0, len(publish.OptionalPermissionScopes))
 		for _, permission := range publish.OptionalPermissionScopes {
 			scopes := make([]string, 0, len(permission.Scopes))
@@ -264,7 +257,51 @@ func resolveDigitalWorkerPublishInputs(
 		values := []string{}
 		boundaries = &values
 	}
+
+	effectivePublish := effectiveDigitalWorkerPublishConfig(publish, flags, permissions, boundaries)
+	if effectivePublish != nil {
+		if err := project.ValidateDigitalWorkerPublishConfig(effectivePublish); err != nil {
+			return nil, nil, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("invalid Digital Worker publish configuration: %s", err),
+				"fix activity.publish in azure.yaml or pass valid publish override flags",
+			)
+		}
+	}
 	return permissions, boundaries, nil
+}
+
+func effectiveDigitalWorkerPublishConfig(
+	publish *project.ActivityPublishConfig,
+	flags *publishFlags,
+	permissions []agent_api.Microsoft365PermissionScopes,
+	boundaries *[]string,
+) *project.ActivityPublishConfig {
+	if publish == nil && len(permissions) == 0 && boundaries == nil {
+		return nil
+	}
+
+	effective := &project.ActivityPublishConfig{}
+	if publish != nil {
+		*effective = *publish
+	}
+	if flags.scopeSet {
+		effective.PublishScope = ""
+	}
+	if flags.optionalPermissionScopesSet {
+		effective.OptionalPermissionScopes = make([]project.Microsoft365PermissionScopes, 0, len(permissions))
+		for _, permission := range permissions {
+			effective.OptionalPermissionScopes = append(effective.OptionalPermissionScopes, project.Microsoft365PermissionScopes{
+				ResourceAppID: permission.ResourceAppID,
+				Scopes:        append([]string(nil), permission.Scopes...),
+			})
+		}
+	}
+	if flags.accessBoundariesSet || flags.clearAccessBoundaries {
+		effective.AccessBoundaries = boundaries
+	}
+
+	return effective
 }
 
 func parseOptionalPermissionScopeFlags(values []string) ([]agent_api.Microsoft365PermissionScopes, error) {

@@ -325,6 +325,35 @@ func TestResolveDigitalWorkerPublishInputs(t *testing.T) {
 	require.Empty(t, *boundaries)
 }
 
+func TestResolveDigitalWorkerPublishInputsValidatesAfterFlagOverrides(t *testing.T) {
+	t.Parallel()
+
+	configBoundaries := []string{"invalid.boundary"}
+	packCtx := digitalWorkerPackContext("shared")
+	packCtx.activitySettings.Publish.OptionalPermissionScopes = []project.Microsoft365PermissionScopes{
+		{ResourceAppID: "", Scopes: []string{""}},
+	}
+	packCtx.activitySettings.Publish.AccessBoundaries = &configBoundaries
+
+	permissions, boundaries, err := resolveDigitalWorkerPublishInputs(&publishFlags{
+		scope:                       "tenant",
+		scopeSet:                    true,
+		optionalPermissionScopes:    []string{"flag-app=Flag.Scope"},
+		optionalPermissionScopesSet: true,
+		clearAccessBoundaries:       true,
+	}, packCtx)
+
+	require.NoError(t, err)
+	require.Equal(t, []agent_api.Microsoft365PermissionScopes{
+		{ResourceAppID: "flag-app", Scopes: []string{"Flag.Scope"}},
+	}, permissions)
+	require.NotNil(t, boundaries)
+	require.Empty(t, *boundaries)
+
+	_, _, err = resolveDigitalWorkerPublishInputs(&publishFlags{}, packCtx)
+	require.ErrorContains(t, err, "publishScope must be tenant")
+}
+
 func TestResolveDigitalWorkerPublishInputsRejectsSimpleAgentFlags(t *testing.T) {
 	t.Parallel()
 

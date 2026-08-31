@@ -29,7 +29,8 @@ type ProjectEventArgs struct {
 	Project *ProjectConfig
 
 	// FollowUp is optional text for the parent command's
-	// completion message.
+	// completion message. A later completed project post* event
+	// replaces this extension's value; an empty value clears it.
 	FollowUp string
 }
 

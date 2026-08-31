@@ -229,8 +229,10 @@ host.WithProjectEventHandler("postdeploy",
 The host appends the text to the parent command's human-readable completion
 message and combines contributions from multiple extensions in a deterministic
 order. It ignores `pre*` and failed handler messages. The text is opaque to the
-host and is not included in JSON output. Older hosts ignore this optional
-success message. Leave `FollowUp` empty when no guidance is needed.
+host and is not included in JSON output. Within one command, a later completed
+`post*` result replaces the earlier result from that extension. An empty
+`FollowUp` retracts that extension's earlier contribution without affecting
+other extensions. Older hosts ignore this optional success message.
 
 ### NewMetadataCommand
 

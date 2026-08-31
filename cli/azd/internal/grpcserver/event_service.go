@@ -168,6 +168,7 @@ func (s *eventService) createProjectEventHandler(
 		}
 
 		var handlerMessage string
+		var handlerCompleted bool
 		err = s.runWithEnvReload(ctx, func() error {
 			// Use streamCtx which has extension claims for correlation
 			response, err := broker.SendAndWait(streamCtx, invokeMsg)
@@ -200,12 +201,13 @@ func (s *eventService) createProjectEventHandler(
 			}
 
 			if statusMsg.ProjectHandlerStatus.Status == "completed" {
+				handlerCompleted = true
 				handlerMessage = statusMsg.ProjectHandlerStatus.Message
 			}
 
 			return nil
 		})
-		if err == nil && strings.HasPrefix(eventName, "post") {
+		if err == nil && handlerCompleted && strings.HasPrefix(eventName, "post") {
 			if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
 				collector.Add(extension.Id, handlerMessage)
 			}

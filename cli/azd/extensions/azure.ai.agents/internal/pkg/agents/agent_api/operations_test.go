@@ -850,6 +850,19 @@ func TestGetAgent_StandardContractOmitsDigitalWorkerPreview(t *testing.T) {
 	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
 }
 
+func TestGetAgent_DigitalWorkerContract(t *testing.T) {
+	transport := &capturingTransport{
+		statusCode: http.StatusOK,
+		respBody:   `{"name":"worker","digital_worker_type":"m365","versions":{"latest":{"version":"1"}}}`,
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	got, err := client.GetAgentWithDigitalWorkerType(t.Context(), "worker", "v1")
+	require.NoError(t, err)
+	require.Equal(t, DigitalWorkerTypeM365, got.DigitalWorkerType)
+	require.Equal(t, DigitalWorkerPreviewFeature, transport.lastReq.Header.Get("Foundry-Features"))
+}
+
 func TestUpdateAgent_OmitsDigitalWorkerPreview(t *testing.T) {
 	transport := &capturingTransport{
 		statusCode: http.StatusOK,

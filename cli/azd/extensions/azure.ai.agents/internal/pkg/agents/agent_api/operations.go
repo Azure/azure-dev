@@ -108,13 +108,35 @@ func hasDigitalWorkerType(request any) bool {
 	}
 }
 
-// GetAgent retrieves a specific agent by name
+// GetAgent retrieves a specific agent by name using the standard contract.
 func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string) (*AgentObject, error) {
+	return c.getAgent(ctx, agentName, apiVersion, false)
+}
+
+// GetAgentWithDigitalWorkerType retrieves a specific agent and opts into the
+// preview contract that returns digital_worker_type.
+func (c *AgentClient) GetAgentWithDigitalWorkerType(
+	ctx context.Context,
+	agentName string,
+	apiVersion string,
+) (*AgentObject, error) {
+	return c.getAgent(ctx, agentName, apiVersion, true)
+}
+
+func (c *AgentClient) getAgent(
+	ctx context.Context,
+	agentName string,
+	apiVersion string,
+	includeDigitalWorkerType bool,
+) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if includeDigitalWorkerType {
+		setDigitalWorkerPreviewFeature(req)
 	}
 
 	resp, err := c.pipeline.Do(req)

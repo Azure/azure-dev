@@ -3060,7 +3060,11 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Check if agent already exists (GET /agents/{name})
 	progress("Checking existing agent")
-	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agent_api.AgentEndpointAPIVersion)
+	existingAgent, getErr := agentClient.GetAgentWithDigitalWorkerType(
+		ctx,
+		agentDef.Name,
+		agent_api.AgentEndpointAPIVersion,
+	)
 	var agentResp *agent_api.AgentObject
 
 	if getErr != nil {
@@ -3078,6 +3082,17 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 		}
 	} else {
+		localProfile := ResolveActivityProfile(agentDef)
+		if versionRequest.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+			localProfile = ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
+		}
+		if _, err := ResolveDeployedActivityProfile(localProfile, existingAgent.DigitalWorkerType); err != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				err.Error(),
+				"delete and recreate the agent so its immutable digital_worker_type matches activity.useCase",
+			)
+		}
 		// Agent exists — update
 		progress("Updating existing agent from code package")
 		writeExistingAgentVersionWarning(agentDef.Name)

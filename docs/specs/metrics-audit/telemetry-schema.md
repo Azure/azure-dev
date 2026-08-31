@@ -319,10 +319,10 @@ The following rules define the runtime and source-governance boundaries:
 
 | Rule | Enforcement |
 |------|-------------|
-| Eligibility | Only eligible official-registry installations produce `ext.usage` spans; other installations receive a normal response without recording an event |
+| Eligibility | Only eligible official-registry installations produce `ext.usage` spans. A valid call from any other source succeeds without producing an `ext.usage` span, while the command-span drop fields are still recorded |
 | Key namespace | Every caller-supplied key is prefixed with `ext.` by the host, so it can never overwrite a host-owned attribute |
 | Size | At most 32 attributes per event; event name and keys at most 128 UTF-8 bytes; values at most 512 UTF-8 bytes |
-| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that are dropped without recording |
+| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that produce no `ext.usage` span, while the command-span drop fields are still recorded |
 | Drop observability | Rejected and dropped calls append one unique `<extension-id-or-unattributed>@<reason>` value to `extension.usage.dropped` on the hosting command span and increment `extension.usage.dropped.count`. IDs appear only after official-source admission; earlier failures use fixed `unattributed`. Synthetic `azd up` phase spans do not copy these fields. Reasons are fixed by the host, and no caller-controlled event or attribute content is copied |
 | Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
 | Classification | Each first-party field has an explicit source declaration based on its actual semantics; the runtime does not assign one classification to the whole `ext.*` class |

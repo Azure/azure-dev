@@ -547,7 +547,7 @@ values low cardinality and free of customer content, and for having them
 privacy reviewed with their extension.
 
 Only eligible official-registry installations produce these spans. Other
-installations receive a normal response without recording an event, as does
+installations receive a normal response without producing an `ext.usage` span, as does
 any report past the limit of 100 spans per `azd` invocation.
 Rejected and dropped calls are summarized
 on the command span using `extension.usage.dropped` and

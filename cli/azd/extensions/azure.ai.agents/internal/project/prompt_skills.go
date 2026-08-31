@@ -14,10 +14,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/envkey"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 
 	"github.com/braydonk/yaml"
 )
@@ -529,8 +526,6 @@ func toolboxNode(
 // toolbox data-plane endpoints. It holds no skills client: skills are published
 // and pinned on the harness, never registered into a toolbox.
 type foundryToolboxBuilder struct {
-	toolboxes       *azure.FoundryToolboxClient
-	projectEndpoint string
 }
 
 // resolvedSkill is a skill bundle matched to the version that its sibling
@@ -630,29 +625,9 @@ func (b *foundryToolboxBuilder) ResolveToolbox(_ context.Context, ref toolboxRef
 	return toolboxAttachment{McpURL: ref.MCPEndpoint, ConnectionName: ref.Connection}, nil
 }
 
-// mcpURL builds the toolbox MCP endpoint. With a version it returns the
-// version-specific (developer) endpoint; without one it returns the consumer
-// endpoint that always serves the toolbox's default_version. Both carry the
-// required api-version query parameter.
-func (b *foundryToolboxBuilder) mcpURL(name, version string) string {
-	base := strings.TrimRight(b.projectEndpoint, "/")
-	if strings.TrimSpace(version) == "" {
-		return fmt.Sprintf("%s/toolboxes/%s/mcp?api-version=%s", base, name, toolboxMcpApiVersion)
-	}
-	return fmt.Sprintf(
-		"%s/toolboxes/%s/versions/%s/mcp?api-version=%s",
-		base, name, version, toolboxMcpApiVersion,
-	)
-}
-
-// toolboxMcpApiVersion is the api-version query parameter required on toolbox
-// MCP endpoint URLs.
-const toolboxMcpApiVersion = "v1"
-
 // newFoundryToolboxBuilder constructs the live builder from prompt settings.
 func newFoundryToolboxBuilder(
 	settings *PromptAgentSettings,
-	credential azcore.TokenCredential,
 ) (toolboxBuilder, error) {
 	if settings == nil || strings.TrimSpace(settings.ProjectEndpoint) == "" {
 		return nil, exterrors.Validation(
@@ -661,8 +636,5 @@ func newFoundryToolboxBuilder(
 			"run `azd up` to provision a Foundry project, or remove the 'toolbox:' block from agent.yaml",
 		)
 	}
-	return &foundryToolboxBuilder{
-		toolboxes:       azure.NewFoundryToolboxClient(settings.ProjectEndpoint, credential),
-		projectEndpoint: settings.ProjectEndpoint,
-	}, nil
+	return &foundryToolboxBuilder{}, nil
 }

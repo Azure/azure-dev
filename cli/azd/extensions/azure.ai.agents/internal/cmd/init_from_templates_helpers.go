@@ -115,8 +115,6 @@ const (
 // start of `azd ai agent init`. It selects between the supported agent
 // runtimes: hosted (the container/code-deploy flow) and prompt (a Foundry
 // prompt agent).
-//
-// Managed is a CLI-only choice that scaffolds kind: prompt plus a harness.
 type agentKindChoice string
 
 const (
@@ -129,8 +127,6 @@ const (
 	// uses kind: prompt (see agent_yaml.AgentKindPrompt). Whether it also names
 	// a `harness:` is decided separately, by --harness or the kind menu entry.
 	AgentKindChoicePrompt agentKindChoice = "prompt"
-	// AgentKindChoiceManaged scaffolds a prompt agent with an execution harness.
-	AgentKindChoiceManaged agentKindChoice = "managed"
 )
 
 // harnessNone is the --harness value that explicitly opts out of a harness,
@@ -198,7 +194,7 @@ var agentKindMenu = []kindMenuEntry{
 	{
 		label: "Prompt agent with GitHub Copilot harness (preview) — " +
 			"Configure a model, instructions, tools, and skills",
-		kind:    AgentKindChoiceManaged,
+		kind:    AgentKindChoicePrompt,
 		harness: agent_api.ManagedAgentHarnessGitHubCopilot,
 	},
 }

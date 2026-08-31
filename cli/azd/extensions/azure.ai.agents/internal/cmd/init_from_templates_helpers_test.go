@@ -99,14 +99,14 @@ func TestAgentKindMenuUsesManagedForHarness(t *testing.T) {
 	for _, entry := range agentKindMenu {
 		require.Contains(
 			t,
-			[]agentKindChoice{AgentKindChoiceHosted, AgentKindChoicePrompt, AgentKindChoiceManaged},
+			[]agentKindChoice{AgentKindChoiceHosted, AgentKindChoicePrompt},
 			entry.kind,
 			"menu entry %q uses an unsupported kind", entry.label,
 		)
 		if entry.harness != "" {
 			harnessed++
-			require.Equal(t, AgentKindChoiceManaged, entry.kind,
-				"only the managed CLI choice can carry a harness")
+			require.Equal(t, AgentKindChoicePrompt, entry.kind,
+				"only a prompt agent can carry a harness")
 		}
 	}
 

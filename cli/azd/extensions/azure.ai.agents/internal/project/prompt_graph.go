@@ -155,7 +155,7 @@ func newPromptGraph(
 		// service-owned system toolbox whose name, version and lifecycle the
 		// customer does not manage.
 		if node := toolboxNode(g, managed.Toolbox, func() (toolboxBuilder, error) {
-			return newFoundryToolboxBuilder(settings, credential)
+			return newFoundryToolboxBuilder(settings)
 		}); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}

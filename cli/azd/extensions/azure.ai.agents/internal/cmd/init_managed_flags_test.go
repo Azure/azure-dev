@@ -19,16 +19,14 @@ func TestValidateInitKindHarness(t *testing.T) {
 		harness string
 		wantErr string
 	}{
-		{name: "managed harness", kind: AgentKindChoiceManaged, rawKind: "managed",
+		{name: "prompt harness", kind: AgentKindChoicePrompt, rawKind: "prompt",
 			harness: agent_api.ManagedAgentHarnessGitHubCopilot},
-		{name: "managed requires harness", kind: AgentKindChoiceManaged, rawKind: "managed",
-			wantErr: "requires --harness"},
-		{name: "prompt rejects harness", kind: AgentKindChoicePrompt, rawKind: "prompt",
-			harness: agent_api.ManagedAgentHarnessGitHubCopilot, wantErr: "only valid with --kind managed"},
 		{name: "hosted rejects harness", kind: AgentKindChoiceHosted, rawKind: "hosted",
-			harness: agent_api.ManagedAgentHarnessGitHubCopilot, wantErr: "only valid with --kind managed"},
+			harness: agent_api.ManagedAgentHarnessGitHubCopilot, wantErr: "only valid with --kind prompt"},
 		{name: "missing kind rejects harness", harness: agent_api.ManagedAgentHarnessGitHubCopilot,
-			wantErr: "only valid with --kind managed"},
+			wantErr: "only valid with --kind prompt"},
+		{name: "managed is not a kind", kind: agentKindChoice("managed"), rawKind: "managed",
+			wantErr: "unknown --kind"},
 	}
 
 	for _, test := range tests {
@@ -41,4 +39,11 @@ func TestValidateInitKindHarness(t *testing.T) {
 			require.ErrorContains(t, err, test.wantErr)
 		})
 	}
+}
+
+func TestValidateInitInstructions(t *testing.T) {
+	require.NoError(t, validateInitInstructions(AgentKindChoicePrompt, "prompt", "Be concise.", false))
+	require.ErrorContains(t,
+		validateInitInstructions(AgentKindChoiceHosted, "hosted", "Be concise.", false),
+		"only supported for prompt agents")
 }

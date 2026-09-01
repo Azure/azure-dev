@@ -669,6 +669,77 @@ services:
 	})
 }
 
+func TestSynthesize_ConnectionExtendedFields(t *testing.T) {
+	const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  mcp-conn:
+    host: azure.ai.connection
+    uses: [my-project]
+    category: RemoteTool
+    target: https://mcp.example.com/mcp
+    authType: OAuth2
+    audience: ${OAUTH_AUDIENCE}
+    connectorName: ${OAUTH_CONNECTOR_NAME}
+`
+	env := map[string]string{
+		"OAUTH_AUDIENCE":       "https://mcp.example.com",
+		"OAUTH_CONNECTOR_NAME": "managed-mcp",
+	}
+
+	t.Run("provision resolves fields", func(t *testing.T) {
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(yaml),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			Env:           env,
+		})
+		require.NoError(t, err)
+		conn := resultConnections(t, res)[0]
+		assert.Equal(t, env["OAUTH_AUDIENCE"], conn.Audience)
+		assert.Equal(t, env["OAUTH_CONNECTOR_NAME"], conn.ConnectorName)
+	})
+
+	t.Run("eject preserves references", func(t *testing.T) {
+		res, err := Synthesize(Input{
+			RawAzureYAML:    []byte(yaml),
+			ServiceName:     "my-project",
+			AcceptedHosts:   []string{"azure.ai.project"},
+			Env:             env,
+			PreserveVarRefs: true,
+		})
+		require.NoError(t, err)
+		conn := resultConnections(t, res)[0]
+		assert.Equal(t, "${OAUTH_AUDIENCE}", conn.Audience)
+		assert.Equal(t, "${OAUTH_CONNECTOR_NAME}", conn.ConnectorName)
+	})
+}
+
+func TestSynthesizeNormalizesLegacyAgenticIdentity(t *testing.T) {
+	const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+  token-conn:
+    host: azure.ai.connection
+    uses: [my-project]
+    category: RemoteTool
+    target: https://mcp.example.com/mcp
+    authType: AgenticIdentity
+`
+
+	res, err := Synthesize(Input{
+		RawAzureYAML:  []byte(yaml),
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+	})
+	require.NoError(t, err)
+	connections := resultConnections(t, res)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "AgenticIdentityToken", connections[0].AuthType)
+}
+
 func TestSynthesize_ConnectionConditions(t *testing.T) {
 	t.Run("whitespace condition disables connection", func(t *testing.T) {
 		const yaml = `

@@ -92,12 +92,15 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
       contains(connectionCredentials, c.name)
         ? { credentials: connectionCredentials[c.name] }
         : {},
-      c.?audience != null ? { audience: c.?audience } : {},
+      toLower(c.authType) == 'oauth2' && !contains(connectionCredentials, c.name)
+        ? { credentials: {} }
+        : {},
+      !empty(c.?audience) ? { audience: c.?audience } : {},
       c.?authorizationUrl != null ? { authorizationUrl: c.?authorizationUrl } : {},
       c.?tokenUrl != null ? { tokenUrl: c.?tokenUrl } : {},
       c.?refreshUrl != null ? { refreshUrl: c.?refreshUrl } : {},
       c.?scopes != null ? { scopes: c.?scopes } : {},
-      c.?connectorName != null ? { connectorName: c.?connectorName } : {},
+      !empty(c.?connectorName) ? { connectorName: c.?connectorName } : {},
       c.?metadata != null ? { metadata: c.?metadata } : {}
     )
   }

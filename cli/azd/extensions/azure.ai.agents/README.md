@@ -6,6 +6,21 @@ See the shared [AI extension non-interactive input reference](../ai-non-interact
 for every prompt's flag, environment/configuration input, or deterministic
 no-prompt behavior.
 
+## Composing Agent Dependencies
+
+Use the Agent command surface to attach existing Toolbox or Connection services
+to an Agent service in `azure.yaml`:
+
+```bash
+azd ai agent add toolbox support-tools --agent research-agent
+azd ai agent add connection search-connection --agent research-agent
+```
+
+These commands add the dependency service key to `services.<agent>.uses`. They
+do not create or deploy the dependency. Toolbox and Connection configuration and
+lifecycle behavior remain owned by the `azure.ai.toolboxes` and
+`azure.ai.connections` extensions.
+
 ## Running Local Agents
 
 `azd ai agent run` starts the selected agent locally and, by default, opens the

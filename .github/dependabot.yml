@@ -1,7 +1,10 @@
 version: 2
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/vally-eval"
+      - "/cli/azd/extensions/azure.coding-agent/internal/cmd/templates"
     schedule:
       interval: "daily"
     cooldown:

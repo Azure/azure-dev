@@ -15,7 +15,7 @@ server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
 `ComposeService` and `CopilotService` are beta-only and therefore do not have
-stable `v1` generated types or façade aliases. The `AzdClient.Compose()` and
+stable `v1` generated types or facade aliases. The `AzdClient.Compose()` and
 `AzdClient.Copilot()` convenience accessors return generated `v1beta` clients,
 and their request and response types come from `contracts/v1beta`.
 

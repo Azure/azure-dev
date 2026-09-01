@@ -8,6 +8,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"azureaiagent/internal/pkg/servicekey"
 )
 
 const (
@@ -459,8 +461,8 @@ func appendBundledToolboxGuidance(
 		*out = append(*out, Suggestion{
 			Command: fmt.Sprintf(
 				"azd ai agent add toolbox %s --agent %s",
-				toolbox.Name,
-				toolbox.ServiceName,
+				shellEscapeSingleQuoted(servicekey.SanitizeServiceName(toolbox.Name)),
+				shellEscapeSingleQuoted(toolbox.ServiceName),
 			),
 			Description: "attach the independent toolbox service to the agent",
 			Priority:    priority,

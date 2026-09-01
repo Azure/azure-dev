@@ -583,7 +583,7 @@ func TestResolveAfterInit_BundledToolboxGuidanceMigratesInOrder(t *testing.T) {
 		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
 		suggestions[0].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox bundled-tools --agent agent",
+		"azd ai agent add toolbox 'bundled-tools' --agent 'agent'",
 		suggestions[1].Command)
 	assert.Equal(t, "azd deploy", suggestions[2].Command)
 	assert.Equal(t, "azd ai agent run", suggestions[3].Command)
@@ -598,6 +598,28 @@ func TestResolveAfterInit_BundledToolboxGuidanceMigratesInOrder(t *testing.T) {
 		assert.NotContains(t, suggestion.Command, "azd provision")
 	}
 	assert.Equal(t, 1, deployCount)
+}
+
+func TestResolveAfterInit_BundledToolboxGuidanceQuotesSpacedNames(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{{
+			Name:          "My Tools",
+			ServiceName:   "My Agent",
+			ToolboxSource: ToolboxSourceBundled,
+		}},
+	}
+
+	suggestions := ResolveAfterInit(state, nil)
+	require.GreaterOrEqual(t, len(suggestions), 2)
+	assert.Equal(t,
+		"edit azure.yaml: create azure.ai.toolbox service \"My Tools\"",
+		suggestions[0].Command)
+	assert.Equal(t,
+		"azd ai agent add toolbox 'MyTools' --agent 'My Agent'",
+		suggestions[1].Command)
 }
 
 func TestResolveAfterInit_BundledToolboxGuidanceSurvivesProvisioning(t *testing.T) {
@@ -618,7 +640,7 @@ func TestResolveAfterInit_BundledToolboxGuidanceSurvivesProvisioning(t *testing.
 		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
 		suggestions[1].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox bundled-tools --agent agent",
+		"azd ai agent add toolbox 'bundled-tools' --agent 'agent'",
 		suggestions[2].Command)
 	assert.Equal(t, "azd deploy", suggestions[3].Command)
 

@@ -202,7 +202,12 @@ func DeployPreparedStandaloneHostedAgent(
 	}
 
 	prepared.progress("Checking existing agent")
-	_, getErr := agentClient.GetAgent(ctx, prepared.definition.Name, agent_api.AgentEndpointAPIVersion, false)
+	existingAgent, getErr := agentClient.GetAgent(
+		ctx,
+		prepared.definition.Name,
+		agent_api.AgentEndpointAPIVersion,
+		true,
+	)
 	var agentObject *agent_api.AgentObject
 	if getErr != nil {
 		if responseError, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
@@ -219,6 +224,13 @@ func DeployPreparedStandaloneHostedAgent(
 			agent_api.AgentEndpointAPIVersion,
 		)
 	} else {
+		if err := reconcileStandaloneEndpointWithDeployedAgent(
+			request,
+			prepared.definition,
+			existingAgent,
+		); err != nil {
+			return nil, err
+		}
 		prepared.progress("Creating a new agent version from code package")
 		writeExistingAgentVersionWarning(prepared.definition.Name)
 		agentObject, err = agentClient.UpdateAgentFromZip(
@@ -275,6 +287,27 @@ func DeployPreparedStandaloneHostedAgent(
 		State:    version.Status,
 		Endpoint: endpoint,
 	}, nil
+}
+
+func reconcileStandaloneEndpointWithDeployedAgent(
+	request *agent_api.CreateAgentRequest,
+	definition agent_yaml.ContainerAgent,
+	existingAgent *agent_api.AgentObject,
+) error {
+	resolvedProfile, err := ResolveDeployedActivityProfile(
+		ResolveActivityProfile(definition),
+		existingAgent.DigitalWorkerType,
+	)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			err.Error(),
+			"delete and recreate the agent so its immutable digital_worker_type matches the local agent definition",
+		)
+	}
+
+	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, resolvedProfile)
+	return nil
 }
 
 func newStandaloneCredential() (azcore.TokenCredential, error) {

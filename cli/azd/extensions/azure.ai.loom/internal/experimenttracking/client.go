@@ -13,7 +13,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"strings"
 	"time"
 
@@ -273,7 +272,18 @@ func (c *Client) requestURL(apiPath string, query url.Values) (string, error) {
 		return "", fmt.Errorf("parse project endpoint: %w", err)
 	}
 
-	rawPath := path.Join(base.EscapedPath(), "experiment_tracking", apiPath)
+	escapedAPIPath := strings.TrimPrefix(apiPath, "/")
+	segments := strings.Split(escapedAPIPath, "/")
+	for i, segment := range segments {
+		switch segment {
+		case ".":
+			segments[i] = "%2E"
+		case "..":
+			segments[i] = "%2E%2E"
+		}
+	}
+	rawPath := strings.TrimRight(base.EscapedPath(), "/") +
+		"/experiment_tracking/" + strings.Join(segments, "/")
 	decodedPath, err := url.PathUnescape(rawPath)
 	if err != nil {
 		return "", fmt.Errorf("decode request path: %w", err)

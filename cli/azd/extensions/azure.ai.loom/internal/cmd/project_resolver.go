@@ -85,7 +85,12 @@ func resolveProjectEndpoint(
 	if err != nil {
 		return nil, err
 	}
-	for _, candidate := range []string{sources.EnvValue, sources.Config.Endpoint, os.Getenv("FOUNDRY_PROJECT_ENDPOINT")} {
+	for _, candidate := range []string{
+		sources.EnvValue,
+		sources.Config.Endpoint,
+		os.Getenv("FOUNDRY_PROJECT_ENDPOINT"),
+		os.Getenv("AZURE_AI_PROJECT_ENDPOINT"),
+	} {
 		if candidate == "" {
 			continue
 		}

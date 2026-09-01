@@ -40,6 +40,35 @@ func TestResolveProjectEndpointUsesPersistedProjectContext(t *testing.T) {
 	assert.Equal(t, testProjectEndpoint, resolved.Endpoint)
 }
 
+func TestResolveProjectEndpointUsesAzureAIHostFallback(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", testProjectEndpoint)
+
+	resolved, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+		ReadAzdHostedSources: func(context.Context) (azdHostedSources, error) {
+			return azdHostedSources{}, nil
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, testProjectEndpoint, resolved.Endpoint)
+}
+
+func TestResolveProjectEndpointPrefersFoundryHostVariable(t *testing.T) {
+	foundryEndpoint := "https://foundry.services.ai.azure.com/api/projects/project"
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", foundryEndpoint)
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", testProjectEndpoint)
+
+	resolved, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+		ReadAzdHostedSources: func(context.Context) (azdHostedSources, error) {
+			return azdHostedSources{}, nil
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, foundryEndpoint, resolved.Endpoint)
+}
+
 func TestValidateProjectEndpointDoesNotDiscloseCredentials(t *testing.T) {
 	credential := "user:secret"
 	_, err := validateProjectEndpoint(

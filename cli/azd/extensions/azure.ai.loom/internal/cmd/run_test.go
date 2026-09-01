@@ -12,6 +12,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	collectorlogs "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	collectormetrics "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	collectortrace "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestRootIncludesExperimentTrackingCommands(t *testing.T) {
@@ -167,6 +171,102 @@ func TestReadNonEmptyExperimentInputRejectsEmptyPayload(t *testing.T) {
 
 	_, err := readNonEmptyExperimentInput(payloadPath)
 	require.Error(t, err)
+}
+
+func TestSetAgentTracesRunIDOverridesPayload(t *testing.T) {
+	body := map[string]any{"run_id": "payload-run"}
+
+	setAgentTracesRunID(body, "flag-run")
+
+	assert.Equal(t, "flag-run", body["run_id"])
+}
+
+func TestFormatOTLPIngestResponseIncludesPartialSuccess(t *testing.T) {
+	tests := []struct {
+		name     string
+		signal   string
+		response proto.Message
+		expected string
+	}{
+		{
+			name:   "metrics",
+			signal: "metrics",
+			response: &collectormetrics.ExportMetricsServiceResponse{
+				PartialSuccess: &collectormetrics.ExportMetricsPartialSuccess{
+					RejectedDataPoints: 2,
+					ErrorMessage:       "two points rejected",
+				},
+			},
+			expected: `{
+				"status": "partial_success",
+				"partial_success": {
+					"rejected_data_points": 2,
+					"error_message": "two points rejected"
+				}
+			}`,
+		},
+		{
+			name:   "logs",
+			signal: "logs",
+			response: &collectorlogs.ExportLogsServiceResponse{
+				PartialSuccess: &collectorlogs.ExportLogsPartialSuccess{
+					RejectedLogRecords: 3,
+					ErrorMessage:       "three records rejected",
+				},
+			},
+			expected: `{
+				"status": "partial_success",
+				"partial_success": {
+					"rejected_log_records": 3,
+					"error_message": "three records rejected"
+				}
+			}`,
+		},
+		{
+			name:   "traces",
+			signal: "traces",
+			response: &collectortrace.ExportTraceServiceResponse{
+				PartialSuccess: &collectortrace.ExportTracePartialSuccess{
+					RejectedSpans: 4,
+					ErrorMessage:  "four spans rejected",
+				},
+			},
+			expected: `{
+				"status": "partial_success",
+				"partial_success": {
+					"rejected_spans": 4,
+					"error_message": "four spans rejected"
+				}
+			}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response, err := proto.Marshal(test.response)
+			require.NoError(t, err)
+
+			formatted, err := formatOTLPIngestResponse(test.signal, response)
+			require.NoError(t, err)
+			assert.JSONEq(t, test.expected, string(formatted))
+		})
+	}
+}
+
+func TestFormatOTLPIngestResponseReportsAccepted(t *testing.T) {
+	formatted, err := formatOTLPIngestResponse("metrics", json.RawMessage(`{}`))
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"status":"accepted"}`, string(formatted))
+
+	response, err := proto.Marshal(&collectormetrics.ExportMetricsServiceResponse{
+		PartialSuccess: &collectormetrics.ExportMetricsPartialSuccess{},
+	})
+	require.NoError(t, err)
+
+	formatted, err = formatOTLPIngestResponse("metrics", response)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"status":"accepted"}`, string(formatted))
 }
 
 func TestExperimentCommandsUseJSONOutput(t *testing.T) {

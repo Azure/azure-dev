@@ -1,5 +1,8 @@
 import: ../../.vscode/cspell.yaml
 words:
+  - collectorlogs
+  - collectormetrics
+  - collectortrace
   - exterrors
   - experimenttracking
   - filestream

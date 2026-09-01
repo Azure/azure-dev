@@ -200,3 +200,35 @@ func TestDoJSONPreservesEscapedPathSegments(t *testing.T) {
 	)
 	require.NoError(t, err)
 }
+
+func TestDoJSONEscapesDotPathSegmentsWithoutCleaning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(
+			t,
+			"/api/projects/project/experiment_tracking/runs/%2E%2E/metrics",
+			r.URL.EscapedPath(),
+		)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := newClient(
+		server.URL+"/api/projects/project",
+		"",
+		"",
+		nil,
+		"project-key",
+		server.Client(),
+	)
+	require.NoError(t, err)
+
+	_, err = client.DoJSON(
+		t.Context(),
+		http.MethodGet,
+		"runs/../metrics",
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+}

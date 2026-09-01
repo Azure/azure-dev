@@ -22,6 +22,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+	collectorlogs "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	collectormetrics "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	collectortrace "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 const maxExperimentInputBytes = 64 << 20
@@ -472,10 +476,11 @@ func newOTLPIngestCommand(extCtx *azdext.ExtensionContext, signal string) *cobra
 			if err != nil {
 				return classifyExperimentError(err)
 			}
-			if isJSONObject(response) {
-				return writeExperimentResponse(cmd, response, nil)
+			formattedResponse, err := formatOTLPIngestResponse(signal, response)
+			if err != nil {
+				return err
 			}
-			return writeExperimentResponse(cmd, json.RawMessage(`{"status":"accepted"}`), nil)
+			return writeExperimentResponse(cmd, formattedResponse, nil)
 		},
 	}
 	addRunFlags(cmd, flags, false)
@@ -499,9 +504,7 @@ func newAgentTracesIngestCommand(extCtx *azdext.ExtensionContext) *cobra.Command
 			if err != nil {
 				return err
 			}
-			if _, found := body["run_id"]; !found {
-				body["run_id"] = flags.runID
-			}
+			setAgentTracesRunID(body, flags.runID)
 			client, err := newExperimentClient(cmd.Context(), flags.experimentFlags)
 			if err != nil {
 				return err
@@ -810,6 +813,73 @@ func ensureJSONDocumentEnd(decoder *json.Decoder) error {
 func isJSONObject(data []byte) bool {
 	var object map[string]any
 	return json.Unmarshal(data, &object) == nil && object != nil
+}
+
+func formatOTLPIngestResponse(signal string, response []byte) (json.RawMessage, error) {
+	if isJSONObject(response) {
+		if bytes.Equal(bytes.TrimSpace(response), []byte("{}")) {
+			return json.RawMessage(`{"status":"accepted"}`), nil
+		}
+		return response, nil
+	}
+
+	var partialSuccess map[string]any
+	switch signal {
+	case "metrics":
+		decoded := &collectormetrics.ExportMetricsServiceResponse{}
+		if err := proto.Unmarshal(response, decoded); err != nil {
+			return nil, fmt.Errorf("decode OTLP metrics response: %w", err)
+		}
+		if partial := decoded.GetPartialSuccess(); partial != nil &&
+			(partial.GetRejectedDataPoints() != 0 || partial.GetErrorMessage() != "") {
+			partialSuccess = map[string]any{
+				"rejected_data_points": partial.GetRejectedDataPoints(),
+				"error_message":        partial.GetErrorMessage(),
+			}
+		}
+	case "logs":
+		decoded := &collectorlogs.ExportLogsServiceResponse{}
+		if err := proto.Unmarshal(response, decoded); err != nil {
+			return nil, fmt.Errorf("decode OTLP logs response: %w", err)
+		}
+		if partial := decoded.GetPartialSuccess(); partial != nil &&
+			(partial.GetRejectedLogRecords() != 0 || partial.GetErrorMessage() != "") {
+			partialSuccess = map[string]any{
+				"rejected_log_records": partial.GetRejectedLogRecords(),
+				"error_message":        partial.GetErrorMessage(),
+			}
+		}
+	case "traces":
+		decoded := &collectortrace.ExportTraceServiceResponse{}
+		if err := proto.Unmarshal(response, decoded); err != nil {
+			return nil, fmt.Errorf("decode OTLP traces response: %w", err)
+		}
+		if partial := decoded.GetPartialSuccess(); partial != nil &&
+			(partial.GetRejectedSpans() != 0 || partial.GetErrorMessage() != "") {
+			partialSuccess = map[string]any{
+				"rejected_spans": partial.GetRejectedSpans(),
+				"error_message":  partial.GetErrorMessage(),
+			}
+		}
+	default:
+		return nil, fmt.Errorf("unsupported OTLP signal %q", signal)
+	}
+
+	if partialSuccess == nil {
+		return json.RawMessage(`{"status":"accepted"}`), nil
+	}
+	formatted, err := json.Marshal(map[string]any{
+		"status":          "partial_success",
+		"partial_success": partialSuccess,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode OTLP response: %w", err)
+	}
+	return formatted, nil
+}
+
+func setAgentTracesRunID(body map[string]any, runID string) {
+	body["run_id"] = runID
 }
 
 func readNonEmptyExperimentInput(file string) ([]byte, error) {

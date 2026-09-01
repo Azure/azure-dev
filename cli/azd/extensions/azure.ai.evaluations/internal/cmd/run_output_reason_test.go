@@ -35,9 +35,10 @@ func TestAPassingRowStillCarriesAReason(t *testing.T) {
 	text := out.String()
 	assert.Contains(t, text, "Followed the task.",
 		"a passing evaluator's reason is what explains the score:\n%s", text)
-	assert.Contains(t, text, "all passed",
-		"the evaluators column says what it found rather than printing a dash")
-	assert.NotContains(t, text, "\t-\t")
+	assert.Contains(t, text, itemPassed,
+		"the status column states the outcome instead of leaving it to be inferred")
+	assert.Contains(t, text, "1P/0F",
+		"and the row says how many criterion results stand behind that status")
 }
 
 // On a mixed row the failure is what the reader came for, so its reason wins

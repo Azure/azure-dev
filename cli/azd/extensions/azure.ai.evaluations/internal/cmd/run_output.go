@@ -39,6 +39,7 @@ func newRunOutputCommand() *cobra.Command {
 func newRunOutputListCommand() *cobra.Command {
 	var (
 		failedOnly  bool
+		statusFlag  string
 		outFile     string
 		endpointFlg string
 		groupName   string
@@ -80,10 +81,22 @@ func newRunOutputListCommand() *cobra.Command {
 				return messages.ReadingRunResults(run.ID, err)
 			}
 			rows := items.Data
+			// One predicate for both views, so `-o json` and the table cannot
+			// disagree about which rows the filter kept.
+			keep, err := parseStatusFilter(statusFlag)
+			if err != nil {
+				return err
+			}
 			if failedOnly {
+				if keep == nil {
+					keep = map[string]bool{}
+				}
+				keep[itemFailed] = true
+			}
+			if keep != nil {
 				kept := make([]eval_api.OutputItem, 0, len(rows))
 				for _, it := range rows {
-					if it.Failed() {
+					if keep[classifyItem(it).Status] {
 						kept = append(kept, it)
 					}
 				}
@@ -117,7 +130,10 @@ func newRunOutputListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&failedOnly, "failed-only", false, "Show only the rows that failed.")
+	cmd.Flags().BoolVar(&failedOnly, "failed-only", false,
+		"Show only the items that failed. Shorthand for --status failed.")
+	cmd.Flags().StringVar(&statusFlag, "status", "",
+		"Show only items with these outcomes: passed, failed, errored, skipped (comma-separated).")
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write JSON results to this path.")
 	addRunFlag(cmd, &runFlag)
 	addEvalFlag(cmd, &groupName)
@@ -550,23 +566,40 @@ func renderResults(
 	fmt.Fprint(w, messages.RunStatusHeading(run.ID, run.Status))
 
 	if c := run.ResultCounts; c != nil {
-		fmt.Fprint(w, messages.ResultTotals(c.Passed, c.Failed, c.Errored))
+		fmt.Fprint(w, messages.ItemResultTotals(c.Total, c.Passed, c.Failed, c.Errored, c.Skipped))
+		fmt.Fprint(w, messages.ScoredPassRateLine(c.Passed, c.Passed+c.Failed))
+		fmt.Fprintln(w)
 	}
 
 	if len(run.PerTestingCriteria) > 0 {
+		if c := run.ResultCounts; c != nil && c.Total > 0 {
+			fmt.Fprint(w, messages.CriterionResultReconciliation(
+				c.Total, len(run.PerTestingCriteria), c.Total*len(run.PerTestingCriteria)))
+		}
 		rows := make([][]string, 0, len(run.PerTestingCriteria))
 		for _, cr := range run.PerTestingCriteria {
 			if failedOnly && cr.Failed == 0 {
 				continue
 			}
+			// Every status the service models gets a column. Reporting only
+			// passed and failed made a criterion's counts fall short of the
+			// run's item count with nothing on screen explaining the shortfall.
+			scored := cr.Passed + cr.Failed
+			total := scored + cr.Errored + cr.Skipped
 			rows = append(rows, []string{
 				cr.TestingCriteria,
 				strconv.Itoa(cr.Passed),
 				strconv.Itoa(cr.Failed),
+				strconv.Itoa(cr.Skipped),
+				strconv.Itoa(cr.Errored),
+				fmt.Sprintf("%d/%d", scored, total),
+				criterionPassRate(cr.Passed, scored),
 			})
 		}
 		if len(rows) > 0 {
-			if err := emitTable(w, []string{"CRITERION", "PASSED", "FAILED"}, rows); err != nil {
+			if err := emitTable(w,
+				[]string{"CRITERION", "PASS", "FAIL", "SKIP", "ERROR", "SCORED", "PASS RATE"},
+				rows); err != nil {
 				return err
 			}
 		}
@@ -583,88 +616,47 @@ func renderResults(
 	} else {
 		fmt.Fprintln(w)
 		rows := make([][]string, 0, len(items))
-		var rowsFailed, rowsUnscored int
+		shown := 0
 		for _, it := range items {
 			// One row per evaluated sample, not per verdict: a sample that
 			// failed three evaluators is one sample to go and look at, and
 			// listing it three times buries how much is actually wrong.
-			//
-			// An evaluator that returned no verdict is held apart from one that
-			// returned a failing verdict. Both keep the row, because the row is
-			// still worth looking at, but naming an errored evaluator among the
-			// ones the sample failed states something about the sample that
-			// nothing measured.
-			var failed, unjudged []string
-			// A failing verdict explains the row; a passing one explains the
-			// score. Taking whichever came first meant a passing evaluator's
-			// reason could stand in front of the failure the reader is here
-			// for, and a run where everything passed showed no reason at all.
-			failedReason, anyReason := "", ""
-			for _, r := range it.Results {
-				switch {
-				case !r.Judged():
-					unjudged = append(unjudged, r.Name)
-				case r.DidPass():
-				default:
-					failed = append(failed, r.Name)
-					if failedReason == "" {
-						failedReason = r.Reason
-					}
-				}
-				if anyReason == "" {
-					anyReason = r.Reason
-				}
-			}
-			reason := failedReason
-			if reason == "" {
-				reason = anyReason
-			}
-			// The same predicate `-o json` filters on, so the two views of
-			// --failed-only cannot disagree about which rows went wrong.
-			if failedOnly && !it.Failed() {
+			out := classifyItem(it)
+
+			// --failed-only means failed. It used to keep any row that did not
+			// pass, so a run that errored everywhere answered it with rows the
+			// totals counted as errored, and the footer then called them
+			// failures.
+			if failedOnly && out.Status != itemFailed {
 				continue
 			}
-			verdicts := strings.Join(failed, ", ")
-			if len(unjudged) > 0 {
-				note := strings.Join(unjudged, ", ") + " (no verdict)"
-				if verdicts == "" {
-					verdicts = note
-				} else {
-					verdicts += "; " + note
-				}
-			}
-			if verdicts == "" {
-				// The column carries what is worth a second look. Saying so
-				// beats a dash, which reads like the row failed to render.
-				verdicts = "all passed"
-			}
-			if len(failed) > 0 {
-				rowsFailed++
-			} else {
-				rowsUnscored++
-			}
+			shown++
+
 			// No position column. It numbered within the current filter, so the
 			// same sample carried a different number depending on the flags while
 			// reading like an identifier -- and ITEM already carries the id, which
 			// is what `run output show` accepts.
+			//
+			// No aggregate score either: averaging evaluators that measure
+			// different things on different scales produces a number no
+			// evaluator reported. Scores live per evaluator in `output show`.
 			rows = append(rows, []string{
 				it.ID,
-				meanScoreOf(it.Results),
-				truncate(verdicts, 40),
-				truncate(reason, 44),
+				out.Status,
+				out.ResultsBreakdown(),
+				truncate(out.AttentionText(2), 40),
+				truncate(out.Reason, 44),
 			})
 		}
 		// Only the first failure's reason fits a cell; `run output show` has
 		// the rest.
 		if err := emitTable(w,
-			[]string{"ITEM", "SCORE", "EVALUATORS", "REASON"},
+			[]string{"ITEM", "STATUS", "RESULTS", "ATTENTION", "REASON"},
 			rows); err != nil {
 			return err
 		}
-		// Counting unscored rows as failures put a number here that contradicted
-		// the totals two lines above, which is what a reader compares it with.
-		if failedOnly && len(rows) > 0 {
-			fmt.Fprint(w, messages.SamplesNeedingALook(rowsFailed, rowsUnscored))
+		if failedOnly {
+			fmt.Fprint(w, messages.FilteredItemCount(shown, len(items), itemFailed))
 		}
 	}
 
@@ -749,4 +741,16 @@ func writeResultsJSONL(w io.Writer, run *eval_api.OpenAIEvalRun) error {
 		}
 	}
 	return nil
+}
+
+// criterionPassRate reports a criterion's rate over what it actually scored.
+//
+// Rows it errored on or skipped are outside the denominator: they say nothing
+// about the evaluator's judgement, and counting them turns an infrastructure
+// problem into a quality signal.
+func criterionPassRate(passed, scored int) string {
+	if scored == 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.1f%%", 100*float64(passed)/float64(scored))
 }

@@ -424,9 +424,35 @@ func RunStatusHeading(runID, status string) string {
 	return fmt.Sprintf("Run %s  status: %s\n", runID, status)
 }
 
-// ResultTotals reports a run's verdict counts above the rows.
-func ResultTotals(passed, failed, errored int) string {
-	return fmt.Sprintf("Totals: %d passed, %d failed, %d errored\n\n", passed, failed, errored)
+// ItemResultTotals states the run's outcome in items, naming every status the
+// service models rather than the two the table used to carry.
+func ItemResultTotals(total, passed, failed, errored, skipped int) string {
+	return fmt.Sprintf("%d items: %d passed, %d failed, %d errored, %d skipped\n",
+		total, passed, failed, errored, skipped)
+}
+
+// ScoredPassRateLine names the denominator in the same breath as the rate.
+//
+// The figure was printed bare beside a sample count, which read as passed over
+// total; a partly errored run then looked like a quality result rather than an
+// infrastructure one.
+func ScoredPassRateLine(passed, scored int) string {
+	if scored == 0 {
+		return "Pass rate: n/a (nothing was scored)\n"
+	}
+	return fmt.Sprintf("Pass rate: %.1f%% (%d / %d scored items)\n",
+		100*float64(passed)/float64(scored), passed, scored)
+}
+
+// CriterionResultReconciliation states how items multiply out into criterion
+// results, so the two tables below can be added up and compared.
+//
+// Without it the criterion counts look wrong: a 15-item run whose evaluator
+// reports 12 passed and 2 failed is missing one, and nothing on screen says the
+// fifteenth was skipped or that there are two evaluators over the same items.
+func CriterionResultReconciliation(items, evaluators, results int) string {
+	return fmt.Sprintf("%d items x %d evaluators = %d criterion results\n\n",
+		items, evaluators, results)
 }
 
 // NoFailingRows reports a --failed-only listing with nothing in it.
@@ -445,16 +471,18 @@ func NoRowsScored() string {
 // One count covering both contradicted the totals printed two lines above it,
 // which is what a reader compares it with: a run reporting 5 failed and 8
 // errored closed with "13 sample(s) failed at least one evaluator".
-func SamplesNeedingALook(failed, unscored int) string {
-	if unscored == 0 {
-		return fmt.Sprintf("\n%d sample(s) failed at least one evaluator.\n", failed)
-	}
-	if failed == 0 {
-		return fmt.Sprintf("\n%d sample(s) could not be scored.\n", unscored)
-	}
-	return fmt.Sprintf(
-		"\n%d sample(s) failed at least one evaluator, and %d could not be scored.\n",
-		failed, unscored)
+// FilteredItemCount closes a filtered listing by naming the filter it applied.
+//
+// --failed-only used to keep rows nothing had scored and then count them as
+// failures, so the footer contradicted the totals directly above it.
+func FilteredItemCount(shown, total int, status string) string {
+	return fmt.Sprintf("\n%d of %d items are %s.\n", shown, total, status)
+}
+
+// UnknownItemStatus reports a --status value that names no outcome.
+func UnknownItemStatus(given string, known []string) error {
+	return fmt.Errorf("--status %q is not an item outcome: use one of %s",
+		given, strings.Join(known, ", "))
 }
 
 // GateSawUnscoredRows warns that a pass-rate gate judged only part of the run.

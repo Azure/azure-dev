@@ -46,7 +46,7 @@ func TestRenderResultsIsOneRowPerSample(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(text, "oi_2"),
 		"a sample that failed two evaluators must still be one row:\n%s", text)
 
-	for _, header := range []string{"ITEM", "SCORE", "EVALUATORS", "REASON"} {
+	for _, header := range []string{"ITEM", "STATUS", "RESULTS", "ATTENTION", "REASON"} {
 		assert.Containsf(t, text, header, "the listing lost its %s column", header)
 	}
 
@@ -57,6 +57,11 @@ func TestRenderResultsIsOneRowPerSample(t *testing.T) {
 		"a position that changes with the filter must not sit beside the id")
 	assert.NotContains(t, text, "FAILED EVALUATORS",
 		"the column also carries evaluators that returned no verdict, which did not fail")
+	// Evaluators measure different things on different scales, so a single
+	// number across them is one no evaluator reported. Scores stay per
+	// evaluator, in `run output show`.
+	assert.NotContains(t, text, "SCORE",
+		"an item-level aggregate score names an aggregation the product has not defined")
 }
 
 // The failing row has to name every evaluator that failed it, because that is
@@ -67,18 +72,20 @@ func TestRenderResultsNamesEveryFailedEvaluator(t *testing.T) {
 	require.NoError(t, renderResults(&out, run, scoredRows(), true))
 
 	text := out.String()
-	assert.Contains(t, text, "relevance, coherence")
+	assert.Contains(t, text, "relevance: failed, coherence: failed",
+		"the column names each non-passing result and what it did")
 	assert.Contains(t, text, "Answered a different question.",
 		"the first failure's reason is what the row is looked at for")
 	assert.NotContains(t, text, "oi_1", "--failed-only must drop the passing sample")
-	assert.Contains(t, text, "1 sample(s) failed at least one evaluator.")
+	assert.Contains(t, text, "1 of 2 items are failed.")
 }
 
-// The footer is read against the totals printed a few lines above it, so it
-// cannot count a row nothing scored as a row that failed. The reported run
-// closed "13 sample(s) failed at least one evaluator" over totals that said 5
-// failed and 8 errored.
-func TestFailedOnlyFooterHoldsUnscoredRowsApart(t *testing.T) {
+// --failed-only means failed.
+//
+// It used to keep any row that did not pass, so a run that errored everywhere
+// answered it with rows the totals counted as errored, and the footer then
+// called them failures. An unscored row is reachable, but by asking for it.
+func TestFailedOnlyExcludesRowsNothingScored(t *testing.T) {
 	items := []eval_api.OutputItem{
 		{ID: "oi_fail", Results: []eval_api.OutputResult{
 			{Name: "relevance", Passed: new(false), Score: 1, Reason: "Answered a different question."},
@@ -89,15 +96,43 @@ func TestFailedOnlyFooterHoldsUnscoredRowsApart(t *testing.T) {
 
 	var out bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
-	require.NoError(t, renderResults(&out, run, items, true))
+	require.NoError(t, renderResults(&out, run, filterItems(items, map[string]bool{itemFailed: true}), true))
 
 	text := out.String()
-	assert.Contains(t, text, "1 sample(s) failed at least one evaluator, and 1 could not be scored.",
-		"the two have to be counted apart:\n%s", text)
+	assert.Contains(t, text, "oi_fail")
+	assert.NotContains(t, text, "oi_unscored",
+		"a row nothing scored did not fail:\n%s", text)
 	assert.NotContains(t, text, "2 sample(s) failed",
 		"an unscored row is not a failing one")
-	assert.Contains(t, text, "(no verdict)",
-		"and the row itself has to say which evaluator returned nothing")
+}
+
+// The row itself has to say which evaluator returned nothing, and the item has
+// to be reachable by the outcome it actually has.
+func TestErroredRowIsReportedAsErrored(t *testing.T) {
+	items := []eval_api.OutputItem{
+		{ID: "oi_unscored", Results: []eval_api.OutputResult{{Name: "relevance"}}},
+	}
+
+	var out bytes.Buffer
+	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
+	require.NoError(t, renderResults(&out, run, items, false))
+
+	text := out.String()
+	assert.Contains(t, text, itemErrored, "the status column states the outcome directly")
+	assert.Contains(t, text, "relevance: no verdict",
+		"and the row names the evaluator that returned nothing")
+}
+
+// filterItems mirrors what the command does, so the render tests exercise the
+// same predicate the listing uses.
+func filterItems(items []eval_api.OutputItem, keep map[string]bool) []eval_api.OutputItem {
+	kept := make([]eval_api.OutputItem, 0, len(items))
+	for _, it := range items {
+		if keep[classifyItem(it).Status] {
+			kept = append(kept, it)
+		}
+	}
+	return kept
 }
 
 // The run summary carries pass and fail counts but no score, so the mean has
@@ -258,4 +293,42 @@ func TestRenderOutputItemDoesNotNestASelfNamedMetric(t *testing.T) {
 
 	assert.Equal(t, 1, strings.Count(out.String(), "task_adherence"),
 		"the evaluator must be named once:\n%s", out.String())
+}
+
+// The criterion table has to account for every sample the run had.
+//
+// It reported only PASSED and FAILED, so a 15-item run whose evaluator skipped
+// one showed 12 and 2 and left the reader to find the fifteenth by scanning
+// every row or reading the JSON. The service models four statuses; all four are
+// columns now, and SCORED names the denominator the rate is taken over.
+func TestCriterionTableAccountsForEverySample(t *testing.T) {
+	run := &eval_api.OpenAIEvalRun{
+		ID:     "evalrun_1",
+		Status: "completed",
+		ResultCounts: &eval_api.EvalRunResultCounts{
+			Total: 15, Passed: 9, Failed: 6, Errored: 0, Skipped: 0,
+		},
+		PerTestingCriteria: []eval_api.EvalRunCriteriaResult{
+			{TestingCriteria: "task_adherence", Passed: 12, Failed: 2, Errored: 0, Skipped: 1},
+			{TestingCriteria: "custom_rubric", Passed: 11, Failed: 4, Errored: 0, Skipped: 0},
+		},
+	}
+
+	var out bytes.Buffer
+	require.NoError(t, renderResults(&out, run, nil, false))
+	text := out.String()
+
+	for _, header := range []string{"PASS", "FAIL", "SKIP", "ERROR", "SCORED", "PASS RATE"} {
+		assert.Containsf(t, text, header, "the criterion table lost its %s column:\n%s", header, text)
+	}
+	assert.Contains(t, text, "14/15",
+		"SCORED states how much of the run the evaluator actually judged")
+	assert.Contains(t, text, "85.7%",
+		"the rate is taken over what was scored, not over every sample")
+
+	// The two tables are read against each other, so the arithmetic between
+	// them has to be on screen rather than inferred.
+	assert.Contains(t, text, "15 items x 2 evaluators = 30 criterion results")
+	assert.Contains(t, text, "15 items: 9 passed, 6 failed, 0 errored, 0 skipped")
+	assert.Contains(t, text, "60.0%", "the run rate is 9 of the 15 it scored")
 }

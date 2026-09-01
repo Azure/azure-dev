@@ -1015,7 +1015,6 @@ func TestCreateTelephonyBinding_PostsAgentScopedBinding(t *testing.T) {
 			Provider:       "twilio",
 			Identifier:     "+14255550123",
 			ConnectionName: "telephony-twilio",
-			AgentRef:       TelephonyAgentRef{Name: "my-voice", Version: "1"},
 		},
 		TelephonyBindingAPIVersion,
 	)
@@ -1030,5 +1029,5 @@ func TestCreateTelephonyBinding_PostsAgentScopedBinding(t *testing.T) {
 	reqBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	require.Contains(t, string(reqBody), `"connection_name":"telephony-twilio"`)
-	require.Contains(t, string(reqBody), `"agent_ref":{"name":"my-voice","version":"1"}`)
+	require.NotContains(t, string(reqBody), `"agent_ref"`)
 }

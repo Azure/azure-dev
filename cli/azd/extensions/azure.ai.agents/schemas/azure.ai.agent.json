@@ -350,9 +350,7 @@
         "provider": { "type": "string", "enum": ["acs", "twilio"] },
         "identifier": { "type": "string", "description": "ACS/TPE raw ID (28:orgid:<guid>), ACS purchased number (4:+<E.164>), or Twilio E.164 number (+<E.164>)." },
         "connection": { "type": "string", "description": "Foundry project connection name used by the telephony runtime." },
-        "agentVersion": { "type": "string", "description": "Optional agent version pin. Defaults to the version created by the current deploy." },
-        "transferTargets": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-        "providerConfig": { "type": "object", "additionalProperties": true }
+        "transferTargets": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
       },
       "required": ["provider", "identifier", "connection"],
       "additionalProperties": false

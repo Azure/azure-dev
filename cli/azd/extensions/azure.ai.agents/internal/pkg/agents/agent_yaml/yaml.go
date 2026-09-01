@@ -253,9 +253,7 @@ type VoiceTelephonyBinding struct {
 	Provider        string           `json:"provider" yaml:"provider"`
 	Identifier      string           `json:"identifier" yaml:"identifier"`
 	Connection      string           `json:"connection" yaml:"connection"`
-	AgentVersion    string           `json:"agentVersion,omitempty" yaml:"agent_version,omitempty"`
 	TransferTargets []map[string]any `json:"transferTargets,omitempty" yaml:"transfer_targets,omitempty"`
-	ProviderConfig  map[string]any   `json:"providerConfig,omitempty" yaml:"provider_config,omitempty"`
 }
 
 // VoiceAudio bundles optional prompt voice input/output audio overrides.

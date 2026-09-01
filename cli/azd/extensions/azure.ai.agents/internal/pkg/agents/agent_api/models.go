@@ -455,33 +455,23 @@ type VoiceAgentDefinition struct {
 	Include           []string          `json:"include,omitempty"`
 }
 
-// TelephonyAgentRef identifies the agent version that receives calls for a binding.
-type TelephonyAgentRef struct {
-	Name    string `json:"name"`
-	Version string `json:"version,omitempty"`
-}
-
 // TelephonyBindingRequest creates an agent telephony binding.
 type TelephonyBindingRequest struct {
-	Provider        string            `json:"provider"`
-	Identifier      string            `json:"identifier"`
-	ConnectionName  string            `json:"connection_name,omitempty"`
-	AgentRef        TelephonyAgentRef `json:"agent_ref"`
-	TransferTargets []map[string]any  `json:"transfer_targets,omitempty"`
-	ProviderConfig  map[string]any    `json:"provider_config,omitempty"`
+	Provider        string           `json:"provider"`
+	Identifier      string           `json:"identifier"`
+	ConnectionName  string           `json:"connection_name,omitempty"`
+	TransferTargets []map[string]any `json:"transfer_targets,omitempty"`
 }
 
 // TelephonyBinding describes a Foundry-side phone number binding.
 type TelephonyBinding struct {
-	ID              string            `json:"id,omitempty"`
-	Provider        string            `json:"provider,omitempty"`
-	Identifier      string            `json:"identifier,omitempty"`
-	Status          string            `json:"status,omitempty"`
-	ConnectionName  string            `json:"connection_name,omitempty"`
-	AgentRef        TelephonyAgentRef `json:"agent_ref"`
-	TransferTargets []map[string]any  `json:"transfer_targets,omitempty"`
-	ProviderConfig  map[string]any    `json:"provider_config,omitempty"`
-	ETag            string            `json:"etag,omitempty"`
+	ID              string           `json:"id,omitempty"`
+	Provider        string           `json:"provider,omitempty"`
+	Identifier      string           `json:"identifier,omitempty"`
+	Status          string           `json:"status,omitempty"`
+	ConnectionName  string           `json:"connection_name,omitempty"`
+	TransferTargets []map[string]any `json:"transfer_targets,omitempty"`
+	ETag            string           `json:"etag,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version

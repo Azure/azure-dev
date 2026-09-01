@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1405,7 +1406,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	if !isVoice && serviceHasTelephony(serviceConfig) {
+	if !isVoice && p.agentDefinitionPath == "" && serviceHasTelephony(serviceConfig) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"telephony bindings are only supported for prompt voice agents",
@@ -2491,35 +2492,28 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 		return nil
 	}
 	for _, binding := range voiceAgent.Telephony.Bindings {
-		version := strings.TrimSpace(binding.AgentVersion)
-		if version == "" {
-			version = agentObject.Versions.Latest.Version
-		}
 		request := &agent_api.TelephonyBindingRequest{
 			Provider:        strings.TrimSpace(binding.Provider),
 			Identifier:      strings.TrimSpace(binding.Identifier),
 			ConnectionName:  strings.TrimSpace(binding.Connection),
-			AgentRef:        agent_api.TelephonyAgentRef{Name: agentObject.Name, Version: version},
 			TransferTargets: binding.TransferTargets,
-			ProviderConfig:  maps.Clone(binding.ProviderConfig),
-		}
-		if request.Provider == "acs" {
-			if request.ProviderConfig == nil {
-				request.ProviderConfig = map[string]any{}
-			}
-			if _, ok := request.ProviderConfig["acs_connection_name"]; !ok {
-				request.ProviderConfig["acs_connection_name"] = request.ConnectionName
-			}
 		}
 
 		bindingID := fmt.Sprintf("%s:%s", request.Provider, request.Identifier)
-		_, getErr := agentClient.GetTelephonyBinding(
+		remoteBinding, getErr := agentClient.GetTelephonyBinding(
 			ctx,
 			agentObject.Name,
 			bindingID,
 			agent_api.TelephonyBindingAPIVersion,
 		)
 		if getErr == nil {
+			if !telephonyBindingMatches(remoteBinding, request) {
+				return fmt.Errorf(
+					"telephony binding %q already exists with different configuration; "+
+						"delete or update the remote binding, then run azd deploy again",
+					bindingID,
+				)
+			}
 			fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)
 			continue
 		}
@@ -2543,6 +2537,16 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 		fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
 	}
 	return nil
+}
+
+func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_api.TelephonyBindingRequest) bool {
+	if remote == nil || desired == nil {
+		return false
+	}
+	return strings.TrimSpace(remote.Provider) == strings.TrimSpace(desired.Provider) &&
+		strings.TrimSpace(remote.Identifier) == strings.TrimSpace(desired.Identifier) &&
+		strings.TrimSpace(remote.ConnectionName) == strings.TrimSpace(desired.ConnectionName) &&
+		reflect.DeepEqual(remote.TransferTargets, desired.TransferTargets)
 }
 
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {

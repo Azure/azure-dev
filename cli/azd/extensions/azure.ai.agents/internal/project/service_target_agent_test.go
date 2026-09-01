@@ -127,6 +127,24 @@ func TestServiceHasTelephony(t *testing.T) {
 	require.False(t, serviceHasTelephony(&azdext.ServiceConfig{}))
 }
 
+func TestTelephonyBindingMatches(t *testing.T) {
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
+	}
+	remote := &agent_api.TelephonyBinding{
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
+	remote.ConnectionName = "other"
+	require.False(t, telephonyBindingMatches(remote, desired))
+}
+
 type fakeProjectAgentChecker struct {
 	err error
 }

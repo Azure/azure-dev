@@ -159,7 +159,17 @@ func ResolveActivityProfileWithSettings(
 	settings *ActivitySettings,
 ) (ActivityProfile, error) {
 	profile := ResolveActivityProfile(ca)
-	if settings == nil || strings.TrimSpace(string(settings.DigitalWorkerType)) == "" {
+	if settings == nil {
+		return profile, nil
+	}
+	if strings.TrimSpace(string(settings.DigitalWorkerType)) == "" {
+		if settings.Publish != nil &&
+			(settings.Publish.OptionalPermissionScopes != nil || settings.Publish.AccessBoundaries != nil) {
+			return ActivityProfile{}, fmt.Errorf(
+				"activity.publish.optionalPermissionScopes and activity.publish.accessBoundaries require " +
+					"activity.digitalWorkerType=m365",
+			)
+		}
 		return profile, nil
 	}
 

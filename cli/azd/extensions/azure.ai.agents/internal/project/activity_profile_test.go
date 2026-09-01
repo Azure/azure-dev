@@ -198,6 +198,21 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 		require.ErrorContains(t, err, "Activity-protocol")
 	})
 
+	t.Run("simple rejects optional permission scopes", func(t *testing.T) {
+		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			Publish: &ActivityPublishConfig{OptionalPermissionScopes: []Microsoft365PermissionScopes{}},
+		})
+		require.ErrorContains(t, err, "activity.digitalWorkerType=m365")
+	})
+
+	t.Run("simple rejects access boundaries", func(t *testing.T) {
+		boundaries := []string{}
+		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			Publish: &ActivityPublishConfig{AccessBoundaries: &boundaries},
+		})
+		require.ErrorContains(t, err, "activity.digitalWorkerType=m365")
+	})
+
 	t.Run("unsupported digital worker type rejected", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
 			DigitalWorkerType: agent_api.DigitalWorkerType("slack"),

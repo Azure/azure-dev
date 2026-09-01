@@ -39,18 +39,18 @@ jobs:
 {{- end }}
     steps:
       - name: Checkout
-        uses: actions/checkout@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v4.3.1
+        uses: {{.Actions.Checkout}}
       - name: Install azd
-        uses: Azure/setup-azd@0b7e3a35ab00f2eee7080c845eb39c3f0ebfa553  # v2.4.0
+        uses: {{.Actions.SetupAzd}}
 {{- if .IsTerraform}}
       - name: Install Terraform
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
+        uses: {{.Actions.SetupTerraform}}
         with:
           terraform_version: 1.9.0
 {{ end }}
 {{- if .InstallDotNetForAspire}}
       - name: Setup .NET
-        uses: actions/setup-dotnet@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        uses: {{.Actions.SetupDotNet}}
         with:
           dotnet-version: | 
             8.x

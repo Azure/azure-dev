@@ -801,6 +801,50 @@ func Test_promptForCiFiles(t *testing.T) {
 	})
 }
 
+func Test_validatePipelineActionReference(t *testing.T) {
+	tests := []struct {
+		name           string
+		reference      string
+		expectedAction string
+		errorContains  string
+	}{
+		{
+			name:           "Valid",
+			reference:      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+			expectedAction: "actions/checkout",
+		},
+		{
+			name:           "WrongAction",
+			reference:      "actions/setup-dotnet@3d3c42e5aac5ba805825da76410c181273ba90b1",
+			expectedAction: "actions/checkout",
+			errorContains:  "expected action actions/checkout",
+		},
+		{
+			name:           "VersionTag",
+			reference:      "actions/checkout@v7.0.1",
+			expectedAction: "actions/checkout",
+			errorContains:  "expected a full 40-character commit SHA",
+		},
+		{
+			name:           "InvalidSha",
+			reference:      "actions/checkout@zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+			expectedAction: "actions/checkout",
+			errorContains:  "invalid commit SHA",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validatePipelineActionReference(test.reference, test.expectedAction)
+			if test.errorContains == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorContains(t, err, test.errorContains)
+			}
+		})
+	}
+}
+
 func Test_promptForCiFiles_azureDevOpsDirectory(t *testing.T) {
 	t.Run("no files - azdo selected - azuredevops dir - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()

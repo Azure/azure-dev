@@ -131,10 +131,8 @@ func hasCanonicalDeploymentReferences(
 		if capacity, ok := deployment.Sku.Capacity.(string); ok {
 			values = append(values, capacity)
 		}
-		for _, value := range values {
-			if isCanonicalDeploymentReference(value) {
-				return true
-			}
+		if slices.ContainsFunc(values, isCanonicalDeploymentReference) {
+			return true
 		}
 	}
 	return false

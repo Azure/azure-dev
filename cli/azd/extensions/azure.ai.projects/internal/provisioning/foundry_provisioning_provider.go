@@ -658,9 +658,7 @@ func foundrySynthesisError(serviceName string, err error) error {
 func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[string]string {
 	out := make(map[string]string,
 		len(p.virtualEnv)+len(p.resolvedDeploymentEnv))
-	for key, value := range p.resolvedDeploymentEnv {
-		out[key] = value
-	}
+	maps.Copy(out, p.resolvedDeploymentEnv)
 	for key, value := range p.virtualEnv {
 		if !isCanonicalDeploymentEnvironmentKey(key) {
 			out[key] = value
@@ -1400,19 +1398,15 @@ func (p *FoundryProvisioningProvider) envValue(ctx context.Context, key string) 
 func (p *FoundryProvisioningProvider) envValues(ctx context.Context) map[string]string {
 	out := make(map[string]string,
 		len(p.virtualEnv)+len(p.resolvedDeploymentEnv)+6)
-	for key, value := range p.resolvedDeploymentEnv {
-		out[key] = value
-	}
-	for key, value := range map[string]string{
+	maps.Copy(out, p.resolvedDeploymentEnv)
+	maps.Copy(out, map[string]string{
 		envKeySubscriptionID: p.subID,
 		envKeyLocation:       p.location,
 		envKeyResourceGroup:  p.rgName,
 		envKeyFoundryRG:      p.rgName,
 		envKeyProjectName:    p.foundryName,
 		envKeyPrincipalID:    p.principalID,
-	} {
-		out[key] = value
-	}
+	})
 	for key, value := range p.virtualEnv {
 		if isCanonicalDeploymentEnvironmentKey(key) {
 			continue

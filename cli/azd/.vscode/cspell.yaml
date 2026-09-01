@@ -524,6 +524,9 @@ overrides:
   - filename: internal/grpcserver/versioned_services_generated.go
     words:
       - generateadapters
+  - filename: "{internal/grpcserver/legacy_services.go,internal/grpcserver/legacybridge/bridge.go,internal/grpcserver/server.go}"
+    words:
+      - legacybridge
   - filename: pkg/azdext/contracts_v1_aliases.go
     words:
       - generatefacade

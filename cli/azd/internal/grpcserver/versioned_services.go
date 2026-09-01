@@ -91,6 +91,10 @@ func (s *Server) registerServices() error {
 	azdext.RegisterValidationServiceServer(s.grpcServer, s.validationService)
 	azdext.RegisterTelemetryServiceServer(s.grpcServer, s.telemetryService)
 
+	if err := s.registerLegacyServices(); err != nil {
+		return fmt.Errorf("register legacy extension services: %w", err)
+	}
+
 	return registerBetaServices(
 		s.grpcServer,
 		map[BetaService]any{

@@ -101,6 +101,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		measurementFields := []fields.AttributeKey{
 			fields.AgentFixAttempts,
 			fields.ExeGraphMaxConcurrencyKey,
+			fields.ExtensionLegacyGrpcCallCount,
 			fields.ToolExitCode,
 		}
 		for _, field := range measurementFields {
@@ -235,6 +236,10 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		kv = fields.ExtensionEvent.String("deploy.completed")
 		require.Equal(t, "extension.event", string(kv.Key))
 		require.Equal(t, "deploy.completed", kv.Value.AsString())
+
+		kv = fields.ExtensionLegacyGrpcCallCount.Int(2)
+		require.Equal(t, "extension.grpc.legacy_call_count", string(kv.Key))
+		require.Equal(t, int64(2), kv.Value.AsInt64())
 
 		category := fields.ExtensionSourceCategory.String("local")
 		require.Equal(t, "extension.source.category", string(category.Key))

@@ -231,6 +231,7 @@ not emitted by azd spans.
 |-------|----------|----------------|---------|-------|
 | Extension ID | `extension.id` | SystemMetadata | FeatureInsight | |
 | Extension version | `extension.version` | SystemMetadata | FeatureInsight | |
+| Legacy gRPC call count | `extension.grpc.legacy_call_count` | SystemMetadata | FeatureInsight | **Measurement** — number of unary calls or streams opened through the temporary `/azdext.*` compatibility bridge during one command |
 | Extension installed | `extension.installed` | SystemMetadata | FeatureInsight | List of installed extensions, each formatted `id@version` |
 | Installed extension source category | `extension.installed.source.category` | SystemMetadata | FeatureInsight | List formatted `id@category`; categories: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an update |

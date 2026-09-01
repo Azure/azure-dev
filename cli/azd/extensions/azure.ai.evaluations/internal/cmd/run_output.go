@@ -43,6 +43,9 @@ func newRunOutputListCommand() *cobra.Command {
 		endpointFlg string
 		groupName   string
 		runFlag     string
+		limit       int
+		pageToken   string
+		all         bool
 	)
 
 	cmd := &cobra.Command{
@@ -75,7 +78,12 @@ func newRunOutputListCommand() *cobra.Command {
 			// items are the rows themselves, which is what "which one failed,
 			// and why" needs. A run that never produced any still renders its
 			// totals rather than failing.
-			items, err := ec.evalClient.ListOutputItems(ctx, evalID, run.ID, 0)
+			// A generated dataset runs to a thousand rows, each carrying a
+			// result per evaluator, so an unbounded listing floods the terminal.
+			// --output-file and `run output export` are the bulk paths and take
+			// everything.
+			pageSize := pageSizeOr(limit, all || outFile != "", defaultPageSize)
+			items, err := ec.evalClient.ListOutputItemsPage(ctx, evalID, run.ID, pageSize, pageToken)
 			if err != nil {
 				return messages.ReadingRunResults(run.ID, err)
 			}
@@ -125,7 +133,13 @@ func newRunOutputListCommand() *cobra.Command {
 			if isJSON(cmd) {
 				return emitJSONList(cmd.OutOrStdout(), rows)
 			}
-			return renderResults(cmd.OutOrStdout(), run, rows, failedOnly)
+			if err := renderResults(cmd.OutOrStdout(), run, rows, failedOnly); err != nil {
+				return err
+			}
+			if items.HasMore && items.LastID != "" {
+				fmt.Fprint(cmd.OutOrStdout(), messages.MoreItemsToList(items.LastID))
+			}
+			return nil
 		},
 	}
 
@@ -134,6 +148,7 @@ func newRunOutputListCommand() *cobra.Command {
 	cmd.Flags().StringVar(&statusFlag, "status", "",
 		"Show only items with these outcomes: passed, failed, errored, skipped (comma-separated).")
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write JSON results to this path.")
+	addPagingFlags(cmd, &limit, &pageToken, &all, defaultPageSize)
 	addRunFlag(cmd, &runFlag)
 	addEvalFlag(cmd, &groupName)
 	// Registered wherever a declared name is resolved, so a configuration

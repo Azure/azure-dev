@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -58,3 +59,40 @@ func missingFrom(names []string, given int) []string {
 	}
 	return names[given:]
 }
+
+// Paging is one contract across every listing, so a reader who learns it on one
+// command has learned it on all of them.
+//
+// --limit alone truncates rather than paginates: it caps the rows and says
+// nothing about what is past them, which is what the two commands that had it
+// were doing. A page is only usable if the next one is reachable, so the token
+// the service returned is printed with the command that resumes from it, and
+// --all is the explicit way to ask for everything rather than the accident of
+// a listing that never stopped.
+func addPagingFlags(cmd *cobra.Command, limit *int, token *string, all *bool, defaultPage int) {
+	cmd.Flags().IntVar(limit, "limit", 0,
+		fmt.Sprintf("Rows per page. Defaults to %d.", defaultPage))
+	cmd.Flags().StringVar(token, "continuation-token", "",
+		"Resume from the token the previous page printed.")
+	cmd.Flags().BoolVar(all, "all", false,
+		"Retrieve every page. Overrides --limit.")
+}
+
+// pageSizeOr settles the page size a listing asks the service for.
+//
+// --all is not "a very large limit": it means follow the cursor, so it asks for
+// no limit at all and lets the walker finish.
+func pageSizeOr(limit int, all bool, fallback int) int {
+	if all {
+		return 0
+	}
+	if limit > 0 {
+		return limit
+	}
+	return fallback
+}
+
+// defaultPageSize keeps a first page quick on a shared project, which runs to
+// hundreds of evals and datasets. Walking all of them took seconds and buried
+// the reader's own rows.
+const defaultPageSize = 50

@@ -730,3 +730,25 @@ func doRequestTyped[T any](
 
 	return &result, nil
 }
+
+// ListOpenAIEvalRunsPage reads one page of runs and hands back the cursor.
+//
+// The walking variant above is what a filter needs; a listing needs the page
+// and a way to ask for the next one. Without this, --limit truncated: it capped
+// the rows and said nothing about what lay past them.
+func (c *EvalClient) ListOpenAIEvalRunsPage(
+	ctx context.Context,
+	evalID string,
+	limit int,
+	after string,
+) (*OpenAIEvalRunList, error) {
+	path := fmt.Sprintf("%s/%s/runs", pathOpenAIEvals, url.PathEscape(evalID))
+	query := map[string]string{}
+	if limit > 0 {
+		query["limit"] = strconv.Itoa(limit)
+	}
+	if after != "" {
+		query["after"] = after
+	}
+	return doRequestTyped[OpenAIEvalRunList](c, ctx, http.MethodGet, path, query, nil, "")
+}

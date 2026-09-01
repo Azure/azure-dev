@@ -348,3 +348,27 @@ func (c *EvalClient) ListOutputItemsRaw(
 	}
 	return all, nil
 }
+
+// ListOutputItemsPage reads one page of evaluated rows and hands back the
+// cursor, so a listing can offer the next page rather than truncating.
+func (c *EvalClient) ListOutputItemsPage(
+	ctx context.Context,
+	evalID, runID string,
+	limit int,
+	after string,
+) (*OutputItemList, error) {
+	if limit <= 0 {
+		// No page size means every row: the caller is writing a file or asked
+		// for --all, and a cursor is not what it needs.
+		return c.ListOutputItems(ctx, evalID, runID, 0)
+	}
+	path := fmt.Sprintf(
+		"%s/%s/runs/%s/output_items",
+		pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID),
+	)
+	query := map[string]string{"limit": strconv.Itoa(limit)}
+	if after != "" {
+		query["after"] = after
+	}
+	return doRequestTyped[OutputItemList](c, ctx, http.MethodGet, path, query, nil, "")
+}

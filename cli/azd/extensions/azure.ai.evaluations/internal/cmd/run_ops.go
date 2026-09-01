@@ -34,6 +34,8 @@ func newRunListCommand() *cobra.Command {
 		endpointFlg string
 		groupName   string
 		limit       int
+		pageToken   string
+		all         bool
 	)
 
 	cmd := &cobra.Command{
@@ -58,7 +60,13 @@ func newRunListCommand() *cobra.Command {
 				return err
 			}
 
-			list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, limit)
+			pageSize := pageSizeOr(limit, all, defaultPageSize)
+			var list *eval_api.OpenAIEvalRunList
+			if all {
+				list, err = ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 0)
+			} else {
+				list, err = ec.evalClient.ListOpenAIEvalRunsPage(ctx, evalID, pageSize, pageToken)
+			}
 			if err != nil {
 				if eval_api.IsNotFound(err) {
 					return messages.EvalNotDeployed(evalID, ec.deployCommand(ctx))
@@ -92,16 +100,22 @@ func newRunListCommand() *cobra.Command {
 					runPassRate(run.ResultCounts),
 				})
 			}
-			return emitTable(cmd.OutOrStdout(),
-				[]string{"RUN", "DATASET", "STARTED", "STATUS", "SAMPLES", "PASS RATE"}, rows)
+			if err := emitTable(cmd.OutOrStdout(),
+				[]string{"RUN", "DATASET", "STARTED", "STATUS", "SAMPLES", "PASS RATE"},
+				rows); err != nil {
+				return err
+			}
+			if list.HasMore && list.LastID != "" {
+				fmt.Fprint(cmd.OutOrStdout(), messages.MoreRunsToList(list.LastID))
+			}
+			return nil
 		},
 	}
 	addEvalFlag(cmd, &groupName)
 	// Registered wherever a declared name is resolved, so a configuration
 	// outside ./evals can be addressed by every command, not just `run start`.
 	addEvalPathFlag(cmd, new(string))
-	cmd.Flags().IntVar(&limit, "limit", 0,
-		"Return at most this many runs. Omit for the service default.")
+	addPagingFlags(cmd, &limit, &pageToken, &all, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

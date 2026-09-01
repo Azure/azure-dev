@@ -166,6 +166,7 @@ func newEvalListCommand() *cobra.Command {
 		limit       int
 		nameFilter  string
 		pageToken   string
+		all         bool
 		endpointFlg string
 	)
 
@@ -181,18 +182,15 @@ func newEvalListCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			pageSize := limit
-			if pageSize <= 0 {
-				pageSize = defaultEvalPageSize
-			}
+			pageSize := pageSizeOr(limit, all, defaultPageSize)
 
 			// A filter that only searched the page in hand would answer "no
 			// such eval" for one sitting on the next, which is the opposite of
 			// what it is for. The service filters nothing, so finding a name
 			// costs the full walk; reading a page does not.
 			var page *eval_api.OpenAIEvalList
-			if nameFilter != "" {
-				page, err = ec.evalClient.ListOpenAIEvals(ctx, limit)
+			if nameFilter != "" || all {
+				page, err = ec.evalClient.ListOpenAIEvals(ctx, pageSize)
 			} else {
 				page, err = ec.evalClient.ListOpenAIEvalsPage(ctx, pageSize, pageToken)
 			}
@@ -231,20 +229,12 @@ func newEvalListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&limit, "limit", 0,
-		"Rows per page. Defaults to 50.")
 	cmd.Flags().StringVar(&nameFilter, "name", "",
 		"Only evals whose name contains this, compared without case. Searches every page.")
-	cmd.Flags().StringVar(&pageToken, "pagination-token", "",
-		"Continue from the token the previous page printed.")
+	addPagingFlags(cmd, &limit, &pageToken, &all, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
-
-// defaultEvalPageSize keeps the first page quick on a shared project, which
-// runs to hundreds of evals. Walking all of them took seconds and buried the
-// reader's own rows.
-const defaultEvalPageSize = 50
 
 // filterEvalsByName keeps the evals whose name contains the filter. An empty
 // filter keeps everything, so the caller does not branch.

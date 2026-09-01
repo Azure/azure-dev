@@ -45,6 +45,9 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 		Instructions: &instructions,
 		Voice:        &voice,
 		Store:        &store,
+		Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
+			{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
+		}},
 	}, nil)
 	require.NoError(t, err)
 
@@ -67,6 +70,11 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	require.Equal(t, voice, *got.Voice)
 	require.NotNil(t, got.Store)
 	require.Equal(t, store, *got.Store)
+	require.NotNil(t, got.Telephony)
+	require.Len(t, got.Telephony.Bindings, 1)
+	require.Equal(t, "twilio", got.Telephony.Bindings[0].Provider)
+	require.Equal(t, "+14255550123", got.Telephony.Bindings[0].Identifier)
+	require.Equal(t, "telephony-twilio", got.Telephony.Bindings[0].Connection)
 }
 
 func TestApplyAgentMetadata(t *testing.T) {
@@ -109,6 +117,14 @@ func TestApplyAgentMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServiceHasTelephony(t *testing.T) {
+	props := &structpb.Struct{Fields: map[string]*structpb.Value{
+		"telephony": structpb.NewStructValue(&structpb.Struct{}),
+	}}
+	require.True(t, serviceHasTelephony(&azdext.ServiceConfig{AdditionalProperties: props}))
+	require.False(t, serviceHasTelephony(&azdext.ServiceConfig{}))
 }
 
 type fakeProjectAgentChecker struct {

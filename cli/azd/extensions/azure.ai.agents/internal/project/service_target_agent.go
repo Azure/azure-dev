@@ -1405,6 +1405,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	if !isVoice && serviceHasTelephony(serviceConfig) {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"telephony bindings are only supported for prompt voice agents",
+			"remove telephony from this service or set kind: prompt-voice",
+		)
+	}
 
 	var agentDef agent_yaml.ContainerAgent
 	if !isVoice {
@@ -2292,6 +2299,18 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 	}, nil
 }
 
+func serviceHasTelephony(serviceConfig *azdext.ServiceConfig) bool {
+	for _, props := range []*structpb.Struct{serviceConfig.GetAdditionalProperties(), serviceConfig.GetConfig()} {
+		if props == nil {
+			continue
+		}
+		if _, ok := props.GetFields()["telephony"]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.
 func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
@@ -2414,6 +2433,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
 		return nil, err
 	}
+	if err := p.deployVoiceTelephonyBindings(ctx, agentClient, va, agentObject); err != nil {
+		return nil, err
+	}
 
 	fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
 
@@ -2457,6 +2479,70 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}}
 
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
+}
+
+func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	voiceAgent agent_yaml.VoiceAgent,
+	agentObject *agent_api.AgentObject,
+) error {
+	if voiceAgent.Telephony == nil || len(voiceAgent.Telephony.Bindings) == 0 {
+		return nil
+	}
+	for _, binding := range voiceAgent.Telephony.Bindings {
+		version := strings.TrimSpace(binding.AgentVersion)
+		if version == "" {
+			version = agentObject.Versions.Latest.Version
+		}
+		request := &agent_api.TelephonyBindingRequest{
+			Provider:        strings.TrimSpace(binding.Provider),
+			Identifier:      strings.TrimSpace(binding.Identifier),
+			ConnectionName:  strings.TrimSpace(binding.Connection),
+			AgentRef:        agent_api.TelephonyAgentRef{Name: agentObject.Name, Version: version},
+			TransferTargets: binding.TransferTargets,
+			ProviderConfig:  maps.Clone(binding.ProviderConfig),
+		}
+		if request.Provider == "acs" {
+			if request.ProviderConfig == nil {
+				request.ProviderConfig = map[string]any{}
+			}
+			if _, ok := request.ProviderConfig["acs_connection_name"]; !ok {
+				request.ProviderConfig["acs_connection_name"] = request.ConnectionName
+			}
+		}
+
+		bindingID := fmt.Sprintf("%s:%s", request.Provider, request.Identifier)
+		_, getErr := agentClient.GetTelephonyBinding(
+			ctx,
+			agentObject.Name,
+			bindingID,
+			agent_api.TelephonyBindingAPIVersion,
+		)
+		if getErr == nil {
+			fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)
+			continue
+		}
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
+			return exterrors.ServiceFromAzure(getErr, exterrors.OpGetTelephonyBinding)
+		}
+
+		created, err := agentClient.CreateTelephonyBinding(
+			ctx,
+			agentObject.Name,
+			request,
+			agent_api.TelephonyBindingAPIVersion,
+		)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCreateTelephonyBinding)
+		}
+		id := created.ID
+		if id == "" {
+			id = bindingID
+		}
+		fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
+	}
+	return nil
 }
 
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {

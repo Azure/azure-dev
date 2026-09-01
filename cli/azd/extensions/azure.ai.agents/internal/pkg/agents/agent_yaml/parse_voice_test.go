@@ -329,3 +329,48 @@ include:
 		t.Fatalf("expected azure-speech include config to be valid, got: %v", err)
 	}
 }
+
+func TestValidateAgentDefinition_PromptVoice_TelephonyBindings(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+telephony:
+  bindings:
+    - provider: acs
+      identifier: 28:orgid:00000000-0000-0000-0000-000000000001
+      connection: telephony-acs
+    - provider: acs
+      identifier: 4:+14255550123
+      connection: telephony-acs
+    - provider: twilio
+      identifier: +14255550124
+      connection: telephony-twilio
+`)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected telephony bindings to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoice_InvalidTelephonyBindings(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{name: "empty bindings", yaml: "telephony:\n  bindings: []", want: "bindings must not be empty"},
+		{name: "bad provider", yaml: "telephony:\n  bindings:\n    - provider: sip\n      identifier: +14255550123\n      connection: c", want: "provider must be acs or twilio"},
+		{name: "bad twilio id", yaml: "telephony:\n  bindings:\n    - provider: twilio\n      identifier: not-a-number\n      connection: c", want: "identifier must be +<E.164>"},
+		{name: "missing connection", yaml: "telephony:\n  bindings:\n    - provider: acs\n      identifier: 4:+14255550123", want: "connection is required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			yamlContent := []byte("kind: prompt-voice\nname: voice-agent\nmodel:\n  id: gpt-realtime\n" + tt.yaml + "\n")
+			err := ValidateAgentDefinition(yamlContent)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q validation error, got: %v", tt.want, err)
+			}
+		})
+	}
+}

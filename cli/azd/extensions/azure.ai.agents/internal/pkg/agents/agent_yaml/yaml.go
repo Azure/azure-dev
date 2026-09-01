@@ -239,6 +239,23 @@ type VoiceAgent struct {
 	MaxOutputTokens any `json:"maxOutputTokens,omitempty" yaml:"max_output_tokens,omitempty"`
 	// Include requests additional service response fields.
 	Include []string `json:"include,omitempty" yaml:"include,omitempty"`
+	// Telephony configures phone-number bindings for prompt voice agents.
+	Telephony *VoiceTelephony `json:"telephony,omitempty" yaml:"telephony,omitempty"`
+}
+
+// VoiceTelephony declares telephony bindings for a prompt voice agent.
+type VoiceTelephony struct {
+	Bindings []VoiceTelephonyBinding `json:"bindings,omitempty" yaml:"bindings,omitempty"`
+}
+
+// VoiceTelephonyBinding maps a provider-side phone identifier to the voice agent.
+type VoiceTelephonyBinding struct {
+	Provider        string           `json:"provider" yaml:"provider"`
+	Identifier      string           `json:"identifier" yaml:"identifier"`
+	Connection      string           `json:"connection" yaml:"connection"`
+	AgentVersion    string           `json:"agentVersion,omitempty" yaml:"agent_version,omitempty"`
+	TransferTargets []map[string]any `json:"transferTargets,omitempty" yaml:"transfer_targets,omitempty"`
+	ProviderConfig  map[string]any   `json:"providerConfig,omitempty" yaml:"provider_config,omitempty"`
 }
 
 // VoiceAudio bundles optional prompt voice input/output audio overrides.

@@ -14,6 +14,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -166,6 +167,9 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 // header while voice agents remain a preview capability.
 const voiceAgentsPreviewFeature = "VoiceAgents=V1Preview"
 
+// TelephonyBindingAPIVersion is the preview API version for voice telephony bindings.
+const TelephonyBindingAPIVersion = "2025-11-15-preview"
+
 func (c *AgentClient) doVoiceJSONAgentRequest(
 	ctx context.Context,
 	method string,
@@ -281,6 +285,88 @@ func (c *AgentClient) UpdateVoiceAgent(
 ) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
 	return c.doVoiceJSONAgentRequest(ctx, http.MethodPost, url, request, overriddenHost)
+}
+
+// GetTelephonyBinding retrieves one telephony binding for an agent.
+func (c *AgentClient) GetTelephonyBinding(
+	ctx context.Context,
+	agentName string,
+	bindingID string,
+	apiVersion string,
+) (*TelephonyBinding, error) {
+	url := fmt.Sprintf(
+		"%s/agents/%s/telephony/%s?api-version=%s",
+		c.endpoint,
+		url.PathEscape(agentName),
+		escapeTelephonyPathSegment(bindingID),
+		apiVersion,
+	)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Raw().Header.Set("Foundry-Features", voiceAgentsPreviewFeature)
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	var binding TelephonyBinding
+	if err := json.Unmarshal(body, &binding); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &binding, nil
+}
+
+func escapeTelephonyPathSegment(value string) string {
+	return strings.ReplaceAll(url.PathEscape(value), "+", "%2B")
+}
+
+// CreateTelephonyBinding creates a telephony binding for an agent.
+func (c *AgentClient) CreateTelephonyBinding(
+	ctx context.Context,
+	agentName string,
+	request *TelephonyBindingRequest,
+	apiVersion string,
+) (*TelephonyBinding, error) {
+	url := fmt.Sprintf("%s/agents/%s/telephony?api-version=%s", c.endpoint, url.PathEscape(agentName), apiVersion)
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Raw().Header.Set("Foundry-Features", voiceAgentsPreviewFeature)
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
+	}
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return nil, runtime.NewResponseError(resp)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	var binding TelephonyBinding
+	if err := json.Unmarshal(body, &binding); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &binding, nil
 }
 
 // UpdateAgent updates an existing agent

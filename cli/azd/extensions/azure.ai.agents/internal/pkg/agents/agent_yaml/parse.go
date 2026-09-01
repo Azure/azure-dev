@@ -16,6 +16,8 @@ import (
 )
 
 var validAgentNamePattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+var e164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
+var acsTpeRawIDPattern = regexp.MustCompile(`^28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // LoadAndValidateAgentManifest parses YAML content and validates it as an AgentManifest
 // Returns the parsed manifest and any validation errors
@@ -507,6 +509,7 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	if err := validateVoiceMaxOutputTokens(agent.MaxOutputTokens); err != nil {
 		errors = append(errors, err.Error())
 	}
+	errors = append(errors, validateVoiceTelephony(agent.Telephony)...)
 
 	if agent.Audio == nil {
 		return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, "")...)
@@ -557,6 +560,51 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 
 func isFinite(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+func validateVoiceTelephony(telephony *VoiceTelephony) []string {
+	if telephony == nil {
+		return nil
+	}
+	var errors []string
+	if len(telephony.Bindings) == 0 {
+		errors = append(errors, "template.telephony.bindings must not be empty")
+	}
+	for i, binding := range telephony.Bindings {
+		path := fmt.Sprintf("template.telephony.bindings[%d]", i)
+		provider := strings.TrimSpace(binding.Provider)
+		identifier := strings.TrimSpace(binding.Identifier)
+		if provider == "" {
+			errors = append(errors, path+".provider is required")
+		}
+		if identifier == "" {
+			errors = append(errors, path+".identifier is required")
+		}
+		if strings.TrimSpace(binding.Connection) == "" {
+			errors = append(errors, path+".connection is required")
+		}
+		switch provider {
+		case "acs":
+			if identifier == "" {
+				continue
+			}
+			if strings.HasPrefix(identifier, "4:") {
+				if !e164Pattern.MatchString(strings.TrimPrefix(identifier, "4:")) {
+					errors = append(errors, path+".identifier must be 4:+<E.164> for acs-purchased numbers")
+				}
+			} else if !acsTpeRawIDPattern.MatchString(identifier) {
+				errors = append(errors, path+".identifier must be 28:orgid:<guid> or 4:+<E.164> for acs")
+			}
+		case "twilio":
+			if identifier != "" && !e164Pattern.MatchString(identifier) {
+				errors = append(errors, path+".identifier must be +<E.164> for twilio")
+			}
+		case "":
+		default:
+			errors = append(errors, path+".provider must be acs or twilio")
+		}
+	}
+	return errors
 }
 
 func validateVoiceMaxOutputTokens(value any) error {

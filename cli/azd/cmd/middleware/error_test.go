@@ -238,7 +238,7 @@ func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
 }
 
 // Test_ErrorMiddleware_ExtensionErrorWithSuggestion_BypassesPipeline verifies that
-// when an extension-supplied error (LocalError or ServiceError) already carries a
+// when an extension-supplied structured error already carries a
 // Suggestion, the YAML error-suggestion pipeline is short-circuited so it doesn't
 // override the extension's specific guidance with a generic one. Regression test
 // for https://github.com/Azure/azure-dev/issues/7706.

@@ -1235,9 +1235,8 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionEvent is the event name an extension chose for a usage
-	// event. Extensions own this value; it exists so queries can filter
-	// an extension's events without parsing its attributes.
+	// ExtensionEvent identifies a usage report or failed invocation event.
+	// Extensions own this value, which lets queries filter their events.
 	ExtensionEvent = AttributeKey{
 		Key:            attribute.Key("extension.event"),
 		Classification: SystemMetadata,

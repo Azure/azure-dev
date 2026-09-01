@@ -239,7 +239,9 @@ Valid values for `project.service.languages` and `project.service.language`:
 | `error.category` | string | High-level error category |
 | `error.code` | string | Specific error code |
 | `error.type` | string | Same as `ResultCode` — the classified error type |
-| `error.chain.types` | string[] | Full Go error type chain, outermost first |
+| `error.chain.types` | string[] | Bounded Go error type chain, outermost first |
+| `error.mapper.source.type` | string | Sanitized source Go type for a mapper conversion failure |
+| `error.mapper.destination.type` | string | Sanitized destination Go type for a mapper conversion failure |
 
 #### Error Classification (ResultCode Taxonomy)
 
@@ -259,6 +261,8 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `ext.validation.*` | Extension validation error | `ext.validation.config` |
 | `ext.auth.*` | Extension auth error | `ext.auth.expired` |
 | `ext.dependency.*` | Extension dependency error | `ext.dependency.missing` |
+| `internal.grpc.<status>` | Host-originated gRPC status without a more specific mapping | `internal.grpc.unavailable` |
+| `internal.mapper_conversionerror` | Conversion between registered Go mapper types failed | — |
 | `internal.unclassified` | Catch-all for unclassified errors | — |
 | `internal.errors_errorString` | Legacy catch-all (being replaced by `internal.unclassified`) | — |
 
@@ -471,7 +475,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 |-----------|------|-------------|
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
-| `extension.event` | string | Extension-chosen event name on an `ext.usage` span |
+| `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined lifecycle event on a failed `ext.run` span |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
 | `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
@@ -493,10 +497,12 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 Each `ext.usage` span contains `extension.id`, `extension.version`,
 `extension.source`, `extension.event`, and any number of dynamic `ext.*`
 fields. The host writes the identity fields and applies the `ext.` prefix; the
-extension chooses the event name, the key suffixes, and the values. The whole
-class is classified as `SystemMetadata` for `FeatureInsight`. Extension authors
-are responsible for keeping values low cardinality and free of customer
-content, and for having them privacy reviewed with their extension.
+extension chooses the event name, the key suffixes, and the values. Failed
+extension invocations instead carry `extension.id`, `extension.version`, and
+`extension.event` on the failed `ext.run` span. The whole class is classified
+as `SystemMetadata` for `FeatureInsight`. Extension authors are responsible
+for keeping usage values low cardinality and free of customer content, and for
+having them privacy reviewed with their extension.
 
 Only extensions whose configured `azd` source matches the verified official
 registry name, type, and normalized URL produce these spans, which is what ties
@@ -802,7 +808,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `ext.install`, `ext.update`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.event`, dynamic `ext.*` fields | Extension adoption, errors, usage events |
+| **Extensions** | `ext.run`, `ext.install`, `ext.update`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.event`, `error.chain.types`, `error.mapper.source.type`, `error.mapper.destination.type`, dynamic `ext.*` fields | Extension adoption, invocation errors, and usage events |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |

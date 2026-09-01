@@ -46,6 +46,7 @@ overrides:
           - dependson
           - exegraph
           - pseudonymizing
+          - conversionerror
           - pulumi
     - filename: ./README.md
       words:
@@ -133,6 +134,7 @@ overrides:
           - centralus
           - chinacloudapi
           - containerapp
+          - conversionerror
           - dcount
           - dependson
           - devdeviceid

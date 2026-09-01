@@ -49,7 +49,9 @@ words:
   - devcontainers
   - errchain
   - errgroup
+  - errorchain
   - errorhandler
+  - conversionerror
   - extendee
   - eiannone
   - firstrun

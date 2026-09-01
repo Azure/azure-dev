@@ -322,7 +322,7 @@ func (x *ErrorLink) GetTitle() string {
 // without parsing status message text.
 //
 // Direction: host -> extension only. Extensions returning errors to the host should use
-// LocalError / ServiceError (transported via ExtensionError) instead.
+// LocalError / ServiceError / ToolError (transported via ExtensionError) instead.
 //
 // The user-facing error message lives in google.rpc.Status.message; this detail does not
 // duplicate it.

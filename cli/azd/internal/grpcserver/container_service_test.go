@@ -401,7 +401,7 @@ func TestMapContainerToolError(t *testing.T) {
 			err:      fmt.Errorf("build failed: %w", exitErr),
 			wantKind: azdext.ToolErrorKindFailed,
 			wantName: "docker",
-			wantCode: intPtr(17),
+			wantCode: new(17),
 		},
 		{
 			name:     "missing process",
@@ -467,8 +467,4 @@ func TestMapContainerToolError_PreservesNonToolErrors(t *testing.T) {
 			require.Equal(t, tt.err, mapContainerToolError(tt.err))
 		})
 	}
-}
-
-func intPtr(value int) *int {
-	return &value
 }

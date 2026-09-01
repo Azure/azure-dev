@@ -54,6 +54,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Error Handling](#error-handling)
   - [LocalError](#localerror)
   - [ServiceError](#serviceerror)
+  - [ToolError](#toolerror)
   - [LocalErrorCategory](#localerrorcategory)
 
 ---
@@ -712,12 +713,15 @@ type LocalError struct {
     Message    string
     Code       string
     Category   LocalErrorCategory
+    CauseTypes []string
     Suggestion string
 }
 ```
 
 Represents an error originating within the extension. The `Suggestion` field
-provides actionable guidance displayed to the user.
+provides actionable guidance displayed to the user. `CauseTypes` contains
+bounded, safe Go error type names for unexpected fallback errors; it is
+diagnostic evidence and does not determine the error classification.
 
 ### ServiceError
 
@@ -732,6 +736,23 @@ type ServiceError struct {
 ```
 
 Represents an error from an Azure service call.
+
+### ToolError
+
+```go
+type ToolError struct {
+    Message    string
+    ToolName   string
+    Kind       ToolErrorKind
+    ExitCode   *int
+    Suggestion string
+}
+```
+
+Represents a failure from an external tool or subprocess. `Kind` is either
+`ToolErrorKindMissing` when the tool was not found or `ToolErrorKindFailed`
+when the tool ran and returned an error. `ExitCode` is populated only for a
+failed invocation that returned a process exit code.
 
 ### LocalErrorCategory
 
@@ -750,8 +771,8 @@ const (
 ```
 
 Error categories enable structured telemetry classification and targeted error
-guidance. Use `WrapError(err)` to convert a `LocalError` or `ServiceError` to
-the gRPC `ExtensionError` proto for reporting.
+guidance. Use `WrapError(err)` to convert a `LocalError`, `ServiceError`, or
+`ToolError` to the gRPC `ExtensionError` proto for reporting.
 
 ---
 

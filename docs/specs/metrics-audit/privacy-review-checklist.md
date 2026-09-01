@@ -3,6 +3,24 @@
 This document defines when a privacy review is required for telemetry changes in `azd`,
 the data classification framework, hashing requirements, and a PR checklist template.
 
+## PR 9810 Review Record
+
+The error-attribution fields introduced by PR 9810 were reviewed against this
+checklist:
+
+| Field or data | Classification | Privacy decision |
+|---------------|----------------|------------------|
+| `error.chain.types` | SystemMetadata | Bounded to 16 validated, de-duplicated Go type names; generic wrappers are omitted and no error message or customer content is emitted |
+| `error.mapper.source.type` | SystemMetadata | Emits only the sanitized source type name from the registered mapper |
+| `error.mapper.destination.type` | SystemMetadata | Emits only the sanitized destination type name from the registered mapper |
+| `extension.event` on failed `ext.run` spans | SystemMetadata | Host lifecycle metadata; extension-supplied usage values remain restricted to the reviewed `ext.usage` admission path |
+
+No new event or user-provided string is introduced. No fields are unhashed
+because the new values are bounded code-defined metadata rather than project,
+environment, path, or customer content. The corresponding unit tests cover
+error-chain bounds, type-name validation, mapper attribution, and extension
+identity attribution.
+
 ## When to Trigger a Privacy Review
 
 A privacy review **must** be triggered when any of the following conditions are met:

@@ -119,15 +119,23 @@ classify it in telemetry.
 
 ### Structured Error Types
 
-The `azdext` package provides two structured error types:
+The `azdext` package provides structured error types for service, local, and
+external-tool failures:
 
 - **`azdext.ServiceError`** — for HTTP/gRPC service failures (e.g., Azure API returned 429).
   Fields: `Message`, `ErrorCode`, `StatusCode`, `ServiceName`, `Suggestion`.
 
 - **`azdext.LocalError`** — for local errors such as validation, auth, config, or internal failures.
-  Fields: `Message`, `Code`, `Category`, `Suggestion`.
+  Fields: `Message`, `Code`, `Category`, `CauseTypes`, `Suggestion`.
 
-Both types implement `Error()`. They are detected via `errors.As` during serialization.
+- **`azdext.ToolError`** — for failures from external tools or subprocesses.
+  Fields: `Message`, `ToolName`, `Kind`, `ExitCode`, `Suggestion`.
+  Use `ToolErrorKindMissing` when the tool was not found and
+  `ToolErrorKindFailed` when it ran and failed.
+
+These types implement `Error()`. They are detected via `errors.As` during
+serialization. `CauseTypes` is bounded diagnostic evidence for unexpected
+local fallbacks; it does not change the selected classification.
 
 ### Telemetry Classification
 
@@ -138,6 +146,7 @@ The host classifies extension errors into telemetry codes using the pattern:
 | `ServiceError` with `ErrorCode` | `ext.service.<errorCode>` |
 | `ServiceError` with `StatusCode` | `ext.service.<serviceName>.<statusCode>` |
 | `LocalError` | `ext.<category>.<code>` |
+| `ToolError` | `tool.<toolName>.missing` or `tool.<toolName>.failed` |
 | Unclassified | `ext.run.failed` |
 
 ### Recommended Layering Pattern
@@ -153,11 +162,10 @@ Treat this as guidance, not a strict package boundary. The important part is tha
 When `WrapError` serializes an error for gRPC, it checks the chain via `errors.As` and picks
 the **first** match in this order:
 
-1. `ServiceError` (highest priority)
-2. `LocalError`
-3. `azcore.ResponseError` (auto-detected Azure SDK errors)
-4. gRPC `Unauthenticated` (safety-net auth classification)
-5. Fallback (unclassified)
+1. `ServiceError`, `LocalError`, or `ToolError` (highest priority)
+2. `azcore.ResponseError` (auto-detected Azure SDK errors)
+3. gRPC status (host-originated metadata and auth classification)
+4. Fallback (unclassified)
 
 Because Go's `errors.As` walks from outermost to innermost, classifying near the outer orchestration layer naturally produces the intended classification.
 

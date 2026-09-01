@@ -648,7 +648,7 @@ Once installed the extension registers a suite of commands under the `x` namespa
 
 Usage: `azd x init`
 
-- Collects information for the extension and scaffolds and extension in a specified language of choice.
+- Collects information for the extension and scaffolds an extension in a specified language of choice.
 - Go is the recommended language and is preselected in the language prompt; it has the most complete and actively maintained template.
 - Creates local extension source if it doesn't already exist
 - Builds initial binaries for extension

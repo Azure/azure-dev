@@ -845,7 +845,7 @@ func TestGetAgent_StandardContractOmitsDigitalWorkerPreview(t *testing.T) {
 	}
 	client := newTestClient("https://test.example.com/api/projects/proj", transport)
 
-	_, err := client.GetAgent(t.Context(), "simple-agent", "v1")
+	_, err := client.GetAgent(t.Context(), "simple-agent", "v1", false)
 	require.NoError(t, err)
 	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
 }
@@ -857,7 +857,7 @@ func TestGetAgent_DigitalWorkerContract(t *testing.T) {
 	}
 	client := newTestClient("https://test.example.com/api/projects/proj", transport)
 
-	got, err := client.GetAgentWithDigitalWorkerType(t.Context(), "worker", "v1")
+	got, err := client.GetAgent(t.Context(), "worker", "v1", true)
 	require.NoError(t, err)
 	require.Equal(t, DigitalWorkerTypeM365, got.DigitalWorkerType)
 	require.Equal(t, DigitalWorkerPreviewFeature, transport.lastReq.Header.Get("Foundry-Features"))
@@ -887,7 +887,7 @@ func TestGetAgentVersion_DigitalWorkerContract(t *testing.T) {
 	}
 	client := newTestClient("https://test.example.com/api/projects/proj", transport)
 
-	got, err := client.GetAgentVersionWithDigitalWorkerType(t.Context(), "worker", "1", "v1")
+	got, err := client.GetAgentVersion(t.Context(), "worker", "1", "v1", true)
 	require.NoError(t, err)
 	require.Equal(t, DigitalWorkerTypeM365, got.DigitalWorkerType)
 	require.Equal(t, DigitalWorkerPreviewFeature, transport.lastReq.Header.Get("Foundry-Features"))
@@ -900,7 +900,7 @@ func TestGetAgentVersion_StandardContractOmitsDigitalWorkerPreview(t *testing.T)
 	}
 	client := newTestClient("https://test.example.com/api/projects/proj", transport)
 
-	_, err := client.GetAgentVersion(t.Context(), "simple-agent", "1", "v1")
+	_, err := client.GetAgentVersion(t.Context(), "simple-agent", "1", "v1", false)
 	require.NoError(t, err)
 	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
 }

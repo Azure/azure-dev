@@ -188,8 +188,8 @@ func resolveTeamsPackContext(
 		return nil, err
 	}
 	agentClient := agent_api.NewAgentClient(endpoint, credential)
-	remoteVersion, err := agentClient.GetAgentVersionWithDigitalWorkerType(
-		ctx, agentName, version, agent_api.AgentEndpointAPIVersion,
+	remoteVersion, err := agentClient.GetAgentVersion(
+		ctx, agentName, version, agent_api.AgentEndpointAPIVersion, true,
 	)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)

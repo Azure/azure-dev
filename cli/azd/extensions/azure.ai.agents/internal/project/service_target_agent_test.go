@@ -119,6 +119,7 @@ func (f fakeProjectAgentChecker) GetAgent(
 	context.Context,
 	string,
 	string,
+	bool,
 ) (*agent_api.AgentObject, error) {
 	if f.err != nil {
 		return nil, f.err

@@ -182,7 +182,7 @@ func warnIfAuthChange(
 	noPrompt bool,
 ) error {
 	// Fetch current agent to compare auth config.
-	current, err := client.GetAgent(ctx, agentName, DefaultAgentAPIVersion)
+	current, err := client.GetAgent(ctx, agentName, DefaultAgentAPIVersion, false)
 	if err != nil {
 		// Only ignore 404 (agent doesn't exist yet). Other errors should propagate.
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
@@ -266,7 +266,7 @@ func normalizeEndpointAuthSchemesForDeployedProfile(
 		return nil
 	}
 
-	deployedAgent, err := client.GetAgentWithDigitalWorkerType(ctx, agentName, apiVersion)
+	deployedAgent, err := client.GetAgent(ctx, agentName, apiVersion, true)
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
 			respErr.StatusCode == http.StatusNotFound {

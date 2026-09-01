@@ -202,7 +202,7 @@ func DeployPreparedStandaloneHostedAgent(
 	}
 
 	prepared.progress("Checking existing agent")
-	_, getErr := agentClient.GetAgent(ctx, prepared.definition.Name, agent_api.AgentEndpointAPIVersion)
+	_, getErr := agentClient.GetAgent(ctx, prepared.definition.Name, agent_api.AgentEndpointAPIVersion, false)
 	var agentObject *agent_api.AgentObject
 	if getErr != nil {
 		if responseError, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||

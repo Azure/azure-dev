@@ -108,22 +108,8 @@ func hasDigitalWorkerType(request any) bool {
 	}
 }
 
-// GetAgent retrieves a specific agent by name using the standard contract.
-func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string) (*AgentObject, error) {
-	return c.getAgent(ctx, agentName, apiVersion, false)
-}
-
-// GetAgentWithDigitalWorkerType retrieves a specific agent and opts into the
-// preview contract that returns digital_worker_type.
-func (c *AgentClient) GetAgentWithDigitalWorkerType(
-	ctx context.Context,
-	agentName string,
-	apiVersion string,
-) (*AgentObject, error) {
-	return c.getAgent(ctx, agentName, apiVersion, true)
-}
-
-func (c *AgentClient) getAgent(
+// GetAgent retrieves a specific agent by name.
+func (c *AgentClient) GetAgent(
 	ctx context.Context,
 	agentName string,
 	apiVersion string,
@@ -676,23 +662,8 @@ func (c *AgentClient) zipDeployRequest(
 	return &agentObj, nil
 }
 
-// GetAgentVersion retrieves a specific version of an agent using the standard contract.
-func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersion, apiVersion string) (*AgentVersionObject, error) {
-	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, false)
-}
-
-// GetAgentVersionWithDigitalWorkerType retrieves a specific version and opts
-// into the preview contract that returns digital_worker_type.
-func (c *AgentClient) GetAgentVersionWithDigitalWorkerType(
-	ctx context.Context,
-	agentName string,
-	agentVersion string,
-	apiVersion string,
-) (*AgentVersionObject, error) {
-	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, true)
-}
-
-func (c *AgentClient) getAgentVersion(
+// GetAgentVersion retrieves a specific version of an agent.
+func (c *AgentClient) GetAgentVersion(
 	ctx context.Context,
 	agentName string,
 	agentVersion string,

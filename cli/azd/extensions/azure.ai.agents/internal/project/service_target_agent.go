@@ -1556,11 +1556,12 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Read the deployed version so post-deploy behavior uses the service-side
 	// Digital Worker classification rather than only the local authoring intent.
-	deployedVersion, err := agentClient.GetAgentVersionWithDigitalWorkerType(
+	deployedVersion, err := agentClient.GetAgentVersion(
 		ctx,
 		result.agentName,
 		result.agentVersion.Version,
 		agent_api.AgentEndpointAPIVersion,
+		true,
 	)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)
@@ -3019,10 +3020,11 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Check if agent already exists (GET /agents/{name})
 	progress("Checking existing agent")
-	existingAgent, getErr := agentClient.GetAgentWithDigitalWorkerType(
+	existingAgent, getErr := agentClient.GetAgent(
 		ctx,
 		agentDef.Name,
 		agent_api.AgentEndpointAPIVersion,
+		true,
 	)
 	var agentResp *agent_api.AgentObject
 
@@ -3394,7 +3396,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		attempt++
 		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
-		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion)
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion, false)
 		if err != nil {
 			lastPollErr = err
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
@@ -3516,7 +3518,7 @@ func reconcileCreateRequestWithDeployedDigitalWorkerType(
 	request *agent_api.CreateAgentRequest,
 	apiVersion string,
 ) (bool, error) {
-	existingAgent, getErr := agentClient.GetAgentWithDigitalWorkerType(ctx, request.Name, apiVersion)
+	existingAgent, getErr := agentClient.GetAgent(ctx, request.Name, apiVersion, true)
 	if getErr != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
 			respErr.StatusCode != http.StatusNotFound {

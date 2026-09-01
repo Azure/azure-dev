@@ -14,7 +14,9 @@ import (
 	"azureaiagent/internal/project"
 )
 
-var deploymentEnvironmentReferencePattern = regexp.MustCompile(`^\$\{[A-Za-z_][A-Za-z0-9_]*\}$`)
+var deploymentEnvironmentReferencePattern = regexp.MustCompile(
+	`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`,
+)
 
 const (
 	deploymentNameEnvKey = "AZURE_AI_MODEL_DEPLOYMENT_NAME"

@@ -113,6 +113,43 @@ func TestPersistDeploymentEnvironmentReservesExistingCanonicalIndices(
 	assert.Equal(t, "${AZURE_AI_MODEL_DEPLOYMENT_NAME}", references[0].Name)
 }
 
+func TestPersistDeploymentEnvironmentReservesExistingCanonicalBase(t *testing.T) {
+	existing := project.Deployment{
+		Name: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+		Model: project.DeploymentModel{
+			Name:    "${AZURE_AI_MODEL_NAME}",
+			Format:  "${AZURE_AI_MODEL_FORMAT}",
+			Version: "${AZURE_AI_MODEL_VERSION}",
+		},
+		Sku: project.DeploymentSku{
+			Name:     "${AZURE_AI_MODEL_SKU_NAME}",
+			Capacity: "${AZURE_AI_MODEL_SKU_CAPACITY}",
+		},
+	}
+	newDeployment := project.Deployment{
+		Name:  "new-chat",
+		Model: project.DeploymentModel{Name: "gpt", Format: "OpenAI", Version: "1"},
+		Sku:   project.DeploymentSku{Name: "Standard", Capacity: 10},
+	}
+	values := map[string]string{}
+	setEnv := func(_ context.Context, key, value string) error {
+		values[key] = value
+		return nil
+	}
+
+	references, err := persistDeploymentEnvironment(
+		t.Context(),
+		setEnv,
+		[]project.Deployment{existing, newDeployment},
+	)
+
+	require.NoError(t, err)
+	assert.NotContains(t, values, "AZURE_AI_MODEL_DEPLOYMENT_NAME")
+	assert.Equal(t, "new-chat", values["AZURE_AI_MODEL_DEPLOYMENT_NAME_2"])
+	assert.Equal(t, existing, references[0])
+	assert.Equal(t, "${AZURE_AI_MODEL_DEPLOYMENT_NAME_2}", references[1].Name)
+}
+
 func TestPersistDeploymentEnvironmentRejectsNonPositiveCapacity(t *testing.T) {
 	for _, capacity := range []any{0, -1, "0", "-1"} {
 		t.Run(fmt.Sprintf("%v", capacity), func(t *testing.T) {

@@ -6,7 +6,6 @@
 package cli
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -162,82 +161,83 @@ func resultsFor(t *testing.T, evalID, runID string) resultsPayload {
 	return payload
 }
 
+// exportedDocument is what `run output export` writes: the run as the service
+// returned it, and every output item under it. The flat formats are gone, so
+// one document is the whole contract.
+type exportedDocument struct {
+	Run struct {
+		ID           string `json:"id"`
+		Status       string `json:"status"`
+		ResultCounts struct {
+			Total  int `json:"total"`
+			Passed int `json:"passed"`
+			Failed int `json:"failed"`
+		} `json:"result_counts"`
+	} `json:"run"`
+	Items []map[string]any `json:"items"`
+}
+
 func TestCLIResultsExport(t *testing.T) {
 	f := sharedEval(t)
 
-	t.Run("json to stdout", func(t *testing.T) {
+	t.Run("json to stdout carries the run and every item", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "run", "output", "export", f.FirstRunID,
 			"--eval", f.EvalID, "--format", "json"))
 
-		var exported struct {
-			ID           string `json:"id"`
-			Status       string `json:"status"`
-			ResultCounts struct {
-				Total  int `json:"total"`
-				Passed int `json:"passed"`
-				Failed int `json:"failed"`
-			} `json:"result_counts"`
-		}
+		var exported exportedDocument
 		r.JSON(t, &exported)
-		require.Equal(t, f.FirstRunID, exported.ID)
-		require.Equal(t, "completed", exported.Status)
-		require.Equal(t, len(fixtureQueries), exported.ResultCounts.Total)
+		require.Equal(t, f.FirstRunID, exported.Run.ID)
+		require.Equal(t, "completed", exported.Run.Status)
+		require.Equal(t, len(fixtureQueries), exported.Run.ResultCounts.Total)
+		// The export exists to be complete: a run summary without its items is
+		// the partial export this replaced.
+		require.Len(t, exported.Items, len(fixtureQueries),
+			"the export must carry every output item, not just the run")
 	})
 
-	t.Run("csv to stdout", func(t *testing.T) {
+	t.Run("json is the default, so --format is optional", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "run", "output", "export", f.FirstRunID,
-			"--eval", f.EvalID, "--format", "csv"))
+			"--eval", f.EvalID))
 
-		rows, err := csv.NewReader(strings.NewReader(r.Stdout)).ReadAll()
-		require.NoError(t, err, "--format csv must emit parseable CSV:\n%s", r.Stdout)
-		require.Len(t, rows, 2, "a header and one row per criterion")
-		require.Equal(t,
-			[]string{"run_id", "status", "testing_criteria", "passed", "failed"}, rows[0])
-		require.Equal(t, f.FirstRunID, rows[1][0])
-		require.Equal(t, "completed", rows[1][1])
-		require.Equal(t, f.EvaluatorName, rows[1][2])
+		var exported exportedDocument
+		r.JSON(t, &exported)
+		require.Equal(t, f.FirstRunID, exported.Run.ID)
 	})
 
 	t.Run("output-file writes the path instead of stdout", func(t *testing.T) {
 		dir := t.TempDir()
-		path := filepath.Join(dir, "results.csv")
+		path := filepath.Join(dir, "results.json")
 
 		r := requireSuccess(t, runIn(t, dir, "run", "output", "export", f.FirstRunID,
-			"--eval", f.EvalID, "--format", "csv", "--output-file", path))
+			"--eval", f.EvalID, "--output-file", path))
 		require.Empty(t, strings.TrimSpace(r.Stdout),
 			"--output-file redirects the payload; leaving it on stdout too would double it")
 
 		body, err := os.ReadFile(path)
 		require.NoError(t, err)
-		// The same header the assertion above checks on stdout: --output-file
-		// changes where the payload goes, not what it is.
-		require.Contains(t, string(body), "run_id,status,testing_criteria,passed,failed")
-		require.Contains(t, string(body), f.FirstRunID)
+		// --output-file changes where the payload goes, not what it is.
+		var exported exportedDocument
+		require.NoError(t, json.Unmarshal(body, &exported))
+		require.Equal(t, f.FirstRunID, exported.Run.ID)
+		require.Len(t, exported.Items, len(fixtureQueries))
 	})
 
 	t.Run("an unknown format is refused", func(t *testing.T) {
 		r := requireFailure(t, run(t, "run", "output", "export", f.FirstRunID,
 			"--eval", f.EvalID, "--format", "xml"))
 		require.Contains(t, r.Combined(), `--format "xml" is not supported`)
-		// The refusal has to name jsonl too, or it repeats the bug where the
-		// guard advertised a narrower set than the exporter can write.
-		require.Contains(t, r.Combined(), "use csv, json or jsonl")
+		// The refusal has to name what the exporter can actually write, or it
+		// repeats the bug where the guard and the exporter disagreed.
+		require.Contains(t, r.Combined(), "use json")
 	})
 
-	t.Run("jsonl is accepted, not just advertised", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "results.jsonl")
-		requireSuccess(t, run(t, "run", "output", "export", f.FirstRunID,
-			"--eval", f.EvalID, "--format", "jsonl", "--output-file", path))
-
-		body, err := os.ReadFile(path)
-		require.NoError(t, err)
-		lines := strings.Split(strings.TrimSpace(string(body)), "\n")
-		require.NotEmpty(t, lines)
-		// Every line has to stand alone as an object, otherwise it is JSON
-		// wearing a .jsonl name.
-		for _, line := range lines {
-			var row map[string]any
-			require.NoError(t, json.Unmarshal([]byte(line), &row))
+	t.Run("the formats that were dropped are refused, not silently ignored", func(t *testing.T) {
+		for _, format := range []string{"csv", "jsonl"} {
+			t.Run(format, func(t *testing.T) {
+				r := requireFailure(t, run(t, "run", "output", "export", f.FirstRunID,
+					"--eval", f.EvalID, "--format", format))
+				require.Contains(t, r.Combined(), `is not supported`)
+			})
 		}
 	})
 }

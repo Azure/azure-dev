@@ -15,6 +15,7 @@ import (
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -389,7 +390,29 @@ func resolveAgentToolboxProperties(
 	projectRoot string,
 	source string,
 ) (map[string]any, error) {
-	return resolveAgentConnectionProperties(props, projectRoot, source)
+	if props == nil || len(props.GetFields()) == 0 {
+		return nil, nil
+	}
+
+	raw := props.AsMap()
+	if _, hasRootRef := raw["$ref"]; hasRootRef {
+		return resolveAgentConnectionProperties(props, projectRoot, source)
+	}
+
+	toolboxes, hasToolboxes := raw["toolboxes"]
+	if !hasToolboxes {
+		return raw, nil
+	}
+
+	resolved, err := foundry.ResolveFileRefs(
+		map[string]any{"toolboxes": toolboxes},
+		projectRoot,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", source, err)
+	}
+	raw["toolboxes"] = resolved["toolboxes"]
+	return raw, nil
 }
 
 func resolveToolboxServiceProperties(

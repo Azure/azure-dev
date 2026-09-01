@@ -682,6 +682,78 @@ func TestAssembleState_InlineToolboxSkipsUnusedLegacyRef(t *testing.T) {
 	assert.Equal(t, 1, src.calls["dev/TOOLBOX_INLINE_TOOLS_MCP_ENDPOINT"])
 }
 
+func TestAssembleState_ToolboxCollectionIgnoresUnrelatedRefs(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeManifest(t, projectRoot, "src/agent", `
+resources:
+  - name: valid-tools
+    kind: toolbox
+`)
+	agent := newAgentService(t, map[string]any{
+		"kind": "hostedAgent",
+		"connections": []any{
+			map[string]any{"$ref": "missing-connection.yaml"},
+		},
+	})
+	agent.RelativePath = "src/agent"
+
+	src := &fakeSource{
+		envName: "dev",
+		calls:   make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.NotEmpty(t, errs)
+	require.Len(t, state.ConnectionLoadErrors, 1)
+	require.Empty(t, state.ToolboxLoadErrors)
+	require.True(t, state.ToolboxEndpointsChecked)
+	require.Equal(t, []string{"valid-tools"}, toolboxNames(state.Toolboxes))
+	require.Equal(t, 1, src.calls["dev/TOOLBOX_VALID_TOOLS_MCP_ENDPOINT"])
+}
+
+func TestAssembleState_DisabledAgentIgnoresUnrelatedRefs(t *testing.T) {
+	t.Parallel()
+
+	agent := newAgentService(t, map[string]any{
+		"kind":      "hostedAgent",
+		"toolboxes": []any{"disabled-tools"},
+		"connections": []any{
+			map[string]any{"$ref": "missing-connection.yaml"},
+		},
+	})
+	agent.Name = "disabled-agent"
+
+	src := &fakeSource{
+		envName: "dev",
+		configValues: map[string]*structpb.Value{
+			"disabled-agent/condition": structpb.NewBoolValue(false),
+		},
+		calls: make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"disabled-agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.NotEmpty(t, errs)
+	require.Empty(t, state.Toolboxes)
+	require.Empty(t, state.ToolboxLoadErrors)
+	require.Empty(t, state.ConnectionLoadErrors)
+	require.False(t, state.ToolboxEndpointsChecked)
+	require.Equal(t, 0, src.calls["dev/TOOLBOX_DISABLED_TOOLS_MCP_ENDPOINT"])
+}
+
 func TestAssembleState_InvalidBundledToolboxIsReported(t *testing.T) {
 	t.Parallel()
 

@@ -179,7 +179,6 @@ func ejectExistingProjectInfra(
 		)
 	}
 
-	// #nosec G301
 	stageDir, err := os.MkdirTemp(projectRoot, ".azd-foundry-eject-*")
 	if err != nil {
 		return exterrors.Internal(

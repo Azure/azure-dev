@@ -579,10 +579,10 @@ func PortalLinkAfterRows(url string) string {
 }
 
 // ExportFormatUnsupported reports an --format the export command cannot write.
-func ExportFormatUnsupported(format, csv, json, jsonl string) error {
+func ExportFormatUnsupported(format string, supported ...string) error {
 	return fmt.Errorf(
-		"--format %q is not supported; use %s, %s or %s",
-		format, csv, json, jsonl)
+		"--format %q is not supported; use %s",
+		format, strings.Join(supported, ", "))
 }
 
 // FailOnInvalid reports a --fail-on value that is neither form of threshold.

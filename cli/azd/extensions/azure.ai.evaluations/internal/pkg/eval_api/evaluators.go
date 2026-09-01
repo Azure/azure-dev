@@ -5,12 +5,15 @@ package eval_api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+
+	"azureaieval/internal/messages"
 )
 
 // EvaluatorTypeBuiltin selects the platform-provided evaluators.
@@ -293,4 +296,55 @@ func (c *EvalClient) GetOutputItem(
 		pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID), url.PathEscape(itemID),
 	)
 	return doRequestTyped[OutputItem](c, ctx, http.MethodGet, path, nil, nil, "")
+}
+
+// GetRunRaw reads a run exactly as the service sent it.
+//
+// The typed models carry what the CLI renders, which is not everything the
+// service returns: an export built from them silently drops job logs, per-model
+// usage, durations and any field added after this client was written. An export
+// is the machine path, so it hands back what arrived rather than this client's
+// view of it.
+func (c *EvalClient) GetRunRaw(ctx context.Context, evalID, runID string) (json.RawMessage, error) {
+	path := fmt.Sprintf(
+		"%s/%s/runs/%s", pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID))
+	body, err := c.doRequest(ctx, http.MethodGet, path, nil, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(body), nil
+}
+
+// ListOutputItemsRaw reads every evaluated row as the service sent it, following
+// the same cursor the typed listing follows.
+func (c *EvalClient) ListOutputItemsRaw(
+	ctx context.Context,
+	evalID, runID string,
+) ([]json.RawMessage, error) {
+	path := fmt.Sprintf(
+		"%s/%s/runs/%s/output_items",
+		pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID),
+	)
+
+	var all []json.RawMessage
+	err := collectPages(0, func(query map[string]string) (int, bool, string, error) {
+		body, err := c.doRequest(ctx, http.MethodGet, path, query, nil, "")
+		if err != nil {
+			return 0, false, "", err
+		}
+		var page struct {
+			Data    []json.RawMessage `json:"data"`
+			HasMore bool              `json:"has_more"`
+			LastID  string            `json:"last_id"`
+		}
+		if err := json.Unmarshal(body, &page); err != nil {
+			return 0, false, "", messages.ParsingResponse(err)
+		}
+		all = append(all, page.Data...)
+		return len(page.Data), page.HasMore, page.LastID, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return all, nil
 }

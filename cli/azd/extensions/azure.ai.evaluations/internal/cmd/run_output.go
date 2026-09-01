@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -207,23 +206,31 @@ func newRunOutputShowCommand() *cobra.Command {
 	return cmd
 }
 
-// writeExport renders a run in the requested export format.
+// writeExport writes the complete result document for a run.
 //
 // Separate from the command so the file path can close explicitly and report
 // the failure. A deferred Close cannot reach an unnamed return, so discarding
 // it exits 0 over an export that stops mid-row.
-func writeExport(w io.Writer, format string, run *eval_api.OpenAIEvalRun) error {
-	switch format {
-	case formatCSV:
-		return writeResultsCSV(w, run)
-	case formatJSON:
-		return emitJSON(w, run)
-	case formatJSONL:
-		return writeResultsJSONL(w, run)
-	default:
-		return messages.ExportFormatUnsupported(
-			format, formatCSV, formatJSON, formatJSONL)
-	}
+//
+// One format, and it is the whole result. The CSV and JSONL this replaced were
+// not other serializations of this document -- they were a per-evaluator
+// summary carrying passed and failed only, so a run with errored or skipped
+// results exported numbers that did not add up to it, and no format carried the
+// rows at all. A projection is a `jq` away from this file; the data it needs is
+// not recoverable from a summary.
+func writeExport(w io.Writer, doc exportDocument) error {
+	return emitJSON(w, doc)
+}
+
+// exportDocument is the machine-readable result of a run: the run as the
+// service described it, and every evaluated row beneath it.
+//
+// Both are held as raw service JSON rather than the typed models, which carry
+// only what the CLI renders. Exporting through them dropped job logs, per-model
+// usage and anything the service added after this client was written.
+type exportDocument struct {
+	Run   json.RawMessage   `json:"run"`
+	Items []json.RawMessage `json:"items"`
 }
 
 func newRunOutputExportCommand() *cobra.Command {
@@ -237,18 +244,21 @@ func newRunOutputExportCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "export [run]",
-		Short: "Export run results as CSV, JSON or JSONL.",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Export the complete run results as JSON.",
+		Long: `Export the complete results of a run as one JSON document.
+
+The document holds the run exactly as the service described it, and every
+evaluated row beneath it: the item that was evaluated, what the target
+answered, and each evaluator's score, verdict and reason.
+
+This is the machine-readable path. ` + "`run output list`" + ` is the readable one.
+Derive any other shape from this file, for example:
+
+  jq -c '.items[]' results.json > results.jsonl`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			format = strings.ToLower(format)
-			// Checked against the same set the writer switches on: this guard
-			// used to name only json and csv, so --format jsonl was refused by a
-			// CLI whose own help offered it.
-			switch format {
-			case formatCSV, formatJSON, formatJSONL:
-			default:
-				return messages.ExportFormatUnsupported(
-					format, formatCSV, formatJSON, formatJSONL)
+			if f := strings.ToLower(strings.TrimSpace(format)); f != "" && f != formatJSON {
+				return messages.ExportFormatUnsupported(format, formatJSON)
 			}
 
 			ctx := cmd.Context()
@@ -272,15 +282,30 @@ func newRunOutputExportCommand() *cobra.Command {
 				return err
 			}
 
+			// Read back raw, so the export carries the service's own fields
+			// rather than the subset these models decode.
+			rawRun, err := ec.evalClient.GetRunRaw(ctx, evalID, run.ID)
+			if err != nil {
+				return messages.ReadingRun(run.ID, err)
+			}
+			rawItems, err := ec.evalClient.ListOutputItemsRaw(ctx, evalID, run.ID)
+			if err != nil {
+				return messages.ReadingRunResults(run.ID, err)
+			}
+			if rawItems == nil {
+				rawItems = []json.RawMessage{}
+			}
+			doc := exportDocument{Run: rawRun, Items: rawItems}
+
 			if outFile == "" {
-				return writeExport(cmd.OutOrStdout(), format, run)
+				return writeExport(cmd.OutOrStdout(), doc)
 			}
 
 			f, createErr := os.Create(outFile)
 			if createErr != nil {
 				return messages.Creating(outFile, createErr)
 			}
-			writeErr := writeExport(f, format, run)
+			writeErr := writeExport(f, doc)
 			// The last write is flushed by Close, so discarding its error
 			// reports success over a file that stops mid-row.
 			closeErr := f.Close()
@@ -295,8 +320,8 @@ func newRunOutputExportCommand() *cobra.Command {
 	}
 
 	addRunFlag(cmd, &runFlag)
-	cmd.Flags().StringVar(&format, "format", formatCSV,
-		fmt.Sprintf("Output format: %s, %s or %s.", formatCSV, formatJSON, formatJSONL))
+	cmd.Flags().StringVar(&format, "format", formatJSON,
+		fmt.Sprintf("Output format. Only %s is supported.", formatJSON))
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write to this path instead of stdout.")
 	addEvalFlag(cmd, &groupName)
 	// Registered wherever a declared name is resolved, so a configuration
@@ -679,69 +704,9 @@ func truncate(s string, n int) string {
 	return s[:n-1] + "…"
 }
 
-func writeResultsCSV(w io.Writer, run *eval_api.OpenAIEvalRun) error {
-	cw := csv.NewWriter(w)
-
-	// Named as the service names it, and as the jsonl export already did, so a
-	// pipeline reading both formats needs one spelling rather than two.
-	if err := cw.Write([]string{"run_id", "status", "testing_criteria", "passed", "failed"}); err != nil {
-		return err
-	}
-	if len(run.PerTestingCriteria) == 0 {
-		if err := cw.Write([]string{run.ID, run.Status, "", "", ""}); err != nil {
-			return err
-		}
-		return flushCSV(cw)
-	}
-	for _, cr := range run.PerTestingCriteria {
-		if err := cw.Write([]string{
-			run.ID, run.Status, cr.TestingCriteria,
-			strconv.Itoa(cr.Passed), strconv.Itoa(cr.Failed),
-		}); err != nil {
-			return err
-		}
-	}
-	return flushCSV(cw)
-}
-
-// flushCSV reports what the buffer swallowed.
-//
-// csv.Writer buffers, so a disk that filled or a pipe that closed shows up only
-// in Error() after the final Flush. Deferring the flush and returning nil made
-// `run output export` report success over a file it had not finished writing.
-func flushCSV(cw *csv.Writer) error {
-	cw.Flush()
-	return cw.Error()
-}
-
-// Export formats. csv is the default because the results are a table and a
-// build artifact is normally read by a spreadsheet or a diff.
-const (
-	formatCSV   = "csv"
-	formatJSON  = "json"
-	formatJSONL = "jsonl"
-)
-
-// writeResultsJSONL emits one criterion per line, which is what a downstream
-// job can stream without holding the whole run in memory.
-func writeResultsJSONL(w io.Writer, run *eval_api.OpenAIEvalRun) error {
-	enc := json.NewEncoder(w)
-	if len(run.PerTestingCriteria) == 0 {
-		return enc.Encode(map[string]any{"run_id": run.ID, "status": run.Status})
-	}
-	for _, cr := range run.PerTestingCriteria {
-		if err := enc.Encode(map[string]any{
-			"run_id":           run.ID,
-			"status":           run.Status,
-			"testing_criteria": cr.TestingCriteria,
-			"passed":           cr.Passed,
-			"failed":           cr.Failed,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+// Export format. Only JSON: the results are a nested document, and the flat
+// formats that used to sit beside it exported a different object.
+const formatJSON = "json"
 
 // criterionPassRate reports a criterion's rate over what it actually scored.
 //

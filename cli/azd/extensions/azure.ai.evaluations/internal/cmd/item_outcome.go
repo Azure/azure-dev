@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -127,12 +128,12 @@ func parseStatusFilter(raw string) (map[string]bool, error) {
 		return nil, nil
 	}
 	keep := map[string]bool{}
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		name := strings.ToLower(strings.TrimSpace(part))
 		if name == "" {
 			continue
 		}
-		if !sliceHas(itemStatuses, name) {
+		if !slices.Contains(itemStatuses, name) {
 			return nil, messages.UnknownItemStatus(name, itemStatuses)
 		}
 		keep[name] = true
@@ -141,13 +142,4 @@ func parseStatusFilter(raw string) (map[string]bool, error) {
 		return nil, nil
 	}
 	return keep, nil
-}
-
-func sliceHas(all []string, want string) bool {
-	for _, v := range all {
-		if v == want {
-			return true
-		}
-	}
-	return false
 }

@@ -37,9 +37,9 @@ func liveDatasetClient(t *testing.T) *dataset_api.DatasetClient {
 	return dataset_api.NewDatasetClient(endpoint, retryingCredential{inner: cred})
 }
 
-// writeRows puts a one-row JSONL file in its own directory, which is what the
-// upload path reads from.
-func writeRows(t *testing.T, answer string) string {
+// writeAnswerRowsDir puts a one-row JSONL file in its own directory and returns
+// that directory, which is what the upload path reads from.
+func writeAnswerRowsDir(t *testing.T, answer string) string {
 	t.Helper()
 	dir := t.TempDir()
 	row := fmt.Sprintf(`{"query":"q","response":%q}`+"\n", answer)
@@ -62,7 +62,7 @@ func TestLiveDatasetVersionIsNeverOverwritten(t *testing.T) {
 	name := fmt.Sprintf("azdlive_ds_immutable_%d", time.Now().UnixNano())
 
 	first, err := client.UploadVersion(
-		ctx, name, "1", writeRows(t, "original"), ProjectEndpointAPIVersion)
+		ctx, name, "1", writeAnswerRowsDir(t, "original"), ProjectEndpointAPIVersion)
 	require.NoError(t, err)
 	require.Equal(t, "1", first.Version)
 	t.Cleanup(func() {
@@ -71,7 +71,7 @@ func TestLiveDatasetVersionIsNeverOverwritten(t *testing.T) {
 	})
 
 	_, err = client.UploadVersion(
-		ctx, name, "1", writeRows(t, "replacement"), ProjectEndpointAPIVersion)
+		ctx, name, "1", writeAnswerRowsDir(t, "replacement"), ProjectEndpointAPIVersion)
 	require.Error(t, err,
 		"publishing over an existing dataset version must be refused, not accepted")
 	assert.True(t, dataset_api.IsVersionConflict(err),
@@ -87,7 +87,7 @@ func TestLiveDatasetUpdateAddsAVersion(t *testing.T) {
 	name := fmt.Sprintf("azdlive_ds_next_%d", time.Now().UnixNano())
 
 	first, err := client.UploadNextVersion(
-		ctx, name, "", writeRows(t, "one"), ProjectEndpointAPIVersion)
+		ctx, name, "", writeAnswerRowsDir(t, "one"), ProjectEndpointAPIVersion)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = client.DeleteDatasetVersion(
@@ -98,7 +98,7 @@ func TestLiveDatasetUpdateAddsAVersion(t *testing.T) {
 	// window where a second upload could be told the dataset is new and
 	// restart at the version the first one just took.
 	second, err := client.UploadNextVersion(
-		ctx, name, "", writeRows(t, "two"), ProjectEndpointAPIVersion)
+		ctx, name, "", writeAnswerRowsDir(t, "two"), ProjectEndpointAPIVersion)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = client.DeleteDatasetVersion(

@@ -109,6 +109,12 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Read the rows before the first network call, so a malformed file is
+			// reported against the file rather than from behind whatever the
+			// service happened to say first.
+			if _, err := dataset_api.ReadFirstJSONLFile(localDir); err != nil {
+				return err
+			}
 
 			ctx := cmd.Context()
 			ec, err := newDatasetContext(ctx, endpointFlg)
@@ -468,6 +474,12 @@ func confirmDelete(
 		},
 	})
 	if err != nil {
+		// A question that could not be drawn at all -- stdout redirected, no
+		// console attached -- fails in the transport, and the caller cannot act
+		// on a gRPC status. They can act on --force.
+		if exterrors.IsPromptUnavailable(err) {
+			return false, messages.DeleteNeedsForce(name, version)
+		}
 		return false, exterrors.FromPrompt(err, "confirming the delete")
 	}
 	return resp.GetValue(), nil

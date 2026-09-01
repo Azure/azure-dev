@@ -141,6 +141,18 @@ func FromPrompt(err error, contextMsg string) error {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// IsPromptUnavailable reports a prompt that could not be shown at all, as
+// opposed to one the caller answered or was not allowed to make. Anything that
+// is neither a cancellation nor an auth refusal reached the host and failed
+// there, which leaves the question unasked.
+func IsPromptUnavailable(err error) bool {
+	if err == nil || IsCancellation(err) {
+		return false
+	}
+	st, ok := status.FromError(err)
+	return !ok || st.Code() != codes.Unauthenticated
+}
+
 // IsCancellation reports whether err represents user cancellation
 // ([context.Canceled] or gRPC [codes.Canceled]).
 func IsCancellation(err error) bool {

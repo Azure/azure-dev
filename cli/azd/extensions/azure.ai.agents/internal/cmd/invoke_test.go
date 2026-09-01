@@ -24,6 +24,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"google.golang.org/grpc"
 )
 
@@ -755,6 +756,176 @@ func TestResolveProtocol_ExplicitFlag(t *testing.T) {
 				t.Errorf("resolveProtocol() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRemoteInvocableProtocols(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		endpoint *agent_api.AgentEndpoint
+		want     []agent_api.AgentProtocol
+	}{
+		{
+			name: "filters non-invocable protocols",
+			endpoint: &agent_api.AgentEndpoint{
+				ProtocolConfiguration: &agent_api.ProtocolConfiguration{
+					Activity:    &agent_api.ActivityProtocolConfiguration{},
+					MCP:         &agent_api.MCPProtocolConfiguration{},
+					Invocations: &agent_api.InvocationsProtocolConfiguration{},
+				},
+			},
+			want: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolInvocations,
+			},
+		},
+		{
+			name: "reads legacy protocol list",
+			endpoint: &agent_api.AgentEndpoint{
+				Protocols: []agent_api.AgentEndpointProtocol{
+					agent_api.AgentEndpointProtocolResponses,
+					agent_api.AgentEndpointProtocolActivity,
+				},
+			},
+			want: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := remoteInvocableProtocols(tt.endpoint)
+			if len(got) != len(tt.want) {
+				t.Fatalf("remoteInvocableProtocols() = %v, want %v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("protocol[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestSelectRemoteInvokeProtocol(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		deployed []agent_api.AgentProtocol
+		local    []agent_api.AgentProtocol
+		want     agent_api.AgentProtocol
+		wantErr  bool
+	}{
+		{
+			name: "unique deployed protocol",
+			deployed: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolInvocations,
+			},
+			local: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+			},
+			want: agent_api.AgentProtocolInvocations,
+		},
+		{
+			name: "local definition disambiguates deployed protocols",
+			deployed: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+				agent_api.AgentProtocolInvocations,
+			},
+			local: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolInvocations,
+			},
+			want: agent_api.AgentProtocolInvocations,
+		},
+		{
+			name: "multiple deployed protocols require explicit choice",
+			deployed: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+				agent_api.AgentProtocolInvocations,
+			},
+			wantErr: true,
+		},
+		{
+			name: "stale local protocol does not disambiguate",
+			deployed: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+				agent_api.AgentProtocolInvocations,
+			},
+			local: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolA2A,
+			},
+			wantErr: true,
+		},
+		{
+			name:    "no deployed protocol",
+			local: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := selectRemoteInvokeProtocol(tt.deployed, tt.local)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				if _, ok := errors.AsType[*azdext.LocalError](err); !ok {
+					t.Fatalf("error type = %T, want *azdext.LocalError", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("protocol = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveDeployedProtocolLookupFailure(t *testing.T) {
+	original := getRemoteAgent
+	t.Cleanup(func() {
+		getRemoteAgent = original
+	})
+
+	lookupErr := errors.New("deployed agent unavailable")
+	getRemoteAgent = func(
+		context.Context,
+		*remoteContext,
+	) (*agent_api.AgentObject, error) {
+		return nil, lookupErr
+	}
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	_, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{name: "agent"},
+	)
+	if err == nil {
+		t.Fatal("expected lookup error, got nil")
+	}
+	if !errors.Is(err, lookupErr) {
+		t.Errorf("error %q does not wrap lookup error", err)
+	}
+	if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+		t.Fatal("lookup error should not be classified as validation")
+	}
+	suggestion, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
+	if !ok {
+		t.Fatalf("error type = %T, want *errorhandler.ErrorWithSuggestion", err)
+	}
+	if !strings.Contains(suggestion.Suggestion, "--protocol") {
+		t.Errorf("suggestion = %q, want --protocol workaround", suggestion.Suggestion)
 	}
 }
 

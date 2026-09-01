@@ -1148,6 +1148,72 @@ func resolveAgentProtocol(
 	return protocol, svc.Name, nil
 }
 
+func resolveAgentInvocableProtocols(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	name string,
+	noPrompt bool,
+) ([]agent_api.AgentProtocol, error) {
+	svc, proj, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not resolve agent service in azd project: %s",
+				err,
+			),
+			"run from your project directory and ensure "+
+				"azure.yaml contains an azure.ai.agent service",
+		)
+	}
+
+	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not resolve the agent definition for %s: %s",
+				svc.Name,
+				err,
+			),
+			"ensure the agent definition is present in azure.yaml or "+
+				"run `azd ai agent init`",
+		)
+	}
+	if source.IsLegacy() {
+		projectpkg.WarnLegacyAgentShape(source)
+	}
+	if !isHosted {
+		return nil, exterrors.Validation(
+			exterrors.CodeUnsupportedAgentKind,
+			fmt.Sprintf("agent service %s is not a hosted agent", svc.Name),
+			"only hosted agents can be invoked",
+		)
+	}
+
+	var protocols []agent_api.AgentProtocol
+	seen := make(map[agent_api.AgentProtocol]struct{})
+	for _, rec := range hosted.Protocols {
+		protocol := agent_api.AgentProtocol(strings.TrimSpace(rec.Protocol))
+		if protocol == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"agent definition declares a protocol entry with an "+
+					"empty protocol field",
+				"set a non-empty protocol value in the agent definition",
+			)
+		}
+		if protocol.IsInvocable() {
+			if _, ok := seen[protocol]; ok {
+				continue
+			}
+			seen[protocol] = struct{}{}
+			protocols = append(protocols, protocol)
+		}
+	}
+	return protocols, nil
+}
+
 // protocolFromContainerAgent extracts the protocol to use for invocation from a
 // resolved agent definition. Returns an error with a contextual suggestion when
 // the definition does not declare exactly one invocable protocol.

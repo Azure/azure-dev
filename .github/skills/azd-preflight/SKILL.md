@@ -2,11 +2,11 @@
 name: azd-preflight
 license: MIT
 metadata:
-  version: "1.2"
+  version: "1.3"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or fix strategies.
 description: >-
   **WORKFLOW SKILL** — Runs `mage preflight` from `cli/azd/` and auto-fixes failures.
-  Covers linting, formatting, copyright, spelling, build, and tests.
+  Covers linting, formatting, copyright, spelling, build, tests, and generated pipeline action pins.
   Iterates fix-then-rerun cycles until all checks pass.
 
   INVOKES: mage CLI, go CLI, golangci-lint, cspell, gh CLI, bash/sh, ask_user.
@@ -38,5 +38,6 @@ and re-runs until all checks pass — or escalates to the user when a fix requir
 
 - All 9 preflight checks pass (or user explicitly chose to skip specific checks)
 - Every changed `CHANGELOG.md` passes its targeted spell check
+- When the generated pipeline action manifest changes, `azure-dev.ymlt` and its snapshots are synchronized
 - All auto-applied fixes are saved to disk (not staged or committed — the user decides when to commit)
 - A clear summary of what passed, what was fixed, and what was skipped is displayed

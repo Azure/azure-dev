@@ -98,6 +98,24 @@ For each unknown word:
    file-scoped `overrides` entry in the resolved owning cspell config.
 4. **If uncertain**: Ask the user via `ask_user` whether to fix the spelling or update a dictionary.
 
+## Generated Pipeline Action Pins — Auto-fix
+
+When `cli/azd/resources/pipeline/.github/workflows/azure-dev-actions.yml` changes:
+
+1. Read the `uses:` value and trailing release-version comment for the `checkout`, `setup-azd`,
+   `setup-terraform`, and `setup-dotnet` step IDs.
+2. Validate that each ID maps to its expected action repository and uses a full 40-character SHA.
+3. Update the matching action repository's literal `uses:` line in
+   `cli/azd/resources/pipeline/.github/azure-dev.ymlt`. Do not match by line number or copy a SHA
+   between different action repositories.
+4. Regenerate the pipeline snapshots from `cli/azd/`:
+
+   ```bash
+   UPDATE_SNAPSHOTS=true go test ./pkg/pipeline -run '^Test_promptForCiFiles$'
+   ```
+
+5. Remove `UPDATE_SNAPSHOTS` from the environment and rerun the same test without update mode.
+
 ## Build (`go build`) — Analyze and Fix
 
 Re-run the build:

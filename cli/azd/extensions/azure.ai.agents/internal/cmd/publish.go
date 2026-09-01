@@ -292,10 +292,13 @@ func effectiveDigitalWorkerPublishConfig(
 	if flags.optionalPermissionScopesSet {
 		effective.OptionalPermissionScopes = make([]project.Microsoft365PermissionScopes, 0, len(permissions))
 		for _, permission := range permissions {
-			effective.OptionalPermissionScopes = append(effective.OptionalPermissionScopes, project.Microsoft365PermissionScopes{
-				ResourceAppID: permission.ResourceAppID,
-				Scopes:        append([]string(nil), permission.Scopes...),
-			})
+			effective.OptionalPermissionScopes = append(
+				effective.OptionalPermissionScopes,
+				project.Microsoft365PermissionScopes{
+					ResourceAppID: permission.ResourceAppID,
+					Scopes:        append([]string(nil), permission.Scopes...),
+				},
+			)
 		}
 	}
 	if flags.accessBoundariesSet || flags.clearAccessBoundaries {

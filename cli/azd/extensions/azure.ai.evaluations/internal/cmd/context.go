@@ -281,29 +281,6 @@ func (ec *evalContext) privateValue(ctx context.Context, key string) string {
 	return ec.loadPrivateState(ctx)[key]
 }
 
-// setEnvValue persists a value into the active azd environment.
-//
-// Reserved for values a user is meant to see. Private reconciliation state goes
-// through setPrivate, which keeps it out of `azd env get-values`.
-func (ec *evalContext) setEnvValue(ctx context.Context, key, value string) error {
-	if ec.envName == "" {
-		envResp, err := ec.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-		if err != nil || envResp == nil || envResp.Environment == nil {
-			return messages.NoAzdEnvironmentToWrite(key)
-		}
-		ec.envName = envResp.Environment.Name
-	}
-	_, err := ec.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: ec.envName,
-		Key:     key,
-		Value:   value,
-	})
-	if err != nil {
-		return messages.WritingEnvValue(key, err)
-	}
-	return nil
-}
-
 // confirmedNoAzdEnvironment reports that azd answered, and the answer was that
 // there is no current environment.
 //
@@ -495,7 +472,6 @@ func (ec *evalContext) withPortalLink(
 
 // azd environment keys written by this extension.
 const (
-	envKeyFingerprintPrefix = "EVAL_FINGERPRINT_"
 	// envKeyEvalPath records where `init` put the configuration, so the
 	// commands that read it afterwards do not each need --path repeated.
 	envKeyEvalPath = "EVAL_CONFIG_PATH"

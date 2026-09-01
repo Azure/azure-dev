@@ -232,6 +232,7 @@ func TestWriteExistingProjectTerraformAcrModes(t *testing.T) {
 			} else {
 				assert.NoFileExists(t, registryPath)
 			}
+			// #nosec G304
 			outputs, err := os.ReadFile(filepath.Join(dir, "outputs.tf"))
 			require.NoError(t, err)
 			assert.Contains(t, string(outputs), `AZD_FOUNDRY_ACR_MODE`)
@@ -379,6 +380,7 @@ func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 
 func mustReadProjectFile(t *testing.T, root string) []byte {
 	t.Helper()
+	// #nosec G304
 	raw, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
 	require.NoError(t, err)
 	return raw

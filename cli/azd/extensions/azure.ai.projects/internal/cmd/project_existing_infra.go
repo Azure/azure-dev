@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,9 +125,7 @@ func ejectExistingProjectInfra(
 
 	environment := map[string]string{}
 	if len(environments) > 0 && environments[0] != nil {
-		for key, value := range environments[0] {
-			environment[key] = value
-		}
+		maps.Copy(environment, environments[0])
 	}
 	if strings.TrimSpace(endpoint) != "" {
 		environment["FOUNDRY_PROJECT_ENDPOINT"] = endpoint
@@ -180,6 +179,7 @@ func ejectExistingProjectInfra(
 		)
 	}
 
+	// #nosec G301
 	stageDir, err := os.MkdirTemp(projectRoot, ".azd-foundry-eject-*")
 	if err != nil {
 		return exterrors.Internal(
@@ -326,6 +326,7 @@ func installProjectEjectStage(
 			break
 		}
 	}
+	// #nosec G301
 	if err := os.MkdirAll(parent, 0755); err != nil {
 		return func() error { return nil }, fmt.Errorf(
 			"create infrastructure parent directory: %w", err,
@@ -371,6 +372,7 @@ func installProjectEjectStage(
 	if err := os.Rename(stageDir, targetDir); err != nil {
 		var restoreErr error
 		if emptyTarget {
+			// #nosec G301
 			restoreErr = os.Mkdir(targetDir, 0755)
 		}
 		for index := len(createdParents) - 1; index >= 0; index-- {
@@ -396,6 +398,7 @@ func installProjectEjectStage(
 			restoreErrs = append(restoreErrs, err)
 		}
 		if emptyTarget {
+			// #nosec G301
 			if err := os.Mkdir(targetDir, 0755); err != nil {
 				restoreErrs = append(restoreErrs, err)
 			}
@@ -582,6 +585,7 @@ func writeExistingProjectBicep(
 	}); err != nil {
 		return fmt.Errorf("render existing-project Bicep template: %w", err)
 	}
+	// #nosec G306
 	if err := os.WriteFile(
 		filepath.Join(infraDir, module+".bicep"),
 		rendered.Bytes(),
@@ -591,6 +595,7 @@ func writeExistingProjectBicep(
 			err)
 	}
 	moduleDir := filepath.Join(infraDir, "modules")
+	// #nosec G301
 	if err := os.MkdirAll(moduleDir, 0755); err != nil {
 		return fmt.Errorf("create existing-project Bicep module directory: %w",
 			err)
@@ -602,6 +607,7 @@ func writeExistingProjectBicep(
 	if err != nil {
 		return fmt.Errorf("read existing-project Bicep module: %w", err)
 	}
+	// #nosec G306
 	if err := os.WriteFile(
 		filepath.Join(moduleDir, "foundry-project.bicep"),
 		projectModule,
@@ -640,6 +646,7 @@ func writeExistingProjectBicep(
 			return fmt.Errorf("render container registry Bicep template: %w",
 				err)
 		}
+		// #nosec G306
 		if err := os.WriteFile(
 			filepath.Join(moduleDir, "container-registry.bicep"),
 			registry.Bytes(),
@@ -651,9 +658,7 @@ func writeExistingProjectBicep(
 	}
 
 	outputParams := map[string]any{}
-	for key, value := range params {
-		outputParams[key] = value
-	}
+	maps.Copy(outputParams, params)
 	outputParams["projectResourceId"] = "${AZURE_AI_PROJECT_ID}"
 	outputParams["projectEndpoint"] = "${FOUNDRY_PROJECT_ENDPOINT}"
 	delete(outputParams, "includeAcr")
@@ -726,6 +731,7 @@ func writeExistingProjectTerraform(
 		if err != nil {
 			return fmt.Errorf("read Terraform template %s: %w", name, err)
 		}
+		// #nosec G306
 		if err := os.WriteFile(
 			filepath.Join(infraDir, name), data, 0644,
 		); err != nil {
@@ -754,6 +760,7 @@ func writeExistingProjectTerraform(
 		if err != nil {
 			return fmt.Errorf("read Terraform registry template: %w", err)
 		}
+		// #nosec G306
 		if err := os.WriteFile(
 			filepath.Join(infraDir, "container-registry.tf"),
 			data, 0644,
@@ -784,6 +791,7 @@ func writeExistingProjectTerraform(
 	}); err != nil {
 		return fmt.Errorf("render Terraform outputs: %w", err)
 	}
+	// #nosec G306
 	if err := os.WriteFile(
 		filepath.Join(infraDir, "outputs.tf"),
 		rendered.Bytes(), 0644,
@@ -791,6 +799,7 @@ func writeExistingProjectTerraform(
 		return fmt.Errorf("write Terraform outputs: %w", err)
 	}
 
+	// #nosec G101
 	tfvars := map[string]any{
 		"subscription_id":              "${AZURE_SUBSCRIPTION_ID}",
 		"tenant_id":                    "${AZURE_TENANT_ID}",
@@ -829,6 +838,7 @@ func writeExistingProjectTerraform(
 	); err != nil {
 		return fmt.Errorf("write Terraform variables: %w", err)
 	}
+	// #nosec G306
 	if err := os.WriteFile(
 		filepath.Join(infraDir, foundryTerraformMarker),
 		[]byte(foundryTerraformMarkerVersion),

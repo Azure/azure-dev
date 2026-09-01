@@ -114,20 +114,6 @@ func planProjectEnvironment(
 	return environmentPlan{Sets: sets, Unsets: unsets}
 }
 
-func reconcileProjectEnvironment(
-	ctx context.Context,
-	client *azdext.AzdClient,
-	envName string,
-	mode projectMode,
-	project *resolvedProject,
-	identityChanged bool,
-) error {
-	_, err := reconcileProjectEnvironmentWithRollback(
-		ctx, client, envName, mode, project, identityChanged,
-	)
-	return err
-}
-
 func reconcileProjectEnvironmentWithRollback(
 	ctx context.Context,
 	client *azdext.AzdClient,

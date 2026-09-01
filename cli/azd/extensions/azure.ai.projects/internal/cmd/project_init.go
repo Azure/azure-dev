@@ -1975,6 +1975,7 @@ func renderTerraformOutputs(destination string, includeAcr, layer bool) error {
 }
 
 func copyEmbeddedTree(files fs.FS, root, destination string, skip map[string]struct{}) error {
+	// #nosec G301
 	if err := os.MkdirAll(destination, 0755); err != nil {
 		return err
 	}

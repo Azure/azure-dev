@@ -102,8 +102,12 @@ func TestTranslateStatusDetails(t *testing.T) {
 				Value:   []byte{1, 2, 3},
 			},
 			{
-				TypeUrl: "type.googleapis.com/google.rpc.ErrorInfo",
+				TypeUrl: "type.googleapis.com/azd.extensions.v1beta.ServiceErrorDetail",
 				Value:   []byte{4, 5, 6},
+			},
+			{
+				TypeUrl: "type.googleapis.com/google.rpc.ErrorInfo",
+				Value:   []byte{7, 8, 9},
 			},
 		},
 	}).Err()
@@ -114,5 +118,6 @@ func TestTranslateStatusDetails(t *testing.T) {
 	st, ok := status.FromError(translated)
 	require.True(t, ok)
 	require.Equal(t, "type.googleapis.com/azdext.ActionableErrorDetail", st.Proto().Details[0].TypeUrl)
-	require.Equal(t, "type.googleapis.com/google.rpc.ErrorInfo", st.Proto().Details[1].TypeUrl)
+	require.Equal(t, "type.googleapis.com/azdext.ServiceErrorDetail", st.Proto().Details[1].TypeUrl)
+	require.Equal(t, "type.googleapis.com/google.rpc.ErrorInfo", st.Proto().Details[2].TypeUrl)
 }

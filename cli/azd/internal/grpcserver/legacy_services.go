@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver/legacybridge"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
 
 // registerLegacyServices is the only host registration point for the temporary
@@ -14,9 +15,9 @@ func (s *Server) registerLegacyServices() error {
 	return legacybridge.Register(s.grpcServer, map[string]any{
 		azdext.AccountService_ServiceDesc.ServiceName:       s.accountService,
 		azdext.AiModelService_ServiceDesc.ServiceName:       s.aiModelService,
-		azdext.ComposeService_ServiceDesc.ServiceName:       s.composeService,
+		v1beta.ComposeService_ServiceDesc.ServiceName:       s.composeService,
 		azdext.ContainerService_ServiceDesc.ServiceName:     s.containerService,
-		azdext.CopilotService_ServiceDesc.ServiceName:       s.copilotService,
+		v1beta.CopilotService_ServiceDesc.ServiceName:       s.copilotService,
 		azdext.DeploymentService_ServiceDesc.ServiceName:    s.deploymentService,
 		azdext.EnvironmentService_ServiceDesc.ServiceName:   s.environmentService,
 		azdext.EventService_ServiceDesc.ServiceName:         s.eventService,

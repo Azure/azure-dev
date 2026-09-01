@@ -66,8 +66,32 @@ func TestGenerateCodeAllowsAdditiveBetaMethod(t *testing.T) {
 	require.Contains(t, code, "return adaptBetaUnary(")
 	require.Contains(t, code, "a.stable.Shared")
 	require.Contains(t, code, "v1beta.RegisterPreviewServer")
-	require.Contains(t, code, "return a.UnimplementedPreviewServer.OnlyBeta(ctx, req)")
+	require.Contains(t, code, "betaPreview, ok := serviceImplementations[BetaPreview].(v1beta.PreviewServer)")
+	require.Contains(t, code, "v1beta.RegisterPreviewServer(registrar, betaPreview)")
+	require.NotContains(t, code, "type betaPreviewAdapter")
 	require.Contains(t, code, "return validateBetaServiceOverride(")
+}
+
+func TestGenerateCodeRejectsOverrideForBetaOnlyService(t *testing.T) {
+	t.Parallel()
+
+	generated, err := generateCode(nil, map[string]service{
+		"Preview": {
+			name: "Preview",
+			methods: []method{{
+				name:     "OnlyBeta",
+				kind:     unaryMethod,
+				request:  "PreviewRequest",
+				response: "PreviewResponse",
+			}},
+		},
+	})
+	require.NoError(t, err)
+	require.Contains(
+		t,
+		string(generated),
+		"beta-only service Preview uses its native implementation and does not accept an override",
+	)
 }
 
 func TestGenerateCodeRejectsSharedMethodStreamShapeChange(t *testing.T) {

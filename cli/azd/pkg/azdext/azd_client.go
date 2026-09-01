@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	_ "google.golang.org/grpc/encoding/gzip" // registers gzip compressor for gRPC streams
 	"google.golang.org/grpc/metadata"
+
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
 
 type AzdClientOption func(*AzdClient) error
@@ -29,14 +31,14 @@ type AzdClient struct {
 	promptClient        PromptServiceClient
 	deploymentClient    DeploymentServiceClient
 	eventsClient        EventServiceClient
-	composeClient       ComposeServiceClient
+	composeClient       v1beta.ComposeServiceClient
 	workflowClient      WorkflowServiceClient
 	extensionClient     ExtensionServiceClient
 	serviceTargetClient ServiceTargetServiceClient
 	containerClient     ContainerServiceClient
 	accountClient       AccountServiceClient
 	aiClient            AiModelServiceClient
-	copilotClient       CopilotServiceClient
+	copilotClient       v1beta.CopilotServiceClient
 	provisioningClient  ProvisioningServiceClient
 	validationClient    ValidationServiceClient
 }
@@ -211,10 +213,10 @@ func (c *AzdClient) Events() EventServiceClient {
 	return c.eventsClient
 }
 
-// Compose returns the compose service client.
-func (c *AzdClient) Compose() ComposeServiceClient {
+// Compose returns the preview compose service client.
+func (c *AzdClient) Compose() v1beta.ComposeServiceClient {
 	if c.composeClient == nil {
-		c.composeClient = NewComposeServiceClient(c.connection)
+		c.composeClient = v1beta.NewComposeServiceClient(c.connection)
 	}
 
 	return c.composeClient
@@ -278,10 +280,10 @@ func (c *AzdClient) Ai() AiModelServiceClient {
 	return c.aiClient
 }
 
-// Copilot returns the Copilot agent service client.
-func (c *AzdClient) Copilot() CopilotServiceClient {
+// Copilot returns the preview Copilot agent service client.
+func (c *AzdClient) Copilot() v1beta.CopilotServiceClient {
 	if c.copilotClient == nil {
-		c.copilotClient = NewCopilotServiceClient(c.connection)
+		c.copilotClient = v1beta.NewCopilotServiceClient(c.connection)
 	}
 
 	return c.copilotClient

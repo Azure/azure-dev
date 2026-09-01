@@ -436,6 +436,70 @@ func TestAssembleState_CollectsBundledToolboxes(t *testing.T) {
 	}, toolboxSources(state.Toolboxes))
 }
 
+func TestAssembleState_MixedShapeToolboxesPreferKindedNestedConfig(t *testing.T) {
+	t.Parallel()
+
+	agent := newAgentService(t, map[string]any{
+		"toolboxes": []any{"inline-tools"},
+	})
+	agent.Config = mustStruct(t, map[string]any{
+		"kind":      "hostedAgent",
+		"toolboxes": []any{"nested-tools"},
+	})
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.True(t, state.HasToolboxes)
+	require.True(t, state.ToolboxEndpointsChecked)
+	require.Equal(t, []string{"nested-tools"}, toolboxNames(state.Toolboxes))
+	require.Equal(t, []string{"nested-tools"}, toolboxNames(state.MissingToolboxEndpoints))
+}
+
+func TestAssembleState_MixedShapeEmptyInlineFallsBackToManifest(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeManifest(t, projectRoot, "src/agent", `
+resources:
+  - name: legacy-tools
+    kind: toolbox
+`)
+	agent := newAgentService(t, map[string]any{
+		"toolboxes": []any{},
+	})
+	agent.Config = mustStruct(t, map[string]any{
+		"kind": "hostedAgent",
+	})
+	agent.RelativePath = "src/agent"
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.True(t, state.HasToolboxes)
+	require.True(t, state.ToolboxEndpointsChecked)
+	require.Equal(t, []string{"legacy-tools"}, toolboxNames(state.Toolboxes))
+	require.Equal(t, []string{"legacy-tools"}, toolboxNames(state.MissingToolboxEndpoints))
+}
+
 func TestAssembleState_ExplicitEmptyToolboxesSuppressLegacyManifest(t *testing.T) {
 	t.Parallel()
 

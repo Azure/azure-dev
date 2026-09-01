@@ -362,8 +362,7 @@ func resolveAgentToolboxConfig(
 	if err != nil {
 		return nil, false, err
 	}
-	if len(inline) > 0 &&
-		(hasToolboxField(inline) || mapHasToolboxKind(inline)) {
+	if mapHasToolboxKind(inline) {
 		_, explicit := inline["toolboxes"]
 		return inline, explicit, nil
 	}
@@ -383,11 +382,6 @@ func resolveAgentToolboxConfig(
 	}
 	_, explicit := resolved["toolboxes"]
 	return resolved, explicit, nil
-}
-
-func hasToolboxField(values map[string]any) bool {
-	_, found := values["toolboxes"]
-	return found
 }
 
 func resolveAgentToolboxProperties(
@@ -425,9 +419,6 @@ func selectAgentToolboxProperties(
 ) map[string]any {
 	if len(inline) == 0 {
 		return legacy
-	}
-	if _, found := inline["toolboxes"]; found {
-		return inline
 	}
 	if !mapHasToolboxKind(inline) &&
 		mapHasToolboxKind(legacy) {

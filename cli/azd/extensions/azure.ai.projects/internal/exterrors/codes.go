@@ -20,7 +20,6 @@ const (
 	CodeOnDiskParametersInvalid  = "ondisk_parameters_invalid"
 	CodeOnDiskTemplateMissing    = "ondisk_template_missing"
 	CodeArmWhatIfFailed          = "arm_what_if_failed"
-	CodeInvalidExperimentPayload = "invalid_experiment_payload"
 )
 
 // Error codes commonly used for dependency errors.
@@ -34,7 +33,6 @@ const (
 	CodeMissingAzureSubscription    = "missing_azure_subscription_id"
 	CodeMissingAzureLocation        = "missing_azure_location"
 	CodeProvisioningServiceNotFound = "provisioning_service_not_found"
-	CodeExperimentInputReadFailed   = "experiment_input_read_failed"
 )
 
 const (
@@ -42,7 +40,6 @@ const (
 	CodeCredentialCreationFailed = "credential_creation_failed"
 	CodeAuthenticationFailed     = "authentication_failed"
 	CodeTenantLookupFailed       = "tenant_lookup_failed"
-	CodeExperimentRequestFailed  = "experiment_request_failed"
 )
 
 const (
@@ -57,5 +54,4 @@ const (
 	OpCognitiveDeploymentDelete = "cognitive_deployment_delete"
 	OpProjectConnectionDelete   = "project_connection_delete"
 	OpProjectConnectionGet      = "project_connection_get"
-	OpExperimentRequest         = "experiment_request"
 )

@@ -22,8 +22,8 @@ func TestRootIncludesExperimentTrackingCommands(t *testing.T) {
 	}
 
 	assert.True(t, names["run"])
-	assert.True(t, names["ingest"])
-	assert.True(t, names["wandb"])
+	assert.False(t, names["ingest"])
+	assert.False(t, names["wandb"])
 }
 
 func TestRunCommandIncludesAllReadAndAgentSurfaces(t *testing.T) {
@@ -40,13 +40,26 @@ func TestRunCommandIncludesAllReadAndAgentSurfaces(t *testing.T) {
 		"log-records",
 		"logs",
 		"metrics",
-		"spans",
+		"span",
 		"summary",
 		"system-metrics",
 		"trace",
-		"traces",
+		"ingest",
+		"wandb",
 	} {
 		assert.True(t, names[name], "missing run command %q", name)
+	}
+}
+
+func TestTraceCommandIncludesListShowAndChat(t *testing.T) {
+	command := newRunTraceCommand(nil)
+	names := map[string]bool{}
+	for _, child := range command.Commands() {
+		names[child.Name()] = true
+	}
+
+	for _, name := range []string{"list", "show", "chat"} {
+		assert.True(t, names[name], "missing trace command %q", name)
 	}
 }
 
@@ -166,4 +179,17 @@ func TestExperimentCommandsUseJSONOutput(t *testing.T) {
 	for _, command := range commands {
 		assertOutputFlagOptions(t, command, "json", []string{"json"})
 	}
+}
+
+func assertOutputFlagOptions(t *testing.T, cmd *cobra.Command, wantDefault string, wantAllowed []string) {
+	t.Helper()
+	require.NotNil(t, cmd.Annotations)
+	assert.Equal(t, wantDefault, cmd.Annotations["azdext.default/output"])
+
+	var allowed []string
+	require.NoError(t, json.Unmarshal(
+		[]byte(cmd.Annotations["azdext.allowed-values/output"]),
+		&allowed,
+	))
+	assert.Equal(t, wantAllowed, allowed)
 }

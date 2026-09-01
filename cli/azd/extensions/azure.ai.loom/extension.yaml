@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+    - custom-commands
+    - metadata
+description: Inspect and ingest Microsoft Foundry experiment-tracking data. (Preview)
+displayName: Foundry Loom (Preview)
+id: azure.ai.loom
+language: go
+namespace: ai.loom
+tags:
+    - ai
+    - loom
+usage: azd ai loom <command> [options]
+version: 0.1.0-preview
+requiredAzdVersion: ">=1.32.0"
+examples:
+    - name: list runs
+      description: List experiment-tracking runs.
+      usage: azd ai loom run list
+    - name: query spans
+      description: Query spans for an experiment-tracking run.
+      usage: azd ai loom run span query --run-id <run-id>
+    - name: ingest traces
+      description: Ingest an OTLP protobuf trace payload.
+      usage: azd ai loom run ingest traces --run-id <run-id> --file ./traces.pb

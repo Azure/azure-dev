@@ -196,13 +196,13 @@ Metadata requests are unauthenticated when no matching token is set.
 > **Note**: These variables are defined and consumed by individual azd extensions. As the extension
 > ecosystem grows, extension-specific variables may move to each extension's own documentation.
 
-### azure.ai.projects and azure.ai.agents
+### Microsoft Foundry extensions
 
 | Variable | Description |
 | --- | --- |
 | `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID used by the `azure.ai.agents` extension. |
-| `AZURE_AI_PROJECT_API_KEY` | A Microsoft Foundry account API key accepted by the project data plane and used by `azure.ai.projects` experiment-tracking commands. When set in the host process, it takes precedence over bearer authentication. Do not persist this value in project files or source control. |
-| `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.projects` endpoint resolver and the `azure.ai.agents` extension. The projects resolver checks the active azd environment before global project configuration and uses the host shell environment as its final endpoint fallback. |
+| `AZURE_AI_PROJECT_API_KEY` | A Microsoft Foundry account API key accepted by the project data plane and used by `azure.ai.loom` experiment-tracking commands. When set in the host process, it takes precedence over bearer authentication. Do not persist this value in project files or source control. |
+| `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by `azure.ai.projects`, `azure.ai.loom`, and `azure.ai.agents`. The projects and Loom resolvers check the active azd environment before global project configuration and use the host shell environment as their final endpoint fallback. |
 | `AZURE_AI_PROJECT_PRINCIPAL_ID` | The principal ID associated with the Microsoft Foundry project identity. |
 | `AZURE_AI_ACCOUNT_NAME` | The Microsoft Foundry account name associated with the project. |
 | `AZURE_AI_PROJECT_NAME` | The Microsoft Foundry project name. |

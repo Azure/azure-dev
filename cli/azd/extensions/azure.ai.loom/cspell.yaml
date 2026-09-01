@@ -1,0 +1,7 @@
+import: ../../.vscode/cspell.yaml
+words:
+  - exterrors
+  - experimenttracking
+  - filestream
+  - opentelemetry
+  - wandb

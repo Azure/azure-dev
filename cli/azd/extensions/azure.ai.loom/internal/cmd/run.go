@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"azure.ai.projects/internal/experimenttracking"
-	"azure.ai.projects/internal/exterrors"
+	"azure.ai.loom/internal/experimenttracking"
+	"azure.ai.loom/internal/exterrors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -54,10 +54,11 @@ func newExperimentRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd.AddCommand(newRunSystemMetricsCommand(extCtx))
 	cmd.AddCommand(newRunLogsCommand(extCtx))
 	cmd.AddCommand(newRunLogRecordsCommand(extCtx))
-	cmd.AddCommand(newRunTracesCommand(extCtx))
 	cmd.AddCommand(newRunTraceCommand(extCtx))
 	cmd.AddCommand(newRunCompareCommand(extCtx))
 	cmd.AddCommand(newRunSpansCommand(extCtx))
+	cmd.AddCommand(newExperimentIngestCommand(extCtx))
+	cmd.AddCommand(newExperimentWandBCommand(extCtx))
 	return cmd
 }
 
@@ -119,7 +120,7 @@ func newRunLogRecordsCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 }
 
 func newRunTracesCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	return newRunGetCommand(extCtx, "traces", "List traces for a run.", "traces", true)
+	return newRunGetCommand(extCtx, "list", "List traces for a run.", "traces", true)
 }
 
 func newRunGetCommand(
@@ -217,6 +218,7 @@ func newRunTraceCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Inspect or analyze a run trace.",
 		Args:  cobra.NoArgs,
 	}
+	cmd.AddCommand(newRunTracesCommand(extCtx))
 	cmd.AddCommand(newRunTraceShowCommand(extCtx))
 	cmd.AddCommand(newRunTraceChatCommand(extCtx))
 	return cmd
@@ -353,7 +355,7 @@ func newRunCompareCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 func newRunSpansCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "spans",
+		Use:   "span",
 		Short: "Query run-scoped spans.",
 		Args:  cobra.NoArgs,
 	}
@@ -624,8 +626,7 @@ func addRunFlags(cmd *cobra.Command, flags *runRequestFlags, withTake bool) {
 	}
 }
 
-func registerJSONOutput(cmd *cobra.Command, extCtx *azdext.ExtensionContext) {
-	_ = ensureExtensionContext(extCtx)
+func registerJSONOutput(cmd *cobra.Command, _ *azdext.ExtensionContext) {
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"json"},

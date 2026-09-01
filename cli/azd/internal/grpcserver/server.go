@@ -12,6 +12,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver/legacybridge"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"google.golang.org/grpc"
@@ -116,11 +117,13 @@ func (s *Server) Start() (*ServerInfo, error) {
 			s.errorWrappingInterceptor(),
 			s.tokenAuthInterceptor(&serverInfo),
 			s.traceContextInterceptor(),
+			legacybridge.UnaryUsageInterceptor(),
 		),
 		grpc.ChainStreamInterceptor(
 			s.errorWrappingStreamInterceptor(),
 			s.tokenAuthStreamInterceptor(&serverInfo),
 			s.traceContextStreamInterceptor(),
+			legacybridge.StreamUsageInterceptor(),
 		),
 	)
 
@@ -180,6 +183,8 @@ func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 			err = mapHostError(err)
 			if strings.HasPrefix(info.FullMethod, "/azd.extensions.v1beta.") {
 				err = translateBetaStatusDetails(err)
+			} else if legacybridge.IsLegacyMethod(info.FullMethod) {
+				err = legacybridge.TranslateStatusDetails(err)
 			}
 		}
 		return resp, err
@@ -199,6 +204,8 @@ func (s *Server) errorWrappingStreamInterceptor() grpc.StreamServerInterceptor {
 			err = mapHostError(err)
 			if strings.HasPrefix(info.FullMethod, "/azd.extensions.v1beta.") {
 				err = translateBetaStatusDetails(err)
+			} else if legacybridge.IsLegacyMethod(info.FullMethod) {
+				err = legacybridge.TranslateStatusDetails(err)
 			}
 		}
 		return err

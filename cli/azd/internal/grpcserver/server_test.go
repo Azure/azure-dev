@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -178,7 +177,7 @@ func Test_Server_Start(t *testing.T) {
 		Namespace: "test",
 	}
 
-	t.Run("RegistersStableAndBetaServices", func(t *testing.T) {
+	t.Run("RegistersStableBetaAndLegacyServices", func(t *testing.T) {
 		serviceNames := []string{
 			"AccountService",
 			"AiModelService",
@@ -201,13 +200,11 @@ func Test_Server_Start(t *testing.T) {
 		}
 
 		services := server.grpcServer.GetServiceInfo()
-		require.Len(t, services, 2*len(serviceNames))
+		require.Len(t, services, 3*len(serviceNames))
 		for _, serviceName := range serviceNames {
 			require.Contains(t, services, "azd.extensions.v1."+serviceName)
 			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
-		}
-		for serviceName := range services {
-			require.False(t, strings.HasPrefix(serviceName, "azdext."))
+			require.Contains(t, services, "azdext."+serviceName)
 		}
 	})
 
@@ -226,6 +223,39 @@ func Test_Server_Start(t *testing.T) {
 
 		// Expect the service to be unimplemented since we are using mock service implementations.
 		require.Equal(t, codes.Unimplemented, st.Code())
+	})
+
+	t.Run("LegacyUnaryAndStreamRoutes", func(t *testing.T) {
+		accessToken, err := GenerateExtensionToken(extension, serverInfo)
+		require.NoError(t, err)
+
+		connection, err := grpc.NewClient(
+			serverInfo.Address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, connection.Close())
+		}()
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		err = connection.Invoke(ctx, "/azdext.ProjectService/Get", &azdext.EmptyRequest{}, &azdext.ProjectConfig{})
+		require.Equal(t, codes.Unimplemented, status.Code(err))
+
+		stream, err := connection.NewStream(ctx, &grpc.StreamDesc{
+			StreamName:    "Stream",
+			ClientStreams: true,
+			ServerStreams: true,
+		}, "/azdext.ValidationService/Stream")
+		require.NoError(t, err)
+
+		message := &azdext.ValidationMessage{}
+		require.NoError(t, stream.SendMsg(message))
+		require.NoError(t, stream.CloseSend())
+
+		response := &azdext.ValidationMessage{}
+		require.NoError(t, stream.RecvMsg(response))
+		require.True(t, proto.Equal(message, response))
 	})
 
 	t.Run("InvalidToken", func(t *testing.T) {

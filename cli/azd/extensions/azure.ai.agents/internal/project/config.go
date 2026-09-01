@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -58,8 +60,8 @@ type ServiceTargetAgentConfig struct {
 
 // ActivitySettings configures the Teams hosting model for an Activity-protocol agent.
 type ActivitySettings struct {
-	UseCase ActivityUseCase        `json:"useCase,omitempty"`
-	Publish *ActivityPublishConfig `json:"publish,omitempty"`
+	DigitalWorkerType agent_api.DigitalWorkerType `json:"digitalWorkerType,omitempty"`
+	Publish           *ActivityPublishConfig      `json:"publish,omitempty"`
 }
 
 // ActivityPublishConfig carries Activity-protocol Teams package/publish metadata.

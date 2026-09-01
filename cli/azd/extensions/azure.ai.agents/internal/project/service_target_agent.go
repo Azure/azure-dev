@@ -1569,9 +1569,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 	result.agentVersion = deployedVersion
 	activityProfile, err = ResolveDeployedActivityProfile(activityProfile, deployedVersion.DigitalWorkerType)
 	if err != nil {
-		suggestion := "redeploy the agent so its service-side digital_worker_type matches activity.useCase"
+		suggestion := "redeploy the agent so its service-side digital_worker_type matches " +
+			"activity.digitalWorkerType"
 		if agentDef.CodeConfiguration != nil {
-			suggestion = "delete and recreate the agent so its immutable digital_worker_type matches activity.useCase"
+			suggestion = "delete and recreate the agent so its immutable digital_worker_type matches " +
+				"activity.digitalWorkerType"
 		}
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -2197,7 +2199,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	applyAgentMetadata(request)
 	if foundryAgentConfig != nil &&
 		foundryAgentConfig.Activity != nil &&
-		foundryAgentConfig.Activity.UseCase == ActivityUseCaseDigitalWorker {
+		foundryAgentConfig.Activity.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
 		request.DigitalWorkerType = agent_api.DigitalWorkerTypeM365
 	}
 	activityProfile, err := ResolveActivityProfileWithSettings(agentDef, foundryAgentConfig.Activity)
@@ -3052,7 +3054,8 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 				return nil, exterrors.Validation(
 					exterrors.CodeInvalidServiceConfig,
 					err.Error(),
-					"delete and recreate the agent so its immutable digital_worker_type matches activity.useCase",
+					"delete and recreate the agent so its immutable digital_worker_type matches "+
+						"activity.digitalWorkerType",
 				)
 			}
 		}
@@ -3535,7 +3538,8 @@ func reconcileCreateRequestWithDeployedDigitalWorkerType(
 			return true, exterrors.Validation(
 				exterrors.CodeInvalidServiceConfig,
 				err.Error(),
-				"delete and recreate the agent so its immutable digital_worker_type matches activity.useCase",
+				"delete and recreate the agent so its immutable digital_worker_type matches "+
+					"activity.digitalWorkerType",
 			)
 		}
 	}

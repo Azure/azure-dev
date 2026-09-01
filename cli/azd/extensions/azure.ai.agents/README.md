@@ -31,7 +31,7 @@ services:
       - protocol: activity
         version: 2.0.0
     activity:
-      useCase: digital_worker
+      digitalWorkerType: m365
       publish:
         publishScope: tenant
         agentDisplayName: My Digital Worker
@@ -46,8 +46,9 @@ services:
 ```
 
 The `activity.publish` block is shared Microsoft 365 app publish metadata for
-Activity use cases (including `simple`). For `digital_worker`, azd enforces
-tenant scope and sends `digital_worker_type: m365` when creating the agent.
+Activity agents. When `digitalWorkerType` is `m365`, azd enforces tenant scope
+and sends `digital_worker_type: m365` when creating the agent. Omit
+`digitalWorkerType` for simple mode.
 After deployment, the service-returned Digital Worker type controls pack and
 publish behavior. The publish request sets `publishAsAutopilot` automatically;
 the publish block itself is optional.
@@ -64,8 +65,8 @@ azd deploy
 azd ai agent publish
 ```
 
-For `simple` Activity agents, `publishScope` accepts `shared` or `tenant`. For
-`digital_worker`, `publishScope` is always `tenant`.
+For simple Activity agents, `publishScope` accepts `shared` or `tenant`. For an
+`m365` Digital Worker, `publishScope` is always `tenant`.
 An explicit `azd ai agent publish --scope <scope>` overrides the configured
 value where allowed by the use case. Use `--display-name` and `--app-version`
 to override the corresponding configured publish metadata for one command

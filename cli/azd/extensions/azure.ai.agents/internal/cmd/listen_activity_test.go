@@ -66,7 +66,7 @@ func TestActivityBotTeardownTarget(t *testing.T) {
 	}
 }
 
-func TestResolveServiceActivityProfileUsesConfiguredUseCase(t *testing.T) {
+func TestResolveServiceActivityProfileUsesConfiguredDigitalWorkerType(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -81,7 +81,7 @@ func TestResolveServiceActivityProfileUsesConfiguredUseCase(t *testing.T) {
 		{
 			name: "digital worker skips simple flow",
 			activity: map[string]any{
-				"useCase": "digital_worker",
+				"digitalWorkerType": "m365",
 				"publish": map[string]any{
 					"publishScope": "tenant",
 				},
@@ -119,7 +119,7 @@ func TestResolveServiceActivityProfileUsesConfiguredUseCase(t *testing.T) {
 	}
 }
 
-func TestResolveServiceActivityProfileUsesConfiguredUseCaseFromFileRef(t *testing.T) {
+func TestResolveServiceActivityProfileUsesConfiguredDigitalWorkerTypeFromFileRef(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -131,7 +131,7 @@ func TestResolveServiceActivityProfileUsesConfiguredUseCaseFromFileRef(t *testin
 		"  - protocol: activity",
 		"    version: 2.0.0",
 		"activity:",
-		"  useCase: digital_worker",
+		"  digitalWorkerType: m365",
 		"  publish:",
 		"    publishScope: tenant",
 	}, "\n")
@@ -181,7 +181,7 @@ func TestShouldProvisionActivityBotUsesCanonicalUseCaseResolution(t *testing.T) 
 			"  - protocol: activity",
 			"    version: 2.0.0",
 			"activity:",
-			"  useCase: digital_worker",
+			"  digitalWorkerType: m365",
 			"  publish:",
 			"    publishScope: tenant",
 		}, "\n")

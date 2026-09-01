@@ -35,7 +35,7 @@ func TestEndpointUpdateResolvesActivitySettingsFromServiceRef(t *testing.T) {
 				"  protocols:\n"+
 				"    - activity\n"+
 				"activity:\n"+
-				"  useCase: digital_worker\n",
+				"  digitalWorkerType: m365\n",
 		),
 		0o600,
 	))

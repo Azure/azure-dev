@@ -221,14 +221,14 @@
       }
     },
     {
-      "$comment": "The activity.publish block is shared publish metadata for Activity use cases (including simple). Digital Worker publish is tenant-only; permission scopes and access boundaries are optional.",
+      "$comment": "The activity.publish block is shared publish metadata for Activity agents. Microsoft 365 Digital Worker publish is tenant-only; permission scopes and access boundaries are optional.",
       "if": {
         "properties": {
           "activity": {
             "properties": {
-              "useCase": { "const": "digital_worker" }
+              "digitalWorkerType": { "const": "m365" }
             },
-            "required": ["useCase"]
+            "required": ["digitalWorkerType"]
           }
         },
         "required": ["activity"]
@@ -248,23 +248,13 @@
       }
     },
     {
-      "$comment": "Optional permission scopes and access boundaries apply only to Digital Workers. An omitted activity.useCase defaults to simple.",
+      "$comment": "Optional permission scopes and access boundaries apply only to Digital Workers. An omitted activity.digitalWorkerType selects simple mode.",
       "if": {
         "properties": {
           "activity": {
-            "anyOf": [
-              {
-                "properties": {
-                  "useCase": { "const": "simple" }
-                },
-                "required": ["useCase"]
-              },
-              {
-                "not": {
-                  "required": ["useCase"]
-                }
-              }
-            ]
+            "not": {
+              "required": ["digitalWorkerType"]
+            }
           }
         },
         "required": ["activity"]
@@ -305,9 +295,9 @@
   "definitions": {
     "ActivitySettings": {
       "type": "object",
-      "description": "Activity-protocol Teams configuration. The publish block is shared metadata for Activity use cases; digital_worker applies additional constraints via allOf.",
+      "description": "Activity-protocol Teams configuration. Omit digitalWorkerType for simple mode; m365 applies Digital Worker constraints via allOf.",
       "properties": {
-        "useCase": { "type": "string", "enum": ["simple", "digital_worker"] },
+        "digitalWorkerType": { "type": "string", "enum": ["m365"] },
         "publish": {
           "$ref": "#/definitions/ActivityPublishConfig",
           "description": "Shared Microsoft 365 app publish metadata used by Activity use cases. Digital Worker publication is tenant-only."

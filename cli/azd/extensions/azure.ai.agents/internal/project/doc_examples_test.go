@@ -912,14 +912,19 @@ func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {
 
 	require.NoError(t, schema.validate(map[string]any{
 		"activity": map[string]any{
-			"useCase": "digital_worker",
-			"publish": digitalWorkerPublish,
+			"digitalWorkerType": "m365",
+			"publish":           digitalWorkerPublish,
 		},
 	}))
 	require.Error(t, schema.validate(map[string]any{
 		"activity": map[string]any{
-			"useCase": "simple",
-			"publish": digitalWorkerPublish,
+			"digitalWorkerType": "other",
+			"publish":           digitalWorkerPublish,
+		},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"activity": map[string]any{
+			"useCase": "digital_worker",
 		},
 	}))
 	require.Error(t, schema.validate(map[string]any{
@@ -929,7 +934,6 @@ func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {
 	}))
 	require.NoError(t, schema.validate(map[string]any{
 		"activity": map[string]any{
-			"useCase": "simple",
 			"publish": map[string]any{
 				"publishScope":     "shared",
 				"agentDisplayName": "Simple Activity agent",

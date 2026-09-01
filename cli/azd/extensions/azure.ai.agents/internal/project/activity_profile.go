@@ -57,7 +57,8 @@ func ResolveDeployedActivityProfile(
 	case "":
 		if local.UseCase == ActivityUseCaseDigitalWorker {
 			return ActivityProfile{}, fmt.Errorf(
-				"agent is configured as digital_worker but the deployed version has no digital_worker_type",
+				"agent is configured with activity.digitalWorkerType=m365 but the deployed version " +
+					"has no digital_worker_type",
 			)
 		}
 		return local, nil
@@ -150,26 +151,26 @@ func ResolveActivityProfile(ca agent_yaml.ContainerAgent) ActivityProfile {
 	return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
 }
 
-// ResolveActivityProfileWithSettings derives and validates the Activity use
-// case configured on the azd service. A missing setting preserves the existing
+// ResolveActivityProfileWithSettings derives and validates the Digital Worker
+// type configured on the azd service. A missing type preserves the existing
 // simple Activity behavior.
 func ResolveActivityProfileWithSettings(
 	ca agent_yaml.ContainerAgent,
 	settings *ActivitySettings,
 ) (ActivityProfile, error) {
 	profile := ResolveActivityProfile(ca)
-	if settings == nil || strings.TrimSpace(string(settings.UseCase)) == "" {
+	if settings == nil || strings.TrimSpace(string(settings.DigitalWorkerType)) == "" {
 		return profile, nil
 	}
 
 	if !profile.IsActivity {
-		return ActivityProfile{}, fmt.Errorf("activity.useCase requires an Activity-protocol hosted agent")
+		return ActivityProfile{}, fmt.Errorf(
+			"activity.digitalWorkerType requires an Activity-protocol hosted agent",
+		)
 	}
 
-	switch settings.UseCase {
-	case ActivityUseCaseSimple:
-		return profile, nil
-	case ActivityUseCaseDigitalWorker:
+	switch settings.DigitalWorkerType {
+	case agent_api.DigitalWorkerTypeM365:
 		if settings.Publish != nil {
 			if err := ValidateDigitalWorkerPublishConfig(settings.Publish); err != nil {
 				return ActivityProfile{}, err
@@ -178,7 +179,7 @@ func ResolveActivityProfileWithSettings(
 		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}, nil
 	default:
 		return ActivityProfile{}, fmt.Errorf(
-			"activity.useCase must be %q or %q", ActivityUseCaseSimple, ActivityUseCaseDigitalWorker,
+			"activity.digitalWorkerType must be %q when specified", agent_api.DigitalWorkerTypeM365,
 		)
 	}
 }

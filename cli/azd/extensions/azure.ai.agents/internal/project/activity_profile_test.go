@@ -114,7 +114,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 
 	t.Run("digital worker resolves", func(t *testing.T) {
 		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
 				PublishScope: "tenant",
 			},
@@ -126,7 +126,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 
 	t.Run("digital worker allows omitted publish block", func(t *testing.T) {
 		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 		})
 		require.NoError(t, err)
 		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
@@ -135,7 +135,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	t.Run("digital worker accepts optional permissions and boundaries", func(t *testing.T) {
 		boundaries := []string{"read.1on1.developers", "write.group.developers"}
 		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
 				OptionalPermissionScopes: []Microsoft365PermissionScopes{
 					{ResourceAppID: "resource-app", Scopes: []string{"McpServers.Mail.All"}},
@@ -150,7 +150,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 
 	t.Run("digital worker rejects missing resource app id", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
 				OptionalPermissionScopes: []Microsoft365PermissionScopes{
 					{Scopes: []string{"McpServers.Mail.All"}},
@@ -162,7 +162,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 
 	t.Run("digital worker rejects empty permission scopes", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
 				OptionalPermissionScopes: []Microsoft365PermissionScopes{
 					{ResourceAppID: "resource-app"},
@@ -174,7 +174,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 
 	t.Run("digital worker requires tenant publish scope", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
 				PublishScope: "shared",
 			},
@@ -185,17 +185,24 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	t.Run("digital worker rejects unsupported access boundary", func(t *testing.T) {
 		boundaries := []string{"read.1on1.tenant"}
 		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &ActivityPublishConfig{AccessBoundaries: &boundaries},
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+			Publish:           &ActivityPublishConfig{AccessBoundaries: &boundaries},
 		})
 		require.ErrorContains(t, err, "unsupported value")
 	})
 
 	t.Run("digital worker requires activity protocol", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(agent_yaml.ContainerAgent{}, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 		})
 		require.ErrorContains(t, err, "Activity-protocol")
+	})
+
+	t.Run("unsupported digital worker type rejected", func(t *testing.T) {
+		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			DigitalWorkerType: agent_api.DigitalWorkerType("slack"),
+		})
+		require.ErrorContains(t, err, `activity.digitalWorkerType must be "m365" when specified`)
 	})
 }
 

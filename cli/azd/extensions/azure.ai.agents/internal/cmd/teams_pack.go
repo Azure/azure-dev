@@ -199,7 +199,8 @@ func resolveTeamsPackContext(
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			err.Error(),
-			"delete and recreate the agent so its immutable digital_worker_type matches activity.useCase",
+			"delete and recreate the agent so its immutable digital_worker_type matches "+
+				"activity.digitalWorkerType",
 		)
 	}
 

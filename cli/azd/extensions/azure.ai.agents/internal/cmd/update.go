@@ -277,7 +277,10 @@ func normalizeEndpointAuthSchemesForDeployedProfile(
 
 	resolvedProfile, err := project.ResolveDeployedActivityProfile(localProfile, deployedAgent.DigitalWorkerType)
 	if err != nil {
-		return fmt.Errorf("failed to reconcile activity.useCase with deployed digital_worker_type: %w", err)
+		return fmt.Errorf(
+			"failed to reconcile activity.digitalWorkerType with deployed digital_worker_type: %w",
+			err,
+		)
 	}
 
 	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, resolvedProfile)

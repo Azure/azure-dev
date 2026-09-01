@@ -1325,7 +1325,7 @@ func TestRegisterAgentEnvironmentVariables_PersistsDigitalWorkerBlueprintClientI
 		"",
 		false,
 		ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
-		&ActivitySettings{UseCase: ActivityUseCaseDigitalWorker, Publish: publish},
+		&ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365, Publish: publish},
 	)
 	require.NoError(t, err)
 	require.Equal(t, "blueprint-client-id", envStub.values[envkey.AgentBlueprintClientID("my-svc")])
@@ -1958,7 +1958,7 @@ func TestPrepareDeploySetsDigitalWorkerType(t *testing.T) {
 		},
 	}
 	props, err := AgentDefinitionToServiceProperties(agentDef, &ServiceTargetAgentConfig{
-		Activity: &ActivitySettings{UseCase: ActivityUseCaseDigitalWorker},
+		Activity: &ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365},
 	})
 	require.NoError(t, err)
 	svc := &azdext.ServiceConfig{

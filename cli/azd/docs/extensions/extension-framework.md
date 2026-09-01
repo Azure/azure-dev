@@ -37,7 +37,7 @@ Table of Contents
 
 ## Getting Started
 
-`azd` extensions are currently a beta feature (Public Preview) within `azd`.
+`azd` extensions is generally available within `azd`.
 
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.

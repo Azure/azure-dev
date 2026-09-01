@@ -3020,11 +3020,15 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Check if agent already exists (GET /agents/{name})
 	progress("Checking existing agent")
+	localProfile := ResolveActivityProfile(agentDef)
+	if versionRequest.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		localProfile = ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
+	}
 	existingAgent, getErr := agentClient.GetAgent(
 		ctx,
 		agentDef.Name,
 		agent_api.AgentEndpointAPIVersion,
-		true,
+		localProfile.IsActivity,
 	)
 	var agentResp *agent_api.AgentObject
 
@@ -3043,16 +3047,14 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 		}
 	} else {
-		localProfile := ResolveActivityProfile(agentDef)
-		if versionRequest.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
-			localProfile = ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
-		}
-		if _, err := ResolveDeployedActivityProfile(localProfile, existingAgent.DigitalWorkerType); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidServiceConfig,
-				err.Error(),
-				"delete and recreate the agent so its immutable digital_worker_type matches activity.useCase",
-			)
+		if localProfile.IsActivity {
+			if _, err := ResolveDeployedActivityProfile(localProfile, existingAgent.DigitalWorkerType); err != nil {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidServiceConfig,
+					err.Error(),
+					"delete and recreate the agent so its immutable digital_worker_type matches activity.useCase",
+				)
+			}
 		}
 		// Agent exists — update
 		progress("Updating existing agent from code package")
@@ -3518,7 +3520,8 @@ func reconcileCreateRequestWithDeployedDigitalWorkerType(
 	request *agent_api.CreateAgentRequest,
 	apiVersion string,
 ) (bool, error) {
-	existingAgent, getErr := agentClient.GetAgent(ctx, request.Name, apiVersion, true)
+	localProfile := activityProfileFromCreateRequest(request)
+	existingAgent, getErr := agentClient.GetAgent(ctx, request.Name, apiVersion, localProfile.IsActivity)
 	if getErr != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
 			respErr.StatusCode != http.StatusNotFound {
@@ -3527,15 +3530,14 @@ func reconcileCreateRequestWithDeployedDigitalWorkerType(
 		return false, nil
 	}
 
-	if _, err := ResolveDeployedActivityProfile(
-		activityProfileFromCreateRequest(request),
-		existingAgent.DigitalWorkerType,
-	); err != nil {
-		return true, exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			err.Error(),
-			"delete and recreate the agent so its immutable digital_worker_type matches activity.useCase",
-		)
+	if localProfile.IsActivity {
+		if _, err := ResolveDeployedActivityProfile(localProfile, existingAgent.DigitalWorkerType); err != nil {
+			return true, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				err.Error(),
+				"delete and recreate the agent so its immutable digital_worker_type matches activity.useCase",
+			)
+		}
 	}
 
 	request.DigitalWorkerType = ""

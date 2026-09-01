@@ -202,11 +202,12 @@ func DeployPreparedStandaloneHostedAgent(
 	}
 
 	prepared.progress("Checking existing agent")
+	localProfile := ResolveActivityProfile(prepared.definition)
 	existingAgent, getErr := agentClient.GetAgent(
 		ctx,
 		prepared.definition.Name,
 		agent_api.AgentEndpointAPIVersion,
-		true,
+		localProfile.IsActivity,
 	)
 	var agentObject *agent_api.AgentObject
 	if getErr != nil {
@@ -224,12 +225,10 @@ func DeployPreparedStandaloneHostedAgent(
 			agent_api.AgentEndpointAPIVersion,
 		)
 	} else {
-		if err := reconcileStandaloneEndpointWithDeployedAgent(
-			request,
-			prepared.definition,
-			existingAgent,
-		); err != nil {
-			return nil, err
+		if localProfile.IsActivity {
+			if err := reconcileStandaloneEndpointWithDeployedAgent(request, localProfile, existingAgent); err != nil {
+				return nil, err
+			}
 		}
 		prepared.progress("Creating a new agent version from code package")
 		writeExistingAgentVersionWarning(prepared.definition.Name)
@@ -291,11 +290,11 @@ func DeployPreparedStandaloneHostedAgent(
 
 func reconcileStandaloneEndpointWithDeployedAgent(
 	request *agent_api.CreateAgentRequest,
-	definition agent_yaml.ContainerAgent,
+	localProfile ActivityProfile,
 	existingAgent *agent_api.AgentObject,
 ) error {
 	resolvedProfile, err := ResolveDeployedActivityProfile(
-		ResolveActivityProfile(definition),
+		localProfile,
 		existingAgent.DigitalWorkerType,
 	)
 	if err != nil {

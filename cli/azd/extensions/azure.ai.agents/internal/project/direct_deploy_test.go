@@ -110,7 +110,7 @@ func TestReconcileStandaloneEndpointWithDeployedDigitalWorker(t *testing.T) {
 	}
 	existingAgent := &agent_api.AgentObject{DigitalWorkerType: agent_api.DigitalWorkerTypeM365}
 
-	err := reconcileStandaloneEndpointWithDeployedAgent(request, definition, existingAgent)
+	err := reconcileStandaloneEndpointWithDeployedAgent(request, ResolveActivityProfile(definition), existingAgent)
 
 	require.NoError(t, err)
 	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{

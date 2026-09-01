@@ -74,7 +74,7 @@ func TestAnEnvironmentFromBeforeTheSplitIsNotReadAsAChange(t *testing.T) {
 	require.NotEqual(t, shipped, definition,
 		"the fixture has to be a declaration where the two digests differ")
 
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		// What a build from before the split recorded, plus the id it created.
 		project.FingerprintKey("eval", "nightly"): shipped,
 		idKey("eval", "nightly"):                  "eval_1",
@@ -87,7 +87,7 @@ func TestAnEnvironmentFromBeforeTheSplitIsNotReadAsAChange(t *testing.T) {
 	assert.Equal(t, "eval_1", id, "the eval already deployed is the one to keep")
 	assert.False(t, wasCreated, "nothing in the file changed")
 	assert.Empty(t, *created, "an upgrade must not recreate an eval nobody edited")
-	assert.Equal(t, definition, env.values[project.FingerprintKey("eval", "nightly")],
+	assert.Equal(t, definition, env.stored(t, project.FingerprintKey("eval", "nightly")),
 		"and the baseline moves to the definition, so the next deploy compares like with like")
 }
 
@@ -101,7 +101,7 @@ func TestAnEditedEvalIsStillRecreated(t *testing.T) {
 	edited := group
 	edited.Evaluators = evalcore.EvaluatorList{{Evaluator: "builtin.coherence"}}
 
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		project.FingerprintKey("eval", "nightly"): shipped,
 		idKey("eval", "nightly"):                  "eval_1",
 	}}
@@ -127,7 +127,7 @@ func TestADeclarationDoesNotAdoptAnEvalAnotherOneOwns(t *testing.T) {
 	// The newcomer is listed first and hashes to the same substance.
 	newcomer := windowedEval("weekly", 24)
 
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		digestIDKey(ownerDigest): "eval_1",
 		idKey("eval", "nightly"): "eval_1",
 	}}
@@ -152,7 +152,7 @@ func TestARenamedEvalIsStillAdopted(t *testing.T) {
 	renamed := group
 	renamed.Name = "evening"
 
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		digestIDKey(digest):      "eval_1",
 		idKey("eval", "nightly"): "eval_1",
 	}}
@@ -182,7 +182,7 @@ func TestARenameIsStillAdoptedWhenTheOldNameIsRecycled(t *testing.T) {
 	recycled := windowedEval("morning", 24)
 	recycled.Evaluators = evalcore.EvaluatorList{{Evaluator: "builtin.coherence"}}
 
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		digestIDKey(digest):                       "eval_1",
 		idKey("eval", "morning"):                  "eval_1",
 		project.FingerprintKey("eval", "morning"): shipped,

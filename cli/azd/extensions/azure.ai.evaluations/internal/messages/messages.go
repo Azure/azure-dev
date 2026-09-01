@@ -387,19 +387,19 @@ func TooManyArgs(commandPath string, names []string, given int) error {
 // MoreEvalsToList says a page ended with the service still holding rows.
 func MoreEvalsToList(token string) string {
 	return fmt.Sprintf(
-		"\nMore evals to come. Next page: --continuation-token %s\n", token)
+		"\nMore evals to come. Next page: --after %s\n", token)
 }
 
 // MoreRunsToList reports a page of runs with more behind it.
 func MoreRunsToList(token string) string {
 	return fmt.Sprintf(
-		"\nMore runs to come. Next page: --continuation-token %s\n", token)
+		"\nMore runs to come. Next page: --after %s\n", token)
 }
 
 // MoreItemsToList reports a page of evaluated rows with more behind it.
 func MoreItemsToList(token string) string {
 	return fmt.Sprintf(
-		"\nMore items to come. Next page: --continuation-token %s\n"+
+		"\nMore items to come. Next page: --after %s\n"+
 			"Everything at once: `azd ai eval run output export`\n", token)
 }
 

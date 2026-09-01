@@ -338,7 +338,7 @@ func (ec *evalContext) checkDatasetRegistered(
 		return nil
 	}
 
-	recorded := ec.getEnvValue(ctx, project.FingerprintKey("dataset", decl.Name))
+	recorded := ec.privateValue(ctx, project.FingerprintKey("dataset", decl.Name))
 	if recorded == "" {
 		return nil
 	}
@@ -649,7 +649,7 @@ func (ec *evalContext) readRegisteredDataset(
 	// is right whether or not there is an azd environment to have recorded one.
 	version := pinned
 	if version == "" {
-		version = ec.getEnvValue(ctx, versionKey("dataset", name))
+		version = ec.privateValue(ctx, versionKey("dataset", name))
 	}
 	if version == "" {
 		versions, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
@@ -754,15 +754,15 @@ func (ec *evalContext) scoredDatasetVersion(
 	configPath string,
 ) string {
 	if localDatasetPath(configPath, group) != "" {
-		if ec.getEnvValue(ctx, project.FingerprintKey("dataset", group.Dataset)) == "" {
+		if ec.privateValue(ctx, project.FingerprintKey("dataset", group.Dataset)) == "" {
 			return ""
 		}
-		return ec.getEnvValue(ctx, versionKey("dataset", group.Dataset))
+		return ec.privateValue(ctx, versionKey("dataset", group.Dataset))
 	}
 	if pinned := declaredDatasetVersion(configPath, group); pinned != "" {
 		return pinned
 	}
-	return ec.getEnvValue(ctx, versionKey("dataset", group.Dataset))
+	return ec.privateValue(ctx, versionKey("dataset", group.Dataset))
 }
 
 // datasetIsDeclared says whether the configuration's catalog holds the dataset

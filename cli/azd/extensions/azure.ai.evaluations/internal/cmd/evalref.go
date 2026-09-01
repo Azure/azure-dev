@@ -130,7 +130,7 @@ func (ec *evalContext) resolveEvalRef(
 // the new one's rows, reported as success. A miss falls through to the service
 // listing by name, which answers the question the id was standing in for.
 func (ec *evalContext) recordedEvalID(ctx context.Context, evalName string) string {
-	return ec.getEnvValue(ctx, idKey("eval", evalName))
+	return ec.privateValue(ctx, idKey("eval", evalName))
 }
 
 // evalIDNamed finds the id of the eval the service lists under this name.

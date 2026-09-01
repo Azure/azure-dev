@@ -40,7 +40,7 @@ func evalContextRememberingRun(
 	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
 		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
 
-	env := &testEnvServer{values: map[string]string{idKey("evalrun", "eval_1"): remembered}}
+	env := &testEnvServer{state: map[string]string{idKey("evalrun", "eval_1"): remembered}}
 	return &evalContext{
 		evalClient: eval_api.NewEvalClientFromPipeline(srv.URL, pipeline),
 		azdClient:  newTestAzdClient(t, env),
@@ -112,7 +112,7 @@ func TestAMutatingCommandStillUsesTheRunThisEnvironmentStarted(t *testing.T) {
 
 	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
 		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
-	env := &testEnvServer{values: map[string]string{idKey("evalrun", "eval_1"): "evalrun_mine"}}
+	env := &testEnvServer{state: map[string]string{idKey("evalrun", "eval_1"): "evalrun_mine"}}
 	ec := &evalContext{
 		evalClient: eval_api.NewEvalClientFromPipeline(srv.URL, pipeline),
 		azdClient:  newTestAzdClient(t, env),

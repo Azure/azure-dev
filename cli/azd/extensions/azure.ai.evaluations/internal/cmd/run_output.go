@@ -442,7 +442,7 @@ func (ec *evalContext) latestOrNamedRun(
 	// group ran last, and asking another group for it returns 404 rather than
 	// that group's own latest run.
 	if runID == "" {
-		runID = ec.getEnvValue(ctx, idKey("evalrun", evalID))
+		runID = ec.privateValue(ctx, idKey("evalrun", evalID))
 	}
 	if runID != "" {
 		run, err := ec.evalClient.GetOpenAIEvalRun(ctx, evalID, runID)

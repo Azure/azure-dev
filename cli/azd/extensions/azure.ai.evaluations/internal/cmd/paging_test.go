@@ -24,7 +24,7 @@ func TestListingsShareOnePagingContract(t *testing.T) {
 			limit := cmd.Flags().Lookup("limit")
 			require.NotNilf(t, limit, "%s cannot bound a page", name)
 
-			token := cmd.Flags().Lookup("continuation-token")
+			token := cmd.Flags().Lookup("after")
 			require.NotNilf(t, token, "%s caps the rows but cannot resume past them", name)
 
 			all := cmd.Flags().Lookup("all")

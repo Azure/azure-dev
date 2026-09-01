@@ -49,7 +49,7 @@ evals:
 // this file's content published, and checkDatasetRegistered has already
 // confirmed the rows match it.
 func TestARunOverALocalFileIsLabelledWithWhatTheFilePublished(t *testing.T) {
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		versionKey("dataset", "golden"):             "2",
 		project.FingerprintKey("dataset", "golden"): "a digest of the file",
 	}}
@@ -67,7 +67,7 @@ func TestARunOverALocalFileIsLabelledWithWhatTheFilePublished(t *testing.T) {
 // dataset that was registered and has since gained a `file:` has a recorded
 // version and no fingerprint, and the rows are whatever the file now holds.
 func TestALocalFileWithNoFingerprintIsLabelledWithNothing(t *testing.T) {
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		versionKey("dataset", "golden"): "3",
 	}}
 	ec := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
@@ -82,7 +82,7 @@ func TestALocalFileWithNoFingerprintIsLabelledWithNothing(t *testing.T) {
 
 // A registered dataset is fetched at the pin, so the pin is the honest label.
 func TestARunOverARegisteredDatasetIsLabelledWithThePin(t *testing.T) {
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		versionKey("dataset", "golden"): "2",
 	}}
 	ec := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
@@ -96,7 +96,7 @@ func TestARunOverARegisteredDatasetIsLabelledWithThePin(t *testing.T) {
 
 // With no pin either way, the recorded version answers.
 func TestWithoutAPinTheRecordedVersionIsTheLabel(t *testing.T) {
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		versionKey("dataset", "golden"):             "2",
 		project.FingerprintKey("dataset", "golden"): "a digest of the file",
 	}}
@@ -117,7 +117,7 @@ func TestTheRecreateDecisionIsMadeOncePerDeploy(t *testing.T) {
 	digest, err := project.FingerprintGroup(group)
 	require.NoError(t, err)
 
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		project.FingerprintKey("eval", "nightly"): "a digest from some older declaration",
 	}}
 	r := &evalReconciler{ec: &evalContext{
@@ -129,7 +129,7 @@ func TestTheRecreateDecisionIsMadeOncePerDeploy(t *testing.T) {
 	require.True(t, first.recreate, "the fixture has to be a declaration that changed")
 
 	// The environment now answers differently, as a failed read would.
-	env.values[project.FingerprintKey("eval", "nightly")] = digest
+	env.state[project.FingerprintKey("eval", "nightly")] = digest
 
 	second, err := r.decide(context.Background(), group)
 	require.NoError(t, err)

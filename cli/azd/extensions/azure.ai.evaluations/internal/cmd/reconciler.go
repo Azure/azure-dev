@@ -82,7 +82,7 @@ func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.E
 			// EnsureEval, where it can fail the deploy.
 			continue
 		}
-		id := r.ec.getEnvValue(ctx, idKey("eval", groups[i].Name))
+		id := r.ec.privateValue(ctx, idKey("eval", groups[i].Name))
 		if id == "" || decision.recreate {
 			continue
 		}
@@ -145,7 +145,7 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	if err != nil {
 		return evalDecision{}, err
 	}
-	prior := r.ec.getEnvValue(ctx, project.FingerprintKey("eval", group.Name))
+	prior := r.ec.privateValue(ctx, project.FingerprintKey("eval", group.Name))
 
 	decided := evalDecision{
 		digest:     digest,
@@ -235,12 +235,12 @@ func (r *evalReconciler) EnsureDataset(
 	}
 
 	key := project.FingerprintKey("dataset", decl.Name)
-	if prior := r.ec.getEnvValue(ctx, key); prior == digest {
+	if prior := r.ec.privateValue(ctx, key); prior == digest {
 		// Unchanged since the last deploy; reuse the recorded version, but only
 		// after confirming nobody published a newer one outside the repo. An
 		// explicit `version:` is the author saying which version they want, so
 		// it settles the question and the check does not apply.
-		if version := r.ec.getEnvValue(ctx, versionKey("dataset", decl.Name)); version != "" {
+		if version := r.ec.privateValue(ctx, versionKey("dataset", decl.Name)); version != "" {
 			if decl.Version != "" {
 				// A pin settles which version to use, not whether it is still
 				// there. Skipping the service entirely let a deleted version
@@ -456,7 +456,7 @@ func (r *evalReconciler) EnsureEvaluator(
 	// the service and a key the author *deleted* — a pass_threshold, say — is
 	// still there to be found, and the deletion never publishes.
 	digestKey := project.FingerprintKey("evaluator", decl.Name)
-	prior := r.ec.getEnvValue(ctx, digestKey)
+	prior := r.ec.privateValue(ctx, digestKey)
 	authorEdited := prior != "" && prior != digest
 
 	// Compare against the definition already on the service.
@@ -488,7 +488,7 @@ func (r *evalReconciler) EnsureEvaluator(
 		// recorded at the last deploy is what tells them apart, and
 		// publishing over the second case would bury an intentional change
 		// under one nobody asked for.
-		if recorded := r.ec.getEnvValue(ctx, versionKey("evaluator", decl.Name)); recorded != "" {
+		if recorded := r.ec.privateValue(ctx, versionKey("evaluator", decl.Name)); recorded != "" {
 			if err := checkEvaluatorDrift(decl.Name, recorded, remote); err != nil {
 				return "", false, err
 			}
@@ -654,7 +654,7 @@ func (r *evalReconciler) EnsureEval(
 		return "", false, err
 	}
 
-	cached := r.ec.getEnvValue(ctx, idKey("eval", group.Name))
+	cached := r.ec.privateValue(ctx, idKey("eval", group.Name))
 	if cached == "" && !recreate {
 		// Nothing recorded under this name, but the substance may already be
 		// deployed under the name it had before. The environment records the id
@@ -723,7 +723,7 @@ func (r *evalReconciler) adoptRenamed(
 	group project.Eval,
 	digest string,
 ) (string, error) {
-	id := r.ec.getEnvValue(ctx, digestIDKey(digest))
+	id := r.ec.privateValue(ctx, digestIDKey(digest))
 	if id == "" {
 		return "", nil
 	}

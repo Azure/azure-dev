@@ -44,7 +44,28 @@ type evalContext struct {
 	// Resolved on first use. Which command deploys cannot change while one
 	// command runs, and asking azd costs a round trip.
 	deployCmd string
+
+	// Private reconciliation state, read once per command and written through.
+	// state is nil until it has been loaded, which is what tells an unread
+	// store from one that is genuinely empty.
+	configHelper *azdext.ConfigHelper
+	state        map[string]string
 }
+
+// privateStatePath is the one environment-config section this extension owns.
+//
+// This state used to be ordinary azd environment values, so `azd env
+// get-values` handed a reader fingerprints, rename indexes and per-object
+// caches alongside their own configuration, and every hook received them. It is
+// not configuration: it exists so an immutable artifact is not republished, and
+// nobody sets it by hand.
+//
+// Environment config rather than a file of our own: it lives in the
+// environment's config.json, so it is scoped per environment, travels with
+// azd's remote environment sync, is removed when the environment is, and is not
+// returned by `azd env get-values`. A separate file under .azure would sync
+// with none of that and would need its own cleanup lifecycle.
+const privateStatePath = "eval.state"
 
 // newEvalContext resolves the project endpoint and builds the data-plane
 // clients. The resolution order is projectctx's, so that every Foundry
@@ -185,7 +206,7 @@ var errNoAzdEnvironment = messages.ErrNoAzdEnvironment
 // not surface an extension's stderr, so under `azd up` this reaches the debug
 // log and no further -- direct invocations are where it shows.
 func (ec *evalContext) remember(ctx context.Context, key, value string) {
-	err := ec.setEnvValue(ctx, key, value)
+	err := ec.setPrivate(ctx, key, value)
 	if err == nil || errors.Is(err, errNoAzdEnvironment) {
 		return
 	}
@@ -193,8 +214,77 @@ func (ec *evalContext) remember(ctx context.Context, key, value string) {
 	log.Printf("[env] could not record %s: %v", key, err)
 }
 
-// setEnvValue persists a value into the active azd environment. azd itself
-// writes none of these keys -- the extension owns them.
+// loadPrivateState reads the whole section once per command.
+//
+// A miss is cached as an empty map rather than retried: the caller reads a
+// dozen keys, and asking azd for each one turns a local lookup into a dozen
+// round trips.
+func (ec *evalContext) loadPrivateState(ctx context.Context) map[string]string {
+	if ec.state != nil {
+		return ec.state
+	}
+	ec.state = map[string]string{}
+
+	helper, err := ec.config()
+	if err != nil {
+		return ec.state
+	}
+	stored := map[string]string{}
+	if found, err := helper.GetEnvJSON(ctx, privateStatePath, &stored); err == nil && found {
+		ec.state = stored
+	}
+	return ec.state
+}
+
+// config builds the environment-config accessor once.
+func (ec *evalContext) config() (*azdext.ConfigHelper, error) {
+	if ec.configHelper != nil {
+		return ec.configHelper, nil
+	}
+	if ec.azdClient == nil {
+		return nil, errNoAzdEnvironment
+	}
+	helper, err := azdext.NewConfigHelper(ec.azdClient)
+	if err != nil {
+		return nil, err
+	}
+	ec.configHelper = helper
+	return helper, nil
+}
+
+// setPrivate records one entry of reconciliation state.
+//
+// The whole section is rewritten because azd's config store is addressed by
+// path and this extension keeps its state as one object; the alternative is a
+// config path per key, which puts the same sprawl in a different file.
+func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error {
+	helper, err := ec.config()
+	if err != nil {
+		return messages.NoAzdEnvironmentToWrite(key)
+	}
+	state := ec.loadPrivateState(ctx)
+	if state[key] == value {
+		return nil
+	}
+	state[key] = value
+	if err := helper.SetEnvJSON(ctx, privateStatePath, state); err != nil {
+		// The in-memory copy is rolled back, so a later read in this same
+		// command cannot report a value that was never stored.
+		delete(state, key)
+		return messages.WritingEnvValue(key, err)
+	}
+	return nil
+}
+
+// privateValue reads one entry of reconciliation state.
+func (ec *evalContext) privateValue(ctx context.Context, key string) string {
+	return ec.loadPrivateState(ctx)[key]
+}
+
+// setEnvValue persists a value into the active azd environment.
+//
+// Reserved for values a user is meant to see. Private reconciliation state goes
+// through setPrivate, which keeps it out of `azd env get-values`.
 func (ec *evalContext) setEnvValue(ctx context.Context, key, value string) error {
 	if ec.envName == "" {
 		envResp, err := ec.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})

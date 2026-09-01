@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -29,9 +30,16 @@ import (
 // that only run once something was recorded at the last deploy are reachable
 // from a test. Without it, getEnvValue answers "" for everything and those
 // branches never execute.
+//
+// It serves both stores azd offers: the values a user sees in
+// `azd env get-values`, and the config section this extension keeps its private
+// reconciliation state in.
 type testEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	values map[string]string
+	values        map[string]string
+	config        map[string][]byte
+	state         map[string]string
+	failSetConfig bool
 }
 
 func (s *testEnvServer) GetValue(
@@ -48,6 +56,57 @@ func (s *testEnvServer) SetValue(
 	}
 	s.values[req.Key] = req.Value
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *testEnvServer) GetConfig(
+	_ context.Context, req *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	// A test seeds state to stand for what the last deploy recorded. It is
+	// served from the config section because that is where the extension keeps
+	// it now, not among the values a user sees.
+	if req.Path == privateStatePath && s.config[req.Path] == nil && s.state != nil {
+		encoded, err := json.Marshal(s.state)
+		if err != nil {
+			return nil, err
+		}
+		return &azdext.GetConfigResponse{Value: encoded, Found: true}, nil
+	}
+	value, found := s.config[req.Path]
+	return &azdext.GetConfigResponse{Value: value, Found: found}, nil
+}
+
+func (s *testEnvServer) SetConfig(
+	_ context.Context, req *azdext.SetConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	if s.failSetConfig {
+		return nil, errors.New("config store unavailable")
+	}
+	if s.config == nil {
+		s.config = map[string][]byte{}
+	}
+	s.config[req.Path] = req.Value
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *testEnvServer) UnsetConfig(
+	_ context.Context, req *azdext.UnsetConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	delete(s.config, req.Path)
+	return &azdext.EmptyResponse{}, nil
+}
+
+// stored reads back one entry of the private state the extension persisted,
+// falling back to what the test seeded when nothing has been written yet.
+func (s *testEnvServer) stored(t *testing.T, key string) string {
+	t.Helper()
+
+	raw, ok := s.config[privateStatePath]
+	if !ok {
+		return s.state[key]
+	}
+	var out map[string]string
+	require.NoError(t, json.Unmarshal(raw, &out))
+	return out[key]
 }
 
 // newTestAzdClient serves the environment over gRPC the way azd itself does,
@@ -106,7 +165,7 @@ func pinnedDatasetReconciler(
 	}))
 	t.Cleanup(srv.Close)
 
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		project.FingerprintKey("dataset", name): digest,
 		versionKey("dataset", name):             version,
 	}}

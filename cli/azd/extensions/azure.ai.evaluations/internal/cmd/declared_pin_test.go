@@ -96,7 +96,7 @@ func TestPinningDoesNotOverwriteTheVersionTheContentPublished(t *testing.T) {
 
 	// The last deploy published version 2 from this same file. The author then
 	// pinned version 1 without touching it, so the digest still matches.
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		project.FingerprintKey("dataset", "golden"): digest,
 		versionKey("dataset", "golden"):             "2",
 	}}
@@ -117,7 +117,7 @@ func TestPinningDoesNotOverwriteTheVersionTheContentPublished(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "1", version, "the pin is what the deploy reports")
 	assert.False(t, changed)
-	assert.Equal(t, "2", env.values[versionKey("dataset", "golden")],
+	assert.Equal(t, "2", env.stored(t, versionKey("dataset", "golden")),
 		"the recorded version still means what this file published, "+
 			"or removing the pin later reads as somebody publishing behind the config")
 }
@@ -139,7 +139,7 @@ func TestTheDownloadedRowsAreThePinnedVersion(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	env := &testEnvServer{values: map[string]string{
+	env := &testEnvServer{state: map[string]string{
 		versionKey("dataset", "golden"): "2",
 	}}
 	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},

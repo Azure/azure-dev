@@ -72,8 +72,14 @@ func missingFrom(names []string, given int) []string {
 func addPagingFlags(cmd *cobra.Command, limit *int, token *string, all *bool, defaultPage int) {
 	cmd.Flags().IntVar(limit, "limit", 0,
 		fmt.Sprintf("Rows per page. Defaults to %d.", defaultPage))
+	// The cursor is the last row's id, so it is named for what it is. Listings
+	// return the same rows in the same order, and paging by it produces exactly
+	// the sequence a single larger request would.
+	cmd.Flags().StringVar(token, "after", "",
+		"Resume after this id, which the previous page printed.")
 	cmd.Flags().StringVar(token, "continuation-token", "",
-		"Resume from the token the previous page printed.")
+		"Deprecated spelling of --after.")
+	_ = cmd.Flags().MarkHidden("continuation-token")
 	cmd.Flags().BoolVar(all, "all", false,
 		"Retrieve every page. Overrides --limit.")
 }

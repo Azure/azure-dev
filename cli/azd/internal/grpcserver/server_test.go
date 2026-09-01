@@ -646,6 +646,41 @@ func TestMapHostError_RelaysExtensionLocalError(t *testing.T) {
 	require.Equal(t, localErr.Links, recoveredLocalErr.Links)
 }
 
+func TestMapHostError_RelaysExtensionToolError(t *testing.T) {
+	t.Parallel()
+
+	exitCode := 42
+	toolErr := &azdext.ToolError{
+		Message:    "docker build failed",
+		ToolName:   "docker",
+		Kind:       azdext.ToolErrorKindFailed,
+		ExitCode:   &exitCode,
+		Suggestion: "check the Docker build output",
+	}
+	wrapped := fmt.Errorf("building container: %w", toolErr)
+
+	st, ok := status.FromError(mapHostError(wrapped))
+	require.True(t, ok)
+	require.Equal(t, codes.Unknown, st.Code())
+	require.Equal(t, wrapped.Error(), st.Message())
+
+	relayed := requireRelayedExtensionError(t, st)
+	require.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_TOOL, relayed.GetOrigin())
+	require.Equal(t, "docker", relayed.GetToolError().GetToolName())
+	require.Equal(t, "failed", relayed.GetToolError().GetFailureKind())
+	require.Equal(t, int32(42), relayed.GetToolError().GetExitCode())
+
+	recovered := azdext.UnwrapError(relayed)
+	var recoveredToolErr *azdext.ToolError
+	require.ErrorAs(t, recovered, &recoveredToolErr)
+	require.Equal(t, toolErr.Message, recoveredToolErr.Message)
+	require.Equal(t, toolErr.ToolName, recoveredToolErr.ToolName)
+	require.Equal(t, toolErr.Kind, recoveredToolErr.Kind)
+	require.NotNil(t, recoveredToolErr.ExitCode)
+	require.Equal(t, *toolErr.ExitCode, *recoveredToolErr.ExitCode)
+	require.Equal(t, toolErr.Suggestion, recoveredToolErr.Suggestion)
+}
+
 func TestMapHostError_DoesNotDuplicateRelayedExtensionError(t *testing.T) {
 	t.Parallel()
 

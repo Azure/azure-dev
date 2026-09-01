@@ -38,6 +38,37 @@ type LocalError struct {
 	Code string
 	// Category classifies the local error (for example: user, validation, dependency)
 	Category LocalErrorCategory
+	// CauseTypes contains safe Go error types from an unexpected fallback chain.
+	// It is transported as diagnostic evidence and does not change classification.
+	CauseTypes []string
+	// Suggestion contains optional user-facing remediation guidance.
+	Suggestion string
+	// Links contains optional reference links rendered alongside the suggestion.
+	Links []errorhandler.ErrorLink
+}
+
+// ToolErrorKind identifies how a local external tool operation failed.
+type ToolErrorKind string
+
+const (
+	// ToolErrorKindMissing indicates that the required tool was not found.
+	ToolErrorKindMissing ToolErrorKind = "missing"
+	// ToolErrorKindFailed indicates that the tool was found but the operation failed.
+	ToolErrorKindFailed ToolErrorKind = "failed"
+)
+
+// ToolError represents a local external tool failure with safe structured metadata.
+type ToolError struct {
+	// Message is the human-readable error message.
+	Message string
+	// Err is the original local error when this value wraps one.
+	Err error
+	// ToolName is the normalized tool name (for example, "docker").
+	ToolName string
+	// Kind identifies whether the tool was missing or failed after starting.
+	Kind ToolErrorKind
+	// ExitCode is the process exit code when the tool ran and failed.
+	ExitCode *int
 	// Suggestion contains optional user-facing remediation guidance.
 	Suggestion string
 	// Links contains optional reference links rendered alongside the suggestion.
@@ -54,12 +85,26 @@ func (e *ServiceError) Error() string {
 	return e.Message
 }
 
+// Error implements the error interface.
+func (e *ToolError) Error() string {
+	return e.Message
+}
+
+// Unwrap returns the original local error when one is available.
+func (e *ToolError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+
+	return e.Err
+}
+
 // WrapError converts a Go error into an ExtensionError proto for transmission to the azd host.
 // It is called from extension processes (via [ReportError] and envelope SetError methods)
 // to serialize errors before sending them over gRPC.
 //
 // The function applies detection in priority order:
-//  1. [ServiceError] / [LocalError] — already structured by extension code (highest specificity)
+//  1. [ServiceError] / [LocalError] / [ToolError] — already structured by extension code (highest specificity)
 //  2. [azcore.ResponseError] — Azure SDK HTTP errors
 //  3. gRPC status — host-originated errors carrying ActionableErrorDetail and/or auth ErrorInfo
 //  4. Fallback — unclassified error with original message
@@ -101,10 +146,31 @@ func WrapError(err error) *ExtensionError {
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
 		extErr.Source = &ExtensionError_LocalError{
 			LocalError: &LocalErrorDetail{
-				Code:     extLocalErr.Code,
-				Category: string(normalizedCategory),
+				Code:       extLocalErr.Code,
+				Category:   string(normalizedCategory),
+				CauseTypes: cloneStrings(extLocalErr.CauseTypes),
 			},
 		}
+		return extErr
+	}
+
+	if extToolErr, ok := errors.AsType[*ToolError](err); ok {
+		kind := normalizeToolErrorKind(extToolErr.Kind)
+		toolDetail := &ToolErrorDetail{
+			ToolName:    extToolErr.ToolName,
+			FailureKind: string(kind),
+		}
+		if extToolErr.ExitCode != nil {
+			// Process exit codes are in the int32 range on supported platforms.
+			exitCode := int32(*extToolErr.ExitCode) //nolint:gosec // process exit codes fit in int32
+			toolDetail.ExitCode = &exitCode
+		}
+
+		extErr.Message = extToolErr.Message
+		extErr.Suggestion = extToolErr.Suggestion
+		extErr.Links = WrapErrorLinks(extToolErr.Links)
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_TOOL
+		extErr.Source = &ExtensionError_ToolError{ToolError: toolDetail}
 		return extErr
 	}
 
@@ -190,6 +256,36 @@ func GRPCStatusFromError(err error) (*status.Status, bool) {
 	return st, st != nil
 }
 
+// ExtensionErrorFromStatus extracts a relayed extension error detail from a gRPC status.
+func ExtensionErrorFromStatus(st *status.Status) *ExtensionError {
+	if st == nil {
+		return nil
+	}
+
+	for _, detail := range st.Details() {
+		if extensionErr, ok := detail.(*ExtensionError); ok {
+			return extensionErr
+		}
+	}
+
+	return nil
+}
+
+// ServiceErrorDetailFromStatus extracts a service error detail from a gRPC status.
+func ServiceErrorDetailFromStatus(st *status.Status) *ServiceErrorDetail {
+	if st == nil {
+		return nil
+	}
+
+	for _, detail := range st.Details() {
+		if serviceErr, ok := detail.(*ServiceErrorDetail); ok {
+			return serviceErr
+		}
+	}
+
+	return nil
+}
+
 // ActionableErrorDetailFromError extracts host-originated actionable guidance from a gRPC status error.
 func ActionableErrorDetailFromError(err error) *ActionableErrorDetail {
 	st, ok := GRPCStatusFromError(err)
@@ -259,6 +355,23 @@ func UnwrapError(msg *ExtensionError) error {
 			Message:    msg.GetMessage(),
 			Code:       localErr.GetCode(),
 			Category:   normalizedCategory,
+			CauseTypes: cloneStrings(localErr.GetCauseTypes()),
+			Suggestion: msg.GetSuggestion(),
+			Links:      links,
+		}
+	}
+
+	if toolErr := msg.GetToolError(); toolErr != nil {
+		var exitCode *int
+		if toolErr.ExitCode != nil {
+			value := int(toolErr.GetExitCode())
+			exitCode = &value
+		}
+		return &ToolError{
+			Message:    msg.GetMessage(),
+			ToolName:   toolErr.GetToolName(),
+			Kind:       normalizeToolErrorKind(ToolErrorKind(toolErr.GetFailureKind())),
+			ExitCode:   exitCode,
 			Suggestion: msg.GetSuggestion(),
 			Links:      links,
 		}
@@ -281,12 +394,29 @@ func UnwrapError(msg *ExtensionError) error {
 		}
 	}
 
+	if msg.GetOrigin() == ErrorOrigin_ERROR_ORIGIN_TOOL {
+		return &ToolError{
+			Message:    msg.GetMessage(),
+			Kind:       ToolErrorKindFailed,
+			Suggestion: msg.GetSuggestion(),
+			Links:      links,
+		}
+	}
+
 	return &LocalError{
 		Message:    msg.GetMessage(),
 		Category:   LocalErrorCategoryLocal,
 		Suggestion: msg.GetSuggestion(),
 		Links:      links,
 	}
+}
+
+func normalizeToolErrorKind(kind ToolErrorKind) ToolErrorKind {
+	if kind == ToolErrorKindMissing {
+		return ToolErrorKindMissing
+	}
+
+	return ToolErrorKindFailed
 }
 
 // WrapErrorLinks converts errorhandler.ErrorLink values into proto ErrorLink messages.
@@ -325,4 +455,12 @@ func UnwrapErrorLinks(links []*ErrorLink) []errorhandler.ErrorLink {
 	}
 
 	return unwrapped
+}
+
+func cloneStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	return append([]string(nil), values...)
 }

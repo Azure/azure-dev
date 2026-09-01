@@ -33,6 +33,8 @@ func TestErrorTypes(t *testing.T) {
 		}
 
 		assert.Contains(t, err.Error(), "conversion failed from string to int: test error")
+		assert.Equal(t, "string", err.SourceTypeName())
+		assert.Equal(t, "int", err.DestinationTypeName())
 		assert.True(t, IsConversionError(err))
 		assert.True(t, errors.Is(err, &ConversionError{}))
 		assert.Equal(t, innerErr, errors.Unwrap(err))

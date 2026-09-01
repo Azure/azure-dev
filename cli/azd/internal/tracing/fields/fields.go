@@ -936,6 +936,22 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
+
+	// MapperSourceType records the sanitized Go type used as the source of a
+	// mapper conversion failure.
+	MapperSourceType = AttributeKey{
+		Key:            attribute.Key("mapper.source.type"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// MapperDestinationType records the sanitized Go type expected by a mapper
+	// conversion failure.
+	MapperDestinationType = AttributeKey{
+		Key:            attribute.Key("mapper.destination.type"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 )
 
 // Service related fields.

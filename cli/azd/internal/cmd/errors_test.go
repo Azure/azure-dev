@@ -16,7 +16,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -25,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -32,12 +35,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func Test_MapError(t *testing.T) {
@@ -1049,6 +1056,280 @@ func Test_MapError_ChainTypes(t *testing.T) {
 	}
 }
 
+func Test_MapError_InvocationMetadata(t *testing.T) {
+	t.Parallel()
+
+	err := extensions.WrapInvocationError(
+		errors.New("extension failed"),
+		"test.extension",
+		"1.2.3",
+		"prepackage",
+	)
+	span := &mocktracing.Span{}
+
+	MapError(err, span)
+
+	require.Equal(t, "internal.unclassified", span.Status.Description)
+
+	attributes := make(map[attribute.Key]attribute.Value, len(span.Attributes))
+	for _, attr := range span.Attributes {
+		attributes[attr.Key] = attr.Value
+	}
+
+	require.Equal(t, attribute.StringValue("test.extension"), attributes[fields.ExtensionId.Key])
+	require.Equal(t, attribute.StringValue("1.2.3"), attributes[fields.ExtensionVersion.Key])
+	require.Equal(t, attribute.StringValue("prepackage"), attributes[fields.ExtensionEvent.Key])
+	require.NotContains(t, attributes, attribute.Key("error.extension.id"))
+	require.NotContains(t, attributes, attribute.Key("error.extension.version"))
+	require.NotContains(t, attributes, attribute.Key("error.extension.event"))
+}
+
+func Test_MapError_RemoteCauseTypes(t *testing.T) {
+	t.Parallel()
+
+	err := &azdext.LocalError{
+		Message:  "agent operation failed",
+		Code:     "agent_operation_failed",
+		Category: azdext.LocalErrorCategoryInternal,
+		CauseTypes: []string{
+			"*fmt.wrapError",
+			"*agents.TransportError",
+			"*agents.TransportError",
+		},
+	}
+	span := &mocktracing.Span{}
+
+	MapError(err, span)
+
+	require.Equal(t, "ext.internal.agent_operation_failed", span.Status.Description)
+
+	attributes := make(map[attribute.Key]attribute.Value, len(span.Attributes))
+	for _, attr := range span.Attributes {
+		attributes[attr.Key] = attr.Value
+	}
+
+	require.Equal(
+		t,
+		[]string{"*azdext.LocalError", "*agents.TransportError"},
+		attributes[fields.ErrChainTypes.Key].AsStringSlice(),
+	)
+	require.Equal(t, attribute.StringValue("*agents.TransportError"), attributes[fields.ErrType.Key])
+	require.NotContains(t, attributes, attribute.Key("error.extension.cause_types"))
+}
+
+func TestMapError_GRPCStatus(t *testing.T) {
+	t.Parallel()
+
+	serviceStatus, err := status.New(codes.Unavailable, "service unavailable").WithDetails(
+		&azdext.ServiceErrorDetail{
+			ErrorCode:   "deploy.AuthorizationFailed",
+			StatusCode:  503,
+			ServiceName: "management.azure.com",
+		},
+	)
+	require.NoError(t, err)
+
+	authStatus, err := status.New(codes.Unauthenticated, "login required").WithDetails(
+		&errdetails.ErrorInfo{
+			Domain: azdext.AuthErrorDomain,
+			Reason: azdext.AuthErrorReasonLoginRequired,
+		},
+	)
+	require.NoError(t, err)
+
+	localStatus, err := status.New(codes.Unknown, "extension failed").WithDetails(
+		azdext.WrapError(&azdext.LocalError{
+			Code:     "invalid_project",
+			Category: azdext.LocalErrorCategoryValidation,
+		}),
+	)
+	require.NoError(t, err)
+
+	toolStatus, err := status.New(codes.Unknown, "tool failed").WithDetails(
+		azdext.WrapError(&azdext.ToolError{
+			ToolName: "Docker",
+			Kind:     azdext.ToolErrorKindFailed,
+		}),
+	)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name      string
+		err       error
+		wantCode  string
+		wantAttrs []attribute.KeyValue
+	}{
+		{
+			name:     "Unknown",
+			err:      status.Error(codes.Unknown, "unknown"),
+			wantCode: "internal.grpc.unknown",
+			wantAttrs: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCode.Key).String("Unknown"),
+			},
+		},
+		{
+			name:     "InvalidArgument",
+			err:      status.Error(codes.InvalidArgument, "invalid argument"),
+			wantCode: "internal.grpc.invalidargument",
+			wantAttrs: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCode.Key).String("InvalidArgument"),
+			},
+		},
+		{
+			name:     "NotFound",
+			err:      status.Error(codes.NotFound, "not found"),
+			wantCode: "internal.grpc.notfound",
+			wantAttrs: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCode.Key).String("NotFound"),
+			},
+		},
+		{
+			name:     "Unavailable",
+			err:      status.Error(codes.Unavailable, "unavailable"),
+			wantCode: "internal.grpc.unavailable",
+			wantAttrs: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCode.Key).String("Unavailable"),
+			},
+		},
+		{
+			name:     "Canceled",
+			err:      status.Error(codes.Canceled, "canceled"),
+			wantCode: "user.canceled",
+		},
+		{
+			name:     "DeadlineExceeded",
+			err:      status.Error(codes.DeadlineExceeded, "deadline exceeded"),
+			wantCode: "internal.timeout",
+		},
+		{
+			name:     "Unauthenticated",
+			err:      status.Error(codes.Unauthenticated, "unauthenticated"),
+			wantCode: "auth.unauthenticated",
+			wantAttrs: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
+		},
+		{
+			name:     "AuthReason",
+			err:      authStatus.Err(),
+			wantCode: "auth.login_required",
+			wantAttrs: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
+		},
+		{
+			name:     "ServiceDetail",
+			err:      serviceStatus.Err(),
+			wantCode: "ext.service.deploy.authorizationfailed",
+			wantAttrs: []attribute.KeyValue{
+				fields.ErrorKey(fields.ServiceNameKey.Key).String("arm"),
+				fields.ErrorKey(fields.ServiceHost.Key).String("management.azure.com"),
+				fields.ErrorKey(fields.ServiceStatusCode.Key).Int(503),
+				fields.ErrorKey(fields.ServiceErrorCode.Key).String("deploy.AuthorizationFailed"),
+			},
+		},
+		{
+			name:     "RelayedLocalDetail",
+			err:      localStatus.Err(),
+			wantCode: "ext.validation.invalid_project",
+			wantAttrs: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("validation"),
+				fields.ErrorKey(fields.ErrCode.Key).String("invalid_project"),
+			},
+		},
+		{
+			name:     "RelayedToolDetail",
+			err:      toolStatus.Err(),
+			wantCode: "tool.docker.failed",
+			wantAttrs: []attribute.KeyValue{
+				fields.ErrorKey(fields.ToolName.Key).String("docker"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			span := &mocktracing.Span{}
+			MapError(tt.err, span)
+
+			require.Equal(t, tt.wantCode, span.Status.Description)
+			gotAttrs := slices.DeleteFunc(slices.Clone(span.Attributes), func(a attribute.KeyValue) bool {
+				return a.Key == fields.ErrChainTypes.Key
+			})
+			require.ElementsMatch(t, tt.wantAttrs, gotAttrs)
+		})
+	}
+}
+
+func TestMapError_StandardExecError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		err      error
+		wantCode string
+		wantTool string
+	}{
+		{
+			name: "MissingExecutable",
+			err: &osexec.Error{
+				Name: filepath.Join("tools", "Docker.EXE"),
+				Err:  osexec.ErrNotFound,
+			},
+			wantCode: "tool.docker.missing",
+			wantTool: "docker",
+		},
+		{
+			name: "StartFailure",
+			err: fmt.Errorf("start process: %w", &osexec.Error{
+				Name: filepath.Join("tools", "Docker.EXE"),
+				Err:  errors.New("permission denied"),
+			}),
+			wantCode: "tool.docker.failed",
+			wantTool: "docker",
+		},
+		{
+			name:     "UnknownTool",
+			err:      &osexec.Error{Err: errors.New("start failed")},
+			wantCode: "tool.other.failed",
+			wantTool: "other",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			span := &mocktracing.Span{}
+			MapError(tt.err, span)
+
+			require.Equal(t, tt.wantCode, span.Status.Description)
+			require.Contains(t, span.Attributes, fields.ErrorKey(fields.ToolName.Key).String(tt.wantTool))
+		})
+	}
+}
+
+func TestMapError_ConversionError(t *testing.T) {
+	t.Parallel()
+
+	err := &mapper.ConversionError{
+		SrcType: reflect.TypeFor[string](),
+		DstType: reflect.TypeFor[int](),
+		Err:     errors.New("conversion failed"),
+	}
+	span := &mocktracing.Span{}
+
+	MapError(err, span)
+
+	require.Equal(t, "internal.mapper_conversionerror", span.Status.Description)
+	require.Contains(t, span.Attributes,
+		fields.ErrorKey(fields.MapperSourceType.Key).String("string"))
+	require.Contains(t, span.Attributes,
+		fields.ErrorKey(fields.MapperDestinationType.Key).String("int"))
+	require.NotContains(t, span.Attributes,
+		fields.ErrorKey(fields.ErrType.Key).String("conversion failed"))
+}
+
 func Test_cmdAsName(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -1067,6 +1348,59 @@ func Test_cmdAsName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			require.Equal(t, tt.want, cmdAsName(tt.cmd))
+		})
+	}
+}
+
+func TestMapError_ToolError(t *testing.T) {
+	t.Parallel()
+
+	exitCode := 17
+	tests := []struct {
+		name       string
+		err        *azdext.ToolError
+		wantReason string
+		wantCode   bool
+	}{
+		{
+			name: "failed",
+			err: &azdext.ToolError{
+				Message:  "docker failed",
+				ToolName: `C:\Program Files\Docker\docker.exe`,
+				Kind:     azdext.ToolErrorKindFailed,
+				ExitCode: &exitCode,
+			},
+			wantReason: "tool.docker.failed",
+			wantCode:   true,
+		},
+		{
+			name: "missing",
+			err: &azdext.ToolError{
+				Message:  "docker is not installed",
+				ToolName: "Docker",
+				Kind:     azdext.ToolErrorKindMissing,
+			},
+			wantReason: "tool.docker.missing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			span := &mocktracing.Span{}
+			MapError(tt.err, span)
+
+			require.Equal(t, tt.wantReason, span.Status.Description)
+			attributes := make(map[attribute.Key]attribute.Value, len(span.Attributes))
+			for _, attr := range span.Attributes {
+				attributes[attr.Key] = attr.Value
+			}
+			require.Equal(t, attribute.StringValue("docker"), attributes[fields.ErrorKey(fields.ToolName.Key)])
+			if tt.wantCode {
+				require.Equal(t, attribute.IntValue(17), attributes[fields.ErrorKey(fields.ToolExitCode.Key)])
+			} else {
+				require.NotContains(t, attributes, fields.ErrorKey(fields.ToolExitCode.Key))
+			}
 		})
 	}
 }

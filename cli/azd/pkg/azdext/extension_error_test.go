@@ -93,6 +93,7 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				Message:    "invalid config",
 				Code:       "invalid_config",
 				Category:   LocalErrorCategoryValidation,
+				CauseTypes: []string{"*agents.TransportError", "*agents.ConfigError"},
 				Suggestion: "Add the missing required field",
 				Links: []errorhandler.ErrorLink{{
 					URL:   "https://aka.ms/azd-errors#invalid-config",
@@ -109,11 +110,13 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				require.NotNil(t, localDetail)
 				assert.Equal(t, "invalid_config", localDetail.GetCode())
 				assert.Equal(t, "validation", localDetail.GetCategory())
+				assert.Equal(t, []string{"*agents.TransportError", "*agents.ConfigError"}, localDetail.GetCauseTypes())
 
 				var localErr *LocalError
 				require.ErrorAs(t, goErr, &localErr)
 				assert.Equal(t, "invalid_config", localErr.Code)
 				assert.Equal(t, LocalErrorCategoryValidation, localErr.Category)
+				assert.Equal(t, []string{"*agents.TransportError", "*agents.ConfigError"}, localErr.CauseTypes)
 				assert.Equal(t, "Add the missing required field", localErr.Suggestion)
 				require.Len(t, localErr.Links, 1)
 				assert.Equal(t, "Invalid config reference", localErr.Links[0].Title)
@@ -312,6 +315,67 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestExtensionError_ToolErrorRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	exitCode := 23
+	source := &ToolError{
+		Message:    "docker build failed",
+		ToolName:   "docker",
+		Kind:       ToolErrorKindFailed,
+		ExitCode:   &exitCode,
+		Suggestion: "Check the Docker build output",
+	}
+
+	protoErr := WrapError(fmt.Errorf("container build: %w", source))
+	require.NotNil(t, protoErr)
+	assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_TOOL, protoErr.GetOrigin())
+	assert.Equal(t, "docker build failed", protoErr.GetMessage())
+	require.NotNil(t, protoErr.GetToolError())
+	assert.Equal(t, "docker", protoErr.GetToolError().GetToolName())
+	assert.Equal(t, "failed", protoErr.GetToolError().GetFailureKind())
+	require.NotNil(t, protoErr.GetToolError().ExitCode)
+	assert.Equal(t, int32(23), protoErr.GetToolError().GetExitCode())
+
+	unwrapped := UnwrapError(protoErr)
+	var toolErr *ToolError
+	require.ErrorAs(t, unwrapped, &toolErr)
+	assert.Equal(t, "docker build failed", toolErr.Message)
+	assert.Equal(t, "docker", toolErr.ToolName)
+	assert.Equal(t, ToolErrorKindFailed, toolErr.Kind)
+	require.NotNil(t, toolErr.ExitCode)
+	assert.Equal(t, 23, *toolErr.ExitCode)
+	assert.Equal(t, "Check the Docker build output", toolErr.Suggestion)
+}
+
+func TestErrorDetailsFromStatus(t *testing.T) {
+	t.Parallel()
+
+	extensionErr := WrapError(&ToolError{
+		Message:  "docker build failed",
+		ToolName: "docker",
+		Kind:     ToolErrorKindFailed,
+	})
+	st, err := status.New(codes.Unknown, "container build failed").WithDetails(extensionErr)
+	require.NoError(t, err)
+
+	assert.Equal(t, extensionErr.GetMessage(), ExtensionErrorFromStatus(st).GetMessage())
+	assert.Nil(t, ServiceErrorDetailFromStatus(st))
+
+	serviceDetail := &ServiceErrorDetail{
+		ErrorCode:   "InternalServerError",
+		StatusCode:  500,
+		ServiceName: "management.azure.com",
+	}
+	st, err = status.New(codes.Unknown, "service failed").WithDetails(serviceDetail)
+	require.NoError(t, err)
+
+	assert.Equal(t, serviceDetail.GetErrorCode(), ServiceErrorDetailFromStatus(st).GetErrorCode())
+	assert.Nil(t, ExtensionErrorFromStatus(st))
+	assert.Nil(t, ExtensionErrorFromStatus(nil))
+	assert.Nil(t, ServiceErrorDetailFromStatus(nil))
+}
+
 func TestUnwrapError_EmptyMessagePreservesStructuredError(t *testing.T) {
 	protoErr := &ExtensionError{
 		Origin: ErrorOrigin_ERROR_ORIGIN_LOCAL,
@@ -336,9 +400,35 @@ func TestUnwrapError_EmptyMessagePreservesStructuredError(t *testing.T) {
 	assert.Empty(t, localErr.Message)
 	assert.Equal(t, "empty_message", localErr.Code)
 	assert.Equal(t, LocalErrorCategoryValidation, localErr.Category)
+	assert.Nil(t, localErr.CauseTypes)
 	assert.Equal(t, "Fill in the required setting", localErr.Suggestion)
 	require.Len(t, localErr.Links, 1)
 	assert.Equal(t, "Validation troubleshooting", localErr.Links[0].Title)
+}
+
+func TestExtensionError_CauseTypesCopiedAtBoundaries(t *testing.T) {
+	t.Parallel()
+
+	sourceTypes := []string{"*agents.TransportError", "*agents.ConfigError"}
+	source := &LocalError{
+		Message:    "unexpected failure",
+		Code:       "unexpected_failure",
+		Category:   LocalErrorCategoryInternal,
+		CauseTypes: sourceTypes,
+	}
+
+	protoErr := WrapError(source)
+	sourceTypes[0] = "*agents.MutatedSourceError"
+	require.Equal(t, "*agents.TransportError", protoErr.GetLocalError().GetCauseTypes()[0])
+
+	unwrapped := UnwrapError(protoErr)
+	protoErr.GetLocalError().CauseTypes[1] = "*agents.MutatedProtoError"
+
+	var localErr *LocalError
+	require.ErrorAs(t, unwrapped, &localErr)
+	require.Equal(t, []string{"*agents.TransportError", "*agents.ConfigError"}, localErr.CauseTypes)
+	localErr.CauseTypes[0] = "*agents.MutatedUnwrappedError"
+	require.Equal(t, "*agents.TransportError", protoErr.GetLocalError().GetCauseTypes()[0])
 }
 
 func mustAuthStatusError(code codes.Code, reason, message string) error {

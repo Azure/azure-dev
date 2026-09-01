@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -125,7 +126,7 @@ func InternalFromError(err error, code, contextMessage string) error {
 	if IsCancellation(err) {
 		return Cancelled(fmt.Sprintf("%s was cancelled", contextMessage))
 	}
-	return Internal(code, fmt.Sprintf("%s: %s", contextMessage, err))
+	return internalFallback(err, code, fmt.Sprintf("%s: %s", contextMessage, err))
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +168,7 @@ func ServiceFromAzure(err error, operation string) error {
 	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
 		return Auth(CodeAuthFailed, err.Error(), "run `azd auth login` to authenticate")
 	}
-	return Internal(operation, fmt.Sprintf("%s: %s", operation, err.Error()))
+	return internalFallback(err, operation, fmt.Sprintf("%s: %s", operation, err.Error()))
 }
 
 // FromHost converts an error returned by an azd host gRPC service. Service metadata
@@ -185,7 +186,7 @@ func FromHost(err error, operation, contextMessage string) error {
 
 	st, ok := azdext.GRPCStatusFromError(err)
 	if !ok {
-		return Internal(operation, fmt.Sprintf("%s: %s", contextMessage, err))
+		return internalFallback(err, operation, fmt.Sprintf("%s: %s", contextMessage, err))
 	}
 	if st.Code() == codes.Unauthenticated {
 		return authFromGrpcMessage(st.Message())
@@ -238,7 +239,7 @@ func FromAiService(err error, fallbackCode string) error {
 
 	st, ok := status.FromError(err)
 	if !ok {
-		return Internal(fallbackCode, err.Error())
+		return internalFallback(err, fallbackCode, err.Error())
 	}
 
 	if st.Code() == codes.Unauthenticated {
@@ -297,7 +298,19 @@ func structuredError(err error) error {
 	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
 		return localErr
 	}
+	if toolErr, ok := errors.AsType[*azdext.ToolError](err); ok {
+		return toolErr
+	}
 	return nil
+}
+
+func internalFallback(cause error, code, message string) error {
+	return &azdext.LocalError{
+		Message:    message,
+		Code:       code,
+		Category:   azdext.LocalErrorCategoryInternal,
+		CauseTypes: errorchain.CauseTypes(cause),
+	}
 }
 
 // serviceErrorDetailFromStatus is kept local until azure.ai.agents can consume an
@@ -348,6 +361,15 @@ func applyActionableErrorDetail(err error, actionable *azdext.ActionableErrorDet
 			localErr.Links = azdext.UnwrapErrorLinks(actionable.GetLinks())
 		}
 		return localErr
+	}
+	if toolErr, ok := errors.AsType[*azdext.ToolError](err); ok {
+		if actionable.GetSuggestion() != "" {
+			toolErr.Suggestion = actionable.GetSuggestion()
+		}
+		if len(actionable.GetLinks()) > 0 {
+			toolErr.Links = azdext.UnwrapErrorLinks(actionable.GetLinks())
+		}
+		return toolErr
 	}
 
 	return err

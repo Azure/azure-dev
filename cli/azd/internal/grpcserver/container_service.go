@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	osexec "os/exec"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -14,9 +15,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -55,6 +58,78 @@ func mapContainerPublishError(err error) error {
 		Code:     "container_publish_" + diagnosticCode,
 		Category: azdext.LocalErrorCategoryInternal,
 	}
+}
+
+func mapContainerToolError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if _, ok := errors.AsType[*azcore.ResponseError](err); ok ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if _, ok := errors.AsType[*azdext.ServiceError](err); ok {
+		return err
+	}
+	if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return err
+	}
+	if _, ok := errors.AsType[*azdext.ToolError](err); ok {
+		return err
+	}
+
+	if missingErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
+		return &azdext.ToolError{
+			Message:  err.Error(),
+			Err:      err,
+			ToolName: missingToolName(missingErr),
+			Kind:     azdext.ToolErrorKindMissing,
+		}
+	}
+
+	if exitErr, ok := errors.AsType[*azdexec.ExitError](err); ok {
+		exitCode := exitErr.ExitCode
+		return &azdext.ToolError{
+			Message:  err.Error(),
+			Err:      err,
+			ToolName: normalizedToolName(exitErr.Cmd),
+			Kind:     azdext.ToolErrorKindFailed,
+			ExitCode: &exitCode,
+		}
+	}
+
+	if processErr, ok := errors.AsType[*osexec.Error](err); ok {
+		kind := azdext.ToolErrorKindFailed
+		if errors.Is(processErr.Err, osexec.ErrNotFound) {
+			kind = azdext.ToolErrorKindMissing
+		}
+		return &azdext.ToolError{
+			Message:  err.Error(),
+			Err:      err,
+			ToolName: normalizedToolName(processErr.Name),
+			Kind:     kind,
+		}
+	}
+
+	return err
+}
+
+func normalizedToolName(name string) string {
+	if normalized := azdexec.CommandName(name); normalized != "" {
+		return normalized
+	}
+
+	return "other"
+}
+
+func missingToolName(err *tools.MissingToolErrors) string {
+	if len(err.ToolNames) != 1 {
+		return "multiple"
+	}
+
+	return normalizedToolName(err.ToolNames[0])
 }
 
 func NewContainerService(
@@ -113,7 +188,7 @@ func (c *containerService) Build(
 
 	buildResult, err := containerHelper.Build(ctx, serviceConfig, serviceContext, env, progress)
 	if err != nil {
-		return nil, err
+		return nil, mapContainerToolError(err)
 	}
 
 	// Use mapper to convert ServiceBuildResult to proto
@@ -168,7 +243,7 @@ func (c *containerService) Package(
 
 	packageResult, err := containerHelper.Package(ctx, serviceConfig, serviceContext, env, progress)
 	if err != nil {
-		return nil, err
+		return nil, mapContainerToolError(err)
 	}
 
 	// Use mapper to convert ServicePackageResult to proto

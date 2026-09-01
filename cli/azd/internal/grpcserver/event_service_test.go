@@ -9,6 +9,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -16,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -498,12 +500,39 @@ func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *tes
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
+	metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](err)
+	require.True(t, ok)
+	assert.Equal(t, extension.Id, metadata.InvocationExtensionId())
+	assert.Equal(t, extension.Version, metadata.InvocationExtensionVersion())
+	assert.Equal(t, "prepackage", metadata.InvocationEvent())
 	assert.Equal(t, "extension project hook failed", localErr.Message)
 	assert.Equal(t, "hook_failed", localErr.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
 	assert.Equal(t, "Fix the extension config and retry", localErr.Suggestion)
 	require.Len(t, localErr.Links, 1)
 	assert.Equal(t, "Hook troubleshooting", localErr.Links[0].Title)
+}
+
+func TestEventService_createProjectEventHandler_MapperErrorHasInvocationMetadata(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+
+	handler := service.createProjectEventHandler(t.Context(), extension, "prepackage", nil)
+	err := handler(t.Context(), project.ProjectLifecycleEventArgs{
+		Project: &project.ProjectConfig{
+			ResourceGroupName: osutil.NewExpandableString("${"),
+		},
+	})
+
+	require.Error(t, err)
+	var conversionErr *mapper.ConversionError
+	require.ErrorAs(t, err, &conversionErr)
+
+	metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](err)
+	require.True(t, ok)
+	assert.Equal(t, extension.Id, metadata.InvocationExtensionId())
+	assert.Equal(t, extension.Version, metadata.InvocationExtensionVersion())
+	assert.Equal(t, "prepackage", metadata.InvocationEvent())
 }
 
 func TestEventService_createProjectEventHandler_BackCompatFailedMessage(t *testing.T) {
@@ -587,6 +616,11 @@ func TestEventService_createServiceEventHandler_RoundTripsStructuredError(t *tes
 
 	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
 	require.True(t, ok)
+	metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](err)
+	require.True(t, ok)
+	assert.Equal(t, extension.Id, metadata.InvocationExtensionId())
+	assert.Equal(t, extension.Version, metadata.InvocationExtensionVersion())
+	assert.Equal(t, "prepackage", metadata.InvocationEvent())
 	assert.Equal(t, "extension service hook failed", serviceErr.Message)
 	assert.Equal(t, "Conflict", serviceErr.ErrorCode)
 	assert.Equal(t, 409, serviceErr.StatusCode)

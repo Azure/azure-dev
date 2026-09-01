@@ -6,6 +6,7 @@ package exterrors
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -20,6 +21,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+type fallbackTransportError struct{}
+
+func (*fallbackTransportError) Error() string {
+	return "transport failed"
+}
 
 func TestServiceFromAzure(t *testing.T) {
 	responseErr := &azcore.ResponseError{
@@ -136,6 +143,30 @@ func TestFromHostPreservesRelayedLocalError(t *testing.T) {
 	assert.Equal(t, source.Links, localErr.Links)
 }
 
+func TestFromHostPreservesRelayedToolError(t *testing.T) {
+	exitCode := 17
+	source := &azdext.ToolError{
+		Message:    "docker build failed",
+		ToolName:   "docker",
+		Kind:       azdext.ToolErrorKindFailed,
+		ExitCode:   &exitCode,
+		Suggestion: "check the Docker build output",
+	}
+	st, err := status.New(codes.Unknown, "container build failed").WithDetails(azdext.WrapError(source))
+	require.NoError(t, err)
+
+	result := FromHost(st.Err(), OpContainerBuild, "container build failed")
+
+	var toolErr *azdext.ToolError
+	require.ErrorAs(t, result, &toolErr)
+	assert.Equal(t, source.Message, toolErr.Message)
+	assert.Equal(t, source.ToolName, toolErr.ToolName)
+	assert.Equal(t, source.Kind, toolErr.Kind)
+	require.NotNil(t, toolErr.ExitCode)
+	assert.Equal(t, *source.ExitCode, *toolErr.ExitCode)
+	assert.Equal(t, source.Suggestion, toolErr.Suggestion)
+}
+
 func TestFromHost_RelayedErrorUsesOuterActionableGuidance(t *testing.T) {
 	source := &azdext.ServiceError{
 		Message:     "could not get Foundry project",
@@ -212,6 +243,44 @@ func TestInternalFromErrorPreservesStructuredError(t *testing.T) {
 	}
 
 	assert.Same(t, expected, InternalFromError(expected, OpContainerPackage, "code packaging failed"))
+}
+
+func TestUnexpectedFallbacksPreserveCauseTypes(t *testing.T) {
+	t.Parallel()
+
+	cause := fmt.Errorf("operation context: %w", &fallbackTransportError{})
+	wantCauseTypes := []string{"*exterrors.fallbackTransportError"}
+
+	tests := []struct {
+		name string
+		got  error
+	}{
+		{
+			name: "InternalFromError",
+			got:  InternalFromError(cause, "unexpected", "operation failed"),
+		},
+		{
+			name: "ServiceFromAzure",
+			got:  ServiceFromAzure(cause, "get_project"),
+		},
+		{
+			name: "FromHost",
+			got:  FromHost(cause, "build", "build failed"),
+		},
+		{
+			name: "FromAiService",
+			got:  FromAiService(cause, "ai_failed"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var localErr *azdext.LocalError
+			require.ErrorAs(t, tt.got, &localErr)
+			assert.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+			assert.Equal(t, wantCauseTypes, localErr.CauseTypes)
+		})
+	}
 }
 
 func TestFromAiService(t *testing.T) {

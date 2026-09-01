@@ -113,8 +113,9 @@ func setupConfigAndExtension(t *testing.T) (string, *Extension) {
 	require.NoError(t, os.WriteFile(extFullPath, []byte("fake-binary"), 0o600))
 
 	ext := &Extension{
-		Id:   "test-ext",
-		Path: extRelPath,
+		Id:      "test-ext",
+		Version: "1.2.3",
+		Path:    extRelPath,
 	}
 
 	return configDir, ext
@@ -392,7 +393,14 @@ func TestRunner_Invoke_CommandError_WrapsInExtensionRunError(t *testing.T) {
 	var runErr *ExtensionRunError
 	require.ErrorAs(t, err, &runErr)
 	require.Equal(t, ext.Id, runErr.ExtensionId)
+	require.Equal(t, ext.Version, runErr.ExtensionVersion)
 	require.ErrorIs(t, runErr, cmdError)
+
+	metadata, ok := errors.AsType[InvocationMetadataProvider](err)
+	require.True(t, ok)
+	require.Equal(t, ext.Id, metadata.InvocationExtensionId())
+	require.Equal(t, ext.Version, metadata.InvocationExtensionVersion())
+	require.Empty(t, metadata.InvocationEvent())
 }
 
 func TestRunner_Invoke_ExtensionPathResolution(t *testing.T) {

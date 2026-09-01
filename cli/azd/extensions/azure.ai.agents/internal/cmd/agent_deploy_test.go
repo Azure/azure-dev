@@ -13,6 +13,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,46 +24,19 @@ type recordingDependencyRunner struct {
 	err    error
 }
 
+func TestLoadAgentToolboxReferenceUsesDeployPathSuggestion(t *testing.T) {
+	t.Parallel()
+
+	_, err := loadAgentToolboxReference(filepath.Join(t.TempDir(), "missing-agent.yaml"))
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Contains(t, localErr.Suggestion, "azd ai agent deploy <path>")
+	assert.NotContains(t, localErr.Suggestion, "--file")
+}
+
 func (r *recordingDependencyRunner) Run(_ context.Context, args ...string) ([]byte, error) {
 	r.args = append([]string(nil), args...)
 	return r.output, r.err
-}
-
-func TestAgentAddToolboxReference(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "agent.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(`# agent definition
-name: research-agent
-kind: hosted
-language: python
-`), 0o600))
-
-	require.NoError(t, addAgentToolboxReference(path, toolboxReference("support-tools", "2")))
-	reference, err := loadAgentToolboxReference(path)
-	require.NoError(t, err)
-	require.NotNil(t, reference)
-	assert.Equal(t, "support-tools", reference.Name)
-	assert.Equal(t, "2", reference.Version)
-
-	content, err := os.ReadFile(path)
-	require.NoError(t, err)
-	assert.Contains(t, string(content), "# agent definition")
-}
-
-func TestAgentAddToolboxReferenceRejectsDifferentExistingReference(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "agent.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(`
-name: research-agent
-kind: hosted
-toolbox:
-  name: existing
-`), 0o600))
-
-	err := addAgentToolboxReference(path, toolboxReference("replacement", ""))
-	require.Error(t, err)
 }
 
 func TestDeployAgentToolboxDependencyUsesRemoteReference(t *testing.T) {

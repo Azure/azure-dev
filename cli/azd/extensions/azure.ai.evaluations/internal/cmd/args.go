@@ -92,7 +92,8 @@ func pageSizeOr(limit int, all bool, fallback int) int {
 	return fallback
 }
 
-// defaultPageSize keeps a first page quick on a shared project, which runs to
-// hundreds of evals and datasets. Walking all of them took seconds and buried
-// the reader's own rows.
-const defaultPageSize = 50
+// defaultPageSize keeps a first page readable on a shared project, which runs
+// to hundreds of evals and datasets. Walking all of them took seconds and
+// buried the reader's own rows; a page that overflows the terminal is the same
+// problem in a different place.
+const defaultPageSize = 20

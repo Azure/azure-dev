@@ -138,13 +138,9 @@ func TestResolvePromptAgentGraph_ValidatesName(t *testing.T) {
 	}
 }
 
-// TestResolvePromptAgentGraph_HarnessFeatureGate verifies the deploy path
-// enforces the harness capability gate: guardrails pass on both a harnessed and
-// a plain agent, while knowledge is rejected only when a harness is named. It
-// exercises the gate through the graph rather than calling
-// ValidateHarnessFeatures directly, so an unwired validation pass would be
-// caught. Memory is covered separately because it needs a live endpoint.
-func TestResolvePromptAgentGraph_HarnessFeatureGate(t *testing.T) {
+// TestResolvePromptAgentGraph_DefersHarnessCapabilities verifies azd validates
+// structure without duplicating the service's evolving harness support matrix.
+func TestResolvePromptAgentGraph_DefersHarnessCapabilities(t *testing.T) {
 	p := &AgentServiceTargetProvider{}
 	validateGraph := func(agent *agent_yaml.PromptAgent) error {
 		graph, err := newPromptGraph(p.servicePath, agent, nil, nil, nil)
@@ -180,17 +176,15 @@ func TestResolvePromptAgentGraph_HarnessFeatureGate(t *testing.T) {
 		}
 	}
 
-	grounding := []any{map[string]any{"type": "azure_ai_search"}}
-
-	if err := validateGraph(newAgent("", grounding)); err != nil {
-		t.Errorf("a plain prompt agent should accept knowledge: %v", err)
-	}
-
-	err := validateGraph(newAgent(agent_api.ManagedAgentHarnessGitHubCopilot, grounding))
-	if err == nil {
-		t.Fatal("a harnessed agent declaring knowledge should be rejected")
-	}
-	if !strings.Contains(err.Error(), "knowledge") {
-		t.Errorf("error should name the rejected capability, got: %v", err)
+	for _, toolType := range []string{
+		"function", "azure_ai_search", "file_search", "fabric_iq_preview",
+		"work_iq_preview", "bing_grounding", "some_future_tool",
+	} {
+		if err := validateGraph(newAgent(
+			agent_api.ManagedAgentHarnessGitHubCopilot,
+			[]any{map[string]any{"type": toolType}},
+		)); err != nil {
+			t.Errorf("harness tool %q should be left to service validation: %v", toolType, err)
+		}
 	}
 }

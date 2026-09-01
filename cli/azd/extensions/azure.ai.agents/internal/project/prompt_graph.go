@@ -221,14 +221,6 @@ func (g *promptGraph) agentNode() promptNode {
 					"set 'instructions' in agent.yaml",
 				)
 			}
-			if err := g.managed.ValidateHarnessFeatures(); err != nil {
-				return exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					err.Error(),
-					"remove that configuration from agent.yaml, or drop 'harness:' to run as a "+
-						"plain prompt agent, which supports it",
-				)
-			}
 			// A tool the service cannot identify is dropped silently, producing an
 			// agent that is missing a capability its manifest claims. Catch the
 			// unambiguous cases before anything is provisioned.
@@ -238,25 +230,6 @@ func (g *promptGraph) agentNode() promptNode {
 					err.Error(),
 					"each entry under 'tools:' must be a mapping with a string 'type', "+
 						"for example '- type: file_search'",
-				)
-			}
-			// A harness owns sampling, response format and tool dispatch. The
-			// service rejects a manifest that sets them rather than ignoring it,
-			// so name the offending key before anything is provisioned.
-			if err := g.managed.ValidateHarnessFields(); err != nil {
-				return exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					err.Error(),
-					"remove that field from agent.yaml, or drop 'harness:' to run as a "+
-						"plain prompt agent, which accepts it",
-				)
-			}
-			if err := g.managed.ValidateHarnessTools(); err != nil {
-				return exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					err.Error(),
-					"remove that tool from agent.yaml, or drop 'harness:' to run as a "+
-						"plain prompt agent, which supports it",
 				)
 			}
 			// A bare RAI policy name reaches the service as "invalid or does not

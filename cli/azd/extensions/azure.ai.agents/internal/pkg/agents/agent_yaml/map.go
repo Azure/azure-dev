@@ -641,16 +641,7 @@ func CreatePromptAgentAPIRequest(
 	if err := promptAgent.ValidateHarnessBlock(); err != nil {
 		return nil, err
 	}
-	if err := promptAgent.ValidateHarnessFeatures(); err != nil {
-		return nil, err
-	}
 	if err := promptAgent.ValidateTools(); err != nil {
-		return nil, err
-	}
-	if err := promptAgent.ValidateHarnessFields(); err != nil {
-		return nil, err
-	}
-	if err := promptAgent.ValidateHarnessTools(); err != nil {
 		return nil, err
 	}
 	if err := promptAgent.ValidatePolicies(); err != nil {

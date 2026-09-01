@@ -143,6 +143,10 @@ func TestTelephonyBindingMatches(t *testing.T) {
 	require.True(t, telephonyBindingMatches(remote, desired))
 	remote.ConnectionName = "other"
 	require.False(t, telephonyBindingMatches(remote, desired))
+	remote.ConnectionName = "telephony-twilio"
+	remote.TransferTargets = []map[string]any{}
+	desired.TransferTargets = nil
+	require.True(t, telephonyBindingMatches(remote, desired))
 }
 
 type fakeProjectAgentChecker struct {

@@ -2546,7 +2546,14 @@ func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_
 	return strings.TrimSpace(remote.Provider) == strings.TrimSpace(desired.Provider) &&
 		strings.TrimSpace(remote.Identifier) == strings.TrimSpace(desired.Identifier) &&
 		strings.TrimSpace(remote.ConnectionName) == strings.TrimSpace(desired.ConnectionName) &&
-		reflect.DeepEqual(remote.TransferTargets, desired.TransferTargets)
+		reflect.DeepEqual(emptyTransferTargetsAsNil(remote.TransferTargets), emptyTransferTargetsAsNil(desired.TransferTargets))
+}
+
+func emptyTransferTargetsAsNil(targets []map[string]any) []map[string]any {
+	if len(targets) == 0 {
+		return nil
+	}
+	return targets
 }
 
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {

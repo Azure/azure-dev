@@ -406,6 +406,330 @@ func TestAssembleState_InactiveSplitToolboxEndpointIsNotManual(t *testing.T) {
 	}
 }
 
+func TestAssembleState_CollectsBundledToolboxes(t *testing.T) {
+	t.Parallel()
+
+	agent := newAgentService(t, map[string]any{
+		"kind": "hostedAgent",
+		"toolboxes": []any{
+			"alpha",
+			map[string]any{"name": "beta", "tools": []any{}},
+		},
+	})
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Equal(t, []string{"alpha", "beta"}, toolboxNames(state.Toolboxes))
+	require.Equal(t, []ToolboxSource{
+		ToolboxSourceBundled,
+		ToolboxSourceBundled,
+	}, toolboxSources(state.Toolboxes))
+}
+
+func TestAssembleState_ExplicitEmptyToolboxesSuppressLegacyManifest(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeManifest(t, projectRoot, "src/agent", `
+resources:
+  - name: legacy-tools
+    kind: toolbox
+`)
+	agent := newAgentService(t, map[string]any{
+		"kind":      "hostedAgent",
+		"toolboxes": []any{},
+	})
+	agent.RelativePath = "src/agent"
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	assert.Empty(t, state.Toolboxes)
+	assert.False(t, state.HasToolboxes)
+}
+
+func TestAssembleState_AbsentToolboxesFallsBackToLegacyManifest(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeManifest(t, projectRoot, "src/agent", `
+resources:
+  - name: legacy-tools
+    kind: toolbox
+`)
+	agent := newAgentService(t, map[string]any{"kind": "hostedAgent"})
+	agent.RelativePath = "src/agent"
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Len(t, state.Toolboxes, 1)
+	assert.Equal(t, "legacy-tools", state.Toolboxes[0].Name)
+	assert.Equal(t, ToolboxSourceLegacyManifest, state.Toolboxes[0].ToolboxSource)
+}
+
+func TestAssembleState_ToolboxSourcePrecedence(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeManifest(t, projectRoot, "src/b", `
+resources:
+  - name: legacy-only
+    kind: toolbox
+`)
+	writeManifest(t, projectRoot, "src/a", `
+resources:
+  - name: same
+    kind: toolbox
+`)
+
+	agentA := newAgentService(t, map[string]any{
+		"kind": "hostedAgent",
+		"toolboxes": []any{
+			map[string]any{"name": "same"},
+			"bundled-only",
+		},
+	})
+	agentA.Name = "a"
+	agentA.RelativePath = "src/a"
+	agentA.Uses = []string{"same"}
+
+	agentB := &azdext.ServiceConfig{
+		Name:         "b",
+		Host:         agentHost,
+		RelativePath: "src/b",
+	}
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"same": {
+					Name:                 "payload-name",
+					Host:                 toolboxHost,
+					AdditionalProperties: mustStruct(t, map[string]any{"name": "ignored"}),
+				},
+				"a": agentA,
+				"b": agentB,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Equal(t, []string{"bundled-only", "legacy-only", "same"},
+		toolboxNames(state.Toolboxes))
+	assert.Equal(t, ToolboxSourceBundled, state.Toolboxes[0].ToolboxSource)
+	assert.Equal(t, ToolboxSourceLegacyManifest, state.Toolboxes[1].ToolboxSource)
+	assert.Equal(t, ToolboxSourceSplit, state.Toolboxes[2].ToolboxSource)
+	assert.Equal(t, "same", state.Toolboxes[2].ServiceName)
+}
+
+func TestAssembleState_ResolvesToolboxRefs(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeProjectFile(t, projectRoot, "agent.yaml", `
+kind: hostedAgent
+toolboxes:
+  - $ref: toolbox-entry.yaml
+`)
+	writeProjectFile(t, projectRoot, "toolbox-entry.yaml", `
+name: nested-toolbox
+`)
+
+	agent := newAgentService(t, map[string]any{
+		"$ref": "agent.yaml",
+	})
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Len(t, state.Toolboxes, 1)
+	assert.Equal(t, "nested-toolbox", state.Toolboxes[0].Name)
+	assert.Equal(t, ToolboxSourceBundled, state.Toolboxes[0].ToolboxSource)
+}
+
+func TestAssembleState_InlineToolboxSkipsUnusedLegacyRef(t *testing.T) {
+	t.Parallel()
+
+	agent := newAgentService(t, map[string]any{
+		"kind":      "hostedAgent",
+		"toolboxes": []any{"inline-tools"},
+	})
+	agent.Config = mustStruct(t, map[string]any{
+		"$ref": "missing-legacy-agent.yaml",
+	})
+
+	src := &fakeSource{
+		envName: "dev",
+		calls:   make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Len(t, state.Toolboxes, 1)
+	assert.Equal(t, "inline-tools", state.Toolboxes[0].Name)
+	assert.Empty(t, state.ToolboxLoadErrors)
+	assert.Equal(t, 1, src.calls["dev/TOOLBOX_INLINE_TOOLS_MCP_ENDPOINT"])
+}
+
+func TestAssembleState_InvalidBundledToolboxIsReported(t *testing.T) {
+	t.Parallel()
+
+	agent := newAgentService(t, map[string]any{
+		"kind": "hostedAgent",
+		"toolboxes": []any{
+			map[string]any{"tools": []any{}},
+		},
+	})
+	src := &fakeSource{
+		envName: "dev",
+		calls:   make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Len(t, errs, 1)
+	require.Len(t, state.ToolboxLoadErrors, 1)
+	assert.Contains(t, state.ToolboxLoadErrors[0], "must include a non-empty name")
+	assert.Empty(t, state.Toolboxes)
+	assert.Equal(t, 0, src.calls["dev/TOOLBOX__MCP_ENDPOINT"])
+	assert.False(t, state.ToolboxEndpointsChecked)
+}
+
+func TestAssembleState_ResolvedAgentConditionIsReported(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeProjectFile(t, projectRoot, "agent.yaml", `
+kind: hostedAgent
+condition: false
+toolboxes:
+  - referenced-tools
+`)
+	agent := newAgentService(t, map[string]any{
+		"$ref": "agent.yaml",
+	})
+
+	src := &fakeSource{
+		envName: "dev",
+		calls:   make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Len(t, errs, 1)
+	require.Len(t, state.ToolboxLoadErrors, 1)
+	assert.Contains(t, state.ToolboxLoadErrors[0], "condition in its resolved $ref")
+	assert.Empty(t, state.Toolboxes)
+	assert.Equal(t, 0, src.calls["dev/TOOLBOX_REFERENCED_TOOLS_MCP_ENDPOINT"])
+}
+
+func TestAssembleState_ToolboxLoadErrorSuppressesLegacyAndProbe(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeManifest(t, projectRoot, "src/agent", `
+resources:
+  - name: stale-tools
+    kind: toolbox
+`)
+	agent := newAgentService(t, map[string]any{
+		"$ref":      "missing-toolbox.yaml",
+		"toolboxes": []any{},
+	})
+	agent.RelativePath = "src/agent"
+
+	src := &fakeSource{
+		envName: "dev",
+		calls:   make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": agent,
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.NotEmpty(t, errs)
+	require.Len(t, state.ToolboxLoadErrors, 1)
+	assert.Contains(t, state.ToolboxLoadErrors[0], "$ref")
+	assert.Empty(t, state.Toolboxes)
+	assert.Equal(t, 0, src.calls["dev/TOOLBOX_STALE_TOOLS_MCP_ENDPOINT"])
+}
+
+func toolboxNames(refs []ResourceRef) []string {
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		names = append(names, ref.Name)
+	}
+	return names
+}
+
+func toolboxSources(refs []ResourceRef) []ToolboxSource {
+	sources := make([]ToolboxSource, 0, len(refs))
+	for _, ref := range refs {
+		sources = append(sources, ref.ToolboxSource)
+	}
+	return sources
+}
+
 func TestAssembleState_SplitToolboxConditionUsesEnvironment(t *testing.T) {
 	t.Parallel()
 

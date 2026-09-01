@@ -565,6 +565,91 @@ func TestResolveAfterInit_SplitToolboxUsesDeployOnce(t *testing.T) {
 	assert.Equal(t, 1, deployCount)
 }
 
+func TestResolveAfterInit_BundledToolboxGuidanceMigratesInOrder(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{{
+			Name:          "bundled-tools",
+			ServiceName:   "agent",
+			ToolboxSource: ToolboxSourceBundled,
+		}},
+	}
+
+	suggestions := ResolveAfterInit(state, nil)
+	require.GreaterOrEqual(t, len(suggestions), 4)
+	assert.Equal(t,
+		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
+		suggestions[0].Command)
+	assert.Equal(t,
+		"azd ai agent add toolbox bundled-tools --agent agent",
+		suggestions[1].Command)
+	assert.Equal(t, "azd deploy", suggestions[2].Command)
+	assert.Equal(t, "azd ai agent run", suggestions[3].Command)
+
+	var deployCount int
+	for _, suggestion := range suggestions {
+		if suggestion.Command == "azd deploy" {
+			deployCount++
+		}
+		assert.NotContains(t, suggestion.Command,
+			"azd env set TOOLBOX_BUNDLED_TOOLS_MCP_ENDPOINT")
+		assert.NotContains(t, suggestion.Command, "azd provision")
+	}
+	assert.Equal(t, 1, deployCount)
+}
+
+func TestResolveAfterInit_BundledToolboxGuidanceSurvivesProvisioning(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		MissingToolboxEndpoints: []ResourceRef{{
+			Name:          "bundled-tools",
+			ServiceName:   "agent",
+			ToolboxSource: ToolboxSourceBundled,
+		}},
+	}
+
+	suggestions := ResolveAfterInit(state, nil)
+	require.GreaterOrEqual(t, len(suggestions), 4)
+	assert.Equal(t, "azd provision", suggestions[0].Command)
+	assert.Equal(t,
+		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
+		suggestions[1].Command)
+	assert.Equal(t,
+		"azd ai agent add toolbox bundled-tools --agent agent",
+		suggestions[2].Command)
+	assert.Equal(t, "azd deploy", suggestions[3].Command)
+
+	var deployCount int
+	for _, suggestion := range suggestions {
+		if suggestion.Command == "azd deploy" {
+			deployCount++
+		}
+	}
+	assert.Equal(t, 1, deployCount)
+}
+
+func TestResolveAfterInit_ToolboxLoadErrorBlocksLocalRun(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		ToolboxLoadErrors: []string{
+			`agent service "agent": resolve service-level properties: missing $ref`,
+		},
+	}
+
+	suggestions := ResolveAfterInit(state, nil)
+	require.NotEmpty(t, suggestions)
+	assert.Contains(t, suggestions[0].Command, "edit azure.yaml")
+	for _, suggestion := range suggestions {
+		assert.NotEqual(t, "azd ai agent run", suggestion.Command)
+		assert.NotEqual(t, "azd deploy", suggestion.Command)
+	}
+}
+
 func TestResolveAfterInit_SplitToolboxDeployFollowsManualVars(t *testing.T) {
 	t.Parallel()
 

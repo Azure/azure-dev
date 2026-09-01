@@ -15,6 +15,11 @@ do not create or deploy the dependency. Toolbox and Connection configuration and
 lifecycle behavior remain owned by the `azure.ai.toolboxes` and
 `azure.ai.connections` extensions.
 
+If a toolbox is declared inline on an agent, move its definition to an
+independent `azure.ai.toolbox` service before deployment, attach that service
+with the command above, and then run `azd deploy`. The add command only updates
+the agent's `uses` list; it does not create or deploy the toolbox service.
+
 ## Running Local Agents
 
 `azd ai agent run` starts the selected agent locally and, by default, opens the

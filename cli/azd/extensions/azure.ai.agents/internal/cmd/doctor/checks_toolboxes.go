@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 
 	"azureaiagent/internal/cmd/nextstep"
@@ -107,6 +106,21 @@ func newCheckToolboxes(deps Dependencies) Check {
 					Status:     StatusFail,
 					Message:    fmt.Sprintf("failed to assemble agent state: %s", cause),
 					Suggestion: "Re-run `azd ai agent doctor`; the state assembly returned nil unexpectedly.",
+				}
+			}
+			if len(state.ToolboxLoadErrors) > 0 {
+				issues := slices.Clone(state.ToolboxLoadErrors)
+				slices.Sort(issues)
+				return Result{
+					Status: StatusFail,
+					Message: fmt.Sprintf(
+						"could not load configured toolboxes: %s",
+						strings.Join(issues, "; ")),
+					Suggestion: "Repair azure.yaml and any referenced toolbox files, then " +
+						"re-run `azd ai agent doctor`.",
+					Details: map[string]any{
+						"toolboxLoadErrors": issues,
+					},
 				}
 			}
 			if len(state.ToolboxDependencyErrors) > 0 {
@@ -209,16 +223,36 @@ func classifyToolboxResults(
 	})
 	var names []string
 	hasSplit := false
+	hasBundled := false
 	hasLegacy := false
 	for _, toolbox := range missing {
 		names = append(names, fmt.Sprintf("%s (env %s, service %s)",
 			toolbox.Name, envkey.ToolboxMCPEndpoint(toolbox.Name), toolbox.ServiceName))
 		hasSplit = hasSplit || toolbox.ToolboxSource == nextstep.ToolboxSourceSplit
-		hasLegacy = hasLegacy || toolbox.ToolboxSource != nextstep.ToolboxSourceSplit
+		hasBundled = hasBundled || toolbox.ToolboxSource == nextstep.ToolboxSourceBundled
+		hasLegacy = hasLegacy ||
+			toolbox.ToolboxSource == nextstep.ToolboxSourceLegacyManifest ||
+			toolbox.ToolboxSource == nextstep.ToolboxSourceUnknown
 	}
 	suggestion := "Run `azd provision` to materialize toolbox infrastructure, or " +
 		"`azd env set <ENV_VAR> <endpoint>` to point at an existing toolbox."
 	switch {
+	case hasBundled && hasSplit && hasLegacy:
+		suggestion = "Move bundled toolboxes to independent azure.ai.toolbox services, " +
+			"run `azd ai agent add toolbox <service> --agent <agent>`, then run " +
+			"`azd deploy`; run `azd provision` for legacy toolbox resources."
+	case hasBundled && hasSplit:
+		suggestion = "Move bundled toolboxes to independent azure.ai.toolbox services, " +
+			"run `azd ai agent add toolbox <service> --agent <agent>`, then run " +
+			"`azd deploy`."
+	case hasBundled && hasLegacy:
+		suggestion = "Move bundled toolboxes to independent azure.ai.toolbox services, " +
+			"run `azd ai agent add toolbox <service> --agent <agent>`, then run " +
+			"`azd deploy`; run `azd provision` for legacy toolbox resources."
+	case hasBundled:
+		suggestion = "Move bundled toolboxes to independent azure.ai.toolbox services, " +
+			"run `azd ai agent add toolbox <service> --agent <agent>`, then run " +
+			"`azd deploy`."
 	case hasSplit && hasLegacy:
 		suggestion = "Run `azd deploy` for split toolbox services and `azd provision` " +
 			"for legacy toolbox resources, or set an existing endpoint."
@@ -275,7 +309,7 @@ func classifyToolboxEndpoints(
 	lookup toolboxEnvLookupFn,
 ) Result {
 	seen := make(map[string]struct{}, len(toolboxes))
-	var missing []toolboxLookup
+	var missing []nextstep.ResourceRef
 	matched := 0
 
 	for _, t := range toolboxes {
@@ -297,51 +331,22 @@ func classifyToolboxEndpoints(
 			}
 		}
 		if strings.TrimSpace(value) == "" {
-			missing = append(missing, toolboxLookup{
-				Name: t.Name, ServiceName: t.ServiceName, EnvVar: key,
-			})
+			missing = append(missing, t)
 			continue
 		}
 		matched++
 	}
 
-	sort.Slice(missing, func(i, j int) bool {
-		if missing[i].Name != missing[j].Name {
-			return missing[i].Name < missing[j].Name
-		}
-		return missing[i].ServiceName < missing[j].ServiceName
-	})
-
-	if len(missing) == 0 {
-		return Result{
-			Status:  StatusPass,
-			Message: fmt.Sprintf("all %d declared toolbox(es) have an MCP endpoint set.", matched),
-			Details: map[string]any{
-				"matchedCount": matched,
-			},
-		}
+	result := classifyToolboxResults(missing, matched)
+	if result.Status == StatusFail {
+		result.Message = strings.Replace(
+			result.Message,
+			"declared toolbox(es)",
+			"toolbox(es)",
+			1,
+		)
 	}
-
-	var sb strings.Builder
-	for i, m := range missing {
-		if i > 0 {
-			sb.WriteString(", ")
-		}
-		sb.WriteString(fmt.Sprintf("%s (env %s, service %s)", m.Name, m.EnvVar, m.ServiceName))
-	}
-
-	return Result{
-		Status: StatusFail,
-		Message: fmt.Sprintf(
-			"%d toolbox(es) declared in agent.manifest.yaml have no MCP endpoint set in the azd environment: %s",
-			len(missing), sb.String()),
-		Suggestion: "Run `azd provision` to materialize toolbox infrastructure, or " +
-			"`azd env set <ENV_VAR> <endpoint>` to point at an existing toolbox.",
-		Details: map[string]any{
-			"missingToolboxes": missing,
-			"matchedCount":     matched,
-		},
-	}
+	return result
 }
 
 // makeRealToolboxEnvLookup binds an `azdext.AzdClient` to a one-key

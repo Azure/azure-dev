@@ -219,6 +219,8 @@ func datasetUploadSource(path string) (string, error) {
 
 func newDatasetListCommand() *cobra.Command {
 	var endpointFlg string
+	var displayLimit int
+	var showAll bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -240,6 +242,7 @@ func newDatasetListCommand() *cobra.Command {
 		},
 	}
 
+	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -257,6 +260,8 @@ func newDatasetVersionsCommand() *cobra.Command {
 
 func newDatasetVersionsListCommand() *cobra.Command {
 	var endpointFlg string
+	var displayLimit int
+	var showAll bool
 
 	cmd := &cobra.Command{
 		Use:   "list <name>",
@@ -288,6 +293,7 @@ func newDatasetVersionsListCommand() *cobra.Command {
 		},
 	}
 
+	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -301,8 +307,9 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 	if isJSON(cmd) {
 		return emitJSONList(cmd.OutOrStdout(), list.Value)
 	}
-	rows := make([][]string, 0, len(list.Value))
-	for _, d := range list.Value {
+	shown, total, trimmed := trimForDisplay(cmd, list.Value)
+	rows := make([][]string, 0, len(shown))
+	for _, d := range shown {
 		rows = append(rows, []string{d.Name, d.Version, d.Type})
 	}
 	if len(rows) == 0 {
@@ -311,7 +318,13 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 	}
 	// TYPE, not FORMAT: the service populates type (`uri_file`) and leaves
 	// format empty, so the column was blank on every row.
-	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows)
+	if err := emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows); err != nil {
+		return err
+	}
+	if trimmed {
+		fmt.Fprint(cmd.OutOrStdout(), messages.ShowingSomeOf(len(rows), total))
+	}
+	return nil
 }
 
 func newDatasetShowCommand() *cobra.Command {

@@ -403,6 +403,15 @@ func MoreItemsToList(token string) string {
 			"Everything at once: `azd ai eval run output export`\n", token)
 }
 
+// ShowingSomeOf closes a listing that was cut to a page.
+//
+// The whole collection was fetched, so the total is exact rather than a guess:
+// the reader is told what they are not seeing instead of being left to wonder
+// whether the rows on screen were all of them.
+func ShowingSomeOf(shown, total int) string {
+	return fmt.Sprintf("\nShowing %d of %d. Use --all to see the rest.\n", shown, total)
+}
+
 // OutputItemRequired reports `run output show` reached without the row to show.
 //
 // Cobra's own "accepts 1 arg(s), received 0" says nothing about what the

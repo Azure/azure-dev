@@ -103,3 +103,43 @@ func pageSizeOr(limit int, all bool, fallback int) int {
 // buried the reader's own rows; a page that overflows the terminal is the same
 // problem in a different place.
 const defaultPageSize = 20
+
+// addDisplayPagingFlags bounds a listing that already holds every row.
+//
+// These listings walk their next links before rendering, so there is no cursor
+// to resume from and offering one would be a lie. What was missing is the other
+// half: 250 rows arrived with nothing saying whether that was all of them.
+// Bounding the display and naming the total says both.
+func addDisplayPagingFlags(cmd *cobra.Command, limit *int, all *bool, defaultPage int) {
+	cmd.Flags().IntVar(limit, "limit", 0,
+		fmt.Sprintf("Rows to show. Defaults to %d.", defaultPage))
+	cmd.Flags().BoolVar(all, "all", false, "Show every row.")
+}
+
+// trimForDisplay cuts a fully-fetched listing to one page and reports the total.
+//
+// -o json is never trimmed: a caller piping a listing into a parser asked for
+// the collection, and handing back part of it without saying so is how a script
+// comes to believe a name does not exist.
+func trimForDisplay[T any](cmd *cobra.Command, rows []T) (shown []T, total int, trimmed bool) {
+	total = len(rows)
+	if isJSON(cmd) {
+		return rows, total, false
+	}
+
+	all, _ := cmd.Flags().GetBool("all")
+	if all {
+		return rows, total, false
+	}
+	limit, err := cmd.Flags().GetInt("limit")
+	if err != nil {
+		return rows, total, false
+	}
+	if limit <= 0 {
+		limit = defaultPageSize
+	}
+	if total <= limit {
+		return rows, total, false
+	}
+	return rows[:limit], total, true
+}

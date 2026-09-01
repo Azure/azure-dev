@@ -118,3 +118,34 @@ func TestFailOnSitsOnTheWaitingCommands(t *testing.T) {
 	assert.Contains(t, strings.ToLower(usage), "1",
 		"the help has to name the exit code a caller observes, which is the only reason to use the flag")
 }
+
+// A run that failed to execute is reported as that, not as a quality breach.
+//
+// `run show --fail-on` without --wait skipped the status check, so a run whose
+// status was `failed` fell through to the gate, which read its empty counts as
+// a pass rate of zero and exited "gate breached". A pipeline then went looking
+// at the model for a problem the run had never got far enough to have.
+func TestAFailedRunIsNotReportedAsAQualityBreach(t *testing.T) {
+	failed := &eval_api.OpenAIEvalRun{
+		ID:           "evalrun_1",
+		Status:       "failed",
+		ResultCounts: &eval_api.EvalRunResultCounts{},
+	}
+
+	err := runCompleted(failed)
+	require.Error(t, err, "an operational failure has to be reported on its own terms")
+	assert.Contains(t, err.Error(), "failed")
+	assert.NotContains(t, strings.ToLower(err.Error()), "pass rate",
+		"the run never scored anything, so a rate says nothing about it")
+
+	// And the run that did finish is left to the gate, which is what judges it.
+	require.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "evalrun_2", Status: "completed"}))
+}
+
+// The status check is part of a gate, whether or not the caller waited.
+func TestShowGatesOnStatusWheneverAGateIsAskedFor(t *testing.T) {
+	cmd := find(t, "run show")
+	require.NotNil(t, cmd.Flags().Lookup("fail-on"))
+	require.NotNil(t, cmd.Flags().Lookup("wait"),
+		"the two are independent: a gate on a terminal run needs no wait")
+}

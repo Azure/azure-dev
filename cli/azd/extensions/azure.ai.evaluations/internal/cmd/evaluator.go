@@ -217,8 +217,10 @@ func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 
 func newEvaluatorListCommand() *cobra.Command {
 	var (
-		builtin     bool
-		endpointFlg string
+		displayLimit int
+		showAll      bool
+		builtin      bool
+		endpointFlg  string
 	)
 
 	cmd := &cobra.Command{
@@ -249,6 +251,7 @@ func newEvaluatorListCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&builtin, "builtin", false,
 		"List the built-in evaluators instead of the project's own.")
+	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -267,6 +270,8 @@ func newEvaluatorVersionsCommand() *cobra.Command {
 
 func newEvaluatorVersionsListCommand() *cobra.Command {
 	var endpointFlg string
+	var displayLimit int
+	var showAll bool
 
 	cmd := &cobra.Command{
 		Use:   "list <name>",
@@ -298,6 +303,7 @@ func newEvaluatorVersionsListCommand() *cobra.Command {
 		},
 	}
 
+	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -310,11 +316,18 @@ func renderEvaluators(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) 
 		fmt.Fprint(cmd.OutOrStdout(), messages.NoEvaluators())
 		return nil
 	}
-	rows := make([][]string, 0, len(list.Value))
-	for _, e := range list.Value {
+	shown, total, trimmed := trimForDisplay(cmd, list.Value)
+	rows := make([][]string, 0, len(shown))
+	for _, e := range shown {
 		rows = append(rows, []string{e.Name, e.Version, e.Type()})
 	}
-	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows)
+	if err := emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows); err != nil {
+		return err
+	}
+	if trimmed {
+		fmt.Fprint(cmd.OutOrStdout(), messages.ShowingSomeOf(len(rows), total))
+	}
+	return nil
 }
 
 // evaluatorPassThreshold renders the rubric's pass mark for a table cell,
@@ -342,8 +355,9 @@ func renderEvaluatorVersions(cmd *cobra.Command, list *eval_api.EvaluatorListRes
 		fmt.Fprint(cmd.OutOrStdout(), messages.NoEvaluators())
 		return nil
 	}
-	rows := make([][]string, 0, len(list.Value))
-	for _, e := range list.Value {
+	shown, total, trimmed := trimForDisplay(cmd, list.Value)
+	rows := make([][]string, 0, len(shown))
+	for _, e := range shown {
 		rows = append(rows, []string{
 			e.Version,
 			timestampString(e.CreatedAt),
@@ -351,8 +365,14 @@ func renderEvaluatorVersions(cmd *cobra.Command, list *eval_api.EvaluatorListRes
 			e.Description,
 		})
 	}
-	return emitTable(cmd.OutOrStdout(),
-		[]string{"VERSION", "CREATED AT", "PASS THRESHOLD", "DESCRIPTION"}, rows)
+	if err := emitTable(cmd.OutOrStdout(),
+		[]string{"VERSION", "CREATED AT", "PASS THRESHOLD", "DESCRIPTION"}, rows); err != nil {
+		return err
+	}
+	if trimmed {
+		fmt.Fprint(cmd.OutOrStdout(), messages.ShowingSomeOf(len(rows), total))
+	}
+	return nil
 }
 
 func newEvaluatorShowCommand() *cobra.Command {

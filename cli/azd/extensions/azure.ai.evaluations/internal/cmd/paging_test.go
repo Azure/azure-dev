@@ -39,6 +39,31 @@ func TestListingsShareOnePagingContract(t *testing.T) {
 	}
 }
 
+// Every listing can be bounded, and says when it has been.
+//
+// A listing that prints 250 rows and nothing else leaves the reader unable to
+// tell a complete answer from a clipped one. These walk their next links before
+// rendering, so there is no cursor to resume from -- but the total is exact,
+// which is the half that was missing.
+func TestEveryListingCanBeBounded(t *testing.T) {
+	for _, name := range []string{
+		"list", "run list", "run output list",
+		"dataset list", "dataset versions list",
+		"evaluator list", "evaluator versions list",
+		"job list",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cmd := find(t, name)
+			require.NotNilf(t, cmd.Flags().Lookup("limit"),
+				"%s cannot be bounded, so a large project floods the terminal", name)
+			all := cmd.Flags().Lookup("all")
+			require.NotNilf(t, all, "%s has no explicit way to ask for everything", name)
+			assert.Equal(t, "false", all.DefValue,
+				"a listing must not flood the terminal unless it was asked to")
+		})
+	}
+}
+
 // --all means follow the cursor, not "a very large page".
 func TestPageSizeOr(t *testing.T) {
 	assert.Equal(t, 50, pageSizeOr(0, false, 50), "no limit takes the default page")

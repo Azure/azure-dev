@@ -165,11 +165,13 @@ func newRunShowCommand() *cobra.Command {
 			// Reattaching to a run started asynchronously: the pipeline that
 			// gates on it is often not the one that started it.
 			//
-			// Only a caller that waited is told a bad status through the exit
-			// code. Without --wait this is an inspection command: it was asked
-			// what happened, and answering that is a success whatever the
-			// answer.
-			gateOnStatus := wait
+			// Without a gate this is an inspection command: it was asked what
+			// happened, and answering that is a success whatever the answer. A
+			// gate is a different question, so the run's own status is part of
+			// it -- a run that failed to execute is not a run that scored badly,
+			// and reporting one as the other sent a pipeline to look at the
+			// model when the run had never produced a score to look at.
+			gateOnStatus := wait || threshold.set
 			if wait {
 				// Into a second variable: pollRun answers the budget with a nil
 				// run, and the run read above is what still names it.

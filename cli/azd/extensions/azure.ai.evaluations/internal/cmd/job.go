@@ -134,6 +134,8 @@ func newJobCommand() *cobra.Command {
 
 func newJobListCommand() *cobra.Command {
 	var endpointFlg string
+	var displayLimit int
+	var showAll bool
 	sel := &jobSelector{}
 
 	cmd := &cobra.Command{
@@ -164,15 +166,23 @@ func newJobListCommand() *cobra.Command {
 				fmt.Fprint(cmd.OutOrStdout(), messages.NoJobs(kind.name))
 				return nil
 			}
-			table := make([][]string, 0, len(jobs))
-			for _, j := range jobs {
+			shown, total, trimmed := trimForDisplay(cmd, jobs)
+			table := make([][]string, 0, len(shown))
+			for _, j := range shown {
 				table = append(table, []string{j.ID, j.Status})
 			}
-			return emitTable(cmd.OutOrStdout(), []string{"JOB ID", "STATUS"}, table)
+			if err := emitTable(cmd.OutOrStdout(), []string{"JOB ID", "STATUS"}, table); err != nil {
+				return err
+			}
+			if trimmed {
+				fmt.Fprint(cmd.OutOrStdout(), messages.ShowingSomeOf(len(table), total))
+			}
+			return nil
 		},
 	}
 
 	sel.bind(cmd)
+	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

@@ -222,8 +222,10 @@ func resolveDigitalWorkerPublishInputs(
 			})
 		}
 		if publish.AccessBoundaries != nil {
-			values := make([]string, len(*publish.AccessBoundaries))
-			copy(values, *publish.AccessBoundaries)
+			values := make([]string, 0, len(*publish.AccessBoundaries))
+			for _, boundary := range *publish.AccessBoundaries {
+				values = append(values, strings.TrimSpace(boundary))
+			}
 			boundaries = &values
 		}
 	}

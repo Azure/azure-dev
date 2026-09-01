@@ -295,7 +295,7 @@ func TestParseOptionalPermissionScopeFlagsRejectsInvalidValue(t *testing.T) {
 func TestResolveDigitalWorkerPublishInputs(t *testing.T) {
 	t.Parallel()
 
-	configBoundaries := []string{"read.1on1.developers"}
+	configBoundaries := []string{" read.1on1.developers "}
 	packCtx := digitalWorkerPackContext("tenant")
 	packCtx.activitySettings.Publish.OptionalPermissionScopes = []project.Microsoft365PermissionScopes{
 		{ResourceAppID: "configured-app", Scopes: []string{"Configured.Scope"}},
@@ -305,7 +305,7 @@ func TestResolveDigitalWorkerPublishInputs(t *testing.T) {
 	permissions, boundaries, err := resolveDigitalWorkerPublishInputs(&publishFlags{}, packCtx)
 	require.NoError(t, err)
 	require.Equal(t, "configured-app", permissions[0].ResourceAppID)
-	require.Equal(t, configBoundaries, *boundaries)
+	require.Equal(t, []string{"read.1on1.developers"}, *boundaries)
 
 	permissions, boundaries, err = resolveDigitalWorkerPublishInputs(&publishFlags{
 		optionalPermissionScopes:    []string{"flag-app=Flag.Scope"},

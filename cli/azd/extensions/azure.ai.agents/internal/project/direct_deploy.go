@@ -207,7 +207,7 @@ func DeployPreparedStandaloneHostedAgent(
 		ctx,
 		prepared.definition.Name,
 		agent_api.AgentEndpointAPIVersion,
-		localProfile.IsActivity,
+		true,
 	)
 	var agentObject *agent_api.AgentObject
 	if getErr != nil {
@@ -225,10 +225,8 @@ func DeployPreparedStandaloneHostedAgent(
 			agent_api.AgentEndpointAPIVersion,
 		)
 	} else {
-		if localProfile.IsActivity {
-			if err := reconcileStandaloneEndpointWithDeployedAgent(request, localProfile, existingAgent); err != nil {
-				return nil, err
-			}
+		if err := reconcileStandaloneEndpointWithDeployedAgent(request, localProfile, existingAgent); err != nil {
+			return nil, err
 		}
 		prepared.progress("Creating a new agent version from code package")
 		writeExistingAgentVersionWarning(prepared.definition.Name)

@@ -117,3 +117,29 @@ func TestReconcileStandaloneEndpointWithDeployedDigitalWorker(t *testing.T) {
 		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
 	}, request.AgentEndpoint.AuthorizationSchemes)
 }
+
+func TestReconcileStandaloneEndpointPromotesNonActivityDefinitionForDeployedDigitalWorker(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
+			AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeEntra},
+			},
+		},
+	}
+	existingAgent := &agent_api.AgentObject{DigitalWorkerType: agent_api.DigitalWorkerTypeM365}
+
+	err := reconcileStandaloneEndpointWithDeployedAgent(request, ActivityProfile{}, existingAgent)
+
+	require.NoError(t, err)
+	require.Equal(t, []agent_api.AgentEndpointProtocol{
+		agent_api.AgentEndpointProtocolResponses,
+		agent_api.AgentEndpointProtocolActivity,
+	}, request.AgentEndpoint.Protocols)
+	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+		{Type: agent_api.AgentEndpointAuthSchemeEntra},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
+	}, request.AgentEndpoint.AuthorizationSchemes)
+}

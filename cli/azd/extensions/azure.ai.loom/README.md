@@ -106,3 +106,24 @@ All commands emit complete JSON responses for automation.
 azd x build
 go test ./... -count=1
 ```
+
+To exercise every command against a project from PowerShell:
+
+```powershell
+.\test-all.ps1 `
+  -ProjectEndpoint "https://<account>.services.ai.azure.com/api/projects/<project-id>" `
+  -RunId "<run-id>" `
+  -SecondRunId "<second-run-id>" `
+  -TraceId "<trace-id>" `
+  -MetricsFile .\testdata\metrics.pb `
+  -LogsFile .\testdata\logs.pb `
+  -TracesFile .\testdata\traces.pb `
+  -AgentTracesFile .\testdata\agent-traces.json `
+  -GraphQLFile .\testdata\graphql-request.json `
+  -FileStreamFile .\testdata\file-stream-request.json
+```
+
+The script builds and installs the extension, runs all commands, and prints a
+pass/fail summary. Set `AZURE_AI_PROJECT_API_KEY` before running it to use API
+key authentication. Otherwise, it uses the current `azd auth login` session.
+Use `-SkipWriteOperations` to test only inspection, trace, and span commands.

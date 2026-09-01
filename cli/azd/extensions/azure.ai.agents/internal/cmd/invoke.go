@@ -26,6 +26,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -64,13 +65,15 @@ const defaultInvokeTimeoutSeconds = 30 * 60
 const maxInvokeVersionLength = 128
 
 var createInvokeVersionSession = createInvokeVersionSessionImpl
+var getRemoteAgent = getRemoteAgentImpl
 
 type InvokeAction struct {
-	flags               *invokeFlags
-	noPrompt            bool
-	endpoint            *parsedAgentEndpoint
-	clientHeaders       http.Header
-	protocolServiceName string
+	flags                 *invokeFlags
+	noPrompt              bool
+	endpoint              *parsedAgentEndpoint
+	clientHeaders         http.Header
+	protocolServiceName   string
+	resolvedRemoteContext *remoteContext
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -268,7 +271,9 @@ suppressed in raw mode.`,
 	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
 	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "",
-		"Protocol to use: responses (default), invocations, or a2a (a2a is remote-only)")
+		"Protocol to use: responses, invocations, or a2a. "+
+			"Auto-detected from the deployed agent remotely or the local definition "+
+			"with --local; --protocol overrides.")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -527,16 +532,28 @@ func (a *InvokeAction) emitInvokeFailureNextStep(mode nextstep.InvokeMode, agent
 }
 
 // resolveProtocol returns the protocol to use for this invocation.
-// The explicit --protocol flag takes priority; otherwise the protocol
-// is auto-detected from agent.yaml (local or remote).
-// When the protocol is auto-detected without an explicit agent name, the
-// resolved service name is cached separately so downstream calls do an exact
-// lookup without confusing the service selector for a Foundry agent name.
 func (a *InvokeAction) resolveProtocol(
 	ctx context.Context,
 ) (agent_api.AgentProtocol, error) {
 	if a.flags.protocol != "" {
 		return agent_api.AgentProtocol(a.flags.protocol), nil
+	}
+
+	if !a.flags.local {
+		rc, err := a.resolveRemoteContextForInvoke(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		protocol, err := a.resolveDeployedProtocol(ctx, rc)
+		if err != nil {
+			if rc.azdClient != nil {
+				rc.azdClient.Close()
+			}
+			return "", err
+		}
+		a.resolvedRemoteContext = rc
+		return protocol, nil
 	}
 
 	azdClient, err := azdext.NewAzdClient()
@@ -558,6 +575,173 @@ func (a *InvokeAction) resolveProtocol(
 	}
 
 	return protocol, nil
+}
+
+func (a *InvokeAction) resolveDeployedProtocol(
+	ctx context.Context,
+	rc *remoteContext,
+) (agent_api.AgentProtocol, error) {
+	agent, err := getRemoteAgent(ctx, rc)
+	if err != nil {
+		return "", remoteProtocolLookupError(rc.name, err)
+	}
+
+	deployed := remoteInvocableProtocols(agent.AgentEndpoint)
+	if len(deployed) <= 1 {
+		return selectRemoteInvokeProtocol(deployed, nil)
+	}
+
+	var local []agent_api.AgentProtocol
+	if rc.azdClient != nil && rc.serviceName != "" {
+		local, err = resolveAgentInvocableProtocols(
+			ctx,
+			rc.azdClient,
+			rc.serviceName,
+			a.noPrompt,
+		)
+		if err != nil {
+			return "", remoteProtocolSelectionError(
+				deployed,
+				fmt.Sprintf("the local definition could not disambiguate them: %v", err),
+			)
+		}
+	}
+
+	return selectRemoteInvokeProtocol(deployed, local)
+}
+
+func getRemoteAgentImpl(
+	ctx context.Context,
+	rc *remoteContext,
+) (*agent_api.AgentObject, error) {
+	credential, err := newAgentCredential()
+	if err != nil {
+		return nil, err
+	}
+
+	apiVersion := rc.apiVersion
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	client := agent_api.NewAgentClient(rc.projectEndpoint, credential)
+	return client.GetAgent(ctx, rc.name, apiVersion)
+}
+
+func remoteProtocolLookupError(agentName string, err error) error {
+	wrapped := fmt.Errorf(
+		"failed to resolve the deployed protocol for agent %q: %w",
+		agentName,
+		err,
+	)
+	return &errorhandler.ErrorWithSuggestion{
+		Err:     wrapped,
+		Message: fmt.Sprintf("could not determine the deployed protocol for agent %q", agentName),
+		Suggestion: "pass --protocol responses, --protocol invocations, or " +
+			"--protocol a2a to bypass deployed protocol detection",
+	}
+}
+
+func remoteInvocableProtocols(
+	endpoint *agent_api.AgentEndpoint,
+) []agent_api.AgentProtocol {
+	var invocable []agent_api.AgentProtocol
+	seen := make(map[agent_api.AgentProtocol]struct{})
+	for _, name := range resolveEndpointProtocols(endpoint) {
+		protocol := agent_api.AgentProtocol(strings.TrimSpace(name))
+		if protocol.IsInvocable() {
+			if _, ok := seen[protocol]; ok {
+				continue
+			}
+			seen[protocol] = struct{}{}
+			invocable = append(invocable, protocol)
+		}
+	}
+	return invocable
+}
+
+func selectRemoteInvokeProtocol(
+	deployed []agent_api.AgentProtocol,
+	local []agent_api.AgentProtocol,
+) (agent_api.AgentProtocol, error) {
+	deployed = uniqueAgentProtocols(deployed)
+	switch len(deployed) {
+	case 0:
+		return "", remoteProtocolSelectionError(deployed, "")
+	case 1:
+		return deployed[0], nil
+	}
+
+	local = uniqueAgentProtocols(local)
+	if len(local) == 1 && containsAgentProtocol(deployed, local[0]) {
+		return local[0], nil
+	}
+	return "", remoteProtocolSelectionError(deployed, "")
+}
+
+func uniqueAgentProtocols(
+	protocols []agent_api.AgentProtocol,
+) []agent_api.AgentProtocol {
+	unique := make([]agent_api.AgentProtocol, 0, len(protocols))
+	seen := make(map[agent_api.AgentProtocol]struct{}, len(protocols))
+	for _, protocol := range protocols {
+		if _, ok := seen[protocol]; ok {
+			continue
+		}
+		seen[protocol] = struct{}{}
+		unique = append(unique, protocol)
+	}
+	return unique
+}
+
+func containsAgentProtocol(
+	protocols []agent_api.AgentProtocol,
+	target agent_api.AgentProtocol,
+) bool {
+	for _, protocol := range protocols {
+		if protocol == target {
+			return true
+		}
+	}
+	return false
+}
+
+func remoteProtocolSelectionError(
+	protocols []agent_api.AgentProtocol,
+	reason string,
+) error {
+	if len(protocols) == 0 {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"the deployed agent does not expose an invocable protocol",
+			"pass --protocol responses, --protocol invocations, or --protocol a2a",
+		)
+	}
+
+	names := make([]string, len(protocols))
+	for i, protocol := range protocols {
+		names[i] = string(protocol)
+	}
+	message := fmt.Sprintf(
+		"the deployed agent exposes multiple invocable protocols: %s",
+		strings.Join(names, ", "),
+	)
+	if reason != "" {
+		message += "; " + reason
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		message,
+		"pass --protocol to choose one of the deployed protocols",
+	)
+}
+
+func (a *InvokeAction) resolveRemoteContextForInvoke(
+	ctx context.Context,
+) (*remoteContext, error) {
+	if a.resolvedRemoteContext != nil {
+		return a.resolvedRemoteContext, nil
+	}
+	return a.resolveRemoteContext(ctx)
 }
 
 func (a *InvokeAction) serviceNameSelector() string {
@@ -1113,7 +1297,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return err
 	}
 
-	rc, err := a.resolveRemoteContext(ctx)
+	rc, err := a.resolveRemoteContextForInvoke(ctx)
 	if err != nil {
 		return err
 	}
@@ -1393,7 +1577,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return err
 	}
 
-	rc, err := a.resolveRemoteContext(ctx)
+	rc, err := a.resolveRemoteContextForInvoke(ctx)
 	if err != nil {
 		return err
 	}

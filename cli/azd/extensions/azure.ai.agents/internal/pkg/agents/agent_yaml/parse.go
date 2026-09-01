@@ -588,8 +588,8 @@ func validateVoiceTelephony(telephony *VoiceTelephony) []string {
 			if identifier == "" {
 				continue
 			}
-			if strings.HasPrefix(identifier, "4:") {
-				if !e164Pattern.MatchString(strings.TrimPrefix(identifier, "4:")) {
+			if after, ok := strings.CutPrefix(identifier, "4:"); ok {
+				if !e164Pattern.MatchString(after) {
 					errors = append(errors, path+".identifier must be 4:+<E.164> for acs-purchased numbers")
 				}
 			} else if !acsTpeRawIDPattern.MatchString(identifier) {

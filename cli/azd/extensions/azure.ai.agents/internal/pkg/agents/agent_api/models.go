@@ -478,7 +478,7 @@ type TelephonyBinding struct {
 	Identifier      string            `json:"identifier,omitempty"`
 	Status          string            `json:"status,omitempty"`
 	ConnectionName  string            `json:"connection_name,omitempty"`
-	AgentRef        TelephonyAgentRef `json:"agent_ref,omitempty"`
+	AgentRef        TelephonyAgentRef `json:"agent_ref"`
 	TransferTargets []map[string]any  `json:"transfer_targets,omitempty"`
 	ProviderConfig  map[string]any    `json:"provider_config,omitempty"`
 	ETag            string            `json:"etag,omitempty"`

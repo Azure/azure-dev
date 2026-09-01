@@ -449,10 +449,11 @@ func appendBundledToolboxGuidance(
 
 	limit := min(len(bundled), maxFixupLines)
 	for _, toolbox := range bundled[:limit] {
+		serviceKey := servicekey.SanitizeServiceName(toolbox.Name)
 		*out = append(*out, Suggestion{
 			Command: fmt.Sprintf(
 				"edit azure.yaml: create azure.ai.toolbox service %q",
-				toolbox.Name,
+				serviceKey,
 			),
 			Description: "move the bundled toolbox definition to an independent service",
 			Priority:    priority,
@@ -461,7 +462,7 @@ func appendBundledToolboxGuidance(
 		*out = append(*out, Suggestion{
 			Command: fmt.Sprintf(
 				"azd ai agent add toolbox %s --agent %s",
-				shellEscapeSingleQuoted(servicekey.SanitizeServiceName(toolbox.Name)),
+				shellEscapeSingleQuoted(serviceKey),
 				shellEscapeSingleQuoted(toolbox.ServiceName),
 			),
 			Description: "attach the independent toolbox service to the agent",

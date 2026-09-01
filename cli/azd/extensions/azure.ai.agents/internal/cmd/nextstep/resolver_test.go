@@ -615,7 +615,7 @@ func TestResolveAfterInit_BundledToolboxGuidanceQuotesSpacedNames(t *testing.T) 
 	suggestions := ResolveAfterInit(state, nil)
 	require.GreaterOrEqual(t, len(suggestions), 2)
 	assert.Equal(t,
-		"edit azure.yaml: create azure.ai.toolbox service \"My Tools\"",
+		"edit azure.yaml: create azure.ai.toolbox service \"MyTools\"",
 		suggestions[0].Command)
 	assert.Equal(t,
 		"azd ai agent add toolbox 'MyTools' --agent 'My Agent'",

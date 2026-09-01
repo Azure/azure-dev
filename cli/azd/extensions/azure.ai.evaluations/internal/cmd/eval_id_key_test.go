@@ -22,8 +22,12 @@ import (
 // This is the only enforcement of that. The reasoning lives in a comment on
 // the reconciler and in another on `resolveEvalID`, and a comment cannot fail.
 func TestRecordedEvalIDIgnoresTheSharedKey(t *testing.T) {
+	// EVAL_ID is no longer written, but an environment reconciled by an older
+	// build still carries one. Named as a literal rather than a constant
+	// because the constant is gone, and the point is that nothing reaches for
+	// it however it got there.
 	env := &testEnvServer{state: map[string]string{
-		envKeyEvalID: "evalgroup_the_one_this_replaced",
+		"EVAL_ID": "evalgroup_the_one_this_replaced",
 	}}
 	ec := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
 

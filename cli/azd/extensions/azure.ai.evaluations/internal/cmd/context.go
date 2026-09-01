@@ -495,9 +495,6 @@ func (ec *evalContext) withPortalLink(
 
 // azd environment keys written by this extension.
 const (
-	envKeyEvalID            = "EVAL_ID"
-	envKeyEvalRunID         = "EVAL_RUN_ID"
-	envKeyDatasetVersion    = "EVAL_DATASET_VERSION"
 	envKeyFingerprintPrefix = "EVAL_FINGERPRINT_"
 	// envKeyEvalPath records where `init` put the configuration, so the
 	// commands that read it afterwards do not each need --path repeated.

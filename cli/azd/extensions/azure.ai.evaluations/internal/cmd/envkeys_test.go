@@ -44,13 +44,11 @@ func TestIDKey_DoesNotCollideWithVersionKey(t *testing.T) {
 	assert.NotEqual(t, idKey("dataset", "golden"), versionKey("dataset", "golden"))
 }
 
-// The shared EVAL_ID entry is written by every deploy, so it cannot say which
-// declaration it belongs to. Reading it for a config that names a single eval
-// let a file whose one entry had been replaced run the previous eval's criteria
-// over the new one's rows, reported as success. An eval's id is read from the
-// entry recorded under its own name and nowhere else.
+// An eval's id is read from the entry recorded under its own name and nowhere
+// else. A shared entry cannot say which declaration it belongs to, and reading
+// one let a file whose single entry had been replaced run the previous eval's
+// criteria over the new one's rows, reported as success.
 func TestEvalIDIsReadFromTheEvalsOwnEntry(t *testing.T) {
-	assert.NotEqual(t, envKeyEvalID, idKey("eval", "quality"))
 	assert.NotEqual(t, idKey("eval", "quality"), idKey("eval", "nightly"),
 		"two declarations cannot share an entry")
 }

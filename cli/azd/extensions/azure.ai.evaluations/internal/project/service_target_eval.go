@@ -24,8 +24,6 @@ const EvalHost = "azure.ai.eval"
 
 // azd environment keys owned by this extension.
 const (
-	EnvKeyEvalID            = "EVAL_ID"
-	EnvKeyDatasetVersion    = "EVAL_DATASET_VERSION"
 	EnvKeyFingerprintPrefix = "EVAL_FINGERPRINT_"
 )
 

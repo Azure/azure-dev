@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -158,17 +157,6 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 			}
 			if err != nil {
 				return messages.RegisteringDataset(name, err)
-			}
-
-			if err := ec.setEnvValue(ctx, envKeyDatasetVersion, ds.Version); err != nil {
-				// Persisting is a convenience, so this never fails the command.
-				// It goes to stdout because azd does not surface an extension's
-				// stderr under `azd up`, which is where a deploy would lose it.
-				// Skipped outside a project, where having nowhere to persist is
-				// expected rather than notable.
-				if !errors.Is(err, errNoAzdEnvironment) && !isJSON(cmd) {
-					fmt.Fprint(cmd.OutOrStdout(), messages.Warning(err))
-				}
 			}
 
 			if isJSON(cmd) {

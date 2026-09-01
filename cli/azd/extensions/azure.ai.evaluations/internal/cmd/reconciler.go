@@ -300,7 +300,6 @@ func (r *evalReconciler) EnsureDataset(
 
 	r.ec.remember(ctx, key, digest)
 	r.ec.remember(ctx, versionKey("dataset", decl.Name), ds.Version)
-	r.ec.remember(ctx, envKeyDatasetVersion, ds.Version)
 
 	return ds.Version, true, nil
 }
@@ -691,7 +690,6 @@ func (r *evalReconciler) EnsureEval(
 			r.ec.remember(ctx, key, definition)
 			r.ec.remember(ctx, idKey("eval", group.Name), cached)
 			r.ec.remember(ctx, digestIDKey(digest), cached)
-			r.ec.remember(ctx, envKeyEvalID, cached)
 			r.claim(cached)
 			return cached, false, nil
 		}
@@ -704,11 +702,6 @@ func (r *evalReconciler) EnsureEval(
 	r.ec.remember(ctx, key, definition)
 	r.ec.remember(ctx, idKey("eval", group.Name), created.ID)
 	r.ec.remember(ctx, digestIDKey(digest), created.ID)
-	// EVAL_ID stays the last-deployed eval. Nothing reads it to decide which
-	// eval a command means, because every deploy writes it and it cannot say
-	// which declaration it belongs to; it is here for anything outside this
-	// extension that wants the id of what was just deployed.
-	r.ec.remember(ctx, envKeyEvalID, created.ID)
 	r.claim(created.ID)
 	return created.ID, true, nil
 }

@@ -57,3 +57,27 @@ func TestAFailedWriteIsNotRememberedInMemory(t *testing.T) {
 	assert.Empty(t, ec.privateValue(ctx, idKey("eval", "nightly")),
 		"a value that never reached azd must not read back as though it had")
 }
+
+// The extension writes no azd environment values at all.
+//
+// EVAL_ID, EVAL_RUN_ID and EVAL_DATASET_VERSION were written by every deploy
+// and read by nothing -- not this extension, not the project package, whose
+// exported constants for them were referenced nowhere. They accumulated: one
+// environment held globals still naming an eval and a run that had been
+// deleted, and a reader could not tell which declaration either belonged to.
+// The per-eval entries carry the same facts and say whose they are.
+func TestNoGlobalIdsAreWrittenToTheEnvironment(t *testing.T) {
+	env := &testEnvServer{}
+	ec := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
+	ctx := context.Background()
+
+	ec.remember(ctx, idKey("eval", "nightly"), "evalgroup_1")
+	ec.remember(ctx, idKey("evalrun", "evalgroup_1"), "evalrun_1")
+	ec.remember(ctx, versionKey("dataset", "golden"), "1.0")
+
+	for _, gone := range []string{"EVAL_ID", "EVAL_RUN_ID", "EVAL_DATASET_VERSION"} {
+		assert.NotContainsf(t, env.values, gone,
+			"%s is written by every deploy and read by nothing", gone)
+	}
+	assert.Empty(t, env.values, "nothing belongs in the environment values")
+}

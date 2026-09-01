@@ -1124,14 +1124,17 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 					}
 					return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
 				}
-				// Reference every selected deployment by name (manifest injection
-				// + env var) regardless of new/existing. Only declare NEW
+				// Reference every selected deployment through its indexed
+				// environment-backed name (manifest injection + env var), regardless
+				// of new/existing. Only declare NEW
 				// deployments under azure.ai.project.deployments: so azd
 				// creates/upserts them; an existing deployment is referenced, not
 				// managed (REFERENCE.md: anything not declared but referenced by
 				// name is treated as existing).
 				referencedDeployments = append(referencedDeployments, *deployment)
-				paramValues[resource.Name] = deployment.Name
+				paramValues[resource.Name] = fmt.Sprintf(
+					"${%s}", deploymentKeys(len(referencedDeployments)-1).deploymentName,
+				)
 				anyModelProcessed = true
 				if isNew {
 					deploymentDetails = append(deploymentDetails, *deployment)

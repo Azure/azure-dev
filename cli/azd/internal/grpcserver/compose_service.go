@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"

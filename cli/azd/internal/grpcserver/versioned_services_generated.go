@@ -113,44 +113,6 @@ func validateBetaAiModelServiceOverride(override any) error {
 	)
 }
 
-// BetaComposeServiceListResourcesOverride overrides the beta ComposeService.ListResources method before stable adaptation.
-type BetaComposeServiceListResourcesOverride interface {
-	ListResources(context.Context, *v1beta.EmptyRequest) (*v1beta.ListResourcesResponse, error)
-}
-
-// BetaComposeServiceGetResourceOverride overrides the beta ComposeService.GetResource method before stable adaptation.
-type BetaComposeServiceGetResourceOverride interface {
-	GetResource(context.Context, *v1beta.GetResourceRequest) (*v1beta.GetResourceResponse, error)
-}
-
-// BetaComposeServiceListResourceTypesOverride overrides the beta ComposeService.ListResourceTypes method before stable adaptation.
-type BetaComposeServiceListResourceTypesOverride interface {
-	ListResourceTypes(context.Context, *v1beta.EmptyRequest) (*v1beta.ListResourceTypesResponse, error)
-}
-
-// BetaComposeServiceGetResourceTypeOverride overrides the beta ComposeService.GetResourceType method before stable adaptation.
-type BetaComposeServiceGetResourceTypeOverride interface {
-	GetResourceType(context.Context, *v1beta.GetResourceTypeRequest) (*v1beta.GetResourceTypeResponse, error)
-}
-
-// BetaComposeServiceAddResourceOverride overrides the beta ComposeService.AddResource method before stable adaptation.
-type BetaComposeServiceAddResourceOverride interface {
-	AddResource(context.Context, *v1beta.AddResourceRequest) (*v1beta.AddResourceResponse, error)
-}
-
-func validateBetaComposeServiceOverride(override any) error {
-	return validateBetaServiceOverride(
-		"ComposeService",
-		override,
-		reflect.TypeFor[v1beta.ComposeServiceServer](),
-		reflect.TypeFor[BetaComposeServiceListResourcesOverride](),
-		reflect.TypeFor[BetaComposeServiceGetResourceOverride](),
-		reflect.TypeFor[BetaComposeServiceListResourceTypesOverride](),
-		reflect.TypeFor[BetaComposeServiceGetResourceTypeOverride](),
-		reflect.TypeFor[BetaComposeServiceAddResourceOverride](),
-	)
-}
-
 // BetaContainerServiceBuildOverride overrides the beta ContainerService.Build method before stable adaptation.
 type BetaContainerServiceBuildOverride interface {
 	Build(context.Context, *v1beta.ContainerBuildRequest) (*v1beta.ContainerBuildResponse, error)
@@ -174,56 +136,6 @@ func validateBetaContainerServiceOverride(override any) error {
 		reflect.TypeFor[BetaContainerServiceBuildOverride](),
 		reflect.TypeFor[BetaContainerServicePackageOverride](),
 		reflect.TypeFor[BetaContainerServicePublishOverride](),
-	)
-}
-
-// BetaCopilotServiceInitializeOverride overrides the beta CopilotService.Initialize method before stable adaptation.
-type BetaCopilotServiceInitializeOverride interface {
-	Initialize(context.Context, *v1beta.InitializeCopilotRequest) (*v1beta.InitializeCopilotResponse, error)
-}
-
-// BetaCopilotServiceListSessionsOverride overrides the beta CopilotService.ListSessions method before stable adaptation.
-type BetaCopilotServiceListSessionsOverride interface {
-	ListSessions(context.Context, *v1beta.ListCopilotSessionsRequest) (*v1beta.ListCopilotSessionsResponse, error)
-}
-
-// BetaCopilotServiceSendMessageOverride overrides the beta CopilotService.SendMessage method before stable adaptation.
-type BetaCopilotServiceSendMessageOverride interface {
-	SendMessage(context.Context, *v1beta.SendCopilotMessageRequest) (*v1beta.SendCopilotMessageResponse, error)
-}
-
-// BetaCopilotServiceGetUsageMetricsOverride overrides the beta CopilotService.GetUsageMetrics method before stable adaptation.
-type BetaCopilotServiceGetUsageMetricsOverride interface {
-	GetUsageMetrics(context.Context, *v1beta.GetCopilotUsageMetricsRequest) (*v1beta.GetCopilotUsageMetricsResponse, error)
-}
-
-// BetaCopilotServiceGetFileChangesOverride overrides the beta CopilotService.GetFileChanges method before stable adaptation.
-type BetaCopilotServiceGetFileChangesOverride interface {
-	GetFileChanges(context.Context, *v1beta.GetCopilotFileChangesRequest) (*v1beta.GetCopilotFileChangesResponse, error)
-}
-
-// BetaCopilotServiceStopSessionOverride overrides the beta CopilotService.StopSession method before stable adaptation.
-type BetaCopilotServiceStopSessionOverride interface {
-	StopSession(context.Context, *v1beta.StopCopilotSessionRequest) (*v1beta.EmptyResponse, error)
-}
-
-// BetaCopilotServiceGetMessagesOverride overrides the beta CopilotService.GetMessages method before stable adaptation.
-type BetaCopilotServiceGetMessagesOverride interface {
-	GetMessages(context.Context, *v1beta.GetCopilotMessagesRequest) (*v1beta.GetCopilotMessagesResponse, error)
-}
-
-func validateBetaCopilotServiceOverride(override any) error {
-	return validateBetaServiceOverride(
-		"CopilotService",
-		override,
-		reflect.TypeFor[v1beta.CopilotServiceServer](),
-		reflect.TypeFor[BetaCopilotServiceInitializeOverride](),
-		reflect.TypeFor[BetaCopilotServiceListSessionsOverride](),
-		reflect.TypeFor[BetaCopilotServiceSendMessageOverride](),
-		reflect.TypeFor[BetaCopilotServiceGetUsageMetricsOverride](),
-		reflect.TypeFor[BetaCopilotServiceGetFileChangesOverride](),
-		reflect.TypeFor[BetaCopilotServiceStopSessionOverride](),
-		reflect.TypeFor[BetaCopilotServiceGetMessagesOverride](),
 	)
 }
 
@@ -669,7 +581,7 @@ func validateBetaWorkflowServiceOverride(override any) error {
 
 func registerBetaServices(
 	registrar grpc.ServiceRegistrar,
-	stableServices map[BetaService]any,
+	serviceImplementations map[BetaService]any,
 	overrides map[BetaService]any,
 ) error {
 	for service := range overrides {
@@ -701,7 +613,7 @@ func registerBetaServices(
 	if err := validateBetaAccountServiceOverride(overrideAccountService); err != nil {
 		return err
 	}
-	stableAccountService, ok := stableServices[BetaAccountService].(v1.AccountServiceServer)
+	stableAccountService, ok := serviceImplementations[BetaAccountService].(v1.AccountServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for AccountService does not satisfy v1.AccountServiceServer")
 	}
@@ -713,7 +625,7 @@ func registerBetaServices(
 	if err := validateBetaAiModelServiceOverride(overrideAiModelService); err != nil {
 		return err
 	}
-	stableAiModelService, ok := stableServices[BetaAiModelService].(v1.AiModelServiceServer)
+	stableAiModelService, ok := serviceImplementations[BetaAiModelService].(v1.AiModelServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for AiModelService does not satisfy v1.AiModelServiceServer")
 	}
@@ -722,22 +634,19 @@ func registerBetaServices(
 		override: overrideAiModelService,
 	})
 	overrideComposeService := overrides[BetaComposeService]
-	if err := validateBetaComposeServiceOverride(overrideComposeService); err != nil {
-		return err
+	if overrideComposeService != nil {
+		return fmt.Errorf("beta-only service ComposeService uses its native implementation and does not accept an override")
 	}
-	stableComposeService, ok := stableServices[BetaComposeService].(v1.ComposeServiceServer)
+	betaComposeService, ok := serviceImplementations[BetaComposeService].(v1beta.ComposeServiceServer)
 	if !ok {
-		return fmt.Errorf("stable implementation for ComposeService does not satisfy v1.ComposeServiceServer")
+		return fmt.Errorf("implementation for beta-only service ComposeService does not satisfy v1beta.ComposeServiceServer")
 	}
-	v1beta.RegisterComposeServiceServer(registrar, &betaComposeServiceAdapter{
-		stable:   stableComposeService,
-		override: overrideComposeService,
-	})
+	v1beta.RegisterComposeServiceServer(registrar, betaComposeService)
 	overrideContainerService := overrides[BetaContainerService]
 	if err := validateBetaContainerServiceOverride(overrideContainerService); err != nil {
 		return err
 	}
-	stableContainerService, ok := stableServices[BetaContainerService].(v1.ContainerServiceServer)
+	stableContainerService, ok := serviceImplementations[BetaContainerService].(v1.ContainerServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for ContainerService does not satisfy v1.ContainerServiceServer")
 	}
@@ -746,22 +655,19 @@ func registerBetaServices(
 		override: overrideContainerService,
 	})
 	overrideCopilotService := overrides[BetaCopilotService]
-	if err := validateBetaCopilotServiceOverride(overrideCopilotService); err != nil {
-		return err
+	if overrideCopilotService != nil {
+		return fmt.Errorf("beta-only service CopilotService uses its native implementation and does not accept an override")
 	}
-	stableCopilotService, ok := stableServices[BetaCopilotService].(v1.CopilotServiceServer)
+	betaCopilotService, ok := serviceImplementations[BetaCopilotService].(v1beta.CopilotServiceServer)
 	if !ok {
-		return fmt.Errorf("stable implementation for CopilotService does not satisfy v1.CopilotServiceServer")
+		return fmt.Errorf("implementation for beta-only service CopilotService does not satisfy v1beta.CopilotServiceServer")
 	}
-	v1beta.RegisterCopilotServiceServer(registrar, &betaCopilotServiceAdapter{
-		stable:   stableCopilotService,
-		override: overrideCopilotService,
-	})
+	v1beta.RegisterCopilotServiceServer(registrar, betaCopilotService)
 	overrideDeploymentService := overrides[BetaDeploymentService]
 	if err := validateBetaDeploymentServiceOverride(overrideDeploymentService); err != nil {
 		return err
 	}
-	stableDeploymentService, ok := stableServices[BetaDeploymentService].(v1.DeploymentServiceServer)
+	stableDeploymentService, ok := serviceImplementations[BetaDeploymentService].(v1.DeploymentServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for DeploymentService does not satisfy v1.DeploymentServiceServer")
 	}
@@ -773,7 +679,7 @@ func registerBetaServices(
 	if err := validateBetaEnvironmentServiceOverride(overrideEnvironmentService); err != nil {
 		return err
 	}
-	stableEnvironmentService, ok := stableServices[BetaEnvironmentService].(v1.EnvironmentServiceServer)
+	stableEnvironmentService, ok := serviceImplementations[BetaEnvironmentService].(v1.EnvironmentServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for EnvironmentService does not satisfy v1.EnvironmentServiceServer")
 	}
@@ -785,7 +691,7 @@ func registerBetaServices(
 	if err := validateBetaEventServiceOverride(overrideEventService); err != nil {
 		return err
 	}
-	stableEventService, ok := stableServices[BetaEventService].(v1.EventServiceServer)
+	stableEventService, ok := serviceImplementations[BetaEventService].(v1.EventServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for EventService does not satisfy v1.EventServiceServer")
 	}
@@ -797,7 +703,7 @@ func registerBetaServices(
 	if err := validateBetaExtensionServiceOverride(overrideExtensionService); err != nil {
 		return err
 	}
-	stableExtensionService, ok := stableServices[BetaExtensionService].(v1.ExtensionServiceServer)
+	stableExtensionService, ok := serviceImplementations[BetaExtensionService].(v1.ExtensionServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for ExtensionService does not satisfy v1.ExtensionServiceServer")
 	}
@@ -809,7 +715,7 @@ func registerBetaServices(
 	if err := validateBetaFrameworkServiceOverride(overrideFrameworkService); err != nil {
 		return err
 	}
-	stableFrameworkService, ok := stableServices[BetaFrameworkService].(v1.FrameworkServiceServer)
+	stableFrameworkService, ok := serviceImplementations[BetaFrameworkService].(v1.FrameworkServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for FrameworkService does not satisfy v1.FrameworkServiceServer")
 	}
@@ -821,7 +727,7 @@ func registerBetaServices(
 	if err := validateBetaProjectServiceOverride(overrideProjectService); err != nil {
 		return err
 	}
-	stableProjectService, ok := stableServices[BetaProjectService].(v1.ProjectServiceServer)
+	stableProjectService, ok := serviceImplementations[BetaProjectService].(v1.ProjectServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for ProjectService does not satisfy v1.ProjectServiceServer")
 	}
@@ -833,7 +739,7 @@ func registerBetaServices(
 	if err := validateBetaPromptServiceOverride(overridePromptService); err != nil {
 		return err
 	}
-	stablePromptService, ok := stableServices[BetaPromptService].(v1.PromptServiceServer)
+	stablePromptService, ok := serviceImplementations[BetaPromptService].(v1.PromptServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for PromptService does not satisfy v1.PromptServiceServer")
 	}
@@ -845,7 +751,7 @@ func registerBetaServices(
 	if err := validateBetaProvisioningServiceOverride(overrideProvisioningService); err != nil {
 		return err
 	}
-	stableProvisioningService, ok := stableServices[BetaProvisioningService].(v1.ProvisioningServiceServer)
+	stableProvisioningService, ok := serviceImplementations[BetaProvisioningService].(v1.ProvisioningServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for ProvisioningService does not satisfy v1.ProvisioningServiceServer")
 	}
@@ -857,7 +763,7 @@ func registerBetaServices(
 	if err := validateBetaServiceTargetServiceOverride(overrideServiceTargetService); err != nil {
 		return err
 	}
-	stableServiceTargetService, ok := stableServices[BetaServiceTargetService].(v1.ServiceTargetServiceServer)
+	stableServiceTargetService, ok := serviceImplementations[BetaServiceTargetService].(v1.ServiceTargetServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for ServiceTargetService does not satisfy v1.ServiceTargetServiceServer")
 	}
@@ -869,7 +775,7 @@ func registerBetaServices(
 	if err := validateBetaTelemetryServiceOverride(overrideTelemetryService); err != nil {
 		return err
 	}
-	stableTelemetryService, ok := stableServices[BetaTelemetryService].(v1.TelemetryServiceServer)
+	stableTelemetryService, ok := serviceImplementations[BetaTelemetryService].(v1.TelemetryServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for TelemetryService does not satisfy v1.TelemetryServiceServer")
 	}
@@ -881,7 +787,7 @@ func registerBetaServices(
 	if err := validateBetaUserConfigServiceOverride(overrideUserConfigService); err != nil {
 		return err
 	}
-	stableUserConfigService, ok := stableServices[BetaUserConfigService].(v1.UserConfigServiceServer)
+	stableUserConfigService, ok := serviceImplementations[BetaUserConfigService].(v1.UserConfigServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for UserConfigService does not satisfy v1.UserConfigServiceServer")
 	}
@@ -893,7 +799,7 @@ func registerBetaServices(
 	if err := validateBetaValidationServiceOverride(overrideValidationService); err != nil {
 		return err
 	}
-	stableValidationService, ok := stableServices[BetaValidationService].(v1.ValidationServiceServer)
+	stableValidationService, ok := serviceImplementations[BetaValidationService].(v1.ValidationServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for ValidationService does not satisfy v1.ValidationServiceServer")
 	}
@@ -905,7 +811,7 @@ func registerBetaServices(
 	if err := validateBetaWorkflowServiceOverride(overrideWorkflowService); err != nil {
 		return err
 	}
-	stableWorkflowService, ok := stableServices[BetaWorkflowService].(v1.WorkflowServiceServer)
+	stableWorkflowService, ok := serviceImplementations[BetaWorkflowService].(v1.WorkflowServiceServer)
 	if !ok {
 		return fmt.Errorf("stable implementation for WorkflowService does not satisfy v1.WorkflowServiceServer")
 	}
@@ -1051,99 +957,6 @@ func (a *betaAiModelServiceAdapter) ListModelLocationsWithQuota(
 	)
 }
 
-type betaComposeServiceAdapter struct {
-	v1beta.UnimplementedComposeServiceServer
-	stable   v1.ComposeServiceServer
-	override any
-}
-
-var _ v1beta.ComposeServiceServer = (*betaComposeServiceAdapter)(nil)
-
-func (a *betaComposeServiceAdapter) ListResources(
-	ctx context.Context,
-	req *v1beta.EmptyRequest,
-) (*v1beta.ListResourcesResponse, error) {
-	if override, ok := a.override.(BetaComposeServiceListResourcesOverride); ok {
-		return override.ListResources(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.EmptyRequest),
-		a.stable.ListResources,
-		new(v1beta.ListResourcesResponse),
-		"ComposeService.ListResources",
-	)
-}
-
-func (a *betaComposeServiceAdapter) GetResource(
-	ctx context.Context,
-	req *v1beta.GetResourceRequest,
-) (*v1beta.GetResourceResponse, error) {
-	if override, ok := a.override.(BetaComposeServiceGetResourceOverride); ok {
-		return override.GetResource(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.GetResourceRequest),
-		a.stable.GetResource,
-		new(v1beta.GetResourceResponse),
-		"ComposeService.GetResource",
-	)
-}
-
-func (a *betaComposeServiceAdapter) ListResourceTypes(
-	ctx context.Context,
-	req *v1beta.EmptyRequest,
-) (*v1beta.ListResourceTypesResponse, error) {
-	if override, ok := a.override.(BetaComposeServiceListResourceTypesOverride); ok {
-		return override.ListResourceTypes(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.EmptyRequest),
-		a.stable.ListResourceTypes,
-		new(v1beta.ListResourceTypesResponse),
-		"ComposeService.ListResourceTypes",
-	)
-}
-
-func (a *betaComposeServiceAdapter) GetResourceType(
-	ctx context.Context,
-	req *v1beta.GetResourceTypeRequest,
-) (*v1beta.GetResourceTypeResponse, error) {
-	if override, ok := a.override.(BetaComposeServiceGetResourceTypeOverride); ok {
-		return override.GetResourceType(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.GetResourceTypeRequest),
-		a.stable.GetResourceType,
-		new(v1beta.GetResourceTypeResponse),
-		"ComposeService.GetResourceType",
-	)
-}
-
-func (a *betaComposeServiceAdapter) AddResource(
-	ctx context.Context,
-	req *v1beta.AddResourceRequest,
-) (*v1beta.AddResourceResponse, error) {
-	if override, ok := a.override.(BetaComposeServiceAddResourceOverride); ok {
-		return override.AddResource(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.AddResourceRequest),
-		a.stable.AddResource,
-		new(v1beta.AddResourceResponse),
-		"ComposeService.AddResource",
-	)
-}
-
 type betaContainerServiceAdapter struct {
 	v1beta.UnimplementedContainerServiceServer
 	stable   v1.ContainerServiceServer
@@ -1200,133 +1013,6 @@ func (a *betaContainerServiceAdapter) Publish(
 		a.stable.Publish,
 		new(v1beta.ContainerPublishResponse),
 		"ContainerService.Publish",
-	)
-}
-
-type betaCopilotServiceAdapter struct {
-	v1beta.UnimplementedCopilotServiceServer
-	stable   v1.CopilotServiceServer
-	override any
-}
-
-var _ v1beta.CopilotServiceServer = (*betaCopilotServiceAdapter)(nil)
-
-func (a *betaCopilotServiceAdapter) Initialize(
-	ctx context.Context,
-	req *v1beta.InitializeCopilotRequest,
-) (*v1beta.InitializeCopilotResponse, error) {
-	if override, ok := a.override.(BetaCopilotServiceInitializeOverride); ok {
-		return override.Initialize(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.InitializeCopilotRequest),
-		a.stable.Initialize,
-		new(v1beta.InitializeCopilotResponse),
-		"CopilotService.Initialize",
-	)
-}
-
-func (a *betaCopilotServiceAdapter) ListSessions(
-	ctx context.Context,
-	req *v1beta.ListCopilotSessionsRequest,
-) (*v1beta.ListCopilotSessionsResponse, error) {
-	if override, ok := a.override.(BetaCopilotServiceListSessionsOverride); ok {
-		return override.ListSessions(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.ListCopilotSessionsRequest),
-		a.stable.ListSessions,
-		new(v1beta.ListCopilotSessionsResponse),
-		"CopilotService.ListSessions",
-	)
-}
-
-func (a *betaCopilotServiceAdapter) SendMessage(
-	ctx context.Context,
-	req *v1beta.SendCopilotMessageRequest,
-) (*v1beta.SendCopilotMessageResponse, error) {
-	if override, ok := a.override.(BetaCopilotServiceSendMessageOverride); ok {
-		return override.SendMessage(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.SendCopilotMessageRequest),
-		a.stable.SendMessage,
-		new(v1beta.SendCopilotMessageResponse),
-		"CopilotService.SendMessage",
-	)
-}
-
-func (a *betaCopilotServiceAdapter) GetUsageMetrics(
-	ctx context.Context,
-	req *v1beta.GetCopilotUsageMetricsRequest,
-) (*v1beta.GetCopilotUsageMetricsResponse, error) {
-	if override, ok := a.override.(BetaCopilotServiceGetUsageMetricsOverride); ok {
-		return override.GetUsageMetrics(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.GetCopilotUsageMetricsRequest),
-		a.stable.GetUsageMetrics,
-		new(v1beta.GetCopilotUsageMetricsResponse),
-		"CopilotService.GetUsageMetrics",
-	)
-}
-
-func (a *betaCopilotServiceAdapter) GetFileChanges(
-	ctx context.Context,
-	req *v1beta.GetCopilotFileChangesRequest,
-) (*v1beta.GetCopilotFileChangesResponse, error) {
-	if override, ok := a.override.(BetaCopilotServiceGetFileChangesOverride); ok {
-		return override.GetFileChanges(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.GetCopilotFileChangesRequest),
-		a.stable.GetFileChanges,
-		new(v1beta.GetCopilotFileChangesResponse),
-		"CopilotService.GetFileChanges",
-	)
-}
-
-func (a *betaCopilotServiceAdapter) StopSession(
-	ctx context.Context,
-	req *v1beta.StopCopilotSessionRequest,
-) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaCopilotServiceStopSessionOverride); ok {
-		return override.StopSession(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.StopCopilotSessionRequest),
-		a.stable.StopSession,
-		new(v1beta.EmptyResponse),
-		"CopilotService.StopSession",
-	)
-}
-
-func (a *betaCopilotServiceAdapter) GetMessages(
-	ctx context.Context,
-	req *v1beta.GetCopilotMessagesRequest,
-) (*v1beta.GetCopilotMessagesResponse, error) {
-	if override, ok := a.override.(BetaCopilotServiceGetMessagesOverride); ok {
-		return override.GetMessages(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.GetCopilotMessagesRequest),
-		a.stable.GetMessages,
-		new(v1beta.GetCopilotMessagesResponse),
-		"CopilotService.GetMessages",
 	)
 }
 

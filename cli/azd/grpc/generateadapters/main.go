@@ -265,6 +265,9 @@ const (
 
 	for _, name := range serviceNames {
 		betaService := beta[name]
+		if _, hasStable := stable[name]; !hasStable {
+			continue
+		}
 		for _, betaMethod := range betaService.methods {
 			writeOverrideInterface(&generated, betaService, betaMethod)
 		}
@@ -273,7 +276,7 @@ const (
 
 	generated.WriteString(`func registerBetaServices(
 	registrar grpc.ServiceRegistrar,
-	stableServices map[BetaService]any,
+	serviceImplementations map[BetaService]any,
 	overrides map[BetaService]any,
 ) error {
 	for service := range overrides {
@@ -293,17 +296,17 @@ const (
 		stableVariable := ""
 		overrideVariable := "override" + name
 		fmt.Fprintf(&generated, "\t%s := overrides[Beta%s]\n", overrideVariable, name)
-		fmt.Fprintf(
-			&generated,
-			"\tif err := validateBeta%sOverride(%s); err != nil {\n\t\treturn err\n\t}\n",
-			name,
-			overrideVariable,
-		)
 		if hasStable {
+			fmt.Fprintf(
+				&generated,
+				"\tif err := validateBeta%sOverride(%s); err != nil {\n\t\treturn err\n\t}\n",
+				name,
+				overrideVariable,
+			)
 			stableVariable = "stable" + name
 			fmt.Fprintf(
 				&generated,
-				"\t%s, ok := stableServices[Beta%s].(v1.%sServer)\n",
+				"\t%s, ok := serviceImplementations[Beta%s].(v1.%sServer)\n",
 				stableVariable,
 				name,
 				name,
@@ -315,6 +318,30 @@ const (
 				"stable implementation for "+name+" does not satisfy v1."+name+"Server",
 			)
 			fmt.Fprintf(&generated, "\t}\n")
+		} else {
+			fmt.Fprintf(&generated, "\tif %s != nil {\n", overrideVariable)
+			fmt.Fprintf(
+				&generated,
+				"\t\treturn fmt.Errorf(%q)\n",
+				"beta-only service "+name+" uses its native implementation and does not accept an override",
+			)
+			fmt.Fprintf(&generated, "\t}\n")
+			fmt.Fprintf(
+				&generated,
+				"\tbeta%s, ok := serviceImplementations[Beta%s].(v1beta.%sServer)\n",
+				name,
+				name,
+				name,
+			)
+			fmt.Fprintf(&generated, "\tif !ok {\n")
+			fmt.Fprintf(
+				&generated,
+				"\t\treturn fmt.Errorf(%q)\n",
+				"implementation for beta-only service "+name+" does not satisfy v1beta."+name+"Server",
+			)
+			fmt.Fprintf(&generated, "\t}\n")
+			fmt.Fprintf(&generated, "\tv1beta.Register%sServer(registrar, beta%s)\n", name, name)
+			continue
 		}
 
 		fmt.Fprintf(&generated, "\tv1beta.Register%sServer(registrar, &beta%sAdapter{\n", name, name)
@@ -329,6 +356,9 @@ const (
 	for _, name := range serviceNames {
 		betaService := beta[name]
 		stableService, hasStable := stable[name]
+		if !hasStable {
+			continue
+		}
 		fmt.Fprintf(&generated, "type beta%sAdapter struct {\n", name)
 		fmt.Fprintf(&generated, "\tv1beta.Unimplemented%sServer\n", name)
 		if hasStable && len(stableService.methods) > 0 {

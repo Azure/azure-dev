@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -449,7 +450,7 @@ func newOTLPIngestCommand(extCtx *azdext.ExtensionContext, signal string) *cobra
 			if err := requireValues(map[string]string{"run-id": flags.runID, "file": file}); err != nil {
 				return err
 			}
-			payload, err := readExperimentInput(file)
+			payload, err := readNonEmptyExperimentInput(file)
 			if err != nil {
 				return err
 			}
@@ -779,19 +780,46 @@ func readJSONObject(file string) (map[string]any, error) {
 		return nil, err
 	}
 
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
 	var object map[string]any
-	if err := json.Unmarshal(data, &object); err != nil {
+	if err := decoder.Decode(&object); err != nil {
 		return nil, invalidExperimentPayload(fmt.Sprintf("parse JSON object: %s", err))
 	}
 	if object == nil {
 		return nil, invalidExperimentPayload("payload must be a JSON object")
 	}
+	if err := ensureJSONDocumentEnd(decoder); err != nil {
+		return nil, invalidExperimentPayload(fmt.Sprintf("parse JSON object: %s", err))
+	}
 	return object, nil
+}
+
+func ensureJSONDocumentEnd(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return errors.New("payload must contain exactly one JSON object")
+		}
+		return err
+	}
+	return nil
 }
 
 func isJSONObject(data []byte) bool {
 	var object map[string]any
 	return json.Unmarshal(data, &object) == nil && object != nil
+}
+
+func readNonEmptyExperimentInput(file string) ([]byte, error) {
+	data, err := readExperimentInput(file)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, invalidExperimentPayload("payload must not be empty")
+	}
+	return data, nil
 }
 
 func readExperimentInput(file string) ([]byte, error) {

@@ -116,6 +116,46 @@ func TestBuildSpanQueryBody(t *testing.T) {
 	}`, string(data))
 }
 
+func TestReadJSONObjectPreservesLargeInteger(t *testing.T) {
+	requestPath := filepath.Join(t.TempDir(), "request.json")
+	require.NoError(t, os.WriteFile(
+		requestPath,
+		[]byte(`{"id":9007199254740993}`),
+		0o600,
+	))
+
+	body, err := readJSONObject(requestPath)
+	require.NoError(t, err)
+
+	id, ok := body["id"].(json.Number)
+	require.True(t, ok)
+	assert.Equal(t, "9007199254740993", id.String())
+
+	encoded, err := json.Marshal(body)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"id":9007199254740993}`, string(encoded))
+}
+
+func TestReadJSONObjectRejectsMultipleValues(t *testing.T) {
+	requestPath := filepath.Join(t.TempDir(), "request.json")
+	require.NoError(t, os.WriteFile(
+		requestPath,
+		[]byte(`{"first":true} {"second":true}`),
+		0o600,
+	))
+
+	_, err := readJSONObject(requestPath)
+	require.Error(t, err)
+}
+
+func TestReadNonEmptyExperimentInputRejectsEmptyPayload(t *testing.T) {
+	payloadPath := filepath.Join(t.TempDir(), "payload.pb")
+	require.NoError(t, os.WriteFile(payloadPath, nil, 0o600))
+
+	_, err := readNonEmptyExperimentInput(payloadPath)
+	require.Error(t, err)
+}
+
 func TestExperimentCommandsUseJSONOutput(t *testing.T) {
 	commands := []*cobra.Command{
 		newRunListCommand(nil),

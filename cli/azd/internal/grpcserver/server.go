@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver/legacybridge"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -36,7 +37,7 @@ type Server struct {
 	userConfigService    azdext.UserConfigServiceServer
 	deploymentService    azdext.DeploymentServiceServer
 	eventService         azdext.EventServiceServer
-	composeService       azdext.ComposeServiceServer
+	composeService       v1beta.ComposeServiceServer
 	workflowService      azdext.WorkflowServiceServer
 	extensionService     azdext.ExtensionServiceServer
 	serviceTargetService azdext.ServiceTargetServiceServer
@@ -44,7 +45,7 @@ type Server struct {
 	containerService     azdext.ContainerServiceServer
 	accountService       azdext.AccountServiceServer
 	aiModelService       azdext.AiModelServiceServer
-	copilotService       azdext.CopilotServiceServer
+	copilotService       v1beta.CopilotServiceServer
 	provisioningService  azdext.ProvisioningServiceServer
 	validationService    azdext.ValidationServiceServer
 	telemetryService     azdext.TelemetryServiceServer
@@ -58,7 +59,7 @@ func NewServer(
 	userConfigService azdext.UserConfigServiceServer,
 	deploymentService azdext.DeploymentServiceServer,
 	eventService azdext.EventServiceServer,
-	composeService azdext.ComposeServiceServer,
+	composeService v1beta.ComposeServiceServer,
 	workflowService azdext.WorkflowServiceServer,
 	extensionService azdext.ExtensionServiceServer,
 	serviceTargetService azdext.ServiceTargetServiceServer,
@@ -66,7 +67,7 @@ func NewServer(
 	containerService azdext.ContainerServiceServer,
 	accountService azdext.AccountServiceServer,
 	aiModelService azdext.AiModelServiceServer,
-	copilotService azdext.CopilotServiceServer,
+	copilotService v1beta.CopilotServiceServer,
 	provisioningService azdext.ProvisioningServiceServer,
 	validationService azdext.ValidationServiceServer,
 	telemetryService azdext.TelemetryServiceServer,

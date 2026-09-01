@@ -511,7 +511,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
-| `Compose()` | `ComposeServiceClient` |
+| `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
 | `FrameworkService()` | `FrameworkServiceClient` |
@@ -519,9 +519,15 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Extension()` | `ExtensionServiceClient` |
 | `Account()` | `AccountServiceClient` |
 | `Ai()` | `AiModelServiceClient` |
+| `Copilot()` | `v1beta.CopilotServiceClient` (preview) |
 | `Telemetry()` | `TelemetryServiceClient` |
 
 Always call `defer client.Close()` after creation.
+
+`Compose()` and `Copilot()` are preview accessors. Import
+`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
+request, response, and enum types. They are intentionally excluded from the
+stable `azdext` contract façade until those services graduate to `v1`.
 
 #### TelemetryService
 

@@ -26,25 +26,9 @@ const (
 	ArtifactKind_ARTIFACT_KIND_ENDPOINT                                    = v1.ArtifactKind_ARTIFACT_KIND_ENDPOINT
 	ArtifactKind_ARTIFACT_KIND_RESOURCE                                    = v1.ArtifactKind_ARTIFACT_KIND_RESOURCE
 	ArtifactKind_ARTIFACT_KIND_UNSPECIFIED                                 = v1.ArtifactKind_ARTIFACT_KIND_UNSPECIFIED
-	ComposeService_AddResource_FullMethodName                              = v1.ComposeService_AddResource_FullMethodName
-	ComposeService_GetResourceType_FullMethodName                          = v1.ComposeService_GetResourceType_FullMethodName
-	ComposeService_GetResource_FullMethodName                              = v1.ComposeService_GetResource_FullMethodName
-	ComposeService_ListResourceTypes_FullMethodName                        = v1.ComposeService_ListResourceTypes_FullMethodName
-	ComposeService_ListResources_FullMethodName                            = v1.ComposeService_ListResources_FullMethodName
 	ContainerService_Build_FullMethodName                                  = v1.ContainerService_Build_FullMethodName
 	ContainerService_Package_FullMethodName                                = v1.ContainerService_Package_FullMethodName
 	ContainerService_Publish_FullMethodName                                = v1.ContainerService_Publish_FullMethodName
-	CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED                 = v1.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED
-	CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_DELETED                 = v1.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_DELETED
-	CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED                = v1.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED
-	CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_UNSPECIFIED             = v1.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_UNSPECIFIED
-	CopilotService_GetFileChanges_FullMethodName                           = v1.CopilotService_GetFileChanges_FullMethodName
-	CopilotService_GetMessages_FullMethodName                              = v1.CopilotService_GetMessages_FullMethodName
-	CopilotService_GetUsageMetrics_FullMethodName                          = v1.CopilotService_GetUsageMetrics_FullMethodName
-	CopilotService_Initialize_FullMethodName                               = v1.CopilotService_Initialize_FullMethodName
-	CopilotService_ListSessions_FullMethodName                             = v1.CopilotService_ListSessions_FullMethodName
-	CopilotService_SendMessage_FullMethodName                              = v1.CopilotService_SendMessage_FullMethodName
-	CopilotService_StopSession_FullMethodName                              = v1.CopilotService_StopSession_FullMethodName
 	DeploymentService_GetDeploymentContext_FullMethodName                  = v1.DeploymentService_GetDeploymentContext_FullMethodName
 	DeploymentService_GetDeployment_FullMethodName                         = v1.DeploymentService_GetDeployment_FullMethodName
 	EnvironmentService_GetConfigSection_FullMethodName                     = v1.EnvironmentService_GetConfigSection_FullMethodName
@@ -118,8 +102,6 @@ type (
 	AccountServiceClient                                     = v1.AccountServiceClient
 	AccountServiceServer                                     = v1.AccountServiceServer
 	ActionableErrorDetail                                    = v1.ActionableErrorDetail
-	AddResourceRequest                                       = v1.AddResourceRequest
-	AddResourceResponse                                      = v1.AddResourceResponse
 	AddServiceRequest                                        = v1.AddServiceRequest
 	AiModel                                                  = v1.AiModel
 	AiModelDeployment                                        = v1.AiModelDeployment
@@ -135,10 +117,6 @@ type (
 	ArtifactList                                             = v1.ArtifactList
 	AzureContext                                             = v1.AzureContext
 	AzureScope                                               = v1.AzureScope
-	ComposeServiceClient                                     = v1.ComposeServiceClient
-	ComposeServiceServer                                     = v1.ComposeServiceServer
-	ComposedResource                                         = v1.ComposedResource
-	ComposedResourceType                                     = v1.ComposedResourceType
 	ConfirmOptions                                           = v1.ConfirmOptions
 	ConfirmRequest                                           = v1.ConfirmRequest
 	ConfirmResponse                                          = v1.ConfirmResponse
@@ -150,13 +128,6 @@ type (
 	ContainerPublishResponse                                 = v1.ContainerPublishResponse
 	ContainerServiceClient                                   = v1.ContainerServiceClient
 	ContainerServiceServer                                   = v1.ContainerServiceServer
-	CopilotFileChange                                        = v1.CopilotFileChange
-	CopilotFileChangeType                                    = v1.CopilotFileChangeType
-	CopilotServiceClient                                     = v1.CopilotServiceClient
-	CopilotServiceServer                                     = v1.CopilotServiceServer
-	CopilotSessionEvent                                      = v1.CopilotSessionEvent
-	CopilotSessionMetadata                                   = v1.CopilotSessionMetadata
-	CopilotUsageMetrics                                      = v1.CopilotUsageMetrics
 	Deployment                                               = v1.Deployment
 	DeploymentServiceClient                                  = v1.DeploymentServiceClient
 	DeploymentServiceServer                                  = v1.DeploymentServiceServer
@@ -229,12 +200,6 @@ type (
 	GetConfigSectionResponse                                 = v1.GetConfigSectionResponse
 	GetConfigStringRequest                                   = v1.GetConfigStringRequest
 	GetConfigStringResponse                                  = v1.GetConfigStringResponse
-	GetCopilotFileChangesRequest                             = v1.GetCopilotFileChangesRequest
-	GetCopilotFileChangesResponse                            = v1.GetCopilotFileChangesResponse
-	GetCopilotMessagesRequest                                = v1.GetCopilotMessagesRequest
-	GetCopilotMessagesResponse                               = v1.GetCopilotMessagesResponse
-	GetCopilotUsageMetricsRequest                            = v1.GetCopilotUsageMetricsRequest
-	GetCopilotUsageMetricsResponse                           = v1.GetCopilotUsageMetricsResponse
 	GetDeploymentContextResponse                             = v1.GetDeploymentContextResponse
 	GetDeploymentResponse                                    = v1.GetDeploymentResponse
 	GetEnvRequest                                            = v1.GetEnvRequest
@@ -245,10 +210,6 @@ type (
 	GetProjectConfigValueResponse                            = v1.GetProjectConfigValueResponse
 	GetProjectResponse                                       = v1.GetProjectResponse
 	GetResolvedServicesResponse                              = v1.GetResolvedServicesResponse
-	GetResourceRequest                                       = v1.GetResourceRequest
-	GetResourceResponse                                      = v1.GetResourceResponse
-	GetResourceTypeRequest                                   = v1.GetResourceTypeRequest
-	GetResourceTypeResponse                                  = v1.GetResourceTypeResponse
 	GetServiceConfigSectionRequest                           = v1.GetServiceConfigSectionRequest
 	GetServiceConfigSectionResponse                          = v1.GetServiceConfigSectionResponse
 	GetServiceConfigValueRequest                             = v1.GetServiceConfigValueRequest
@@ -264,23 +225,17 @@ type (
 	GetUserConfigStringRequest                               = v1.GetUserConfigStringRequest
 	GetUserConfigStringResponse                              = v1.GetUserConfigStringResponse
 	InfraOptions                                             = v1.InfraOptions
-	InitializeCopilotRequest                                 = v1.InitializeCopilotRequest
-	InitializeCopilotResponse                                = v1.InitializeCopilotResponse
 	InvokeProjectHandler                                     = v1.InvokeProjectHandler
 	InvokeServiceHandler                                     = v1.InvokeServiceHandler
 	KeyValue                                                 = v1.KeyValue
 	KeyValueListResponse                                     = v1.KeyValueListResponse
 	KeyValueResponse                                         = v1.KeyValueResponse
-	ListCopilotSessionsRequest                               = v1.ListCopilotSessionsRequest
-	ListCopilotSessionsResponse                              = v1.ListCopilotSessionsResponse
 	ListLocationsWithQuotaRequest                            = v1.ListLocationsWithQuotaRequest
 	ListLocationsWithQuotaResponse                           = v1.ListLocationsWithQuotaResponse
 	ListModelLocationsWithQuotaRequest                       = v1.ListModelLocationsWithQuotaRequest
 	ListModelLocationsWithQuotaResponse                      = v1.ListModelLocationsWithQuotaResponse
 	ListModelsRequest                                        = v1.ListModelsRequest
 	ListModelsResponse                                       = v1.ListModelsResponse
-	ListResourceTypesResponse                                = v1.ListResourceTypesResponse
-	ListResourcesResponse                                    = v1.ListResourcesResponse
 	ListSubscriptionsRequest                                 = v1.ListSubscriptionsRequest
 	ListSubscriptionsResponse                                = v1.ListSubscriptionsResponse
 	ListUsagesRequest                                        = v1.ListUsagesRequest
@@ -417,8 +372,6 @@ type (
 	SelectOptions                                            = v1.SelectOptions
 	SelectRequest                                            = v1.SelectRequest
 	SelectResponse                                           = v1.SelectResponse
-	SendCopilotMessageRequest                                = v1.SendCopilotMessageRequest
-	SendCopilotMessageResponse                               = v1.SendCopilotMessageResponse
 	ServiceBuildResult                                       = v1.ServiceBuildResult
 	ServiceConfig                                            = v1.ServiceConfig
 	ServiceContext                                           = v1.ServiceContext
@@ -470,7 +423,6 @@ type (
 	SetServiceConfigSectionRequest                           = v1.SetServiceConfigSectionRequest
 	SetServiceConfigValueRequest                             = v1.SetServiceConfigValueRequest
 	SetUserConfigRequest                                     = v1.SetUserConfigRequest
-	StopCopilotSessionRequest                                = v1.StopCopilotSessionRequest
 	SubscribeProjectEvent                                    = v1.SubscribeProjectEvent
 	SubscribeServiceEvent                                    = v1.SubscribeServiceEvent
 	Subscription                                             = v1.Subscription
@@ -479,9 +431,7 @@ type (
 	TelemetryServiceServer                                   = v1.TelemetryServiceServer
 	UnimplementedAccountServiceServer                        = v1.UnimplementedAccountServiceServer
 	UnimplementedAiModelServiceServer                        = v1.UnimplementedAiModelServiceServer
-	UnimplementedComposeServiceServer                        = v1.UnimplementedComposeServiceServer
 	UnimplementedContainerServiceServer                      = v1.UnimplementedContainerServiceServer
-	UnimplementedCopilotServiceServer                        = v1.UnimplementedCopilotServiceServer
 	UnimplementedDeploymentServiceServer                     = v1.UnimplementedDeploymentServiceServer
 	UnimplementedEnvironmentServiceServer                    = v1.UnimplementedEnvironmentServiceServer
 	UnimplementedEventServiceServer                          = v1.UnimplementedEventServiceServer
@@ -497,9 +447,7 @@ type (
 	UnimplementedWorkflowServiceServer                       = v1.UnimplementedWorkflowServiceServer
 	UnsafeAccountServiceServer                               = v1.UnsafeAccountServiceServer
 	UnsafeAiModelServiceServer                               = v1.UnsafeAiModelServiceServer
-	UnsafeComposeServiceServer                               = v1.UnsafeComposeServiceServer
 	UnsafeContainerServiceServer                             = v1.UnsafeContainerServiceServer
-	UnsafeCopilotServiceServer                               = v1.UnsafeCopilotServiceServer
 	UnsafeDeploymentServiceServer                            = v1.UnsafeDeploymentServiceServer
 	UnsafeEnvironmentServiceServer                           = v1.UnsafeEnvironmentServiceServer
 	UnsafeEventServiceServer                                 = v1.UnsafeEventServiceServer
@@ -547,11 +495,7 @@ var (
 	AiModelService_ServiceDesc       = v1.AiModelService_ServiceDesc
 	ArtifactKind_name                = v1.ArtifactKind_name
 	ArtifactKind_value               = v1.ArtifactKind_value
-	ComposeService_ServiceDesc       = v1.ComposeService_ServiceDesc
 	ContainerService_ServiceDesc     = v1.ContainerService_ServiceDesc
-	CopilotFileChangeType_name       = v1.CopilotFileChangeType_name
-	CopilotFileChangeType_value      = v1.CopilotFileChangeType_value
-	CopilotService_ServiceDesc       = v1.CopilotService_ServiceDesc
 	DeploymentService_ServiceDesc    = v1.DeploymentService_ServiceDesc
 	EnvironmentService_ServiceDesc   = v1.EnvironmentService_ServiceDesc
 	ErrorOrigin_name                 = v1.ErrorOrigin_name
@@ -560,9 +504,7 @@ var (
 	ExtensionService_ServiceDesc     = v1.ExtensionService_ServiceDesc
 	File_account_proto               = v1.File_azd_extensions_v1_account_proto
 	File_ai_model_proto              = v1.File_azd_extensions_v1_ai_model_proto
-	File_compose_proto               = v1.File_azd_extensions_v1_compose_proto
 	File_container_proto             = v1.File_azd_extensions_v1_container_proto
-	File_copilot_proto               = v1.File_azd_extensions_v1_copilot_proto
 	File_deployment_proto            = v1.File_azd_extensions_v1_deployment_proto
 	File_environment_proto           = v1.File_azd_extensions_v1_environment_proto
 	File_errors_proto                = v1.File_azd_extensions_v1_errors_proto
@@ -603,16 +545,8 @@ func NewAiModelServiceClient(cc grpc.ClientConnInterface) AiModelServiceClient {
 	return v1.NewAiModelServiceClient(cc)
 }
 
-func NewComposeServiceClient(cc grpc.ClientConnInterface) ComposeServiceClient {
-	return v1.NewComposeServiceClient(cc)
-}
-
 func NewContainerServiceClient(cc grpc.ClientConnInterface) ContainerServiceClient {
 	return v1.NewContainerServiceClient(cc)
-}
-
-func NewCopilotServiceClient(cc grpc.ClientConnInterface) CopilotServiceClient {
-	return v1.NewCopilotServiceClient(cc)
 }
 
 func NewDeploymentServiceClient(cc grpc.ClientConnInterface) DeploymentServiceClient {
@@ -675,16 +609,8 @@ func RegisterAiModelServiceServer(s grpc.ServiceRegistrar, srv AiModelServiceSer
 	v1.RegisterAiModelServiceServer(s, srv)
 }
 
-func RegisterComposeServiceServer(s grpc.ServiceRegistrar, srv ComposeServiceServer) {
-	v1.RegisterComposeServiceServer(s, srv)
-}
-
 func RegisterContainerServiceServer(s grpc.ServiceRegistrar, srv ContainerServiceServer) {
 	v1.RegisterContainerServiceServer(s, srv)
-}
-
-func RegisterCopilotServiceServer(s grpc.ServiceRegistrar, srv CopilotServiceServer) {
-	v1.RegisterCopilotServiceServer(s, srv)
 }
 
 func RegisterDeploymentServiceServer(s grpc.ServiceRegistrar, srv DeploymentServiceServer) {

@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1 "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
 
 const (
@@ -32,7 +33,9 @@ const (
 	MethodPrefix = "/azdext."
 
 	stableServicePrefix = "azd.extensions.v1."
+	betaServicePrefix   = "azd.extensions.v1beta."
 	stableTypeURLPrefix = "type.googleapis.com/azd.extensions.v1."
+	betaTypeURLPrefix   = "type.googleapis.com/azd.extensions.v1beta."
 	legacyTypeURLPrefix = "type.googleapis.com/azdext."
 )
 
@@ -52,7 +55,7 @@ var frozenServices = []frozenService{
 		"ListLocationsWithQuota",
 		"ListModelLocationsWithQuota",
 	}},
-	{&v1.ComposeService_ServiceDesc, []string{
+	{&v1beta.ComposeService_ServiceDesc, []string{
 		"ListResources",
 		"GetResource",
 		"ListResourceTypes",
@@ -60,7 +63,7 @@ var frozenServices = []frozenService{
 		"AddResource",
 	}},
 	{&v1.ContainerService_ServiceDesc, []string{"Build", "Package", "Publish"}},
-	{&v1.CopilotService_ServiceDesc, []string{
+	{&v1beta.CopilotService_ServiceDesc, []string{
 		"Initialize",
 		"ListSessions",
 		"SendMessage",
@@ -149,11 +152,18 @@ func Register(registrar grpc.ServiceRegistrar, implementations map[string]any) e
 
 func freezeDescription(service frozenService) (grpc.ServiceDesc, error) {
 	description := *service.description
-	if !strings.HasPrefix(description.ServiceName, stableServicePrefix) {
+	versionedPrefix := ""
+	for _, prefix := range []string{stableServicePrefix, betaServicePrefix} {
+		if strings.HasPrefix(description.ServiceName, prefix) {
+			versionedPrefix = prefix
+			break
+		}
+	}
+	if versionedPrefix == "" {
 		return grpc.ServiceDesc{}, fmt.Errorf("legacy bridge service has unexpected name %q", description.ServiceName)
 	}
 
-	description.ServiceName = "azdext." + strings.TrimPrefix(description.ServiceName, stableServicePrefix)
+	description.ServiceName = "azdext." + strings.TrimPrefix(description.ServiceName, versionedPrefix)
 	description.Methods = slices.DeleteFunc(slices.Clone(description.Methods), func(method grpc.MethodDesc) bool {
 		return !slices.Contains(service.methods, method.MethodName)
 	})
@@ -232,11 +242,16 @@ func TranslateStatusDetails(err error) error {
 	statusProto := proto.Clone(st.Proto()).(*statuspb.Status)
 	translated := false
 	for _, detail := range statusProto.Details {
-		if detail == nil || !strings.HasPrefix(detail.TypeUrl, stableTypeURLPrefix) {
+		if detail == nil {
 			continue
 		}
-		detail.TypeUrl = legacyTypeURLPrefix + strings.TrimPrefix(detail.TypeUrl, stableTypeURLPrefix)
-		translated = true
+		for _, prefix := range []string{stableTypeURLPrefix, betaTypeURLPrefix} {
+			if suffix, ok := strings.CutPrefix(detail.TypeUrl, prefix); ok {
+				detail.TypeUrl = legacyTypeURLPrefix + suffix
+				translated = true
+				break
+			}
+		}
 	}
 	if !translated {
 		return err

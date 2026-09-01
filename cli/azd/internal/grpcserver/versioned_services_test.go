@@ -45,6 +45,10 @@ func TestRegisterBetaServicesUsesGeneratedBetaDescriptorsAndServers(t *testing.T
 	require.Same(t, &v1beta.AccountService_ServiceDesc, registrar.services[accountService])
 	require.IsType(t, &betaAccountServiceAdapter{}, registrar.implementations[accountService])
 	require.Implements(t, (*v1beta.AccountServiceServer)(nil), registrar.implementations[accountService])
+
+	const composeService = "azd.extensions.v1beta.ComposeService"
+	require.Same(t, &v1beta.ComposeService_ServiceDesc, registrar.services[composeService])
+	require.IsType(t, v1beta.UnimplementedComposeServiceServer{}, registrar.implementations[composeService])
 }
 
 func TestRegisterBetaServicesRejectsInvalidOverrides(t *testing.T) {
@@ -75,6 +79,13 @@ func TestRegisterBetaServicesRejectsInvalidOverrides(t *testing.T) {
 				BetaAccountService: betaTelemetryOverride{},
 			},
 			want: "does not implement a generated focused method override interface",
+		},
+		{
+			name: "beta-only service",
+			overrides: map[BetaService]any{
+				BetaComposeService: betaTelemetryOverride{},
+			},
+			want: "beta-only service ComposeService uses its native implementation",
 		},
 	}
 
@@ -244,9 +255,9 @@ func stableServiceImplementations() map[BetaService]any {
 	return map[BetaService]any{
 		BetaAccountService:       v1.UnimplementedAccountServiceServer{},
 		BetaAiModelService:       v1.UnimplementedAiModelServiceServer{},
-		BetaComposeService:       v1.UnimplementedComposeServiceServer{},
+		BetaComposeService:       v1beta.UnimplementedComposeServiceServer{},
 		BetaContainerService:     v1.UnimplementedContainerServiceServer{},
-		BetaCopilotService:       v1.UnimplementedCopilotServiceServer{},
+		BetaCopilotService:       v1beta.UnimplementedCopilotServiceServer{},
 		BetaDeploymentService:    v1.UnimplementedDeploymentServiceServer{},
 		BetaEnvironmentService:   v1.UnimplementedEnvironmentServiceServer{},
 		BetaEventService:         v1.UnimplementedEventServiceServer{},

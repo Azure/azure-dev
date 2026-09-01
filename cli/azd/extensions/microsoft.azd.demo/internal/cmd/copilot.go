@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -87,7 +88,7 @@ func runCopilotChat(ctx context.Context, client *azdext.AzdClient, flags copilot
 	fmt.Println()
 
 	// Optional: Initialize to warm up client and show resolved config
-	initResp, err := copilot.Initialize(ctx, &azdext.InitializeCopilotRequest{
+	initResp, err := copilot.Initialize(ctx, &v1beta.InitializeCopilotRequest{
 		Model:           flags.model,
 		ReasoningEffort: flags.reasoningEffort,
 	})
@@ -128,7 +129,7 @@ func runCopilotChat(ctx context.Context, client *azdext.AzdClient, flags copilot
 		showFileChanges(ctx, copilot, sessionID)
 
 		// Stop the session
-		if _, stopErr := copilot.StopSession(ctx, &azdext.StopCopilotSessionRequest{
+		if _, stopErr := copilot.StopSession(ctx, &v1beta.StopCopilotSessionRequest{
 			SessionId: sessionID,
 		}); stopErr != nil {
 			fmt.Printf("  %s Failed to stop session: %v\n", color.RedString("✗"), stopErr)
@@ -146,12 +147,12 @@ func runCopilotChat(ctx context.Context, client *azdext.AzdClient, flags copilot
 // Returns the SDK session ID to resume, or empty for a new session.
 func pickExistingSession(
 	ctx context.Context,
-	copilot azdext.CopilotServiceClient,
+	copilot v1beta.CopilotServiceClient,
 	promptSvc azdext.PromptServiceClient,
 ) string {
 	fmt.Println(color.HiYellowString("  Looking for existing sessions..."))
 
-	listResp, err := copilot.ListSessions(ctx, &azdext.ListCopilotSessionsRequest{})
+	listResp, err := copilot.ListSessions(ctx, &v1beta.ListCopilotSessionsRequest{})
 	if err != nil {
 		fmt.Printf("  %s Could not list sessions: %v\n", color.YellowString("⚠"), err)
 		return ""
@@ -209,7 +210,7 @@ func pickExistingSession(
 // Returns the session ID assigned by the server (from the first SendMessage response).
 func chatLoop(
 	ctx context.Context,
-	copilot azdext.CopilotServiceClient,
+	copilot v1beta.CopilotServiceClient,
 	promptSvc azdext.PromptServiceClient,
 	sessionID string,
 	flags copilotFlags,
@@ -234,7 +235,7 @@ func chatLoop(
 		}
 
 		// SendMessage creates the session on the first call, reuses it after
-		sendReq := &azdext.SendCopilotMessageRequest{
+		sendReq := &v1beta.SendCopilotMessageRequest{
 			Prompt: input,
 		}
 		if sessionID != "" {
@@ -266,10 +267,10 @@ func chatLoop(
 // showCumulativeMetrics displays cumulative session usage.
 func showCumulativeMetrics(
 	ctx context.Context,
-	copilot azdext.CopilotServiceClient,
+	copilot v1beta.CopilotServiceClient,
 	sessionID string,
 ) {
-	metricsResp, err := copilot.GetUsageMetrics(ctx, &azdext.GetCopilotUsageMetricsRequest{
+	metricsResp, err := copilot.GetUsageMetrics(ctx, &v1beta.GetCopilotUsageMetricsRequest{
 		SessionId: sessionID,
 	})
 	if err != nil {
@@ -308,10 +309,10 @@ func showCumulativeMetrics(
 // showFileChanges displays accumulated file changes from the session.
 func showFileChanges(
 	ctx context.Context,
-	copilot azdext.CopilotServiceClient,
+	copilot v1beta.CopilotServiceClient,
 	sessionID string,
 ) {
-	changesResp, err := copilot.GetFileChanges(ctx, &azdext.GetCopilotFileChangesRequest{
+	changesResp, err := copilot.GetFileChanges(ctx, &v1beta.GetCopilotFileChangesRequest{
 		SessionId: sessionID,
 	})
 	if err != nil || len(changesResp.FileChanges) == 0 {
@@ -323,11 +324,11 @@ func showFileChanges(
 
 	for _, change := range changesResp.FileChanges {
 		switch change.ChangeType {
-		case azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED:
+		case v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED:
 			fmt.Printf("  %s %s\n", color.GreenString("+ Created "), change.Path)
-		case azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED:
+		case v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED:
 			fmt.Printf("  %s %s\n", color.YellowString("± Modified"), change.Path)
-		case azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_DELETED:
+		case v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_DELETED:
 			fmt.Printf("  %s %s\n", color.RedString("- Deleted "), change.Path)
 		default:
 			fmt.Printf("  %s %s\n", color.HiBlackString("? Unknown "), change.Path)

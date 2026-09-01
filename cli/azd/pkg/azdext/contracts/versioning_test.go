@@ -27,9 +27,22 @@ func TestStableContractIsSubsetOfBeta(t *testing.T) {
 	stable := contractFiles(t, "azd.extensions.v1")
 	beta := contractFiles(t, "azd.extensions.v1beta")
 
-	require.Len(t, stable, 20)
+	require.Len(t, stable, 18)
 	require.GreaterOrEqual(t, len(beta), len(stable))
 	require.NoError(t, validateStableSubset(stable, beta))
+}
+
+func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
+	t.Parallel()
+
+	stable := contractFiles(t, "azd.extensions.v1")
+	beta := contractFiles(t, "azd.extensions.v1beta")
+
+	for _, fileName := range []string{"compose.proto", "copilot.proto"} {
+		require.NotContains(t, stable, fileName)
+		require.Contains(t, beta, fileName)
+		require.NotEmpty(t, beta[fileName].Services())
+	}
 }
 
 func TestStableSubsetAllowsAdditiveBetaFieldsAndMethods(t *testing.T) {

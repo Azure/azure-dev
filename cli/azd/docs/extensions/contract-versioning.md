@@ -14,6 +14,10 @@ stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
+`ComposeService` and `CopilotService` are beta-only and therefore do not have
+stable `v1` generated types or façade aliases. The `AzdClient.Compose()` and
+`AzdClient.Copilot()` convenience accessors return generated `v1beta` clients,
+and their request and response types come from `contracts/v1beta`.
 
 ## Channel policy
 
@@ -28,11 +32,10 @@ After validation, graduate a capability by adding the same compatible shape
 to `v1`. A beta client continues to use the beta package until it deliberately
 moves to stable.
 
-The move from the original `azdext` wire package to
-`azd.extensions.v1` is an intentionally accepted one-time breaking change.
-azd does not register legacy `/azdext.*` runtime endpoints. Compatibility
-checks should use the first merged versioned-contract commit as their baseline,
-not the old unversioned sources.
+The original `azdext` wire package is retained only through a temporary frozen
+runtime bridge for already-built extensions. New development must use `v1` or
+`v1beta`. Compatibility checks use the first merged versioned-contract commit
+as their baseline, not the old unversioned sources.
 
 ## Host registration and adaptation
 
@@ -41,6 +44,13 @@ descriptors and handlers on the same server. The generated beta servers in
 `internal/grpcserver/versioned_services_generated.go` satisfy the real
 `v1beta` server interfaces; the host does not clone or rewrite stable
 descriptors.
+
+A service that exists only in beta is implemented directly with the generated
+`v1beta` server interface and registered without a stable adapter.
+`ComposeService` and `CopilotService` currently use this model. Focused beta
+overrides apply only to beta additions on services that also exist in stable;
+registration rejects an override for a beta-only service because its native
+implementation already owns the full beta contract.
 
 For a method shared by both channels, the beta server:
 
@@ -93,6 +103,11 @@ beta files, messages, enum values, fields, and methods, while requiring every
 shared field number, name, kind, cardinality, presence, oneof membership, and
 message or enum type to remain compatible. Shared methods must retain their
 request and response types and client/server streaming shape.
+
+The temporary legacy bridge separately aliases the frozen pre-versioning
+`azdext.ComposeService` and `azdext.CopilotService` addresses to their native
+beta implementations. That compatibility alias does not make either service
+part of stable `v1`.
 
 See [`grpc/README.md`](../../grpc/README.md) for generation, lint, and Buf
 compatibility commands.

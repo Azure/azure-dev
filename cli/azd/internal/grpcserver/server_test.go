@@ -147,7 +147,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedUserConfigServiceServer{},
 		azdext.UnimplementedDeploymentServiceServer{},
 		azdext.UnimplementedEventServiceServer{},
-		azdext.UnimplementedComposeServiceServer{},
+		v1beta.UnimplementedComposeServiceServer{},
 		azdext.UnimplementedWorkflowServiceServer{},
 		azdext.UnimplementedExtensionServiceServer{},
 		azdext.UnimplementedServiceTargetServiceServer{},
@@ -155,7 +155,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedContainerServiceServer{},
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
-		azdext.UnimplementedCopilotServiceServer{},
+		v1beta.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		echoValidationService{},
 		newTelemetryService(stubExtensionLookup{extension: reportingExtension}),
@@ -181,9 +181,7 @@ func Test_Server_Start(t *testing.T) {
 		serviceNames := []string{
 			"AccountService",
 			"AiModelService",
-			"ComposeService",
 			"ContainerService",
-			"CopilotService",
 			"DeploymentService",
 			"EnvironmentService",
 			"EventService",
@@ -200,9 +198,14 @@ func Test_Server_Start(t *testing.T) {
 		}
 
 		services := server.grpcServer.GetServiceInfo()
-		require.Len(t, services, 3*len(serviceNames))
+		require.Len(t, services, 3*len(serviceNames)+4)
 		for _, serviceName := range serviceNames {
 			require.Contains(t, services, "azd.extensions.v1."+serviceName)
+			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
+			require.Contains(t, services, "azdext."+serviceName)
+		}
+		for _, serviceName := range []string{"ComposeService", "CopilotService"} {
+			require.NotContains(t, services, "azd.extensions.v1."+serviceName)
 			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
 			require.Contains(t, services, "azdext."+serviceName)
 		}
@@ -240,6 +243,14 @@ func Test_Server_Start(t *testing.T) {
 
 		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		err = connection.Invoke(ctx, "/azdext.ProjectService/Get", &azdext.EmptyRequest{}, &azdext.ProjectConfig{})
+		require.Equal(t, codes.Unimplemented, status.Code(err))
+
+		err = connection.Invoke(
+			ctx,
+			"/azdext.ComposeService/ListResources",
+			&v1beta.EmptyRequest{},
+			&v1beta.ListResourcesResponse{},
+		)
 		require.Equal(t, codes.Unimplemented, status.Code(err))
 
 		stream, err := connection.NewStream(ctx, &grpc.StreamDesc{
@@ -420,7 +431,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		azdext.UnimplementedUserConfigServiceServer{},
 		azdext.UnimplementedDeploymentServiceServer{},
 		azdext.UnimplementedEventServiceServer{},
-		azdext.UnimplementedComposeServiceServer{},
+		v1beta.UnimplementedComposeServiceServer{},
 		azdext.UnimplementedWorkflowServiceServer{},
 		azdext.UnimplementedExtensionServiceServer{},
 		azdext.UnimplementedServiceTargetServiceServer{},
@@ -428,7 +439,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		azdext.UnimplementedContainerServiceServer{},
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
-		azdext.UnimplementedCopilotServiceServer{},
+		v1beta.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
 		azdext.UnimplementedTelemetryServiceServer{},
@@ -547,7 +558,7 @@ func TestServer_RelaysExtensionErrorOverGRPC(t *testing.T) {
 		azdext.UnimplementedUserConfigServiceServer{},
 		azdext.UnimplementedDeploymentServiceServer{},
 		azdext.UnimplementedEventServiceServer{},
-		azdext.UnimplementedComposeServiceServer{},
+		v1beta.UnimplementedComposeServiceServer{},
 		azdext.UnimplementedWorkflowServiceServer{},
 		azdext.UnimplementedExtensionServiceServer{},
 		azdext.UnimplementedServiceTargetServiceServer{},
@@ -557,7 +568,7 @@ func TestServer_RelaysExtensionErrorOverGRPC(t *testing.T) {
 		},
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
-		azdext.UnimplementedCopilotServiceServer{},
+		v1beta.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
 		newTelemetryService(stubExtensionLookup{}),
@@ -789,7 +800,7 @@ func newServerWithContainerService(
 		azdext.UnimplementedUserConfigServiceServer{},
 		azdext.UnimplementedDeploymentServiceServer{},
 		azdext.UnimplementedEventServiceServer{},
-		azdext.UnimplementedComposeServiceServer{},
+		v1beta.UnimplementedComposeServiceServer{},
 		azdext.UnimplementedWorkflowServiceServer{},
 		azdext.UnimplementedExtensionServiceServer{},
 		azdext.UnimplementedServiceTargetServiceServer{},
@@ -797,7 +808,7 @@ func newServerWithContainerService(
 		containerService,
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
-		azdext.UnimplementedCopilotServiceServer{},
+		v1beta.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
 		azdext.UnimplementedTelemetryServiceServer{},

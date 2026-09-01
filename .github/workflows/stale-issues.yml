@@ -10,7 +10,7 @@ jobs:
   mark-stale-issues:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629  # v10.4.0
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93  # v11.0.0
         with:
           days-before-issue-stale: 365        # Initial filter to stale yearly ignored issues
         #   only-issue-labels:                # Not enabled until we have a better idea for what to target

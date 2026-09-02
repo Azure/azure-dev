@@ -409,6 +409,35 @@ func TestCheckToolboxes_BundledSourceAvoidsManualEndpointGuidance(t *testing.T) 
 	require.NotContains(t, res.Suggestion, "azd provision")
 }
 
+func TestCheckToolboxes_BundledOwnersKeepAttachGuidance(t *testing.T) {
+	t.Parallel()
+
+	state := stateWithToolboxes(
+		nextstep.ResourceRef{
+			Name:          "My Tools",
+			ServiceName:   "agent-a",
+			ToolboxSource: nextstep.ToolboxSourceBundled,
+		},
+		nextstep.ResourceRef{
+			Name:          "My Tools",
+			ServiceName:   "agent-b",
+			ToolboxSource: nextstep.ToolboxSourceBundled,
+		},
+	)
+	state.ToolboxEndpointsChecked = true
+	state.MissingToolboxEndpoints = state.Toolboxes
+
+	res := runToolboxesCheck(t, Dependencies{
+		AzdClient:     &azdext.AzdClient{},
+		assembleState: fixedAssembler(state),
+	}, nil)
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "1 declared toolbox(es)")
+	require.Contains(t, res.Suggestion, `"My Tools" in agent "agent-a"`)
+	require.Contains(t, res.Suggestion, `"My Tools" in agent "agent-b"`)
+	require.Equal(t, 0, res.Details["matchedCount"])
+}
+
 func TestCheckToolboxes_BundledSpacedNameExplainsReferenceMigration(t *testing.T) {
 	t.Parallel()
 

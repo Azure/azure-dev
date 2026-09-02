@@ -436,6 +436,48 @@ func TestAssembleState_CollectsBundledToolboxes(t *testing.T) {
 	}, toolboxSources(state.Toolboxes))
 }
 
+func TestAssembleState_KeepsBundledToolboxOwners(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		calls:   make(map[string]int),
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"agent-a": newAgentService(t, map[string]any{
+					"kind":      "hostedAgent",
+					"toolboxes": []any{"shared"},
+				}),
+				"agent-b": newAgentService(t, map[string]any{
+					"kind":      "hostedAgent",
+					"toolboxes": []any{"shared"},
+				}),
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Equal(t, []string{"shared", "shared"}, toolboxNames(state.Toolboxes))
+	require.Equal(t, []string{"agent-a", "agent-b"}, toolboxServiceNames(state.Toolboxes))
+	require.Equal(t, []ToolboxSource{
+		ToolboxSourceBundled,
+		ToolboxSourceBundled,
+	}, toolboxSources(state.Toolboxes))
+	require.Equal(
+		t,
+		[]string{"shared", "shared"},
+		toolboxNames(state.MissingToolboxEndpoints),
+	)
+	require.Equal(
+		t,
+		[]string{"agent-a", "agent-b"},
+		toolboxServiceNames(state.MissingToolboxEndpoints),
+	)
+	require.Equal(t, 1, src.calls["dev/TOOLBOX_SHARED_MCP_ENDPOINT"])
+}
+
 func TestAssembleState_MixedShapeToolboxesPreferKindedNestedConfig(t *testing.T) {
 	t.Parallel()
 
@@ -864,6 +906,14 @@ func toolboxSources(refs []ResourceRef) []ToolboxSource {
 		sources = append(sources, ref.ToolboxSource)
 	}
 	return sources
+}
+
+func toolboxServiceNames(refs []ResourceRef) []string {
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		names = append(names, ref.ServiceName)
+	}
+	return names
 }
 
 func TestAssembleState_SplitToolboxConditionUsesEnvironment(t *testing.T) {

@@ -180,14 +180,8 @@ func classifyToolboxState(
 	toolboxes, missing []nextstep.ResourceRef,
 ) Result {
 	missingKeys := make(map[string]struct{}, len(missing))
-	missingUnique := make([]nextstep.ResourceRef, 0, len(missing))
 	for _, toolbox := range missing {
-		key := envkey.ToolboxMCPEndpoint(toolbox.Name)
-		if _, duplicate := missingKeys[key]; duplicate {
-			continue
-		}
-		missingKeys[key] = struct{}{}
-		missingUnique = append(missingUnique, toolbox)
+		missingKeys[envkey.ToolboxMCPEndpoint(toolbox.Name)] = struct{}{}
 	}
 	seen := make(map[string]struct{}, len(toolboxes))
 	matched := 0
@@ -201,14 +195,15 @@ func classifyToolboxState(
 			matched++
 		}
 	}
-	return classifyToolboxResults(missingUnique, matched)
+	return classifyToolboxResults(missing, matched)
 }
 
 func classifyToolboxResults(
 	missing []nextstep.ResourceRef,
 	matched int,
 ) Result {
-	if len(missing) == 0 {
+	uniqueMissing := uniqueToolboxRefs(missing)
+	if len(uniqueMissing) == 0 {
 		return Result{
 			Status:  StatusPass,
 			Message: fmt.Sprintf("all %d declared toolbox(es) have an MCP endpoint set.", matched),
@@ -216,19 +211,17 @@ func classifyToolboxResults(
 		}
 	}
 
-	slices.SortFunc(missing, func(a, b nextstep.ResourceRef) int {
-		if a.Name != b.Name {
-			return strings.Compare(a.Name, b.Name)
-		}
-		return strings.Compare(a.ServiceName, b.ServiceName)
-	})
+	slices.SortFunc(uniqueMissing, compareToolboxRefs)
+	slices.SortFunc(missing, compareToolboxRefs)
 	var names []string
+	for _, toolbox := range uniqueMissing {
+		names = append(names, fmt.Sprintf("%s (env %s, service %s)",
+			toolbox.Name, envkey.ToolboxMCPEndpoint(toolbox.Name), toolbox.ServiceName))
+	}
 	hasSplit := false
 	hasBundled := false
 	hasLegacy := false
 	for _, toolbox := range missing {
-		names = append(names, fmt.Sprintf("%s (env %s, service %s)",
-			toolbox.Name, envkey.ToolboxMCPEndpoint(toolbox.Name), toolbox.ServiceName))
 		hasSplit = hasSplit || toolbox.ToolboxSource == nextstep.ToolboxSourceSplit
 		hasBundled = hasBundled || toolbox.ToolboxSource == nextstep.ToolboxSourceBundled
 		hasLegacy = hasLegacy ||
@@ -257,13 +250,34 @@ func classifyToolboxResults(
 	return Result{
 		Status: StatusFail,
 		Message: fmt.Sprintf("%d declared toolbox(es) have no MCP endpoint set in the azd environment: %s",
-			len(missing), strings.Join(names, ", ")),
+			len(uniqueMissing), strings.Join(names, ", ")),
 		Suggestion: suggestion,
 		Details: map[string]any{
-			"missingToolboxes": toolboxLookupDetails(missing),
+			"missingToolboxes": toolboxLookupDetails(uniqueMissing),
 			"matchedCount":     matched,
 		},
 	}
+}
+
+func compareToolboxRefs(a, b nextstep.ResourceRef) int {
+	if a.Name != b.Name {
+		return strings.Compare(a.Name, b.Name)
+	}
+	return strings.Compare(a.ServiceName, b.ServiceName)
+}
+
+func uniqueToolboxRefs(refs []nextstep.ResourceRef) []nextstep.ResourceRef {
+	seen := make(map[string]struct{}, len(refs))
+	unique := make([]nextstep.ResourceRef, 0, len(refs))
+	for _, ref := range refs {
+		key := envkey.ToolboxMCPEndpoint(ref.Name)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, ref)
+	}
+	return unique
 }
 
 func bundledToolboxMigrationSuggestion(
@@ -324,42 +338,44 @@ func toolboxLookupDetails(toolboxes []nextstep.ResourceRef) []toolboxLookup {
 // surface instead of a quiet pass-through.
 //
 // Dedup is on the canonical env key, not the toolbox name: the
-// manifest walker deduplicates on (ServiceName, Name) so the same toolbox
-// referenced by two services surfaces twice in state.Toolboxes.
-// Without dedup here the doctor would issue two gRPC reads for the
-// same key and report the same toolbox twice in the missing list.
+// manifest walker keeps one ref per (ServiceName, Name), so the same
+// toolbox used by two services surfaces twice in state.Toolboxes.
+// Env reads stay unique; missing owners are kept for attach guidance.
 func classifyToolboxEndpoints(
 	ctx context.Context,
 	toolboxes []nextstep.ResourceRef,
 	lookup toolboxEnvLookupFn,
 ) Result {
 	seen := make(map[string]struct{}, len(toolboxes))
+	missingKeys := make(map[string]struct{}, len(toolboxes))
 	var missing []nextstep.ResourceRef
 	matched := 0
 
 	for _, t := range toolboxes {
 		key := envkey.ToolboxMCPEndpoint(t.Name)
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
+		if _, dup := seen[key]; !dup {
+			seen[key] = struct{}{}
 
-		value, err := lookup(ctx, key)
-		if err != nil {
-			return Result{
-				Status: StatusFail,
-				Message: fmt.Sprintf(
-					"could not read toolbox endpoint env vars from the azd environment: %s",
-					err),
-				Suggestion: "Verify the azd extension is healthy and the active environment is accessible. " +
-					"Try `azd env list` and `azd env get-values`.",
+			value, err := lookup(ctx, key)
+			if err != nil {
+				return Result{
+					Status: StatusFail,
+					Message: fmt.Sprintf(
+						"could not read toolbox endpoint env vars from the azd environment: %s",
+						err),
+					Suggestion: "Verify the azd extension is healthy and the active environment is accessible. " +
+						"Try `azd env list` and `azd env get-values`.",
+				}
+			}
+			if strings.TrimSpace(value) == "" {
+				missingKeys[key] = struct{}{}
+			} else {
+				matched++
 			}
 		}
-		if strings.TrimSpace(value) == "" {
+		if _, ok := missingKeys[key]; ok {
 			missing = append(missing, t)
-			continue
 		}
-		matched++
 	}
 
 	result := classifyToolboxResults(missing, matched)

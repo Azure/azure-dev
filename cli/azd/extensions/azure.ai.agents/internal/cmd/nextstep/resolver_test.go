@@ -601,6 +601,85 @@ func TestResolveAfterInit_BundledToolboxGuidanceMigratesInOrder(t *testing.T) {
 	assert.Equal(t, 1, deployCount)
 }
 
+func TestResolveAfterInit_BundledToolboxGuidanceAttachesEveryOwner(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{
+			{
+				Name:          "bundled-tools",
+				ServiceName:   "agent-a",
+				ToolboxSource: ToolboxSourceBundled,
+			},
+			{
+				Name:          "bundled-tools",
+				ServiceName:   "agent-b",
+				ToolboxSource: ToolboxSourceBundled,
+			},
+		},
+	}
+
+	suggestions := ResolveAfterInit(state, nil)
+	require.GreaterOrEqual(t, len(suggestions), 5)
+	assert.Equal(t,
+		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
+		suggestions[0].Command)
+	assert.Equal(t,
+		"azd ai agent add toolbox 'bundled-tools' --agent 'agent-a'",
+		suggestions[1].Command)
+	assert.Equal(t,
+		"azd ai agent add toolbox 'bundled-tools' --agent 'agent-b'",
+		suggestions[2].Command)
+	assert.Equal(t, "azd deploy", suggestions[3].Command)
+
+	var createCount int
+	for _, suggestion := range suggestions {
+		if strings.Contains(suggestion.Command, "create azure.ai.toolbox service") {
+			createCount++
+		}
+	}
+	assert.Equal(t, 1, createCount)
+}
+
+func TestResolveAfterInit_BundledToolboxGuidanceReplacesEveryOwner(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{
+			{
+				Name:          "My Tools",
+				ServiceName:   "agent-a",
+				ToolboxSource: ToolboxSourceBundled,
+			},
+			{
+				Name:          "My Tools",
+				ServiceName:   "agent-b",
+				ToolboxSource: ToolboxSourceBundled,
+			},
+		},
+	}
+
+	suggestions := ResolveAfterInit(state, nil)
+	require.GreaterOrEqual(t, len(suggestions), 6)
+	assert.Equal(t,
+		"edit azure.yaml: create azure.ai.toolbox service \"MyTools\"",
+		suggestions[0].Command)
+	assert.Equal(t,
+		"edit agent configuration: replace toolbox \"My Tools\" with service key \"MyTools\"",
+		suggestions[1].Command)
+	assert.Equal(t,
+		"azd ai agent add toolbox 'MyTools' --agent 'agent-a'",
+		suggestions[2].Command)
+	assert.Equal(t,
+		"edit agent configuration: replace toolbox \"My Tools\" with service key \"MyTools\"",
+		suggestions[3].Command)
+	assert.Equal(t,
+		"azd ai agent add toolbox 'MyTools' --agent 'agent-b'",
+		suggestions[4].Command)
+}
+
 func TestResolveAfterInit_BundledToolboxGuidanceQuotesSpacedNames(t *testing.T) {
 	t.Parallel()
 

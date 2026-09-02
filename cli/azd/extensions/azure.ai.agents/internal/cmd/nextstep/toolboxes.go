@@ -94,8 +94,8 @@ func collectBundledAndLegacyToolboxes(
 	excludedAgents map[string]struct{},
 	checkedAgents map[string]struct{},
 	errs *[]error,
-) map[string]ResourceRef {
-	collected := make(map[string]ResourceRef)
+) map[string][]ResourceRef {
+	collected := make(map[string][]ResourceRef)
 	if excludedAgents == nil {
 		excludedAgents = make(map[string]struct{})
 	}
@@ -233,7 +233,7 @@ func collectBundledAndLegacyToolboxes(
 		}
 
 		for _, toolbox := range bundled {
-			addToolboxIfHigherPriority(
+			addCollectedToolbox(
 				collected,
 				ResourceRef{
 					Name:          toolbox.Name,
@@ -243,7 +243,7 @@ func collectBundledAndLegacyToolboxes(
 			)
 		}
 		for _, name := range legacy {
-			addToolboxIfHigherPriority(
+			addCollectedToolbox(
 				collected,
 				ResourceRef{
 					Name:          name,
@@ -455,16 +455,30 @@ func mapHasToolboxKind(values map[string]any) bool {
 	return ok && strings.TrimSpace(kind) != ""
 }
 
-func addToolboxIfHigherPriority(
-	collected map[string]ResourceRef,
+// addCollectedToolbox keeps highest-priority refs per endpoint.
+// Equal-priority owners are preserved so each agent can attach.
+func addCollectedToolbox(
+	collected map[string][]ResourceRef,
 	ref ResourceRef,
 ) {
 	key := envkey.ToolboxMCPEndpoint(ref.Name)
-	existing, found := collected[key]
-	if !found || toolboxSourcePriority(ref.ToolboxSource) >
-		toolboxSourcePriority(existing.ToolboxSource) {
-		collected[key] = ref
+	existing := collected[key]
+	if len(existing) == 0 ||
+		toolboxSourcePriority(ref.ToolboxSource) >
+			toolboxSourcePriority(existing[0].ToolboxSource) {
+		collected[key] = []ResourceRef{ref}
+		return
 	}
+	if toolboxSourcePriority(ref.ToolboxSource) <
+		toolboxSourcePriority(existing[0].ToolboxSource) {
+		return
+	}
+	for _, current := range existing {
+		if current.ServiceName == ref.ServiceName {
+			return
+		}
+	}
+	collected[key] = append(existing, ref)
 }
 
 func toolboxSourcePriority(source ToolboxSource) int {
@@ -482,28 +496,33 @@ func toolboxSourcePriority(source ToolboxSource) int {
 
 func mergeToolboxFallbacks(
 	state *State,
-	fallbacks map[string]ResourceRef,
+	fallbacks map[string][]ResourceRef,
 	reservedKeys map[string]struct{},
 ) {
-	merged := make(map[string]ResourceRef, len(state.Toolboxes)+len(fallbacks))
+	merged := make(map[string][]ResourceRef, len(state.Toolboxes)+len(fallbacks))
 	for _, ref := range state.Toolboxes {
-		merged[envkey.ToolboxMCPEndpoint(ref.Name)] = ref
+		key := envkey.ToolboxMCPEndpoint(ref.Name)
+		merged[key] = append(merged[key], ref)
 	}
-	for key, ref := range fallbacks {
+	for key, refs := range fallbacks {
+		if len(refs) == 0 {
+			continue
+		}
 		if _, reserved := reservedKeys[key]; reserved {
 			continue
 		}
-		if existing, found := merged[key]; found &&
-			toolboxSourcePriority(existing.ToolboxSource) >=
-				toolboxSourcePriority(ref.ToolboxSource) {
+		existing := merged[key]
+		if len(existing) > 0 &&
+			toolboxSourcePriority(existing[0].ToolboxSource) >=
+				toolboxSourcePriority(refs[0].ToolboxSource) {
 			continue
 		}
-		merged[key] = ref
+		merged[key] = refs
 	}
 
 	state.Toolboxes = state.Toolboxes[:0]
-	for _, ref := range merged {
-		state.Toolboxes = append(state.Toolboxes, ref)
+	for _, refs := range merged {
+		state.Toolboxes = append(state.Toolboxes, refs...)
 	}
 }
 

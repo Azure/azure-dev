@@ -447,9 +447,10 @@ func appendBundledToolboxGuidance(
 		return strings.Compare(a.ServiceName, b.ServiceName)
 	})
 
-	limit := min(len(bundled), maxFixupLines)
-	for _, toolbox := range bundled[:limit] {
-		serviceKey := servicekey.SanitizeServiceName(toolbox.Name)
+	groups := groupBundledToolboxes(bundled)
+	limit := min(len(groups), maxFixupLines)
+	for _, group := range groups[:limit] {
+		serviceKey := servicekey.SanitizeServiceName(group[0].Name)
 		*out = append(*out, Suggestion{
 			Command: fmt.Sprintf(
 				"edit azure.yaml: create azure.ai.toolbox service %q",
@@ -459,28 +460,30 @@ func appendBundledToolboxGuidance(
 			Priority:    priority,
 		})
 		priority++
-		if serviceKey != toolbox.Name {
+		for _, toolbox := range group {
+			if serviceKey != toolbox.Name {
+				*out = append(*out, Suggestion{
+					Command: fmt.Sprintf(
+						"edit agent configuration: replace toolbox %q with service key %q",
+						toolbox.Name,
+						serviceKey,
+					),
+					Description: "update the agent's toolboxes reference to the new service key",
+					Priority:    priority,
+				})
+				priority++
+			}
 			*out = append(*out, Suggestion{
 				Command: fmt.Sprintf(
-					"edit agent configuration: replace toolbox %q with service key %q",
-					toolbox.Name,
-					serviceKey,
+					"azd ai agent add toolbox %s --agent %s",
+					shellEscapeSingleQuoted(serviceKey),
+					shellEscapeSingleQuoted(toolbox.ServiceName),
 				),
-				Description: "update the agent's toolboxes reference to the new service key",
+				Description: "attach the independent toolbox service to the agent",
 				Priority:    priority,
 			})
 			priority++
 		}
-		*out = append(*out, Suggestion{
-			Command: fmt.Sprintf(
-				"azd ai agent add toolbox %s --agent %s",
-				shellEscapeSingleQuoted(serviceKey),
-				shellEscapeSingleQuoted(toolbox.ServiceName),
-			),
-			Description: "attach the independent toolbox service to the agent",
-			Priority:    priority,
-		})
-		priority++
 	}
 	if len(bundled) > 0 {
 		*out = append(*out, Suggestion{
@@ -491,6 +494,32 @@ func appendBundledToolboxGuidance(
 		priority++
 	}
 	return priority
+}
+
+// groupBundledToolboxes collapses equal names so the service is
+// created once, while each owning agent stays in the group.
+func groupBundledToolboxes(toolboxes []ResourceRef) [][]ResourceRef {
+	groups := make([][]ResourceRef, 0)
+	index := make(map[string]int, len(toolboxes))
+	for _, toolbox := range toolboxes {
+		i, found := index[toolbox.Name]
+		if !found {
+			index[toolbox.Name] = len(groups)
+			groups = append(groups, []ResourceRef{toolbox})
+			continue
+		}
+		duplicate := false
+		for _, existing := range groups[i] {
+			if existing.ServiceName == toolbox.ServiceName {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			groups[i] = append(groups[i], toolbox)
+		}
+	}
+	return groups
 }
 
 func hasMissingToolboxSource(toolboxes []ResourceRef, source ToolboxSource) bool {

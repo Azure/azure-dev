@@ -494,8 +494,8 @@ func detectMissingAzureContextVars(ctx context.Context, src Source, envName stri
 }
 
 // probeToolboxEndpoints reads each canonical toolbox endpoint once.
-// azd produces these values, so the probe does not depend on agent
-// environment references.
+// Missing results keep every owning agent so attach guidance is
+// complete; only the env-var read is deduplicated.
 func probeToolboxEndpoints(
 	ctx context.Context,
 	src Source,
@@ -505,21 +505,24 @@ func probeToolboxEndpoints(
 	errs *[]error,
 ) []ResourceRef {
 	seen := make(map[string]struct{}, len(toolboxes))
+	missingKeys := make(map[string]struct{}, len(toolboxes))
 	var missing []ResourceRef
 	for _, toolbox := range toolboxes {
 		key := envkey.ToolboxMCPEndpoint(toolbox.Name)
-		if _, ok := seen[key]; ok {
-			continue
+		if _, ok := seen[key]; !ok {
+			seen[key] = struct{}{}
+			value, err := src.EnvValue(ctx, envName, key)
+			if err != nil {
+				probeErr := fmt.Errorf("read toolbox endpoint %s: %w", key, err)
+				*endpointErrors = append(*endpointErrors, probeErr.Error())
+				*errs = append(*errs, probeErr)
+				continue
+			}
+			if strings.TrimSpace(value) == "" {
+				missingKeys[key] = struct{}{}
+			}
 		}
-		seen[key] = struct{}{}
-		value, err := src.EnvValue(ctx, envName, key)
-		if err != nil {
-			probeErr := fmt.Errorf("read toolbox endpoint %s: %w", key, err)
-			*endpointErrors = append(*endpointErrors, probeErr.Error())
-			*errs = append(*errs, probeErr)
-			continue
-		}
-		if strings.TrimSpace(value) == "" {
+		if _, ok := missingKeys[key]; ok {
 			missing = append(missing, toolbox)
 		}
 	}

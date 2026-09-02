@@ -758,6 +758,40 @@ func TestResolveProtocol_ExplicitFlag(t *testing.T) {
 	}
 }
 
+func TestInvokeValidatesInputFileBeforeRemoteProtocolLookup(t *testing.T) {
+	original := getRemoteAgent
+	t.Cleanup(func() {
+		getRemoteAgent = original
+	})
+
+	lookupCalled := false
+	getRemoteAgent = func(context.Context, *remoteContext) (*agent_api.AgentObject, error) {
+		lookupCalled = true
+		return nil, errors.New("remote lookup should not run")
+	}
+
+	action := &InvokeAction{
+		flags: &invokeFlags{
+			inputFile: filepath.Join(t.TempDir(), "missing.json"),
+		},
+		endpoint: &parsedAgentEndpoint{
+			ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			AgentName:       "agent",
+		},
+	}
+
+	err := action.Run(t.Context())
+	if err == nil {
+		t.Fatal("expected input file error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to read input file") {
+		t.Fatalf("error = %q, want input file error", err)
+	}
+	if lookupCalled {
+		t.Fatal("remote protocol lookup ran before input file validation")
+	}
+}
+
 func TestRemoteInvocableProtocols(t *testing.T) {
 	t.Parallel()
 
@@ -860,7 +894,7 @@ func TestSelectRemoteInvokeProtocol(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "no deployed protocol",
+			name: "no deployed protocol",
 			local: []agent_api.AgentProtocol{
 				agent_api.AgentProtocolResponses,
 			},

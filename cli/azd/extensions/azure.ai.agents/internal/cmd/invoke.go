@@ -73,6 +73,9 @@ type InvokeAction struct {
 	clientHeaders         http.Header
 	protocolServiceName   string
 	resolvedRemoteContext *remoteContext
+	resolvedBody          []byte
+	resolvedBodyLabel     string
+	bodyResolved          bool
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -424,6 +427,12 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	if a.flags.inputFile != "" {
+		if _, _, err := a.resolveBody(); err != nil {
+			return err
+		}
+	}
+
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
 		return err
@@ -617,13 +626,12 @@ func getRemoteAgentImpl(
 	if err != nil {
 		return nil, err
 	}
-
 	apiVersion := rc.apiVersion
 	if apiVersion == "" {
 		apiVersion = DefaultAgentAPIVersion
 	}
 	client := agent_api.NewAgentClient(rc.projectEndpoint, credential)
-	return client.GetAgent(ctx, rc.name, apiVersion)
+	return client.GetAgent(ctx, rc.name, apiVersion, false)
 }
 
 func remoteProtocolLookupError(agentName string, err error) error {
@@ -765,15 +773,26 @@ func (a *InvokeAction) httpTimeout() time.Duration {
 // resolveBody returns the request body for invoke calls.
 // When --input-file is set, the file contents are returned; otherwise the message string is used.
 func (a *InvokeAction) resolveBody() ([]byte, string, error) {
+	if a.bodyResolved {
+		return a.resolvedBody, a.resolvedBodyLabel, nil
+	}
+
 	if a.flags.inputFile != "" {
 		//nolint:gosec // G304: inputFile is a user-provided CLI flag
 		data, err := os.ReadFile(a.flags.inputFile)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to read input file %q: %w", a.flags.inputFile, err)
 		}
-		return data, fmt.Sprintf("(from file %s)", a.flags.inputFile), nil
+		a.resolvedBody = data
+		a.resolvedBodyLabel = fmt.Sprintf("(from file %s)", a.flags.inputFile)
+		a.bodyResolved = true
+		return a.resolvedBody, a.resolvedBodyLabel, nil
 	}
-	return []byte(a.flags.message), fmt.Sprintf("%q", a.flags.message), nil
+
+	a.resolvedBody = []byte(a.flags.message)
+	a.resolvedBodyLabel = fmt.Sprintf("%q", a.flags.message)
+	a.bodyResolved = true
+	return a.resolvedBody, a.resolvedBodyLabel, nil
 }
 
 // contentTypeForBody returns "application/json" if data is valid JSON,

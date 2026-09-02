@@ -689,7 +689,7 @@ These helpers are intended to remove common extension boilerplate for shell exec
 | API | Description |
 |-----|-------------|
 | `DetectInteractive()` | Detects TTY mode (`full` / `limited` / `none`), `AZD_NO_PROMPT`, CI, and known agent environments. |
-| `InteractiveInfo.CanPrompt()` | Safe prompt gate (`stdin/stdout tty`, not no-prompt, not CI, not agent). |
+| `InteractiveInfo.CanPrompt()` | Safe prompt gate (`stdin/stdout tty`, not no-prompt, not CI). Agent detection is informational and does not disable prompts in an interactive terminal. |
 | `InteractiveInfo.CanColorize()` | Color output gate honoring `FORCE_COLOR` and `NO_COLOR`. |
 
 #### Atomic File Helpers

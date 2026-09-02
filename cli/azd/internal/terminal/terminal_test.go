@@ -7,13 +7,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsTerminal_ForceTTY(t *testing.T) {
 	clearTestEnvVars(t)
-	agentdetect.ResetDetection()
 
 	// Test AZD_FORCE_TTY=true forces TTY mode
 	t.Setenv("AZD_FORCE_TTY", "true")
@@ -24,82 +23,32 @@ func TestIsTerminal_ForceTTY(t *testing.T) {
 	assert.False(t, IsTerminal(0, 0), "AZD_FORCE_TTY=false should disable TTY mode")
 }
 
-func TestIsTerminal_AgentDetection(t *testing.T) {
-	tests := []struct {
-		name     string
-		envVars  map[string]string
-		expected bool
-	}{
-		{
-			name:     "Claude Code agent disables TTY",
-			envVars:  map[string]string{"CLAUDE_CODE": "1"},
-			expected: false,
-		},
-		{
-			name:     "GitHub Copilot CLI disables TTY",
-			envVars:  map[string]string{"GITHUB_COPILOT_CLI": "true"},
-			expected: false,
-		},
-		{
-			name:     "Codex disables TTY",
-			envVars:  map[string]string{"CODEX_THREAD_ID": "thread-id"},
-			expected: false,
-		},
-		{
-			name:     "Cursor disables TTY",
-			envVars:  map[string]string{"CURSOR_AGENT": "1"},
-			expected: false,
-		},
-		{
-			name:     "GitHub Copilot CLI via COPILOT_CLI disables TTY",
-			envVars:  map[string]string{"COPILOT_CLI": "true"},
-			expected: false,
-		},
-		{
-			name:     "GitHub Copilot VSCode disables TTY",
-			envVars:  map[string]string{"AI_AGENT": "github_copilot_vscode_agent"},
-			expected: false,
-		},
-		{
-			name:     "Gemini CLI disables TTY",
-			envVars:  map[string]string{"GEMINI_CLI": "1"},
-			expected: false,
-		},
-		{
-			name:     "OpenCode disables TTY",
-			envVars:  map[string]string{"OPENCODE": "1"},
-			expected: false,
-		},
-	}
+func TestIsTerminal_CI(t *testing.T) {
+	clearTestEnvVars(t)
+	t.Setenv("CI", "1")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			clearTestEnvVars(t)
-			agentdetect.ResetDetection()
-
-			for k, v := range tt.envVars {
-				t.Setenv(k, v)
-			}
-
-			result := IsTerminal(0, 0)
-			assert.Equal(t, tt.expected, result,
-				"IsTerminal should return %v when agent is detected", tt.expected)
-		})
-	}
+	assert.False(t, IsTerminal(0, 0), "CI should disable TTY mode")
 }
 
-func TestIsTerminal_ForceTTYOverridesAgent(t *testing.T) {
+func TestIsTerminal_NonTerminalFileDescriptors(t *testing.T) {
 	clearTestEnvVars(t)
-	agentdetect.ResetDetection()
+	nullFile, err := os.Open(os.DevNull)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, nullFile.Close())
+	})
 
-	// Set an agent env var that would normally disable TTY
-	t.Setenv("CLAUDE_CODE", "1")
+	assert.False(t, IsTerminal(nullFile.Fd(), nullFile.Fd()), "os.DevNull should not be a terminal")
+}
 
-	// But AZD_FORCE_TTY should take precedence
-	t.Setenv("AZD_FORCE_TTY", "true")
+func TestIsTerminal_AgentMarkerDoesNotOverrideTTY(t *testing.T) {
+	clearTestEnvVars(t)
+	t.Setenv("CLAUDECODE", "1")
 
-	assert.True(t, IsTerminal(0, 0),
-		"AZD_FORCE_TTY=true should override agent detection and enable TTY")
+	assert.True(t, isTerminal(0, 0, func(uintptr) bool {
+		return true
+	}),
+		"agent attribution should not disable an interactive terminal")
 }
 
 // clearTestEnvVars clears environment variables that affect terminal detection.
@@ -108,14 +57,16 @@ func clearTestEnvVars(t *testing.T) {
 		"AZD_FORCE_TTY",
 		// Agent env vars
 		"AI_AGENT", // GitHub Copilot hosts
-		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
-		"CODEX_CI", "CODEX_THREAD_ID", "CODEX_SESSION_ID",
+		"CLAUDECODE",
+		"CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "CODEX_CI", "CODEX_THREAD_ID", "CODEX_SESSION_ID",
 		"CURSOR_AGENT", "CURSOR_CONVERSATION_ID",
-		"GITHUB_COPILOT_CLI", "GH_COPILOT", "COPILOT_CLI",
+		"COPILOT_CLI",
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		"OPENCODE",
 		// CI env vars
-		"CI", "TF_BUILD", "GITHUB_ACTIONS",
+		"TF_BUILD", "GITHUB_ACTIONS", "APPVEYOR", "TRAVIS", "CIRCLECI", "GITLAB_CI",
+		"CODEBUILD_BUILD_ID", "JENKINS_URL", "TEAMCITY_VERSION", "JB_SPACE_API_URL",
+		"bamboo.buildKey", "BITBUCKET_BUILD_NUMBER", "CI", "BUILD_ID",
 	}
 
 	for _, envVar := range envVarsToUnset {

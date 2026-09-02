@@ -316,14 +316,19 @@ const (
 	EnvCloudShell         = "Azure CloudShell"
 
 	// AI Coding Agent environments
-	EnvClaudeCode          = "Claude Code"
-	EnvCodex               = "Codex"
-	EnvCursor              = "Cursor"
-	EnvGitHubCopilotCLI    = "GitHub Copilot CLI"
-	EnvGitHubCopilotApp    = "GitHub Copilot App"
-	EnvGitHubCopilotVSCode = "GitHub Copilot VSCode"
-	EnvGemini              = "Gemini"
-	EnvOpenCode            = "OpenCode"
+	EnvClaudeCode              = "Claude Code"
+	EnvClaudeCodeDesktop       = "Claude Code Desktop"
+	EnvClaudeCodeVSCode        = "Claude Code VSCode"
+	EnvCodex                   = "Codex"
+	EnvCodexDesktop            = "Codex Desktop"
+	EnvCursor                  = "Cursor"
+	EnvGitHubCopilotCLI        = "GitHub Copilot CLI"
+	EnvGitHubCopilotApp        = "GitHub Copilot App"
+	EnvGitHubCopilotVSCode     = "GitHub Copilot VSCode"
+	EnvGitHubCopilotCloudAgent = "GitHub Copilot Cloud Agent"
+	EnvGemini                  = "Gemini"
+	EnvOpenCode                = "OpenCode"
+	EnvPi                      = "Pi"
 
 	// Continuous Integration environments
 

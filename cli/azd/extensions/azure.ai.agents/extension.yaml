@@ -13,7 +13,7 @@ dependencies:
   - id: azure.ai.projects
     version: "~1.0.0-beta.6"
   - id: azure.ai.connections
-    version: "~1.0.0-beta.5"
+    version: "~1.0.0-beta.4"
   - id: azure.ai.toolboxes
     version: "~1.0.0-beta.5"
 language: go

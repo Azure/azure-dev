@@ -30,7 +30,7 @@ func TestFoundryResourceOwnershipMetadata(t *testing.T) {
 	connections := readResourceExtensionManifest(t, "../../../azure.ai.connections/extension.yaml")
 	toolboxes := readResourceExtensionManifest(t, "../../../azure.ai.toolboxes/extension.yaml")
 
-	assert.True(t, hasResourceDependency(agents, "azure.ai.connections", "~1.0.0-beta.5"))
+	assert.True(t, hasResourceDependency(agents, "azure.ai.connections", "~1.0.0-beta.4"))
 	assert.True(t, hasResourceDependency(agents, "azure.ai.toolboxes", "~1.0.0-beta.5"))
 	assert.True(t, hasResourceProvider(agents, "azure.ai.agent", "service-target"))
 	assert.False(t, hasResourceProvider(agents, "azure.ai.connection", "service-target"))

@@ -17,4 +17,4 @@ tags:
     - routine
 usage: azd ai routine <command> [options]
 version: 1.0.0-beta.4
-requiredAzdVersion: ">=1.27.1"
+requiredAzdVersion: ">=1.31.0"

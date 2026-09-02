@@ -28,6 +28,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -39,11 +40,6 @@ const (
 	agentInspectorExtensionID     = "azure.ai.inspector"
 	agentInspectorReadyPollPeriod = 250 * time.Millisecond
 	windowsControlCExitCode       = 0xC000013A
-	localClientRouteSelectedEvent = "local_client.route.selected"
-	localClientRouteAttribute     = "route"
-	localClientRouteInspector     = "inspector"
-	localClientRoutePlayground    = "playground"
-	localClientRouteSuppressed    = "suppressed"
 	// defaultInspectorUIPort mirrors the default UI port of the
 	// azure.ai.inspector extension. The inspector extension remains the source
 	// of truth for the actual default: when --inspector-port is unset we do not
@@ -159,7 +155,12 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// not clear a session belonging to an already-running agent.
 	activityProfile := resolveActivityRunProfile(runCtx.Definition)
 	suppressClient := flags.noInspector || flags.noClient
-	reportLocalClientRouteSelected(ctx, azdClient.Telemetry(), activityProfile, suppressClient)
+	reportLocalClientRouteSelected(
+		ctx,
+		telemetry.NewReporter(azdClient.Telemetry(), nil),
+		activityProfile,
+		suppressClient,
+	)
 	if err := validateInspectorPortForProfile(flags, activityProfile.IsActivity); err != nil {
 		return err
 	}
@@ -405,25 +406,18 @@ func isAgentProcessCanceled(err error) bool {
 
 func reportLocalClientRouteSelected(
 	ctx context.Context,
-	telemetry azdext.TelemetryServiceClient,
+	reporter telemetry.Reporter,
 	activityProfile activityRunProfile,
 	suppressClient bool,
 ) {
-	route := localClientRouteInspector
+	route := telemetry.LocalClientRouteInspector
 	if suppressClient {
-		route = localClientRouteSuppressed
+		route = telemetry.LocalClientRouteSuppressed
 	} else if activityProfile.IsActivity {
-		route = localClientRoutePlayground
+		route = telemetry.LocalClientRoutePlayground
 	}
 
-	if _, err := telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{
-		EventName: localClientRouteSelectedEvent,
-		Attributes: map[string]string{
-			localClientRouteAttribute: route,
-		},
-	}); err != nil {
-		log.Printf("run: failed to report local client route selection: %v", err)
-	}
+	reporter.Report(ctx, telemetry.LocalClientRouteSelected(route))
 }
 
 func handleInspectorAutoLaunch(

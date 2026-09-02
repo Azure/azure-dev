@@ -3,6 +3,26 @@
 Browser-based inspector UI for locally running Foundry agents, packaged as a standalone
 azd extension.
 
+## Extension telemetry API
+
+Extension code reports best-effort usage events through `internal/telemetry`:
+
+```go
+reporter := telemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, telemetry.InspectorUIReady())
+```
+
+`Report` has no return value and never changes Inspector behavior. It applies a
+one-second timeout, never retries, and does not log attribute values or transport
+error details. Event names, attribute keys, and bounded values belong in
+`internal/telemetry/events.go`; the server and RPC packages pass typed events and
+must not call `ReportUsage` directly.
+
+Never include ports, URLs, session or conversation IDs, prompts, responses, or
+other customer content. The azd host records events only for extensions installed
+from the official registry. The event currently emitted by this extension is
+documented under [Telemetry](#telemetry).
+
 ## What it does
 
 `azd ai inspector launch` starts a small local HTTP server that:

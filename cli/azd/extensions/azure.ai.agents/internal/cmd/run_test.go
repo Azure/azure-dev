@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	goyaml "go.yaml.in/yaml/v3"
@@ -246,33 +247,27 @@ func TestReportLocalClientRouteSelected(t *testing.T) {
 		name            string
 		activityProfile activityRunProfile
 		suppressClient  bool
-		reportErr       error
-		wantRoute       string
+		wantRoute       telemetry.LocalClientRoute
 	}{
 		{
 			name:      "selects Inspector for non-activity agent",
-			wantRoute: localClientRouteInspector,
+			wantRoute: telemetry.LocalClientRouteInspector,
 		},
 		{
 			name:            "selects Playground for activity agent",
 			activityProfile: activityRunProfile{IsActivity: true},
-			wantRoute:       localClientRoutePlayground,
+			wantRoute:       telemetry.LocalClientRoutePlayground,
 		},
 		{
 			name:           "selects suppressed for non-activity agent",
 			suppressClient: true,
-			wantRoute:      localClientRouteSuppressed,
+			wantRoute:      telemetry.LocalClientRouteSuppressed,
 		},
 		{
 			name:            "suppression overrides activity route",
 			activityProfile: activityRunProfile{IsActivity: true},
 			suppressClient:  true,
-			wantRoute:       localClientRouteSuppressed,
-		},
-		{
-			name:      "reporting failure is best effort",
-			reportErr: errors.New("telemetry unavailable"),
-			wantRoute: localClientRouteInspector,
+			wantRoute:       telemetry.LocalClientRouteSuppressed,
 		},
 	}
 
@@ -280,27 +275,17 @@ func TestReportLocalClientRouteSelected(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			telemetry := &recordingTelemetryClient{err: tt.reportErr}
+			reporter := &recordingUsageReporter{}
 			reportLocalClientRouteSelected(
 				t.Context(),
-				telemetry,
+				reporter,
 				tt.activityProfile,
 				tt.suppressClient,
 			)
 
-			if telemetry.request == nil {
-				t.Fatal("expected telemetry request")
-			}
-			if telemetry.request.EventName != localClientRouteSelectedEvent {
-				t.Fatalf(
-					"event name = %q, want %q",
-					telemetry.request.EventName,
-					localClientRouteSelectedEvent,
-				)
-			}
-			wantAttributes := map[string]string{localClientRouteAttribute: tt.wantRoute}
-			if !maps.Equal(telemetry.request.Attributes, wantAttributes) {
-				t.Fatalf("attributes = %v, want %v", telemetry.request.Attributes, wantAttributes)
+			wantEvent := telemetry.LocalClientRouteSelected(tt.wantRoute)
+			if reporter.event.Name != wantEvent.Name || !maps.Equal(reporter.event.Attributes, wantEvent.Attributes) {
+				t.Fatalf("event = %#v, want %#v", reporter.event, wantEvent)
 			}
 		})
 	}
@@ -914,9 +899,9 @@ type recordingWorkflowClient struct {
 	called  chan struct{}
 }
 
-type recordingTelemetryClient struct {
-	request *azdext.ReportUsageRequest
-	err     error
+type recordingUsageReporter struct {
+	ctx   context.Context
+	event telemetry.Event
 }
 
 type lockedBuffer struct {
@@ -948,16 +933,9 @@ func (c *recordingWorkflowClient) Run(
 	return &azdext.EmptyResponse{}, c.err
 }
 
-func (c *recordingTelemetryClient) ReportUsage(
-	_ context.Context,
-	request *azdext.ReportUsageRequest,
-	_ ...grpc.CallOption,
-) (*azdext.ReportUsageResponse, error) {
-	c.request = request
-	if c.err != nil {
-		return nil, c.err
-	}
-	return &azdext.ReportUsageResponse{Accepted: true}, nil
+func (r *recordingUsageReporter) Report(ctx context.Context, event telemetry.Event) {
+	r.ctx = ctx
+	r.event = event
 }
 
 // createVenv sets up a minimal .venv directory structure for testing.

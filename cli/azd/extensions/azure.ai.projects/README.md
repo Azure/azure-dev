@@ -2,6 +2,34 @@
 
 Manage Microsoft Foundry Project resources from your terminal. (Preview)
 
+## Extension telemetry API
+
+Extension code can report best-effort usage events through
+`internal/telemetry`:
+
+```go
+reporter := telemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, telemetry.Event{
+  Name: "project.operation.completed",
+  Attributes: map[string]string{
+    "operation": "provision",
+  },
+})
+```
+
+The example is illustrative; this extension does not currently emit a product
+usage event through this interface. Existing provisioning span attributes are
+unchanged by this adapter. Add an event only after its product question, bounded
+values, documentation, and privacy review are agreed.
+
+`Report` has no return value and never changes command or provider behavior. It
+uses a one-second timeout, does not retry, and does not log attribute values or
+transport error details. Put approved event builders and finite-value types in
+`internal/telemetry/events.go`; do not call `ReportUsage` directly from command,
+service-target, or provisioning code. Never include project endpoints, ARM IDs,
+deployment names, resource names, paths, URLs, or other customer content. The azd
+host records events only for extensions installed from the official registry.
+
 ## `azure.yaml` ownership
 
 This extension owns `host: azure.ai.project` services and the `microsoft.foundry` provisioning provider. A project service carries account-level settings such as an existing project endpoint, model deployments, and private networking.

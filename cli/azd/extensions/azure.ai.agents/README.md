@@ -1,5 +1,29 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Extension telemetry API
+
+Extension code reports best-effort usage events through `internal/telemetry`:
+
+```go
+reporter := telemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, telemetry.LocalClientRouteSelected(route))
+```
+
+`Report` has no return value and never changes the command result. It applies a
+one-second timeout, never retries, and writes only the event name and gRPC status
+code to the debug log when reporting fails. Attribute values and transport error
+details are not logged.
+
+Define event names, attribute keys, and bounded values in
+`internal/telemetry/events.go`. Do not call `ReportUsage` directly from command
+or provider code. Events must contain low-cardinality product metadata only;
+never include prompts, responses, resource or service names, IDs, paths, URLs,
+connection values, or other customer content. The azd host records events only
+for extensions installed from the official registry.
+
+The event currently emitted by this extension is documented under
+[Local client route telemetry](#local-client-route-telemetry).
+
 ## Composing Agent Dependencies
 
 Use the Agent command surface to attach existing Toolbox or Connection services

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"azureaiinspector/internal/inspector"
+	"azureaiinspector/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/cli/browser"
@@ -149,19 +150,14 @@ func newUsageReporter(ctx context.Context) (inspector.ReportUsageFunc, func()) {
 		return nil, func() {}
 	}
 
-	return usageReporter(ctx, azdClient.Telemetry()), azdClient.Close
+	return usageReporter(ctx, telemetry.NewReporter(azdClient.Telemetry(), nil)), azdClient.Close
 }
 
-func usageReporter(ctx context.Context, telemetry azdext.TelemetryServiceClient) inspector.ReportUsageFunc {
+func usageReporter(ctx context.Context, reporter telemetry.Reporter) inspector.ReportUsageFunc {
 	// Capture the command context because WebSocket request contexts do not carry
 	// the azd access token or parent trace metadata needed by ReportUsage.
-	reportUsage := func(eventName string, attributes map[string]string) {
-		if _, err := telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{
-			EventName:  eventName,
-			Attributes: attributes,
-		}); err != nil {
-			log.Printf("inspector: failed to report %s: %v", eventName, err)
-		}
+	reportUsage := func(event telemetry.Event) {
+		reporter.Report(ctx, event)
 	}
 
 	return reportUsage

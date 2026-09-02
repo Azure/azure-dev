@@ -1,6 +1,6 @@
 # Release History
 
-## 1.33.0-beta.1 (Unreleased)
+## 1.34.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,24 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.33.0 (2026-09-02)
+
+### Features Added
+
+- [[#8371]](https://github.com/Azure/azure-dev/pull/8371) Add Unix domain socket and Windows named-pipe transports for external authentication hosts using `AZD_AUTH_ENDPOINT`.
+- [[#9541]](https://github.com/Azure/azure-dev/pull/9541) Add an archived-template warning to `azd init --template` so users can cancel before cloning unmaintained repositories.
+- [[#9782]](https://github.com/Azure/azure-dev/pull/9782) Add a shared Foundry condition evaluator for extension service enablement.
+- [[#9798]](https://github.com/Azure/azure-dev/pull/9798) Add Foundry file-reference path rebasing for extension-owned keys and generic YAML document editing APIs. Thanks @m7md7sien for the contribution!
+
+### Bugs Fixed
+
+- [[#9678]](https://github.com/Azure/azure-dev/pull/9678) Fix disabled services with `condition` values being initialized or checked before command execution.
+- [[#9729]](https://github.com/Azure/azure-dev/pull/9729) Fix quota guidance to avoid showing Foundry-specific recovery steps for unrelated Azure resource providers.
+- [[#9733]](https://github.com/Azure/azure-dev/pull/9733) Fix extension install, update, init, and auto-install paths to select releases compatible with the running azd version.
+- [[#9737]](https://github.com/Azure/azure-dev/pull/9737) Fix Azure Container Registry remote-build failures to surface stable structured diagnostics while preserving build logs.
+- [[#9764]](https://github.com/Azure/azure-dev/pull/9764) Fix AI coding-agent detection to ignore empty markers, prioritize active Codex and Cursor sessions, and avoid classifying the Cursor desktop app as an agent.
+- [[#9775]](https://github.com/Azure/azure-dev/pull/9775) Fix concurrent .NET service publishes sharing intermediate artifacts by isolating publish artifacts on supported .NET SDKs.
 
 ## 1.32.0 (2026-08-26)
 

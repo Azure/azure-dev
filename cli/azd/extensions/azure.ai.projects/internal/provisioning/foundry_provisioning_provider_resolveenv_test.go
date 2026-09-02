@@ -47,6 +47,16 @@ func (s *resolveEnvStubEnvServer) GetValue(
 	return &azdext.KeyValueResponse{Value: s.get[req.Key]}, nil
 }
 
+func (s *resolveEnvStubEnvServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	values := make([]*azdext.KeyValue, 0, len(s.get))
+	for key, value := range s.get {
+		values = append(values, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: values}, nil
+}
+
 func (s *resolveEnvStubEnvServer) SetValue(
 	_ context.Context, req *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
@@ -67,6 +77,13 @@ type resolveEnvStubPromptServer struct {
 	location        string
 	locationErr     error
 	locationN       int
+	model           *azdext.AiModel
+	modelErr        error
+	modelRequests   []*azdext.PromptAiModelRequest
+	deployment      *azdext.AiModelDeployment
+	deploymentErr   error
+	deploymentErrs  []error
+	deployRequests  []*azdext.PromptAiDeploymentRequest
 }
 
 func (s *resolveEnvStubPromptServer) PromptSubscription(
@@ -91,18 +108,97 @@ func (s *resolveEnvStubPromptServer) PromptLocation(
 	return &azdext.PromptLocationResponse{Location: &azdext.Location{Name: s.location}}, nil
 }
 
+func (s *resolveEnvStubPromptServer) PromptAiModel(
+	_ context.Context, req *azdext.PromptAiModelRequest,
+) (*azdext.PromptAiModelResponse, error) {
+	s.modelRequests = append(s.modelRequests, req)
+	if s.modelErr != nil {
+		return nil, s.modelErr
+	}
+	return &azdext.PromptAiModelResponse{Model: s.model}, nil
+}
+
+func (s *resolveEnvStubPromptServer) PromptAiDeployment(
+	_ context.Context, req *azdext.PromptAiDeploymentRequest,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	index := len(s.deployRequests)
+	s.deployRequests = append(s.deployRequests, req)
+	if index < len(s.deploymentErrs) && s.deploymentErrs[index] != nil {
+		return nil, s.deploymentErrs[index]
+	}
+	if s.deploymentErr != nil {
+		return nil, s.deploymentErr
+	}
+	return &azdext.PromptAiDeploymentResponse{Deployment: s.deployment}, nil
+}
+
+type resolveEnvStubAiServer struct {
+	azdext.UnimplementedAiModelServiceServer
+	deployments []*azdext.AiModelDeployment
+	models      []*azdext.AiModel
+	err         error
+	resolveErr  error
+	requests    []*azdext.ResolveModelDeploymentsRequest
+}
+
+func (s *resolveEnvStubAiServer) ListModels(
+	_ context.Context,
+	_ *azdext.ListModelsRequest,
+) (*azdext.ListModelsResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.models != nil {
+		return &azdext.ListModelsResponse{Models: s.models}, nil
+	}
+
+	seen := map[string]bool{}
+	models := make([]*azdext.AiModel, 0, len(s.deployments))
+	for _, deployment := range s.deployments {
+		if deployment == nil || seen[deployment.GetModelName()] {
+			continue
+		}
+		seen[deployment.GetModelName()] = true
+		models = append(models, &azdext.AiModel{
+			Name:         deployment.GetModelName(),
+			Capabilities: []string{agentsV2ModelCapability},
+		})
+	}
+	return &azdext.ListModelsResponse{Models: models}, nil
+}
+
+func (s *resolveEnvStubAiServer) ResolveModelDeployments(
+	_ context.Context,
+	req *azdext.ResolveModelDeploymentsRequest,
+) (*azdext.ResolveModelDeploymentsResponse, error) {
+	s.requests = append(s.requests, req)
+	if s.resolveErr != nil {
+		return nil, s.resolveErr
+	}
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &azdext.ResolveModelDeploymentsResponse{
+		Deployments: s.deployments,
+	}, nil
+}
+
 // newResolveEnvTestClient spins up a gRPC server exposing the given environment
 // and prompt stubs and returns an AzdClient connected to it.
 func newResolveEnvTestClient(
 	t *testing.T,
 	envSrv azdext.EnvironmentServiceServer,
 	promptSrv azdext.PromptServiceServer,
+	aiSrv ...azdext.AiModelServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	srv := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
 	azdext.RegisterPromptServiceServer(srv, promptSrv)
+	if len(aiSrv) > 0 {
+		azdext.RegisterAiModelServiceServer(srv, aiSrv[0])
+	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

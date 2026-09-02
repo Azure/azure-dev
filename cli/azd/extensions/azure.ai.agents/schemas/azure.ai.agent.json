@@ -629,7 +629,13 @@
       "description": "SKU configuration for a deployment.",
       "properties": {
         "name": { "type": "string", "description": "SKU name." },
-        "capacity": { "type": "integer", "description": "SKU capacity." }
+        "capacity": {
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "string", "pattern": "^\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$" }
+          ],
+          "description": "SKU capacity, or an azd environment reference."
+        }
       },
       "required": ["name", "capacity"],
       "additionalProperties": false

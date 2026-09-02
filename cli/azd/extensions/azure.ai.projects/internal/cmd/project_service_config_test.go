@@ -172,6 +172,85 @@ func TestProjectLifecycleHandlerWritesDeployments(t *testing.T) {
 	)
 }
 
+func TestProjectLifecycleHandlerResolvesDeploymentEnvironment(t *testing.T) {
+	envServer := &recordingProjectEnvironmentServer{
+		envName: "dev",
+		values: map[string]string{
+			"DEPLOYMENT_NAME": "gpt-5-mini",
+			"MODEL_NAME":      "gpt-5-mini",
+			"MODEL_FORMAT":    "OpenAI",
+			"MODEL_VERSION":   "2025-08-07",
+			"SKU_NAME":        "GlobalStandard",
+			"MODEL_CAPACITY":  "50",
+		},
+	}
+	client := newProjectEnvironmentClient(t, envServer)
+	props := mustProjectProperties(t, map[string]any{
+		"deployments": []any{map[string]any{
+			"name": "${DEPLOYMENT_NAME}",
+			"model": map[string]any{
+				"name": "${MODEL_NAME}", "format": "${MODEL_FORMAT}", "version": "${MODEL_VERSION}",
+			},
+			"sku": map[string]any{"name": "${SKU_NAME}", "capacity": "${MODEL_CAPACITY}"},
+		}},
+	})
+
+	err := projectLifecycleHandler(t.Context(), client, &azdext.ProjectEventArgs{
+		Project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+			"project": {Host: aiProjectHost, AdditionalProperties: props},
+		}},
+	})
+
+	require.NoError(t, err)
+	assert.Contains(t, envServer.value, `\"name\":\"gpt-5-mini\"`)
+	assert.Contains(t, envServer.value, `\"capacity\":50`)
+	assert.NotContains(t, envServer.value, "${")
+}
+
+func TestProjectLifecycleHandlerBeforeProvisionDefersCanonicalDeployments(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	envServer := &recordingProjectEnvironmentServer{envName: "dev"}
+	client := newProjectEnvironmentClient(t, envServer)
+	props := mustProjectProperties(t, map[string]any{
+		"deployments": []any{map[string]any{
+			"name": "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+			"model": map[string]any{
+				"name":    "${AZURE_AI_MODEL_NAME}",
+				"format":  "${AZURE_AI_MODEL_FORMAT}",
+				"version": "${AZURE_AI_MODEL_VERSION}",
+			},
+			"sku": map[string]any{
+				"name":     "${AZURE_AI_MODEL_SKU_NAME}",
+				"capacity": "${AZURE_AI_MODEL_SKU_CAPACITY}",
+			},
+		}},
+	})
+
+	err := projectLifecycleHandlerBeforeProvision(
+		t.Context(),
+		client,
+		&azdext.ProjectEventArgs{
+			Project: &azdext.ProjectConfig{
+				Services: map[string]*azdext.ServiceConfig{
+					"project": {
+						Host:                 aiProjectHost,
+						AdditionalProperties: props,
+					},
+				},
+			},
+		},
+	)
+
+	require.NoError(t, err)
+	envServer.mu.Lock()
+	defer envServer.mu.Unlock()
+	assert.Empty(t, envServer.value)
+	assert.Empty(t, envServer.key)
+}
+
 func TestProjectLifecycleHandlerClearsEmptyDeployments(t *testing.T) {
 	t.Parallel()
 
@@ -254,6 +333,7 @@ type recordingProjectEnvironmentServer struct {
 	envNameSet string
 	key        string
 	value      string
+	values     map[string]string
 }
 
 func (s *recordingProjectEnvironmentServer) GetCurrent(
@@ -263,6 +343,17 @@ func (s *recordingProjectEnvironmentServer) GetCurrent(
 	return &azdext.EnvironmentResponse{
 		Environment: &azdext.Environment{Name: s.envName},
 	}, nil
+}
+
+func (s *recordingProjectEnvironmentServer) GetValues(
+	context.Context,
+	*azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	values := make([]*azdext.KeyValue, 0, len(s.values))
+	for key, value := range s.values {
+		values = append(values, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: values}, nil
 }
 
 func (s *recordingProjectEnvironmentServer) SetValue(

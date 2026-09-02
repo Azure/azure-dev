@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // These constants must match the sanitized cassette content exactly (equal-length replacements).
@@ -200,16 +201,87 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	envContent, err := os.ReadFile(envFile)
 	require.NoError(t, err)
 	envStr := string(envContent)
+	initialEnvironmentDeployment := dotEnvValue(envStr, "AZURE_AI_MODEL_DEPLOYMENT_NAME")
 	// Pin to the exact value produced by manifest resources[0].id resolution.
-	require.Contains(t, envStr, `AZURE_AI_MODEL_DEPLOYMENT_NAME="gpt-4.1"`,
+	require.Equal(t, "gpt-4.1", initialEnvironmentDeployment,
 		"model deployment should be resolved from manifest resource id via ARM catalog")
 
-	// Cross-check: azure.yaml should have the resolved model value inline, not ${...} placeholder.
+	// azure.yaml should keep the deployment environment-specific.
 	azureYamlContent, err := os.ReadFile(filepath.Join(projectDir, "azure.yaml"))
 	require.NoError(t, err)
-	azureYamlStr := string(azureYamlContent)
-	require.NotContains(t, azureYamlStr, "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
-		"azure.yaml should have resolved model name, not azd env placeholder")
+	var config struct {
+		Services map[string]struct {
+			Host        string            `yaml:"host"`
+			Environment map[string]string `yaml:"env"`
+			Deployments []struct {
+				Name  string `yaml:"name"`
+				Model struct {
+					Name    string `yaml:"name"`
+					Format  string `yaml:"format"`
+					Version string `yaml:"version"`
+				} `yaml:"model"`
+				Sku struct {
+					Name     string `yaml:"name"`
+					Capacity string `yaml:"capacity"`
+				} `yaml:"sku"`
+			} `yaml:"deployments"`
+		} `yaml:"services"`
+	}
+	require.NoError(t, yaml.Unmarshal(azureYamlContent, &config))
+
+	projectServiceKey := ""
+	for name, service := range config.Services {
+		if service.Host == "azure.ai.project" {
+			require.Empty(t, projectServiceKey,
+				"expected exactly one Foundry project service")
+			projectServiceKey = name
+		}
+	}
+	require.NotEmpty(t, projectServiceKey,
+		"expected a Foundry project service")
+	projectDeployments := config.Services[projectServiceKey].Deployments
+	require.Len(t, projectDeployments, 1)
+	deployment := projectDeployments[0]
+	deploymentReference := "${AZURE_AI_MODEL_DEPLOYMENT_NAME}"
+	require.Equal(t, deploymentReference, deployment.Name)
+	require.Equal(t, "${AZURE_AI_MODEL_NAME}", deployment.Model.Name)
+	require.Equal(t, "${AZURE_AI_MODEL_FORMAT}", deployment.Model.Format)
+	require.Equal(t, "${AZURE_AI_MODEL_VERSION}", deployment.Model.Version)
+	require.Equal(t, "${AZURE_AI_MODEL_SKU_NAME}", deployment.Sku.Name)
+	require.Equal(t, "${AZURE_AI_MODEL_SKU_CAPACITY}",
+		deployment.Sku.Capacity)
+
+	agentServiceKey := ""
+	for name, service := range config.Services {
+		if service.Host == "azure.ai.agent" {
+			require.Empty(t, agentServiceKey, "expected exactly one hosted agent service")
+			agentServiceKey = name
+		}
+	}
+	require.NotEmpty(t, agentServiceKey, "expected a hosted agent service")
+	agentEnvironment := config.Services[agentServiceKey].Environment
+	agentDeploymentReference := agentEnvironment["AZURE_AI_MODEL_DEPLOYMENT_NAME"]
+	require.Equal(t, deploymentReference, agentDeploymentReference)
+	require.NotContains(t, agentDeploymentReference, initialEnvironmentDeployment)
+
+	// Resolve the raw reference against a different environment value. The
+	// agent service must follow the selected environment rather than retaining
+	// the initialization environment's concrete deployment name.
+	secondEnvironmentDeployment := "gpt-4.1-second-environment"
+	require.NotEqual(t, initialEnvironmentDeployment, secondEnvironmentDeployment)
+	require.Equal(t, secondEnvironmentDeployment,
+		strings.ReplaceAll(agentDeploymentReference, deploymentReference,
+			secondEnvironmentDeployment))
+}
+
+func dotEnvValue(content, key string) string {
+	prefix := key + "="
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return strings.Trim(strings.TrimPrefix(line, prefix), `"'`)
+		}
+	}
+	return ""
 }
 
 // Test_AIAgent_Init_NegativeControl_BadCassette verifies that the recording cassette is actually

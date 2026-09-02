@@ -71,7 +71,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 				ctx context.Context,
 				args *azdext.ProjectEventArgs,
 			) error {
-				return projectLifecycleHandler(ctx, azdClient, args)
+				return projectLifecycleHandlerBeforeProvision(ctx, azdClient, args)
 			},
 		).
 		WithProjectEventHandler(

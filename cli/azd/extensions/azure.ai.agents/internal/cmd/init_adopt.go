@@ -160,8 +160,10 @@ func foundryProjectName(content []byte) string {
 // foundryDeploymentEntry holds a parsed deployment along with the service key
 // it was declared in, so the azure.yaml can be updated after verification.
 type foundryDeploymentEntry struct {
-	ServiceName string
-	Deployment  project.Deployment
+	ServiceName      string
+	Deployment       project.Deployment
+	preserveManifest bool
+	referenceIndex   int
 }
 
 // azureYamlServices is the minimal typed structure for parsing deployments from
@@ -185,7 +187,8 @@ func foundryDeployments(content []byte) []foundryDeploymentEntry {
 	}
 
 	var entries []foundryDeploymentEntry
-	for svcName, svc := range doc.Services {
+	for _, svcName := range slices.Sorted(maps.Keys(doc.Services)) {
+		svc := doc.Services[svcName]
 		if svc.Host != "azure.ai.project" {
 			continue
 		}
@@ -272,7 +275,29 @@ func verifyAzureYamlDeployments(
 		)
 	}
 
-	for _, entry := range entries {
+	appendReference := func(deployment project.Deployment) int {
+		index := len(referencedDeployments)
+		referencedDeployments = append(referencedDeployments, deployment)
+		return index
+	}
+	appendKept := func(
+		entry foundryDeploymentEntry,
+		deployment project.Deployment,
+		preserveManifest bool,
+	) {
+		entry.Deployment = deployment
+		entry.preserveManifest = preserveManifest
+		entry.referenceIndex = -1
+		if !preserveManifest {
+			entry.referenceIndex = appendReference(deployment)
+		}
+		keptEntries = append(keptEntries, entry)
+	}
+
+	for _, parsedEntry := range entries {
+		entry := parsedEntry
+		entry.preserveManifest = true
+		entry.referenceIndex = -1
 		dep := entry.Deployment
 
 		// Find matching deployments by model name.
@@ -300,7 +325,7 @@ func verifyAzureYamlDeployments(
 					"--no-prompt: using existing deployment '%s' (version: %s) for model '%s'",
 					name, existing.Version, dep.Model.Name,
 				)
-				referencedDeployments = append(referencedDeployments, project.Deployment{
+				appendReference(project.Deployment{
 					Name: name,
 					Model: project.DeploymentModel{
 						Name:    dep.Model.Name,
@@ -319,7 +344,7 @@ func verifyAzureYamlDeployments(
 			// Show deployment details and prompt.
 			fmt.Printf("\nModel deployment %s is defined in the azure.yaml:\n", output.WithHighLightFormat("'%s'", dep.Name))
 			fmt.Printf("  Model: %s (%s), version %s\n", dep.Model.Name, dep.Model.Format, dep.Model.Version)
-			fmt.Printf("  SKU: %s, capacity %d\n", dep.Sku.Name, dep.Sku.Capacity)
+			fmt.Printf("  SKU: %s, capacity %v\n", dep.Sku.Name, dep.Sku.Capacity)
 			fmt.Println()
 
 			fmt.Println("Existing deployment(s) using the same model were found in your Foundry project:")
@@ -342,11 +367,13 @@ func verifyAzureYamlDeployments(
 			}
 			// Only offer "deploy as specified" if no existing deployment is an exact match.
 			hasExactMatch := false
+			depCapacity, capacityErr := deploymentCapacity(dep.Sku.Capacity)
 			for _, d := range matchingDeployments {
 				if d.Name == dep.Name &&
 					d.Version == dep.Model.Version &&
 					d.SkuName == dep.Sku.Name &&
-					d.SkuCapacity == dep.Sku.Capacity {
+					capacityErr == nil &&
+					d.SkuCapacity == depCapacity {
 					hasExactMatch = true
 					break
 				}
@@ -388,7 +415,7 @@ func verifyAzureYamlDeployments(
 			case strings.HasPrefix(selected, "use:"):
 				name := strings.TrimPrefix(selected, "use:")
 				existing := matchingDeployments[name]
-				referencedDeployments = append(referencedDeployments, project.Deployment{
+				appendReference(project.Deployment{
 					Name: name,
 					Model: project.DeploymentModel{
 						Name:    dep.Model.Name,
@@ -404,11 +431,7 @@ func verifyAzureYamlDeployments(
 				fmt.Printf("Using existing deployment '%s'.\n", name)
 
 			case selected == "deploy":
-				keptEntries = append(keptEntries, foundryDeploymentEntry{
-					ServiceName: entry.ServiceName,
-					Deployment:  dep,
-				})
-				referencedDeployments = append(referencedDeployments, dep)
+				appendKept(entry, dep, entry.preserveManifest)
 
 			case selected == "change":
 				newDep, isExisting, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
@@ -417,12 +440,10 @@ func verifyAzureYamlDeployments(
 				}
 				if newDep != nil {
 					if !isExisting {
-						keptEntries = append(keptEntries, foundryDeploymentEntry{
-							ServiceName: entry.ServiceName,
-							Deployment:  *newDep,
-						})
+						appendKept(entry, *newDep, false)
+					} else {
+						appendReference(*newDep)
 					}
-					referencedDeployments = append(referencedDeployments, *newDep)
 				}
 				modified = true
 
@@ -438,11 +459,7 @@ func verifyAzureYamlDeployments(
 				// Auto-deploy as specified.
 				log.Printf("--no-prompt: no matching deployment for model '%s', will deploy as specified",
 					dep.Model.Name)
-				keptEntries = append(keptEntries, foundryDeploymentEntry{
-					ServiceName: entry.ServiceName,
-					Deployment:  dep,
-				})
-				referencedDeployments = append(referencedDeployments, dep)
+				appendKept(entry, dep, entry.preserveManifest)
 				continue
 			}
 
@@ -458,7 +475,7 @@ func verifyAzureYamlDeployments(
 					output.WithHighLightFormat("'%s'", dep.Name))
 			}
 			fmt.Printf("  Model: %s (%s), version %s\n", dep.Model.Name, dep.Model.Format, dep.Model.Version)
-			fmt.Printf("  SKU: %s, capacity %d\n\n", dep.Sku.Name, dep.Sku.Capacity)
+			fmt.Printf("  SKU: %s, capacity %v\n\n", dep.Sku.Name, dep.Sku.Capacity)
 
 			noMatchChoices := []*azdext.SelectChoice{
 				{Value: "deploy", Label: "Deploy as specified in azure.yaml"},
@@ -483,11 +500,7 @@ func verifyAzureYamlDeployments(
 
 			switch noMatchChoices[*selectResp.Value].Value {
 			case "deploy":
-				keptEntries = append(keptEntries, foundryDeploymentEntry{
-					ServiceName: entry.ServiceName,
-					Deployment:  dep,
-				})
-				referencedDeployments = append(referencedDeployments, dep)
+				appendKept(entry, dep, entry.preserveManifest)
 
 			case "change":
 				newDep, isExisting, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
@@ -496,12 +509,10 @@ func verifyAzureYamlDeployments(
 				}
 				if newDep != nil {
 					if !isExisting {
-						keptEntries = append(keptEntries, foundryDeploymentEntry{
-							ServiceName: entry.ServiceName,
-							Deployment:  *newDep,
-						})
+						appendKept(entry, *newDep, false)
+					} else {
+						appendReference(*newDep)
 					}
-					referencedDeployments = append(referencedDeployments, *newDep)
 				}
 				modified = true
 
@@ -514,6 +525,39 @@ func verifyAzureYamlDeployments(
 	}
 
 	return keptEntries, referencedDeployments, modified, nil
+}
+
+// persistAdoptedDeploymentEnvironment persists every selected concrete
+// deployment while preserving the source shape of retained manifest entries.
+func persistAdoptedDeploymentEnvironment(
+	ctx context.Context,
+	setEnv envValueSetter,
+	keptEntries []foundryDeploymentEntry,
+	referencedDeployments []project.Deployment,
+) ([]foundryDeploymentEntry, error) {
+	references, err := persistDeploymentEnvironment(
+		ctx,
+		setEnv,
+		referencedDeployments,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range keptEntries {
+		if keptEntries[i].preserveManifest {
+			continue
+		}
+		index := keptEntries[i].referenceIndex
+		if index < 0 || index >= len(references) {
+			return nil, fmt.Errorf(
+				"deployment reference index %d is out of range",
+				index,
+			)
+		}
+		keptEntries[i].Deployment = references[index]
+	}
+	return keptEntries, nil
 }
 
 // promptAlternativeDeployment lets the user browse the model catalog or pick an
@@ -562,6 +606,9 @@ func promptAlternativeDeployment(
 		promptReq := &azdext.PromptAiModelRequest{
 			AzureContext: azureContext,
 			Filter:       agentModelFilter([]string{azureContext.Scope.Location}, nil),
+			Quota: &azdext.QuotaCheckOptions{
+				MinRemainingCapacity: 1,
+			},
 			SelectOptions: &azdext.SelectOptions{
 				Message: "Select a model",
 			},
@@ -578,18 +625,8 @@ func promptAlternativeDeployment(
 
 		model := modelResp.Model
 
-		var defaultCap int32 = 50
-		deploymentResp, err := azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
-			AzureContext: azureContext,
-			ModelName:    model.Name,
-			Options: &azdext.AiModelDeploymentOptions{
-				Locations: []string{azureContext.Scope.Location},
-				Capacity:  &defaultCap,
-			},
-			Quota: &azdext.QuotaCheckOptions{
-				MinRemainingCapacity: 1,
-			},
-		})
+		deploymentResp, err := promptAdoptedDeployment(
+			ctx, azdClient, azureContext, model.Name)
 		if err != nil {
 			if exterrors.IsCancellation(err) {
 				return nil, false, exterrors.Cancelled("deployment configuration was cancelled")
@@ -671,6 +708,39 @@ func promptAlternativeDeployment(
 			Capacity: d.SkuCapacity,
 		},
 	}, true, nil
+}
+
+func promptAdoptedDeployment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	modelName string,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	preferredCapacity := int32(defaultDeploymentCapacity)
+	for _, capacity := range []*int32{&preferredCapacity, nil} {
+		response, err := azdClient.Prompt().PromptAiDeployment(
+			ctx,
+			&azdext.PromptAiDeploymentRequest{
+				AzureContext: azureContext,
+				ModelName:    modelName,
+				Options: &azdext.AiModelDeploymentOptions{
+					Locations: []string{azureContext.Scope.Location},
+					Capacity:  capacity,
+				},
+				Quota: &azdext.QuotaCheckOptions{
+					MinRemainingCapacity: 1,
+				},
+			},
+		)
+		if err == nil || !hasAiErrorReason(
+			err,
+			azdext.AiErrorReasonNoValidSkus,
+			azdext.AiErrorReasonNoDeploymentMatch,
+		) || capacity == nil {
+			return response, err
+		}
+	}
+	return nil, fmt.Errorf("failed to select adopted deployment")
 }
 
 // updateAzureYamlDeployments writes the filtered deployment list back to the
@@ -1142,7 +1212,7 @@ func runInitFromAzureYaml(
 		}
 
 		// Update the azure.yaml if deployments were modified.
-		if deploymentsModified {
+		if deploymentsModified && len(keptEntries) == 0 {
 			// Group kept deployments by their originating service name.
 			byService := make(map[string][]project.Deployment)
 			for _, entry := range deploymentEntries {
@@ -1155,19 +1225,42 @@ func runInitFromAzureYaml(
 				byService[kept.ServiceName] = append(byService[kept.ServiceName], kept.Deployment)
 			}
 
-			for svcName, deps := range byService {
+			for _, svcName := range slices.Sorted(maps.Keys(byService)) {
+				deps := byService[svcName]
 				if err := updateAzureYamlDeployments(ctx, azdClient, svcName, deps); err != nil {
 					return err
 				}
 			}
 		}
 
-		// Persist the first referenced deployment name as AZURE_AI_MODEL_DEPLOYMENT_NAME.
 		setEnv := func(ctx context.Context, key, value string) error {
 			return setEnvValue(ctx, azdClient, env.Name, key, value)
 		}
-		if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
-			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		keptEntries, err = persistAdoptedDeploymentEnvironment(
+			ctx,
+			setEnv,
+			keptEntries,
+			referencedDeployments,
+		)
+		if err != nil {
+			return fmt.Errorf("persist model deployment environment: %w", err)
+		}
+		if len(keptEntries) > 0 {
+			byService := make(map[string][]project.Deployment)
+			for _, entry := range deploymentEntries {
+				if _, ok := byService[entry.ServiceName]; !ok {
+					byService[entry.ServiceName] = nil
+				}
+			}
+			for _, kept := range keptEntries {
+				byService[kept.ServiceName] = append(byService[kept.ServiceName], kept.Deployment)
+			}
+			for _, svcName := range slices.Sorted(maps.Keys(byService)) {
+				deps := byService[svcName]
+				if err := updateAzureYamlDeployments(ctx, azdClient, svcName, deps); err != nil {
+					return err
+				}
+			}
 		}
 	}
 

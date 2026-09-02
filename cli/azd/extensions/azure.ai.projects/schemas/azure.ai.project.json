@@ -89,7 +89,13 @@
           "required": ["capacity", "name"],
           "additionalProperties": false,
           "properties": {
-            "capacity": { "type": "integer", "description": "SKU capacity (TPM units)." },
+            "capacity": {
+              "oneOf": [
+                { "type": "integer" },
+                { "type": "string", "pattern": "^\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$" }
+              ],
+              "description": "SKU capacity (TPM units), or an azd environment reference."
+            },
             "name": { "type": "string", "description": "SKU name (e.g., 'Standard', 'GlobalStandard', 'GlobalBatch')." }
           }
         }

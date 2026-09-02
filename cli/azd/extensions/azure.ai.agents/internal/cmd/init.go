@@ -123,13 +123,15 @@ type InitAction struct {
 	flags         *initFlags
 	models        *modelSelector
 
-	deploymentDetails    []project.Deployment
-	containerSettings    *project.ContainerSettings
-	isCodeDeploy         bool // true when user selects code deploy mode; skips ACR config
-	isVoiceAgent         bool // true when the manifest kind is prompt-voice (managed, no container)
-	httpClient           *http.Client
-	serviceNameOverride  string // when set, addToProject uses this instead of the manifest name
-	createdFolderDisplay string // pre-computed relative display path for the created folder
+	deploymentDetails          []project.Deployment
+	deploymentReferences       []project.Deployment
+	deploymentReferenceIndices []int
+	containerSettings          *project.ContainerSettings
+	isCodeDeploy               bool // true when user selects code deploy mode; skips ACR config
+	isVoiceAgent               bool // true when the manifest kind is prompt-voice (managed, no container)
+	httpClient                 *http.Client
+	serviceNameOverride        string // when set, addToProject uses this instead of the manifest name
+	createdFolderDisplay       string // pre-computed relative display path for the created folder
 
 	// selectedFoundryProject holds the existing Foundry project resolved during
 	// init (nil when creating a new project). It carries NetworkInjected so
@@ -3320,6 +3322,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 			if relPath, err := filepath.Rel(a.projectConfig.Path, cwd); err == nil && relPath != "." {
 				targetDir = filepath.ToSlash(relPath)
 			}
+
 		}
 	}
 
@@ -3401,7 +3404,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		agentConfig.Container = a.containerSettings
 	}
 
-	agentConfig.Deployments = a.deploymentDetails
+	setEnv := func(ctx context.Context, key, value string) error {
+		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
+	}
+	agentConfig.Deployments, err = a.persistDeploymentConfigurations(ctx, setEnv)
+	if err != nil {
+		return fmt.Errorf("persist model deployment environment: %w", err)
+	}
 	agentConfig.Resources = resourceDetails
 
 	// Process toolbox resources from the manifest
@@ -3571,6 +3580,19 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	state, _ := nextstep.AssembleState(ctx, a.azdClient, stateOpts...)
 	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
 	return nil
+}
+
+func (a *InitAction) persistDeploymentConfigurations(
+	ctx context.Context,
+	setEnv envValueSetter,
+) ([]project.Deployment, error) {
+	return persistDeploymentConfigurations(
+		ctx,
+		setEnv,
+		a.deploymentReferences,
+		a.deploymentReferenceIndices,
+		a.deploymentDetails,
+	)
 }
 
 // addVoiceAgentToProject writes a prompt-voice (declarative, managed) agent as an

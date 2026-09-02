@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"azure.ai.projects/internal/synthesis"
@@ -29,6 +30,25 @@ func projectLifecycleHandler(
 	azdClient *azdext.AzdClient,
 	args *azdext.ProjectEventArgs,
 ) error {
+	return projectLifecycleHandlerWithOptions(ctx, azdClient, args, false)
+}
+
+// projectLifecycleHandlerBeforeProvision defers canonical deployment values
+// until the provisioning provider has reconciled them for the active scope.
+func projectLifecycleHandlerBeforeProvision(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	args *azdext.ProjectEventArgs,
+) error {
+	return projectLifecycleHandlerWithOptions(ctx, azdClient, args, true)
+}
+
+func projectLifecycleHandlerWithOptions(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	args *azdext.ProjectEventArgs,
+	deferCanonicalDeployments bool,
+) error {
 	if args == nil || args.Project == nil {
 		return fmt.Errorf("project lifecycle event has no project")
 	}
@@ -43,6 +63,9 @@ func projectLifecycleHandler(
 	if !found {
 		return nil
 	}
+	if deferCanonicalDeployments && hasCanonicalDeploymentReferences(cfg.Deployments) {
+		return nil
+	}
 
 	current, err := azdClient.Environment().GetCurrent(
 		ctx,
@@ -55,7 +78,24 @@ func projectLifecycleHandler(
 		return fmt.Errorf("current azd environment has no name")
 	}
 
-	value, err := encodeProjectDeployments(cfg.Deployments)
+	envResponse, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: current.GetEnvironment().GetName(),
+	})
+	if err != nil {
+		return fmt.Errorf("reading current azd environment values: %w", err)
+	}
+	env := make(map[string]string, len(envResponse.GetKeyValues()))
+	for _, value := range envResponse.GetKeyValues() {
+		if value != nil {
+			env[value.GetKey()] = value.GetValue()
+		}
+	}
+	deployments, err := synthesis.ResolveDeployments(cfg.Deployments, env, false)
+	if err != nil {
+		return fmt.Errorf("resolving project model deployments: %w", err)
+	}
+
+	value, err := encodeProjectDeployments(deployments)
 	if err != nil {
 		return err
 	}
@@ -75,6 +115,57 @@ func projectLifecycleHandler(
 	}
 
 	return nil
+}
+
+func hasCanonicalDeploymentReferences(
+	deployments []synthesis.Deployment,
+) bool {
+	for _, deployment := range deployments {
+		values := []string{
+			deployment.Name,
+			deployment.Model.Name,
+			deployment.Model.Format,
+			deployment.Model.Version,
+			deployment.Sku.Name,
+		}
+		if capacity, ok := deployment.Sku.Capacity.(string); ok {
+			values = append(values, capacity)
+		}
+		if slices.ContainsFunc(values, isCanonicalDeploymentReference) {
+			return true
+		}
+	}
+	return false
+}
+
+func isCanonicalDeploymentReference(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(trimmed, "${") ||
+		!strings.HasSuffix(trimmed, "}") {
+		return false
+	}
+	key := trimmed[2 : len(trimmed)-1]
+	for _, base := range []string{
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME",
+		"AZURE_AI_MODEL_NAME",
+		"AZURE_AI_MODEL_FORMAT",
+		"AZURE_AI_MODEL_VERSION",
+		"AZURE_AI_MODEL_SKU_NAME",
+		"AZURE_AI_MODEL_SKU_CAPACITY",
+	} {
+		if key == base {
+			return true
+		}
+		suffix, ok := strings.CutPrefix(key, base+"_")
+		if !ok || suffix == "" || suffix[0] == '0' {
+			continue
+		}
+		index, err := strconv.Atoi(suffix)
+		if err == nil && index >= 2 {
+			return true
+		}
+	}
+	return false
 }
 
 func loadProjectServiceConfig(
@@ -131,6 +222,14 @@ func loadProjectServiceConfig(
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, false, fmt.Errorf(
 			"parsing project service %q config: %w",
+			names[0],
+			err,
+		)
+	}
+	cfg.Deployments, err = synthesis.ResolveDeployments(cfg.Deployments, nil, true)
+	if err != nil {
+		return nil, false, fmt.Errorf(
+			"normalizing project service %q deployments: %w",
 			names[0],
 			err,
 		)

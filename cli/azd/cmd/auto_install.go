@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -934,10 +935,15 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 //
 // Auto no-prompt detection: If --no-prompt is not explicitly set (via flag or the
 // AZD_NON_INTERACTIVE env var) and azd is running in a non-interactive context — an AI coding
-// agent (like Claude Code, GitHub Copilot CLI, Cursor, etc.) or a CI/CD environment — NoPrompt is
-// automatically enabled. Explicit --no-prompt/--non-interactive flags and AZD_NON_INTERACTIVE take
-// precedence; set AZD_NON_INTERACTIVE=false to opt out of this automatic enablement.
+// agent whose shell cannot answer prompts (like Claude Code, GitHub Copilot CLI, Cursor, etc.), an
+// agent invocation without terminal input, or a CI/CD environment — NoPrompt is automatically enabled.
+// Explicit --no-prompt/--non-interactive flags and AZD_NON_INTERACTIVE take precedence; set
+// AZD_NON_INTERACTIVE=false to opt out of this automatic enablement.
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
+	return parseGlobalFlags(args, opts, terminal.IsInputTerminal(os.Stdin.Fd()))
+}
+
+func parseGlobalFlags(args []string, opts *internal.GlobalCommandOptions, inputTerminal bool) error {
 	globalFlagSet := CreateGlobalFlagSet()
 
 	// Set output to io.Discard to suppress any error messages from pflag
@@ -1031,13 +1037,16 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 
 	// Auto no-prompt detection: If no explicit flag or env var was set, automatically enable
 	// no-prompt mode when azd runs in a non-interactive context where prompting is not possible —
-	// either an AI coding agent or a CI/CD environment. This makes CI behavior deterministic:
+	// either an AI coding agent whose shell cannot answer prompts, an agent invocation without terminal
+	// input, or a CI/CD environment. This makes CI behavior deterministic:
 	// prompts resolve to their defaults (or fail fast with an actionable error) instead of
 	// silently aborting on an EOF stdin. Explicit flags and AZD_NON_INTERACTIVE take precedence;
 	// set AZD_NON_INTERACTIVE=false to opt out of this automatic enablement (NoPrompt stays false).
 	// Note: some commands still avoid interactive prompts in CI/CD by design, independent of this.
+	agent := agentdetect.GetCallingAgent()
 	if !flagExplicitlySet && !envVarPresent &&
-		(agentdetect.IsRunningInAgent() || resource.IsRunningOnCI()) {
+		((agent.Detected && (!agent.Type.SupportsInteractiveInput() || !inputTerminal)) ||
+			resource.IsRunningOnCI()) {
 		opts.NoPrompt = true
 	}
 

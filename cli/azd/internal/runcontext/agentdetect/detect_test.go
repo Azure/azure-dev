@@ -18,6 +18,7 @@ func TestAgentType_DisplayName(t *testing.T) {
 		agentType   AgentType
 		displayName string
 	}{
+		{AgentTypeAntigravity, "Antigravity"},
 		{AgentTypeClaudeCode, "Claude Code"},
 		{AgentTypeCodex, "Codex"},
 		{AgentTypeCursor, "Cursor"},
@@ -33,6 +34,33 @@ func TestAgentType_DisplayName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(string(tt.agentType), func(t *testing.T) {
 			assert.Equal(t, tt.displayName, tt.agentType.DisplayName())
+		})
+	}
+}
+
+func TestAgentType_InteractiveCapabilities(t *testing.T) {
+	tests := []struct {
+		agentType         AgentType
+		interactiveInput  bool
+		interactiveOutput bool
+	}{
+		{AgentTypeAntigravity, true, true},
+		{AgentTypeClaudeCode, false, false},
+		{AgentTypeCodex, false, false},
+		{AgentTypeCursor, false, false},
+		{AgentTypeGitHubCopilotCLI, false, false},
+		{AgentTypeGitHubCopilotApp, false, false},
+		{AgentTypeGitHubCopilotVSCode, false, false},
+		{AgentTypeVSCodeCopilot, false, false},
+		{AgentTypeGemini, false, false},
+		{AgentTypeOpenCode, false, false},
+		{AgentTypeUnknown, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.agentType.DisplayName(), func(t *testing.T) {
+			assert.Equal(t, tt.interactiveInput, tt.agentType.SupportsInteractiveInput())
+			assert.Equal(t, tt.interactiveOutput, tt.agentType.SupportsInteractiveOutput())
 		})
 	}
 }
@@ -57,6 +85,34 @@ func TestDetectFromEnvVars(t *testing.T) {
 			envVars:       map[string]string{},
 			expectedAgent: AgentTypeUnknown,
 			detected:      false,
+		},
+		{
+			name:          "Antigravity via ANTIGRAVITY_AGENT",
+			envVars:       map[string]string{"ANTIGRAVITY_AGENT": "1"},
+			expectedAgent: AgentTypeAntigravity,
+			detected:      true,
+		},
+		{
+			name:          "Antigravity via ANTIGRAVITY_CONVERSATION_ID",
+			envVars:       map[string]string{"ANTIGRAVITY_CONVERSATION_ID": "conversation-id"},
+			expectedAgent: AgentTypeAntigravity,
+			detected:      true,
+		},
+		{
+			name:          "ANTIGRAVITY_AGENT requires exact value",
+			envVars:       map[string]string{"ANTIGRAVITY_AGENT": "true"},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name: "Antigravity takes precedence over inherited Copilot and Gemini markers",
+			envVars: map[string]string{
+				"ANTIGRAVITY_AGENT": "1",
+				"COPILOT_CLI":       "1",
+				"GEMINI_CLI":        "1",
+			},
+			expectedAgent: AgentTypeAntigravity,
+			detected:      true,
 		},
 		{
 			name: "GitHub Copilot App takes precedence over Copilot CLI",
@@ -309,6 +365,18 @@ func TestDetectFromUserAgent(t *testing.T) {
 			detected:      true,
 		},
 		{
+			name:          "Antigravity in user agent",
+			userAgent:     "antigravity-cli/1.1.23",
+			expectedAgent: AgentTypeAntigravity,
+			detected:      true,
+		},
+		{
+			name:          "Antigravity desktop user agent is not CLI",
+			userAgent:     "antigravity-desktop/2.0.0",
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
 			name:          "OpenCode in user agent",
 			userAgent:     "opencode/0.1.0",
 			expectedAgent: AgentTypeOpenCode,
@@ -357,6 +425,13 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Name: "claude",
 			},
 			expectedAgent: AgentTypeClaudeCode,
+		},
+		{
+			name: "Antigravity process name",
+			processInfo: parentProcessInfo{
+				Name: "agy",
+			},
+			expectedAgent: AgentTypeAntigravity,
 		},
 		{
 			name: "Claude Code process name",
@@ -454,6 +529,21 @@ func TestMatchProcessToAgent(t *testing.T) {
 			expectedAgent: AgentTypeUnknown,
 		},
 		{
+			name: "Antigravity name substring does not match",
+			processInfo: parentProcessInfo{
+				Name: "agy-wrapper",
+			},
+			expectedAgent: AgentTypeUnknown,
+		},
+		{
+			name: "Antigravity name in host path does not match",
+			processInfo: parentProcessInfo{
+				Name:       "bash",
+				Executable: "/tmp/agy-workspace/bash",
+			},
+			expectedAgent: AgentTypeUnknown,
+		},
+		{
 			name: "Claude wrapper remains supported",
 			processInfo: parentProcessInfo{
 				Name: "my-claude-wrapper",
@@ -500,6 +590,7 @@ func TestMatchProcessToAgent_ExactExecutableNames(t *testing.T) {
 		processName   string
 		expectedAgent AgentType
 	}{
+		{"agy", AgentTypeAntigravity},
 		{"claude", AgentTypeClaudeCode},
 		{"claude-code", AgentTypeClaudeCode},
 		{"codex", AgentTypeCodex},
@@ -579,6 +670,8 @@ func TestDisableAgentDetect(t *testing.T) {
 // This list must be kept in sync with knownEnvVarPatterns in detect_env.go.
 func clearAgentEnvVars(t *testing.T) {
 	envVarsToUnset := []string{
+		// Antigravity CLI
+		"ANTIGRAVITY_AGENT", "ANTIGRAVITY_CONVERSATION_ID",
 		// GitHub Copilot hosts
 		"AI_AGENT",
 		// Claude Code

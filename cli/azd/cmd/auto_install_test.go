@@ -1186,6 +1186,7 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 		name             string
 		args             []string
 		envVars          map[string]string
+		inputTerminal    bool
 		expectedNoPrompt bool
 	}{
 		{
@@ -1199,6 +1200,54 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			args:             []string{"up"},
 			envVars:          map[string]string{"CLAUDE_CODE": "1"},
 			expectedNoPrompt: true,
+		},
+		{
+			name:             "Antigravity supports interactive input",
+			args:             []string{"up"},
+			envVars:          map[string]string{"ANTIGRAVITY_AGENT": "1"},
+			inputTerminal:    true,
+			expectedNoPrompt: false,
+		},
+		{
+			name:             "Antigravity with non-terminal input enables no-prompt",
+			args:             []string{"up"},
+			envVars:          map[string]string{"ANTIGRAVITY_AGENT": "1"},
+			inputTerminal:    false,
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "Antigravity honors explicit --no-prompt",
+			args:             []string{"--no-prompt", "up"},
+			envVars:          map[string]string{"ANTIGRAVITY_AGENT": "1"},
+			inputTerminal:    true,
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "Antigravity honors explicit --no-prompt=false",
+			args:             []string{"--no-prompt=false", "up"},
+			envVars:          map[string]string{"ANTIGRAVITY_AGENT": "1"},
+			inputTerminal:    true,
+			expectedNoPrompt: false,
+		},
+		{
+			name: "Antigravity honors AZD_NON_INTERACTIVE=true",
+			args: []string{"up"},
+			envVars: map[string]string{
+				"ANTIGRAVITY_AGENT":   "1",
+				"AZD_NON_INTERACTIVE": "true",
+			},
+			inputTerminal:    true,
+			expectedNoPrompt: true,
+		},
+		{
+			name: "Antigravity honors AZD_NON_INTERACTIVE=false",
+			args: []string{"up"},
+			envVars: map[string]string{
+				"ANTIGRAVITY_AGENT":   "1",
+				"AZD_NON_INTERACTIVE": "false",
+			},
+			inputTerminal:    true,
+			expectedNoPrompt: false,
 		},
 		{
 			name:             "agent detected but --no-prompt=false explicitly set",
@@ -1278,7 +1327,7 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			}
 
 			opts := &internal.GlobalCommandOptions{}
-			err := ParseGlobalFlags(tt.args, opts)
+			err := parseGlobalFlags(tt.args, opts, tt.inputTerminal)
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.expectedNoPrompt, opts.NoPrompt,

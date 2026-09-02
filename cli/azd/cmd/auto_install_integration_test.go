@@ -324,6 +324,8 @@ func containsNoPromptFalse(args []string) bool {
 // runs inside a CI/CD provider.
 func clearAgentEnvVarsForTest(t *testing.T) {
 	envVarsToUnset := []string{
+		// Antigravity CLI
+		"ANTIGRAVITY_AGENT", "ANTIGRAVITY_CONVERSATION_ID",
 		// GitHub Copilot hosts
 		"AI_AGENT",
 		// Claude Code

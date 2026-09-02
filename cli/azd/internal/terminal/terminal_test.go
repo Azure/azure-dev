@@ -102,11 +102,24 @@ func TestIsTerminal_ForceTTYOverridesAgent(t *testing.T) {
 		"AZD_FORCE_TTY=true should override agent detection and enable TTY")
 }
 
+func TestIsTerminal_ForceTTYOverridesAntigravity(t *testing.T) {
+	clearTestEnvVars(t)
+	agentdetect.ResetDetection()
+	t.Setenv("ANTIGRAVITY_AGENT", "1")
+
+	t.Setenv("AZD_FORCE_TTY", "false")
+	assert.False(t, IsTerminal(0, 0), "AZD_FORCE_TTY=false should disable TTY for Antigravity")
+
+	t.Setenv("AZD_FORCE_TTY", "true")
+	assert.True(t, IsTerminal(0, 0), "AZD_FORCE_TTY=true should enable TTY for Antigravity")
+}
+
 // clearTestEnvVars clears environment variables that affect terminal detection.
 func clearTestEnvVars(t *testing.T) {
 	envVarsToUnset := []string{
 		"AZD_FORCE_TTY",
 		// Agent env vars
+		"ANTIGRAVITY_AGENT", "ANTIGRAVITY_CONVERSATION_ID",
 		"AI_AGENT", // GitHub Copilot hosts
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
 		"CODEX_CI", "CODEX_THREAD_ID", "CODEX_SESSION_ID",

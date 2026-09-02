@@ -741,7 +741,7 @@ func renderResults(
 // text is always in `-o json`.
 //
 // Counted in runes: an evaluator name or reason is free-form text, and cutting
-// it at a byte split multibyte characters down the middle, which reaches the
+// it at a byte split multi-byte characters down the middle, which reaches the
 // terminal as a replacement glyph.
 func truncate(s string, n int) string {
 	s = strings.ReplaceAll(strings.ReplaceAll(s, "\n", " "), "\r", "")

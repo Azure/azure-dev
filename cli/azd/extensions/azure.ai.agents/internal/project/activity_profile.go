@@ -75,8 +75,8 @@ func digitalWorkerTypeMismatchSuggestion() string {
 }
 
 // EnsureActivityEndpointAuthSchemeForProfile preserves explicitly authored
-// authorization schemes. Simple Activity agents receive BotServiceRbac when no
-// scheme is supplied, while Digital Workers rely on the service default.
+// authorization schemes and ensures an existing Activity endpoint advertises
+// the Activity protocol. The service owns defaults when schemes are omitted.
 func EnsureActivityEndpointAuthSchemeForProfile(
 	endpoint *agent_api.AgentEndpoint,
 	profile ActivityProfile,
@@ -86,27 +86,6 @@ func EnsureActivityEndpointAuthSchemeForProfile(
 	}
 
 	ensureActivityEndpointProtocol(endpoint)
-	if profile.UseCase == ActivityUseCaseDigitalWorker {
-		return
-	}
-
-	EnsureActivityEndpointAuthScheme(endpoint, agent_api.AgentEndpointAuthSchemeBotServiceRbac)
-}
-
-// EnsureActivityEndpointAuthScheme ensures the Activity protocol is advertised and
-// applies the supplied default authorization scheme only when the endpoint omits all schemes.
-func EnsureActivityEndpointAuthScheme(
-	endpoint *agent_api.AgentEndpoint,
-	schemeType agent_api.AgentEndpointAuthorizationSchemeType,
-) {
-	ensureActivityEndpointProtocol(endpoint)
-
-	if len(endpoint.AuthorizationSchemes) == 0 {
-		endpoint.AuthorizationSchemes = append(
-			endpoint.AuthorizationSchemes,
-			agent_api.AgentEndpointAuthorizationScheme{Type: schemeType},
-		)
-	}
 }
 
 func ensureActivityEndpointProtocol(endpoint *agent_api.AgentEndpoint) {

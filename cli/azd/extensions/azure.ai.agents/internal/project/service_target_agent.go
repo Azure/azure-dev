@@ -2228,10 +2228,7 @@ func ensureActivityEndpointAuthSchemeForProfile(
 		return
 	}
 	if request.AgentEndpoint == nil {
-		if profile.UseCase == ActivityUseCaseDigitalWorker {
-			return
-		}
-		request.AgentEndpoint = &agent_api.AgentEndpoint{}
+		return
 	}
 	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, profile)
 }

@@ -308,11 +308,6 @@ func reconcileStandaloneEndpointWithDeployedAgent(
 		)
 	}
 
-	if resolvedProfile.IsActivity &&
-		resolvedProfile.UseCase != ActivityUseCaseDigitalWorker &&
-		request.AgentEndpoint == nil {
-		request.AgentEndpoint = &agent_api.AgentEndpoint{}
-	}
 	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, resolvedProfile)
 	return nil
 }

@@ -2018,7 +2018,7 @@ func TestPrepareDeployLeavesOmittedDigitalWorkerEndpointNil(t *testing.T) {
 	require.Nil(t, prep.request.AgentCard)
 }
 
-func TestPrepareDeployDefersRbacForSimpleActivityEndpointUntilProfileIsResolved(t *testing.T) {
+func TestPrepareDeployPreservesOmittedSimpleActivityAuthorizationSchemes(t *testing.T) {
 	t.Parallel()
 
 	agentDef := sampleContainerAgent()
@@ -2109,7 +2109,7 @@ func TestEnsureActivityEndpointAuthSchemeForDigitalWorkerPreservesEndpointWithou
 	require.Empty(t, request.AgentEndpoint.AuthorizationSchemes)
 }
 
-func TestEnsureActivityEndpointAuthSchemeForSimpleActivityCreatesRbacEndpoint(t *testing.T) {
+func TestEnsureActivityEndpointAuthSchemeForSimpleActivityUsesServiceDefault(t *testing.T) {
 	t.Parallel()
 
 	request := &agent_api.CreateAgentRequest{}
@@ -2119,13 +2119,7 @@ func TestEnsureActivityEndpointAuthSchemeForSimpleActivityCreatesRbacEndpoint(t 
 		UseCase:    ActivityUseCaseSimple,
 	})
 
-	require.NotNil(t, request.AgentEndpoint)
-	require.Equal(t, []agent_api.AgentEndpointProtocol{
-		agent_api.AgentEndpointProtocolActivity,
-	}, request.AgentEndpoint.Protocols)
-	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
-	}, request.AgentEndpoint.AuthorizationSchemes)
+	require.Nil(t, request.AgentEndpoint)
 }
 
 func TestEnsureActivityEndpointAuthSchemePreservesExplicitLegacyBotService(t *testing.T) {

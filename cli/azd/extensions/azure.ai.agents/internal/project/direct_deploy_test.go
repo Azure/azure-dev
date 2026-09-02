@@ -130,7 +130,7 @@ func TestReconcileStandaloneEndpointUsesServiceDefaultForDeployedDigitalWorker(t
 	require.Nil(t, request.AgentEndpoint)
 }
 
-func TestReconcileStandaloneEndpointCreatesEndpointForSimpleActivity(t *testing.T) {
+func TestReconcileStandaloneEndpointUsesServiceDefaultForSimpleActivity(t *testing.T) {
 	t.Parallel()
 
 	request := &agent_api.CreateAgentRequest{}
@@ -142,13 +142,7 @@ func TestReconcileStandaloneEndpointCreatesEndpointForSimpleActivity(t *testing.
 	}, existingAgent)
 
 	require.NoError(t, err)
-	require.NotNil(t, request.AgentEndpoint)
-	require.Equal(t, []agent_api.AgentEndpointProtocol{
-		agent_api.AgentEndpointProtocolActivity,
-	}, request.AgentEndpoint.Protocols)
-	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
-	}, request.AgentEndpoint.AuthorizationSchemes)
+	require.Nil(t, request.AgentEndpoint)
 }
 
 func TestReconcileStandaloneEndpointPromotesNonActivityDefinitionForDeployedDigitalWorker(t *testing.T) {

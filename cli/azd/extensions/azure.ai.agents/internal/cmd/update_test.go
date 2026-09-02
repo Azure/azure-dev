@@ -113,7 +113,7 @@ func TestEnsureEndpointAuthSchemeForProfile_DigitalWorkerUsesServiceDefaultWhenO
 	assert.Empty(t, endpoint.AuthorizationSchemes)
 }
 
-func TestEnsureEndpointAuthSchemeForProfile_SimpleDefaultsToRbacWhenOmitted(t *testing.T) {
+func TestEnsureEndpointAuthSchemeForProfile_SimpleUsesServiceDefaultWhenOmitted(t *testing.T) {
 	endpoint := &agent_api.AgentEndpoint{}
 
 	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{
@@ -121,9 +121,8 @@ func TestEnsureEndpointAuthSchemeForProfile_SimpleDefaultsToRbacWhenOmitted(t *t
 		UseCase:    project.ActivityUseCaseSimple,
 	})
 
-	assert.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
-	}, endpoint.AuthorizationSchemes)
+	assert.Contains(t, endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
+	assert.Empty(t, endpoint.AuthorizationSchemes)
 }
 
 func TestEnsureEndpointAuthSchemeForProfile_NonActivityNoop(t *testing.T) {

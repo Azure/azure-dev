@@ -76,6 +76,8 @@ telemetry by the agent-detection path.
 
 | Variable | Match | Detected agent (`execution.environment`) |
 | --- | --- | --- |
+| `ANTIGRAVITY_AGENT` | Exactly `1` | Antigravity |
+| `ANTIGRAVITY_CONVERSATION_ID` | Non-empty | Antigravity |
 | `AI_AGENT` | Exactly `github_copilot_app_agent` | GitHub Copilot App |
 | `AI_AGENT` | Exactly `github_copilot_vscode_agent` | GitHub Copilot VSCode |
 | `AI_AGENT` | Exactly `github_copilot_cloud_agent` | GitHub Copilot Cloud Agent |
@@ -93,9 +95,14 @@ telemetry by the agent-detection path.
 | `GEMINI_CLI_NO_RELAUNCH` | Non-empty | Gemini |
 | `OPENCODE` | Non-empty | OpenCode |
 
-As a last resort, parent-process detection recognizes the `codex`, `claude`, `gemini`, `opencode`,
-and GitHub Copilot CLI executable names. It intentionally does not recognize `Cursor.exe`, because
-that name also identifies the regular Cursor desktop application.
+Antigravity's shell tool was validated with PTY-backed stdin and stdout by running local-only
+`azd env new`, `azd env select`, and `azd env remove` prompts. Text input, list selection, and
+confirmation all completed without EOF, hangs, duplicated rendering, or lost responses.
+
+As a last resort, parent-process detection recognizes the exact Antigravity executable name `agy`,
+along with the `codex`, `claude`, `gemini`, `opencode`, and GitHub Copilot CLI executable names.
+It intentionally does not recognize `Cursor.exe`, because that name also identifies the regular
+Cursor desktop application.
 
 ## azd exec
 

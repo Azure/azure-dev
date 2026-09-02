@@ -1,21 +1,6 @@
 # Release History
 
-## 1.0.0-beta.18 (2026-08-31)
-
-### Bugs Fixed
-
-- `create` and `update` read the rows before the first request, which is what
-  the previous release said they did. A malformed or empty `--from-file` was
-  parsed during the upload, past the read that decides whether the name is
-  taken, so the author was told whatever the network said first: pointed at an
-  endpoint that does not resolve, a bad row came back as a DNS failure naming a
-  host they had not mistyped, about a file they had.
-- `delete` asks for `--force` when it cannot ask anything else. With output
-  redirected there is no console to draw the confirmation on, and that surfaced
-  as `rpc error: code = Unknown desc = The handle is invalid` -- a transport
-  detail in place of the one thing the caller could act on.
-
-## 1.0.0-beta.17 (2026-08-20)
+## 1.0.0-beta.1 (Unreleased)
 
 First release of the Foundry datasets extension.
 
@@ -26,12 +11,16 @@ First release of the Foundry datasets extension.
 - Publishes a local `.jsonl` file or folder as a versioned dataset, picking the
   next version from what the project already carries. `--version` publishes at
   exactly that version instead, on `create` and `update` alike.
-- Validates before sending: a malformed row, an empty dataset, a name the
-  service will not take, and a folder that could mean more than one dataset are
-  each refused locally.
+- Validates before sending: the rows are read before the first request, so a
+  malformed row, an empty dataset, a name the service will not take, or a folder
+  that could mean more than one dataset is refused against the file rather than
+  from behind whatever the network happened to say first.
 - Reads dataset content back, whether the service hands out a blob URI or the
   container holding it.
 - `delete` asks before removing a version, and takes `--force` to skip the
-  question. Under `--no-prompt` or `-o json` it refuses rather than assume,
-  because a prompt nobody can answer is a hang.
-- `-o json` on every command, and `--no-prompt` for unattended use.
+  question. Where nobody can answer -- `--no-prompt`, `-o json`, or output
+  redirected away from a console -- it asks for `--force` rather than assume,
+  because a prompt nobody can see is a hang.
+- `-o json` on every command for machine-readable output and `table` otherwise,
+  with anything else refused rather than quietly answered in a format nobody
+  asked for. `--no-prompt` for unattended use.

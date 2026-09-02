@@ -1518,6 +1518,8 @@ func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL s
 					if !downgradeReported {
 						a.console.EnsureBlankLine(ctx)
 					}
+					// Print the complete target URL intentionally. The warning shows the exact HTTP
+					// destination, including any userinfo or query parameters, before continuing.
 					a.console.Message(ctx, output.WithWarningFormat(
 						"WARNING: Download redirected to %s",
 						output.WithLinkFormat(targetURL.String()),

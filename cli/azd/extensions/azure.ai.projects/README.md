@@ -40,33 +40,40 @@ infra:
       provider: microsoft.foundry
 ```
 
-When `azd ai project init --infra` is used with layers, infrastructure is
+When `azd ai project add --infra` is used with layers, infrastructure is
 ejected into the Foundry layer's configured path and module. The root
 `microsoft.foundry` provider cannot be combined with named layers.
 
 ## Project authoring
 
-Initialize a new Foundry project in the current azd workspace:
+Add or adopt a Foundry project in the current azd workspace:
 
 ```sh
-azd ai project init
+azd ai project add
 ```
 
-For a new project, managed deployment declarations can be added before the
-first provision:
+`azd ai project init` remains available as a compatibility alias and accepts
+the same options. For a new project, managed deployment declarations can be
+added before the first provision:
 
 ```sh
-azd ai project init
+azd ai project add
 azd ai project deployment add --model <model-name>
 azd provision
 ```
+
+`project deployment add` creates the azd workspace and Foundry project
+configuration when they are missing, then adds the deployment. In automation,
+provide the project identity and Azure environment values required by
+`project add`; incomplete non-interactive input fails before the deployment is
+changed.
 
 To use an existing project in automation, initialize it with its full ARM
 resource ID. This stores the project identity in the active azd environment
 and allows managed deployment declarations to be reconciled:
 
 ```sh
-azd ai project init --project-id "<project-resource-id>"
+azd ai project add --project-id "<project-resource-id>"
 azd ai project deployment add --model <model-name>
 ```
 
@@ -89,15 +96,16 @@ Generate editable infrastructure for an existing Foundry project with its full
 ARM resource ID:
 
 ```sh
-azd ai project init --project-id "<project-resource-id>" --infra
-azd ai project init --project-id "<project-resource-id>" --infra=terraform
+azd ai project add --project-id "<project-resource-id>" --infra
+azd ai project add --project-id "<project-resource-id>" --infra=terraform
 ```
 
 The default format is Bicep. The generated infrastructure references the
 existing account and project without taking ownership of them. It manages only
 declared model deployments, project connections, and any required container
 registry resources. Endpoint-only initialization cannot eject infrastructure;
-rerun it with the full project resource ID.
+rerun `project add` (or the compatibility `project init`) with the full
+project resource ID.
 
 When an agent needs a registry, ejection preserves the registry state selected
 during initialization: it creates a registry when none exists, connects an

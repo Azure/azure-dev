@@ -127,6 +127,13 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	}
 
 	projectRoot := projectRootPath()
+	project, _, err := ensureProject(ctx, client, projectRoot)
+	if err != nil {
+		return err
+	}
+	if project.GetPath() != "" {
+		projectRoot = project.GetPath()
+	}
 	envName, err := resolveProjectEnvironmentName(ctx, client, a.environmentName(), projectRoot)
 	if err != nil {
 		return err
@@ -145,11 +152,44 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		return err
 	}
 	if service == nil {
-		return exterrors.Dependency(
-			"project_service_not_found",
-			"no azure.ai.project service was found in the azd project",
-			"run `azd ai project init` before adding a deployment",
+		projectAction := &ProjectInitAction{
+			client: client,
+			flags: &projectInitFlags{
+				noPrompt: a.noPrompt(),
+				output:   "none",
+			},
+			extCtx: a.extCtx,
+		}
+		if err := projectAction.Run(ctx); err != nil {
+			return err
+		}
+
+		envName, err = resolveProjectEnvironmentName(
+			ctx, client, a.environmentName(), projectRoot,
 		)
+		if err != nil {
+			return err
+		}
+		values, err = currentProjectEnvironment(ctx, client, envName)
+		if err != nil {
+			return err
+		}
+		reconciler = &projectServiceReconciler{
+			client:            client,
+			projectRoot:       projectRoot,
+			environmentValues: values,
+		}
+		service, _, err = reconciler.discoverProjectService(ctx)
+		if err != nil {
+			return err
+		}
+		if service == nil {
+			return exterrors.Dependency(
+				"project_service_not_found",
+				"project add completed without creating an azure.ai.project service",
+				"run `azd ai project add` and retry adding the deployment",
+			)
+		}
 	}
 	if err := validateConfiguredProjectIdentity(values, service); err != nil {
 		return err
@@ -159,7 +199,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			"project_deployment_requires_id",
 			"managed model deployments for an existing Foundry project "+
 				"require a resource ID",
-			"rerun `azd ai project init --project-id <resource-id>` "+
+			"rerun `azd ai project add --project-id <resource-id>` "+
 				"before adding managed deployments",
 		)
 	}
@@ -349,7 +389,7 @@ func validateConfiguredProjectIdentity(
 	return exterrors.Validation(
 		"project_target_mismatch",
 		"the configured project endpoint and AZURE_AI_PROJECT_ID identify different projects",
-		"rerun `azd ai project init` with the intended project target",
+		"rerun `azd ai project add` with the intended project target",
 	)
 }
 

@@ -66,7 +66,7 @@ const (
 	foundryTerraformMarkerVersion = "terraform-v1\n"
 )
 
-// ProjectInitAction implements `azd ai project init`.
+// ProjectInitAction implements project add and project init.
 type ProjectInitAction struct {
 	client *azdext.AzdClient
 	flags  *projectInitFlags
@@ -74,11 +74,31 @@ type ProjectInitAction struct {
 }
 
 func newProjectInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	return newProjectAuthoringCommand(
+		"init",
+		"Initialize or adopt a Microsoft Foundry project.",
+		extCtx,
+	)
+}
+
+func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	return newProjectAuthoringCommand(
+		"add",
+		"Add or update a Microsoft Foundry project.",
+		extCtx,
+	)
+}
+
+func newProjectAuthoringCommand(
+	use string,
+	short string,
+	extCtx *azdext.ExtensionContext,
+) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	flags := &projectInitFlags{}
 	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Initialize or adopt a Microsoft Foundry project.",
+		Use:   use,
+		Short: short,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
@@ -1385,7 +1405,7 @@ func validateExistingEndpointMode(
 		return exterrors.Dependency(
 			exterrors.CodeInfraEjectRequiresProjectID,
 			"infrastructure ejection requires a verified Foundry project resource ID",
-			"rerun `azd ai project init --project-id <resource-id> --infra`",
+			"rerun `azd ai project add --project-id <resource-id> --infra`",
 		)
 	}
 	if hasProjectConnections(project) || hasPendingAcrProvision(values) {
@@ -1393,7 +1413,7 @@ func validateExistingEndpointMode(
 			"project_reconciliation_requires_project_id",
 			"endpoint-only initialization cannot reconcile project connections "+
 				"or a pending container registry",
-			"rerun `azd ai project init --project-id <resource-id>` "+
+			"rerun `azd ai project add --project-id <resource-id>` "+
 				"before retaining project resources",
 		)
 	}
@@ -1405,7 +1425,7 @@ func validateExistingEndpointMode(
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
 			"endpoint-only initialization cannot retain managed model deployments",
-			"rerun `azd ai project init --project-id <resource-id>` "+
+			"rerun `azd ai project add --project-id <resource-id>` "+
 				"before managing deployments",
 		)
 	}
@@ -1414,7 +1434,7 @@ func validateExistingEndpointMode(
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
 			"changing the project endpoint would move managed project configuration",
-			"rerun `azd ai project init --project-id <resource-id>` before changing project identity",
+			"rerun `azd ai project add --project-id <resource-id>` before changing project identity",
 		)
 	}
 	return nil

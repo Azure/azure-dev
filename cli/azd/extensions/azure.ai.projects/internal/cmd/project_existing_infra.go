@@ -423,7 +423,7 @@ func projectEjectIdentity(
 			exterrors.CodeInfraEjectRequiresProjectID,
 			"infrastructure ejection requires a verified Foundry project "+
 				"resource ID",
-			"rerun `azd ai project init --project-id <resource-id> --infra`",
+			"rerun `azd ai project add --project-id <resource-id> --infra`",
 		)
 	}
 	project, err := projectFromResourceID(resourceID)

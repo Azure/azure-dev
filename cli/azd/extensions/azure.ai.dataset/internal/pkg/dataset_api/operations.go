@@ -107,7 +107,7 @@ func (c *DatasetClient) UploadNextVersion(
 	ctx context.Context,
 	name string,
 	currentVersion string,
-	localDir string,
+	content string,
 	apiVersion string,
 ) (*Dataset, error) {
 	if currentVersion == "" {
@@ -121,7 +121,7 @@ func (c *DatasetClient) UploadNextVersion(
 	var err error
 	for range versionConflictAttempts {
 		var ds *Dataset
-		ds, err = c.UploadNewVersion(ctx, name, currentVersion, localDir, apiVersion)
+		ds, err = c.UploadNewVersion(ctx, name, currentVersion, content, apiVersion)
 		if err == nil || !IsVersionConflict(err) {
 			return ds, err
 		}
@@ -202,9 +202,8 @@ func IsNotFound(err error) bool {
 	return respErr.StatusCode == http.StatusNotFound
 }
 
-// UploadNewVersion reads the first JSONL file from localDir, computes the next
-// version from currentVersion, and uploads it as a new dataset version using
-// the 3-step pending upload flow:
+// UploadNewVersion computes the next version from currentVersion and uploads
+// content as a new dataset version using the 3-step pending upload flow:
 //  1. startPendingUpload → get SAS URI
 //  2. Upload blob to SAS URI
 //  3. Finalize dataset version with dataUri
@@ -212,10 +211,10 @@ func (c *DatasetClient) UploadNewVersion(
 	ctx context.Context,
 	name string,
 	currentVersion string,
-	localDir string,
+	content string,
 	apiVersion string,
 ) (*Dataset, error) {
-	return c.UploadVersion(ctx, name, NextVersion(currentVersion), localDir, apiVersion)
+	return c.UploadVersion(ctx, name, NextVersion(currentVersion), content, apiVersion)
 }
 
 // UploadVersion publishes the dataset at exactly this version.
@@ -223,18 +222,17 @@ func (c *DatasetClient) UploadNewVersion(
 // Separate from UploadNewVersion because its parameter is the version to
 // count from, not the one to write: passing "1.0" there publishes 2.0. An
 // author who declares a version means that version.
+//
+// Takes the rows rather than a directory: the caller reads the file before the
+// first request so a malformed one is reported against the file, and reading it
+// again here held a second copy of a dataset that can be large.
 func (c *DatasetClient) UploadVersion(
 	ctx context.Context,
 	name string,
 	version string,
-	localDir string,
+	content string,
 	apiVersion string,
 ) (*Dataset, error) {
-	content, err := ReadFirstJSONLFile(localDir)
-	if err != nil {
-		return nil, messages.ReadingDatasetFromDir(localDir, err)
-	}
-
 	newVersion := version
 
 	// Step 1: Start pending upload to get a SAS URI.
@@ -545,7 +543,10 @@ func (c *DatasetClient) readBlobPage(req *http.Request) ([]string, string, error
 	if err != nil {
 		return nil, "", messages.ReadingListResponse(err)
 	}
-	names, next := parseBlobPage(string(body))
+	names, next, err := parseBlobPage(string(body))
+	if err != nil {
+		return nil, "", messages.ParsingListResponse(err)
+	}
 	return names, next, nil
 }
 
@@ -587,13 +588,18 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 // parseBlobNames extracts blob names from the Azure Blob Storage XML list response
 // using proper XML parsing against the EnumerationResults schema.
 func parseBlobNames(xmlBody string) []string {
-	names, _ := parseBlobPage(xmlBody)
+	names, _, _ := parseBlobPage(xmlBody)
 	return names
 }
 
 // parseBlobPage extracts one page of blob names and the marker that continues
 // the listing. An empty marker means this was the last page.
-func parseBlobPage(xmlBody string) ([]string, string) {
+//
+// A body that does not decode is returned as the error it is. Reporting it as
+// an empty last page told the caller the dataset has no file, which reads as a
+// missing dataset rather than a listing nobody could parse, and threw away the
+// pages already collected.
+func parseBlobPage(xmlBody string) ([]string, string, error) {
 	type blob struct {
 		Name string `xml:"Name"`
 	}
@@ -607,7 +613,7 @@ func parseBlobPage(xmlBody string) ([]string, string) {
 
 	var result enumerationResults
 	if err := xml.Unmarshal([]byte(xmlBody), &result); err != nil {
-		return nil, ""
+		return nil, "", err
 	}
 
 	names := make([]string, 0, len(result.Blobs.Blob))
@@ -616,7 +622,7 @@ func parseBlobPage(xmlBody string) ([]string, string) {
 			names = append(names, b.Name)
 		}
 	}
-	return names, result.NextMarker
+	return names, result.NextMarker, nil
 }
 
 // doRequest performs an HTTP request against the dataset API and returns the raw response body.

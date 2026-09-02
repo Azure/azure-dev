@@ -111,8 +111,10 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 			}
 			// Read the rows before the first network call, so a malformed file is
 			// reported against the file rather than from behind whatever the
-			// service happened to say first.
-			if _, err := dataset_api.ReadFirstJSONLFile(localDir); err != nil {
+			// service happened to say first. The upload publishes what is read
+			// here rather than reading it again.
+			content, err := dataset_api.ReadFirstJSONLFile(localDir)
+			if err != nil {
 				return err
 			}
 
@@ -141,11 +143,11 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 			var ds *dataset_api.Dataset
 			if version != "" {
 				ds, err = ec.datasetClient.UploadVersion(
-					ctx, name, version, localDir, ProjectEndpointAPIVersion,
+					ctx, name, version, content, ProjectEndpointAPIVersion,
 				)
 			} else {
 				ds, err = ec.datasetClient.UploadNextVersion(
-					ctx, name, "", localDir, ProjectEndpointAPIVersion,
+					ctx, name, "", content, ProjectEndpointAPIVersion,
 				)
 			}
 			if err != nil {

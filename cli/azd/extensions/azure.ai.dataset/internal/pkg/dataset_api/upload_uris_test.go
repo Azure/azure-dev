@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -42,13 +40,11 @@ func pendingUploadServer(t *testing.T, pendingBody string) (*DatasetClient, *[]s
 	return NewDatasetClientFromPipeline(srv.URL, pipeline), &asked
 }
 
-// datasetDir writes one .jsonl for UploadVersion to read.
-func oneJSONLDir(t *testing.T) string {
+// oneJSONLBody is the dataset these tests publish. UploadVersion takes the rows
+// the caller already read, so no file is needed to exercise the upload path.
+func oneJSONLBody(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "golden.jsonl"), []byte("{\"query\":\"hi\"}\n"), 0o600))
-	return dir
+	return "{\"query\":\"hi\"}\n"
 }
 
 // The SAS says where to write and the blob URI says what to register; they are
@@ -59,7 +55,7 @@ func oneJSONLDir(t *testing.T) string {
 func TestAnUploadWithNowhereToRegisterItIsRefusedBeforeTheBlobIsWritten(t *testing.T) {
 	client, asked := pendingUploadServer(t, `{"blobReference":{"credential":{"sasUri":"https://blob.example.invalid/c?sig=s"}}}`)
 
-	_, err := client.UploadVersion(context.Background(), "golden", "1", oneJSONLDir(t), "2024-01-01")
+	_, err := client.UploadVersion(context.Background(), "golden", "1", oneJSONLBody(t), "2024-01-01")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "blob URI")
@@ -76,7 +72,7 @@ func TestAnUploadWithNowhereToRegisterItIsRefusedBeforeTheBlobIsWritten(t *testi
 func TestAnUploadWithNowhereToWriteKeepsItsOwnMessage(t *testing.T) {
 	client, _ := pendingUploadServer(t, `{"blobReference":{"blobUri":"https://blob.example.invalid/c"}}`)
 
-	_, err := client.UploadVersion(context.Background(), "golden", "1", oneJSONLDir(t), "2024-01-01")
+	_, err := client.UploadVersion(context.Background(), "golden", "1", oneJSONLBody(t), "2024-01-01")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "upload SAS URI")

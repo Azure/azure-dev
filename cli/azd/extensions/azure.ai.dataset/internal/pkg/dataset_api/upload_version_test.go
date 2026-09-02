@@ -6,10 +6,9 @@ package dataset_api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +19,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// datasetRows is the body these tests publish. The client is handed the rows
+// the caller already read, so producing them from a file belongs to the
+// command's tests rather than these.
+const datasetRows = "{\"query\":\"q\"}\n"
+
 // uploadServer answers the three-step publish, refusing any version in taken
 // and reporting whatever the listing is told to report.
 type uploadServer struct {
@@ -27,6 +31,7 @@ type uploadServer struct {
 	taken    map[string]bool
 	listing  []string
 	attempts []string
+	uploaded []string
 }
 
 func (s *uploadServer) handler(t *testing.T, base func() string) http.HandlerFunc {
@@ -61,6 +66,14 @@ func (s *uploadServer) handler(t *testing.T, base func() string) http.HandlerFun
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"value": values}))
 
+		// The blob write is a PUT too, and it is matched first: falling through
+		// to the finalize branch recorded "ds.jsonl" as a published version.
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/c/"):
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			s.uploaded = append(s.uploaded, string(body))
+			w.WriteHeader(http.StatusCreated)
+
 		case r.Method == http.MethodPut:
 			version := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 			s.taken[version] = true
@@ -69,7 +82,6 @@ func (s *uploadServer) handler(t *testing.T, base func() string) http.HandlerFun
 			}))
 
 		default:
-			// The blob PUT.
 			w.WriteHeader(http.StatusCreated)
 		}
 	}
@@ -92,11 +104,7 @@ func TestUploadNextVersionWalksPastAStaleListing(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "rows.jsonl"), []byte("{\"query\":\"q\"}\n"), 0o600))
-
-	ds, err := client.UploadNextVersion(context.Background(), "ds", "", dir, "2025-11-15-preview")
+	ds, err := client.UploadNextVersion(context.Background(), "ds", "", datasetRows, "2025-11-15-preview")
 	require.NoError(t, err, "a stale listing must not surface as a conflict")
 	assert.Equal(t, "2.0", ds.Version)
 	assert.Equal(t, []string{"1.0", "2.0"}, server.attempts,
@@ -120,15 +128,13 @@ func TestUploadVersionPublishesTheVersionDeclared(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "rows.jsonl"), []byte("{\"query\":\"q\"}\n"), 0o600))
-
-	ds, err := client.UploadVersion(context.Background(), "ds", "7.0", dir, "2025-11-15-preview")
+	ds, err := client.UploadVersion(context.Background(), "ds", "7.0", datasetRows, "2025-11-15-preview")
 	require.NoError(t, err)
 	assert.Equal(t, "7.0", ds.Version, "the version asked for is the version written")
 	assert.Equal(t, []string{"7.0"}, server.attempts,
 		"a declared version is published as given, not counted from")
+	assert.Equal(t, []string{datasetRows}, server.uploaded,
+		"the rows handed to the client are the bytes that reach storage")
 }
 
 // A declared version the service already holds is refused rather than stepped
@@ -149,11 +155,7 @@ func TestUploadVersionDoesNotWalkPastAConflict(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "rows.jsonl"), []byte("{\"query\":\"q\"}\n"), 0o600))
-
-	_, err := client.UploadVersion(context.Background(), "ds", "7.0", dir, "2025-11-15-preview")
+	_, err := client.UploadVersion(context.Background(), "ds", "7.0", datasetRows, "2025-11-15-preview")
 	require.Error(t, err, "the version the author named is taken, and that is theirs to resolve")
 	assert.True(t, IsVersionConflict(err), "the refusal has to read as a conflict")
 	assert.Equal(t, []string{"7.0"}, server.attempts,
@@ -177,11 +179,7 @@ func TestUploadNextVersionPrefersACaughtUpListing(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "rows.jsonl"), []byte("{\"query\":\"q\"}\n"), 0o600))
-
-	ds, err := client.UploadNextVersion(context.Background(), "ds", "", dir, "2025-11-15-preview")
+	ds, err := client.UploadNextVersion(context.Background(), "ds", "", datasetRows, "2025-11-15-preview")
 	require.NoError(t, err)
 	assert.Equal(t, "4.0", ds.Version)
 }
@@ -203,11 +201,7 @@ func TestUploadNextVersionGivesUpBounded(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "rows.jsonl"), []byte("{\"query\":\"q\"}\n"), 0o600))
-
-	_, err := client.UploadNextVersion(context.Background(), "ds", "", dir, "2025-11-15-preview")
+	_, err := client.UploadNextVersion(context.Background(), "ds", "", datasetRows, "2025-11-15-preview")
 	require.Error(t, err)
 	assert.True(t, IsVersionConflict(err))
 	assert.Len(t, server.attempts, versionConflictAttempts)

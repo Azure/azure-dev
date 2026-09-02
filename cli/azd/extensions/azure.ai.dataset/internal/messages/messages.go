@@ -120,11 +120,6 @@ func NoJSONLInDirectory(dir string) error {
 	return fmt.Errorf("no .jsonl file found in %s", filepath.ToSlash(dir))
 }
 
-// ReadingDatasetFromDir reports the upload failing to gather the local rows.
-func ReadingDatasetFromDir(dir string, err error) error {
-	return fmt.Errorf("reading dataset from %s: %w", dir, err)
-}
-
 // StartingPendingUpload reports the service refusing to open an upload.
 func StartingPendingUpload(err error) error {
 	return fmt.Errorf("starting pending upload: %w", err)
@@ -636,6 +631,11 @@ func ContainerListStatus(status int) error {
 // ReadingListResponse reports a container listing that could not be read.
 func ReadingListResponse(err error) error {
 	return fmt.Errorf("failed to read list response: %w", err)
+}
+
+// ParsingListResponse reports a container listing that did not decode.
+func ParsingListResponse(err error) error {
+	return fmt.Errorf("failed to parse list response: %w", err)
 }
 
 // CreatingBlobDownloadRequest reports the blob download request failing to build.

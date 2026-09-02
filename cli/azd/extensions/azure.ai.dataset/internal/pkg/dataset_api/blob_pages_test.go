@@ -108,3 +108,22 @@ func TestListContainerBlobsRefusesToExhaustThePageCap(t *testing.T) {
 	assert.Nil(t, names)
 	assert.Equal(t, maxListPages, calls, "the cap has to bound the walk")
 }
+
+// A body that does not decode used to read as an empty last page, so a corrupt
+// response was reported as a dataset with no file -- and the page that had
+// already arrived was thrown away to say it.
+func TestListContainerBlobsRefusesAnUndecodableListing(t *testing.T) {
+	client, srv := pagingClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		if r.URL.Query().Get("marker") == "" {
+			fmt.Fprint(w, blobPage("m1", "a.jsonl"))
+			return
+		}
+		fmt.Fprint(w, `<?xml version="1.0"?><EnumerationResults><Blobs><Blob><Name>b.jsonl`)
+	})
+
+	names, err := client.ListContainerBlobs(t.Context(), srv.URL+"/container")
+
+	require.Error(t, err, "a listing nobody could parse is not an empty one")
+	assert.Nil(t, names, "the page that did arrive is not the container")
+}

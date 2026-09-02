@@ -6,8 +6,6 @@ package dataset_api
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -17,14 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// datasetDir returns a directory holding one uploadable dataset file, so the
-// upload path is exercised rather than short-circuiting on an empty folder.
-func datasetDir(t *testing.T) string {
+// datasetBody returns one uploadable dataset, so the upload path is exercised
+// rather than short-circuiting on an empty body.
+func datasetBody(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "data.jsonl"), []byte(`{"query":"hi"}`+"\n"), 0o600))
-	return dir
+	return `{"query":"hi"}` + "\n"
 }
 
 // An empty version listing is how a brand-new dataset looks, so a listing that
@@ -53,7 +48,7 @@ func TestUploadNextVersionRefusesToStartOverWhenTheListingFails(t *testing.T) {
 	c := NewDatasetClientFromPipeline(
 		srv.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	_, err := c.UploadNextVersion(t.Context(), "ds", "", datasetDir(t), testAPIVersion)
+	_, err := c.UploadNextVersion(t.Context(), "ds", "", datasetBody(t), testAPIVersion)
 
 	require.Error(t, err, "a refused listing must surface, not read as a new dataset")
 
@@ -92,7 +87,7 @@ func TestUploadNextVersionTreatsAnUnknownDatasetAsVersionless(t *testing.T) {
 	c := NewDatasetClientFromPipeline(
 		srv.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	_, _ = c.UploadNextVersion(t.Context(), "ds", "", datasetDir(t), testAPIVersion)
+	_, _ = c.UploadNextVersion(t.Context(), "ds", "", datasetBody(t), testAPIVersion)
 
 	mu.Lock()
 	defer mu.Unlock()

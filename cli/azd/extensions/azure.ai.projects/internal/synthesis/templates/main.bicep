@@ -1,8 +1,8 @@
 // Provisioning template for a Foundry project service.
 //
 // Inputs are derived from the host: azure.ai.project service body in
-// azure.yaml by internal/synthesis. Greenfield only (no endpoint:); a
-// brownfield path is handled by the provider before synthesis.
+// azure.yaml by internal/synthesis. This entry point creates a new Foundry
+// account and project; existing projects use the separate editable entry point.
 //
 // Subscription-scoped so the resource group is part of the deployment. This
 // keeps `azd provision --preview` side-effect free: the resource group shows
@@ -39,6 +39,12 @@ type connectionType = {
   category: string
   target: string
   authType: string
+  audience: string?
+  authorizationUrl: string?
+  tokenUrl: string?
+  refreshUrl: string?
+  scopes: string[]?
+  connectorName: string?
   metadata: object?
 }
 
@@ -171,5 +177,6 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAI
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_RESOURCE_ID
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = resources.outputs.AZURE_AI_PROJECT_ACR_CONNECTION_NAME
 output AZURE_AI_PROJECT_CONNECTION_NAMES string = resources.outputs.AZURE_AI_PROJECT_CONNECTION_NAMES
+output AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT string = resources.outputs.FOUNDRY_PROJECT_ENDPOINT
 output AZURE_FOUNDRY_NETWORK_MODE string = resources.outputs.AZURE_FOUNDRY_NETWORK_MODE
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = resources.outputs.AZURE_FOUNDRY_MANAGED_ISOLATION_MODE

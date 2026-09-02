@@ -1,0 +1,26 @@
+template:
+  kind: hosted
+  name: hosted-invocations-moderation-agent
+  description: A hosted invocations agent whose RAI policy moderates request and response text
+  policies:
+    - type: rai_policy
+      # Full ARM resource ID of the RAI policy on the Cognitive Services account.
+      rai_policy_name: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2
+      # Tells the content-safety proxy which text to moderate. Without this the policy is
+      # attached but has nothing to inspect on the invocations path.
+      invocations_moderation:
+        # This container answers both buffered and streaming requests. The proxy still runs
+        # exactly one output gate per response, chosen from the actual response Content-Type.
+        response_mode: both
+        input_content_type: json
+        output_content_type: json
+        input_paths:
+          - $.input
+        output_paths:
+          - $.output
+        stream_selectors:
+          - event_type: response.output_text.delta
+            text_field: $.delta
+  protocols:
+    - protocol: invocations
+      version: "1.0.0"

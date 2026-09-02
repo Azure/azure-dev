@@ -45,6 +45,44 @@ func TestFoundryProjectInfo_Endpoint(t *testing.T) {
 	}
 }
 
+func TestVerifyFoundryProjectConnection(t *testing.T) {
+	t.Parallel()
+
+	project := FoundryProjectInfo{AccountName: "account", ProjectName: "project"}
+	connections := []azure.Connection{
+		{Name: "private-registry", ID: "/connections/private-registry", Type: azure.ConnectionTypeCustomKeys},
+	}
+	loader := func(
+		_ context.Context,
+		_ azcore.TokenCredential,
+		accountName string,
+		projectName string,
+	) ([]azure.Connection, error) {
+		require.Equal(t, "account", accountName)
+		require.Equal(t, "project", projectName)
+		return connections, nil
+	}
+
+	require.NoError(t, verifyFoundryProjectConnection(
+		t.Context(), nil, project, "private-registry", loader,
+	))
+	require.NoError(t, verifyFoundryProjectConnection(
+		t.Context(), nil, project, "/connections/private-registry", loader,
+	))
+
+	err := verifyFoundryProjectConnection(t.Context(), nil, project, "missing", loader)
+	require.ErrorContains(t, err, "was not found")
+
+	loadErr := errors.New("service unavailable")
+	err = verifyFoundryProjectConnection(
+		t.Context(), nil, project, "private-registry",
+		func(context.Context, azcore.TokenCredential, string, string) ([]azure.Connection, error) {
+			return nil, loadErr
+		},
+	)
+	require.ErrorIs(t, err, loadErr)
+}
+
 func TestExtractProjectDetails(t *testing.T) {
 	t.Parallel()
 
@@ -277,6 +315,25 @@ func newTestAzdClient(
 ) *azdext.AzdClient {
 	t.Helper()
 
+	address := newTestAzdServer(t, envServer, workflowServer, promptServers...)
+	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(address))
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		azdClient.Close()
+	})
+
+	return azdClient
+}
+
+func newTestAzdServer(
+	t *testing.T,
+	envServer azdext.EnvironmentServiceServer,
+	workflowServer azdext.WorkflowServiceServer,
+	promptServers ...azdext.PromptServiceServer,
+) string {
+	t.Helper()
+
 	grpcServer := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(grpcServer, envServer)
 	azdext.RegisterWorkflowServiceServer(grpcServer, workflowServer)
@@ -304,14 +361,7 @@ func newTestAzdClient(
 		}
 	})
 
-	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		azdClient.Close()
-	})
-
-	return azdClient
+	return listener.Addr().String()
 }
 
 func TestFoundryProjectInfoFromResource(t *testing.T) {
@@ -864,6 +914,23 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 			wantValues: map[string]string{
 				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
 				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+		},
+		{
+			name: "re-init preserves create mode for the owned registry connection",
+			connections: []azure.Connection{{
+				Name: "valid-conn", Target: "valid.azurecr.io",
+			}},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			initial: map[string]string{
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZD_FOUNDRY_RESOURCE_GROUP_ID":        "/subscriptions/sub/resourceGroups/rg",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+			wantValues: map[string]string{
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
 				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
 			},
 		},

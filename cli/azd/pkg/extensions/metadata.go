@@ -81,6 +81,8 @@ type Flag struct {
 	Default any `json:"default,omitempty"`
 	// Required indicates if the flag is required
 	Required bool `json:"required,omitempty"`
+	// ValueOptional indicates if the flag can be provided without an explicit value
+	ValueOptional bool `json:"valueOptional,omitempty"`
 	// ValidValues contains the allowed values for the flag
 	ValidValues []string `json:"validValues,omitempty"`
 	// Hidden indicates if the flag should be hidden from help output

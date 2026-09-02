@@ -11,6 +11,9 @@ words:
   # Voice (prompt-voice) agents
   - BYOM
   - Nanami
+  - pcma
+  - pcmu
+  - webrtc
   # Azure region names
   - australiaeast
   - brazilsouth
@@ -55,6 +58,7 @@ words:
   - azuresdk
   - bicepless
   - CLIENTSECRET
+  - containerref
   - curr
   - dataagent
   - envkey
@@ -81,6 +85,7 @@ words:
   - protocolversionrecord
   - Qdrant
   - schedulerun
+  - servicekey
   - Toolsets
   - underscoped
   - unparseable

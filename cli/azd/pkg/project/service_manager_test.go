@@ -37,12 +37,14 @@ const (
 	ServiceLanguageFake ServiceLanguageKind = "fake-framework"
 	ServiceTargetFake   ServiceTargetKind   = "fake-service-target"
 
-	frameworkRestoreCalled     contextKey = "frameworkRestoreCalled"
-	frameworkBuildCalled       contextKey = "frameworkBuildCalled"
-	frameworkPackageCalled     contextKey = "frameworkPackageCalled"
-	serviceTargetPackageCalled contextKey = "serviceTargetPackageCalled"
-	serviceTargetDeployCalled  contextKey = "serviceTargetDeployCalled"
-	serviceTargetPublishCalled contextKey = "serviceTargetPublishCalled"
+	frameworkRestoreCalled       contextKey = "frameworkRestoreCalled"
+	frameworkBuildCalled         contextKey = "frameworkBuildCalled"
+	frameworkPackageCalled       contextKey = "frameworkPackageCalled"
+	serviceTargetPackageCalled   contextKey = "serviceTargetPackageCalled"
+	serviceTargetPackageArtifact contextKey = "serviceTargetPackageArtifact"
+	serviceTargetDeployCalled    contextKey = "serviceTargetDeployCalled"
+	serviceTargetPublishCalled   contextKey = "serviceTargetPublishCalled"
+	serviceTargetPublishContext  contextKey = "serviceTargetPublishContext"
 )
 
 func createServiceManager(
@@ -318,6 +320,290 @@ func Test_ServiceManager_Publish(t *testing.T) {
 	require.True(t, *publishCalled)
 	require.True(t, raisedPrePublishEvent)
 	require.True(t, raisedPostPublishEvent)
+}
+
+func Test_ServiceManager_Publish_RejectsImageOverrideForPassthrough(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	setupMocksForServiceManager(mockContext)
+	env := environment.New("test")
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	serviceConfig.Image = osutil.NewExpandableString("private.example.com/team/agent:v1")
+	serviceConfig.Docker.ImagePassthrough = true
+
+	publishCalled := new(false)
+	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
+
+	_, err := sm.Publish(
+		ctx,
+		serviceConfig,
+		NewServiceContext(),
+		async.NewProgress[ServiceProgress](),
+		&PublishOptions{Image: "other.example.com/team/agent:v2"},
+	)
+
+	require.ErrorContains(t, err, "docker.imagePassthrough cannot be combined with a publish image override")
+	require.False(t, *publishCalled)
+}
+
+func Test_ServiceManager_Publish_ValidatesImagePassthroughConfiguration(t *testing.T) {
+	tests := []struct {
+		name          string
+		image         string
+		remoteBuild   bool
+		errorContains string
+	}{
+		{
+			name:          "missing configured image",
+			errorContains: "requires the service image property",
+		},
+		{
+			name:          "remote build conflict",
+			image:         "private.example.com/team/agent:v1",
+			remoteBuild:   true,
+			errorContains: "cannot be combined with docker.remoteBuild",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			setupMocksForServiceManager(mockContext)
+			env := environment.New("test")
+			sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+			serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+			serviceConfig.Image = osutil.NewExpandableString(tt.image)
+			serviceConfig.Docker.ImagePassthrough = true
+			serviceConfig.Docker.RemoteBuild = tt.remoteBuild
+
+			publishCalled := new(false)
+			ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
+			serviceContext := NewServiceContext()
+			require.NoError(t, serviceContext.Package.Add(&Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "other.example.com/team/agent:v2",
+				LocationKind: LocationKindLocal,
+			}))
+
+			_, err := sm.Publish(
+				ctx,
+				serviceConfig,
+				serviceContext,
+				async.NewProgress[ServiceProgress](),
+				&PublishOptions{},
+			)
+
+			require.ErrorContains(t, err, tt.errorContains)
+			require.False(t, *publishCalled)
+		})
+	}
+}
+
+func Test_ServiceManager_Publish_AcceptsDuplicateRemotePackageArtifactsForPassthrough(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	setupMocksForServiceManager(mockContext)
+	env := environment.NewWithValues("test", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	serviceConfig.Image = osutil.NewExpandableString("private.example.com/team/agent:v1")
+	serviceConfig.Docker.ImagePassthrough = true
+
+	publishCalled := new(false)
+	var publishedContext *ServiceContext
+	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
+	ctx = context.WithValue(ctx, serviceTargetPublishContext, &publishedContext)
+	serviceContext := NewServiceContext()
+	for range 2 {
+		require.NoError(t, serviceContext.Package.Add(&Artifact{
+			Kind:         ArtifactKindContainer,
+			Location:     "other.example.com/team/agent:v2",
+			LocationKind: LocationKindLocal,
+		}))
+	}
+
+	_, err := sm.Publish(
+		ctx,
+		serviceConfig,
+		serviceContext,
+		async.NewProgress[ServiceProgress](),
+		&PublishOptions{},
+	)
+
+	require.NoError(t, err)
+	require.True(t, *publishCalled)
+	require.NotNil(t, publishedContext)
+	require.Len(t, publishedContext.Package, 2)
+	for _, artifact := range publishedContext.Package {
+		require.Equal(t, LocationKindRemote, artifact.LocationKind)
+		require.Equal(t, "true", artifact.Metadata[MetadataKeyImagePassthrough])
+		require.Equal(t, "other.example.com/team/agent:v2", artifact.Metadata["remoteImage"])
+		require.Equal(t, "other.example.com/team/agent:v2", artifact.Metadata["sourceImage"])
+	}
+}
+
+func Test_ServiceManager_Publish_ValidatesArtifactsAddedDuringPackage(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	setupMocksForServiceManager(mockContext)
+	env := environment.NewWithValues("test", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	serviceConfig.Image = osutil.NewExpandableString("private.example.com/team/agent:v1")
+	serviceConfig.Docker.ImagePassthrough = true
+
+	packageCalled := new(false)
+	publishCalled := new(false)
+	ctx := context.WithValue(*mockContext.Context, serviceTargetPackageCalled, packageCalled)
+	ctx = context.WithValue(ctx, serviceTargetPublishCalled, publishCalled)
+	ctx = context.WithValue(ctx, serviceTargetPackageArtifact, &Artifact{
+		Kind:         ArtifactKindArchive,
+		Location:     "external-target-package.zip",
+		LocationKind: LocationKindLocal,
+	})
+
+	_, err := sm.Publish(
+		ctx,
+		serviceConfig,
+		NewServiceContext(),
+		async.NewProgress[ServiceProgress](),
+		&PublishOptions{},
+	)
+
+	require.ErrorContains(t, err, "does not support archive package artifacts")
+	require.True(t, *packageCalled)
+	require.False(t, *publishCalled)
+}
+
+func Test_ServiceManager_Publish_AllowsConfigAddedDuringPackage(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	setupMocksForServiceManager(mockContext)
+	env := environment.NewWithValues("test", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	serviceConfig.Image = osutil.NewExpandableString("private.example.com/team/agent:v1")
+	serviceConfig.Docker.ImagePassthrough = true
+
+	packageCalled := new(false)
+	publishCalled := new(false)
+	var publishedContext *ServiceContext
+	ctx := context.WithValue(*mockContext.Context, serviceTargetPackageCalled, packageCalled)
+	ctx = context.WithValue(ctx, serviceTargetPublishCalled, publishCalled)
+	ctx = context.WithValue(ctx, serviceTargetPublishContext, &publishedContext)
+	ctx = context.WithValue(ctx, serviceTargetPackageArtifact, &Artifact{
+		Kind:         ArtifactKindConfig,
+		Location:     "external-target-config.yaml",
+		LocationKind: LocationKindLocal,
+	})
+
+	_, err := sm.Publish(
+		ctx,
+		serviceConfig,
+		NewServiceContext(),
+		async.NewProgress[ServiceProgress](),
+		&PublishOptions{},
+	)
+
+	require.NoError(t, err)
+	require.True(t, *packageCalled)
+	require.True(t, *publishCalled)
+	require.NotNil(t, publishedContext)
+	require.Len(t, publishedContext.Package, 2)
+	containerArtifact, found := publishedContext.Package.FindFirst(WithKind(ArtifactKindContainer))
+	require.True(t, found)
+	require.Equal(t, LocationKindRemote, containerArtifact.LocationKind)
+	require.Equal(t, "true", containerArtifact.Metadata[MetadataKeyImagePassthrough])
+	require.Equal(t, containerArtifact.Location, containerArtifact.Metadata["remoteImage"])
+	require.Equal(t, containerArtifact.Location, containerArtifact.Metadata["sourceImage"])
+	configArtifact, found := publishedContext.Package.FindFirst(WithKind(ArtifactKindConfig))
+	require.True(t, found)
+	require.Equal(t, LocationKindLocal, configArtifact.LocationKind)
+}
+
+func Test_ServiceManager_Publish_RejectsInvalidPackageOverrideForPassthrough(t *testing.T) {
+	tests := []struct {
+		name               string
+		artifact           *Artifact
+		additionalArtifact *Artifact
+		errorContains      string
+	}{
+		{
+			name: "local container image",
+			artifact: &Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "team/agent:v2",
+				LocationKind: LocationKindLocal,
+			},
+			errorContains: "requires package container artifacts",
+		},
+		{
+			name: "archive",
+			artifact: &Artifact{
+				Kind:         ArtifactKindArchive,
+				Location:     "agent.zip",
+				LocationKind: LocationKindLocal,
+			},
+			errorContains: "does not support archive package artifacts",
+		},
+		{
+			name: "directory",
+			artifact: &Artifact{
+				Kind:         ArtifactKindDirectory,
+				Location:     "agent",
+				LocationKind: LocationKindLocal,
+			},
+			errorContains: "does not support directory package artifacts",
+		},
+		{
+			name: "multiple artifacts",
+			artifact: &Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "other.example.com/team/agent:v2",
+				LocationKind: LocationKindLocal,
+			},
+			additionalArtifact: &Artifact{
+				Kind:         ArtifactKindArchive,
+				Location:     "agent.zip",
+				LocationKind: LocationKindLocal,
+			},
+			errorContains: "does not support archive package artifacts",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			setupMocksForServiceManager(mockContext)
+			env := environment.New("test")
+			sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+			serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+			serviceConfig.Image = osutil.NewExpandableString("private.example.com/team/agent:v1")
+			serviceConfig.Docker.ImagePassthrough = true
+
+			publishCalled := new(false)
+			ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
+			serviceContext := NewServiceContext()
+			require.NoError(t, serviceContext.Package.Add(tt.artifact))
+			if tt.additionalArtifact != nil {
+				require.NoError(t, serviceContext.Package.Add(tt.additionalArtifact))
+			}
+
+			_, err := sm.Publish(
+				ctx,
+				serviceConfig,
+				serviceContext,
+				async.NewProgress[ServiceProgress](),
+				&PublishOptions{},
+			)
+
+			require.ErrorContains(t, err, tt.errorContains)
+			require.False(t, *publishCalled)
+		})
+	}
 }
 
 func Test_ServiceManager_GetFrameworkService(t *testing.T) {
@@ -689,6 +975,14 @@ func (f *fakeFramework) Package(
 		*packageCalled = true
 	}
 
+	if serviceConfig.Docker.ImagePassthrough {
+		image, err := serviceConfig.Image.Envsubst(func(string) string { return "" })
+		if err != nil {
+			return nil, err
+		}
+		return &ServicePackageResult{Artifacts: ArtifactCollection{imagePassthroughArtifact(image)}}, nil
+	}
+
 	runArgs := exec.NewRunArgs("fake-framework", "package")
 	result, err := f.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -739,6 +1033,10 @@ func (st *fakeServiceTarget) Package(
 		*packageCalled = true
 	}
 
+	if artifact, ok := ctx.Value(serviceTargetPackageArtifact).(*Artifact); ok {
+		return &ServicePackageResult{Artifacts: ArtifactCollection{artifact}}, nil
+	}
+
 	runArgs := exec.NewRunArgs("fake-service-target", "package")
 	result, err := st.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -770,6 +1068,10 @@ func (st *fakeServiceTarget) Publish(
 	publishCalled, ok := ctx.Value(serviceTargetPublishCalled).(*bool)
 	if ok {
 		*publishCalled = true
+	}
+	publishedContext, ok := ctx.Value(serviceTargetPublishContext).(**ServiceContext)
+	if ok {
+		*publishedContext = serviceContext
 	}
 	return &ServicePublishResult{
 		Artifacts: ArtifactCollection{

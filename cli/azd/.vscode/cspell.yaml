@@ -84,6 +84,7 @@ words:
   - protoreflect
   - SNAPPROCESS
   - structpb
+  - statuspb
   - subtest
   - subtests
   - syncmap
@@ -503,6 +504,16 @@ overrides:
   - filename: internal/cmd/up_graph.go
     words:
       - finalizer
+  - filename: cmd/auth_transport_peer_linux.go
+    words:
+      - Getsockopt
+      - PEERCRED
+      - Ucred
+  - filename: cmd/auth_transport_peer_darwin.go
+    words:
+      - Getsockopt
+      - PEERCRED
+      - Xucred
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -421,19 +422,22 @@ func TestAutoInstallExtensionRequirementsDisplaysInstalledDependencies(t *testin
 	}
 	manager.installFn = func(extension *extensions.ExtensionMetadata) (*extensions.ExtensionVersion, error) {
 		manager.installed[parent.Id] = &extensions.Extension{
-			Id:      parent.Id,
-			Version: parent.Versions[0].Version,
-			Source:  parent.Source,
+			Id:             parent.Id,
+			Version:        parent.Versions[0].Version,
+			Source:         parent.Source,
+			SourceCategory: parent.SourceCategory,
 		}
 		manager.installed[child.Id] = &extensions.Extension{
-			Id:      child.Id,
-			Version: child.Versions[0].Version,
-			Source:  child.Source,
+			Id:             child.Id,
+			Version:        child.Versions[0].Version,
+			Source:         child.Source,
+			SourceCategory: child.SourceCategory,
 		}
 		manager.installed[grandchild.Id] = &extensions.Extension{
-			Id:      grandchild.Id,
-			Version: grandchild.Versions[0].Version,
-			Source:  grandchild.Source,
+			Id:             grandchild.Id,
+			Version:        grandchild.Versions[0].Version,
+			Source:         grandchild.Source,
+			SourceCategory: grandchild.SourceCategory,
 		}
 		return &extension.Versions[0], nil
 	}
@@ -453,7 +457,54 @@ func TestAutoInstallExtensionRequirementsDisplaysInstalledDependencies(t *testin
 	require.Contains(t, rendered, "(2.0.0)")
 	require.Contains(t, rendered, "Installing grandchild dependency")
 	require.Contains(t, rendered, "(3.0.0)")
+	require.NotContains(t, rendered, "from azd")
 	require.Less(t, strings.Index(rendered, "child dependency"), strings.Index(rendered, "grandchild dependency"))
+}
+
+func TestAutoInstallExtensionRequirementsDisplaysMainRegistryDependencyFallback(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+
+	parent := autoInstallTestExtension("parent", "Parent", "local", extensions.SourceCategoryLocal)
+	parent.Versions[0].Dependencies = []extensions.ExtensionDependency{{Id: "child", Version: "2.0.0"}}
+	child := autoInstallTestExtension("child", "Child", "azd", extensions.SourceCategoryAzd)
+	child.Versions[0].Version = "2.0.0"
+	child.Versions[0].Dependencies = []extensions.ExtensionDependency{{Id: "grandchild", Version: "3.0.0"}}
+	grandchild := autoInstallTestExtension("grandchild", "Grandchild", "azd", extensions.SourceCategoryAzd)
+	grandchild.Versions[0].Version = "3.0.0"
+
+	console := mockinput.NewMockConsole()
+	console.SetNoPromptMode(true)
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{parent, child, grandchild},
+		installed: map[string]*extensions.Extension{},
+	}
+	manager.installFn = func(extension *extensions.ExtensionMetadata) (*extensions.ExtensionVersion, error) {
+		for _, installed := range []*extensions.ExtensionMetadata{parent, child, grandchild} {
+			manager.installed[installed.Id] = &extensions.Extension{
+				Id:             installed.Id,
+				Version:        installed.Versions[0].Version,
+				Source:         installed.Source,
+				SourceCategory: installed.SourceCategory,
+			}
+		}
+		return &extension.Versions[0], nil
+	}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		[]projectExtensionRequirement{autoInstallTestRequirement(parent)},
+		autoInstallDisplayContext{requiredByProject: true},
+	)
+
+	require.NoError(t, err)
+	require.True(t, result.installed)
+	rendered := strings.Join(console.Output(), "\n")
+	require.Contains(t, rendered, "Installing child dependency")
+	require.Contains(t, rendered, "(2.0.0) from azd")
+	require.Contains(t, rendered, "Installing grandchild dependency")
+	require.NotContains(t, rendered, "(3.0.0) from azd")
 }
 
 func TestAutoInstallExtensionRequirementsNoPromptAmbiguous(t *testing.T) {
@@ -492,11 +543,20 @@ func TestManualInstallErrorIncludesResolvedVersion(t *testing.T) {
 		"azd",
 		extensions.SourceCategoryAzd,
 	)
-	candidate.Versions = append(candidate.Versions, extensions.ExtensionVersion{Version: "2.0.0"})
+	candidate.Versions = append(candidate.Versions, extensions.ExtensionVersion{
+		Version:            "2.0.0",
+		RequiredAzdVersion: ">=2.0.0",
+	})
 	requirement := autoInstallTestRequirement(candidate)
 	requirement.versionPreference = ">=1.0.0 <2.0.0"
+	manager := &fakeExtensionAutoInstallManager{
+		available:  []*extensions.ExtensionMetadata{candidate},
+		installed:  map[string]*extensions.Extension{},
+		azdVersion: semver.MustParse("1.0.0"),
+	}
 
 	err := manualInstallError(
+		manager,
 		[]projectExtensionRequirement{requirement},
 		"Manual installation required.",
 	)

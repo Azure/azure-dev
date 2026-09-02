@@ -131,7 +131,7 @@ Shows detailed information for a specific extension, including description, tags
 
 Installs one or more extensions from any configured extension source.
 
-- `-v, --version` Specifies the exact version to install.
+- `-v, --version` Specifies the exact version to install. It cannot be used with an extension bundle.
 - `-s, --source` Specifies the extension source used for installations. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source, prompting for a name and confirming first for URLs, then installs from it:
 
   ```bash
@@ -350,7 +350,7 @@ The metadata JSON includes:
   - `usage`: Usage template string
   - `examples`: Example usages with description and command
   - `args`: Positional arguments with name, description, required flag
-  - `flags`: Command flags with name, shorthand, type, default, validValues
+  - `flags`: Command flags with name, shorthand, type, default, and validValues. `valueOptional` marks a value-taking flag that can be used without an explicit value.
   - `subcommands`: Nested subcommand definitions
   - `hidden`, `aliases`, `deprecated`: Optional command metadata
 - **`configuration`**: Optional configuration schemas:
@@ -2072,6 +2072,7 @@ Prompts the user to select multiple options from a list.
     - `help_message` (string)
     - `hint` (string)
     - `display_count` (int32)
+    - `allow_empty_selection` (optional bool): Whether the prompt can be submitted without a selection (default: `false`)
 - **Response:** _MultiSelectResponse_
   - Contains a list of selected **MultiSelectChoice** items
 

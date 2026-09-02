@@ -117,6 +117,9 @@ type OptimizeOptions struct {
 	// MaxStalls is the maximum number of consecutive non-improving iterations
 	// before the optimizer stops early. Omitted when nil (service default applies).
 	MaxStalls *int `json:"max_stalls,omitempty"`
+	// MaxConcurrentAgentRuns is the maximum number of agent invocations the
+	// evaluation service executes concurrently. Omitted when nil (service default applies).
+	MaxConcurrentAgentRuns *int `json:"max_concurrent_agent_runs,omitempty"`
 }
 
 // --- Response models ---

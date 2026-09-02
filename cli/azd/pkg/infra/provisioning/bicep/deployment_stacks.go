@@ -25,6 +25,17 @@ func (p *BicepProvider) deploymentStacksEnabled() bool {
 	return featureManager.IsEnabled(azapi.FeatureDeploymentStacks)
 }
 
+// deploymentProjectName returns the project identity used for ARM deployment tags and lookup.
+// Deployment stacks retain their existing naming and matching behavior because changing a stack
+// identity can conflict with resources still managed by the previous stack.
+func (p *BicepProvider) deploymentProjectName() string {
+	if p.deploymentStacksEnabled() {
+		return ""
+	}
+
+	return p.projectName
+}
+
 // hasActiveDeploymentStacksConfig reports whether an effective deployment-stacks configuration is
 // present (config supplied AND the alpha feature enabled). When true, the deployment-state shortcut
 // must be bypassed: the stacks deny/unmanage settings — including ${VAR}-resolved deny lists — can

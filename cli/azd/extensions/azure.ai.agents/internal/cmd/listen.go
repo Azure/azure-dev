@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -404,8 +405,12 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// configuration pass that can conflict with the deploy-time bot name.
 	envName, endpoint, _, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
 
-	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil &&
-		isHosted && project.ResolveActivityProfile(ca).IsActivity {
+	activityProfile, profileErr := resolveServiceActivityProfile(svc, args.Project.Path)
+	if profileErr != nil {
+		log.Printf("postdeploy: skipping Teams setup for %s: %v", svc.Name, profileErr)
+	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
+		warnLegacySimpleTeamsArtifacts(args.Project, svc)
+	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseSimple {
 		serviceKey := toServiceKey(svc.Name)
 		agentName, nameErr := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
 		botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
@@ -472,6 +477,62 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
 
 	return nil
+}
+
+func resolveServiceActivityProfile(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (project.ActivityProfile, error) {
+	resolvedSvc, err := resolveAgentServiceConfigWithProjectOverrides(svc, projectRoot)
+	if err != nil {
+		return project.ActivityProfile{}, err
+	}
+	agent, isHosted, _, err := project.LoadAgentDefinition(resolvedSvc, projectRoot)
+	if err != nil || !isHosted {
+		return project.ActivityProfile{}, err
+	}
+
+	config, err := project.LoadServiceTargetAgentConfig(resolvedSvc)
+	if err != nil {
+		return project.ActivityProfile{}, err
+	}
+	return project.ResolveActivityProfileWithSettings(agent, config.Activity)
+}
+
+func resolveAgentServiceConfigWithProjectOverrides(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*azdext.ServiceConfig, error) {
+	resolvedSvc := *svc
+	if err := project.ResolveServiceConfigInPlace(&resolvedSvc, projectRoot); err != nil {
+		return nil, err
+	}
+	return &resolvedSvc, nil
+}
+
+func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.ServiceConfig) {
+	if proj == nil || svc == nil {
+		return
+	}
+	artifactDir := filepath.Join(proj.GetPath(), svc.GetRelativePath())
+	artifacts := []string{teamsAppPackageFile, teamsAppPackageMarkerFile, teamsSetupGuideFile}
+	found := make([]string, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		if _, err := os.Stat(filepath.Join(artifactDir, artifact)); err == nil {
+			found = append(found, artifact)
+		}
+	}
+	if len(found) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+		"WARNING: digital worker service %q still has legacy simple-agent Teams artifacts in %q (%s). "+
+			"This transition can leave stale appPackage.zip and TEAMS_APP_SETUP.md files behind. "+
+			"review and remove them manually before retrying the Teams setup flow.\n",
+		svc.GetName(),
+		svc.GetRelativePath(),
+		strings.Join(found, ", "),
+	))
 }
 
 // postdownHandler cleans up config store entries (sessions, conversations) for agent services

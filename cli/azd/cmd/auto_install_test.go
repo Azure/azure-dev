@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,6 +34,12 @@ type fakeExtensionAutoInstallManager struct {
 	findErr    error
 	installErr error
 	installFn  func(*extensions.ExtensionMetadata) (*extensions.ExtensionVersion, error)
+	installOps []extensions.InstallOptions
+	azdVersion *semver.Version
+}
+
+func (m *fakeExtensionAutoInstallManager) AzdVersion() *semver.Version {
+	return m.azdVersion
 }
 
 func (m *fakeExtensionAutoInstallManager) FindExtensions(
@@ -56,10 +63,12 @@ func (m *fakeExtensionAutoInstallManager) FindExtensions(
 				continue
 			}
 		}
-		hasCapability := slices.ContainsFunc(extension.Versions, func(version extensions.ExtensionVersion) bool {
-			return slices.Contains(version.Capabilities, options.Capability)
-		})
-		if options.Capability != "" && !hasCapability {
+		if options.Capability != "" && !slices.ContainsFunc(
+			extension.Versions,
+			func(version extensions.ExtensionVersion) bool {
+				return slices.Contains(version.Capabilities, options.Capability)
+			},
+		) {
 			continue
 		}
 		if options.Provider != "" {
@@ -79,6 +88,48 @@ func (m *fakeExtensionAutoInstallManager) FindExtensions(
 	return matches, nil
 }
 
+func (m *fakeExtensionAutoInstallManager) ResolveExtensions(
+	ctx context.Context,
+	options *extensions.InstallResolutionOptions,
+) (*extensions.InstallResolutionResult, error) {
+	if options == nil {
+		options = &extensions.InstallResolutionOptions{}
+	}
+	baseOptions := &extensions.FilterOptions{
+		Id:        options.Id,
+		Namespace: options.Namespace,
+		Source:    options.Source,
+		Tags:      options.Tags,
+	}
+	catalogue, err := m.FindExtensions(ctx, baseOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return extensions.ClassifyInstallResolution(catalogue, options, m.azdVersion), nil
+}
+
+func (m *fakeExtensionAutoInstallManager) FindInstallableExtensions(
+	ctx context.Context,
+	options *extensions.InstallResolutionOptions,
+) ([]*extensions.ExtensionMetadata, error) {
+	result, err := m.ResolveExtensions(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	if resolutionErr := result.Error(); resolutionErr != nil {
+		return nil, resolutionErr
+	}
+	return result.Matches, nil
+}
+
+func (m *fakeExtensionAutoInstallManager) ResolveVersion(
+	extension *extensions.ExtensionMetadata,
+	versionPreference string,
+) (*extensions.ExtensionVersion, error) {
+	return extensions.ResolveExtensionVersion(extension, versionPreference, m.azdVersion)
+}
+
 func (m *fakeExtensionAutoInstallManager) GetInstalled(
 	options extensions.FilterOptions,
 ) (*extensions.Extension, error) {
@@ -88,18 +139,53 @@ func (m *fakeExtensionAutoInstallManager) GetInstalled(
 	return nil, fmt.Errorf("extension not installed")
 }
 
-func (m *fakeExtensionAutoInstallManager) Install(
+func (m *fakeExtensionAutoInstallManager) ResolveDependency(
+	ctx context.Context,
+	parent *extensions.ExtensionMetadata,
+	dependency extensions.ExtensionDependency,
+) (*extensions.ExtensionMetadata, error) {
+	parentSource := parent.Source
+	if parentSource == "" {
+		parentSource = extensions.MainRegistryName
+	}
+	sources := []string{parentSource}
+	if !strings.EqualFold(parentSource, extensions.MainRegistryName) {
+		sources = append(sources, extensions.MainRegistryName)
+	}
+	for _, source := range sources {
+		matches, err := m.FindInstallableExtensions(ctx, &extensions.InstallResolutionOptions{
+			FilterOptions: extensions.FilterOptions{
+				Id:      dependency.Id,
+				Version: dependency.Version,
+				Source:  source,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(matches) == 1 {
+			return matches[0], nil
+		}
+	}
+	return nil, fmt.Errorf("dependency not found")
+}
+
+func (m *fakeExtensionAutoInstallManager) InstallWithOptions(
 	_ context.Context,
 	extension *extensions.ExtensionMetadata,
-	_ string,
+	opts extensions.InstallOptions,
 ) (*extensions.ExtensionVersion, error) {
+	m.installOps = append(m.installOps, opts)
 	if m.installErr != nil {
 		return nil, m.installErr
 	}
 	if m.installFn != nil {
 		return m.installFn(extension)
 	}
-	version := &extension.Versions[0]
+	version, err := extensions.ResolveExtensionVersion(extension, opts.VersionPreference, m.azdVersion)
+	if err != nil {
+		return nil, err
+	}
 	m.installed[extension.Id] = &extensions.Extension{
 		Id:      extension.Id,
 		Version: version.Version,
@@ -178,8 +264,8 @@ func TestMissingProjectExtensions(t *testing.T) {
 		t.Context(),
 		mockinput.NewMockConsole(),
 		manager,
-		projectConfig,
-	)
+		projectConfig)
+
 	require.NoError(t, err)
 	require.Len(t, requirements, 3)
 	assert.Equal(t, "microsoft.foundry", requirements[0].extension.Id)
@@ -192,6 +278,97 @@ func TestMissingProjectExtensions(t *testing.T) {
 	selectedVersion, err := extensions.ResolveExtensionVersion(requirements[2].extension, "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "2.0.0", selectedVersion.Version)
+}
+
+func TestMissingProjectExtensionsFiltersIncompatibleSources(t *testing.T) {
+	compatible := &extensions.ExtensionMetadata{
+		Id:     "microsoft.foundry",
+		Source: "azd",
+		Versions: []extensions.ExtensionVersion{{
+			Version:      "1.0.0",
+			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+			Providers: []extensions.Provider{{
+				Name: "microsoft.foundry",
+				Type: extensions.ProvisioningProviderType,
+			}},
+		}},
+	}
+	incompatible := &extensions.ExtensionMetadata{
+		Id:     compatible.Id,
+		Source: "local",
+		Versions: []extensions.ExtensionVersion{{
+			Version:            "2.0.0",
+			RequiredAzdVersion: ">=2.0.0",
+			Capabilities:       []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+			Providers:          compatible.Versions[0].Providers,
+		}},
+	}
+	manager := &fakeExtensionAutoInstallManager{
+		available:  []*extensions.ExtensionMetadata{compatible, incompatible},
+		installed:  map[string]*extensions.Extension{},
+		azdVersion: semver.MustParse("1.0.0"),
+	}
+	projectConfig := &project.ProjectConfig{
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{compatible.Id: nil},
+		},
+		Infra: provisioning.Options{Provider: "microsoft.foundry"},
+	}
+
+	requirements, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig)
+
+	require.NoError(t, err)
+	require.Len(t, requirements, 1)
+	require.Len(t, requirements[0].candidates, 1)
+	require.Equal(t, compatible.Source, requirements[0].candidates[0].Source)
+}
+
+func TestMissingProjectExtensionsUsesCompatibleProviderVersion(t *testing.T) {
+	extension := &extensions.ExtensionMetadata{
+		Id:     "microsoft.foundry",
+		Source: "azd",
+		Versions: []extensions.ExtensionVersion{
+			{
+				Version:      "1.0.0",
+				Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+				Providers: []extensions.Provider{{
+					Name: "microsoft.foundry",
+					Type: extensions.ProvisioningProviderType,
+				}},
+			},
+			{
+				Version:            "2.0.0",
+				RequiredAzdVersion: ">=2.0.0",
+			},
+		},
+	}
+	manager := &fakeExtensionAutoInstallManager{
+		available:  []*extensions.ExtensionMetadata{extension},
+		installed:  map[string]*extensions.Extension{},
+		azdVersion: semver.MustParse("1.0.0"),
+	}
+
+	requirements, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		&project.ProjectConfig{
+			Infra: provisioning.Options{Provider: "microsoft.foundry"},
+		})
+
+	require.NoError(t, err)
+	require.Len(t, requirements, 1)
+	selected, err := extensions.ResolveExtensionVersion(
+		requirements[0].extension,
+		requirements[0].versionPreference,
+		semver.MustParse("1.0.0"),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", selected.Version)
 }
 
 func TestMissingProjectExtensionsSkipsInstalledProviderAcrossSources(t *testing.T) {
@@ -241,8 +418,7 @@ func TestMissingProjectExtensionsSkipsInstalledProviderAcrossSources(t *testing.
 		t.Context(),
 		mockinput.NewMockConsole(),
 		manager,
-		projectConfig,
-	)
+		projectConfig)
 
 	require.NoError(t, err)
 	require.Empty(t, requirements)
@@ -378,8 +554,7 @@ func TestMissingProjectExtensionsSkipsExtensionPackDependencies(t *testing.T) {
 		t.Context(),
 		mockinput.NewMockConsole(),
 		manager,
-		projectConfig,
-	)
+		projectConfig)
 
 	require.NoError(t, err)
 	require.Len(t, requirements, 1)
@@ -438,8 +613,7 @@ func TestMissingProjectExtensionsNarrowsParentToSourceWhoseDependencyProvidesPro
 		t.Context(),
 		mockinput.NewMockConsole(),
 		manager,
-		projectConfig,
-	)
+		projectConfig)
 
 	require.NoError(t, err)
 	require.Len(t, requirements, 1)
@@ -509,8 +683,7 @@ func TestMissingProjectExtensionsSkipsPinnedDependencyWithoutProvider(t *testing
 				t.Context(),
 				mockinput.NewMockConsole(),
 				newManager(installed),
-				projectConfig,
-			)
+				projectConfig)
 
 			require.NoError(t, err)
 			require.Len(t, requirements, 1)
@@ -553,8 +726,7 @@ func TestMissingProjectExtensionsIgnoresSplitProviderMetadata(t *testing.T) {
 		t.Context(),
 		mockinput.NewMockConsole(),
 		manager,
-		projectConfig,
-	)
+		projectConfig)
 
 	require.NoError(t, err)
 	require.Empty(t, requirements)
@@ -581,8 +753,7 @@ func TestMissingProjectExtensionsInstalledIdIsCaseInsensitive(t *testing.T) {
 		t.Context(),
 		mockinput.NewMockConsole(),
 		manager,
-		projectConfig,
-	)
+		projectConfig)
 
 	require.NoError(t, err)
 	require.Empty(t, requirements)
@@ -609,8 +780,7 @@ func TestMissingProjectExtensionsRejectsInstalledVersionConstraint(t *testing.T)
 		t.Context(),
 		mockinput.NewMockConsole(),
 		manager,
-		projectConfig,
-	)
+		projectConfig)
 
 	require.EqualError(
 		t,
@@ -655,8 +825,7 @@ func TestMissingProjectExtensionsRejectsExplicitVersionWithoutProvider(t *testin
 		t.Context(),
 		mockinput.NewMockConsole(),
 		manager,
-		projectConfig,
-	)
+		projectConfig)
 
 	require.EqualError(
 		t,
@@ -680,8 +849,7 @@ func TestMissingProjectExtensionsPropagatesProviderLookupError(t *testing.T) {
 		t.Context(),
 		mockinput.NewMockConsole(),
 		manager,
-		projectConfig,
-	)
+		projectConfig)
 
 	require.ErrorContains(t, err, `finding extension for provider "demo": registry unavailable`)
 }
@@ -773,8 +941,7 @@ func TestTryAutoInstallExtensionVersionRejectsInstalledVersionConstraint(t *test
 		manager,
 		extensions.ExtensionMetadata{Id: "test.extension"},
 		">=2.0.0",
-		false,
-	)
+		false)
 
 	require.False(t, installed)
 	require.EqualError(
@@ -782,6 +949,88 @@ func TestTryAutoInstallExtensionVersionRejectsInstalledVersionConstraint(t *test
 		err,
 		`installed extension test.extension version 1.0.0 does not satisfy constraint ">=2.0.0"`,
 	)
+}
+
+func TestTryAutoInstallExtensionVersionUsesAzdCompatibility(t *testing.T) {
+	azdVersion := semver.MustParse("1.0.0")
+	manager := &fakeExtensionAutoInstallManager{
+		installed:  map[string]*extensions.Extension{},
+		azdVersion: azdVersion,
+	}
+	extension := extensions.ExtensionMetadata{
+		Id: "test.extension",
+		Versions: []extensions.ExtensionVersion{
+			{Version: "1.0.0"},
+			{Version: "2.0.0", RequiredAzdVersion: ">=2.0.0"},
+		},
+	}
+	installed, err := tryAutoInstallExtensionVersion(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		extension,
+		"",
+		false)
+
+	require.NoError(t, err)
+	require.True(t, installed)
+	require.Equal(t, "1.0.0", manager.installed[extension.Id].Version)
+	require.Len(t, manager.installOps, 1)
+}
+
+func TestFindInstallableExtensionsReportsCompatibilityMismatch(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{{
+			Id: "test.extension",
+			Versions: []extensions.ExtensionVersion{{
+				Version:            "2.0.0",
+				RequiredAzdVersion: ">=2.0.0",
+			}},
+		}},
+		installed:  map[string]*extensions.Extension{},
+		azdVersion: semver.MustParse("1.0.0"),
+	}
+
+	matches, err := manager.FindInstallableExtensions(
+		t.Context(),
+		&extensions.InstallResolutionOptions{
+			FilterOptions: extensions.FilterOptions{Id: "test.extension"},
+		},
+	)
+
+	require.Empty(t, matches)
+	require.EqualError(t, err, `no version of extension "test.extension" is compatible with azd 1.0.0`)
+}
+
+func TestCheckForMatchingExtensionsReportsIncompatibleNamespace(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		azdVersion: semver.MustParse("1.0.0"),
+		installed:  map[string]*extensions.Extension{},
+		available: []*extensions.ExtensionMetadata{{
+			Id:        "azure.ai.agents",
+			Namespace: "ai.agent",
+			Versions: []extensions.ExtensionVersion{{
+				Version:            "2.0.0",
+				RequiredAzdVersion: ">=2.0.0",
+			}},
+		}},
+	}
+
+	matches, err := checkForMatchingExtensions(
+		t.Context(),
+		manager,
+		[]string{"ai", "agent"},
+	)
+
+	require.Empty(t, matches)
+	compatibilityErr, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err)
+	require.True(t, ok)
+	require.Equal(
+		t,
+		`command namespace "ai.agent" requires a different azd version than 1.0.0`,
+		compatibilityErr.Error(),
+	)
+	require.Contains(t, compatibilityErr.Suggestion(), `satisfies ">=2.0.0"`)
 }
 
 func TestDisplayAutoInstallError(t *testing.T) {
@@ -1199,6 +1448,18 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			name:             "GitHub Copilot CLI agent detected",
 			args:             []string{"deploy"},
 			envVars:          map[string]string{"GITHUB_COPILOT_CLI": "true"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "Codex agent detected",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"CODEX_THREAD_ID": "thread-id"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "Cursor agent detected",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"CURSOR_AGENT": "1"},
 			expectedNoPrompt: true,
 		},
 		{
@@ -1864,14 +2125,57 @@ func TestResolveExtensionRequirementDependencies(t *testing.T) {
 			manager,
 			map[string]projectExtensionRequirement{
 				"demo.pack": {extension: manager.available[0], explicit: true},
-			},
-		)
+			})
+
 	}
 
 	t.Run("resolves transitively", func(t *testing.T) {
 		t.Parallel()
 
 		resolved := resolve(newManager([]extensions.ExtensionDependency{{Id: "demo.b"}}))
+
+		assert.Equal(t, []string{"demo.b", "demo.c"}, slices.Sorted(maps.Keys(resolved)))
+		assert.True(t, resolvedDependencyProvidesProvider(
+			resolved["demo.c"],
+			extensions.ServiceTargetProviderCapability,
+			"demo",
+		))
+	})
+
+	t.Run("uses compatible dependency versions", func(t *testing.T) {
+		t.Parallel()
+
+		manager := newManager([]extensions.ExtensionDependency{{Id: "demo.b"}})
+		manager.azdVersion = semver.MustParse("1.0.0")
+		manager.available[2].Versions = append(
+			manager.available[2].Versions,
+			extensions.ExtensionVersion{
+				Version:            "2.0.0",
+				RequiredAzdVersion: ">=2.0.0",
+			},
+		)
+		resolved := resolveExtensionRequirementDependencies(
+			t.Context(),
+			manager,
+			map[string]projectExtensionRequirement{
+				"demo.pack": {extension: manager.available[0], explicit: true},
+			})
+
+		require.Contains(t, resolved, "demo.c")
+		require.True(t, resolvedDependencyProvidesProvider(
+			resolved["demo.c"],
+			extensions.ServiceTargetProviderCapability,
+			"demo",
+		))
+	})
+
+	t.Run("resolves dependencies from main registry fallback", func(t *testing.T) {
+		t.Parallel()
+
+		manager := newManager([]extensions.ExtensionDependency{{Id: "demo.b"}})
+		manager.available[0].Source = "local"
+
+		resolved := resolve(manager)
 
 		assert.Equal(t, []string{"demo.b", "demo.c"}, slices.Sorted(maps.Keys(resolved)))
 		assert.True(t, resolvedDependencyProvidesProvider(
@@ -1981,8 +2285,8 @@ func TestMissingProjectExtensionsSkipsBuiltInProviders(t *testing.T) {
 				t.Context(),
 				mockinput.NewMockConsole(),
 				manager,
-				projectConfig,
-			)
+				projectConfig)
+
 			require.NoError(t, err)
 			assert.Empty(t, requirements)
 		})
@@ -2030,8 +2334,8 @@ func TestMissingProjectExtensionsResolvesUnknownProviders(t *testing.T) {
 				t.Context(),
 				mockinput.NewMockConsole(),
 				manager,
-				test.projectConfig,
-			)
+				test.projectConfig)
+
 			require.ErrorContains(t, err, "registry unavailable")
 		})
 	}
@@ -2080,6 +2384,7 @@ func TestMissingProjectExtensionsIgnoresSupersededProviderVersions(t *testing.T)
 	requirements, err := missingProjectExtensions(t.Context(), console, manager, &project.ProjectConfig{
 		Infra: provisioning.Options{Provider: "microsoft.foundry"},
 	})
+
 	require.NoError(t, err)
 	require.Len(t, requirements, 1)
 	require.Equal(t, "azure.ai.projects", requirements[0].extension.Id)
@@ -2123,62 +2428,9 @@ func TestMissingProjectExtensionsSkipsProviderSuppliedByInstalledExtension(t *te
 	requirements, err := missingProjectExtensions(t.Context(), console, manager, &project.ProjectConfig{
 		Infra: provisioning.Options{Provider: "microsoft.foundry"},
 	})
+
 	require.NoError(t, err)
 	require.Empty(t, requirements)
-}
-
-func TestFilterExtensionsForProvider(t *testing.T) {
-	provisioningDemo := extensions.ExtensionVersion{
-		Version:      "2.0.0",
-		Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-		Providers:    []extensions.Provider{{Type: extensions.ProvisioningProviderType, Name: "demo"}},
-	}
-	serviceTargetDemo := extensions.ExtensionVersion{
-		Version:      "1.0.0",
-		Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
-		Providers:    []extensions.Provider{{Type: extensions.ServiceTargetProviderType, Name: "demo"}},
-	}
-
-	current := &extensions.ExtensionMetadata{
-		Id:       "current",
-		Versions: []extensions.ExtensionVersion{provisioningDemo, serviceTargetDemo},
-	}
-	superseded := &extensions.ExtensionMetadata{
-		Id:       "superseded",
-		Versions: []extensions.ExtensionVersion{serviceTargetDemo, {Version: "3.0.0"}},
-	}
-
-	t.Run("keeps extensions whose selected version provides the provider", func(t *testing.T) {
-		filtered := filterExtensionsForProvider(
-			[]*extensions.ExtensionMetadata{current, superseded},
-			extensions.ProvisioningProviderCapability,
-			"demo",
-		)
-		require.Len(t, filtered, 1)
-		assert.Equal(t, "current", filtered[0].Id)
-		assert.Len(t, filtered[0].Versions, 2, "published versions should not be narrowed")
-	})
-
-	t.Run("ignores versions other than the selected one", func(t *testing.T) {
-		filtered := filterExtensionsForProvider(
-			[]*extensions.ExtensionMetadata{current},
-			extensions.ServiceTargetProviderCapability,
-			"demo",
-		)
-		assert.Empty(t, filtered, "only the superseded 1.0.0 publishes the service target")
-	})
-
-	t.Run("requires the provider type to match the capability", func(t *testing.T) {
-		filtered := filterExtensionsForProvider(
-			[]*extensions.ExtensionMetadata{{
-				Id:       "provisioning.only",
-				Versions: []extensions.ExtensionVersion{provisioningDemo},
-			}},
-			extensions.ServiceTargetProviderCapability,
-			"demo",
-		)
-		assert.Empty(t, filtered)
-	})
 }
 
 // Both errors are deterministic and user-fixable, so they carry a suggestion that
@@ -2208,8 +2460,7 @@ func TestProjectExtensionErrorsCarrySuggestions(t *testing.T) {
 				RequiredVersions: &project.RequiredVersions{
 					Extensions: map[string]*string{"does.not.exist": nil},
 				},
-			},
-		)
+			})
 
 		suggestErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
 		require.True(t, ok, "expected an ErrorWithSuggestion")

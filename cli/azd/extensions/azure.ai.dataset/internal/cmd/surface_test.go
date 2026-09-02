@@ -242,7 +242,8 @@ func TestSuggestedFlagsExist(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// A message pointing at `azd ai eval dataset ...` is almost always the copy// these commands came from rather than a deliberate cross-extension pointer.
+// A message pointing at `azd ai eval dataset ...` is almost always the copy
+// these commands came from rather than a deliberate cross-extension pointer.
 // `dataset` is this extension's own namespace, so telling a user to run the
 // eval extension's version of a command it serves itself sends them somewhere
 // they may not have installed.

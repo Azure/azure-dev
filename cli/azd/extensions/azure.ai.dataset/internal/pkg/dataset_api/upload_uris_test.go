@@ -53,7 +53,8 @@ func oneJSONLBody(t *testing.T) string {
 // "/golden.jsonl" -- a blob nothing points at, and a publish that failed for a
 // reason the message did not name.
 func TestAnUploadWithNowhereToRegisterItIsRefusedBeforeTheBlobIsWritten(t *testing.T) {
-	client, asked := pendingUploadServer(t, `{"blobReference":{"credential":{"sasUri":"https://blob.example.invalid/c?sig=s"}}}`)
+	client, asked := pendingUploadServer(t,
+		`{"blobReference":{"credential":{"sasUri":"https://blob.example.invalid/c?sig=s"}}}`)
 
 	_, err := client.UploadVersion(context.Background(), "golden", "1", oneJSONLBody(t), "2024-01-01")
 

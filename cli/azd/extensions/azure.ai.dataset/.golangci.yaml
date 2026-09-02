@@ -9,12 +9,8 @@ linters:
     - errorlint
   settings:
     lll:
-      line-length: 220
+      line-length: 125
       tab-width: 4
-    gosec:
-      excludes:
-        - G204 # Subprocess launched with variable (bicep build invoked in tests)
-        - G304 # Potential file inclusion via variable
 
 formatters:
   enable:

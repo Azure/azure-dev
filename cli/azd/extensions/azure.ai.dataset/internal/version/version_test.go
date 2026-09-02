@@ -24,6 +24,7 @@ import (
 func TestBuildScriptsStampThisModule(t *testing.T) {
 	root := filepath.Join("..", "..")
 
+	// #nosec G304 -- root is the module directory this test computed, not caller input.
 	goMod, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	require.NoError(t, err)
 
@@ -38,6 +39,7 @@ func TestBuildScriptsStampThisModule(t *testing.T) {
 
 	want := module + "/internal/version"
 	for _, script := range []string{"build.ps1", "build.sh", "ci-build.ps1"} {
+		// #nosec G304 -- script comes from this test's own table of repo paths.
 		body, err := os.ReadFile(filepath.Join(root, script))
 		require.NoError(t, err)
 

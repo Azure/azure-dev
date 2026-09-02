@@ -78,6 +78,11 @@ var displayableProtocols = []displayableProtocolEntry{
 		BuildURL:  buildInvocationsProtocolURL,
 	},
 	{
+		Protocol:  agent_api.AgentProtocolA2A,
+		EnvSuffix: "A2A",
+		URLPath:   "a2a",
+	},
+	{
 		Protocol:  agent_api.AgentProtocolInvocationsWS,
 		EnvSuffix: "INVOCATIONS_WS",
 		BuildURL:  buildInvocationsWSProtocolURL,
@@ -3628,10 +3633,19 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		agentVersionResponse.Name,
 		protocols,
 	)
+	endpointValues := make(map[agent_api.AgentProtocol]string, len(endpoints))
 	for _, ep := range endpoints {
-		suffix := strings.ToUpper(ep.Protocol)
-		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, suffix)
-		envVars = append(envVars, azdext.SetEnvRequest{EnvName: p.env.Name, Key: key, Value: ep.URL})
+		endpointValues[agent_api.AgentProtocol(ep.Protocol)] = ep.URL
+	}
+	// Set every known protocol key on each deployment. Empty values clear
+	// endpoints from a previous deployment when the protocol is removed.
+	for _, dp := range displayableProtocols {
+		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, dp.EnvSuffix)
+		envVars = append(envVars, azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     key,
+			Value:   endpointValues[dp.Protocol],
+		})
 	}
 	envVars = append(envVars,
 		azdext.SetEnvRequest{EnvName: p.env.Name, Key: envkey.AgentProjectEndpoint(serviceConfig.Name), Value: projectEndpoint},

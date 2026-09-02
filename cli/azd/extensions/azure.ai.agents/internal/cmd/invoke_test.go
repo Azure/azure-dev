@@ -884,6 +884,27 @@ func TestResolveDeployedProtocolUsesPersistedEndpointWithoutMetadata(t *testing.
 	}
 }
 
+func TestResolveDeployedProtocolUsesPersistedA2AEndpoint(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	protocol, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{
+			name: "agent",
+			invocableProtocols: invocableProtocolsFromEndpoints(map[agent_api.AgentProtocol]string{
+				agent_api.AgentProtocolA2A: "https://example.test/a2a",
+			}),
+		},
+	)
+	if err != nil {
+		t.Fatalf("resolveDeployedProtocol() unexpected error: %v", err)
+	}
+	if protocol != agent_api.AgentProtocolA2A {
+		t.Errorf("protocol = %q, want %q", protocol, agent_api.AgentProtocolA2A)
+	}
+}
+
 func TestResolveDeployedProtocolRequiresExplicitProtocolWithoutMetadata(t *testing.T) {
 	t.Parallel()
 

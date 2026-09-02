@@ -89,7 +89,7 @@ configuration and the selected azd environment. Optionally specify the service n
 				return missingDeployedAgentStateError(info.ServiceName, "version", extCtx.Environment)
 			}
 
-			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
+			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version, info.EnvironmentName)
 			if err != nil {
 				return err
 			}

@@ -93,7 +93,7 @@ func resolveFilesContext(
 		return nil, missingDeployedAgentStateError(info.ServiceName, "name", environmentName)
 	}
 
-	endpoint, err := resolveAgentEndpoint(ctx, "", "")
+	endpoint, err := resolveAgentEndpointForEnvironment(ctx, "", "", info.EnvironmentName)
 	if err != nil {
 		return nil, err
 	}

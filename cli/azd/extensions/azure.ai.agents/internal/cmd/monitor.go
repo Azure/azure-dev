@@ -106,7 +106,7 @@ when streaming session logs.`,
 				return missingDeployedAgentStateError(info.ServiceName, "name", extCtx.Environment)
 			}
 
-			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
+			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version, info.EnvironmentName)
 			if err != nil {
 				return monitorEndpointError(err)
 			}

@@ -51,6 +51,15 @@ func validateProjectEndpoint(raw string) (string, error) {
 			"provide the base Foundry project endpoint",
 		)
 	}
+	for segment := range strings.SplitSeq(endpoint.Path, "/") {
+		if segment == "." || segment == ".." {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"project endpoint path must not contain dot segments",
+				"provide a standard Foundry project endpoint path",
+			)
+		}
+	}
 
 	path := strings.TrimRight(endpoint.EscapedPath(), "/")
 	return fmt.Sprintf("https://%s%s", host, path), nil

@@ -90,3 +90,18 @@ func TestValidateProjectEndpointDoesNotDiscloseMalformedURL(t *testing.T) {
 	assert.NotContains(t, err.Error(), secret)
 	assert.NotContains(t, err.Error(), "%zz")
 }
+
+func TestValidateProjectEndpointRejectsDotSegments(t *testing.T) {
+	for _, endpoint := range []string{
+		"https://account.services.ai.azure.com/api/projects/.",
+		"https://account.services.ai.azure.com/api/projects/..",
+		"https://account.services.ai.azure.com/api/projects/%2e%2e",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			_, err := validateProjectEndpoint(endpoint)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "dot segments")
+		})
+	}
+}

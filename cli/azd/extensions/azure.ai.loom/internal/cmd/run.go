@@ -714,6 +714,9 @@ func classifyExperimentError(err error) error {
 	if err == nil {
 		return nil
 	}
+	if exterrors.IsCancellation(err) {
+		return exterrors.Cancelled("experiment request was cancelled")
+	}
 	if strings.Contains(strings.ToLower(err.Error()), "access token") {
 		return exterrors.Auth(
 			exterrors.CodeAuthenticationFailed,
@@ -962,6 +965,6 @@ func invalidExperimentPayload(message string) error {
 	return exterrors.Validation(
 		exterrors.CodeInvalidExperimentPayload,
 		message,
-		"provide a valid JSON object using the documented request schema",
+		"provide a valid payload using the format and schema documented by the command",
 	)
 }

@@ -4,12 +4,18 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"azure.ai.loom/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -202,6 +208,19 @@ func TestReadNonEmptyExperimentInputRejectsEmptyPayload(t *testing.T) {
 
 	_, err := readNonEmptyExperimentInput(payloadPath)
 	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.NotContains(t, localErr.Suggestion, "JSON")
+	assert.Contains(t, localErr.Suggestion, "format")
+}
+
+func TestClassifyExperimentErrorPreservesCancellation(t *testing.T) {
+	err := classifyExperimentError(fmt.Errorf("acquire Foundry access token: %w", context.Canceled))
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, azdext.LocalErrorCategoryUser, localErr.Category)
+	assert.Equal(t, exterrors.CodeCancelled, localErr.Code)
 }
 
 func TestSetAgentTracesRunIDOverridesPayload(t *testing.T) {

@@ -320,6 +320,29 @@ func newDatasetVersionsCommand() *cobra.Command {
 	return cmd
 }
 
+// listVersionsForDisplay answers what `versions list` shows for a name.
+//
+// `ListDatasetVersions` reports an unknown name as a 404 error, so taking the
+// error path here refused a name the command is supposed to answer for. This is
+// a filter rather than a lookup: nothing matched is an empty result, which is
+// what `-o json` callers range over and what a delete's idempotence check reads.
+// `show` is the lookup, and still refuses.
+func listVersionsForDisplay(
+	ctx context.Context,
+	client *dataset_api.DatasetClient,
+	name string,
+) (*dataset_api.DatasetList, error) {
+	list, err := client.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+	switch {
+	case err == nil:
+		return list, nil
+	case dataset_api.IsNotFound(err):
+		return &dataset_api.DatasetList{}, nil
+	default:
+		return nil, messages.ListingDatasetVersions(name, err)
+	}
+}
+
 func newDatasetVersionsListCommand() *cobra.Command {
 	var endpointFlg string
 
@@ -340,9 +363,9 @@ func newDatasetVersionsListCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			list, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+			list, err := listVersionsForDisplay(ctx, ec.datasetClient, name)
 			if err != nil {
-				return messages.ListingDatasetVersions(name, err)
+				return err
 			}
 			// An unknown name lists nothing and succeeds; it is not an error.
 			// `-o json` callers range over the array, and a delete is checked
@@ -383,6 +406,30 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows)
 }
 
+// latestVersionForShow resolves the version `show` reads when none was named.
+//
+// A dataset cannot exist with no versions, so both shapes the service uses for
+// an unknown name -- a 404, or a 200 with an empty list -- mean the same thing
+// and get the same short sentence. Wrapping the 404 instead carried the whole
+// HTTP response into the message for something one line explains.
+func latestVersionForShow(
+	ctx context.Context,
+	client *dataset_api.DatasetClient,
+	name string,
+) (string, error) {
+	list, err := client.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+	if err != nil {
+		if dataset_api.IsNotFound(err) {
+			return "", messages.DatasetNotFound(name)
+		}
+		return "", messages.ResolvingLatestDatasetVersion(name, err)
+	}
+	if list == nil || len(list.Value) == 0 {
+		return "", messages.DatasetNotFound(name)
+	}
+	return dataset_api.LatestVersion(list.Value), nil
+}
+
 func newDatasetShowCommand() *cobra.Command {
 	var (
 		version     string
@@ -407,17 +454,11 @@ func newDatasetShowCommand() *cobra.Command {
 			defer ec.Close()
 
 			if version == "" {
-				list, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+				resolved, err := latestVersionForShow(ctx, ec.datasetClient, name)
 				if err != nil {
-					return messages.ResolvingLatestDatasetVersion(name, err)
+					return err
 				}
-				// The service answers an unknown name with an empty list rather
-				// than a 404, so this is what "no such dataset" looks like. A
-				// dataset cannot exist with no versions.
-				if len(list.Value) == 0 {
-					return messages.DatasetNotFound(name)
-				}
-				version = dataset_api.LatestVersion(list.Value)
+				version = resolved
 			}
 
 			ds, err := ec.datasetClient.GetDataset(ctx, name, version, ProjectEndpointAPIVersion)

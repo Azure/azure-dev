@@ -46,16 +46,27 @@ func newEvaluatorUpdateCommand() *cobra.Command {
 	return newEvaluatorWriteCommand("update", "Publish a new version of an evaluator.")
 }
 
+// evaluatorWriteFlags are the flags create and update share.
+type evaluatorWriteFlags struct {
+	fromFile    string
+	endpointFlg string
+}
+
+// evaluatorWriteAction publishes an evaluator version.
+type evaluatorWriteAction struct {
+	cmd   *cobra.Command
+	flags *evaluatorWriteFlags
+	verb  string
+	name  string
+}
+
 // newEvaluatorWriteCommand builds create and update, which send the same
 // request and differ only in which starting state they accept. The service has
 // one route for both and assigns the version either way, so the existence check
 // is ours: without it, `create` on a name already in use would silently publish
 // a further version of someone else's evaluator.
 func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
-	var (
-		fromFile    string
-		endpointFlg string
-	)
+	flags := &evaluatorWriteFlags{}
 
 	cmd := &cobra.Command{
 		Use:   verb + " <name>",
@@ -64,72 +75,73 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 			"An evaluator is a rubric: a JSON file of weighted scoring dimensions.",
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
-			if !validAssetName(name) {
-				return messages.InvalidEvaluatorName(name)
-			}
-			if fromFile == "" {
-				return requireFlag("from-file")
-			}
-
-			raw, err := project.ReadFileNoBOM(fromFile)
-			if err != nil {
-				return messages.ReadingEvaluator(fromFile, err)
-			}
-
-			body, err := normalizeRubricBody(name, raw)
-			if err != nil {
-				return messages.EvaluatorProblem(fromFile, err)
-			}
-
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			// Asked of the direct read, not the version listing. The listing
-			// lags a publish by up to a second and a half, so an update
-			// issued straight after a create would be told the evaluator it
-			// just made does not exist.
-			existing, readErr := ec.evalClient.GetEvaluatorRaw(
-				ctx, name, "", ProjectEndpointAPIVersion,
-			)
-			if readErr != nil && !eval_api.IsNotFound(readErr) {
-				return messages.CheckingEvaluatorExists(name, readErr)
-			}
-			// A non-404 already returned above, so reaching here means the read
-			// either found the evaluator or the service said it is unknown.
-			if err := checkAssetExistence(verb, "evaluator", name, readErr == nil, true); err != nil {
-				return err
-			}
-
-			// What that read saw is what keeps the publish from being
-			// answered with the same version and replacing it.
-			if readErr != nil {
-				existing = nil
-			}
-
-			created, err := ec.evalClient.CreateEvaluatorVersion(
-				ctx, name, body, existing, ProjectEndpointAPIVersion,
-			)
-			if err != nil {
-				return messages.RegisteringEvaluator(name, err)
-			}
-
-			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), created)
-			}
-			fmt.Fprint(cmd.OutOrStdout(),
-				messages.EvaluatorRegistered(created.Name, created.Version))
-			return nil
+			return (&evaluatorWriteAction{
+				cmd: cmd, flags: flags, verb: verb, name: args[0],
+			}).Run()
 		},
 	}
 
-	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the evaluator JSON file.")
-	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	cmd.Flags().StringVar(&flags.fromFile, "from-file", "", "Path to the evaluator JSON file.")
+	cmd.Flags().StringVar(&flags.endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *evaluatorWriteAction) Run() error {
+	if !validAssetName(a.name) {
+		return messages.InvalidEvaluatorName(a.name)
+	}
+	if a.flags.fromFile == "" {
+		return requireFlag("from-file")
+	}
+
+	raw, err := project.ReadFileNoBOM(a.flags.fromFile)
+	if err != nil {
+		return messages.ReadingEvaluator(a.flags.fromFile, err)
+	}
+
+	body, err := normalizeRubricBody(a.name, raw)
+	if err != nil {
+		return messages.EvaluatorProblem(a.flags.fromFile, err)
+	}
+
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.flags.endpointFlg)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	// Asked of the direct read, not the version listing. The listing lags a
+	// publish by up to a second and a half, so an update issued straight after a
+	// create would be told the evaluator it just made does not exist.
+	existing, readErr := ec.evalClient.GetEvaluatorRaw(ctx, a.name, "", ProjectEndpointAPIVersion)
+	if readErr != nil && !eval_api.IsNotFound(readErr) {
+		return messages.CheckingEvaluatorExists(a.name, readErr)
+	}
+	// A non-404 already returned above, so reaching here means the read either
+	// found the evaluator or the service said it is unknown.
+	if err := checkAssetExistence(a.verb, "evaluator", a.name, readErr == nil, true); err != nil {
+		return err
+	}
+
+	// What that read saw is what keeps the publish from being answered with the
+	// same version and replacing it.
+	if readErr != nil {
+		existing = nil
+	}
+
+	created, err := ec.evalClient.CreateEvaluatorVersion(
+		ctx, a.name, body, existing, ProjectEndpointAPIVersion,
+	)
+	if err != nil {
+		return messages.RegisteringEvaluator(a.name, err)
+	}
+
+	if isJSON(a.cmd) {
+		return emitJSON(a.cmd.OutOrStdout(), created)
+	}
+	fmt.Fprint(a.cmd.OutOrStdout(), messages.EvaluatorRegistered(created.Name, created.Version))
+	return nil
 }
 
 // checkAssetExistence enforces the one difference between create and update.
@@ -215,6 +227,13 @@ func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 	return out, nil
 }
 
+// evaluatorListAction lists the project's evaluators, or the built-in ones.
+type evaluatorListAction struct {
+	cmd      *cobra.Command
+	endpoint string
+	builtin  bool
+}
+
 func newEvaluatorListCommand() *cobra.Command {
 	var (
 		displayLimit int
@@ -228,24 +247,9 @@ func newEvaluatorListCommand() *cobra.Command {
 		Short: "List the project's evaluators, or the built-in ones.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			// The service filters by type, and asking for nothing returns only
-			// the project's own evaluators.
-			filter := ""
-			if builtin {
-				filter = eval_api.EvaluatorTypeBuiltin
-			}
-			list, err := ec.evalClient.ListEvaluators(ctx, filter, ProjectEndpointAPIVersion)
-			if err != nil {
-				return messages.ListingEvaluators(err)
-			}
-			return renderEvaluators(cmd, list)
+			return (&evaluatorListAction{
+				cmd: cmd, endpoint: endpointFlg, builtin: builtin,
+			}).Run()
 		},
 	}
 
@@ -254,6 +258,27 @@ func newEvaluatorListCommand() *cobra.Command {
 	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *evaluatorListAction) Run() error {
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	// The service filters by type, and asking for nothing returns only the
+	// project's own evaluators.
+	filter := ""
+	if a.builtin {
+		filter = eval_api.EvaluatorTypeBuiltin
+	}
+	list, err := ec.evalClient.ListEvaluators(ctx, filter, ProjectEndpointAPIVersion)
+	if err != nil {
+		return messages.ListingEvaluators(err)
+	}
+	return renderEvaluators(a.cmd, list)
 }
 
 // newEvaluatorVersionsCommand groups the version listing, so that `list` means
@@ -268,6 +293,13 @@ func newEvaluatorVersionsCommand() *cobra.Command {
 	return cmd
 }
 
+// evaluatorVersionsListAction lists the versions of one evaluator.
+type evaluatorVersionsListAction struct {
+	cmd      *cobra.Command
+	endpoint string
+	name     string
+}
+
 func newEvaluatorVersionsListCommand() *cobra.Command {
 	var endpointFlg string
 	var displayLimit int
@@ -278,34 +310,39 @@ func newEvaluatorVersionsListCommand() *cobra.Command {
 		Short: "List the versions of an evaluator.",
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
-			if !validLookupName(name) {
-				return messages.InvalidEvaluatorName(name)
-			}
-
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			list, err := ec.evalClient.ListEvaluatorVersions(ctx, name, ProjectEndpointAPIVersion)
-			if err != nil {
-				// A name nobody published is the ordinary way to get here, and
-				// it does not need the whole 404 body to explain it.
-				if eval_api.IsNotFound(err) {
-					return messages.EvaluatorNotFound(name)
-				}
-				return messages.ListingEvaluatorVersions(name, err)
-			}
-			return renderEvaluatorVersions(cmd, list)
+			return (&evaluatorVersionsListAction{
+				cmd: cmd, endpoint: endpointFlg, name: args[0],
+			}).Run()
 		},
 	}
 
 	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *evaluatorVersionsListAction) Run() error {
+	if !validLookupName(a.name) {
+		return messages.InvalidEvaluatorName(a.name)
+	}
+
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	list, err := ec.evalClient.ListEvaluatorVersions(ctx, a.name, ProjectEndpointAPIVersion)
+	if err != nil {
+		// A name nobody published is the ordinary way to get here, and it does
+		// not need the whole 404 body to explain it.
+		if eval_api.IsNotFound(err) {
+			return messages.EvaluatorNotFound(a.name)
+		}
+		return messages.ListingEvaluatorVersions(a.name, err)
+	}
+	return renderEvaluatorVersions(a.cmd, list)
 }
 
 func renderEvaluators(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) error {
@@ -375,6 +412,15 @@ func renderEvaluatorVersions(cmd *cobra.Command, list *eval_api.EvaluatorListRes
 	return nil
 }
 
+// evaluatorShowAction reads one evaluator definition.
+type evaluatorShowAction struct {
+	cmd      *cobra.Command
+	endpoint string
+	version  string
+	outFile  string
+	name     string
+}
+
 func newEvaluatorShowCommand() *cobra.Command {
 	var (
 		version     string
@@ -387,65 +433,9 @@ func newEvaluatorShowCommand() *cobra.Command {
 		Short: "Show an evaluator definition.",
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
-			if !validLookupName(name) {
-				return messages.InvalidEvaluatorName(name)
-			}
-
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			raw, err := ec.evalClient.GetEvaluatorRaw(ctx, name, version, ProjectEndpointAPIVersion)
-			if err != nil {
-				if eval_api.IsNotFound(err) {
-					return messages.EvaluatorNotFound(name)
-				}
-				return messages.ReadingEvaluator(name, err)
-			}
-
-			// --output-file writes the service's document verbatim, because
-			// reconciliation points here to adopt a remote change over the local
-			// definition: anything this view dropped would be lost on adoption.
-			if outFile != "" {
-				body := raw
-				var pretty any
-				if err := json.Unmarshal(raw, &pretty); err == nil {
-					if indented, err := json.MarshalIndent(pretty, "", "  "); err == nil {
-						body = append(indented, '\n')
-					}
-				}
-				if err := writeFileAtomic(outFile, body); err != nil {
-					return err
-				}
-				if !isJSON(cmd) {
-					fmt.Fprint(cmd.OutOrStdout(), messages.WroteArtifact(outFile))
-				}
-				return nil
-			}
-
-			// -o json answers with the service's document untouched, because a
-			// caller asking for JSON wants the evaluator, not this view of it.
-			if isJSON(cmd) {
-				var pretty any
-				if err := json.Unmarshal(raw, &pretty); err != nil {
-					fmt.Fprintln(cmd.OutOrStdout(), string(raw))
-					return nil
-				}
-				return emitJSON(cmd.OutOrStdout(), pretty)
-			}
-
-			var summary eval_api.EvaluatorSummary
-			if err := json.Unmarshal(raw, &summary); err != nil {
-				// An evaluator shaped in a way this view cannot read is still
-				// worth showing; falling back beats refusing to print it.
-				fmt.Fprintln(cmd.OutOrStdout(), string(raw))
-				return nil
-			}
-			return ec.renderEvaluator(ctx, cmd.OutOrStdout(), &summary)
+			return (&evaluatorShowAction{
+				cmd: cmd, endpoint: endpointFlg, version: version, outFile: outFile, name: args[0],
+			}).Run()
 		},
 	}
 
@@ -454,6 +444,73 @@ func newEvaluatorShowCommand() *cobra.Command {
 		"Write the evaluator document to this path instead of stdout.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *evaluatorShowAction) Run() error {
+	if !validLookupName(a.name) {
+		return messages.InvalidEvaluatorName(a.name)
+	}
+
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	raw, err := ec.evalClient.GetEvaluatorRaw(ctx, a.name, a.version, ProjectEndpointAPIVersion)
+	if err != nil {
+		if eval_api.IsNotFound(err) {
+			return messages.EvaluatorNotFound(a.name)
+		}
+		return messages.ReadingEvaluator(a.name, err)
+	}
+
+	if a.outFile != "" {
+		return a.writeDocument(raw)
+	}
+
+	// -o json answers with the service's document untouched, because a caller
+	// asking for JSON wants the evaluator, not this view of it.
+	if isJSON(a.cmd) {
+		var pretty any
+		if err := json.Unmarshal(raw, &pretty); err != nil {
+			fmt.Fprintln(a.cmd.OutOrStdout(), string(raw))
+			return nil
+		}
+		return emitJSON(a.cmd.OutOrStdout(), pretty)
+	}
+
+	var summary eval_api.EvaluatorSummary
+	if err := json.Unmarshal(raw, &summary); err != nil {
+		// An evaluator shaped in a way this view cannot read is still worth
+		// showing; falling back beats refusing to print it.
+		fmt.Fprintln(a.cmd.OutOrStdout(), string(raw))
+		return nil
+	}
+	return ec.renderEvaluator(ctx, a.cmd.OutOrStdout(), &summary)
+}
+
+// writeDocument writes the service's document verbatim.
+//
+// Reconciliation points --output-file here to adopt a remote change over the
+// local definition, so anything the detail view dropped would be lost on
+// adoption. Only the indentation is this command's.
+func (a *evaluatorShowAction) writeDocument(raw []byte) error {
+	body := raw
+	var pretty any
+	if err := json.Unmarshal(raw, &pretty); err == nil {
+		if indented, err := json.MarshalIndent(pretty, "", "  "); err == nil {
+			body = append(indented, '\n')
+		}
+	}
+	if err := writeFileAtomic(a.outFile, body); err != nil {
+		return err
+	}
+	if !isJSON(a.cmd) {
+		fmt.Fprint(a.cmd.OutOrStdout(), messages.WroteArtifact(a.outFile))
+	}
+	return nil
 }
 
 // renderEvaluator prints the detail view for one evaluator, closing with its
@@ -484,6 +541,15 @@ func (ec *evalContext) renderEvaluator(
 	return nil
 }
 
+// evaluatorDeleteAction removes one evaluator version.
+type evaluatorDeleteAction struct {
+	cmd      *cobra.Command
+	endpoint string
+	version  string
+	force    bool
+	name     string
+}
+
 func newEvaluatorDeleteCommand() *cobra.Command {
 	var (
 		version     string
@@ -499,46 +565,9 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 			"--force is required.",
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
-			if !validLookupName(name) {
-				return messages.InvalidEvaluatorName(name)
-			}
-			if version == "" {
-				return requireFlag("version")
-			}
-
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			subject := fmt.Sprintf("evaluator %s version %s", name, version)
-			goAhead, err := confirmDelete(cmd, ec, subject, force)
-			if err != nil {
-				return err
-			}
-			if !goAhead {
-				return deleteDeclined(cmd, subject)
-			}
-
-			if err := ec.evalClient.DeleteEvaluatorVersion(
-				ctx, name, version, ProjectEndpointAPIVersion,
-			); err != nil {
-				if eval_api.IsNotFound(err) {
-					return messages.EvaluatorVersionNotFound(name, version)
-				}
-				return messages.DeletingEvaluatorVersion(name, version, err)
-			}
-
-			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), map[string]string{
-					"name": name, "version": version, "status": "deleted",
-				})
-			}
-			fmt.Fprint(cmd.OutOrStdout(), messages.EvaluatorDeleted(name, version))
-			return nil
+			return (&evaluatorDeleteAction{
+				cmd: cmd, endpoint: endpointFlg, version: version, force: force, name: args[0],
+			}).Run()
 		},
 	}
 
@@ -546,4 +575,46 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 	registerForceFlag(cmd, &force)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *evaluatorDeleteAction) Run() error {
+	if !validLookupName(a.name) {
+		return messages.InvalidEvaluatorName(a.name)
+	}
+	if a.version == "" {
+		return requireFlag("version")
+	}
+
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	subject := fmt.Sprintf("evaluator %s version %s", a.name, a.version)
+	goAhead, err := confirmDelete(a.cmd, ec, subject, a.force)
+	if err != nil {
+		return err
+	}
+	if !goAhead {
+		return deleteDeclined(a.cmd, subject)
+	}
+
+	if err := ec.evalClient.DeleteEvaluatorVersion(
+		ctx, a.name, a.version, ProjectEndpointAPIVersion,
+	); err != nil {
+		if eval_api.IsNotFound(err) {
+			return messages.EvaluatorVersionNotFound(a.name, a.version)
+		}
+		return messages.DeletingEvaluatorVersion(a.name, a.version, err)
+	}
+
+	if isJSON(a.cmd) {
+		return emitJSON(a.cmd.OutOrStdout(), map[string]string{
+			"name": a.name, "version": a.version, "status": "deleted",
+		})
+	}
+	fmt.Fprint(a.cmd.OutOrStdout(), messages.EvaluatorDeleted(a.name, a.version))
+	return nil
 }

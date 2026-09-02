@@ -545,9 +545,10 @@ func isCredentialFailure(err error) bool {
 		return false
 	}
 
-	var authFailed *azidentity.AuthenticationFailedError
-	var authRequired *azidentity.AuthenticationRequiredError
-	if errors.As(err, &authFailed) || errors.As(err, &authRequired) {
+	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[*azidentity.AuthenticationRequiredError](err); ok {
 		return true
 	}
 

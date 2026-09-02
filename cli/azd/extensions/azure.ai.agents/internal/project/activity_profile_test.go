@@ -264,6 +264,14 @@ func TestResolveDeployedActivityProfile(t *testing.T) {
 	})
 }
 
+func TestDigitalWorkerTypeMismatchSuggestionRequiresRecreation(t *testing.T) {
+	t.Parallel()
+
+	suggestion := digitalWorkerTypeMismatchSuggestion()
+	require.Contains(t, suggestion, "delete and recreate")
+	require.NotContains(t, suggestion, "redeploy")
+}
+
 func TestDigitalWorkerBotTransitionWarning(t *testing.T) {
 	t.Parallel()
 

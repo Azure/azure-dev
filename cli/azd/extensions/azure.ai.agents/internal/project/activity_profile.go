@@ -69,6 +69,11 @@ func ResolveDeployedActivityProfile(
 	}
 }
 
+func digitalWorkerTypeMismatchSuggestion() string {
+	return "delete and recreate the agent so its immutable digital_worker_type matches " +
+		"activity.digitalWorkerType"
+}
+
 // EnsureActivityEndpointAuthSchemeForProfile aligns an Activity endpoint's BotService
 // authorization scheme with the resolved Activity use case.
 func EnsureActivityEndpointAuthSchemeForProfile(

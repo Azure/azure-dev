@@ -299,10 +299,13 @@ func reconcileStandaloneEndpointWithDeployedAgent(
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			err.Error(),
-			"delete and recreate the agent so its immutable digital_worker_type matches the local agent definition",
+			digitalWorkerTypeMismatchSuggestion(),
 		)
 	}
 
+	if resolvedProfile.IsActivity && request.AgentEndpoint == nil {
+		request.AgentEndpoint = &agent_api.AgentEndpoint{}
+	}
 	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, resolvedProfile)
 	return nil
 }

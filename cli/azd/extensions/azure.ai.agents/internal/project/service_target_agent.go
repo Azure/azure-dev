@@ -1569,16 +1569,10 @@ func (p *AgentServiceTargetProvider) Deploy(
 	result.agentVersion = deployedVersion
 	activityProfile, err = ResolveDeployedActivityProfile(activityProfile, deployedVersion.DigitalWorkerType)
 	if err != nil {
-		suggestion := "redeploy the agent so its service-side digital_worker_type matches " +
-			"activity.digitalWorkerType"
-		if agentDef.CodeConfiguration != nil {
-			suggestion = "delete and recreate the agent so its immutable digital_worker_type matches " +
-				"activity.digitalWorkerType"
-		}
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			err.Error(),
-			suggestion,
+			digitalWorkerTypeMismatchSuggestion(),
 		)
 	}
 	ensureActivityEndpointAuthSchemeForProfile(result.request, activityProfile)

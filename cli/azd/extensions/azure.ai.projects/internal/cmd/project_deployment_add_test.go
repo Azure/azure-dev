@@ -170,6 +170,35 @@ type selfInitializingAIService struct {
 	calls int
 }
 
+type selfInitializingWorkflowServer struct {
+	azdext.UnimplementedWorkflowServiceServer
+	root string
+	args [][]string
+}
+
+func (s *selfInitializingWorkflowServer) Run(
+	_ context.Context,
+	request *azdext.RunWorkflowRequest,
+) (*azdext.EmptyResponse, error) {
+	workflow := request.GetWorkflow()
+	if workflow != nil && len(workflow.GetSteps()) > 0 {
+		command := workflow.GetSteps()[0].GetCommand()
+		if command != nil {
+			s.args = append(s.args, append([]string(nil), command.GetArgs()...))
+		}
+	}
+	if s.root != "" {
+		if err := os.WriteFile(
+			filepath.Join(s.root, "azure.yaml"),
+			[]byte("name: test\n"),
+			0600,
+		); err != nil {
+			return nil, err
+		}
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
 func (s *selfInitializingAIService) ResolveModelDeployments(
 	_ context.Context,
 	_ *azdext.ResolveModelDeploymentsRequest,
@@ -198,6 +227,7 @@ func newSelfInitializingDeploymentClient(
 	*selfInitializingProjectServer,
 	*selfInitializingEnvironmentServer,
 	*selfInitializingAIService,
+	*selfInitializingWorkflowServer,
 ) {
 	t.Helper()
 	projectServer := &selfInitializingProjectServer{
@@ -217,11 +247,13 @@ func newSelfInitializingDeploymentClient(
 		},
 	}
 	aiServer := &selfInitializingAIService{}
+	workflowServer := &selfInitializingWorkflowServer{root: root}
 
 	server := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(server, projectServer)
 	azdext.RegisterEnvironmentServiceServer(server, environmentServer)
 	azdext.RegisterAiModelServiceServer(server, aiServer)
+	azdext.RegisterWorkflowServiceServer(server, workflowServer)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() {
@@ -237,7 +269,31 @@ func newSelfInitializingDeploymentClient(
 	)
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
-	return client, projectServer, environmentServer, aiServer
+	return client, projectServer, environmentServer, aiServer, workflowServer
+}
+
+func TestEnsureProjectInitializesEmptyDirectory(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+
+	client, _, _, _, workflowServer := newSelfInitializingDeploymentClient(t, root)
+
+	project, initialized, err := ensureProject(t.Context(), client, root)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+	assert.True(t, initialized)
+	assert.Equal(t, root, project.GetPath())
+	assert.FileExists(t, filepath.Join(root, "azure.yaml"))
+	require.Len(t, workflowServer.args, 1)
+	assert.Equal(
+		t,
+		[]string{
+			"init", "--minimal", "--no-prompt",
+			"--environment", deriveProjectEnvironmentName(root),
+		},
+		workflowServer.args[0],
+	)
 }
 
 func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {
@@ -273,13 +329,8 @@ func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {
 			root := t.TempDir()
 			t.Chdir(root)
 			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
-			require.NoError(t, os.WriteFile(
-				filepath.Join(root, "azure.yaml"),
-				[]byte("name: test\n"),
-				0600,
-			))
 
-			client, projectServer, environmentServer, aiServer :=
+			client, projectServer, environmentServer, aiServer, workflowServer :=
 				newSelfInitializingDeploymentClient(t, root)
 			flags := &projectDeploymentFlags{
 				model:  test.expectedModel,
@@ -304,6 +355,15 @@ func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {
 			}
 
 			require.NoError(t, action.Run(t.Context()))
+			require.Len(t, workflowServer.args, 1)
+			assert.Equal(
+				t,
+				[]string{
+					"init", "--minimal", "--no-prompt",
+					"--environment", deriveProjectEnvironmentName(root),
+				},
+				workflowServer.args[0],
+			)
 			require.Contains(t, projectServer.project.Services, "test")
 			assert.True(t, projectServer.providerSet)
 			assert.True(t, projectServer.deploymentSet)
@@ -332,7 +392,7 @@ func TestProjectDeploymentAddStopsWhenProjectInitializationFails(t *testing.T) {
 		0600,
 	))
 
-	client, projectServer, _, aiServer :=
+	client, projectServer, _, aiServer, _ :=
 		newSelfInitializingDeploymentClient(t, root)
 	projectServer.setConfigErr = errors.New("project configuration write failed")
 	action := &ProjectDeploymentAddAction{

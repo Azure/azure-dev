@@ -46,7 +46,8 @@ ejected into the Foundry layer's configured path and module. The root
 
 ## Project authoring
 
-Add or adopt a Foundry project in the current azd workspace:
+Add or adopt a Foundry project in the current azd workspace. If `azure.yaml`
+is missing, the command first creates a minimal azd project:
 
 ```sh
 azd ai project add

@@ -987,7 +987,7 @@ func ensureProject(
 	}
 	if !exists {
 		envName := deriveProjectEnvironmentName(projectRoot)
-		if err := scaffoldProject(ctx, client, projectRoot, envName); err != nil {
+		if err := scaffoldProject(ctx, client, envName); err != nil {
 			return nil, false, err
 		}
 	}
@@ -1030,20 +1030,13 @@ func projectFileExists(projectRoot string) (bool, error) {
 func scaffoldProject(
 	ctx context.Context,
 	client *azdext.AzdClient,
-	projectRoot string,
 	envName string,
 ) error {
-	templateDir, err := os.MkdirTemp(filepath.Dir(projectRoot), ".azd-foundry-template-*")
-	if err != nil {
-		return fmt.Errorf("create project template directory: %w", err)
-	}
-	defer os.RemoveAll(templateDir)
 	workflow := &azdext.Workflow{
 		Name: "init",
 		Steps: []*azdext.WorkflowStep{{
 			Command: &azdext.WorkflowCommand{Args: []string{
-				"init", "-t", templateDir, projectRoot,
-				"--environment", envName, "--output=none",
+				"init", "--minimal", "--no-prompt", "--environment", envName,
 			}},
 		}},
 	}

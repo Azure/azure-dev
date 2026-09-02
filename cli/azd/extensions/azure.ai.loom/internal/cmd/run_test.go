@@ -170,6 +170,31 @@ func TestRunCompareRejectsNonFiniteBounds(t *testing.T) {
 	}
 }
 
+func TestRequiredFlagsAreValidatedInOrder(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		missing string
+	}{
+		{name: "all missing", missing: "--run-id"},
+		{name: "second missing", args: []string{"--run-id", "run-one"}, missing: "--trace-id"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command := newRunTraceShowCommand(nil)
+			command.SetOut(io.Discard)
+			command.SetErr(io.Discard)
+			command.SetArgs(test.args)
+
+			err := command.Execute()
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.missing)
+		})
+	}
+}
+
 func TestReadJSONObjectPreservesLargeInteger(t *testing.T) {
 	requestPath := filepath.Join(t.TempDir(), "request.json")
 	require.NoError(t, os.WriteFile(

@@ -21,6 +21,12 @@ import (
 
 type staticCredential struct{}
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
 func (staticCredential) GetToken(
 	context.Context,
 	policy.TokenRequestOptions,
@@ -29,6 +35,77 @@ func (staticCredential) GetToken(
 		Token:     "test-token",
 		ExpiresOn: time.Now().Add(time.Hour),
 	}, nil
+}
+
+func TestIngestionRequestsUseExtendedTimeout(t *testing.T) {
+	tests := []struct {
+		name string
+		send func(context.Context, *Client) error
+	}{
+		{
+			name: "protobuf",
+			send: func(ctx context.Context, client *Client) error {
+				_, err := client.DoBytes(
+					ctx,
+					http.MethodPost,
+					"protocols/otlp/v1/traces",
+					nil,
+					nil,
+					"application/x-protobuf",
+					[]byte{0x0a, 0x00},
+				)
+				return err
+			},
+		},
+		{
+			name: "JSON",
+			send: func(ctx context.Context, client *Client) error {
+				_, err := client.DoJSONIngestion(
+					ctx,
+					http.MethodPost,
+					"agents/otel/v1/traces",
+					nil,
+					nil,
+					map[string]any{"resourceSpans": []any{}},
+				)
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var deadline time.Time
+			httpClient := &http.Client{
+				Timeout: defaultTimeout,
+				Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+					var ok bool
+					deadline, ok = request.Context().Deadline()
+					require.True(t, ok)
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     make(http.Header),
+						Body:       io.NopCloser(strings.NewReader(`{}`)),
+						Request:    request,
+					}, nil
+				}),
+			}
+			client, err := newClient(
+				"https://account.services.ai.azure.com/api/projects/project",
+				"",
+				"",
+				nil,
+				"project-key",
+				httpClient,
+			)
+			require.NoError(t, err)
+
+			started := time.Now()
+			require.NoError(t, test.send(t.Context(), client))
+			assert.WithinDuration(t, started.Add(ingestionTimeout), deadline, time.Second)
+			assert.Equal(t, defaultTimeout, httpClient.Timeout)
+		})
+	}
 }
 
 func TestNewClientDerivesProjectAndAccountIDs(t *testing.T) {

@@ -38,7 +38,6 @@ const (
 const (
 	//nolint:gosec // error code, not a credential
 	CodeCredentialCreationFailed = "credential_creation_failed"
-	CodeAuthenticationFailed     = "authentication_failed"
 	CodeTenantLookupFailed       = "tenant_lookup_failed"
 )
 

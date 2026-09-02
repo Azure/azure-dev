@@ -138,6 +138,31 @@ func TestExperimentCommandHTTPContracts(t *testing.T) {
 			jsonBody: `{"runIds":["run-one","run-two"],"metricNames":["loss"],"min":1,"max":5}`,
 		},
 		{
+			name: "compare without bounds",
+			args: []string{
+				"ai", "loom", "run", "compare",
+				"--run-id", "run-one",
+				"--run-id", "run-two",
+				"--metric", "loss",
+			},
+			method:   http.MethodPost,
+			path:     "/api/projects/project/experiment_tracking/runs/compare",
+			jsonBody: `{"runIds":["run-one","run-two"],"metricNames":["loss"]}`,
+		},
+		{
+			name: "compare with minimum only",
+			args: []string{
+				"ai", "loom", "run", "compare",
+				"--run-id", "run-one",
+				"--run-id", "run-two",
+				"--metric", "loss",
+				"--min", "1",
+			},
+			method:   http.MethodPost,
+			path:     "/api/projects/project/experiment_tracking/runs/compare",
+			jsonBody: `{"runIds":["run-one","run-two"],"metricNames":["loss"],"min":1}`,
+		},
+		{
 			name:   "list traces",
 			args:   []string{"ai", "loom", "run", "trace", "list", "--run-id", "run-one", "--take", "5"},
 			method: http.MethodGet,

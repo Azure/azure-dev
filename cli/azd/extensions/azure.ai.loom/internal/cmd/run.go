@@ -237,7 +237,10 @@ func newRunTraceShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Get one trace and its details.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := requireValues(map[string]string{"run-id": flags.runID, "trace-id": traceID}); err != nil {
+			if err := requireValue("run-id", flags.runID); err != nil {
+				return err
+			}
+			if err := requireValue("trace-id", traceID); err != nil {
 				return err
 			}
 			client, err := newExperimentClient(cmd.Context(), flags.experimentFlags)
@@ -333,13 +336,15 @@ func newRunCompareCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			if len(metricNames) == 0 {
 				return invalidExperimentParameter("metric", "provide at least one metric name")
 			}
-			if math.IsNaN(minStep) || math.IsInf(minStep, 0) {
+			minChanged := cmd.Flags().Changed("min")
+			maxChanged := cmd.Flags().Changed("max")
+			if minChanged && (math.IsNaN(minStep) || math.IsInf(minStep, 0)) {
 				return invalidExperimentParameter("min", "--min must be a finite number")
 			}
-			if math.IsNaN(maxStep) || math.IsInf(maxStep, 0) {
+			if maxChanged && (math.IsNaN(maxStep) || math.IsInf(maxStep, 0)) {
 				return invalidExperimentParameter("max", "--max must be a finite number")
 			}
-			if maxStep < minStep {
+			if minChanged && maxChanged && maxStep < minStep {
 				return invalidExperimentParameter("max", "--max must be greater than or equal to --min")
 			}
 			client, err := newExperimentClient(cmd.Context(), *flags)
@@ -349,8 +354,12 @@ func newRunCompareCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			body := map[string]any{
 				"runIds":      runIDs,
 				"metricNames": metricNames,
-				"min":         minStep,
-				"max":         maxStep,
+			}
+			if minChanged {
+				body["min"] = minStep
+			}
+			if maxChanged {
+				body["max"] = maxStep
 			}
 			return executeExperimentJSON(cmd, client, http.MethodPost, "runs/compare", nil, nil, body)
 		},
@@ -460,7 +469,10 @@ func newOTLPIngestCommand(extCtx *azdext.ExtensionContext, signal string) *cobra
 		Short: fmt.Sprintf("Ingest OTLP %s from a protobuf file or stdin.", signal),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := requireValues(map[string]string{"run-id": flags.runID, "file": file}); err != nil {
+			if err := requireValue("run-id", flags.runID); err != nil {
+				return err
+			}
+			if err := requireValue("file", file); err != nil {
 				return err
 			}
 			payload, err := readNonEmptyExperimentInput(file)
@@ -504,7 +516,10 @@ func newAgentTracesIngestCommand(extCtx *azdext.ExtensionContext) *cobra.Command
 		Short: "Ingest agent OTEL traces from a JSON file or stdin.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := requireValues(map[string]string{"run-id": flags.runID, "file": file}); err != nil {
+			if err := requireValue("run-id", flags.runID); err != nil {
+				return err
+			}
+			if err := requireValue("file", file); err != nil {
 				return err
 			}
 			body, err := readJSONObject(file)
@@ -516,7 +531,15 @@ func newAgentTracesIngestCommand(extCtx *azdext.ExtensionContext) *cobra.Command
 			if err != nil {
 				return err
 			}
-			return executeExperimentJSON(cmd, client, http.MethodPost, "agents/otel/v1/traces", nil, nil, body)
+			return executeExperimentIngestionJSON(
+				cmd,
+				client,
+				http.MethodPost,
+				"agents/otel/v1/traces",
+				nil,
+				nil,
+				body,
+			)
 		},
 	}
 	addRunFlags(cmd, flags, false)
@@ -574,10 +597,10 @@ func newWandBFileStreamCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Send a W&B-compatible FileStream payload.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := requireValues(map[string]string{
-				"run-id": flags.runID,
-				"file":   file,
-			}); err != nil {
+			if err := requireValue("run-id", flags.runID); err != nil {
+				return err
+			}
+			if err := requireValue("file", file); err != nil {
 				return err
 			}
 			body, err := readJSONObject(file)
@@ -600,7 +623,7 @@ func newWandBFileStreamCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				url.PathEscape(project),
 				url.PathEscape(flags.runID),
 			)
-			return executeExperimentJSON(cmd, client, http.MethodPost, apiPath, nil, nil, body)
+			return executeExperimentIngestionJSON(cmd, client, http.MethodPost, apiPath, nil, nil, body)
 		},
 	}
 	addRunFlags(cmd, flags, false)
@@ -707,6 +730,19 @@ func executeExperimentJSON(
 	body any,
 ) error {
 	response, err := client.DoJSON(cmd.Context(), method, apiPath, query, headers, body)
+	return writeExperimentResponse(cmd, response, classifyExperimentError(err))
+}
+
+func executeExperimentIngestionJSON(
+	cmd *cobra.Command,
+	client *experimenttracking.Client,
+	method string,
+	apiPath string,
+	query url.Values,
+	headers http.Header,
+	body any,
+) error {
+	response, err := client.DoJSONIngestion(cmd.Context(), method, apiPath, query, headers, body)
 	return writeExperimentResponse(cmd, response, classifyExperimentError(err))
 }
 
@@ -940,15 +976,6 @@ func readExperimentInput(file string) ([]byte, error) {
 func requireValue(name string, value string) error {
 	if strings.TrimSpace(value) == "" {
 		return invalidExperimentParameter(name, fmt.Sprintf("--%s is required", name))
-	}
-	return nil
-}
-
-func requireValues(values map[string]string) error {
-	for name, value := range values {
-		if err := requireValue(name, value); err != nil {
-			return err
-		}
 	}
 	return nil
 }

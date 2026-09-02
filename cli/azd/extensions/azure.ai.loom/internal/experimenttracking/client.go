@@ -26,6 +26,7 @@ const (
 	foundryScope      = "https://ai.azure.com/.default"
 	maxResponseBytes  = 64 << 20
 	defaultTimeout    = 30 * time.Second
+	ingestionTimeout  = 5 * time.Minute
 )
 
 // Client calls the experiment-tracking APIs for a Foundry project.
@@ -183,6 +184,30 @@ func (c *Client) DoJSON(
 	headers http.Header,
 	body any,
 ) (json.RawMessage, error) {
+	return c.doJSON(ctx, method, apiPath, query, headers, body, c.httpClient)
+}
+
+// DoJSONIngestion sends an authenticated JSON ingestion request with the longer upload timeout.
+func (c *Client) DoJSONIngestion(
+	ctx context.Context,
+	method string,
+	apiPath string,
+	query url.Values,
+	headers http.Header,
+	body any,
+) (json.RawMessage, error) {
+	return c.doJSON(ctx, method, apiPath, query, headers, body, c.httpClientWithTimeout(ingestionTimeout))
+}
+
+func (c *Client) doJSON(
+	ctx context.Context,
+	method string,
+	apiPath string,
+	query url.Values,
+	headers http.Header,
+	body any,
+	httpClient *http.Client,
+) (json.RawMessage, error) {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -200,7 +225,7 @@ func (c *Client) DoJSON(
 		headers.Set("Content-Type", "application/json")
 	}
 
-	return c.do(ctx, method, apiPath, query, headers, reader)
+	return c.doWithHTTPClient(ctx, method, apiPath, query, headers, reader, httpClient)
 }
 
 // DoBytes sends an authenticated request with an arbitrary content type.
@@ -218,7 +243,24 @@ func (c *Client) DoBytes(
 	}
 	headers.Set("Accept", contentType)
 	headers.Set("Content-Type", contentType)
-	return c.do(ctx, method, apiPath, query, headers, bytes.NewReader(body))
+	return c.doWithHTTPClient(
+		ctx,
+		method,
+		apiPath,
+		query,
+		headers,
+		bytes.NewReader(body),
+		c.httpClientWithTimeout(ingestionTimeout),
+	)
+}
+
+func (c *Client) httpClientWithTimeout(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Transport:     c.httpClient.Transport,
+		CheckRedirect: c.httpClient.CheckRedirect,
+		Jar:           c.httpClient.Jar,
+		Timeout:       timeout,
+	}
 }
 
 func (c *Client) do(
@@ -228,6 +270,18 @@ func (c *Client) do(
 	query url.Values,
 	headers http.Header,
 	body io.Reader,
+) (json.RawMessage, error) {
+	return c.doWithHTTPClient(ctx, method, apiPath, query, headers, body, c.httpClient)
+}
+
+func (c *Client) doWithHTTPClient(
+	ctx context.Context,
+	method string,
+	apiPath string,
+	query url.Values,
+	headers http.Header,
+	body io.Reader,
+	httpClient *http.Client,
 ) (json.RawMessage, error) {
 	requestURL, err := c.requestURL(apiPath, query)
 	if err != nil {
@@ -251,7 +305,7 @@ func (c *Client) do(
 		req.Header.Set("Authorization", "Bearer "+token.Token)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}

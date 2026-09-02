@@ -79,3 +79,14 @@ func TestValidateProjectEndpointDoesNotDiscloseCredentials(t *testing.T) {
 	assert.NotContains(t, err.Error(), credential)
 	assert.NotContains(t, err.Error(), "sensitive")
 }
+
+func TestValidateProjectEndpointDoesNotDiscloseMalformedURL(t *testing.T) {
+	secret := "sensitive"
+	_, err := validateProjectEndpoint(
+		"https://account.services.ai.azure.com/api/projects/project%zz?sig=" + secret,
+	)
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), secret)
+	assert.NotContains(t, err.Error(), "%zz")
+}

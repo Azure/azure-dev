@@ -25,7 +25,7 @@ The project endpoint is resolved in this order:
 1. `--project-endpoint`
 2. `FOUNDRY_PROJECT_ENDPOINT` or `AZURE_AI_PROJECT_ENDPOINT` in the active azd environment
 3. The endpoint saved by `azd ai project set <endpoint>`
-4. `FOUNDRY_PROJECT_ENDPOINT` in the host shell
+4. `FOUNDRY_PROJECT_ENDPOINT` or `AZURE_AI_PROJECT_ENDPOINT` in the host shell
 
 The project ID is derived from `/api/projects/<project>` in the endpoint. Use
 `--project-id` only when an API-compatible endpoint requires an override.

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -131,6 +132,36 @@ func TestBuildSpanQueryBody(t *testing.T) {
 		"include_details": true,
 		"limit": 10
 	}`, string(data))
+}
+
+func TestRunCompareRejectsNonFiniteBounds(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		flag  string
+		value string
+	}{
+		{name: "minimum NaN", flag: "min", value: "NaN"},
+		{name: "minimum infinity", flag: "min", value: "Inf"},
+		{name: "maximum NaN", flag: "max", value: "NaN"},
+		{name: "maximum infinity", flag: "max", value: "-Inf"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			command := newRunCompareCommand(nil)
+			command.SetOut(io.Discard)
+			command.SetErr(io.Discard)
+			command.SetArgs([]string{
+				"--run-id", "run-one",
+				"--run-id", "run-two",
+				"--metric", "loss",
+				"--" + test.flag, test.value,
+			})
+
+			err := command.Execute()
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "finite number")
+		})
+	}
 }
 
 func TestReadJSONObjectPreservesLargeInteger(t *testing.T) {

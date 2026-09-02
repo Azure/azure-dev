@@ -169,6 +169,32 @@ func TestDoJSONUsesAPIKeyAuthentication(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestDoJSONDoesNotFollowRedirectsWithAPIKey(t *testing.T) {
+	redirectTargetCalled := false
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		redirectTargetCalled = true
+	}))
+	t.Cleanup(redirectTarget.Close)
+
+	redirectSource := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "project-key", r.Header.Get("api-key"))
+		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+	}))
+	t.Cleanup(redirectSource.Close)
+
+	client, err := NewClientWithAPIKey(
+		redirectSource.URL+"/api/projects/project",
+		"",
+		"",
+		"project-key",
+	)
+	require.NoError(t, err)
+
+	_, err = client.DoJSON(t.Context(), http.MethodGet, "runs", nil, nil, nil)
+	require.Error(t, err)
+	assert.False(t, redirectTargetCalled)
+}
+
 func TestDoJSONPreservesEscapedPathSegments(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(

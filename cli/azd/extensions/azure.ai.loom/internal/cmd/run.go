@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -331,6 +332,12 @@ func newRunCompareCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			}
 			if len(metricNames) == 0 {
 				return invalidExperimentParameter("metric", "provide at least one metric name")
+			}
+			if math.IsNaN(minStep) || math.IsInf(minStep, 0) {
+				return invalidExperimentParameter("min", "--min must be a finite number")
+			}
+			if math.IsNaN(maxStep) || math.IsInf(maxStep, 0) {
+				return invalidExperimentParameter("max", "--max must be a finite number")
 			}
 			if maxStep < minStep {
 				return invalidExperimentParameter("max", "--max must be greater than or equal to --min")

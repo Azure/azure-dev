@@ -52,7 +52,7 @@ func NewClient(
 		apiVersion,
 		credential,
 		"",
-		&http.Client{Timeout: defaultTimeout},
+		newHTTPClient(),
 	)
 }
 
@@ -70,8 +70,17 @@ func NewClientWithAPIKey(
 		apiVersion,
 		nil,
 		apiKey,
-		&http.Client{Timeout: defaultTimeout},
+		newHTTPClient(),
 	)
+}
+
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: defaultTimeout,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 func newClient(

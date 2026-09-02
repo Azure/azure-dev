@@ -25,7 +25,7 @@ func validateProjectEndpoint(raw string) (string, error) {
 	if err != nil {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("invalid project endpoint URL: %s", err),
+			"invalid project endpoint URL",
 			"provide a valid https:// Foundry project endpoint URL",
 		)
 	}

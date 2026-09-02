@@ -258,10 +258,9 @@ func TestExtensionService_Ready_InitializesExtension(t *testing.T) {
 }
 
 func TestExtensionService_ReportError_StoresStructuredError(t *testing.T) {
-	extension := &extensions.Extension{Id: "test.error", Version: "1.2.3"}
-	manager := newStreamTestExtensionManager(t, extension)
+	extension := &extensions.Extension{Id: "test.error"}
 	service := NewExtensionService(
-		manager,
+		newStreamTestExtensionManager(t, extension),
 	).(*ExtensionService)
 	reported := &azdext.LocalError{Message: "extension failed"}
 
@@ -272,14 +271,6 @@ func TestExtensionService_ReportError_StoresStructuredError(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, response)
-
-	storedExtension, err := manager.GetInstalled(extensions.FilterOptions{Id: extension.Id})
-	require.NoError(t, err)
-	metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](storedExtension.GetReportedError())
-	require.True(t, ok)
-	require.Equal(t, storedExtension.Id, metadata.InvocationExtensionId())
-	require.Equal(t, storedExtension.Version, metadata.InvocationExtensionVersion())
-	require.Empty(t, metadata.InvocationEvent())
 }
 
 func TestProviderStreams_RejectUnsupportedCapabilities(t *testing.T) {

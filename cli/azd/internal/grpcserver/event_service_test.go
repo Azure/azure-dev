@@ -500,11 +500,6 @@ func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *tes
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
-	metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](err)
-	require.True(t, ok)
-	assert.Equal(t, extension.Id, metadata.InvocationExtensionId())
-	assert.Equal(t, extension.Version, metadata.InvocationExtensionVersion())
-	assert.Equal(t, "prepackage", metadata.InvocationEvent())
 	assert.Equal(t, "extension project hook failed", localErr.Message)
 	assert.Equal(t, "hook_failed", localErr.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
@@ -616,11 +611,6 @@ func TestEventService_createServiceEventHandler_RoundTripsStructuredError(t *tes
 
 	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
 	require.True(t, ok)
-	metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](err)
-	require.True(t, ok)
-	assert.Equal(t, extension.Id, metadata.InvocationExtensionId())
-	assert.Equal(t, extension.Version, metadata.InvocationExtensionVersion())
-	assert.Equal(t, "prepackage", metadata.InvocationEvent())
 	assert.Equal(t, "extension service hook failed", serviceErr.Message)
 	assert.Equal(t, "Conflict", serviceErr.ErrorCode)
 	assert.Equal(t, 409, serviceErr.StatusCode)

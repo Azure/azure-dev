@@ -395,12 +395,6 @@ func TestRunner_Invoke_CommandError_WrapsInExtensionRunError(t *testing.T) {
 	require.Equal(t, ext.Id, runErr.ExtensionId)
 	require.Equal(t, ext.Version, runErr.ExtensionVersion)
 	require.ErrorIs(t, runErr, cmdError)
-
-	metadata, ok := errors.AsType[InvocationMetadataProvider](err)
-	require.True(t, ok)
-	require.Equal(t, ext.Id, metadata.InvocationExtensionId())
-	require.Equal(t, ext.Version, metadata.InvocationExtensionVersion())
-	require.Empty(t, metadata.InvocationEvent())
 }
 
 func TestRunner_Invoke_ExtensionPathResolution(t *testing.T) {

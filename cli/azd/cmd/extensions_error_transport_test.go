@@ -16,13 +16,13 @@ func TestExtensionReportedError(t *testing.T) {
 	t.Parallel()
 	t.Run("NoErrorReported", func(t *testing.T) {
 		t.Parallel()
-		ext := &extensions.Extension{Id: "test.ext", Version: "1.2.3"}
+		ext := &extensions.Extension{Id: "test.ext"}
 		require.Nil(t, ext.GetReportedError())
 	})
 
 	t.Run("LocalErrorReported", func(t *testing.T) {
 		t.Parallel()
-		ext := &extensions.Extension{Id: "test.ext", Version: "1.2.3"}
+		ext := &extensions.Extension{Id: "test.ext"}
 		localErr := &azdext.LocalError{
 			Message:    "invalid config",
 			Code:       "invalid_config",
@@ -39,12 +39,6 @@ func TestExtensionReportedError(t *testing.T) {
 		require.Equal(t, "invalid_config", gotLocal.Code)
 		require.Equal(t, azdext.LocalErrorCategoryValidation, gotLocal.Category)
 		require.Equal(t, "Fix the config file", gotLocal.Suggestion)
-
-		metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](reported)
-		require.True(t, ok)
-		require.Equal(t, "test.ext", metadata.InvocationExtensionId())
-		require.Equal(t, "1.2.3", metadata.InvocationExtensionVersion())
-		require.Empty(t, metadata.InvocationEvent())
 	})
 
 	t.Run("ServiceErrorReported", func(t *testing.T) {

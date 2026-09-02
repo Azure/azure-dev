@@ -35,7 +35,7 @@ func walk(t *testing.T, cmd *cobra.Command, path []string, visit func(string, *c
 	for _, child := range cmd.Commands() {
 		name := strings.Fields(child.Use)[0]
 		switch name {
-		case "help", "completion", "listen", "metadata":
+		case "help", "completion", "listen", "metadata", "version":
 			continue
 		}
 		full := append(append([]string{}, path...), name)

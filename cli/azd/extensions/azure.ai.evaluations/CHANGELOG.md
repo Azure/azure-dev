@@ -21,8 +21,10 @@ First release of the Foundry evaluations extension.
   are fingerprinted locally, evaluator definitions are compared on the keys the
   author wrote, and eval groups are recreated only when their own declaration
   changes.
-- Atomic commands for every operation -- `dataset`, `evaluator`, `run` and
-  `run output` -- each supporting `-o json` and `--no-prompt`.
+- Atomic commands for every operation -- `dataset`, `evaluator`, `eval`, `run`,
+  `run output` and `job` -- each supporting `-o json` and `--no-prompt`.
+- `job` reattaches to a generation started with `--no-wait`, or one whose client
+  was interrupted, rather than paying for it again.
 - `dataset --version` names the version to publish, on `create` and `update`
   alike, and means the same thing as `version:` in the configuration.
 - Testing criteria are shaped from each evaluator's published contract, so

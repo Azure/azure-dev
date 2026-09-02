@@ -90,6 +90,7 @@ func newRunCommand() *cobra.Command {
 }
 
 // buildRunCommand builds `run start`.
+
 // runStartFlags carries what `run start` was asked for.
 type runStartFlags struct {
 	groupName   string
@@ -117,6 +118,9 @@ func buildRunCommand(use, short string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
+		// The eval is named by --eval. Without this, `run start other-eval`
+		// is accepted, ignored, and bills a run against the default eval.
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&runStartAction{cmd: cmd, flags: flags}).Run()
 		},

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"azureaieval/internal/foundry/projectctx"
+	"azureaieval/internal/version"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -70,6 +71,11 @@ func NewRootCommand() *cobra.Command {
 		newEvalDeleteCommand(),
 		newListenCommand(),
 	)
+
+	// The shared release stage validates each published artifact by running
+	// `<binary> version`, so an extension without this command fails the bundle.
+	rootCmd.AddCommand(azdext.NewVersionCommand(
+		"azure.ai.evaluations", version.Version, &extCtx.OutputFormat))
 
 	// The manifest declares the `metadata` capability, which azd uses to
 	// discover this extension's command tree. Without the command registered,

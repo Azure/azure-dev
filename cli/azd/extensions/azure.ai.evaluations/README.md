@@ -199,10 +199,6 @@ Both are files the azd extensions team owns, so they are not changed here:
   entry. Until it exists `azd extension install azure.ai.evaluations` cannot
   resolve, so the extension is only reachable through `azd x pack` +
   `azd x publish` into the local source registry.
-  - [x] **`.github/CODEOWNERS`** -- `/cli/azd/extensions/azure.ai.evaluations/`
-    is routed to the same owners as its siblings. Unlike the registry and bundle
-    entries below, this one depends on no published artifact, so there was
-    nothing to wait for.
 - [ ] **`microsoft.foundry/extension.yaml`** — add the dependency, but only
   after the registry entry lands. Declaring a dependency that cannot resolve
   breaks installing the bundle.

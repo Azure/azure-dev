@@ -64,6 +64,8 @@ func newInitCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Scaffold evaluation config for an agent. Makes no service calls.",
+		// Everything init takes is a flag; a positional would be ignored.
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&initAction{cmd: cmd, flags: flags}).Run()
 		},

@@ -514,6 +514,12 @@ func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgen
 	if s == nil {
 		return cfg, nil
 	}
+	if activity := s.GetFields()["activity"].GetStructValue(); activity.GetFields()["useCase"] != nil {
+		return nil, fmt.Errorf(
+			"activity.useCase is not supported; use activity.digitalWorkerType: m365 for a Digital Worker " +
+				"or omit digitalWorkerType for simple mode",
+		)
+	}
 	if err := UnmarshalStruct(s, &cfg); err != nil {
 		return nil, err
 	}

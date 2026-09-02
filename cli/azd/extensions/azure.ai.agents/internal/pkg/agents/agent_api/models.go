@@ -75,6 +75,14 @@ const (
 	AgentKindVoice AgentKind = "voice"
 )
 
+// DigitalWorkerType identifies the service-side Digital Worker classification.
+type DigitalWorkerType string
+
+const (
+	// DigitalWorkerTypeM365 is a Microsoft 365 Digital Worker.
+	DigitalWorkerTypeM365 DigitalWorkerType = "m365"
+)
+
 // AgentEventType represents the types of events that can be handled
 type AgentEventType string
 
@@ -457,9 +465,10 @@ type VoiceAgentDefinition struct {
 
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
-	Description *string           `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	Definition  any               `json:"definition"` // Can be any of the agent definition types
+	Description       *string           `json:"description,omitempty"`
+	Metadata          map[string]string `json:"metadata,omitempty"`
+	Definition        any               `json:"definition"` // Can be any of the agent definition types
+	DigitalWorkerType DigitalWorkerType `json:"digital_worker_type,omitempty"`
 }
 
 // CreateAgentRequest represents a request to create an agent
@@ -472,7 +481,9 @@ type CreateAgentRequest struct {
 
 // UpdateAgentRequest represents a request to update an agent
 type UpdateAgentRequest struct {
-	CreateAgentVersionRequest
+	Description *string           `json:"description,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	Definition  any               `json:"definition"` // Can be any of the agent definition types
 }
 
 // PatchAgentRequest represents a partial update to agent-level fields.
@@ -517,6 +528,7 @@ type AgentVersionObject struct {
 	Blueprint          *BlueprintInfo      `json:"blueprint,omitempty"`
 	BlueprintReference *BlueprintReference `json:"blueprint_reference,omitempty"`
 	AgentGUID          string              `json:"agent_guid,omitempty"`
+	DigitalWorkerType  DigitalWorkerType   `json:"digital_worker_type,omitempty"`
 	// RequestID is populated from the x-request-id response header (not from JSON).
 	RequestID string `json:"-"`
 }
@@ -538,6 +550,7 @@ type AgentObject struct {
 	InstanceIdentity   *AgentIdentityInfo  `json:"instance_identity,omitempty"`
 	Blueprint          *BlueprintInfo      `json:"blueprint,omitempty"`
 	BlueprintReference *BlueprintReference `json:"blueprint_reference,omitempty"`
+	DigitalWorkerType  DigitalWorkerType   `json:"digital_worker_type,omitempty"`
 	Versions           struct {
 		Latest AgentVersionObject `json:"latest"`
 	} `json:"versions"`

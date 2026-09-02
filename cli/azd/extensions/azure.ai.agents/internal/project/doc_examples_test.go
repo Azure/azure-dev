@@ -896,6 +896,52 @@ func TestDocSchemaPromptVoiceRejectsToolbox(t *testing.T) {
 	}))
 }
 
+func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {
+	t.Parallel()
+
+	schema := loadDocSchema(t, extensionRoot(t))
+	digitalWorkerPublish := map[string]any{
+		"optionalPermissionScopes": []any{
+			map[string]any{
+				"resourceAppId": "resource-app-id",
+				"scopes":        []any{"McpServers.Mail.All"},
+			},
+		},
+		"accessBoundaries": []any{"read.1on1.developers"},
+	}
+
+	require.NoError(t, schema.validate(map[string]any{
+		"activity": map[string]any{
+			"digitalWorkerType": "m365",
+			"publish":           digitalWorkerPublish,
+		},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"activity": map[string]any{
+			"digitalWorkerType": "other",
+			"publish":           digitalWorkerPublish,
+		},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"activity": map[string]any{
+			"useCase": "digital_worker",
+		},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"activity": map[string]any{
+			"publish": digitalWorkerPublish,
+		},
+	}))
+	require.NoError(t, schema.validate(map[string]any{
+		"activity": map[string]any{
+			"publish": map[string]any{
+				"publishScope":     "shared",
+				"agentDisplayName": "Simple Activity agent",
+			},
+		},
+	}))
+}
+
 func TestActiveDocAgentConfig(t *testing.T) {
 	t.Parallel()
 

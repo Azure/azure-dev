@@ -1028,6 +1028,7 @@ func (f *fakeConflictAgentChecker) GetAgent(
 	_ context.Context,
 	agentName string,
 	_ string,
+	_ bool,
 ) (*agent_api.AgentObject, error) {
 	f.calls = append(f.calls, agentName)
 	if f.err != nil {

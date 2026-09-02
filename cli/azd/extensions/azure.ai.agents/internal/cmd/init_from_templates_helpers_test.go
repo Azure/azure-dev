@@ -282,26 +282,6 @@ func TestPromptInitMode_ShowsVoiceChoiceWhenPreviewEnabled(t *testing.T) {
 	require.Equal(t, "Create a prompt voice agent", prompts.lastSelect.Options.Choices[1].Label)
 }
 
-func TestPromptInitMode_ShowsHostedVoiceChoiceForLocalCode(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	t.Setenv(promptVoicePreviewEnvVar, "true")
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "Program.cs"), []byte("class Program {}\n"), 0600))
-
-	prompts := &helpersPromptServer{selectIndex: 3}
-	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
-
-	mode, err := promptInitMode(t.Context(), azdClient, false)
-
-	require.NoError(t, err)
-	require.Equal(t, initModeHostedVoice, mode)
-	require.NotNil(t, prompts.lastSelect)
-	require.Len(t, prompts.lastSelect.Options.Choices, 4)
-	require.Equal(t,
-		"Create a hosted voice agent from the code in the current directory",
-		prompts.lastSelect.Options.Choices[3].Label)
-}
-
 func TestFindRecommendedIndex(t *testing.T) {
 	t.Parallel()
 

@@ -1619,6 +1619,10 @@ func applyDeployModeToAdoptedProjectWithSources(
 	projectNeedsACR := false
 	var configuredSourceContainers []string
 	for _, agent := range agentServices {
+		kind := adoptedAgentKind(agent.svc)
+		if kind != "" && kind != "hosted" {
+			continue
+		}
 		hadDockerConfig := adoptedServiceHasDocker(agent.svc)
 		serviceNeedsACR, err := applyDeployModeToService(
 			ctx,
@@ -1637,6 +1641,18 @@ func applyDeployModeToAdoptedProjectWithSources(
 		}
 	}
 	return projectNeedsACR, configuredSourceContainers, nil
+}
+
+func adoptedAgentKind(svc *azdext.ServiceConfig) string {
+	props := svc.GetAdditionalProperties()
+	if props == nil || props.GetFields() == nil {
+		return ""
+	}
+	kind, ok := props.GetFields()["kind"]
+	if !ok || kind == nil {
+		return ""
+	}
+	return kind.GetStringValue()
 }
 
 func finalizeAdoptedSourceContainerNetwork(

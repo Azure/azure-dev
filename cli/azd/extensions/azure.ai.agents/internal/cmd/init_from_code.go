@@ -84,8 +84,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	// Guard against silently overwriting an existing agent definition. Reached
 	// when the user declined the reuse prompt in RunE or bypassed it; we still
 	// refuse in --no-prompt and confirm interactively.
-	if existing, statErr := findExistingAgentYaml(srcDir); statErr == nil && existing != "" &&
-		!strings.EqualFold(a.flags.kind, kindFlagHostedVoice) {
+	if existing, statErr := findExistingAgentYaml(srcDir); statErr == nil && existing != "" {
 		displayPath, relErr := filepath.Rel(srcDir, existing)
 		if relErr != nil || displayPath == "" {
 			displayPath = existing
@@ -304,25 +303,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 	}
 
-	// Hosted Voice targets implement the Voice Bridge 1.0 contract over the
-	// invocations_ws/1.0.0 transport. Other hosted agents retain the normal
-	// protocol selection and current default versions.
-	var protocols []agent_yaml.ProtocolVersionRecord
-	if strings.EqualFold(a.flags.kind, kindFlagHostedVoice) {
-		if len(a.flags.protocols) > 0 &&
-			!(len(a.flags.protocols) == 1 && strings.EqualFold(a.flags.protocols[0], "invocations_ws")) {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"hosted voice targets require the invocations_ws protocol",
-				"omit --protocol or pass --protocol invocations_ws",
-			)
-		}
-		protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "invocations_ws", Version: "1.0.0"}}
-	} else {
-		protocols, err = promptProtocols(ctx, a.azdClient.Prompt(), a.flags.noPrompt, a.flags.protocols)
-		if err != nil {
-			return nil, err
-		}
+	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.noPrompt, a.flags.protocols)
+	if err != nil {
+		return nil, err
 	}
 
 	// Step 1: Foundry project selection
@@ -562,20 +545,6 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		},
 		Protocols:         protocols,
 		CodeConfiguration: codeConfig,
-	}
-	if strings.EqualFold(a.flags.kind, kindFlagHostedVoice) {
-		definition.Metadata = &map[string]any{
-			"voiceLiveCompatible":   "true",
-			"bridgeProtocolVersion": "1.0",
-		}
-		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
-			Name:  "AZURE_OPENAI_ENDPOINT",
-			Value: "${FOUNDRY_PROJECT_ENDPOINT}/openai/v1/responses",
-		})
-		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
-			Name:  "AZURE_OPENAI_DEPLOYMENT",
-			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
-		})
 	}
 
 	// An activity agent additionally advertises the friendly "activity" endpoint
@@ -823,11 +792,6 @@ func (a *InitFromCodeAction) addToProject(
 ) error {
 	agentName := definition.Name
 	agentServiceName := strings.ReplaceAll(agentName, " ", "")
-	if strings.EqualFold(a.flags.kind, kindFlagHostedVoice) {
-		if err := a.validateHostedVoiceServiceNames(ctx, agentServiceName); err != nil {
-			return err
-		}
-	}
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
 	if targetDir == "." {
@@ -846,10 +810,6 @@ func (a *InitFromCodeAction) addToProject(
 			Memory: project.DefaultMemory,
 			Cpu:    project.DefaultCpu,
 		},
-	}
-	if strings.EqualFold(a.flags.kind, kindFlagHostedVoice) {
-		agentConfig.Container.Resources.Cpu = "1"
-		agentConfig.Container.Resources.Memory = "2Gi"
 	}
 
 	agentConfig.Deployments = a.deploymentDetails
@@ -943,147 +903,8 @@ func (a *InitFromCodeAction) addToProject(
 		return err
 	}
 
-	if strings.EqualFold(a.flags.kind, kindFlagHostedVoice) {
-		if err := a.addHostedVoiceWrapper(ctx, agentServiceName); err != nil {
-			return err
-		}
-	}
-
 	printAgentAddedMessage(agentName)
 	return nil
-}
-
-func (a *InitFromCodeAction) validateHostedVoiceServiceNames(ctx context.Context, targetServiceName string) error {
-	return validateHostedVoiceServiceNamesForProject(ctx, a.azdClient, targetServiceName)
-}
-
-func validateHostedVoiceServiceNamesForProject(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	targetServiceName string,
-) error {
-	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("checking existing services for hosted voice init: %w", err)
-	}
-	if response.Project == nil {
-		return nil
-	}
-	for _, serviceName := range []string{targetServiceName, hostedVoiceWrapperName(targetServiceName)} {
-		if _, exists := response.Project.Services[serviceName]; exists {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				fmt.Sprintf("service %q already exists", serviceName),
-				"choose a different target agent name so target and wrapper service names are unique",
-			)
-		}
-	}
-	return nil
-}
-
-func (a *InitFromCodeAction) addHostedVoiceWrapper(ctx context.Context, targetServiceName string) error {
-	noPrompt := false
-	if a.flags != nil {
-		noPrompt = a.flags.noPrompt
-	}
-	return addHostedVoiceWrapperToProject(
-		ctx, a.azdClient, a.environment, a.credential, noPrompt, targetServiceName,
-	)
-}
-
-func addHostedVoiceWrapperToProject(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	environment *azdext.Environment,
-	credential azcore.TokenCredential,
-	noPrompt bool,
-	targetServiceName string,
-) error {
-	wrapperName := hostedVoiceWrapperName(targetServiceName)
-	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("loading project services before adding hosted voice wrapper: %w", err)
-	}
-	if response == nil || response.Project == nil {
-		return fmt.Errorf("loading project services before adding hosted voice wrapper: project response is empty")
-	}
-	if _, exists := response.Project.Services[wrapperName]; exists {
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("hosted voice wrapper service %q already exists", wrapperName),
-			"choose a different target agent name so the generated wrapper service name is unique",
-		)
-	}
-	projectServiceName := existingProjectServiceKey(ctx, azdClient)
-	if projectServiceName == "" {
-		return fmt.Errorf("cannot resolve the azure.ai.project service for hosted voice wrapper %q", wrapperName)
-	}
-	if environment != nil && credential != nil {
-		wrapperName, err = resolveExistingAgentNameConflict(
-			ctx, azdClient, environment, credential, noPrompt, wrapperName,
-		)
-		if err != nil {
-			return err
-		}
-	}
-	if _, exists := response.Project.Services[wrapperName]; exists {
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("resolved hosted voice wrapper service %q already exists", wrapperName),
-			"choose a different target agent name so the resolved wrapper name is unique in azure.yaml",
-		)
-	}
-	store := false
-	description := "Voice wrapper for hosted target " + targetServiceName
-	voiceAgent := agent_yaml.VoiceAgent{
-		AgentDefinition: agent_yaml.AgentDefinition{
-			Kind:        agent_yaml.AgentKindPromptVoice,
-			Name:        wrapperName,
-			Description: &description,
-		},
-		ModelType: agent_yaml.VoiceModelTypeHostedAgent,
-		TargetAgent: &agent_yaml.VoiceTargetAgent{
-			Service: targetServiceName,
-			Version: "deployed",
-		},
-		Store: &store,
-	}
-	props, err := project.VoiceAgentDefinitionToServiceProperties(voiceAgent, nil)
-	if err != nil {
-		return err
-	}
-	if _, err := azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: &azdext.ServiceConfig{
-		Name:                 wrapperName,
-		Host:                 AiAgentHost,
-		AdditionalProperties: props,
-	}}); err != nil {
-		return fmt.Errorf("adding hosted voice wrapper service: %w", err)
-	}
-
-	if err := setServiceUses(ctx, azdClient, wrapperName, []string{projectServiceName, targetServiceName}); err != nil {
-		return err
-	}
-	fmt.Printf("  %s  Added hosted voice wrapper %s -> %s\n", color.GreenString("+"), wrapperName, targetServiceName)
-	return nil
-}
-
-func hostedVoiceWrapperName(targetServiceName string) string {
-	const suffix = "-voice"
-	base := strings.TrimRight(targetServiceName, "-")
-	if len(base)+len(suffix) > 63 {
-		base = strings.TrimRight(base[:63-len(suffix)], "-")
-	}
-	if base == "" {
-		base = "agent"
-	}
-	wrapperName := base + suffix
-	if wrapperName != targetServiceName {
-		return wrapperName
-	}
-
-	const distinctSuffix = "-wrapper"
-	base = strings.TrimRight(targetServiceName[:63-len(distinctSuffix)], "-")
-	return base + distinctSuffix
 }
 
 // promptCodeConfiguration prompts the user for code deploy configuration settings.

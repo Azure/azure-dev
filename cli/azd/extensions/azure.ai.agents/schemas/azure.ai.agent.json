@@ -212,10 +212,9 @@
       "$comment": "A hosted-agent voice wrapper references a deployed hosted service; other voice modes declare a model. Prompt voice agents cannot use the hosted-agent toolbox reference.",
       "if": {
         "properties": {
-          "kind": { "const": "prompt-voice" },
           "modelType": { "const": "hosted_agent" }
         },
-        "required": ["kind", "modelType"]
+        "required": ["modelType"]
       },
       "then": {
         "required": ["targetAgent"],

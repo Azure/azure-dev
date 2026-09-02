@@ -294,21 +294,21 @@ keys throughout this block (`invocations_moderation`, `response_mode`,
 
 A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
 and text-to-speech while routing conversation logic to a hosted agent in the
-same Foundry project. Hosted Voice samples use the same standard Agent Manifest
-flow as other Hosted Agent and `invocations_ws` samples:
+same Foundry project. Hosted Voice samples use the same sample `azure.yaml`
+flow as other current Hosted Agent and `invocations_ws` samples:
 
 ```powershell
-azd ai agent init -m .\path\to\agent.manifest.yaml
+azd ai agent init -m .\path\to\azure.yaml
 ```
 
-The manifest path can be replaced with its public GitHub URL after the sample
-is published.
+The local path can be replaced with its public GitHub URL after the sample is
+published.
 
-When the sample source is already present, run `azd ai agent init` from its
-directory and accept the detected local manifest. azd reuses a parent project
-when the source is already inside an existing azd project.
+When the sample project is already present with its `azure.yaml`, run
+`azd ai agent init` from the project directory to reuse the existing azd
+configuration before provisioning and deployment.
 
-Init generates both services and references the target by its `azure.yaml`
+The sample `azure.yaml` contains both services and references the target by its
 service name:
 
 ```yaml

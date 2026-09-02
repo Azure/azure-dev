@@ -128,7 +128,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "Name of the eval. The azd environment records the created eval id under it, which is what --eval resolves."
+            "description": "Name of the eval. The extension records the created eval id under it in its own private state (eval.state), not in the azd environment values that `azd env get-values` prints, and that is what --eval resolves."
         },
         "id": {
           "type": "string",

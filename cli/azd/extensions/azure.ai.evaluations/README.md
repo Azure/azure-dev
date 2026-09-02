@@ -85,9 +85,10 @@ keys you authored — the service adds `data_schema`, `init_parameters` and
 `metrics` of its own.
 
 Eval groups are immutable, so a change to a group's evaluators, target or
-sampling creates a new group and a new id. The id is cached in the azd
-environment so repeat runs stay comparable.
-
+  sampling creates a new group and a new id. The id is cached in the extension's
+  own private state (`eval.state`) so repeat runs stay comparable. That is not
+  an azd environment value: it does not appear in `azd env get-values`, which
+  shows only what you put there.
 ## Commands
 
 | Group | Commands |
@@ -198,9 +199,10 @@ Both are files the azd extensions team owns, so they are not changed here:
   entry. Until it exists `azd extension install azure.ai.evaluations` cannot
   resolve, so the extension is only reachable through `azd x pack` +
   `azd x publish` into the local source registry.
-- [ ] **`.github/CODEOWNERS`** — add `/cli/azd/extensions/azure.ai.evaluations/`.
-  Every sibling Foundry extension has an entry; without one, PRs here get no
-  reviewer routing.
+  - [x] **`.github/CODEOWNERS`** -- `/cli/azd/extensions/azure.ai.evaluations/`
+    is routed to the same owners as its siblings. Unlike the registry and bundle
+    entries below, this one depends on no published artifact, so there was
+    nothing to wait for.
 - [ ] **`microsoft.foundry/extension.yaml`** — add the dependency, but only
   after the registry entry lands. Declaring a dependency that cannot resolve
   breaks installing the bundle.

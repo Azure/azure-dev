@@ -53,11 +53,22 @@ func ReadAuthoredConfig(evalDir string) (*AuthoredConfig, error) {
 }
 
 // authoredFromDocument reads the three catalogs in document order.
+//
+// A document this cannot read answers with nothing rather than an error: the
+// callers use it to decide what is already declared, and the write path refuses
+// a wrongly shaped file with a message of its own.
 func authoredFromDocument(doc *yaml.Node) *AuthoredConfig {
 	out := &AuthoredConfig{sections: map[string][]AuthoredEntry{}}
-	root := documentMapping(doc)
+	root, err := documentMapping(doc)
+	if err != nil {
+		return out
+	}
 	for _, section := range []string{SectionDatasets, SectionEvaluators, SectionEvals} {
-		for _, item := range mappingSequence(root, section).Content {
+		seq, err := mappingSequence(root, section)
+		if err != nil {
+			continue
+		}
+		for _, item := range seq.Content {
 			if item.Kind != yaml.MappingNode {
 				continue
 			}

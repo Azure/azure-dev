@@ -203,6 +203,23 @@ func IsNotFound(err error) bool {
 	return respErr.StatusCode == http.StatusNotFound
 }
 
+// blobStatusError carries the status a direct blob read answered, so the one
+// status that means "this is a container" stays distinguishable from the rest.
+type blobStatusError struct {
+	status int
+	err    error
+}
+
+func (e blobStatusError) Error() string { return e.err.Error() }
+func (e blobStatusError) Unwrap() error { return e.err }
+
+// isContainerSignal reports whether a direct read failed because the URI names
+// a container rather than a blob.
+func isContainerSignal(err error) bool {
+	statusErr, ok := errors.AsType[blobStatusError](err)
+	return ok && statusErr.status == http.StatusConflict
+}
+
 // UploadNewVersion reads the first JSONL file from localDir, computes the next
 // version from currentVersion, and uploads it as a new dataset version using
 // the 3-step pending upload flow:
@@ -409,7 +426,14 @@ func (c *DatasetClient) DownloadDatasetContent(
 		if err == nil {
 			return data, nil
 		}
-		log.Printf("[dataset_api] direct download failed (%v); treating the URI as a container", err)
+		// 409 is how storage says the URI names a container, and the extension
+		// on the last segment was only ever a guess. Every other failure is this
+		// request's own: a 403, a timeout or a cancelled context used to be
+		// thrown away and reported as a listing error about a different request.
+		if !isContainerSignal(err) {
+			return nil, err
+		}
+		log.Printf("[dataset_api] direct download answered 409; treating the URI as a container")
 	}
 
 	names, err := c.ListContainerBlobs(ctx, sasURI)
@@ -469,7 +493,7 @@ func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, messages.BlobDownloadStatus(resp.StatusCode)
+		return nil, blobStatusError{status: resp.StatusCode, err: messages.BlobDownloadStatus(resp.StatusCode)}
 	}
 
 	data, err := io.ReadAll(resp.Body)

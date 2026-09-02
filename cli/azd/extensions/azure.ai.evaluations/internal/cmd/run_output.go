@@ -459,7 +459,11 @@ func (ec *evalContext) latestOrNamedRun(
 		return nil, messages.RunMustBeNamed(evalID)
 	}
 
-	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)
+	// The service does not order runs, so one row is not enough to know which is
+	// newest -- asking for a single one and taking it silently settled on
+	// whatever came back first, which `run cancel` and the output commands then
+	// acted on.
+	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, newestRunCandidates)
 	if err != nil {
 		if eval_api.IsNotFound(err) {
 			return nil, messages.EvalNotDeployed(evalID, ec.deployCommand(ctx))
@@ -469,8 +473,35 @@ func (ec *evalContext) latestOrNamedRun(
 	if list == nil || len(list.Data) == 0 {
 		return nil, messages.EvalHasNoRuns(evalID)
 	}
-	ec.sayWhichRun(cmd, explicit, list.Data[0].ID)
-	return &list.Data[0], nil
+	newest := newestRunIn(list.Data)
+	ec.sayWhichRun(cmd, explicit, newest.ID)
+	return newest, nil
+}
+
+// newestRunCandidates bounds the page read to settle which run is newest.
+const newestRunCandidates = 50
+
+// newestRunIn picks the most recently created run.
+//
+// The same rule idsNamedIn uses for evals: timestampString normalizes both
+// shapes the service writes created_at in, and those sort chronologically as
+// text. A run with no usable timestamp never wins on the strength of its
+// position, and if none of them carry one the list order is all there is.
+func newestRunIn(runs []eval_api.OpenAIEvalRun) *eval_api.OpenAIEvalRun {
+	best, bestAt := -1, ""
+	for i := range runs {
+		at := timestampString(runs[i].CreatedAt)
+		if at == "" {
+			continue
+		}
+		if best == -1 || at > bestAt {
+			best, bestAt = i, at
+		}
+	}
+	if best == -1 {
+		return &runs[0]
+	}
+	return &runs[best]
 }
 
 // sayWhichRun names the run a command settled on for itself.
@@ -708,15 +739,20 @@ func renderResults(
 
 // truncate keeps a table readable when a reason runs to a paragraph. The full
 // text is always in `-o json`.
+//
+// Counted in runes: an evaluator name or reason is free-form text, and cutting
+// it at a byte split multibyte characters down the middle, which reaches the
+// terminal as a replacement glyph.
 func truncate(s string, n int) string {
 	s = strings.ReplaceAll(strings.ReplaceAll(s, "\n", " "), "\r", "")
-	if len(s) <= n {
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
 	if n <= 1 {
-		return s[:n]
+		return string(r[:max(n, 0)])
 	}
-	return s[:n-1] + "…"
+	return string(r[:n-1]) + "…"
 }
 
 // Export format. Only JSON: the results are a nested document, and the flat

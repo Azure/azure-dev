@@ -163,6 +163,25 @@ func TestDownloadDatasetContentFallsBackWhenTheBlobReadFails(t *testing.T) {
 	assert.NotNil(t, server.gotListQuery)
 }
 
+// Only a 409 says "this is a container". Every other failure belonged to the
+// read that was actually made, and was thrown away: a 403, a timeout or a
+// cancelled context came back as a listing error, about a request the caller
+// never asked for and which had to be sent to produce it.
+func TestDownloadDatasetContentKeepsAnUnrelatedFailure(t *testing.T) {
+	server := &storageServer{
+		uriPath:          "/c/looks.jsonl",
+		directBlobStatus: http.StatusForbidden,
+		blobs:            map[string]string{"real.jsonl": `{"query":"never read"}`},
+	}
+	client, _ := server.start(t)
+
+	_, err := client.DownloadDatasetContent(context.Background(), "ds", "1.0", testAPIVersion)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "403", "the status that actually happened")
+	assert.Nil(t, server.gotListQuery, "a 403 is not a reason to go looking in a container")
+}
+
 // An empty container is a dataset with nothing to read, and saying so beats
 // returning empty content that looks like a dataset with no rows.
 func TestDownloadDatasetContentReportsAnEmptyContainer(t *testing.T) {

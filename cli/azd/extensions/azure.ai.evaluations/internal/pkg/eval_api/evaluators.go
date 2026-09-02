@@ -180,20 +180,31 @@ func (c *EvalClient) ListEvaluatorVersions(
 
 // LatestEvaluatorVersionNumber reports the newest registered version as an
 // integer, or 0 when the evaluator is unknown or its versions are not numeric.
+//
+// A listing that failed is returned rather than answered as zero. This is half
+// of publishEvaluatorVersion's collision guard, and a timeout, a 403 or a
+// truncated page reading as "no versions" lets a version the service already
+// holds be accepted as a first publish. Only a confirmed not-found is absence.
 func (c *EvalClient) LatestEvaluatorVersionNumber(
 	ctx context.Context,
 	name string,
 	apiVersion string,
-) int {
+) (int, error) {
 	list, err := c.ListEvaluatorVersions(ctx, name, apiVersion)
-	if err != nil || list == nil || len(list.Value) == 0 {
-		return 0
+	if err != nil {
+		if IsNotFound(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if list == nil || len(list.Value) == 0 {
+		return 0, nil
 	}
 	number, err := strconv.Atoi(pickLatestVersion(list.Value))
 	if err != nil {
-		return 0
+		return 0, nil
 	}
-	return number
+	return number, nil
 }
 
 // parseVersionNumber reads a version string as an integer, answering 0 for one

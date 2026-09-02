@@ -327,7 +327,11 @@ func (c *EvalClient) publishEvaluatorVersion(
 	}
 
 	latest := parseVersionNumber(known.Version)
-	if listed := c.LatestEvaluatorVersionNumber(ctx, name, apiVersion); listed > latest {
+	listed, err := c.LatestEvaluatorVersionNumber(ctx, name, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+	if listed > latest {
 		latest = listed
 	}
 

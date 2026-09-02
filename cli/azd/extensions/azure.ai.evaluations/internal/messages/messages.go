@@ -2411,6 +2411,19 @@ func ParsingEvalConfig(path string, err error) error {
 	return fmt.Errorf("parsing eval config %q: %w", filepath.ToSlash(path), err)
 }
 
+// EvalConfigNotAMapping reports a configuration whose root is not a mapping.
+func EvalConfigNotAMapping() error {
+	return errors.New(
+		"the eval configuration is not a mapping, so there is nothing to add entries to; " +
+			"expected top-level `datasets:`, `evaluators:` or `evals:`")
+}
+
+// EvalConfigKeyNotASequence reports a catalog that is not a list.
+func EvalConfigKeyNotASequence(key string) error {
+	return fmt.Errorf(
+		"the eval configuration has %q, but it is not a list, so an entry cannot be added to it", key)
+}
+
 // SerializingEvalConfig reports a configuration that would not serialize.
 func SerializingEvalConfig(err error) error {
 	return fmt.Errorf("serializing eval config: %w", err)

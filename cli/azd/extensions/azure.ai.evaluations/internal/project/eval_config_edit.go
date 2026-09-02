@@ -53,23 +53,42 @@ func ApplyScaffold(evalDir string, write ScaffoldWrite) error {
 	if err != nil {
 		return err
 	}
-	root := documentMapping(doc)
+	root, err := documentMapping(doc)
+	if err != nil {
+		return err
+	}
 
 	if write.RemoveEval != "" {
-		removeSequenceEntryNamed(mappingSequence(root, "evals"), write.RemoveEval)
+		evals, err := mappingSequence(root, "evals")
+		if err != nil {
+			return err
+		}
+		removeSequenceEntryNamed(evals, write.RemoveEval)
 	}
 	for _, decl := range write.Datasets {
-		if err := appendEncoded(mappingSequence(root, "datasets"), decl); err != nil {
+		seq, err := mappingSequence(root, "datasets")
+		if err != nil {
+			return err
+		}
+		if err := appendEncoded(seq, decl); err != nil {
 			return err
 		}
 	}
 	for _, decl := range write.Evaluators {
-		if err := appendEncoded(mappingSequence(root, "evaluators"), decl); err != nil {
+		seq, err := mappingSequence(root, "evaluators")
+		if err != nil {
+			return err
+		}
+		if err := appendEncoded(seq, decl); err != nil {
 			return err
 		}
 	}
 	for _, eval := range write.Evals {
-		if err := appendEncoded(mappingSequence(root, "evals"), eval); err != nil {
+		seq, err := mappingSequence(root, "evals")
+		if err != nil {
+			return err
+		}
+		if err := appendEncoded(seq, eval); err != nil {
 			return err
 		}
 	}
@@ -168,8 +187,14 @@ func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool,
 		return false, false, err
 	}
 
-	root := documentMapping(doc)
-	seq := mappingSequence(root, kind)
+	root, err := documentMapping(doc)
+	if err != nil {
+		return false, false, err
+	}
+	seq, err := mappingSequence(root, kind)
+	if err != nil {
+		return false, false, err
+	}
 	entry := sequenceEntryNamed(seq, name)
 
 	if entry == nil {
@@ -192,7 +217,13 @@ func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool,
 
 // documentMapping returns the mapping at the root of doc, filling in an empty
 // document so a configuration that does not exist yet can be built up.
-func documentMapping(doc *yaml.Node) *yaml.Node {
+//
+// A root of any other kind is refused rather than replaced. It used to be
+// overwritten with an empty mapping, and the caller then serialized that over
+// the file -- so a valid YAML document of the wrong shape was erased instead of
+// being reported. Nothing decoded the file first on this path, so there was no
+// earlier guard to catch it.
+func documentMapping(doc *yaml.Node) (*yaml.Node, error) {
 	if doc.Kind == 0 {
 		doc.Kind = yaml.DocumentNode
 	}
@@ -201,35 +232,39 @@ func documentMapping(doc *yaml.Node) *yaml.Node {
 	}
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
-		// A configuration that is not a mapping is not one this can edit; the
-		// decoder reports it properly, so leave it to the read path.
-		root.Kind = yaml.MappingNode
-		root.Tag = "!!map"
-		root.Content = nil
-		root.Value = ""
+		return nil, messages.EvalConfigNotAMapping()
 	}
-	return root
+	return root, nil
 }
 
 // mappingSequence returns the sequence under key, adding it when absent.
-func mappingSequence(mapping *yaml.Node, key string) *yaml.Node {
+//
+// An existing value of another kind is refused for the same reason: replacing
+// it discards whatever the author wrote there. A key with nothing under it is
+// not that case -- `evals:` on its own is an empty list, and stays one.
+func mappingSequence(mapping *yaml.Node, key string) (*yaml.Node, error) {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		if mapping.Content[i].Value != key {
 			continue
 		}
 		value := mapping.Content[i+1]
-		if value.Kind != yaml.SequenceNode {
+		switch {
+		case value.Kind == yaml.SequenceNode:
+			return value, nil
+		case value.Tag == "!!null":
 			value.Kind = yaml.SequenceNode
 			value.Tag = "!!seq"
 			value.Value = ""
+			return value, nil
+		default:
+			return nil, messages.EvalConfigKeyNotASequence(key)
 		}
-		return value
 	}
 	seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
 	mapping.Content = append(mapping.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
 		seq)
-	return seq
+	return seq, nil
 }
 
 // sequenceEntryNamed returns the mapping in seq whose `name` is name.

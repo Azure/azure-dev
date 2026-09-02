@@ -276,6 +276,7 @@ func (u *UpGraphAction) Run(
 	if err != nil {
 		return nil, err
 	}
+	maxConcurrency := u.resolveDAGConcurrency()
 
 	// 3. Resolve deploy timeout (honors --timeout flag and AZD_DEPLOY_TIMEOUT
 	// env var for parity with stand-alone `azd deploy`).
@@ -421,9 +422,12 @@ func (u *UpGraphAction) Run(
 	}
 
 	handles, err := addServiceStepsToGraph(g, serviceGraphOptions{
-		services:       stableServices,
-		serviceManager: u.serviceManager,
-		deployTimeout:  deployTimeout,
+		services:                   stableServices,
+		serviceManager:             u.serviceManager,
+		deployTimeout:              deployTimeout,
+		maxConcurrency:             maxConcurrency,
+		packagePublishBuildGateKey: dotNetPackagePublishBuildGateKey,
+		buildGateKey:               aspireBuildGateKey,
 		// `azd up` never takes a --from-package flag; leave empty.
 		fromPackage:      "",
 		packageExtraDeps: []string{prePackageEventStep},
@@ -432,7 +436,6 @@ func (u *UpGraphAction) Run(
 		onDeployTimeout: func(cbCtx context.Context, svc *project.ServiceConfig) {
 			safeCon.MessageUxItem(cbCtx, deployTimeoutWarning(svc.Name, deployTimeout))
 		},
-		buildGateKey: aspireBuildGateKey,
 		onPhaseProgress: func(svcName string, phase deployPhase, detail string) {
 			updateDeployProgress(svcName, phase, detail)
 		},
@@ -582,7 +585,7 @@ func (u *UpGraphAction) Run(
 		}
 	}
 
-	opts := u.runOptions()
+	opts := u.runOptions(maxConcurrency)
 	baseOnStepStart := opts.OnStepStart
 	baseOnStepDone := opts.OnStepDone
 
@@ -808,12 +811,12 @@ func (u *UpGraphAction) initializeServices(ctx context.Context) ([]*project.Serv
 		return nil, fmt.Errorf("enumerating services: %w", err)
 	}
 
-	if err := u.projectManager.Initialize(ctx, u.projectConfig); err != nil {
+	if err := u.projectManager.InitializeServices(ctx, stableServices); err != nil {
 		return nil, fmt.Errorf("initializing project: %w", err)
 	}
 
 	if err := u.projectManager.EnsureServiceTargetTools(
-		ctx, u.projectConfig, func(_ *project.ServiceConfig) bool { return true },
+		ctx, stableServices,
 	); err != nil {
 		return nil, fmt.Errorf("ensuring service tools: %w", err)
 	}
@@ -925,17 +928,9 @@ func (u *UpGraphAction) addProvisionSteps(
 	return provisionSinks, nil
 }
 
-// runOptions returns the execution options for the unified graph, including
-// error policy, optional concurrency limit, and step lifecycle callbacks.
-func (u *UpGraphAction) runOptions() exegraph.RunOptions {
-	opts := exegraph.RunOptions{
-		ErrorPolicy: exegraph.FailFast,
-	}
-
-	// Optional concurrency limit from environment. AZD_UP_CONCURRENCY is the
-	// canonical name for `azd up`; AZD_DEPLOY_CONCURRENCY is honored as a
-	// fallback so that users who already tuned `azd deploy` parallelism don't
-	// get unlimited concurrency when they switch to `azd up`.
+// resolveDAGConcurrency resolves the scheduler concurrency for the unified
+// graph. AZD_UP_CONCURRENCY takes precedence over AZD_DEPLOY_CONCURRENCY.
+func (u *UpGraphAction) resolveDAGConcurrency() int {
 	if v, ok := os.LookupEnv("AZD_UP_CONCURRENCY"); ok {
 		if n, parseErr := strconv.Atoi(v); parseErr != nil {
 			log.Printf("warning: ignoring invalid AZD_UP_CONCURRENCY=%q: %v", v, parseErr)
@@ -944,7 +939,7 @@ func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 			if clamped < n {
 				log.Printf("clamping up concurrency from %d to %d", n, clamped)
 			}
-			opts.MaxConcurrency = clamped
+			return clamped
 		}
 	} else if v, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
 		if n, parseErr := strconv.Atoi(v); parseErr != nil {
@@ -954,8 +949,19 @@ func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 			if clamped < n {
 				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)
 			}
-			opts.MaxConcurrency = clamped
+			return clamped
 		}
+	}
+
+	return 0
+}
+
+// runOptions returns the execution options for the unified graph, including
+// error policy, concurrency limit, and step lifecycle callbacks.
+func (u *UpGraphAction) runOptions(maxConcurrency int) exegraph.RunOptions {
+	opts := exegraph.RunOptions{
+		ErrorPolicy:    exegraph.FailFast,
+		MaxConcurrency: maxConcurrency,
 	}
 
 	opts.OnStepStart = func(stepName string) {

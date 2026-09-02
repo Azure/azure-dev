@@ -7,6 +7,7 @@ on:
       - "!cli/azd/extensions/**"
       - ".github/workflows/cli-ci.yml"
       - "eng/scripts/Get-CoverageDiff*.ps1"
+      - "eng/scripts/Set-ExtensionVersionVariable*.ps1"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -52,14 +53,17 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - name: Run Pester tests for coverage scripts
+      - name: Run Pester tests for engineering scripts
         shell: pwsh
         run: |
           # Pin Pester to a specific signed release for deterministic, supply-chain-safe installs.
           Install-Module -Name Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
           Import-Module Pester -RequiredVersion 5.7.1
           $config = New-PesterConfiguration
-          $config.Run.Path = './eng/scripts/Get-CoverageDiff.Tests.ps1'
+          $config.Run.Path = @(
+            './eng/scripts/Get-CoverageDiff.Tests.ps1'
+            './eng/scripts/Set-ExtensionVersionVariable.Tests.ps1'
+          )
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config

@@ -697,6 +697,30 @@
                                 "remoteBuild": false
                             }
                         }
+                    },
+                    {
+                        "comment": "imagePassthrough requires a service image and cannot be combined with docker.remoteBuild",
+                        "if": {
+                            "required": ["docker"],
+                            "properties": {
+                                "docker": {
+                                    "required": ["imagePassthrough"],
+                                    "properties": {
+                                        "imagePassthrough": { "const": true }
+                                    }
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": ["image"],
+                            "properties": {
+                                "docker": {
+                                    "properties": {
+                                        "remoteBuild": { "const": false }
+                                    }
+                                }
+                            }
+                        }
                     }
                 ]
             }
@@ -1331,6 +1355,11 @@
                     "type": "boolean",
                     "title": "Optional. Whether to build the image remotely",
                     "description": "If set to true, the image will be built remotely using the Azure Container Registry remote build feature. If set to false, the image will be built locally using Docker."
+                },
+                "imagePassthrough": {
+                    "type": "boolean",
+                    "title": "Optional. Whether to use the service image as the final remote artifact",
+                    "description": "If set to true, azd uses the service image as an existing remote image without building, pulling, tagging, copying, or publishing it. A fully qualified remote image passed to azd deploy --from-package overrides the service image for that deployment and is also passed through unchanged; local images, archives, and directories are not supported as overrides. azd publish --from-package and azd publish --to are not supported for passthrough services. Requires the service image property to contain a fully qualified remote image and cannot be combined with docker.remoteBuild."
                 }
             }
         },

@@ -194,7 +194,7 @@ func classifyResponseError(respErr *azcore.ResponseError) (string, []attribute.K
 			attrs = append(attrs,
 				fields.ServiceHost.String(hostName),
 				fields.ServiceMethod.String(respErr.RawResponse.Request.Method),
-				fields.ServiceName.String(serviceName),
+				fields.ServiceNameKey.String(serviceName),
 			)
 		}
 	}
@@ -203,7 +203,7 @@ func classifyResponseError(respErr *azcore.ResponseError) (string, []attribute.K
 }
 
 func classifyArmDeployError(armDeployErr *azapi.AzureDeploymentError) (string, []attribute.KeyValue) {
-	attrs := []attribute.KeyValue{fields.ServiceName.String("arm")}
+	attrs := []attribute.KeyValue{fields.ServiceNameKey.String("arm")}
 	codes := []*deploymentErrorCode{}
 	var collect func(details []*azapi.DeploymentErrorLine, frame int)
 	collect = func(details []*azapi.DeploymentErrorLine, frame int) {
@@ -247,7 +247,7 @@ func classifyExtServiceError(extServiceErr *azdext.ServiceError) (string, []attr
 		var hostDomain string
 		serviceName, hostDomain = mapService(extServiceErr.ServiceName)
 		attrs = append(attrs,
-			fields.ServiceName.String(serviceName),
+			fields.ServiceNameKey.String(serviceName),
 			fields.ServiceHost.String(hostDomain),
 		)
 	}
@@ -282,7 +282,7 @@ func classifyExtLocalError(extLocalErr *azdext.LocalError) (string, []attribute.
 }
 
 func authFailedTelemetryDetails(authFailedErr *auth.AuthFailedError) []attribute.KeyValue {
-	errDetails := []attribute.KeyValue{fields.ServiceName.String("aad")}
+	errDetails := []attribute.KeyValue{fields.ServiceNameKey.String("aad")}
 	if authFailedErr == nil || authFailedErr.Parsed == nil {
 		return errDetails
 	}
@@ -342,6 +342,8 @@ func classifySentinel(err error) string {
 		return "internal.service_not_found"
 	case errors.Is(err, internal.ErrNoExtensionsAvailable):
 		return "internal.no_extensions_available"
+	case errors.Is(err, internal.ErrNoExtensionVersionsAvailable):
+		return "internal.no_extension_versions_available"
 	case errors.Is(err, internal.ErrValidationFailed):
 		return "internal.validation_failed"
 	case errors.Is(err, internal.ErrUnsupportedOperation):

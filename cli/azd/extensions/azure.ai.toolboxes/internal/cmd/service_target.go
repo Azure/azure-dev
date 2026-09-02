@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"strings"
 
+	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/foundry/projectctx"
-	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -37,9 +37,13 @@ type toolboxServiceConfig struct {
 	// azd publishes it for agents instead of creating a new version,
 	// mirroring the azure.ai.project brownfield endpoint. Mutually
 	// exclusive with Tools and Description (a version is immutable).
-	Endpoint    string           `json:"endpoint,omitempty"`
-	Description string           `json:"description,omitempty"`
-	Tools       []map[string]any `json:"tools,omitempty"`
+	Endpoint    string                           `json:"endpoint,omitempty"`
+	Description string                           `json:"description,omitempty"`
+	Connections []definition.ConnectionReference `json:"connections,omitempty"`
+	Skills      []definition.SkillReference      `json:"skills,omitempty"`
+	Tools       []map[string]any                 `json:"tools,omitempty"`
+	Policies    *definition.Policies             `json:"policies,omitempty"`
+	Metadata    map[string]string                `json:"metadata,omitempty"`
 }
 
 // toolboxServiceTarget upserts a Foundry toolbox declared as an azure.ai.toolbox
@@ -157,12 +161,24 @@ func (p *toolboxServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	tools, err := p.buildToolEntries(
+	rawTools, err := p.buildToolEntries(
 		ctx,
 		endpoint,
 		cfg.Tools,
 		environment,
 	)
+	if err != nil {
+		return nil, err
+	}
+	request, err := buildToolboxVersionRequest(ctx, p.resolver, endpoint, &definition.Definition{
+		Name:        name,
+		Description: cfg.Description,
+		Connections: cfg.Connections,
+		Skills:      cfg.Skills,
+		Tools:       rawTools,
+		Policies:    cfg.Policies,
+		Metadata:    cfg.Metadata,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -176,10 +192,7 @@ func (p *toolboxServiceTarget) Deploy(
 		return nil, err
 	}
 
-	created, err := client.CreateToolboxVersion(ctx, name, &azure.CreateToolboxVersionRequest{
-		Description: cfg.Description,
-		Tools:       tools,
-	})
+	created, err := client.CreateToolboxVersion(ctx, name, request)
 	if err != nil {
 		return nil, fmt.Errorf("upserting toolbox %q: %w", name, err)
 	}
@@ -249,15 +262,15 @@ func (p *toolboxServiceTarget) publishReuseEndpoint(
 func resolveReuseEndpoint(
 	name string, cfg *toolboxServiceConfig, env map[string]string,
 ) (string, error) {
-	if len(cfg.Tools) > 0 || strings.TrimSpace(cfg.Description) != "" {
+	if len(cfg.Connections) > 0 || len(cfg.Skills) > 0 || len(cfg.Tools) > 0 ||
+		cfg.Policies != nil || len(cfg.Metadata) > 0 || strings.TrimSpace(cfg.Description) != "" {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf(
-				"toolbox %q sets 'endpoint' together with 'tools'/'description'",
+				"toolbox %q sets 'endpoint' together with definition fields",
 				name,
 			),
-			"set 'endpoint' to reuse an existing toolbox, or remove it to "+
-				"create a new version from 'tools'",
+			"set 'endpoint' to reuse an existing toolbox, or remove it to create a new version",
 		)
 	}
 

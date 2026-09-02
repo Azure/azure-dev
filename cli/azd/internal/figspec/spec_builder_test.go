@@ -359,6 +359,33 @@ func TestGenerateFlagArgs(t *testing.T) {
 		require.Equal(t, "output", args[0].Name)
 	})
 
+	t.Run("flag_with_optional_value_returns_optional_arg", func(t *testing.T) {
+		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		fs.String("infra", "", "Infrastructure provider")
+		f := fs.Lookup("infra")
+		f.NoOptDefVal = "bicep"
+		ctx := &FlagContext{Flag: f, CommandPath: "azd test"}
+
+		sb := newTestSpecBuilder(false)
+		args := sb.generateFlagArgs(f, ctx)
+		require.Len(t, args, 1)
+		require.True(t, args[0].IsOptional)
+	})
+
+	t.Run("custom_flag_arg_preserves_optional_value", func(t *testing.T) {
+		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		fs.String("from-package", "", "Package path")
+		f := fs.Lookup("from-package")
+		f.NoOptDefVal = "."
+		ctx := &FlagContext{Flag: f, CommandPath: "azd deploy"}
+
+		sb := newTestSpecBuilder(false)
+		args := sb.generateFlagArgs(f, ctx)
+		require.Len(t, args, 1)
+		require.Equal(t, "file-path|image-tag", args[0].Name)
+		require.True(t, args[0].IsOptional)
+	})
+
 	t.Run("empty_type_returns_nil", func(t *testing.T) {
 		// A flag with empty type should be treated like a boolean
 		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)

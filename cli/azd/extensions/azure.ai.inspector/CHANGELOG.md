@@ -1,5 +1,17 @@
 # Release History
 
+## 1.0.0-beta.5 (2026-08-24)
+
+### Other Changes
+
+- [[#9580]](https://github.com/Azure/azure-dev/pull/9580) Report when the Agent Inspector interface is ready while preserving the originating trace context.
+
+## 1.0.0-beta.4 (2026-08-20)
+
+### Features Added
+
+- [[#9652]](https://github.com/Azure/azure-dev/pull/9652) Refresh the embedded Agent Inspector UI with response overviews, reasoning details, approval handling, and response metrics.
+
 ## 1.0.0-beta.3 (2026-08-06)
 
 ### Other Changes

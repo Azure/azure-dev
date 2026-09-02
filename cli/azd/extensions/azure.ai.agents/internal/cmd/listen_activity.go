@@ -79,7 +79,7 @@ func writeTeamsAppPackage(
 		DeveloperWebsiteURL:      "https://learn.microsoft.com/azure/ai-foundry/",
 		PrivacyURL:               "https://learn.microsoft.com/azure/ai-foundry/",
 		TermsOfUseURL:            "https://learn.microsoft.com/azure/ai-foundry/",
-		CanRespondWithoutMention: true,
+		CanRespondWithoutMention: new(true),
 	}
 
 	zipBytes, err := agentClient.DownloadTeamsAppPackage(

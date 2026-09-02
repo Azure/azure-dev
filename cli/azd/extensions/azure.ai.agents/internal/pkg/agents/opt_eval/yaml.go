@@ -488,6 +488,12 @@ type Options struct {
 	// (iterations that do not improve over the current best score) before
 	// the optimizer stops early. When nil the service default is used.
 	MaxStalls *int `yaml:"max_stalls,omitempty"`
+	// MaxConcurrentAgentRuns is the maximum number of agent invocations the
+	// evaluation service executes concurrently for each evaluation run.
+	// Values greater than 1 parallelize row evaluation, which significantly
+	// reduces wall-clock time for large datasets. When nil the service
+	// default (sequential) is used.
+	MaxConcurrentAgentRuns *int `yaml:"max_concurrent_agent_runs,omitempty"`
 }
 
 // Read reads a YAML config file (eval or optimize format).

@@ -16,6 +16,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
 )
 
@@ -336,7 +337,7 @@ func TestExtensionError_ToolErrorRoundTrip(t *testing.T) {
 	assert.Equal(t, "docker", protoErr.GetToolError().GetToolName())
 	assert.Equal(t, "failed", protoErr.GetToolError().GetFailureKind())
 	require.NotNil(t, protoErr.GetToolError().ExitCode)
-	assert.Equal(t, int32(23), protoErr.GetToolError().GetExitCode())
+	assert.Equal(t, int64(23), protoErr.GetToolError().GetExitCode())
 
 	unwrapped := UnwrapError(protoErr)
 	var toolErr *ToolError
@@ -347,6 +348,30 @@ func TestExtensionError_ToolErrorRoundTrip(t *testing.T) {
 	require.NotNil(t, toolErr.ExitCode)
 	assert.Equal(t, 23, *toolErr.ExitCode)
 	assert.Equal(t, "Check the Docker build output", toolErr.Suggestion)
+}
+
+func TestExtensionError_ToolErrorExitCodeWireRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	const windowsExitCode int64 = 0xC0000135
+	input := &ExtensionError{
+		Message: "tool failed",
+		Origin:  ErrorOrigin_ERROR_ORIGIN_TOOL,
+		Source: &ExtensionError_ToolError{
+			ToolError: &ToolErrorDetail{
+				ToolName:    "tool",
+				FailureKind: "failed",
+				ExitCode:    new(windowsExitCode),
+			},
+		},
+	}
+
+	encoded, err := proto.Marshal(input)
+	require.NoError(t, err)
+
+	var decoded ExtensionError
+	require.NoError(t, proto.Unmarshal(encoded, &decoded))
+	require.Equal(t, windowsExitCode, decoded.GetToolError().GetExitCode())
 }
 
 func TestErrorDetailsFromStatus(t *testing.T) {

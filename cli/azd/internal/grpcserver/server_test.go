@@ -684,7 +684,7 @@ func TestMapHostError_RelaysExtensionToolError(t *testing.T) {
 	require.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_TOOL, relayed.GetOrigin())
 	require.Equal(t, "docker", relayed.GetToolError().GetToolName())
 	require.Equal(t, "failed", relayed.GetToolError().GetFailureKind())
-	require.Equal(t, int32(42), relayed.GetToolError().GetExitCode())
+	require.Equal(t, int64(42), relayed.GetToolError().GetExitCode())
 
 	recovered := azdext.UnwrapError(relayed)
 	var recoveredToolErr *azdext.ToolError

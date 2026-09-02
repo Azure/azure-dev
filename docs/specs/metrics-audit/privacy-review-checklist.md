@@ -10,7 +10,7 @@ checklist:
 
 | Field or data | Classification | Privacy decision |
 |---------------|----------------|------------------|
-| `error.chain.types` | SystemMetadata | Bounded to 16 validated, de-duplicated Go type names; generic wrappers are omitted and no error message or customer content is emitted |
+| `error.chain.types` | SystemMetadata | Bounded to 16 code-defined Go type names; extension-provided `CauseTypes` are validated, de-duplicated, and stripped of generic wrappers, while local chains preserve their traversal types |
 | `error.mapper.source.type` | SystemMetadata | Emits only the sanitized source type name from the registered mapper |
 | `error.mapper.destination.type` | SystemMetadata | Emits only the sanitized destination type name from the registered mapper |
 | `error.tool.name` | SystemMetadata | Extension-provided `ToolError` names are normalized to 1-64 ASCII characters from `[a-z0-9_-]`; invalid or oversized values become `other` |

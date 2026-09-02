@@ -208,7 +208,7 @@ type ToolErrorDetail struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ToolName      string                 `protobuf:"bytes,1,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`          // Normalized tool name (for example, "docker")
 	FailureKind   string                 `protobuf:"bytes,2,opt,name=failure_kind,json=failureKind,proto3" json:"failure_kind,omitempty"` // Stable failure kind: "missing" or "failed"
-	ExitCode      *int32                 `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`   // Process exit code when the tool ran and failed
+	ExitCode      *int64                 `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`   // Process exit code when the tool ran and failed
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -257,7 +257,7 @@ func (x *ToolErrorDetail) GetFailureKind() string {
 	return ""
 }
 
-func (x *ToolErrorDetail) GetExitCode() int32 {
+func (x *ToolErrorDetail) GetExitCode() int64 {
 	if x != nil && x.ExitCode != nil {
 		return *x.ExitCode
 	}
@@ -534,7 +534,7 @@ const file_errors_proto_rawDesc = "" +
 	"\x0fToolErrorDetail\x12\x1b\n" +
 	"\ttool_name\x18\x01 \x01(\tR\btoolName\x12!\n" +
 	"\ffailure_kind\x18\x02 \x01(\tR\vfailureKind\x12 \n" +
-	"\texit_code\x18\x03 \x01(\x05H\x00R\bexitCode\x88\x01\x01B\f\n" +
+	"\texit_code\x18\x03 \x01(\x03H\x00R\bexitCode\x88\x01\x01B\f\n" +
 	"\n" +
 	"_exit_code\"3\n" +
 	"\tErrorLink\x12\x10\n" +

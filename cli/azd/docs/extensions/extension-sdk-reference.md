@@ -744,10 +744,12 @@ Represents an error from an Azure service call.
 ```go
 type ToolError struct {
     Message    string
+    Err        error
     ToolName   string
     Kind       ToolErrorKind
     ExitCode   *int
     Suggestion string
+    Links      []errorhandler.ErrorLink
 }
 ```
 

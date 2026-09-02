@@ -36,7 +36,7 @@ message LocalErrorDetail {
 message ToolErrorDetail {
   string tool_name = 1;       // Normalized tool name (for example, "docker")
   string failure_kind = 2;    // Stable failure kind: "missing" or "failed"
-  optional int32 exit_code = 3;  // Process exit code when the tool ran and failed
+  optional int64 exit_code = 3; // Process exit code when the tool ran and failed
 }
 
 // ErrorLink contains a reference link with a URL and optional title.

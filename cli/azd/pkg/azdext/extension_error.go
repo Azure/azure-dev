@@ -163,8 +163,7 @@ func WrapError(err error) *ExtensionError {
 			FailureKind: string(kind),
 		}
 		if extToolErr.ExitCode != nil {
-			// Process exit codes are in the int32 range on supported platforms.
-			exitCode := int32(*extToolErr.ExitCode) //nolint:gosec // process exit codes fit in int32
+			exitCode := int64(*extToolErr.ExitCode)
 			toolDetail.ExitCode = &exitCode
 		}
 

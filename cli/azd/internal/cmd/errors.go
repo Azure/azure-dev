@@ -55,12 +55,10 @@ func MapError(err error, span tracing.Span) {
 	// what hides behind a generic ResultCode like internal.unclassified
 	// without needing to repro. Type names are code-defined and PII-free.
 	chainTypes := errchain.Types(err)
-	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
-		remoteTypes := errorchain.NormalizeCauseTypes(localErr.CauseTypes)
-		chainTypes = appendUniqueStrings(chainTypes, remoteTypes...)
-		if len(remoteTypes) > 0 && !hasErrorTypeAttribute(attrs) {
-			attrs = append(attrs, fields.ErrType.String(errorchain.DeepestNamedTypeFromTypes(remoteTypes)))
-		}
+	remoteTypes := causeTypesForTelemetry(err)
+	chainTypes = appendUniqueStrings(chainTypes, remoteTypes...)
+	if len(remoteTypes) > 0 && !hasErrorTypeAttribute(attrs) {
+		attrs = append(attrs, fields.ErrType.String(errorchain.DeepestNamedTypeFromTypes(remoteTypes)))
 	}
 	span.SetAttributes(fields.ErrChainTypes.StringSlice(chainTypes))
 
@@ -86,6 +84,29 @@ func MapError(err error, span tracing.Span) {
 	}
 
 	span.SetStatus(codes.Error, code)
+}
+
+func causeTypesForTelemetry(err error) []string {
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return errorchain.NormalizeCauseTypes(localErr.CauseTypes)
+	}
+
+	st, ok := azdext.GRPCStatusFromError(err)
+	if !ok {
+		return nil
+	}
+
+	relayed := azdext.ExtensionErrorFromStatus(st)
+	if relayed == nil {
+		return nil
+	}
+
+	localErr, ok := errors.AsType[*azdext.LocalError](azdext.UnwrapError(relayed))
+	if !ok {
+		return nil
+	}
+
+	return errorchain.NormalizeCauseTypes(localErr.CauseTypes)
 }
 
 func hasErrorTypeAttribute(attrs []attribute.KeyValue) bool {
@@ -172,10 +193,7 @@ func classify(err error) (string, []attribute.KeyValue) {
 		return "ext.run.failed", nil
 	}
 	if toolExecErr, ok := errors.AsType[*exec.ExitError](err); ok {
-		toolName := "other"
-		if cmdName := exec.CommandName(toolExecErr.Cmd); cmdName != "" {
-			toolName = cmdName
-		}
+		toolName := normalizeToolName(toolExecErr.Cmd)
 		return fmt.Sprintf("tool.%s.failed", toolName), []attribute.KeyValue{
 			fields.ToolExitCode.Int(toolExecErr.ExitCode),
 			fields.ToolName.String(toolName),
@@ -183,28 +201,20 @@ func classify(err error) (string, []attribute.KeyValue) {
 	}
 	if toolCheckErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
 		if len(toolCheckErr.ToolNames) == 1 {
-			toolName := "other"
-			if cmdName := exec.CommandName(toolCheckErr.ToolNames[0]); cmdName != "" {
-				toolName = cmdName
-			}
+			toolName := normalizeToolName(toolCheckErr.ToolNames[0])
 			return fmt.Sprintf("tool.%s.missing", toolName),
 				[]attribute.KeyValue{fields.ToolName.String(toolName)}
 		}
 		toolNames := make([]string, 0, len(toolCheckErr.ToolNames))
 		for _, name := range toolCheckErr.ToolNames {
-			if normalized := exec.CommandName(name); normalized != "" {
-				toolNames = append(toolNames, normalized)
-			}
+			toolNames = append(toolNames, normalizeToolName(name))
 		}
 		return "tool.multiple.missing", []attribute.KeyValue{
 			fields.ToolName.String(strings.Join(toolNames, ",")),
 		}
 	}
 	if processErr, ok := errors.AsType[*osexec.Error](err); ok {
-		toolName := "other"
-		if normalized := exec.CommandName(processErr.Name); normalized != "" {
-			toolName = normalized
-		}
+		toolName := normalizeToolName(processErr.Name)
 
 		failureKind := "failed"
 		if errors.Is(processErr.Err, osexec.ErrNotFound) {

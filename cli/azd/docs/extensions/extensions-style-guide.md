@@ -129,7 +129,8 @@ external-tool failures:
   Fields: `Message`, `Code`, `Category`, `CauseTypes`, `Suggestion`.
 
 - **`azdext.ToolError`** — for failures from external tools or subprocesses.
-  Fields: `Message`, `ToolName`, `Kind`, `ExitCode`, `Suggestion`.
+  Fields: `Message`, `Err`, `ToolName`, `Kind`, `ExitCode`, `Suggestion`,
+  `Links`.
   Use `ToolErrorKindMissing` when the tool was not found and
   `ToolErrorKindFailed` when it ran and failed.
 

@@ -1118,6 +1118,42 @@ func Test_MapError_RemoteCauseTypes(t *testing.T) {
 	require.NotContains(t, attributes, attribute.Key("error.extension.cause_types"))
 }
 
+func Test_MapError_GRPCStatusRemoteCauseTypes(t *testing.T) {
+	t.Parallel()
+
+	statusErr, err := status.New(codes.Unknown, "extension failed").WithDetails(
+		&azdext.ExtensionError{
+			Message: "extension failed",
+			Origin:  azdext.ErrorOrigin_ERROR_ORIGIN_LOCAL,
+			Source: &azdext.ExtensionError_LocalError{
+				LocalError: &azdext.LocalErrorDetail{
+					Code:     "invalid_project",
+					Category: "validation",
+					CauseTypes: []string{
+						"*fmt.wrapError",
+						"*agents.RemoteError",
+					},
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	span := &mocktracing.Span{}
+	MapError(statusErr.Err(), span)
+
+	attributes := make(map[attribute.Key]attribute.Value, len(span.Attributes))
+	for _, attr := range span.Attributes {
+		attributes[attr.Key] = attr.Value
+	}
+
+	require.Equal(t, "ext.validation.invalid_project", span.Status.Description)
+	require.Equal(t, attribute.StringValue("*agents.RemoteError"),
+		attributes[fields.ErrType.Key])
+	require.Contains(t, attributes[fields.ErrChainTypes.Key].AsStringSlice(),
+		"*agents.RemoteError")
+}
+
 func Test_MapError_ChainTypesCapsMergedRemoteTypes(t *testing.T) {
 	t.Parallel()
 
@@ -1317,6 +1353,15 @@ func TestMapError_StandardExecError(t *testing.T) {
 			}),
 			wantCode: "tool.docker.failed",
 			wantTool: "docker",
+		},
+		{
+			name: "InvalidToolName",
+			err: &osexec.Error{
+				Name: filepath.Join("tools", "Docker Tool.EXE"),
+				Err:  osexec.ErrNotFound,
+			},
+			wantCode: "tool.other.missing",
+			wantTool: "other",
 		},
 		{
 			name:     "UnknownTool",

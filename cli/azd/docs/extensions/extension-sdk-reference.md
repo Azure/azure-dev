@@ -721,7 +721,9 @@ type LocalError struct {
 Represents an error originating within the extension. The `Suggestion` field
 provides actionable guidance displayed to the user. `CauseTypes` contains
 bounded, safe Go error type names for unexpected fallback errors; it is
-diagnostic evidence and does not determine the error classification.
+diagnostic evidence and does not determine the error classification. The host
+normalizes these values at both gRPC boundaries by removing generic wrappers,
+duplicates, unsafe names, and values beyond the 16-item limit.
 
 ### ServiceError
 
@@ -752,7 +754,12 @@ type ToolError struct {
 Represents a failure from an external tool or subprocess. `Kind` is either
 `ToolErrorKindMissing` when the tool was not found or `ToolErrorKindFailed`
 when the tool ran and returned an error. `ExitCode` is populated only for a
-failed invocation that returned a process exit code.
+failed invocation that returned a process exit code. For telemetry, the host
+normalizes `ToolName` by taking the basename from either POSIX or Windows
+paths, removing the executable extension, and lowercasing it. Only 1-64 ASCII
+characters matching `[a-z0-9_-]` are accepted; invalid or oversized values
+are recorded as `other`. This normalization does not change the displayed
+error.
 
 ### LocalErrorCategory
 

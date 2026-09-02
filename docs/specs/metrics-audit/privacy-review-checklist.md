@@ -13,13 +13,14 @@ checklist:
 | `error.chain.types` | SystemMetadata | Bounded to 16 validated, de-duplicated Go type names; generic wrappers are omitted and no error message or customer content is emitted |
 | `error.mapper.source.type` | SystemMetadata | Emits only the sanitized source type name from the registered mapper |
 | `error.mapper.destination.type` | SystemMetadata | Emits only the sanitized destination type name from the registered mapper |
-| `extension.event` on failed `ext.run` spans | SystemMetadata | Host lifecycle metadata; extension-supplied usage values remain restricted to the reviewed `ext.usage` admission path |
+| `error.tool.name` | SystemMetadata | Extension-provided `ToolError` names are normalized to 1-64 ASCII characters from `[a-z0-9_-]`; invalid or oversized values become `other` |
+| `extension.event` on failed lifecycle-hook `cmd.*` spans | SystemMetadata | Host lifecycle metadata; failed `ext.run` commands carry only extension ID and version, while extension-supplied usage values remain restricted to the reviewed `ext.usage` admission path |
 
-No new event or user-provided string is introduced. No fields are unhashed
-because the new values are bounded code-defined metadata rather than project,
+No new event or unbounded user-provided string is introduced. No fields are
+unhashed because the new values are bounded metadata rather than project,
 environment, path, or customer content. The corresponding unit tests cover
-error-chain bounds, type-name validation, mapper attribution, and extension
-identity attribution.
+error-chain bounds, type-name validation, mapper attribution, tool-name
+normalization, and extension identity attribution.
 
 ## When to Trigger a Privacy Review
 

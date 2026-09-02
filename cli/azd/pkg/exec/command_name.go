@@ -11,7 +11,7 @@ import (
 // CommandName returns a safe, normalized command name for telemetry.
 // It removes the path and executable extension and lowercases the result.
 func CommandName(command string) string {
-	command = filepath.Base(command)
+	command = filepath.Base(strings.ReplaceAll(command, "\\", "/"))
 	if len(command) > 0 && command[0] == '.' {
 		if len(command) == 1 {
 			return ""

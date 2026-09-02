@@ -98,7 +98,10 @@ func hasErrorTypeAttribute(attrs []attribute.KeyValue) bool {
 }
 
 func appendUniqueStrings(values []string, additions ...string) []string {
-	if len(additions) == 0 {
+	if len(values) > errorchain.MaxChainLen {
+		values = values[:errorchain.MaxChainLen]
+	}
+	if len(additions) == 0 || len(values) >= errorchain.MaxChainLen {
 		return values
 	}
 
@@ -107,6 +110,9 @@ func appendUniqueStrings(values []string, additions ...string) []string {
 		seen[value] = struct{}{}
 	}
 	for _, addition := range additions {
+		if len(values) >= errorchain.MaxChainLen {
+			break
+		}
 		if _, exists := seen[addition]; exists {
 			continue
 		}
@@ -425,10 +431,7 @@ func classifyExtLocalError(extLocalErr *azdext.LocalError) (string, []attribute.
 }
 
 func classifyExtToolError(extToolErr *azdext.ToolError) (string, []attribute.KeyValue) {
-	toolName := "other"
-	if normalized := exec.CommandName(extToolErr.ToolName); normalized != "" {
-		toolName = normalized
-	}
+	toolName := normalizeToolName(extToolErr.ToolName)
 
 	if extToolErr.Kind == azdext.ToolErrorKindMissing {
 		return fmt.Sprintf("tool.%s.missing", toolName), []attribute.KeyValue{
@@ -441,6 +444,26 @@ func classifyExtToolError(extToolErr *azdext.ToolError) (string, []attribute.Key
 		attrs = append(attrs, fields.ToolExitCode.Int(*extToolErr.ExitCode))
 	}
 	return fmt.Sprintf("tool.%s.failed", toolName), attrs
+}
+
+const maxTelemetryToolNameLength = 64
+
+func normalizeToolName(toolName string) string {
+	toolName = exec.CommandName(toolName)
+	if len(toolName) == 0 || len(toolName) > maxTelemetryToolNameLength {
+		return "other"
+	}
+
+	for i := range toolName {
+		char := toolName[i]
+		if (char < 'a' || char > 'z') &&
+			(char < '0' || char > '9') &&
+			char != '_' && char != '-' {
+			return "other"
+		}
+	}
+
+	return toolName
 }
 
 func authFailedTelemetryDetails(authFailedErr *auth.AuthFailedError) []attribute.KeyValue {

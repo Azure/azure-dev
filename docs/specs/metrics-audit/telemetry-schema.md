@@ -126,7 +126,7 @@ These are set once at process startup via `resource.New()` and attached to every
 | Error category | `error.category` | SystemMetadata | PerformanceAndHealth | |
 | Error code | `error.code` | SystemMetadata | PerformanceAndHealth | |
 | Error type | `error.type` | SystemMetadata | PerformanceAndHealth | ResultCode or Go type for the classified error |
-| Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | Bounded wrapped Go error type chain, outermost first |
+| Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | At most 16 wrapped Go error type names, outermost first; extension-provided cause types are normalized |
 | Mapper source type | `error.mapper.source.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go source type on a mapper conversion failure |
 | Mapper destination type | `error.mapper.destination.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go destination type on a mapper conversion failure |
 
@@ -158,7 +158,7 @@ tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `er
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Tool name | `tool.name` | SystemMetadata | PerformanceAndHealth | |
+| Tool name | `tool.name` | SystemMetadata | PerformanceAndHealth | Normalized lowercase basename; extension-provided names are limited to 1-64 ASCII characters from `[a-z0-9_-]`, otherwise `other`; multiple missing tools remain comma-separated |
 | Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 
 ### Performance
@@ -255,9 +255,11 @@ tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `er
 Extensions do not have individual fields listed in this document. An extension
 reports a named event with an arbitrary attribute map, and `azd` records it on
 an `ext.usage` span alongside `extension.id`, `extension.version`,
-`extension.source`, and `extension.event`. Failed extension invocations use
-`extension.id`, `extension.version`, and `extension.event` on the failed
-`ext.run` span, but do not create an `ext.usage` span.
+`extension.source`, and `extension.event`. Failed extension commands use
+`extension.id` and `extension.version` on the failed `ext.run` span, but do
+not set `extension.event` or create an `ext.usage` span. Failed lifecycle
+hooks use the enclosing `cmd.*` span and include the extension ID, version,
+and lifecycle event.
 
 `azd` core carries no product-specific telemetry semantics for these fields.
 The following rules are enforced by the host and are what this schema

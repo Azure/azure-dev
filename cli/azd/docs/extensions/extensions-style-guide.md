@@ -149,6 +149,15 @@ The host classifies extension errors into telemetry codes using the pattern:
 | `ToolError` | `tool.<toolName>.missing` or `tool.<toolName>.failed` |
 | Unclassified | `ext.run.failed` |
 
+Failed extension commands use an `ext.run` span with the extension ID and
+version, but no `extension.event`. Failed lifecycle hooks use the enclosing
+`cmd.*` span and include the extension ID, version, and lifecycle event.
+
+For `ToolError`, the host derives the telemetry name from either POSIX or
+Windows paths, removes the executable extension, and lowercases the basename.
+It accepts only 1-64 ASCII characters matching `[a-z0-9_-]`; invalid or
+oversized names are recorded as `other` without changing the displayed error.
+
 ### Recommended Layering Pattern
 
 **Entry-point or orchestration layer**: Usually creates structured errors once it can confidently choose the final category, code, and suggestion. This often includes command handlers, top-level actions, or other user-facing coordination code.

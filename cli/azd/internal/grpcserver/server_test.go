@@ -385,6 +385,22 @@ func TestServer_RelaysExtensionErrorOverGRPC(t *testing.T) {
 	var recoveredServiceErr *azdext.ServiceError
 	require.ErrorAs(t, recovered, &recoveredServiceErr)
 	require.Equal(t, serviceErr, recoveredServiceErr)
+
+	returnedToExtension := azdext.WrapError(err)
+	require.Equal(t, st.Message(), returnedToExtension.GetMessage())
+	require.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_SERVICE,
+		returnedToExtension.GetOrigin())
+	require.Equal(t, serviceErr.ErrorCode,
+		returnedToExtension.GetServiceError().GetErrorCode())
+
+	returnedToHost := azdext.UnwrapError(returnedToExtension)
+	roundTripStatus, ok := status.FromError(mapHostError(returnedToHost))
+	require.True(t, ok)
+	roundTripRelayed := requireRelayedExtensionError(t, roundTripStatus)
+	require.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_SERVICE,
+		roundTripRelayed.GetOrigin())
+	require.Equal(t, serviceErr.ErrorCode,
+		roundTripRelayed.GetServiceError().GetErrorCode())
 }
 
 type relayingContainerService struct {
@@ -679,6 +695,35 @@ func TestMapHostError_RelaysExtensionToolError(t *testing.T) {
 	require.NotNil(t, recoveredToolErr.ExitCode)
 	require.Equal(t, *toolErr.ExitCode, *recoveredToolErr.ExitCode)
 	require.Equal(t, toolErr.Suggestion, recoveredToolErr.Suggestion)
+}
+
+func TestMapHostError_ToolErrorSurvivesExtensionRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	toolErr := &azdext.ToolError{
+		Message:  "docker build failed",
+		ToolName: "docker",
+		Kind:     azdext.ToolErrorKindFailed,
+	}
+	hostStatus, ok := status.FromError(
+		mapHostError(fmt.Errorf("building container: %w", toolErr)),
+	)
+	require.True(t, ok)
+
+	returnedToExtension := azdext.WrapError(hostStatus.Err())
+	require.Equal(t, hostStatus.Message(), returnedToExtension.GetMessage())
+	require.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_TOOL,
+		returnedToExtension.GetOrigin())
+	require.Equal(t, "docker", returnedToExtension.GetToolError().GetToolName())
+
+	returnedToHost := azdext.UnwrapError(returnedToExtension)
+	roundTripStatus, ok := status.FromError(mapHostError(returnedToHost))
+	require.True(t, ok)
+	roundTripRelayed := requireRelayedExtensionError(t, roundTripStatus)
+	require.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_TOOL,
+		roundTripRelayed.GetOrigin())
+	require.Equal(t, "docker", roundTripRelayed.GetToolError().GetToolName())
+	require.Equal(t, "failed", roundTripRelayed.GetToolError().GetFailureKind())
 }
 
 func TestMapHostError_DoesNotDuplicateRelayedExtensionError(t *testing.T) {

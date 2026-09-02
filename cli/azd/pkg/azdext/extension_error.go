@@ -7,9 +7,11 @@ import (
 	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // ServiceError represents an HTTP/gRPC service error from an extension.
@@ -148,7 +150,7 @@ func WrapError(err error) *ExtensionError {
 			LocalError: &LocalErrorDetail{
 				Code:       extLocalErr.Code,
 				Category:   string(normalizedCategory),
-				CauseTypes: cloneStrings(extLocalErr.CauseTypes),
+				CauseTypes: errorchain.NormalizeCauseTypes(extLocalErr.CauseTypes),
 			},
 		}
 		return extErr
@@ -204,7 +206,46 @@ func WrapError(err error) *ExtensionError {
 // the string-equality fallbacks that earlier versions used.
 func populateExtensionErrorFromStatus(extErr *ExtensionError, st *status.Status) {
 	actionable := ActionableErrorDetailFromStatus(st)
+	relayed := ExtensionErrorFromStatus(st)
+	serviceDetail := ServiceErrorDetailFromStatus(st)
 	isAuth := st.Code() == codes.Unauthenticated
+
+	if relayed != nil {
+		relayedCopy := proto.Clone(relayed).(*ExtensionError)
+		relayedCopy.Message = st.Message()
+		if localErr := relayedCopy.GetLocalError(); localErr != nil {
+			localErr.CauseTypes = errorchain.NormalizeCauseTypes(
+				localErr.GetCauseTypes(),
+			)
+		}
+		if actionable != nil {
+			if relayedCopy.GetSuggestion() == "" {
+				relayedCopy.Suggestion = actionable.GetSuggestion()
+			}
+			if len(relayedCopy.GetLinks()) == 0 {
+				relayedCopy.Links = actionable.GetLinks()
+			}
+		}
+		extErr.Message = relayedCopy.Message
+		extErr.Suggestion = relayedCopy.Suggestion
+		extErr.Links = relayedCopy.Links
+		extErr.Origin = relayedCopy.Origin
+		extErr.Source = relayedCopy.Source
+		return
+	}
+
+	if serviceDetail != nil {
+		extErr.Message = st.Message()
+		if actionable != nil {
+			extErr.Suggestion = actionable.GetSuggestion()
+			extErr.Links = actionable.GetLinks()
+		}
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_SERVICE
+		extErr.Source = &ExtensionError_ServiceError{
+			ServiceError: proto.Clone(serviceDetail).(*ServiceErrorDetail),
+		}
+		return
+	}
 
 	if actionable == nil && !isAuth {
 		// Plain gRPC error with no host metadata; leave extErr as-is so the caller
@@ -355,7 +396,7 @@ func UnwrapError(msg *ExtensionError) error {
 			Message:    msg.GetMessage(),
 			Code:       localErr.GetCode(),
 			Category:   normalizedCategory,
-			CauseTypes: cloneStrings(localErr.GetCauseTypes()),
+			CauseTypes: errorchain.NormalizeCauseTypes(localErr.GetCauseTypes()),
 			Suggestion: msg.GetSuggestion(),
 			Links:      links,
 		}
@@ -455,12 +496,4 @@ func UnwrapErrorLinks(links []*ErrorLink) []errorhandler.ErrorLink {
 	}
 
 	return unwrapped
-}
-
-func cloneStrings(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-
-	return append([]string(nil), values...)
 }

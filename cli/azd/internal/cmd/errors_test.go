@@ -34,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -1117,6 +1118,34 @@ func Test_MapError_RemoteCauseTypes(t *testing.T) {
 	require.NotContains(t, attributes, attribute.Key("error.extension.cause_types"))
 }
 
+func Test_MapError_ChainTypesCapsMergedRemoteTypes(t *testing.T) {
+	t.Parallel()
+
+	var err error = &azdext.LocalError{
+		Message:    "agent operation failed",
+		Code:       "agent_operation_failed",
+		Category:   azdext.LocalErrorCategoryInternal,
+		CauseTypes: []string{"*agents.RemoteError"},
+	}
+	for range errorchain.MaxChainLen - 1 {
+		err = fmt.Errorf("wrap: %w", err)
+	}
+
+	span := &mocktracing.Span{}
+	MapError(err, span)
+
+	var chainTypes []string
+	for _, attr := range span.Attributes {
+		if attr.Key == fields.ErrChainTypes.Key {
+			chainTypes = attr.Value.AsStringSlice()
+			break
+		}
+	}
+
+	require.Len(t, chainTypes, errorchain.MaxChainLen)
+	require.NotContains(t, chainTypes, "*agents.RemoteError")
+}
+
 func TestMapError_GRPCStatus(t *testing.T) {
 	t.Parallel()
 
@@ -1360,10 +1389,11 @@ func TestMapError_ToolError(t *testing.T) {
 		name       string
 		err        *azdext.ToolError
 		wantReason string
+		wantTool   string
 		wantCode   bool
 	}{
 		{
-			name: "failed",
+			name: "failed windows path",
 			err: &azdext.ToolError{
 				Message:  "docker failed",
 				ToolName: `C:\Program Files\Docker\docker.exe`,
@@ -1371,16 +1401,38 @@ func TestMapError_ToolError(t *testing.T) {
 				ExitCode: &exitCode,
 			},
 			wantReason: "tool.docker.failed",
+			wantTool:   "docker",
 			wantCode:   true,
 		},
 		{
-			name: "missing",
+			name: "missing posix path",
 			err: &azdext.ToolError{
 				Message:  "docker is not installed",
-				ToolName: "Docker",
+				ToolName: "/usr/local/bin/docker",
 				Kind:     azdext.ToolErrorKindMissing,
 			},
 			wantReason: "tool.docker.missing",
+			wantTool:   "docker",
+		},
+		{
+			name: "invalid name",
+			err: &azdext.ToolError{
+				Message:  "tool failed",
+				ToolName: "Docker Tool",
+				Kind:     azdext.ToolErrorKindFailed,
+			},
+			wantReason: "tool.other.failed",
+			wantTool:   "other",
+		},
+		{
+			name: "oversized name",
+			err: &azdext.ToolError{
+				Message:  "tool failed",
+				ToolName: strings.Repeat("a", maxTelemetryToolNameLength+1),
+				Kind:     azdext.ToolErrorKindMissing,
+			},
+			wantReason: "tool.other.missing",
+			wantTool:   "other",
 		},
 	}
 
@@ -1395,7 +1447,8 @@ func TestMapError_ToolError(t *testing.T) {
 			for _, attr := range span.Attributes {
 				attributes[attr.Key] = attr.Value
 			}
-			require.Equal(t, attribute.StringValue("docker"), attributes[fields.ErrorKey(fields.ToolName.Key)])
+			require.Equal(t, attribute.StringValue(tt.wantTool),
+				attributes[fields.ErrorKey(fields.ToolName.Key)])
 			if tt.wantCode {
 				require.Equal(t, attribute.IntValue(17), attributes[fields.ErrorKey(fields.ToolExitCode.Key)])
 			} else {

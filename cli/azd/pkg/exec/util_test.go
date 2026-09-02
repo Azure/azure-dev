@@ -16,6 +16,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCommandName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		command string
+		want    string
+	}{
+		{name: "empty", command: "", want: ""},
+		{name: "posix path", command: "/usr/local/bin/Docker", want: "docker"},
+		{name: "windows path", command: `C:\Program Files\Docker\Docker.EXE`, want: "docker"},
+		{name: "slash path", command: `C:/Program Files/Docker/Docker.EXE`, want: "docker"},
+		{name: "hidden file", command: ".TOOL", want: "tool"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, CommandName(tt.command))
+		})
+	}
+}
+
 func TestRunCommand(t *testing.T) {
 	runner := NewCommandRunner(nil)
 

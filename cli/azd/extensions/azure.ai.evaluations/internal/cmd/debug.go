@@ -71,11 +71,20 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 	}
 }
 
-// isDebug reports whether --debug or AZD_EXT_DEBUG is set.
+// isDebug reports whether diagnostics were asked for.
+//
+// AZD_DEBUG is how the host forwards its own global --debug to an extension;
+// reading only AZD_EXT_DEBUG left `azd --debug ai dataset ...` -- the form the
+// README documents -- writing nothing. AZD_EXT_DEBUG stays because it is the
+// only way to turn this on for an extension invoked directly.
 func isDebug(flags *pflag.FlagSet) bool {
 	if debugFlag, err := flags.GetBool("debug"); err == nil && debugFlag {
 		return true
 	}
-	debug, _ := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG"))
-	return debug
+	for _, key := range []string{"AZD_DEBUG", "AZD_EXT_DEBUG"} {
+		if debug, err := strconv.ParseBool(os.Getenv(key)); err == nil && debug {
+			return true
+		}
+	}
+	return false
 }

@@ -17,6 +17,7 @@ import (
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -70,8 +71,17 @@ func isJSON(cmd *cobra.Command) bool {
 //
 // JSON output counts: a prompt written into a document nobody is reading is a
 // hang, not a question.
+//
+// The flag is only half of it. azd folds CI detection, agent detection,
+// --non-interactive and AZD_NON_INTERACTIVE into the AZD_NO_PROMPT it sets in
+// the extension's environment, and never sets this cobra flag -- so reading the
+// flag alone let an unattended delete take the confirm RPC's default of no,
+// report the artifact left alone, and exit 0 instead of asking for --force.
 func noPrompt(cmd *cobra.Command) bool {
 	if isJSON(cmd) {
+		return true
+	}
+	if azdext.DetectInteractive().NoPrompt {
 		return true
 	}
 	value, err := cmd.Flags().GetBool("no-prompt")

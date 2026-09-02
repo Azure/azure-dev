@@ -14,7 +14,11 @@ import (
 )
 
 // schema builds an evaluator contract the way the service publishes one.
-func schema(name string, dataRequired, dataProps, initRequired, initProps []string, levels ...string) *eval_api.EvaluatorSummary {
+func schema(
+	name string,
+	dataRequired, dataProps, initRequired, initProps []string,
+	levels ...string,
+) *eval_api.EvaluatorSummary {
 	toProps := func(names []string) map[string]any {
 		if names == nil {
 			return nil

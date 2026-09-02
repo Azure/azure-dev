@@ -37,7 +37,7 @@ func TestAWronglyShapedConfigIsRefusedRatherThanErased(t *testing.T) {
 
 			require.Error(t, err, "a file this cannot edit must be reported, not rewritten")
 
-			after, readErr := os.ReadFile(path)
+			after, readErr := os.ReadFile(path) //nolint:gosec // path is this test's own temp file
 			require.NoError(t, readErr)
 			assert.Equal(t, tc.body, string(after),
 				"the author's file has to survive a command that refused to edit it")
@@ -57,7 +57,7 @@ func TestAnEmptyCatalogKeyStillAcceptsEntries(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, changed)
 
-	after, readErr := os.ReadFile(path)
+	after, readErr := os.ReadFile(path) //nolint:gosec // path is this test's own temp file
 	require.NoError(t, readErr)
 	assert.Contains(t, string(after), "rows")
 }
@@ -74,7 +74,7 @@ func TestACatalogThatIsNotAListIsRefused(t *testing.T) {
 
 	require.Error(t, err)
 
-	after, readErr := os.ReadFile(path)
+	after, readErr := os.ReadFile(path) //nolint:gosec // path is this test's own temp file
 	require.NoError(t, readErr)
 	assert.Equal(t, body, string(after), "nothing may be discarded to make room")
 }

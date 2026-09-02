@@ -9,12 +9,16 @@ linters:
     - errorlint
   settings:
     lll:
-      line-length: 220
+      line-length: 125
       tab-width: 4
-    gosec:
-      excludes:
-        - G204 # Subprocess launched with variable (bicep build invoked in tests)
-        - G304 # Potential file inclusion via variable
+  exclusions:
+    rules:
+      # G304 cannot apply to a path a test computed from its own t.TempDir().
+      # Production reads stay covered; the few there carry their own #nosec.
+      - path: _test\.go$
+        text: G304
+        linters:
+          - gosec
 
 formatters:
   enable:

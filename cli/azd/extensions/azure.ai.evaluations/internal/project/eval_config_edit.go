@@ -135,6 +135,7 @@ func removeSequenceEntryNamed(seq *yaml.Node, name string) {
 // readConfigDocument parses the configuration at path, answering an empty
 // document when there is nothing there yet.
 func readConfigDocument(path string) (*yaml.Node, error) {
+	// #nosec G304 -- reading the configuration the caller named is the point.
 	body, err := os.ReadFile(path)
 	switch {
 	case err == nil:

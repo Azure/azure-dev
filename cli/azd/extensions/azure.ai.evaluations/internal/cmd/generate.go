@@ -84,6 +84,7 @@ func resolveInstruction(inline, path string) (string, error) {
 	if path == "" {
 		return inline, nil
 	}
+	// #nosec G304 -- path is the file the caller named on the command line.
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return "", messages.ReadingInstructionFile(path, err)
@@ -110,6 +111,7 @@ func declaredInstructions(named, configPath string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(filepath.Dir(configPath), filepath.FromSlash(named))
 	}
+	// #nosec G304 -- named comes from the eval config, resolved against it.
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "", nil

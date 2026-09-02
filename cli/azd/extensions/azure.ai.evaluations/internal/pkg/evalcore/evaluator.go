@@ -46,6 +46,7 @@ type EvaluatorRef struct {
 	// InitializationParameters carry the judge deployment and a built-in's
 	// numeric threshold. They are bound against the evaluator's published
 	// contract rather than forwarded as written.
+	//nolint:lll // a struct tag is one token and cannot be wrapped
 	InitializationParameters map[string]any `yaml:"initialization_parameters,omitempty" json:"initialization_parameters,omitempty"`
 	// DataMapping binds evaluator inputs to dataset columns, and is written
 	// only when the inference from declared inputs and columns gets it wrong.

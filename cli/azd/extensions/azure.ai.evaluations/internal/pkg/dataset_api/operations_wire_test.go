@@ -128,8 +128,10 @@ func TestDatasetOperationPaths(t *testing.T) {
 			wantPath:   "/datasets",
 		},
 		{
-			name:       "delete",
-			call:       func(c *DatasetClient) error { return c.DeleteDatasetVersion(t.Context(), "ds", "1.0", testAPIVersion) },
+			name: "delete",
+			call: func(c *DatasetClient) error {
+				return c.DeleteDatasetVersion(t.Context(), "ds", "1.0", testAPIVersion)
+			},
 			wantMethod: http.MethodDelete,
 			wantPath:   "/datasets/ds/versions/1.0",
 		},

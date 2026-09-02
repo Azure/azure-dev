@@ -389,6 +389,7 @@ func ResolveSource(baseDir, source string) string {
 // service would mean downloading the blob on every deploy. Every artifact this
 // applies to — a dataset, a rubric, an evaluator script — is a single file.
 func Fingerprint(path string) (string, error) {
+	// #nosec G304 -- reading the configuration the caller named is the point.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", messages.Hashing(path, err)

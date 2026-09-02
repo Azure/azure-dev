@@ -171,14 +171,20 @@ func TestValidateSource_Refuses(t *testing.T) {
 			wantErr: "keep one",
 		},
 		{
-			name:    "end before start",
-			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", StartTime: "2026-08-02T00:00:00Z", EndTime: "2026-08-01T00:00:00Z"},
+			name: "end before start",
+			source: SourceDecl{
+				Type: SourceTypeTraces, AgentName: "a",
+				StartTime: "2026-08-02T00:00:00Z", EndTime: "2026-08-01T00:00:00Z",
+			},
 			wantErr: "holds no traces",
 		},
 		{
 			// An instant is not a window, and a run over it reads nothing.
-			name:    "end equal to start",
-			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", StartTime: "2026-08-01T00:00:00Z", EndTime: "2026-08-01T00:00:00Z"},
+			name: "end equal to start",
+			source: SourceDecl{
+				Type: SourceTypeTraces, AgentName: "a",
+				StartTime: "2026-08-01T00:00:00Z", EndTime: "2026-08-01T00:00:00Z",
+			},
 			wantErr: "holds no traces",
 		},
 	}

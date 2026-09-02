@@ -799,6 +799,7 @@ func datasetIsDeclared(configPath string, group *project.Eval) bool {
 
 // readJSONL reads newline-delimited JSON, optionally truncating to limit rows.
 func readJSONL(path string, limit int) ([]map[string]any, error) {
+	// #nosec G304 -- path is the dataset file the eval config declares.
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, messages.ReadingDataset(path, err)

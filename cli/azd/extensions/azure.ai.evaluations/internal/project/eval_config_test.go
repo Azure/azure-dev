@@ -381,8 +381,9 @@ func TestValidate_Rejects(t *testing.T) {
 			wantErr: "duplicate criterion",
 		},
 		{
-			name:    "unsupported source type",
-			body:    "evals:\n  - name: e\n    source:\n      type: prompt\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			name: "unsupported source type",
+			body: "evals:\n  - name: e\n    source:\n      type: prompt\n" +
+				"    evaluators:\n      - evaluator: builtin.relevance\n",
 			wantErr: "is not supported",
 		},
 		{

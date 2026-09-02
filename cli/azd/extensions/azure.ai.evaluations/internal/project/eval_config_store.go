@@ -481,6 +481,7 @@ func readFileOverContention(path string) ([]byte, error) {
 	deadline := time.Now().Add(readRetryBudget)
 	delay := time.Millisecond
 	for {
+		// #nosec G304 -- reading the configuration the caller named is the point.
 		body, err := os.ReadFile(path)
 		if err == nil || !isSharingContention(err) || time.Now().After(deadline) {
 			return body, err

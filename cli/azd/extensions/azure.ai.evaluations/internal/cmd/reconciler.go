@@ -311,6 +311,7 @@ func (r *evalReconciler) EnsureDataset(
 // registered version, an eval bound to it, and a run that fails on a row
 // nobody has looked at. Blank lines are skipped: they are not rows.
 func validateJSONL(path string) error {
+	// #nosec G304 -- path is the dataset file the eval config declares.
 	f, err := os.Open(path)
 	if err != nil {
 		return messages.ReadingPath(path, err)

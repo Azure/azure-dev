@@ -47,9 +47,13 @@ func TestWaitBudgetBranchStillConsultsTheGate(t *testing.T) {
 	require.NotEqual(t, -1, start, "the wait-budget branch has moved or gone")
 
 	branch := src[start:]
-	if end := strings.Index(branch, "\n\t\t\tif err != nil {"); end != -1 {
-		branch = branch[:end]
-	}
+	// The poll's own error check, one indent out from the branch, is where the
+	// window ends. Required rather than tolerated: falling back to the rest of
+	// the file would leave the assertions below matching some other command's
+	// gate, so a marker that moves has to fail here rather than pass vacuously.
+	end := strings.Index(branch, "\n\tif err != nil {")
+	require.NotEqual(t, -1, end, "the branch no longer ends at the poll's error check")
+	branch = branch[:end]
 
 	assert.Contains(t, branch, "threshold.set",
 		"the branch has to ask whether a gate was set before reporting success")

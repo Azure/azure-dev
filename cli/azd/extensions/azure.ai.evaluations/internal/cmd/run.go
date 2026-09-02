@@ -90,216 +90,234 @@ func newRunCommand() *cobra.Command {
 }
 
 // buildRunCommand builds `run start`.
+// runStartFlags carries what `run start` was asked for.
+type runStartFlags struct {
+	groupName   string
+	datasetName string
+	name        string
+	maxSamples  int
+	wait        bool
+	failOn      string
+	endpoint    string
+	evalPath    string
+	// noWait is the spec's spelling of --wait=false. Cobra does not derive
+	// one bool from the other, so PreRun folds this into wait.
+	noWait bool
+}
+
+// runStartAction starts a run and, unless asked not to, waits for its verdict.
+type runStartAction struct {
+	cmd   *cobra.Command
+	flags *runStartFlags
+}
+
 func buildRunCommand(use, short string) *cobra.Command {
-	var (
-		groupName   string
-		datasetName string
-		runName     string
-		maxSamples  int
-		wait        bool
-		failOn      string
-		endpointFlg string
-		evalPath    string
-	)
+	flags := &runStartFlags{}
 
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			out := cmd.OutOrStdout()
-
-			// Parsed before any network work, so a malformed threshold costs
-			// nothing to find out about.
-			threshold, err := parseGate(failOn)
-			if err != nil {
-				return err
-			}
-			// A gate is a verdict on a result. Returning before there is one
-			// used to drop the gate silently, so `--no-wait --fail-on ...`
-			// exited 0 however the run turned out -- a pipeline that believes
-			// it is gated and is not.
-			if !wait && threshold.set {
-				return messages.GateNeedsTheWait()
-			}
-			// resolveMaxSamples reads anything not above zero as "no cap", so a
-			// negative one sent the whole dataset to a billed run.
-			if maxSamples < 0 {
-				return messages.NegativeMaxSamplesFlag(maxSamples)
-			}
-
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			// One flag takes a name or an id. A declared name also brings the
-			// declaration, which is what says where rows come from; a bare id
-			// has none, so the pairing comes from the eval's previous run.
-			evalDir, err := ec.evalDir(ctx, evalPath)
-			if err != nil {
-				return err
-			}
-			ref, err := ec.resolveEvalRef(ctx, evalDir, chooseEvalIn(cmd, evalDir, groupName))
-			if err != nil {
-				return err
-			}
-			evalID := ref.ID
-			group := ref.Eval
-			configPath := ref.ConfigPath
-
-			if datasetName != "" {
-				if !ref.Declared() {
-					return messages.DatasetOverrideNeedsDeclaredEval()
-				}
-				if _, ok := ref.Config.DatasetDeclaration(datasetName); !ok {
-					return messages.DatasetNotInCatalog(
-						datasetName, filepath.ToSlash(configPath))
-				}
-				// The eval keeps its own declaration; only this run reads elsewhere.
-				overridden := *group
-				overridden.Dataset = datasetName
-				overridden.Source = nil
-				group = &overridden
-			}
-
-			if ref.Declared() {
-				if err := ec.checkDatasetRegistered(ctx, ref.Config, group, configPath); err != nil {
-					return err
-				}
-			}
-
-			var dataSource *eval_api.EvalRunDataSource
-			switch {
-			case group == nil:
-				dataSource, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
-			default:
-				dataSource, err = ec.buildRunDataSource(
-					ctx, group, configPath, resolveMaxSamples(maxSamples, group))
-			}
-			if err != nil {
-				return err
-			}
-
-			if runName == "" {
-				base := "eval"
-				if group != nil {
-					base = group.Name
-				}
-				runName = fmt.Sprintf("%s-%s", base, time.Now().UTC().Format("20060102-150405"))
-			}
-
-			metadata := map[string]string{}
-			if lvl := resolveLevel(group); lvl != "" {
-				metadata["evaluation_level"] = lvl
-			}
-			// The eval carries its name in its own metadata, but a run is read
-			// on its own, and an id is not what the author called it.
-			if group != nil && group.Name != "" {
-				metadata[metaEvalName] = group.Name
-			}
-			// Recorded per run, not read from the configuration at list time:
-			// comparing two runs is the point of that listing, and the dataset
-			// under an eval can change between them. A source-backed run scored
-			// no dataset, so it records none.
-			if group != nil && group.Dataset != "" && group.Source == nil {
-				metadata[metaDataset] = group.Dataset
-				if v := ec.scoredDatasetVersion(ctx, group, configPath); v != "" {
-					metadata[metaDatasetVersion] = v
-				}
-			}
-
-			run, err := ec.evalClient.CreateOpenAIEvalRun(ctx, evalID, &eval_api.CreateOpenAIEvalRunRequest{
-				Name:       runName,
-				DataSource: dataSource,
-				Metadata:   metadata,
-			})
-			if err != nil {
-				return messages.StartingRun(err)
-			}
-
-			// Recorded per eval. A single shared key belongs to whichever eval ran
-			// last, so another asking for "the last run" was handed one that is not
-			// its own.
-			ec.remember(ctx, idKey("evalrun", evalID), run.ID)
-
-			if !wait {
-				if isJSON(cmd) {
-					return emitJSON(out, startedRun(run, evalID, group))
-				}
-				fmt.Fprint(out, messages.RunStarted(run.ID, run.Status))
-				fmt.Fprint(out, messages.ReattachToRun(run.ID, evalID))
-				return nil
-			}
-
-			if !isJSON(cmd) {
-				fmt.Fprint(out, messages.WaitingForRun(run.ID))
-			}
-			final, err := ec.pollRun(ctx, evalID, run.ID, out, isJSON(cmd))
-			if errors.Is(err, errWaitBudgetSpent) {
-				// A gate asked for a verdict that never arrived. Exiting 0 here
-				// would tell a pipeline the gate passed, which is the silent
-				// drop --no-wait is refused for, reached by running long.
-				if threshold.set {
-					return messages.GateOutlivedTheWait(run.ID, waitBudget)
-				}
-				// The run did not fail, the wait ran out. Same contract as
-				// --no-wait: exit 0 and say how to pick it back up.
-				if isJSON(cmd) {
-					return emitJSON(out, startedRun(run, evalID, group))
-				}
-				fmt.Fprint(out, messages.WaitBudgetSpent(run.ID, waitBudget))
-				fmt.Fprint(out, messages.ReattachToRun(run.ID, evalID))
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			final = ec.withPortalLink(ctx, evalID, final)
-
-			if isJSON(cmd) {
-				if err := emitJSON(out, final); err != nil {
-					return err
-				}
-			} else if err := renderRun(out, final, ec.runMeans(ctx, evalID, final)); err != nil {
-				return err
-			}
-
-			// Last, so that the results are reported whether or not the gate
-			// holds: a pipeline that only learns it failed is worse off than
-			// one that can see by how much.
-			if err := runCompleted(final); err != nil {
-				return err
-			}
-			applyGate(cmd, threshold, final)
-			return nil
+			return (&runStartAction{cmd: cmd, flags: flags}).Run()
 		},
 	}
 
-	cmd.Flags().StringVar(&groupName, "eval", "",
+	cmd.Flags().StringVar(&flags.groupName, "eval", "",
 		"Name of the eval to run, or its id. Defaults to the only one declared.")
-	cmd.Flags().StringVar(&datasetName, "dataset", "",
+	cmd.Flags().StringVar(&flags.datasetName, "dataset", "",
 		"Catalog dataset to read instead of the one the eval declares. "+
 			"Must satisfy the eval's column schema.")
-	cmd.Flags().StringVar(&runName, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
-	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
+	cmd.Flags().StringVar(&flags.name, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
+	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", 0,
 		"Cap the rows sent from the dataset.")
-	cmd.Flags().BoolVar(&wait, "wait", true, "Block until the run reaches a terminal state.")
-	addFailOnFlag(cmd, &failOn)
+	cmd.Flags().BoolVar(&flags.wait, "wait", true, "Block until the run reaches a terminal state.")
+	addFailOnFlag(cmd, &flags.failOn)
 	// The spec documents --no-wait, and cobra does not derive it from a bool.
-	var noWait bool
-	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Submit the run and return immediately.")
+	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit the run and return immediately.")
 	cmd.PreRun = func(*cobra.Command, []string) {
-		if noWait {
-			wait = false
+		if flags.noWait {
+			flags.wait = false
 		}
 	}
 	cmd.MarkFlagsMutuallyExclusive("wait", "no-wait")
-	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
-	addEvalPathFlag(cmd, &evalPath)
+	cmd.Flags().StringVar(&flags.endpoint, "project-endpoint", "", "Foundry project endpoint.")
+	addEvalPathFlag(cmd, &flags.evalPath)
 
 	return cmd
+}
+
+func (a *runStartAction) Run() error {
+	ctx := a.cmd.Context()
+	out := a.cmd.OutOrStdout()
+
+	// Parsed before any network work, so a malformed threshold costs
+	// nothing to find out about.
+	threshold, err := parseGate(a.flags.failOn)
+	if err != nil {
+		return err
+	}
+	// A gate is a verdict on a result. Returning before there is one
+	// used to drop the gate silently, so `--no-wait --fail-on ...`
+	// exited 0 however the run turned out -- a pipeline that believes
+	// it is gated and is not.
+	if !a.flags.wait && threshold.set {
+		return messages.GateNeedsTheWait()
+	}
+	// resolveMaxSamples reads anything not above zero as "no cap", so a
+	// negative one sent the whole dataset to a billed run.
+	if a.flags.maxSamples < 0 {
+		return messages.NegativeMaxSamplesFlag(a.flags.maxSamples)
+	}
+
+	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	// One flag takes a name or an id. A declared name also brings the
+	// declaration, which is what says where rows come from; a bare id
+	// has none, so the pairing comes from the eval's previous run.
+	evalDir, err := ec.evalDir(ctx, a.flags.evalPath)
+	if err != nil {
+		return err
+	}
+	ref, err := ec.resolveEvalRef(ctx, evalDir, chooseEvalIn(a.cmd, evalDir, a.flags.groupName))
+	if err != nil {
+		return err
+	}
+	evalID := ref.ID
+	group := ref.Eval
+	configPath := ref.ConfigPath
+
+	if a.flags.datasetName != "" {
+		if !ref.Declared() {
+			return messages.DatasetOverrideNeedsDeclaredEval()
+		}
+		if _, ok := ref.Config.DatasetDeclaration(a.flags.datasetName); !ok {
+			return messages.DatasetNotInCatalog(
+				a.flags.datasetName, filepath.ToSlash(configPath))
+		}
+		// The eval keeps its own declaration; only this run reads elsewhere.
+		overridden := *group
+		overridden.Dataset = a.flags.datasetName
+		overridden.Source = nil
+		group = &overridden
+	}
+
+	if ref.Declared() {
+		if err := ec.checkDatasetRegistered(ctx, ref.Config, group, configPath); err != nil {
+			return err
+		}
+	}
+
+	var dataSource *eval_api.EvalRunDataSource
+	switch {
+	case group == nil:
+		dataSource, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
+	default:
+		dataSource, err = ec.buildRunDataSource(
+			ctx, group, configPath, resolveMaxSamples(a.flags.maxSamples, group))
+	}
+	if err != nil {
+		return err
+	}
+
+	// Local, so a default name is derived per invocation rather than
+	// written back over the flag the command was built with.
+	runName := a.flags.name
+	if runName == "" {
+		base := "eval"
+		if group != nil {
+			base = group.Name
+		}
+		runName = fmt.Sprintf("%s-%s", base, time.Now().UTC().Format("20060102-150405"))
+	}
+
+	metadata := map[string]string{}
+	if lvl := resolveLevel(group); lvl != "" {
+		metadata["evaluation_level"] = lvl
+	}
+	// The eval carries its name in its own metadata, but a run is read
+	// on its own, and an id is not what the author called it.
+	if group != nil && group.Name != "" {
+		metadata[metaEvalName] = group.Name
+	}
+	// Recorded per run, not read from the configuration at list time:
+	// comparing two runs is the point of that listing, and the dataset
+	// under an eval can change between them. A source-backed run scored
+	// no dataset, so it records none.
+	if group != nil && group.Dataset != "" && group.Source == nil {
+		metadata[metaDataset] = group.Dataset
+		if v := ec.scoredDatasetVersion(ctx, group, configPath); v != "" {
+			metadata[metaDatasetVersion] = v
+		}
+	}
+
+	run, err := ec.evalClient.CreateOpenAIEvalRun(ctx, evalID, &eval_api.CreateOpenAIEvalRunRequest{
+		Name:       runName,
+		DataSource: dataSource,
+		Metadata:   metadata,
+	})
+	if err != nil {
+		return messages.StartingRun(err)
+	}
+
+	// Recorded per eval. A single shared key belongs to whichever eval ran
+	// last, so another asking for "the last run" was handed one that is not
+	// its own.
+	ec.remember(ctx, idKey("evalrun", evalID), run.ID)
+
+	if !a.flags.wait {
+		if isJSON(a.cmd) {
+			return emitJSON(out, startedRun(run, evalID, group))
+		}
+		fmt.Fprint(out, messages.RunStarted(run.ID, run.Status))
+		fmt.Fprint(out, messages.ReattachToRun(run.ID, evalID))
+		return nil
+	}
+
+	if !isJSON(a.cmd) {
+		fmt.Fprint(out, messages.WaitingForRun(run.ID))
+	}
+	final, err := ec.pollRun(ctx, evalID, run.ID, out, isJSON(a.cmd))
+	if errors.Is(err, errWaitBudgetSpent) {
+		// A gate asked for a verdict that never arrived. Exiting 0 here
+		// would tell a pipeline the gate passed, which is the silent
+		// drop --no-wait is refused for, reached by running long.
+		if threshold.set {
+			return messages.GateOutlivedTheWait(run.ID, waitBudget)
+		}
+		// The run did not fail, the wait ran out. Same contract as
+		// --no-wait: exit 0 and say how to pick it back up.
+		if isJSON(a.cmd) {
+			return emitJSON(out, startedRun(run, evalID, group))
+		}
+		fmt.Fprint(out, messages.WaitBudgetSpent(run.ID, waitBudget))
+		fmt.Fprint(out, messages.ReattachToRun(run.ID, evalID))
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	final = ec.withPortalLink(ctx, evalID, final)
+
+	if isJSON(a.cmd) {
+		if err := emitJSON(out, final); err != nil {
+			return err
+		}
+	} else if err := renderRun(out, final, ec.runMeans(ctx, evalID, final)); err != nil {
+		return err
+	}
+
+	// Last, so that the results are reported whether or not the gate
+	// holds: a pipeline that only learns it failed is worse off than
+	// one that can see by how much.
+	if err := runCompleted(final); err != nil {
+		return err
+	}
+	applyGate(a.cmd, threshold, final)
+	return nil
 }
 
 // checkDatasetRegistered fails when the group's local dataset has edits that

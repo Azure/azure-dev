@@ -149,6 +149,11 @@ func TestTelephonyBindingMatches(t *testing.T) {
 	require.True(t, telephonyBindingMatches(remote, desired))
 }
 
+func TestTelephonyWireProvider(t *testing.T) {
+	require.Equal(t, "azure-communication-service", telephonyWireProvider("acs"))
+	require.Equal(t, "twilio", telephonyWireProvider("twilio"))
+}
+
 type fakeProjectAgentChecker struct {
 	err error
 }

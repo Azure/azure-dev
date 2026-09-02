@@ -2493,7 +2493,7 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 	}
 	for _, binding := range voiceAgent.Telephony.Bindings {
 		request := &agent_api.TelephonyBindingRequest{
-			Provider:        strings.TrimSpace(binding.Provider),
+			Provider:        telephonyWireProvider(binding.Provider),
 			Identifier:      strings.TrimSpace(binding.Identifier),
 			ConnectionName:  strings.TrimSpace(binding.Connection),
 			TransferTargets: binding.TransferTargets,
@@ -2537,6 +2537,15 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 		fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
 	}
 	return nil
+}
+
+func telephonyWireProvider(provider string) string {
+	switch strings.TrimSpace(provider) {
+	case "acs":
+		return "azure-communication-service"
+	default:
+		return strings.TrimSpace(provider)
+	}
 }
 
 func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_api.TelephonyBindingRequest) bool {

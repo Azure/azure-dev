@@ -628,7 +628,14 @@ func (s scaffold) nextSteps(deployCmd string) []string {
 	switch {
 	case s.generateDataset && s.generateRubric:
 		// One command produces both, which is the whole point of the composite.
-		steps = append(steps, s.generateCommand(""))
+		// It still has to be told the names this scaffold just declared: bare
+		// `generate` derives its own from the target, so the printed step
+		// published `<target>-dataset` while the configuration was waiting for
+		// the name recorded here, and the deploy that followed could not find
+		// either source.
+		steps = append(steps, s.generateCommand(
+			"--dataset-name "+quoteForShell(s.datasetName)+
+				" --evaluator-name "+quoteForShell(s.rubricName)))
 	case s.generateDataset:
 		steps = append(steps, s.generateCommand("--dataset --dataset-name "+quoteForShell(s.datasetName)))
 	case s.generateRubric:

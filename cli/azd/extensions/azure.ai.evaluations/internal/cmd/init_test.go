@@ -209,10 +209,17 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 		plan, _ := scaffoldFor(t, scaffoldInput{
 			evalName: "support-agent-smoke", target: "support-agent", judgeModel: "m",
 		})
-		// One command produces both, so there is one step, not two.
-		require.Equal(t,
-			[]string{"azd ai eval generate --target support-agent --generation-model m"},
-			plan.nextSteps("azd ai eval create"))
+		// One command produces both, so there is one step, not two -- and it has
+		// to name what this scaffold just declared. Bare `generate` derives its
+		// own names from the target, so the step published artifacts under
+		// different names than the configuration was waiting for, and the deploy
+		// after it could not find either source.
+		steps := plan.nextSteps("azd ai eval create")
+		require.Len(t, steps, 1)
+		require.Contains(t, steps[0], "--dataset-name "+plan.datasetName)
+		require.Contains(t, steps[0], "--evaluator-name "+plan.rubricName)
+		require.Contains(t, steps[0], "--target support-agent")
+		require.Contains(t, steps[0], "--generation-model m")
 	})
 
 	t.Run("dataset supplied", func(t *testing.T) {

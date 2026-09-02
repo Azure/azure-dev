@@ -626,6 +626,17 @@ func (r *evalReconciler) EnsureEval(
 	datasetPath string,
 ) (string, bool, error) {
 	if group.ID != "" {
+		// An explicit id skips every read below, so nothing here noticed when it
+		// named an eval that had been deleted or was simply mistyped: the deploy
+		// reported success and the first run against it answered 404. One point
+		// read settles it, and it is the same confirmation an external dataset
+		// or evaluator reference gets.
+		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+			if eval_api.IsNotFound(err) {
+				return "", false, messages.EvalNotFound(group.ID)
+			}
+			return "", false, messages.ReadingEval(group.ID, err)
+		}
 		r.claim(group.ID)
 		return group.ID, false, nil
 	}

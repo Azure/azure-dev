@@ -16,8 +16,6 @@
 
 - [[#8371]](https://github.com/Azure/azure-dev/pull/8371) Add Unix domain socket and Windows named-pipe transports for external authentication hosts using `AZD_AUTH_ENDPOINT`.
 - [[#9541]](https://github.com/Azure/azure-dev/pull/9541) Add an archived-template warning to `azd init --template` so users can cancel before cloning unmaintained repositories.
-- [[#9782]](https://github.com/Azure/azure-dev/pull/9782) Add a shared Foundry condition evaluator for extension service enablement.
-- [[#9798]](https://github.com/Azure/azure-dev/pull/9798) Add Foundry file-reference path rebasing for extension-owned keys and generic YAML document editing APIs. Thanks @m7md7sien for the contribution!
 
 ### Bugs Fixed
 

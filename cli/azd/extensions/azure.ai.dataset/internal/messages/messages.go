@@ -441,8 +441,13 @@ func InvalidRequestPath(path string, err error) error {
 }
 
 // InvalidNextLink reports a pagination link the service sent that will not parse.
-func InvalidNextLink(link string, err error) error {
-	return fmt.Errorf("invalid nextLink %q: %w", link, err)
+//
+// The link is deliberately not quoted. It did not parse, so it cannot be
+// rendered with urlsafe.URL, and a continuation link carries its credential in
+// the query as `sig` -- echoing it verbatim wrote a live SAS into an error the
+// user sees and the terminal scrolls back.
+func InvalidNextLink(err error) error {
+	return fmt.Errorf("the service sent a nextLink that is not a valid URL: %w", err)
 }
 
 // NextLinkOffOrigin reports a pagination link pointing somewhere other than the

@@ -35,190 +35,218 @@ func newRunOutputCommand() *cobra.Command {
 	return cmd
 }
 
+// runOutputListFlags carries what `run output list` was asked for.
+type runOutputListFlags struct {
+	failedOnly bool
+	status     string
+	outFile    string
+	endpoint   string
+	groupName  string
+	run        string
+	limit      int
+	pageToken  string
+	all        bool
+}
+
+// runOutputListAction lists the per-sample results of one run.
+type runOutputListAction struct {
+	cmd   *cobra.Command
+	flags *runOutputListFlags
+	runID string
+}
+
 func newRunOutputListCommand() *cobra.Command {
-	var (
-		failedOnly  bool
-		statusFlag  string
-		outFile     string
-		endpointFlg string
-		groupName   string
-		runFlag     string
-		limit       int
-		pageToken   string
-		all         bool
-	)
+	flags := &runOutputListFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "list [run]",
 		Short: "List the per-sample results of a run.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			evalID, err := resolveEvalID(cmd, ec, groupName)
-			if err != nil {
-				return err
-			}
-
+			// The positional wins over the flag; both name the same run, and
+			// the one typed at the end of the line is the more deliberate.
 			runID := firstArg(args)
 			if runID == "" {
-				runID = runFlag
+				runID = flags.run
 			}
-			run, err := ec.latestOrNamedRun(cmd, evalID, runID, true)
-			if err != nil {
-				return err
-			}
-
-			// The run carries totals and a per-criterion breakdown. The output
-			// items are the rows themselves, which is what "which one failed,
-			// and why" needs. A run that never produced any still renders its
-			// totals rather than failing.
-			// A generated dataset runs to a thousand rows, each carrying a
-			// result per evaluator, so an unbounded listing floods the terminal.
-			// --output-file and `run output export` are the bulk paths and take
-			// everything.
-			pageSize := pageSizeOr(limit, all || outFile != "", defaultPageSize)
-			items, err := ec.evalClient.ListOutputItemsPage(ctx, evalID, run.ID, pageSize, pageToken)
-			if err != nil {
-				return messages.ReadingRunResults(run.ID, err)
-			}
-			rows := items.Data
-			// One predicate for both views, so `-o json` and the table cannot
-			// disagree about which rows the filter kept.
-			keep, err := parseStatusFilter(statusFlag)
-			if err != nil {
-				return err
-			}
-			if failedOnly {
-				if keep == nil {
-					keep = map[string]bool{}
-				}
-				keep[itemFailed] = true
-			}
-			if keep != nil {
-				kept := make([]eval_api.OutputItem, 0, len(rows))
-				for _, it := range rows {
-					if keep[classifyItem(it).Status] {
-						kept = append(kept, it)
-					}
-				}
-				rows = kept
-			}
-
-			// A bare array, as every other list emits. Wrapping the rows beside
-			// the run made `-o json` the one listing a script could not iterate,
-			// and it failed silently: the loop walked the two keys instead. The
-			// run itself is what `run show` answers.
-			if outFile != "" {
-				f, err := os.Create(outFile)
-				if err != nil {
-					return messages.Creating(outFile, err)
-				}
-				if err := emitJSONList(f, rows); err != nil {
-					_ = f.Close()
-					return err
-				}
-				// The last write is flushed by Close, so discarding its error
-				// reports success over a file that stops mid-row.
-				if err := f.Close(); err != nil {
-					return messages.Writing(outFile, err)
-				}
-				return nil
-			}
-			if isJSON(cmd) {
-				return emitJSONList(cmd.OutOrStdout(), rows)
-			}
-			if err := renderResults(cmd.OutOrStdout(), run, rows, failedOnly); err != nil {
-				return err
-			}
-			if items.HasMore && items.LastID != "" {
-				fmt.Fprint(cmd.OutOrStdout(), messages.MoreItemsToList(items.LastID))
-			}
-			return nil
+			return (&runOutputListAction{cmd: cmd, flags: flags, runID: runID}).Run()
 		},
 	}
 
-	cmd.Flags().BoolVar(&failedOnly, "failed-only", false,
+	cmd.Flags().BoolVar(&flags.failedOnly, "failed-only", false,
 		"Show only the items that failed. Shorthand for --status failed.")
-	cmd.Flags().StringVar(&statusFlag, "status", "",
+	cmd.Flags().StringVar(&flags.status, "status", "",
 		"Show only items with these outcomes: passed, failed, errored, skipped (comma-separated).")
-	cmd.Flags().StringVar(&outFile, "output-file", "", "Write JSON results to this path.")
-	addPagingFlags(cmd, &limit, &pageToken, &all, defaultPageSize)
-	addRunFlag(cmd, &runFlag)
-	addEvalFlag(cmd, &groupName)
+	cmd.Flags().StringVar(&flags.outFile, "output-file", "", "Write JSON results to this path.")
+	addPagingFlags(cmd, &flags.limit, &flags.pageToken, &flags.all, defaultPageSize)
+	addRunFlag(cmd, &flags.run)
+	addEvalFlag(cmd, &flags.groupName)
 	// Registered wherever a declared name is resolved, so a configuration
 	// outside ./evals can be addressed by every command, not just `run start`.
 	addEvalPathFlag(cmd, new(string))
-	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	cmd.Flags().StringVar(&flags.endpoint, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *runOutputListAction) Run() error {
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
+	if err != nil {
+		return err
+	}
+
+	run, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
+	if err != nil {
+		return err
+	}
+
+	// The run carries totals and a per-criterion breakdown. The output
+	// items are the rows themselves, which is what "which one failed,
+	// and why" needs. A run that never produced any still renders its
+	// totals rather than failing.
+	// A generated dataset runs to a thousand rows, each carrying a
+	// result per evaluator, so an unbounded listing floods the terminal.
+	// --output-file and `run output export` are the bulk paths and take
+	// everything.
+	pageSize := pageSizeOr(a.flags.limit, a.flags.all || a.flags.outFile != "", defaultPageSize)
+	items, err := ec.evalClient.ListOutputItemsPage(ctx, evalID, run.ID, pageSize, a.flags.pageToken)
+	if err != nil {
+		return messages.ReadingRunResults(run.ID, err)
+	}
+	rows := items.Data
+	// One predicate for both views, so `-o json` and the table cannot
+	// disagree about which rows the filter kept.
+	keep, err := parseStatusFilter(a.flags.status)
+	if err != nil {
+		return err
+	}
+	if a.flags.failedOnly {
+		if keep == nil {
+			keep = map[string]bool{}
+		}
+		keep[itemFailed] = true
+	}
+	if keep != nil {
+		kept := make([]eval_api.OutputItem, 0, len(rows))
+		for _, it := range rows {
+			if keep[classifyItem(it).Status] {
+				kept = append(kept, it)
+			}
+		}
+		rows = kept
+	}
+
+	// A bare array, as every other list emits. Wrapping the rows beside
+	// the run made `-o json` the one listing a script could not iterate,
+	// and it failed silently: the loop walked the two keys instead. The
+	// run itself is what `run show` answers.
+	if a.flags.outFile != "" {
+		f, err := os.Create(a.flags.outFile)
+		if err != nil {
+			return messages.Creating(a.flags.outFile, err)
+		}
+		if err := emitJSONList(f, rows); err != nil {
+			_ = f.Close()
+			return err
+		}
+		// The last write is flushed by Close, so discarding its error
+		// reports success over a file that stops mid-row.
+		if err := f.Close(); err != nil {
+			return messages.Writing(a.flags.outFile, err)
+		}
+		return nil
+	}
+	if isJSON(a.cmd) {
+		return emitJSONList(a.cmd.OutOrStdout(), rows)
+	}
+	if err := renderResults(a.cmd.OutOrStdout(), run, rows, a.flags.failedOnly); err != nil {
+		return err
+	}
+	if items.HasMore && items.LastID != "" {
+		fmt.Fprint(a.cmd.OutOrStdout(), messages.MoreItemsToList(items.LastID))
+	}
+	return nil
 }
 
 // newRunOutputShowCommand reads one evaluated row by its id.
 //
 // The listing truncates the input and the reason to keep a table readable, so
 // this is how the whole of either is seen.
+// runOutputShowFlags carries what `run output show` was asked for.
+type runOutputShowFlags struct {
+	run       string
+	endpoint  string
+	groupName string
+}
+
+// runOutputShowAction reports one evaluated row.
+type runOutputShowAction struct {
+	cmd    *cobra.Command
+	flags  *runOutputShowFlags
+	itemID string
+}
+
 func newRunOutputShowCommand() *cobra.Command {
-	var (
-		runID       string
-		endpointFlg string
-		groupName   string
-	)
+	flags := &runOutputShowFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "show <output-item>",
 		Short: "Show a single evaluated row. The id is the ITEM column of `run output list`.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				return messages.OutputItemRequired(groupName)
+				return messages.OutputItemRequired(flags.groupName)
 			}
 			return requiredArgs(1)(cmd, args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			itemID := args[0]
-
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			evalID, err := resolveEvalID(cmd, ec, groupName)
-			if err != nil {
-				return err
-			}
-
-			run, err := ec.latestOrNamedRun(cmd, evalID, runID, true)
-			if err != nil {
-				return err
-			}
-
-			item, err := ec.evalClient.GetOutputItem(ctx, evalID, run.ID, itemID)
-			if err != nil {
-				if eval_api.IsNotFound(err) {
-					return messages.OutputItemNotFound(itemID, run.ID)
-				}
-				return messages.ReadingOutputItem(itemID, err)
-			}
-			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), item)
-			}
-			return renderOutputItem(cmd.OutOrStdout(), item)
+			return (&runOutputShowAction{cmd: cmd, flags: flags, itemID: args[0]}).Run()
 		},
 	}
 
-	addRunFlag(cmd, &runID)
-	addEvalFlag(cmd, &groupName)
+	addRunFlag(cmd, &flags.run)
+	addEvalFlag(cmd, &flags.groupName)
 	// Registered wherever a declared name is resolved, so a configuration
 	// outside ./evals can be addressed by every command, not just `run start`.
 	addEvalPathFlag(cmd, new(string))
-	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	cmd.Flags().StringVar(&flags.endpoint, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *runOutputShowAction) Run() error {
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
+	if err != nil {
+		return err
+	}
+
+	run, err := ec.latestOrNamedRun(a.cmd, evalID, a.flags.run, true)
+	if err != nil {
+		return err
+	}
+
+	item, err := ec.evalClient.GetOutputItem(ctx, evalID, run.ID, a.itemID)
+	if err != nil {
+		if eval_api.IsNotFound(err) {
+			return messages.OutputItemNotFound(a.itemID, run.ID)
+		}
+		return messages.ReadingOutputItem(a.itemID, err)
+	}
+	if isJSON(a.cmd) {
+		return emitJSON(a.cmd.OutOrStdout(), item)
+	}
+	return renderOutputItem(a.cmd.OutOrStdout(), item)
 }
 
 // writeExport writes the complete result document for a run.
@@ -248,14 +276,24 @@ type exportDocument struct {
 	Items []json.RawMessage `json:"items"`
 }
 
+// runOutputExportFlags carries what `run output export` was asked for.
+type runOutputExportFlags struct {
+	format    string
+	outFile   string
+	endpoint  string
+	groupName string
+	run       string
+}
+
+// runOutputExportAction writes the complete result document for one run.
+type runOutputExportAction struct {
+	cmd   *cobra.Command
+	flags *runOutputExportFlags
+	runID string
+}
+
 func newRunOutputExportCommand() *cobra.Command {
-	var (
-		format      string
-		outFile     string
-		endpointFlg string
-		groupName   string
-		runFlag     string
-	)
+	flags := &runOutputExportFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "export [run]",
@@ -272,78 +310,84 @@ Derive any other shape from this file, for example:
   jq -c '.items[]' results.json > results.jsonl`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if f := strings.ToLower(strings.TrimSpace(format)); f != "" && f != formatJSON {
-				return messages.ExportFormatUnsupported(format, formatJSON)
-			}
-
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			evalID, err := resolveEvalID(cmd, ec, groupName)
-			if err != nil {
-				return err
-			}
-
+			// The positional wins over the flag; both name the same run, and
+			// the one typed at the end of the line is the more deliberate.
 			runID := firstArg(args)
 			if runID == "" {
-				runID = runFlag
+				runID = flags.run
 			}
-			run, err := ec.latestOrNamedRun(cmd, evalID, runID, true)
-			if err != nil {
-				return err
-			}
-
-			// Read back raw, so the export carries the service's own fields
-			// rather than the subset these models decode.
-			rawRun, err := ec.evalClient.GetRunRaw(ctx, evalID, run.ID)
-			if err != nil {
-				return messages.ReadingRun(run.ID, err)
-			}
-			rawItems, err := ec.evalClient.ListOutputItemsRaw(ctx, evalID, run.ID)
-			if err != nil {
-				return messages.ReadingRunResults(run.ID, err)
-			}
-			if rawItems == nil {
-				rawItems = []json.RawMessage{}
-			}
-			doc := exportDocument{Run: rawRun, Items: rawItems}
-
-			if outFile == "" {
-				return writeExport(cmd.OutOrStdout(), doc)
-			}
-
-			f, createErr := os.Create(outFile)
-			if createErr != nil {
-				return messages.Creating(outFile, createErr)
-			}
-			writeErr := writeExport(f, doc)
-			// The last write is flushed by Close, so discarding its error
-			// reports success over a file that stops mid-row.
-			closeErr := f.Close()
-			if writeErr != nil {
-				return writeErr
-			}
-			if closeErr != nil {
-				return messages.Writing(outFile, closeErr)
-			}
-			return nil
+			return (&runOutputExportAction{cmd: cmd, flags: flags, runID: runID}).Run()
 		},
 	}
 
-	addRunFlag(cmd, &runFlag)
-	cmd.Flags().StringVar(&format, "format", formatJSON,
+	addRunFlag(cmd, &flags.run)
+	cmd.Flags().StringVar(&flags.format, "format", formatJSON,
 		fmt.Sprintf("Output format. Only %s is supported.", formatJSON))
-	cmd.Flags().StringVar(&outFile, "output-file", "", "Write to this path instead of stdout.")
-	addEvalFlag(cmd, &groupName)
+	cmd.Flags().StringVar(&flags.outFile, "output-file", "", "Write to this path instead of stdout.")
+	addEvalFlag(cmd, &flags.groupName)
 	// Registered wherever a declared name is resolved, so a configuration
 	// outside ./evals can be addressed by every command, not just `run start`.
 	addEvalPathFlag(cmd, new(string))
-	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	cmd.Flags().StringVar(&flags.endpoint, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *runOutputExportAction) Run() error {
+	if f := strings.ToLower(strings.TrimSpace(a.flags.format)); f != "" && f != formatJSON {
+		return messages.ExportFormatUnsupported(a.flags.format, formatJSON)
+	}
+
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
+	if err != nil {
+		return err
+	}
+
+	run, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
+	if err != nil {
+		return err
+	}
+
+	// Read back raw, so the export carries the service's own fields
+	// rather than the subset these models decode.
+	rawRun, err := ec.evalClient.GetRunRaw(ctx, evalID, run.ID)
+	if err != nil {
+		return messages.ReadingRun(run.ID, err)
+	}
+	rawItems, err := ec.evalClient.ListOutputItemsRaw(ctx, evalID, run.ID)
+	if err != nil {
+		return messages.ReadingRunResults(run.ID, err)
+	}
+	if rawItems == nil {
+		rawItems = []json.RawMessage{}
+	}
+	doc := exportDocument{Run: rawRun, Items: rawItems}
+
+	if a.flags.outFile == "" {
+		return writeExport(a.cmd.OutOrStdout(), doc)
+	}
+
+	f, createErr := os.Create(a.flags.outFile)
+	if createErr != nil {
+		return messages.Creating(a.flags.outFile, createErr)
+	}
+	writeErr := writeExport(f, doc)
+	// The last write is flushed by Close, so discarding its error
+	// reports success over a file that stops mid-row.
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return messages.Writing(a.flags.outFile, closeErr)
+	}
+	return nil
 }
 
 // resolveEvalID resolves the eval a run command is about, from --eval or from

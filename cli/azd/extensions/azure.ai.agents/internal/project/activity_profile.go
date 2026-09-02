@@ -74,19 +74,19 @@ func digitalWorkerTypeMismatchSuggestion() string {
 		"activity.digitalWorkerType"
 }
 
-// serviceDefaultsActivityAuthorizationScheme records whether the Agents service
-// applies BotServiceRbac when an Activity endpoint omits authorization schemes.
-// Keep this false until that service behavior is available for both simple
-// Activity agents and Digital Workers.
-const serviceDefaultsActivityAuthorizationScheme = false
-
 // EnsureActivityEndpointAuthSchemeForProfile preserves explicitly authored
-// authorization schemes and applies the Activity default only when none was supplied.
+// authorization schemes. Simple Activity agents receive BotServiceRbac when no
+// scheme is supplied, while Digital Workers rely on the service default.
 func EnsureActivityEndpointAuthSchemeForProfile(
 	endpoint *agent_api.AgentEndpoint,
 	profile ActivityProfile,
 ) {
 	if endpoint == nil || !profile.IsActivity {
+		return
+	}
+
+	ensureActivityEndpointProtocol(endpoint)
+	if profile.UseCase == ActivityUseCaseDigitalWorker {
 		return
 	}
 
@@ -99,15 +99,19 @@ func EnsureActivityEndpointAuthScheme(
 	endpoint *agent_api.AgentEndpoint,
 	schemeType agent_api.AgentEndpointAuthorizationSchemeType,
 ) {
-	if !slices.Contains(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity) {
-		endpoint.Protocols = append(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
-	}
+	ensureActivityEndpointProtocol(endpoint)
 
-	if len(endpoint.AuthorizationSchemes) == 0 && !serviceDefaultsActivityAuthorizationScheme {
+	if len(endpoint.AuthorizationSchemes) == 0 {
 		endpoint.AuthorizationSchemes = append(
 			endpoint.AuthorizationSchemes,
 			agent_api.AgentEndpointAuthorizationScheme{Type: schemeType},
 		)
+	}
+}
+
+func ensureActivityEndpointProtocol(endpoint *agent_api.AgentEndpoint) {
+	if !slices.Contains(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity) {
+		endpoint.Protocols = append(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
 	}
 }
 
@@ -252,9 +256,10 @@ func ValidateDigitalWorkerAccessBoundaries(boundaries []string) error {
 // endpoint carries a list of protocols and a list of authorization schemes. This
 // helper therefore advertises every selected protocol on the endpoint,
 // normalizing the legacy "activity_protocol" spelling to the canonical
-// "activity", and applies BotServiceRbac only when authorization schemes are
-// omitted and the service does not yet supply that default. No-op inputs (nil
-// existing endpoint) start fresh.
+// "activity", and applies BotServiceRbac when authorization schemes are omitted.
+// This init-time helper produces the Simple Activity shape; deploy-time Digital
+// Worker defaults are handled separately. No-op inputs (nil existing endpoint)
+// start fresh.
 func ComposeActivityAgentEndpoint(
 	existing *agent_yaml.AgentEndpoint,
 	protocols []agent_yaml.ProtocolVersionRecord,
@@ -286,7 +291,7 @@ func ComposeActivityAgentEndpoint(
 		seen[name] = true
 	}
 
-	if len(ep.AuthorizationSchemes) == 0 && !serviceDefaultsActivityAuthorizationScheme {
+	if len(ep.AuthorizationSchemes) == 0 {
 		ep.AuthorizationSchemes = append(ep.AuthorizationSchemes, agent_yaml.AuthorizationScheme{
 			Type: string(agent_api.AgentEndpointAuthSchemeBotServiceRbac),
 		})

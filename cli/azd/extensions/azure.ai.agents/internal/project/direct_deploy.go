@@ -258,6 +258,11 @@ func DeployPreparedStandaloneHostedAgent(
 			return nil, err
 		}
 	}
+	if getErr != nil {
+		if err := reconcileStandaloneEndpointWithDeployedAgent(request, localProfile, agentObject); err != nil {
+			return nil, err
+		}
+	}
 	if err := provider.patchAgentEndpointFields(
 		ctx,
 		prepared.definition.Name,
@@ -303,7 +308,9 @@ func reconcileStandaloneEndpointWithDeployedAgent(
 		)
 	}
 
-	if resolvedProfile.IsActivity && request.AgentEndpoint == nil {
+	if resolvedProfile.IsActivity &&
+		resolvedProfile.UseCase != ActivityUseCaseDigitalWorker &&
+		request.AgentEndpoint == nil {
 		request.AgentEndpoint = &agent_api.AgentEndpoint{}
 	}
 	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, resolvedProfile)

@@ -101,12 +101,24 @@ func TestEnsureEndpointAuthSchemeForProfile_SimplePreservesExplicitTenant(t *tes
 	}, endpoint.AuthorizationSchemes)
 }
 
-func TestEnsureEndpointAuthSchemeForProfile_DefaultsToRbacWhenOmitted(t *testing.T) {
+func TestEnsureEndpointAuthSchemeForProfile_DigitalWorkerUsesServiceDefaultWhenOmitted(t *testing.T) {
 	endpoint := &agent_api.AgentEndpoint{}
 
 	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{
 		IsActivity: true,
 		UseCase:    project.ActivityUseCaseDigitalWorker,
+	})
+
+	assert.Contains(t, endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
+	assert.Empty(t, endpoint.AuthorizationSchemes)
+}
+
+func TestEnsureEndpointAuthSchemeForProfile_SimpleDefaultsToRbacWhenOmitted(t *testing.T) {
+	endpoint := &agent_api.AgentEndpoint{}
+
+	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{
+		IsActivity: true,
+		UseCase:    project.ActivityUseCaseSimple,
 	})
 
 	assert.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{

@@ -1987,7 +1987,38 @@ func TestPrepareDeploySetsDigitalWorkerType(t *testing.T) {
 	require.Equal(t, agent_api.AgentEndpointAuthSchemeBotServiceRbac, prep.request.AgentEndpoint.AuthorizationSchemes[0].Type)
 }
 
-func TestPrepareDeployUsesRbacForSimpleActivityEndpoint(t *testing.T) {
+func TestPrepareDeployLeavesOmittedDigitalWorkerEndpointNil(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = nil
+	agentDef.AgentCard = nil
+	props, err := AgentDefinitionToServiceProperties(agentDef, &ServiceTargetAgentConfig{
+		Activity: &ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "digital-worker",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/worker:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, agent_api.DigitalWorkerTypeM365, prep.request.DigitalWorkerType)
+	require.Nil(t, prep.request.AgentEndpoint)
+	require.Nil(t, prep.request.AgentCard)
+}
+
+func TestPrepareDeployDefersRbacForSimpleActivityEndpointUntilProfileIsResolved(t *testing.T) {
 	t.Parallel()
 
 	agentDef := sampleContainerAgent()
@@ -2017,12 +2048,7 @@ func TestPrepareDeployUsesRbacForSimpleActivityEndpoint(t *testing.T) {
 		[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
 		prep.request.AgentEndpoint.Protocols,
 	)
-	require.Len(t, prep.request.AgentEndpoint.AuthorizationSchemes, 1)
-	require.Equal(
-		t,
-		agent_api.AgentEndpointAuthSchemeBotServiceRbac,
-		prep.request.AgentEndpoint.AuthorizationSchemes[0].Type,
-	)
+	require.Empty(t, prep.request.AgentEndpoint.AuthorizationSchemes)
 }
 
 func TestEnsureActivityEndpointAuthSchemeForPromotedDigitalWorkerPreservesExplicitScheme(t *testing.T) {
@@ -2045,6 +2071,59 @@ func TestEnsureActivityEndpointAuthSchemeForPromotedDigitalWorkerPreservesExplic
 
 	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
 		{Type: agent_api.AgentEndpointAuthSchemeEntra},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+	}, request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForDigitalWorkerUsesServiceDefault(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForDigitalWorkerPreservesEndpointWithoutAddingScheme(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
+		},
+	}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Equal(t, []agent_api.AgentEndpointProtocol{
+		agent_api.AgentEndpointProtocolResponses,
+		agent_api.AgentEndpointProtocolActivity,
+	}, request.AgentEndpoint.Protocols)
+	require.Empty(t, request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForSimpleActivityCreatesRbacEndpoint(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseSimple,
+	})
+
+	require.NotNil(t, request.AgentEndpoint)
+	require.Equal(t, []agent_api.AgentEndpointProtocol{
+		agent_api.AgentEndpointProtocolActivity,
+	}, request.AgentEndpoint.Protocols)
+	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
 		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
 	}, request.AgentEndpoint.AuthorizationSchemes)
 }

@@ -15,8 +15,6 @@ First release of the Foundry datasets extension.
   malformed row, an empty dataset, a name the service will not take, or a folder
   that could mean more than one dataset is refused against the file rather than
   from behind whatever the network happened to say first.
-- Reads dataset content back, whether the service hands out a blob URI or the
-  container holding it.
 - `delete` asks before removing a version, and takes `--force` to skip the
   question. Where nobody can answer -- `--no-prompt`, `-o json`, or output
   redirected away from a console -- it asks for `--force` rather than assume,

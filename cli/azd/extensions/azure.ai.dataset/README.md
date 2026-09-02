@@ -68,9 +68,6 @@ Both are files the azd extensions team owns, so they are not changed here:
   Until it exists `azd extension install azure.ai.dataset` cannot resolve, so
   the extension is only reachable through `azd x pack` + `azd x publish` into
   the local source registry.
-- [ ] **`.github/CODEOWNERS`** — add `/cli/azd/extensions/azure.ai.dataset/`.
-  Every sibling Foundry extension has an entry; without one, PRs here get no
-  reviewer routing.
 - [ ] **`microsoft.foundry/extension.yaml`** — add the dependency, but only
   after the registry entry lands. Declaring a dependency that cannot resolve
   breaks installing the bundle.

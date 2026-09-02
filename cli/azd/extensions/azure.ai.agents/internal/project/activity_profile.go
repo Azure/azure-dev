@@ -151,9 +151,9 @@ func ResolveActivityProfile(ca agent_yaml.ContainerAgent) ActivityProfile {
 	return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
 }
 
-// ResolveActivityProfileWithSettings derives and validates the Digital Worker
-// type configured on the azd service. A missing type preserves the existing
-// simple Activity behavior.
+// ResolveActivityProfileWithSettings derives the Digital Worker type configured
+// on the azd service. A missing type preserves the existing simple Activity
+// behavior. Publish fields are validated after command-line overrides are applied.
 func ResolveActivityProfileWithSettings(
 	ca agent_yaml.ContainerAgent,
 	settings *ActivitySettings,
@@ -163,13 +163,6 @@ func ResolveActivityProfileWithSettings(
 		return profile, nil
 	}
 	if strings.TrimSpace(string(settings.DigitalWorkerType)) == "" {
-		if settings.Publish != nil &&
-			(settings.Publish.OptionalPermissionScopes != nil || settings.Publish.AccessBoundaries != nil) {
-			return ActivityProfile{}, fmt.Errorf(
-				"activity.publish.optionalPermissionScopes and activity.publish.accessBoundaries require " +
-					"activity.digitalWorkerType=m365",
-			)
-		}
 		return profile, nil
 	}
 
@@ -181,17 +174,39 @@ func ResolveActivityProfileWithSettings(
 
 	switch settings.DigitalWorkerType {
 	case agent_api.DigitalWorkerTypeM365:
-		if settings.Publish != nil {
-			if err := ValidateDigitalWorkerPublishConfig(settings.Publish); err != nil {
-				return ActivityProfile{}, err
-			}
-		}
 		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}, nil
 	default:
 		return ActivityProfile{}, fmt.Errorf(
 			"activity.digitalWorkerType must be %q when specified", agent_api.DigitalWorkerTypeM365,
 		)
 	}
+}
+
+// ResolveActivityProfileForDeploy derives the Activity profile and eagerly
+// validates publish settings when deploying an agent from azure.yaml.
+func ResolveActivityProfileForDeploy(
+	ca agent_yaml.ContainerAgent,
+	settings *ActivitySettings,
+) (ActivityProfile, error) {
+	profile, err := ResolveActivityProfileWithSettings(ca, settings)
+	if err != nil || settings == nil || settings.Publish == nil {
+		return profile, err
+	}
+
+	if profile.UseCase != ActivityUseCaseDigitalWorker {
+		if settings.Publish.OptionalPermissionScopes != nil || settings.Publish.AccessBoundaries != nil {
+			return ActivityProfile{}, fmt.Errorf(
+				"activity.publish.optionalPermissionScopes and activity.publish.accessBoundaries require " +
+					"activity.digitalWorkerType=m365",
+			)
+		}
+		return profile, nil
+	}
+
+	if err := ValidateDigitalWorkerPublishConfig(settings.Publish); err != nil {
+		return ActivityProfile{}, err
+	}
+	return profile, nil
 }
 
 // ValidateDigitalWorkerPublishConfig validates fields that are sent only for

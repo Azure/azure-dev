@@ -12,6 +12,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
@@ -93,6 +94,13 @@ type teamsPackContext struct {
 	activitySettings *project.ActivitySettings
 }
 
+func resolveTeamsPackActivityProfile(
+	ca agent_yaml.ContainerAgent,
+	settings *project.ActivitySettings,
+) (project.ActivityProfile, error) {
+	return project.ResolveActivityProfileWithSettings(ca, settings)
+}
+
 // resolveTeamsPackContext resolves the target activity agent and derives the Azure
 // Bot ARM id, credential, and Microsoft 365 client shared by the pack and publish
 // commands. It enforces the preconditions loudly:
@@ -136,7 +144,7 @@ func resolveTeamsPackContext(
 			"check the activity configuration in azure.yaml",
 		)
 	}
-	activityProfile, err := project.ResolveActivityProfileWithSettings(ca, serviceTargetConfig.Activity)
+	activityProfile, err := resolveTeamsPackActivityProfile(ca, serviceTargetConfig.Activity)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,

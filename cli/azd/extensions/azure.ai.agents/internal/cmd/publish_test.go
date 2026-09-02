@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/stretchr/testify/require"
@@ -350,19 +351,37 @@ func TestResolveDigitalWorkerPublishInputsValidatesAfterFlagOverrides(t *testing
 	t.Parallel()
 
 	configBoundaries := []string{"invalid.boundary"}
-	packCtx := digitalWorkerPackContext("shared")
-	packCtx.activitySettings.Publish.OptionalPermissionScopes = []project.Microsoft365PermissionScopes{
+	activitySettings := &project.ActivitySettings{
+		DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+		Publish: &project.ActivityPublishConfig{
+			PublishScope: "shared",
+		},
+	}
+	activitySettings.Publish.OptionalPermissionScopes = []project.Microsoft365PermissionScopes{
 		{ResourceAppID: "", Scopes: []string{""}},
 	}
-	packCtx.activitySettings.Publish.AccessBoundaries = &configBoundaries
-
-	permissions, boundaries, err := resolveDigitalWorkerPublishInputs(&publishFlags{
+	activitySettings.Publish.AccessBoundaries = &configBoundaries
+	profile, err := resolveTeamsPackActivityProfile(agent_yaml.ContainerAgent{
+		Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}},
+	}, activitySettings)
+	require.NoError(t, err)
+	packCtx := &teamsPackContext{
+		activityProfile:  profile,
+		activitySettings: activitySettings,
+	}
+	flags := &publishFlags{
 		scope:                       "tenant",
 		scopeSet:                    true,
 		optionalPermissionScopes:    []string{"flag-app=Flag.Scope"},
 		optionalPermissionScopesSet: true,
 		clearAccessBoundaries:       true,
-	}, packCtx)
+	}
+
+	scope, err := resolvePublishScope(flags, packCtx)
+	require.NoError(t, err)
+	require.Equal(t, "tenant", scope.flag)
+
+	permissions, boundaries, err := resolveDigitalWorkerPublishInputs(flags, packCtx)
 
 	require.NoError(t, err)
 	require.Equal(t, []agent_api.Microsoft365PermissionScopes{

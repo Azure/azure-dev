@@ -132,6 +132,22 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
 	})
 
+	t.Run("classification allows publish fields to be overridden later", func(t *testing.T) {
+		boundaries := []string{"invalid.boundary"}
+		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+			Publish: &ActivityPublishConfig{
+				PublishScope: "shared",
+				OptionalPermissionScopes: []Microsoft365PermissionScopes{
+					{Scopes: []string{""}},
+				},
+				AccessBoundaries: &boundaries,
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
+	})
+
 	t.Run("digital worker accepts optional permissions and boundaries", func(t *testing.T) {
 		boundaries := []string{"read.1on1.developers", "write.group.developers"}
 		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
@@ -149,7 +165,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	})
 
 	t.Run("digital worker rejects missing resource app id", func(t *testing.T) {
-		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
 			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
 				OptionalPermissionScopes: []Microsoft365PermissionScopes{
@@ -161,7 +177,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	})
 
 	t.Run("digital worker rejects empty permission scopes", func(t *testing.T) {
-		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
 			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
 				OptionalPermissionScopes: []Microsoft365PermissionScopes{
@@ -173,7 +189,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	})
 
 	t.Run("digital worker requires tenant publish scope", func(t *testing.T) {
-		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
 			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
 				PublishScope: "shared",
@@ -184,7 +200,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 
 	t.Run("digital worker rejects unsupported access boundary", func(t *testing.T) {
 		boundaries := []string{"read.1on1.tenant"}
-		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
 			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish:           &ActivityPublishConfig{AccessBoundaries: &boundaries},
 		})
@@ -199,7 +215,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 	})
 
 	t.Run("simple rejects optional permission scopes", func(t *testing.T) {
-		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
 			Publish: &ActivityPublishConfig{OptionalPermissionScopes: []Microsoft365PermissionScopes{}},
 		})
 		require.ErrorContains(t, err, "activity.digitalWorkerType=m365")
@@ -207,7 +223,7 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 
 	t.Run("simple rejects access boundaries", func(t *testing.T) {
 		boundaries := []string{}
-		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
 			Publish: &ActivityPublishConfig{AccessBoundaries: &boundaries},
 		})
 		require.ErrorContains(t, err, "activity.digitalWorkerType=m365")

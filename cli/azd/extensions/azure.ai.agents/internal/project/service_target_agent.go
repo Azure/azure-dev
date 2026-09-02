@@ -1475,7 +1475,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 	addAgentToolboxDependency(serviceTargetConfig, agentDef.Toolbox)
-	activityProfile, err := ResolveActivityProfileWithSettings(agentDef, serviceTargetConfig.Activity)
+	activityProfile, err := ResolveActivityProfileForDeploy(agentDef, serviceTargetConfig.Activity)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -2202,7 +2202,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		foundryAgentConfig.Activity.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
 		request.DigitalWorkerType = agent_api.DigitalWorkerTypeM365
 	}
-	activityProfile, err := ResolveActivityProfileWithSettings(agentDef, foundryAgentConfig.Activity)
+	activityProfile, err := ResolveActivityProfileForDeploy(agentDef, foundryAgentConfig.Activity)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentRequest,

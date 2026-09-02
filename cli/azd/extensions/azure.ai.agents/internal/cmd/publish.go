@@ -194,7 +194,7 @@ func resolveDigitalWorkerPublishInputs(
 	publish := activityPublishConfig(packCtx)
 	if !isDigitalWorker {
 		hasDigitalWorkerConfig := publish != nil &&
-			(len(publish.OptionalPermissionScopes) > 0 || publish.AccessBoundaries != nil)
+			(publish.OptionalPermissionScopes != nil || publish.AccessBoundaries != nil)
 		if flags.optionalPermissionScopesSet || flags.accessBoundariesSet ||
 			flags.clearAccessBoundaries || hasDigitalWorkerConfig {
 			return nil, nil, exterrors.Validation(

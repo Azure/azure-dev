@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -26,13 +25,6 @@ import (
 )
 
 const aiAgentHost = "azure.ai.agent"
-
-var routineManagedServiceFields = []string{
-	"description",
-	"enabled",
-	"triggers",
-	"action",
-}
 
 var routineCoreServiceFields = map[string]struct{}{
 	"apiVersion": {}, "condition": {}, "config": {}, "dist": {},
@@ -64,20 +56,21 @@ type routineProjectClient interface {
 	) (*azdext.EmptyResponse, error)
 }
 
-type routineProjectAuthor struct {
-	projectClient routineProjectClient
-	routine       *routines.Routine
-	close         func()
-}
-
 type routineServicePlan struct {
 	projectClient     routineProjectClient
 	routineName       string
-	properties        *structpb.Struct
+	manifestRef       string
 	services          map[string]*azdext.ServiceConfig
 	existing          *routineServiceState
 	agentServiceName  string
 	preserveAgentUses bool
+}
+
+type routineServiceUpsertResult struct {
+	Name    string `json:"name"`
+	Host    string `json:"host"`
+	Ref     string `json:"ref"`
+	Created bool   `json:"created"`
 }
 
 type routineServiceState struct {
@@ -87,51 +80,28 @@ type routineServiceState struct {
 	pathPrefix string
 }
 
-func newRoutineProjectAuthor(ctx context.Context) (*routineProjectAuthor, error) {
+func upsertRoutineServiceToProject(
+	ctx context.Context,
+	routine *routines.Routine,
+	file string,
+) (*routineServiceUpsertResult, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return nil, fmt.Errorf("connecting to the current azd project: %w", err)
 	}
-
-	return &routineProjectAuthor{
-		projectClient: azdClient.Project(),
-		close:         azdClient.Close,
-	}, nil
-}
-
-func (a *routineProjectAuthor) Prepare(ctx context.Context, routine *routines.Routine) error {
-	if _, err := planRoutineService(ctx, a.projectClient, routine); err != nil {
-		return err
-	}
-	a.routine = routine
-	return nil
-}
-
-func (a *routineProjectAuthor) Close() {
-	if a.close != nil {
-		a.close()
-	}
-}
-
-func (a *routineProjectAuthor) Apply(ctx context.Context) error {
-	if a.routine == nil {
-		return fmt.Errorf("routine project author is not prepared")
-	}
-	plan, err := planRoutineService(ctx, a.projectClient, a.routine)
-	if err != nil {
-		return err
-	}
-	return plan.apply(ctx)
+	defer azdClient.Close()
+	return upsertRoutineService(ctx, azdClient.Project(), routine, file)
 }
 
 func upsertRoutineService(
 	ctx context.Context,
 	projectClient routineProjectClient,
 	routine *routines.Routine,
-) error {
-	plan, err := planRoutineService(ctx, projectClient, routine)
+	file string,
+) (*routineServiceUpsertResult, error) {
+	plan, err := planRoutineService(ctx, projectClient, routine, file)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	return plan.apply(ctx)
 }
@@ -140,6 +110,7 @@ func planRoutineService(
 	ctx context.Context,
 	projectClient routineProjectClient,
 	routine *routines.Routine,
+	file string,
 ) (*routineServicePlan, error) {
 	if routine == nil || strings.TrimSpace(routine.Name) == "" {
 		return nil, fmt.Errorf("routine name is required for azure.yaml authoring")
@@ -161,7 +132,7 @@ func planRoutineService(
 		return nil, fmt.Errorf("reading azure.yaml before adding routine %q: %w", routine.Name, err)
 	}
 	project := projectResp.GetProject()
-	if project == nil {
+	if project == nil || strings.TrimSpace(project.GetPath()) == "" {
 		return nil, fmt.Errorf("reading azure.yaml before adding routine %q: project configuration is empty", routine.Name)
 	}
 
@@ -181,8 +152,15 @@ func planRoutineService(
 			"rename the routine or the conflicting azure.yaml service",
 		)
 	}
+	if existing != nil && !routineServiceCanUpdateFileReference(existing) {
+		return nil, exterrors.Validation(
+			exterrors.CodeProjectServiceConflict,
+			fmt.Sprintf("cannot update routine service %q as a file-backed declaration", routine.Name),
+			"remove inline triggers and action overrides, or remove the service before rerunning the command",
+		)
+	}
 
-	properties, err := routineServiceProperties(routine)
+	manifestRef, err := portableRoutineManifestReference(project.GetPath(), file)
 	if err != nil {
 		return nil, err
 	}
@@ -191,15 +169,15 @@ func planRoutineService(
 	if err != nil {
 		return nil, err
 	}
-	preserveAgentUses, err := shouldPreserveRoutineAgentUses(existing, project.GetPath(), routine, agentServiceName)
-	if err != nil {
-		return nil, err
-	}
+	preserveAgentUses := existing != nil &&
+		routine.Action != nil &&
+		strings.TrimSpace(routine.Action.AgentName) != "" &&
+		agentServiceName == ""
 
 	return &routineServicePlan{
 		projectClient:     projectClient,
 		routineName:       routine.Name,
-		properties:        properties,
+		manifestRef:       manifestRef,
 		services:          services,
 		existing:          existing,
 		agentServiceName:  agentServiceName,
@@ -262,6 +240,15 @@ func routineServiceStateFromConfig(service *azdext.ServiceConfig) *routineServic
 	}
 }
 
+func routineServiceCanUpdateFileReference(service *routineServiceState) bool {
+	if service == nil || service.pathPrefix != "" || service.properties == nil {
+		return false
+	}
+	fields := service.properties.GetFields()
+	ref := fields["$ref"].GetStringValue()
+	return strings.TrimSpace(ref) != "" && fields["triggers"] == nil && fields["action"] == nil
+}
+
 func stringList(value *structpb.Value) []string {
 	if value == nil || value.GetListValue() == nil {
 		return nil
@@ -276,7 +263,7 @@ func stringList(value *structpb.Value) []string {
 	return result
 }
 
-func (p *routineServicePlan) apply(ctx context.Context) error {
+func (p *routineServicePlan) apply(ctx context.Context) (*routineServiceUpsertResult, error) {
 	uses := reconcileRoutineUses(
 		p.services,
 		p.existing,
@@ -284,14 +271,11 @@ func (p *routineServicePlan) apply(ctx context.Context) error {
 		p.preserveAgentUses,
 	)
 	if p.existing != nil {
-		for _, field := range routineManagedServiceFields {
-			if value, found := p.properties.GetFields()[field]; found {
-				if p.existing.properties != nil && proto.Equal(value, p.existing.properties.GetFields()[field]) {
-					continue
-				}
-				if err := p.setValue(ctx, p.existing.pathPrefix+field, value); err != nil {
-					return err
-				}
+		refValue := structpb.NewStringValue(p.manifestRef)
+		if p.existing.properties == nil ||
+			!proto.Equal(refValue, p.existing.properties.GetFields()["$ref"]) {
+			if err := p.setValue(ctx, "$ref", refValue); err != nil {
+				return nil, err
 			}
 		}
 		if !slices.Equal(p.existing.uses, uses) {
@@ -301,51 +285,35 @@ func (p *routineServicePlan) apply(ctx context.Context) error {
 			}
 			value := structpb.NewListValue(&structpb.ListValue{Values: values})
 			if err := p.setValue(ctx, "uses", value); err != nil {
-				return err
+				return nil, err
 			}
 		}
-		return nil
+		return p.result(false), nil
 	}
 
 	service := &azdext.ServiceConfig{
-		Name:                 p.routineName,
-		Host:                 aiRoutineHost,
-		AdditionalProperties: p.properties,
-		Uses:                 uses,
+		Name: p.routineName,
+		Host: aiRoutineHost,
+		AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+			"$ref": structpb.NewStringValue(p.manifestRef),
+		}},
+		Uses: uses,
 	}
 
 	_, err := p.projectClient.AddService(ctx, &azdext.AddServiceRequest{Service: service})
 	if err != nil {
-		return fmt.Errorf("adding routine service %q to azure.yaml: %w", p.routineName, err)
+		return nil, fmt.Errorf("adding routine service %q to azure.yaml: %w", p.routineName, err)
 	}
-	return nil
+	return p.result(true), nil
 }
 
-func shouldPreserveRoutineAgentUses(
-	existing *routineServiceState,
-	projectRoot string,
-	routine *routines.Routine,
-	agentServiceName string,
-) (bool, error) {
-	if existing == nil || routine.Action == nil || agentServiceName != "" {
-		return false, nil
+func (p *routineServicePlan) result(created bool) *routineServiceUpsertResult {
+	return &routineServiceUpsertResult{
+		Name:    p.routineName,
+		Host:    aiRoutineHost,
+		Ref:     p.manifestRef,
+		Created: created,
 	}
-	requestedAgentName := strings.TrimSpace(routine.Action.AgentName)
-	if requestedAgentName == "" {
-		return false, nil
-	}
-	existingService := &azdext.ServiceConfig{Name: routine.Name}
-	if existing.pathPrefix == "config." {
-		existingService.Config = existing.properties
-	} else {
-		existingService.AdditionalProperties = existing.properties
-	}
-	existingRoutine, err := parseRoutineServiceConfig(existingService, projectRoot)
-	if err != nil {
-		return false, fmt.Errorf("reading existing routine service %q: %w", routine.Name, err)
-	}
-	return existingRoutine.Action != nil &&
-		strings.TrimSpace(existingRoutine.Action.AgentName) == requestedAgentName, nil
 }
 
 func (p *routineServicePlan) setValue(ctx context.Context, path string, value *structpb.Value) error {
@@ -360,30 +328,43 @@ func (p *routineServicePlan) setValue(ctx context.Context, path string, value *s
 	return nil
 }
 
-func routineProjectAuthoringRetry(name string) string {
-	return fmt.Sprintf("rerun `azd ai routine update %q --add-to-project`", name)
-}
-
-func routineServiceProperties(routine *routines.Routine) (*structpb.Struct, error) {
-	data, err := json.Marshal(routine)
+func portableRoutineManifestReference(projectRoot, file string) (string, error) {
+	root, err := filepath.Abs(projectRoot)
 	if err != nil {
-		return nil, fmt.Errorf("encoding routine %q for azure.yaml: %w", routine.Name, err)
+		return "", fmt.Errorf("resolving azd project path: %w", err)
 	}
-
-	var values map[string]any
-	if err := json.Unmarshal(data, &values); err != nil {
-		return nil, fmt.Errorf("decoding routine %q for azure.yaml: %w", routine.Name, err)
-	}
-	delete(values, "name")
-	delete(values, "created_at")
-	delete(values, "updated_at")
-	values["description"] = routine.Description
-
-	properties, err := structpb.NewStruct(values)
+	manifest, err := filepath.Abs(file)
 	if err != nil {
-		return nil, fmt.Errorf("creating routine service %q configuration: %w", routine.Name, err)
+		return "", fmt.Errorf("resolving routine manifest path: %w", err)
 	}
-	return properties, nil
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("resolving azd project path: %w", err)
+	}
+	resolvedManifest, err := filepath.EvalSymlinks(manifest)
+	if err != nil {
+		return "", fmt.Errorf("resolving routine manifest path: %w", err)
+	}
+	contained, err := filepath.Rel(resolvedRoot, resolvedManifest)
+	if err != nil {
+		return "", fmt.Errorf("checking routine manifest location: %w", err)
+	}
+	if contained == ".." || strings.HasPrefix(contained, ".."+string(filepath.Separator)) {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidRoutineManifest,
+			"routine manifest must be inside the current azd project",
+			"move the routine manifest into the project and rerun the command",
+		)
+	}
+	reference, err := filepath.Rel(resolvedRoot, resolvedManifest)
+	if err != nil {
+		return "", fmt.Errorf("making routine manifest path relative to azure.yaml: %w", err)
+	}
+	reference = filepath.ToSlash(reference)
+	if !strings.HasPrefix(reference, ".") {
+		reference = "./" + reference
+	}
+	return reference, nil
 }
 
 func resolveRoutineAgentService(

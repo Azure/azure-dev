@@ -12,8 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // ─── constructor helpers ──────────────────────────────────────────────────────
@@ -52,61 +50,6 @@ func TestInternal_Category(t *testing.T) {
 	var le *azdext.LocalError
 	require.ErrorAs(t, err, &le)
 	assert.Equal(t, azdext.LocalErrorCategoryInternal, le.Category)
-}
-
-func TestProjectAuthoring_PreservesPartialSuccessContext(t *testing.T) {
-	t.Parallel()
-
-	err := ProjectAuthoring(
-		"routine \"nightly-summary\" was created but could not be added to azure.yaml",
-		"run `azd ai routine update nightly-summary --add-to-project`",
-		assert.AnError,
-	)
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, err, &localErr)
-	assert.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
-	assert.Equal(t, CodeProjectAuthoringFailed, localErr.Code)
-	assert.Contains(t, localErr.Message, "was created")
-	assert.Contains(t, localErr.Message, assert.AnError.Error())
-	assert.Contains(t, localErr.Suggestion, "routine update nightly-summary --add-to-project")
-}
-
-func TestProjectAuthoring_PreservesLocalErrorClassification(t *testing.T) {
-	t.Parallel()
-
-	cause := Validation(CodeInvalidRoutineManifest, "invalid $ref", "fix the reference")
-	err := ProjectAuthoring("remote operation succeeded", "retry update", cause)
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, err, &localErr)
-	assert.Equal(t, CodeInvalidRoutineManifest, localErr.Code)
-	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
-	assert.Contains(t, localErr.Message, "remote operation succeeded")
-	assert.Contains(t, localErr.Message, "invalid $ref")
-	assert.Contains(t, localErr.Suggestion, "fix the reference")
-	assert.Contains(t, localErr.Suggestion, "retry update")
-}
-
-func TestProjectAuthoring_PreservesHostActionableError(t *testing.T) {
-	t.Parallel()
-
-	statusWithDetails, err := status.New(codes.FailedPrecondition, "invalid project configuration").WithDetails(
-		&azdext.ActionableErrorDetail{
-			Suggestion: "fix the condition",
-			Links: []*azdext.ErrorLink{
-				{Url: "https://example.com/help", Title: "Project configuration help"},
-			},
-		},
-	)
-	require.NoError(t, err)
-
-	wrapped := ProjectAuthoring("remote operation succeeded", "retry update", statusWithDetails.Err())
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, wrapped, &localErr)
-	assert.Contains(t, localErr.Message, "invalid project configuration")
-	assert.Contains(t, localErr.Suggestion, "fix the condition")
-	assert.Contains(t, localErr.Suggestion, "retry update")
-	require.Len(t, localErr.Links, 1)
-	assert.Equal(t, "https://example.com/help", localErr.Links[0].URL)
 }
 
 func TestCancelled_Category(t *testing.T) {
@@ -202,10 +145,7 @@ func TestIsCancellation(t *testing.T) {
 
 func TestWrapAuthError_401_NotLoggedIn(t *testing.T) {
 	t.Parallel()
-	azErr := &azcore.ResponseError{
-		StatusCode: http.StatusUnauthorized,
-		ErrorCode:  "not logged in, run `azd auth login` to login",
-	}
+	azErr := &azcore.ResponseError{StatusCode: http.StatusUnauthorized, ErrorCode: "not logged in, run `azd auth login` to login"}
 	err := WrapAuthError(azErr, OpGetRoutine)
 	var le *azdext.LocalError
 	require.ErrorAs(t, err, &le)

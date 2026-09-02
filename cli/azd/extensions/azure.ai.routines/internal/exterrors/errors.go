@@ -56,37 +56,6 @@ func Internal(code, message string) error {
 	}
 }
 
-// ProjectAuthoring returns a structured error after the remote operation succeeded
-// but the corresponding azure.yaml update failed.
-func ProjectAuthoring(message, suggestion string, err error) error {
-	underlyingMessage := azdext.ErrorMessage(err)
-	if underlyingMessage == "" {
-		underlyingMessage = err.Error()
-	}
-	if underlyingSuggestion := azdext.ErrorSuggestion(err); underlyingSuggestion != "" {
-		suggestion = fmt.Sprintf("%s Then %s", underlyingSuggestion, suggestion)
-	}
-	links := azdext.ErrorLinks(err)
-
-	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
-		return &azdext.LocalError{
-			Message:    fmt.Sprintf("%s: %s", message, underlyingMessage),
-			Code:       localErr.Code,
-			Category:   localErr.Category,
-			Suggestion: suggestion,
-			Links:      links,
-		}
-	}
-
-	return &azdext.LocalError{
-		Message:    fmt.Sprintf("%s: %s", message, underlyingMessage),
-		Code:       CodeProjectAuthoringFailed,
-		Category:   azdext.LocalErrorCategoryInternal,
-		Suggestion: suggestion,
-		Links:      links,
-	}
-}
-
 // User returns a user-action LocalError (e.g. cancellation).
 func User(code, message string) error {
 	return &azdext.LocalError{

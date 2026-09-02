@@ -23,11 +23,6 @@ const (
 	CodeFileNotFound           = "file_not_found"
 )
 
-// Error codes for internal errors.
-const (
-	CodeProjectAuthoringFailed = "project_authoring_failed"
-)
-
 // Error codes for auth errors.
 const (
 	//nolint:gosec // error code identifier, not a credential

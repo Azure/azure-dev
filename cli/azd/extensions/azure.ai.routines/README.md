@@ -4,29 +4,22 @@ Manage Microsoft Foundry Routines from your terminal. (Preview)
 
 ## Add a routine to azure.yaml
 
-Pass `--add-to-project` to `routine create` or `routine update` to declare the
-routine in the current project's `azure.yaml` as a `host: azure.ai.routine`
-service. When the routine invokes an `azure.ai.agent` service declared in the
-same project, the command also adds the corresponding `uses:` dependency.
-The routine name must be a valid azd service name: 1-63 characters, starting
-with a letter or number and containing only letters, numbers, `.`, `_`, or `-`.
+Use `routine add` to declare a local YAML or JSON routine manifest in the
+current project's `azure.yaml`. The command only updates local project
+configuration; run `azd deploy <name>` or `azd up` to create or update the
+routine in Microsoft Foundry.
 
 ```bash
-azd ai routine create nightly-summary \
-  --trigger recurring \
-  --cron "0 2 * * *" \
-  --agent-name summarizer \
-  --add-to-project
+azd ai routine add nightly-summary --file ./routines/nightly-summary.yaml
+azd deploy nightly-summary
 ```
 
-Repeated updates modify the existing service instead of adding another one.
-After authoring, `azd deploy nightly-summary` reconciles the routine from
-`azure.yaml`. Routine trigger and action types are immutable after creation;
-delete and recreate the routine to change either type.
-
-The command validates the local project before changing the remote routine.
-If a later `azure.yaml` write fails after the remote operation succeeds, fix
-the reported project error and rerun `azd ai routine update "<name>" --add-to-project`.
+The manifest must be inside the azd project. The command writes a portable
+`$ref`, produces the same declaration when repeated, and adds `uses:` when the
+manifest invokes an `azure.ai.agent` service in the same project. Existing
+service fields not owned by the routines extension are preserved. Convert or
+remove an inline routine service before replacing it with a file-backed
+declaration.
 
 ## Reference a routine manifest
 

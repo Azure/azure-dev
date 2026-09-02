@@ -33,7 +33,6 @@ type routineUpdateFlags struct {
 	agentEndpointID string
 	conversationID  string
 	sessionID       string
-	addToProject    bool
 	file            string
 	output          string
 }
@@ -47,8 +46,7 @@ func newRoutineUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Update fields on an existing Foundry routine.
 
 Only the named flags change; all other fields are preserved verbatim.
-To change the trigger or action type, delete and recreate the routine.
-Pass --add-to-project to also add or update the routine in the current project's azure.yaml.`,
+To change the trigger or action type, delete and recreate the routine.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
@@ -71,16 +69,10 @@ Pass --add-to-project to also add or update the routine in the current project's
 	cmd.Flags().StringVar(&flags.timeZone, "time-zone", "", "New time zone (recurring trigger only)")
 	cmd.Flags().StringVar(&flags.at, "at", "", "New ISO 8601 datetime (timer trigger only)")
 	cmd.Flags().StringVar(&flags.cronExpression, "cron", "", "New cron expression (recurring trigger only)")
-	cmd.Flags().StringVar(
-		&flags.connectionID, "connection-id", "",
-		"New workspace connection ID (github-issue trigger only)",
-	)
+	cmd.Flags().StringVar(&flags.connectionID, "connection-id", "", "New workspace connection ID (github-issue trigger only)")
 	cmd.Flags().StringVar(&flags.owner, "owner", "", "New GitHub owner (github-issue trigger only)")
 	cmd.Flags().StringVar(&flags.repository, "repository", "", "New GitHub repository (github-issue trigger only)")
-	cmd.Flags().StringVar(
-		&flags.issueEvent, "issue-event", "",
-		"New GitHub issue event: opened or closed (github-issue trigger only)",
-	)
+	cmd.Flags().StringVar(&flags.issueEvent, "issue-event", "", "New GitHub issue event: opened or closed (github-issue trigger only)")
 	cmd.Flags().StringVar(&flags.provider, "provider", "", "New external provider (custom trigger only)")
 	cmd.Flags().StringVar(&flags.eventName, "event-name", "", "New event name (custom trigger only)")
 	cmd.Flags().StringVar(&flags.parametersJSON, "parameters", "", "New parameters JSON object (custom trigger only)")
@@ -88,8 +80,6 @@ Pass --add-to-project to also add or update the routine in the current project's
 	cmd.Flags().StringVar(&flags.agentEndpointID, "agent-endpoint-id", "", "New agent endpoint ID")
 	cmd.Flags().StringVar(&flags.conversationID, "conversation-id", "", "New conversation to continue (preview)")
 	cmd.Flags().StringVar(&flags.sessionID, "session-id", "", "New session to continue")
-	cmd.Flags().BoolVar(&flags.addToProject, "add-to-project", false,
-		"Add or update the routine in the current project's azure.yaml")
 	cmd.Flags().StringVar(&flags.file, "file", "",
 		"Path to a YAML/JSON manifest; merged fields win unless overridden by flags")
 
@@ -101,15 +91,6 @@ Pass --add-to-project to also add or update the routine in the current project's
 }
 
 func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpdateFlags) error {
-	return runRoutineUpdateWithDependencies(ctx, cmd, flags, defaultRoutineCommandDependencies())
-}
-
-func runRoutineUpdateWithDependencies(
-	ctx context.Context,
-	cmd *cobra.Command,
-	flags *routineUpdateFlags,
-	dependencies routineCommandDependencies,
-) error {
 	// Type-switch guard: --trigger and --action are not allowed on update.
 	if flags.trigger != "" {
 		return exterrors.Validation(
@@ -126,17 +107,7 @@ func runRoutineUpdateWithDependencies(
 		)
 	}
 
-	var projectAuthor routineProjectWriter
-	if flags.addToProject {
-		preparedAuthor, err := dependencies.newProjectWriter(ctx)
-		if err != nil {
-			return err
-		}
-		projectAuthor = preparedAuthor
-		defer projectAuthor.Close()
-	}
-
-	client, err := dependencies.newClient(ctx, cmd)
+	client, _, err := newRoutineClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -204,27 +175,7 @@ func runRoutineUpdateWithDependencies(
 	}
 	changed += flagChanged
 
-	if projectAuthor != nil {
-		if err := projectAuthor.Prepare(ctx, existing); err != nil {
-			return err
-		}
-	}
-
 	if changed == 0 && flags.file == "" {
-		if projectAuthor != nil {
-			if err := projectAuthor.Apply(ctx); err != nil {
-				return exterrors.ProjectAuthoring(
-					fmt.Sprintf("routine %q was not changed and could not be added to azure.yaml", flags.name),
-					routineProjectAuthoringRetry(flags.name),
-					err,
-				)
-			}
-			if flags.output == "json" {
-				return printJSON(existing)
-			}
-			fmt.Printf("Routine '%s' added to azure.yaml.\n", flags.name)
-			return nil
-		}
 		fmt.Printf("No changes specified for routine '%s'.\n", flags.name)
 		return nil
 	}
@@ -237,15 +188,6 @@ func runRoutineUpdateWithDependencies(
 				fmt.Sprintf("routine %q was deleted before the update completed", flags.name))
 		}
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateRoutine)
-	}
-	if projectAuthor != nil {
-		if err := projectAuthor.Apply(ctx); err != nil {
-			return exterrors.ProjectAuthoring(
-				fmt.Sprintf("routine %q was updated but could not be added to azure.yaml", flags.name),
-				routineProjectAuthoringRetry(flags.name),
-				err,
-			)
-		}
 	}
 
 	if flags.output == "json" {

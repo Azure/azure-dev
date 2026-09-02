@@ -38,36 +38,7 @@ type routineCreateFlags struct {
 	enabled         bool
 	force           bool
 	file            string
-	addToProject    bool
 	output          string
-}
-
-type routineCommandClient interface {
-	GetRoutine(context.Context, string) (*routines.Routine, error)
-	PutRoutine(context.Context, string, *routines.Routine) (*routines.Routine, error)
-}
-
-type routineProjectWriter interface {
-	Prepare(context.Context, *routines.Routine) error
-	Apply(context.Context) error
-	Close()
-}
-
-type routineCommandDependencies struct {
-	newClient        func(context.Context, *cobra.Command) (routineCommandClient, error)
-	newProjectWriter func(context.Context) (routineProjectWriter, error)
-}
-
-func defaultRoutineCommandDependencies() routineCommandDependencies {
-	return routineCommandDependencies{
-		newClient: func(ctx context.Context, cmd *cobra.Command) (routineCommandClient, error) {
-			client, _, err := newRoutineClient(ctx, cmd)
-			return client, err
-		},
-		newProjectWriter: func(ctx context.Context) (routineProjectWriter, error) {
-			return newRoutineProjectAuthor(ctx)
-		},
-	}
 }
 
 func newRoutineCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -81,8 +52,7 @@ func newRoutineCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Create a new Foundry routine.
 
 A routine pairs a trigger (--trigger) with an action (--action).
-Use --file to create from a YAML/JSON manifest file instead of individual flags.
-Pass --add-to-project to also declare the routine in the current project's azure.yaml.`,
+Use --file to create from a YAML/JSON manifest file instead of individual flags.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
@@ -130,8 +100,6 @@ Pass --add-to-project to also declare the routine in the current project's azure
 		"Whether the routine is enabled on creation")
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an existing routine with the same name (upsert)")
-	cmd.Flags().BoolVar(&flags.addToProject, "add-to-project", false,
-		"Add or update the routine in the current project's azure.yaml")
 	cmd.Flags().StringVar(&flags.file, "file", "",
 		"Path to a YAML or JSON routine manifest file")
 
@@ -143,15 +111,6 @@ Pass --add-to-project to also declare the routine in the current project's azure
 }
 
 func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCreateFlags) error {
-	return runRoutineCreateWithDependencies(ctx, cmd, flags, defaultRoutineCommandDependencies())
-}
-
-func runRoutineCreateWithDependencies(
-	ctx context.Context,
-	cmd *cobra.Command,
-	flags *routineCreateFlags,
-	dependencies routineCommandDependencies,
-) error {
 	// --file and --trigger are mutually exclusive
 	if flags.file != "" && flags.trigger != "" {
 		return exterrors.Validation(
@@ -221,20 +180,7 @@ func runRoutineCreateWithDependencies(
 		body.Enabled = new(true)
 	}
 
-	var projectAuthor routineProjectWriter
-	if flags.addToProject {
-		preparedAuthor, err := dependencies.newProjectWriter(ctx)
-		if err != nil {
-			return err
-		}
-		projectAuthor = preparedAuthor
-		defer projectAuthor.Close()
-		if err := projectAuthor.Prepare(ctx, &body); err != nil {
-			return err
-		}
-	}
-
-	client, err := dependencies.newClient(ctx, cmd)
+	client, _, err := newRoutineClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -257,15 +203,6 @@ func runRoutineCreateWithDependencies(
 	result, err := client.PutRoutine(ctx, flags.name, &body)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateRoutine)
-	}
-	if projectAuthor != nil {
-		if err := projectAuthor.Apply(ctx); err != nil {
-			return exterrors.ProjectAuthoring(
-				fmt.Sprintf("routine %q was created but could not be added to azure.yaml", flags.name),
-				routineProjectAuthoringRetry(flags.name),
-				err,
-			)
-		}
 	}
 
 	if flags.output == "json" {

@@ -4,11 +4,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"maps"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"azure.ai.routines/internal/exterrors"
@@ -24,56 +25,37 @@ import (
 
 type recordingRoutineProjectClient struct {
 	project     *azdext.ProjectConfig
-	projects    []*azdext.ProjectConfig
-	lastProject *azdext.ProjectConfig
 	rawProjects []*azdext.ProjectConfig
-	lastRaw     *azdext.ProjectConfig
-	getCalls    int
+	lastProject *azdext.ProjectConfig
 	rawCalls    int
+	getCalls    int
 	added       []*azdext.ServiceConfig
 	setPaths    []string
 	setCalls    int
-	addErr      error
-	setErr      error
 	setErrAt    int
 }
 
-func (c *recordingRoutineProjectClient) Get(
+func (client *recordingRoutineProjectClient) Get(
 	context.Context,
 	*azdext.EmptyRequest,
 	...grpc.CallOption,
 ) (*azdext.GetProjectResponse, error) {
-	if c.getCalls < len(c.projects) {
-		project := c.projects[c.getCalls]
-		c.getCalls++
-		c.lastProject = project
-		return &azdext.GetProjectResponse{Project: project}, nil
-	}
-	c.getCalls++
-	c.lastProject = c.project
-	return &azdext.GetProjectResponse{Project: c.project}, nil
+	client.getCalls++
+	client.lastProject = client.project
+	return &azdext.GetProjectResponse{Project: client.project}, nil
 }
 
-func (c *recordingRoutineProjectClient) AddService(
-	_ context.Context,
-	req *azdext.AddServiceRequest,
-	_ ...grpc.CallOption,
-) (*azdext.EmptyResponse, error) {
-	c.added = append(c.added, req.GetService())
-	return &azdext.EmptyResponse{}, c.addErr
-}
-
-func (c *recordingRoutineProjectClient) GetConfigSection(
+func (client *recordingRoutineProjectClient) GetConfigSection(
 	_ context.Context,
 	_ *azdext.GetProjectConfigSectionRequest,
 	_ ...grpc.CallOption,
 ) (*azdext.GetProjectConfigSectionResponse, error) {
-	project := c.lastProject
-	if c.rawCalls < len(c.rawProjects) {
-		project = c.rawProjects[c.rawCalls]
+	project := client.lastProject
+	if client.rawCalls < len(client.rawProjects) {
+		project = client.rawProjects[client.rawCalls]
 	}
-	c.rawCalls++
-	c.lastRaw = project
+	client.rawCalls++
+	client.lastProject = project
 	services := map[string]any{}
 	for name, service := range project.GetServices() {
 		values := map[string]any{}
@@ -103,596 +85,228 @@ func (c *recordingRoutineProjectClient) GetConfigSection(
 	return &azdext.GetProjectConfigSectionResponse{Found: true, Section: section}, nil
 }
 
-func (c *recordingRoutineProjectClient) SetServiceConfigValue(
+func (client *recordingRoutineProjectClient) AddService(
 	_ context.Context,
-	req *azdext.SetServiceConfigValueRequest,
+	request *azdext.AddServiceRequest,
 	_ ...grpc.CallOption,
 ) (*azdext.EmptyResponse, error) {
-	c.setPaths = append(c.setPaths, req.GetPath())
-	c.setCalls++
-	if c.setErr != nil && (c.setErrAt == 0 || c.setCalls == c.setErrAt) {
-		return nil, c.setErr
+	client.added = append(client.added, request.GetService())
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (client *recordingRoutineProjectClient) SetServiceConfigValue(
+	_ context.Context,
+	request *azdext.SetServiceConfigValueRequest,
+	_ ...grpc.CallOption,
+) (*azdext.EmptyResponse, error) {
+	client.setPaths = append(client.setPaths, request.GetPath())
+	client.setCalls++
+	if client.setErrAt > 0 && client.setCalls == client.setErrAt {
+		return nil, assert.AnError
 	}
-	service := c.lastRaw.GetServices()[req.GetServiceName()]
-	if req.GetPath() == "uses" {
-		service.Uses = nil
-		for _, item := range req.GetValue().GetListValue().GetValues() {
-			service.Uses = append(service.Uses, item.GetStringValue())
-		}
-		return &azdext.EmptyResponse{}, nil
-	}
-	path := req.GetPath()
-	if strings.HasPrefix(path, "config.") {
-		if service.Config == nil {
-			service.Config = &structpb.Struct{Fields: map[string]*structpb.Value{}}
-		}
-		service.Config.Fields[strings.TrimPrefix(path, "config.")] = req.GetValue()
+	service := client.lastProject.GetServices()[request.GetServiceName()]
+	if request.GetPath() == "uses" {
+		service.Uses = stringList(request.GetValue())
 		return &azdext.EmptyResponse{}, nil
 	}
 	if service.AdditionalProperties == nil {
 		service.AdditionalProperties = &structpb.Struct{Fields: map[string]*structpb.Value{}}
 	}
-	if service.AdditionalProperties.Fields == nil {
-		service.AdditionalProperties.Fields = map[string]*structpb.Value{}
-	}
-	service.AdditionalProperties.Fields[path] = req.GetValue()
+	service.AdditionalProperties.Fields[request.GetPath()] = request.GetValue()
 	return &azdext.EmptyResponse{}, nil
 }
-func TestRoutineProjectAuthorApplyReloadsCurrentUses(t *testing.T) {
+
+func TestUpsertRoutineServiceCreatesFileReferenceAndAgentDependency(t *testing.T) {
 	t.Parallel()
 
-	initial := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-		"nightly-summary": {
-			Name: "nightly-summary",
-			Host: aiRoutineHost,
-			Uses: []string{"old-connection"},
+	projectRoot, manifestPath, routine := routineManifestFixture(t, "deployed-researcher")
+	client := &recordingRoutineProjectClient{project: &azdext.ProjectConfig{
+		Path: projectRoot,
+		Services: map[string]*azdext.ServiceConfig{
+			"researcher": {
+				Name: "researcher", Host: aiAgentHost,
+				AdditionalProperties: mustStruct(t, map[string]any{
+					"kind": "hosted", "name": "deployed-researcher",
+				}),
+			},
 		},
 	}}
-	current := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-		"nightly-summary": {
-			Name: "nightly-summary",
-			Host: aiRoutineHost,
-			Uses: []string{"new-connection"},
-		},
-	}}
-	client := &recordingRoutineProjectClient{
-		projects:    []*azdext.ProjectConfig{initial, initial},
-		rawProjects: []*azdext.ProjectConfig{initial, current},
-	}
-	routine := &routines.Routine{Name: "nightly-summary"}
-	author := &routineProjectAuthor{projectClient: client}
-	require.NoError(t, author.Prepare(t.Context(), routine))
 
-	err := author.Apply(t.Context())
+	result, err := upsertRoutineService(t.Context(), client, routine, manifestPath)
 	require.NoError(t, err)
-	assert.Equal(t, 2, client.getCalls)
-	assert.Empty(t, client.added)
-	assert.Equal(t, []string{"description"}, client.setPaths)
-	assert.Equal(t, []string{"new-connection"}, current.GetServices()["nightly-summary"].GetUses())
+	assert.True(t, result.Created)
+	assert.Equal(t, "./routines/nightly.yaml", result.Ref)
+	service := requireAddedService(t, client)
+	assert.Equal(t, "nightly-summary", service.GetName())
+	assert.Equal(t, aiRoutineHost, service.GetHost())
+	assert.Equal(t, "./routines/nightly.yaml", service.GetAdditionalProperties().AsMap()["$ref"])
+	assert.Equal(t, []string{"researcher"}, service.GetUses())
+	assert.Len(t, service.GetAdditionalProperties().GetFields(), 1)
 }
 
-func TestRoutineProjectAuthorApplyRejectsCurrentHostChange(t *testing.T) {
+func TestUpsertRoutineServiceUpdatesFileReferenceAndPreservesUnownedFields(t *testing.T) {
 	t.Parallel()
 
-	initial := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+	projectRoot, manifestPath, routine := routineManifestFixture(t, "new-agent")
+	existingProperties := mustStruct(t, map[string]any{
+		"$ref":        "./routines/old.yaml",
+		"description": "preserved override",
+		"custom":      "preserved",
+	})
+	client := &recordingRoutineProjectClient{project: &azdext.ProjectConfig{
+		Path: projectRoot,
+		Services: map[string]*azdext.ServiceConfig{
+			"nightly-summary": {
+				Name: "nightly-summary", Host: aiRoutineHost,
+				Uses: []string{"connection", "old-agent-service"}, AdditionalProperties: existingProperties,
+			},
+			"connection":        {Name: "connection", Host: "azure.ai.connection"},
+			"old-agent-service": {Name: "old-agent-service", Host: aiAgentHost},
+			"new-agent-service": {
+				Name: "new-agent-service", Host: aiAgentHost,
+				AdditionalProperties: mustStruct(t, map[string]any{"kind": "hosted", "name": "new-agent"}),
+			},
+		},
+	}}
+
+	result, err := upsertRoutineService(t.Context(), client, routine, manifestPath)
+	require.NoError(t, err)
+	assert.False(t, result.Created)
+	service := client.project.GetServices()["nightly-summary"]
+	properties := service.GetAdditionalProperties().AsMap()
+	assert.Equal(t, "./routines/nightly.yaml", properties["$ref"])
+	assert.Equal(t, "preserved override", properties["description"])
+	assert.Equal(t, "preserved", properties["custom"])
+	assert.ElementsMatch(t, []string{"$ref", "uses"}, client.setPaths)
+	assert.Equal(t, []string{"connection", "new-agent-service"}, service.GetUses())
+}
+
+func TestUpsertRoutineServiceIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	projectRoot, manifestPath, routine := routineManifestFixture(t, "researcher")
+	client := &recordingRoutineProjectClient{project: &azdext.ProjectConfig{
+		Path: projectRoot,
+		Services: map[string]*azdext.ServiceConfig{
+			"nightly-summary": {
+				Name: "nightly-summary", Host: aiRoutineHost, Uses: []string{"researcher"},
+				AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./routines/nightly.yaml"}),
+			},
+			"researcher": {
+				Name: "researcher", Host: aiAgentHost,
+				AdditionalProperties: mustStruct(t, map[string]any{"kind": "hosted", "name": "researcher"}),
+			},
+		},
+	}}
+
+	result, err := upsertRoutineService(t.Context(), client, routine, manifestPath)
+	require.NoError(t, err)
+	assert.False(t, result.Created)
+	assert.Empty(t, client.added)
+	assert.Empty(t, client.setPaths)
+}
+
+func TestUpsertRoutineServiceRejectsInlineLegacyAndMixedServices(t *testing.T) {
+	t.Parallel()
+
+	projectRoot, manifestPath, routine := routineManifestFixture(t, "researcher")
+	for name, service := range map[string]*azdext.ServiceConfig{
+		"inline": {
+			Name: "nightly-summary", Host: aiRoutineHost,
+			AdditionalProperties: mustStruct(t, map[string]any{
+				"triggers": map[string]any{}, "action": map[string]any{},
+			}),
+		},
+		"legacy": {
+			Name: "nightly-summary", Host: aiRoutineHost,
+			Config: mustStruct(t, map[string]any{
+				"triggers": map[string]any{}, "action": map[string]any{},
+			}),
+		},
+		"mixed": {
+			Name: "nightly-summary", Host: aiRoutineHost,
+			AdditionalProperties: mustStruct(t, map[string]any{
+				"$ref": "./routines/old.yaml", "action": map[string]any{},
+			}),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := &recordingRoutineProjectClient{project: &azdext.ProjectConfig{
+				Path: projectRoot,
+				Services: map[string]*azdext.ServiceConfig{
+					"nightly-summary": service,
+				},
+			}}
+
+			_, err := upsertRoutineService(t.Context(), client, routine, manifestPath)
+			var localErr *azdext.LocalError
+			require.ErrorAs(t, err, &localErr)
+			assert.Equal(t, exterrors.CodeProjectServiceConflict, localErr.Code)
+			assert.Contains(t, localErr.Message, "cannot update routine service")
+			assert.Empty(t, client.setPaths)
+		})
+	}
+}
+
+func TestUpsertRoutineServiceUsesFreshRawHost(t *testing.T) {
+	t.Parallel()
+
+	projectRoot, manifestPath, routine := routineManifestFixture(t, "researcher")
+	initial := &azdext.ProjectConfig{Path: projectRoot, Services: map[string]*azdext.ServiceConfig{
 		"nightly-summary": {Name: "nightly-summary", Host: aiRoutineHost},
 	}}
-	current := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+	current := &azdext.ProjectConfig{Path: projectRoot, Services: map[string]*azdext.ServiceConfig{
 		"nightly-summary": {Name: "nightly-summary", Host: "containerapp"},
 	}}
-	client := &recordingRoutineProjectClient{
-		projects:    []*azdext.ProjectConfig{initial, initial},
-		rawProjects: []*azdext.ProjectConfig{initial, current},
-	}
-	author := &routineProjectAuthor{projectClient: client}
-	require.NoError(t, author.Prepare(t.Context(), &routines.Routine{Name: "nightly-summary"}))
+	client := &recordingRoutineProjectClient{project: initial, rawProjects: []*azdext.ProjectConfig{current}}
 
-	err := author.Apply(t.Context())
+	_, err := upsertRoutineService(t.Context(), client, routine, manifestPath)
 	require.ErrorContains(t, err, "service name is already used by host \"containerapp\"")
 	assert.Empty(t, client.added)
 	assert.Empty(t, client.setPaths)
 }
 
-func TestRoutineProjectAuthorApplyReloadsAgentDefinition(t *testing.T) {
+func TestUpsertRoutineServiceUsesFreshRawAgentDefinition(t *testing.T) {
 	t.Parallel()
 
-	initial := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-		"nightly-summary": {Name: "nightly-summary", Host: aiRoutineHost},
+	projectRoot, manifestPath, routine := routineManifestFixture(t, "new-agent")
+	initial := &azdext.ProjectConfig{Path: projectRoot, Services: map[string]*azdext.ServiceConfig{
 		"agent-service": {
 			Name: "agent-service", Host: aiAgentHost,
 			AdditionalProperties: mustStruct(t, map[string]any{"kind": "hosted", "name": "old-agent"}),
 		},
 	}}
-	current := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-		"nightly-summary": {Name: "nightly-summary", Host: aiRoutineHost},
+	current := &azdext.ProjectConfig{Path: projectRoot, Services: map[string]*azdext.ServiceConfig{
 		"agent-service": {
 			Name: "agent-service", Host: aiAgentHost,
 			AdditionalProperties: mustStruct(t, map[string]any{"kind": "hosted", "name": "new-agent"}),
 		},
 	}}
-	client := &recordingRoutineProjectClient{
-		projects:    []*azdext.ProjectConfig{initial, initial},
-		rawProjects: []*azdext.ProjectConfig{initial, current},
-	}
-	author := &routineProjectAuthor{projectClient: client}
-	routine := &routines.Routine{
-		Name: "nightly-summary",
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "new-agent",
-		},
-	}
-	require.NoError(t, author.Prepare(t.Context(), routine))
+	client := &recordingRoutineProjectClient{project: initial, rawProjects: []*azdext.ProjectConfig{current}}
 
-	require.NoError(t, author.Apply(t.Context()))
-	assert.Contains(t, client.setPaths, "uses")
-	assert.Equal(t, []string{"agent-service"}, current.Services["nightly-summary"].GetUses())
-}
-
-func TestUpsertRoutineServiceCreatesBlockAndAgentDependency(t *testing.T) {
-	t.Parallel()
-
-	agentProperties, err := structpb.NewStruct(map[string]any{
-		"kind": "hosted",
-		"name": "deployed-researcher",
-	})
+	result, err := upsertRoutineService(t.Context(), client, routine, manifestPath)
 	require.NoError(t, err)
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"researcher": {
-				Name:                 "researcher",
-				Host:                 aiAgentHost,
-				AdditionalProperties: agentProperties,
-			},
-		}},
-	}
-	routine := &routines.Routine{
-		Name:        "nightly-summary",
-		Description: "Summarize changes",
-		Enabled:     new(true),
-		CreatedAt:   "2026-08-24T00:00:00Z",
-		UpdatedAt:   "2026-08-24T01:00:00Z",
-		Triggers: map[string]routines.RoutineTrigger{
-			routines.DefaultTriggerKey: {Type: "schedule", CronExpression: "0 2 * * *"},
-		},
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "deployed-researcher",
-		},
-	}
-
-	err = upsertRoutineService(t.Context(), client, routine)
-	require.NoError(t, err)
-	require.Len(t, client.added, 1)
-	service := client.added[0]
-	assert.Equal(t, "nightly-summary", service.GetName())
-	assert.Equal(t, aiRoutineHost, service.GetHost())
-	properties := service.GetAdditionalProperties().GetFields()
-	assert.Equal(t, "Summarize changes", properties["description"].AsInterface())
-	assert.NotContains(t, properties, "name")
-	assert.NotContains(t, properties, "created_at")
-	assert.NotContains(t, properties, "updated_at")
-	assert.Equal(t, []string{"researcher"}, service.GetUses())
-}
-
-func TestUpsertRoutineServiceUpdatesOwnedFieldsAndPreservesOtherConfiguration(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"nightly-summary": {
-				Name:                 "nightly-summary",
-				Host:                 aiRoutineHost,
-				Uses:                 []string{"connection", "old-agent-service"},
-				Environment:          map[string]string{"API_KEY": "${API_KEY}"},
-				Config:               mustStruct(t, map[string]any{"legacy": "preserved"}),
-				AdditionalProperties: mustStruct(t, map[string]any{"custom": "preserved"}),
-			},
-			"connection": {Name: "connection", Host: "azure.ai.connection"},
-			"old-agent-service": {
-				Name: "old-agent-service",
-				Host: aiAgentHost,
-			},
-			"new-agent-service": {
-				Name: "new-agent-service",
-				Host: aiAgentHost,
-				AdditionalProperties: mustStruct(t, map[string]any{
-					"kind": "hosted",
-					"name": "new-agent",
-				}),
-			},
-		}},
-	}
-	routine := &routines.Routine{
-		Name:        "nightly-summary",
-		Description: "new description",
-		Enabled:     new(true),
-		Triggers: map[string]routines.RoutineTrigger{
-			routines.DefaultTriggerKey: {Type: "schedule", CronExpression: "0 3 * * *"},
-		},
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "new-agent",
-		},
-	}
-
-	err := upsertRoutineService(t.Context(), client, routine)
-	require.NoError(t, err)
-	assert.Empty(t, client.added)
-	service := client.project.GetServices()["nightly-summary"]
-	properties := service.GetAdditionalProperties().GetFields()
-	assert.Equal(t, "preserved", properties["custom"].GetStringValue())
-	assert.Equal(t, "new description", properties["description"].AsInterface())
-	assert.Contains(t, properties, "enabled")
-	assert.Contains(t, properties, "triggers")
-	assert.Contains(t, properties, "action")
-	assert.Equal(t, "preserved", service.GetConfig().GetFields()["legacy"].GetStringValue())
-	assert.Equal(t, map[string]string{"API_KEY": "${API_KEY}"}, service.GetEnvironment())
-	assert.Equal(t, []string{"connection", "new-agent-service"}, service.GetUses())
-	assert.ElementsMatch(
-		t, []string{"description", "enabled", "triggers", "action", "uses"}, client.setPaths,
-	)
-	parsed, err := parseRoutineServiceConfig(service, "")
-	require.NoError(t, err)
-	assert.Equal(t, routine.Description, parsed.Description)
-	assert.Equal(t, routine.Action.AgentName, parsed.Action.AgentName)
-}
-
-func TestUpsertRoutineServiceIdempotentlyUpdatesExistingBlock(t *testing.T) {
-	t.Parallel()
-
-	routine := &routines.Routine{
-		Name:        "nightly.summary",
-		Description: "",
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "researcher",
-		},
-	}
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"nightly.summary": {
-				Name: "nightly.summary",
-				Host: aiRoutineHost,
-				Uses: []string{"researcher-service"},
-			},
-			"researcher-service": {
-				Name: "researcher-service",
-				Host: aiAgentHost,
-				AdditionalProperties: mustStruct(t, map[string]any{
-					"kind": "hosted",
-					"name": "researcher",
-				}),
-			},
-		}},
-	}
-
-	err := upsertRoutineService(t.Context(), client, routine)
-	require.NoError(t, err)
-	assert.Empty(t, client.added)
-	first := client.project.GetServices()["nightly.summary"]
-	assert.Empty(t, first.GetAdditionalProperties().GetFields()["description"].GetStringValue())
-	assert.Contains(t, first.GetAdditionalProperties().GetFields(), "action")
-	assert.Equal(t, []string{"researcher-service"}, first.GetUses())
-
-	client.setPaths = nil
-	require.NoError(t, upsertRoutineService(t.Context(), client, routine))
-	assert.Empty(t, client.setPaths)
-}
-
-func TestUpsertRoutineServiceInitializesEmptyAdditionalProperties(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"nightly-summary": {
-				Name:                 "nightly-summary",
-				Host:                 aiRoutineHost,
-				AdditionalProperties: &structpb.Struct{},
-			},
-		}},
-	}
-
-	require.NoError(t, upsertRoutineService(
-		t.Context(), client, &routines.Routine{Name: "nightly-summary"},
-	))
-	assert.Empty(t, client.added)
-	properties := client.project.GetServices()["nightly-summary"].GetAdditionalProperties().GetFields()
-	assert.Contains(t, properties, "description")
-}
-
-func TestUpsertRoutineServiceResolvesAgentNameFromFileRef(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "agent.yaml"),
-		[]byte("kind: hosted\nname: deployed-researcher\n"),
-		0o600,
-	))
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{
-			Path: root,
-			Services: map[string]*azdext.ServiceConfig{
-				"researcher-service": {
-					Name: "researcher-service",
-					Host: aiAgentHost,
-					AdditionalProperties: mustStruct(t, map[string]any{
-						"$ref": "./agent.yaml",
-					}),
-				},
-			},
-		},
-	}
-	routine := &routines.Routine{
-		Name: "nightly-summary",
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "deployed-researcher",
-		},
-	}
-
-	err := upsertRoutineService(t.Context(), client, routine)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"researcher-service"}, requireAddedService(t, client).GetUses())
-}
-
-func TestUpsertRoutineServiceResolvesAgentNameFromLegacyManifest(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	serviceDir := filepath.Join(root, "agents", "researcher")
-	require.NoError(t, os.MkdirAll(serviceDir, 0o700))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(serviceDir, "agent.yaml"),
-		[]byte("kind: hosted\nname: deployed-researcher\n"),
-		0o600,
-	))
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{
-			Path: root,
-			Services: map[string]*azdext.ServiceConfig{
-				"researcher-service": {
-					Name:         "researcher-service",
-					Host:         aiAgentHost,
-					RelativePath: "agents/researcher",
-				},
-			},
-		},
-	}
-	routine := &routines.Routine{
-		Name: "nightly-summary",
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "deployed-researcher",
-		},
-	}
-
-	err := upsertRoutineService(t.Context(), client, routine)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"researcher-service"}, requireAddedService(t, client).GetUses())
-}
-
-func TestUpsertRoutineServiceInlineAgentDefinitionDoesNotUseLegacyName(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"agent-service": {
-				Name:                 "agent-service",
-				Host:                 aiAgentHost,
-				AdditionalProperties: mustStruct(t, map[string]any{"name": "stale-inline-name"}),
-				Config: mustStruct(t, map[string]any{
-					"kind": "hosted",
-					"name": "configured-agent",
-				}),
-			},
-		}},
-	}
-	routine := &routines.Routine{
-		Name: "nightly-summary",
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "stale-inline-name",
-		},
-	}
-
-	require.NoError(t, upsertRoutineService(t.Context(), client, routine))
-	assert.Empty(t, requireAddedService(t, client).GetUses())
-
-	client.added = nil
-	routine.Action.AgentName = "configured-agent"
-	require.NoError(t, upsertRoutineService(t.Context(), client, routine))
+	assert.True(t, result.Created)
 	assert.Equal(t, []string{"agent-service"}, requireAddedService(t, client).GetUses())
 }
 
-func TestUpsertRoutineServicePreservesAgentDependencyWhenNameIsUnresolved(t *testing.T) {
+func TestUpsertRoutineServiceRejectsManifestOutsideProject(t *testing.T) {
 	t.Parallel()
 
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"nightly-summary": {
-				Name: "nightly-summary",
-				Host: aiRoutineHost,
-				Uses: []string{"connection", "researcher-service"},
-				AdditionalProperties: mustStruct(t, map[string]any{
-					"action": map[string]any{
-						"type":       "invoke_agent_responses_api",
-						"agent_name": "deployed-researcher",
-					},
-				}),
-			},
-			"connection": {Name: "connection", Host: "azure.ai.connection"},
-			"researcher-service": {
-				Name: "researcher-service",
-				Host: aiAgentHost,
-			},
-		}},
-	}
-	routine := &routines.Routine{
-		Name: "nightly-summary",
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "deployed-researcher",
-		},
-	}
+	projectRoot := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "routine.yaml")
+	require.NoError(t, os.WriteFile(outside, []byte("triggers: {}\naction: {}\n"), 0o600))
+	client := &recordingRoutineProjectClient{project: &azdext.ProjectConfig{
+		Path: projectRoot, Services: map[string]*azdext.ServiceConfig{},
+	}}
 
-	err := upsertRoutineService(t.Context(), client, routine)
-	require.NoError(t, err)
-	assert.Empty(t, client.added)
-	assert.NotContains(t, client.setPaths, "uses")
-	assert.Equal(t, []string{"connection", "researcher-service"}, client.project.Services["nightly-summary"].GetUses())
-}
-
-func TestUpsertRoutineServiceRemovesOldAgentDependencyWhenUnresolvedAgentChanges(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"nightly-summary": {
-				Name: "nightly-summary",
-				Host: aiRoutineHost,
-				Uses: []string{"connection", "researcher-service"},
-				AdditionalProperties: mustStruct(t, map[string]any{
-					"action": map[string]any{
-						"type":       "invoke_agent_responses_api",
-						"agent_name": "old-agent",
-					},
-				}),
-			},
-			"connection": {Name: "connection", Host: "azure.ai.connection"},
-			"researcher-service": {
-				Name: "researcher-service",
-				Host: aiAgentHost,
-			},
-		}},
-	}
-	routine := &routines.Routine{
-		Name: "nightly-summary",
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "new-unresolved-agent",
-		},
-	}
-
-	require.NoError(t, upsertRoutineService(t.Context(), client, routine))
-	assert.Contains(t, client.setPaths, "uses")
-	assert.Equal(t, []string{"connection"}, client.project.Services["nightly-summary"].GetUses())
-}
-
-func TestUpsertRoutineServiceRejectsLegacyAgentPathOutsideProject(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{
-			Path: t.TempDir(),
-			Services: map[string]*azdext.ServiceConfig{
-				"researcher-service": {
-					Name:         "researcher-service",
-					Host:         aiAgentHost,
-					RelativePath: "../outside",
-				},
-			},
-		},
-	}
-	routine := &routines.Routine{
-		Name: "nightly-summary",
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "deployed-researcher",
-		},
-	}
-
-	err := upsertRoutineService(t.Context(), client, routine)
-	require.ErrorContains(t, err, "path escapes from parent")
-	assert.Empty(t, client.added)
-}
-
-func TestUpsertRoutineServiceRemovesAgentDependencyWhenActionHasNoAgentName(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"nightly-summary": {
-				Name: "nightly-summary",
-				Host: aiRoutineHost,
-				Uses: []string{"connection", "researcher-service"},
-			},
-			"connection": {Name: "connection", Host: "azure.ai.connection"},
-			"researcher-service": {
-				Name: "researcher-service",
-				Host: aiAgentHost,
-			},
-		}},
-	}
-	routine := &routines.Routine{
-		Name: "nightly-summary",
-		Action: &routines.RoutineAction{
-			Type:            "invoke_agent_responses_api",
-			AgentEndpointID: "agent-endpoint-id",
-		},
-	}
-
-	err := upsertRoutineService(t.Context(), client, routine)
-	require.NoError(t, err)
-	assert.Empty(t, client.added)
-	assert.Contains(t, client.setPaths, "uses")
-	assert.Equal(t, []string{"connection"}, client.project.Services["nightly-summary"].GetUses())
-}
-
-func TestUpsertRoutineServiceRejectsAmbiguousAgentName(t *testing.T) {
-	t.Parallel()
-
-	agentProperties := mustStruct(t, map[string]any{"kind": "hosted", "name": "researcher"})
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"researcher-a": {
-				Name:                 "researcher-a",
-				Host:                 aiAgentHost,
-				AdditionalProperties: agentProperties,
-			},
-			"researcher-b": {
-				Name:                 "researcher-b",
-				Host:                 aiAgentHost,
-				AdditionalProperties: agentProperties,
-			},
-		}},
-	}
-	routine := &routines.Routine{
-		Name: "nightly-summary",
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "researcher",
-		},
-	}
-
-	err := upsertRoutineService(t.Context(), client, routine)
+	_, err := upsertRoutineService(
+		t.Context(), client, &routines.Routine{Name: "nightly-summary"}, outside,
+	)
 	var localErr *azdext.LocalError
 	require.ErrorAs(t, err, &localErr)
-	assert.Equal(t, exterrors.CodeProjectServiceConflict, localErr.Code)
-	assert.Contains(t, localErr.Message, "agent name \"researcher\" matches multiple services")
-	assert.Contains(t, localErr.Suggestion, "only one azure.ai.agent service")
-	assert.Empty(t, client.added)
-}
-
-func TestUpsertRoutineServiceRejectsDifferentHostCollision(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"nightly-summary": {
-				Name: "nightly-summary",
-				Host: "containerapp",
-			},
-		}},
-	}
-
-	err := upsertRoutineService(t.Context(), client, &routines.Routine{Name: "nightly-summary"})
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, err, &localErr)
-	assert.Equal(t, exterrors.CodeProjectServiceConflict, localErr.Code)
-	assert.Contains(t, localErr.Message, "service name is already used by host \"containerapp\"")
-	assert.Contains(t, localErr.Suggestion, "rename the routine")
+	assert.Equal(t, exterrors.CodeInvalidRoutineManifest, localErr.Code)
+	assert.Contains(t, localErr.Message, "must be inside")
 	assert.Empty(t, client.added)
 }
 
@@ -700,113 +314,45 @@ func TestUpsertRoutineServiceRejectsInvalidServiceNameBeforeReadingProject(t *te
 	t.Parallel()
 
 	client := &recordingRoutineProjectClient{}
-	err := upsertRoutineService(t.Context(), client, &routines.Routine{Name: "nightly summary"})
+	_, err := upsertRoutineService(
+		t.Context(), client, &routines.Routine{Name: "nightly summary"}, "routine.yaml",
+	)
 	var localErr *azdext.LocalError
 	require.ErrorAs(t, err, &localErr)
 	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
-	assert.Contains(t, localErr.Message, "cannot be used as an azure.yaml service name")
 	assert.Zero(t, client.getCalls)
-	assert.Empty(t, client.added)
-	assert.Empty(t, client.setPaths)
 }
 
-func TestUpsertRoutineServiceReturnsAddServiceError(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{}},
-		addErr:  assert.AnError,
-	}
-
-	err := upsertRoutineService(t.Context(), client, &routines.Routine{Name: "nightly-summary"})
-	require.ErrorIs(t, err, assert.AnError)
-	require.Len(t, client.added, 1)
-}
-
-func TestUpsertRoutineServiceReturnsSetServiceConfigValueError(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"nightly-summary": {
-				Name: "nightly-summary",
-				Host: aiRoutineHost,
-				AdditionalProperties: mustStruct(t, map[string]any{
-					"description": "old",
-				}),
-			},
-		}},
-		setErr: assert.AnError,
-	}
-
-	err := upsertRoutineService(
-		t.Context(), client,
-		&routines.Routine{Name: "nightly-summary", Description: "new"},
-	)
-	require.ErrorIs(t, err, assert.AnError)
-	assert.Empty(t, client.added)
-	assert.Equal(t, []string{"description"}, client.setPaths)
-}
-
-func TestUpsertRoutineServiceConvergesAfterMidSequenceFailure(t *testing.T) {
-	t.Parallel()
-
-	routine := &routines.Routine{
-		Name:        "nightly-summary",
-		Description: "new description",
-		Enabled:     new(true),
-		Triggers: map[string]routines.RoutineTrigger{
-			routines.DefaultTriggerKey: {Type: "schedule", CronExpression: "0 2 * * *"},
-		},
-		Action: &routines.RoutineAction{
-			Type:      "invoke_agent_responses_api",
-			AgentName: "researcher",
-		},
-	}
-	client := &recordingRoutineProjectClient{
-		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-			"nightly-summary": {
-				Name:   "nightly-summary",
-				Host:   aiRoutineHost,
-				Config: mustStruct(t, map[string]any{"description": "legacy"}),
-			},
-		}},
-		setErr:   assert.AnError,
-		setErrAt: 3,
-	}
-
-	err := upsertRoutineService(t.Context(), client, routine)
-	require.ErrorIs(t, err, assert.AnError)
-	assert.Equal(t, []string{"config.description", "config.enabled", "config.triggers"}, client.setPaths)
-
-	client.setErr = nil
-	client.setPaths = nil
-	require.NoError(t, upsertRoutineService(t.Context(), client, routine))
-	assert.Equal(t, []string{"config.triggers", "config.action"}, client.setPaths)
-
-	expected, err := routineServiceProperties(routine)
-	require.NoError(t, err)
-	actual := client.project.Services["nightly-summary"].GetConfig()
-	assert.Equal(t, expected.AsMap(), actual.AsMap())
-}
-
-func TestRoutineProjectAuthoringRetryQuotesName(t *testing.T) {
-	t.Parallel()
-
-	assert.Contains(t, routineProjectAuthoringRetry("nightly summary"), `update "nightly summary"`)
-}
-
-func TestRoutineCommandsRegisterAddToProjectFlag(t *testing.T) {
+func TestRoutineAddRequiresFileAndCreateUpdateRemainRemoteOnly(t *testing.T) {
 	t.Parallel()
 
 	extensionContext := &azdext.ExtensionContext{}
-	for _, command := range []*cobra.Command{
-		newRoutineCreateCommand(extensionContext),
-		newRoutineUpdateCommand(extensionContext),
-	} {
-		flag := command.Flags().Lookup("add-to-project")
-		require.NotNil(t, flag)
-		assert.Equal(t, "false", flag.DefValue)
+	addCommand := newRoutineAddCommand(extensionContext)
+	fileFlag := addCommand.Flags().Lookup("file")
+	require.NotNil(t, fileFlag)
+	assert.NotEmpty(t, fileFlag.Annotations[cobra.BashCompOneRequiredFlag])
+	assert.Nil(t, newRoutineCreateCommand(extensionContext).Flags().Lookup("add-to-project"))
+	assert.Nil(t, newRoutineUpdateCommand(extensionContext).Flags().Lookup("add-to-project"))
+}
+
+func routineManifestFixture(t *testing.T, agentName string) (string, string, *routines.Routine) {
+	t.Helper()
+	projectRoot := t.TempDir()
+	manifestPath := filepath.Join(projectRoot, "routines", "nightly.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(manifestPath), 0o700))
+	require.NoError(t, os.WriteFile(manifestPath, []byte(`triggers:
+  default:
+    type: schedule
+    cron_expression: "0 2 * * *"
+action:
+  type: invoke_agent_responses_api
+  agent_name: `+agentName+"\n"), 0o600))
+	return projectRoot, manifestPath, &routines.Routine{
+		Name: "nightly-summary",
+		Triggers: map[string]routines.RoutineTrigger{
+			routines.DefaultTriggerKey: {Type: "schedule", CronExpression: "0 2 * * *"},
+		},
+		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: agentName},
 	}
 }
 
@@ -821,4 +367,147 @@ func requireAddedService(t *testing.T, client *recordingRoutineProjectClient) *a
 	t.Helper()
 	require.Len(t, client.added, 1)
 	return client.added[0]
+}
+
+func TestUpsertRoutineServiceConvergesAfterUpdateFailure(t *testing.T) {
+	t.Parallel()
+
+	projectRoot, manifestPath, routine := routineManifestFixture(t, "new-agent")
+	service := &azdext.ServiceConfig{
+		Name: "nightly-summary", Host: aiRoutineHost, Uses: []string{"old-agent"},
+		AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./routines/old.yaml"}),
+	}
+	client := &recordingRoutineProjectClient{
+		project: &azdext.ProjectConfig{Path: projectRoot, Services: map[string]*azdext.ServiceConfig{
+			"nightly-summary": service,
+			"old-agent":       {Name: "old-agent", Host: aiAgentHost},
+			"new-agent": {
+				Name: "new-agent", Host: aiAgentHost,
+				AdditionalProperties: mustStruct(t, map[string]any{
+					"kind": "hosted", "name": "new-agent",
+				}),
+			},
+		}},
+		setErrAt: 2,
+	}
+
+	_, err := upsertRoutineService(t.Context(), client, routine, manifestPath)
+	require.ErrorIs(t, err, assert.AnError)
+	assert.Equal(t, "./routines/nightly.yaml", service.GetAdditionalProperties().AsMap()["$ref"])
+	assert.Equal(t, []string{"old-agent"}, service.GetUses())
+
+	client.setErrAt = 0
+	client.setPaths = nil
+	result, err := upsertRoutineService(t.Context(), client, routine, manifestPath)
+	require.NoError(t, err)
+	assert.False(t, result.Created)
+	assert.Equal(t, []string{"uses"}, client.setPaths)
+	assert.Equal(t, []string{"new-agent"}, service.GetUses())
+}
+
+func TestPortableRoutineManifestReferenceUsesResolvedProjectPath(t *testing.T) {
+	t.Parallel()
+
+	realProject := t.TempDir()
+	manifest := filepath.Join(realProject, "routines", "nightly.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(manifest), 0o700))
+	require.NoError(t, os.WriteFile(manifest, []byte("{}"), 0o600))
+	projectLink := filepath.Join(t.TempDir(), "project")
+	if err := os.Symlink(realProject, projectLink); err != nil {
+		t.Skipf("creating a directory symlink is unavailable: %v", err)
+	}
+
+	reference, err := portableRoutineManifestReference(projectLink, manifest)
+	require.NoError(t, err)
+	assert.Equal(t, "./routines/nightly.yaml", reference)
+}
+
+func TestUpsertRoutineServiceRejectsAmbiguousAgentName(t *testing.T) {
+	t.Parallel()
+
+	projectRoot, manifestPath, routine := routineManifestFixture(t, "researcher")
+	agent := mustStruct(t, map[string]any{"kind": "hosted", "name": "researcher"})
+	client := &recordingRoutineProjectClient{project: &azdext.ProjectConfig{
+		Path: projectRoot,
+		Services: map[string]*azdext.ServiceConfig{
+			"researcher-a": {Name: "researcher-a", Host: aiAgentHost, AdditionalProperties: agent},
+			"researcher-b": {Name: "researcher-b", Host: aiAgentHost, AdditionalProperties: agent},
+		},
+	}}
+
+	_, err := upsertRoutineService(t.Context(), client, routine, manifestPath)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeProjectServiceConflict, localErr.Code)
+	assert.Contains(t, localErr.Message, "matches multiple services")
+	assert.Empty(t, client.added)
+}
+
+func TestRoutineAddActionWritesHumanAndJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name       string
+		output     string
+		created    bool
+		wantOutput string
+	}{
+		{name: "created", created: true, wantOutput: "Added routine 'nightly-summary' in azure.yaml.\n"},
+		{name: "updated", wantOutput: "Updated routine 'nightly-summary' in azure.yaml.\n"},
+		{name: "json", output: "json", created: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			action := &routineAddAction{
+				flags: &routineAddFlags{name: "nightly-summary", file: "routine.yaml", output: test.output},
+				load: func(string) (*routines.Routine, error) {
+					return &routines.Routine{
+						Triggers: map[string]routines.RoutineTrigger{"default": {Type: "schedule"}},
+						Action:   &routines.RoutineAction{Type: "invoke_agent_responses_api"},
+					}, nil
+				},
+				upsert: func(
+					_ context.Context, routine *routines.Routine, file string,
+				) (*routineServiceUpsertResult, error) {
+					assert.Equal(t, "nightly-summary", routine.Name)
+					assert.Equal(t, "routine.yaml", file)
+					return &routineServiceUpsertResult{
+						Name: routine.Name, Host: aiRoutineHost, Ref: "./routine.yaml", Created: test.created,
+					}, nil
+				},
+				writer: &output,
+			}
+
+			require.NoError(t, action.Run(t.Context()))
+			if test.output != "json" {
+				assert.Equal(t, test.wantOutput, output.String())
+				return
+			}
+			var result routineServiceUpsertResult
+			require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+			assert.Equal(t, "./routine.yaml", result.Ref)
+			assert.True(t, result.Created)
+		})
+	}
+}
+
+func TestRoutineAddActionRejectsIncompleteManifestBeforeProjectWrite(t *testing.T) {
+	t.Parallel()
+
+	upsertCalled := false
+	action := &routineAddAction{
+		flags: &routineAddFlags{name: "nightly-summary", file: "routine.yaml"},
+		load:  func(string) (*routines.Routine, error) { return &routines.Routine{}, nil },
+		upsert: func(context.Context, *routines.Routine, string) (*routineServiceUpsertResult, error) {
+			upsertCalled = true
+			return nil, nil
+		},
+		writer: &bytes.Buffer{},
+	}
+
+	err := action.Run(t.Context())
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeInvalidRoutineManifest, localErr.Code)
+	assert.False(t, upsertCalled)
 }

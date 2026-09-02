@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -839,7 +840,17 @@ const aiModelHost = "azure.ai.model"
 // Coming back empty leaves it to resolveJudgeModel, which reads the Foundry
 // project's deployments: and then asks or names --judge-model.
 func detectModelDeployment(proj *azdext.ProjectConfig) string {
-	for name, svc := range proj.GetServices() {
+	// Sorted, because GetServices is a map: without an order, a project with
+	// two model services judged with a different deployment run to run.
+	services := proj.GetServices()
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		svc := services[name]
 		if svc.GetHost() != aiModelHost {
 			continue
 		}
@@ -968,13 +979,22 @@ func sameRefTarget(a, b string) bool {
 // contract rather than chosen.
 func evalServiceUses(proj *azdext.ProjectConfig, target string) []string {
 	var uses []string
-	for name, svc := range proj.GetServices() {
-		if svc.GetHost() == aiProjectHost {
+	// Sorted, because GetServices is a map and this writes the `uses` list into
+	// azure.yaml: an unordered pick rewrites the file differently each run.
+	services := proj.GetServices()
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		if services[name].GetHost() == aiProjectHost {
 			uses = append(uses, name)
 			break
 		}
 	}
-	if _, ok := proj.GetServices()[target]; ok {
+	if _, ok := services[target]; ok {
 		uses = append(uses, target)
 	}
 	return uses

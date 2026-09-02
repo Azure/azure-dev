@@ -2453,6 +2453,17 @@ func AmbiguousAgentService(agent string, matched []string) error {
 		ErrAmbiguousAgentService, agent, strings.Join(matched, ", "))
 }
 
+// AmbiguousEvalServices refuses to guess which declared configuration was meant.
+//
+// Picking one would be a coin toss -- the services arrive as a map -- and the
+// commands that read the configuration create, generate and run against it.
+func AmbiguousEvalServices(refs []string) error {
+	return fmt.Errorf(
+		"the project declares more than one evaluation service, pointing at %s. "+
+			"Name the one you mean with --path",
+		strings.Join(refs, " and "))
+}
+
 // InstructionFileUnreadable reports optimize metadata pointing at a missing file.
 func InstructionFileUnreadable(metadataPath, named string, err error) error {
 	return fmt.Errorf(

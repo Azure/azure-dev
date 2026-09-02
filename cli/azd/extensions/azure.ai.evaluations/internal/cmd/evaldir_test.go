@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
 	"github.com/spf13/cobra"
@@ -98,7 +99,7 @@ func TestEvalDirCascadeAnswersInOrder(t *testing.T) {
 func TestEvalDirCascadeReadsTheDeclaredRef(t *testing.T) {
 	got, err := evalDirCascade("",
 		func() (string, error) { return "", nil },
-		func() string { return "config" })
+		func() (string, error) { return "config", nil })
 
 	require.NoError(t, err)
 	assert.Equal(t, "config", got)
@@ -109,7 +110,7 @@ func TestEvalDirCascadeReadsTheDeclaredRef(t *testing.T) {
 func TestEvalDirCascadePrefersTheRecordedPathOverTheDeclaredRef(t *testing.T) {
 	got, err := evalDirCascade("",
 		func() (string, error) { return "quality", nil },
-		func() string { return "config" })
+		func() (string, error) { return "config", nil })
 
 	require.NoError(t, err)
 	assert.Equal(t, "quality", got)
@@ -119,10 +120,24 @@ func TestEvalDirCascadePrefersTheRecordedPathOverTheDeclaredRef(t *testing.T) {
 func TestEvalDirCascadeFallsBackWhenNothingIsDeclared(t *testing.T) {
 	got, err := evalDirCascade("",
 		func() (string, error) { return "", nil },
-		func() string { return "" })
+		func() (string, error) { return "", nil })
 
 	require.NoError(t, err)
 	assert.Equal(t, project.DefaultEvalDir, got)
+}
+
+// A project declaring two evaluation services has no single answer, and the
+// services arrive as a map, so picking one would differ run to run.
+func TestEvalDirCascadeReportsAnAmbiguousDeclaration(t *testing.T) {
+	_, err := evalDirCascade("",
+		func() (string, error) { return "", nil },
+		func() (string, error) {
+			return "", messages.AmbiguousEvalServices([]string{"a.yaml", "b.yaml"})
+		})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--path",
+		"the refusal has to say how to resolve it")
 }
 
 // A --path that was given is the answer on its own, so neither level is asked.
@@ -130,7 +145,7 @@ func TestEvalDirCascadeSkipsBothLookupsWhenPathWasGiven(t *testing.T) {
 	var declaredAsked int
 	got, err := evalDirCascade("./given",
 		func() (string, error) { return "recorded", nil },
-		func() string { declaredAsked++; return "config" })
+		func() (string, error) { declaredAsked++; return "config", nil })
 
 	require.NoError(t, err)
 	assert.Equal(t, "./given", got)

@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"azureaieval/internal/foundry/projectctx"
@@ -540,7 +541,7 @@ const (
 func evalDirCascade(
 	flagValue string,
 	recorded func() (string, error),
-	declared func() string,
+	declared func() (string, error),
 ) (string, error) {
 	if flagValue != "" {
 		return flagValue, nil
@@ -553,7 +554,11 @@ func evalDirCascade(
 		return path, nil
 	}
 	if declared != nil {
-		if dir := declared(); dir != "" {
+		dir, err := declared()
+		if err != nil {
+			return "", err
+		}
+		if dir != "" {
 			return dir, nil
 		}
 	}
@@ -569,14 +574,22 @@ func evalDirCascade(
 // `azure.eval.yaml` happens to sit beside it.
 //
 // Returns empty outside an azd project, or when nothing declares the eval host.
-func declaredEvalConfig(ctx context.Context, azdClient *azdext.AzdClient) string {
+//
+// GetServices is a map, so "the first entry that matches" is whichever one Go
+// happened to visit first. A project declaring two evaluation services is a
+// question this cannot answer, so it says so rather than picking one and
+// operating on a configuration the author did not mean.
+func declaredEvalConfig(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
 	if azdClient == nil {
-		return ""
+		return "", nil
 	}
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil || resp.GetProject() == nil {
-		return ""
+		return "", nil
 	}
+
+	seen := map[string]bool{}
+	var refs []string
 	for _, svc := range resp.GetProject().GetServices() {
 		if svc.GetHost() != project.EvalHost {
 			continue
@@ -589,9 +602,23 @@ func declaredEvalConfig(ctx context.Context, azdClient *azdext.AzdClient) string
 		if ref == "" {
 			continue
 		}
-		return filepath.Clean(filepath.FromSlash(ref))
+		cleaned := filepath.Clean(filepath.FromSlash(ref))
+		if seen[cleaned] {
+			continue
+		}
+		seen[cleaned] = true
+		refs = append(refs, cleaned)
 	}
-	return ""
+
+	switch len(refs) {
+	case 0:
+		return "", nil
+	case 1:
+		return refs[0], nil
+	default:
+		sort.Strings(refs)
+		return "", messages.AmbiguousEvalServices(refs)
+	}
 }
 
 // evalDir is the cascade for a command that already holds an azd connection.
@@ -601,7 +628,7 @@ func (ec *evalContext) evalDir(ctx context.Context, flagValue string) (string, e
 			return "", nil
 		}
 		return readRecordedEvalPath(ctx, ec.azdClient, ec.envName)
-	}, func() string {
+	}, func() (string, error) {
 		return declaredEvalConfig(ctx, ec.azdClient)
 	})
 }
@@ -641,10 +668,10 @@ func resolveEvalDir(ctx context.Context, flagValue string) (string, error) {
 			return "", nil
 		}
 		return readRecordedEvalPath(ctx, azdClient, env.GetEnvironment().GetName())
-	}, func() string {
+	}, func() (string, error) {
 		azdClient, err := azdext.NewAzdClient()
 		if err != nil {
-			return ""
+			return "", nil
 		}
 		defer azdClient.Close()
 		return declaredEvalConfig(ctx, azdClient)

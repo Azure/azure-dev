@@ -132,6 +132,13 @@ func newJobCommand() *cobra.Command {
 	return cmd
 }
 
+// jobListAction lists the project's generation jobs.
+type jobListAction struct {
+	cmd      *cobra.Command
+	sel      *jobSelector
+	endpoint string
+}
+
 func newJobListCommand() *cobra.Command {
 	var endpointFlg string
 	var displayLimit int
@@ -143,41 +150,7 @@ func newJobListCommand() *cobra.Command {
 		Short: "List the project's generation jobs.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			kind, err := sel.kind()
-			if err != nil {
-				return err
-			}
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			jobs, err := kind.list(ctx, ec)
-			if err != nil {
-				return messages.ListingJobs(kind.name, err)
-			}
-
-			if isJSON(cmd) {
-				return emitJSONList(cmd.OutOrStdout(), jobs)
-			}
-			if len(jobs) == 0 {
-				fmt.Fprint(cmd.OutOrStdout(), messages.NoJobs(kind.name))
-				return nil
-			}
-			shown, total, trimmed := trimForDisplay(cmd, jobs)
-			table := make([][]string, 0, len(shown))
-			for _, j := range shown {
-				table = append(table, []string{j.ID, j.Status})
-			}
-			if err := emitTable(cmd.OutOrStdout(), []string{"JOB ID", "STATUS"}, table); err != nil {
-				return err
-			}
-			if trimmed {
-				fmt.Fprint(cmd.OutOrStdout(), messages.ShowingSomeOf(len(table), total))
-			}
-			return nil
+			return (&jobListAction{cmd: cmd, sel: sel, endpoint: endpointFlg}).Run()
 		},
 	}
 
@@ -185,6 +158,52 @@ func newJobListCommand() *cobra.Command {
 	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *jobListAction) Run() error {
+	kind, err := a.sel.kind()
+	if err != nil {
+		return err
+	}
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	jobs, err := kind.list(ctx, ec)
+	if err != nil {
+		return messages.ListingJobs(kind.name, err)
+	}
+
+	if isJSON(a.cmd) {
+		return emitJSONList(a.cmd.OutOrStdout(), jobs)
+	}
+	if len(jobs) == 0 {
+		fmt.Fprint(a.cmd.OutOrStdout(), messages.NoJobs(kind.name))
+		return nil
+	}
+	shown, total, trimmed := trimForDisplay(a.cmd, jobs)
+	table := make([][]string, 0, len(shown))
+	for _, j := range shown {
+		table = append(table, []string{j.ID, j.Status})
+	}
+	if err := emitTable(a.cmd.OutOrStdout(), []string{"JOB ID", "STATUS"}, table); err != nil {
+		return err
+	}
+	if trimmed {
+		fmt.Fprint(a.cmd.OutOrStdout(), messages.ShowingSomeOf(len(table), total))
+	}
+	return nil
+}
+
+// jobShowAction reads one generation job.
+type jobShowAction struct {
+	cmd      *cobra.Command
+	sel      *jobSelector
+	endpoint string
+	jobID    string
 }
 
 func newJobShowCommand() *cobra.Command {
@@ -196,38 +215,51 @@ func newJobShowCommand() *cobra.Command {
 		Short: "Show a generation job.",
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			jobID := args[0]
-			kind, err := sel.kind()
-			if err != nil {
-				return err
-			}
-
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			job, err := kind.get(ctx, ec, jobID)
-			if err != nil {
-				return jobLookupError("reading", kind, jobID, err)
-			}
-
-			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), job)
-			}
-			fmt.Fprint(cmd.OutOrStdout(), messages.JobLine(job.ID, job.Status))
-			if job.Error != nil && job.Error.Message != "" {
-				fmt.Fprint(cmd.OutOrStdout(), messages.JobErrorLine(job.Error.Message))
-			}
-			return nil
+			return (&jobShowAction{
+				cmd: cmd, sel: sel, endpoint: endpointFlg, jobID: args[0],
+			}).Run()
 		},
 	}
 
 	sel.bind(cmd)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *jobShowAction) Run() error {
+	kind, err := a.sel.kind()
+	if err != nil {
+		return err
+	}
+
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	job, err := kind.get(ctx, ec, a.jobID)
+	if err != nil {
+		return jobLookupError("reading", kind, a.jobID, err)
+	}
+
+	if isJSON(a.cmd) {
+		return emitJSON(a.cmd.OutOrStdout(), job)
+	}
+	fmt.Fprint(a.cmd.OutOrStdout(), messages.JobLine(job.ID, job.Status))
+	if job.Error != nil && job.Error.Message != "" {
+		fmt.Fprint(a.cmd.OutOrStdout(), messages.JobErrorLine(job.Error.Message))
+	}
+	return nil
+}
+
+// jobCancelAction cancels an in-flight generation job.
+type jobCancelAction struct {
+	cmd      *cobra.Command
+	sel      *jobSelector
+	endpoint string
+	jobID    string
 }
 
 func newJobCancelCommand() *cobra.Command {
@@ -239,36 +271,48 @@ func newJobCancelCommand() *cobra.Command {
 		Short: "Cancel an in-flight generation job.",
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			jobID := args[0]
-			kind, err := sel.kind()
-			if err != nil {
-				return err
-			}
-
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			canceled, err := kind.cancel(ctx, ec, jobID)
-			if err != nil {
-				return jobLookupError("cancelling", kind, jobID, err)
-			}
-
-			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), canceled)
-			}
-			fmt.Fprint(cmd.OutOrStdout(),
-				messages.JobCancelled(kind.name, jobID, canceled.Status))
-			return nil
+			return (&jobCancelAction{
+				cmd: cmd, sel: sel, endpoint: endpointFlg, jobID: args[0],
+			}).Run()
 		},
 	}
 
 	sel.bind(cmd)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *jobCancelAction) Run() error {
+	kind, err := a.sel.kind()
+	if err != nil {
+		return err
+	}
+
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	canceled, err := kind.cancel(ctx, ec, a.jobID)
+	if err != nil {
+		return jobLookupError("cancelling", kind, a.jobID, err)
+	}
+
+	if isJSON(a.cmd) {
+		return emitJSON(a.cmd.OutOrStdout(), canceled)
+	}
+	fmt.Fprint(a.cmd.OutOrStdout(), messages.JobCancelled(kind.name, a.jobID, canceled.Status))
+	return nil
+}
+
+// jobDeleteAction removes one generation job record.
+type jobDeleteAction struct {
+	cmd      *cobra.Command
+	sel      *jobSelector
+	endpoint string
+	jobID    string
 }
 
 func newJobDeleteCommand() *cobra.Command {
@@ -283,36 +327,41 @@ func newJobDeleteCommand() *cobra.Command {
 			"and is not affected.",
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			jobID := args[0]
-			kind, err := sel.kind()
-			if err != nil {
-				return err
-			}
-
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			if err := kind.remove(ctx, ec, jobID); err != nil {
-				return jobLookupError("deleting", kind, jobID, err)
-			}
-
-			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), map[string]string{
-					"id": jobID, "kind": kind.name, "status": "deleted",
-				})
-			}
-			fmt.Fprint(cmd.OutOrStdout(), messages.JobDeleted(kind.name, jobID))
-			return nil
+			return (&jobDeleteAction{
+				cmd: cmd, sel: sel, endpoint: endpointFlg, jobID: args[0],
+			}).Run()
 		},
 	}
 
 	sel.bind(cmd)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+func (a *jobDeleteAction) Run() error {
+	kind, err := a.sel.kind()
+	if err != nil {
+		return err
+	}
+
+	ctx := a.cmd.Context()
+	ec, err := newEvalContext(ctx, a.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	if err := kind.remove(ctx, ec, a.jobID); err != nil {
+		return jobLookupError("deleting", kind, a.jobID, err)
+	}
+
+	if isJSON(a.cmd) {
+		return emitJSON(a.cmd.OutOrStdout(), map[string]string{
+			"id": a.jobID, "kind": kind.name, "status": "deleted",
+		})
+	}
+	fmt.Fprint(a.cmd.OutOrStdout(), messages.JobDeleted(kind.name, a.jobID))
+	return nil
 }
 
 // jobLookupError names the sibling group, because the two job types share an id

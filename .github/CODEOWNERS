@@ -21,7 +21,7 @@
 /cli/azd/extensions/azure.ai.connections/   @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
 /cli/azd/extensions/azure.ai.finetune/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.inspector/     @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @anchenyi @XiaofuHuang
-/cli/azd/extensions/azure.ai.loom/          @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.loom/          @hnamburi @savitam
 /cli/azd/extensions/azure.ai.models/        @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.projects/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
 /cli/azd/extensions/azure.ai.rle/           @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212

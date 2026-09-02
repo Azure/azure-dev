@@ -320,11 +320,11 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	if invokeErr != nil {
 		// Check if the extension reported a structured error via gRPC.
-		// This gives us a typed error for telemetry classification instead
-		// of just a generic exit-code error.
+		// This gives us a typed LocalError/ServiceError for telemetry classification
+		// instead of just a generic exit-code error.
 		if reportedErr := extension.GetReportedError(); reportedErr != nil {
 			// Wrap both errors so the chain contains both:
-			// - reportedErr for telemetry classification
+			// - reportedErr (LocalError/ServiceError) for telemetry classification
 			// - invokeErr (ExtensionRunError) for UX middleware handling
 			return nil, fmt.Errorf("%w: %w", reportedErr, invokeErr)
 		}

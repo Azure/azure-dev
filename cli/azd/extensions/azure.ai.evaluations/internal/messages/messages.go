@@ -1788,6 +1788,14 @@ func WritingEnvValue(key string, err error) error {
 	return fmt.Errorf("writing %s to the azd environment: %w", key, err)
 }
 
+// PrivateStateUnreadable reports a write refused because the state it would
+// replace could not be read.
+func PrivateStateUnreadable(key string, err error) error {
+	return fmt.Errorf(
+		"cannot record %s: the extension's state could not be read, and writing it "+
+			"would replace what is already there: %w", key, err)
+}
+
 // BuildingServiceEntry reports the eval service entry failing to build.
 func BuildingServiceEntry(err error) error {
 	return fmt.Errorf("building the eval service entry: %w", err)

@@ -40,6 +40,7 @@ type testEnvServer struct {
 	config        map[string][]byte
 	state         map[string]string
 	failSetConfig bool
+	failGetConfig bool
 }
 
 func (s *testEnvServer) GetValue(
@@ -61,6 +62,9 @@ func (s *testEnvServer) SetValue(
 func (s *testEnvServer) GetConfig(
 	_ context.Context, req *azdext.GetConfigRequest,
 ) (*azdext.GetConfigResponse, error) {
+	if s.failGetConfig {
+		return nil, errors.New("config store unavailable")
+	}
 	// A test seeds state to stand for what the last deploy recorded. It is
 	// served from the config section because that is where the extension keeps
 	// it now, not among the values a user sees.

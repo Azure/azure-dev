@@ -47,9 +47,11 @@ type evalContext struct {
 
 	// Private reconciliation state, read once per command and written through.
 	// state is nil until it has been loaded, which is what tells an unread
-	// store from one that is genuinely empty.
+	// store from one that is genuinely empty. stateErr holds a read that failed,
+	// which is a third thing again: empty to a reader, and unwritable.
 	configHelper *azdext.ConfigHelper
 	state        map[string]string
+	stateErr     error
 }
 
 // privateStatePath is the one environment-config section this extension owns.
@@ -219,6 +221,12 @@ func (ec *evalContext) remember(ctx context.Context, key, value string) {
 // A miss is cached as an empty map rather than retried: the caller reads a
 // dozen keys, and asking azd for each one turns a local lookup into a dozen
 // round trips.
+//
+// A read that failed is remembered apart from one that found nothing. It still
+// answers empty, because the callers are readers and there is nothing else to
+// give them, but it must never be written back: setPrivate replaces the whole
+// section, so persisting an empty map that came from a failure would delete
+// every id and fingerprint the section already held.
 func (ec *evalContext) loadPrivateState(ctx context.Context) map[string]string {
 	if ec.state != nil {
 		return ec.state
@@ -230,7 +238,11 @@ func (ec *evalContext) loadPrivateState(ctx context.Context) map[string]string {
 		return ec.state
 	}
 	stored := map[string]string{}
-	if found, err := helper.GetEnvJSON(ctx, privateStatePath, &stored); err == nil && found {
+	found, err := helper.GetEnvJSON(ctx, privateStatePath, &stored)
+	switch {
+	case err != nil:
+		ec.stateErr = err
+	case found:
 		ec.state = stored
 	}
 	return ec.state
@@ -263,6 +275,13 @@ func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error 
 		return messages.NoAzdEnvironmentToWrite(key)
 	}
 	state := ec.loadPrivateState(ctx)
+	if ec.stateErr != nil {
+		// What the section already holds is unknown, and this write replaces all
+		// of it. Recording one key over an unread baseline would delete every
+		// other id and fingerprint in it -- silently, and only on the runs where
+		// the read happened to fail.
+		return messages.PrivateStateUnreadable(key, ec.stateErr)
+	}
 	if state[key] == value {
 		return nil
 	}

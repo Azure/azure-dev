@@ -91,7 +91,10 @@ func (p *EvalServiceTargetProvider) GetTargetResource(
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
 	if defaultResolver != nil {
-		if target, err := defaultResolver(); err == nil {
+		// A nil target with a nil error means no default was computed, not that
+		// the default is nothing. Returning it skipped the fallback below and
+		// left the service-target operations with no target resource at all.
+		if target, err := defaultResolver(); err == nil && target != nil {
 			return target, nil
 		}
 	}

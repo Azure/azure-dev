@@ -26,7 +26,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -628,17 +627,22 @@ func getRemoteAgentImpl(
 }
 
 func remoteProtocolLookupError(agentName string, err error) error {
-	wrapped := fmt.Errorf(
-		"failed to resolve the deployed protocol for agent %q: %w",
-		agentName,
-		err,
-	)
-	return &errorhandler.ErrorWithSuggestion{
-		Err:     wrapped,
-		Message: fmt.Sprintf("could not determine the deployed protocol for agent %q", agentName),
-		Suggestion: "pass --protocol responses, --protocol invocations, or " +
-			"--protocol a2a to bypass deployed protocol detection",
+	message := fmt.Sprintf("could not determine the deployed protocol for agent %q", agentName)
+	suggestion := "pass --protocol responses, --protocol invocations, or " +
+		"--protocol a2a to bypass deployed protocol detection"
+
+	structured := exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)
+	if serviceErr, ok := errors.AsType[*azdext.ServiceError](structured); ok {
+		serviceErr.Message = message
+		serviceErr.Suggestion = suggestion
+		return serviceErr
 	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](structured); ok {
+		localErr.Message = message
+		localErr.Suggestion = suggestion
+		return localErr
+	}
+	return structured
 }
 
 func remoteInvocableProtocols(

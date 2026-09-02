@@ -24,7 +24,6 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"google.golang.org/grpc"
 )
 
@@ -914,18 +913,25 @@ func TestResolveDeployedProtocolLookupFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected lookup error, got nil")
 	}
-	if !errors.Is(err, lookupErr) {
-		t.Errorf("error %q does not wrap lookup error", err)
+
+	const wantMessage = "could not determine the deployed protocol for agent \"agent\""
+	const wantSuggestion = "pass --protocol responses, --protocol invocations, or " +
+		"--protocol a2a to bypass deployed protocol detection"
+
+	protoErr := azdext.WrapError(err)
+	if got := protoErr.GetMessage(); got != wantMessage {
+		t.Errorf("transported message = %q, want %q", got, wantMessage)
 	}
-	if _, ok := errors.AsType[*azdext.LocalError](err); ok {
-		t.Fatal("lookup error should not be classified as validation")
+	if got := protoErr.GetSuggestion(); got != wantSuggestion {
+		t.Errorf("transported suggestion = %q, want %q", got, wantSuggestion)
 	}
-	suggestion, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
-	if !ok {
-		t.Fatalf("error type = %T, want *errorhandler.ErrorWithSuggestion", err)
+
+	roundTripped := azdext.UnwrapError(protoErr)
+	if got := azdext.ErrorMessage(roundTripped); got != wantMessage {
+		t.Errorf("round-tripped message = %q, want %q", got, wantMessage)
 	}
-	if !strings.Contains(suggestion.Suggestion, "--protocol") {
-		t.Errorf("suggestion = %q, want --protocol workaround", suggestion.Suggestion)
+	if got := azdext.ErrorSuggestion(roundTripped); got != wantSuggestion {
+		t.Errorf("round-tripped suggestion = %q, want %q", got, wantSuggestion)
 	}
 }
 

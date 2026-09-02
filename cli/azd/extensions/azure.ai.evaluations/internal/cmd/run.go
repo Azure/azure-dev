@@ -383,7 +383,12 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 	// The service promises no order, so one row is not the most recent run --
 	// it is whichever the listing happened to put first. Restarting from it
 	// scored a stale dataset or target on any eval with more than one run.
-	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, newestRunCandidates)
+	//
+	// Read whole rather than capped: a prefix of an unordered listing cannot
+	// contain the newest row, so a cap would trade a wrong answer for a
+	// cheaper one. collectPages bounds the walk and reports a listing it could
+	// not finish as an error, so this is either right or it says so.
+	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 0)
 	if err != nil {
 		if eval_api.IsNotFound(err) {
 			// The eval itself is missing, which is worth saying plainly rather

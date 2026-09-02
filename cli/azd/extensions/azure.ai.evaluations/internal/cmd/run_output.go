@@ -506,8 +506,10 @@ func (ec *evalContext) latestOrNamedRun(
 	// The service does not order runs, so one row is not enough to know which is
 	// newest -- asking for a single one and taking it silently settled on
 	// whatever came back first, which `run cancel` and the output commands then
-	// acted on.
-	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, newestRunCandidates)
+	// acted on. A capped read has the same defect one step removed: the newest
+	// row need not be in the first N of an unordered listing. collectPages
+	// bounds the walk and reports one it could not finish as an error.
+	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 0)
 	if err != nil {
 		if eval_api.IsNotFound(err) {
 			return nil, messages.EvalNotDeployed(evalID, ec.deployCommand(ctx))
@@ -521,9 +523,6 @@ func (ec *evalContext) latestOrNamedRun(
 	ec.sayWhichRun(cmd, explicit, newest.ID)
 	return newest, nil
 }
-
-// newestRunCandidates bounds the page read to settle which run is newest.
-const newestRunCandidates = 50
 
 // newestRunIn picks the most recently created run.
 //

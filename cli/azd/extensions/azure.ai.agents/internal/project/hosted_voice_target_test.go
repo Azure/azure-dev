@@ -23,12 +23,13 @@ func TestFetchAndValidateHostedVoiceTarget(t *testing.T) {
 	target := &hostedVoiceTarget{AgentName: "target", AgentVersion: "7"}
 	called := false
 	err := fetchAndValidateHostedVoiceTarget(t.Context(), target, func(
-		_ context.Context, name, version, apiVersion string,
+		_ context.Context, name, version, apiVersion string, includeDigitalWorkerType bool,
 	) (*agent_api.AgentVersionObject, error) {
 		called = true
 		require.Equal(t, "target", name)
 		require.Equal(t, "7", version)
 		require.Equal(t, agent_api.AgentEndpointAPIVersion, apiVersion)
+		require.False(t, includeDigitalWorkerType)
 		return compatibleHostedVoiceVersion(), nil
 	})
 	require.NoError(t, err)
@@ -38,7 +39,7 @@ func TestFetchAndValidateHostedVoiceTarget(t *testing.T) {
 func TestFetchAndValidateHostedVoiceTargetClassifiesAzureFailure(t *testing.T) {
 	t.Parallel()
 	err := fetchAndValidateHostedVoiceTarget(t.Context(), &hostedVoiceTarget{}, func(
-		context.Context, string, string, string,
+		context.Context, string, string, string, bool,
 	) (*agent_api.AgentVersionObject, error) {
 		return nil, &azcore.ResponseError{StatusCode: http.StatusForbidden}
 	})
@@ -50,7 +51,7 @@ func TestFetchAndValidateHostedVoiceTargetClassifiesAzureFailure(t *testing.T) {
 func TestFetchAndValidateHostedVoiceTargetClassifiesCompatibilityFailure(t *testing.T) {
 	t.Parallel()
 	err := fetchAndValidateHostedVoiceTarget(t.Context(), &hostedVoiceTarget{}, func(
-		context.Context, string, string, string,
+		context.Context, string, string, string, bool,
 	) (*agent_api.AgentVersionObject, error) {
 		version := compatibleHostedVoiceVersion()
 		version.Status = "failed"

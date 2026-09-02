@@ -2553,7 +2553,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 }
 
 type getAgentVersionFunc func(
-	context.Context, string, string, string,
+	context.Context, string, string, string, bool,
 ) (*agent_api.AgentVersionObject, error)
 
 func fetchAndValidateHostedVoiceTarget(
@@ -2562,7 +2562,7 @@ func fetchAndValidateHostedVoiceTarget(
 	getVersion getAgentVersionFunc,
 ) error {
 	version, err := getVersion(
-		ctx, target.AgentName, target.AgentVersion, agent_api.AgentEndpointAPIVersion,
+		ctx, target.AgentName, target.AgentVersion, agent_api.AgentEndpointAPIVersion, false,
 	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, "getting hosted voice target version")

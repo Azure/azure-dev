@@ -29,17 +29,27 @@ import (
 // interleave into nonsense. The catalog is written after both have finished,
 // on this goroutine, because both entries land in the same file.
 
+// generateCommandFlags carries what `generate` was asked for: the flags every
+// generating command shares, and the ones only this one registers.
+type generateCommandFlags struct {
+	shared        generateFlags
+	maxSamples    int
+	from          []string
+	traceDays     int
+	wantDataset   bool
+	wantEvaluator bool
+	datasetName   string
+	evaluatorName string
+}
+
+// generateAction generates a dataset and a rubric evaluator together.
+type generateAction struct {
+	cmd   *cobra.Command
+	flags *generateCommandFlags
+}
+
 func newGenerateCommand() *cobra.Command {
-	var (
-		flags         generateFlags
-		maxSamples    int
-		from          []string
-		traceDays     int
-		wantDataset   bool
-		wantEvaluator bool
-		datasetName   string
-		evaluatorName string
-	)
+	flags := &generateCommandFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "generate",
@@ -52,109 +62,113 @@ func newGenerateCommand() *cobra.Command {
 			"dataset from, and is repeatable.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dataset, evaluator := selectedArtifacts(wantDataset, wantEvaluator)
-
-			// Checked before any network work, so a flag that cannot apply
-			// costs nothing to find out about. Changed() rather than the value,
-			// so a zero the caller actually typed is still caught and an
-			// untouched default is not.
-			if err := refuseInapplicableFlags(cmd, dataset, evaluator); err != nil {
-				return err
-			}
-			if traceDays < 0 {
-				return messages.NegativeTraceDays(traceDays)
-			}
-			if flags.noWait && cmd.Flags().Changed("output-dir") {
-				return messages.OutputDirNeedsTheWait()
-			}
-			// One command builds two artifacts. --output-dir naming a file
-			// gives both of them the same path -- the extension is recognized
-			// for either kind -- and they are written concurrently, so two
-			// billed jobs would leave one file and a configuration claiming a
-			// dataset and an evaluator that are the same bytes.
-			if dataset && evaluator && project.OutputDirNamesAFile(flags.outputDir) {
-				return messages.OutputFileCannotHoldBothArtifacts(flags.outputDir)
-			}
-
-			if dataset {
-				for _, src := range from {
-					if err := project.ValidateGenerateSource(src); err != nil {
-						return err
-					}
-				}
-				if err := project.ValidateSampleSize(maxSamples); err != nil {
-					return err
-				}
-			}
-
-			// Settled before anything reads or writes the configuration, so the
-			// catalog entry lands next to the eval `init` scaffolded rather than
-			// in a second configuration under ./evals that nothing else reads.
-			resolvedPath, err := resolveEvalDir(cmd.Context(), flags.path)
-			if err != nil {
-				return err
-			}
-			flags.path = resolvedPath
-
-			target := firstNonEmpty(flags.target, declaredTarget(flags.path))
-			plans, err := buildGeneratePlans(generateRequest{
-				flags:         &flags,
-				target:        target,
-				dataset:       dataset,
-				evaluator:     evaluator,
-				datasetName:   datasetName,
-				evaluatorName: evaluatorName,
-				maxSamples:    maxSamples,
-				from:          from,
-				traceDays:     traceDays,
-			})
-			if err != nil {
-				return err
-			}
-
-			ec, resolved, err := prepareGeneration(cmd, &flags, plans[0])
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			// prepareGeneration settles the inputs only the service can supply.
-			// They are the same for both artifacts, so they are read once.
-			for i := range plans {
-				plans[i].Instruction = resolved.Instruction
-				plans[i].Model = resolved.Model
-			}
-			if dataset && len(plans[0].From) == 0 {
-				plans[0].From = defaultGenerationSource(
-					ec.getEnvValue(cmd.Context(), appInsightsEnvKey),
-				)
-			}
-
-			return ec.runGenerations(cmd, plans, flags)
+			return (&generateAction{cmd: cmd, flags: flags}).Run()
 		},
 	}
 
-	cmd.Flags().BoolVar(&wantDataset, "dataset", false,
+	cmd.Flags().BoolVar(&flags.wantDataset, "dataset", false,
 		"Generate only the dataset. Omit both flags to generate both.")
-	cmd.Flags().BoolVar(&wantEvaluator, "evaluator", false,
+	cmd.Flags().BoolVar(&flags.wantEvaluator, "evaluator", false,
 		"Generate only the evaluator. Omit both flags to generate both.")
-	cmd.Flags().StringVar(&datasetName, "dataset-name", "",
+	cmd.Flags().StringVar(&flags.datasetName, "dataset-name", "",
 		"Name for the generated dataset. Defaults to <target>-dataset.")
-	cmd.Flags().StringVar(&evaluatorName, "evaluator-name", "",
+	cmd.Flags().StringVar(&flags.evaluatorName, "evaluator-name", "",
 		"Name for the generated evaluator. Defaults to <target>-evaluator.")
-	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
+	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", 0,
 		fmt.Sprintf("Rows to synthesize (%d-%d). Defaults to %d. Dataset only.",
 			project.MinSampleSize, project.MaxSampleSize, project.DefaultSampleSize))
-	cmd.Flags().StringSliceVar(&from, "from", nil,
+	cmd.Flags().StringSliceVar(&flags.from, "from", nil,
 		fmt.Sprintf("Where the dataset's rows come from: %s. Repeatable, and the "+
 			"service accepts more than one. Defaults to %s when the project has "+
 			"Application Insights connected, otherwise %s. Dataset only.",
 			strings.Join(project.GenerateSources, ", "),
 			project.GenerateFromTraces, project.GenerateFromAgent))
-	cmd.Flags().IntVar(&traceDays, "trace-days", 0,
+	cmd.Flags().IntVar(&flags.traceDays, "trace-days", 0,
 		"Days of traces to seed the evaluator's rubric. 0 disables.")
-	addGenerateFlags(cmd, &flags)
+	addGenerateFlags(cmd, &flags.shared)
 	return cmd
+}
+
+func (a *generateAction) Run() error {
+	dataset, evaluator := selectedArtifacts(a.flags.wantDataset, a.flags.wantEvaluator)
+
+	// Checked before any network work, so a flag that cannot apply
+	// costs nothing to find out about. Changed() rather than the value,
+	// so a zero the caller actually typed is still caught and an
+	// untouched default is not.
+	if err := refuseInapplicableFlags(a.cmd, dataset, evaluator); err != nil {
+		return err
+	}
+	if a.flags.traceDays < 0 {
+		return messages.NegativeTraceDays(a.flags.traceDays)
+	}
+	if a.flags.shared.noWait && a.cmd.Flags().Changed("output-dir") {
+		return messages.OutputDirNeedsTheWait()
+	}
+	// One command builds two artifacts. --output-dir naming a file
+	// gives both of them the same path -- the extension is recognized
+	// for either kind -- and they are written concurrently, so two
+	// billed jobs would leave one file and a configuration claiming a
+	// dataset and an evaluator that are the same bytes.
+	if dataset && evaluator && project.OutputDirNamesAFile(a.flags.shared.outputDir) {
+		return messages.OutputFileCannotHoldBothArtifacts(a.flags.shared.outputDir)
+	}
+
+	if dataset {
+		for _, src := range a.flags.from {
+			if err := project.ValidateGenerateSource(src); err != nil {
+				return err
+			}
+		}
+		if err := project.ValidateSampleSize(a.flags.maxSamples); err != nil {
+			return err
+		}
+	}
+
+	// Settled before anything reads or writes the configuration, so the
+	// catalog entry lands next to the eval `init` scaffolded rather than
+	// in a second configuration under ./evals that nothing else reads.
+	resolvedPath, err := resolveEvalDir(a.cmd.Context(), a.flags.shared.path)
+	if err != nil {
+		return err
+	}
+	a.flags.shared.path = resolvedPath
+
+	target := firstNonEmpty(a.flags.shared.target, declaredTarget(a.flags.shared.path))
+	plans, err := buildGeneratePlans(generateRequest{
+		flags:         &a.flags.shared,
+		target:        target,
+		dataset:       dataset,
+		evaluator:     evaluator,
+		datasetName:   a.flags.datasetName,
+		evaluatorName: a.flags.evaluatorName,
+		maxSamples:    a.flags.maxSamples,
+		from:          a.flags.from,
+		traceDays:     a.flags.traceDays,
+	})
+	if err != nil {
+		return err
+	}
+
+	ec, resolved, err := prepareGeneration(a.cmd, &a.flags.shared, plans[0])
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	// prepareGeneration settles the inputs only the service can supply.
+	// They are the same for both artifacts, so they are read once.
+	for i := range plans {
+		plans[i].Instruction = resolved.Instruction
+		plans[i].Model = resolved.Model
+	}
+	if dataset && len(plans[0].From) == 0 {
+		plans[0].From = defaultGenerationSource(
+			ec.getEnvValue(a.cmd.Context(), appInsightsEnvKey),
+		)
+	}
+
+	return ec.runGenerations(a.cmd, plans, a.flags.shared)
 }
 
 // selectedArtifacts reads the pair of narrowing flags. Neither set means both,

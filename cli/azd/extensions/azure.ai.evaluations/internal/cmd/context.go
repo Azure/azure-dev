@@ -48,7 +48,7 @@ type evalContext struct {
 	// Private reconciliation state, read once per command and written through.
 	// state is nil until it has been loaded, which is what tells an unread
 	// store from one that is genuinely empty. stateErr holds a read that failed,
-	// which is a third thing again: empty to a reader, and unwritable.
+	// which is a third thing again: empty to a reader, and unsafe to write over.
 	configHelper *azdext.ConfigHelper
 	state        map[string]string
 	stateErr     error

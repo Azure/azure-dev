@@ -50,7 +50,8 @@ func TestWaitBudgetBranchStillConsultsTheGate(t *testing.T) {
 	// The poll's own error check, one indent out from the branch, is where the
 	// window ends. Required rather than tolerated: falling back to the rest of
 	// the file would leave the assertions below matching some other command's
-	// gate, so a marker that moves has to fail here rather than pass vacuously.
+	// gate, so a marker that moves has to fail here rather than pass on a
+	// window that no longer means anything.
 	end := strings.Index(branch, "\n\tif err != nil {")
 	require.NotEqual(t, -1, end, "the branch no longer ends at the poll's error check")
 	branch = branch[:end]

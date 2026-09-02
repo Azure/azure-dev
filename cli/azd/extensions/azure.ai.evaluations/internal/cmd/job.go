@@ -132,41 +132,57 @@ func newJobCommand() *cobra.Command {
 	return cmd
 }
 
-// jobListAction lists the project's generation jobs.
-type jobListAction struct {
-	cmd      *cobra.Command
-	sel      *jobSelector
+// jobFlags are the flags every job command takes: which of the two generation
+// collections to act on, and where to reach it.
+type jobFlags struct {
+	sel      jobSelector
 	endpoint string
 }
 
+// bind registers them together, so a command cannot declare one and forget
+// the other.
+func (f *jobFlags) bind(cmd *cobra.Command) {
+	f.sel.bind(cmd)
+	cmd.Flags().StringVar(&f.endpoint, "project-endpoint", "", "Foundry project endpoint.")
+}
+
+// jobListFlags carries what `job list` was asked for.
+type jobListFlags struct {
+	jobFlags
+	displayLimit int
+	showAll      bool
+}
+
+// jobListAction lists the project's generation jobs.
+type jobListAction struct {
+	cmd   *cobra.Command
+	flags *jobListFlags
+}
+
 func newJobListCommand() *cobra.Command {
-	var endpointFlg string
-	var displayLimit int
-	var showAll bool
-	sel := &jobSelector{}
+	flags := &jobListFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the project's generation jobs.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&jobListAction{cmd: cmd, sel: sel, endpoint: endpointFlg}).Run()
+			return (&jobListAction{cmd: cmd, flags: flags}).Run()
 		},
 	}
 
-	sel.bind(cmd)
-	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
-	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	flags.bind(cmd)
+	addDisplayPagingFlags(cmd, &flags.displayLimit, &flags.showAll, defaultPageSize)
 	return cmd
 }
 
 func (a *jobListAction) Run() error {
-	kind, err := a.sel.kind()
+	kind, err := a.flags.sel.kind()
 	if err != nil {
 		return err
 	}
 	ctx := a.cmd.Context()
-	ec, err := newEvalContext(ctx, a.endpoint)
+	ec, err := newEvalContext(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}
@@ -200,40 +216,35 @@ func (a *jobListAction) Run() error {
 
 // jobShowAction reads one generation job.
 type jobShowAction struct {
-	cmd      *cobra.Command
-	sel      *jobSelector
-	endpoint string
-	jobID    string
+	cmd   *cobra.Command
+	flags *jobFlags
+	jobID string
 }
 
 func newJobShowCommand() *cobra.Command {
-	var endpointFlg string
-	sel := &jobSelector{}
+	flags := &jobFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "show <job-id>",
 		Short: "Show a generation job.",
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&jobShowAction{
-				cmd: cmd, sel: sel, endpoint: endpointFlg, jobID: args[0],
-			}).Run()
+			return (&jobShowAction{cmd: cmd, flags: flags, jobID: args[0]}).Run()
 		},
 	}
 
-	sel.bind(cmd)
-	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	flags.bind(cmd)
 	return cmd
 }
 
 func (a *jobShowAction) Run() error {
-	kind, err := a.sel.kind()
+	kind, err := a.flags.sel.kind()
 	if err != nil {
 		return err
 	}
 
 	ctx := a.cmd.Context()
-	ec, err := newEvalContext(ctx, a.endpoint)
+	ec, err := newEvalContext(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}
@@ -256,40 +267,35 @@ func (a *jobShowAction) Run() error {
 
 // jobCancelAction cancels an in-flight generation job.
 type jobCancelAction struct {
-	cmd      *cobra.Command
-	sel      *jobSelector
-	endpoint string
-	jobID    string
+	cmd   *cobra.Command
+	flags *jobFlags
+	jobID string
 }
 
 func newJobCancelCommand() *cobra.Command {
-	var endpointFlg string
-	sel := &jobSelector{}
+	flags := &jobFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "cancel <job-id>",
 		Short: "Cancel an in-flight generation job.",
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&jobCancelAction{
-				cmd: cmd, sel: sel, endpoint: endpointFlg, jobID: args[0],
-			}).Run()
+			return (&jobCancelAction{cmd: cmd, flags: flags, jobID: args[0]}).Run()
 		},
 	}
 
-	sel.bind(cmd)
-	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	flags.bind(cmd)
 	return cmd
 }
 
 func (a *jobCancelAction) Run() error {
-	kind, err := a.sel.kind()
+	kind, err := a.flags.sel.kind()
 	if err != nil {
 		return err
 	}
 
 	ctx := a.cmd.Context()
-	ec, err := newEvalContext(ctx, a.endpoint)
+	ec, err := newEvalContext(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}
@@ -309,15 +315,13 @@ func (a *jobCancelAction) Run() error {
 
 // jobDeleteAction removes one generation job record.
 type jobDeleteAction struct {
-	cmd      *cobra.Command
-	sel      *jobSelector
-	endpoint string
-	jobID    string
+	cmd   *cobra.Command
+	flags *jobFlags
+	jobID string
 }
 
 func newJobDeleteCommand() *cobra.Command {
-	var endpointFlg string
-	sel := &jobSelector{}
+	flags := &jobFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "delete <job-id>",
@@ -327,25 +331,22 @@ func newJobDeleteCommand() *cobra.Command {
 			"and is not affected.",
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&jobDeleteAction{
-				cmd: cmd, sel: sel, endpoint: endpointFlg, jobID: args[0],
-			}).Run()
+			return (&jobDeleteAction{cmd: cmd, flags: flags, jobID: args[0]}).Run()
 		},
 	}
 
-	sel.bind(cmd)
-	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	flags.bind(cmd)
 	return cmd
 }
 
 func (a *jobDeleteAction) Run() error {
-	kind, err := a.sel.kind()
+	kind, err := a.flags.sel.kind()
 	if err != nil {
 		return err
 	}
 
 	ctx := a.cmd.Context()
-	ec, err := newEvalContext(ctx, a.endpoint)
+	ec, err := newEvalContext(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}

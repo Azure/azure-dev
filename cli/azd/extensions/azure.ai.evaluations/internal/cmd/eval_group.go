@@ -279,37 +279,32 @@ func filterEvalsByName(evals []eval_api.OpenAIEval, name string) []eval_api.Open
 	return out
 }
 
-// evalShowFlags carries what `eval show` was asked for.
-type evalShowFlags struct {
-	endpoint string
-}
-
 // evalShowAction reports one eval definition.
 type evalShowAction struct {
-	cmd    *cobra.Command
-	flags  *evalShowFlags
-	evalID string
+	cmd      *cobra.Command
+	endpoint string
+	evalID   string
 }
 
 func newEvalShowCommand() *cobra.Command {
-	flags := &evalShowFlags{}
+	var endpointFlg string
 
 	cmd := &cobra.Command{
 		Use:   "show <eval>",
 		Short: "Show an eval definition.",
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&evalShowAction{cmd: cmd, flags: flags, evalID: args[0]}).Run()
+			return (&evalShowAction{cmd: cmd, endpoint: endpointFlg, evalID: args[0]}).Run()
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.endpoint, "project-endpoint", "", "Foundry project endpoint.")
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
 func (a *evalShowAction) Run() error {
 	ctx := a.cmd.Context()
-	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	ec, err := newEvalContext(ctx, a.endpoint)
 	if err != nil {
 		return err
 	}

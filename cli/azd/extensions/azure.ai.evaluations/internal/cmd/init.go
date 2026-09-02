@@ -34,287 +34,310 @@ const (
 // overwritten, because the settings a reader tunes by hand — thresholds, judge
 // model, data mapping — live nowhere but that entry and `init` cannot
 // reproduce them. Editing an eval is a file edit.
+// initFlags carries what `init` was asked for.
+type initFlags struct {
+	evalName   string
+	target     string
+	source     string
+	dataset    string
+	maxTraces  int
+	evaluators []string
+	judgeModel string
+	path       string
+	force      bool
+}
+
+// initAction scaffolds the eval configuration.
+//
+// Much of what it needs is settled rather than supplied -- a target is
+// detected, a judge model is read off the project, evaluators are chosen from
+// a list -- so Run derives its own locals from the flags. The flags stay what
+// the caller typed.
+type initAction struct {
+	cmd   *cobra.Command
+	flags *initFlags
+}
+
 func newInitCommand() *cobra.Command {
-	var (
-		evalName   string
-		target     string
-		source     string
-		dataset    string
-		maxTraces  int
-		evaluators []string
-		judgeModel string
-		path       string
-		force      bool
-	)
+	flags := &initFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Scaffold evaluation config for an agent. Makes no service calls.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			out := cmd.OutOrStdout()
-
-			switch source {
-			case "", initSourceDataset, initSourceTraces:
-			default:
-				return messages.SourceNotADataSource(
-					source, initSourceDataset, initSourceTraces)
-			}
-			if source == initSourceTraces && dataset != "" {
-				return messages.TracesTakesNoDataset()
-			}
-			if maxTraces < 0 {
-				return messages.MaxTracesMustBePositive()
-			}
-			// Checked with the other flag-only rules, before anything is asked
-			// or read: a reference that cannot name an evaluator is otherwise
-			// written by a command that exits 0, and only fails two commands
-			// later. Answering two prompts first to be told a flag was wrong is
-			// the same defect one step removed.
-			if err := validateEvaluatorRefs(evaluators); err != nil {
-				return err
-			}
-			// Asked twice -- once to pick the default source, once to say so --
-			// and each call opens an azd connection. The answer cannot change
-			// mid-command, and a run that never asks never connects.
-			tracesWired := sync.OnceValue(func() bool {
-				return tracesConnected(commandContext(cmd))
-			})
-			settled, err := settleInitSource(
-				source, cmd.Flags().Changed("max-traces"), tracesWired)
-			if err != nil {
-				return err
-			}
-			source = settled
-			// The same cascade every other command reads the configuration
-			// through. init merges into the configuration it finds, so a second
-			// `init` in a project scaffolded at ./quality has to find that one --
-			// otherwise it writes a second configuration under ./evals and
-			// declares a second service pointing at it.
-			path, err := resolveEvalDir(cmd.Context(), path)
-			if err != nil {
-				return err
-			}
-
-			// Asked before anything is written: the project is the one thing
-			// init cannot supply for itself, and failing after creating
-			// directories leaves a half-scaffolded tree behind.
-			azdProject, err := readAzdProject(cmd.Context())
-			if err != nil {
-				return err
-			}
-
-			// The target is what the whole scaffold is named and shaped around,
-			// so it is settled before anything derived from it.
-			if target == "" {
-				target, err = resolveAgentTarget(cmd, azdProject)
-				if err != nil {
-					return err
-				}
-			}
-			if evalName == "" {
-				evalName = defaultEvalName(target, source)
-			}
-			if judgeModel == "" {
-				judgeModel, err = resolveJudgeModel(cmd, azdProject)
-				if err != nil {
-					return err
-				}
-			}
-
-			configPath, err := project.ResolveEvalConfigPath(path)
-			if err != nil {
-				return err
-			}
-			// Captured before the write: init merges into an existing config, so
-			// reporting it as created would claim a file it only added to.
-			_, configExistedErr := os.Stat(configPath)
-			configExisted := configExistedErr == nil
-			authored, err := project.ReadAuthoredConfig(path)
-			if err != nil {
-				return err
-			}
-			cfg := declaredSoFar(authored)
-			// Checked before the prompt as well as after it, so a name that is
-			// already taken is reported without asking a question first.
-			if cfg.HasEval(evalName) && !force {
-				return messages.EvalAlreadyDeclared(
-					evalName, filepath.ToSlash(configPath))
-			}
-
-			// Asked, not detected: an eval grades on a set, so there is no
-			// "the only one" to settle on, and which criteria define quality
-			// is the substantive decision in the configuration.
-			//
-			// Deliberately outside the lock below. This is an unbounded human
-			// pause, and a lock held across it would either block a concurrent
-			// `generate` for as long as someone leaves the terminal, or -- once
-			// that side gave up waiting -- protect nothing at all. The listing
-			// it offers is only a menu; the authoritative read is taken after.
-			evaluatorsWereChosen := len(evaluators) > 0
-			if len(evaluators) == 0 {
-				var asked bool
-				evaluators, asked, err = resolveEvaluators(
-					cmd, cfg, target+"-quality", source == initSourceTraces)
-				if err != nil {
-					return err
-				}
-				evaluatorsWereChosen = asked
-			}
-
-			// The read-modify-write starts here, and nothing inside it waits on
-			// a person. The configuration is read again because the copy above
-			// was taken before the prompt, and a `generate` may well have
-			// finished writing to it since.
-			unlockConfig, err := project.LockEvalConfig(cmd.Context(), path)
-			if err != nil {
-				return err
-			}
-			defer unlockConfig()
-
-			authored, err = project.ReadAuthoredConfig(path)
-			if err != nil {
-				return err
-			}
-			cfg = declaredSoFar(authored)
-			// Recorded rather than applied here: the write below edits the file,
-			// so the replacement has to be expressed as a removal it can make.
-			replacedEval := ""
-			if cfg.HasEval(evalName) {
-				if !force {
-					return messages.EvalAlreadyDeclared(
-						evalName, filepath.ToSlash(configPath))
-				}
-				replacedEval = evalName
-				cfg.RemoveEval(evalName)
-			}
-
-			// What the file already declares, so the write can be limited to what
-			// planScaffold adds to it.
-			declaredDatasets := len(cfg.Datasets)
-			declaredEvaluators := len(cfg.Evaluators)
-			declaredEvals := len(cfg.Evals)
-
-			// The location may be the file azure.yaml names rather than the
-			// directory holding it, and artifacts sit beside the configuration.
-			evalDir := project.EvalDirOf(path)
-			if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultDatasetsDir), 0o750); err != nil {
-				return messages.CreatingDatasetsDir(err)
-			}
-			if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultEvaluatorsDir), 0o750); err != nil {
-				return messages.CreatingEvaluatorsDir(err)
-			}
-
-			plan := planScaffold(scaffoldInput{
-				evalName:   evalName,
-				target:     target,
-				source:     source,
-				dataset:    dataset,
-				maxTraces:  maxTraces,
-				evaluators: evaluators,
-				judgeModel: judgeModel,
-				rubricName: target + "-quality",
-				evalDir:    evalDir,
-				cfg:        cfg,
-			})
-
-			if err := refuseDuplicateEval(path, plan.eval); err != nil {
-				return err
-			}
-
-			if err := project.ApplyScaffold(path, project.ScaffoldWrite{
-				RemoveEval: replacedEval,
-				Datasets:   cfg.Datasets[declaredDatasets:],
-				Evaluators: cfg.Evaluators[declaredEvaluators:],
-				Evals:      cfg.Evals[declaredEvals:],
-			}); err != nil {
-				return err
-			}
-
-			// Scaffolding a config azd cannot see is half a step: the eval
-			// service has to be referenced from the root config before any of
-			// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
-			serviceName := target + "-evals"
-			rootWiring, err := ensureRootEvalService(cmd.Context(), serviceName, target, configPath)
-			if err != nil {
-				return err
-			}
-
-			recordEvalPath(cmd.Context(), path)
-
-			if isJSON(cmd) {
-				return emitJSON(out, map[string]any{
-					"eval":          evalName,
-					"evalConfig":    configPath,
-					"service":       serviceName,
-					"datasetsDir":   filepath.Join(evalDir, project.DefaultDatasetsDir),
-					"evaluatorsDir": filepath.Join(evalDir, project.DefaultEvaluatorsDir),
-					"rootConfig":    rootWiring,
-					"target":        target,
-					"source":        source,
-					"judgeModel":    judgeModel,
-					"evaluators":    plan.evaluatorNames(),
-				})
-			}
-
-			fmt.Fprint(out, messages.DetectedTarget(target))
-			if source == initSourceTraces {
-				// Claiming the connection is only honest when it was found. init
-				// makes no service calls, so it cannot verify one it did not see.
-				fmt.Fprint(out, messages.UsingTraceSource(tracesWired()))
-			}
-			// Only what was settled without asking: a reader who just picked
-			// from a list does not need it read back to them.
-			if names := plan.evaluatorNames(); len(names) > 0 && !evaluatorsWereChosen {
-				fmt.Fprint(out, messages.GradingWith(names))
-			}
-			if judgeModel != "" {
-				fmt.Fprint(out, messages.JudgeModelDeployment(judgeModel))
-			}
-
-			fmt.Fprint(out, messages.ScaffoldHeading(configExisted))
-			fmt.Fprint(out, messages.ScaffoldConfigLine(filepath.ToSlash(configPath), configExisted))
-			switch rootWiring {
-			case wiringAdded:
-				fmt.Fprint(out, messages.AddedServiceLine(rootConfigName, serviceName))
-			case wiringPresent:
-				fmt.Fprint(out, messages.AlreadyDeclaresServiceLine(rootConfigName, serviceName))
-			}
-
-			// Only what was actually scheduled is offered. Suggesting
-			// `dataset generate` for a dataset the caller supplied sends them
-			// to submit a billed job for an artifact they already have.
-			next := plan.nextSteps(deployCommandName(azdProject))
-			fmt.Fprint(out, messages.FirstNextStep(next[0]))
-			for _, step := range next[1:] {
-				fmt.Fprint(out, messages.FurtherNextStep(step))
-			}
-			return nil
+			return (&initAction{cmd: cmd, flags: flags}).Run()
 		},
 	}
 
-	cmd.Flags().StringVar(&evalName, "name", "",
+	cmd.Flags().StringVar(&flags.evalName, "name", "",
 		"Name of the eval. Defaults to <target>-eval, or <target>-trace-eval under --source traces.")
-	cmd.Flags().StringVar(&target, "target", "",
+	cmd.Flags().StringVar(&flags.target, "target", "",
 		"Name of the agent to evaluate. Detected when the project has one agent; prompts when it has several.")
-	cmd.Flags().StringVar(&source, "source", "",
+	cmd.Flags().StringVar(&flags.source, "source", "",
 		"Where rows come from: dataset or traces. Defaults to traces when the azd "+
 			"environment records an Application Insights connection, otherwise dataset.")
-	cmd.Flags().StringVar(&dataset, "dataset", "",
+	cmd.Flags().StringVar(&flags.dataset, "dataset", "",
 		"Path to a local .jsonl, or the name of a registered dataset.")
-	cmd.Flags().IntVar(&maxTraces, "max-traces", project.DefaultScaffoldMaxTraces,
+	cmd.Flags().IntVar(&flags.maxTraces, "max-traces", project.DefaultScaffoldMaxTraces,
 		"Cap on traces read by a --source traces eval. Delete max_traces from the "+
 			"file to take the service default instead.")
-	cmd.Flags().StringSliceVar(&evaluators, "evaluator", nil,
+	cmd.Flags().StringSliceVar(&flags.evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a "+
 			"built-in. Passing this replaces the defaults, so it also opts out of rubric generation.")
-	cmd.Flags().StringVar(&judgeModel, "judge-model", "",
+	cmd.Flags().StringVar(&flags.judgeModel, "judge-model", "",
 		"Model deployment the graders judge with. Detected from the project when omitted.")
-	cmd.Flags().StringVar(&path, "path", "",
+	cmd.Flags().StringVar(&flags.path, "path", "",
 		"Directory to write the configuration into. Used verbatim, never re-rooted. "+
 			"Defaults to the directory an earlier `init` scaffolded, otherwise ./evals.")
-	cmd.Flags().BoolVar(&force, "force", false,
+	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Replace an eval of the same name instead of failing.")
 	return cmd
+}
+
+func (a *initAction) Run() error {
+	out := a.cmd.OutOrStdout()
+
+	source := a.flags.source
+	switch source {
+	case "", initSourceDataset, initSourceTraces:
+	default:
+		return messages.SourceNotADataSource(
+			source, initSourceDataset, initSourceTraces)
+	}
+	if source == initSourceTraces && a.flags.dataset != "" {
+		return messages.TracesTakesNoDataset()
+	}
+	if a.flags.maxTraces < 0 {
+		return messages.MaxTracesMustBePositive()
+	}
+	// Checked with the other flag-only rules, before anything is asked
+	// or read: a reference that cannot name an evaluator is otherwise
+	// written by a command that exits 0, and only fails two commands
+	// later. Answering two prompts first to be told a flag was wrong is
+	// the same defect one step removed.
+	if err := validateEvaluatorRefs(a.flags.evaluators); err != nil {
+		return err
+	}
+	// Asked twice -- once to pick the default source, once to say so --
+	// and each call opens an azd connection. The answer cannot change
+	// mid-command, and a run that never asks never connects.
+	tracesWired := sync.OnceValue(func() bool {
+		return tracesConnected(commandContext(a.cmd))
+	})
+	settled, err := settleInitSource(
+		source, a.cmd.Flags().Changed("max-traces"), tracesWired)
+	if err != nil {
+		return err
+	}
+	source = settled
+	// The same cascade every other command reads the configuration
+	// through. init merges into the configuration it finds, so a second
+	// `init` in a project scaffolded at ./quality has to find that one --
+	// otherwise it writes a second configuration under ./evals and
+	// declares a second service pointing at it.
+	path, err := resolveEvalDir(a.cmd.Context(), a.flags.path)
+	if err != nil {
+		return err
+	}
+
+	// Asked before anything is written: the project is the one thing
+	// init cannot supply for itself, and failing after creating
+	// directories leaves a half-scaffolded tree behind.
+	azdProject, err := readAzdProject(a.cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	// The target is what the whole scaffold is named and shaped around,
+	// so it is settled before anything derived from it.
+	target := a.flags.target
+	if target == "" {
+		target, err = resolveAgentTarget(a.cmd, azdProject)
+		if err != nil {
+			return err
+		}
+	}
+	evalName := a.flags.evalName
+	if evalName == "" {
+		evalName = defaultEvalName(target, source)
+	}
+	judgeModel := a.flags.judgeModel
+	if judgeModel == "" {
+		judgeModel, err = resolveJudgeModel(a.cmd, azdProject)
+		if err != nil {
+			return err
+		}
+	}
+
+	configPath, err := project.ResolveEvalConfigPath(path)
+	if err != nil {
+		return err
+	}
+	// Captured before the write: init merges into an existing config, so
+	// reporting it as created would claim a file it only added to.
+	_, configExistedErr := os.Stat(configPath)
+	configExisted := configExistedErr == nil
+	authored, err := project.ReadAuthoredConfig(path)
+	if err != nil {
+		return err
+	}
+	cfg := declaredSoFar(authored)
+	// Checked before the prompt as well as after it, so a name that is
+	// already taken is reported without asking a question first.
+	if cfg.HasEval(evalName) && !a.flags.force {
+		return messages.EvalAlreadyDeclared(
+			evalName, filepath.ToSlash(configPath))
+	}
+
+	// Asked, not detected: an eval grades on a set, so there is no
+	// "the only one" to settle on, and which criteria define quality
+	// is the substantive decision in the configuration.
+	//
+	// Deliberately outside the lock below. This is an unbounded human
+	// pause, and a lock held across it would either block a concurrent
+	// `generate` for as long as someone leaves the terminal, or -- once
+	// that side gave up waiting -- protect nothing at all. The listing
+	// it offers is only a menu; the authoritative read is taken after.
+	evaluators := a.flags.evaluators
+	evaluatorsWereChosen := len(evaluators) > 0
+	if len(evaluators) == 0 {
+		var asked bool
+		evaluators, asked, err = resolveEvaluators(
+			a.cmd, cfg, target+"-quality", source == initSourceTraces)
+		if err != nil {
+			return err
+		}
+		evaluatorsWereChosen = asked
+	}
+
+	// The read-modify-write starts here, and nothing inside it waits on
+	// a person. The configuration is read again because the copy above
+	// was taken before the prompt, and a `generate` may well have
+	// finished writing to it since.
+	unlockConfig, err := project.LockEvalConfig(a.cmd.Context(), path)
+	if err != nil {
+		return err
+	}
+	defer unlockConfig()
+
+	authored, err = project.ReadAuthoredConfig(path)
+	if err != nil {
+		return err
+	}
+	cfg = declaredSoFar(authored)
+	// Recorded rather than applied here: the write below edits the file,
+	// so the replacement has to be expressed as a removal it can make.
+	replacedEval := ""
+	if cfg.HasEval(evalName) {
+		if !a.flags.force {
+			return messages.EvalAlreadyDeclared(
+				evalName, filepath.ToSlash(configPath))
+		}
+		replacedEval = evalName
+		cfg.RemoveEval(evalName)
+	}
+
+	// What the file already declares, so the write can be limited to what
+	// planScaffold adds to it.
+	declaredDatasets := len(cfg.Datasets)
+	declaredEvaluators := len(cfg.Evaluators)
+	declaredEvals := len(cfg.Evals)
+
+	// The location may be the file azure.yaml names rather than the
+	// directory holding it, and artifacts sit beside the configuration.
+	evalDir := project.EvalDirOf(path)
+	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultDatasetsDir), 0o750); err != nil {
+		return messages.CreatingDatasetsDir(err)
+	}
+	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultEvaluatorsDir), 0o750); err != nil {
+		return messages.CreatingEvaluatorsDir(err)
+	}
+
+	plan := planScaffold(scaffoldInput{
+		evalName:   evalName,
+		target:     target,
+		source:     source,
+		dataset:    a.flags.dataset,
+		maxTraces:  a.flags.maxTraces,
+		evaluators: evaluators,
+		judgeModel: judgeModel,
+		rubricName: target + "-quality",
+		evalDir:    evalDir,
+		cfg:        cfg,
+	})
+
+	if err := refuseDuplicateEval(path, plan.eval); err != nil {
+		return err
+	}
+
+	if err := project.ApplyScaffold(path, project.ScaffoldWrite{
+		RemoveEval: replacedEval,
+		Datasets:   cfg.Datasets[declaredDatasets:],
+		Evaluators: cfg.Evaluators[declaredEvaluators:],
+		Evals:      cfg.Evals[declaredEvals:],
+	}); err != nil {
+		return err
+	}
+
+	// Scaffolding a config azd cannot see is half a step: the eval
+	// service has to be referenced from the root config before any of
+	// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
+	serviceName := target + "-evals"
+	rootWiring, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath)
+	if err != nil {
+		return err
+	}
+
+	recordEvalPath(a.cmd.Context(), path)
+
+	if isJSON(a.cmd) {
+		return emitJSON(out, map[string]any{
+			"eval":          evalName,
+			"evalConfig":    configPath,
+			"service":       serviceName,
+			"datasetsDir":   filepath.Join(evalDir, project.DefaultDatasetsDir),
+			"evaluatorsDir": filepath.Join(evalDir, project.DefaultEvaluatorsDir),
+			"rootConfig":    rootWiring,
+			"target":        target,
+			"source":        source,
+			"judgeModel":    judgeModel,
+			"evaluators":    plan.evaluatorNames(),
+		})
+	}
+
+	fmt.Fprint(out, messages.DetectedTarget(target))
+	if source == initSourceTraces {
+		// Claiming the connection is only honest when it was found. init
+		// makes no service calls, so it cannot verify one it did not see.
+		fmt.Fprint(out, messages.UsingTraceSource(tracesWired()))
+	}
+	// Only what was settled without asking: a reader who just picked
+	// from a list does not need it read back to them.
+	if names := plan.evaluatorNames(); len(names) > 0 && !evaluatorsWereChosen {
+		fmt.Fprint(out, messages.GradingWith(names))
+	}
+	if judgeModel != "" {
+		fmt.Fprint(out, messages.JudgeModelDeployment(judgeModel))
+	}
+
+	fmt.Fprint(out, messages.ScaffoldHeading(configExisted))
+	fmt.Fprint(out, messages.ScaffoldConfigLine(filepath.ToSlash(configPath), configExisted))
+	switch rootWiring {
+	case wiringAdded:
+		fmt.Fprint(out, messages.AddedServiceLine(rootConfigName, serviceName))
+	case wiringPresent:
+		fmt.Fprint(out, messages.AlreadyDeclaresServiceLine(rootConfigName, serviceName))
+	}
+
+	// Only what was actually scheduled is offered. Suggesting
+	// `dataset generate` for a dataset the caller supplied sends them
+	// to submit a billed job for an artifact they already have.
+	next := plan.nextSteps(deployCommandName(azdProject))
+	fmt.Fprint(out, messages.FirstNextStep(next[0]))
+	for _, step := range next[1:] {
+		fmt.Fprint(out, messages.FurtherNextStep(step))
+	}
+	return nil
 }
 
 // settleInitSource returns the data source the eval will read, and refuses

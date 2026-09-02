@@ -358,7 +358,10 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 	ctx context.Context,
 	evalID string,
 ) (*eval_api.EvalRunDataSource, error) {
-	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)
+	// The service promises no order, so one row is not the most recent run --
+	// it is whichever the listing happened to put first. Restarting from it
+	// scored a stale dataset or target on any eval with more than one run.
+	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, newestRunCandidates)
 	if err != nil {
 		if eval_api.IsNotFound(err) {
 			// The eval itself is missing, which is worth saying plainly rather
@@ -367,10 +370,14 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 		}
 		return nil, messages.ReadingPreviousRuns(evalID, err)
 	}
-	if list == nil || len(list.Data) == 0 || list.Data[0].DataSource == nil {
+	if list == nil || len(list.Data) == 0 {
 		return nil, messages.EvalHasNoPreviousRun(evalID)
 	}
-	return pinReusedTraceWindow(list.Data[0].DataSource), nil
+	newest := newestRunIn(list.Data)
+	if newest.DataSource == nil {
+		return nil, messages.EvalHasNoPreviousRun(evalID)
+	}
+	return pinReusedTraceWindow(newest.DataSource), nil
 }
 
 // legacyTraceLookbackHours is the window a legacy source with no lookback ran

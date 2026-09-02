@@ -664,6 +664,10 @@ type PromptAgent struct {
 	// Skills is an optional list of Foundry skill names attached to the agent.
 	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
 
+	// ResolvedSkills contains versioned references resolved by the deploy graph.
+	// It is internal deployment state and is never authored directly.
+	ResolvedSkills []HarnessSkillRef `json:"-" yaml:"-"`
+
 	// Tools is an optional list of tool definitions attached to the agent.
 	// Entries are passed through verbatim to the Foundry prompt-agent API, so
 	// author them using the API's snake_case tool schema. Supported types

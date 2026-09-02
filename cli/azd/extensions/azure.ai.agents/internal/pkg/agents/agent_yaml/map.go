@@ -531,13 +531,9 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 // agent so the field is omitted entirely.
 //
 // The harness is serialized as an object rather than the bare string it used to
-// be, because that is the only shape with somewhere to put skills. The type
+// be. The type
 // value itself is passed through verbatim: azd does not maintain an allowlist
 // of harness names, so a harness the service gains later needs no change here.
-//
-// Author-declared skill names are folded in alongside the ones the deploy graph
-// published from the skills/ folder, and are matched by name so a manifest entry
-// naming a folder-published skill does not produce a duplicate reference.
 func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
 	harnessType := promptAgent.HarnessType()
 	if harnessType == "" {
@@ -550,26 +546,38 @@ func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
 		BuiltinTools: mapHarnessBuiltInTools(promptAgent.Harness.BuiltinTools),
 	}
 
-	seen := make(map[string]struct{}, len(promptAgent.Harness.Skills))
-	addSkill := func(name, version string) {
+	return harness
+}
+
+// PromptAgentSkillReferences returns the top-level versioned skill references
+// sent in a prompt-agent definition.
+func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillReference {
+	seen := map[string]struct{}{}
+	var skills []agent_api.SkillReference
+	add := func(name, version string) {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			return
 		}
-		if _, dup := seen[name]; dup {
+		key := strings.ToLower(name)
+		if _, ok := seen[key]; ok {
 			return
 		}
-		seen[name] = struct{}{}
-		harness.Skills = append(harness.Skills, agent_api.HarnessSkillReference{
-			Name:    name,
-			Version: strings.TrimSpace(version),
-		})
+		seen[key] = struct{}{}
+		skills = append(skills, agent_api.SkillReference{Name: name, Version: strings.TrimSpace(version)})
 	}
-
-	for _, skill := range promptAgent.Harness.Skills {
-		addSkill(skill.Name, skill.Version)
+	for _, skill := range promptAgent.ResolvedSkills {
+		add(skill.Name, skill.Version)
 	}
-	return harness
+	if promptAgent.Harness != nil {
+		for _, skill := range promptAgent.Harness.Skills {
+			add(skill.Name, skill.Version)
+		}
+	}
+	for _, skill := range promptAgent.Skills {
+		add(skill, "")
+	}
+	return skills
 }
 
 // mapHarnessEnvironment converts the authored sandbox sizing to its API shape.
@@ -656,14 +664,7 @@ func CreatePromptAgentAPIRequest(
 		Model:        promptAgent.Model,
 		Harness:      mapHarness(promptAgent),
 		Instructions: promptAgent.Instructions,
-	}
-
-	// Skills split on the harness. A harnessed agent carries them inside the
-	// harness block, where the service provisions them into the sandbox that
-	// runs them. A harness-less agent has no sandbox, so its skills stay on the
-	// definition-level field.
-	if promptDef.Harness == nil && len(promptAgent.Skills) > 0 {
-		promptDef.Skills = append([]string(nil), promptAgent.Skills...)
+		Skills:       PromptAgentSkillReferences(promptAgent),
 	}
 
 	// Tools, tool_choice, and structured_inputs are passed through verbatim so

@@ -389,33 +389,23 @@ var RemovedManagedAgentHarnesses = map[string]string{
 	"github-copilot": ManagedAgentHarnessGitHubCopilot,
 }
 
-// HarnessSkillReference pins one published Foundry skill onto a harnessed
-// agent's definition.
+// SkillReference identifies a Foundry skill available to a prompt agent.
 //
 // Version is not optional in practice. The API contract says an omitted version
 // resolves to the skill's current default, but the service currently returns a
 // 500 for a reference without one, so callers must supply the version they
 // published. Skills are published before the agent version is created, so the
 // version is always known by then.
-type HarnessSkillReference struct {
+type SkillReference struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 }
 
 // ManagedAgentHarness is the `harness` block of a managed agent definition.
-//
-// Skills hang off the harness rather than off the definition because a skill is
-// instructions plus scripts and assets: it needs the harness execution
-// environment to run at all. Foundry provisions each pinned skill into the
-// sandbox when it starts. A definition-level `skills` field would imply that a
-// prompt agent with no harness could execute one, which it cannot -- the
-// service accepts that field but never resolves it, so a name written there is
-// silently inert (including a name that matches no skill at all).
 type ManagedAgentHarness struct {
-	Type         string                  `json:"type"`
-	Skills       []HarnessSkillReference `json:"skills,omitempty"`
-	Environment  *HarnessEnvironment     `json:"environment,omitempty"`
-	BuiltinTools *HarnessBuiltInTools    `json:"builtin_tools,omitempty"`
+	Type         string               `json:"type"`
+	Environment  *HarnessEnvironment  `json:"environment,omitempty"`
+	BuiltinTools *HarnessBuiltInTools `json:"builtin_tools,omitempty"`
 }
 
 // HarnessEnvironment sizes the sandbox the harness runs the agent in.
@@ -477,21 +467,18 @@ type ManagedAgentDefinition struct {
 	// Harness identifies the execution harness the platform should use to run
 	// the managed agent, and carries the skills provisioned into it. Nil for a
 	// plain prompt agent, which Foundry runs directly.
-	Harness      *ManagedAgentHarness `json:"harness,omitempty"`
-	Instructions string               `json:"instructions,omitempty"`
-	Tools        []any                `json:"tools,omitempty"`
-	ToolChoice   any                  `json:"tool_choice,omitempty"`
-	Temperature  *float64             `json:"temperature,omitempty"`
-	TopP         *float64             `json:"top_p,omitempty"`
-	Text         any                  `json:"text,omitempty"`
-	Reasoning    any                  `json:"reasoning,omitempty"`
-	// Skills is the definition-level skill list. It applies only to a
-	// harness-less prompt agent; a harnessed agent carries its skills on
-	// Harness.Skills instead.
-	Skills           []string            `json:"skills,omitempty"`
-	StructuredInputs map[string]any      `json:"structured_inputs,omitempty"`
-	Environment      *ManagedEnvironment `json:"environment,omitempty"`
-	Files            map[string]string   `json:"files,omitempty"`
+	Harness          *ManagedAgentHarness `json:"harness,omitempty"`
+	Instructions     string               `json:"instructions,omitempty"`
+	Tools            []any                `json:"tools,omitempty"`
+	ToolChoice       any                  `json:"tool_choice,omitempty"`
+	Temperature      *float64             `json:"temperature,omitempty"`
+	TopP             *float64             `json:"top_p,omitempty"`
+	Text             any                  `json:"text,omitempty"`
+	Reasoning        any                  `json:"reasoning,omitempty"`
+	Skills           []SkillReference     `json:"skills,omitempty"`
+	StructuredInputs map[string]any       `json:"structured_inputs,omitempty"`
+	Environment      *ManagedEnvironment  `json:"environment,omitempty"`
+	Files            map[string]string    `json:"files,omitempty"`
 }
 
 // VoiceModelType selects the model-inference mode for a voice agent.

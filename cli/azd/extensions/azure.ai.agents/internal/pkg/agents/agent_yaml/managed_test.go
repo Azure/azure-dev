@@ -225,12 +225,8 @@ func TestCreatePromptAgentAPIRequest_Harness(t *testing.T) {
 	}
 }
 
-// TestCreatePromptAgentAPIRequest_HarnessSkills pins where skills land on the
-// wire. A harnessed agent carries them inside the harness block as versioned
-// references, because a skill is instructions plus scripts that only the
-// harness sandbox can execute. Nothing about a skill becomes a tool, and no
-// toolbox is involved: the harness already has a service-owned system toolbox
-// whose name and lifecycle the customer does not manage.
+// TestCreatePromptAgentAPIRequest_HarnessSkills pins the REST contract: skills
+// are versioned references at the prompt definition's top level.
 func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 	promptDef := PromptAgent{
 		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
@@ -256,29 +252,36 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 	if def.Harness == nil {
 		t.Fatal("expected a harness block")
 	}
-	want := []agent_api.HarnessSkillReference{
+	want := []agent_api.SkillReference{
 		{Name: "duplicate-check", Version: "3"},
 		{Name: "severity-triage", Version: "1"},
 	}
-	if len(def.Harness.Skills) != len(want) {
-		t.Fatalf("harness skills: got %+v, want %+v", def.Harness.Skills, want)
+	if len(def.Skills) != len(want) {
+		t.Fatalf("definition skills: got %+v, want %+v", def.Skills, want)
 	}
 	for i, w := range want {
-		if def.Harness.Skills[i] != w {
-			t.Errorf("harness skill %d: got %+v, want %+v", i, def.Harness.Skills[i], w)
+		if def.Skills[i] != w {
+			t.Errorf("skill %d: got %+v, want %+v", i, def.Skills[i], w)
 		}
-	}
-	if len(def.Skills) != 0 {
-		t.Errorf("harnessed skills must not appear on the definition-level field, got %+v", def.Skills)
 	}
 	if len(def.Tools) != 0 {
 		t.Errorf("a skill must not become a tool, got %+v", def.Tools)
 	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, `"skills":[{"name":"duplicate-check","version":"3"}`) {
+		t.Errorf("versioned top-level skills missing from request: %s", body)
+	}
+	if strings.Contains(body, `"harness":{"type":"github_copilot_preview","skills"`) {
+		t.Errorf("skills must not be nested under harness: %s", body)
+	}
 }
 
-// TestCreatePromptAgentAPIRequest_HarnessLessSkills covers the other half of
-// the split: with no harness there is no sandbox to provision skills into, so
-// the authored names stay on the definition-level field.
+// TestCreatePromptAgentAPIRequest_HarnessLessSkills verifies plain prompt
+// skills use the same top-level reference shape.
 func TestCreatePromptAgentAPIRequest_HarnessLessSkills(t *testing.T) {
 	promptDef := PromptAgent{
 		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
@@ -299,7 +302,7 @@ func TestCreatePromptAgentAPIRequest_HarnessLessSkills(t *testing.T) {
 	if def.Harness != nil {
 		t.Errorf("expected no harness block, got %+v", def.Harness)
 	}
-	if len(def.Skills) != 1 || def.Skills[0] != "severity-triage" {
+	if len(def.Skills) != 1 || def.Skills[0] != (agent_api.SkillReference{Name: "severity-triage"}) {
 		t.Errorf("definition skills: got %+v, want [severity-triage]", def.Skills)
 	}
 }

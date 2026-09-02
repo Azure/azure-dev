@@ -322,36 +322,8 @@ func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, connect
 	managed.Tools = append(managed.Tools, mcpTool)
 }
 
-// promptSkillShellToolType is the tool a harness-less prompt agent uses to run
-// its skills. A skill bundle is files plus a script, so the agent needs shell
-// execution to invoke one; a managed agent gets the equivalent from its harness
-// sandbox and reaches skills through a toolbox instead.
-const promptSkillShellToolType = "shell"
-
-// injectShellTool ensures the agent's tools include a shell tool, so published
-// skills are actually runnable. An existing shell tool is left in place. The
-// definition is mutated in place.
-func injectShellTool(managed *agent_yaml.PromptAgent) {
-	if managed == nil {
-		return
-	}
-	for _, raw := range managed.Tools {
-		tool, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if fmt.Sprintf("%v", tool["type"]) == promptSkillShellToolType {
-			return
-		}
-	}
-	managed.Tools = append(managed.Tools, map[string]any{
-		"type": promptSkillShellToolType,
-	})
-}
-
 // skillsShellNode builds the skills graph node for a *harness-less* prompt
-// agent: bundles are referenced by name on the definition and made runnable by
-// a shell tool.
+// agent: bundles are referenced by name and version on the definition.
 //
 // This is the counterpart to toolboxNode, which serves managed agents. The two
 // are mutually exclusive — a toolbox is only reachable from inside a harness
@@ -389,11 +361,8 @@ func skillsShellNode(
 				return err
 			}
 			for _, s := range resolved {
-				if !slices.Contains(g.managed.Skills, s.Name) {
-					g.managed.Skills = append(g.managed.Skills, s.Name)
-				}
+				addResolvedPromptSkill(g.managed, s.Name, s.Version)
 			}
-			injectShellTool(g.managed)
 			return nil
 		},
 	}
@@ -423,23 +392,23 @@ func skillsHarnessNode(
 				return err
 			}
 			for _, s := range resolved {
-				if slices.ContainsFunc(g.managed.Harness.Skills, func(existing agent_yaml.HarnessSkillRef) bool {
-					return existing.Name == s.Name
-				}) {
-					continue
-				}
-				// Always pin the version the skill service published, even when
-				// the author did not pin one in SKILL.md. The service returns a
-				// 500 for a skill reference with no version, so "follow the
-				// default" is not an option the wire format actually offers.
-				g.managed.Harness.Skills = append(g.managed.Harness.Skills, agent_yaml.HarnessSkillRef{
-					Name:    s.Name,
-					Version: s.Version,
-				})
+				addResolvedPromptSkill(g.managed, s.Name, s.Version)
 			}
 			return nil
 		},
 	}
+}
+
+func addResolvedPromptSkill(agent *agent_yaml.PromptAgent, name, version string) {
+	for i, skill := range agent.ResolvedSkills {
+		if strings.EqualFold(skill.Name, name) {
+			if skill.Version == "" {
+				agent.ResolvedSkills[i].Version = version
+			}
+			return
+		}
+	}
+	agent.ResolvedSkills = append(agent.ResolvedSkills, agent_yaml.HarnessSkillRef{Name: name, Version: version})
 }
 
 // validateSkillBundleInstructions rejects a bundle whose SKILL.md has no body.

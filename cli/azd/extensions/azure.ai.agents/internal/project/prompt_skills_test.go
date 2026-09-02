@@ -321,11 +321,8 @@ func TestSkillsHarnessNode_NoneReturnsNil(t *testing.T) {
 	}
 }
 
-// TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool is the core of the
-// harnessed skills contract: skills land on the harness as versioned
-// references taken from the sibling skill services' markers, and nothing is
-// added to tools. A skill is not a tool, and the toolbox that used to carry
-// them is service-owned.
+// TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool verifies resolved skills
+// are stored as versioned top-level references for request mapping.
 func TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
 	managed.Name = "agent"
@@ -357,14 +354,11 @@ func TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool(t *testing.T) {
 		{Name: "skill-a", Version: "7"},
 		{Name: "skill-b", Version: "7"},
 	}
-	if !slices.Equal(managed.Harness.Skills, want) {
-		t.Errorf("harness skills: got %+v, want %+v", managed.Harness.Skills, want)
+	if !slices.Equal(managed.ResolvedSkills, want) {
+		t.Errorf("resolved skills: got %+v, want %+v", managed.ResolvedSkills, want)
 	}
 	if len(managed.Tools) != 0 {
 		t.Errorf("a skill must not become a tool, got %+v", managed.Tools)
-	}
-	if len(managed.Skills) != 0 {
-		t.Errorf("harnessed skills must not land on the definition-level field, got %+v", managed.Skills)
 	}
 }
 
@@ -387,8 +381,8 @@ func TestSkillsHarnessNode_PinsVersionEvenWhenUnpinned(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 
-	if len(managed.Harness.Skills) != 1 || managed.Harness.Skills[0].Version != "3" {
-		t.Errorf("expected the published version pinned, got %+v", managed.Harness.Skills)
+	if len(managed.ResolvedSkills) != 1 || managed.ResolvedSkills[0].Version != "3" {
+		t.Errorf("expected the published version pinned, got %+v", managed.ResolvedSkills)
 	}
 }
 
@@ -397,8 +391,10 @@ func TestSkillsHarnessNode_ResolveIsIdempotent(t *testing.T) {
 		Model:        "m",
 		Instructions: "i",
 		Harness:      testPromptHarness(),
+		ResolvedSkills: []agent_yaml.HarnessSkillRef{
+			{Name: "skill-a", Version: "7"},
+		},
 	}
-	managed.Harness.Skills = []agent_yaml.HarnessSkillRef{{Name: "skill-a", Version: "7"}}
 	g := &promptGraph{
 		managed:  managed,
 		bindings: map[string]any{},
@@ -413,8 +409,8 @@ func TestSkillsHarnessNode_ResolveIsIdempotent(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 
-	if len(managed.Harness.Skills) != 1 {
-		t.Errorf("expected no duplicate reference, got %+v", managed.Harness.Skills)
+	if len(managed.ResolvedSkills) != 1 {
+		t.Errorf("expected no duplicate reference, got %+v", managed.ResolvedSkills)
 	}
 }
 
@@ -461,8 +457,8 @@ func TestSkillsHarnessNode_MissingMarkerFails(t *testing.T) {
 	if !strings.Contains(svcErr.Suggestion, "azure.ai.skill") {
 		t.Errorf("suggestion should name the host to declare, got: %v", svcErr.Suggestion)
 	}
-	if len(managed.Harness.Skills) != 0 {
-		t.Errorf("failed resolve must leave the definition untouched, got %+v", managed.Harness.Skills)
+	if len(managed.ResolvedSkills) != 0 {
+		t.Errorf("failed resolve must leave the definition untouched, got %+v", managed.ResolvedSkills)
 	}
 }
 
@@ -524,10 +520,9 @@ func TestSkillsShellNode_RejectsEmptyInstructions(t *testing.T) {
 	}
 }
 
-// TestSkillsShellNode_AttachesAndInjectsShell asserts the node's whole job:
-// reference the skills the sibling services published, and add the shell tool
-// that makes them runnable.
-func TestSkillsShellNode_AttachesAndInjectsShell(t *testing.T) {
+// TestSkillsShellNode_AttachesVersionedReferences asserts the node resolves the
+// exact skill versions published by sibling services.
+func TestSkillsShellNode_AttachesVersionedReferences(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
 	managed.Name = "agent"
 	g := &promptGraph{
@@ -554,14 +549,12 @@ func TestSkillsShellNode_AttachesAndInjectsShell(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 
-	if want := []string{"skill-a", "skill-b"}; !slices.Equal(managed.Skills, want) {
-		t.Errorf("skills: got %v, want %v", managed.Skills, want)
+	want := []agent_yaml.HarnessSkillRef{{Name: "skill-a", Version: "1"}, {Name: "skill-b", Version: "1"}}
+	if !slices.Equal(managed.ResolvedSkills, want) {
+		t.Errorf("resolved skills: got %v, want %v", managed.ResolvedSkills, want)
 	}
-	if len(managed.Tools) != 1 {
-		t.Fatalf("expected the shell tool to be injected, got %+v", managed.Tools)
-	}
-	if got := managed.Tools[0].(map[string]any)["type"]; got != promptSkillShellToolType {
-		t.Errorf("tool type: got %v, want %v", got, promptSkillShellToolType)
+	if len(managed.Tools) != 0 {
+		t.Errorf("skills must not synthesize tools, got %+v", managed.Tools)
 	}
 }
 
@@ -572,8 +565,9 @@ func TestSkillsShellNode_ResolveIsIdempotent(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{
 		Model:        "m",
 		Instructions: "i",
-		Skills:       []string{"skill-a"},
-		Tools:        []any{map[string]any{"type": promptSkillShellToolType}},
+		ResolvedSkills: []agent_yaml.HarnessSkillRef{
+			{Name: "skill-a", Version: "1"},
+		},
 	}
 	managed.Name = "agent"
 	g := &promptGraph{
@@ -590,11 +584,8 @@ func TestSkillsShellNode_ResolveIsIdempotent(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 
-	if want := []string{"skill-a"}; !slices.Equal(managed.Skills, want) {
-		t.Errorf("skills: got %v, want %v", managed.Skills, want)
-	}
-	if len(managed.Tools) != 1 {
-		t.Errorf("expected the existing shell tool to be reused, got %+v", managed.Tools)
+	if len(managed.ResolvedSkills) != 1 {
+		t.Errorf("expected the existing reference to be reused, got %+v", managed.ResolvedSkills)
 	}
 }
 
@@ -615,8 +606,8 @@ func TestSkillsShellNode_MissingMarkerFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an unpublished skill to fail the deploy")
 	}
-	if len(managed.Skills) != 0 || len(managed.Tools) != 0 {
+	if len(managed.ResolvedSkills) != 0 || len(managed.Tools) != 0 {
 		t.Errorf("definition must be left untouched on failure: skills=%v tools=%v",
-			managed.Skills, managed.Tools)
+			managed.ResolvedSkills, managed.Tools)
 	}
 }

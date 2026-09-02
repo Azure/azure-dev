@@ -684,7 +684,7 @@ func (c *EvalClient) doRequestWithHeaders(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, messages.RequestFailed(err)
+		return nil, messages.RequestFailed(urlsafe.Error(err))
 	}
 	defer resp.Body.Close()
 

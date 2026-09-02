@@ -37,6 +37,49 @@ func TestURLHandlesNil(t *testing.T) {
 	assert.Equal(t, "", URL(nil))
 }
 
+// Redacted() masks a userinfo password and prints the username verbatim, so a
+// credential passed either way has to be dropped here rather than rendered.
+func TestURLDropsUserinfoCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+	}{
+		{"password", "https://user:" + sasSecret + "@acct.blob.core.windows.net/c/rows.jsonl"},
+		{"token as username", "https://" + sasSecret + "@acct.blob.core.windows.net/c/rows.jsonl"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u, err := url.Parse(tc.raw)
+			require.NoError(t, err)
+
+			safe := URL(u)
+			assert.NotContains(t, safe, sasSecret, "userinfo must never reach a log")
+			assert.NotContains(t, safe, "@")
+			assert.Equal(t, "https://acct.blob.core.windows.net/c/rows.jsonl", safe)
+			assert.Equal(t, tc.raw, u.String(), "the caller's URL is untouched")
+		})
+	}
+
+	u, err := url.Parse("https://" + sasSecret + "@acct.blob.core.windows.net/c/rows.jsonl")
+	require.NoError(t, err)
+	assert.Contains(t, u.Redacted(), sasSecret,
+		"guards the premise: Redacted() alone leaks a username-only token")
+}
+
+// The transport error carries the request URL, so userinfo has to be dropped on
+// that path too and not only on the query.
+func TestErrorStripsUserinfoFromTransportFailures(t *testing.T) {
+	original := &url.Error{
+		Op:  "Get",
+		URL: "https://" + sasSecret + "@acct.blob.core.windows.net/c/rows.jsonl",
+		Err: errors.New("dial tcp: lookup failed"),
+	}
+
+	got := Error(original)
+
+	assert.NotContains(t, got.Error(), sasSecret)
+	assert.Contains(t, got.Error(), "acct.blob.core.windows.net")
+}
+
 func TestErrorStripsTheSASFromTransportFailures(t *testing.T) {
 	inner := errors.New("dial tcp: lookup failed")
 	original := &url.Error{

@@ -75,7 +75,7 @@ const privateStatePath = "eval.state"
 //
 //  1. --project-endpoint
 //  2. the active azd environment (FOUNDRY_PROJECT_ENDPOINT, then AZURE_AI_PROJECT_ENDPOINT)
-//  3. global config: extensions.ai-agents.project.context.endpoint
+//  3. global config: extensions.ai-projects.context.endpoint
 //  4. the host environment variables of the same two names
 //  5. otherwise an error naming how to set one
 func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, error) {

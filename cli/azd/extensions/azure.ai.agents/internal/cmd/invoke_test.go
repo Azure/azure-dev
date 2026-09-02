@@ -23,6 +23,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc"
 )
@@ -966,6 +967,93 @@ func TestResolveDeployedProtocolLookupFailure(t *testing.T) {
 	}
 	if got := azdext.ErrorSuggestion(roundTripped); got != wantSuggestion {
 		t.Errorf("round-tripped suggestion = %q, want %q", got, wantSuggestion)
+	}
+}
+
+func TestResolveDeployedProtocolLookupAuthenticationFailure(t *testing.T) {
+	original := getRemoteAgent
+	t.Cleanup(func() {
+		getRemoteAgent = original
+	})
+
+	lookupErr := &azidentity.AuthenticationFailedError{}
+	getRemoteAgent = func(
+		context.Context,
+		*remoteContext,
+	) (*agent_api.AgentObject, error) {
+		return nil, lookupErr
+	}
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	_, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{name: "agent"},
+	)
+	if err == nil {
+		t.Fatal("expected lookup error, got nil")
+	}
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("error type = %T, want *azdext.LocalError", err)
+	}
+	if localErr.Category != azdext.LocalErrorCategoryAuth {
+		t.Errorf("error category = %q, want %q", localErr.Category, azdext.LocalErrorCategoryAuth)
+	}
+	if localErr.Code != exterrors.CodeAuthFailed {
+		t.Errorf("error code = %q, want %q", localErr.Code, exterrors.CodeAuthFailed)
+	}
+	if localErr.Message != lookupErr.Error() {
+		t.Errorf("error message = %q, want %q", localErr.Message, lookupErr.Error())
+	}
+	if localErr.Suggestion != "run `azd auth login` to authenticate" {
+		t.Errorf("error suggestion = %q, want authentication guidance", localErr.Suggestion)
+	}
+	if strings.Contains(localErr.Suggestion, "--protocol") {
+		t.Errorf("error suggestion = %q, must not contain protocol workaround", localErr.Suggestion)
+	}
+}
+
+func TestResolveDeployedProtocolLookupCancellation(t *testing.T) {
+	original := getRemoteAgent
+	t.Cleanup(func() {
+		getRemoteAgent = original
+	})
+
+	getRemoteAgent = func(
+		context.Context,
+		*remoteContext,
+	) (*agent_api.AgentObject, error) {
+		return nil, context.Canceled
+	}
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	_, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{name: "agent"},
+	)
+	if err == nil {
+		t.Fatal("expected lookup error, got nil")
+	}
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("error type = %T, want *azdext.LocalError", err)
+	}
+	if localErr.Category != azdext.LocalErrorCategoryUser {
+		t.Errorf("error category = %q, want %q", localErr.Category, azdext.LocalErrorCategoryUser)
+	}
+	if localErr.Code != exterrors.CodeCancelled {
+		t.Errorf("error code = %q, want %q", localErr.Code, exterrors.CodeCancelled)
+	}
+	if localErr.Message != "get_agent was cancelled" {
+		t.Errorf("error message = %q, want cancellation guidance", localErr.Message)
+	}
+	if localErr.Suggestion != "" {
+		t.Errorf("error suggestion = %q, want no suggestion", localErr.Suggestion)
+	}
+	if strings.Contains(localErr.Message, "--protocol") {
+		t.Errorf("error message = %q, must not contain protocol workaround", localErr.Message)
 	}
 }
 

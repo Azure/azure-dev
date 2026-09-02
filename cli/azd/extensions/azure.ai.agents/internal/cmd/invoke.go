@@ -646,6 +646,14 @@ func remoteProtocolLookupError(agentName string, err error) error {
 		return serviceErr
 	}
 	if localErr, ok := errors.AsType[*azdext.LocalError](structured); ok {
+		if localErr.Category == azdext.LocalErrorCategoryAuth ||
+			(localErr.Category == azdext.LocalErrorCategoryUser &&
+				localErr.Code == exterrors.CodeCancelled) {
+			return localErr
+		}
+		if localErr.Category != azdext.LocalErrorCategoryInternal {
+			return localErr
+		}
 		localErr.Message = message
 		localErr.Suggestion = suggestion
 		return localErr

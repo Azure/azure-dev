@@ -1984,11 +1984,7 @@ func TestPrepareDeploySetsDigitalWorkerType(t *testing.T) {
 		prep.request.AgentEndpoint.Protocols,
 	)
 	require.Len(t, prep.request.AgentEndpoint.AuthorizationSchemes, 1)
-	require.Equal(
-		t,
-		agent_api.AgentEndpointAuthSchemeBotServiceTenant,
-		prep.request.AgentEndpoint.AuthorizationSchemes[0].Type,
-	)
+	require.Equal(t, agent_api.AgentEndpointAuthSchemeBotServiceRbac, prep.request.AgentEndpoint.AuthorizationSchemes[0].Type)
 }
 
 func TestPrepareDeployUsesRbacForSimpleActivityEndpoint(t *testing.T) {
@@ -2029,7 +2025,7 @@ func TestPrepareDeployUsesRbacForSimpleActivityEndpoint(t *testing.T) {
 	)
 }
 
-func TestEnsureActivityEndpointAuthSchemeForPromotedDigitalWorker(t *testing.T) {
+func TestEnsureActivityEndpointAuthSchemeForPromotedDigitalWorkerPreservesExplicitScheme(t *testing.T) {
 	t.Parallel()
 
 	request := &agent_api.CreateAgentRequest{
@@ -2049,30 +2045,18 @@ func TestEnsureActivityEndpointAuthSchemeForPromotedDigitalWorker(t *testing.T) 
 
 	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
 		{Type: agent_api.AgentEndpointAuthSchemeEntra},
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
 	}, request.AgentEndpoint.AuthorizationSchemes)
 }
 
-func TestEnsureActivityEndpointAuthSchemeReplacesLegacyBotService(t *testing.T) {
+func TestEnsureActivityEndpointAuthSchemePreservesExplicitLegacyBotService(t *testing.T) {
 	t.Parallel()
 
-	for _, test := range []struct {
-		name    string
-		useCase ActivityUseCase
-		want    agent_api.AgentEndpointAuthorizationSchemeType
-	}{
-		{
-			name:    "digital worker",
-			useCase: ActivityUseCaseDigitalWorker,
-			want:    agent_api.AgentEndpointAuthSchemeBotServiceTenant,
-		},
-		{
-			name:    "simple activity",
-			useCase: ActivityUseCaseSimple,
-			want:    agent_api.AgentEndpointAuthSchemeBotServiceRbac,
-		},
+	for _, useCase := range []ActivityUseCase{
+		ActivityUseCaseDigitalWorker,
+		ActivityUseCaseSimple,
 	} {
-		t.Run(test.name, func(t *testing.T) {
+		t.Run(string(useCase), func(t *testing.T) {
 			request := &agent_api.CreateAgentRequest{
 				AgentEndpoint: &agent_api.AgentEndpoint{
 					AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
@@ -2084,12 +2068,12 @@ func TestEnsureActivityEndpointAuthSchemeReplacesLegacyBotService(t *testing.T) 
 
 			ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
 				IsActivity: true,
-				UseCase:    test.useCase,
+				UseCase:    useCase,
 			})
 
 			require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
 				{Type: agent_api.AgentEndpointAuthSchemeEntra},
-				{Type: test.want},
+				{Type: agent_api.AgentEndpointAuthSchemeBotService},
 			}, request.AgentEndpoint.AuthorizationSchemes)
 		})
 	}

@@ -114,7 +114,7 @@ func TestReconcileStandaloneEndpointWithDeployedDigitalWorker(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
 	}, request.AgentEndpoint.AuthorizationSchemes)
 }
 
@@ -132,7 +132,7 @@ func TestReconcileStandaloneEndpointCreatesEndpointForDeployedDigitalWorker(t *t
 		agent_api.AgentEndpointProtocolActivity,
 	}, request.AgentEndpoint.Protocols)
 	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
 	}, request.AgentEndpoint.AuthorizationSchemes)
 }
 
@@ -158,6 +158,5 @@ func TestReconcileStandaloneEndpointPromotesNonActivityDefinitionForDeployedDigi
 	}, request.AgentEndpoint.Protocols)
 	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
 		{Type: agent_api.AgentEndpointAuthSchemeEntra},
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
 	}, request.AgentEndpoint.AuthorizationSchemes)
 }

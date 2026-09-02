@@ -284,6 +284,11 @@ func newRunTraceChatCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				if err := requireValue("trace-id", traceID); err != nil {
 					return err
 				}
+			} else if cmd.Flags().Changed("trace-id") {
+				return conflictingExperimentArguments(
+					"--request-file cannot be combined with --trace-id",
+					"remove either --request-file or --trace-id",
+				)
 			}
 			client, err := newExperimentClient(cmd.Context(), flags.experimentFlags)
 			if err != nil {
@@ -399,6 +404,16 @@ func newRunSpansQueryCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			if err := requireValue("run-id", flags.runID); err != nil {
 				return err
 			}
+			if requestFile != "" {
+				for _, flag := range []string{"filter", "filter-file", "include-details", "limit"} {
+					if cmd.Flags().Changed(flag) {
+						return conflictingExperimentArguments(
+							fmt.Sprintf("--request-file cannot be combined with --%s", flag),
+							fmt.Sprintf("remove either --request-file or --%s", flag),
+						)
+					}
+				}
+			}
 			client, err := newExperimentClient(cmd.Context(), flags.experimentFlags)
 			if err != nil {
 				return err
@@ -406,12 +421,6 @@ func newRunSpansQueryCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 			var body any
 			if requestFile != "" {
-				if filter != "" || filterFile != "" {
-					return invalidExperimentParameter(
-						"request-file",
-						"--request-file cannot be combined with --filter or --filter-file",
-					)
-				}
 				body, err = readJSONObject(requestFile)
 			} else {
 				query, queryErr := readFilterExpression(filter, filterFile)
@@ -753,7 +762,7 @@ func classifyExperimentError(err error) error {
 	if exterrors.IsCancellation(err) {
 		return exterrors.Cancelled("experiment request was cancelled")
 	}
-	if strings.Contains(strings.ToLower(err.Error()), "access token") {
+	if errors.Is(err, experimenttracking.ErrTokenAcquisition) {
 		return exterrors.Auth(
 			exterrors.CodeAuthenticationFailed,
 			fmt.Sprintf("authenticate to Foundry experiment tracking: %s", err),
@@ -985,6 +994,14 @@ func invalidExperimentParameter(name string, message string) error {
 		exterrors.CodeInvalidParameter,
 		message,
 		fmt.Sprintf("provide a valid --%s value", name),
+	)
+}
+
+func conflictingExperimentArguments(message string, suggestion string) error {
+	return exterrors.Validation(
+		exterrors.CodeConflictingArguments,
+		message,
+		suggestion,
 	)
 }
 

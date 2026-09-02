@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,6 +68,34 @@ func TestResolveProjectEndpointPrefersFoundryHostVariable(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, foundryEndpoint, resolved.Endpoint)
+}
+
+func TestResolveProjectEndpointUsesHostFallbackWhenAzdSourcesFail(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", testProjectEndpoint)
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "")
+
+	resolved, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+		ReadAzdHostedSources: func(context.Context) (azdHostedSources, error) {
+			return azdHostedSources{}, errors.New("read persisted context")
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, testProjectEndpoint, resolved.Endpoint)
+}
+
+func TestResolveProjectEndpointReturnsAzdSourceErrorWithoutFallback(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "")
+	sourceErr := errors.New("read persisted context")
+
+	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+		ReadAzdHostedSources: func(context.Context) (azdHostedSources, error) {
+			return azdHostedSources{}, sourceErr
+		},
+	})
+
+	require.ErrorIs(t, err, sourceErr)
 }
 
 func TestValidateProjectEndpointDoesNotDiscloseCredentials(t *testing.T) {

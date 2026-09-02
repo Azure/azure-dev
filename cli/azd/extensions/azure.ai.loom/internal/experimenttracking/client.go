@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,9 @@ const (
 	defaultTimeout    = 30 * time.Second
 	ingestionTimeout  = 5 * time.Minute
 )
+
+// ErrTokenAcquisition identifies failures acquiring a Foundry access token.
+var ErrTokenAcquisition = errors.New("acquire Foundry access token")
 
 // Client calls the experiment-tracking APIs for a Foundry project.
 type Client struct {
@@ -289,7 +293,7 @@ func (c *Client) doWithHTTPClient(
 			Scopes: []string{foundryScope},
 		})
 		if tokenErr != nil {
-			return nil, fmt.Errorf("acquire Foundry access token: %w", tokenErr)
+			return nil, fmt.Errorf("%w: %w", ErrTokenAcquisition, tokenErr)
 		}
 		req.Header.Set("Authorization", "Bearer "+token.Token)
 	}
@@ -301,14 +305,14 @@ func (c *Client) doWithHTTPClient(
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, runtime.NewResponseError(resp)
+		return nil, newLimitedResponseError(resp, maxResponseBytes)
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	data, truncated, err := readLimitedBody(resp.Body, maxResponseBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read response body: %w", err)
 	}
-	if len(data) > maxResponseBytes {
+	if truncated {
 		return nil, fmt.Errorf("response body exceeds %d bytes", maxResponseBytes)
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
@@ -316,6 +320,30 @@ func (c *Client) doWithHTTPClient(
 	}
 
 	return json.RawMessage(data), nil
+}
+
+func newLimitedResponseError(resp *http.Response, maxBytes int64) error {
+	data, truncated, err := readLimitedBody(resp.Body, maxBytes)
+	if err != nil {
+		return fmt.Errorf("read error response body: %w", err)
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(data))
+	responseErr := runtime.NewResponseError(resp)
+	if truncated {
+		return fmt.Errorf("error response body exceeds %d bytes: %w", maxBytes, responseErr)
+	}
+	return responseErr
+}
+
+func readLimitedBody(reader io.Reader, maxBytes int64) ([]byte, bool, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(data)) > maxBytes {
+		return data[:maxBytes], true, nil
+	}
+	return data, false, nil
 }
 
 func (c *Client) requestURL(apiPath string, query url.Values) (string, error) {

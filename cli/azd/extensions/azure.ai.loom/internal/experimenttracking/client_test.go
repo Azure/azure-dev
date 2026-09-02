@@ -6,9 +6,11 @@ package experimenttracking
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -192,6 +194,29 @@ func TestDoJSONReturnsResponseError(t *testing.T) {
 	_, err = client.DoJSON(t.Context(), http.MethodGet, "runs", nil, nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "BadFilter")
+}
+
+func TestNewLimitedResponseErrorBoundsBody(t *testing.T) {
+	const maxBytes = 8
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"error":"response body is too large"}`)),
+		Request: &http.Request{
+			Method: http.MethodGet,
+			URL:    new(url.URL),
+		},
+	}
+
+	err := newLimitedResponseError(resp, maxBytes)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds 8 bytes")
+	responseErr, ok := errors.AsType[*azcore.ResponseError](err)
+	require.True(t, ok)
+	body, readErr := io.ReadAll(responseErr.RawResponse.Body)
+	require.NoError(t, readErr)
+	assert.Len(t, body, maxBytes)
 }
 
 func TestRunHeaders(t *testing.T) {

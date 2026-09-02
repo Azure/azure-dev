@@ -6,6 +6,7 @@ package exterrors
 const (
 	CodeCancelled                 = "cancelled"
 	CodeInvalidParameter          = "invalid_parameter"
+	CodeConflictingArguments      = "conflicting_arguments"
 	CodeInvalidExperimentPayload  = "invalid_experiment_payload"
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeExperimentInputReadFailed = "experiment_input_read_failed"

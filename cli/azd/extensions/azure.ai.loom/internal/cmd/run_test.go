@@ -9,12 +9,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"azure.ai.loom/internal/experimenttracking"
 	"azure.ai.loom/internal/exterrors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -195,6 +198,81 @@ func TestRequiredFlagsAreValidatedInOrder(t *testing.T) {
 	}
 }
 
+func TestCompleteRequestFilesRejectIgnoredFlags(t *testing.T) {
+	tests := []struct {
+		name       string
+		newCommand func() *cobra.Command
+		args       []string
+	}{
+		{
+			name:       "trace ID",
+			newCommand: func() *cobra.Command { return newRunTraceChatCommand(nil) },
+			args:       []string{"--run-id", "run-one", "--request-file", "request.json", "--trace-id", "trace-one"},
+		},
+		{
+			name:       "empty trace ID",
+			newCommand: func() *cobra.Command { return newRunTraceChatCommand(nil) },
+			args:       []string{"--run-id", "run-one", "--request-file", "request.json", "--trace-id", ""},
+		},
+		{
+			name:       "span filter",
+			newCommand: func() *cobra.Command { return newRunSpansQueryCommand(nil) },
+			args:       []string{"--run-id", "run-one", "--request-file", "request.json", "--filter", `{}`},
+		},
+		{
+			name:       "empty span filter",
+			newCommand: func() *cobra.Command { return newRunSpansQueryCommand(nil) },
+			args:       []string{"--run-id", "run-one", "--request-file", "request.json", "--filter", ""},
+		},
+		{
+			name:       "span filter file",
+			newCommand: func() *cobra.Command { return newRunSpansQueryCommand(nil) },
+			args:       []string{"--run-id", "run-one", "--request-file", "request.json", "--filter-file", "filter.json"},
+		},
+		{
+			name:       "empty span filter file",
+			newCommand: func() *cobra.Command { return newRunSpansQueryCommand(nil) },
+			args:       []string{"--run-id", "run-one", "--request-file", "request.json", "--filter-file", ""},
+		},
+		{
+			name:       "span include details",
+			newCommand: func() *cobra.Command { return newRunSpansQueryCommand(nil) },
+			args:       []string{"--run-id", "run-one", "--request-file", "request.json", "--include-details"},
+		},
+		{
+			name:       "span include details false",
+			newCommand: func() *cobra.Command { return newRunSpansQueryCommand(nil) },
+			args:       []string{"--run-id", "run-one", "--request-file", "request.json", "--include-details=false"},
+		},
+		{
+			name:       "span limit",
+			newCommand: func() *cobra.Command { return newRunSpansQueryCommand(nil) },
+			args:       []string{"--run-id", "run-one", "--request-file", "request.json", "--limit", "5"},
+		},
+		{
+			name:       "default span limit",
+			newCommand: func() *cobra.Command { return newRunSpansQueryCommand(nil) },
+			args:       []string{"--run-id", "run-one", "--request-file", "request.json", "--limit", "10"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command := test.newCommand()
+			command.SetOut(io.Discard)
+			command.SetErr(io.Discard)
+			command.SetArgs(test.args)
+
+			err := command.Execute()
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+			assert.Contains(t, localErr.Message, "--request-file")
+		})
+	}
+}
+
 func TestReadJSONObjectPreservesLargeInteger(t *testing.T) {
 	requestPath := filepath.Join(t.TempDir(), "request.json")
 	require.NoError(t, os.WriteFile(
@@ -240,12 +318,36 @@ func TestReadNonEmptyExperimentInputRejectsEmptyPayload(t *testing.T) {
 }
 
 func TestClassifyExperimentErrorPreservesCancellation(t *testing.T) {
-	err := classifyExperimentError(fmt.Errorf("acquire Foundry access token: %w", context.Canceled))
+	err := classifyExperimentError(
+		fmt.Errorf("%w: %w", experimenttracking.ErrTokenAcquisition, context.Canceled),
+	)
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	assert.Equal(t, azdext.LocalErrorCategoryUser, localErr.Category)
 	assert.Equal(t, exterrors.CodeCancelled, localErr.Code)
+}
+
+func TestClassifyExperimentErrorUsesTypedTokenAcquisitionError(t *testing.T) {
+	err := classifyExperimentError(
+		fmt.Errorf("%w: %w", experimenttracking.ErrTokenAcquisition, assert.AnError),
+	)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, azdext.LocalErrorCategoryAuth, localErr.Category)
+	assert.Equal(t, exterrors.CodeAuthenticationFailed, localErr.Code)
+}
+
+func TestClassifyExperimentErrorPreservesServiceResponse(t *testing.T) {
+	err := classifyExperimentError(&azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		ErrorCode:  "AccessTokenDenied",
+	})
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	assert.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
 }
 
 func TestSetAgentTracesRunIDOverridesPayload(t *testing.T) {

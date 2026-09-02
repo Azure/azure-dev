@@ -81,10 +81,7 @@ func resolveProjectEndpoint(
 	if readSources == nil {
 		readSources = readAzdHostedSources
 	}
-	sources, err := readSources(ctx)
-	if err != nil {
-		return nil, err
-	}
+	sources, sourcesErr := readSources(ctx)
 	for _, candidate := range []string{
 		sources.EnvValue,
 		sources.Config.Endpoint,
@@ -99,6 +96,9 @@ func resolveProjectEndpoint(
 			return nil, err
 		}
 		return &resolvedEndpoint{Endpoint: endpoint}, nil
+	}
+	if sourcesErr != nil {
+		return nil, sourcesErr
 	}
 	return nil, noProjectEndpointError()
 }

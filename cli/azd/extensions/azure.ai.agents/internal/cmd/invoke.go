@@ -48,7 +48,7 @@ type invokeFlags struct {
 	outputFmt       string
 	callID          string
 	clientHeaders   []string
-	background      bool
+	resumable       bool
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -123,9 +123,9 @@ behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
 
-Use --background with the Responses protocol to start work that continues running in
+Use --resumable with the Responses protocol to start work that continues running in
 the service if this command disconnects. The command remains attached until the work
-finishes. Background invocation is remote-only, does not support raw output, and cannot
+finishes. Resumable invocation is remote-only, does not support raw output, and cannot
 be combined with --timeout.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
@@ -156,7 +156,7 @@ be combined with --timeout.`,
 
   # Start work that continues in the service if this command disconnects,
   # while remaining attached until it finishes
-  azd ai agent invoke --background "Run the long task"
+  azd ai agent invoke --resumable "Run the long task"
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
@@ -271,25 +271,25 @@ be combined with --timeout.`,
 			}
 			action.clientHeaders = clientHeaders
 
-			if flags.background {
+			if flags.resumable {
 				if cmd.Flags().Changed("timeout") {
 					return exterrors.Validation(
 						exterrors.CodeConflictingArguments,
-						"--timeout cannot be used with --background",
+						"--timeout cannot be used with --resumable",
 						"remove --timeout; background Responses remain attached until completion or interruption",
 					)
 				}
 				if flags.local {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--background is supported only for remote Responses agents",
+						"--resumable is supported only for remote Responses agents",
 						"remove --local and invoke a deployed Responses agent",
 					)
 				}
 				if flags.outputFmt == outputRaw {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--output raw is not supported with --background",
+						"--output raw is not supported with --resumable",
 						"remove --output raw so azd can save the Response identity and cursor",
 					)
 				}
@@ -345,10 +345,10 @@ be combined with --timeout.`,
 		"Agent version to invoke (creates or reuses a session backed by that version)",
 	)
 	cmd.Flags().BoolVar(
-		&flags.background,
-		"background",
+		&flags.resumable,
+		"resumable",
 		false,
-		"Start work that continues in the service if the command disconnects; remain attached until it finishes",
+		"Start resumable work that continues in the service if the command disconnects; remain attached until it finishes",
 	)
 
 	// Register `raw` as an additional allowed value on the inherited global
@@ -471,11 +471,11 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// populated, but a2aRemote never calls applyCustomHeaders — the headers
 	// would be silently dropped, which is the exact silent no-op the guard
 	// intends to prevent.
-	if a.flags.background && protocol != agent_api.AgentProtocolResponses {
+	if a.flags.resumable && protocol != agent_api.AgentProtocolResponses {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--background is not supported with the %s protocol", protocol),
-			"use a deployed Responses agent or remove --background",
+			fmt.Sprintf("--resumable is not supported with the %s protocol", protocol),
+			"use a deployed Responses agent or remove --resumable",
 		)
 	}
 
@@ -1175,7 +1175,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	var responseStore responseStateStore
-	if a.flags.background {
+	if a.flags.resumable {
 		if rc.azdClient == nil || agentKey == "" {
 			return responseStateUnavailable(nil)
 		}
@@ -1210,7 +1210,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if sid != "" {
 		reqBody["agent_session_id"] = sid
 	}
-	if a.flags.background {
+	if a.flags.resumable {
 		reqBody["store"] = true
 		reqBody["background"] = true
 	}
@@ -1284,7 +1284,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
-	if a.flags.background {
+	if a.flags.resumable {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.ResponseHeaderTimeout = 30 * time.Second
 		client = &http.Client{Transport: transport}
@@ -1329,7 +1329,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", respURL, resp.StatusCode, resp.Status, string(respBody))
 	}
 	// Parse SSE stream for agent output.
-	if !a.flags.background {
+	if !a.flags.resumable {
 		if err := readResponsesSSE(ctx, resp.Body, os.Stdout, rc.name, responsesSSEOptions{}); err != nil {
 			return err
 		}

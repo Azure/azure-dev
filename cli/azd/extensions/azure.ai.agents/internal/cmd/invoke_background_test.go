@@ -22,12 +22,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestInvokeCommandBackgroundFlagRegistered(t *testing.T) {
+func TestInvokeCommandResumableFlagRegistered(t *testing.T) {
 	t.Parallel()
 
-	flag := newInvokeCommand(nil).Flags().Lookup("background")
+	flags := newInvokeCommand(nil).Flags()
+	flag := flags.Lookup("resumable")
 	require.NotNil(t, flag)
 	assert.Equal(t, "false", flag.DefValue)
+	assert.Nil(t, flags.Lookup("background"))
 }
 
 type orderingResponseStore struct {
@@ -401,24 +403,24 @@ func TestInvokeCommandBackgroundValidation(t *testing.T) {
 	}{
 		{
 			name: "rejects local",
-			args: []string{"--background", "--local", "hello"},
+			args: []string{"--resumable", "--local", "hello"},
 			want: "supported only for remote Responses agents",
 		},
 		{
 			name: "rejects explicit invocations protocol",
-			args: []string{"--background", "--protocol", "invocations", "hello"},
-			want: "--background is not supported with the invocations protocol",
+			args: []string{"--resumable", "--protocol", "invocations", "hello"},
+			want: "--resumable is not supported with the invocations protocol",
 		},
 		{
 			name:     "rejects explicit timeout",
-			args:     []string{"--background", "--timeout", "1", "hello"},
-			want:     "--timeout cannot be used with --background",
+			args:     []string{"--resumable", "--timeout", "1", "hello"},
+			want:     "--timeout cannot be used with --resumable",
 			wantCode: exterrors.CodeConflictingArguments,
 		},
 		{
 			name:     "rejects explicitly set default timeout",
-			args:     []string{"--background", "--timeout", "1800", "hello"},
-			want:     "--timeout cannot be used with --background",
+			args:     []string{"--resumable", "--timeout", "1800", "hello"},
+			want:     "--timeout cannot be used with --resumable",
 			wantCode: exterrors.CodeConflictingArguments,
 		},
 	}
@@ -447,7 +449,7 @@ func TestInvokeCommandBackgroundEndpointRoutesHostFailure(t *testing.T) {
 
 	cmd := newInvokeCommand(nil)
 	cmd.SetArgs([]string{
-		"--background",
+		"--resumable",
 		"--agent-endpoint",
 		"https://acct.services.ai.azure.com/api/projects/proj/agents/test-agent/endpoint/protocols/openai/responses",
 		"hello",
@@ -461,7 +463,7 @@ func TestInvokeCommandBackgroundEndpointRoutesHostFailure(t *testing.T) {
 	assert.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
 	assert.Equal(t, exterrors.OpReadBackgroundResponseState, localErr.Code)
 	assert.Empty(t, localErr.Suggestion)
-	assert.NotContains(t, err.Error(), "--background is not supported with --agent-endpoint")
+	assert.NotContains(t, err.Error(), "--resumable is not supported with --agent-endpoint")
 }
 
 func TestClassifyBackgroundResponseStateReadError(t *testing.T) {

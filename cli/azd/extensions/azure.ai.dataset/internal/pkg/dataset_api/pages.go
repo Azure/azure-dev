@@ -118,7 +118,9 @@ func (c *DatasetClient) doRequestGetURL(ctx context.Context, rawURL string) ([]b
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, messages.RequestFailed(err)
+		// A nextLink carries its SAS in the query, and a DNS, TLS or timeout
+		// failure returns a *url.Error holding the whole link.
+		return nil, messages.RequestFailed(urlsafe.Error(err))
 	}
 	defer resp.Body.Close()
 

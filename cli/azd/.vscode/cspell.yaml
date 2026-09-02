@@ -51,7 +51,6 @@ words:
   - errgroup
   - errorchain
   - errorhandler
-  - conversionerror
   - extendee
   - eiannone
   - firstrun

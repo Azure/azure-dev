@@ -139,7 +139,7 @@ Generic-only error chains now use the catch-all ResultCode `internal.unclassifie
 the previous `internal.errors_errorString`. Use `error.chain.types` to inspect the concrete
 wrapper types behind that bucket. Host-originated gRPC statuses use
 `internal.grpc.<status>` when no more specific mapping applies, and mapper conversion failures
-use `internal.mapper_conversionerror` with the mapper type fields above. Structured extension
+use `internal.mapper_conversion` with the mapper type fields above. Structured extension
 tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `error.inner` and
 `error.frame` attributes were not emitted by azd spans.
 

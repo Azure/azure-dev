@@ -243,7 +243,7 @@ func classify(err error) (string, []attribute.KeyValue) {
 }
 
 func classifyConversionError(conversionErr *mapper.ConversionError) (string, []attribute.KeyValue) {
-	return "internal.mapper_conversionerror", []attribute.KeyValue{
+	return "internal.mapper_conversion", []attribute.KeyValue{
 		fields.MapperSourceType.String(conversionErr.SourceTypeName()),
 		fields.MapperDestinationType.String(conversionErr.DestinationTypeName()),
 	}

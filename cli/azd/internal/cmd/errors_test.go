@@ -1321,7 +1321,7 @@ func TestMapError_ConversionError(t *testing.T) {
 
 	MapError(err, span)
 
-	require.Equal(t, "internal.mapper_conversionerror", span.Status.Description)
+	require.Equal(t, "internal.mapper_conversion", span.Status.Description)
 	require.Contains(t, span.Attributes,
 		fields.ErrorKey(fields.MapperSourceType.Key).String("string"))
 	require.Contains(t, span.Attributes,

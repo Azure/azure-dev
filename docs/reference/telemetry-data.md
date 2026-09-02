@@ -262,7 +262,7 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `ext.auth.*` | Extension auth error | `ext.auth.expired` |
 | `ext.dependency.*` | Extension dependency error | `ext.dependency.missing` |
 | `internal.grpc.<status>` | Host-originated gRPC status without a more specific mapping | `internal.grpc.unavailable` |
-| `internal.mapper_conversionerror` | Conversion between registered Go mapper types failed | — |
+| `internal.mapper_conversion` | Conversion between registered Go mapper types failed | — |
 | `internal.unclassified` | Catch-all for unclassified errors | — |
 | `internal.errors_errorString` | Legacy catch-all (being replaced by `internal.unclassified`) | — |
 

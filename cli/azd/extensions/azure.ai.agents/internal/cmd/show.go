@@ -186,7 +186,7 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	}
 
 	version, err := agentClient.GetAgentVersion(
-		ctx, a.Name, a.Version, DefaultAgentAPIVersion,
+		ctx, a.Name, a.Version, DefaultAgentAPIVersion, false,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to get agent version: %w", err)
@@ -222,7 +222,7 @@ func runPromptShow(ctx context.Context, flags *showFlags, pctx *promptServiceCon
 		return err
 	}
 
-	agent, err := client.GetAgent(ctx, agentName, pctx.Settings.EffectiveAPIVersion())
+	agent, err := client.GetAgent(ctx, agentName, pctx.Settings.EffectiveAPIVersion(), false)
 	if err != nil {
 		return fmt.Errorf("failed to get prompt agent %q: %w", agentName, err)
 	}

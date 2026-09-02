@@ -823,7 +823,7 @@ func makeRealProbeAgentStatus(
 
 		client := agent_api.NewAgentClient(endpoint, cred)
 		v, err := client.GetAgentVersion(
-			ctx, agentName, agentVersion, apiVersion)
+			ctx, agentName, agentVersion, apiVersion, false)
 		if err != nil {
 			if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 				return agentStatusProbeResult{

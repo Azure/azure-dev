@@ -153,9 +153,9 @@ Variables for [External Authentication](./external-authentication.md) integratio
 
 | Variable | Description |
 | --- | --- |
-| `AZD_AUTH_ENDPOINT` | The [External Authentication](./external-authentication.md) endpoint. |
-| `AZD_AUTH_KEY` | The [External Authentication](./external-authentication.md) shared key. |
-| `AZD_AUTH_CERT` | The [External Authentication](./external-authentication.md) client certificate, provided as a base64-encoded DER certificate string. When set, `AZD_AUTH_ENDPOINT` must use HTTPS. |
+| `AZD_AUTH_ENDPOINT` | The [External Authentication](./external-authentication.md) endpoint. Accepts `https://host:port` (loopback HTTPS), `unix:/absolute/path/to/socket` (Linux/macOS Unix domain socket; `AZD_AUTH_CERT` must not be set), or `npipe:<pipe-name>` / `npipe://./pipe/<pipe-name>` / `npipe:////./pipe/<pipe-name>` (Windows-only named pipe; `AZD_AUTH_CERT` must not be set). Named-pipe owners and ACLs are validated; the Windows default read-only Everyone/Anonymous ACEs are accepted, but broader access is refused. |
+| `AZD_AUTH_KEY` | The [External Authentication](./external-authentication.md) shared key. Required for all schemes (`https:`, `unix:`, `npipe:`); sent as `Authorization: Bearer`. |
+| `AZD_AUTH_CERT` | The optional [External Authentication](./external-authentication.md) server certificate, provided as a base64-encoded DER certificate string. When set, `AZD_AUTH_ENDPOINT` must use `https:` and `azd` pins the connection to this certificate. MUST NOT be set when `AZD_AUTH_ENDPOINT` uses `unix:` or `npipe:`. |
 
 ## Tool Configuration
 

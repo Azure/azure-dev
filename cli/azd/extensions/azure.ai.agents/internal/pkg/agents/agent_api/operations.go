@@ -89,9 +89,33 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 	}
 }
 
-// GetAgent retrieves a specific agent by name
-func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string) (*AgentObject, error) {
-	return c.GetAgentWithHeaders(ctx, agentName, apiVersion, nil)
+// DigitalWorkerPreviewFeature opts agent definition operations into the
+// preview Digital Worker contract.
+const DigitalWorkerPreviewFeature = "DigitalWorker=V1Preview"
+
+func setDigitalWorkerPreviewFeature(req *policy.Request) {
+	req.Raw().Header.Set("Foundry-Features", DigitalWorkerPreviewFeature)
+}
+
+func hasDigitalWorkerType(request any) bool {
+	switch request := request.(type) {
+	case *CreateAgentRequest:
+		return request != nil && request.DigitalWorkerType != ""
+	case *CreateAgentVersionRequest:
+		return request != nil && request.DigitalWorkerType != ""
+	default:
+		return false
+	}
+}
+
+// GetAgent retrieves a specific agent by name.
+func (c *AgentClient) GetAgent(
+	ctx context.Context,
+	agentName string,
+	apiVersion string,
+	includeDigitalWorkerType bool,
+) (*AgentObject, error) {
+	return c.getAgent(ctx, agentName, apiVersion, includeDigitalWorkerType, nil)
 }
 
 // GetAgentWithHeaders retrieves an agent and applies additional service headers.
@@ -99,6 +123,16 @@ func (c *AgentClient) GetAgentWithHeaders(
 	ctx context.Context,
 	agentName string,
 	apiVersion string,
+	headers map[string]string,
+) (*AgentObject, error) {
+	return c.getAgent(ctx, agentName, apiVersion, false, headers)
+}
+
+func (c *AgentClient) getAgent(
+	ctx context.Context,
+	agentName string,
+	apiVersion string,
+	includeDigitalWorkerType bool,
 	headers map[string]string,
 ) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
@@ -109,6 +143,9 @@ func (c *AgentClient) GetAgentWithHeaders(
 	}
 	for key, value := range headers {
 		req.Raw().Header.Set(key, value)
+	}
+	if includeDigitalWorkerType {
+		setDigitalWorkerPreviewFeature(req)
 	}
 
 	resp, err := c.pipeline.Do(req)
@@ -159,6 +196,9 @@ func (c *AgentClient) CreateAgentWithHeaders(
 	}
 	for key, value := range headers {
 		req.Raw().Header.Set(key, value)
+	}
+	if hasDigitalWorkerType(request) {
+		setDigitalWorkerPreviewFeature(req)
 	}
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
@@ -521,6 +561,9 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	if hasDigitalWorkerType(request) {
+		setDigitalWorkerPreviewFeature(req)
+	}
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
@@ -639,6 +682,9 @@ func (c *AgentClient) zipDeployRequest(
 
 	// Required headers
 	req.Raw().Header.Set("x-ms-code-zip-sha256", sha256Hex)
+	if agentName != "" && hasDigitalWorkerType(metadata) {
+		setDigitalWorkerPreviewFeature(req)
+	}
 	if agentName != "" {
 		req.Raw().Header.Set("x-ms-agent-name", agentName)
 	}
@@ -666,13 +712,22 @@ func (c *AgentClient) zipDeployRequest(
 	return &agentObj, nil
 }
 
-// GetAgentVersion retrieves a specific version of an agent
-func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersion, apiVersion string) (*AgentVersionObject, error) {
+// GetAgentVersion retrieves a specific version of an agent.
+func (c *AgentClient) GetAgentVersion(
+	ctx context.Context,
+	agentName string,
+	agentVersion string,
+	apiVersion string,
+	includeDigitalWorkerType bool,
+) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if includeDigitalWorkerType {
+		setDigitalWorkerPreviewFeature(req)
 	}
 
 	resp, err := c.pipeline.Do(req)

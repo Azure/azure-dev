@@ -63,9 +63,9 @@ Set by IDE hosts (VS Code, Visual Studio) when spawning azd as a subprocess. Use
 
 | Variable | Description |
 |---|---|
-| `AZD_AUTH_ENDPOINT` | Authentication endpoint URL set by IDE hosts for integrated authentication |
-| `AZD_AUTH_KEY` | Authentication key set by IDE hosts for integrated authentication |
-| `AZD_AUTH_CERT` | Authentication certificate/TLS trust configuration set by IDE hosts |
+| `AZD_AUTH_ENDPOINT` | Authentication endpoint URL set by IDE hosts for integrated authentication. Supports `https://host:port`, `unix:/path/to/socket`, and Windows named pipes as `npipe:<pipe-name>`, `npipe://./pipe/<pipe-name>`, or `npipe:////./pipe/<pipe-name>`. Named-pipe owners and ACLs are validated; the Windows default read-only Everyone/Anonymous ACEs are accepted, but broader access is refused. |
+| `AZD_AUTH_KEY` | Authentication key set by IDE hosts for integrated authentication. Required for all schemes (`https:`, `unix:`, `npipe:`). |
+| `AZD_AUTH_CERT` | Optional authentication certificate/TLS trust configuration set by IDE hosts. When set, the endpoint must use `https:` and `azd` pins the connection to this certificate. Must NOT be set for `unix:` / `npipe:`. |
 
 For details on the external authentication protocol, see [cli/azd/docs/external-authentication.md](../../cli/azd/docs/external-authentication.md).
 

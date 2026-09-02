@@ -6,6 +6,7 @@ package project
 import (
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
 
@@ -113,51 +114,49 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 
 	t.Run("digital worker resolves", func(t *testing.T) {
 		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &ActivityPublishConfig{
-				PublishAsAutopilot: true,
-				PublishScope:       "tenant",
-				AgenticUserTemplate: &AgenticUserTemplateConfig{
-					ID:                    "digitalWorkerTemplate",
-					File:                  "agenticUserTemplateManifest.json",
-					SchemaVersion:         "0.1.0-preview",
-					CommunicationProtocol: "activityProtocol",
-				},
-			},
-		})
-		require.NoError(t, err)
-		require.True(t, profile.IsActivity)
-		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
-	})
-
-	t.Run("digital worker defaults omitted publish scope", func(t *testing.T) {
-		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &ActivityPublishConfig{
-				PublishAsAutopilot: true,
-				AgenticUserTemplate: &AgenticUserTemplateConfig{
-					ID:                    "digitalWorkerTemplate",
-					File:                  "agenticUserTemplateManifest.json",
-					SchemaVersion:         "0.1.0-preview",
-					CommunicationProtocol: "activityProtocol",
-				},
-			},
-		})
-		require.NoError(t, err)
-		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
-	})
-
-	t.Run("digital worker infers autopilot publish", func(t *testing.T) {
-		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
 				PublishScope: "tenant",
-				AgenticUserTemplate: &AgenticUserTemplateConfig{
-					ID:                    "digitalWorkerTemplate",
-					File:                  "agenticUserTemplateManifest.json",
-					SchemaVersion:         "0.1.0-preview",
-					CommunicationProtocol: "activityProtocol",
+			},
+		})
+		require.NoError(t, err)
+		require.True(t, profile.IsActivity)
+		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
+	})
+
+	t.Run("digital worker allows omitted publish block", func(t *testing.T) {
+		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+		})
+		require.NoError(t, err)
+		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
+	})
+
+	t.Run("classification allows publish fields to be overridden later", func(t *testing.T) {
+		boundaries := []string{"invalid.boundary"}
+		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+			Publish: &ActivityPublishConfig{
+				PublishScope: "shared",
+				OptionalPermissionScopes: []Microsoft365PermissionScopes{
+					{Scopes: []string{""}},
 				},
+				AccessBoundaries: &boundaries,
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, ActivityUseCaseDigitalWorker, profile.UseCase)
+	})
+
+	t.Run("digital worker accepts optional permissions and boundaries", func(t *testing.T) {
+		boundaries := []string{"read.1on1.developers", "write.group.developers"}
+		profile, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+			Publish: &ActivityPublishConfig{
+				OptionalPermissionScopes: []Microsoft365PermissionScopes{
+					{ResourceAppID: "resource-app", Scopes: []string{"McpServers.Mail.All"}},
+				},
+				AccessBoundaries: &boundaries,
 			},
 		})
 		require.NoError(t, err)
@@ -165,62 +164,112 @@ func TestResolveActivityProfileWithSettings(t *testing.T) {
 		require.True(t, profile.IsActivity)
 	})
 
-	t.Run("digital worker requires agentic user template", func(t *testing.T) {
-		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+	t.Run("digital worker rejects missing resource app id", func(t *testing.T) {
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
-				PublishAsAutopilot: true,
-				PublishScope:       "tenant",
+				OptionalPermissionScopes: []Microsoft365PermissionScopes{
+					{Scopes: []string{"McpServers.Mail.All"}},
+				},
 			},
 		})
-		require.ErrorContains(t, err, "agenticUserTemplate")
+		require.ErrorContains(t, err, "resourceAppId is required")
 	})
 
-	t.Run("digital worker missing template fields reports first field deterministically", func(t *testing.T) {
-		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+	t.Run("digital worker rejects empty permission scopes", func(t *testing.T) {
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
-				PublishAsAutopilot:  true,
-				PublishScope:        "tenant",
-				AgenticUserTemplate: &AgenticUserTemplateConfig{},
+				OptionalPermissionScopes: []Microsoft365PermissionScopes{
+					{ResourceAppID: "resource-app"},
+				},
 			},
 		})
-		require.ErrorContains(t, err, "activity.publish.agenticUserTemplate.id")
+		require.ErrorContains(t, err, "scopes must not be empty")
 	})
 
 	t.Run("digital worker requires tenant publish scope", func(t *testing.T) {
-		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 			Publish: &ActivityPublishConfig{
-				PublishAsAutopilot: true,
-				PublishScope:       "shared",
-				AgenticUserTemplate: &AgenticUserTemplateConfig{
-					ID:                    "digitalWorkerTemplate",
-					File:                  "agenticUserTemplateManifest.json",
-					SchemaVersion:         "0.1.0-preview",
-					CommunicationProtocol: "activityProtocol",
-				},
+				PublishScope: "shared",
 			},
 		})
 		require.ErrorContains(t, err, "publishScope must be tenant")
 	})
 
+	t.Run("digital worker rejects unsupported access boundary", func(t *testing.T) {
+		boundaries := []string{"read.1on1.tenant"}
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+			Publish:           &ActivityPublishConfig{AccessBoundaries: &boundaries},
+		})
+		require.ErrorContains(t, err, "unsupported value")
+	})
+
 	t.Run("digital worker requires activity protocol", func(t *testing.T) {
 		_, err := ResolveActivityProfileWithSettings(agent_yaml.ContainerAgent{}, &ActivitySettings{
-			UseCase: ActivityUseCaseDigitalWorker,
-			Publish: &ActivityPublishConfig{
-				PublishAsAutopilot: true,
-				PublishScope:       "tenant",
-				AgenticUserTemplate: &AgenticUserTemplateConfig{
-					ID:                    "digitalWorkerTemplate",
-					File:                  "agenticUserTemplateManifest.json",
-					SchemaVersion:         "0.1.0-preview",
-					CommunicationProtocol: "activityProtocol",
-				},
-			},
+			DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
 		})
 		require.ErrorContains(t, err, "Activity-protocol")
 	})
+
+	t.Run("simple rejects optional permission scopes", func(t *testing.T) {
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
+			Publish: &ActivityPublishConfig{OptionalPermissionScopes: []Microsoft365PermissionScopes{}},
+		})
+		require.ErrorContains(t, err, "activity.digitalWorkerType=m365")
+	})
+
+	t.Run("simple rejects access boundaries", func(t *testing.T) {
+		boundaries := []string{}
+		_, err := ResolveActivityProfileForDeploy(activityAgent, &ActivitySettings{
+			Publish: &ActivityPublishConfig{AccessBoundaries: &boundaries},
+		})
+		require.ErrorContains(t, err, "activity.digitalWorkerType=m365")
+	})
+
+	t.Run("unsupported digital worker type rejected", func(t *testing.T) {
+		_, err := ResolveActivityProfileWithSettings(activityAgent, &ActivitySettings{
+			DigitalWorkerType: agent_api.DigitalWorkerType("slack"),
+		})
+		require.ErrorContains(t, err, `activity.digitalWorkerType must be "m365" when specified`)
+	})
+}
+
+func TestResolveDeployedActivityProfile(t *testing.T) {
+	t.Run("service m365 overrides local simple", func(t *testing.T) {
+		got, err := ResolveDeployedActivityProfile(
+			ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple},
+			agent_api.DigitalWorkerTypeM365,
+		)
+		require.NoError(t, err)
+		require.Equal(t, ActivityUseCaseDigitalWorker, got.UseCase)
+	})
+
+	t.Run("configured digital worker requires service classification", func(t *testing.T) {
+		_, err := ResolveDeployedActivityProfile(
+			ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
+			"",
+		)
+		require.ErrorContains(t, err, "no digital_worker_type")
+	})
+
+	t.Run("unknown service classification is rejected", func(t *testing.T) {
+		_, err := ResolveDeployedActivityProfile(
+			ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple},
+			"future-worker",
+		)
+		require.ErrorContains(t, err, "unsupported digital_worker_type")
+	})
+}
+
+func TestDigitalWorkerTypeMismatchSuggestionRequiresRecreation(t *testing.T) {
+	t.Parallel()
+
+	suggestion := digitalWorkerTypeMismatchSuggestion()
+	require.Contains(t, suggestion, "delete and recreate")
+	require.NotContains(t, suggestion, "redeploy")
 }
 
 func TestDigitalWorkerBotTransitionWarning(t *testing.T) {

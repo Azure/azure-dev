@@ -66,7 +66,7 @@ func TestActivityBotTeardownTarget(t *testing.T) {
 	}
 }
 
-func TestResolveServiceActivityProfileUsesConfiguredUseCase(t *testing.T) {
+func TestResolveServiceActivityProfileUsesConfiguredDigitalWorkerType(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -81,15 +81,9 @@ func TestResolveServiceActivityProfileUsesConfiguredUseCase(t *testing.T) {
 		{
 			name: "digital worker skips simple flow",
 			activity: map[string]any{
-				"useCase": "digital_worker",
+				"digitalWorkerType": "m365",
 				"publish": map[string]any{
 					"publishScope": "tenant",
-					"agenticUserTemplate": map[string]any{
-						"id":                    "digitalWorkerTemplate",
-						"file":                  "agenticUserTemplateManifest.json",
-						"schemaVersion":         "0.1.0-preview",
-						"communicationProtocol": "activityProtocol",
-					},
 				},
 			},
 			want: project.ActivityUseCaseDigitalWorker,
@@ -125,7 +119,7 @@ func TestResolveServiceActivityProfileUsesConfiguredUseCase(t *testing.T) {
 	}
 }
 
-func TestResolveServiceActivityProfileUsesConfiguredUseCaseFromFileRef(t *testing.T) {
+func TestResolveServiceActivityProfileUsesConfiguredDigitalWorkerTypeFromFileRef(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -137,14 +131,9 @@ func TestResolveServiceActivityProfileUsesConfiguredUseCaseFromFileRef(t *testin
 		"  - protocol: activity",
 		"    version: 2.0.0",
 		"activity:",
-		"  useCase: digital_worker",
+		"  digitalWorkerType: m365",
 		"  publish:",
 		"    publishScope: tenant",
-		"    agenticUserTemplate:",
-		"      id: digitalWorkerTemplate",
-		"      file: agenticUserTemplateManifest.json",
-		"      schemaVersion: 0.1.0-preview",
-		"      communicationProtocol: activityProtocol",
 	}, "\n")
 	require.NoError(t, os.WriteFile(definitionPath, []byte(referenced), 0600))
 
@@ -192,14 +181,9 @@ func TestShouldProvisionActivityBotUsesCanonicalUseCaseResolution(t *testing.T) 
 			"  - protocol: activity",
 			"    version: 2.0.0",
 			"activity:",
-			"  useCase: digital_worker",
+			"  digitalWorkerType: m365",
 			"  publish:",
 			"    publishScope: tenant",
-			"    agenticUserTemplate:",
-			"      id: digitalWorkerTemplate",
-			"      file: agenticUserTemplateManifest.json",
-			"      schemaVersion: 0.1.0-preview",
-			"      communicationProtocol: activityProtocol",
 		}, "\n")
 		require.NoError(t, os.WriteFile(definitionPath, []byte(definition), 0600))
 

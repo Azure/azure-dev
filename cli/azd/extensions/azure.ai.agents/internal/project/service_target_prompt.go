@@ -867,7 +867,9 @@ func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 	// The agent already exists — publish a new version instead.
 	fmt.Fprintf(os.Stderr, "Agent %q already exists; publishing a new version.\n", request.Name)
 	updateReq := &agent_api.UpdateAgentRequest{
-		CreateAgentVersionRequest: request.CreateAgentVersionRequest,
+		Description: request.Description,
+		Metadata:    request.Metadata,
+		Definition:  request.Definition,
 	}
 	return client.UpdateAgentWithHeaders(ctx, request.Name, updateReq, apiVersion, headers)
 }

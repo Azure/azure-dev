@@ -19,8 +19,13 @@ import (
 // `azd ai eval evaluator show "my rubric"` returned the service's 400 wrapped
 // in four levels of JSON. Walking the tree rather than listing the verbs is
 // the point: a verb added later is covered without anyone remembering to.
+//
+// The name has to be one both rules refuse. Creating applies the service's
+// character set, so a typo is caught before the round trip; looking something
+// up does not, because `generate` publishes names that set would reject and
+// what it published has to be readable back. A separator is refused either way.
 func TestEveryNamedAssetVerbRefusesAnInvalidName(t *testing.T) {
-	const badName = "has space"
+	const badName = "bad/name"
 
 	var walk func(cmd *cobra.Command, path string)
 	checked := 0

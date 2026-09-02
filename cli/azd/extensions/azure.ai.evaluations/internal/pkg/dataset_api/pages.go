@@ -92,7 +92,9 @@ func sameOrigin(a, b *url.URL) bool {
 func (c *DatasetClient) doRequestGetURL(ctx context.Context, rawURL string) ([]byte, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, messages.InvalidNextLink(rawURL, err)
+		// Two copies to keep out: the raw link, and url.Parse's own error, which
+		// embeds the URL it was given.
+		return nil, messages.InvalidNextLink(urlsafe.Error(err))
 	}
 	base, err := url.Parse(c.endpoint)
 	if err != nil {

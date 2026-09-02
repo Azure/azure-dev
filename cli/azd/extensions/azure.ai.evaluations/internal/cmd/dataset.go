@@ -269,7 +269,7 @@ func newDatasetVersionsListCommand() *cobra.Command {
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if !validAssetName(name) {
+			if !validLookupName(name) {
 				return messages.InvalidDatasetName(name)
 			}
 
@@ -339,7 +339,7 @@ func newDatasetShowCommand() *cobra.Command {
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if !validAssetName(name) {
+			if !validLookupName(name) {
 				return messages.InvalidDatasetName(name)
 			}
 
@@ -411,7 +411,7 @@ func newDatasetDeleteCommand() *cobra.Command {
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if !validAssetName(name) {
+			if !validLookupName(name) {
 				return messages.InvalidDatasetName(name)
 			}
 			if version == "" {

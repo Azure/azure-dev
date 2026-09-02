@@ -266,11 +266,18 @@ func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error 
 	if state[key] == value {
 		return nil
 	}
+	previous, had := state[key]
 	state[key] = value
 	if err := helper.SetEnvJSON(ctx, privateStatePath, state); err != nil {
-		// The in-memory copy is rolled back, so a later read in this same
-		// command cannot report a value that was never stored.
-		delete(state, key)
+		// The in-memory copy goes back to what it was, so a later read in this
+		// same command reports what is still persisted. Deleting the key
+		// instead dropped a value the write never touched, and a resource that
+		// reads as untracked gets another immutable version published for it.
+		if had {
+			state[key] = previous
+		} else {
+			delete(state, key)
+		}
 		return messages.WritingEnvValue(key, err)
 	}
 	return nil

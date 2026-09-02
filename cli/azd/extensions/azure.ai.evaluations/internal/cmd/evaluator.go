@@ -279,7 +279,7 @@ func newEvaluatorVersionsListCommand() *cobra.Command {
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if !validAssetName(name) {
+			if !validLookupName(name) {
 				return messages.InvalidEvaluatorName(name)
 			}
 
@@ -388,7 +388,7 @@ func newEvaluatorShowCommand() *cobra.Command {
 		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if !validAssetName(name) {
+			if !validLookupName(name) {
 				return messages.InvalidEvaluatorName(name)
 			}
 
@@ -500,7 +500,7 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if !validAssetName(name) {
+			if !validLookupName(name) {
 				return messages.InvalidEvaluatorName(name)
 			}
 			if version == "" {

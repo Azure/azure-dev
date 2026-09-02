@@ -26,14 +26,26 @@ var configLockTimeout = 30 * time.Second
 
 // evalConfigLockName is the lock file, beside the configuration it guards.
 //
-// Not in the OS temp directory, which looked tidier and was wrong twice over: a
-// lock file there is created 0600 by whoever runs first, so a second user on
-// the same machine can never open it and silently never locks; and two
-// containers bind-mounting one project have separate temp directories, so they
-// never see each other's lock at all. Beside the config it shares the project's
-// lifetime, permissions and mount, and the `git status` noise that argued for
-// temp is answered by ignoreLockFile.
+// Not in the OS temp directory: two containers bind-mounting one project have
+// separate temp directories, so they never see each other's lock at all. Beside
+// the config it shares the project's lifetime and mount, and the `git status`
+// noise that argued for temp is answered by ignoreLockFile.
+//
+// Moving it does not by itself make the file openable by a second user, which
+// an earlier version of this comment claimed: flock creates it 0600 whatever
+// directory it sits in, so the first user to run would own a lock nobody else
+// could take, and every later config mutation would fail for them. That is what
+// evalConfigLockPerm is for.
 const evalConfigLockName = ".azure.eval.lock"
+
+// evalConfigLockPerm is the mode the lock file is created with.
+//
+// gofrs/flock defaults to 0600, which is right for a file holding something.
+// This one holds nothing -- it exists to be opened -- and it sits in a
+// directory two people or two containers can share, so the default locks
+// everyone except its owner out of a project they can otherwise write to. The
+// umask still applies.
+const evalConfigLockPerm = 0o666
 
 // LockEvalConfig serializes read-modify-write on the configuration across
 // processes, returning the release function.
@@ -65,7 +77,15 @@ func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
 		return nil, err
 	}
 
-	lock := flock.New(filepath.Join(evalDir, evalConfigLockName))
+	lockPath := filepath.Join(evalDir, evalConfigLockName)
+	// A lock file left at 0600 by an earlier version keeps locking the second
+	// user out, and only its owner can widen it. Best effort: whoever owns it
+	// repairs it the next time they run, and everyone else carries on.
+	if info, statErr := os.Stat(lockPath); statErr == nil && info.Mode().Perm() != evalConfigLockPerm {
+		_ = os.Chmod(lockPath, evalConfigLockPerm)
+	}
+
+	lock := flock.New(lockPath, flock.SetPermissions(evalConfigLockPerm))
 	waitCtx, cancel := context.WithTimeout(ctx, configLockTimeout)
 	defer cancel()
 

@@ -53,7 +53,9 @@ func (e pageWalkError) Unwrap() error { return e.cause }
 func (c *EvalClient) followNextLink(ctx context.Context, nextLink string) ([]byte, error) {
 	parsed, err := url.Parse(nextLink)
 	if err != nil {
-		return nil, messages.InvalidNextLink(nextLink, err)
+		// Two copies to keep out: the raw link, and url.Parse's own error, which
+		// embeds the URL it was given.
+		return nil, messages.InvalidNextLink(urlsafe.Error(err))
 	}
 	base, err := url.Parse(c.endpoint)
 	if err != nil {

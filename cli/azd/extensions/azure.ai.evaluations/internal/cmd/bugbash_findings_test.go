@@ -72,11 +72,13 @@ func TestRefToMarksARelativePath(t *testing.T) {
 // validAssetName models the service's own character set so a typo is reported
 // here instead of coming back as a 400 wrapped in JSON.
 //
-// The gap between them is reachable: `generate --dataset-name "my data"`
-// publishes, and `dataset versions list "my data"` then refuses to name it.
-// Pinned rather than fixed, because closing it means overruling one of those
-// two decisions and that is the owner's call, not a late edit's.
-func TestGenerateAndLookupDisagreeOnNames(t *testing.T) {
+// The gap between them used to be reachable: `generate --dataset-name "my data"`
+// published, and `dataset versions list "my data"` then refused to name it. It
+// is closed without overruling either decision -- creating still applies the
+// service's character set, because that is where a typo is worth catching, and
+// looking something up no longer does, because the name already exists and the
+// only question is whether it can address anything.
+func TestGenerateAndLookupAgreeOnAPublishedName(t *testing.T) {
 	const spaced = "my data"
 
 	generated, err := generatedName(spaced, "support-agent", "dataset")
@@ -84,5 +86,18 @@ func TestGenerateAndLookupDisagreeOnNames(t *testing.T) {
 	require.Equal(t, spaced, generated)
 
 	assert.False(t, validAssetName(spaced),
-		"and the named verbs refuse it, so what generate just published cannot be listed")
+		"creating still refuses it, so a typo is reported before the round trip")
+	assert.True(t, validLookupName(spaced),
+		"but what generate published has to be readable back")
+}
+
+// The looser lookup check is not no check: a name that cannot address anything,
+// or that would leave the request path, is still refused.
+func TestLookupNamesStillRefuseWhatCannotAddressAnything(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "a/b", `a\b`, "line\nbreak", "bell\x07"} {
+		assert.False(t, validLookupName(name), "%q must not address a resource", name)
+	}
+	for _, name := range []string{"my data", "with.dots", "MiXeD-case_1"} {
+		assert.True(t, validLookupName(name), "%q is a name the service can hold", name)
+	}
 }

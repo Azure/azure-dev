@@ -263,17 +263,6 @@ func (c *Client) httpClientWithTimeout(timeout time.Duration) *http.Client {
 	}
 }
 
-func (c *Client) do(
-	ctx context.Context,
-	method string,
-	apiPath string,
-	query url.Values,
-	headers http.Header,
-	body io.Reader,
-) (json.RawMessage, error) {
-	return c.doWithHTTPClient(ctx, method, apiPath, query, headers, body, c.httpClient)
-}
-
 func (c *Client) doWithHTTPClient(
 	ctx context.Context,
 	method string,

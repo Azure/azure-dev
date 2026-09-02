@@ -7,21 +7,15 @@ import (
 	"sync"
 	"testing"
 
+	"azureaiinspector/internal/telemetry"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestUIReadyReporterReportsFunnelStageOnce(t *testing.T) {
-	type usageEvent struct {
-		name       string
-		attributes map[string]string
-	}
-
-	var events []usageEvent
-	reportUIReady := newUIReadyReporter(func(eventName string, attributes map[string]string) {
-		events = append(events, usageEvent{
-			name:       eventName,
-			attributes: attributes,
-		})
+	var events []telemetry.Event
+	reportUIReady := newUIReadyReporter(func(event telemetry.Event) {
+		events = append(events, event)
 	})
 
 	var wg sync.WaitGroup
@@ -30,11 +24,11 @@ func TestUIReadyReporterReportsFunnelStageOnce(t *testing.T) {
 	}
 	wg.Wait()
 
-	require.Equal(t, []usageEvent{{
-		name: inspectorFunnelStageEvent,
-		attributes: map[string]string{
-			inspectorFunnelStageAttribute:   inspectorFunnelStageUIReady,
-			inspectorFunnelOutcomeAttribute: inspectorFunnelSucceeded,
+	require.Equal(t, []telemetry.Event{{
+		Name: "inspector.funnel.stage",
+		Attributes: map[string]string{
+			"stage":   "ui_ready",
+			"outcome": "succeeded",
 		},
 	}}, events)
 }

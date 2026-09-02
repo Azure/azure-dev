@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"azureaiinspector/internal/telemetry"
+
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -23,21 +23,21 @@ func TestUsageReporterForwardsEventWithCommandContext(t *testing.T) {
 		"authorization", "token",
 		"traceparent", "00-11111111111111111111111111111111-2222222222222222-01",
 	))
-	telemetry := &recordingTelemetryClient{}
+	reporter := &recordingUsageReporter{}
 
-	usageReporter(ctx, telemetry)("inspector.funnel.stage", map[string]string{
+	usageReporter(ctx, reporter)(telemetry.Event{Name: "inspector.funnel.stage", Attributes: map[string]string{
 		"stage":   "ui_ready",
 		"outcome": "succeeded",
-	})
+	}})
 
-	require.Equal(t, &azdext.ReportUsageRequest{
-		EventName: "inspector.funnel.stage",
+	require.Equal(t, telemetry.Event{
+		Name: "inspector.funnel.stage",
 		Attributes: map[string]string{
 			"stage":   "ui_ready",
 			"outcome": "succeeded",
 		},
-	}, telemetry.request)
-	md, ok := metadata.FromOutgoingContext(telemetry.ctx)
+	}, reporter.event)
+	md, ok := metadata.FromOutgoingContext(reporter.ctx)
 	require.True(t, ok)
 	require.Equal(t, []string{"token"}, md.Get("authorization"))
 	require.Equal(t, []string{
@@ -126,17 +126,12 @@ func (r errorReader) Read([]byte) (int, error) {
 	return 0, r.err
 }
 
-type recordingTelemetryClient struct {
-	ctx     context.Context
-	request *azdext.ReportUsageRequest
+type recordingUsageReporter struct {
+	ctx   context.Context
+	event telemetry.Event
 }
 
-func (c *recordingTelemetryClient) ReportUsage(
-	ctx context.Context,
-	request *azdext.ReportUsageRequest,
-	_ ...grpc.CallOption,
-) (*azdext.ReportUsageResponse, error) {
-	c.ctx = ctx
-	c.request = request
-	return &azdext.ReportUsageResponse{Accepted: true}, nil
+func (r *recordingUsageReporter) Report(ctx context.Context, event telemetry.Event) {
+	r.ctx = ctx
+	r.event = event
 }

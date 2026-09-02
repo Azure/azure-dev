@@ -593,6 +593,7 @@ func TestResolveAfterInit_BundledToolboxGuidanceMigratesInOrder(t *testing.T) {
 		if suggestion.Command == "azd deploy" {
 			deployCount++
 		}
+		assert.NotContains(t, suggestion.Command, "replace toolbox")
 		assert.NotContains(t, suggestion.Command,
 			"azd env set TOOLBOX_BUNDLED_TOOLS_MCP_ENDPOINT")
 		assert.NotContains(t, suggestion.Command, "azd provision")
@@ -613,13 +614,16 @@ func TestResolveAfterInit_BundledToolboxGuidanceQuotesSpacedNames(t *testing.T) 
 	}
 
 	suggestions := ResolveAfterInit(state, nil)
-	require.GreaterOrEqual(t, len(suggestions), 2)
+	require.GreaterOrEqual(t, len(suggestions), 3)
 	assert.Equal(t,
 		"edit azure.yaml: create azure.ai.toolbox service \"MyTools\"",
 		suggestions[0].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'MyTools' --agent 'My Agent'",
+		"edit agent configuration: replace toolbox \"My Tools\" with service key \"MyTools\"",
 		suggestions[1].Command)
+	assert.Equal(t,
+		"azd ai agent add toolbox 'MyTools' --agent 'My Agent'",
+		suggestions[2].Command)
 }
 
 func TestResolveAfterInit_BundledToolboxGuidanceSurvivesProvisioning(t *testing.T) {

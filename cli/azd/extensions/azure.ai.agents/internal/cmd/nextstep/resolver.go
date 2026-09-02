@@ -459,6 +459,18 @@ func appendBundledToolboxGuidance(
 			Priority:    priority,
 		})
 		priority++
+		if serviceKey != toolbox.Name {
+			*out = append(*out, Suggestion{
+				Command: fmt.Sprintf(
+					"edit agent configuration: replace toolbox %q with service key %q",
+					toolbox.Name,
+					serviceKey,
+				),
+				Description: "update the agent's toolboxes reference to the new service key",
+				Priority:    priority,
+			})
+			priority++
+		}
 		*out = append(*out, Suggestion{
 			Command: fmt.Sprintf(
 				"azd ai agent add toolbox %s --agent %s",

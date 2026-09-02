@@ -16,9 +16,12 @@ lifecycle behavior remain owned by the `azure.ai.toolboxes` and
 `azure.ai.connections` extensions.
 
 If a toolbox is declared inline on an agent, move its definition to an
-independent `azure.ai.toolbox` service before deployment, attach that service
-with the command above, and then run `azd deploy`. The add command only updates
-the agent's `uses` list; it does not create or deploy the toolbox service.
+independent `azure.ai.toolbox` service before deployment. If the new service key
+differs from the original toolbox name (for example, `My Tools` becomes
+`MyTools`), replace the inline entry in the agent's `toolboxes` list with the
+new service key. Then attach that service with the command above and run `azd deploy`.
+The add command only updates the agent's `uses` list; it does not rewrite
+`toolboxes`, create the service, or deploy it.
 
 ## Running Local Agents
 

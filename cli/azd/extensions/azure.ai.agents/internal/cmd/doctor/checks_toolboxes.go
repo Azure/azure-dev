@@ -11,6 +11,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/envkey"
+	"azureaiagent/internal/pkg/servicekey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -238,21 +239,15 @@ func classifyToolboxResults(
 		"`azd env set <ENV_VAR> <endpoint>` to point at an existing toolbox."
 	switch {
 	case hasBundled && hasSplit && hasLegacy:
-		suggestion = "Move bundled toolboxes to independent azure.ai.toolbox services, " +
-			"run `azd ai agent add toolbox <service> --agent <agent>`, then run " +
-			"`azd deploy`; run `azd provision` for legacy toolbox resources."
+		suggestion = bundledToolboxMigrationSuggestion(missing) +
+			" Run `azd provision` for legacy toolbox resources."
 	case hasBundled && hasSplit:
-		suggestion = "Move bundled toolboxes to independent azure.ai.toolbox services, " +
-			"run `azd ai agent add toolbox <service> --agent <agent>`, then run " +
-			"`azd deploy`."
+		suggestion = bundledToolboxMigrationSuggestion(missing)
 	case hasBundled && hasLegacy:
-		suggestion = "Move bundled toolboxes to independent azure.ai.toolbox services, " +
-			"run `azd ai agent add toolbox <service> --agent <agent>`, then run " +
-			"`azd deploy`; run `azd provision` for legacy toolbox resources."
+		suggestion = bundledToolboxMigrationSuggestion(missing) +
+			" Run `azd provision` for legacy toolbox resources."
 	case hasBundled:
-		suggestion = "Move bundled toolboxes to independent azure.ai.toolbox services, " +
-			"run `azd ai agent add toolbox <service> --agent <agent>`, then run " +
-			"`azd deploy`."
+		suggestion = bundledToolboxMigrationSuggestion(missing)
 	case hasSplit && hasLegacy:
 		suggestion = "Run `azd deploy` for split toolbox services and `azd provision` " +
 			"for legacy toolbox resources, or set an existing endpoint."
@@ -269,6 +264,36 @@ func classifyToolboxResults(
 			"matchedCount":     matched,
 		},
 	}
+}
+
+func bundledToolboxMigrationSuggestion(
+	missing []nextstep.ResourceRef,
+) string {
+	replacements := make([]string, 0)
+	for _, toolbox := range missing {
+		if toolbox.ToolboxSource != nextstep.ToolboxSourceBundled {
+			continue
+		}
+		serviceKey := servicekey.SanitizeServiceName(toolbox.Name)
+		if serviceKey == toolbox.Name {
+			continue
+		}
+		replacements = append(replacements, fmt.Sprintf(
+			"%q in agent %q -> service key %q",
+			toolbox.Name,
+			toolbox.ServiceName,
+			serviceKey,
+		))
+	}
+
+	suggestion := "Move bundled toolboxes to independent " +
+		"azure.ai.toolbox services"
+	if len(replacements) > 0 {
+		suggestion += ", then replace the changed agent `toolboxes` " +
+			"entries (" + strings.Join(replacements, "; ") + ")"
+	}
+	return suggestion + ", run `azd ai agent add toolbox <service> --agent " +
+		"<agent>`, then run `azd deploy`."
 }
 
 type toolboxLookup struct {

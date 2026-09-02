@@ -758,11 +758,22 @@ func printManagedInitSummary(
 	fmt.Println()
 	fmt.Println("Authoring:")
 	fmt.Printf("  %-16s the agent's definition and instructions\n", "azure.yaml")
+	printPromptInitNextSteps(promptInitFolderDisplay(projectTargetDir, existingProject))
+}
 
+func promptInitFolderDisplay(projectTargetDir string, existingProject bool) string {
+	if existingProject || projectTargetDir == "." {
+		return ""
+	}
+	return projectTargetDir
+}
+
+// printPromptInitNextSteps prints the shared prompt/managed post-init guidance.
+func printPromptInitNextSteps(folderDisplay string) {
 	fmt.Println()
 	fmt.Println("Next steps:")
-	if !existingProject && projectTargetDir != "." {
-		fmt.Printf("  cd %q\n", projectTargetDir)
+	if folderDisplay != "" {
+		fmt.Printf("  cd %q\n", folderDisplay)
 	}
 	fmt.Println("  # Provision infrastructure and deploy the agent")
 	fmt.Println("  azd up")

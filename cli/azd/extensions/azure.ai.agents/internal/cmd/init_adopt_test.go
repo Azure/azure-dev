@@ -45,6 +45,18 @@ services:
 			wantAgentService: true,
 		},
 		{
+			name: "prompt-only azure.yaml",
+			content: `name: prompt-only
+services:
+  agent:
+    host: azure.ai.agent
+    kind: prompt
+    model: gpt-5.6-luna
+`,
+			wantServices:     true,
+			wantAgentService: true,
+		},
+		{
 			name: "unsupported microsoft.foundry host",
 			content: `name: foundry-legacy
 services:
@@ -124,6 +136,82 @@ services:
 			require.Equal(t, tt.wantAgentService, info.hasAgentService)
 		})
 	}
+}
+
+func TestInspectAzureYamlPromptOnly(t *testing.T) {
+	t.Parallel()
+
+	promptOnly, err := inspectAzureYaml([]byte(`services:
+  prompt:
+    host: azure.ai.agent
+    kind: prompt
+`), "")
+	require.NoError(t, err)
+	require.True(t, promptOnly.promptOnly())
+
+	managed, err := inspectAzureYaml([]byte(`services:
+  managed:
+    host: azure.ai.agent
+    kind: prompt
+    harness:
+      kind: github_copilot_preview
+`), "")
+	require.NoError(t, err)
+	require.True(t, managed.promptOnly())
+
+	mixed, err := inspectAzureYaml([]byte(`services:
+  prompt:
+    host: azure.ai.agent
+    kind: prompt
+  hosted:
+    host: azure.ai.agent
+    kind: hosted
+`), "")
+	require.NoError(t, err)
+	require.False(t, mixed.promptOnly())
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"), []byte(`
+host: azure.ai.agent
+kind: prompt
+`), 0o600))
+	resolved, err := inspectAzureYaml([]byte(`services:
+  prompt:
+    $ref: ./agent.yaml
+`), root)
+	require.NoError(t, err)
+	require.True(t, resolved.promptOnly())
+}
+
+func TestConfigureExistingPromptProjectNoPromptRequiresProjectID(t *testing.T) {
+	t.Parallel()
+
+	_, err := configureExistingPromptProject(
+		t.Context(), nil, &azdext.AzureContext{}, "test", "", true,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "requires an existing Foundry project")
+}
+
+func TestMissingPromptAdoptionProjectError(t *testing.T) {
+	t.Parallel()
+
+	err := missingPromptAdoptionProjectError()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "requires an existing Foundry project")
+}
+
+func TestPrintPromptInitNextSteps(t *testing.T) {
+	stdout := withCapturedStdout(t, func() {
+		printPromptInitNextSteps("prompt-agent")
+	})
+
+	require.Contains(t, stdout, `cd "prompt-agent"`)
+	require.Contains(t, stdout, "azd up")
+	require.Contains(t, stdout, "azd deploy")
+	require.Contains(t, stdout, `azd ai agent invoke "hello"`)
+	require.NotContains(t, stdout, "azd ai agent run")
+	require.NotContains(t, stdout, "--local")
 }
 
 func TestDeclaresAgentService_LocalServiceRef(t *testing.T) {

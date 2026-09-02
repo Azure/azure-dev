@@ -73,7 +73,7 @@ func TestReporterIsBestEffort(t *testing.T) {
 			t.Parallel()
 			var logs []string
 			reporter := NewReporter(test.client, &Options{
-				Debugf: func(format string, args ...any) {
+				Logger: func(format string, args ...any) {
 					logs = append(logs, fmt.Sprintf(format, args...))
 				},
 			})

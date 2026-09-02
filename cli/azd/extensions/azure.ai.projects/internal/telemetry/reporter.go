@@ -43,29 +43,29 @@ type Client interface {
 // Options configures a Reporter.
 type Options struct {
 	Timeout time.Duration
-	Debugf  func(format string, args ...any)
+	Logger  func(format string, args ...any)
 }
 
 type reporter struct {
 	client  Client
 	timeout time.Duration
-	debugf  func(format string, args ...any)
+	logger  func(format string, args ...any)
 }
 
 // NewReporter creates a best-effort usage reporter backed by the azd host.
 func NewReporter(client Client, options *Options) Reporter {
 	timeout := defaultReportTimeout
-	debugf := debugLogf
+	logger := debugLogf
 	if options != nil {
 		if options.Timeout > 0 {
 			timeout = options.Timeout
 		}
-		if options.Debugf != nil {
-			debugf = options.Debugf
+		if options.Logger != nil {
+			logger = options.Logger
 		}
 	}
 
-	return &reporter{client: client, timeout: timeout, debugf: debugf}
+	return &reporter{client: client, timeout: timeout, logger: logger}
 }
 
 func (r *reporter) Report(ctx context.Context, event Event) {
@@ -81,11 +81,11 @@ func (r *reporter) Report(ctx context.Context, event Event) {
 		Attributes: maps.Clone(event.Attributes),
 	})
 	if err != nil {
-		r.debugf("telemetry event %q was not reported: code=%s", event.Name, status.Code(err))
+		r.logger("telemetry event %q was not reported: code=%s", event.Name, status.Code(err))
 		return
 	}
 	if response == nil {
-		r.debugf("telemetry event %q returned an empty response", event.Name)
+		r.logger("telemetry event %q returned an empty response", event.Name)
 	}
 }
 

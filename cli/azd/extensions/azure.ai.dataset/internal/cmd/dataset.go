@@ -178,6 +178,7 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 	cmd.Flags().StringVar(&version, "version", "",
 		"Version to publish. Omit to publish the next version after the latest registered.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	registerOutputFormats(cmd)
 	return cmd
 }
 
@@ -245,6 +246,7 @@ func newDatasetListCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	registerOutputFormats(cmd)
 	return cmd
 }
 
@@ -293,6 +295,7 @@ func newDatasetVersionsListCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	registerOutputFormats(cmd)
 	return cmd
 }
 
@@ -380,6 +383,7 @@ func newDatasetShowCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&version, "version", "", "Version to show. Omit for the latest.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	registerOutputFormats(cmd)
 	return cmd
 }
 
@@ -446,6 +450,7 @@ with JSON output, --force is required.`,
 	cmd.Flags().StringVar(&version, "version", "", "Version to delete.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	cmd.Flags().BoolVar(&force, "force", false, "Delete without asking for confirmation.")
+	registerOutputFormats(cmd)
 	return cmd
 }
 

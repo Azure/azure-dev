@@ -12,10 +12,28 @@ import (
 
 	"azureaidataset/internal/messages"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
 const outputJSON = "json"
+
+const outputTable = "table"
+
+// registerOutputFormats constrains -o/--output to the formats these commands
+// implement.
+//
+// Anything that is not "json" renders as a table, so `--output yaml` was
+// accepted and quietly answered in a format nobody asked for. Declaring the
+// values rejects that at parse time, and puts them in help, metadata and
+// completion at the same time.
+func registerOutputFormats(cmd *cobra.Command) {
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{outputJSON, outputTable},
+		Default:       outputTable,
+	})
+}
 
 // outputFormat reads the inherited -o/--output flag.
 func outputFormat(cmd *cobra.Command) string {

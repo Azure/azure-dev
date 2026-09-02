@@ -11,10 +11,20 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
+// IsAttached returns true if the given file descriptors are attached to terminals.
+// It reports the physical descriptor state without applying rendering policy overrides.
+func IsAttached(stdoutFd uintptr, stdinFd uintptr) bool {
+	return isAttached(stdoutFd, stdinFd, isatty.IsTerminal)
+}
+
 // IsTerminal returns true if the given file descriptors are attached to a terminal,
 // taking into account of environment variables that force TTY behavior.
 func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
 	return isTerminal(stdoutFd, stdinFd, isatty.IsTerminal)
+}
+
+func isAttached(stdoutFd uintptr, stdinFd uintptr, isTerminalFileDescriptor func(uintptr) bool) bool {
+	return isTerminalFileDescriptor(stdoutFd) && isTerminalFileDescriptor(stdinFd)
 }
 
 func isTerminal(stdoutFd uintptr, stdinFd uintptr, isTerminalFileDescriptor func(uintptr) bool) bool {
@@ -31,5 +41,5 @@ func isTerminal(stdoutFd uintptr, stdinFd uintptr, isTerminalFileDescriptor func
 	}
 
 	// Agent markers are not considered here because child terminals inherit them.
-	return isTerminalFileDescriptor(stdoutFd) && isTerminalFileDescriptor(stdinFd)
+	return isAttached(stdoutFd, stdinFd, isTerminalFileDescriptor)
 }

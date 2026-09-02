@@ -1422,6 +1422,19 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			expectedNoPrompt: true,
 		},
 		{
+			name:             "force TTY does not make detached agent input interactive",
+			args:             []string{"up"},
+			envVars:          map[string]string{"CLAUDECODE": "1", "AZD_FORCE_TTY": "true"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "disabled TTY rendering does not suppress prompts in an attached terminal",
+			args:             []string{"up"},
+			envVars:          map[string]string{"CLAUDECODE": "1", "AZD_FORCE_TTY": "false"},
+			terminal:         true,
+			expectedNoPrompt: false,
+		},
+		{
 			name: "inherited Claude marker remains interactive in a terminal",
 			args: []string{"up"},
 			envVars: map[string]string{

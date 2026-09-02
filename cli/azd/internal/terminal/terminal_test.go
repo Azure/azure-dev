@@ -41,6 +41,20 @@ func TestIsTerminal_NonTerminalFileDescriptors(t *testing.T) {
 	assert.False(t, IsTerminal(nullFile.Fd(), nullFile.Fd()), "os.DevNull should not be a terminal")
 }
 
+func TestIsAttached_IgnoresForceTTY(t *testing.T) {
+	clearTestEnvVars(t)
+
+	t.Setenv("AZD_FORCE_TTY", "true")
+	assert.False(t, isAttached(0, 0, func(uintptr) bool {
+		return false
+	}), "AZD_FORCE_TTY=true should not make detached descriptors interactive")
+
+	t.Setenv("AZD_FORCE_TTY", "false")
+	assert.True(t, isAttached(0, 0, func(uintptr) bool {
+		return true
+	}), "AZD_FORCE_TTY=false should not make attached descriptors non-interactive")
+}
+
 func TestIsTerminal_AgentMarkerDoesNotOverrideTTY(t *testing.T) {
 	clearTestEnvVars(t)
 	t.Setenv("CLAUDECODE", "1")

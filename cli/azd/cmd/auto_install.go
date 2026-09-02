@@ -984,7 +984,7 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 // flags and AZD_NON_INTERACTIVE take precedence; set AZD_NON_INTERACTIVE=false to opt out of this
 // automatic enablement.
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
-	return parseGlobalFlags(args, opts, terminal.IsTerminal)
+	return parseGlobalFlags(args, opts, terminal.IsAttached)
 }
 
 func parseGlobalFlags(

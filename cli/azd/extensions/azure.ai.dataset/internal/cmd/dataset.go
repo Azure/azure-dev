@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"azureaidataset/internal/exterrors"
 	"azureaidataset/internal/messages"
@@ -73,6 +74,54 @@ func datasetPresence(
 		}
 	}
 	return false, dataset_api.IsNotFound(listErr), nil
+}
+
+// How long a version listing is given to catch up before it is believed.
+const (
+	versionListingSettleAttempts = 5
+	versionListingSettleDelay    = 400 * time.Millisecond
+)
+
+// settledLatestVersion gives the version listing a moment to catch up before
+// `update` counts from it.
+//
+// An empty listing does not distinguish a dataset the service has not caught up
+// on from one that is not there, and `update` derives the next version from that
+// answer. A listing still behind a `create --version 7.0` therefore publishes
+// 1.0: a version nobody asked for, with the sequence running backwards. The
+// probe above does not cover this, because it only knows the versions a first
+// publish can carry, so an explicitly versioned create is invisible to it.
+//
+// This narrows the window rather than closing it. An empty answer after the last
+// attempt is still taken at face value, and the caller falls back to counting
+// from nothing.
+func settledLatestVersion(
+	ctx context.Context,
+	client *dataset_api.DatasetClient,
+	name string,
+) (string, error) {
+	for attempt := range versionListingSettleAttempts {
+		list, err := client.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+		switch {
+		case err == nil && list != nil && len(list.Value) > 0:
+			return dataset_api.LatestVersion(list.Value), nil
+		case err != nil && dataset_api.IsNotFound(err):
+			// The service naming the dataset unknown is an answer, not a lag.
+			return "", nil
+		case err != nil:
+			// A read that failed proves nothing, and must not read as "no versions".
+			return "", messages.CheckingDataset(name, err)
+		}
+		if attempt == versionListingSettleAttempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(versionListingSettleDelay):
+		}
+	}
+	return "", nil
 }
 
 // newDatasetUpdateCommand builds `dataset update <name>`, which publishes a
@@ -146,8 +195,18 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 					ctx, name, version, content, ProjectEndpointAPIVersion,
 				)
 			} else {
+				// `update` counts from the latest registered version, so the
+				// listing is given a moment to settle first. `create` has
+				// nothing to count from and does not wait.
+				current := ""
+				if verb == "update" {
+					current, err = settledLatestVersion(ctx, ec.datasetClient, name)
+					if err != nil {
+						return err
+					}
+				}
 				ds, err = ec.datasetClient.UploadNextVersion(
-					ctx, name, "", content, ProjectEndpointAPIVersion,
+					ctx, name, current, content, ProjectEndpointAPIVersion,
 				)
 			}
 			if err != nil {

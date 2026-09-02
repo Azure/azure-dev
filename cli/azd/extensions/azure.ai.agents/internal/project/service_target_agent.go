@@ -2196,7 +2196,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		foundryAgentConfig.Activity.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
 		request.DigitalWorkerType = agent_api.DigitalWorkerTypeM365
 	}
-	activityProfile, err := ResolveActivityProfileForDeploy(agentDef, foundryAgentConfig.Activity)
+	_, err = ResolveActivityProfileForDeploy(agentDef, foundryAgentConfig.Activity)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentRequest,
@@ -2204,7 +2204,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the activity configuration in azure.yaml",
 		)
 	}
-	ensureActivityEndpointAuthSchemeForProfile(request, activityProfile)
 
 	// Default to "responses" protocol when none specified in agent.yaml.
 	protocols := agentDef.Protocols
@@ -2229,7 +2228,7 @@ func ensureActivityEndpointAuthSchemeForProfile(
 		return
 	}
 	if request.AgentEndpoint == nil {
-		request.AgentEndpoint = &agent_api.AgentEndpoint{}
+		return
 	}
 	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, profile)
 }

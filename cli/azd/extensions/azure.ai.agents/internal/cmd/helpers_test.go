@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
 
@@ -601,7 +602,10 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 	}}
 	envServer := &testEnvironmentServiceServer{
 		current: &azdext.Environment{Name: "test"},
-		values:  map[string]map[string]string{"test": {}},
+		values: map[string]map[string]string{"test": {
+			"AGENT_SERVICE_KEY_RESPONSES_ENDPOINT":   projectEndpoint + "/responses",
+			"AGENT_SERVICE_KEY_INVOCATIONS_ENDPOINT": projectEndpoint + "/invocations",
+		}},
 	}
 	azdClient := newHelpersTestAzdClient(
 		t, projectServer, &helpersPromptServer{}, envServer,
@@ -626,6 +630,7 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 			require.Equal(t, "inline-agent", agentName)
 			return true, nil
 		}),
+		withDeployedProtocolEndpoints(),
 	)
 	require.NoError(t, err)
 	require.Equal(t, "service-key", info.ServiceName)
@@ -633,6 +638,10 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 		"inline agent name should resolve for an explicitly adopted existing project")
 	require.Equal(t, projectEndpoint, info.ProjectEndpoint,
 		"verified inline name must remain bound to its adopted project")
+	require.Equal(t, map[agent_api.AgentProtocol]string{
+		agent_api.AgentProtocolResponses:   projectEndpoint + "/responses",
+		agent_api.AgentProtocolInvocations: projectEndpoint + "/invocations",
+	}, info.ProtocolEndpoints)
 
 	missingInfo, err := resolveAgentServiceFromProject(
 		t.Context(),

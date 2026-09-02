@@ -23,7 +23,6 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc"
 )
@@ -760,17 +759,6 @@ func TestResolveProtocol_ExplicitFlag(t *testing.T) {
 }
 
 func TestInvokeValidatesInputFileBeforeRemoteProtocolLookup(t *testing.T) {
-	original := getRemoteAgent
-	t.Cleanup(func() {
-		getRemoteAgent = original
-	})
-
-	lookupCalled := false
-	getRemoteAgent = func(context.Context, *remoteContext) (*agent_api.AgentObject, error) {
-		lookupCalled = true
-		return nil, errors.New("remote lookup should not run")
-	}
-
 	action := &InvokeAction{
 		flags: &invokeFlags{
 			inputFile: filepath.Join(t.TempDir(), "missing.json"),
@@ -787,60 +775,6 @@ func TestInvokeValidatesInputFileBeforeRemoteProtocolLookup(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to read input file") {
 		t.Fatalf("error = %q, want input file error", err)
-	}
-	if lookupCalled {
-		t.Fatal("remote protocol lookup ran before input file validation")
-	}
-}
-
-func TestRemoteInvocableProtocols(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		endpoint *agent_api.AgentEndpoint
-		want     []agent_api.AgentProtocol
-	}{
-		{
-			name: "filters non-invocable protocols",
-			endpoint: &agent_api.AgentEndpoint{
-				ProtocolConfiguration: &agent_api.ProtocolConfiguration{
-					Activity:    &agent_api.ActivityProtocolConfiguration{},
-					MCP:         &agent_api.MCPProtocolConfiguration{},
-					Invocations: &agent_api.InvocationsProtocolConfiguration{},
-				},
-			},
-			want: []agent_api.AgentProtocol{
-				agent_api.AgentProtocolInvocations,
-			},
-		},
-		{
-			name: "reads legacy protocol list",
-			endpoint: &agent_api.AgentEndpoint{
-				Protocols: []agent_api.AgentEndpointProtocol{
-					agent_api.AgentEndpointProtocolResponses,
-					agent_api.AgentEndpointProtocolActivity,
-				},
-			},
-			want: []agent_api.AgentProtocol{
-				agent_api.AgentProtocolResponses,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := remoteInvocableProtocols(tt.endpoint)
-			if len(got) != len(tt.want) {
-				t.Fatalf("remoteInvocableProtocols() = %v, want %v", got, tt.want)
-			}
-			for i := range tt.want {
-				if got[i] != tt.want[i] {
-					t.Errorf("protocol[%d] = %q, want %q", i, got[i], tt.want[i])
-				}
-			}
-		})
 	}
 }
 
@@ -895,11 +829,11 @@ func TestSelectRemoteInvokeProtocol(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "no deployed protocol",
+			name: "local definition supplies protocol when deployment data is unavailable",
 			local: []agent_api.AgentProtocol{
 				agent_api.AgentProtocolResponses,
 			},
-			wantErr: true,
+			want: agent_api.AgentProtocolResponses,
 		},
 	}
 
@@ -926,63 +860,32 @@ func TestSelectRemoteInvokeProtocol(t *testing.T) {
 	}
 }
 
-func TestResolveDeployedProtocolLookupFailure(t *testing.T) {
-	original := getRemoteAgent
-	t.Cleanup(func() {
-		getRemoteAgent = original
-	})
-
-	lookupErr := errors.New("deployed agent unavailable")
-	getRemoteAgent = func(
-		context.Context,
-		*remoteContext,
-	) (*agent_api.AgentObject, error) {
-		return nil, lookupErr
-	}
+func TestResolveDeployedProtocolUsesPersistedEndpointWithoutMetadata(t *testing.T) {
+	t.Parallel()
 
 	action := &InvokeAction{flags: &invokeFlags{}}
-	_, err := action.resolveDeployedProtocol(
+	protocol, err := action.resolveDeployedProtocol(
 		t.Context(),
-		&remoteContext{name: "agent"},
+		&remoteContext{
+			name: "agent",
+			// This represents the endpoint data persisted by deployment. A
+			// Foundry Agent Consumer can invoke this endpoint without
+			// permission to read GET /agents/{name} metadata.
+			invocableProtocols: invocableProtocolsFromEndpoints(map[agent_api.AgentProtocol]string{
+				agent_api.AgentProtocolInvocations: "https://example.test/invocations",
+			}),
+		},
 	)
-	if err == nil {
-		t.Fatal("expected lookup error, got nil")
+	if err != nil {
+		t.Fatalf("resolveDeployedProtocol() unexpected error: %v", err)
 	}
-
-	const wantMessage = "could not determine the deployed protocol for agent \"agent\""
-	const wantSuggestion = "pass --protocol responses, --protocol invocations, or " +
-		"--protocol a2a to bypass deployed protocol detection"
-
-	protoErr := azdext.WrapError(err)
-	if got := protoErr.GetMessage(); got != wantMessage {
-		t.Errorf("transported message = %q, want %q", got, wantMessage)
-	}
-	if got := protoErr.GetSuggestion(); got != wantSuggestion {
-		t.Errorf("transported suggestion = %q, want %q", got, wantSuggestion)
-	}
-
-	roundTripped := azdext.UnwrapError(protoErr)
-	if got := azdext.ErrorMessage(roundTripped); got != wantMessage {
-		t.Errorf("round-tripped message = %q, want %q", got, wantMessage)
-	}
-	if got := azdext.ErrorSuggestion(roundTripped); got != wantSuggestion {
-		t.Errorf("round-tripped suggestion = %q, want %q", got, wantSuggestion)
+	if protocol != agent_api.AgentProtocolInvocations {
+		t.Errorf("protocol = %q, want %q", protocol, agent_api.AgentProtocolInvocations)
 	}
 }
 
-func TestResolveDeployedProtocolLookupAuthenticationFailure(t *testing.T) {
-	original := getRemoteAgent
-	t.Cleanup(func() {
-		getRemoteAgent = original
-	})
-
-	lookupErr := &azidentity.AuthenticationFailedError{}
-	getRemoteAgent = func(
-		context.Context,
-		*remoteContext,
-	) (*agent_api.AgentObject, error) {
-		return nil, lookupErr
-	}
+func TestResolveDeployedProtocolRequiresExplicitProtocolWithoutMetadata(t *testing.T) {
+	t.Parallel()
 
 	action := &InvokeAction{flags: &invokeFlags{}}
 	_, err := action.resolveDeployedProtocol(
@@ -990,70 +893,13 @@ func TestResolveDeployedProtocolLookupAuthenticationFailure(t *testing.T) {
 		&remoteContext{name: "agent"},
 	)
 	if err == nil {
-		t.Fatal("expected lookup error, got nil")
+		t.Fatal("expected protocol selection error, got nil")
 	}
-
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("error type = %T, want *azdext.LocalError", err)
+	if !strings.Contains(err.Error(), "could not determine an invocable protocol") {
+		t.Errorf("error = %q, want protocol selection guidance", err)
 	}
-	if localErr.Category != azdext.LocalErrorCategoryAuth {
-		t.Errorf("error category = %q, want %q", localErr.Category, azdext.LocalErrorCategoryAuth)
-	}
-	if localErr.Code != exterrors.CodeAuthFailed {
-		t.Errorf("error code = %q, want %q", localErr.Code, exterrors.CodeAuthFailed)
-	}
-	if localErr.Message != lookupErr.Error() {
-		t.Errorf("error message = %q, want %q", localErr.Message, lookupErr.Error())
-	}
-	if localErr.Suggestion != "run `azd auth login` to authenticate" {
-		t.Errorf("error suggestion = %q, want authentication guidance", localErr.Suggestion)
-	}
-	if strings.Contains(localErr.Suggestion, "--protocol") {
-		t.Errorf("error suggestion = %q, must not contain protocol workaround", localErr.Suggestion)
-	}
-}
-
-func TestResolveDeployedProtocolLookupCancellation(t *testing.T) {
-	original := getRemoteAgent
-	t.Cleanup(func() {
-		getRemoteAgent = original
-	})
-
-	getRemoteAgent = func(
-		context.Context,
-		*remoteContext,
-	) (*agent_api.AgentObject, error) {
-		return nil, context.Canceled
-	}
-
-	action := &InvokeAction{flags: &invokeFlags{}}
-	_, err := action.resolveDeployedProtocol(
-		t.Context(),
-		&remoteContext{name: "agent"},
-	)
-	if err == nil {
-		t.Fatal("expected lookup error, got nil")
-	}
-
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("error type = %T, want *azdext.LocalError", err)
-	}
-	if localErr.Category != azdext.LocalErrorCategoryUser {
-		t.Errorf("error category = %q, want %q", localErr.Category, azdext.LocalErrorCategoryUser)
-	}
-	if localErr.Code != exterrors.CodeCancelled {
-		t.Errorf("error code = %q, want %q", localErr.Code, exterrors.CodeCancelled)
-	}
-	if localErr.Message != "get_agent was cancelled" {
-		t.Errorf("error message = %q, want cancellation guidance", localErr.Message)
-	}
-	if localErr.Suggestion != "" {
-		t.Errorf("error suggestion = %q, want no suggestion", localErr.Suggestion)
-	}
-	if strings.Contains(localErr.Message, "--protocol") {
-		t.Errorf("error message = %q, must not contain protocol workaround", localErr.Message)
+	if suggestion := azdext.WrapError(err).GetSuggestion(); !strings.Contains(suggestion, "--protocol") {
+		t.Errorf("suggestion = %q, want explicit protocol guidance", suggestion)
 	}
 }
 

@@ -382,7 +382,7 @@ func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {
 	}
 }
 
-func TestProjectDeploymentAddStopsWhenProjectInitializationFails(t *testing.T) {
+func TestProjectDeploymentAddStopsWhenProjectSetupFails(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	t.Setenv("AZD_EXEC_PROJECT_DIR", root)

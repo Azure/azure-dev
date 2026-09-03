@@ -152,9 +152,9 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		return err
 	}
 	if service == nil {
-		projectAction := &ProjectInitAction{
+		projectAction := &ProjectAddAction{
 			client: client,
-			flags: &projectInitFlags{
+			flags: &projectAddFlags{
 				noPrompt: a.noPrompt(),
 				output:   "none",
 			},

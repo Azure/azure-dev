@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-type initContextPromptServer struct {
+type azureContextPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	subscription      *azdext.Subscription
 	location          *azdext.Location
@@ -25,7 +25,7 @@ type initContextPromptServer struct {
 	locationRequest   *azdext.PromptLocationRequest
 }
 
-func (s *initContextPromptServer) PromptSubscription(
+func (s *azureContextPromptServer) PromptSubscription(
 	context.Context,
 	*azdext.PromptSubscriptionRequest,
 ) (*azdext.PromptSubscriptionResponse, error) {
@@ -35,7 +35,7 @@ func (s *initContextPromptServer) PromptSubscription(
 	}, nil
 }
 
-func (s *initContextPromptServer) PromptLocation(
+func (s *azureContextPromptServer) PromptLocation(
 	_ context.Context,
 	request *azdext.PromptLocationRequest,
 ) (*azdext.PromptLocationResponse, error) {
@@ -44,14 +44,14 @@ func (s *initContextPromptServer) PromptLocation(
 	return &azdext.PromptLocationResponse{Location: s.location}, nil
 }
 
-type initContextAccountServer struct {
+type azureContextAccountServer struct {
 	azdext.UnimplementedAccountServiceServer
 	tenantID string
 	calls    int
 	request  *azdext.LookupTenantRequest
 }
 
-func (s *initContextAccountServer) LookupTenant(
+func (s *azureContextAccountServer) LookupTenant(
 	_ context.Context,
 	request *azdext.LookupTenantRequest,
 ) (*azdext.LookupTenantResponse, error) {
@@ -60,7 +60,7 @@ func (s *initContextAccountServer) LookupTenant(
 	return &azdext.LookupTenantResponse{TenantId: s.tenantID}, nil
 }
 
-func newInitContextClient(
+func newAzureContextClient(
 	t *testing.T,
 	promptServer azdext.PromptServiceServer,
 	accountServer azdext.AccountServiceServer,
@@ -89,19 +89,19 @@ func newInitContextClient(
 	return client
 }
 
-func TestResolveAzureContextForInitUsesEnvironmentSubscription(t *testing.T) {
-	promptServer := &initContextPromptServer{
+func TestResolveAzureContextUsesEnvironmentSubscription(t *testing.T) {
+	promptServer := &azureContextPromptServer{
 		location: &azdext.Location{Name: "eastus"},
 	}
-	accountServer := &initContextAccountServer{tenantID: "user-tenant"}
-	client := newInitContextClient(t, promptServer, accountServer)
+	accountServer := &azureContextAccountServer{tenantID: "user-tenant"}
+	client := newAzureContextClient(t, promptServer, accountServer)
 	target := &resolvedProject{Mode: projectModeNew}
 	values := map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "environment-subscription",
 		"AZURE_TENANT_ID":       "environment-tenant",
 	}
 
-	require.NoError(t, resolveAzureContextForInit(
+	require.NoError(t, resolveAzureContext(
 		t.Context(),
 		client,
 		target,
@@ -125,12 +125,12 @@ func TestResolveAzureContextForInitUsesEnvironmentSubscription(t *testing.T) {
 	assert.Equal(t, "eastus", target.Location)
 }
 
-func TestResolveAzureContextForInitPrefersTargetSubscription(t *testing.T) {
-	promptServer := &initContextPromptServer{
+func TestResolveAzureContextPrefersTargetSubscription(t *testing.T) {
+	promptServer := &azureContextPromptServer{
 		location: &azdext.Location{Name: "westus"},
 	}
-	accountServer := &initContextAccountServer{tenantID: "looked-up-tenant"}
-	client := newInitContextClient(t, promptServer, accountServer)
+	accountServer := &azureContextAccountServer{tenantID: "looked-up-tenant"}
+	client := newAzureContextClient(t, promptServer, accountServer)
 	target := &resolvedProject{
 		Mode:           projectModeNew,
 		SubscriptionId: "target-subscription",
@@ -141,7 +141,7 @@ func TestResolveAzureContextForInitPrefersTargetSubscription(t *testing.T) {
 		"AZURE_TENANT_ID":       "environment-tenant",
 	}
 
-	require.NoError(t, resolveAzureContextForInit(
+	require.NoError(t, resolveAzureContext(
 		t.Context(),
 		client,
 		target,
@@ -160,19 +160,19 @@ func TestResolveAzureContextForInitPrefersTargetSubscription(t *testing.T) {
 	assert.Equal(t, "westus", target.Location)
 }
 
-func TestResolveAzureContextForInitPromptsForSubscription(t *testing.T) {
-	promptServer := &initContextPromptServer{
+func TestResolveAzureContextPromptsForSubscription(t *testing.T) {
+	promptServer := &azureContextPromptServer{
 		subscription: &azdext.Subscription{
 			Id:           "prompted-subscription",
 			UserTenantId: "prompted-tenant",
 		},
 		location: &azdext.Location{Name: "centralus"},
 	}
-	accountServer := &initContextAccountServer{tenantID: "unused-tenant"}
-	client := newInitContextClient(t, promptServer, accountServer)
+	accountServer := &azureContextAccountServer{tenantID: "unused-tenant"}
+	client := newAzureContextClient(t, promptServer, accountServer)
 	target := &resolvedProject{Mode: projectModeNew}
 
-	require.NoError(t, resolveAzureContextForInit(
+	require.NoError(t, resolveAzureContext(
 		t.Context(),
 		client,
 		target,
@@ -193,7 +193,7 @@ func TestResolveAzureContextForInitPromptsForSubscription(t *testing.T) {
 	assert.Equal(t, "centralus", target.Location)
 }
 
-func TestResolveAzureContextForInitNoPromptErrorCodes(t *testing.T) {
+func TestResolveAzureContextNoPromptErrorCodes(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
@@ -223,7 +223,7 @@ func TestResolveAzureContextForInitNoPromptErrorCodes(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			target := &resolvedProject{Mode: projectModeNew}
-			err := resolveAzureContextForInit(
+			err := resolveAzureContext(
 				t.Context(),
 				nil,
 				target,
@@ -241,9 +241,9 @@ func TestResolveAzureContextForInitNoPromptErrorCodes(t *testing.T) {
 	}
 }
 
-func TestResolveAzureContextForInitNoPromptWithCompleteValues(t *testing.T) {
+func TestResolveAzureContextNoPromptWithCompleteValues(t *testing.T) {
 	target := &resolvedProject{Mode: projectModeNew}
-	require.NoError(t, resolveAzureContextForInit(
+	require.NoError(t, resolveAzureContext(
 		t.Context(),
 		nil,
 		target,

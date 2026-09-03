@@ -28,10 +28,10 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestDelegatedProjectInitRequestValidation(t *testing.T) {
-	request := &projectInitRequest{
+func TestDelegatedProjectAddRequestValidation(t *testing.T) {
+	request := &projectAddRequest{
 		SchemaVersion: delegatedSchemaVersion,
-		Source:        projectInitSourceAgents,
+		Source:        delegatedSourceAgents,
 		SourceVersion: "1.0.0-beta.9",
 		Project:       delegatedProject{ResourceID: "/subscriptions/s"},
 	}
@@ -57,7 +57,7 @@ func TestDelegatedRequestRejectsUnknownFields(t *testing.T) {
 		"sourceVersion": "1.0.0",
 		"unknown": true
 	}`), 0600))
-	request := &projectInitRequest{}
+	request := &projectAddRequest{}
 	require.Error(t, decodeDelegatedJSON(requestPath, request))
 }
 
@@ -923,7 +923,7 @@ services:
 	assert.Equal(t, "terraform", foundry["provider"])
 }
 
-func TestLoadDelegatedProjectInitNormalizesInfraProvider(t *testing.T) {
+func TestLoadDelegatedProjectAddNormalizesInfraProvider(t *testing.T) {
 	requestPath := filepath.Join(t.TempDir(), "request.json")
 	require.NoError(t, os.WriteFile(
 		requestPath,
@@ -937,8 +937,8 @@ func TestLoadDelegatedProjectInitNormalizesInfraProvider(t *testing.T) {
 		0600,
 	))
 
-	action := &ProjectInitAction{
-		flags: &projectInitFlags{requestFile: requestPath},
+	action := &ProjectAddAction{
+		flags: &projectAddFlags{requestFile: requestPath},
 	}
 	request, err := action.loadRequest()
 	require.NoError(t, err)
@@ -1166,21 +1166,21 @@ type recordingProjectConfigServer struct {
 	setRequest *azdext.SetProjectConfigValueRequest
 }
 
-type projectInitEnvironmentServer struct {
+type projectAddEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	setCalls int
 	setErr   error
 	values   map[string]string
 }
 
-func (s *projectInitEnvironmentServer) Select(
+func (s *projectAddEnvironmentServer) Select(
 	context.Context,
 	*azdext.SelectEnvironmentRequest,
 ) (*azdext.EmptyResponse, error) {
 	return &azdext.EmptyResponse{}, nil
 }
 
-func (s *projectInitEnvironmentServer) GetValues(
+func (s *projectAddEnvironmentServer) GetValues(
 	context.Context,
 	*azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
@@ -1194,7 +1194,7 @@ func (s *projectInitEnvironmentServer) GetValues(
 	return response, nil
 }
 
-func (s *projectInitEnvironmentServer) SetValue(
+func (s *projectAddEnvironmentServer) SetValue(
 	context.Context,
 	*azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
@@ -1276,7 +1276,7 @@ func (s *recordingProjectServiceServer) SetServiceConfigValue(
 	return &azdext.EmptyResponse{}, nil
 }
 
-func TestProjectInitPersistsProjectBeforeEnvironment(t *testing.T) {
+func TestProjectAddPersistsProjectBeforeEnvironment(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	require.NoError(t, os.WriteFile(
@@ -1292,7 +1292,7 @@ func TestProjectInitPersistsProjectBeforeEnvironment(t *testing.T) {
 			Services: map[string]*azdext.ServiceConfig{},
 		},
 	}
-	envServer := &projectInitEnvironmentServer{}
+	envServer := &projectAddEnvironmentServer{}
 	server := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(server, projectServer)
 	azdext.RegisterEnvironmentServiceServer(server, envServer)
@@ -1312,9 +1312,9 @@ func TestProjectInitPersistsProjectBeforeEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 
-	action := &ProjectInitAction{
+	action := &ProjectAddAction{
 		client: client,
-		flags: &projectInitFlags{
+		flags: &projectAddFlags{
 			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
 			noPrompt:        true,
 			output:          "none",
@@ -1327,7 +1327,7 @@ func TestProjectInitPersistsProjectBeforeEnvironment(t *testing.T) {
 	assert.Zero(t, envServer.setCalls)
 }
 
-func TestProjectInitWritesEnvironmentBeforeInfrastructureEjection(t *testing.T) {
+func TestProjectAddWritesEnvironmentBeforeInfrastructureEjection(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	require.NoError(t, os.WriteFile(
@@ -1355,7 +1355,7 @@ services:
 		},
 		section: section,
 	}
-	envServer := &projectInitEnvironmentServer{
+	envServer := &projectAddEnvironmentServer{
 		setErr: errors.New("environment write failed"),
 		values: map[string]string{
 			"AZURE_SUBSCRIPTION_ID": "subscription",
@@ -1381,9 +1381,9 @@ services:
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 
-	action := &ProjectInitAction{
+	action := &ProjectAddAction{
 		client: client,
-		flags: &projectInitFlags{
+		flags: &projectAddFlags{
 			infra:    "terraform",
 			noPrompt: true,
 			output:   "none",

@@ -31,7 +31,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-type projectInitFlags struct {
+type projectAddFlags struct {
 	projectID       string
 	projectEndpoint string
 	infra           string
@@ -66,10 +66,10 @@ const (
 	foundryTerraformMarkerVersion = "terraform-v1\n"
 )
 
-// ProjectInitAction implements project add and delegated project setup.
-type ProjectInitAction struct {
+// ProjectAddAction implements project add.
+type ProjectAddAction struct {
 	client *azdext.AzdClient
-	flags  *projectInitFlags
+	flags  *projectAddFlags
 	extCtx *azdext.ExtensionContext
 }
 
@@ -87,7 +87,7 @@ func newProjectAuthoringCommand(
 	extCtx *azdext.ExtensionContext,
 ) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
-	flags := &projectInitFlags{}
+	flags := &projectAddFlags{}
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
@@ -104,7 +104,7 @@ func newProjectAuthoringCommand(
 					}
 				}
 			}
-			action := &ProjectInitAction{flags: flags, extCtx: extCtx}
+			action := &ProjectAddAction{flags: flags, extCtx: extCtx}
 			return action.Run(cmd.Context())
 		},
 	}
@@ -126,9 +126,9 @@ func newProjectAuthoringCommand(
 	return cmd
 }
 
-func (a *ProjectInitAction) Run(ctx context.Context) error {
+func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if a.flags == nil {
-		a.flags = &projectInitFlags{}
+		a.flags = &projectAddFlags{}
 	}
 	request, err := a.loadRequest()
 	if err != nil {
@@ -197,7 +197,7 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 	); err != nil {
 		return err
 	}
-	if err := resolveAzureContextForInit(
+	if err := resolveAzureContext(
 		ctx, client, target, oldValues, allowedLocations(request),
 		request != nil && request.ResolveAzureContext,
 		a.flags.noPrompt,
@@ -284,13 +284,13 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 		ctx, serviceProjectName, target.Endpoint, target.Mode,
 	)
 	if err != nil {
-		return rollbackProjectInit(err, restoreProvider)
+		return rollbackProjectAdd(err, restoreProvider)
 	}
 	restoreEnvironment, err := reconcileProjectEnvironmentWithRollback(
 		ctx, client, envName, target.Mode, target, identityChanged,
 	)
 	if err != nil {
-		return rollbackProjectInit(err, restoreService, restoreProvider)
+		return rollbackProjectAdd(err, restoreService, restoreProvider)
 	}
 	if infra := infraFromRequest(request, a.flags); infra != "" {
 		if err := ejectProjectInfraWithTarget(
@@ -303,13 +303,13 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 			target.ResourceId,
 			oldValues,
 		); err != nil {
-			return rollbackProjectInit(
+			return rollbackProjectAdd(
 				err, restoreEnvironment, restoreService, restoreInfra,
 			)
 		}
 	}
 
-	result := projectInitOutput{
+	result := projectAddOutput{
 		SchemaVersion:   delegatedSchemaVersion,
 		ProducerVersion: delegatedProducerVersion(),
 		ServiceName:     serviceName,
@@ -336,7 +336,7 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 	return nil
 }
 
-func rollbackProjectInit(
+func rollbackProjectAdd(
 	operationErr error,
 	rollbacks ...func() error,
 ) error {
@@ -345,7 +345,7 @@ func rollbackProjectInit(
 		if err := rollback(); err != nil {
 			rollbackErrs = append(
 				rollbackErrs,
-				fmt.Errorf("rollback project initialization: %w", err),
+				fmt.Errorf("rollback project add: %w", err),
 			)
 		}
 	}
@@ -355,18 +355,18 @@ func rollbackProjectInit(
 	return errors.Join(append([]error{operationErr}, rollbackErrs...)...)
 }
 
-func (a *ProjectInitAction) loadRequest() (*projectInitRequest, error) {
+func (a *ProjectAddAction) loadRequest() (*projectAddRequest, error) {
 	if a.flags.requestFile == "" {
 		return nil, nil
 	}
 	if err := validateDelegatedFilePath(a.flags.requestFile, "request", true); err != nil {
 		return nil, err
 	}
-	request := &projectInitRequest{}
+	request := &projectAddRequest{}
 	if err := decodeDelegatedJSON(a.flags.requestFile, request); err != nil {
 		return nil, err
 	}
-	if err := validateProjectInitRequest(*request); err != nil {
+	if err := validateProjectAddRequest(*request); err != nil {
 		return nil, err
 	}
 	if request.Infra.EjectProvider != "" {
@@ -383,21 +383,21 @@ func (a *ProjectInitAction) loadRequest() (*projectInitRequest, error) {
 	return request, nil
 }
 
-func (a *ProjectInitAction) environmentName() string {
+func (a *ProjectAddAction) environmentName() string {
 	if a.extCtx != nil {
 		return a.extCtx.Environment
 	}
 	return ""
 }
 
-func allowedLocations(request *projectInitRequest) []string {
+func allowedLocations(request *projectAddRequest) []string {
 	if request == nil {
 		return nil
 	}
 	return request.Requirements.AllowedLocations
 }
 
-func infraFromRequest(request *projectInitRequest, flags *projectInitFlags) string {
+func infraFromRequest(request *projectAddRequest, flags *projectAddFlags) string {
 	if request != nil {
 		return request.Infra.EjectProvider
 	}
@@ -410,8 +410,8 @@ func resolveProjectTarget(
 	project *azdext.ProjectConfig,
 	service *projectServiceInfo,
 	values map[string]string,
-	request *projectInitRequest,
-	flags *projectInitFlags,
+	request *projectAddRequest,
+	flags *projectAddFlags,
 ) (*resolvedProject, error) {
 	projectID, endpoint := flags.projectID, flags.projectEndpoint
 	if request != nil {
@@ -472,7 +472,7 @@ func resolveProjectTarget(
 	return promptProjectTarget(ctx, client, values, allowedLocations(request))
 }
 
-func noPromptForRequest(_ *projectInitRequest, flags *projectInitFlags) bool {
+func noPromptForRequest(_ *projectAddRequest, flags *projectAddFlags) bool {
 	return flags.noPrompt
 }
 
@@ -678,8 +678,8 @@ func confirmExplicitProjectReplacement(
 	target *resolvedProject,
 	service *projectServiceInfo,
 	values map[string]string,
-	request *projectInitRequest,
-	flags *projectInitFlags,
+	request *projectAddRequest,
+	flags *projectAddFlags,
 ) error {
 	if target == nil || !explicitProjectTarget(request, flags) || flags.force {
 		return nil
@@ -734,8 +734,8 @@ func confirmExplicitProjectReplacement(
 }
 
 func explicitProjectTarget(
-	request *projectInitRequest,
-	flags *projectInitFlags,
+	request *projectAddRequest,
+	flags *projectAddFlags,
 ) bool {
 	if request != nil {
 		return request.Project.ResourceID != "" || request.Project.Endpoint != ""
@@ -784,7 +784,7 @@ func locationAllowed(location string, allowed []string) bool {
 	return false
 }
 
-func resolveAzureContextForInit(
+func resolveAzureContext(
 	ctx context.Context,
 	client *azdext.AzdClient,
 	target *resolvedProject,
@@ -1396,7 +1396,7 @@ func validateExistingEndpointMode(
 	if hasProjectConnections(project) || hasPendingAcrProvision(values) {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
-			"endpoint-only initialization cannot reconcile project connections "+
+			"endpoint-only setup cannot reconcile project connections "+
 				"or a pending container registry",
 			"rerun `azd ai project add --project-id <resource-id>` "+
 				"before retaining project resources",
@@ -1409,7 +1409,7 @@ func validateExistingEndpointMode(
 		hasManagedDeployments(service.Raw) {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
-			"endpoint-only initialization cannot retain managed model deployments",
+			"endpoint-only setup cannot retain managed model deployments",
 			"rerun `azd ai project add --project-id <resource-id>` "+
 				"before managing deployments",
 		)

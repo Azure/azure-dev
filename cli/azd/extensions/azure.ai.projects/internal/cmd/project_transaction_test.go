@@ -20,11 +20,11 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestRollbackProjectInitUsesApplicationOrder(t *testing.T) {
+func TestRollbackProjectAddUsesApplicationOrder(t *testing.T) {
 	var order []string
 	operationErr := errors.New("operation failed")
 
-	err := rollbackProjectInit(
+	err := rollbackProjectAdd(
 		operationErr,
 		func() error {
 			order = append(order, "environment")

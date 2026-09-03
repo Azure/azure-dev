@@ -21,7 +21,7 @@ import (
 const delegatedSchemaVersion = 1
 
 const (
-	projectInitSourceAgents = "azure.ai.agents/init"
+	delegatedSourceAgents = "azure.ai.agents/init"
 )
 
 type delegatedProject struct {
@@ -37,8 +37,8 @@ type delegatedRequirements struct {
 	AllowedLocations []string `json:"allowedLocations,omitempty"`
 }
 
-// projectInitRequest is the versioned IPC contract for agents.
-type projectInitRequest struct {
+// projectAddRequest is the versioned IPC contract for agents.
+type projectAddRequest struct {
 	SchemaVersion       int                   `json:"schemaVersion"`
 	Source              string                `json:"source"`
 	SourceVersion       string                `json:"sourceVersion,omitempty"`
@@ -69,7 +69,7 @@ type projectDeploymentAddRequest struct {
 
 type deploymentAddRequest = projectDeploymentAddRequest
 
-type projectInitOutput struct {
+type projectAddOutput struct {
 	SchemaVersion   int    `json:"schemaVersion"`
 	ProducerVersion string `json:"producerVersion"`
 	ServiceName     string `json:"serviceName"`
@@ -100,17 +100,17 @@ type deploymentOutputSKU struct {
 	Capacity int    `json:"capacity"`
 }
 
-func (r *projectInitRequest) validate() error {
+func (r *projectAddRequest) validate() error {
 	if r == nil {
-		return contractValidationError("delegated project init request is empty")
+		return contractValidationError("delegated project add request is empty")
 	}
 	if r.SchemaVersion != delegatedSchemaVersion {
 		return contractCompatibilityError(r.SchemaVersion)
 	}
-	if r.Source != projectInitSourceAgents {
+	if r.Source != delegatedSourceAgents {
 		return contractValidationError("source must be azure.ai.agents/init")
 	}
-	if r.Source == projectInitSourceAgents && strings.TrimSpace(r.SourceVersion) == "" {
+	if r.Source == delegatedSourceAgents && strings.TrimSpace(r.SourceVersion) == "" {
 		return contractValidationError("sourceVersion is required for delegated requests")
 	}
 	if r.Project.ResourceID != "" && r.Project.Endpoint != "" {
@@ -134,7 +134,7 @@ func (r *projectInitRequest) validate() error {
 	return nil
 }
 
-func validateProjectInitRequest(request projectInitRequest) error {
+func validateProjectAddRequest(request projectAddRequest) error {
 	return request.validate()
 }
 
@@ -145,10 +145,10 @@ func (r *projectDeploymentAddRequest) validate() error {
 	if r.SchemaVersion != delegatedSchemaVersion {
 		return contractCompatibilityError(r.SchemaVersion)
 	}
-	if r.Source != projectInitSourceAgents {
+	if r.Source != delegatedSourceAgents {
 		return contractValidationError("source must be azure.ai.agents/init")
 	}
-	if r.Source == projectInitSourceAgents && strings.TrimSpace(r.SourceVersion) == "" {
+	if r.Source == delegatedSourceAgents && strings.TrimSpace(r.SourceVersion) == "" {
 		return contractValidationError("sourceVersion is required for delegated requests")
 	}
 	if strings.TrimSpace(r.Model.Name) == "" {

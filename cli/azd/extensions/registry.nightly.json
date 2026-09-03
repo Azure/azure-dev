@@ -650,7 +650,7 @@
       "description": "Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Beta)",
       "versions": [
         {
-          "version": "1.0.0-beta.4.nightly.6777033",
+          "version": "1.0.0-beta.4.nightly.6783644",
           "requiredAzdVersion": ">=1.27.0",
           "capabilities": [
             "custom-commands",
@@ -686,7 +686,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "0122965836640e6ebf4d716c06a3ec34a44a1b1d9dc26fb50c155e5bffcf1c2c"
+                "value": "47f663849689053195fde3cdf8bf4910608d1b156a3a393b2f5c48748ac25fc2"
               },
               "entryPoint": "azure-ai-skills-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-skills/nightly/azure-ai-skills-darwin-amd64.zip"
@@ -694,7 +694,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "6ba37b55cdb358e194be579730e72a0455980964dc8746578e06c3aa059658f1"
+                "value": "d9891f4a045c12d00b8258d3a2d9e11a9db3e18836fb38995f000eb2bf1925d0"
               },
               "entryPoint": "azure-ai-skills-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-skills/nightly/azure-ai-skills-darwin-arm64.zip"
@@ -702,7 +702,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "cf366216d7d1fcff4a07fce7fc08cd55c1b92c281b4e12f5bab0e2983dc26569"
+                "value": "9beee2648e52cf919c33dfd4670369b75374214b22377b08652a70ec7fa66ebe"
               },
               "entryPoint": "azure-ai-skills-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-skills/nightly/azure-ai-skills-linux-amd64.tar.gz"
@@ -710,7 +710,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e34dfb986bd420aa7223358149c22c8805039118f8d62c5d52beb9a41f1ea526"
+                "value": "7d797ee8e56730dc044d01c5a942d922a73a8b9a9352760e44ec37b9899057ea"
               },
               "entryPoint": "azure-ai-skills-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-skills/nightly/azure-ai-skills-linux-arm64.tar.gz"
@@ -718,7 +718,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "49b6a12e718613ee9493e29dff76cb1f7b841d86c52a778fcd7c40bf538159cd"
+                "value": "36090c92c774be4e1379ac33e4cec7c45c5c92efa16e52798207194a791ef4d4"
               },
               "entryPoint": "azure-ai-skills-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-skills/nightly/azure-ai-skills-windows-amd64.zip"
@@ -726,7 +726,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "ef47569594a8eb57239f203f50fa9082859bb49935bfb9ef2b75a666cce939bd"
+                "value": "8371a5ecfcb72296c3bdf155106863d8f445e9321439f060d78ec11a0c382939"
               },
               "entryPoint": "azure-ai-skills-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-skills/nightly/azure-ai-skills-windows-arm64.zip"

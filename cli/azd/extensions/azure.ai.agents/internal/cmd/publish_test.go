@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/stretchr/testify/require"
@@ -252,8 +253,8 @@ func TestBuildTeamsAppPackageRequestUsesPublishMetadataForSimpleActivity(t *test
 	require.Equal(t, "Configured Activity agent", configured.AgentDisplayName)
 	require.Equal(t, "Shared", configured.PublishScope)
 	require.False(t, configured.PublishAsAutopilot)
-	require.False(t, configured.UseAgenticUserTemplate)
-	require.Nil(t, configured.AgenticUserTemplate)
+	require.Empty(t, configured.OptionalPermissionScopes)
+	require.Nil(t, configured.AccessBoundaries)
 
 	explicit := buildTeamsAppPackageRequest("", teamsAppRequestOptions{
 		displayName: "CLI Activity agent",
@@ -265,8 +266,142 @@ func TestBuildTeamsAppPackageRequestUsesPublishMetadataForSimpleActivity(t *test
 	require.Equal(t, "CLI Activity agent", explicit.AgentDisplayName)
 	require.Equal(t, "Tenant", explicit.PublishScope)
 	require.False(t, explicit.PublishAsAutopilot)
-	require.False(t, explicit.UseAgenticUserTemplate)
-	require.Nil(t, explicit.AgenticUserTemplate)
+	require.Empty(t, explicit.OptionalPermissionScopes)
+	require.Nil(t, explicit.AccessBoundaries)
+}
+
+func TestParseOptionalPermissionScopeFlags(t *testing.T) {
+	t.Parallel()
+
+	got, err := parseOptionalPermissionScopeFlags([]string{
+		"resource-a=McpServers.Mail.All",
+		"resource-b=Ado.Mcp.Tools",
+		"resource-a=McpServers.Calendar.All",
+		"resource-a=McpServers.Mail.All",
+	})
+	require.NoError(t, err)
+	require.Equal(t, []agent_api.Microsoft365PermissionScopes{
+		{ResourceAppID: "resource-a", Scopes: []string{"McpServers.Mail.All", "McpServers.Calendar.All"}},
+		{ResourceAppID: "resource-b", Scopes: []string{"Ado.Mcp.Tools"}},
+	}, got)
+}
+
+func TestParseOptionalPermissionScopeFlagsRejectsInvalidValue(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseOptionalPermissionScopeFlags([]string{"McpServers.Mail.All"})
+	require.ErrorContains(t, err, "invalid optional permission scope")
+}
+
+func TestResolveDigitalWorkerPublishInputs(t *testing.T) {
+	t.Parallel()
+
+	configBoundaries := []string{" read.1on1.developers "}
+	packCtx := digitalWorkerPackContext("tenant")
+	packCtx.activitySettings.Publish.OptionalPermissionScopes = []project.Microsoft365PermissionScopes{
+		{ResourceAppID: "configured-app", Scopes: []string{"Configured.Scope"}},
+	}
+	packCtx.activitySettings.Publish.AccessBoundaries = &configBoundaries
+
+	permissions, boundaries, err := resolveDigitalWorkerPublishInputs(&publishFlags{}, packCtx)
+	require.NoError(t, err)
+	require.Equal(t, "configured-app", permissions[0].ResourceAppID)
+	require.Equal(t, []string{"read.1on1.developers"}, *boundaries)
+
+	permissions, boundaries, err = resolveDigitalWorkerPublishInputs(&publishFlags{
+		optionalPermissionScopes:    []string{"flag-app=Flag.Scope"},
+		optionalPermissionScopesSet: true,
+		accessBoundaries:            []string{" write.group.developers ", "write.group.developers"},
+		accessBoundariesSet:         true,
+	}, packCtx)
+	require.NoError(t, err)
+	require.Equal(t, "flag-app", permissions[0].ResourceAppID)
+	require.Equal(t, []string{"write.group.developers"}, *boundaries)
+
+	_, boundaries, err = resolveDigitalWorkerPublishInputs(&publishFlags{
+		clearAccessBoundaries: true,
+	}, packCtx)
+	require.NoError(t, err)
+	require.NotNil(t, boundaries)
+	require.Empty(t, *boundaries)
+}
+
+func TestResolveDigitalWorkerPublishInputsPreservesConfiguredEmptyBoundaries(t *testing.T) {
+	t.Parallel()
+
+	configuredBoundaries := []string{}
+	packCtx := digitalWorkerPackContext("tenant")
+	packCtx.activitySettings.Publish.AccessBoundaries = &configuredBoundaries
+
+	_, boundaries, err := resolveDigitalWorkerPublishInputs(&publishFlags{}, packCtx)
+
+	require.NoError(t, err)
+	require.NotNil(t, boundaries)
+	require.NotNil(t, *boundaries)
+	require.Empty(t, *boundaries)
+
+	payload, err := json.Marshal(struct {
+		AccessBoundaries *[]string `json:"accessBoundaries,omitempty"`
+	}{AccessBoundaries: boundaries})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"accessBoundaries":[]}`, string(payload))
+}
+
+func TestResolveDigitalWorkerPublishInputsValidatesAfterFlagOverrides(t *testing.T) {
+	t.Parallel()
+
+	configBoundaries := []string{"invalid.boundary"}
+	activitySettings := &project.ActivitySettings{
+		DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+		Publish: &project.ActivityPublishConfig{
+			PublishScope: "shared",
+		},
+	}
+	activitySettings.Publish.OptionalPermissionScopes = []project.Microsoft365PermissionScopes{
+		{ResourceAppID: "", Scopes: []string{""}},
+	}
+	activitySettings.Publish.AccessBoundaries = &configBoundaries
+	profile, err := resolveTeamsPackActivityProfile(agent_yaml.ContainerAgent{
+		Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}},
+	}, activitySettings)
+	require.NoError(t, err)
+	packCtx := &teamsPackContext{
+		activityProfile:  profile,
+		activitySettings: activitySettings,
+	}
+	flags := &publishFlags{
+		scope:                       "tenant",
+		scopeSet:                    true,
+		optionalPermissionScopes:    []string{"flag-app=Flag.Scope"},
+		optionalPermissionScopesSet: true,
+		clearAccessBoundaries:       true,
+	}
+
+	scope, err := resolvePublishScope(flags, packCtx)
+	require.NoError(t, err)
+	require.Equal(t, "tenant", scope.flag)
+
+	permissions, boundaries, err := resolveDigitalWorkerPublishInputs(flags, packCtx)
+
+	require.NoError(t, err)
+	require.Equal(t, []agent_api.Microsoft365PermissionScopes{
+		{ResourceAppID: "flag-app", Scopes: []string{"Flag.Scope"}},
+	}, permissions)
+	require.NotNil(t, boundaries)
+	require.Empty(t, *boundaries)
+
+	_, _, err = resolveDigitalWorkerPublishInputs(&publishFlags{}, packCtx)
+	require.ErrorContains(t, err, "publishScope must be tenant")
+}
+
+func TestResolveDigitalWorkerPublishInputsRejectsSimpleAgentFlags(t *testing.T) {
+	t.Parallel()
+
+	_, _, err := resolveDigitalWorkerPublishInputs(&publishFlags{
+		accessBoundaries:    []string{"read.1on1.developers"},
+		accessBoundariesSet: true,
+	}, activityPackContext(project.ActivityUseCaseSimple, "shared"))
+	require.ErrorContains(t, err, "cannot be used for a simple Activity agent")
 }
 
 func digitalWorkerPackContext(publishScope string) *teamsPackContext {
@@ -278,16 +413,9 @@ func activityPackContext(useCase project.ActivityUseCase, publishScope string) *
 		activityProfile: project.ActivityProfile{UseCase: useCase},
 		activitySettings: &project.ActivitySettings{
 			Publish: &project.ActivityPublishConfig{
-				PublishAsAutopilot: true,
-				PublishScope:       publishScope,
-				AppVersion:         "2.3.4",
-				AgentDisplayName:   "Configured Activity agent",
-				AgenticUserTemplate: &project.AgenticUserTemplateConfig{
-					ID:                    "digitalWorkerTemplate",
-					File:                  "agenticUserTemplateManifest.json",
-					SchemaVersion:         "0.1.0-preview",
-					CommunicationProtocol: "activityProtocol",
-				},
+				PublishScope:     publishScope,
+				AppVersion:       "2.3.4",
+				AgentDisplayName: "Configured Activity agent",
 			},
 		},
 	}

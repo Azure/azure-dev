@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/pkg/servicekey"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -57,9 +58,9 @@ func agentService(t *testing.T, name string, toolConnections ...project.ToolConn
 func TestSanitizeServiceName(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "MyAgent", sanitizeServiceName("  My Agent  "))
-	assert.Equal(t, "gpt4o", sanitizeServiceName("gpt 4 o"))
-	assert.Equal(t, "", sanitizeServiceName("   "))
+	assert.Equal(t, "MyAgent", servicekey.SanitizeServiceName("  My Agent  "))
+	assert.Equal(t, "gpt4o", servicekey.SanitizeServiceName("gpt 4 o"))
+	assert.Equal(t, "", servicekey.SanitizeServiceName("   "))
 }
 
 // TestReserveServiceName verifies distinct service keys are accepted and that

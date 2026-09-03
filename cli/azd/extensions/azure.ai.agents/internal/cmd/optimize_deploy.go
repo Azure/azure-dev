@@ -139,7 +139,7 @@ func (a *OptimizeDeployAction) runDirect(
 	fmt.Fprintf(out, "  Fetching current agent definition...\n")
 	agentClient := agent_api.NewAgentClient(projectEndpoint, credential)
 
-	agentObj, err := agentClient.GetAgent(ctx, agentName, DefaultAgentAPIVersion)
+	agentObj, err := agentClient.GetAgent(ctx, agentName, DefaultAgentAPIVersion, false)
 	if err != nil {
 		return fmt.Errorf("failed to get agent %q: %w", agentName, err)
 	}
@@ -407,7 +407,7 @@ func pollVersionActive(
 			return fmt.Errorf("timed out waiting for version %s to become active after %s", versionNum, timeout)
 		}
 
-		version, err := client.GetAgentVersion(ctx, agentName, versionNum, DefaultAgentAPIVersion)
+		version, err := client.GetAgentVersion(ctx, agentName, versionNum, DefaultAgentAPIVersion, false)
 		if err != nil {
 			return fmt.Errorf("failed to poll version status: %w", err)
 		}

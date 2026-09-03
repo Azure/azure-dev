@@ -28,53 +28,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestDelegatedProjectAddRequestValidation(t *testing.T) {
-	request := &projectAddRequest{
-		SchemaVersion: delegatedSchemaVersion,
-		Source:        delegatedSourceAgents,
-		SourceVersion: "1.0.0-beta.9",
-		Project:       delegatedProject{ResourceID: "/subscriptions/s"},
-	}
-	require.NoError(t, request.validate())
-
-	request.Project.Endpoint = "https://account.services.ai.azure.com/api/projects/p"
-	require.Error(t, request.validate())
-	request.Project.Endpoint = ""
-	request.SchemaVersion = 2
-	err := request.validate()
-	require.Error(t, err)
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, err, &localErr)
-	assert.Equal(t, azdext.LocalErrorCategoryCompatibility, localErr.Category)
-}
-
-func TestDelegatedRequestRejectsUnknownFields(t *testing.T) {
-	dir := t.TempDir()
-	requestPath := filepath.Join(dir, "request.json")
-	require.NoError(t, os.WriteFile(requestPath, []byte(`{
-		"schemaVersion": 1,
-		"source": "azure.ai.agents/init",
-		"sourceVersion": "1.0.0",
-		"unknown": true
-	}`), 0600))
-	request := &projectAddRequest{}
-	require.Error(t, decodeDelegatedJSON(requestPath, request))
-}
-
-func TestDelegatedRequestIsInputOnly(t *testing.T) {
-	dir := t.TempDir()
-	requestPath := filepath.Join(dir, "request.json")
-	require.NoError(t, os.WriteFile(requestPath, []byte(`{}`), 0600))
-	root := NewRootCommand()
-	addCommand, _, err := root.Find([]string{"add"})
-	require.NoError(t, err)
-	deploymentCommand, _, err := root.Find([]string{"deployment", "add"})
-	require.NoError(t, err)
-	assert.Nil(t, addCommand.Flags().Lookup("result-file"))
-	assert.Nil(t, deploymentCommand.Flags().Lookup("result-file"))
-	assert.NoError(t, validateDelegatedFilePath(requestPath, "request", true))
-}
-
 func TestProjectCommandsRegistered(t *testing.T) {
 	root := NewRootCommand()
 	addCommand, _, err := root.Find([]string{"add"})
@@ -83,8 +36,8 @@ func TestProjectCommandsRegistered(t *testing.T) {
 	deploymentCommand, _, err := root.Find([]string{"deployment", "add"})
 	require.NoError(t, err)
 	assert.Equal(t, "add", deploymentCommand.Name())
-	assert.True(t, addCommand.Flags().Lookup("request-file").Hidden)
-	assert.True(t, deploymentCommand.Flags().Lookup("request-file").Hidden)
+	assert.Nil(t, addCommand.Flags().Lookup("request-file"))
+	assert.Nil(t, deploymentCommand.Flags().Lookup("request-file"))
 	assertOutputFlagOptions(t, addCommand, "default", []string{"default", "json", "none"})
 
 	assert.Equal(t, "bicep", addCommand.Flags().Lookup("infra").NoOptDefVal)
@@ -246,24 +199,15 @@ func TestLegacyProjectServiceBodyRemovesEndpointForNewProject(t *testing.T) {
 
 func TestDeploymentLocationsExplicitSelectionWins(t *testing.T) {
 	locations, err := deploymentLocations(
-		[]string{"eastus", "westus"},
 		"eastus",
 		"westus",
 	)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"westus"}, locations)
-
-	_, err = deploymentLocations(
-		[]string{"eastus"},
-		"eastus",
-		"westus",
-	)
-	require.Error(t, err)
 }
 
 func TestDeploymentLocationsUsesProjectLocationByDefault(t *testing.T) {
 	locations, err := deploymentLocations(
-		[]string{"eastus", "westus"},
 		"westus",
 		"",
 	)
@@ -360,34 +304,6 @@ func TestValidateDeploymentSelectionRejectsNegativeCapacity(t *testing.T) {
 	var localErr *azdext.LocalError
 	require.ErrorAs(t, err, &localErr)
 	assert.Equal(t, "invalid_parameter", localErr.Code)
-}
-
-func TestValidateAllowedProjectLocationUsesFallback(t *testing.T) {
-	require.Error(t, validateAllowedProjectLocation(
-		&resolvedProject{},
-		[]string{"eastus"},
-		"westus",
-	))
-	require.NoError(t, validateAllowedProjectLocation(
-		&resolvedProject{},
-		[]string{"eastus"},
-		"eastus",
-	))
-	require.NoError(t, validateAllowedProjectLocation(
-		&resolvedProject{Location: "eastus"},
-		[]string{"eastus"},
-		"westus",
-	))
-	require.Error(t, validateAllowedProjectLocation(
-		&resolvedProject{},
-		[]string{"eastus"},
-		"",
-	))
-	require.NoError(t, validateAllowedProjectLocation(
-		&resolvedProject{},
-		nil,
-		"",
-	))
 }
 
 func TestFillEmptyAzureScope(t *testing.T) {
@@ -921,30 +837,6 @@ services:
 	foundry, ok := layers[1].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "terraform", foundry["provider"])
-}
-
-func TestLoadDelegatedProjectAddNormalizesInfraProvider(t *testing.T) {
-	requestPath := filepath.Join(t.TempDir(), "request.json")
-	require.NoError(t, os.WriteFile(
-		requestPath,
-		[]byte(`{
-  "schemaVersion": 1,
-  "source": "azure.ai.agents/init",
-  "sourceVersion": "1.0.0",
-  "project": {"resourceId": "/subscriptions/sub"},
-  "infra": {"ejectProvider": " TERRAFORM "}
-}`),
-		0600,
-	))
-
-	action := &ProjectAddAction{
-		flags: &projectAddFlags{requestFile: requestPath},
-	}
-	request, err := action.loadRequest()
-	require.NoError(t, err)
-	require.NotNil(t, request)
-	assert.Equal(t, "terraform", request.Infra.EjectProvider)
-	assert.Equal(t, "terraform", action.flags.infra)
 }
 
 func TestExpandProjectServiceValuesUsesEnvironment(t *testing.T) {

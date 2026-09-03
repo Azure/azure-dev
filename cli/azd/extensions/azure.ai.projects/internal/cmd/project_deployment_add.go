@@ -17,15 +17,14 @@ import (
 )
 
 type projectDeploymentFlags struct {
-	model       string
-	name        string
-	version     string
-	sku         string
-	capacity    int32
-	location    string
-	force       bool
-	requestFile string
-	output      string
+	model    string
+	name     string
+	version  string
+	sku      string
+	capacity int32
+	location string
+	force    bool
+	output   string
 }
 
 // ProjectDeploymentAddAction implements deployment add.
@@ -54,15 +53,6 @@ func newProjectDeploymentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
-			if flags.requestFile != "" {
-				for _, name := range []string{"model", "name", "version", "sku", "capacity", "location", "force"} {
-					if cmd.Flags().Changed(name) {
-						return contractValidationError(
-							fmt.Sprintf("--%s cannot be combined with --request-file", name),
-						)
-					}
-				}
-			}
 			action := &ProjectDeploymentAddAction{flags: flags, extCtx: extCtx}
 			return action.Run(cmd.Context())
 		},
@@ -74,7 +64,6 @@ func newProjectDeploymentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 	cmd.Flags().Int32Var(&flags.capacity, "capacity", 0, "Deployment capacity")
 	cmd.Flags().StringVar(&flags.location, "location", "", "Deployment location")
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Replace a conflicting inline declaration")
-	registerDelegatedContractFlags(cmd, &flags.requestFile)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"default", "json", "none"},
@@ -88,15 +77,16 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	if a.flags == nil {
 		a.flags = &projectDeploymentFlags{}
 	}
-	request, err := a.loadRequest()
-	if err != nil {
-		return err
-	}
-	if request == nil && strings.TrimSpace(a.flags.model) == "" {
+	if strings.TrimSpace(a.flags.model) == "" {
 		if a.noPrompt() {
-			return contractValidationError("--model is required in --no-prompt mode")
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--model is required in --no-prompt mode",
+				"provide a model with --model and retry",
+			)
 		}
 	}
+	var err error
 	client := a.client
 	if client == nil {
 		client, err = azdext.NewAzdClient()
@@ -110,7 +100,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		defer client.Close()
 	}
 	a.client = client
-	if request == nil && strings.TrimSpace(a.flags.model) == "" {
+	if strings.TrimSpace(a.flags.model) == "" {
 		response, promptErr := client.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:        "Model name",
@@ -122,7 +112,11 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		}
 		a.flags.model = response.GetValue()
 		if strings.TrimSpace(a.flags.model) == "" {
-			return contractValidationError("model name cannot be empty")
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"model name cannot be empty",
+				"provide a model name and retry",
+			)
 		}
 	}
 
@@ -209,17 +203,12 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	model := delegatedModel{
+	model := modelSelection{
 		Name:           a.flags.model,
 		DeploymentName: a.flags.name,
 	}
 	force := a.flags.force
 	setAsDefault := true
-	if request != nil {
-		model = request.Model
-		force = request.Force
-		setAsDefault = request.SetAsDefault
-	}
 	selection := deploymentSelectionOptions{
 		Version:  a.flags.version,
 		SKU:      a.flags.sku,
@@ -274,8 +263,8 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		}
 	}
 	result := projectDeploymentAddOutput{
-		SchemaVersion:   delegatedSchemaVersion,
-		ProducerVersion: delegatedProducerVersion(),
+		SchemaVersion:   projectOutputSchemaVersion,
+		ProducerVersion: projectOutputProducerVersion(),
 		ServiceName:     service.Name,
 		DeploymentName:  selected.Deployment.Name,
 		Model: deploymentOutputModel{
@@ -288,9 +277,6 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			Capacity: selected.Deployment.Sku.Capacity,
 		},
 		Mutation: string(mutation),
-	}
-	if request != nil {
-		return nil
 	}
 	if a.flags.output == "none" {
 		return nil
@@ -407,25 +393,6 @@ func requiresExistingProjectID(
 		return true
 	}
 	return service != nil && serviceEndpoint(service.Resolved) != ""
-}
-
-func (a *ProjectDeploymentAddAction) loadRequest() (*deploymentAddRequest, error) {
-	if a.flags.requestFile == "" {
-		return nil, nil
-	}
-	if err := validateDelegatedFilePath(a.flags.requestFile, "request", true); err != nil {
-		return nil, err
-	}
-	request := &deploymentAddRequest{}
-	if err := decodeDelegatedJSON(a.flags.requestFile, request); err != nil {
-		return nil, err
-	}
-	if err := validateProjectDeploymentAddRequest(*request); err != nil {
-		return nil, err
-	}
-	a.flags.model = request.Model.Name
-	a.flags.force = request.Force
-	return request, nil
 }
 
 func (a *ProjectDeploymentAddAction) noPrompt() bool {

@@ -40,6 +40,11 @@ type deploymentSelectionOptions struct {
 	Location string
 }
 
+type modelSelection struct {
+	Name           string
+	DeploymentName string
+}
+
 func splitModelReference(raw string) (format, name string) {
 	raw = strings.TrimSpace(raw)
 	if slash := strings.IndexByte(raw, '/'); slash > 0 && slash < len(raw)-1 {
@@ -68,7 +73,7 @@ func selectModelDeployment(
 	ctx context.Context,
 	client *azdext.AzdClient,
 	azureContext *azdext.AzureContext,
-	model delegatedModel,
+	model modelSelection,
 	selection deploymentSelectionOptions,
 	noPrompt bool,
 ) (*selectedDeployment, error) {
@@ -77,55 +82,19 @@ func selectModelDeployment(
 	}
 	modelFormat, modelName := splitModelReference(model.Name)
 	if modelName == "" {
-		return nil, contractValidationError("model.name is required")
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"model.name is required",
+			"provide a model name and retry",
+		)
 	}
 
 	locations, err := deploymentLocations(
-		model.AllowedLocations,
 		azureContextLocation(azureContext),
 		selection.Location,
 	)
 	if err != nil {
 		return nil, err
-	}
-	if len(model.RequiredCapabilities) > 0 || len(model.ExcludedModelNames) > 0 {
-		catalog, catalogErr := client.Ai().ListModels(ctx, &azdext.ListModelsRequest{
-			AzureContext: azureContext,
-			Filter: &azdext.AiModelFilterOptions{
-				Locations:         locations,
-				Capabilities:      model.RequiredCapabilities,
-				ExcludeModelNames: model.ExcludedModelNames,
-			},
-		})
-		if catalogErr != nil {
-			return nil, fmt.Errorf("filter model catalog: %w", catalogErr)
-		}
-		found := false
-		for _, candidate := range catalog.GetModels() {
-			if candidate != nil && strings.EqualFold(candidate.GetName(), modelName) {
-				found = true
-				for _, required := range model.RequiredCapabilities {
-					if !slices.Contains(candidate.GetCapabilities(), required) {
-						found = false
-						break
-					}
-				}
-				for _, excluded := range model.ExcludedModelNames {
-					if strings.EqualFold(excluded, candidate.GetName()) {
-						found = false
-						break
-					}
-				}
-				break
-			}
-		}
-		if !found {
-			return nil, exterrors.Validation(
-				"model_not_available",
-				fmt.Sprintf("model %q does not satisfy the requested capability or exclusion filters", modelName),
-				"choose a compatible model or remove the consumer-specific filter",
-			)
-		}
 	}
 
 	options := &azdext.AiModelDeploymentOptions{
@@ -218,41 +187,16 @@ func validateDeploymentSelection(selection deploymentSelectionOptions) error {
 }
 
 func deploymentLocations(
-	allowed []string,
 	projectLocation string,
 	explicitLocation string,
 ) ([]string, error) {
-	locations, err := normalizeLocations(allowed)
-	if err != nil {
-		return nil, err
-	}
 	if explicitLocation != "" {
-		if len(locations) > 0 && !locationAllowed(explicitLocation, locations) {
-			return nil, exterrors.Validation(
-				"model_deployment_location_not_allowed",
-				fmt.Sprintf(
-					"deployment location %q is outside the allowed locations",
-					explicitLocation,
-				),
-				"choose a deployment location from the allowed locations",
-			)
-		}
 		return []string{explicitLocation}, nil
 	}
-	if projectLocation == "" {
-		return locations, nil
+	if projectLocation != "" {
+		return []string{projectLocation}, nil
 	}
-	if len(locations) > 0 && !locationAllowed(projectLocation, locations) {
-		return nil, exterrors.Validation(
-			"model_deployment_location_not_allowed",
-			fmt.Sprintf(
-				"the project location %q is outside the model's allowed locations",
-				projectLocation,
-			),
-			"choose a model location that includes the project location",
-		)
-	}
-	return []string{projectLocation}, nil
+	return nil, nil
 }
 
 func azureContextLocation(azureContext *azdext.AzureContext) string {

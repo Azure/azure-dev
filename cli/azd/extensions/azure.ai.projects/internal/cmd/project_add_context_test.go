@@ -8,8 +8,6 @@ import (
 	"net"
 	"testing"
 
-	"azure.ai.projects/internal/exterrors"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,8 +104,6 @@ func TestResolveAzureContextUsesEnvironmentSubscription(t *testing.T) {
 		client,
 		target,
 		values,
-		nil,
-		true,
 		false,
 	))
 
@@ -146,8 +142,6 @@ func TestResolveAzureContextPrefersTargetSubscription(t *testing.T) {
 		client,
 		target,
 		values,
-		nil,
-		true,
 		false,
 	))
 
@@ -177,8 +171,6 @@ func TestResolveAzureContextPromptsForSubscription(t *testing.T) {
 		client,
 		target,
 		map[string]string{},
-		nil,
-		true,
 		false,
 	))
 
@@ -193,54 +185,6 @@ func TestResolveAzureContextPromptsForSubscription(t *testing.T) {
 	assert.Equal(t, "centralus", target.Location)
 }
 
-func TestResolveAzureContextNoPromptErrorCodes(t *testing.T) {
-	tests := []struct {
-		name   string
-		values map[string]string
-		code   string
-	}{
-		{
-			name: "only location missing",
-			values: map[string]string{
-				"AZURE_SUBSCRIPTION_ID": "subscription",
-			},
-			code: exterrors.CodeMissingAzureLocation,
-		},
-		{
-			name: "only subscription missing",
-			values: map[string]string{
-				"AZURE_LOCATION": "eastus",
-			},
-			code: exterrors.CodeMissingAzureSubscription,
-		},
-		{
-			name:   "both values missing",
-			values: map[string]string{},
-			code:   exterrors.CodeMissingAzureSubscription,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			target := &resolvedProject{Mode: projectModeNew}
-			err := resolveAzureContext(
-				t.Context(),
-				nil,
-				target,
-				test.values,
-				nil,
-				true,
-				true,
-			)
-			require.Error(t, err)
-
-			var localErr *azdext.LocalError
-			require.ErrorAs(t, err, &localErr)
-			assert.Equal(t, test.code, localErr.Code)
-		})
-	}
-}
-
 func TestResolveAzureContextNoPromptWithCompleteValues(t *testing.T) {
 	target := &resolvedProject{Mode: projectModeNew}
 	require.NoError(t, resolveAzureContext(
@@ -251,8 +195,6 @@ func TestResolveAzureContextNoPromptWithCompleteValues(t *testing.T) {
 			"AZURE_SUBSCRIPTION_ID": "subscription",
 			"AZURE_LOCATION":        "eastus",
 		},
-		nil,
-		true,
 		true,
 	))
 }

@@ -37,7 +37,6 @@ type projectAddFlags struct {
 	infra           string
 	force           bool
 	noPrompt        bool
-	requestFile     string
 	output          string
 }
 
@@ -95,15 +94,6 @@ func newProjectAuthoringCommand(
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
 			flags.noPrompt = extCtx.NoPrompt
-			if flags.requestFile != "" {
-				for _, name := range []string{"project-id", "project-endpoint", "infra", "force"} {
-					if cmd.Flags().Changed(name) {
-						return contractValidationError(
-							fmt.Sprintf("--%s cannot be combined with --request-file", name),
-						)
-					}
-				}
-			}
 			action := &ProjectAddAction{flags: flags, extCtx: extCtx}
 			return action.Run(cmd.Context())
 		},
@@ -116,7 +106,6 @@ func newProjectAuthoringCommand(
 	_ = cmd.Flags().Lookup("infra").NoOptDefVal
 	cmd.Flags().Lookup("infra").NoOptDefVal = provisioning.BicepProviderName
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Replace a different configured project")
-	registerDelegatedContractFlags(cmd, &flags.requestFile)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"default", "json", "none"},
@@ -130,18 +119,17 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if a.flags == nil {
 		a.flags = &projectAddFlags{}
 	}
-	request, err := a.loadRequest()
-	if err != nil {
-		return err
+	if a.flags.projectID != "" && a.flags.projectEndpoint != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--project-id and --project-endpoint are mutually exclusive",
+			"specify only one project target",
+		)
 	}
-	if request == nil {
-		if a.flags.projectID != "" && a.flags.projectEndpoint != "" {
-			return contractValidationError("--project-id and --project-endpoint are mutually exclusive")
-		}
-		if a.flags.infra != "" {
-			if a.flags.infra, err = parseInfraProvider(a.flags.infra); err != nil {
-				return err
-			}
+	var err error
+	if a.flags.infra != "" {
+		if a.flags.infra, err = parseInfraProvider(a.flags.infra); err != nil {
+			return err
 		}
 	}
 
@@ -187,27 +175,18 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	}
 
 	target, err := resolveProjectTarget(
-		ctx, client, projectConfig, service, oldValues, request, a.flags,
+		ctx, client, projectConfig, service, oldValues, a.flags,
 	)
 	if err != nil {
 		return err
 	}
 	if err := confirmExplicitProjectReplacement(
-		ctx, client, target, service, oldValues, request, a.flags,
+		ctx, client, target, service, oldValues, a.flags,
 	); err != nil {
 		return err
 	}
 	if err := resolveAzureContext(
-		ctx, client, target, oldValues, allowedLocations(request),
-		request != nil && request.ResolveAzureContext,
-		a.flags.noPrompt,
-	); err != nil {
-		return err
-	}
-	if err := validateAllowedProjectLocation(
-		target,
-		allowedLocations(request),
-		oldValues["AZURE_LOCATION"],
+		ctx, client, target, oldValues, a.flags.noPrompt,
 	); err != nil {
 		return err
 	}
@@ -215,7 +194,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		if err := validateExistingEndpointMode(
 			service,
 			target.Endpoint,
-			infraFromRequest(request, a.flags),
+			a.flags.infra,
 			projectConfig,
 			oldValues,
 		); err != nil {
@@ -231,7 +210,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err := validateProjectServiceMutation(
 		service,
 		target.Endpoint,
-		infraFromRequest(request, a.flags),
+		a.flags.infra,
 	); err != nil {
 		return err
 	}
@@ -264,7 +243,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	}
 	restoreInfra := func() error {
 		var restoreErrs []error
-		if infra := infraFromRequest(request, a.flags); infra != "" {
+		if infra := a.flags.infra; infra != "" {
 			if err := restoreProjectInfraConfig(
 				ctx, client, oldProvider, oldPath,
 			); err != nil {
@@ -292,7 +271,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return rollbackProjectAdd(err, restoreService, restoreProvider)
 	}
-	if infra := infraFromRequest(request, a.flags); infra != "" {
+	if infra := a.flags.infra; infra != "" {
 		if err := ejectProjectInfraWithTarget(
 			ctx,
 			client,
@@ -310,16 +289,13 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	}
 
 	result := projectAddOutput{
-		SchemaVersion:   delegatedSchemaVersion,
-		ProducerVersion: delegatedProducerVersion(),
+		SchemaVersion:   projectOutputSchemaVersion,
+		ProducerVersion: projectOutputProducerVersion(),
 		ServiceName:     serviceName,
 		Mode:            string(target.Mode),
 		Mutation:        mutation,
 		Endpoint:        target.Endpoint,
 		ResourceID:      target.ResourceId,
-	}
-	if request != nil {
-		return nil
 	}
 
 	if a.flags.output == "none" {
@@ -355,53 +331,11 @@ func rollbackProjectAdd(
 	return errors.Join(append([]error{operationErr}, rollbackErrs...)...)
 }
 
-func (a *ProjectAddAction) loadRequest() (*projectAddRequest, error) {
-	if a.flags.requestFile == "" {
-		return nil, nil
-	}
-	if err := validateDelegatedFilePath(a.flags.requestFile, "request", true); err != nil {
-		return nil, err
-	}
-	request := &projectAddRequest{}
-	if err := decodeDelegatedJSON(a.flags.requestFile, request); err != nil {
-		return nil, err
-	}
-	if err := validateProjectAddRequest(*request); err != nil {
-		return nil, err
-	}
-	if request.Infra.EjectProvider != "" {
-		provider, err := parseInfraProvider(request.Infra.EjectProvider)
-		if err != nil {
-			return nil, err
-		}
-		request.Infra.EjectProvider = provider
-	}
-	a.flags.projectID = request.Project.ResourceID
-	a.flags.projectEndpoint = request.Project.Endpoint
-	a.flags.infra = request.Infra.EjectProvider
-	a.flags.force = request.Force
-	return request, nil
-}
-
 func (a *ProjectAddAction) environmentName() string {
 	if a.extCtx != nil {
 		return a.extCtx.Environment
 	}
 	return ""
-}
-
-func allowedLocations(request *projectAddRequest) []string {
-	if request == nil {
-		return nil
-	}
-	return request.Requirements.AllowedLocations
-}
-
-func infraFromRequest(request *projectAddRequest, flags *projectAddFlags) string {
-	if request != nil {
-		return request.Infra.EjectProvider
-	}
-	return flags.infra
 }
 
 func resolveProjectTarget(
@@ -410,13 +344,9 @@ func resolveProjectTarget(
 	project *azdext.ProjectConfig,
 	service *projectServiceInfo,
 	values map[string]string,
-	request *projectAddRequest,
 	flags *projectAddFlags,
 ) (*resolvedProject, error) {
 	projectID, endpoint := flags.projectID, flags.projectEndpoint
-	if request != nil {
-		projectID, endpoint = request.Project.ResourceID, request.Project.Endpoint
-	}
 	if projectID != "" {
 		return lookupResolvedProject(ctx, client, projectID)
 	}
@@ -434,7 +364,7 @@ func resolveProjectTarget(
 			return nil, err
 		}
 		if !equalProjectEndpoint(serviceEndpointValue, inferred.Endpoint) {
-			if noPromptForRequest(request, flags) {
+			if flags.noPrompt {
 				return nil, exterrors.Validation(
 					"project_target_mismatch",
 					"the configured project endpoint and AZURE_AI_PROJECT_ID identify different projects",
@@ -466,21 +396,16 @@ func resolveProjectTarget(
 	if serviceEndpointValue != "" {
 		return resolvedProjectFromEndpoint(serviceEndpointValue)
 	}
-	if noPromptForRequest(request, flags) {
+	if flags.noPrompt {
 		return &resolvedProject{Mode: projectModeNew}, nil
 	}
-	return promptProjectTarget(ctx, client, values, allowedLocations(request))
-}
-
-func noPromptForRequest(_ *projectAddRequest, flags *projectAddFlags) bool {
-	return flags.noPrompt
+	return promptProjectTarget(ctx, client, values)
 }
 
 func promptProjectTarget(
 	ctx context.Context,
 	client *azdext.AzdClient,
 	values map[string]string,
-	allowed []string,
 ) (*resolvedProject, error) {
 	choices := []*azdext.SelectChoice{
 		{Label: "Create a new Foundry project", Value: "new"},
@@ -517,7 +442,7 @@ func promptProjectTarget(
 		return nil, err
 	}
 	projects, err := listFoundryProjects(
-		ctx, subscriptionID, userTenantID, allowed,
+		ctx, subscriptionID, userTenantID,
 	)
 	if err != nil {
 		return nil, err
@@ -525,7 +450,7 @@ func promptProjectTarget(
 	if len(projects) == 0 {
 		return nil, exterrors.Validation(
 			"project_not_found",
-			"no Foundry projects in the selected subscription satisfy the location restriction",
+			"no Foundry projects were found in the selected subscription",
 			"choose a different subscription or create a new project",
 		)
 	}
@@ -613,7 +538,6 @@ func resolveInteractiveSubscription(
 func listFoundryProjects(
 	ctx context.Context,
 	subscriptionID, userTenantID string,
-	allowed []string,
 ) ([]resolvedProject, error) {
 	credential, err := azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{
@@ -657,10 +581,7 @@ func listFoundryProjects(
 			if resource.Location != nil {
 				project.Location = *resource.Location
 			}
-			if len(allowed) == 0 ||
-				(project.Location != "" && locationAllowed(project.Location, allowed)) {
-				projects = append(projects, *project)
-			}
+			projects = append(projects, *project)
 		}
 	}
 	slices.SortFunc(projects, func(left, right resolvedProject) int {
@@ -678,10 +599,9 @@ func confirmExplicitProjectReplacement(
 	target *resolvedProject,
 	service *projectServiceInfo,
 	values map[string]string,
-	request *projectAddRequest,
 	flags *projectAddFlags,
 ) error {
-	if target == nil || !explicitProjectTarget(request, flags) || flags.force {
+	if target == nil || !explicitProjectTarget(flags) || flags.force {
 		return nil
 	}
 	oldEndpoint := serviceEndpoint(nil)
@@ -733,55 +653,9 @@ func confirmExplicitProjectReplacement(
 	return nil
 }
 
-func explicitProjectTarget(
-	request *projectAddRequest,
-	flags *projectAddFlags,
-) bool {
-	if request != nil {
-		return request.Project.ResourceID != "" || request.Project.Endpoint != ""
-	}
+func explicitProjectTarget(flags *projectAddFlags) bool {
 	return strings.TrimSpace(flags.projectID) != "" ||
 		strings.TrimSpace(flags.projectEndpoint) != ""
-}
-
-func validateAllowedProjectLocation(
-	project *resolvedProject,
-	allowed []string,
-	fallbackLocation string,
-) error {
-	if project == nil || len(allowed) == 0 {
-		return nil
-	}
-	location := strings.TrimSpace(project.Location)
-	if location == "" {
-		location = strings.TrimSpace(fallbackLocation)
-	}
-	if location == "" {
-		return exterrors.Validation(
-			"project_location_not_allowed",
-			"the project location is unknown and cannot be checked against the allowed locations",
-			"provide a project with a known Azure location",
-		)
-	}
-	for _, allowedLocation := range allowed {
-		if strings.EqualFold(strings.TrimSpace(allowedLocation), location) {
-			return nil
-		}
-	}
-	return exterrors.Validation(
-		"project_location_not_allowed",
-		fmt.Sprintf("project location %q is outside the allowed locations", location),
-		"choose a project in one of the allowed locations",
-	)
-}
-
-func locationAllowed(location string, allowed []string) bool {
-	for _, candidate := range allowed {
-		if strings.EqualFold(strings.TrimSpace(candidate), location) {
-			return true
-		}
-	}
-	return false
 }
 
 func resolveAzureContext(
@@ -789,8 +663,6 @@ func resolveAzureContext(
 	client *azdext.AzdClient,
 	target *resolvedProject,
 	values map[string]string,
-	allowed []string,
-	required bool,
 	noPrompt bool,
 ) error {
 	if target == nil || target.Mode == projectModeExistingEndpoint {
@@ -801,26 +673,8 @@ func resolveAzureContext(
 		strings.TrimSpace(values["AZURE_SUBSCRIPTION_ID"]) == ""
 	needLocation := strings.TrimSpace(target.Location) == "" &&
 		strings.TrimSpace(values["AZURE_LOCATION"]) == ""
-	if !required && (noPrompt || (!needSubscription && !needLocation)) {
+	if noPrompt || (!needSubscription && !needLocation) {
 		return nil
-	}
-	if noPrompt && (needSubscription || needLocation) {
-		missing := make([]string, 0, 2)
-		if needSubscription {
-			missing = append(missing, "AZURE_SUBSCRIPTION_ID")
-		}
-		if needLocation {
-			missing = append(missing, "AZURE_LOCATION")
-		}
-		code := exterrors.CodeMissingAzureLocation
-		if needSubscription {
-			code = exterrors.CodeMissingAzureSubscription
-		}
-		return exterrors.Dependency(
-			code,
-			fmt.Sprintf("Azure context is incomplete; missing %s", strings.Join(missing, ", ")),
-			"set the missing values in the active azd environment and retry",
-		)
 	}
 	if needSubscription || (needLocation && targetSubscriptionID == "") {
 		subscriptionID, userTenantID, err := resolveInteractiveSubscription(
@@ -840,8 +694,7 @@ func resolveAzureContext(
 			},
 		}
 		response, err := client.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
-			AzureContext:     azureContext,
-			AllowedLocations: allowed,
+			AzureContext: azureContext,
 		})
 		if err != nil {
 			return fmt.Errorf("select Azure location: %w", err)

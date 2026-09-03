@@ -299,8 +299,6 @@ func TestEnsureProjectInitializesEmptyDirectory(t *testing.T) {
 func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {
 	tests := []struct {
 		name          string
-		delegated     bool
-		requestJSON   string
 		expectedModel string
 		expectedName  string
 	}{
@@ -308,19 +306,6 @@ func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {
 			name:          "direct",
 			expectedModel: "gpt-4.1",
 			expectedName:  "gpt-4.1",
-		},
-		{
-			name:      "delegated",
-			delegated: true,
-			requestJSON: `{
-  "schemaVersion": 1,
-  "source": "azure.ai.agents/init",
-  "sourceVersion": "1.0.0",
-  "model": {"name": "gpt-4.1", "deploymentName": "chat"},
-  "setAsDefault": true
-}`,
-			expectedModel: "gpt-4.1",
-			expectedName:  "chat",
 		},
 	}
 
@@ -335,14 +320,6 @@ func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {
 			flags := &projectDeploymentFlags{
 				model:  test.expectedModel,
 				output: "none",
-			}
-			if test.delegated {
-				requestPath := filepath.Join(root, "request.json")
-				require.NoError(t, os.WriteFile(
-					requestPath, []byte(test.requestJSON), 0600,
-				))
-				flags.model = ""
-				flags.requestFile = requestPath
 			}
 			action := &ProjectDeploymentAddAction{
 				client: client,

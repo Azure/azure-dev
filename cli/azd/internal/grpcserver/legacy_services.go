@@ -27,7 +27,7 @@ func (s *Server) registerLegacyServices() error {
 		azdext.PromptService_ServiceDesc.ServiceName:        s.promptService,
 		azdext.ProvisioningService_ServiceDesc.ServiceName:  s.provisioningService,
 		azdext.ServiceTargetService_ServiceDesc.ServiceName: s.serviceTargetService,
-		azdext.TelemetryService_ServiceDesc.ServiceName:     s.telemetryService,
+		v1beta.TelemetryService_ServiceDesc.ServiceName:     s.telemetryService,
 		azdext.UserConfigService_ServiceDesc.ServiceName:    s.userConfigService,
 		azdext.ValidationService_ServiceDesc.ServiceName:    s.validationService,
 		azdext.WorkflowService_ServiceDesc.ServiceName:      s.workflowService,

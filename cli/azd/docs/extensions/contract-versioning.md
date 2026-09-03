@@ -14,10 +14,10 @@ stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
-`ComposeService` and `CopilotService` are beta-only and therefore do not have
-stable `v1` generated types or facade aliases. The `AzdClient.Compose()` and
-`AzdClient.Copilot()` convenience accessors return generated `v1beta` clients,
-and their request and response types come from `contracts/v1beta`.
+`ComposeService`, `CopilotService`, and `TelemetryService` are beta-only and
+therefore do not have stable `v1` generated types or facade aliases. The
+corresponding `AzdClient` convenience accessors return generated `v1beta`
+clients, and their request and response types come from `contracts/v1beta`.
 
 ## Channel policy
 
@@ -47,10 +47,10 @@ descriptors.
 
 A service that exists only in beta is implemented directly with the generated
 `v1beta` server interface and registered without a stable adapter.
-`ComposeService` and `CopilotService` currently use this model. Focused beta
-overrides apply only to beta additions on services that also exist in stable;
-registration rejects an override for a beta-only service because its native
-implementation already owns the full beta contract.
+`ComposeService`, `CopilotService`, and `TelemetryService` currently use this
+model. Focused beta overrides apply only to beta additions on services that
+also exist in stable; registration rejects an override for a beta-only service
+because its native implementation already owns the full beta contract.
 
 For a method shared by both channels, the beta server:
 
@@ -105,9 +105,9 @@ message or enum type to remain compatible. Shared methods must retain their
 request and response types and client/server streaming shape.
 
 The temporary legacy bridge separately aliases the frozen pre-versioning
-`azdext.ComposeService` and `azdext.CopilotService` addresses to their native
-beta implementations. That compatibility alias does not make either service
-part of stable `v1`.
+`azdext.ComposeService`, `azdext.CopilotService`, and
+`azdext.TelemetryService` addresses to their native beta implementations. That
+compatibility alias does not make those services part of stable `v1`.
 
 See [`grpc/README.md`](../../grpc/README.md) for generation, lint, and Buf
 compatibility commands.

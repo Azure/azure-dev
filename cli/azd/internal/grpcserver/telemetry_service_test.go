@@ -14,7 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"

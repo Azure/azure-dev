@@ -124,7 +124,7 @@ var frozenServices = []frozenService{
 	}},
 	{&v1.ProvisioningService_ServiceDesc, []string{"Stream"}},
 	{&v1.ServiceTargetService_ServiceDesc, []string{"Stream"}},
-	{&v1.TelemetryService_ServiceDesc, []string{"ReportUsage"}},
+	{&v1beta.TelemetryService_ServiceDesc, []string{"ReportUsage"}},
 	{&v1.UserConfigService_ServiceDesc, []string{"Get", "GetString", "GetSection", "Set", "Unset"}},
 	{&v1.ValidationService_ServiceDesc, []string{"Stream"}},
 	{&v1.WorkflowService_ServiceDesc, []string{"Run"}},

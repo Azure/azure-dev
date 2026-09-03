@@ -227,7 +227,6 @@ func verifyAzureYamlDeployments(
 	noPrompt bool,
 	modelDeploymentFlag string,
 	modelFlag string,
-	existingOnly bool,
 ) (keptEntries []foundryDeploymentEntry, referencedDeployments []project.Deployment, modified bool, err error) {
 	// Get the Foundry project ID from the environment.
 	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -285,10 +284,6 @@ func verifyAzureYamlDeployments(
 			"verify the deployment name or omit --model-deployment to select interactively",
 		)
 	}
-	if existingOnly && len(allDeployments) == 0 {
-		return nil, nil, false, noExistingPromptDeploymentsError()
-	}
-
 	for _, entry := range entries {
 		dep := entry.Deployment
 
@@ -347,8 +342,7 @@ func verifyAzureYamlDeployments(
 			}
 			fmt.Println()
 
-			// Build prompt choices. Prompt agents currently reuse existing deployments
-			// only; hosted agents retain deploy/catalog/skip options.
+			// Build prompt choices: use each existing + optionally deploy as specified + choose different + skip
 			choices := make([]*azdext.SelectChoice, 0, len(sortedNames)+3)
 			for _, name := range sortedNames {
 				d := matchingDeployments[name]
@@ -358,40 +352,27 @@ func verifyAzureYamlDeployments(
 						name, d.Version, d.SkuName),
 				})
 			}
-			if existingOnly {
-				choices = append(choices, &azdext.SelectChoice{
-					Value: "change",
-					Label: "Choose a different existing deployment",
-				})
-			} else {
-				// Only offer "deploy as specified" if no existing deployment is an exact match.
-				hasExactMatch := false
-				for _, d := range matchingDeployments {
-					if d.Name == dep.Name &&
-						d.Version == dep.Model.Version &&
-						d.SkuName == dep.Sku.Name &&
-						d.SkuCapacity == dep.Sku.Capacity {
-						hasExactMatch = true
-						break
-					}
+			// Only offer "deploy as specified" if no existing deployment is an exact match.
+			hasExactMatch := false
+			for _, d := range matchingDeployments {
+				if d.Name == dep.Name &&
+					d.Version == dep.Model.Version &&
+					d.SkuName == dep.Sku.Name &&
+					d.SkuCapacity == dep.Sku.Capacity {
+					hasExactMatch = true
+					break
 				}
-				if !hasExactMatch {
-					choices = append(choices, &azdext.SelectChoice{
-						Value: "deploy",
-						Label: "Deploy as specified in azure.yaml",
-					})
-				}
-				choices = append(choices,
-					&azdext.SelectChoice{
-						Value: "change",
-						Label: "Choose a different model",
-					},
-					&azdext.SelectChoice{
-						Value: "skip",
-						Label: "Skip this model entirely (remove from azure.yaml)",
-					},
-				)
 			}
+			if !hasExactMatch {
+				choices = append(choices, &azdext.SelectChoice{
+					Value: "deploy",
+					Label: "Deploy as specified in azure.yaml",
+				})
+			}
+			choices = append(choices,
+				&azdext.SelectChoice{Value: "change", Label: "Choose a different model"},
+				&azdext.SelectChoice{Value: "skip", Label: "Skip this model entirely (remove from azure.yaml)"},
+			)
 
 			defaultIdx := int32(0)
 			selectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
@@ -437,7 +418,7 @@ func verifyAzureYamlDeployments(
 
 			case selected == "change":
 				newDep, isExisting, err := promptAlternativeDeployment(
-					ctx, azdClient, azureContext, allDeployments, modelFlag, existingOnly,
+					ctx, azdClient, azureContext, allDeployments, modelFlag,
 				)
 				if err != nil {
 					return nil, nil, false, err
@@ -462,13 +443,6 @@ func verifyAzureYamlDeployments(
 		} else {
 			// No matching deployment in the project (or no project yet).
 			if noPrompt {
-				if existingOnly {
-					return nil, nil, false, exterrors.Validation(
-						exterrors.CodeModelDeploymentNotFound,
-						fmt.Sprintf("no existing deployment matches model %q", dep.Model.Name),
-						"pass --model-deployment with a deployment from the selected Foundry project",
-					)
-				}
 				// Auto-deploy as specified.
 				log.Printf("--no-prompt: no matching deployment for model '%s', will deploy as specified",
 					dep.Model.Name)
@@ -477,18 +451,6 @@ func verifyAzureYamlDeployments(
 					Deployment:  dep,
 				})
 				referencedDeployments = append(referencedDeployments, dep)
-				continue
-			}
-
-			if existingOnly {
-				newDep, _, err := promptAlternativeDeployment(
-					ctx, azdClient, azureContext, allDeployments, modelFlag, true,
-				)
-				if err != nil {
-					return nil, nil, false, err
-				}
-				referencedDeployments = append(referencedDeployments, *newDep)
-				modified = true
 				continue
 			}
 
@@ -537,7 +499,7 @@ func verifyAzureYamlDeployments(
 
 			case "change":
 				newDep, isExisting, err := promptAlternativeDeployment(
-					ctx, azdClient, azureContext, allDeployments, modelFlag, false,
+					ctx, azdClient, azureContext, allDeployments, modelFlag,
 				)
 				if err != nil {
 					return nil, nil, false, err
@@ -574,12 +536,7 @@ func promptAlternativeDeployment(
 	azureContext *azdext.AzureContext,
 	allDeployments []FoundryDeploymentInfo,
 	modelFlag string,
-	existingOnly bool,
 ) (dep *project.Deployment, isExisting bool, err error) {
-	if existingOnly {
-		dep, err := promptExistingAdoptionDeployment(ctx, azdClient, allDeployments)
-		return dep, true, err
-	}
 	// Determine whether to prompt for catalog vs existing, or skip straight to catalog.
 	useCatalog := true
 	if len(allDeployments) > 0 {
@@ -724,47 +681,6 @@ func promptAlternativeDeployment(
 			Capacity: d.SkuCapacity,
 		},
 	}, true, nil
-}
-
-func promptExistingAdoptionDeployment(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	deployments []FoundryDeploymentInfo,
-) (*project.Deployment, error) {
-	if len(deployments) == 0 {
-		return nil, noExistingPromptDeploymentsError()
-	}
-	slices.SortFunc(deployments, func(a, b FoundryDeploymentInfo) int {
-		return strings.Compare(a.Name, b.Name)
-	})
-	choices := make([]*azdext.SelectChoice, len(deployments))
-	for i, deployment := range deployments {
-		choices[i] = &azdext.SelectChoice{
-			Value: deployment.Name,
-			Label: fmt.Sprintf("%s (%s, version %s)", deployment.Name, deployment.ModelName, deployment.Version),
-		}
-	}
-	defaultIndex := int32(0)
-	response, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{Options: &azdext.SelectOptions{
-		Message:       "Select an existing model deployment",
-		Choices:       choices,
-		SelectedIndex: &defaultIndex,
-	}})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return nil, exterrors.Cancelled("model deployment selection was cancelled")
-		}
-		return nil, fmt.Errorf("selecting an existing model deployment: %w", err)
-	}
-	return promptDeploymentFromFoundry(&deployments[*response.Value]), nil
-}
-
-func noExistingPromptDeploymentsError() error {
-	return exterrors.Dependency(
-		exterrors.CodeModelDeploymentNotFound,
-		"the selected Foundry project has no existing model deployments",
-		"create a model deployment in the Foundry project, then retry init",
-	)
 }
 
 // updateAzureYamlDeployments writes the filtered deployment list back to the
@@ -1098,9 +1014,6 @@ func runInitFromAzureYaml(
 		return err
 	}
 	promptOnly := stagedInfo.promptOnly()
-	if promptOnly && flags.noPrompt && strings.TrimSpace(flags.projectResourceId) == "" {
-		return missingPromptAdoptionProjectError()
-	}
 	if agentNameOverride != "" {
 		// Validate against the fully staged template so services whose host lives
 		// inside a local $ref are counted the same way azd-core will load them.
@@ -1166,24 +1079,16 @@ func runInitFromAzureYaml(
 	// Only source-container deploys require an ACR. Code deploy and pre-built
 	// images skip it.
 	skipACR := !projectNeedsACR
-	// The adopt path only supports hosted agents today. Hosted-region filtering
-	// is independent from ACR setup; prompt-voice has its own region/onboarding
-	// constraints and does not flow through this path.
+	// Hosted-region filtering is independent from ACR setup. Prompt agents are
+	// managed by Foundry and must not inherit hosted-agent region constraints.
 	filterHostedRegions := true
 
-	var result *foundryProjectSetupResult
-	if promptOnly {
-		result, err = configureExistingPromptProject(
-			ctx, azdClient, azureContext, env.Name, flags.projectResourceId, flags.noPrompt,
-		)
-	} else {
-		result, err = configureFoundryProject(
-			ctx, azdClient, azureContext, env.Name,
-			flags.projectResourceId, flags.noPrompt,
-			skipACR,
-			filterHostedRegions,
-		)
-	}
+	result, err := configureFoundryProject(
+		ctx, azdClient, azureContext, env.Name,
+		flags.projectResourceId, flags.noPrompt,
+		skipACR,
+		filterHostedRegions && !promptOnly,
+	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
 			return exterrors.Cancelled("initialization was cancelled")
@@ -1251,7 +1156,7 @@ func runInitFromAzureYaml(
 		result != nil && result.Credential != nil {
 		keptEntries, referencedDeployments, deploymentsModified, err := verifyAzureYamlDeployments(
 			ctx, azdClient, result.Credential, azureContext, env.Name,
-			deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model, promptOnly,
+			deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model,
 		)
 		if err != nil {
 			if exterrors.IsCancellation(err) {
@@ -1288,6 +1193,11 @@ func runInitFromAzureYaml(
 		if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
 			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 		}
+		if err := updatePendingModelDeploymentSignal(
+			ctx, azdClient, env.Name, true, len(keptEntries) > 0,
+		); err != nil {
+			log.Printf("warning: failed to update model_deployment provision signal: %v", err)
+		}
 	}
 
 	// scaffoldProject changes the extension process into the adopted project root.
@@ -1308,109 +1218,6 @@ func runInitFromAzureYaml(
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay, promptOnly)
 	return nil
-}
-
-func configureExistingPromptProject(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	azureContext *azdext.AzureContext,
-	envName string,
-	projectResourceID string,
-	noPrompt bool,
-) (*foundryProjectSetupResult, error) {
-	if noPrompt && strings.TrimSpace(projectResourceID) == "" {
-		return nil, missingPromptAdoptionProjectError()
-	}
-	if projectResourceID != "" {
-		details, err := extractProjectDetails(projectResourceID)
-		if err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidProjectResourceId,
-				fmt.Sprintf("invalid --project-id value: %s", err),
-				"pass a full Microsoft.CognitiveServices/accounts/projects resource ID",
-			)
-		}
-		azureContext.Scope.SubscriptionId = details.SubscriptionId
-	}
-
-	credential, err := ensureSubscription(
-		ctx, azdClient, azureContext, envName,
-		"Select an Azure subscription containing an existing Foundry project.",
-	)
-	if err != nil {
-		return nil, err
-	}
-	selected, err := selectExistingPromptFoundryProject(
-		ctx, azdClient, credential, azureContext, projectResourceID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if selected == nil {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectId,
-			"an existing Foundry project is required for prompt-agent azure.yaml adoption",
-			"create the project separately, then re-run with --project-id <resource ID>",
-		)
-	}
-	if err := setPromptFoundryProjectEnv(ctx, azdClient, envName, selected); err != nil {
-		return nil, err
-	}
-	if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
-		return nil, err
-	}
-	return &foundryProjectSetupResult{Credential: credential, FoundryProject: selected}, nil
-}
-
-func missingPromptAdoptionProjectError() error {
-	return exterrors.Dependency(
-		exterrors.CodeMissingAiProjectId,
-		"prompt-agent azure.yaml adoption requires an existing Foundry project",
-		"pass --project-id <full Foundry project resource ID>",
-	)
-}
-
-func selectExistingPromptFoundryProject(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	credential azcore.TokenCredential,
-	azureContext *azdext.AzureContext,
-	projectResourceID string,
-) (*FoundryProjectInfo, error) {
-	if projectResourceID != "" {
-		return getFoundryProject(
-			ctx, credential, azureContext.Scope.SubscriptionId, projectResourceID,
-		)
-	}
-	projects, err := listFoundryProjects(ctx, credential, azureContext.Scope.SubscriptionId)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
-	}
-	if len(projects) == 0 {
-		return nil, nil
-	}
-	slices.SortFunc(projects, func(a, b FoundryProjectInfo) int {
-		return strings.Compare(a.AccountName+"/"+a.ProjectName, b.AccountName+"/"+b.ProjectName)
-	})
-	choices := make([]*azdext.SelectChoice, len(projects))
-	for i, project := range projects {
-		choices[i] = &azdext.SelectChoice{
-			Label: fmt.Sprintf("%s / %s (%s)", project.AccountName, project.ProjectName, project.Location),
-			Value: fmt.Sprintf("%d", i),
-		}
-	}
-	response, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{Options: &azdext.SelectOptions{
-		Message: "Select an existing Foundry project for the prompt agent",
-		Choices: choices,
-	}})
-	if err != nil {
-		return nil, exterrors.FromPrompt(err, "failed to select an existing Foundry project")
-	}
-	index := int(response.GetValue())
-	if index < 0 || index >= len(projects) {
-		return nil, exterrors.Cancelled("Foundry project selection was cancelled")
-	}
-	return &projects[index], nil
 }
 
 func validateAdoptedAgentNameOverride(content []byte, projectRoot string) error {

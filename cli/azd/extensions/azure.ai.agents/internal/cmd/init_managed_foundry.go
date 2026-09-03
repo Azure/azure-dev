@@ -152,10 +152,11 @@ func resolvePromptHarnessTarget(
 	return deployment, proj, cred, err
 }
 
-// selectPromptFoundryProject lists the Foundry projects in the subscription and
-// prompts the user to pick one (or to create a new one). When projectResourceId
-// is set it resolves that project directly without prompting. Returns nil when
-// the user chose "Create a new Foundry project" or none were found.
+// selectPromptFoundryProject first asks whether to use an existing project or
+// create a new one, then lists projects only for the existing-project branch.
+// When projectResourceId is set it resolves that project directly without
+// prompting. Returns nil when the user chose "Create a new Foundry project" or
+// no existing projects were found.
 //
 // Unlike the hosted selectFoundryProject this does NOT filter by region or
 // configure ACR/AppInsights connections, which are irrelevant to prompt agents.
@@ -181,6 +182,25 @@ func selectPromptFoundryProject(
 	if noPrompt {
 		return nil, nil
 	}
+	projectChoices := []*azdext.SelectChoice{
+		{Label: "Use an existing Foundry project", Value: "existing"},
+		{Label: "Create a new Foundry project", Value: "new"},
+	}
+	defaultIndex := int32(0)
+	projectResponse, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{Options: &azdext.SelectOptions{
+		Message:       "Select a Foundry project to host your agent and model",
+		Choices:       projectChoices,
+		SelectedIndex: &defaultIndex,
+	}})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("project selection was cancelled")
+		}
+		return nil, exterrors.FromPrompt(err, "failed to select a Foundry project configuration")
+	}
+	if projectChoices[*projectResponse.Value].Value == "new" {
+		return nil, nil
+	}
 
 	projects, err := listFoundryProjects(ctx, credential, subscriptionId)
 	if err != nil {
@@ -190,7 +210,7 @@ func selectPromptFoundryProject(
 		return nil, nil
 	}
 
-	choices := make([]*azdext.SelectChoice, 0, len(projects)+1)
+	choices := make([]*azdext.SelectChoice, 0, len(projects))
 	for i, p := range projects {
 		label := fmt.Sprintf("%s / %s", p.AccountName, p.ProjectName)
 		if p.Location != "" {
@@ -201,12 +221,6 @@ func selectPromptFoundryProject(
 			Value: fmt.Sprintf("%d", i),
 		})
 	}
-	const createNewValue = "__create_new__"
-	choices = append(choices, &azdext.SelectChoice{
-		Label: "Create a new Foundry project (provisioned by `azd up`)",
-		Value: createNewValue,
-	})
-
 	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a Foundry project to host your agent and model",
@@ -225,10 +239,6 @@ func selectPromptFoundryProject(
 	}
 
 	idx := int(*resp.Value)
-	if idx < 0 || idx >= len(projects) {
-		// "Create a new Foundry project"
-		return nil, nil
-	}
 	selected := projects[idx]
 	return &selected, nil
 }

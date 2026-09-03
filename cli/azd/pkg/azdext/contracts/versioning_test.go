@@ -27,7 +27,7 @@ func TestStableContractIsSubsetOfBeta(t *testing.T) {
 	stable := contractFiles(t, "azd.extensions.v1")
 	beta := contractFiles(t, "azd.extensions.v1beta")
 
-	require.Len(t, stable, 18)
+	require.Len(t, stable, 17)
 	require.GreaterOrEqual(t, len(beta), len(stable))
 	require.NoError(t, validateStableSubset(stable, beta))
 }
@@ -38,7 +38,7 @@ func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
 	stable := contractFiles(t, "azd.extensions.v1")
 	beta := contractFiles(t, "azd.extensions.v1beta")
 
-	for _, fileName := range []string{"compose.proto", "copilot.proto"} {
+	for _, fileName := range []string{"compose.proto", "copilot.proto", "telemetry.proto"} {
 		require.NotContains(t, stable, fileName)
 		require.Contains(t, beta, fileName)
 		require.NotEmpty(t, beta[fileName].Services())
@@ -113,11 +113,6 @@ func TestVersionedFullMethodNames(t *testing.T) {
 			name:   "stream",
 			stable: v1.ValidationService_Stream_FullMethodName,
 			beta:   v1beta.ValidationService_Stream_FullMethodName,
-		},
-		{
-			name:   "telemetry",
-			stable: v1.TelemetryService_ReportUsage_FullMethodName,
-			beta:   v1beta.TelemetryService_ReportUsage_FullMethodName,
 		},
 	}
 

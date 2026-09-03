@@ -213,20 +213,19 @@ func Test_Server_Start(t *testing.T) {
 			"PromptService",
 			"ProvisioningService",
 			"ServiceTargetService",
-			"TelemetryService",
 			"UserConfigService",
 			"ValidationService",
 			"WorkflowService",
 		}
 
 		services := server.grpcServer.GetServiceInfo()
-		require.Len(t, services, 3*len(serviceNames)+4)
+		require.Len(t, services, 3*len(serviceNames)+6)
 		for _, serviceName := range serviceNames {
 			require.Contains(t, services, "azd.extensions.v1."+serviceName)
 			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
 			require.Contains(t, services, "azdext."+serviceName)
 		}
-		for _, serviceName := range []string{"ComposeService", "CopilotService"} {
+		for _, serviceName := range []string{"ComposeService", "CopilotService", "TelemetryService"} {
 			require.NotContains(t, services, "azd.extensions.v1."+serviceName)
 			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
 			require.Contains(t, services, "azdext."+serviceName)
@@ -344,7 +343,7 @@ func Test_Server_Start(t *testing.T) {
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
-		resp, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+		resp, err := client.Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{
 			EventName:  "deploy.completed",
 			Attributes: map[string]string{"deploy.mode": "code"},
 		})
@@ -416,7 +415,7 @@ func Test_Server_Start(t *testing.T) {
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
-		_, err = client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+		_, err = client.Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{
 			Attributes: map[string]string{"deploy.mode": "code"},
 		})
 		st, ok := status.FromError(err)
@@ -434,7 +433,7 @@ func Test_Server_Start(t *testing.T) {
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
-		_, err = client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+		_, err = client.Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{
 			EventName: "deploy.completed",
 		})
 		st, ok := status.FromError(err)
@@ -448,7 +447,7 @@ func Test_Server_Start(t *testing.T) {
 
 		_, err = client.Telemetry().ReportUsage(
 			t.Context(),
-			&azdext.ReportUsageRequest{EventName: "deploy.completed"},
+			&v1beta.ReportUsageRequest{EventName: "deploy.completed"},
 		)
 		st, ok := status.FromError(err)
 		require.True(t, ok)
@@ -477,7 +476,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		v1beta.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
-		azdext.UnimplementedTelemetryServiceServer{},
+		v1beta.UnimplementedTelemetryServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -759,23 +758,23 @@ func TestServer_BetaStructuredErrorDetails(t *testing.T) {
 	}
 }
 
-type betaTelemetryOverride struct{}
+type betaAccountOverride struct{}
 
-func (betaTelemetryOverride) ReportUsage(
+func (betaAccountOverride) ListSubscriptions(
 	ctx context.Context,
-	request *v1beta.ReportUsageRequest,
-) (*v1beta.ReportUsageResponse, error) {
-	return &v1beta.ReportUsageResponse{Accepted: request.GetEventName() == "preview.event"}, nil
+	request *v1beta.ListSubscriptionsRequest,
+) (*v1beta.ListSubscriptionsResponse, error) {
+	return &v1beta.ListSubscriptionsResponse{
+		Subscriptions: []*v1beta.Subscription{{Name: request.GetTenantId()}},
+	}, nil
 }
-
-var _ BetaTelemetryServiceReportUsageOverride = betaTelemetryOverride{}
 
 func TestServer_BetaMethodOverride(t *testing.T) {
 	t.Parallel()
 
 	server := newServerWithContainerService(
 		azdext.UnimplementedContainerServiceServer{},
-		WithBetaServiceOverride(BetaTelemetryService, betaTelemetryOverride{}),
+		WithBetaServiceOverride(BetaAccountService, betaAccountOverride{}),
 	)
 	serverInfo, err := server.Start()
 	require.NoError(t, err)
@@ -795,21 +794,13 @@ func TestServer_BetaMethodOverride(t *testing.T) {
 		require.NoError(t, connection.Close())
 	}()
 
-	response, err := v1beta.NewTelemetryServiceClient(connection).ReportUsage(
+	response, err := v1beta.NewAccountServiceClient(connection).ListSubscriptions(
 		azdext.WithAccessToken(t.Context(), accessToken),
-		&v1beta.ReportUsageRequest{EventName: "preview.event"},
+		&v1beta.ListSubscriptionsRequest{TenantId: new("preview-tenant")},
 	)
 	require.NoError(t, err)
-	require.True(t, response.GetAccepted())
+	require.Equal(t, "preview-tenant", response.GetSubscriptions()[0].GetName())
 
-	_, err = azdext.NewTelemetryServiceClient(connection).ReportUsage(
-		azdext.WithAccessToken(t.Context(), accessToken),
-		&azdext.ReportUsageRequest{EventName: "preview.event"},
-	)
-	require.Error(t, err)
-	st, ok := status.FromError(err)
-	require.True(t, ok)
-	require.Equal(t, codes.Unimplemented, st.Code())
 }
 
 type relayingContainerService struct {
@@ -846,7 +837,7 @@ func newServerWithContainerService(
 		v1beta.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
-		azdext.UnimplementedTelemetryServiceServer{},
+		v1beta.UnimplementedTelemetryServiceServer{},
 	).WithOptions(options...)
 }
 

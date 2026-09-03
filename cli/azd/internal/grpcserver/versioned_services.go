@@ -87,7 +87,6 @@ func (s *Server) registerServices() error {
 	azdext.RegisterAiModelServiceServer(s.grpcServer, s.aiModelService)
 	azdext.RegisterProvisioningServiceServer(s.grpcServer, s.provisioningService)
 	azdext.RegisterValidationServiceServer(s.grpcServer, s.validationService)
-	azdext.RegisterTelemetryServiceServer(s.grpcServer, s.telemetryService)
 
 	if err := s.registerLegacyServices(); err != nil {
 		return fmt.Errorf("register legacy extension services: %w", err)

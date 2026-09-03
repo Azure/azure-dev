@@ -1575,10 +1575,6 @@ the stable and beta channel policy.
 
 - Stable proto files @ [grpc/proto/azd/extensions/v1](../../grpc/proto/azd/extensions/v1/)
 - Beta proto files @ [grpc/proto/azd/extensions/v1beta](../../grpc/proto/azd/extensions/v1beta/)
-- Generated stable files @ [pkg/azdext/contracts/v1](../../pkg/azdext/contracts/v1/)
-- Generated beta files @ [pkg/azdext/contracts/v1beta](../../pkg/azdext/contracts/v1beta/)
-- Generated host beta adapters @
-  [internal/grpcserver/versioned_services_generated.go](../../internal/grpcserver/versioned_services_generated.go)
 - Make file @ [Makefile](../../Makefile)
 
 To re-generate gRPC clients:

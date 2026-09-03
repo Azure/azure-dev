@@ -11,9 +11,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"sync"
 	"time"
+
+	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
@@ -275,7 +279,61 @@ func (a *InvokeAction) responsesResumeRemote(ctx context.Context) error {
 	fmt.Printf("Response:     %s\n", record.ResponseID)
 	fmt.Printf("Session:      %s\n", record.SessionID)
 	fmt.Printf("Conversation: %s\n\n", record.ConversationID)
-	return a.followBackgroundResponse(ctx, rc, store, *record, os.Stdout)
+	return classifyResponseLifecycleHTTPError(
+		a.followBackgroundResponse(ctx, rc, store, *record, os.Stdout),
+		exterrors.OpResumeBackgroundResponse,
+	)
+}
+
+// responseLifecycleHTTPError preserves HTTP response metadata for classification at the operation boundary.
+type responseLifecycleHTTPError struct {
+	method     string
+	requestURL string
+	statusCode int
+	status     string
+	body       []byte
+}
+
+func (e *responseLifecycleHTTPError) Error() string {
+	return fmt.Sprintf(
+		"%s %s failed with HTTP %d: %s\n%s",
+		e.method,
+		e.requestURL,
+		e.statusCode,
+		e.status,
+		e.body,
+	)
+}
+
+func classifyResponseLifecycleHTTPError(cause error, operation string) error {
+	if cause == nil {
+		return nil
+	}
+	httpErr, ok := errors.AsType[*responseLifecycleHTTPError](cause)
+	if !ok {
+		return cause
+	}
+
+	serviceName := ""
+	if parsedURL, err := url.Parse(httpErr.requestURL); err == nil {
+		serviceName = parsedURL.Hostname()
+	}
+	operationLabel := "background Response request"
+	switch operation {
+	case exterrors.OpResumeBackgroundResponse:
+		operationLabel = "resuming background Response"
+	case exterrors.OpCancelBackgroundResponse:
+		operationLabel = "cancelling background Response"
+	}
+	serviceErr := exterrors.Service(
+		operation,
+		strconv.Itoa(httpErr.statusCode),
+		fmt.Sprintf("%s failed with HTTP %d: %s", operationLabel, httpErr.statusCode, httpErr.status),
+		serviceName,
+		"",
+	)
+	serviceErr.StatusCode = httpErr.statusCode
+	return serviceErr
 }
 
 // backgroundFollowAttempt describes whether one follow attempt completed or should be retried.
@@ -423,7 +481,13 @@ func classifyBackgroundFollowResponse(
 
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	followErr := fmt.Errorf("GET %s failed with HTTP %d: %s\n%s", followURL, resp.StatusCode, resp.Status, body)
+	followErr := &responseLifecycleHTTPError{
+		method:     http.MethodGet,
+		requestURL: followURL,
+		statusCode: resp.StatusCode,
+		status:     resp.Status,
+		body:       body,
+	}
 	if !isRetryableResponseStatus(resp.StatusCode) {
 		return backgroundFollowRequestResult{}, followErr
 	}
@@ -581,14 +645,17 @@ func (a *InvokeAction) responsesCancelRemote(ctx context.Context) error {
 		return fmt.Errorf("read cancel response: %w", readErr)
 	}
 	if resp.StatusCode >= 400 {
-		cancelErr := fmt.Errorf(
-			"POST %s failed with HTTP %d: %s\n%s",
-			cancelURL,
-			resp.StatusCode,
-			resp.Status,
-			body,
+		cancelErr := &responseLifecycleHTTPError{
+			method:     http.MethodPost,
+			requestURL: cancelURL,
+			statusCode: resp.StatusCode,
+			status:     resp.Status,
+			body:       body,
+		}
+		return classifyResponseLifecycleHTTPError(
+			a.handleRejectedResponseCancel(ctx, rc, store, record, cancelErr, os.Stdout),
+			exterrors.OpCancelBackgroundResponse,
 		)
-		return a.handleRejectedResponseCancel(ctx, rc, store, record, cancelErr, os.Stdout)
 	}
 
 	snapshot, decodeErr := decodeResponseSnapshot(body)
@@ -692,8 +759,13 @@ func (a *InvokeAction) refreshResponseSnapshot(
 			fmt.Errorf("read Response snapshot: %w", err)
 	}
 	if resp.StatusCode >= 400 {
-		return savedBackgroundResponse{}, responseSnapshotResult{},
-			fmt.Errorf("GET %s failed with HTTP %d: %s\n%s", snapshotURL, resp.StatusCode, resp.Status, body)
+		return savedBackgroundResponse{}, responseSnapshotResult{}, &responseLifecycleHTTPError{
+			method:     http.MethodGet,
+			requestURL: snapshotURL,
+			statusCode: resp.StatusCode,
+			status:     resp.Status,
+			body:       body,
+		}
 	}
 	snapshot, err := decodeResponseSnapshot(body)
 	if err != nil {

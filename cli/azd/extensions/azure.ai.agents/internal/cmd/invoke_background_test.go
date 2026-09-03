@@ -833,6 +833,45 @@ func TestClassifyBackgroundFollowResponse(t *testing.T) {
 	}
 }
 
+func TestClassifyResponseLifecycleHTTPError(t *testing.T) {
+	t.Parallel()
+
+	for _, operation := range []string{
+		exterrors.OpResumeBackgroundResponse,
+		exterrors.OpCancelBackgroundResponse,
+	} {
+		t.Run(operation, func(t *testing.T) {
+			t.Parallel()
+			cause := errors.Join(
+				errors.New("operation failed"),
+				&responseLifecycleHTTPError{
+					method:     http.MethodGet,
+					requestURL: "https://project.services.ai.azure.com/responses/resp_123",
+					statusCode: http.StatusForbidden,
+					status:     "403 Forbidden",
+					body:       []byte(`{"error":{"message":"sensitive response"}}`),
+				},
+			)
+
+			err := classifyResponseLifecycleHTTPError(cause, operation)
+
+			serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+			require.True(t, ok)
+			assert.Equal(t, operation+".403", serviceErr.ErrorCode)
+			assert.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
+			assert.Equal(t, "project.services.ai.azure.com", serviceErr.ServiceName)
+			assert.NotContains(t, serviceErr.Message, "sensitive response")
+		})
+	}
+}
+
+func TestClassifyResponseLifecycleHTTPErrorPreservesOtherErrors(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("local failure")
+	assert.Same(t, cause, classifyResponseLifecycleHTTPError(cause, exterrors.OpResumeBackgroundResponse))
+}
+
 func TestClassifyBackgroundFollowResponseUsesHTTPDate(t *testing.T) {
 	t.Parallel()
 

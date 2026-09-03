@@ -206,10 +206,10 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		return classifyDeleteError(err, agentName)
 	}
 
-	// Best-effort: clean up saved session and conversation IDs (same as postdown hook).
+	// Best-effort: clean up saved session, conversation, and background Response state (same as postdown hook).
 	// Must run before cleanupEnvVars since it reads AGENT_{KEY}_ENDPOINT.
 	if envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
-		cleanupAgentSessionState(ctx, azdClient, envResp.Environment.Name, info.ServiceName)
+		cleanupAgentState(ctx, azdClient, envResp.Environment.Name, info.ServiceName)
 	}
 
 	// Best-effort: clear readiness and endpoint state after a successful delete.
@@ -476,7 +476,7 @@ func (a *DeleteAction) runPromptDelete(
 	// longer exists. Session state must be cleared first since it reads
 	// AGENT_{KEY}_ENDPOINT.
 	if envResp, envErr := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); envErr == nil {
-		cleanupAgentSessionState(ctx, azdClient, envResp.Environment.Name, pctx.ServiceName)
+		cleanupAgentState(ctx, azdClient, envResp.Environment.Name, pctx.ServiceName)
 	}
 	a.cleanupEnvVars(ctx, azdClient, pctx.ServiceName, pctx.Settings.ProjectEndpoint)
 

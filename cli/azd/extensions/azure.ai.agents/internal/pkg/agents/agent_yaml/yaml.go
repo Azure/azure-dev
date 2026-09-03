@@ -22,6 +22,9 @@ const (
 	// voice when building the create request. Reserving "prompt-voice" keeps a
 	// clean boundary against a future hosted (code) voice agent.
 	AgentKindPromptVoice AgentKind = "prompt-voice"
+	// AgentKindVoice is the preferred authoring kind for managed Voice agents.
+	// AgentKindPromptVoice remains accepted for backwards compatibility.
+	AgentKindVoice AgentKind = "voice"
 )
 
 // VoiceModelType selects the model-inference mode for a voice agent.
@@ -52,7 +55,13 @@ func ValidAgentKinds() []AgentKind {
 		AgentKindHosted,
 		AgentKindWorkflow,
 		AgentKindPromptVoice,
+		AgentKindVoice,
 	}
+}
+
+// IsVoiceAgentKind reports whether kind is a managed Voice agent authoring kind.
+func IsVoiceAgentKind(kind AgentKind) bool {
+	return kind == AgentKindPromptVoice || kind == AgentKindVoice
 }
 
 type ResourceKind string

@@ -2563,7 +2563,7 @@ func (a *InitAction) configureModelChoice(
 	// filtering (isHostedAgent). Best-effort: a parse failure here leaves the
 	// default non-voice behavior unchanged.
 	if kind, err := agentManifestKind(agentManifest); err == nil {
-		a.isVoiceAgent = kind == agent_yaml.AgentKindPromptVoice
+		a.isVoiceAgent = agent_yaml.IsVoiceAgentKind(kind)
 	}
 
 	// When no --project-id flag was given, check whether the azd environment already
@@ -3366,7 +3366,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// Voice agents (kind: prompt-voice) carry no container/image/code config and
 	// take an entirely different service-entry shape. Handle them in an isolated
 	// branch and return early so the container path below is unaffected.
-	if agentDef.Kind == agent_yaml.AgentKindPromptVoice {
+	if agent_yaml.IsVoiceAgentKind(agentDef.Kind) {
 		return a.addVoiceAgentToProject(ctx, targetDir, agentManifest)
 	}
 

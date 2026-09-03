@@ -119,7 +119,7 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 		agent.AgentDefinition = agentDef
 		return agent, nil
-	case AgentKindPromptVoice:
+	case AgentKindPromptVoice, AgentKindVoice:
 		var agent VoiceAgent
 		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal to VoiceAgent: %w", err)
@@ -394,13 +394,13 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
 				if modelType, ok := fields["model_type"]; ok &&
 					modelType.Kind == yaml.ScalarNode && modelType.Value == string(VoiceModelTypeHostedAgent) &&
-					agentDef.Kind != AgentKindPromptVoice {
+					!IsVoiceAgentKind(agentDef.Kind) {
 					errors = append(errors,
-						"template.model_type 'hosted_agent' is only valid for prompt-voice agents")
+						"template.model_type 'hosted_agent' is only valid for voice agents")
 				}
-				if _, ok := fields["target_agent"]; ok && agentDef.Kind != AgentKindPromptVoice {
+				if _, ok := fields["target_agent"]; ok && !IsVoiceAgentKind(agentDef.Kind) {
 					errors = append(errors,
-						"template.target_agent is only valid for prompt-voice agents")
+						"template.target_agent is only valid for voice agents")
 				}
 			}
 
@@ -462,7 +462,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to Workflow: %v", err))
 				}
-			case AgentKindPromptVoice:
+			case AgentKindPromptVoice, AgentKindVoice:
 				var agent VoiceAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
 					var fields map[string]yaml.Node

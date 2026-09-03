@@ -802,7 +802,7 @@ func agentDefinitionFromStruct(
 
 	if inline.Kind != agent_yaml.AgentKindHosted {
 		definition := any(s.AsMap())
-		if inline.Kind == agent_yaml.AgentKindPromptVoice {
+		if agent_yaml.IsVoiceAgentKind(inline.Kind) {
 			if len(inline.Protocols) > 0 {
 				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
@@ -1000,7 +1000,7 @@ func voiceAgentFromDefinitionFile(path string) (agent_yaml.VoiceAgent, bool, err
 		)
 	}
 
-	if kind, _ := genericTemplate["kind"].(string); kind != string(agent_yaml.AgentKindPromptVoice) {
+	if kind, _ := genericTemplate["kind"].(string); kind != string(agent_yaml.AgentKindPromptVoice) && kind != string(agent_yaml.AgentKindVoice) {
 		// Not a voice definition; let the container path handle the override.
 		return agent_yaml.VoiceAgent{}, false, nil
 	}
@@ -1142,8 +1142,8 @@ func VoiceAgentFromResolvedService(
 		if !structHasKind(resolved) {
 			continue
 		}
-		if resolved.GetFields()["kind"].GetStringValue() !=
-			string(agent_yaml.AgentKindPromptVoice) {
+		kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
+		if !agent_yaml.IsVoiceAgentKind(kind) {
 			// A definition is present but it is not a voice agent.
 			return agent_yaml.VoiceAgent{}, false, nil
 		}

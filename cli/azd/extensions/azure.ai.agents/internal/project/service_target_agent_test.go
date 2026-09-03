@@ -96,6 +96,29 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
 	require.Equal(t, "deployed", got.TargetAgent.Version)
 }
 
+func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "voice"},
+		ModelType:       agent_yaml.VoiceModelTypeHostedAgent,
+		TargetAgent: &agent_yaml.VoiceTargetAgent{
+			Service: "voice-target",
+			Version: "deployed",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.AgentKindVoice, got.Kind)
+	require.Equal(t, "voice-target", got.TargetAgent.Service)
+}
+
 func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
 	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
 		"kind":  "prompt-voice",

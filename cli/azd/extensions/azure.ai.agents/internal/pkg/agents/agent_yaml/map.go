@@ -164,11 +164,11 @@ func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuil
 	case AgentKindHosted:
 		hostedDef := agentTemplate.(ContainerAgent)
 		return CreateHostedAgentAPIRequest(hostedDef, buildConfig)
-	case AgentKindPromptVoice:
+	case AgentKindPromptVoice, AgentKindVoice:
 		voiceDef := agentTemplate.(VoiceAgent)
 		return CreateVoiceAgentAPIRequest(voiceDef)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted, prompt-voice", agentDef.Kind)
+		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted, prompt-voice, voice", agentDef.Kind)
 	}
 }
 

@@ -46,8 +46,8 @@
     },
     "kind": {
       "type": "string",
-      "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt-voice' for a declarative (managed) speech-to-speech voice agent.",
-      "enum": ["hosted", "prompt-voice"]
+      "description": "The agent kind. 'hosted' for a containerized/code agent; 'voice' for a managed speech-to-speech voice agent. 'prompt-voice' remains accepted for compatibility.",
+      "enum": ["hosted", "prompt-voice", "voice"]
     },
     "language": {
       "type": "string",
@@ -217,7 +217,10 @@
         "required": ["modelType"]
       },
       "then": {
-        "required": ["targetAgent"],
+        "properties": {
+          "kind": { "enum": ["prompt-voice", "voice"] }
+        },
+        "required": ["kind", "targetAgent"],
         "not": {
           "anyOf": [
             { "required": ["model"] },
@@ -239,7 +242,7 @@
       },
       "else": {
         "if": {
-          "properties": { "kind": { "const": "prompt-voice" } },
+          "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
           "required": ["kind"]
         },
         "then": {
@@ -259,7 +262,7 @@
       "if": { "required": ["targetAgent"] },
       "then": {
         "properties": {
-          "kind": { "const": "prompt-voice" },
+          "kind": { "enum": ["prompt-voice", "voice"] },
           "modelType": { "const": "hosted_agent" }
         },
         "required": ["kind", "modelType"]

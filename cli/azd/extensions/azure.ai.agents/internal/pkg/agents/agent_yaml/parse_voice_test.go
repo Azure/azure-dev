@@ -344,6 +344,20 @@ target_agent:
 	}
 }
 
+func TestValidateAgentDefinition_HostedVoiceAcceptedWithVoiceKind(t *testing.T) {
+	yamlContent := []byte(`
+kind: voice
+name: voice-wrapper
+model_type: hosted_agent
+target_agent:
+  service: voice-target
+  version: deployed
+`)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected hosted voice definition to be valid, got: %v", err)
+	}
+}
+
 func TestValidateAgentDefinition_HostedAgentRejectsHostedVoiceModelType(t *testing.T) {
 	yamlContent := []byte(`
 kind: hosted

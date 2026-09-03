@@ -564,7 +564,7 @@
       "description": "Manage Microsoft Foundry Toolboxes from your terminal. (Beta)",
       "versions": [
         {
-          "version": "1.0.0-beta.5.nightly.6777066",
+          "version": "1.0.0-beta.5.nightly.6783691",
           "requiredAzdVersion": ">=1.27.1",
           "capabilities": [
             "custom-commands",
@@ -584,7 +584,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "863a8855bce2f9a552faa88015b6939ab2c5d2b868b11d4d8e691e7371fd5136"
+                "value": "45d1b2b21edebbcfdf142623d7c996d05997b063eca4184528b50851e85b00f0"
               },
               "entryPoint": "azure-ai-toolboxes-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-darwin-amd64.zip"
@@ -592,7 +592,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "32bc966306c66fda86e467d0aa3042bfc75029635c29e9a6dabac1756e7a116f"
+                "value": "ca764e627a467f2bade5f96630d0eae9e6c1dd1a252811343b565f77ebdcd76c"
               },
               "entryPoint": "azure-ai-toolboxes-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-darwin-arm64.zip"
@@ -600,7 +600,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "ac57949a2520dba721e0a06f1d86327f4fe714824dd380550da32868695047e8"
+                "value": "540f431b13c2fd780da656a6866c1f57306a06cb9209a2cd651310ea47c7629b"
               },
               "entryPoint": "azure-ai-toolboxes-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-linux-amd64.tar.gz"
@@ -608,7 +608,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "415e70c0ca3102932ee93bed59035dce48e00691a259e47d4d42a216b5d63b9b"
+                "value": "3279d6bda240f93aa351e68b4dbf3f85e89ae021071c360dddcf9506d12e84b3"
               },
               "entryPoint": "azure-ai-toolboxes-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-linux-arm64.tar.gz"
@@ -616,7 +616,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "efe61668060e7a3ed1eae1d088e012ecbbdcbadae58dfe960ca397f9bb3cc758"
+                "value": "d21e452ef6ddc221e8bafb1fde41865b611da6308683e99697a010a9a1051996"
               },
               "entryPoint": "azure-ai-toolboxes-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-windows-amd64.zip"
@@ -624,7 +624,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "571d1c6d5b8d9e249f04d02610b88b761c0d2a0bb4a4aaf1d120bc59eab03a08"
+                "value": "6680e3700d84f4b0262176d910685be257b7835cd651a16c0801ee0380baa31b"
               },
               "entryPoint": "azure-ai-toolboxes-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-windows-arm64.zip"

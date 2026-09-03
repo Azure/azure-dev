@@ -59,13 +59,12 @@ func TestEndpointUpdateResolvesActivitySettingsFromServiceRef(t *testing.T) {
 	require.Equal(t, project.ActivityUseCaseDigitalWorker, profile.UseCase)
 }
 
-func TestEnsureEndpointAuthSchemeForProfile_DigitalWorker(t *testing.T) {
+func TestEnsureEndpointAuthSchemeForProfile_DigitalWorkerPreservesExplicitRbac(t *testing.T) {
 	endpoint := &agent_api.AgentEndpoint{
 		Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
 		AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
 			{Type: agent_api.AgentEndpointAuthSchemeEntra},
 			{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
-			{Type: agent_api.AgentEndpointAuthSchemeBotService},
 		},
 	}
 
@@ -77,11 +76,11 @@ func TestEnsureEndpointAuthSchemeForProfile_DigitalWorker(t *testing.T) {
 	require.Contains(t, endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
 	assert.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
 		{Type: agent_api.AgentEndpointAuthSchemeEntra},
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
 	}, endpoint.AuthorizationSchemes)
 }
 
-func TestEnsureEndpointAuthSchemeForProfile_Simple(t *testing.T) {
+func TestEnsureEndpointAuthSchemeForProfile_SimplePreservesExplicitTenant(t *testing.T) {
 	endpoint := &agent_api.AgentEndpoint{
 		Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
 		AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
@@ -98,8 +97,32 @@ func TestEnsureEndpointAuthSchemeForProfile_Simple(t *testing.T) {
 	require.Contains(t, endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
 	assert.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
 		{Type: agent_api.AgentEndpointAuthSchemeEntra},
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
 	}, endpoint.AuthorizationSchemes)
+}
+
+func TestEnsureEndpointAuthSchemeForProfile_DigitalWorkerUsesServiceDefaultWhenOmitted(t *testing.T) {
+	endpoint := &agent_api.AgentEndpoint{}
+
+	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{
+		IsActivity: true,
+		UseCase:    project.ActivityUseCaseDigitalWorker,
+	})
+
+	assert.Contains(t, endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
+	assert.Empty(t, endpoint.AuthorizationSchemes)
+}
+
+func TestEnsureEndpointAuthSchemeForProfile_SimpleUsesServiceDefaultWhenOmitted(t *testing.T) {
+	endpoint := &agent_api.AgentEndpoint{}
+
+	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, project.ActivityProfile{
+		IsActivity: true,
+		UseCase:    project.ActivityUseCaseSimple,
+	})
+
+	assert.Contains(t, endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
+	assert.Empty(t, endpoint.AuthorizationSchemes)
 }
 
 func TestEnsureEndpointAuthSchemeForProfile_NonActivityNoop(t *testing.T) {

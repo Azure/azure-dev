@@ -100,8 +100,16 @@ func TestUxMiddleware_MergesCollectedFollowUp(t *testing.T) {
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
 		collector := commandresult.FollowUpCollectorFromContext(ctx)
-		collector.Add("z.extension", "z")
-		collector.Add("a.extension", "a")
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "z.extension",
+			EventName:   "postdeploy",
+			Text:        "z",
+		})
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "a.extension",
+			EventName:   "postdeploy",
+			Text:        "a",
+		})
 		return actionResult, nil
 	})
 
@@ -123,8 +131,16 @@ func TestUxMiddleware_AzdUpUsesLatestExtensionFollowUp(t *testing.T) {
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
 		collector := commandresult.FollowUpCollectorFromContext(ctx)
-		collector.Add("azure.ai.agents", "Next:\n  azd deploy")
-		collector.Add("azure.ai.agents", "Next:\n  azd ai agent show")
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "azure.ai.agents",
+			EventName:   "postprovision",
+			Text:        "Next:\n  azd deploy",
+		})
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "azure.ai.agents",
+			EventName:   "postdeploy",
+			Text:        "Next:\n  azd ai agent show",
+		})
 		return &actions.ActionResult{}, nil
 	})
 
@@ -149,9 +165,21 @@ func TestUxMiddleware_AzdUpClearsStaleExtensionFollowUp(t *testing.T) {
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
 		collector := commandresult.FollowUpCollectorFromContext(ctx)
-		collector.Add("azure.ai.agents", "Next:\n  azd deploy")
-		collector.Add("other.extension", "other guidance")
-		collector.Add("azure.ai.agents", "")
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "azure.ai.agents",
+			EventName:   "postprovision",
+			Text:        "Next:\n  azd deploy",
+		})
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "other.extension",
+			EventName:   "postdeploy",
+			Text:        "other guidance",
+		})
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "azure.ai.agents",
+			EventName:   "postdeploy",
+			Text:        "",
+		})
 		return actionResult, nil
 	})
 
@@ -173,8 +201,11 @@ func TestUxMiddleware_CreatesResultForCollectedFollowUp(t *testing.T) {
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
 		commandresult.FollowUpCollectorFromContext(ctx).Add(
-			"test.extension",
-			"Run azd deploy",
+			commandresult.FollowUp{
+				ExtensionID: "test.extension",
+				EventName:   "postprovision",
+				Text:        "Run azd deploy",
+			},
 		)
 		return nil, nil
 	})
@@ -203,8 +234,11 @@ func TestUxMiddleware_DoesNotMergeFollowUpIntoJSON(t *testing.T) {
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
 		commandresult.FollowUpCollectorFromContext(ctx).Add(
-			"test.extension",
-			"Run azd deploy",
+			commandresult.FollowUp{
+				ExtensionID: "test.extension",
+				EventName:   "postprovision",
+				Text:        "Run azd deploy",
+			},
 		)
 		return actionResult, nil
 	})
@@ -232,8 +266,11 @@ func TestUxMiddleware_DiscardsFollowUpOnError(t *testing.T) {
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
 		commandresult.FollowUpCollectorFromContext(ctx).Add(
-			"test.extension",
-			"Run azd deploy",
+			commandresult.FollowUp{
+				ExtensionID: "test.extension",
+				EventName:   "postprovision",
+				Text:        "Run azd deploy",
+			},
 		)
 		return actionResult, handlerError
 	})

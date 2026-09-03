@@ -167,7 +167,7 @@ func (s *eventService) createProjectEventHandler(
 			},
 		}
 
-		var handlerMessage string
+		var handlerFollowUp *string
 		var handlerCompleted bool
 		err = s.runWithEnvReload(ctx, func() error {
 			// Use streamCtx which has extension claims for correlation
@@ -202,19 +202,39 @@ func (s *eventService) createProjectEventHandler(
 
 			if statusMsg.ProjectHandlerStatus.Status == "completed" {
 				handlerCompleted = true
-				handlerMessage = statusMsg.ProjectHandlerStatus.Message
+				handlerFollowUp = statusMsg.ProjectHandlerStatus.FollowUp
 			}
 
 			return nil
 		})
-		if err == nil && handlerCompleted && strings.HasPrefix(eventName, "post") {
+		if err == nil && handlerCompleted &&
+			strings.HasPrefix(eventName, "post") &&
+			handlerFollowUp != nil {
 			if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
-				collector.Add(extension.Id, handlerMessage)
+				collector.Add(commandresult.FollowUp{
+					ExtensionID: extension.Id,
+					EventName:   eventName,
+					Layer:       followUpLayer(args),
+					Text:        *handlerFollowUp,
+				})
 			}
 		}
 
 		return err
 	}
+}
+
+func followUpLayer(args project.ProjectLifecycleEventArgs) string {
+	if args.Args == nil {
+		return ""
+	}
+	if layer, ok := args.Args["layer"].(string); ok && layer != "" {
+		return layer
+	}
+	if path, ok := args.Args["path"].(string); ok {
+		return path
+	}
+	return ""
 }
 
 // ----- Service Event Handlers -----

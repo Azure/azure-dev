@@ -178,7 +178,7 @@ func TestEventManager_onInvokeProjectHandler_FollowUp(t *testing.T) {
 		ctx context.Context,
 		args *ProjectEventArgs,
 	) error {
-		args.FollowUp = "Run azd deploy"
+		args.FollowUp = new("Run azd deploy")
 		return nil
 	}
 
@@ -188,10 +188,13 @@ func TestEventManager_onInvokeProjectHandler_FollowUp(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, "Run azd deploy", resp.GetProjectHandlerStatus().Message)
+	status := resp.GetProjectHandlerStatus()
+	require.Equal(t, "Run azd deploy", status.GetFollowUp())
+	require.NotNil(t, status.FollowUp)
+	require.Empty(t, status.Message)
 }
 
-func TestEventManager_onInvokeProjectHandler_EmptyFollowUp(t *testing.T) {
+func TestEventManager_onInvokeProjectHandler_UnsetFollowUp(t *testing.T) {
 	ctx := t.Context()
 	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
 	eventManager.projectEvents["postprovision"] = func(
@@ -207,7 +210,32 @@ func TestEventManager_onInvokeProjectHandler_EmptyFollowUp(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Empty(t, resp.GetProjectHandlerStatus().Message)
+	status := resp.GetProjectHandlerStatus()
+	require.Nil(t, status.FollowUp)
+	require.Empty(t, status.Message)
+}
+
+func TestEventManager_onInvokeProjectHandler_EmptyFollowUp(t *testing.T) {
+	ctx := t.Context()
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	eventManager.projectEvents["postprovision"] = func(
+		ctx context.Context,
+		args *ProjectEventArgs,
+	) error {
+		args.FollowUp = new("")
+		return nil
+	}
+
+	resp, err := eventManager.onInvokeProjectHandler(ctx, &InvokeProjectHandler{
+		EventName: "postprovision",
+		Project:   createTestProjectConfigForEvents(),
+	})
+
+	require.NoError(t, err)
+	status := resp.GetProjectHandlerStatus()
+	require.NotNil(t, status.FollowUp)
+	require.Empty(t, status.GetFollowUp())
+	require.Empty(t, status.Message)
 }
 
 // Test onInvokeProjectHandler with handler error

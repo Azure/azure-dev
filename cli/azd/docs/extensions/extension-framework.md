@@ -210,7 +210,7 @@ provide command-level guidance:
 ```go
 host.WithProjectEventHandler("postprovision",
   func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-    args.FollowUp = "Next:\n  azd deploy"
+    args.FollowUp = new("Next:\n  azd deploy")
     return nil
   })
 ```
@@ -218,11 +218,12 @@ host.WithProjectEventHandler("postprovision",
 azd appends the opaque text to the parent command's human-readable completion
 message. It combines contributions from multiple extensions, ignores
 `pre*` and failed handlers, and does not include the text in JSON output.
-Within one command, a later completed `post*` result replaces the earlier
-result from that extension. An empty `FollowUp` retracts that extension's
-earlier contribution without affecting other extensions. Older hosts ignore
-this optional success message. Service handlers do not contribute to this
-field.
+Nil means no contribution. Within one command, a later lifecycle event
+replaces the earlier result from that extension. An empty `FollowUp` retracts
+that extension's earlier contribution without affecting other extensions.
+Concurrent layers of the same event resolve by stable layer identity, not
+completion time. Older hosts ignore this optional field. Service handlers do
+not contribute to this field.
 
 #### Service Target Providers
 

@@ -1,5 +1,11 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Non-interactive automation
+
+See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
+for every prompt's flag, environment/configuration input, or deterministic
+no-prompt behavior.
+
 ## Composing Agent Dependencies
 
 Use the Agent command surface to attach existing Toolbox or Connection services

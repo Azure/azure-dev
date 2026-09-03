@@ -1067,7 +1067,7 @@ func runInitFromAzureYaml(
 
 	result, err := configureFoundryProject(
 		ctx, azdClient, azureContext, env.Name,
-		flags.projectResourceId, flags.noPrompt,
+		flags.projectResourceId, flags.acrConnection, flags.noPrompt,
 		skipACR,
 		filterHostedRegions,
 	)

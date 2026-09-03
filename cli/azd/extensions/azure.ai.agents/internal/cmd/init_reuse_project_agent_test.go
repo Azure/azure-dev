@@ -257,6 +257,7 @@ func TestAgentDefiningFlagsSet(t *testing.T) {
 		{name: "model", flags: &initFlags{model: "gpt-5.4-mini"}, want: true},
 		{name: "model-deployment", flags: &initFlags{modelDeployment: "my-deployment"}, want: true},
 		{name: "project-id", flags: &initFlags{projectResourceId: "/subscriptions/x"}, want: true},
+		{name: "acr-connection", flags: &initFlags{acrConnection: "my-acr"}, want: true},
 		{name: "image", flags: &initFlags{image: "myacr.azurecr.io/agent:1"}, want: true},
 		{name: "registry connection", flags: &initFlags{registryConnection: "private-registry"}, want: true},
 		{name: "protocol", flags: &initFlags{protocols: []string{"responses"}}, want: true},
@@ -319,6 +320,10 @@ func TestCanReuseExistingAgentConfiguration(t *testing.T) {
 		{
 			name:  "manifest pointer blocks reuse",
 			flags: &initFlags{manifestPointer: "agent.manifest.yaml"},
+		},
+		{
+			name:  "force blocks reuse",
+			flags: &initFlags{force: true},
 		},
 		{
 			name:             "declined manifest blocks rediscovery",

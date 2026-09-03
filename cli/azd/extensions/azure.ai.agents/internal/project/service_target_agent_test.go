@@ -96,6 +96,19 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
 	require.Equal(t, "deployed", got.TargetAgent.Version)
 }
 
+func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":  "prompt-voice",
+		"name":  "voice",
+		"model": map[string]any{"id": "gpt-realtime"},
+		"protocols": []any{map[string]any{
+			"protocol": "invocations_ws",
+			"version":  "1.0.0",
+		}},
+	}))
+	require.ErrorContains(t, err, "protocols are not supported on prompt voice agents")
+}
+
 func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
 		name         string

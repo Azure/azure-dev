@@ -458,6 +458,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"template.toolbox is not supported for a prompt-voice agent; "+
 									"remove it from the agent definition")
 						}
+						if _, hasProtocols := fields["protocols"]; hasProtocols {
+							errors = append(errors,
+								"template.protocols is not supported for a prompt-voice agent; "+
+									"configure protocols on the hosted target")
+						}
 					}
 					var policyEnvelope struct {
 						Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`

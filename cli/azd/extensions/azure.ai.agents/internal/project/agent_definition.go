@@ -803,6 +803,13 @@ func agentDefinitionFromStruct(
 	if inline.Kind != agent_yaml.AgentKindHosted {
 		definition := any(s.AsMap())
 		if inline.Kind == agent_yaml.AgentKindPromptVoice {
+			if len(inline.Protocols) > 0 {
+				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"protocols are not supported on prompt voice agents",
+					"configure protocols on the hosted target",
+				)
+			}
 			if inline.Toolbox != nil {
 				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,

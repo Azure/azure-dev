@@ -392,6 +392,22 @@ outputSchema:
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoiceRejectsProtocols(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice
+model:
+  id: gpt-realtime
+protocols:
+  - protocol: invocations_ws
+    version: 1.0.0
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "protocols is not supported") {
+		t.Fatalf("expected prompt voice protocols validation error, got: %v", err)
+	}
+}
+
 func TestValidateAgentDefinition_PromptVoiceRejectsPolicies(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice

@@ -224,6 +224,7 @@
             { "required": ["inputSchema"] },
             { "required": ["outputSchema"] },
             { "required": ["policies"] },
+            { "required": ["protocols"] },
             { "required": ["instructions"] },
             { "required": ["structuredInputs"] },
             { "required": ["tools"] },

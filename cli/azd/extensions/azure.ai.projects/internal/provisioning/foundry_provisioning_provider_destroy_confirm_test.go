@@ -115,7 +115,6 @@ func TestDestroy_NoPromptRequiresForce(t *testing.T) {
 
 // TestDestroy_PromptRequiredFallsBackToForce verifies compatibility with hosts
 // that return a prompt-required error instead of the request's default value.
-// that return a prompt-required error instead of the request's default value.
 func TestDestroy_PromptRequiredFallsBackToForce(t *testing.T) {
 	promptRequired, err := status.New(codes.FailedPrecondition, "confirmation is required").WithDetails(
 		&azdext.ActionableErrorDetail{Suggestion: "run interactively to confirm"},

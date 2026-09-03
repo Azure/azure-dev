@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"slices"
 
 	"azure.ai.connections/internal/definition"
+	"azure.ai.connections/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -30,18 +30,31 @@ var _ azdext.ServiceTargetProvider = (*connectionServiceTarget)(nil)
 type connectionServiceTarget struct {
 	azdClient     *azdext.AzdClient
 	projectClient serviceConfigReader
-	upsert        func(context.Context, *connectionCreateFlags) error
+	environment   string
+	upsert        func(context.Context, string, rawConnectionProperties) error
 }
 
 // newConnectionServiceTarget creates the azure.ai.connection service-target provider.
-func newConnectionServiceTarget(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
-	return &connectionServiceTarget{
+func newConnectionServiceTarget(
+	azdClient *azdext.AzdClient,
+	environmentName string,
+) azdext.ServiceTargetProvider {
+	target := &connectionServiceTarget{
 		azdClient:     azdClient,
 		projectClient: azdClient.Project(),
-		upsert: func(ctx context.Context, flags *connectionCreateFlags) error {
-			return (&ConnectionCreateAction{flags: flags}).Run(ctx)
-		},
+		environment:   environmentName,
 	}
+	target.upsert = func(ctx context.Context, name string, properties rawConnectionProperties) error {
+		connectionContext, err := resolveConnectionContextForEnvironment(ctx, "", target.environment)
+		if err != nil {
+			return err
+		}
+		if err := rawCreateConnection(ctx, connectionContext, name, properties); err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCreateConnection)
+		}
+		return nil
+	}
+	return target
 }
 
 // Initialize requires no setup.
@@ -111,26 +124,26 @@ func (p *connectionServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	flags, err := connectionServiceCreateFlags(serviceConfig, environment)
+	properties, err := connectionServiceProperties(serviceConfig, environment)
 	if err != nil {
 		return nil, err
 	}
 	if progress != nil {
 		progress(fmt.Sprintf("Upserting connection %q", serviceConfig.GetName()))
 	}
-	if err := p.upsert(ctx, flags); err != nil {
+	if err := p.upsert(ctx, serviceConfig.GetName(), properties); err != nil {
 		return nil, err
 	}
 	return &azdext.ServiceDeployResult{}, nil
 }
 
-func connectionServiceCreateFlags(
+func connectionServiceProperties(
 	serviceConfig *azdext.ServiceConfig,
 	environment map[string]string,
-) (*connectionCreateFlags, error) {
+) (rawConnectionProperties, error) {
 	input, err := parseConnectionServiceConfig(serviceConfig)
 	if err != nil {
-		return nil, err
+		return rawConnectionProperties{}, err
 	}
 	expand := func(field, value string) (string, error) {
 		expanded, err := foundry.ExpandEnv(value, func(name string) string { return environment[name] })
@@ -141,105 +154,113 @@ func connectionServiceCreateFlags(
 	}
 	target, err := expand("target", input.Target)
 	if err != nil {
-		return nil, err
+		return rawConnectionProperties{}, err
 	}
 	audience, err := expand("audience", input.Audience)
 	if err != nil {
-		return nil, err
+		return rawConnectionProperties{}, err
 	}
 	authorizationURL, err := expand("authorizationUrl", input.AuthorizationURL)
 	if err != nil {
-		return nil, err
+		return rawConnectionProperties{}, err
 	}
 	tokenURL, err := expand("tokenUrl", input.TokenURL)
 	if err != nil {
-		return nil, err
+		return rawConnectionProperties{}, err
 	}
 	refreshURL, err := expand("refreshUrl", input.RefreshURL)
 	if err != nil {
-		return nil, err
+		return rawConnectionProperties{}, err
 	}
 	connectorName, err := expand("connectorName", input.ConnectorName)
 	if err != nil {
-		return nil, err
+		return rawConnectionProperties{}, err
 	}
-	flags := &connectionCreateFlags{
-		name:             serviceConfig.GetName(),
-		kind:             input.Category,
-		target:           target,
-		authType:         normalizeAuthType(input.AuthType),
-		force:            true,
-		suppressOutput:   true,
-		audience:         audience,
-		authorizationURL: authorizationURL,
-		tokenURL:         tokenURL,
-		refreshURL:       refreshURL,
-		connectorName:    connectorName,
+	properties := rawConnectionProperties{
+		AuthType:         normalizeAuthTypeToARM(normalizeAuthType(input.AuthType)),
+		Category:         normalizeKind(input.Category),
+		Target:           target,
+		Metadata:         map[string]string{},
+		Audience:         audience,
+		AuthorizationURL: authorizationURL,
+		TokenURL:         tokenURL,
+		RefreshURL:       refreshURL,
+		ConnectorName:    connectorName,
 	}
 	for index, scope := range input.Scopes {
 		expanded, err := expand(fmt.Sprintf("scopes[%d]", index), scope)
 		if err != nil {
-			return nil, err
+			return rawConnectionProperties{}, err
 		}
-		flags.scopes = append(flags.scopes, expanded)
+		properties.Scopes = append(properties.Scopes, expanded)
 	}
-	if flags.authType == "" {
-		flags.authType = "none"
+	if properties.AuthType == "" {
+		properties.AuthType = "None"
 	}
 
 	for key, value := range input.Metadata {
 		expanded, err := expand("metadata."+key, value)
 		if err != nil {
-			return nil, err
+			return rawConnectionProperties{}, err
 		}
-		flags.metadata = append(flags.metadata, key+"="+expanded)
+		properties.Metadata[key] = expanded
 	}
-	slices.Sort(flags.metadata)
-	for key, rawValue := range input.Credentials {
-		if flags.authType == "custom-keys" && key == "keys" {
-			keys, ok := rawValue.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("connection %q credentials.keys must be an object", flags.name)
-			}
-			for keyName, rawKeyValue := range keys {
-				keyValue, ok := rawKeyValue.(string)
-				if !ok {
-					return nil, fmt.Errorf("connection %q credential %q must be a string", flags.name, keyName)
-				}
-				keyValue, err = expand("credentials.keys."+keyName, keyValue)
-				if err != nil {
-					return nil, err
-				}
-				flags.customKeys = append(flags.customKeys, keyName+"="+keyValue)
-			}
-			continue
-		}
-		value, ok := rawValue.(string)
-		if !ok {
-			return nil, fmt.Errorf("connection %q credential %q must be a string", flags.name, key)
-		}
-		value, err = expand("credentials."+key, value)
-		if err != nil {
-			return nil, err
-		}
-		switch flags.authType {
-		case "api-key":
-			if key == "key" {
-				flags.key = value
-			}
-		case "oauth2":
-			switch key {
-			case "clientId":
-				flags.clientID = value
-			case "clientSecret":
-				flags.clientSecret = value
-			}
-		default:
-			flags.customKeys = append(flags.customKeys, key+"="+value)
-		}
+	if len(properties.Metadata) == 0 {
+		properties.Metadata = nil
 	}
-	slices.Sort(flags.customKeys)
-	return flags, nil
+	credentials, err := expandConnectionCredentials(input.Credentials, environment)
+	if err != nil {
+		return rawConnectionProperties{}, fmt.Errorf("resolving connection %q credentials: %w", serviceConfig.GetName(), err)
+	}
+	if credentials != nil {
+		raw := rawCredentials(credentials)
+		properties.Credentials = &raw
+	}
+	return properties, nil
+}
+
+func expandConnectionCredentials(value map[string]any, environment map[string]string) (map[string]any, error) {
+	if value == nil {
+		return nil, nil
+	}
+	expanded, err := expandConnectionCredentialValue(value, environment)
+	if err != nil {
+		return nil, err
+	}
+	credentials, ok := expanded.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("credentials must be an object")
+	}
+	return credentials, nil
+}
+
+func expandConnectionCredentialValue(value any, environment map[string]string) (any, error) {
+	switch typed := value.(type) {
+	case string:
+		return foundry.ExpandEnv(typed, func(name string) string { return environment[name] })
+	case map[string]any:
+		result := make(map[string]any, len(typed))
+		for key, item := range typed {
+			expanded, err := expandConnectionCredentialValue(item, environment)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", key, err)
+			}
+			result[key] = expanded
+		}
+		return result, nil
+	case []any:
+		result := make([]any, len(typed))
+		for index, item := range typed {
+			expanded, err := expandConnectionCredentialValue(item, environment)
+			if err != nil {
+				return nil, fmt.Errorf("[%d]: %w", index, err)
+			}
+			result[index] = expanded
+		}
+		return result, nil
+	default:
+		return value, nil
+	}
 }
 
 type serviceConfigReader interface {
@@ -264,12 +285,16 @@ func (p *connectionServiceTarget) environmentValues(
 	if declared {
 		return map[string]string{}, nil
 	}
-	current, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return nil, fmt.Errorf("resolving current azd environment: %w", err)
+	environmentName := p.environment
+	if environmentName == "" {
+		current, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, fmt.Errorf("resolving current azd environment: %w", err)
+		}
+		environmentName = current.GetEnvironment().GetName()
 	}
 	response, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: current.GetEnvironment().GetName(),
+		Name: environmentName,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("loading azd environment values: %w", err)

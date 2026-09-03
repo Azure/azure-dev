@@ -210,7 +210,6 @@ type connectionCreateFlags struct {
 	refreshURL       string   // OAuth2 refresh endpoint
 	scopes           []string // OAuth2 scopes
 	connectorName    string   // Managed connector name
-	suppressOutput   bool     // Service targets report progress through azd instead.
 }
 
 // ConnectionCreateAction implements connection creation.
@@ -388,10 +387,6 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateConnection)
 	}
-	if a.flags.suppressOutput {
-		return nil
-	}
-
 	return emitConnectionCreateResult(a.flags.name, connCtx.project, a.flags.output)
 }
 
@@ -594,8 +589,8 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 		}
 		rawProps.Metadata = parseKVMap(metaPairs)
 		rawProps.Credentials = buildOAuth2Credentials(normalizedAuth,
-			rawProps.Credentials.clientIDOrEmpty(),
-			rawProps.Credentials.clientSecretOrEmpty(),
+			credentialString(rawProps.Credentials, "clientId"),
+			credentialString(rawProps.Credentials, "clientSecret"),
 		)
 		err = rawCreateConnection(ctx, connCtx, a.flags.name, *rawProps)
 	default:
@@ -1007,6 +1002,12 @@ func normalizeAuthType(armAuthType string) string {
 // Used for auth types that lack ARM SDK structs and require raw REST.
 func normalizeAuthTypeToARM(cliAuthType string) string {
 	switch cliAuthType {
+	case "api-key":
+		return "ApiKey"
+	case "custom-keys":
+		return "CustomKeys"
+	case "none":
+		return "None"
 	case "oauth2":
 		return "OAuth2"
 	case "user-entra-token":

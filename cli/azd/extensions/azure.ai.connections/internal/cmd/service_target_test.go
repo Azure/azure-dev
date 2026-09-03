@@ -36,9 +36,15 @@ func TestDeployUpsertsConnectionFromServiceConfig(t *testing.T) {
 		AdditionalProperties: props,
 		Environment:          map[string]string{"CONNECTION_KEY": "secret"},
 	}
-	var captured *connectionCreateFlags
-	target := &connectionServiceTarget{upsert: func(_ context.Context, flags *connectionCreateFlags) error {
-		captured = flags
+	var captured rawConnectionProperties
+	var capturedName string
+	target := &connectionServiceTarget{upsert: func(
+		_ context.Context,
+		name string,
+		properties rawConnectionProperties,
+	) error {
+		capturedName = name
+		captured = properties
 		return nil
 	}}
 
@@ -48,17 +54,54 @@ func TestDeployUpsertsConnectionFromServiceConfig(t *testing.T) {
 	res, err := target.Deploy(t.Context(), svc, nil, nil, progress)
 	require.NoError(t, err)
 	require.NotNil(t, res)
-	require.NotNil(t, captured)
-	assert.Equal(t, "search-conn", captured.name)
-	assert.Equal(t, "RemoteTool", captured.kind)
-	assert.Equal(t, "https://example.test/mcp", captured.target)
-	assert.Equal(t, "custom-keys", captured.authType)
-	assert.Equal(t, []string{"x-api-key=secret"}, captured.customKeys)
-	assert.Equal(t, []string{"region=test"}, captured.metadata)
-	assert.True(t, captured.force)
-	assert.True(t, captured.suppressOutput)
+	assert.Equal(t, "search-conn", capturedName)
+	assert.Equal(t, "RemoteTool", captured.Category)
+	assert.Equal(t, "https://example.test/mcp", captured.Target)
+	assert.Equal(t, "CustomKeys", captured.AuthType)
+	require.NotNil(t, captured.Credentials)
+	assert.Equal(t, rawCredentials{"keys": map[string]any{"x-api-key": "secret"}}, *captured.Credentials)
+	assert.Equal(t, map[string]string{"region": "test"}, captured.Metadata)
 	require.Len(t, progressMsgs, 1)
 	assert.Equal(t, "Upserting connection \"search-conn\"", progressMsgs[0])
+}
+
+func TestConnectionServicePropertiesPreservesGenericAuthTypes(t *testing.T) {
+	t.Parallel()
+
+	authTypes := []string{
+		"AAD", "PAT", "ServicePrincipal", "UsernamePassword",
+		"AccessKey", "AccountKey", "SAS",
+	}
+	for _, authType := range authTypes {
+		t.Run(authType, func(t *testing.T) {
+			t.Parallel()
+
+			props, err := structpb.NewStruct(map[string]any{
+				"category": "AzureOpenAI",
+				"target":   "https://example.test",
+				"authType": authType,
+				"credentials": map[string]any{
+					"username": "${USERNAME}",
+					"password": "${PASSWORD}",
+					"options":  []any{"preserved", true, float64(3)},
+				},
+			})
+			require.NoError(t, err)
+
+			got, err := connectionServiceProperties(&azdext.ServiceConfig{
+				Name:                 "generic",
+				AdditionalProperties: props,
+			}, map[string]string{"USERNAME": "user", "PASSWORD": "secret"})
+			require.NoError(t, err)
+			assert.Equal(t, authType, got.AuthType)
+			require.NotNil(t, got.Credentials)
+			assert.Equal(t, rawCredentials{
+				"username": "user",
+				"password": "secret",
+				"options":  []any{"preserved", true, float64(3)},
+			}, *got.Credentials)
+		})
+	}
 }
 
 func TestParseConnectionServiceConfigFallsBackToLegacyConfig(t *testing.T) {

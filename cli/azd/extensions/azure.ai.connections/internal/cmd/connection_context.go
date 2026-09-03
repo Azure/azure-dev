@@ -42,7 +42,18 @@ func resolveConnectionContext(
 	ctx context.Context,
 	flagEndpoint string,
 ) (*connectionContext, error) {
-	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: flagEndpoint})
+	return resolveConnectionContextForEnvironment(ctx, flagEndpoint, "")
+}
+
+func resolveConnectionContextForEnvironment(
+	ctx context.Context,
+	flagEndpoint string,
+	environmentName string,
+) (*connectionContext, error) {
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{
+		FlagValue:       flagEndpoint,
+		EnvironmentName: environmentName,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +68,7 @@ func resolveConnectionContext(
 	// the subscription's user-access tenant (for credential scoping) and the
 	// Foundry project's ARM resource ID (for ARM context on connection-less
 	// projects). Every field is best-effort and may be empty.
-	envCtx := resolveEnvContext(ctx)
+	envCtx := resolveEnvContext(ctx, environmentName)
 
 	// Scope the credential to the subscription's user-access tenant so tokens are
 	// issued for the tenant that owns the Foundry resource. Multi-tenant / guest
@@ -149,7 +160,7 @@ type envContext struct {
 // subscription, which is the tenant that owns the Foundry resource - so
 // multi-tenant / guest users get a token for that tenant instead of their home
 // tenant.
-func resolveEnvContext(ctx context.Context) envContext {
+func resolveEnvContext(ctx context.Context, environmentName string) envContext {
 	var out envContext
 
 	azdClient, err := azdext.NewAzdClient()
@@ -159,12 +170,15 @@ func resolveEnvContext(ctx context.Context) envContext {
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp.GetEnvironment() == nil {
-		log.Printf("connections: no active azd environment: %v", err)
-		return out
+	envName := environmentName
+	if envName == "" {
+		envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil || envResp.GetEnvironment() == nil {
+			log.Printf("connections: no active azd environment: %v", err)
+			return out
+		}
+		envName = envResp.GetEnvironment().GetName()
 	}
-	envName := envResp.GetEnvironment().GetName()
 
 	out.projectID = envValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ID")
 

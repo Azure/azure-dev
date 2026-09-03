@@ -21,10 +21,29 @@ import (
 func withHostedSources(t *testing.T, sources AzdHostedSources, err error) {
 	t.Helper()
 	orig := ReadAzdHostedSourcesFunc
-	ReadAzdHostedSourcesFunc = func(context.Context) (AzdHostedSources, error) {
+	ReadAzdHostedSourcesFunc = func(context.Context, string) (AzdHostedSources, error) {
 		return sources, err
 	}
 	t.Cleanup(func() { ReadAzdHostedSourcesFunc = orig })
+}
+
+func TestResolveUsesSelectedEnvironment(t *testing.T) {
+	var received string
+	original := ReadAzdHostedSourcesFunc
+	ReadAzdHostedSourcesFunc = func(_ context.Context, environmentName string) (AzdHostedSources, error) {
+		received = environmentName
+		return AzdHostedSources{
+			EnvName:  environmentName,
+			EnvValue: "https://staging.services.ai.azure.com/api/projects/project",
+		}, nil
+	}
+	t.Cleanup(func() { ReadAzdHostedSourcesFunc = original })
+
+	resolved, err := Resolve(t.Context(), ResolveOpts{EnvironmentName: "staging"})
+	require.NoError(t, err)
+	assert.Equal(t, "staging", received)
+	assert.Equal(t, "staging", resolved.AzdEnvName)
+	assert.Equal(t, "https://staging.services.ai.azure.com/api/projects/project", resolved.Endpoint)
 }
 
 // isolateFromAzdDaemon installs an empty hosted-sources stub and clears

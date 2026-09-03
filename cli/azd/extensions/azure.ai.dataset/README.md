@@ -53,6 +53,12 @@ Level 3 is worth knowing about: it is machine-wide rather than per-project, so
 a project context left behind by `azd ai agent` somewhere else takes precedence
 over the variable exported in this shell. `--debug` prints which level answered.
 
+## Debug logging
+
+Request tracing is off by default. `--debug`, or `AZD_EXT_DEBUG=true`, writes it
+to a dated log file in the temporary directory rather than the terminal, and
+prints that path on stderr.
+
 ## Building
 
 ```console

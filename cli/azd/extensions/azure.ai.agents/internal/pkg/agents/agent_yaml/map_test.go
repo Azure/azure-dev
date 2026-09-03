@@ -1807,7 +1807,7 @@ func TestMapRaiConfig_WithInvocationsModeration(t *testing.T) {
 			InputPaths:        []string{"$.input"},
 			OutputPaths:       []string{"$.output"},
 			StreamSelectors: []SseTextSelector{
-				{EventType: "response.output_text.delta", TextField: "$.delta"},
+				{EventType: "response.output_text.delta", TextField: "delta"},
 			},
 		},
 	}})
@@ -1843,8 +1843,8 @@ func TestMapRaiConfig_WithInvocationsModeration(t *testing.T) {
 		t.Errorf("StreamSelectors[0].EventType = %q, want response.output_text.delta",
 			moderation.StreamSelectors[0].EventType)
 	}
-	if moderation.StreamSelectors[0].TextField != "$.delta" {
-		t.Errorf("StreamSelectors[0].TextField = %q, want $.delta",
+	if moderation.StreamSelectors[0].TextField != "delta" {
+		t.Errorf("StreamSelectors[0].TextField = %q, want delta",
 			moderation.StreamSelectors[0].TextField)
 	}
 }

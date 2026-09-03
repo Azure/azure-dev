@@ -65,8 +65,7 @@ const (
 // non-follow fetch or a user Ctrl+C) and return nil.
 func (f *logFormatter) formatStream(ctx context.Context, r io.Reader) error {
 	scanner := bufio.NewScanner(r)
-	// Log lines can include stack traces or large JSON dumps; match the
-	// upper bound used by readSSEStream in invoke.go (1 MB per line).
+	// Log lines can include stack traces or large JSON dumps, so allow up to 1 MB per line.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var (

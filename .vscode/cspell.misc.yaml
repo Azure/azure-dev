@@ -24,6 +24,7 @@ overrides:
       words:
           - apphost
           - appdetect
+          - azdext
           - vsrpc
           - Buildpacks
           - devdeviceid
@@ -104,6 +105,9 @@ overrides:
           - Thhmmss
           - unhashed
           - vsrpc
+    - filename: docs/reference/telemetry-data.md
+      words:
+          - azdext
     - filename: docs/guides/**/*.md
       words:
           - azdext

@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -313,7 +314,7 @@ func registerProjectMappings() {
 	})
 
 	// ResourceConfig -> proto ComposedResource conversion
-	mapper.MustRegister(func(ctx context.Context, src *ResourceConfig) (*azdext.ComposedResource, error) {
+	mapper.MustRegister(func(ctx context.Context, src *ResourceConfig) (*v1beta.ComposedResource, error) {
 		if src == nil {
 			return nil, nil
 		}
@@ -323,7 +324,7 @@ func registerProjectMappings() {
 			return nil, fmt.Errorf("marshaling resource config: %w", err)
 		}
 
-		return &azdext.ComposedResource{
+		return &v1beta.ComposedResource{
 			Name:       src.Name,
 			Type:       string(src.Type),
 			Config:     resourceConfigBytes,
@@ -333,8 +334,8 @@ func registerProjectMappings() {
 	})
 
 	// ResourceType -> proto ComposedResourceType conversion
-	mapper.MustRegister(func(ctx context.Context, src ResourceType) (*azdext.ComposedResourceType, error) {
-		return &azdext.ComposedResourceType{
+	mapper.MustRegister(func(ctx context.Context, src ResourceType) (*v1beta.ComposedResourceType, error) {
+		return &v1beta.ComposedResourceType{
 			Name:        string(src),
 			DisplayName: src.String(),
 			Type:        src.AzureResourceType(),
@@ -345,7 +346,7 @@ func registerProjectMappings() {
 	// Register reverse conversions (FromProto* functions)
 
 	// proto ComposedResource -> ResourceConfig conversion
-	mapper.MustRegister(func(ctx context.Context, src *azdext.ComposedResource) (*ResourceConfig, error) {
+	mapper.MustRegister(func(ctx context.Context, src *v1beta.ComposedResource) (*ResourceConfig, error) {
 		if src == nil {
 			return nil, nil
 		}

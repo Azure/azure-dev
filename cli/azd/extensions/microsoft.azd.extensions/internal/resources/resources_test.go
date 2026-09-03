@@ -5,7 +5,11 @@ package resources
 
 import (
 	"bytes"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"text/template"
 
@@ -81,6 +85,67 @@ func TestGoScaffoldPinsReleasedAzdModule(t *testing.T) {
 	)
 }
 
+func TestNonGoScaffoldsUseVersionedGrpcPackages(t *testing.T) {
+	roots := []string{
+		"languages/proto",
+		"languages/javascript/generated/proto",
+		"languages/python/generated_proto",
+	}
+
+	for _, root := range roots {
+		t.Run(root, func(t *testing.T) {
+			err := fs.WalkDir(Languages, root, func(path string, entry fs.DirEntry, err error) error {
+				require.NoError(t, err)
+				if entry.IsDir() {
+					return nil
+				}
+
+				contents, err := Languages.ReadFile(path)
+				require.NoError(t, err)
+				text := string(contents)
+				require.NotContains(t, text, "package azdext;", path)
+				require.NotContains(t, text, "/azdext.", path)
+				require.NotContains(t, text, "proto.azdext", path)
+				require.NotContains(
+					t,
+					strings.ToLower(path),
+					"compose",
+					"Compose is beta-only and not part of stable scaffolds",
+				)
+
+				if (strings.HasSuffix(path, "_grpc_pb.js") || strings.HasSuffix(path, "_pb2_grpc.py")) &&
+					!strings.Contains(path, "/models_") {
+					require.Contains(t, text, "/azd.extensions.v1.", path)
+				}
+				return nil
+			})
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestNonGoScaffoldEventMessageMatchesStableContract(t *testing.T) {
+	scaffold, err := Languages.ReadFile("languages/proto/event.proto")
+	require.NoError(t, err)
+
+	canonical, err := os.ReadFile(filepath.Join(
+		"..", "..", "..", "..", "grpc", "proto", "azd", "extensions", "v1", "event.proto",
+	))
+	require.NoError(t, err)
+
+	require.Equal(t, eventMessageFields(t, canonical), eventMessageFields(t, scaffold))
+
+	for _, path := range []string{
+		"languages/javascript/generated/proto/event_pb.js",
+		"languages/python/generated_proto/event_pb2.py",
+	} {
+		generated, err := Languages.ReadFile(path)
+		require.NoError(t, err)
+		require.NotContains(t, string(generated), "ExtensionReadyEvent", path)
+		require.NotContains(t, string(generated), "extension_ready_event", path)
+	}
+}
+
 func TestGoScaffoldReadmeMatchesCapabilities(t *testing.T) {
 	contents, err := Languages.ReadFile("languages/go/README.md.tmpl")
 	require.NoError(t, err)
@@ -152,7 +217,23 @@ func TestGoScaffoldReadmeMatchesCapabilities(t *testing.T) {
 	}
 }
 
+func eventMessageFields(t *testing.T, proto []byte) map[string]string {
+	t.Helper()
+
+	oneof := eventMessageOneofPattern.FindSubmatch(proto)
+	require.Len(t, oneof, 2, "EventMessage message_type oneof must be present")
+
+	fields := map[string]string{}
+	for _, match := range protoFieldPattern.FindAllSubmatch(oneof[1], -1) {
+		fields[string(match[2])] = string(match[1]) + ":" + string(match[3])
+	}
+	require.NotEmpty(t, fields, "EventMessage message_type oneof must contain fields")
+	return fields
+}
+
 var azdModuleRequirePattern = regexp.MustCompile(`github\.com/azure/azure-dev/cli/azd (\S+)`)
+var eventMessageOneofPattern = regexp.MustCompile(`(?s)message EventMessage\s*\{.*?oneof message_type\s*\{(.*?)\n\s*\}`)
+var protoFieldPattern = regexp.MustCompile(`(?m)^\s*([\w.]+)\s+(\w+)\s*=\s*(\d+);`)
 
 // pseudoVersionPattern matches the trailing "<yyyymmddhhmmss>-<12 hex digits>" that the Go
 // toolchain appends when a module is referenced by commit rather than by a published tag.

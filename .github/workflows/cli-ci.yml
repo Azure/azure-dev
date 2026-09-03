@@ -1,4 +1,5 @@
 name: cli-ci
+# cspell:ignore bufbuild
 
 on:
   pull_request:
@@ -80,3 +81,27 @@ jobs:
       - name: Run mage helper tests
         working-directory: cli/azd
         run: go test -tags mage -run '^Test(Resolve|DependencyVersion)' -v .
+
+  proto-contract-compatibility:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/azd/go.mod
+      - name: Install Buf
+        run: go install github.com/bufbuild/buf/cmd/buf@v1.72.0
+      - name: Check protobuf contracts
+        working-directory: cli/azd
+        run: |
+          make proto-lint
+          if git cat-file -e origin/main:cli/azd/grpc/proto/azd/extensions/v1 2>/dev/null; then
+            git branch --force buf-contract-baseline origin/main
+            make proto-breaking BUF_BREAKING_AGAINST='../../.git#branch=buf-contract-baseline,subdir=cli/azd/grpc'
+          else
+            echo "Bootstrapping the versioned-contract baseline; historical comparison starts after this PR merges."
+          fi

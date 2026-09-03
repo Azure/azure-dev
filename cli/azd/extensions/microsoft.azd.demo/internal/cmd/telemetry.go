@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -29,7 +30,7 @@ func newTelemetryCommand() *cobra.Command {
 
 			defer azdClient.Close()
 
-			resp, err := azdClient.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+			resp, err := azdClient.Telemetry().ReportUsage(ctx, &contracts.ReportUsageRequest{
 				EventName: "demo.telemetry.reported",
 				Attributes: map[string]string{
 					"demo.mode":    "sample",

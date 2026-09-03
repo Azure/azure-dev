@@ -471,6 +471,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 |-----------|------|-------------|
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
+| `extension.grpc.legacy_call_count` | measurement | Number of RPCs made through the temporary legacy `/azdext.*` compatibility bridge during the command |
 | `extension.event` | string | Extension-chosen event name on an `ext.usage` span |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
@@ -802,7 +803,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `ext.install`, `ext.update`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.event`, dynamic `ext.*` fields | Extension adoption, errors, usage events |
+| **Extensions** | `ext.run`, `ext.install`, `ext.update`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.grpc.legacy_call_count`, `extension.event`, dynamic `ext.*` fields | Extension adoption, errors, usage events, and remaining legacy gRPC bridge use |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |

@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/qna"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/util"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
@@ -129,7 +130,7 @@ func newStartCommand() *cobra.Command {
 				return fmt.Errorf("failed to ensure azure context: %w", err)
 			}
 
-			getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
+			getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &v1beta.EmptyRequest{})
 			if err != nil {
 				return fmt.Errorf("failed to get composed resources: %w", err)
 			}
@@ -171,7 +172,7 @@ type startAction struct {
 	projectConfig       *azdext.ProjectConfig
 	scenarioData        *scenarioInput
 	modelCatalog        map[string]*ai.AiModel
-	composedResources   []*azdext.ComposedResource
+	composedResources   []*v1beta.ComposedResource
 }
 
 func (a *startAction) Run(ctx context.Context, args []string) error {
@@ -196,13 +197,13 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to start spinner: %w", err)
 	}
 
-	resourcesToAdd := map[string]*azdext.ComposedResource{}
+	resourcesToAdd := map[string]*v1beta.ComposedResource{}
 	servicesToAdd := map[string]*azdext.ServiceConfig{}
 
 	// Add database resources
 	if a.scenarioData.DatabaseType != "" {
 		desiredName := strings.ReplaceAll(a.scenarioData.DatabaseType, "db.", "")
-		dbResource := &azdext.ComposedResource{
+		dbResource := &v1beta.ComposedResource{
 			Name:       a.generateResourceName(desiredName),
 			Type:       a.scenarioData.DatabaseType,
 			ResourceId: a.scenarioData.DatabaseId,
@@ -213,7 +214,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	// Add messaging resources
 	if a.scenarioData.MessagingType != "" {
 		desiredName := strings.ReplaceAll(a.scenarioData.MessagingType, "messaging.", "")
-		messagingResource := &azdext.ComposedResource{
+		messagingResource := &v1beta.ComposedResource{
 			Name:       a.generateResourceName(desiredName),
 			Type:       a.scenarioData.MessagingType,
 			ResourceId: a.scenarioData.MessagingId,
@@ -223,7 +224,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 	// Add vector store resources
 	if a.scenarioData.VectorStoreType != "" {
-		vectorStoreResource := &azdext.ComposedResource{
+		vectorStoreResource := &v1beta.ComposedResource{
 			Name:       a.generateResourceName("vector-store"),
 			Type:       a.scenarioData.VectorStoreType,
 			ResourceId: a.scenarioData.VectorStoreId,
@@ -245,7 +246,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 			return fmt.Errorf("failed to marshal storage config: %w", err)
 		}
 
-		storageResource := &azdext.ComposedResource{
+		storageResource := &v1beta.ComposedResource{
 			Name:       a.generateResourceName("storage"),
 			Type:       "storage",
 			Config:     storageConfigJson,
@@ -263,7 +264,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 	// Add AI model resources
 	if len(a.scenarioData.ModelSelections) > 0 {
-		var aiProject *azdext.ComposedResource
+		var aiProject *v1beta.ComposedResource
 		var aiProjectConfig *AiProjectResourceConfig
 		for _, resource := range a.composedResources {
 			if resource.Type == "ai.project" {
@@ -278,7 +279,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		if aiProject == nil {
-			aiProject = &azdext.ComposedResource{
+			aiProject = &v1beta.ComposedResource{
 				Name: a.generateResourceName("ai-project"),
 				Type: "ai.project",
 			}
@@ -349,7 +350,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		if a.scenarioData.AppResourceIds[i] != "new" {
 			resourceId = a.scenarioData.AppResourceIds[i]
 		}
-		appResource := &azdext.ComposedResource{
+		appResource := &v1beta.ComposedResource{
 			Name:       a.generateResourceName(appKey),
 			Type:       appType,
 			Config:     appConfigJson,
@@ -448,7 +449,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 	// Add any new resources to the azure.yaml.
 	for _, resource := range resourcesToAdd {
-		_, err := a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
+		_, err := a.azdClient.Compose().AddResource(ctx, &v1beta.AddResourceRequest{
 			Resource: resource,
 		})
 		if err != nil {
@@ -746,15 +747,15 @@ func ensureAzureContext(
 }
 
 func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Question, error) {
-	resourceTypes, err := a.azdClient.Compose().ListResourceTypes(ctx, &azdext.EmptyRequest{})
+	resourceTypes, err := a.azdClient.Compose().ListResourceTypes(ctx, &v1beta.EmptyRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list resource types: %w", err)
 	}
 
-	dbResourceMap := make(map[string]*azdext.ComposedResourceType)
-	vectorStoreMap := make(map[string]*azdext.ComposedResourceType)
-	messagingResourceMap := make(map[string]*azdext.ComposedResourceType)
-	appResourceMap := make(map[string]*azdext.ComposedResourceType)
+	dbResourceMap := make(map[string]*v1beta.ComposedResourceType)
+	vectorStoreMap := make(map[string]*v1beta.ComposedResourceType)
+	messagingResourceMap := make(map[string]*v1beta.ComposedResourceType)
+	appResourceMap := make(map[string]*v1beta.ComposedResourceType)
 
 	for _, resourceType := range resourceTypes.ResourceTypes {
 		key := resourceType.Name

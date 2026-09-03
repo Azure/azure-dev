@@ -511,7 +511,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
-| `Compose()` | `ComposeServiceClient` |
+| `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
 | `FrameworkService()` | `FrameworkServiceClient` |
@@ -519,13 +519,19 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Extension()` | `ExtensionServiceClient` |
 | `Account()` | `AccountServiceClient` |
 | `Ai()` | `AiModelServiceClient` |
-| `Telemetry()` | `TelemetryServiceClient` |
+| `Copilot()` | `v1beta.CopilotServiceClient` (preview) |
+| `Telemetry()` | `v1beta.TelemetryServiceClient` (preview) |
 
 Always call `defer client.Close()` after creation.
 
+`Compose()`, `Copilot()`, and `Telemetry()` are preview accessors. Import
+`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
+request, response, and enum types. They are intentionally excluded from the
+stable `azdext` contract facade until those services graduate to `v1`.
+
 #### TelemetryService
 
-`Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{EventName, Attributes})`
+`Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{EventName, Attributes})`
 lets an authenticated extension report a named usage event with an arbitrary
 `map[string]string` of attributes. Telemetry is a service `azd` offers to
 extensions whose configured source matches the verified official registry
@@ -547,7 +553,7 @@ so the same code path runs during local development and in production. Run
 `azd --debug` to see which applied.
 
 ```go
-resp, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+resp, err := client.Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{
     EventName:  "deploy.completed",
     Attributes: map[string]string{"deploy.mode": "container"},
 })

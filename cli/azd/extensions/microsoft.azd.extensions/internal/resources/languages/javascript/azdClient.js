@@ -1,6 +1,5 @@
 const grpc = require('@grpc/grpc-js');
 
-const { ComposeServiceClient } = require('./generated/proto/compose_grpc_pb');
 const { DeploymentServiceClient } = require('./generated/proto/deployment_grpc_pb');
 const { EnvironmentServiceClient } = require('./generated/proto/environment_grpc_pb');
 const { EventServiceClient } = require('./generated/proto/event_grpc_pb');
@@ -25,7 +24,6 @@ class AzdClient {
 
     const credentials = grpc.credentials.createInsecure();
 
-    this.Compose = new ComposeServiceClient(address, credentials);
     this.Deployment = new DeploymentServiceClient(address, credentials);
     this.Environment = new EnvironmentServiceClient(address, credentials);
     this.Events = new EventServiceClient(address, credentials);

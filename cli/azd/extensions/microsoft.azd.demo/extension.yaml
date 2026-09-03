@@ -5,7 +5,7 @@ displayName: Demo Extension
 description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.8.0
-requiredAzdVersion: ">=1.31.0"
+requiredAzdVersion: ">=1.33.0"
 language: go
 capabilities:
   - custom-commands

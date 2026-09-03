@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package azdext;
+package azd.extensions.v1;
 
-option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1";
 option csharp_namespace = "Microsoft.Azd";
 
 import "models.proto";
@@ -23,15 +23,7 @@ message EventMessage {
     SubscribeServiceEvent subscribe_service_event = 4;
     InvokeServiceHandler invoke_service_handler = 5;
     ServiceHandlerStatus service_handler_status = 6;
-    ExtensionReadyEvent extension_ready_event = 7;
   }
-}
-
-message ExtensionReadyEvent {
-  // Status indicates the readiness state of the extension.
-  string status = 1;
-  // Message provides additional details.
-  string message = 2;
 }
 
 // Client subscribes to project-related events

@@ -12,11 +12,12 @@ example, which deployment mode a user picked.
 > user privacy before you start collecting it. See [Your responsibility for
 > content](#your-responsibility-for-content) below.
 
-Telemetry is a service `azd` offers to extensions installed from the verified
-official `azd` registry source. Call `ReportUsage` with an event name and the
-attributes you care about. `azd` core owns the identity fields, namespaces your
-attributes, and bounds their size and number. It does not inspect what they
-mean.
+Telemetry is a preview service `azd` offers to extensions installed from the
+verified official `azd` registry source. Import
+`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for its request
+and response types. Call `ReportUsage` with an event name and the attributes
+you care about. `azd` core owns the identity fields, namespaces your attributes,
+and bounds their size and number. It does not inspect what they mean.
 
 The reserved `azd` source is eligible only when its name, source type, and
 normalized URL match the official registry. This is a configuration-based
@@ -31,7 +32,7 @@ A published extension version that depends on this service should declare the
 first `azd` release that includes `TelemetryService` in its `extension.yaml`:
 
 ```yaml
-requiredAzdVersion: ">=1.31.0"
+requiredAzdVersion: ">=1.33.0"
 ```
 
 Use the first released `azd` version containing the service as the lower bound.
@@ -66,7 +67,7 @@ identity fields — a key of `extension.id` is recorded as `ext.extension.id`.
 ```go
 if _, err := client.Telemetry().ReportUsage(
     ctx,
-    &azdext.ReportUsageRequest{
+    &v1beta.ReportUsageRequest{
         EventName: "deploy.completed",
         Attributes: map[string]string{
             "deploy.mode": "container",

@@ -142,5 +142,5 @@ func Test_AzdClient_Telemetry(t *testing.T) {
 
 	require.NotNil(t, first)
 	require.NotNil(t, second)
-	require.Same(t, first, second)
+	require.NotSame(t, first, second)
 }

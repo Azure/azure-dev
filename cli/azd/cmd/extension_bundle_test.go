@@ -922,7 +922,11 @@ func TestDownloadBundle_AllowsHTTPSDowngradeWithWarning(t *testing.T) {
 			require.Equal(t, targetPassword, request.password)
 
 			outputText := strings.Join(console.Output(), "\n")
-			require.Contains(t, outputText, "WARNING: Download redirected to "+targetURL.String())
+			require.Contains(
+				t,
+				outputText,
+				"WARNING: Download redirected from HTTPS to HTTP\n"+targetURL.String(),
+			)
 			require.Empty(t, lastConfirmQuestion(console))
 			require.Contains(t, outputText, "(✓) Done: Downloading extension bundle")
 			require.Contains(t, outputText, targetUsername)
@@ -1012,7 +1016,7 @@ func TestDownloadBundle_ContinuesAfterHTTPSDowngrade(t *testing.T) {
 	require.Contains(
 		t,
 		outputText,
-		"WARNING: Download redirected to "+targetURL.String(),
+		"WARNING: Download redirected from HTTPS to HTTP\n"+targetURL.String(),
 	)
 	require.Empty(t, lastConfirmQuestion(console))
 }

@@ -1518,12 +1518,12 @@ func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL s
 					if !downgradeReported {
 						a.console.EnsureBlankLine(ctx)
 					}
-					// Print the complete target URL intentionally. The warning shows the exact HTTP
-					// destination, including any userinfo or query parameters, before continuing.
 					a.console.Message(ctx, output.WithWarningFormat(
-						"WARNING: Download redirected to %s",
-						output.WithLinkFormat(targetURL.String()),
+						"WARNING: Download redirected from HTTPS to HTTP",
 					))
+					// Print the complete target URL intentionally, including any userinfo or query
+					// parameters, so the user sees the exact HTTP destination before continuing.
+					a.console.Message(ctx, output.WithLinkFormat(targetURL.String()))
 					a.console.EnsureBlankLine(ctx)
 					a.console.ShowSpinner(ctx, stepMessage, input.Step)
 					downgradeReported = true

@@ -1126,7 +1126,8 @@ Extensions can declare the following capabilities in their manifest:
 Telemetry is not a capability. Internal telemetry is currently available to
 Microsoft-built extensions in this repository after a privacy review and
 publication to the official `azd` registry. Those extensions can call the
-telemetry gRPC service, and events are recorded when the configured source
+preview telemetry gRPC service using request and response types from
+`pkg/azdext/contracts/v1beta`, and events are recorded when the configured source
 matches the verified official `azd` registry name, type, and normalized URL —
 see [Extension Telemetry](./extension-telemetry.md). Published versions that
 depend on the service should set `requiredAzdVersion` to the first `azd`

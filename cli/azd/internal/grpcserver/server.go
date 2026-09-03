@@ -48,7 +48,7 @@ type Server struct {
 	copilotService       v1beta.CopilotServiceServer
 	provisioningService  azdext.ProvisioningServiceServer
 	validationService    azdext.ValidationServiceServer
-	telemetryService     azdext.TelemetryServiceServer
+	telemetryService     v1beta.TelemetryServiceServer
 	betaServiceOverrides map[BetaService]any
 }
 
@@ -70,7 +70,7 @@ func NewServer(
 	copilotService v1beta.CopilotServiceServer,
 	provisioningService azdext.ProvisioningServiceServer,
 	validationService azdext.ValidationServiceServer,
-	telemetryService azdext.TelemetryServiceServer,
+	telemetryService v1beta.TelemetryServiceServer,
 ) *Server {
 	return &Server{
 		projectService:       projectService,

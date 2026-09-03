@@ -49,6 +49,10 @@ func TestRegisterBetaServicesUsesGeneratedBetaDescriptorsAndServers(t *testing.T
 	const composeService = "azd.extensions.v1beta.ComposeService"
 	require.Same(t, &v1beta.ComposeService_ServiceDesc, registrar.services[composeService])
 	require.IsType(t, v1beta.UnimplementedComposeServiceServer{}, registrar.implementations[composeService])
+
+	const telemetryService = "azd.extensions.v1beta.TelemetryService"
+	require.Same(t, &v1beta.TelemetryService_ServiceDesc, registrar.services[telemetryService])
+	require.IsType(t, v1beta.UnimplementedTelemetryServiceServer{}, registrar.implementations[telemetryService])
 }
 
 func TestRegisterBetaServicesRejectsInvalidOverrides(t *testing.T) {
@@ -62,30 +66,30 @@ func TestRegisterBetaServicesRejectsInvalidOverrides(t *testing.T) {
 		{
 			name: "unknown service",
 			overrides: map[BetaService]any{
-				BetaService("FutureService"): betaTelemetryOverride{},
+				BetaService("FutureService"): betaAccountOverride{},
 			},
 			want: "unknown beta service override",
 		},
 		{
 			name: "whole generated server",
 			overrides: map[BetaService]any{
-				BetaTelemetryService: v1beta.UnimplementedTelemetryServiceServer{},
+				BetaAccountService: v1beta.UnimplementedAccountServiceServer{},
 			},
 			want: "must implement focused method override interfaces",
 		},
 		{
 			name: "wrong service method",
 			overrides: map[BetaService]any{
-				BetaAccountService: betaTelemetryOverride{},
+				BetaPromptService: betaAccountOverride{},
 			},
 			want: "does not implement a generated focused method override interface",
 		},
 		{
 			name: "beta-only service",
 			overrides: map[BetaService]any{
-				BetaComposeService: betaTelemetryOverride{},
+				BetaTelemetryService: betaAccountOverride{},
 			},
-			want: "beta-only service ComposeService uses its native implementation",
+			want: "beta-only service TelemetryService uses its native implementation",
 		},
 	}
 
@@ -104,18 +108,14 @@ func TestRegisterBetaServicesRejectsInvalidOverrides(t *testing.T) {
 func TestTranscodeBetaRequestDiscardsUnknownPreviewFields(t *testing.T) {
 	t.Parallel()
 
-	request := &v1beta.ReportUsageRequest{
-		EventName:  "deploy.completed",
-		Attributes: map[string]string{"mode": "code"},
-	}
+	request := &v1beta.ListSubscriptionsRequest{TenantId: new("tenant")}
 	unknown := protowire.AppendTag(nil, 500, protowire.BytesType)
 	unknown = protowire.AppendString(unknown, "preview-only")
 	request.ProtoReflect().SetUnknown(unknown)
 
-	stableRequest := new(v1.ReportUsageRequest)
+	stableRequest := new(v1.ListSubscriptionsRequest)
 	require.NoError(t, transcodeBetaRequest(request, stableRequest))
-	require.Equal(t, request.GetEventName(), stableRequest.GetEventName())
-	require.Equal(t, request.GetAttributes(), stableRequest.GetAttributes())
+	require.Equal(t, request.GetTenantId(), stableRequest.GetTenantId())
 	require.Empty(t, stableRequest.ProtoReflect().GetUnknown())
 }
 
@@ -127,16 +127,18 @@ func TestAdaptBetaUnary(t *testing.T) {
 
 		response, err := adaptBetaUnary(
 			t.Context(),
-			&v1beta.ReportUsageRequest{EventName: "deploy.completed"},
-			new(v1.ReportUsageRequest),
-			func(_ context.Context, request *v1.ReportUsageRequest) (*v1.ReportUsageResponse, error) {
-				return &v1.ReportUsageResponse{Accepted: request.GetEventName() == "deploy.completed"}, nil
+			&v1beta.ListSubscriptionsRequest{TenantId: new("tenant")},
+			new(v1.ListSubscriptionsRequest),
+			func(_ context.Context, request *v1.ListSubscriptionsRequest) (*v1.ListSubscriptionsResponse, error) {
+				return &v1.ListSubscriptionsResponse{
+					Subscriptions: []*v1.Subscription{{Name: request.GetTenantId()}},
+				}, nil
 			},
-			new(v1beta.ReportUsageResponse),
-			"TelemetryService.ReportUsage",
+			new(v1beta.ListSubscriptionsResponse),
+			"AccountService.ListSubscriptions",
 		)
 		require.NoError(t, err)
-		require.True(t, response.GetAccepted())
+		require.Equal(t, "tenant", response.GetSubscriptions()[0].GetName())
 	})
 
 	t.Run("StableError", func(t *testing.T) {
@@ -145,13 +147,13 @@ func TestAdaptBetaUnary(t *testing.T) {
 		stableErr := errors.New("stable failure")
 		_, err := adaptBetaUnary(
 			t.Context(),
-			new(v1beta.ReportUsageRequest),
-			new(v1.ReportUsageRequest),
-			func(context.Context, *v1.ReportUsageRequest) (*v1.ReportUsageResponse, error) {
+			new(v1beta.ListSubscriptionsRequest),
+			new(v1.ListSubscriptionsRequest),
+			func(context.Context, *v1.ListSubscriptionsRequest) (*v1.ListSubscriptionsResponse, error) {
 				return nil, stableErr
 			},
-			new(v1beta.ReportUsageResponse),
-			"TelemetryService.ReportUsage",
+			new(v1beta.ListSubscriptionsResponse),
+			"AccountService.ListSubscriptions",
 		)
 		require.ErrorIs(t, err, stableErr)
 	})
@@ -161,13 +163,13 @@ func TestAdaptBetaUnary(t *testing.T) {
 
 		_, err := adaptBetaUnary(
 			t.Context(),
-			new(v1beta.ReportUsageRequest),
-			new(v1.ReportUsageRequest),
-			func(context.Context, *v1.ReportUsageRequest) (*v1.ReportUsageResponse, error) {
+			new(v1beta.ListSubscriptionsRequest),
+			new(v1.ListSubscriptionsRequest),
+			func(context.Context, *v1.ListSubscriptionsRequest) (*v1.ListSubscriptionsResponse, error) {
 				return nil, nil
 			},
-			new(v1beta.ReportUsageResponse),
-			"TelemetryService.ReportUsage",
+			new(v1beta.ListSubscriptionsResponse),
+			"AccountService.ListSubscriptions",
 		)
 		require.ErrorContains(t, err, "returned a nil response")
 	})
@@ -267,7 +269,7 @@ func stableServiceImplementations() map[BetaService]any {
 		BetaPromptService:        v1.UnimplementedPromptServiceServer{},
 		BetaProvisioningService:  v1.UnimplementedProvisioningServiceServer{},
 		BetaServiceTargetService: v1.UnimplementedServiceTargetServiceServer{},
-		BetaTelemetryService:     v1.UnimplementedTelemetryServiceServer{},
+		BetaTelemetryService:     v1beta.UnimplementedTelemetryServiceServer{},
 		BetaUserConfigService:    v1.UnimplementedUserConfigServiceServer{},
 		BetaValidationService:    v1.UnimplementedValidationServiceServer{},
 		BetaWorkflowService:      v1.UnimplementedWorkflowServiceServer{},

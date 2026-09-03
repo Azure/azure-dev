@@ -499,20 +499,6 @@ func validateBetaServiceTargetServiceOverride(override any) error {
 	)
 }
 
-// BetaTelemetryServiceReportUsageOverride overrides the beta TelemetryService.ReportUsage method before stable adaptation.
-type BetaTelemetryServiceReportUsageOverride interface {
-	ReportUsage(context.Context, *v1beta.ReportUsageRequest) (*v1beta.ReportUsageResponse, error)
-}
-
-func validateBetaTelemetryServiceOverride(override any) error {
-	return validateBetaServiceOverride(
-		"TelemetryService",
-		override,
-		reflect.TypeFor[v1beta.TelemetryServiceServer](),
-		reflect.TypeFor[BetaTelemetryServiceReportUsageOverride](),
-	)
-}
-
 // BetaUserConfigServiceGetOverride overrides the beta UserConfigService.Get method before stable adaptation.
 type BetaUserConfigServiceGetOverride interface {
 	Get(context.Context, *v1beta.GetUserConfigRequest) (*v1beta.GetUserConfigResponse, error)
@@ -772,17 +758,14 @@ func registerBetaServices(
 		override: overrideServiceTargetService,
 	})
 	overrideTelemetryService := overrides[BetaTelemetryService]
-	if err := validateBetaTelemetryServiceOverride(overrideTelemetryService); err != nil {
-		return err
+	if overrideTelemetryService != nil {
+		return fmt.Errorf("beta-only service TelemetryService uses its native implementation and does not accept an override")
 	}
-	stableTelemetryService, ok := serviceImplementations[BetaTelemetryService].(v1.TelemetryServiceServer)
+	betaTelemetryService, ok := serviceImplementations[BetaTelemetryService].(v1beta.TelemetryServiceServer)
 	if !ok {
-		return fmt.Errorf("stable implementation for TelemetryService does not satisfy v1.TelemetryServiceServer")
+		return fmt.Errorf("implementation for beta-only service TelemetryService does not satisfy v1beta.TelemetryServiceServer")
 	}
-	v1beta.RegisterTelemetryServiceServer(registrar, &betaTelemetryServiceAdapter{
-		stable:   stableTelemetryService,
-		override: overrideTelemetryService,
-	})
+	v1beta.RegisterTelemetryServiceServer(registrar, betaTelemetryService)
 	overrideUserConfigService := overrides[BetaUserConfigService]
 	if err := validateBetaUserConfigServiceOverride(overrideUserConfigService); err != nil {
 		return err
@@ -1962,31 +1945,6 @@ func (a *betaServiceTargetServiceAdapter) Stream(
 			return betaResponse, nil
 		},
 	})
-}
-
-type betaTelemetryServiceAdapter struct {
-	v1beta.UnimplementedTelemetryServiceServer
-	stable   v1.TelemetryServiceServer
-	override any
-}
-
-var _ v1beta.TelemetryServiceServer = (*betaTelemetryServiceAdapter)(nil)
-
-func (a *betaTelemetryServiceAdapter) ReportUsage(
-	ctx context.Context,
-	req *v1beta.ReportUsageRequest,
-) (*v1beta.ReportUsageResponse, error) {
-	if override, ok := a.override.(BetaTelemetryServiceReportUsageOverride); ok {
-		return override.ReportUsage(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.ReportUsageRequest),
-		a.stable.ReportUsage,
-		new(v1beta.ReportUsageResponse),
-		"TelemetryService.ReportUsage",
-	)
 }
 
 type betaUserConfigServiceAdapter struct {

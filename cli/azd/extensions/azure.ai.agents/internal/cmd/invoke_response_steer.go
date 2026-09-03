@@ -109,7 +109,7 @@ func buildConversationContinuationRequest(
 	current *savedBackgroundResponse,
 ) (map[string]any, error) {
 	if current.ConversationID == "" {
-		return nil, fmt.Errorf("saved background Response has no conversation ID for --resume with input")
+		return nil, fmt.Errorf("saved background Response has no conversation ID for --steer")
 	}
 	requestBody := map[string]any{
 		"input":        input,

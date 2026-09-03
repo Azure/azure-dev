@@ -51,6 +51,7 @@ type invokeFlags struct {
 	resumable       bool
 	noWait          bool
 	resume          bool
+	steer           bool
 	cancel          bool
 }
 
@@ -129,10 +130,10 @@ suppressed in raw mode.
 Use --resumable with the Responses protocol to start work that continues running in
 the service if this command disconnects. The command remains attached until the work
 finishes. Add --no-wait to detach as soon as the service acknowledges the background
-work. Use --resume without input to reconnect to saved work, or with input to revise
-the current turn. Use --cancel to cancel saved work. In multi-agent projects, pass the
-agent name positionally when resuming or cancelling saved work. Resumable operations
-are remote-only, do not support raw output, and cannot be combined with --timeout.`,
+work. Use --resume to reconnect to saved work, --steer with input to revise the current
+turn, or --cancel to cancel saved work. In multi-agent projects, pass the agent name
+positionally. Resumable operations are remote-only, do not support raw output, and cannot
+be combined with --timeout.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -167,9 +168,9 @@ are remote-only, do not support raw output, and cannot be combined with --timeou
   # Start resumable work and detach after the service acknowledges it
   azd ai agent invoke --resumable --no-wait "Run the long task"
 
-  # Resume, revise, or cancel saved resumable work
+  # Resume, steer, or cancel saved resumable work
   azd ai agent invoke --resume
-  azd ai agent invoke "Use the revised requirements" --resume
+  azd ai agent invoke "Use the revised requirements" --steer
   azd ai agent invoke --cancel
 
   # Select an agent when reconnecting to or cancelling saved work
@@ -274,7 +275,7 @@ are remote-only, do not support raw output, and cannot be combined with --timeou
 					)
 				}
 			}
-			if flags.resumable || flags.resume || flags.cancel {
+			if flags.resumable || flags.resume || flags.steer || flags.cancel {
 				if flags.local {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
@@ -347,7 +348,8 @@ are remote-only, do not support raw output, and cannot be combined with --timeou
 		"Start resumable work that continues in the service if the command disconnects; remain attached until it finishes",
 	)
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Detach after the service acknowledges the resumable work")
-	cmd.Flags().BoolVar(&flags.resume, "resume", false, "Resume or revise saved background work")
+	cmd.Flags().BoolVar(&flags.resume, "resume", false, "Reconnect to saved background work")
+	cmd.Flags().BoolVar(&flags.steer, "steer", false, "Revise saved background work with new input")
 	cmd.Flags().BoolVar(&flags.cancel, "cancel", false, "Cancel the saved current background Response")
 
 	// Register `raw` as an additional allowed value on the inherited global
@@ -384,20 +386,21 @@ func parseInvokeArgs(flags *invokeFlags, args []string) {
 
 func validateInvokeOperationFlags(cmd *cobra.Command, flags *invokeFlags) error {
 	hasInput := flags.message != "" || flags.inputFile != ""
-	continuesOrCancels := flags.resume || flags.cancel
+	messageFreeOperation := flags.resume || flags.cancel
+	savedResponseOperation := messageFreeOperation || flags.steer
 
 	// An invocation selects exactly one operation.
-	if flags.resume && flags.cancel {
+	if (flags.resume && (flags.steer || flags.cancel)) || (flags.steer && flags.cancel) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"--resume and --cancel are mutually exclusive",
+			"--resume, --steer, and --cancel are mutually exclusive",
 			"choose one operation",
 		)
 	}
-	if flags.resumable && continuesOrCancels {
+	if flags.resumable && savedResponseOperation {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"--resumable cannot be combined with --resume or --cancel",
+			"--resumable cannot be combined with --resume, --steer, or --cancel",
 			"choose one operation",
 		)
 	}
@@ -419,28 +422,35 @@ func validateInvokeOperationFlags(cmd *cobra.Command, flags *invokeFlags) error 
 			"provide either a message argument or --input-file, not both",
 		)
 	}
-	if !hasInput && !continuesOrCancels {
+	if flags.steer && !hasInput {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--steer requires a message argument or --input-file",
+			"provide revised input to steer the saved Response",
+		)
+	}
+	if !hasInput && !messageFreeOperation {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"a message argument or --input-file is required",
 			"provide a message as a positional argument, or use --input-file/-f to send a file",
 		)
 	}
-	if flags.cancel && hasInput {
+	if messageFreeOperation && hasInput {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"--cancel does not accept a message or --input-file",
-			"remove the input to cancel the saved Response",
+			"--resume and --cancel do not accept a message or --input-file",
+			"remove the input to reconnect to or cancel the saved Response",
 		)
 	}
 
 	// Operations on saved work own their session, conversation, and timeout.
-	if continuesOrCancels {
+	if savedResponseOperation {
 		for _, name := range []string{"session-id", "new-session", "conversation-id", "new-conversation"} {
 			if cmd.Flags().Changed(name) {
 				return exterrors.Validation(
 					exterrors.CodeInvalidParameter,
-					"--resume and --cancel use the saved session and conversation",
+					"--resume, --steer, and --cancel use the saved session and conversation",
 					"remove session and conversation overrides",
 				)
 			}
@@ -448,7 +458,7 @@ func validateInvokeOperationFlags(cmd *cobra.Command, flags *invokeFlags) error 
 		if cmd.Flags().Changed("timeout") {
 			return exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				"--timeout is not supported with --resume or --cancel",
+				"--timeout is not supported with --resume, --steer, or --cancel",
 				"remove --timeout; attached background work has no overall timeout",
 			)
 		}
@@ -562,7 +572,8 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// populated, but a2aRemote never calls applyCustomHeaders — the headers
 	// would be silently dropped, which is the exact silent no-op the guard
 	// intends to prevent.
-	if (a.flags.resumable || a.flags.resume || a.flags.cancel) && protocol != agent_api.AgentProtocolResponses {
+	if (a.flags.resumable || a.flags.resume || a.flags.steer || a.flags.cancel) &&
+		protocol != agent_api.AgentProtocolResponses {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("resumable operations are not supported with the %s protocol", protocol),
@@ -597,10 +608,10 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	case agent_api.AgentProtocolA2A:
 		return a.a2aRemote(ctx)
 	default:
+		if a.flags.steer {
+			return a.responsesSteerRemote(ctx)
+		}
 		if a.flags.resume {
-			if a.flags.message != "" || a.flags.inputFile != "" {
-				return a.responsesSteerRemote(ctx)
-			}
 			return a.responsesResumeRemote(ctx)
 		}
 		if a.flags.cancel {
@@ -1293,7 +1304,7 @@ func (a *InvokeAction) ensureNoActiveBackgroundResponse(
 	}
 	return fmt.Errorf(
 		"background Response %s is still active; reconnect with `azd ai agent invoke --resume`, revise it with "+
-			"`azd ai agent invoke \"<message>\" --resume`, or cancel it with `azd ai agent invoke --cancel`",
+			"`azd ai agent invoke \"<message>\" --steer`, or cancel it with `azd ai agent invoke --cancel`",
 		record.ResponseID,
 	)
 }

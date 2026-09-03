@@ -56,6 +56,6 @@ func TestBuildConversationContinuationRequestRequiresConversation(t *testing.T) 
 		SessionID:  "sess_123",
 	})
 
-	require.EqualError(t, err, "saved background Response has no conversation ID for --resume with input")
+	require.EqualError(t, err, "saved background Response has no conversation ID for --steer")
 	assert.Nil(t, request)
 }

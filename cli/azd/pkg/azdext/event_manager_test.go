@@ -169,7 +169,6 @@ func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
 	assert.Equal(t, "prerestore", status.EventName)
 	assert.Equal(t, "completed", status.Status)
 	assert.Equal(t, "", status.Message)
-	assert.Nil(t, status.FollowUp)
 }
 
 func TestEventManager_onInvokeProjectHandler_FollowUp(t *testing.T) {
@@ -179,8 +178,7 @@ func TestEventManager_onInvokeProjectHandler_FollowUp(t *testing.T) {
 		ctx context.Context,
 		args *ProjectEventArgs,
 	) error {
-		followUp := "Run azd deploy"
-		args.FollowUp = &followUp
+		args.FollowUp = new("Run azd deploy")
 		return nil
 	}
 
@@ -191,19 +189,40 @@ func TestEventManager_onInvokeProjectHandler_FollowUp(t *testing.T) {
 
 	require.NoError(t, err)
 	status := resp.GetProjectHandlerStatus()
+	require.Equal(t, "Run azd deploy", status.GetFollowUp())
 	require.NotNil(t, status.FollowUp)
-	require.Equal(t, "Run azd deploy", *status.FollowUp)
 	require.Empty(t, status.Message)
 }
 
-func TestEventManager_onInvokeProjectHandler_ExplicitEmptyFollowUp(t *testing.T) {
+func TestEventManager_onInvokeProjectHandler_UnsetFollowUp(t *testing.T) {
 	ctx := t.Context()
 	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
 	eventManager.projectEvents["postprovision"] = func(
 		ctx context.Context,
 		args *ProjectEventArgs,
 	) error {
-		args.FollowUp = new(string)
+		return nil
+	}
+
+	resp, err := eventManager.onInvokeProjectHandler(ctx, &InvokeProjectHandler{
+		EventName: "postprovision",
+		Project:   createTestProjectConfigForEvents(),
+	})
+
+	require.NoError(t, err)
+	status := resp.GetProjectHandlerStatus()
+	require.Nil(t, status.FollowUp)
+	require.Empty(t, status.Message)
+}
+
+func TestEventManager_onInvokeProjectHandler_EmptyFollowUp(t *testing.T) {
+	ctx := t.Context()
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	eventManager.projectEvents["postprovision"] = func(
+		ctx context.Context,
+		args *ProjectEventArgs,
+	) error {
+		args.FollowUp = new("")
 		return nil
 	}
 
@@ -215,7 +234,7 @@ func TestEventManager_onInvokeProjectHandler_ExplicitEmptyFollowUp(t *testing.T)
 	require.NoError(t, err)
 	status := resp.GetProjectHandlerStatus()
 	require.NotNil(t, status.FollowUp)
-	require.Empty(t, *status.FollowUp)
+	require.Empty(t, status.GetFollowUp())
 	require.Empty(t, status.Message)
 }
 

@@ -12,6 +12,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -206,8 +207,7 @@ func isError(expression ast.Expr) bool {
 }
 
 func generateCode(stable, beta map[string]service) ([]byte, error) {
-	serviceNames := mapsKeys(beta)
-	slices.Sort(serviceNames)
+	serviceNames := slices.Sorted(maps.Keys(beta))
 	if len(serviceNames) == 0 {
 		return nil, fmt.Errorf("no beta services found")
 	}
@@ -387,14 +387,6 @@ const (
 		return nil, fmt.Errorf("format generated adapters: %w\n%s", err, generated.String())
 	}
 	return formatted, nil
-}
-
-func mapsKeys[V any](items map[string]V) []string {
-	keys := make([]string, 0, len(items))
-	for key := range items {
-		keys = append(keys, key)
-	}
-	return keys
 }
 
 func findMethod(service service, name string) (method, bool) {

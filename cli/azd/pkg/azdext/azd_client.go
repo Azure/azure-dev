@@ -41,7 +41,6 @@ type AzdClient struct {
 	copilotClient       v1beta.CopilotServiceClient
 	provisioningClient  ProvisioningServiceClient
 	validationClient    ValidationServiceClient
-	telemetryClient     v1beta.TelemetryServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -317,9 +316,5 @@ func (c *AzdClient) Validation() ValidationServiceClient {
 // so an unsynchronized lazily-written cache field could race on first use. The
 // generated client wrapper is cheap and shares the existing connection.
 func (c *AzdClient) Telemetry() v1beta.TelemetryServiceClient {
-	if c.telemetryClient == nil {
-		c.telemetryClient = v1beta.NewTelemetryServiceClient(c.connection)
-	}
-
-	return c.telemetryClient
+	return v1beta.NewTelemetryServiceClient(c.connection)
 }

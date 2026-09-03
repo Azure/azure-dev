@@ -7,7 +7,7 @@
 // TEMPORARY: Remove this entire package, its two server interceptor hooks, and
 // ExtensionLegacyGrpcCallCount when
 // extension.grpc.legacy_call_count remains zero for a full stable release
-// cycle and all supported extensions have migrated to azd.extensions.v1.
+// cycle and all supported extensions have migrated to versioned contracts.
 package legacybridge
 
 import (
@@ -167,6 +167,13 @@ func freezeDescription(service frozenService) (grpc.ServiceDesc, error) {
 	description.Methods = slices.DeleteFunc(slices.Clone(description.Methods), func(method grpc.MethodDesc) bool {
 		return !slices.Contains(service.methods, method.MethodName)
 	})
+	for index := range description.Methods {
+		method := &description.Methods[index]
+		method.Handler = legacyUnaryHandler(
+			method.Handler,
+			fmt.Sprintf("/%s/%s", description.ServiceName, method.MethodName),
+		)
+	}
 	description.Streams = slices.DeleteFunc(slices.Clone(description.Streams), func(stream grpc.StreamDesc) bool {
 		return !slices.Contains(service.methods, stream.StreamName)
 	})
@@ -190,6 +197,30 @@ func freezeDescription(service frozenService) (grpc.ServiceDesc, error) {
 	}
 
 	return description, nil
+}
+
+func legacyUnaryHandler(handler grpc.MethodHandler, fullMethod string) grpc.MethodHandler {
+	return func(
+		srv any,
+		ctx context.Context,
+		dec func(any) error,
+		interceptor grpc.UnaryServerInterceptor,
+	) (any, error) {
+		if interceptor == nil {
+			return handler(srv, ctx, dec, nil)
+		}
+
+		return handler(srv, ctx, dec, func(
+			ctx context.Context,
+			req any,
+			info *grpc.UnaryServerInfo,
+			next grpc.UnaryHandler,
+		) (any, error) {
+			legacyInfo := *info
+			legacyInfo.FullMethod = fullMethod
+			return interceptor(ctx, req, &legacyInfo, next)
+		})
+	}
 }
 
 // IsLegacyMethod reports whether a full gRPC method uses the frozen legacy package.

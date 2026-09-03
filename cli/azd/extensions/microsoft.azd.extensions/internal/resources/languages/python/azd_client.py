@@ -1,7 +1,6 @@
 import os
 import grpc
 
-from generated_proto.compose_pb2_grpc import ComposeServiceStub
 from generated_proto.deployment_pb2_grpc import DeploymentServiceStub
 from generated_proto.environment_pb2_grpc import EnvironmentServiceStub
 from generated_proto.event_pb2_grpc import EventServiceStub
@@ -24,7 +23,6 @@ class AzdClient:
         auth_interceptor = AuthInterceptor(access_token)
         self.channel = grpc.intercept_channel(channel, auth_interceptor)
 
-        self.compose = ComposeServiceStub(self.channel)
         self.deployment = DeploymentServiceStub(self.channel)
         self.environment = EnvironmentServiceStub(self.channel)
         self.events = EventServiceStub(self.channel)

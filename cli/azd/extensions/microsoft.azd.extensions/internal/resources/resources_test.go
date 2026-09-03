@@ -83,7 +83,7 @@ func TestGoScaffoldPinsReleasedAzdModule(t *testing.T) {
 	)
 }
 
-func TestNonGoScaffoldsUseStableGrpcPackage(t *testing.T) {
+func TestNonGoScaffoldsUseVersionedGrpcPackages(t *testing.T) {
 	roots := []string{
 		"languages/proto",
 		"languages/javascript/generated/proto",
@@ -104,6 +104,7 @@ func TestNonGoScaffoldsUseStableGrpcPackage(t *testing.T) {
 				require.NotContains(t, text, "package azdext;", path)
 				require.NotContains(t, text, "/azdext.", path)
 				require.NotContains(t, text, "proto.azdext", path)
+				require.NotContains(t, strings.ToLower(path), "compose", "Compose is beta-only and not part of stable scaffolds")
 
 				if (strings.HasSuffix(path, "_grpc_pb.js") || strings.HasSuffix(path, "_pb2_grpc.py")) &&
 					!strings.Contains(path, "/models_") {

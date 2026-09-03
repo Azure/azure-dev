@@ -11,28 +11,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFollowUpCollector_ReplacesByExtension(t *testing.T) {
+func TestFollowUpCollector_ResolvesByEventOrder(t *testing.T) {
 	collector := NewFollowUpCollector()
 
-	collector.Add("test.extension", "first")
-	collector.Add("test.extension", "second")
+	recordFollowUp(collector, "test.extension", "postdeploy", "", "deploy")
+	recordFollowUp(collector, "test.extension", "postbuild", "", "build")
 
-	require.Equal(t, "second", collector.Text())
+	require.Equal(t, "deploy", collector.Text())
 }
 
 func TestFollowUpCollector_SortsExtensions(t *testing.T) {
 	collector := NewFollowUpCollector()
 
-	collector.Add("z.extension", "z")
-	collector.Add("a.extension", "a")
+	recordFollowUp(collector, "z.extension", "postdeploy", "", "z")
+	recordFollowUp(collector, "a.extension", "postdeploy", "", "a")
 
 	require.Equal(t, "a\n\nz", collector.Text())
 }
 
-func TestFollowUpCollector_BlankTextProducesNoContribution(t *testing.T) {
+func TestFollowUpCollector_ExplicitBlankProducesNoContribution(t *testing.T) {
 	collector := NewFollowUpCollector()
 
-	collector.Add("test.extension", " \n\t ")
+	recordFollowUp(collector, "test.extension", "postdeploy", "", " \n\t ")
 
 	require.Empty(t, collector.Text())
 }
@@ -40,8 +40,8 @@ func TestFollowUpCollector_BlankTextProducesNoContribution(t *testing.T) {
 func TestFollowUpCollector_ClearsExistingContribution(t *testing.T) {
 	collector := NewFollowUpCollector()
 
-	collector.Add("test.extension", "first")
-	collector.Add("test.extension", "")
+	recordFollowUp(collector, "test.extension", "postbuild", "", "first")
+	recordFollowUp(collector, "test.extension", "postdeploy", "", "")
 
 	require.Empty(t, collector.Text())
 }
@@ -49,14 +49,32 @@ func TestFollowUpCollector_ClearsExistingContribution(t *testing.T) {
 func TestFollowUpCollector_ClearKeepsOtherContributions(t *testing.T) {
 	collector := NewFollowUpCollector()
 
-	collector.Add("a.extension", "first")
-	collector.Add("b.extension", "other")
-	collector.Add("a.extension", " \n\t ")
+	recordFollowUp(collector, "a.extension", "postdeploy", "", "first")
+	recordFollowUp(collector, "b.extension", "postdeploy", "", "other")
+	recordFollowUp(collector, "a.extension", "postdeploy", "", " \n\t ")
 
 	require.Equal(t, "other", collector.Text())
 
-	collector.Add("a.extension", "second")
+	recordFollowUp(collector, "a.extension", "postdeploy", "", "second")
 	require.Equal(t, "second\n\nother", collector.Text())
+}
+
+func TestFollowUpCollector_NilLeavesExistingContribution(t *testing.T) {
+	collector := NewFollowUpCollector()
+	recordFollowUp(collector, "test.extension", "postdeploy", "", "first")
+
+	collector.Record("test.extension", "postdeploy", "", nil)
+
+	require.Equal(t, "first", collector.Text())
+}
+
+func TestFollowUpCollector_SortsLayerInstances(t *testing.T) {
+	collector := NewFollowUpCollector()
+
+	recordFollowUp(collector, "test.extension", "postprovision", "layer-b", "b")
+	recordFollowUp(collector, "test.extension", "postprovision", "layer-a", "a")
+
+	require.Equal(t, "b", collector.Text())
 }
 
 func TestFollowUpCollector_ConcurrentWrites(t *testing.T) {
@@ -65,8 +83,11 @@ func TestFollowUpCollector_ConcurrentWrites(t *testing.T) {
 
 	for i := range 100 {
 		group.Go(func() {
-			collector.Add(
+			recordFollowUp(
+				collector,
 				fmt.Sprintf("extension-%d", i),
+				"postdeploy",
+				"",
 				fmt.Sprintf("follow-up-%d", i),
 			)
 		})
@@ -74,6 +95,16 @@ func TestFollowUpCollector_ConcurrentWrites(t *testing.T) {
 
 	group.Wait()
 	require.Len(t, collector.contributions, 100)
+}
+
+func recordFollowUp(
+	collector *FollowUpCollector,
+	extensionID string,
+	eventName string,
+	instanceID string,
+	text string,
+) {
+	collector.Record(extensionID, eventName, instanceID, &text)
 }
 
 func TestFollowUpCollector_Context(t *testing.T) {

@@ -322,6 +322,8 @@ func classifyResponseLifecycleHTTPError(cause error, operation string) error {
 	switch operation {
 	case exterrors.OpResumeBackgroundResponse:
 		operationLabel = "resuming background Response"
+	case exterrors.OpSteerBackgroundResponse:
+		operationLabel = "steering background Response"
 	case exterrors.OpCancelBackgroundResponse:
 		operationLabel = "cancelling background Response"
 	}

@@ -838,6 +838,7 @@ func TestClassifyResponseLifecycleHTTPError(t *testing.T) {
 
 	for _, operation := range []string{
 		exterrors.OpResumeBackgroundResponse,
+		exterrors.OpSteerBackgroundResponse,
 		exterrors.OpCancelBackgroundResponse,
 	} {
 		t.Run(operation, func(t *testing.T) {

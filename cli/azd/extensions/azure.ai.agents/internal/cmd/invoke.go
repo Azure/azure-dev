@@ -130,10 +130,10 @@ suppressed in raw mode.
 Use --resumable with the Responses protocol to start work that continues running in
 the service if this command disconnects. The command remains attached until the work
 finishes. Add --no-wait to detach as soon as the service acknowledges the background
-work. Use --resume to reconnect to saved work, --steer with input to revise the current
-turn, or --cancel to cancel saved work. In multi-agent projects, pass the agent name
-positionally. Resumable operations are remote-only, do not support raw output, and cannot
-be combined with --timeout.`,
+work. Use --resume to reconnect to saved work, --steer with input to revise active work
+or start the next resumable turn after completion, and --cancel to cancel saved work. In
+multi-agent projects, pass the agent name positionally. Resumable operations are remote-only,
+do not support raw output, and cannot be combined with --timeout.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -349,7 +349,12 @@ be combined with --timeout.`,
 	)
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Detach after the service acknowledges the resumable work")
 	cmd.Flags().BoolVar(&flags.resume, "resume", false, "Reconnect to saved background work")
-	cmd.Flags().BoolVar(&flags.steer, "steer", false, "Revise saved background work with new input")
+	cmd.Flags().BoolVar(
+		&flags.steer,
+		"steer",
+		false,
+		"Revise active work or start the next resumable turn after completion",
+	)
 	cmd.Flags().BoolVar(&flags.cancel, "cancel", false, "Cancel the saved current background Response")
 
 	// Register `raw` as an additional allowed value on the inherited global

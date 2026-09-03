@@ -12,6 +12,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+
+	"azureaiagent/internal/exterrors"
 )
 
 func (a *InvokeAction) responsesSteerRemote(ctx context.Context) error {
@@ -57,7 +59,16 @@ func (a *InvokeAction) responsesSteerRemote(ctx context.Context) error {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		responseBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", responseURL, resp.StatusCode, resp.Status, responseBody)
+		return classifyResponseLifecycleHTTPError(
+			&responseLifecycleHTTPError{
+				method:     http.MethodPost,
+				requestURL: responseURL,
+				statusCode: resp.StatusCode,
+				status:     resp.Status,
+				body:       responseBody,
+			},
+			exterrors.OpSteerBackgroundResponse,
+		)
 	}
 
 	effectiveSessionID := current.SessionID
@@ -99,7 +110,10 @@ func (a *InvokeAction) responsesSteerRemote(ctx context.Context) error {
 		!isTerminalResponseStatus(progressPersister.latest.Status) && isRetryableBackgroundStreamError(streamErr) &&
 		flushErr == nil && closeErr == nil {
 		latest := progressPersister.latest
-		return a.followBackgroundResponse(ctx, rc, store, latest, os.Stdout)
+		return classifyResponseLifecycleHTTPError(
+			a.followBackgroundResponse(ctx, rc, store, latest, os.Stdout),
+			exterrors.OpSteerBackgroundResponse,
+		)
 	}
 	return errors.Join(streamErr, flushErr, closeErr)
 }

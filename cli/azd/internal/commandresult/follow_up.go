@@ -4,6 +4,7 @@
 package commandresult
 
 import (
+	"cmp"
 	"context"
 	"maps"
 	"slices"
@@ -13,16 +14,27 @@ import (
 
 type followUpCollectorKey struct{}
 
+type followUpContributionKey struct {
+	eventName  string
+	instanceID string
+}
+
+type followUpContribution struct {
+	eventName  string
+	instanceID string
+	text       string
+}
+
 // FollowUpCollector gathers extension follow-up text for one command.
 type FollowUpCollector struct {
 	mu            sync.RWMutex
-	contributions map[string]string
+	contributions map[string]map[followUpContributionKey]string
 }
 
 // NewFollowUpCollector creates an empty command follow-up collector.
 func NewFollowUpCollector() *FollowUpCollector {
 	return &FollowUpCollector{
-		contributions: make(map[string]string),
+		contributions: make(map[string]map[followUpContributionKey]string),
 	}
 }
 
@@ -37,43 +49,105 @@ func FollowUpCollectorFromContext(ctx context.Context) *FollowUpCollector {
 	return collector
 }
 
-// Add records follow-up text for an extension. An empty value
-// clears that extension's contribution.
-func (c *FollowUpCollector) Add(extensionID, followUp string) {
-	if c == nil {
+// Record records an explicit follow-up value for an extension event.
+// A nil value does not change the existing contribution.
+func (c *FollowUpCollector) Record(
+	extensionID string,
+	eventName string,
+	instanceID string,
+	followUp *string,
+) {
+	if c == nil || followUp == nil {
 		return
 	}
-
-	isBlank := strings.TrimSpace(followUp) == ""
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if isBlank {
-		delete(c.contributions, extensionID)
-		return
-	}
-
 	if c.contributions == nil {
-		c.contributions = make(map[string]string)
+		c.contributions = make(map[string]map[followUpContributionKey]string)
 	}
-	c.contributions[extensionID] = followUp
+	if c.contributions[extensionID] == nil {
+		c.contributions[extensionID] =
+			make(map[followUpContributionKey]string)
+	}
+	c.contributions[extensionID][followUpContributionKey{
+		eventName:  eventName,
+		instanceID: instanceID,
+	}] = *followUp
 }
 
-// Text returns contributions in deterministic extension ID order.
+// Text returns contributions in deterministic lifecycle and extension order.
 func (c *FollowUpCollector) Text() string {
 	if c == nil {
 		return ""
 	}
 
 	c.mu.RLock()
-	defer c.mu.RUnlock()
+	contributionsByExtension := make(
+		map[string][]followUpContribution,
+		len(c.contributions),
+	)
+	for extensionID, contributions := range c.contributions {
+		entries := make([]followUpContribution, 0, len(contributions))
+		for key, text := range contributions {
+			entries = append(entries, followUpContribution{
+				eventName:  key.eventName,
+				instanceID: key.instanceID,
+				text:       text,
+			})
+		}
+		contributionsByExtension[extensionID] = entries
+	}
+	c.mu.RUnlock()
 
-	contributions := make([]string, 0, len(c.contributions))
-	for _, extensionID := range slices.Sorted(maps.Keys(c.contributions)) {
-		if followUp := strings.TrimSpace(c.contributions[extensionID]); followUp != "" {
-			contributions = append(contributions, followUp)
+	result := make([]string, 0, len(contributionsByExtension))
+	for _, extensionID := range slices.Sorted(maps.Keys(contributionsByExtension)) {
+		entries := contributionsByExtension[extensionID]
+		slices.SortFunc(entries, compareFollowUpContributions)
+
+		var followUp string
+		for _, entry := range entries {
+			followUp = strings.TrimSpace(entry.text)
+		}
+		if followUp != "" {
+			result = append(result, followUp)
 		}
 	}
 
-	return strings.Join(contributions, "\n\n")
+	return strings.Join(result, "\n\n")
+}
+
+func compareFollowUpContributions(
+	left followUpContribution,
+	right followUpContribution,
+) int {
+	if result := cmp.Compare(
+		followUpEventRank(left.eventName),
+		followUpEventRank(right.eventName),
+	); result != 0 {
+		return result
+	}
+	if result := cmp.Compare(left.eventName, right.eventName); result != 0 {
+		return result
+	}
+	return cmp.Compare(left.instanceID, right.instanceID)
+}
+
+func followUpEventRank(eventName string) int {
+	switch eventName {
+	case "postrestore":
+		return 0
+	case "postbuild":
+		return 1
+	case "postpackage":
+		return 2
+	case "postprovision":
+		return 3
+	case "postpublish":
+		return 4
+	case "postdeploy":
+		return 5
+	default:
+		return 6
+	}
 }

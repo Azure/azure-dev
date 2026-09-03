@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -384,117 +383,6 @@ func TestResolveEnv_EmptyLocationResponseReturnsError(t *testing.T) {
 	require.ErrorAs(t, err, &local)
 	assert.Equal(t, exterrors.CodeMissingAzureLocation, local.Code)
 	assert.Empty(t, env.set, "an empty location name must not be persisted")
-}
-
-// promptOrderStubProjectServer models azd core expanding ${VAR} in a
-// service env at call time: the connection endpoint reads as empty
-// until the prompted location has been persisted to the azd
-// environment.
-type promptOrderStubProjectServer struct {
-	azdext.UnimplementedProjectServiceServer
-	projectPath string
-	env         *resolveEnvStubEnvServer
-}
-
-func (s *promptOrderStubProjectServer) Get(
-	context.Context, *azdext.EmptyRequest,
-) (*azdext.GetProjectResponse, error) {
-	endpoint := ""
-	if location := s.env.set[envKeyLocation]; location != "" {
-		endpoint = "https://search." + location + ".example"
-	}
-	return &azdext.GetProjectResponse{Project: &azdext.ProjectConfig{
-		Path: s.projectPath,
-		Services: map[string]*azdext.ServiceConfig{
-			"connection": {
-				Environment: map[string]string{"ENDPOINT": endpoint},
-			},
-		},
-	}}, nil
-}
-
-// newPromptOrderTestClient serves the project, environment and prompt
-// stubs needed to exercise Initialize end to end.
-func newPromptOrderTestClient(
-	t *testing.T,
-	projSrv azdext.ProjectServiceServer,
-	envSrv azdext.EnvironmentServiceServer,
-	promptSrv azdext.PromptServiceServer,
-) *azdext.AzdClient {
-	t.Helper()
-
-	srv := grpc.NewServer()
-	azdext.RegisterProjectServiceServer(srv, projSrv)
-	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
-	azdext.RegisterPromptServiceServer(srv, promptSrv)
-
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	go func() { _ = srv.Serve(lis) }()
-	t.Cleanup(func() {
-		srv.Stop()
-		_ = lis.Close()
-	})
-
-	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
-	require.NoError(t, err)
-	t.Cleanup(func() { client.Close() })
-
-	return client
-}
-
-func TestInitializeResolvesEnvBeforeReadingServiceEnvironments(t *testing.T) {
-	// Greenfield: neither AZURE_SUBSCRIPTION_ID nor AZURE_LOCATION is
-	// set, so Initialize must prompt first. Reading service
-	// environments before the prompt would synthesize the connection
-	// with an empty target.
-	projectPath := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectPath, "azure.yaml"),
-		[]byte(`
-services:
-  project:
-    host: azure.ai.project
-  connection:
-    host: azure.ai.connection
-    uses: [project]
-    env:
-      ENDPOINT: ${SEARCH_ENDPOINT}
-    category: CognitiveSearch
-    target: ${ENDPOINT}
-    authType: None
-`),
-		0o600,
-	))
-
-	env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{}}
-	prompt := &resolveEnvStubPromptServer{
-		subscriptionID: "00000000-0000-0000-0000-000000000001",
-		location:       "westus2",
-	}
-	client := newPromptOrderTestClient(
-		t,
-		&promptOrderStubProjectServer{projectPath: projectPath, env: env},
-		env,
-		prompt,
-	)
-	provider := &FoundryProvisioningProvider{azdClient: client}
-
-	err := provider.Initialize(
-		t.Context(),
-		projectPath,
-		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
-	)
-	require.NoError(t, err)
-	assert.Equal(t, 1, prompt.subscriptionN)
-	assert.Equal(t, 1, prompt.locationN)
-
-	require.NotNil(t, provider.synthResult)
-	connections, ok := provider.synthResult.Parameters["connections"].([]synthesis.Connection)
-	require.True(t, ok)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "https://search.westus2.example", connections[0].Target)
 }
 
 func TestInitializeValidatesConfigBeforePrompting(t *testing.T) {

@@ -44,14 +44,6 @@ func connectionService(t *testing.T, name string, conn project.Connection) *azde
 	return svc
 }
 
-func toolboxService(t *testing.T, name string, toolbox project.Toolbox) *azdext.ServiceConfig {
-	t.Helper()
-	svc := mustMarshalConfig(t, &toolbox)
-	svc.Name = name
-	svc.Host = AiToolboxHost
-	return svc
-}
-
 func agentService(t *testing.T, name string, toolConnections ...project.ToolConnection) *azdext.ServiceConfig {
 	t.Helper()
 	svc := mustMarshalConfig(t, &project.ServiceTargetAgentConfig{ToolConnections: toolConnections})
@@ -211,9 +203,7 @@ func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(
 	assert.Empty(t, deployments)
 }
 
-// TestCollectConnections verifies connections are sourced from
-// azure.ai.connection services in deterministic (sorted) order.
-func TestCollectConnections(t *testing.T) {
+func TestCollectLegacyConnectionsIgnoresSplitServices(t *testing.T) {
 	t.Parallel()
 
 	services := map[string]*azdext.ServiceConfig{
@@ -223,15 +213,12 @@ func TestCollectConnections(t *testing.T) {
 		"agent":      agentService(t, "agent"),
 	}
 
-	connections, err := collectConnections(services, "")
+	connections, err := collectLegacyConnections(services, "")
 	require.NoError(t, err)
-	require.Len(t, connections, 2)
-	// Sorted by service key (alpha before zeta) for stable env-var output.
-	assert.Equal(t, "alpha", connections[0].Name)
-	assert.Equal(t, "zeta", connections[1].Name)
+	require.Empty(t, connections)
 }
 
-func TestCollectConnections_UsesAgentConfigPrecedence(t *testing.T) {
+func TestCollectLegacyConnectionsUsesAgentConfigPrecedence(t *testing.T) {
 	t.Parallel()
 
 	inline, err := structpb.NewStruct(map[string]any{
@@ -265,13 +252,13 @@ func TestCollectConnections_UsesAgentConfigPrecedence(t *testing.T) {
 		},
 	}
 
-	connections, err := collectConnections(services, "")
+	connections, err := collectLegacyConnections(services, "")
 	require.NoError(t, err)
 	require.Len(t, connections, 1)
 	assert.Equal(t, "legacy-connection", connections[0].Name)
 }
 
-func TestCollectConnections_UsesResolvedInlineConfig(t *testing.T) {
+func TestCollectLegacyConnectionsUsesResolvedInlineConfig(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -311,27 +298,10 @@ func TestCollectConnections_UsesResolvedInlineConfig(t *testing.T) {
 		},
 	}
 
-	connections, err := collectConnections(services, root)
+	connections, err := collectLegacyConnections(services, root)
 	require.NoError(t, err)
 	require.Len(t, connections, 1)
 	assert.Equal(t, "inline-connection", connections[0].Name)
-}
-
-// TestCollectToolboxes verifies toolboxes are sourced from azure.ai.toolbox
-// services only.
-func TestCollectToolboxes(t *testing.T) {
-	t.Parallel()
-
-	services := map[string]*azdext.ServiceConfig{
-		"tb":    toolboxService(t, "tb", project.Toolbox{Name: "tb", Tools: []map[string]any{{"type": "mcp"}}}),
-		"agent": agentService(t, "agent"),
-	}
-
-	toolboxes, err := collectToolboxes(services, "")
-	require.NoError(t, err)
-	require.Len(t, toolboxes, 1)
-	assert.Equal(t, "tb", toolboxes[0].Name)
-	require.Len(t, toolboxes[0].Tools, 1)
 }
 
 func TestCollectResourceServices_ResolvesFileRefs(t *testing.T) {
@@ -390,11 +360,9 @@ func TestCollectResourceServices_ResolvesFileRefs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, deployments)
 
-	connections, err := collectConnections(services, root)
+	connections, err := collectLegacyConnections(services, root)
 	require.NoError(t, err)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "search", connections[0].Name)
-	assert.Equal(t, "ApiKey", connections[0].Category)
+	require.Empty(t, connections)
 }
 
 // TestCollectAgentToolConnections verifies tool connections stay on the agent
@@ -428,26 +396,21 @@ func TestCollectHelpers_EmptyAndNilConfigs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, deployments)
 
-	connections, err := collectConnections(services, "")
+	connections, err := collectLegacyConnections(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, connections)
 
-	toolboxes, err := collectToolboxes(services, "")
-	require.NoError(t, err)
-	assert.Empty(t, toolboxes)
 }
 
-// TestCollect_FallbackToBundledAgentConfig verifies that a pre-split azure.yaml
-// -- deployments, connections, and toolboxes bundled on the agent service with
-// no sibling azure.ai.<kind> services -- still yields those resources, so
-// existing projects provision without re-running init.
+// TestCollect_FallbackToBundledAgentConfig verifies that pre-split deployments
+// and connections bundled on the agent service remain available to the legacy
+// provisioning compatibility path.
 func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
 	t.Parallel()
 
 	bundled := &project.ServiceTargetAgentConfig{
 		Deployments: []project.Deployment{{Name: "gpt-4o", Model: project.DeploymentModel{Name: "gpt-4o"}}},
 		Connections: []project.Connection{{Name: "conn", Category: "ApiKey"}},
-		Toolboxes:   []project.Toolbox{{Name: "tb", Tools: []map[string]any{{"type": "mcp"}}}},
 	}
 	svc := mustMarshalConfig(t, bundled)
 	svc.Name = "my-agent"
@@ -459,15 +422,11 @@ func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
 	require.Len(t, deployments, 1)
 	assert.Equal(t, "gpt-4o", deployments[0].Name)
 
-	connections, err := collectConnections(services, "")
+	connections, err := collectLegacyConnections(services, "")
 	require.NoError(t, err)
 	require.Len(t, connections, 1)
 	assert.Equal(t, "conn", connections[0].Name)
 
-	toolboxes, err := collectToolboxes(services, "")
-	require.NoError(t, err)
-	require.Len(t, toolboxes, 1)
-	assert.Equal(t, "tb", toolboxes[0].Name)
 }
 
 func TestCollectLegacyProjectDeploymentsSplitDisablesFallback(
@@ -870,11 +829,14 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 	require.Len(t, projectCfg.Deployments, 1)
 	assert.Equal(t, "gpt-4.1-mini", projectCfg.Deployments[0].Name)
 
-	gotConns, err := collectConnections(services, "")
+	var connectionCfg project.Connection
+	err = project.UnmarshalStruct(
+		project.ServiceConfigProps(services["myconn"]),
+		&connectionCfg,
+	)
 	require.NoError(t, err)
-	require.Len(t, gotConns, 1)
-	assert.Equal(t, "myconn", gotConns[0].Name)
-	assert.Equal(t, "ApiKey", gotConns[0].Category)
+	assert.Equal(t, "myconn", connectionCfg.Name)
+	assert.Equal(t, "ApiKey", connectionCfg.Category)
 }
 
 // TestEmitResourceServices_WritesEndpointForExistingProject verifies that a

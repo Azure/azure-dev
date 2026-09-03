@@ -301,12 +301,13 @@ func (p *FoundryProvisioningProvider) Initialize(
 		// Pass the current env so connection conditions evaluate
 		// even when payload ${VAR} refs are preserved.
 		_, validationErr := synthesis.Synthesize(synthesis.Input{
-			RawAzureYAML:    rawYAML,
-			ServiceName:     svcName,
-			AcceptedHosts:   FoundryProvisioningServiceHosts,
-			Env:             p.networkEnvMap(ctx),
-			PreserveVarRefs: true,
-			ProjectRoot:     projectRoot,
+			RawAzureYAML:              rawYAML,
+			ServiceName:               svcName,
+			AcceptedHosts:             FoundryProvisioningServiceHosts,
+			Env:                       p.networkEnvMap(ctx),
+			PreserveVarRefs:           true,
+			ExcludeConnectionServices: true,
+			ProjectRoot:               projectRoot,
 		})
 		if validationErr != nil &&
 			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
@@ -314,30 +315,32 @@ func (p *FoundryProvisioningProvider) Initialize(
 		}
 	}
 
-	p.connectionEnvironmentScopes, err =
-		synthesis.ConnectionEnvironmentScopes(
+	if onDisk {
+		p.connectionEnvironmentScopes, err = synthesis.ConnectionEnvironmentScopes(
 			rawYAML,
 			projectRoot,
 			p.networkEnvMap(ctx),
 		)
-	if err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf(
-				"read Foundry connection service configuration: %s",
-				err,
-			),
-			"fix the connection service configuration in azure.yaml",
-		)
+		if err != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAzureYaml,
+				fmt.Sprintf(
+					"read Foundry connection service configuration: %s",
+					err,
+				),
+				"fix the connection service configuration in azure.yaml",
+			)
+		}
 	}
 	if endpoint != "" && !onDisk {
 		connectionOnlyResult, synthErr := synthesis.SynthesizeExistingProject(synthesis.Input{
-			RawAzureYAML:    rawYAML,
-			ServiceName:     svcName,
-			AcceptedHosts:   FoundryProvisioningServiceHosts,
-			Env:             p.networkEnvMap(ctx),
-			PreserveVarRefs: true,
-			ProjectRoot:     projectRoot,
+			RawAzureYAML:              rawYAML,
+			ServiceName:               svcName,
+			AcceptedHosts:             FoundryProvisioningServiceHosts,
+			Env:                       p.networkEnvMap(ctx),
+			PreserveVarRefs:           true,
+			ExcludeConnectionServices: true,
+			ProjectRoot:               projectRoot,
 		})
 		if synthErr != nil {
 			return foundrySynthesisError(svcName, synthErr)
@@ -365,18 +368,21 @@ func (p *FoundryProvisioningProvider) Initialize(
 		}
 	}
 
-	p.serviceEnvironments, err = p.projectServiceEnvironments(ctx)
-	if err != nil {
-		return err
+	if onDisk {
+		p.serviceEnvironments, err = p.projectServiceEnvironments(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	input := synthesis.Input{
-		RawAzureYAML:        rawYAML,
-		ServiceName:         svcName,
-		AcceptedHosts:       FoundryProvisioningServiceHosts,
-		Env:                 p.networkEnvMap(ctx),
-		ServiceEnvironments: p.serviceEnvironments,
-		ProjectRoot:         projectRoot,
+		RawAzureYAML:              rawYAML,
+		ServiceName:               svcName,
+		AcceptedHosts:             FoundryProvisioningServiceHosts,
+		Env:                       p.networkEnvMap(ctx),
+		ServiceEnvironments:       p.serviceEnvironments,
+		ExcludeConnectionServices: !onDisk,
+		ProjectRoot:               projectRoot,
 	}
 	var res *synthesis.Result
 	if endpoint != "" {

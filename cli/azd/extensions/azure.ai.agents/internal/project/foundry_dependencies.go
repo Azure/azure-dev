@@ -77,7 +77,7 @@ func validateRegistryConnectionDependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("registry connection service %s is not declared in %s uses",
 				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
-			fmt.Sprintf("add %s to the %s service uses list, run 'azd provision', then retry the agent deployment",
+			fmt.Sprintf("add %s to the %s service uses list, run 'azd deploy', then retry the agent deployment",
 				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
 		)
 	}
@@ -133,13 +133,12 @@ func validateFoundryDependencies(
 		detail := validateFoundryDependency(dependency, env)
 		if detail != "" {
 			failures = append(failures, foundryDependencyFailure{
-				name:   dependencyName,
-				host:   host,
-				detail: detail,
-				requiresProvision: host == foundryProjectHost || host == legacyFoundryHost ||
-					host == foundryConnectionHost,
-				requiresDeploy: host == foundryToolboxHost || host == foundryAgentHost ||
-					host == foundrySkillHost,
+				name:              dependencyName,
+				host:              host,
+				detail:            detail,
+				requiresProvision: host == foundryProjectHost || host == legacyFoundryHost,
+				requiresDeploy: host == foundryConnectionHost || host == foundryToolboxHost ||
+					host == foundryAgentHost || host == foundrySkillHost,
 			})
 		}
 	}
@@ -349,21 +348,10 @@ func validateFoundryProjectDependency(_ *azdext.ServiceConfig, env map[string]st
 	return ""
 }
 
-func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[string]string) string {
-	connectionProject := strings.TrimSpace(env[envkey.ConnectionProjectEndpoint])
-	if connectionProject != "" && !sameProjectEndpoint(connectionProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
-		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
-	}
-	found := false
-	for name := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
-		if strings.TrimSpace(name) == service.GetName() {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return "connection is not listed in AZURE_AI_PROJECT_CONNECTION_NAMES"
-	}
+func validateFoundryConnectionDependency(_ *azdext.ServiceConfig, _ map[string]string) string {
+	// The uses graph runs the Connection service target before its dependent
+	// Agent. A failed or disabled Connection prevents the Agent deploy step, so
+	// no environment readiness marker is required here.
 	return ""
 }
 

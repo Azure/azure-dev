@@ -210,6 +210,7 @@ type connectionCreateFlags struct {
 	refreshURL       string   // OAuth2 refresh endpoint
 	scopes           []string // OAuth2 scopes
 	connectorName    string   // Managed connector name
+	suppressOutput   bool     // Service targets report progress through azd instead.
 }
 
 // ConnectionCreateAction implements connection creation.
@@ -386,6 +387,9 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 	}
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateConnection)
+	}
+	if a.flags.suppressOutput {
+		return nil
 	}
 
 	return emitConnectionCreateResult(a.flags.name, connCtx.project, a.flags.output)

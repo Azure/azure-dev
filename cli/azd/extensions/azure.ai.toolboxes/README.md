@@ -2,6 +2,21 @@
 
 Manage Microsoft Foundry Toolboxes from your terminal. (Preview)
 
+## `azure.yaml` ownership
+
+This extension owns the runtime lifecycle for `host: azure.ai.toolbox`
+services. During the staged ownership migration, `azd ai agent init` may still
+author the service block, but the Toolboxes extension reads it, resolves its
+Connection and Skill references, creates the Toolbox version during deploy, and
+publishes the resulting MCP endpoint.
+
+`azd deploy <toolbox-service>` reconciles one Toolbox. In `azd up`, `uses`
+orders the Project and Connection services before the Toolbox, and the Toolbox
+before an Agent that consumes it. The Agents extension does not parse split
+Toolbox service blocks at provision or deploy time. Its standalone legacy
+`azd ai agent deploy` path delegates a sibling `toolbox.yaml` to
+`azd ai toolbox deploy`.
+
 ## Reuse an existing toolbox in `azure.yaml`
 
 A `host: azure.ai.toolbox` service normally creates a new toolbox version from

@@ -1002,6 +1002,61 @@ services:
 	})
 }
 
+func TestSynthesizeExcludesConnectionServicesForOwningExtension(t *testing.T) {
+	t.Parallel()
+
+	result, err := Synthesize(Input{
+		RawAzureYAML: []byte(`
+services:
+  project:
+    host: azure.ai.project
+  search:
+    host: azure.ai.connection
+    category: CognitiveSearch
+    target: https://search.example
+    authType: None
+`),
+		ServiceName:               "project",
+		ExcludeConnectionServices: true,
+	})
+	require.NoError(t, err)
+	connections, ok := result.Parameters["connections"].([]Connection)
+	require.True(t, ok)
+	require.Empty(t, connections)
+}
+
+func TestSynthesizePreservesPreSplitBundledConnections(t *testing.T) {
+	t.Parallel()
+
+	result, err := Synthesize(Input{
+		RawAzureYAML: []byte(`
+services:
+  agent:
+    host: azure.ai.agent
+    connections:
+      - name: search
+        category: CognitiveSearch
+        target: ${SEARCH_ENDPOINT}
+        authType: ApiKey
+        credentials:
+          key: ${SEARCH_KEY}
+`),
+		ServiceName:               "agent",
+		AcceptedHosts:             []string{"azure.ai.agent"},
+		Env:                       map[string]string{"SEARCH_ENDPOINT": "https://search.example", "SEARCH_KEY": "secret"},
+		ExcludeConnectionServices: true,
+	})
+	require.NoError(t, err)
+	connections, ok := result.Parameters["connections"].([]Connection)
+	require.True(t, ok)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "search", connections[0].Name)
+	assert.Equal(t, "https://search.example", connections[0].Target)
+	credentials, ok := result.Parameters["connectionCredentials"].(map[string]map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "secret", credentials["search"]["key"])
+}
+
 func TestSynthesize_ConnectionExtendedFields(t *testing.T) {
 	const inputYAML = `
 services:

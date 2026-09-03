@@ -202,7 +202,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		}
 		out = append(out, Suggestion{
 			Command:     "azd provision",
-			Description: "set up your Foundry project, models, and connections",
+			Description: "set up your Foundry project and models",
 			Priority:    priority,
 		})
 		priority++
@@ -228,18 +228,10 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 			priority,
 		)
 		// Toolbox sub-branch: configured toolboxes declare one or more
-		// whose azd-injected TOOLBOX_<NAME>_MCP_ENDPOINT variable is
-		// not yet present in the azd environment. The variable is
-		// written by `azd provision` (listen.go::registerToolboxEnvVars)
-		// after the azure.ai.toolbox service target publishes the toolbox version,
-		// so the canonical fix is provision — NOT `azd env set`, which
-		// the generic manual-vars sub-branch below would otherwise
-		// suggest. We also surface `azd ai agent doctor` as a follow-up
-		// so the user can check whether the toolbox already exists in
-		// their Foundry project. The actual live existence check
-		// belongs in doctor's local.toolboxes (one HTTP GET per
-		// toolbox); ResolveAfterInit is offline by contract and must
-		// not initiate Foundry API calls.
+		// whose azd-injected TOOLBOX_<NAME>_MCP_ENDPOINT variable is not
+		// yet present. Split Toolboxes publish it from their deploy target;
+		// legacy bundled Toolboxes still require migration/provision guidance.
+		// ResolveAfterInit remains offline and does not probe Foundry.
 		if hasToolboxEndpoints {
 			if hasLegacyToolboxEndpoints {
 				out = append(out, Suggestion{

@@ -4,34 +4,76 @@
 package cmd
 
 import (
+	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// TestDeploy_IsNoOp verifies the connection service target does not create the
-// connection at deploy time. Connections declared as host: azure.ai.connection
-// services are provisioned by the microsoft.foundry provider (synthesis) at
-// provision time, so Deploy must return an empty result without any ARM call.
-func TestDeploy_IsNoOp(t *testing.T) {
+func TestDeployUpsertsConnectionFromServiceConfig(t *testing.T) {
 	t.Parallel()
 
-	target := &connectionServiceTarget{}
-	svc := &azdext.ServiceConfig{Name: "search-conn", Host: aiConnectionHost}
+	props, err := structpb.NewStruct(map[string]any{
+		"category": "RemoteTool",
+		"target":   "https://example.test/mcp",
+		"authType": "CustomKeys",
+		"credentials": map[string]any{
+			"keys": map[string]any{
+				"x-api-key": "${CONNECTION_KEY}",
+			},
+		},
+		"metadata": map[string]any{
+			"region": "test",
+		},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "search-conn",
+		Host:                 aiConnectionHost,
+		AdditionalProperties: props,
+		Environment:          map[string]string{"CONNECTION_KEY": "secret"},
+	}
+	var captured *connectionCreateFlags
+	target := &connectionServiceTarget{upsert: func(_ context.Context, flags *connectionCreateFlags) error {
+		captured = flags
+		return nil
+	}}
 
 	var progressMsgs []string
 	progress := func(msg string) { progressMsgs = append(progressMsgs, msg) }
 
-	// A nil azdClient would panic if Deploy tried to reach the environment or
-	// ARM; the no-op must not touch either.
 	res, err := target.Deploy(t.Context(), svc, nil, nil, progress)
 	require.NoError(t, err)
 	require.NotNil(t, res)
+	require.NotNil(t, captured)
+	assert.Equal(t, "search-conn", captured.name)
+	assert.Equal(t, "RemoteTool", captured.kind)
+	assert.Equal(t, "https://example.test/mcp", captured.target)
+	assert.Equal(t, "custom-keys", captured.authType)
+	assert.Equal(t, []string{"x-api-key=secret"}, captured.customKeys)
+	assert.Equal(t, []string{"region=test"}, captured.metadata)
+	assert.True(t, captured.force)
+	assert.True(t, captured.suppressOutput)
 	require.Len(t, progressMsgs, 1)
-	assert.Contains(t, progressMsgs[0], "search-conn")
-	assert.Contains(t, progressMsgs[0], "provisioned by infrastructure")
+	assert.Equal(t, "Upserting connection \"search-conn\"", progressMsgs[0])
+}
+
+func TestParseConnectionServiceConfigFallsBackToLegacyConfig(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"category": "AzureOpenAI",
+		"target":   "https://example.test",
+	})
+	require.NoError(t, err)
+
+	input, err := parseConnectionServiceConfig(&azdext.ServiceConfig{Name: "legacy", Config: config})
+	require.NoError(t, err)
+	assert.Equal(t, "AzureOpenAI", input.Category)
+	assert.Equal(t, "https://example.test", input.Target)
 }
 
 // TestPackagePublish_AreNoOps verifies the remaining lifecycle methods a

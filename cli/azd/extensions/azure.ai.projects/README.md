@@ -51,14 +51,6 @@ is missing, the command first creates a minimal azd project:
 
 ```sh
 azd ai project add
-```
-
-`azd ai project init` remains available as a compatibility alias and accepts
-the same options. For a new project, managed deployment declarations can be
-added before the first provision:
-
-```sh
-azd ai project add
 azd ai project deployment add --model <model-name>
 azd provision
 ```
@@ -80,7 +72,7 @@ azd ai project deployment add --model <model-name>
 
 An endpoint-only project is suitable for configuration that does not manage
 resources on the existing project. If managed deployments are already
-declared, endpoint-only initialization stops before clearing the project ID.
+declared, endpoint-only setup stops before clearing the project ID.
 Use the full project resource ID before adding managed deployments.
 
 To reconcile deployments, connections, or a pending container registry on an existing project, set the project's full ARM resource ID in the active azd environment:
@@ -104,9 +96,8 @@ azd ai project add --project-id "<project-resource-id>" --infra=terraform
 The default format is Bicep. The generated infrastructure references the
 existing account and project without taking ownership of them. It manages only
 declared model deployments, project connections, and any required container
-registry resources. Endpoint-only initialization cannot eject infrastructure;
-rerun `project add` (or the compatibility `project init`) with the full
-project resource ID.
+registry resources. Endpoint-only setup cannot eject infrastructure; rerun
+`project add` with the full project resource ID.
 
 When an agent needs a registry, ejection preserves the registry state selected
 during initialization: it creates a registry when none exists, connects an

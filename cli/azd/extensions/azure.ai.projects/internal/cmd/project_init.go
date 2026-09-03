@@ -66,19 +66,11 @@ const (
 	foundryTerraformMarkerVersion = "terraform-v1\n"
 )
 
-// ProjectInitAction implements project add and project init.
+// ProjectInitAction implements project add and delegated project setup.
 type ProjectInitAction struct {
 	client *azdext.AzdClient
 	flags  *projectInitFlags
 	extCtx *azdext.ExtensionContext
-}
-
-func newProjectInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	return newProjectAuthoringCommand(
-		"init",
-		"Initialize or adopt a Microsoft Foundry project.",
-		extCtx,
-	)
 }
 
 func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -511,7 +503,7 @@ func promptProjectTarget(
 		return nil, exterrors.Validation(
 			"project_selection_invalid",
 			"the project selection response was invalid",
-			"retry project initialization",
+			"retry `azd ai project add`",
 		)
 	}
 	if choices[index].GetValue() == "new" {
@@ -566,7 +558,7 @@ func promptProjectTarget(
 		return nil, exterrors.Validation(
 			"project_selection_invalid",
 			"the Foundry project selection response was invalid",
-			"retry project initialization",
+			"retry `azd ai project add`",
 		)
 	}
 	return &projects[index], nil

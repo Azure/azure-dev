@@ -434,7 +434,7 @@ func projectEjectIdentity(
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"the Foundry project endpoint does not match the project resource ID",
-			"rerun project initialization against the same existing project",
+			"rerun `project add` against the same existing project",
 		)
 	}
 	return project, nil
@@ -448,7 +448,7 @@ func validateProjectEjectEnvironment(
 			exterrors.CodeInvalidParameter,
 			"FOUNDRY_PROJECT_ENDPOINT does not match the existing project "+
 				"configured in azure.yaml",
-			"rerun project initialization against the configured project",
+			"rerun `project add` against the configured project",
 		)
 	}
 	if configuredID := strings.TrimSpace(values["AZURE_AI_PROJECT_ID"]); configuredID != "" && !strings.EqualFold(
@@ -458,7 +458,7 @@ func validateProjectEjectEnvironment(
 			exterrors.CodeInvalidParameter,
 			"AZURE_AI_PROJECT_ID does not match the existing project "+
 				"configured in azure.yaml",
-			"rerun project initialization against the configured project",
+			"rerun `project add` against the configured project",
 		)
 	}
 	return nil

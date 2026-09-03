@@ -34,7 +34,6 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectUnsetCommand(extCtx))
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
 	rootCmd.AddCommand(newProjectAddCommand(extCtx))
-	rootCmd.AddCommand(newProjectInitCommand(extCtx))
 	rootCmd.AddCommand(newProjectDeploymentCommand(extCtx))
 	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 

@@ -19,7 +19,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 
-	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -67,13 +66,10 @@ func TestDelegatedRequestIsInputOnly(t *testing.T) {
 	requestPath := filepath.Join(dir, "request.json")
 	require.NoError(t, os.WriteFile(requestPath, []byte(`{}`), 0600))
 	root := NewRootCommand()
-	initCommand, _, err := root.Find([]string{"init"})
-	require.NoError(t, err)
 	addCommand, _, err := root.Find([]string{"add"})
 	require.NoError(t, err)
 	deploymentCommand, _, err := root.Find([]string{"deployment", "add"})
 	require.NoError(t, err)
-	assert.Nil(t, initCommand.Flags().Lookup("result-file"))
 	assert.Nil(t, addCommand.Flags().Lookup("result-file"))
 	assert.Nil(t, deploymentCommand.Flags().Lookup("result-file"))
 	assert.NoError(t, validateDelegatedFilePath(requestPath, "request", true))
@@ -81,31 +77,19 @@ func TestDelegatedRequestIsInputOnly(t *testing.T) {
 
 func TestProjectCommandsRegistered(t *testing.T) {
 	root := NewRootCommand()
-	initCommand, _, err := root.Find([]string{"init"})
-	require.NoError(t, err)
 	addCommand, _, err := root.Find([]string{"add"})
 	require.NoError(t, err)
 	assert.Equal(t, "add", addCommand.Name())
-	assert.Equal(t, "init", initCommand.Name())
 	deploymentCommand, _, err := root.Find([]string{"deployment", "add"})
 	require.NoError(t, err)
 	assert.Equal(t, "add", deploymentCommand.Name())
-	assert.Equal(t, "bicep", initCommand.Flags().Lookup("infra").NoOptDefVal)
-	assert.True(t, initCommand.Flags().Lookup("request-file").Hidden)
 	assert.True(t, addCommand.Flags().Lookup("request-file").Hidden)
 	assert.True(t, deploymentCommand.Flags().Lookup("request-file").Hidden)
-	assertOutputFlagOptions(t, initCommand, "default", []string{"default", "json", "none"})
 	assertOutputFlagOptions(t, addCommand, "default", []string{"default", "json", "none"})
 
-	initFlags := map[string]struct{}{}
-	initCommand.Flags().VisitAll(func(flag *pflag.Flag) {
-		initFlags[flag.Name] = struct{}{}
-	})
-	addFlags := map[string]struct{}{}
-	addCommand.Flags().VisitAll(func(flag *pflag.Flag) {
-		addFlags[flag.Name] = struct{}{}
-	})
-	assert.Equal(t, initFlags, addFlags)
+	assert.Equal(t, "bicep", addCommand.Flags().Lookup("infra").NoOptDefVal)
+	_, _, err = root.Find([]string{"init"})
+	require.Error(t, err)
 }
 
 func TestProjectFileExists(t *testing.T) {

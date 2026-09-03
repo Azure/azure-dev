@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 // Package errorchain provides dependency-free helpers for inspecting Go error
-// chains. The package is public so extensions can preserve safe error-type
+// chains. The package is public so extensions can preserve bounded diagnostic
 // evidence across the azd gRPC boundary without depending on internal APIs.
 package errorchain
 
@@ -89,15 +89,17 @@ func isComparableError(err error) bool {
 	return reflect.ValueOf(err).Comparable()
 }
 
-// CauseTypes returns a bounded, de-duplicated list of useful error types for
-// transport across an extension boundary. Generic wrappers are omitted and
-// type names are limited to the format produced by reflect.Type.String.
+// CauseTypes returns a bounded, de-duplicated list of useful local error
+// types for transport across an extension boundary. Generic wrappers are
+// omitted; type names use the format produced by reflect.Type.String.
 func CauseTypes(err error) []string {
 	return NormalizeCauseTypes(Types(err))
 }
 
-// NormalizeCauseTypes validates and de-duplicates type names received from an
-// extension. It returns a fresh slice and never includes generic wrappers.
+// NormalizeCauseTypes bounds and de-duplicates diagnostic labels received from
+// an extension. It returns a fresh slice and never includes generic wrappers.
+// The normalized values remain extension-controlled and are not a privacy
+// guarantee.
 func NormalizeCauseTypes(types []string) []string {
 	if len(types) == 0 {
 		return nil

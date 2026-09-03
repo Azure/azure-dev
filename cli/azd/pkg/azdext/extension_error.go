@@ -40,8 +40,9 @@ type LocalError struct {
 	Code string
 	// Category classifies the local error (for example: user, validation, dependency)
 	Category LocalErrorCategory
-	// CauseTypes contains safe Go error types from an unexpected fallback chain.
-	// It is transported as diagnostic evidence and does not change classification.
+	// CauseTypes contains extension-provided diagnostic labels from an
+	// unexpected fallback chain. The host normalizes and hashes them for
+	// telemetry; they do not change classification.
 	CauseTypes []string
 	// Suggestion contains optional user-facing remediation guidance.
 	Suggestion string

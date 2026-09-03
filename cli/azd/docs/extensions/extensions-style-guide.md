@@ -135,8 +135,10 @@ external-tool failures:
   `ToolErrorKindFailed` when it ran and failed.
 
 These types implement `Error()`. They are detected via `errors.As` during
-serialization. `CauseTypes` is bounded diagnostic evidence for unexpected
-local fallbacks; it does not change the selected classification.
+serialization. `CauseTypes` is bounded, extension-provided diagnostic input
+for unexpected local fallbacks; it does not change the selected
+classification. The host records it only as hashes in
+`error.extension.cause_types`, never as plain text in system metadata.
 
 ### Telemetry Classification
 

@@ -146,7 +146,7 @@ type LocalErrorDetail struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`                               // Extension-defined error code (e.g., "invalid_config")
 	Category      string                 `protobuf:"bytes,2,opt,name=category,proto3" json:"category,omitempty"`                       // Error category (e.g., "user", "validation", "dependency", "internal")
-	CauseTypes    []string               `protobuf:"bytes,3,rep,name=cause_types,json=causeTypes,proto3" json:"cause_types,omitempty"` // Normalized Go error types from an unexpected fallback chain
+	CauseTypes    []string               `protobuf:"bytes,3,rep,name=cause_types,json=causeTypes,proto3" json:"cause_types,omitempty"` // Bounded extension-provided diagnostic labels
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

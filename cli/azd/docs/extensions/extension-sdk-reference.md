@@ -720,10 +720,13 @@ type LocalError struct {
 
 Represents an error originating within the extension. The `Suggestion` field
 provides actionable guidance displayed to the user. `CauseTypes` contains
-bounded, safe Go error type names for unexpected fallback errors; it is
-diagnostic evidence and does not determine the error classification. The host
+bounded diagnostic labels for unexpected fallback errors; it is extension-
+provided input and does not determine the error classification. The host
 normalizes these values at both gRPC boundaries by removing generic wrappers,
-duplicates, unsafe names, and values beyond the 16-item limit.
+duplicates, unsafe names, and values beyond the 16-item limit. For telemetry,
+the host records these labels only as case-insensitive hashes in
+`error.extension.cause_types`; they are never added to the reflected
+`error.chain.types` or used as `error.type`.
 
 ### ServiceError
 

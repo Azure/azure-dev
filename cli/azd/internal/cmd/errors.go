@@ -51,14 +51,13 @@ import (
 func MapError(err error, span tracing.Span) {
 	code, attrs := classify(err)
 
-	// Always emit the wrapped-error type chain so engineers can see
-	// what hides behind a generic ResultCode like internal.unclassified
-	// without needing to repro. Type names are code-defined and PII-free.
+	// Always emit the host-observed wrapped-error type chain so engineers
+	// can see what hides behind internal.unclassified.
 	chainTypes := errchain.Types(err)
 	remoteTypes := causeTypesForTelemetry(err)
-	chainTypes = appendUniqueStrings(chainTypes, remoteTypes...)
-	if len(remoteTypes) > 0 && !hasErrorTypeAttribute(attrs) {
-		attrs = append(attrs, fields.ErrType.String(errorchain.DeepestNamedTypeFromTypes(remoteTypes)))
+	if len(remoteTypes) > 0 {
+		span.SetAttributes(fields.StringSliceHashed(
+			fields.ErrExtensionCauseTypes, remoteTypes))
 	}
 	span.SetAttributes(fields.ErrChainTypes.StringSlice(chainTypes))
 
@@ -107,40 +106,6 @@ func causeTypesForTelemetry(err error) []string {
 	}
 
 	return errorchain.NormalizeCauseTypes(localErr.CauseTypes)
-}
-
-func hasErrorTypeAttribute(attrs []attribute.KeyValue) bool {
-	for _, attr := range attrs {
-		if attr.Key == fields.ErrType.Key {
-			return true
-		}
-	}
-	return false
-}
-
-func appendUniqueStrings(values []string, additions ...string) []string {
-	if len(values) > errorchain.MaxChainLen {
-		values = values[:errorchain.MaxChainLen]
-	}
-	if len(additions) == 0 || len(values) >= errorchain.MaxChainLen {
-		return values
-	}
-
-	seen := make(map[string]struct{}, len(values)+len(additions))
-	for _, value := range values {
-		seen[value] = struct{}{}
-	}
-	for _, addition := range additions {
-		if len(values) >= errorchain.MaxChainLen {
-			break
-		}
-		if _, exists := seen[addition]; exists {
-			continue
-		}
-		seen[addition] = struct{}{}
-		values = append(values, addition)
-	}
-	return values
 }
 
 // classify runs the typed/sentinel decision tree and returns the

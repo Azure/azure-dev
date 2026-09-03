@@ -28,7 +28,8 @@ message ServiceErrorDetail {
 message LocalErrorDetail {
   string code = 1;      // Extension-defined error code (e.g., "invalid_config")
   string category = 2;  // Error category (e.g., "user", "validation", "dependency", "internal")
-  repeated string cause_types = 3;  // Normalized Go error types from an unexpected fallback chain
+  // Bounded extension-provided diagnostic labels.
+  repeated string cause_types = 3;
 }
 
 // ToolErrorDetail contains structured information about a local tool failure.

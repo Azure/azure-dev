@@ -1097,6 +1097,7 @@ func Test_MapError_RemoteCauseTypes(t *testing.T) {
 			"*fmt.wrapError",
 			"*agents.TransportError",
 			"*agents.TransportError",
+			"CustomerTokenABC123",
 		},
 	}
 	span := &mocktracing.Span{}
@@ -1112,11 +1113,21 @@ func Test_MapError_RemoteCauseTypes(t *testing.T) {
 
 	require.Equal(
 		t,
-		[]string{"*azdext.LocalError", "*agents.TransportError"},
+		[]string{"*azdext.LocalError"},
 		attributes[fields.ErrChainTypes.Key].AsStringSlice(),
 	)
-	require.Equal(t, attribute.StringValue("*agents.TransportError"), attributes[fields.ErrType.Key])
-	require.NotContains(t, attributes, attribute.Key("error.extension.cause_types"))
+	require.NotContains(t, attributes, fields.ErrType.Key)
+	require.Equal(
+		t,
+		[]string{
+			fields.CaseInsensitiveHash("*agents.TransportError"),
+			fields.CaseInsensitiveHash("CustomerTokenABC123"),
+		},
+		attributes[fields.ErrExtensionCauseTypes.Key].AsStringSlice(),
+	)
+	require.NotContains(t,
+		attributes[fields.ErrExtensionCauseTypes.Key].AsStringSlice(),
+		"CustomerTokenABC123")
 }
 
 func Test_MapError_GRPCStatusRemoteCauseTypes(t *testing.T) {
@@ -1149,10 +1160,12 @@ func Test_MapError_GRPCStatusRemoteCauseTypes(t *testing.T) {
 	}
 
 	require.Equal(t, "ext.validation.invalid_project", span.Status.Description)
-	require.Equal(t, attribute.StringValue("*agents.RemoteError"),
-		attributes[fields.ErrType.Key])
-	require.Contains(t, attributes[fields.ErrChainTypes.Key].AsStringSlice(),
+	require.NotContains(t, attributes, fields.ErrType.Key)
+	require.NotContains(t, attributes[fields.ErrChainTypes.Key].AsStringSlice(),
 		"*agents.RemoteError")
+	require.Equal(t,
+		[]string{fields.CaseInsensitiveHash("*agents.RemoteError")},
+		attributes[fields.ErrExtensionCauseTypes.Key].AsStringSlice())
 }
 
 func Test_MapError_ChainTypesCapsMergedRemoteTypes(t *testing.T) {
@@ -1171,16 +1184,20 @@ func Test_MapError_ChainTypesCapsMergedRemoteTypes(t *testing.T) {
 	span := &mocktracing.Span{}
 	MapError(err, span)
 
+	attributes := make(map[attribute.Key]attribute.Value, len(span.Attributes))
 	var chainTypes []string
 	for _, attr := range span.Attributes {
+		attributes[attr.Key] = attr.Value
 		if attr.Key == fields.ErrChainTypes.Key {
 			chainTypes = attr.Value.AsStringSlice()
-			break
 		}
 	}
 
 	require.Len(t, chainTypes, errorchain.MaxChainLen)
 	require.NotContains(t, chainTypes, "*agents.RemoteError")
+	require.Equal(t,
+		[]string{fields.CaseInsensitiveHash("*agents.RemoteError")},
+		attributes[fields.ErrExtensionCauseTypes.Key].AsStringSlice())
 }
 
 func TestMapError_GRPCStatus(t *testing.T) {

@@ -928,12 +928,19 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// ErrChainTypes records the wrapped-error type chain (outermost
-	// first). Type names are code-defined and PII-free, so they're
-	// emitted as system metadata for triaging the catch-all bucket.
+	// ErrChainTypes records the host-observed wrapped-error type chain
+	// (outermost first). These reflected type names are system metadata.
 	ErrChainTypes = AttributeKey{
 		Key:            attribute.Key("error.chain.types"),
 		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ErrExtensionCauseTypes records normalized extension-provided cause
+	// types as hashes because the extension controls their contents.
+	ErrExtensionCauseTypes = AttributeKey{
+		Key:            attribute.Key("error.extension.cause_types"),
+		Classification: EndUserPseudonymizedInformation,
 		Purpose:        PerformanceAndHealth,
 	}
 

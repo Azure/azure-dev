@@ -581,6 +581,34 @@ behavior. Report an event immediately after the fact it represents is known,
 rather than waiting until the command completes, so a later unrelated failure
 does not lose the signal.
 
+#### Foundry telemetry reporter
+
+Microsoft Foundry extensions should use the shared reporter from
+`pkg/foundry/telemetry` instead of repeating generated-client error handling in
+each independently released extension:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+
+reporter := telemetry.NewReporter(client.Telemetry(), nil)
+reporter.Report(ctx, telemetry.Event{
+    Name: "deploy.completed",
+    Attributes: map[string]string{
+        "deploy.mode": "container",
+    },
+})
+```
+
+The reporter applies a one-second timeout, never retries, and never returns an
+error to product code. Rejected reports, unavailable hosts, and transport
+failures cannot change command behavior. Debug diagnostics contain only the
+event name and gRPC status code, never attribute values or raw transport error
+details.
+
+The shared reporter owns transport behavior only. Event names, attribute keys,
+and bounded values remain owned and reviewed by each Foundry extension. Use
+`telemetry.Options` to provide a shorter timeout or an `azdext.Logger` in tests.
+
 ### ConfigHelper
 
 ```go

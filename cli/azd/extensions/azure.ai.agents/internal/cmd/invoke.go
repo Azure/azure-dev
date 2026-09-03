@@ -52,9 +52,6 @@ type invokeFlags struct {
 	noWait          bool
 	resume          bool
 	cancel          bool
-	// agentName explicitly selects an agent for message-free lifecycle operations.
-	// A single positional argument remains message input for --resume steering.
-	agentName string
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -133,7 +130,7 @@ Use --resumable with the Responses protocol to start work that continues running
 the service if this command disconnects. The command remains attached until the work
 finishes. Add --no-wait to detach as soon as the service acknowledges the background
 work. Use --resume to reconnect to saved work and --cancel to cancel it. In multi-agent
-projects, use --agent-name to select the saved work for --resume or --cancel. Resumable
+projects, pass the agent name positionally when resuming or cancelling saved work. Resumable
 invocation is remote-only, does not support raw output, and cannot be combined with --timeout.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
@@ -173,8 +170,9 @@ invocation is remote-only, does not support raw output, and cannot be combined w
   azd ai agent invoke --resume
   azd ai agent invoke --cancel
 
-  # Select an agent when reconnecting to saved work
-  azd ai agent invoke --resume --agent-name my-agent
+  # Select an agent when reconnecting to or cancelling saved work
+  azd ai agent invoke my-agent --resume
+  azd ai agent invoke my-agent --cancel
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
@@ -202,33 +200,7 @@ invocation is remote-only, does not support raw output, and cannot be combined w
 			// reads a single field.
 			flags.outputFmt = extCtx.OutputFormat
 
-			switch len(args) {
-			case 2:
-				flags.name = args[0]
-				flags.message = args[1]
-			case 1:
-				// Single arg could be a name (when -f is used) or a message
-				if flags.inputFile != "" {
-					flags.name = args[0]
-				} else {
-					flags.message = args[0]
-				}
-			case 0:
-				// Operations that allow empty input are validated below.
-			}
-			// A single positional argument is always message input unless --input-file supplies
-			// the body. Keep --agent-name separate so message-free lifecycle operations can
-			// select an agent without making `invoke foo --resume` ambiguous.
-			if flags.agentName != "" {
-				if flags.name != "" {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--agent-name cannot be combined with a positional agent name",
-						"use --agent-name instead of a positional agent name with --resume or --cancel",
-					)
-				}
-				flags.name = flags.agentName
-			}
+			parseInvokeArgs(flags, args)
 
 			action := &InvokeAction{flags: flags, noPrompt: extCtx.NoPrompt}
 
@@ -375,7 +347,6 @@ invocation is remote-only, does not support raw output, and cannot be combined w
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Detach after the service acknowledges the resumable work")
 	cmd.Flags().BoolVar(&flags.resume, "resume", false, "Resume saved background work")
 	cmd.Flags().BoolVar(&flags.cancel, "cancel", false, "Cancel the saved current background Response")
-	cmd.Flags().StringVar(&flags.agentName, "agent-name", "", "Agent name for --resume or --cancel")
 
 	// Register `raw` as an additional allowed value on the inherited global
 	// --output/-o flag. The extension SDK forbids extensions from registering
@@ -390,6 +361,23 @@ invocation is remote-only, does not support raw output, and cannot be combined w
 	})
 
 	return cmd
+}
+
+func parseInvokeArgs(flags *invokeFlags, args []string) {
+	switch len(args) {
+	case 2:
+		flags.name = args[0]
+		flags.message = args[1]
+	case 1:
+		// Message-free lifecycle operations use the positional argument as the agent name.
+		// Other operations preserve the existing single-argument message grammar unless
+		// --input-file supplies the request body.
+		if flags.inputFile != "" || flags.resume || flags.cancel {
+			flags.name = args[0]
+		} else {
+			flags.message = args[0]
+		}
+	}
 }
 
 func validateInvokeOperationFlags(cmd *cobra.Command, flags *invokeFlags) error {

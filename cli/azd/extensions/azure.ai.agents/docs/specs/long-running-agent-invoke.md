@@ -53,7 +53,7 @@ The implementation is delivered as four independently useful, stacked pull reque
 
 1. **Attached background Responses:** add `--resumable`, typed SSE processing, and saved Response identity/cursor state. The command remains attached until terminal completion or interruption. Active-turn enforcement is deferred until users have follow/cancel recovery in PR 2.
 2. **Responses detach, reconnect, and cancel:** add `--no-wait`, `--resume` without input, cursor replay, transport recovery, snapshot fallback, and `--cancel`.
-3. **Responses steering:** add `--resume` with input, replacement turns, terminal next-turn behavior, and service-refreshed active-turn enforcement.
+3. **Responses steering:** add `--steer` with input, replacement turns, terminal next-turn behavior, and service-refreshed active-turn enforcement.
 4. **Invocations retrieval:** save the latest remote invocation context and add `--resume` without input as exactly one best-effort GET with no polling, status interpretation, replay, steering, or cancellation.
 
 PR 3 and PR 4 depend on PR 2 and can be reviewed in parallel. Each PR includes focused unit tests and live validation against the corresponding hosted reference agent.
@@ -67,24 +67,24 @@ azd ai agent invoke "long task" --resumable
 azd ai agent invoke "long task" --resumable --no-wait
 
 azd ai agent invoke --resume
-azd ai agent invoke "revised requirements" --resume
+azd ai agent invoke "revised requirements" --steer
 azd ai agent invoke --cancel
 ```
 
-Operations without input use an explicit selector in multi-agent projects:
+Message-free operations use the positional name to select an agent in multi-agent projects:
 
 ```bash
-azd ai agent invoke --resume --agent-name my-agent
-azd ai agent invoke --cancel --agent-name my-agent
+azd ai agent invoke my-agent --resume
+azd ai agent invoke my-agent --cancel
 ```
 
-The existing named-message form remains valid:
+The existing named-message form remains valid for steering:
 
 ```bash
-azd ai agent invoke my-agent "revised requirements" --resume
+azd ai agent invoke my-agent "revised requirements" --steer
 ```
 
-Because the existing grammar treats one positional argument as input, `azd ai agent invoke my-agent --resume` sends the text `my-agent`; it does not select that agent. Help and validation examples must direct `--resume` and `--cancel` without input to `--agent-name` for explicit agent selection.
+`--resume` and `--cancel` are message-free, so their single positional argument is unambiguously the agent name. `--steer` requires input and preserves the existing input grammar: one positional argument is the message, while two are the agent name and message.
 
 ## Existing implementation
 
@@ -144,7 +144,7 @@ The operation is selected as follows:
 | Message with `--resumable` | `invokeBackgroundCreateAndFollow` |
 | Message with `--resumable --no-wait` | `invokeBackgroundCreateNoWait` |
 | No message with `--resume` | `invokeContinueExisting` |
-| Message with `--resume` | `invokeSteerOrCreateNext` |
+| Message with `--steer` | `invokeSteerOrCreateNext` |
 | No message with `--cancel` | `invokeCancelExisting` |
 
 ### New flags
@@ -155,18 +155,18 @@ Add fields to `invokeFlags`:
 resumable bool
 noWait    bool
 resume    bool
+steer     bool
 cancel    bool
-agentName string
 ```
 
 ### Positional parsing
 
-Preserve the current `[name] [message]` positional grammar for operations with input. Do not reinterpret a single positional argument differently only because `--resume` or `--cancel` is present.
+Preserve the current `[name] [message]` positional grammar for operations with input. A single positional argument remains input for ordinary, resumable, and steering operations.
 
-For `--resume` and `--cancel` without input:
+For the message-free `--resume` and `--cancel` operations:
 
-- Agent auto-detection remains the default.
-- `--agent-name` explicitly selects an agent in a multi-agent project.
+- Agent auto-detection remains the default when no positional name is supplied.
+- One positional argument explicitly selects an agent in a multi-agent project.
 - `--agent-endpoint` remains available outside an azd project.
 
 ### Validation
@@ -178,21 +178,20 @@ Perform structural validation before project resolution, followed by protocol va
 | `--resumable` without a message or `--input-file` | Reject |
 | `--resumable` with a message or `--input-file` | Accept |
 | `--no-wait` without `--resumable` | Reject |
-| `--resume` with `--cancel` | Reject |
-| `--cancel` with a message or `--input-file` | Reject |
-| Responses `--resume` with `--input-file` | Accept as continuation with input |
-| `--resumable` with `--resume` or `--cancel` | Reject |
-| `--no-wait` with `--resume` or `--cancel` | Reject |
-| `--resume` or `--cancel` with `--session-id` or `--new-session` | Reject; use the saved response context |
-| `--resume` or `--cancel` with `--conversation-id` or `--new-conversation` | Reject; use the saved response context |
-| `--agent-name` with a positional agent name | Reject |
+| More than one of `--resume`, `--steer`, or `--cancel` | Reject |
+| `--resume` or `--cancel` with a message or `--input-file` | Reject |
+| `--steer` without a message or `--input-file` | Reject |
+| `--resumable` with `--resume`, `--steer`, or `--cancel` | Reject |
+| `--no-wait` with `--resume`, `--steer`, or `--cancel` | Reject |
+| `--resume`, `--steer`, or `--cancel` with `--session-id` or `--new-session` | Reject; use the saved response context |
+| `--resume`, `--steer`, or `--cancel` with `--conversation-id` or `--new-conversation` | Reject; use the saved response context |
 | New lifecycle operation with `--local` | Reject |
 | `--resume` without input with remote Invocations | Accept; perform one best-effort GET of the saved invocation |
-| `--resume` with input with remote Invocations | Reject; steering is not defined |
+| `--steer` with remote Invocations | Reject; steering is not defined |
 | `--resumable`, `--no-wait`, or `--cancel` with Invocations | Reject |
 | New lifecycle operation with A2A | Reject after protocol resolution |
 | New lifecycle operation with `--output raw` | Reject before network access |
-| Operation without input in an ambiguous project without `--agent-name` and without prompts | Reject with agent-selection guidance |
+| Operation without input in an ambiguous project without a positional agent name and without prompts | Reject with agent-selection guidance |
 
 ## Invocations one-shot retrieval contract
 
@@ -431,7 +430,7 @@ Before starting any ordinary foreground or background turn, inspect the saved ba
 1. If no record exists or the saved status is terminal, proceed.
 2. If the saved status is `queued` or `in_progress`, retrieve current service status.
 3. If the service reports terminal, update the record and proceed.
-4. If the service still reports active, reject the new turn and direct the user to `invoke <message> --resume` to steer or `invoke --cancel` to stop it.
+4. If the service still reports active, reject the new turn and direct the user to `invoke <message> --steer` to steer or `invoke --cancel` to stop it.
 5. A new background turn replaces a terminal record when its identity arrives. A successfully accepted ordinary foreground turn clears the terminal background record because the conversation advances outside the background lifecycle; retain the record if the foreground request fails before acceptance.
 
 This guard prevents accidental concurrent turns in the same conversation. The service may temporarily expose an active superseded Response and a queued replacement during steering, but only one handler executes at a time.
@@ -443,7 +442,7 @@ While the saved background Response is active:
 | `invoke "message"` | Reject |
 | `invoke "message" --resumable` | Reject |
 | `invoke --resume` | Follow current output |
-| `invoke "message" --resume` | Steer the current turn |
+| `invoke "message" --steer` | Steer the current turn |
 | `invoke --cancel` | Cancel the current turn |
 
 After it becomes terminal:
@@ -452,13 +451,13 @@ After it becomes terminal:
 | --- | --- |
 | `invoke "message"` | Start a normal foreground next turn |
 | `invoke "message" --resumable` | Start a new background next turn |
-| `invoke "message" --resume` | Start a new background next turn |
+| `invoke "message" --steer` | Start a new background next turn |
 | `invoke --resume` | Replay or retrieve the terminal result |
 | `invoke --cancel` | Report terminal status without failing |
 
-### Continuation with input
+### Steering with input
 
-`--resume` with input always creates a new stored background Response in the saved conversation and hosted session:
+`--steer` with input always creates a new stored background Response in the saved conversation and hosted session:
 
 ```json
 {
@@ -486,7 +485,7 @@ The background create captures its effective session and conversation. Follow, s
 | Any create, active Response | Reject with follow/steer/cancel guidance | Reject with the same guidance |
 | Follow, steer, or cancel | Use saved context | Reject and tell the user to remove the override |
 
-Before any create, refresh a saved nonterminal Response. If still active, offer: follow with `invoke --resume`, steer with `invoke "<message>" --resume`, or stop with `invoke --cancel`. If terminal, preserve the old record until the new request succeeds: a foreground create then clears it, while a background create replaces it when the new Response identity is saved.
+Before any create, refresh a saved nonterminal Response. If still active, offer: follow with `invoke --resume`, steer with `invoke "<message>" --steer`, or stop with `invoke --cancel`. If terminal, preserve the old record until the new request succeeds: a foreground create then clears it, while a background create replaces it when the new Response identity is saved.
 
 Example:
 
@@ -549,7 +548,7 @@ Use the existing UserConfig read-modify-write mechanism and accept its current l
 
 ### Resolution rules
 
-For `--resume` or `--cancel`:
+For `--resume`, `--steer`, or `--cancel`:
 
 1. Resolve the existing agent context key.
 2. Load its one background record.
@@ -642,7 +641,7 @@ Add stable extension error codes for at least:
 Context errors must include the valid next action:
 
 - A lifecycle override tells the user to remove `--session-id`, `--new-session`, `--conversation-id`, or `--new-conversation` because the saved context is reused.
-- An active-context switch offers follow (`invoke --resume`), steer (`invoke "<message>" --resume`), and cancel (`invoke --cancel`).
+- An active-context switch offers follow (`invoke --resume`), steer (`invoke "<message>" --steer`), and cancel (`invoke --cancel`).
 
 Lower-level HTTP and decoding helpers return wrapped plain errors. Classify at background operation boundaries using `internal/exterrors`. Use service errors for Azure HTTP failures and validation/dependency errors for local state and option failures.
 
@@ -745,8 +744,8 @@ Build on the existing in-process UserConfig gRPC test server. Cover:
 Cover:
 
 - An active current Response blocks ordinary and background new turns.
-- Active and terminal `--resume` with input use the same saved `conversation.id` and `agent_session_id` request shape.
-- `--resume` with input never sends `previous_response_id`.
+- Active and terminal `--steer` use the same saved `conversation.id` and `agent_session_id` request shape.
+- `--steer` never sends `previous_response_id`.
 - A busy steerable conversation interrupts or winds down the active turn and completes the replacement.
 - An idle conversation starts the normal next background turn with the same request shape.
 - Two consecutive steering cycles remain in one conversation without a fork or forwarding error.
@@ -871,7 +870,7 @@ The MVP blind GET requires no capability discovery because it makes no claim abo
 
 ### PR 3 — Responses steering
 
-1. Add `--resume` with input for active replacement and terminal next-turn creation.
+1. Add `--steer` with input for active replacement and terminal next-turn creation.
 2. Refresh active status before blocking competing turns.
 3. Validate repeated conversation-based steering and superseded terminal outcomes.
 4. Validate steering against the hosted Responses reference agent.

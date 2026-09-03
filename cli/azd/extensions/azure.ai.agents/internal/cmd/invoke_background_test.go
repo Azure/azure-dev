@@ -34,6 +34,7 @@ func TestInvokeCommandLifecycleFlagsRegistered(t *testing.T) {
 		require.NotNil(t, flag)
 		assert.Equal(t, "false", flag.DefValue)
 	}
+	assert.Nil(t, flags.Lookup("agent-name"))
 	assert.Nil(t, flags.Lookup("background"))
 	assert.Nil(t, flags.Lookup("continue"))
 }
@@ -995,40 +996,49 @@ func TestValidateInvokeOperationFlags(t *testing.T) {
 	}
 }
 
-func TestInvokeCommandLifecycleAgentNameIsUnambiguous(t *testing.T) {
+func TestParseInvokeArgs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		args []string
-		want string
+		name        string
+		flags       invokeFlags
+		args        []string
+		wantName    string
+		wantMessage string
 	}{
+		{name: "single positional is message", args: []string{"hello"}, wantMessage: "hello"},
 		{
-			name: "single positional remains resume input",
-			args: []string{"foo", "--resume"},
-			want: "--resume and --cancel do not accept a message or --input-file",
+			name:     "single positional with input file is agent",
+			flags:    invokeFlags{inputFile: "request.json"},
+			args:     []string{"agent"},
+			wantName: "agent",
 		},
 		{
-			name: "agent name flag keeps resume message free",
-			args: []string{"--resume", "--agent-name", "foo", "--session-id", "sess_123"},
-			want: "--resume and --cancel use the saved session and conversation",
+			name:     "single positional with resume is agent",
+			flags:    invokeFlags{resume: true},
+			args:     []string{"agent"},
+			wantName: "agent",
 		},
 		{
-			name: "agent name flag rejects a positional agent name",
-			args: []string{"foo", "message", "--resume", "--agent-name", "bar"},
-			want: "--agent-name cannot be combined with a positional agent name",
+			name:     "single positional with cancel is agent",
+			flags:    invokeFlags{cancel: true},
+			args:     []string{"agent"},
+			wantName: "agent",
+		},
+		{
+			name:        "two positionals are agent and message",
+			args:        []string{"agent", "hello"},
+			wantName:    "agent",
+			wantMessage: "hello",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			cmd := newInvokeCommand(nil)
-			cmd.SetArgs(tt.args)
-			cmd.SetOut(io.Discard)
-			cmd.SetErr(io.Discard)
-			err := cmd.Execute()
-			require.ErrorContains(t, err, tt.want)
+			parseInvokeArgs(&tt.flags, tt.args)
+			assert.Equal(t, tt.wantName, tt.flags.name)
+			assert.Equal(t, tt.wantMessage, tt.flags.message)
 		})
 	}
 }

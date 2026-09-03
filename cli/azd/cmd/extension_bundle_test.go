@@ -818,7 +818,7 @@ func TestDownloadBundle_HTTPSRedirectFollowsWithoutPromptOrWarning(t *testing.T)
 	}
 }
 
-func TestBundleTransportWithRedirectWarning_ReportsOnlyHTTPSDowngrades(t *testing.T) {
+func TestBundleTransportWithRedirectWarning_ReportsEachHTTPSDowngradeTargetOnce(t *testing.T) {
 	t.Parallel()
 
 	var warnings []string
@@ -837,6 +837,7 @@ func TestBundleTransportWithRedirectWarning_ReportsOnlyHTTPSDowngrades(t *testin
 
 	httpTarget := &http.Request{URL: &url.URL{Scheme: "http", Host: "cdn.example"}}
 	require.NoError(t, client.CheckRedirect(httpTarget, []*http.Request{httpsSource, httpsTarget}))
+	require.NoError(t, client.CheckRedirect(httpTarget, []*http.Request{httpsSource, httpsTarget}))
 
 	secondHTTP := &http.Request{URL: &url.URL{Scheme: "http", Host: "assets.example"}}
 	require.NoError(t, client.CheckRedirect(secondHTTP, []*http.Request{httpsSource, httpsTarget, httpTarget}))
@@ -847,7 +848,17 @@ func TestBundleTransportWithRedirectWarning_ReportsOnlyHTTPSDowngrades(t *testin
 		[]*http.Request{httpsSource, httpsTarget, httpTarget, secondHTTP},
 	))
 
-	require.Equal(t, []string{"http://cdn.example"}, warnings)
+	secondDowngrade := &http.Request{URL: &url.URL{Scheme: "http", Host: "mirror.example"}}
+	require.NoError(t, client.CheckRedirect(
+		secondDowngrade,
+		[]*http.Request{httpsSource, httpsTarget, httpTarget, secondHTTP, returnToHTTPS},
+	))
+	require.NoError(t, client.CheckRedirect(
+		secondDowngrade,
+		[]*http.Request{httpsSource, httpsTarget, httpTarget, secondHTTP, returnToHTTPS},
+	))
+
+	require.Equal(t, []string{"http://cdn.example", "http://mirror.example"}, warnings)
 }
 
 func TestDownloadBundle_AllowsHTTPSDowngradeWithWarning(t *testing.T) {

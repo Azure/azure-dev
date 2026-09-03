@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -1600,7 +1601,7 @@ func (e *bundleDownloadError) Unwrap() error {
 }
 
 // bundleTransportWithRedirectWarning clones an injected HTTP client so extension
-// bundle downloads can warn before following an HTTPS-to-HTTP redirect.
+// bundle downloads can warn once per HTTPS-to-HTTP redirect destination.
 func bundleTransportWithRedirectWarning(
 	transport policy.Transporter,
 	warn func(context.Context, *url.URL),
@@ -1612,6 +1613,8 @@ func bundleTransportWithRedirectWarning(
 
 	bundleClient := *client
 	existingCheckRedirect := bundleClient.CheckRedirect
+	reportedTargets := map[string]struct{}{}
+	var reportedTargetsMu sync.Mutex
 	bundleClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if existingCheckRedirect != nil {
 			if err := existingCheckRedirect(req, via); err != nil {
@@ -1624,7 +1627,17 @@ func bundleTransportWithRedirectWarning(
 		if len(via) > 0 && req.URL != nil && via[len(via)-1].URL != nil &&
 			strings.EqualFold(via[len(via)-1].URL.Scheme, "https") &&
 			strings.EqualFold(req.URL.Scheme, "http") {
-			warn(req.Context(), req.URL)
+			target := req.URL.String()
+			reportedTargetsMu.Lock()
+			_, reported := reportedTargets[target]
+			if !reported {
+				reportedTargets[target] = struct{}{}
+			}
+			reportedTargetsMu.Unlock()
+
+			if !reported {
+				warn(req.Context(), req.URL)
+			}
 		}
 		return nil
 	}

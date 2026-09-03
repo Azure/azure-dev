@@ -201,6 +201,14 @@ func TestMissingPromptAdoptionProjectError(t *testing.T) {
 	require.Contains(t, err.Error(), "requires an existing Foundry project")
 }
 
+func TestNoExistingPromptDeploymentsError(t *testing.T) {
+	t.Parallel()
+
+	err := noExistingPromptDeploymentsError()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no existing model deployments")
+}
+
 func TestPrintPromptInitNextSteps(t *testing.T) {
 	stdout := withCapturedStdout(t, func() {
 		printPromptInitNextSteps("prompt-agent")

@@ -227,6 +227,7 @@ func verifyAzureYamlDeployments(
 	noPrompt bool,
 	modelDeploymentFlag string,
 	modelFlag string,
+	existingOnly bool,
 ) (keptEntries []foundryDeploymentEntry, referencedDeployments []project.Deployment, modified bool, err error) {
 	// Get the Foundry project ID from the environment.
 	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -283,6 +284,9 @@ func verifyAzureYamlDeployments(
 			fmt.Sprintf("model deployment %q not found in Foundry project", modelDeploymentFlag),
 			"verify the deployment name or omit --model-deployment to select interactively",
 		)
+	}
+	if existingOnly && len(allDeployments) == 0 {
+		return nil, nil, false, noExistingPromptDeploymentsError()
 	}
 
 	for _, entry := range entries {
@@ -343,7 +347,8 @@ func verifyAzureYamlDeployments(
 			}
 			fmt.Println()
 
-			// Build prompt choices: use each existing + optionally deploy as specified + choose different + skip
+			// Build prompt choices. Prompt agents currently reuse existing deployments
+			// only; hosted agents retain deploy/catalog/skip options.
 			choices := make([]*azdext.SelectChoice, 0, len(sortedNames)+3)
 			for _, name := range sortedNames {
 				d := matchingDeployments[name]
@@ -353,33 +358,40 @@ func verifyAzureYamlDeployments(
 						name, d.Version, d.SkuName),
 				})
 			}
-			// Only offer "deploy as specified" if no existing deployment is an exact match.
-			hasExactMatch := false
-			for _, d := range matchingDeployments {
-				if d.Name == dep.Name &&
-					d.Version == dep.Model.Version &&
-					d.SkuName == dep.Sku.Name &&
-					d.SkuCapacity == dep.Sku.Capacity {
-					hasExactMatch = true
-					break
-				}
-			}
-			if !hasExactMatch {
+			if existingOnly {
 				choices = append(choices, &azdext.SelectChoice{
-					Value: "deploy",
-					Label: "Deploy as specified in azure.yaml",
-				})
-			}
-			choices = append(choices,
-				&azdext.SelectChoice{
 					Value: "change",
-					Label: "Choose a different model",
-				},
-				&azdext.SelectChoice{
-					Value: "skip",
-					Label: "Skip this model entirely (remove from azure.yaml)",
-				},
-			)
+					Label: "Choose a different existing deployment",
+				})
+			} else {
+				// Only offer "deploy as specified" if no existing deployment is an exact match.
+				hasExactMatch := false
+				for _, d := range matchingDeployments {
+					if d.Name == dep.Name &&
+						d.Version == dep.Model.Version &&
+						d.SkuName == dep.Sku.Name &&
+						d.SkuCapacity == dep.Sku.Capacity {
+						hasExactMatch = true
+						break
+					}
+				}
+				if !hasExactMatch {
+					choices = append(choices, &azdext.SelectChoice{
+						Value: "deploy",
+						Label: "Deploy as specified in azure.yaml",
+					})
+				}
+				choices = append(choices,
+					&azdext.SelectChoice{
+						Value: "change",
+						Label: "Choose a different model",
+					},
+					&azdext.SelectChoice{
+						Value: "skip",
+						Label: "Skip this model entirely (remove from azure.yaml)",
+					},
+				)
+			}
 
 			defaultIdx := int32(0)
 			selectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
@@ -424,7 +436,9 @@ func verifyAzureYamlDeployments(
 				referencedDeployments = append(referencedDeployments, dep)
 
 			case selected == "change":
-				newDep, isExisting, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
+				newDep, isExisting, err := promptAlternativeDeployment(
+					ctx, azdClient, azureContext, allDeployments, modelFlag, existingOnly,
+				)
 				if err != nil {
 					return nil, nil, false, err
 				}
@@ -448,6 +462,13 @@ func verifyAzureYamlDeployments(
 		} else {
 			// No matching deployment in the project (or no project yet).
 			if noPrompt {
+				if existingOnly {
+					return nil, nil, false, exterrors.Validation(
+						exterrors.CodeModelDeploymentNotFound,
+						fmt.Sprintf("no existing deployment matches model %q", dep.Model.Name),
+						"pass --model-deployment with a deployment from the selected Foundry project",
+					)
+				}
 				// Auto-deploy as specified.
 				log.Printf("--no-prompt: no matching deployment for model '%s', will deploy as specified",
 					dep.Model.Name)
@@ -456,6 +477,18 @@ func verifyAzureYamlDeployments(
 					Deployment:  dep,
 				})
 				referencedDeployments = append(referencedDeployments, dep)
+				continue
+			}
+
+			if existingOnly {
+				newDep, _, err := promptAlternativeDeployment(
+					ctx, azdClient, azureContext, allDeployments, modelFlag, true,
+				)
+				if err != nil {
+					return nil, nil, false, err
+				}
+				referencedDeployments = append(referencedDeployments, *newDep)
+				modified = true
 				continue
 			}
 
@@ -503,7 +536,9 @@ func verifyAzureYamlDeployments(
 				referencedDeployments = append(referencedDeployments, dep)
 
 			case "change":
-				newDep, isExisting, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
+				newDep, isExisting, err := promptAlternativeDeployment(
+					ctx, azdClient, azureContext, allDeployments, modelFlag, false,
+				)
 				if err != nil {
 					return nil, nil, false, err
 				}
@@ -539,7 +574,12 @@ func promptAlternativeDeployment(
 	azureContext *azdext.AzureContext,
 	allDeployments []FoundryDeploymentInfo,
 	modelFlag string,
+	existingOnly bool,
 ) (dep *project.Deployment, isExisting bool, err error) {
+	if existingOnly {
+		dep, err := promptExistingAdoptionDeployment(ctx, azdClient, allDeployments)
+		return dep, true, err
+	}
 	// Determine whether to prompt for catalog vs existing, or skip straight to catalog.
 	useCatalog := true
 	if len(allDeployments) > 0 {
@@ -684,6 +724,47 @@ func promptAlternativeDeployment(
 			Capacity: d.SkuCapacity,
 		},
 	}, true, nil
+}
+
+func promptExistingAdoptionDeployment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	deployments []FoundryDeploymentInfo,
+) (*project.Deployment, error) {
+	if len(deployments) == 0 {
+		return nil, noExistingPromptDeploymentsError()
+	}
+	slices.SortFunc(deployments, func(a, b FoundryDeploymentInfo) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	choices := make([]*azdext.SelectChoice, len(deployments))
+	for i, deployment := range deployments {
+		choices[i] = &azdext.SelectChoice{
+			Value: deployment.Name,
+			Label: fmt.Sprintf("%s (%s, version %s)", deployment.Name, deployment.ModelName, deployment.Version),
+		}
+	}
+	defaultIndex := int32(0)
+	response, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{Options: &azdext.SelectOptions{
+		Message:       "Select an existing model deployment",
+		Choices:       choices,
+		SelectedIndex: &defaultIndex,
+	}})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("model deployment selection was cancelled")
+		}
+		return nil, fmt.Errorf("selecting an existing model deployment: %w", err)
+	}
+	return promptDeploymentFromFoundry(&deployments[*response.Value]), nil
+}
+
+func noExistingPromptDeploymentsError() error {
+	return exterrors.Dependency(
+		exterrors.CodeModelDeploymentNotFound,
+		"the selected Foundry project has no existing model deployments",
+		"create a model deployment in the Foundry project, then retry init",
+	)
 }
 
 // updateAzureYamlDeployments writes the filtered deployment list back to the
@@ -1170,7 +1251,7 @@ func runInitFromAzureYaml(
 		result != nil && result.Credential != nil {
 		keptEntries, referencedDeployments, deploymentsModified, err := verifyAzureYamlDeployments(
 			ctx, azdClient, result.Credential, azureContext, env.Name,
-			deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model,
+			deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model, promptOnly,
 		)
 		if err != nil {
 			if exterrors.IsCancellation(err) {

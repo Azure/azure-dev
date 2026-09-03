@@ -24,14 +24,15 @@ const aiConnectionHost = "azure.ai.connection"
 
 var _ azdext.ServiceTargetProvider = (*connectionServiceTarget)(nil)
 
-// connectionServiceTarget owns the azure.ai.connection host so azd can walk a
-// connection entry in the deploy graph. All lifecycle methods are no-ops; see
-// Deploy for why.
+// connectionServiceTarget owns the azure.ai.connection host so azd can walk and
+// reconcile a connection entry in the deploy graph. Package and Publish are
+// no-ops; Deploy performs the ARM upsert.
 type connectionServiceTarget struct {
 	azdClient     *azdext.AzdClient
 	projectClient serviceConfigReader
+	envClient     serviceEnvironmentReader
 	environment   string
-	upsert        func(context.Context, string, rawConnectionProperties) error
+	upsert        func(context.Context, string, string, rawConnectionProperties) error
 }
 
 // newConnectionServiceTarget creates the azure.ai.connection service-target provider.
@@ -42,10 +43,16 @@ func newConnectionServiceTarget(
 	target := &connectionServiceTarget{
 		azdClient:     azdClient,
 		projectClient: azdClient.Project(),
+		envClient:     azdClient.Environment(),
 		environment:   environmentName,
 	}
-	target.upsert = func(ctx context.Context, name string, properties rawConnectionProperties) error {
-		connectionContext, err := resolveConnectionContextForEnvironment(ctx, "", target.environment)
+	target.upsert = func(
+		ctx context.Context,
+		environmentName string,
+		name string,
+		properties rawConnectionProperties,
+	) error {
+		connectionContext, err := resolveConnectionContextForEnvironment(ctx, "", environmentName)
 		if err != nil {
 			return err
 		}
@@ -131,7 +138,7 @@ func (p *connectionServiceTarget) Deploy(
 	if progress != nil {
 		progress(fmt.Sprintf("Upserting connection %q", serviceConfig.GetName()))
 	}
-	if err := p.upsert(ctx, serviceConfig.GetName(), properties); err != nil {
+	if err := p.upsert(ctx, p.environment, serviceConfig.GetName(), properties); err != nil {
 		return nil, err
 	}
 	return &azdext.ServiceDeployResult{}, nil
@@ -215,6 +222,9 @@ func connectionServiceProperties(
 	if credentials != nil {
 		raw := rawCredentials(credentials)
 		properties.Credentials = &raw
+	} else if properties.AuthType == "OAuth2" {
+		raw := rawCredentials{}
+		properties.Credentials = &raw
 	}
 	return properties, nil
 }
@@ -271,6 +281,19 @@ type serviceConfigReader interface {
 	) (*azdext.GetServiceConfigValueResponse, error)
 }
 
+type serviceEnvironmentReader interface {
+	GetCurrent(
+		ctx context.Context,
+		request *azdext.EmptyRequest,
+		options ...grpc.CallOption,
+	) (*azdext.EnvironmentResponse, error)
+	GetValues(
+		ctx context.Context,
+		request *azdext.GetEnvironmentRequest,
+		options ...grpc.CallOption,
+	) (*azdext.KeyValueListResponse, error)
+}
+
 func (p *connectionServiceTarget) environmentValues(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
@@ -287,13 +310,13 @@ func (p *connectionServiceTarget) environmentValues(
 	}
 	environmentName := p.environment
 	if environmentName == "" {
-		current, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		current, err := p.envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 		if err != nil {
 			return nil, fmt.Errorf("resolving current azd environment: %w", err)
 		}
 		environmentName = current.GetEnvironment().GetName()
 	}
-	response, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+	response, err := p.envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: environmentName,
 	})
 	if err != nil {

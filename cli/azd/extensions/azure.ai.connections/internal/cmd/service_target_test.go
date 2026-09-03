@@ -5,11 +5,13 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -38,15 +40,19 @@ func TestDeployUpsertsConnectionFromServiceConfig(t *testing.T) {
 	}
 	var captured rawConnectionProperties
 	var capturedName string
+	var capturedEnvironment string
 	target := &connectionServiceTarget{upsert: func(
 		_ context.Context,
+		environmentName string,
 		name string,
 		properties rawConnectionProperties,
 	) error {
+		capturedEnvironment = environmentName
 		capturedName = name
 		captured = properties
 		return nil
 	}}
+	target.environment = "staging"
 
 	var progressMsgs []string
 	progress := func(msg string) { progressMsgs = append(progressMsgs, msg) }
@@ -55,6 +61,7 @@ func TestDeployUpsertsConnectionFromServiceConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	assert.Equal(t, "search-conn", capturedName)
+	assert.Equal(t, "staging", capturedEnvironment)
 	assert.Equal(t, "RemoteTool", captured.Category)
 	assert.Equal(t, "https://example.test/mcp", captured.Target)
 	assert.Equal(t, "CustomKeys", captured.AuthType)
@@ -63,6 +70,28 @@ func TestDeployUpsertsConnectionFromServiceConfig(t *testing.T) {
 	assert.Equal(t, map[string]string{"region": "test"}, captured.Metadata)
 	require.Len(t, progressMsgs, 1)
 	assert.Equal(t, "Upserting connection \"search-conn\"", progressMsgs[0])
+}
+
+func TestEnvironmentValuesUsesSelectedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	environments := &recordingServiceEnvironmentReader{
+		values: map[string]map[string]string{
+			"default": {"VALUE": "wrong"},
+			"staging": {"VALUE": "right"},
+		},
+	}
+	target := &connectionServiceTarget{
+		environment:   "staging",
+		envClient:     environments,
+		projectClient: missingServiceEnvReader{},
+	}
+
+	values, err := target.environmentValues(t.Context(), &azdext.ServiceConfig{Name: "connection"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"VALUE": "right"}, values)
+	assert.Equal(t, 0, environments.currentCalls)
+	assert.Equal(t, []string{"staging"}, environments.valuesRequests)
 }
 
 func TestConnectionServicePropertiesPreservesGenericAuthTypes(t *testing.T) {
@@ -104,6 +133,26 @@ func TestConnectionServicePropertiesPreservesGenericAuthTypes(t *testing.T) {
 	}
 }
 
+func TestConnectionServicePropertiesPreservesEmptyOAuth2Credentials(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"category":      "RemoteTool",
+		"target":        "https://example.test",
+		"authType":      "OAuth2",
+		"connectorName": "managed-connector",
+	})
+	require.NoError(t, err)
+
+	got, err := connectionServiceProperties(&azdext.ServiceConfig{
+		Name:                 "oauth",
+		AdditionalProperties: props,
+	}, nil)
+	require.NoError(t, err)
+	require.NotNil(t, got.Credentials)
+	assert.Empty(t, *got.Credentials)
+}
+
 func TestParseConnectionServiceConfigFallsBackToLegacyConfig(t *testing.T) {
 	t.Parallel()
 
@@ -138,4 +187,42 @@ func TestPackagePublish_AreNoOps(t *testing.T) {
 	endpoints, err := target.Endpoints(t.Context(), svc, nil)
 	require.NoError(t, err)
 	assert.Nil(t, endpoints)
+}
+
+type recordingServiceEnvironmentReader struct {
+	values         map[string]map[string]string
+	currentCalls   int
+	valuesRequests []string
+}
+
+func (r *recordingServiceEnvironmentReader) GetCurrent(
+	context.Context,
+	*azdext.EmptyRequest,
+	...grpc.CallOption,
+) (*azdext.EnvironmentResponse, error) {
+	r.currentCalls++
+	return nil, errors.New("GetCurrent must not be called for a selected environment")
+}
+
+func (r *recordingServiceEnvironmentReader) GetValues(
+	_ context.Context,
+	request *azdext.GetEnvironmentRequest,
+	_ ...grpc.CallOption,
+) (*azdext.KeyValueListResponse, error) {
+	r.valuesRequests = append(r.valuesRequests, request.GetName())
+	response := &azdext.KeyValueListResponse{}
+	for key, value := range r.values[request.GetName()] {
+		response.KeyValues = append(response.KeyValues, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return response, nil
+}
+
+type missingServiceEnvReader struct{}
+
+func (missingServiceEnvReader) GetServiceConfigValue(
+	context.Context,
+	*azdext.GetServiceConfigValueRequest,
+	...grpc.CallOption,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{}, nil
 }

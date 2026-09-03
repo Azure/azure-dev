@@ -180,7 +180,7 @@ output, and cannot be combined with --timeout.`,
   azd ai agent invoke my-agent --cancel
 
   # Retrieve the latest saved Invocation once (no polling or replay guarantee)
-  azd ai agent invoke --protocol invocations --resume --agent-name my-agent
+  azd ai agent invoke my-agent --protocol invocations --resume
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
@@ -455,7 +455,7 @@ func validateInvokeOperationFlags(cmd *cobra.Command, flags *invokeFlags) error 
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--resume and --cancel do not accept a message or --input-file",
-			"remove the input to reconnect to or cancel the saved Response",
+			"remove the input; --resume reconnects to saved work and --cancel cancels saved Responses",
 		)
 	}
 
@@ -589,16 +589,6 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// intends to prevent.
 	if (a.flags.resumable || a.flags.resume || a.flags.steer || a.flags.cancel) &&
 		protocol != agent_api.AgentProtocolResponses {
-		if protocol == agent_api.AgentProtocolInvocations && a.flags.resume &&
-			(a.flags.message != "" || a.flags.inputFile != "") {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"Invocations --resume does not accept a message or --input-file",
-				"remove the input to retrieve the latest saved Invocation, "+
-					"or remove --resume to start a new Invocation",
-			)
-		}
-
 		invocationsGet := protocol == agent_api.AgentProtocolInvocations && a.flags.resume &&
 			!a.flags.resumable && !a.flags.steer && !a.flags.cancel
 		if !invocationsGet {

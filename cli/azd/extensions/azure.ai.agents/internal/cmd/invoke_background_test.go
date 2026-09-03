@@ -1170,7 +1170,7 @@ func TestInvokeCommandBackgroundValidation(t *testing.T) {
 	}
 }
 
-func TestInvokeCommandRejectsInvocationsContinueWithInput(t *testing.T) {
+func TestInvokeCommandRejectsInvocationsResumeWithInput(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1179,7 +1179,7 @@ func TestInvokeCommandRejectsInvocationsContinueWithInput(t *testing.T) {
 	}{
 		{
 			name: "message",
-			args: []string{"--protocol", "invocations", "--resume", "revised requirements"},
+			args: []string{"agent", "revised requirements", "--protocol", "invocations", "--resume"},
 		},
 		{
 			name: "input file",
@@ -1199,11 +1199,10 @@ func TestInvokeCommandRejectsInvocationsContinueWithInput(t *testing.T) {
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
-			assert.Equal(t, "Invocations --resume does not accept a message or --input-file", localErr.Message)
+			assert.Equal(t, "--resume and --cancel do not accept a message or --input-file", localErr.Message)
 			assert.Equal(
 				t,
-				"remove the input to retrieve the latest saved Invocation, "+
-					"or remove --resume to start a new Invocation",
+				"remove the input; --resume reconnects to saved work and --cancel cancels saved Responses",
 				localErr.Suggestion,
 			)
 		})

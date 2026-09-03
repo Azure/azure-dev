@@ -20,11 +20,29 @@ import (
 )
 
 func TestFreezeDescriptionExcludesNewStableMethods(t *testing.T) {
+	stableHandler := func(
+		srv any,
+		ctx context.Context,
+		dec func(any) error,
+		interceptor grpc.UnaryServerInterceptor,
+	) (any, error) {
+		if interceptor == nil {
+			return nil, nil
+		}
+		return interceptor(
+			ctx,
+			nil,
+			&grpc.UnaryServerInfo{FullMethod: "/azd.extensions.v1.TestService/Frozen"},
+			func(context.Context, any) (any, error) {
+				return nil, nil
+			},
+		)
+	}
 	service := frozenService{
 		description: &grpc.ServiceDesc{
 			ServiceName: "azd.extensions.v1.TestService",
 			Methods: []grpc.MethodDesc{
-				{MethodName: "Frozen"},
+				{MethodName: "Frozen", Handler: stableHandler},
 				{MethodName: "AddedLater"},
 			},
 			Streams: []grpc.StreamDesc{
@@ -40,9 +58,28 @@ func TestFreezeDescriptionExcludesNewStableMethods(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "azdext.TestService", description.ServiceName)
-	require.Equal(t, []grpc.MethodDesc{{MethodName: "Frozen"}}, description.Methods)
+	require.Len(t, description.Methods, 1)
+	require.Equal(t, "Frozen", description.Methods[0].MethodName)
 	require.Equal(t, []grpc.StreamDesc{{StreamName: "FrozenStream"}}, description.Streams)
 	require.Nil(t, description.Metadata)
+
+	var fullMethod string
+	_, err = description.Methods[0].Handler(
+		nil,
+		t.Context(),
+		func(any) error { return nil },
+		func(
+			ctx context.Context,
+			req any,
+			info *grpc.UnaryServerInfo,
+			handler grpc.UnaryHandler,
+		) (any, error) {
+			fullMethod = info.FullMethod
+			return handler(ctx, req)
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "/azdext.TestService/Frozen", fullMethod)
 }
 
 func TestFreezeDescriptionRejectsMissingFrozenMethod(t *testing.T) {

@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -30,8 +31,11 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/dynamicpb"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -117,6 +121,24 @@ type echoValidationService struct {
 	azdext.UnimplementedValidationServiceServer
 }
 
+type legacyDetailProjectService struct {
+	azdext.UnimplementedProjectServiceServer
+}
+
+func (legacyDetailProjectService) Get(
+	context.Context,
+	*azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	return nil, status.FromProto(&statuspb.Status{
+		Code:    int32(codes.InvalidArgument),
+		Message: "invalid project",
+		Details: []*anypb.Any{{
+			TypeUrl: "type.googleapis.com/azd.extensions.v1.ActionableErrorDetail",
+			Value:   []byte{1, 2, 3},
+		}},
+	}).Err()
+}
+
 func (echoValidationService) Stream(stream azdext.ValidationService_StreamServer) error {
 	message, err := stream.Recv()
 	if err != nil {
@@ -141,7 +163,7 @@ func Test_Server_Start(t *testing.T) {
 	}
 
 	server := NewServer(
-		azdext.UnimplementedProjectServiceServer{},
+		legacyDetailProjectService{},
 		azdext.UnimplementedEnvironmentServiceServer{},
 		azdext.UnimplementedPromptServiceServer{},
 		azdext.UnimplementedUserConfigServiceServer{},
@@ -212,7 +234,7 @@ func Test_Server_Start(t *testing.T) {
 	})
 
 	t.Run("ValidToken", func(t *testing.T) {
-		// Test for a valid extension token: expect service calls to be unimplemented (authenticated case).
+		// Test for a valid extension token: expect the service implementation to handle the call.
 		accessToken, err := GenerateExtensionToken(extension, serverInfo)
 		require.NoError(t, err)
 
@@ -224,8 +246,7 @@ func Test_Server_Start(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 
-		// Expect the service to be unimplemented since we are using mock service implementations.
-		require.Equal(t, codes.Unimplemented, st.Code())
+		require.Equal(t, codes.InvalidArgument, st.Code())
 	})
 
 	t.Run("LegacyUnaryAndStreamRoutes", func(t *testing.T) {
@@ -242,8 +263,22 @@ func Test_Server_Start(t *testing.T) {
 		}()
 
 		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		tracing.ResetUsageAttributesForTest()
+		t.Cleanup(tracing.ResetUsageAttributesForTest)
+
 		err = connection.Invoke(ctx, "/azdext.ProjectService/Get", &azdext.EmptyRequest{}, &azdext.ProjectConfig{})
-		require.Equal(t, codes.Unimplemented, status.Code(err))
+		legacyStatus, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, legacyStatus.Code())
+		require.Equal(
+			t,
+			"type.googleapis.com/azdext.ActionableErrorDetail",
+			legacyStatus.Proto().Details[0].TypeUrl,
+		)
+		attributes := tracing.GetUsageAttributes()
+		require.Len(t, attributes, 1)
+		require.Equal(t, fields.ExtensionLegacyGrpcCallCount.Key, attributes[0].Key)
+		require.Equal(t, int64(1), attributes[0].Value.AsInt64())
 
 		err = connection.Invoke(
 			ctx,

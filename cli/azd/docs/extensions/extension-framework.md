@@ -2864,7 +2864,7 @@ func main() {
 
 This service manages composability resources in an azd project.
 
-> See [compose.proto](../../grpc/proto/azd/extensions/v1/compose.proto) for more details.
+> See [compose.proto](../../grpc/proto/azd/extensions/v1beta/compose.proto) for more details.
 
 #### ListResources
 
@@ -3076,7 +3076,7 @@ func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, su
 
 This service provides Copilot agent capabilities to extensions. Sessions are created lazily on the first `SendMessage` call and can be reused across multiple calls. Sessions run in headless/autopilot mode by default when invoked via gRPC, suppressing all console output.
 
-> See [copilot.proto](../../grpc/proto/azd/extensions/v1/copilot.proto) for more details.
+> See [copilot.proto](../../grpc/proto/azd/extensions/v1beta/copilot.proto) for more details.
 
 #### Initialize
 
@@ -3178,6 +3178,9 @@ Returns the session event log from the Copilot SDK. Each event contains a type, 
 
 **Example Usage (Go):**
 
+Import `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta`
+as `v1beta` for the preview request and response types used below.
+
 ```go
 ctx := azdext.WithAccessToken(cmd.Context())
 azdClient, err := azdext.NewAzdClient()
@@ -3188,8 +3191,9 @@ defer azdClient.Close()
 
 copilot := azdClient.Copilot()
 
+// Copilot request and response messages are in the preview v1beta contract package.
 // Optional: warm up the client and resolve configuration
-initResp, err := copilot.Initialize(ctx, &azdext.InitializeCopilotRequest{
+initResp, err := copilot.Initialize(ctx, &v1beta.InitializeCopilotRequest{
     Model:           "gpt-4o",
     ReasoningEffort: "medium",
 })
@@ -3199,7 +3203,7 @@ if err != nil {
 fmt.Printf("Model: %s, Reasoning: %s\n", initResp.Model, initResp.ReasoningEffort)
 
 // Send the first message — creates a new session
-sendResp, err := copilot.SendMessage(ctx, &azdext.SendCopilotMessageRequest{
+sendResp, err := copilot.SendMessage(ctx, &v1beta.SendCopilotMessageRequest{
     Prompt:          "Add a health check endpoint to the API",
     Mode:            "autopilot",
     Headless:        true,
@@ -3213,7 +3217,7 @@ if err != nil {
 sessionID := sendResp.SessionId
 
 // Send a follow-up message in the same session
-followUp, err := copilot.SendMessage(ctx, &azdext.SendCopilotMessageRequest{
+followUp, err := copilot.SendMessage(ctx, &v1beta.SendCopilotMessageRequest{
     Prompt:    "Now add tests for the health check endpoint",
     SessionId: sessionID,
 })
@@ -3223,7 +3227,7 @@ if err != nil {
 fmt.Printf("Turn usage: %.0f tokens\n", followUp.Usage.TotalTokens)
 
 // Retrieve cumulative metrics
-metricsResp, err := copilot.GetUsageMetrics(ctx, &azdext.GetCopilotUsageMetricsRequest{
+metricsResp, err := copilot.GetUsageMetrics(ctx, &v1beta.GetCopilotUsageMetricsRequest{
     SessionId: sessionID,
 })
 if err != nil {
@@ -3233,7 +3237,7 @@ fmt.Printf("Total tokens: %.0f, Premium requests: %.0f\n",
     metricsResp.Usage.TotalTokens, metricsResp.Usage.PremiumRequests)
 
 // Retrieve file changes
-changesResp, err := copilot.GetFileChanges(ctx, &azdext.GetCopilotFileChangesRequest{
+changesResp, err := copilot.GetFileChanges(ctx, &v1beta.GetCopilotFileChangesRequest{
     SessionId: sessionID,
 })
 if err != nil {
@@ -3244,7 +3248,7 @@ for _, change := range changesResp.FileChanges {
 }
 
 // Clean up the session
-_, err = copilot.StopSession(ctx, &azdext.StopCopilotSessionRequest{
+_, err = copilot.StopSession(ctx, &v1beta.StopCopilotSessionRequest{
     SessionId: sessionID,
 })
 if err != nil {

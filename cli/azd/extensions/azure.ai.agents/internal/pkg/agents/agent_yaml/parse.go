@@ -390,6 +390,20 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				errors = append(errors, fmt.Sprintf("template.name not in valid format: %v", err))
 			}
 
+			var fields map[string]yaml.Node
+			if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+				if modelType, ok := fields["model_type"]; ok &&
+					modelType.Kind == yaml.ScalarNode && modelType.Value == string(VoiceModelTypeHostedAgent) &&
+					agentDef.Kind != AgentKindPromptVoice {
+					errors = append(errors,
+						"template.model_type 'hosted_agent' is only valid for prompt-voice agents")
+				}
+				if _, ok := fields["target_agent"]; ok && agentDef.Kind != AgentKindPromptVoice {
+					errors = append(errors,
+						"template.target_agent is only valid for prompt-voice agents")
+				}
+			}
+
 			// Only hosted agents carry policies to the service, so a moderation block on any
 			// other kind would be dropped silently instead of enforced.
 			if agentDef.Kind != AgentKindHosted {

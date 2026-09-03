@@ -344,6 +344,21 @@ target_agent:
 	}
 }
 
+func TestValidateAgentDefinition_HostedAgentRejectsHostedVoiceModelType(t *testing.T) {
+	yamlContent := []byte(`
+kind: hosted
+name: hosted-target
+model_type: hosted_agent
+target_agent:
+  service: target
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "model_type 'hosted_agent' is only valid") ||
+		!strings.Contains(err.Error(), "target_agent is only valid") {
+		t.Fatalf("expected hosted voice fields on hosted kind to fail, got: %v", err)
+	}
+}
+
 func TestValidateAgentDefinition_HostedVoiceRequiresTarget(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice

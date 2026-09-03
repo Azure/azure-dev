@@ -12,8 +12,8 @@ import (
 
 // IsConflict reports whether the service refused because the resource is busy.
 func IsConflict(err error) bool {
-	var respErr *azcore.ResponseError
-	if !errors.As(err, &respErr) {
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok {
 		return false
 	}
 	return respErr.StatusCode == http.StatusConflict
@@ -28,8 +28,8 @@ func IsNotFound(err error) bool {
 	if _, walking := errors.AsType[pageWalkError](err); walking {
 		return false
 	}
-	var respErr *azcore.ResponseError
-	if !errors.As(err, &respErr) {
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok {
 		return false
 	}
 	return respErr.StatusCode == http.StatusNotFound

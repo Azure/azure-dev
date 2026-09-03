@@ -676,8 +676,7 @@ func GeneratedNameNeedsATarget(kind string) error {
 // serializes a LocalError's own message and drops any wrapper, so wrapping
 // would throw away the one word saying which job failed.
 func GenerationFailed(kind string, err error) error {
-	var local *azdext.LocalError
-	if errors.As(err, &local) {
+	if local, ok := errors.AsType[*azdext.LocalError](err); ok {
 		labelled := *local
 		labelled.Message = "generating the " + kind + ": " + local.Message
 		return &labelled
@@ -715,13 +714,13 @@ func SomeGenerationsFailed(failures []error) error {
 	}
 	joined := strings.Join(parts, "; ")
 
-	var first *azdext.LocalError
-	if !errors.As(failures[0], &first) {
+	first, ok := errors.AsType[*azdext.LocalError](failures[0])
+	if !ok {
 		return &multiError{msg: joined, causes: failures}
 	}
 	for _, f := range failures[1:] {
-		var other *azdext.LocalError
-		if !errors.As(f, &other) || other.Category != first.Category {
+		other, ok := errors.AsType[*azdext.LocalError](f)
+		if !ok || other.Category != first.Category {
 			return &multiError{msg: joined, causes: failures}
 		}
 	}
@@ -787,8 +786,8 @@ func WarningAgentUnreadable(agent string, err error) string {
 // Written here rather than imported from eval_api, because that package imports
 // this one for its own wording and the dependency only goes one way.
 func notFound(err error) bool {
-	var respErr *azcore.ResponseError
-	return errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	return ok && respErr.StatusCode == http.StatusNotFound
 }
 
 // WarningAgentSeedFailedRetrying reports the retry that drops the agent source.
@@ -2886,9 +2885,10 @@ func isCredentialFailure(err error) bool {
 		return false
 	}
 
-	var authFailed *azidentity.AuthenticationFailedError
-	var authRequired *azidentity.AuthenticationRequiredError
-	if errors.As(err, &authFailed) || errors.As(err, &authRequired) {
+	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[*azidentity.AuthenticationRequiredError](err); ok {
 		return true
 	}
 

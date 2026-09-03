@@ -39,8 +39,8 @@ func TestAWalkFailureStillClassifiesAsItself(t *testing.T) {
 	cause := &azcore.ResponseError{StatusCode: http.StatusUnauthorized}
 	wrapped := error(pageWalkError{cause: cause})
 
-	var respErr *azcore.ResponseError
-	if !errors.As(wrapped, &respErr) {
+	respErr, ok := errors.AsType[*azcore.ResponseError](wrapped)
+	if !ok {
 		t.Fatal("the cause is no longer reachable through the wrapper")
 	}
 	if respErr.StatusCode != http.StatusUnauthorized {

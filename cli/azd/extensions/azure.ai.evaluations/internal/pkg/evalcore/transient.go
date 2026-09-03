@@ -17,8 +17,7 @@ func IsTransientError(err error) bool {
 		return false
 	}
 
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return respErr.StatusCode == 429 || respErr.StatusCode >= 500
 	}
 

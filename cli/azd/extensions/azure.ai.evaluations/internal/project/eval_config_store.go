@@ -468,8 +468,8 @@ func isSharingContention(err error) bool {
 	if runtime.GOOS != "windows" {
 		return false
 	}
-	var errno syscall.Errno
-	if !errors.As(err, &errno) {
+	errno, ok := errors.AsType[syscall.Errno](err)
+	if !ok {
 		return false
 	}
 	// ERROR_ACCESS_DENIED and ERROR_SHARING_VIOLATION.

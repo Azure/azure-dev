@@ -349,9 +349,8 @@ func (ec *evalContext) runGenerations(
 
 	for i := range plans {
 		outcomes[i].plan = plans[i]
-		wg.Add(1)
-		go func(o *generationOutcome) {
-			defer wg.Done()
+		o := &outcomes[i]
+		wg.Go(func() {
 			switch o.plan.Kind {
 			case generateKindDataset:
 				o.ref, o.err = ec.generateDataset(
@@ -360,7 +359,7 @@ func (ec *evalContext) runGenerations(
 				o.ref, o.err = ec.generateRubric(
 					cmd.Context(), o.plan, &o.output, flags.noWait, &o.jobID)
 			}
-		}(&outcomes[i])
+		})
 	}
 	wg.Wait()
 
@@ -396,28 +395,41 @@ func (ec *evalContext) runGenerations(
 		}
 	}
 
-	if len(failures) > 0 {
-		return messages.SomeGenerationsFailed(failures)
-	}
-
 	// One document, keyed by artifact: two bare objects on stdout is not
 	// something a caller can parse. Under --no-wait there is no artifact yet,
 	// so the job id is what the caller gets and what they reattach with.
+	//
+	// Emitted before a failure is returned, for the same reason the write
+	// errors above are carried rather than returned: the two generations are
+	// independent, so one can succeed while the other fails, and the service
+	// has already billed the one that succeeded. Returning first left a JSON
+	// caller with neither its reference nor its job id.
 	if isJSON(cmd) {
-		produced := map[string]any{}
-		for i := range outcomes {
-			o := &outcomes[i]
-			if o.ref != nil {
-				produced[string(o.plan.Kind)] = o.ref
-				continue
-			}
-			if o.jobID != "" {
-				produced[string(o.plan.Kind)] = map[string]string{"job_id": o.jobID}
-				continue
-			}
-			produced[string(o.plan.Kind)] = nil
+		if err := emitJSON(out, generationDocument(outcomes)); err != nil {
+			failures = append(failures, err)
 		}
-		return emitJSON(out, produced)
+	}
+
+	if len(failures) > 0 {
+		return messages.SomeGenerationsFailed(failures)
 	}
 	return nil
+}
+
+// generationDocument keys each outcome by the artifact it was for, so a caller
+// reads the two generations apart rather than by position.
+func generationDocument(outcomes []generationOutcome) map[string]any {
+	produced := map[string]any{}
+	for i := range outcomes {
+		o := &outcomes[i]
+		switch {
+		case o.ref != nil:
+			produced[string(o.plan.Kind)] = o.ref
+		case o.jobID != "":
+			produced[string(o.plan.Kind)] = map[string]string{"job_id": o.jobID}
+		default:
+			produced[string(o.plan.Kind)] = nil
+		}
+	}
+	return produced
 }

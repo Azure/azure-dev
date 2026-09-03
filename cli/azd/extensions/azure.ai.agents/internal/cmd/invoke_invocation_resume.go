@@ -9,12 +9,24 @@ import (
 	"io"
 	"net/http"
 	"os"
+
+	"azureaiagent/internal/exterrors"
 )
 
 func (a *InvokeAction) invocationsResumeRemote(ctx context.Context) error {
 	rc, err := a.resolveRemoteContext(ctx)
 	if err != nil {
 		return err
+	}
+	if a.endpoint != nil {
+		if rc.azdClient != nil {
+			rc.azdClient.Close()
+		}
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"Invocations --resume is not supported with --agent-endpoint",
+			"run from an azd project so the saved Invocation can be resolved",
+		)
 	}
 	if rc.azdClient == nil || rc.agentKey == "" {
 		if rc.azdClient != nil {

@@ -284,15 +284,15 @@ output, and cannot be combined with --timeout.`,
 				if flags.local {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"resumable operations are supported only for remote Responses agents",
-						"remove --local and use a deployed Responses agent",
+						"saved-work operations are supported only for remote agents",
+						"remove --local and use a deployed agent",
 					)
 				}
 				if flags.outputFmt == outputRaw {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--output raw is not supported with resumable operations",
-						"remove --output raw so azd can manage the Response identity and cursor",
+						"--output raw is not supported with saved-work operations",
+						"remove --output raw so azd can manage saved operation state",
 					)
 				}
 			}
@@ -474,7 +474,7 @@ func validateInvokeOperationFlags(cmd *cobra.Command, flags *invokeFlags) error 
 			return exterrors.Validation(
 				exterrors.CodeConflictingArguments,
 				"--timeout is not supported with --resume, --steer, or --cancel",
-				"remove --timeout; attached background work has no overall timeout",
+				"remove --timeout; saved-work operations manage request timing internally",
 			)
 		}
 	}

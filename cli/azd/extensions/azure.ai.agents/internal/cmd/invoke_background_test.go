@@ -1130,7 +1130,7 @@ func TestInvokeCommandBackgroundValidation(t *testing.T) {
 		{
 			name: "rejects local",
 			args: []string{"--resumable", "--local", "hello"},
-			want: "supported only for remote Responses agents",
+			want: "saved-work operations are supported only for remote agents",
 		},
 		{
 			name: "rejects explicit invocations protocol",
@@ -1205,6 +1205,74 @@ func TestInvokeCommandRejectsInvocationsResumeWithInput(t *testing.T) {
 				"remove the input; --resume reconnects to saved work and --cancel cancels saved Responses",
 				localErr.Suggestion,
 			)
+		})
+	}
+}
+
+func TestInvokeCommandRejectsInvocationResumeWithAgentEndpoint(t *testing.T) {
+	isolateFromAzdDaemon(t)
+
+	cmd := newInvokeCommand(nil)
+	cmd.SetArgs([]string{
+		"--resume",
+		"--agent-endpoint",
+		"https://acct.services.ai.azure.com/api/projects/proj/agents/test-agent/endpoint/protocols/invocations",
+	})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+	assert.Equal(t, "Invocations --resume is not supported with --agent-endpoint", localErr.Message)
+	assert.Equal(t, "run from an azd project so the saved Invocation can be resolved", localErr.Suggestion)
+}
+
+func TestInvokeCommandInvocationResumeDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		extCtx     *azdext.ExtensionContext
+		args       []string
+		message    string
+		suggestion string
+	}{
+		{
+			name:       "local",
+			args:       []string{"--protocol", "invocations", "--resume", "--local"},
+			message:    "saved-work operations are supported only for remote agents",
+			suggestion: "remove --local and use a deployed agent",
+		},
+		{
+			name:       "raw output",
+			extCtx:     &azdext.ExtensionContext{OutputFormat: outputRaw},
+			args:       []string{"--protocol", "invocations", "--resume"},
+			message:    "--output raw is not supported with saved-work operations",
+			suggestion: "remove --output raw so azd can manage saved operation state",
+		},
+		{
+			name:       "timeout",
+			args:       []string{"--protocol", "invocations", "--resume", "--timeout", "1"},
+			message:    "--timeout is not supported with --resume, --steer, or --cancel",
+			suggestion: "remove --timeout; saved-work operations manage request timing internally",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := newInvokeCommand(tt.extCtx)
+			cmd.SetArgs(tt.args)
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+
+			err := cmd.Execute()
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, tt.message, localErr.Message)
+			assert.Equal(t, tt.suggestion, localErr.Suggestion)
 		})
 	}
 }

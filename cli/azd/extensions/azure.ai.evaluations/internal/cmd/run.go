@@ -837,7 +837,14 @@ func scanJSONL(r io.Reader, limit int) ([]map[string]any, error) {
 	line := 0
 	for scanner.Scan() {
 		line++
-		text := strings.TrimSpace(scanner.Text())
+		text := scanner.Text()
+		if line == 1 {
+			// Windows editors and PowerShell's Set-Content write a mark ahead
+			// of the first row. The upload path strips it, so without this the
+			// same file deploys and then fails to score.
+			text = project.TrimBOM(text)
+		}
+		text = strings.TrimSpace(text)
 		if text == "" {
 			continue
 		}

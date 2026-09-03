@@ -389,8 +389,11 @@ func (ec *evalContext) generateDataset(
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, messages.Creating(filepath.Dir(path), err)
 	}
-	if err := os.WriteFile(path, content, 0o600); err != nil {
-		return nil, messages.Writing(path, err)
+	// Atomic, because regenerating writes over the dataset already sitting
+	// there: os.WriteFile truncates first, so a failure mid-write destroys the
+	// copy the caller had while still reporting the generation as failed.
+	if err := writeFileAtomic(path, content); err != nil {
+		return nil, err
 	}
 	fmt.Fprint(out, messages.WroteArtifact(path))
 
@@ -478,12 +481,12 @@ func writeRubric(path string, result json.RawMessage) error {
 			if err := json.Indent(&pretty, envelope.Definition, "", "  "); err != nil {
 				return messages.Serializing(path, err)
 			}
-			return os.WriteFile(path, pretty.Bytes(), 0o600)
+			return writeFileAtomic(path, pretty.Bytes())
 		}
 	}
 
 	// Fall back to the raw payload rather than losing the result.
-	return os.WriteFile(path, result, 0o600)
+	return writeFileAtomic(path, result)
 }
 
 // relativeSource expresses an artifact path relative to the deployment spec.

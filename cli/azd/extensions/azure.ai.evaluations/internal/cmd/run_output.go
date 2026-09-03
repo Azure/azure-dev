@@ -4,10 +4,10 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -147,20 +147,15 @@ func (a *runOutputListAction) Run() error {
 	// and it failed silently: the loop walked the two keys instead. The
 	// run itself is what `run show` answers.
 	if a.flags.outFile != "" {
-		f, err := os.Create(a.flags.outFile)
-		if err != nil {
-			return messages.Creating(a.flags.outFile, err)
-		}
-		if err := emitJSONList(f, rows); err != nil {
-			_ = f.Close()
+		// These rows carry prompts, answers and the reasons an evaluator gave.
+		// os.Create takes the process umask, which commonly leaves them
+		// world-readable; writeFileAtomic keeps them at 0600 and replaces the
+		// destination in one step whatever it was before.
+		var body bytes.Buffer
+		if err := emitJSONList(&body, rows); err != nil {
 			return err
 		}
-		// The last write is flushed by Close, so discarding its error
-		// reports success over a file that stops mid-row.
-		if err := f.Close(); err != nil {
-			return messages.Writing(a.flags.outFile, err)
-		}
-		return nil
+		return writeFileAtomic(a.flags.outFile, body.Bytes())
 	}
 	if isJSON(a.cmd) {
 		return emitJSONList(a.cmd.OutOrStdout(), rows)
@@ -373,21 +368,14 @@ func (a *runOutputExportAction) Run() error {
 		return writeExport(a.cmd.OutOrStdout(), doc)
 	}
 
-	f, createErr := os.Create(a.flags.outFile)
-	if createErr != nil {
-		return messages.Creating(a.flags.outFile, createErr)
+	// The document carries every evaluated row, so it holds prompts, answers
+	// and evaluator reasons. os.Create takes the process umask and commonly
+	// leaves that world-readable.
+	var body bytes.Buffer
+	if err := writeExport(&body, doc); err != nil {
+		return err
 	}
-	writeErr := writeExport(f, doc)
-	// The last write is flushed by Close, so discarding its error
-	// reports success over a file that stops mid-row.
-	closeErr := f.Close()
-	if writeErr != nil {
-		return writeErr
-	}
-	if closeErr != nil {
-		return messages.Writing(a.flags.outFile, closeErr)
-	}
-	return nil
+	return writeFileAtomic(a.flags.outFile, body.Bytes())
 }
 
 // resolveEvalID resolves the eval a run command is about, from --eval or from

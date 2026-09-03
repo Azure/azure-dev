@@ -207,17 +207,18 @@ func writeFileAtomic(path string, body []byte) error {
 
 	if _, err := tmp.Write(body); err != nil {
 		_ = tmp.Close()
-		return messages.Creating(path, err)
+		return messages.Writing(path, err)
 	}
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
 		return messages.Creating(path, err)
 	}
+	// Close flushes, so a failure here is content that never reached the disk.
 	if err := tmp.Close(); err != nil {
-		return messages.Creating(path, err)
+		return messages.Writing(path, err)
 	}
 	if err := project.ReplaceFile(tmpName, path); err != nil {
-		return messages.Creating(path, err)
+		return messages.Writing(path, err)
 	}
 	return nil
 }

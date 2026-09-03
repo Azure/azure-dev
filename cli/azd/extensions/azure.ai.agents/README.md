@@ -409,11 +409,10 @@ connection must exist on the selected project before `azd deploy` runs.
 
 ### Declarative sibling connection
 
-To let `azd provision` create the connection, declare an
-`azure.ai.connection` sibling. For this declarative path, both the agent's
-`registryConnectionId` and `uses` identify the sibling's azure.yaml service key,
-which is also the Foundry connection name provisioned by the current Projects
-extension:
+To let azd manage the connection, declare an `azure.ai.connection` sibling. For
+this declarative path, both the agent's `registryConnectionId` and `uses`
+identify the sibling's azure.yaml service key, which is also the Foundry
+connection name reconciled by the Connections extension:
 
 ```yaml
 services:
@@ -453,10 +452,11 @@ services:
         version: 1.0.0
 ```
 
-Set the referenced credential environment values, run `azd provision`, and then
-run `azd deploy`. Omitting the sibling from `uses`, disabling it with a deployment
-condition, or omitting image passthrough causes validation to fail before agent
-deployment.
+Set the referenced credential environment values and run `azd up`, or run
+`azd provision` followed by `azd deploy`. Provision creates the Project;
+deploy reconciles the Connection before the dependent Agent. Omitting the
+sibling from `uses`, disabling it with a deployment condition, or omitting image
+passthrough causes validation to fail before Agent deployment.
 
 ## Private networking for `host: azure.ai.project`
 

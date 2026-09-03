@@ -221,7 +221,7 @@ func TestProjectServiceEnvironments(t *testing.T) {
 	)
 }
 
-func TestInitializeUsesConnectionServiceEnvironment(t *testing.T) {
+func TestInitializeExcludesConnectionsFromProviderManagedInfrastructure(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
@@ -277,8 +277,7 @@ services:
 	require.NotNil(t, provider.synthResult)
 	connections, ok := provider.synthResult.Parameters["connections"].([]synthesis.Connection)
 	require.True(t, ok)
-	require.Len(t, connections, 1)
-	require.Equal(t, "https://service.example", connections[0].Target)
+	require.Empty(t, connections)
 }
 
 func TestResolveTemplateUsesOnDiskConnectionServiceEnvironment(

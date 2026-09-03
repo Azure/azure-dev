@@ -345,8 +345,8 @@ func TestRawConnectionBody_OAuth2_FullFields(t *testing.T) {
 		RefreshURL:       "https://github.com/login/oauth/access_token",
 		Scopes:           []string{"read:user", "user:email"},
 		Credentials: &rawCredentials{
-			ClientID:     "test-cid",
-			ClientSecret: "test-csec",
+			"clientId":     "test-cid",
+			"clientSecret": "test-csec",
 		},
 	}
 	body := rawConnectionBody{Properties: props}
@@ -590,8 +590,8 @@ func TestBuildOAuth2Credentials(t *testing.T) {
 				return
 			}
 			require.NotNil(t, got)
-			require.Equal(t, tt.wantID, got.ClientID)
-			require.Equal(t, tt.wantSecret, got.ClientSecret)
+			require.Equal(t, tt.wantID, credentialString(got, "clientId"))
+			require.Equal(t, tt.wantSecret, credentialString(got, "clientSecret"))
 		})
 	}
 }

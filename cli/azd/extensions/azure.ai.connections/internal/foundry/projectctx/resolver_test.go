@@ -6,6 +6,7 @@ package projectctx
 import (
 	"context"
 	"errors"
+	"net"
 	"testing"
 
 	"azure.ai.connections/internal/exterrors"
@@ -13,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 // withHostedSources installs a stub for ReadAzdHostedSourcesFunc for the
@@ -21,10 +23,89 @@ import (
 func withHostedSources(t *testing.T, sources AzdHostedSources, err error) {
 	t.Helper()
 	orig := ReadAzdHostedSourcesFunc
-	ReadAzdHostedSourcesFunc = func(context.Context) (AzdHostedSources, error) {
+	ReadAzdHostedSourcesFunc = func(context.Context, string) (AzdHostedSources, error) {
 		return sources, err
 	}
 	t.Cleanup(func() { ReadAzdHostedSourcesFunc = orig })
+}
+
+func TestResolveUsesSelectedEnvironment(t *testing.T) {
+	var received string
+	original := ReadAzdHostedSourcesFunc
+	ReadAzdHostedSourcesFunc = func(_ context.Context, environmentName string) (AzdHostedSources, error) {
+		received = environmentName
+		return AzdHostedSources{
+			EnvName:  environmentName,
+			EnvValue: "https://staging.services.ai.azure.com/api/projects/project",
+		}, nil
+	}
+	t.Cleanup(func() { ReadAzdHostedSourcesFunc = original })
+
+	resolved, err := Resolve(t.Context(), ResolveOpts{EnvironmentName: "staging"})
+	require.NoError(t, err)
+	assert.Equal(t, "staging", received)
+	assert.Equal(t, "staging", resolved.AzdEnvName)
+	assert.Equal(t, "https://staging.services.ai.azure.com/api/projects/project", resolved.Endpoint)
+}
+
+func TestReadAzdHostedSourcesUsesSelectedEnvironment(t *testing.T) {
+	environment := &selectedEnvironmentServer{}
+	server := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(server, environment)
+	azdext.RegisterUserConfigServiceServer(server, emptyUserConfigServer{})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+
+	sources, err := readAzdHostedSources(t.Context(), "staging")
+	require.NoError(t, err)
+	assert.Equal(t, "staging", sources.EnvName)
+	assert.Equal(t, "https://staging.services.ai.azure.com/api/projects/project", sources.EnvValue)
+	assert.Equal(t, 0, environment.currentCalls)
+	assert.Equal(t, []string{"staging"}, environment.requestedEnvironments)
+}
+
+type selectedEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	currentCalls          int
+	requestedEnvironments []string
+}
+
+func (s *selectedEnvironmentServer) GetCurrent(
+	context.Context,
+	*azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	s.currentCalls++
+	return nil, errors.New("GetCurrent must not be called for a selected environment")
+}
+
+func (s *selectedEnvironmentServer) GetValue(
+	_ context.Context,
+	request *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	s.requestedEnvironments = append(s.requestedEnvironments, request.GetEnvName())
+	if request.GetKey() == foundryEnvKey && request.GetEnvName() == "staging" {
+		return &azdext.KeyValueResponse{
+			Value: "https://staging.services.ai.azure.com/api/projects/project",
+		}, nil
+	}
+	return &azdext.KeyValueResponse{}, nil
+}
+
+type emptyUserConfigServer struct {
+	azdext.UnimplementedUserConfigServiceServer
+}
+
+func (emptyUserConfigServer) Get(
+	context.Context,
+	*azdext.GetUserConfigRequest,
+) (*azdext.GetUserConfigResponse, error) {
+	return &azdext.GetUserConfigResponse{}, nil
 }
 
 // isolateFromAzdDaemon installs an empty hosted-sources stub and clears

@@ -530,43 +530,13 @@ func collectLegacyProjectDeployments(
 	return out, nil
 }
 
-// collectConnections gathers the connections declared across all
-// azure.ai.connection services. Falls back to the connections bundled on the
-// agent service when no connection service carries any, so a pre-split
-// azure.yaml still provisions without re-running init.
-func collectConnections(
+// collectLegacyConnections gathers connections bundled on pre-split Agent
+// services. Split host: azure.ai.connection services are reconciled by the
+// Connections extension and are intentionally not parsed here.
+func collectLegacyConnections(
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,
 ) ([]project.Connection, error) {
-	var out []project.Connection
-	for _, svc := range sortedServices(services) {
-		if svc.Host != AiConnectionHost {
-			continue
-		}
-		props, err := resolvedResourceServiceProps(
-			svc,
-			projectRoot,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if props == nil {
-			continue
-		}
-		var conn *project.Connection
-		if err := project.UnmarshalStruct(props, &conn); err != nil {
-			return nil, fmt.Errorf("parsing connection service %q config: %w", svc.Name, err)
-		}
-		if conn != nil {
-			if conn.Name == "" {
-				conn.Name = svc.Name
-			}
-			out = append(out, *conn)
-		}
-	}
-	if len(out) > 0 {
-		return out, nil
-	}
 	legacy, err := collectLegacyAgentConfigs(
 		services,
 		projectRoot,
@@ -574,58 +544,9 @@ func collectConnections(
 	if err != nil {
 		return nil, err
 	}
+	var out []project.Connection
 	for _, cfg := range legacy {
 		out = append(out, cfg.Connections...)
-	}
-	return out, nil
-}
-
-// collectToolboxes gathers the toolboxes declared across all azure.ai.toolbox
-// services. Falls back to the toolboxes bundled on the agent service when no
-// toolbox service carries any, so a pre-split azure.yaml still provisions
-// without re-running init.
-func collectToolboxes(
-	services map[string]*azdext.ServiceConfig,
-	projectRoot string,
-) ([]project.Toolbox, error) {
-	var out []project.Toolbox
-	for _, svc := range sortedServices(services) {
-		if svc.Host != AiToolboxHost {
-			continue
-		}
-		props, err := resolvedResourceServiceProps(
-			svc,
-			projectRoot,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if props == nil {
-			continue
-		}
-		var toolbox *project.Toolbox
-		if err := project.UnmarshalStruct(props, &toolbox); err != nil {
-			return nil, fmt.Errorf("parsing toolbox service %q config: %w", svc.Name, err)
-		}
-		if toolbox != nil {
-			if toolbox.Name == "" {
-				toolbox.Name = svc.Name
-			}
-			out = append(out, *toolbox)
-		}
-	}
-	if len(out) > 0 {
-		return out, nil
-	}
-	legacy, err := collectLegacyAgentConfigs(
-		services,
-		projectRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for _, cfg := range legacy {
-		out = append(out, cfg.Toolboxes...)
 	}
 	return out, nil
 }

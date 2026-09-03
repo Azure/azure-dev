@@ -70,7 +70,7 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 	); err != nil {
 		return err
 	}
-	connections, err := collectConnections(
+	connections, err := collectLegacyConnections(
 		args.Project.Services,
 		args.Project.Path,
 	)
@@ -241,7 +241,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	); err != nil {
 		return err
 	}
-	connections, err := collectConnections(
+	connections, err := collectLegacyConnections(
 		args.Project.Services,
 		args.Project.Path,
 	)

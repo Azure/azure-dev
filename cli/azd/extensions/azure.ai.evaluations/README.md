@@ -188,8 +188,9 @@ They clean up every resource they create.
 
 ### Debug logging
 
-Request tracing is off by default. `--debug`, or `AZD_EXT_DEBUG=true`, writes
-it to a dated log file rather than the terminal.
+Request tracing is off by default. `--debug`, or `AZD_EXT_DEBUG=true`, writes it
+to a dated log file in the temporary directory rather than the terminal, and
+prints that path on stderr.
 
 ## TODO before release
 

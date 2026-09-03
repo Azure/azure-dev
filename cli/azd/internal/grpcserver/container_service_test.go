@@ -468,3 +468,36 @@ func TestMapContainerToolError_PreservesNonToolErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestMapContainerPublishError_ComposesToolMapping(t *testing.T) {
+	t.Parallel()
+
+	exitErr := fmt.Errorf("publish failed: %w", &azdexec.ExitError{
+		Cmd:      "docker",
+		ExitCode: 17,
+	})
+	mapped := mapContainerToolError(mapContainerPublishError(exitErr))
+
+	var toolErr *azdext.ToolError
+	require.ErrorAs(t, mapped, &toolErr)
+	require.Equal(t, azdext.ToolErrorKindFailed, toolErr.Kind)
+	require.Equal(t, "docker", toolErr.ToolName)
+	require.Equal(t, new(17), toolErr.ExitCode)
+	require.ErrorIs(t, mapped, exitErr)
+}
+
+func TestMapContainerPublishError_PreservesPublishMappingPriority(t *testing.T) {
+	t.Parallel()
+
+	err := fmt.Errorf("publish failed: %w", &containerregistry.RemoteBuildRunError{
+		Status: armcontainerregistry.RunStatusFailed,
+	})
+	mapped := mapContainerToolError(mapContainerPublishError(err))
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, mapped, &localErr)
+	require.Equal(t, "container_publish_acr_run_failed", localErr.Code)
+
+	_, isToolError := errors.AsType[*azdext.ToolError](mapped)
+	require.False(t, isToolError)
+}

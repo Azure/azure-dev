@@ -39,6 +39,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
@@ -1402,6 +1403,54 @@ func TestMapError_ConversionError(t *testing.T) {
 		fields.ErrorKey(fields.MapperDestinationType.Key).String("int"))
 	require.NotContains(t, span.Attributes,
 		fields.ErrorKey(fields.ErrType.Key).String("conversion failed"))
+}
+
+func TestMapError_MissingToolErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		toolNames []string
+		wantCode  string
+		wantTool  string
+	}{
+		{
+			name:      "display name",
+			toolNames: []string{"Terraform CLI"},
+			wantCode:  "tool.terraform.missing",
+			wantTool:  "terraform",
+		},
+		{
+			name:      "punctuated display name",
+			toolNames: []string{".NET CLI"},
+			wantCode:  "tool.dotnet.missing",
+			wantTool:  "dotnet",
+		},
+		{
+			name:      "multiple display names",
+			toolNames: []string{"Terraform CLI", "GitHub CLI"},
+			wantCode:  "tool.multiple.missing",
+			wantTool:  "terraform,gh",
+		},
+		{
+			name:      "unknown display name",
+			toolNames: []string{"Test Tool"},
+			wantCode:  "tool.other.missing",
+			wantTool:  "other",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			span := &mocktracing.Span{}
+			MapError(&tools.MissingToolErrors{ToolNames: tt.toolNames}, span)
+
+			require.Equal(t, tt.wantCode, span.Status.Description)
+			require.Contains(t, span.Attributes,
+				fields.ErrorKey(fields.ToolName.Key).String(tt.wantTool))
+		})
+	}
 }
 
 func Test_cmdAsName(t *testing.T) {

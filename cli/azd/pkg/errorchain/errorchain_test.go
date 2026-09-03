@@ -28,6 +28,12 @@ type selfRefErr struct{}
 func (s *selfRefErr) Error() string { return "self-ref" }
 func (s *selfRefErr) Unwrap() error { return s }
 
+type unhashableValueErr struct {
+	value any
+}
+
+func (u unhashableValueErr) Error() string { return "unhashable" }
+
 func TestTypes(t *testing.T) {
 	t.Parallel()
 
@@ -69,6 +75,18 @@ func TestCauseTypesCycleSafe(t *testing.T) {
 	require.Equal(t, []string{"*errorchain.selfRefErr"}, Types(err))
 	require.Equal(t, "*errorchain.selfRefErr", DeepestNamedType(err))
 	require.Equal(t, []string{"*errorchain.selfRefErr"}, CauseTypes(err))
+}
+
+func TestTypesWithUnhashableValue(t *testing.T) {
+	t.Parallel()
+
+	err := unhashableValueErr{value: []string{"unhashable"}}
+
+	require.NotPanics(t, func() {
+		require.Equal(t, []string{"errorchain.unhashableValueErr"}, Types(err))
+		require.Equal(t, "errorchain.unhashableValueErr", DeepestNamedType(err))
+		require.Equal(t, []string{"errorchain.unhashableValueErr"}, CauseTypes(err))
+	})
 }
 
 func TestNormalizeCauseTypesRejectsUnsafeValues(t *testing.T) {

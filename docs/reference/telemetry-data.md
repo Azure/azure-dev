@@ -290,7 +290,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `error.tool.name` | string | Normalized lowercase basename of the failed external tool; extension-provided `ToolError` names are limited to 1-64 ASCII characters from `[a-z0-9_-]`, with invalid or oversized values recorded as `other`. Multiple missing tools remain comma-separated |
+| `error.tool.name` | string | Stable identifier for the failed external tool; core missing-tool display names use a fixed mapping, unknown names become `other`, and extension-provided `ToolError` names are limited to 1-64 ASCII characters from `[a-z0-9_-]`. Multiple missing tools remain comma-separated |
 | `error.tool.exitCode` | measurement | Exit code returned by the failed tool |
 
 ### Performance Fields

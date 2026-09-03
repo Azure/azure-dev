@@ -201,13 +201,13 @@ func classify(err error) (string, []attribute.KeyValue) {
 	}
 	if toolCheckErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
 		if len(toolCheckErr.ToolNames) == 1 {
-			toolName := normalizeToolName(toolCheckErr.ToolNames[0])
+			toolName := tools.TelemetryName(toolCheckErr.ToolNames[0])
 			return fmt.Sprintf("tool.%s.missing", toolName),
 				[]attribute.KeyValue{fields.ToolName.String(toolName)}
 		}
 		toolNames := make([]string, 0, len(toolCheckErr.ToolNames))
 		for _, name := range toolCheckErr.ToolNames {
-			toolNames = append(toolNames, normalizeToolName(name))
+			toolNames = append(toolNames, tools.TelemetryName(name))
 		}
 		return "tool.multiple.missing", []attribute.KeyValue{
 			fields.ToolName.String(strings.Join(toolNames, ",")),

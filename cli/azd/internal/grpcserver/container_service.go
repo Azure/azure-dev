@@ -129,7 +129,7 @@ func missingToolName(err *tools.MissingToolErrors) string {
 		return "multiple"
 	}
 
-	return normalizedToolName(err.ToolNames[0])
+	return tools.TelemetryName(err.ToolNames[0])
 }
 
 func NewContainerService(
@@ -313,7 +313,7 @@ func (c *containerService) Publish(
 
 	publishResult, err := containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, env, progress, nil)
 	if err != nil {
-		return nil, mapContainerPublishError(err)
+		return nil, mapContainerToolError(mapContainerPublishError(err))
 	}
 
 	// Use mapper to convert ServicePublishResult to proto

@@ -86,8 +86,7 @@ func isComparableError(err error) bool {
 		return false
 	}
 
-	errType := reflect.TypeOf(err)
-	return errType.Comparable()
+	return reflect.ValueOf(err).Comparable()
 }
 
 // CauseTypes returns a bounded, de-duplicated list of useful error types for

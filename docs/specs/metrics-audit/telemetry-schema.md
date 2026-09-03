@@ -158,7 +158,7 @@ tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `er
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Tool name | `tool.name` | SystemMetadata | PerformanceAndHealth | Normalized lowercase basename; extension-provided names are limited to 1-64 ASCII characters from `[a-z0-9_-]`, otherwise `other`; multiple missing tools remain comma-separated |
+| Tool name | `tool.name` | SystemMetadata | PerformanceAndHealth | Stable identifier; core missing-tool display names use a fixed mapping and unknown names become `other`; extension-provided names are limited to 1-64 ASCII characters from `[a-z0-9_-]`; multiple missing tools remain comma-separated |
 | Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 
 ### Performance

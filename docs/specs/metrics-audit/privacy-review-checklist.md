@@ -13,7 +13,7 @@ checklist:
 | `error.chain.types` | SystemMetadata | Bounded to 16 code-defined Go type names; extension-provided `CauseTypes` are validated, de-duplicated, and stripped of generic wrappers, while local chains preserve their traversal types |
 | `error.mapper.source.type` | SystemMetadata | Emits only the sanitized source type name from the registered mapper |
 | `error.mapper.destination.type` | SystemMetadata | Emits only the sanitized destination type name from the registered mapper |
-| `error.tool.name` | SystemMetadata | Extension-provided `ToolError` names are normalized to 1-64 ASCII characters from `[a-z0-9_-]`; invalid or oversized values become `other` |
+| `error.tool.name` | SystemMetadata | Core missing-tool display names use a fixed code-defined mapping; unknown values become `other`. Extension-provided `ToolError` names are limited to 1-64 ASCII characters from `[a-z0-9_-]`; invalid or oversized values become `other` |
 | `extension.event` on failed lifecycle-hook `cmd.*` spans | SystemMetadata | Host lifecycle metadata; failed `ext.run` commands carry only extension ID and version, while extension-supplied usage values remain restricted to the reviewed `ext.usage` admission path |
 
 No new event or unbounded user-provided string is introduced. No fields are

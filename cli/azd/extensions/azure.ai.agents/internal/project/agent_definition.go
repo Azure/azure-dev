@@ -1000,7 +1000,8 @@ func voiceAgentFromDefinitionFile(path string) (agent_yaml.VoiceAgent, bool, err
 		)
 	}
 
-	if kind, _ := genericTemplate["kind"].(string); kind != string(agent_yaml.AgentKindPromptVoice) && kind != string(agent_yaml.AgentKindVoice) {
+	if kind, _ := genericTemplate["kind"].(string); kind != string(agent_yaml.AgentKindPromptVoice) &&
+		kind != string(agent_yaml.AgentKindVoice) {
 		// Not a voice definition; let the container path handle the override.
 		return agent_yaml.VoiceAgent{}, false, nil
 	}

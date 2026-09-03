@@ -341,7 +341,7 @@ services:
 
   voice-target-voice:
     host: azure.ai.agent
-    kind: prompt-voice
+    kind: voice
     name: voice-target-voice
     uses:
       - ai-project

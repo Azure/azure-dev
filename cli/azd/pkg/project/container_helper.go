@@ -1185,15 +1185,18 @@ func (ch *ContainerHelper) runDotnetPublish(
 		defaultImageName,
 		ch.DefaultImageTag())
 
-	_, err = ch.dotNetCli.PublishContainer(
-		ctx,
-		serviceConfig.Path(),
-		"Release",
-		imageName,
-		dockerCreds.LoginServer,
-		dockerCreds.Username,
-		dockerCreds.Password,
-		ch.ContainerEngine())
+	err = runIsolatedDotNetBuild(ctx, serviceConfig.Name, ch.dotNetCli, func(buildCtx context.Context) error {
+		_, err := ch.dotNetCli.PublishContainer(
+			buildCtx,
+			serviceConfig.Path(),
+			"Release",
+			imageName,
+			dockerCreds.LoginServer,
+			dockerCreds.Username,
+			dockerCreds.Password,
+			ch.ContainerEngine())
+		return err
+	})
 	if err != nil {
 		return "", fmt.Errorf("publishing container: %w", err)
 	}

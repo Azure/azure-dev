@@ -52,11 +52,11 @@ integration.
 | `AZD_CONTAINER_RUNTIME` | The container runtime to use (e.g., `docker`, `podman`). |
 | `AZD_ALLOW_NON_EMPTY_FOLDER` | If set, allows `azd init` to run in a non-empty directory without prompting. |
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |
-| `AZD_DEPLOY_CONCURRENCY` | Maximum number of services to deploy in parallel during `azd deploy`. Only takes effect when at least one service declares `uses:` targeting another service; without `uses:` edges, services deploy sequentially in alphabetical order for backward compatibility (see [concurrency model](concurrency-model.md)). Parsed as a positive integer; clamped to a maximum of `64`. When unset, concurrency is unlimited (bounded only by the number of services). |
+| `AZD_DEPLOY_CONCURRENCY` | Maximum number of service graph steps (`package`, `publish`, and `deploy`) that may run in parallel during `azd deploy`. The limit applies even when deploy steps use the no-`uses:` sequential fallback; setting it to `1` serializes source packaging and publishing too, which is the safe workaround for .NET projects that share custom build-output paths. Parsed as a positive integer; clamped to a maximum of `64`. When unset, non-positive, or not an integer, the scheduler uses at most `min(step count, GOMAXPROCS * 2)` workers. See the [concurrency model](concurrency-model.md). |
 | `AZD_DEPLOY_TIMEOUT` | Timeout for deployment operations, parsed as an integer number of seconds (for example, `1200`). Defaults to `1200` seconds (20 minutes). |
-| `AZD_PROVISION_CONCURRENCY` | Maximum number of infrastructure layers to provision in parallel during `azd provision`. Parsed as a positive integer; clamped to a maximum of `64`. When unset, concurrency is unlimited (bounded only by the dependency graph). |
+| `AZD_PROVISION_CONCURRENCY` | Maximum number of infrastructure layers to provision in parallel during `azd provision`. Parsed as a positive integer; clamped to a maximum of `64`. When unset, non-positive, or not an integer, the scheduler uses at most `min(layer count, GOMAXPROCS * 2)` workers. |
 | `AZD_DEPLOYMENT_ID_FILE` | Absolute path of a file where `azd` writes ARM deployment IDs in NDJSON format (one JSON line per layer) during `azd provision` or `azd up`. The file is truncated at the start of each provisioning run, and each infrastructure layer appends one line as its ARM deployment starts. Each line has the shape `{"deploymentId":"/subscriptions/.../deployments/<name>","layer":"<layer-name>"}` — the `layer` field is empty for non-layered (single-module) provisioning. Consumers should tail/watch the file and parse each line independently; unknown fields must be ignored for forward compatibility. The path must be absolute (relative paths are ignored); the containing directory must already exist and be writable. Lines are only appended when an ARM deployment is actually started — runs short-circuited by the deployment-state cache or canceled by provision validation do not produce output. A process-wide mutex serializes writes so each line is always complete. If the file cannot be written (for example, the parent directory does not exist, the path is not writable, or the path points to a directory rather than a file), provisioning continues and the failure is recorded via the standard log; that output is only visible when `--debug` or `AZD_DEBUG_LOG` is enabled. On Windows, consumers should use a file-watcher pattern that does not keep a read handle open, otherwise new appends may fail. Only Bicep deployments are supported. |
-| `AZD_UP_CONCURRENCY` | Maximum number of steps to run in parallel during `azd up`. Parsed as a positive integer; clamped to a maximum of `64`. Falls back to `AZD_DEPLOY_CONCURRENCY` when unset. When both are unset, concurrency is unlimited. |
+| `AZD_UP_CONCURRENCY` | Maximum number of steps to run in parallel during `azd up`. Parsed as a positive integer; clamped to a maximum of `64`. Falls back to `AZD_DEPLOY_CONCURRENCY` only when unset. If the selected variable is non-positive or not an integer, or if both variables are unset, the scheduler uses at most `min(step count, GOMAXPROCS * 2)` workers. |
 | `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | Sets the App Service deployment slot target for a service. Replace `{SERVICE}` with the uppercase service name (hyphens become underscores). Set to `production` to deploy to the main app, or a slot name (e.g., `staging`). When slots exist and this is not set, `--no-prompt` mode fails with an error listing available targets. Applies to `host: appservice` only; Function Apps always deploy to the main site. |
 | `AZD_DEPLOY_{SERVICE}_SKIP_STATUS_CHECK` | If `true`, skips deployment status tracking for the named Linux App Service after the zip deployment request is accepted. By default, azd waits up to five minutes without a deployment status change. Each new status resets the five-minute wait. If the status remains unchanged, azd completes deployment with a warning. Useful when the target web app is intentionally stopped. Parsed as a boolean (`true`/`false`/`1`/`0`). `{SERVICE}` follows the same naming rules as `AZD_DEPLOY_{SERVICE}_SLOT_NAME`. |
 
@@ -153,9 +153,9 @@ Variables for [External Authentication](./external-authentication.md) integratio
 
 | Variable | Description |
 | --- | --- |
-| `AZD_AUTH_ENDPOINT` | The [External Authentication](./external-authentication.md) endpoint. |
-| `AZD_AUTH_KEY` | The [External Authentication](./external-authentication.md) shared key. |
-| `AZD_AUTH_CERT` | The [External Authentication](./external-authentication.md) client certificate, provided as a base64-encoded DER certificate string. When set, `AZD_AUTH_ENDPOINT` must use HTTPS. |
+| `AZD_AUTH_ENDPOINT` | The [External Authentication](./external-authentication.md) endpoint. Accepts `https://host:port` (loopback HTTPS), `unix:/absolute/path/to/socket` (Linux/macOS Unix domain socket; `AZD_AUTH_CERT` must not be set), or `npipe:<pipe-name>` / `npipe://./pipe/<pipe-name>` / `npipe:////./pipe/<pipe-name>` (Windows-only named pipe; `AZD_AUTH_CERT` must not be set). Named-pipe owners and ACLs are validated; the Windows default read-only Everyone/Anonymous ACEs are accepted, but broader access is refused. |
+| `AZD_AUTH_KEY` | The [External Authentication](./external-authentication.md) shared key. Required for all schemes (`https:`, `unix:`, `npipe:`); sent as `Authorization: Bearer`. |
+| `AZD_AUTH_CERT` | The optional [External Authentication](./external-authentication.md) server certificate, provided as a base64-encoded DER certificate string. When set, `AZD_AUTH_ENDPOINT` must use `https:` and `azd` pins the connection to this certificate. MUST NOT be set when `AZD_AUTH_ENDPOINT` uses `unix:` or `npipe:`. |
 
 ## Tool Configuration
 
@@ -168,6 +168,20 @@ specific version of the tool installed on the machine.
 | `AZD_GH_TOOL_PATH` | The `gh` tool override path. The direct path to `gh` or `gh.exe`. |
 | `AZD_PACK_TOOL_PATH` | The `pack` tool override path. The direct path to `pack` or `pack.exe`. |
 | `AZD_COPILOT_CLI_PATH` | The Copilot CLI tool override path. When set, skips automatic download and uses the specified path. |
+
+### GitHub Repository Access
+
+These GitHub-compatible variables are used when `azd init --template` checks repository metadata before cloning.
+Metadata requests are unauthenticated when no matching token is set.
+
+| Variable | Description |
+| --- | --- |
+| `GH_TOKEN` | Token used to request repository metadata from `github.com` and GitHub Enterprise Cloud `*.ghe.com` hosts. Takes precedence over `GITHUB_TOKEN`. |
+| `GITHUB_TOKEN` | Token used to request repository metadata from `github.com` and `*.ghe.com` when `GH_TOKEN` is not set. |
+| `GH_HOST` | GitHub Enterprise host recognized for repository metadata checks. |
+| `GITHUB_SERVER_URL` | GitHub server URL recognized for repository metadata checks when `GH_HOST` is not set. |
+| `GH_ENTERPRISE_TOKEN` | Token used to request repository metadata from a recognized GitHub Enterprise Server host. Takes precedence over `GITHUB_ENTERPRISE_TOKEN`. |
+| `GITHUB_ENTERPRISE_TOKEN` | Token used for a recognized GitHub Enterprise Server host when `GH_ENTERPRISE_TOKEN` is not set. |
 
 ## Extension Configuration
 
@@ -195,7 +209,8 @@ specific version of the tool installed on the machine.
 | `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
-| `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd agent init` for code-deploy scenarios (where no container image is built). |
+| `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd ai agent init` for code-deploy, pre-built image, and managed voice scenarios. |
+| `AZD_AI_AGENT_MANIFEST_PARAMETER_<NAME>` | Supplies a value for the `<NAME>` agent manifest parameter. When unset, init uses the declared default, the first enum value, or an empty value for optional parameters; unresolved required parameters fail. |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |

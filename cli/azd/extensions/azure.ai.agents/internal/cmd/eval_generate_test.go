@@ -126,8 +126,10 @@ func TestRunEvalGenerate_InstructionFileMissing(t *testing.T) {
 	// Use filepath.Join with TempDir to get a proper absolute path that doesn't exist.
 	missingFile := filepath.Join(t.TempDir(), "nonexistent", "instruction.txt")
 	flags := &evalGenerateFlags{
+		evalContextFlags: evalContextFlags{
+			projectEndpoint: "https://example.ai.azure.com/",
+		},
 		instructionFile: missingFile,
-		projectEndpoint: "https://example.ai.azure.com/",
 	}
 	err := runEvalGenerate(t.Context(), flags, true)
 	require.Error(t, err)

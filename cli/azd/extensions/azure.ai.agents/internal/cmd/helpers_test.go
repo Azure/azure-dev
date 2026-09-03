@@ -548,6 +548,7 @@ type helpersPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	selectIndex int32
 	selectCalls atomic.Int32
+	promptCalls atomic.Int32
 	lastSelect  *azdext.SelectRequest
 }
 
@@ -569,6 +570,13 @@ func (s *helpersPromptServer) Select(
 	s.lastSelect = req
 	idx := s.selectIndex
 	return &azdext.SelectResponse{Value: &idx}, nil
+}
+
+func (s *helpersPromptServer) Prompt(
+	context.Context, *azdext.PromptRequest,
+) (*azdext.PromptResponse, error) {
+	s.promptCalls.Add(1)
+	return nil, status.Error(codes.Internal, "unexpected text prompt")
 }
 
 // newHelpersTestAzdClient spins up a gRPC server with the supplied Project,

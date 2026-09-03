@@ -1204,6 +1204,7 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrUnsupportedScriptType": "pkg/ext: hook script validation, caught before command level",
 
 		// Errors that are always caught/handled before reaching MapError
+		"ErrArchivedTemplateDeclined":          "caught in cmd/init.go and converted to a successful cancellation result",
 		"ErrEnsureEnvPreReqBicepCompileFailed": "caught in cmd/env.go and cmd/up.go before reaching telemetry",
 		"ErrAzdOperationsNotEnabled":           "caught in pkg/project/dotnet_importer.go before reaching telemetry",
 		"ErrAzCliSecretNotFound":               "caught in pkg/cmdsubst before reaching telemetry",

@@ -91,9 +91,31 @@ func TestDestroy_PromptDeclineReturnsCancelled(t *testing.T) {
 	assert.Equal(t, exterrors.CodeCancelled, local.Code)
 }
 
-// TestDestroy_PromptRequiredFallsBackToForce verifies that under `--no-prompt`
-// (the host returns a structured prompt-required error) Destroy surfaces the actionable
-// --force guidance instead of proceeding, keeping CI/scripts deterministic.
+// TestDestroy_NoPromptRequiresForce verifies the real host contract: azd
+// propagates AZD_NO_PROMPT and a default-false Confirm would otherwise return
+// false without an error. The provider must detect no-prompt before issuing the
+// request and surface actionable --force guidance instead of cancellation.
+func TestDestroy_NoPromptRequiresForce(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "true")
+	prompt := &destroyConfirmStubPromptServer{confirmValue: false}
+	client := newDestroyConfirmTestClient(t, prompt)
+
+	p := &FoundryProvisioningProvider{azdClient: client, rgName: "rg-foundry-test", rgExplicit: true}
+	_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: false}, func(string) {})
+
+	require.Error(t, err)
+	assert.Equal(t, 0, prompt.confirmN, "no-prompt mode must not issue a confirmation request")
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Equal(t, exterrors.CodeDestroyRequiresForce, local.Code)
+	assert.Equal(t, azdext.LocalErrorCategoryValidation, local.Category)
+	assert.Contains(t, local.Message, "rg-foundry-test")
+	assert.Contains(t, local.Suggestion, "--force")
+}
+
+// TestDestroy_PromptRequiredFallsBackToForce verifies compatibility with hosts
+// that return a prompt-required error instead of the request's default value.
+// that return a prompt-required error instead of the request's default value.
 func TestDestroy_PromptRequiredFallsBackToForce(t *testing.T) {
 	promptRequired, err := status.New(codes.FailedPrecondition, "confirmation is required").WithDetails(
 		&azdext.ActionableErrorDetail{Suggestion: "run interactively to confirm"},

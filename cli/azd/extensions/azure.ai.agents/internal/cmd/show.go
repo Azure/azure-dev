@@ -159,7 +159,7 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	}
 
 	version, err := agentClient.GetAgentVersion(
-		ctx, a.Name, a.Version, DefaultAgentAPIVersion,
+		ctx, a.Name, a.Version, DefaultAgentAPIVersion, false,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to get agent version: %w", err)

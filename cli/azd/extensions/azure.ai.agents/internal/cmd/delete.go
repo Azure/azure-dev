@@ -43,7 +43,8 @@ func newDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 If --version is specified, only that version is deleted (the agent itself remains).
 
 If the agent has active sessions, deletion will fail unless --force is passed.
-Use --force to terminate active sessions and delete the agent.
+Use --force to terminate active sessions and delete the agent. In no-prompt
+mode, --force is also required as explicit consent for deletion.
 
 The agent name is resolved from the azd environment when omitted.`,
 		Example: `  # Delete agent (auto-resolves name from azure.yaml)
@@ -74,7 +75,7 @@ The agent name is resolved from the azd environment when omitted.`,
 
 	cmd.Flags().BoolVar(
 		&flags.force, "force", false,
-		"Force deletion even if the agent has active sessions",
+		"Force deletion even if the agent has active sessions; required as consent in no-prompt mode",
 	)
 
 	cmd.Flags().StringVar(
@@ -118,40 +119,8 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		)
 	}
 
-	// Confirmation prompt (skip in --no-prompt mode)
-	if !a.flags.noPrompt {
-		var message string
-		if a.flags.version != "" && a.flags.force {
-			message = fmt.Sprintf(
-				"Force-delete version %q of agent %q? This will terminate active sessions on this version.",
-				a.flags.version, agentName,
-			)
-		} else if a.flags.version != "" {
-			message = fmt.Sprintf("Delete version %q of agent %q?", a.flags.version, agentName)
-		} else if a.flags.force {
-			message = fmt.Sprintf(
-				"Force-delete agent %q? This will terminate all active sessions.",
-				agentName,
-			)
-		} else {
-			message = fmt.Sprintf("Delete agent %q and all its versions?", agentName)
-		}
-		defaultValue := false
-		resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message:      message,
-				DefaultValue: &defaultValue,
-			},
-		})
-		if promptErr != nil {
-			if exterrors.IsCancellation(promptErr) {
-				return exterrors.Cancelled("delete cancelled")
-			}
-			return fmt.Errorf("prompting for confirmation: %w", promptErr)
-		}
-		if resp.Value == nil || !*resp.Value {
-			return exterrors.Cancelled("delete cancelled by user")
-		}
+	if err := a.confirmDelete(ctx, azdClient, agentName); err != nil {
+		return err
 	}
 
 	endpoint, err := resolveAgentEndpoint(ctx, "", "")
@@ -191,10 +160,10 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		return classifyDeleteError(err, agentName)
 	}
 
-	// Best-effort: clean up saved session and conversation IDs (same as postdown hook).
+	// Best-effort: clean up saved session, conversation, and background Response state (same as postdown hook).
 	// Must run before cleanupEnvVars since it reads AGENT_{KEY}_ENDPOINT.
 	if envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
-		cleanupAgentSessionState(ctx, azdClient, envResp.Environment.Name, info.ServiceName)
+		cleanupAgentState(ctx, azdClient, envResp.Environment.Name, info.ServiceName)
 	}
 
 	// Best-effort: clear readiness and endpoint state after a successful delete.
@@ -209,6 +178,54 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		fmt.Println(string(data))
 	default:
 		fmt.Printf("Agent %q deleted.\n", agentName)
+	}
+
+	return nil
+}
+
+func (a *DeleteAction) confirmDelete(ctx context.Context, azdClient *azdext.AzdClient, agentName string) error {
+	if a.flags.noPrompt {
+		if a.flags.force {
+			return nil
+		}
+		return exterrors.Validation(
+			exterrors.CodeDeleteRequiresForce,
+			fmt.Sprintf("deleting agent %q requires explicit consent in no-prompt mode", agentName),
+			"re-run with --force to confirm deletion",
+		)
+	}
+
+	var message string
+	if a.flags.version != "" && a.flags.force {
+		message = fmt.Sprintf(
+			"Force-delete version %q of agent %q? This will terminate active sessions on this version.",
+			a.flags.version, agentName,
+		)
+	} else if a.flags.version != "" {
+		message = fmt.Sprintf("Delete version %q of agent %q?", a.flags.version, agentName)
+	} else if a.flags.force {
+		message = fmt.Sprintf(
+			"Force-delete agent %q? This will terminate all active sessions.",
+			agentName,
+		)
+	} else {
+		message = fmt.Sprintf("Delete agent %q and all its versions?", agentName)
+	}
+
+	resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      message,
+			DefaultValue: new(false),
+		},
+	})
+	if promptErr != nil {
+		if exterrors.IsCancellation(promptErr) {
+			return exterrors.Cancelled("delete cancelled")
+		}
+		return fmt.Errorf("prompting for confirmation: %w", promptErr)
+	}
+	if resp.Value == nil || !*resp.Value {
+		return exterrors.Cancelled("delete cancelled by user")
 	}
 
 	return nil

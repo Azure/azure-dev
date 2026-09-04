@@ -214,6 +214,23 @@ func TestOptionsValidate(t *testing.T) {
 			require.Error(t, err)
 		})
 
+	t.Run("layers with mappings set at top level is invalid", func(t *testing.T) {
+		// ie, you can't do this:
+		// infra:
+		//   inputs:			<-- once you use layers, being at the top level no longer makes sense.
+		//      LOCAL: SHARED
+		//   outputs:
+		//      OUTPUT: SHARED_OUTPUT
+		//   layers:
+		//
+		opts := &Options{
+			Inputs:  map[string]string{"LOCAL": "SHARED"},
+			Outputs: map[string]string{"OUTPUT": "SHARED_OUTPUT"},
+			Layers:  []Options{{Name: "l1"}},
+		}
+		require.Error(t, opts.Validate())
+	})
+
 	t.Run(
 		"layers with DeploymentStacks set at top level is invalid",
 		func(t *testing.T) {
@@ -243,19 +260,36 @@ func TestOptionsValidate(t *testing.T) {
 			)
 		})
 
-	t.Run("layer without path is invalid",
+	t.Run("provider-managed layer without path is valid",
 		func(t *testing.T) {
 			opts := &Options{
 				Layers: []Options{
-					{Name: "l1"},
+					{Name: "foundry", Provider: ProviderKind("microsoft.foundry")},
 				},
 			}
 			err := opts.Validate()
-			require.Error(t, err)
-			assert.Contains(
-				t, err.Error(), "path must be specified",
-			)
+			require.NoError(t, err)
 		})
+
+	t.Run("built-in layer without path is invalid", func(t *testing.T) {
+		opts := &Options{Layers: []Options{{Name: "bicep", Provider: Bicep}}}
+
+		err := opts.Validate()
+
+		require.ErrorContains(t, err, "path must be specified")
+	})
+
+	t.Run("layer with empty mapping destination is invalid", func(t *testing.T) {
+		opts := &Options{Layers: []Options{{
+			Name:     "foundry",
+			Provider: ProviderKind("microsoft.foundry"),
+			Outputs:  map[string]string{"PROJECT_ID": ""},
+		}}}
+
+		err := opts.Validate()
+
+		require.ErrorContains(t, err, "destination cannot be empty")
+	})
 
 	t.Run("multiple valid layers", func(t *testing.T) {
 		opts := &Options{

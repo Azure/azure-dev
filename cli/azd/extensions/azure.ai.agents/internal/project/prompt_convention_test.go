@@ -161,7 +161,7 @@ func TestResolvePromptAgentGraph_DefersHarnessCapabilities(t *testing.T) {
 			Instructions: "ok",
 			Harness:      agent_yaml.NewPromptHarness(harness),
 			Policies: []agent_yaml.Policy{
-				{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: "/subscriptions/sub/raiPolicies/strict"},
+				{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID},
 			},
 			Tools: tools,
 		}

@@ -39,7 +39,9 @@ func (c *AgentClient) CreateResponse(
 	defer resp.Body.Close()
 
 	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated, http.StatusAccepted) {
-		return nil, nil, runtime.NewResponseError(resp)
+		responseErr := runtime.NewResponseError(resp)
+		_ = resp.Body.Close()
+		return nil, nil, responseErr
 	}
 
 	body, err := io.ReadAll(resp.Body)

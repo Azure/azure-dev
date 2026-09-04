@@ -66,70 +66,43 @@ func (m *promptAgentManifest) instructions() string {
 	return strings.TrimSpace(m.definition.Instructions)
 }
 
-// looksLikePromptAgentManifest reports whether the given YAML content is a
-// prompt-agent manifest (`kind: prompt`) rather than a hosted/workflow agent
-// manifest or a unified azure.yaml.
-//
-// It deliberately inspects only the top-level `kind` so a manifest that is
-// otherwise malformed still routes to the prompt flow and fails there with a
-// prompt-specific error, instead of being silently handed to the hosted flow.
-func looksLikePromptAgentManifest(content []byte) bool {
-	var top map[string]any
-	if err := yaml.Unmarshal(content, &top); err != nil {
-		return false
-	}
-	kind, ok := top["kind"].(string)
-	if !ok {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(kind), string(agent_yaml.AgentKindPrompt))
+type explicitInitManifest struct {
+	content []byte
+	prompt  *promptAgentManifest
+	unified bool
 }
 
-// loadPromptAgentManifest parses prompt-agent manifest content into the seed
-// runInitManaged scaffolds from. sourceDir is the directory the content came
-// from and may be empty for a remote pointer.
-func loadPromptAgentManifest(content []byte, sourceDir string) (*promptAgentManifest, error) {
-	var definition agent_yaml.PromptAgent
-	if err := yaml.Unmarshal(content, &definition); err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("manifest is not a valid prompt agent: %s", err),
-			"fix the manifest to match the prompt agent schema (kind: prompt, name, model)",
-		)
-	}
-	if !strings.EqualFold(string(definition.Kind), string(agent_yaml.AgentKindPrompt)) {
-		return nil, exterrors.Validation(
-			exterrors.CodeUnsupportedAgentKind,
-			fmt.Sprintf("manifest declares kind %q, expected prompt", definition.Kind),
-			"use kind: prompt for prompt and managed agents",
-		)
-	}
-	return &promptAgentManifest{definition: definition, sourceDir: sourceDir}, nil
-}
-
-// loadPromptManifestFromPointer inspects `--manifest` (or the positional
-// template pointer it was resolved into) and returns the parsed prompt-agent
-// manifest when it declares `kind: prompt`.
-//
-// It returns (nil, nil) when no pointer was supplied, when the pointer cannot
-// be read, or when the content is not a prompt-agent manifest — all of which
-// mean "not my flow", leaving the hosted and unified-azure.yaml paths to handle
-// it exactly as before. Only a pointer that is unambiguously a prompt agent but
-// fails to parse surfaces an error.
-func loadPromptManifestFromPointer(
+// classifyExplicitInitManifest reads an explicitly supplied manifest once and
+// identifies the flows that must dispatch before --kind: unified azure.yaml
+// adoption and bare prompt/managed definitions. Other agent manifests continue
+// through the existing manifest loader.
+func classifyExplicitInitManifest(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
 	httpClient *http.Client,
-) (*promptAgentManifest, error) {
+) (*explicitInitManifest, error) {
 	pointer := strings.TrimSpace(flags.manifestPointer)
 	if pointer == "" {
 		return nil, nil
 	}
 
 	content, ok := readManifestContentForInitDetection(ctx, azdClient, pointer, httpClient)
-	if !ok || !looksLikePromptAgentManifest(content) {
+	if !ok {
 		return nil, nil
+	}
+	classified := &explicitInitManifest{content: content}
+	projectRoot := ""
+	if isLocalFilePath(pointer) {
+		projectRoot = filepath.Dir(pointer)
+	}
+	info, err := inspectAzureYaml(content, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	if info.hasServices {
+		classified.unified = true
+		return classified, nil
 	}
 
 	// A sibling instructions.md is only reachable for a local pointer; for a
@@ -141,7 +114,27 @@ func loadPromptManifestFromPointer(
 		}
 	}
 
-	return loadPromptAgentManifest(content, sourceDir)
+	var document map[string]any
+	if err := yaml.Unmarshal(content, &document); err == nil &&
+		strings.EqualFold(fmt.Sprint(document["kind"]), string(agent_yaml.AgentKindPrompt)) {
+		content, err = yaml.Marshal(map[string]any{"template": document})
+		if err != nil {
+			return nil, fmt.Errorf("encoding prompt agent manifest: %w", err)
+		}
+	}
+
+	manifest, parseErr := agent_yaml.LoadAndValidateAgentManifest(content)
+	if parseErr != nil {
+		// The existing hosted manifest path owns validation and its established
+		// error messages. Classification only needs to intercept prompt manifests.
+		return classified, nil
+	}
+	prompt, ok := manifest.Template.(agent_yaml.PromptAgent)
+	if !ok {
+		return classified, nil
+	}
+	classified.prompt = &promptAgentManifest{definition: prompt, sourceDir: sourceDir}
+	return classified, nil
 }
 
 // runInitManaged is the entry point for `azd ai agent init` when the user has
@@ -152,8 +145,7 @@ func loadPromptManifestFromPointer(
 //  1. Scaffolds (or reuses) an azd project + infra via ensureProject — the
 //     same azd-ai-starter-basic template the hosted flow uses.
 //  2. Writes an agent.yaml (kind: prompt) into the service directory.
-//  3. Adds an azure.yaml service entry (Host=azure.ai.agent) whose config
-//     carries the harness connection details in a promptAgent block.
+//  3. Adds an inline azure.yaml service entry (Host=azure.ai.agent).
 //
 // The create/invoke/delete then happen through the service-target provider
 // during `azd deploy` / `azd up`, exactly like hosted agents — no bespoke
@@ -298,44 +290,9 @@ func runInitManaged(
 		}
 	}
 
-	promptAgent := agent_yaml.PromptAgent{
-		AgentDefinition: agent_yaml.AgentDefinition{
-			Name: agentName,
-			Kind: agent_yaml.AgentKindPrompt,
-		},
-		Model: model,
-		// A nil harness is omitted from azure.yaml entirely, which is what
-		// distinguishes a plain prompt agent from a managed (harnessed) one.
-		Harness: promptScaffoldHarness(harness, manifest),
-		// Instructions are inline, matching the prompt-agent API schema.
-		Instructions: promptScaffoldInstructions(instructions),
-	}
-	// Carry the authored parts of a supplied manifest through to the scaffold.
-	// Tools, skills, connections, and the toolbox reference are the reason a
-	// user supplies a template at all; dropping them would silently produce a
-	// bare agent that does not match the template they asked for.
-	//
-	// displayName and metadata come along for the same reason: a hosted agent's
-	// azure.yaml carries description and metadata.tags straight from its
-	// template, and both reach the same CreateAgentRequest fields for a prompt
-	// agent, so a prompt agent scaffolded from a template should not silently
-	// lose the catalog labels the template author wrote.
-	if manifest != nil {
-		promptAgent.Skills = manifest.definition.Skills
-		promptAgent.Tools = manifest.definition.Tools
-		promptAgent.ToolChoice = manifest.definition.ToolChoice
-		promptAgent.StructuredInputs = manifest.definition.StructuredInputs
-		promptAgent.Policies = manifest.definition.Policies
-		promptAgent.Connections = manifest.definition.Connections
-		promptAgent.Toolbox = manifest.definition.Toolbox
-		promptAgent.Memory = manifest.definition.Memory
-		promptAgent.AgentDefinition.DisplayName = manifest.definition.DisplayName
-		promptAgent.AgentDefinition.Metadata = manifest.definition.Metadata
-	}
-	if strings.TrimSpace(description) != "" {
-		desc := strings.TrimSpace(description)
-		promptAgent.AgentDefinition.Description = &desc
-	}
+	promptAgent := promptAgentForScaffold(
+		manifest, agentName, description, model, instructions, harness,
+	)
 	// Applied after the manifest carry-over so a manifest that declares its own
 	// policies keeps them; resolvePromptRaiPolicy returns "not attached" in that
 	// case, making this a no-op.
@@ -386,6 +343,29 @@ func runInitManaged(
 	return nil
 }
 
+func promptAgentForScaffold(
+	manifest *promptAgentManifest,
+	agentName, description, model, instructions, harness string,
+) agent_yaml.PromptAgent {
+	// Start from the complete authored definition so fields added to the prompt
+	// contract are not silently dropped by init. Resolved flags and prompts are
+	// applied afterward and remain authoritative.
+	promptAgent := agent_yaml.PromptAgent{}
+	if manifest != nil {
+		promptAgent = manifest.definition
+	}
+	promptAgent.Kind = agent_yaml.AgentKindPrompt
+	promptAgent.Name = agentName
+	promptAgent.Model = model
+	promptAgent.Instructions = promptScaffoldInstructions(instructions)
+	promptAgent.Harness = promptScaffoldHarness(harness, manifest)
+	promptAgent.Description = nil
+	if description = strings.TrimSpace(description); description != "" {
+		promptAgent.Description = new(description)
+	}
+	return promptAgent
+}
+
 // addPromptAgentService registers the prompt agent as an azure.yaml service
 // entry with Host=azure.ai.agent. Unlike hosted agents there is no
 // Docker/Language — the harness owns the runtime.
@@ -396,11 +376,8 @@ func runInitManaged(
 // accepts a definition behind a `$ref:` include; init does not scaffold one
 // because a second file adds nothing when there is only one agent to describe.
 //
-// No promptAgent config block is written. Every value it used to carry —
-// subscription, resource group, workspace, project endpoint — is recorded in
-// the azd environment by `azd provision` and read from there at deploy time, so
-// the block could only have held a copy of the environment or a set of ${VAR}
-// references pointing back at it.
+// The Foundry target is recorded in the azd environment by `azd provision` and
+// read from there at deploy time, keeping azure.yaml portable.
 //
 // Model deployments are deliberately NOT recorded here: they belong to the
 // sibling azure.ai.project service that emitResourceServices writes, the

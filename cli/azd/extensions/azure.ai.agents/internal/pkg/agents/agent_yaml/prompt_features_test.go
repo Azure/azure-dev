@@ -167,7 +167,7 @@ func TestValidateRaiPolicyName(t *testing.T) {
 		{name: "empty is left to the required-field check", policy: "", wantErr: false},
 		{name: "whitespace only", policy: "   ", wantErr: false},
 		{name: "full arm id", policy: testRaiPolicyID, wantErr: false},
-		{name: "short but well formed arm id", policy: "/subscriptions/s/raiPolicies/p", wantErr: false},
+		{name: "incomplete arm id", policy: "/subscriptions/s/raiPolicies/p", wantErr: true},
 		{name: "surrounding whitespace tolerated", policy: "  " + testRaiPolicyID + "  ", wantErr: false},
 		// The scaffold writes ${RAI_POLICY_ID}; the concrete ID is substituted
 		// on the deploy path and re-validated there.

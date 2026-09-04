@@ -174,23 +174,20 @@ type AgentServiceTargetProvider struct {
 	azdClient           *azdext.AzdClient
 	serviceConfig       *azdext.ServiceConfig
 	agentDefinitionPath string
+	agentDefinitionRef  string
 	projectPath         string
 	servicePath         string
 	// deployContextReady is set by every successful ensureDeployContext path;
 	// agentDefinitionPath is only set for the file-based and env-override paths
 	// (not the inline unified shape), so both are checked as the idempotency guard.
 	deployContextReady bool
-	// serviceConfigResolved tracks whether serviceConfig has had
-	// its local $ref includes expanded. Cleared whenever a newer
-	// config is adopted.
-	serviceConfigResolved bool
-	credential            azcore.TokenCredential
-	tenantId              string
-	env                   *azdext.Environment
-	foundryProject        *arm.ResourceID
-	projectServices       map[string]*azdext.ServiceConfig
-	dependencyEnabled     dependencyEnabled
-	dependencyEnv         map[string]string
+	credential         azcore.TokenCredential
+	tenantId           string
+	env                *azdext.Environment
+	foundryProject     *arm.ResourceID
+	projectServices    map[string]*azdext.ServiceConfig
+	dependencyEnabled  dependencyEnabled
+	dependencyEnv      map[string]string
 }
 
 const (
@@ -205,17 +202,17 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 	}
 }
 
-// Initialize stores the service config. It is intentionally cheap: azd core
-// calls it on every service-target for every action. Heavy work (resolving
-// agent.yaml, tenant lookup, credential) lives in ensureDeployContext and runs
-// only when a deploy-time entrypoint needs it.
+// Initialize stores and validates the service config. Heavy work such as
+// resolving agent.yaml, tenant lookup, and credential creation remains deferred
+// to deploy-time entrypoints; an explicit $ref is resolved here for validation.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
-	p.adoptServiceConfig(serviceConfig)
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return err
+	}
 	props := ServiceConfigProps(serviceConfig)
-	hasRef := props != nil && props.GetFields()["$ref"] != nil
 	needsLegacyLifecycleCheck := props == nil && strings.TrimSpace(serviceConfig.GetImage()) != "" &&
 		!serviceConfig.GetDocker().GetImagePassthrough()
-	if hasRef || needsLegacyLifecycleCheck {
+	if needsLegacyLifecycleCheck {
 		proj, err := p.azdClient.Project().Get(ctx, nil)
 		if err != nil {
 			return exterrors.Dependency(
@@ -225,22 +222,16 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 			)
 		}
 		p.projectPath = proj.GetProject().GetPath()
-		if hasRef {
-			if err := p.resolveServiceConfig(); err != nil {
-				return err
-			}
-		} else {
-			agentDef, _, source, err := LoadAgentDefinition(serviceConfig, p.projectPath)
-			if err != nil {
-				return err
-			}
-			if source.IsLegacy() && strings.TrimSpace(agentDef.RegistryConnectionID) != "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidServiceConfig,
-					"registryConnectionId requires docker.imagePassthrough: true",
-					"enable docker.imagePassthrough for the private pre-built image",
-				)
-			}
+		agentDef, _, source, err := LoadAgentDefinition(serviceConfig, p.projectPath)
+		if err != nil {
+			return err
+		}
+		if source.IsLegacy() && strings.TrimSpace(agentDef.RegistryConnectionID) != "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				"registryConnectionId requires docker.imagePassthrough: true",
+				"enable docker.imagePassthrough for the private pre-built image",
+			)
 		}
 	}
 	return validateRegistryConnectionServiceConfig(p.serviceConfig)
@@ -291,15 +282,52 @@ func (p *AgentServiceTargetProvider) adoptServiceConfig(serviceConfig *azdext.Se
 		return
 	}
 	p.serviceConfig = serviceConfig
-	p.serviceConfigResolved = false
+	p.agentDefinitionRef = declaredAgentDefinitionRef(serviceConfig)
 }
 
-// resolveServiceConfig expands local $ref includes on the current
-// service config. It is idempotent per config instance, so repeat
-// calls stay cheap while a freshly adopted config is always
-// re-resolved.
+func serviceConfigHasRef(serviceConfig *azdext.ServiceConfig) bool {
+	if serviceConfig == nil {
+		return false
+	}
+	for _, props := range []*structpb.Struct{
+		serviceConfig.GetAdditionalProperties(),
+		serviceConfig.GetConfig(),
+	} {
+		if props != nil && props.GetFields()[AgentDefinitionRefKey] != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// adoptAndResolveServiceConfig expands a freshly supplied service config before
+// lifecycle methods decide whether to use the prompt or hosted agent path.
+func (p *AgentServiceTargetProvider) adoptAndResolveServiceConfig(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+) error {
+	p.adoptServiceConfig(serviceConfig)
+	if !serviceConfigHasRef(p.serviceConfig) {
+		return nil
+	}
+	if p.projectPath == "" {
+		proj, err := p.azdClient.Project().Get(ctx, nil)
+		if err != nil {
+			return exterrors.Dependency(
+				exterrors.CodeProjectNotFound,
+				fmt.Sprintf("failed to get project while resolving agent service: %s", err),
+				"run 'azd init' to initialize your project",
+			)
+		}
+		p.projectPath = proj.GetProject().GetPath()
+	}
+	return p.resolveServiceConfig()
+}
+
+// resolveServiceConfig expands local $ref includes on the current service
+// config. Successful expansion removes the $ref, making repeat calls no-ops.
 func (p *AgentServiceTargetProvider) resolveServiceConfig() error {
-	if p.serviceConfigResolved || p.serviceConfig == nil || p.projectPath == "" {
+	if p.serviceConfig == nil || p.projectPath == "" || !serviceConfigHasRef(p.serviceConfig) {
 		return nil
 	}
 	if err := ResolveServiceConfigInPlace(p.serviceConfig, p.projectPath); err != nil {
@@ -313,15 +341,13 @@ func (p *AgentServiceTargetProvider) resolveServiceConfig() error {
 			"fix the agent service configuration in azure.yaml",
 		)
 	}
-	p.serviceConfigResolved = true
 	return nil
 }
 
 // ensureDeployContext lazily resolves the agent definition file, the azd
-// environment, the tenant, and the credential. Idempotent via the
-// agentDefinitionPath short-circuit. The short-circuit still resolves
-// the service config so a newer one adopted after the first
-// deploy-time call is expanded before consumers read it.
+// environment, the tenant, and the credential. Idempotent via
+// deployContextReady and agentDefinitionPath. The short-circuit still resolves
+// a newer service config before consumers read it.
 func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) error {
 	if p.deployContextReady || p.agentDefinitionPath != "" {
 		return p.resolveServiceConfig()
@@ -341,10 +367,8 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 			"run 'azd init' to initialize your project",
 		)
 	}
-	// Read the include directive before resolving it away: ResolveServiceConfigInPlace
-	// replaces the `$ref` key with the referenced file's contents, so this is the
-	// only point where the file the definition came from is still knowable.
-	declaredRef := declaredAgentDefinitionRef(p.serviceConfig)
+	// adoptServiceConfig records the include before resolution removes it.
+	declaredRef := p.agentDefinitionRef
 	p.projectPath = proj.Project.Path
 	p.projectServices = proj.GetProject().GetServices()
 	p.dependencyEnabled = p.isDependencyEnabled
@@ -723,6 +747,9 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	serviceConfig *azdext.ServiceConfig,
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return nil, err
+	}
 	// Prompt agents expose a single workspace-rooted Responses endpoint on the
 	// harness. Build it from the service config, resolved against the azd
 	// environment so `azd show` reports the same target deploy published.
@@ -837,7 +864,9 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	p.adoptServiceConfig(serviceConfig)
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return nil, err
+	}
 	if p.isPromptAgentService() {
 		return &azdext.TargetResource{SubscriptionId: subscriptionId}, nil
 	}
@@ -905,7 +934,9 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	p.adoptServiceConfig(serviceConfig)
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return nil, err
+	}
 	// Prompt agents have no container/code to build — the harness owns the
 	// runtime. Skip packaging entirely.
 	if p.isPromptAgentService() {
@@ -1051,7 +1082,9 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	p.adoptServiceConfig(serviceConfig)
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return nil, err
+	}
 	// Prompt agents have no container image to publish.
 	if p.isPromptAgentService() {
 		return &azdext.ServicePublishResult{}, nil
@@ -1564,7 +1597,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	p.adoptServiceConfig(serviceConfig)
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return nil, err
+	}
 	// Prompt agents are created on the managed harness, not the Foundry
 	// service. Dispatch to the dedicated harness deploy path before any
 	// ARM/Foundry resolution the hosted path requires. The deploy context still

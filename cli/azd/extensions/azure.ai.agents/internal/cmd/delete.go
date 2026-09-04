@@ -405,8 +405,8 @@ func classifyDeleteError(err error, agentName string) error {
 }
 
 // runPromptDelete deletes a prompt (kind=managed) agent from the harness. It
-// is dispatched from Run() when the resolved azure.ai.agent service carries a
-// promptAgent config block. The agent is removed from the harness directly;
+// is dispatched from Run() when the resolved azure.ai.agent service declares
+// kind: prompt. The agent is removed from the harness directly;
 // to tear down the whole project (infra included) use `azd down`.
 //
 // Versioning is not supported for prompt agents today — the backend does not

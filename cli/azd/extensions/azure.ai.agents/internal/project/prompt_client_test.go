@@ -24,28 +24,10 @@ func TestPromptAgentSettingsValidateRequiresFoundryProject(t *testing.T) {
 }
 
 func TestPromptAgentSettingsValidateRejectsAuthenticatedCustomEndpoint(t *testing.T) {
-	t.Setenv(PromptNoAuthEnvVar, "")
 	settings := DefaultPromptAgentSettings()
 	settings.ProjectEndpoint = "https://attacker.example/api/projects/project"
 
 	require.ErrorContains(t, settings.Validate(), "HTTPS Foundry project URL")
-}
-
-func TestPromptAgentSettingsValidateAllowsNoAuthCustomEndpoint(t *testing.T) {
-	t.Setenv(PromptNoAuthEnvVar, "true")
-	settings := DefaultPromptAgentSettings()
-	settings.ProjectEndpoint = "http://localhost:5000/api/projects/project"
-
-	require.NoError(t, settings.Validate())
-}
-
-func TestNewPromptAgentClientUsesFoundryProject(t *testing.T) {
-	t.Setenv(PromptNoAuthEnvVar, "true")
-	settings := DefaultPromptAgentSettings()
-	settings.ProjectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
-	client, err := NewPromptAgentClient(&settings, nil)
-	require.NoError(t, err)
-	require.NotNil(t, client)
 }
 
 func TestPromptAgentResponsesEndpoint(t *testing.T) {
@@ -85,17 +67,4 @@ func TestPromptAgentSettingsFromEnvUsesFoundryEndpointOnly(t *testing.T) {
 		"AZURE_AI_PROJECT_ENDPOINT": "https://legacy.services.ai.azure.com/api/projects/old",
 	})
 	require.Empty(t, settings.ProjectEndpoint)
-}
-
-func TestResolvePromptAgentSettingsExpandsConfiguredValues(t *testing.T) {
-	settings, err := ResolvePromptAgentSettings(&PromptAgentSettings{
-		ProjectEndpoint: "${PROJECT_ENDPOINT}",
-		ModelEndpoint:   "${MODEL_ENDPOINT}",
-	}, map[string]string{
-		"PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
-		"MODEL_ENDPOINT":   "https://acct.services.ai.azure.com",
-	})
-	require.NoError(t, err)
-	require.Equal(t, "https://acct.services.ai.azure.com/api/projects/project", settings.ProjectEndpoint)
-	require.Equal(t, "https://acct.services.ai.azure.com", settings.ModelEndpoint)
 }

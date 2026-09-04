@@ -8,13 +8,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
-)
-
-// raiPolicyIDPrefix and raiPolicyIDSegment are the two fixed parts of a RAI
-// policy's ARM resource ID.
-const (
-	raiPolicyIDPrefix  = "/subscriptions/"
-	raiPolicyIDSegment = "/raiPolicies/"
+	"azureaiagent/internal/pkg/azure"
 )
 
 // ValidateRaiPolicyName rejects a policy value that is not a full ARM resource
@@ -41,7 +35,7 @@ func ValidateRaiPolicyName(name string) error {
 	if strings.Contains(trimmed, "${") {
 		return nil
 	}
-	if strings.HasPrefix(trimmed, raiPolicyIDPrefix) && strings.Contains(trimmed, raiPolicyIDSegment) {
+	if _, ok := azure.ParseRaiPolicyResourceID(trimmed); ok {
 		return nil
 	}
 	return fmt.Errorf(

@@ -734,10 +734,6 @@ func TestInitializeResolvesPromptAgentFileRef(t *testing.T) {
 
 	props, err := structpb.NewStruct(map[string]any{"$ref": "./svc/triage.yaml"})
 	require.NoError(t, err)
-	config, err := structpb.NewStruct(map[string]any{
-		"promptAgent": map[string]any{"projectEndpoint": "https://example.test"},
-	})
-	require.NoError(t, err)
 
 	provider := &AgentServiceTargetProvider{
 		azdClient: newInitializeTestClient(t, projectRoot),
@@ -747,12 +743,59 @@ func TestInitializeResolvesPromptAgentFileRef(t *testing.T) {
 		Host:                 "azure.ai.agent",
 		RelativePath:         "svc",
 		AdditionalProperties: props,
-		Config:               config,
 	}))
 
 	require.NoError(t, provider.ensureDeployContext(t.Context()))
-	require.Empty(t, provider.agentDefinitionPath)
+	require.Equal(t, filepath.Join(serviceDir, "triage.yaml"), provider.agentDefinitionPath)
 	require.True(t, ServiceIsPromptAgent(provider.serviceConfig))
+}
+
+func TestLifecycleResolvesFreshPromptAgentRefBeforeDispatch(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	agentPath := filepath.Join(projectRoot, "agent.yaml")
+	require.NoError(t, os.WriteFile(
+		agentPath,
+		[]byte("kind: prompt\nname: ref-agent\nmodel: gpt-5-mini\ninstructions: hi\n"),
+		0o600,
+	))
+	newConfig := func() *azdext.ServiceConfig {
+		return &azdext.ServiceConfig{
+			Name:                 "ref-agent",
+			Host:                 foundryAgentHost,
+			AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./agent.yaml"}),
+		}
+	}
+
+	provider := &AgentServiceTargetProvider{azdClient: newInitializeTestClient(t, projectRoot)}
+	require.NoError(t, provider.Initialize(t.Context(), newConfig()))
+
+	packageConfig := newConfig()
+	packageResult, err := provider.Package(t.Context(), packageConfig, &azdext.ServiceContext{}, func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, packageResult)
+	require.True(t, ServiceIsPromptAgent(packageConfig))
+
+	publishConfig := newConfig()
+	publishResult, err := provider.Publish(
+		t.Context(), publishConfig, &azdext.ServiceContext{}, &azdext.TargetResource{},
+		&azdext.PublishOptions{}, func(string) {},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, publishResult)
+	require.True(t, ServiceIsPromptAgent(publishConfig))
+
+	targetConfig := newConfig()
+	defaultCalled := false
+	target, err := provider.GetTargetResource(t.Context(), "subscription", targetConfig, func() (*azdext.TargetResource, error) {
+		defaultCalled = true
+		return nil, errors.New("default resolver must not be called")
+	})
+	require.NoError(t, err)
+	require.False(t, defaultCalled)
+	require.Equal(t, "subscription", target.SubscriptionId)
+	require.True(t, ServiceIsPromptAgent(targetConfig))
 }
 
 // TestInitializeRejectsMissingPromptAgentFileRef pins that a `$ref` naming a file
@@ -772,10 +815,6 @@ func TestInitializeRejectsMissingPromptAgentFileRef(t *testing.T) {
 
 	props, err := structpb.NewStruct(map[string]any{"$ref": "./svc/missing.yaml"})
 	require.NoError(t, err)
-	config, err := structpb.NewStruct(map[string]any{
-		"promptAgent": map[string]any{"projectEndpoint": "https://example.test"},
-	})
-	require.NoError(t, err)
 
 	provider := &AgentServiceTargetProvider{
 		azdClient: newInitializeTestClient(t, projectRoot),
@@ -785,7 +824,6 @@ func TestInitializeRejectsMissingPromptAgentFileRef(t *testing.T) {
 		Host:                 "azure.ai.agent",
 		RelativePath:         "svc",
 		AdditionalProperties: props,
-		Config:               config,
 	})
 
 	require.Error(t, err)
@@ -881,29 +919,6 @@ func TestDeployTimeServiceConfigReplacesInitializeSnapshot(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, "westus2", prep.resolvedEnvVars["AGENT_REGION"])
-}
-
-func TestAdoptServiceConfigIgnoresNilAndKeepsResolvedState(t *testing.T) {
-	t.Parallel()
-
-	existing := &azdext.ServiceConfig{Name: "echo"}
-	provider := &AgentServiceTargetProvider{
-		serviceConfig:         existing,
-		serviceConfigResolved: true,
-	}
-
-	// A nil config (or the same instance) must not drop the resolved
-	// state, otherwise every repeat call would re-expand $ref
-	// includes.
-	provider.adoptServiceConfig(nil)
-	require.Same(t, existing, provider.serviceConfig)
-	require.True(t, provider.serviceConfigResolved)
-
-	provider.adoptServiceConfig(existing)
-	require.True(t, provider.serviceConfigResolved)
-
-	provider.adoptServiceConfig(&azdext.ServiceConfig{Name: "echo"})
-	require.False(t, provider.serviceConfigResolved)
 }
 
 func TestBuildVoiceWSProtocolURL(t *testing.T) {

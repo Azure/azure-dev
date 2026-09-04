@@ -1392,35 +1392,53 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				Timeout: 30 * time.Second,
 			}
 
+			// An explicit manifest is authoritative. --kind selects a flow only
+			// when no manifest was supplied; accepting both while allowing --kind
+			// to bypass the manifest would silently ignore user input.
+			var explicitManifest *explicitInitManifest
+			if userProvidedManifest {
+				explicitManifest, err = classifyExplicitInitManifest(ctx, azdClient, flags, httpClient)
+				if err != nil {
+					return err
+				}
+				if cmd.Flags().Changed("kind") {
+					warnManifestOverridesKind(os.Stderr, flags)
+				}
+				if explicitManifest != nil && explicitManifest.unified {
+					if err := runInitFromAzureYaml(
+						ctx, flags, azdClient, httpClient, explicitManifest.content,
+					); err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+					return ejectInfraAfterInit(ctx, infraProvider, azdClient)
+				}
+				if explicitManifest != nil && explicitManifest.prompt != nil {
+					harness, harnessErr := resolveInitHarness(
+						flags.harness, explicitManifest.prompt.definition.HarnessType(),
+					)
+					if harnessErr != nil {
+						return harnessErr
+					}
+					return runInitManaged(ctx, flags, azdClient, harness, explicitManifest.prompt)
+				}
+			}
+
 			// Ask the user which agent kind to initialize, before any
 			// hosted-specific manifest/template detection runs. When the user
 			// has already passed a manifest, --src, or any other hosted-only
 			// signal we skip the prompt and stay on the hosted path; only an
 			// otherwise-blank invocation can branch into the prompt-agent flow.
 			//
-			// An explicit --kind flag always wins: it bypasses both the prompt
-			// and the hosted-signal gating so automation can select a
-			// prompt-agent runtime non-interactively. A harness is an optional
-			// capability of kind: prompt, not a separate agent kind.
-			//
-			// A supplied --manifest (or positional template) that declares
-			// `kind: prompt` also routes here, with or without --kind, so a
-			// prompt-agent template scaffolds a prompt agent instead of being
-			// mis-handled by the hosted generator. `--kind hosted` opts out of
-			// that peek entirely so the hosted path never pays for an extra
-			// fetch of a remote pointer.
+			// With no explicit manifest, --kind selects the runtime directly. A
+			// harness is an optional capability of kind: prompt, not a separate
+			// agent kind.
 			requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
 			isPromptVoice := strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
 			if err := validateInitKindHarness(requestedKind, flags.kind, flags.harness, isPromptVoice); err != nil {
 				return err
-			}
-
-			var promptManifest *promptAgentManifest
-			if requestedKind != AgentKindChoiceHosted && !isPromptVoice {
-				promptManifest, err = loadPromptManifestFromPointer(ctx, azdClient, flags, httpClient)
-				if err != nil {
-					return err
-				}
 			}
 
 			switch {
@@ -1429,18 +1447,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if harnessErr != nil {
 					return harnessErr
 				}
-				return runInitManaged(ctx, flags, azdClient, harness, promptManifest)
-			case promptManifest != nil:
-				// No --kind: the manifest's own harness decides the flavor, so a
-				// template with a `harness:` block scaffolds a managed agent and a
-				// harness-less one a plain prompt agent. --harness still wins.
-				harness, harnessErr := resolveInitHarness(
-					flags.harness, promptManifest.definition.HarnessType(),
-				)
-				if harnessErr != nil {
-					return harnessErr
-				}
-				return runInitManaged(ctx, flags, azdClient, harness, promptManifest)
+				return runInitManaged(ctx, flags, azdClient, harness, nil)
 			case flags.kind == "":
 				hostedSignalsPresent := userProvidedManifest ||
 					flags.src != "" ||
@@ -2097,7 +2104,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"(model + instructions; Foundry runs the agent), or 'prompt-voice' (a declarative "+
 			"voice agent; use --model for the speech-to-speech model and --voice for the output "+
 			"voice agent). When omitted, "+
-			"the kind is taken from --manifest when it declares one, otherwise you are prompted "+
+			"when --manifest is supplied, the manifest determines the runtime and --kind is ignored; "+
+			"otherwise you are prompted "+
 			"interactively. With --no-prompt, 'prompt' requires --agent-name and "+
 			"either --model or --model-deployment (unless supplied by --manifest).")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
@@ -2123,6 +2131,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Ignored for hosted agents and when --manifest already declares policies.")
 
 	return cmd
+}
+
+func warnManifestOverridesKind(writer io.Writer, flags *initFlags) {
+	fmt.Fprintf(writer, "%s", output.WithWarningFormat(
+		"WARNING: Ignoring --kind because --manifest determines the agent type.\n",
+	))
+	flags.kind = ""
 }
 
 func validateInitKindHarness(requestedKind agentKindChoice, rawKind, harness string, isPromptVoice bool) error {

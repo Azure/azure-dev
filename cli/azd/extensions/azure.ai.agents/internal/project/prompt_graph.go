@@ -29,7 +29,6 @@ const (
 	nodeMemoryStore promptNodeKind = "memory_store"
 	nodeSkill       promptNodeKind = "skill"
 	nodeToolbox     promptNodeKind = "toolbox"
-	nodePolicy      promptNodeKind = "policy"
 )
 
 // promptNode is a single dependency in the prompt-agent deploy graph. Validate
@@ -172,16 +171,6 @@ func newPromptGraph(
 	// Connections are provisioned by sibling azure.ai.connection services. This
 	// node only verifies their deployment markers before publishing the agent.
 	if node := connectionsNode(g); node != nil {
-		g.nodes = append(g.nodes, *node)
-	}
-
-	// Guardrails are checked just before the agent node so a policy that does
-	// not exist is reported by name instead of as an opaque service rejection
-	// from the create call, and is replaced with the account's built-in default
-	// rather than failing the deploy.
-	if node := policiesNode(g, func() (raiPolicyLister, error) {
-		return azureRaiPolicyLister(credential)
-	}); node != nil {
 		g.nodes = append(g.nodes, *node)
 	}
 

@@ -24,7 +24,7 @@ const (
 	// agent.yaml references the variable rather than the ID itself: the ID
 	// embeds a subscription, resource group and account, so writing it literally
 	// would pin the scaffold to the machine that ran init. This mirrors how the
-	// promptAgent block in azure.yaml already states its Foundry target.
+	// azd environment already states its Foundry target.
 	raiPolicyEnvVar = "RAI_POLICY_ID"
 
 	// raiPolicyRef is the value written into agent.yaml's policies[].raiPolicyName.

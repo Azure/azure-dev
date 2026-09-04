@@ -26,25 +26,6 @@ type promptServiceContext struct {
 	Agent       agent_yaml.PromptAgent
 }
 
-// promptSettingsFromService extracts the optional `promptAgent` override block
-// from a service config.
-//
-// A nil result is the normal case: `azd ai agent init` no longer writes the
-// block, because everything it carried is read from the azd environment. It is
-// returned as-is (not resolved) so the caller can layer it the same way deploy
-// does. It is NOT a prompt-agent discriminator — use
-// [project.ServiceIsPromptAgent] or the resolved definition for that.
-func promptSettingsFromService(svc *azdext.ServiceConfig) *project.PromptAgentSettings {
-	if svc == nil || svc.Config == nil {
-		return nil
-	}
-	var cfg project.ServiceTargetAgentConfig
-	if err := project.UnmarshalStruct(svc.Config, &cfg); err != nil {
-		return nil
-	}
-	return cfg.PromptAgent
-}
-
 // promptDefinitionForService returns the prompt-agent definition backing a
 // service, and whether the service is a prompt agent at all.
 //
@@ -98,13 +79,13 @@ func resolvePromptAgentService(
 
 	// Resolve the harness target exactly as deploy does: the subscription,
 	// resource group, workspace, and project endpoint come from the azd
-	// environment, and the optional promptAgent block is layered on top. The
+	// environment. The
 	// environment read is best-effort — when it cannot be read, expansion falls
 	// back to the process environment and unset references collapse to the
 	// defaults, which is what lets these commands run in a project that has not
 	// been provisioned yet.
 	envValues, envErr := promptEnvValues(ctx, azdClient)
-	settings, err := project.ResolvePromptAgentSettings(promptSettingsFromService(svc), envValues)
+	settings, err := project.ResolvePromptAgentSettings(envValues)
 	if err != nil {
 		return nil, false, err
 	}

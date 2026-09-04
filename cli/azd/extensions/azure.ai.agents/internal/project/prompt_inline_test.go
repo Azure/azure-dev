@@ -223,10 +223,9 @@ func TestPromptAgentInlineAcceptsPassThroughTools(t *testing.T) {
 	require.Len(t, got.Tools, 1)
 }
 
-// TestResolvePromptAgentSettingsWithoutConfigBlock is the regression test for
-// removing the promptAgent block from scaffolding: the harness target must
-// resolve from the azd environment alone.
-func TestResolvePromptAgentSettingsWithoutConfigBlock(t *testing.T) {
+// TestResolvePromptAgentSettingsFromEnvironment verifies the harness target
+// resolves entirely from the azd environment.
+func TestResolvePromptAgentSettingsFromEnvironment(t *testing.T) {
 	t.Parallel()
 
 	env := map[string]string{
@@ -235,58 +234,11 @@ func TestResolvePromptAgentSettingsWithoutConfigBlock(t *testing.T) {
 		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com/api/projects/p",
 	}
 
-	settings, err := ResolvePromptAgentSettings(nil, env)
+	settings, err := ResolvePromptAgentSettings(env)
 	require.NoError(t, err)
 	require.Equal(t, "sub-1", settings.SubscriptionID)
 	require.Equal(t, "rg-1", settings.ResourceGroup)
 	require.Equal(t, "https://proj.services.ai.azure.com/api/projects/p", settings.ProjectEndpoint)
-}
-
-// TestResolvePromptAgentSettingsConfigBlockWins confirms a hand-authored block
-// still overrides the environment, which is what keeps it useful as an escape
-// hatch for the advanced knobs the environment does not carry.
-func TestResolvePromptAgentSettingsConfigBlockWins(t *testing.T) {
-	t.Parallel()
-
-	env := map[string]string{
-		"AZURE_SUBSCRIPTION_ID":    "sub-from-env",
-		"AZURE_RESOURCE_GROUP":     "rg-from-env",
-		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com/api/projects/p",
-	}
-	configured := &PromptAgentSettings{
-		ResourceGroup: "rg-pinned",
-		APIVersion:    "2099-01-01",
-	}
-
-	settings, err := ResolvePromptAgentSettings(configured, env)
-	require.NoError(t, err)
-	require.Equal(t, "rg-pinned", settings.ResourceGroup, "authored value wins")
-	require.Equal(t, "sub-from-env", settings.SubscriptionID, "unset fields still fall back to the environment")
-	require.Equal(t, "2099-01-01", settings.APIVersion)
-}
-
-// TestResolvePromptAgentSettingsExpandsLegacyRefs confirms projects scaffolded
-// before the block was removed — whose every field is a ${VAR} reference — keep
-// resolving to the same values.
-func TestResolvePromptAgentSettingsExpandsLegacyRefs(t *testing.T) {
-	t.Parallel()
-
-	env := map[string]string{
-		"AZURE_SUBSCRIPTION_ID":    "sub-1",
-		"AZURE_RESOURCE_GROUP":     "rg-1",
-		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com/api/projects/p",
-	}
-	legacy := &PromptAgentSettings{
-		SubscriptionID:  "${AZURE_SUBSCRIPTION_ID}",
-		ResourceGroup:   "${AZURE_RESOURCE_GROUP}",
-		ProjectEndpoint: "${FOUNDRY_PROJECT_ENDPOINT}",
-	}
-
-	settings, err := ResolvePromptAgentSettings(legacy, env)
-	require.NoError(t, err)
-	require.Equal(t, "sub-1", settings.SubscriptionID)
-	require.Equal(t, "rg-1", settings.ResourceGroup)
-	require.Equal(t, env["FOUNDRY_PROJECT_ENDPOINT"], settings.ProjectEndpoint)
 }
 
 // TestServiceIsPromptAgent requires an explicit prompt kind.

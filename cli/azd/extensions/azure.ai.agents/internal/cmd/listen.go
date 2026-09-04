@@ -629,8 +629,8 @@ func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azde
 			continue
 		}
 		// Resolved the same way deploy does: the harness target comes from the
-		// azd environment, with the optional promptAgent block layered on top.
-		settings, err := project.ResolvePromptAgentSettings(promptSettingsFromService(svc), envValues)
+		// azd environment.
+		settings, err := project.ResolvePromptAgentSettings(envValues)
 		if err != nil {
 			log.Printf("predown: skipping harness delete for %q: %v", svc.Name, err)
 			continue

@@ -10,6 +10,29 @@ import (
 	"testing"
 )
 
+type trackedResponseBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *trackedResponseBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+type trackedResponseTransport struct {
+	body *trackedResponseBody
+}
+
+func (t *trackedResponseTransport) Do(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       t.body,
+		Request:    req,
+	}, nil
+}
+
 func TestCreateResponseUsesProjectEndpoint(t *testing.T) {
 	client, transport := newCaptureClient(http.StatusOK, `{"id":"resp_1"}`)
 	body, _, err := client.CreateResponse(
@@ -91,5 +114,29 @@ func TestCreateResponseStreamAtUsesExplicitEndpoint(t *testing.T) {
 	}
 	if request.Header.Get("Foundry-Features") != "GitHubCopilot=V1Preview" {
 		t.Errorf("feature header: got %q", request.Header.Get("Foundry-Features"))
+	}
+}
+
+func TestCreateResponseStreamAtClosesFailedResponse(t *testing.T) {
+	body := &trackedResponseBody{Reader: strings.NewReader(`{"error":{"message":"invalid request"}}`)}
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&trackedResponseTransport{body: body},
+	)
+
+	stream, _, err := client.CreateResponseStreamAt(
+		t.Context(),
+		"https://test.example.com/api/projects/proj/openai/v1/responses",
+		[]byte(`{"input":"hello"}`),
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected a response error")
+	}
+	if stream != nil {
+		t.Fatal("failed response must not return a stream")
+	}
+	if !body.closed {
+		t.Fatal("failed response body was not closed")
 	}
 }

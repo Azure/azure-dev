@@ -1144,7 +1144,7 @@ protocols:
 			yaml: `kind: hosted
 name: rai-agent
 policies:
-  - rai_policy_name: /subscriptions/x/raiPolicies/p
+  - rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p
 protocols:
   - protocol: responses
     version: "1.0.0"
@@ -1209,7 +1209,7 @@ func TestValidateAgentDefinition_InvocationsModeration(t *testing.T) {
 name: rai-agent
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p
     invocations_moderation:
 ` + moderation + `protocols:
   - protocol: invocations
@@ -1330,7 +1330,7 @@ policies:
 name: rai-agent
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p
     invocations_moderation:
       response_mode: non_streaming
       input_paths: ["$.input"]
@@ -1402,13 +1402,13 @@ protocols:
 name: rai-agent
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/first
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/first
     invocations_moderation:
       response_mode: non_streaming
       input_paths: ["$.input"]
       output_paths: ["$.output"]
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/second
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/second
     invocations_moderation:
       input_paths: ["$.input"]
       output_paths: ["$.output"]
@@ -1424,7 +1424,7 @@ protocols:
 name: rai-agent
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p
     invocations_moderation:
       response_mode: non_streaming
       input_paths: ["$.input"]
@@ -1442,7 +1442,7 @@ protocols:
 name: rai-agent
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p
 protocols:
   - protocol: invocations
     version: "1.0.0"
@@ -1492,7 +1492,7 @@ model:
   id: gpt-4o-realtime-preview
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p
     invocations_moderation:
       response_mode: non_streaming
       input_paths: ["$.input"]
@@ -1507,7 +1507,7 @@ policies:
 name: workflow-agent
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p
     invocations_moderation:
       response_mode: non_streaming
       input_paths: ["$.input"]
@@ -1522,9 +1522,9 @@ policies:
 name: workflow-agent
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/first
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/first
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/second
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/second
     invocations_moderation:
       response_mode: non_streaming
       input_paths: ["$.input"]
@@ -1538,7 +1538,7 @@ policies:
 name: workflow-agent
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p
 `,
 		},
 		{
@@ -1547,7 +1547,7 @@ policies:
 name: workflow-agent
 policies:
   - type: rai_policy
-    raiPolicyName: /subscriptions/x/raiPolicies/p
+    raiPolicyName: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p
     invocationsModeration:
       responseMode: non_streaming
       inputPaths: ["$.input"]
@@ -1578,7 +1578,7 @@ name: hosted-agent
 image: myregistry.azurecr.io/agent:v1
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p1
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p1
 `,
 		},
 		{
@@ -1588,9 +1588,9 @@ name: hosted-agent
 image: myregistry.azurecr.io/agent:v1
 policies:
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p1
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p1
   - type: rai_policy
-    rai_policy_name: /subscriptions/x/raiPolicies/p2
+    rai_policy_name: /subscriptions/x/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/p2
 `,
 			wantErrSubst: "policies declares 2 policies of type 'rai_policy', but only one is supported",
 		},

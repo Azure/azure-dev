@@ -197,7 +197,7 @@ before contacting Foundry Agent Service.
 
 ## Content safety policies
 
-A hosted agent can be bound to an Azure AI Content Safety (RAI) policy so every
+A hosted or prompt agent can be bound to an Azure AI Content Safety (RAI) policy so every
 request and response it handles is screened by that policy. Declare it with a
 `policies` list on the `azure.ai.agent` service entry in `azure.yaml`:
 
@@ -213,9 +213,22 @@ services:
         raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
 ```
 
-`policies` applies to both deploy modes — container images and code deploys
-(`codeConfiguration`) alike. It is optional; agents without it deploy exactly as
-before.
+For prompt agents, use the same `policies` entry with `kind: prompt`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    kind: prompt
+    model: gpt-4.1-mini
+    instructions: You are a helpful assistant.
+    policies:
+      - type: rai_policy
+        raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
+```
+
+`policies` is optional. For hosted agents, it applies to both deploy modes —
+container images and code deploys (`codeConfiguration`) alike.
 
 Details:
 
@@ -236,7 +249,7 @@ Details:
 
 ### Moderating invocations-protocol traffic
 
-For agents that expose the `invocations` protocol, the RAI policy alone is not
+For hosted agents that expose the `invocations` protocol, the RAI policy alone is not
 enough: the content-safety proxy needs to be told **where the text lives** in the
 request and response bodies. Without that it has nothing to submit to the policy,
 so no content is actually screened. Supply an `invocationsModeration` block on the

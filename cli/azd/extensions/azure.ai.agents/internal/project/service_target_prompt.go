@@ -55,27 +55,9 @@ func (p *AgentServiceTargetProvider) isPromptAgentService() bool {
 	return ServiceIsPromptAgent(p.serviceConfig)
 }
 
-// promptAgentSettings extracts and validates the prompt-agent harness settings
-// from the service config, applying environment-variable overrides.
-//
-// `azd ai agent init` writes every promptAgent field as a ${VAR} reference so
-// azure.yaml stays portable, so the block is expanded against env (the azd
-// environment, falling back to the process environment) before it is layered
-// over the defaults. A reference whose variable is unset expands to "" and
-// therefore leaves the corresponding default in place, which is what lets a
-// project be cloned into an environment that has not been provisioned yet.
-// Projects that carry literal values keep working -- expansion leaves a string
-// with no ${...} in it untouched.
+// promptAgentSettings resolves prompt-agent routing from the azd environment.
 func (p *AgentServiceTargetProvider) promptAgentSettings(env map[string]string) (*PromptAgentSettings, error) {
-	var cfg ServiceTargetAgentConfig
-	if err := UnmarshalStruct(p.serviceConfig.Config, &cfg); err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("failed to parse service config: %s", err),
-			"check the service configuration in azure.yaml",
-		)
-	}
-	return ResolvePromptAgentSettings(cfg.PromptAgent, env)
+	return ResolvePromptAgentSettings(env)
 }
 
 // ResolvePromptAgentSettings produces the settings that address the harness.
@@ -83,25 +65,12 @@ func (p *AgentServiceTargetProvider) promptAgentSettings(env map[string]string) 
 // The Foundry target is read from the azd environment, which is the only thing
 // that knows it: `azd provision` writes the subscription, resource group,
 // workspace, and project endpoint there, and they change per environment. That
-// is why azure.yaml carries no promptAgent block — the values would be either a
-// copy of the environment or a set of ${VAR} references pointing back at it.
+// keeps environment-specific routing values out of azure.yaml.
 //
-// A hand-authored promptAgent block still wins, layered on top, so a developer
-// can pin a field or set one of the advanced knobs (apiVersion, modelEndpoint)
-// that the environment does not carry. Its ${VAR} references are expanded
-// against the same environment first, keeping older projects working unchanged.
 // Process-environment AZD_MANAGED_AGENT_* overrides are applied last.
-func ResolvePromptAgentSettings(
-	configured *PromptAgentSettings,
-	env map[string]string,
-) (*PromptAgentSettings, error) {
-	expanded, err := expandPromptAgentSettings(configured, env)
-	if err != nil {
-		return nil, err
-	}
+func ResolvePromptAgentSettings(env map[string]string) (*PromptAgentSettings, error) {
 	settings := DefaultPromptAgentSettings()
 	settings.overlay(promptAgentSettingsFromEnv(env))
-	settings.overlay(expanded)
 	settings.ApplyEnvOverrides()
 	if err := settings.Validate(); err != nil {
 		return nil, err
@@ -124,44 +93,6 @@ func promptAgentSettingsFromEnv(env map[string]string) *PromptAgentSettings {
 		ResourceGroup:   strings.TrimSpace(env["AZURE_RESOURCE_GROUP"]),
 		ProjectEndpoint: strings.TrimSpace(env["FOUNDRY_PROJECT_ENDPOINT"]),
 	}
-}
-
-// expandPromptAgentSettings returns a copy of src with ${VAR} references in
-// every field resolved against env, falling back to the process environment for
-// variables the azd environment does not define. A nil src returns nil.
-func expandPromptAgentSettings(
-	src *PromptAgentSettings,
-	env map[string]string,
-) (*PromptAgentSettings, error) {
-	if src == nil {
-		return nil, nil
-	}
-	lookup := func(name string) string {
-		if v, ok := env[name]; ok {
-			return v
-		}
-		v, _ := os.LookupEnv(name)
-		return v
-	}
-	expanded := *src
-	for name, field := range map[string]*string{
-		"subscriptionId":  &expanded.SubscriptionID,
-		"resourceGroup":   &expanded.ResourceGroup,
-		"projectEndpoint": &expanded.ProjectEndpoint,
-		"apiVersion":      &expanded.APIVersion,
-		"modelEndpoint":   &expanded.ModelEndpoint,
-	} {
-		value, err := ExpandEnv(strings.TrimSpace(*field), lookup)
-		if err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidServiceConfig,
-				fmt.Sprintf("failed to expand promptAgent.%s: %s", name, err),
-				"check the ${VAR} references in the promptAgent block in azure.yaml",
-			)
-		}
-		*field = strings.TrimSpace(value)
-	}
-	return &expanded, nil
 }
 
 // expandPromptAgentPolicies resolves ${VAR} references in the agent's
@@ -269,10 +200,8 @@ func declaresRaiPolicy(managed *agent_yaml.PromptAgent) bool {
 // resolvedPromptAgentSettings returns the prompt-agent settings with the same
 // azd environment-derived target resolution deployPromptAgent applies. Read-only
 // callers (Endpoints, GetTargetResource) must use this rather than
-// promptAgentSettings: a non-guided init stores a placeholder
-// subscription/resource-group/workspace tuple in azure.yaml and only the azd
-// environment knows the real Foundry target, so the raw settings would report
-// `test-rg`/`test-ws` even after a successful deploy.
+// promptAgentSettings: only the azd environment knows the provisioned Foundry
+// target, so environment overlay must be applied before returning it.
 func (p *AgentServiceTargetProvider) resolvedPromptAgentSettings(
 	ctx context.Context,
 ) (*PromptAgentSettings, error) {
@@ -435,9 +364,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		return nil, err
 	}
 
-	// The azd environment is read before the settings because azure.yaml states
-	// the promptAgent block as ${VAR} references that resolve against it.
-	//
+	// The Foundry target is resolved from the azd environment.
 	// A failed env read is fatal because the provisioned Foundry project endpoint
 	// is resolved from this environment.
 	env, err := p.azdEnvValues(ctx)

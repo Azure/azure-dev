@@ -56,19 +56,17 @@ func TestPromptDefinitionForServiceHosted(t *testing.T) {
 	assert.False(t, isPrompt)
 }
 
-// TestPromptDefinitionForServiceRequiresExplicitKind confirms promptAgent
-// settings and an on-disk definition do not implicitly classify a service.
+// TestPromptDefinitionForServiceRequiresExplicitKind confirms an on-disk
+// definition does not implicitly classify a service.
 func TestPromptDefinitionForServiceRequiresExplicitKind(t *testing.T) {
 	serviceDir := t.TempDir()
 	agentYaml := "kind: prompt\nname: legacy-agent\nmodel: gpt-4o\nharness:\n  type: github_copilot_preview\n"
 	require.NoError(t, os.WriteFile(filepath.Join(serviceDir, "agent.yaml"), []byte(agentYaml), 0600))
 
 	svc := &azdext.ServiceConfig{
-		Name: "legacy",
-		Host: AiAgentHost,
-		Config: mustStruct(t, map[string]any{
-			"promptAgent": map[string]any{"baseUrl": "https://example.invalid"},
-		}),
+		Name:   "legacy",
+		Host:   AiAgentHost,
+		Config: mustStruct(t, map[string]any{"startupCommand": "ignored"}),
 	}
 
 	_, isPrompt := promptDefinitionForService(svc, filepath.Dir(serviceDir), serviceDir)
@@ -89,21 +87,4 @@ func TestPromptAgentNameForServicePrefersDefinition(t *testing.T) {
 	}
 
 	assert.Equal(t, "renamed-agent", promptAgentNameForService(svc, t.TempDir()))
-}
-
-// TestPromptSettingsFromServiceOptional asserts a missing promptAgent block is
-// not an error. init stopped writing the block, so nil is the common case and
-// the settings are resolved from the azd environment instead.
-func TestPromptSettingsFromServiceOptional(t *testing.T) {
-	assert.Nil(t, promptSettingsFromService(nil))
-	assert.Nil(t, promptSettingsFromService(&azdext.ServiceConfig{Name: "svc"}))
-
-	settings := promptSettingsFromService(&azdext.ServiceConfig{
-		Name: "svc",
-		Config: mustStruct(t, map[string]any{
-			"promptAgent": map[string]any{"apiVersion": "2025-11-15-preview"},
-		}),
-	})
-	require.NotNil(t, settings)
-	assert.Equal(t, "2025-11-15-preview", settings.APIVersion)
 }

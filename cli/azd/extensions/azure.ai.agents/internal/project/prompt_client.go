@@ -25,9 +25,6 @@ func ResolvePromptCredential(
 	azdClient *azdext.AzdClient,
 	settings *PromptAgentSettings,
 ) (*azidentity.AzureDeveloperCLICredential, error) {
-	if isTruthyEnvValue(os.Getenv(PromptNoAuthEnvVar)) {
-		return nil, nil
-	}
 	if settings == nil || strings.TrimSpace(settings.SubscriptionID) == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAzureSubscription,
@@ -66,10 +63,6 @@ const (
 	PromptProjectEndpointEnvVar = "AZD_MANAGED_AGENT_PROJECT_ENDPOINT"
 	PromptAPIVersionEnvVar      = "AZD_MANAGED_AGENT_API_VERSION"
 	PromptModelEndpointEnvVar   = "AZD_MANAGED_AGENT_MODEL_ENDPOINT"
-	// PromptNoAuthEnvVar, when truthy, skips attaching a bearer token to
-	// harness requests. Use it only against a harness that runs with auth
-	// fully bypassed; by default a cognitive-services token is attached.
-	PromptNoAuthEnvVar = "AZD_MANAGED_AGENT_NO_AUTH"
 )
 
 const (
@@ -141,9 +134,7 @@ func DefaultPromptAgentSettings() PromptAgentSettings {
 }
 
 // overlay copies every non-empty field of src onto s, leaving s's existing
-// value in place where src is empty. It lets a partially populated (or empty)
-// promptAgent block in azure.yaml layer over DefaultPromptAgentSettings without
-// blanking the defaults.
+// value in place where src is empty.
 func (s *PromptAgentSettings) overlay(src *PromptAgentSettings) {
 	if s == nil || src == nil {
 		return
@@ -187,13 +178,11 @@ func (s *PromptAgentSettings) Validate() error {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			fmt.Sprintf("prompt agent config is missing required fields: %s", strings.Join(missing, ", ")),
-			"edit the promptAgent block in azure.yaml, or re-run `azd ai agent init`",
+			"run `azd up` to populate the Foundry project environment values",
 		)
 	}
-	if !isTruthyEnvValue(os.Getenv(PromptNoAuthEnvVar)) {
-		if err := validateAuthenticatedPromptEndpoint(s.ProjectEndpoint); err != nil {
-			return err
-		}
+	if err := validateAuthenticatedPromptEndpoint(s.ProjectEndpoint); err != nil {
+		return err
 	}
 	return nil
 }
@@ -205,8 +194,7 @@ func validateAuthenticatedPromptEndpoint(endpoint string) error {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"authenticated prompt agent endpoint must be an HTTPS Foundry project URL",
-			"use https://<account>.services.ai.azure.com/api/projects/<project>, "+
-				"or set AZD_MANAGED_AGENT_NO_AUTH only for a trusted local test service",
+			"use https://<account>.services.ai.azure.com/api/projects/<project>",
 		)
 	}
 	return nil
@@ -309,16 +297,13 @@ func NewPromptAgentClient(
 //
 // Local/custom harness endpoints continue to use cognitive-services scope.
 // promptCredential returns the bearer-token credential to attach to harness
-// requests, or nil when AZD_MANAGED_AGENT_NO_AUTH is truthy.
+// requests.
 //
 // Credential-construction failures are surfaced as nil so the underlying HTTP
 // error from the service (401/403) becomes the user-visible failure mode —
 // that error is more actionable than a generic "failed to create credential"
 // wrap.
 func promptCredential(tenantID string) *azidentity.AzureDeveloperCLICredential {
-	if isTruthyEnvValue(os.Getenv(PromptNoAuthEnvVar)) {
-		return nil
-	}
 	c, err := azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{
 			TenantID:                   tenantID,
@@ -330,17 +315,6 @@ func promptCredential(tenantID string) *azidentity.AzureDeveloperCLICredential {
 	}
 
 	return nil
-}
-
-// isTruthyEnvValue reports whether an environment-variable value should be
-// treated as "on" (true/1/yes/on, case-insensitive).
-func isTruthyEnvValue(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "true", "1", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }
 
 // OverlayAzdProjectEnv fills any harness target field still at its package

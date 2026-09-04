@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/stretchr/testify/require"
 )
 
@@ -152,6 +153,72 @@ func Test_Multiple_Errors_With_Suggestions(t *testing.T) {
 	suggestion := errWithSuggestion.Suggestion
 	require.Contains(t, suggestion, "Suggestion1")
 	require.Contains(t, suggestion, "Suggestion2")
+}
+
+func Test_Multiple_Errors_Preserve_Invocation_Metadata(t *testing.T) {
+	t.Parallel()
+
+	first := extensions.WrapInvocationError(
+		&internal.ErrorWithSuggestion{
+			Err:        errors.New("first handler failed"),
+			Suggestion: "retry the first handler",
+		},
+		"first.extension",
+		"1.0.0",
+		"predeploy",
+	)
+	second := extensions.WrapInvocationError(
+		&internal.ErrorWithSuggestion{
+			Err:        errors.New("second handler failed"),
+			Suggestion: "retry the second handler",
+		},
+		"second.extension",
+		"2.0.0",
+		"predeploy",
+	)
+
+	ed := NewEventDispatcher[testEventArgs](testEvent)
+	require.NoError(t, ed.AddHandler(t.Context(), testEvent, func(
+		ctx context.Context, args testEventArgs,
+	) error {
+		return first
+	}))
+	require.NoError(t, ed.AddHandler(t.Context(), testEvent, func(
+		ctx context.Context, args testEventArgs,
+	) error {
+		return second
+	}))
+
+	err := ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
+	require.Error(t, err)
+
+	var aggregate interface{ Unwrap() []error }
+	require.ErrorAs(t, err, &aggregate)
+	require.Len(t, aggregate.Unwrap(), 2)
+
+	metadata := make(map[string]struct {
+		version string
+		event   string
+	})
+	for _, handlerErr := range aggregate.Unwrap() {
+		invocation, ok := errors.AsType[extensions.InvocationMetadataProvider](handlerErr)
+		require.True(t, ok)
+		metadata[invocation.InvocationExtensionId()] = struct {
+			version string
+			event   string
+		}{
+			version: invocation.InvocationExtensionVersion(),
+			event:   invocation.InvocationEvent(),
+		}
+	}
+
+	require.Equal(t, map[string]struct {
+		version string
+		event   string
+	}{
+		"first.extension":  {version: "1.0.0", event: "predeploy"},
+		"second.extension": {version: "2.0.0", event: "predeploy"},
+	}, metadata)
 }
 
 func Test_Automatic_Handler_Removal_On_Context_Done(t *testing.T) {

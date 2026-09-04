@@ -225,6 +225,62 @@ const completionSpec: Fig.Spec = {
 					description: 'Ship agents with Microsoft Foundry from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add a typed service dependency to an agent.',
+							subcommands: [
+								{
+									name: ['connection'],
+									description: 'Add a connection service dependency to an agent service.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name in azure.yaml.',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['toolbox'],
+									description: 'Add a toolbox service dependency to an agent service.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name in azure.yaml.',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['code'],
 							description: 'Manage agent source code. (Preview)',
 							subcommands: [
@@ -264,7 +320,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--force'],
-									description: 'Force deletion even if the agent has active sessions',
+									description: 'Force deletion even if the agent has active sessions; required as consent in no-prompt mode',
 									isDangerous: true,
 								},
 								{
@@ -283,6 +339,40 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['deploy'],
+							description: 'Deploy an agent directly from agent.yaml.',
+							options: [
+								{
+									name: ['--code'],
+									description: 'Path to the hosted-agent source directory.',
+									args: [
+										{
+											name: 'code',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env and project config).',
+									args: [
+										{
+											name: 'project-endpoint',
 										},
 									],
 								},
@@ -466,12 +556,30 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Microsoft Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
 									],
 								},
 								{
 									name: ['run'],
 									description: 'Execute an evaluation run from eval.yaml.',
 									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
 										{
 											name: ['--config'],
 											description: 'Local eval config YAML',
@@ -493,6 +601,15 @@ const completionSpec: Fig.Spec = {
 										{
 											name: ['--no-wait'],
 											description: 'Start the run and return immediately without waiting for results',
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Microsoft Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
 										},
 									],
 								},
@@ -527,12 +644,30 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Microsoft Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
 									],
 								},
 								{
 									name: ['update'],
 									description: 'Update evaluators and datasets from local files.',
 									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
 										{
 											name: ['--config'],
 											description: 'Local eval config YAML',
@@ -549,6 +684,15 @@ const completionSpec: Fig.Spec = {
 										{
 											name: ['--evaluator-only'],
 											description: 'Only update evaluators',
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Microsoft Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
 										},
 									],
 								},
@@ -841,6 +985,15 @@ const completionSpec: Fig.Spec = {
 							description: 'Initialize a new AI agent project. (Preview)',
 							options: [
 								{
+									name: ['--acr-connection'],
+									description: 'Foundry Azure Container Registry connection name to use for an existing project; incompatible with code deploy, --image, and prompt-voice agents',
+									args: [
+										{
+											name: 'acr-connection',
+										},
+									],
+								},
+								{
 									name: ['--agent-name'],
 									description: 'Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.',
 									args: [
@@ -878,7 +1031,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--force'],
-									description: 'Overwrite an input manifest that already lives inside the generated src tree without prompting. Required together with --no-prompt when init would otherwise need confirmation.',
+									description: 'Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. Required together with --no-prompt when init would otherwise need overwrite confirmation.',
 									isDangerous: true,
 								},
 								{
@@ -1064,6 +1217,10 @@ const completionSpec: Fig.Spec = {
 											name: 'protocol',
 										},
 									],
+								},
+								{
+									name: ['--resumable'],
+									description: 'Start resumable work that continues in the service if the command disconnects; remain attached until it finishes',
 								},
 								{
 									name: ['--session-id', '-s'],
@@ -1504,6 +1661,16 @@ const completionSpec: Fig.Spec = {
 							description: 'Publish an activity agent as a Teams app to the Microsoft 365 store.',
 							options: [
 								{
+									name: ['--access-boundary'],
+									description: 'Digital Worker access boundary. Repeat to select multiple developer boundaries.',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'access-boundary',
+										},
+									],
+								},
+								{
 									name: ['--app-version'],
 									description: 'Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.',
 									args: [
@@ -1513,11 +1680,25 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--clear-access-boundaries'],
+									description: 'Clear all existing Digital Worker access boundaries.',
+								},
+								{
 									name: ['--display-name'],
 									description: 'Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.',
 									args: [
 										{
 											name: 'display-name',
+										},
+									],
+								},
+								{
+									name: ['--optional-permission-scope'],
+									description: 'Digital Worker permission in <resource-app-id>=<scope> form. Repeat to select multiple scopes.',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'optional-permission-scope',
 										},
 									],
 								},

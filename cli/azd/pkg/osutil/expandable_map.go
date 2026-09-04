@@ -9,6 +9,15 @@ import "fmt"
 // It provides convenient methods for expanding all values in the map.
 type ExpandableMap map[string]ExpandableString
 
+// Raw returns all values without environment substitution.
+func (em ExpandableMap) Raw() map[string]string {
+	result := make(map[string]string, len(em))
+	for key, value := range em {
+		result[key] = value.Raw()
+	}
+	return result
+}
+
 // Expand evaluates all ExpandableString values in the map, substituting variables as [ExpandableString.Envsubst] would.
 // Returns a map[string]string with all values expanded, or an error if any expansion fails.
 // The mapping parameter is a function that returns the value for a given variable name.

@@ -1276,7 +1276,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"extension show",    // extension.source.kind
 		// extension.source.category
 		"extension source add",
-		"extension uninstall", // ext.uninstall span per removed extension
+		"extension uninstall", // ext.uninstall span per attempted extension removal
 		"extension update",    // extension.source.kind + extension update spans
 		"hooks run",           // hooks.name, hooks.type
 		"infra generate",      // infra.provider

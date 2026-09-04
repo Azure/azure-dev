@@ -87,7 +87,7 @@ These commands emit attributes or events beyond the global middleware span.
 | **Copilot Consent** | | | | | |
 | `copilot consent` | `list`, `revoke`, `grant` | ✅ | ❌ | ❌ | Low priority |
 | **Extension Management** | | | | | |
-| `extension` | `list`, `show`, `install`, `uninstall`, `update` | ✅ | ✅ | ✅ | Covered by `extension.*` fields and `ext.install`, `ext.update`, `ext.uninstall`, `ext.promote` events; `extension.source.kind` tracks `--source` argument kind for list/show/install/update; one `ext.uninstall` span per removed extension covers dependency-aware uninstall |
+| `extension` | `list`, `show`, `install`, `uninstall`, `update` | ✅ | ✅ | ✅ | Covered by `extension.*` fields and `ext.install`, `ext.update`, `ext.uninstall`, `ext.promote` events; `extension.source.kind` tracks `--source` argument kind for list/show/install/update; one `ext.uninstall` span per attempted extension removal covers dependency-aware uninstall |
 | `extension source` | `list`, `add`, `remove`, `validate` | ✅ | ✅ | ❌ | `source add` emits the fixed `extension.source.category` on the command span; other operations rely on global command telemetry and do not emit configured values |
 | **Init** | | | | | |
 | `init` | — | ✅ | ✅ | ✅ | Comprehensive coverage via `appinit.*` fields |

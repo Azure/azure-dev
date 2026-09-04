@@ -73,7 +73,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 | `ext.run` | Extension command execution |
 | `ext.install` | Extension installation |
 | `ext.update` | Extension update attempt |
-| `ext.uninstall` | Removal of one extension by `azd extension uninstall`, by name or as a no-longer-required dependency |
+| `ext.uninstall` | Single extension uninstall attempt, by name or as a no-longer-required dependency |
 | `ext.promote` | Registry promotion (e.g., dev → main) |
 | `ext.usage` | Usage event reported by an extension through the telemetry service (official-registry extensions only) |
 

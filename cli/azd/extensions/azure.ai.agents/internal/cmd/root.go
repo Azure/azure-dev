@@ -15,7 +15,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "agent",
 		Use:   "agent <command> [options]",
-		Short: fmt.Sprintf("Ship agents with Microsoft Foundry from your terminal. %s", color.YellowString("(Preview)")),
+		Short: fmt.Sprintf("Ship hosted and voice agents with Microsoft Foundry from your terminal. %s", color.YellowString("(Preview)")),
 	})
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true

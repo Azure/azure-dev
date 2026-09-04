@@ -1,5 +1,7 @@
 # Release History
 
+<!-- cspell:ignore herohua -->
+
 ## 1.0.0-beta.6 (2026-09-04)
 
 ### Features Added

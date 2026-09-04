@@ -1,5 +1,7 @@
 # Release History
 
+<!-- cspell:ignore Yimin -->
+
 ## 1.0.0-beta.5 (2026-09-04)
 
 ### Features Added

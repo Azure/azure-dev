@@ -1,5 +1,7 @@
 # Release History
 
+<!-- cspell:ignore Deeksharma JerryYangKai -->
+
 ## 1.0.0-beta.14 (2026-09-04)
 
 ### Breaking Changes

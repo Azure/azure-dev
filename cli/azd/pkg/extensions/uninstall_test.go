@@ -541,6 +541,20 @@ func Test_ReconcileDependencies_BackfillsLegacyDependencySnapshot(t *testing.T) 
 	require.False(t, leafRecord.InstalledAsDependency)
 }
 
+func Test_BackfillDependencies_ReturnsInstalledConfigError(t *testing.T) {
+	t.Parallel()
+	manager := newTestManager(t)
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, "invalid"))
+	manager.installed = nil
+
+	err := manager.BackfillDependencies("test.pack", &ExtensionVersion{
+		Version:      "1.0.0",
+		Dependencies: []ExtensionDependency{{Id: "test.leaf"}},
+	})
+	require.ErrorContains(t, err, "failed to get installed extension test.pack")
+	require.ErrorContains(t, err, "failed to get extensions section")
+}
+
 func Test_MarkExplicitlyInstalled(t *testing.T) {
 	t.Parallel()
 	manager := newPlanTestManager(t, map[string]*Extension{

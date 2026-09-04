@@ -20,6 +20,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
@@ -39,7 +40,13 @@ import (
 type azureYamlManifestInfo struct {
 	hasServices       bool
 	hasAgentService   bool
+	hasPromptAgent    bool
+	hasNonPromptAgent bool
 	hasUnresolvedRefs bool
+}
+
+func (i azureYamlManifestInfo) promptOnly() bool {
+	return i.hasPromptAgent && !i.hasNonPromptAgent && !i.hasUnresolvedRefs
 }
 
 // inspectAzureYaml identifies unified manifests and Agent services.
@@ -84,6 +91,12 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 		host, _ := svcMap["host"].(string)
 		if host == AiAgentHost {
 			info.hasAgentService = true
+			kind, _ := svcMap["kind"].(string)
+			if strings.EqualFold(strings.TrimSpace(kind), string(agent_yaml.AgentKindPrompt)) {
+				info.hasPromptAgent = true
+			} else {
+				info.hasNonPromptAgent = true
+			}
 		}
 	}
 
@@ -271,7 +284,6 @@ func verifyAzureYamlDeployments(
 			"verify the deployment name or omit --model-deployment to select interactively",
 		)
 	}
-
 	for _, entry := range entries {
 		dep := entry.Deployment
 
@@ -358,14 +370,8 @@ func verifyAzureYamlDeployments(
 				})
 			}
 			choices = append(choices,
-				&azdext.SelectChoice{
-					Value: "change",
-					Label: "Choose a different model",
-				},
-				&azdext.SelectChoice{
-					Value: "skip",
-					Label: "Skip this model entirely (remove from azure.yaml)",
-				},
+				&azdext.SelectChoice{Value: "change", Label: "Choose a different model"},
+				&azdext.SelectChoice{Value: "skip", Label: "Skip this model entirely (remove from azure.yaml)"},
 			)
 
 			defaultIdx := int32(0)
@@ -411,7 +417,9 @@ func verifyAzureYamlDeployments(
 				referencedDeployments = append(referencedDeployments, dep)
 
 			case selected == "change":
-				newDep, isExisting, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
+				newDep, isExisting, err := promptAlternativeDeployment(
+					ctx, azdClient, azureContext, allDeployments, modelFlag,
+				)
 				if err != nil {
 					return nil, nil, false, err
 				}
@@ -490,7 +498,9 @@ func verifyAzureYamlDeployments(
 				referencedDeployments = append(referencedDeployments, dep)
 
 			case "change":
-				newDep, isExisting, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
+				newDep, isExisting, err := promptAlternativeDeployment(
+					ctx, azdClient, azureContext, allDeployments, modelFlag,
+				)
 				if err != nil {
 					return nil, nil, false, err
 				}
@@ -995,13 +1005,18 @@ func runInitFromAzureYaml(
 	if err := validateStagedAzureYaml(stagingDir, flags.manifestPointer); err != nil {
 		return err
 	}
+	stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
+	if err != nil {
+		return fmt.Errorf("reading staged azure.yaml: %w", err)
+	}
+	stagedInfo, err := inspectAzureYaml(stagedContent, stagingDir)
+	if err != nil {
+		return err
+	}
+	promptOnly := stagedInfo.promptOnly()
 	if agentNameOverride != "" {
 		// Validate against the fully staged template so services whose host lives
 		// inside a local $ref are counted the same way azd-core will load them.
-		stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
-		if err != nil {
-			return fmt.Errorf("reading staged azure.yaml for agent name override: %w", err)
-		}
 		if err := validateAdoptedAgentNameOverride(stagedContent, stagingDir); err != nil {
 			return err
 		}
@@ -1050,26 +1065,29 @@ func runInitFromAzureYaml(
 	// resolved deploy mode: a container agent on an existing project
 	// needs AZURE_CONTAINER_REGISTRY_ENDPOINT set here, while a code
 	// agent (or a user-supplied --image) does not.
-	projectNeedsACR, configuredSourceContainers, err := applyDeployModeToAdoptedProjectWithSources(
-		ctx, flags, azdClient,
-	)
-	if err != nil {
-		return err
+	projectNeedsACR := false
+	var configuredSourceContainers []string
+	if !promptOnly {
+		projectNeedsACR, configuredSourceContainers, err = applyDeployModeToAdoptedProjectWithSources(
+			ctx, flags, azdClient,
+		)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Only source-container deploys require an ACR. Code deploy and pre-built
 	// images skip it.
 	skipACR := !projectNeedsACR
-	// The adopt path only supports hosted agents today. Hosted-region filtering
-	// is independent from ACR setup; prompt-voice has its own region/onboarding
-	// constraints and does not flow through this path.
+	// Hosted-region filtering is independent from ACR setup. Prompt agents are
+	// managed by Foundry and must not inherit hosted-agent region constraints.
 	filterHostedRegions := true
 
 	result, err := configureFoundryProject(
 		ctx, azdClient, azureContext, env.Name,
 		flags.projectResourceId, flags.acrConnection, flags.noPrompt,
 		skipACR,
-		filterHostedRegions,
+		filterHostedRegions && !promptOnly,
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -1078,10 +1096,15 @@ func runInitFromAzureYaml(
 		return err
 	}
 
-	// When an existing project was selected, stamp its endpoint onto the
-	// azure.ai.project service so the provisioning provider recognizes the
-	// brownfield signal and reuses the project instead of creating a new one.
+	// When an existing project was selected, record its endpoint in the azd
+	// environment and stamp the portable reference onto the azure.ai.project
+	// service so the provisioning provider recognizes the brownfield signal and
+	// reuses the project instead of creating a new one.
 	if result.FoundryProject != nil {
+		endpointRef, err := recordFoundryProjectEnv(ctx, azdClient, env.Name, result.FoundryProject)
+		if err != nil {
+			return err
+		}
 		if err := finalizeAdoptedSourceContainerNetwork(
 			ctx,
 			azdClient,
@@ -1110,7 +1133,7 @@ func runInitFromAzureYaml(
 				return err
 			}
 		}
-		if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
+		if err := stampProjectEndpoint(ctx, azdClient, endpointRef); err != nil {
 			return err
 		}
 		if err := confirmAdoptedAgentNameConflicts(
@@ -1129,7 +1152,8 @@ func runInitFromAzureYaml(
 	// selected Foundry project. If the user opts to use existing deployments
 	// or skip, we update the on-disk azure.yaml accordingly.
 	deploymentEntries := foundryDeployments(content)
-	if len(deploymentEntries) > 0 && result != nil && result.Credential != nil {
+	if (len(deploymentEntries) > 0 || flags.modelDeployment != "") &&
+		result != nil && result.Credential != nil {
 		keptEntries, referencedDeployments, deploymentsModified, err := verifyAzureYamlDeployments(
 			ctx, azdClient, result.Credential, azureContext, env.Name,
 			deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model,
@@ -1169,6 +1193,11 @@ func runInitFromAzureYaml(
 		if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
 			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 		}
+		if err := updatePendingModelDeploymentSignal(
+			ctx, azdClient, env.Name, true, len(keptEntries) > 0,
+		); err != nil {
+			log.Printf("warning: failed to update model_deployment provision signal: %v", err)
+		}
 	}
 
 	// scaffoldProject changes the extension process into the adopted project root.
@@ -1187,7 +1216,7 @@ func runInitFromAzureYaml(
 		output.WithHighLightFormat("azure.yaml"),
 	)
 
-	printAdoptionNextSteps(ctx, azdClient, folderDisplay)
+	printAdoptionNextSteps(ctx, azdClient, folderDisplay, promptOnly)
 	return nil
 }
 
@@ -1555,7 +1584,16 @@ func ensureFoundryProviderDeclared(ctx context.Context, azdClient *azdext.AzdCli
 // printAdoptionNextSteps emits context-aware next-step guidance after adoption,
 // reusing the shared nextstep resolver. State-assembly errors are intentionally
 // ignored: the resolver degrades gracefully on partial state.
-func printAdoptionNextSteps(ctx context.Context, azdClient *azdext.AzdClient, folderDisplay string) {
+func printAdoptionNextSteps(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	folderDisplay string,
+	promptOnly bool,
+) {
+	if promptOnly {
+		printPromptInitNextSteps(folderDisplay)
+		return
+	}
 	var stateOpts []nextstep.Option
 	if folderDisplay != "" {
 		stateOpts = append(stateOpts, nextstep.WithCreatedFolder(folderDisplay))

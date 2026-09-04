@@ -1147,6 +1147,67 @@ func TestBrownfieldDeployments_EmptyRaw(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestSynthesize_EndpointVarReference covers the portable endpoint shape
+// `azd ai agent init` writes: endpoint: ${FOUNDRY_PROJECT_ENDPOINT}. The
+// variable is expanded before the brownfield test, so the same azure.yaml
+// provisions a new project when the variable is unset and reuses an existing
+// one when it is set. Without expansion the unset case would take the
+// brownfield branch and then try to call a literal "${...}" URL.
+func TestSynthesize_EndpointVarReference(t *testing.T) {
+	// Not parallel: the greenfield case pins FOUNDRY_PROJECT_ENDPOINT to empty
+	// via t.Setenv so a developer who exports it locally still sees the unset
+	// behavior (maybeExpand falls back to the process environment).
+	const yamlDoc = `
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: ${FOUNDRY_PROJECT_ENDPOINT}
+`
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/p1"
+
+	t.Run("unset variable is greenfield", func(t *testing.T) {
+		t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+
+		res, err := Synthesize(Input{
+			RawAzureYAML: []byte(yamlDoc),
+			ServiceName:  "ai-project",
+			Env:          map[string]string{},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, res)
+	})
+
+	t.Run("set variable is brownfield", func(t *testing.T) {
+		_, err := Synthesize(Input{
+			RawAzureYAML: []byte(yamlDoc),
+			ServiceName:  "ai-project",
+			Env:          map[string]string{"FOUNDRY_PROJECT_ENDPOINT": endpoint},
+		})
+		require.ErrorIs(t, err, ErrEndpointBrownfield)
+	})
+
+	t.Run("eject keeps the greenfield/brownfield split", func(t *testing.T) {
+		// PreserveVarRefs only governs the values written out, never which
+		// branch is taken, so eject must agree with provision.
+		_, err := Synthesize(Input{
+			RawAzureYAML:    []byte(yamlDoc),
+			ServiceName:     "ai-project",
+			Env:             map[string]string{"FOUNDRY_PROJECT_ENDPOINT": endpoint},
+			PreserveVarRefs: true,
+		})
+		require.ErrorIs(t, err, ErrEndpointBrownfield)
+	})
+
+	t.Run("ProjectEndpoint resolves the reference", func(t *testing.T) {
+		got, err := ProjectEndpoint(
+			[]byte(yamlDoc), "ai-project", "",
+			map[string]string{"FOUNDRY_PROJECT_ENDPOINT": endpoint},
+		)
+		require.NoError(t, err)
+		require.Equal(t, endpoint, got)
+	})
+}
+
 func TestBrownfieldDeployments_ResolvesFileRef(
 	t *testing.T,
 ) {

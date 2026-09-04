@@ -46,8 +46,8 @@
     },
     "kind": {
       "type": "string",
-      "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt-voice' for a declarative (managed) speech-to-speech voice agent.",
-      "enum": ["hosted", "prompt-voice"]
+      "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt' for a declarative prompt agent; 'prompt-voice' for a declarative speech-to-speech voice agent.",
+      "enum": ["hosted", "prompt", "prompt-voice"]
     },
     "language": {
       "type": "string",
@@ -59,7 +59,12 @@
       "description": "Named Foundry toolbox consumed by the agent.",
       "properties": {
         "name": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 }
+        "version": { "type": "string", "minLength": 1 },
+        "connection": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Sibling azure.ai.connection service used by prompt agents to call the toolbox MCP endpoint."
+        }
       },
       "required": ["name"],
       "additionalProperties": false
@@ -70,17 +75,15 @@
       "enum": ["managed", "self_deployed"]
     },
     "model": {
-      "type": "object",
-      "description": "Voice agent (kind: prompt-voice) speech-to-speech model (e.g. id: gpt-realtime).",
-      "properties": {
-        "id": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Model name for managed mode (e.g. 'gpt-realtime') or existing Foundry deployment name for self_deployed mode." }
-      },
-      "required": ["id"],
-      "additionalProperties": true
+      "description": "Model deployment name for prompt agents, or speech-to-speech model configuration for prompt-voice agents.",
+      "oneOf": [
+        { "type": "string", "minLength": 1, "pattern": "\\S" },
+        { "$ref": "#/definitions/VoiceModel" }
+      ]
     },
     "instructions": {
       "type": "string",
-      "description": "Voice agent (kind: prompt-voice) system prompt for the assistant."
+      "description": "System prompt for prompt and prompt-voice agents."
     },
     "voice": {
       "type": "string",
@@ -206,6 +209,21 @@
   "additionalProperties": true,
   "allOf": [
     {
+      "$comment": "A prompt agent requires a model deployment name and instructions.",
+      "if": {
+        "properties": {
+          "kind": { "const": "prompt" }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["model", "instructions"],
+        "properties": {
+          "model": { "type": "string", "minLength": 1, "pattern": "\\S" }
+        }
+      }
+    },
+    {
       "$comment": "A prompt-voice agent must declare a speech-to-speech model and cannot use the hosted-agent toolbox reference, which the voice deployment path does not support.",
       "if": {
         "properties": {
@@ -215,6 +233,9 @@
       },
       "then": {
         "required": ["model"],
+        "properties": {
+          "model": { "$ref": "#/definitions/VoiceModel" }
+        },
         "not": {
           "required": ["toolbox"]
         }
@@ -293,6 +314,15 @@
     }
   ],
   "definitions": {
+    "VoiceModel": {
+      "type": "object",
+      "description": "Prompt-voice speech-to-speech model.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "pattern": "\\S" }
+      },
+      "required": ["id"],
+      "additionalProperties": true
+    },
     "ActivitySettings": {
       "type": "object",
       "description": "Activity-protocol Teams configuration. Omit digitalWorkerType for simple mode; m365 applies Digital Worker constraints via allOf.",

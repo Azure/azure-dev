@@ -132,3 +132,18 @@ words:
   - upsert
   - m365agentstoolkit
   - atk
+  # Managed agent (Foundry PES / managed harness) terms
+  - azureml
+  - cognitiveservices
+  - fdp
+  - PES
+  # Prompt agent (graph, skills, connections, policies) terms
+  - frontmatter
+  - ghcp
+  - pctx
+  - raipolicies
+  - retarget
+  - stringifying
+  - subfolders
+  - ufeff
+  - warnf

@@ -622,6 +622,11 @@ type AgentServiceInfo struct {
 	Version         string // deployed agent version from env
 	AgentEndpoint   string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
 	ProjectEndpoint string // adopted project endpoint used by a verified brownfield fallback
+	// ServiceDir is the absolute path to the service's source directory
+	// (project.Path joined with svc.RelativePath). It points at the folder
+	// that contains the service's agent.yaml, when one was scaffolded by
+	// `azd ai agent init`. May be empty if the resolver could not compute it.
+	ServiceDir string
 }
 
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.

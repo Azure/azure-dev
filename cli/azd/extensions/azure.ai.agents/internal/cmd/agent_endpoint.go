@@ -82,7 +82,14 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 	}
 
 	host := strings.ToLower(u.Hostname())
-	if host == "" || !isFoundryHost(host) {
+	if host == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--agent-endpoint host must not be empty",
+			agentEndpointHint,
+		)
+	}
+	if !isFoundryHost(host) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("--agent-endpoint host %q is not a Foundry host (*%s)", u.Hostname(), agentEndpointHostHint),

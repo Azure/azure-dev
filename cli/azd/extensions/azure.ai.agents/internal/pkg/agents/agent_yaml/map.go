@@ -164,11 +164,15 @@ func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuil
 	case AgentKindHosted:
 		hostedDef := agentTemplate.(ContainerAgent)
 		return CreateHostedAgentAPIRequest(hostedDef, buildConfig)
+	case AgentKindPrompt:
+		promptDef := agentTemplate.(PromptAgent)
+		return CreatePromptAgentAPIRequest(promptDef, buildConfig)
 	case AgentKindPromptVoice:
 		voiceDef := agentTemplate.(VoiceAgent)
 		return CreateVoiceAgentAPIRequest(voiceDef)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted, prompt-voice", agentDef.Kind)
+		return nil, fmt.Errorf(
+			"unsupported agent kind: %s. Supported kinds are: hosted, prompt, prompt-voice", agentDef.Kind)
 	}
 }
 
@@ -520,6 +524,186 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,
 		hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
+}
+
+// CreatePromptAgentAPIRequest converts a PromptAgent YAML definition into the
+// mapHarness builds the `harness` block, or returns nil for a plain prompt
+// agent so the field is omitted entirely.
+//
+// The harness is serialized as an object rather than the bare string it used to
+// be. The type
+// value itself is passed through verbatim: azd does not maintain an allowlist
+// of harness names, so a harness the service gains later needs no change here.
+func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
+	harnessType := promptAgent.HarnessType()
+	if harnessType == "" {
+		return nil
+	}
+
+	harness := &agent_api.ManagedAgentHarness{
+		Type:         harnessType,
+		Environment:  mapHarnessEnvironment(promptAgent.Harness.Environment),
+		BuiltinTools: mapHarnessBuiltInTools(promptAgent.Harness.BuiltinTools),
+	}
+
+	return harness
+}
+
+// PromptAgentSkillReferences returns the top-level versioned skill references
+// sent in a prompt-agent definition.
+func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillReference {
+	seen := map[string]struct{}{}
+	var skills []agent_api.SkillReference
+	add := func(name, version string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		key := strings.ToLower(name)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		skills = append(skills, agent_api.SkillReference{Name: name, Version: strings.TrimSpace(version)})
+	}
+	for _, skill := range promptAgent.ResolvedSkills {
+		add(skill.Name, skill.Version)
+	}
+	if promptAgent.Harness != nil {
+		for _, skill := range promptAgent.Harness.Skills {
+			add(skill.Name, skill.Version)
+		}
+	}
+	for _, skill := range promptAgent.Skills {
+		add(skill, "")
+	}
+	return skills
+}
+
+// mapHarnessEnvironment converts the authored sandbox sizing to its API shape.
+// Empty strings become nil so an omitted knob leaves the service default in
+// place rather than pinning it to "".
+func mapHarnessEnvironment(env *PromptHarnessEnvironment) *agent_api.HarnessEnvironment {
+	if env == nil {
+		return nil
+	}
+	mapped := &agent_api.HarnessEnvironment{IdleTimeoutSeconds: env.IdleTimeoutSeconds}
+	if cpu := strings.TrimSpace(env.Cpu); cpu != "" {
+		mapped.CPU = new(cpu)
+	}
+	if memory := strings.TrimSpace(env.Memory); memory != "" {
+		mapped.Memory = new(memory)
+	}
+	if mapped.CPU == nil && mapped.Memory == nil && mapped.IdleTimeoutSeconds == nil {
+		return nil
+	}
+	return mapped
+}
+
+// mapHarnessBuiltInTools converts the authored built-in capability filter to its
+// API shape, preserving the distinction between an explicitly empty list (turn
+// every capability off) and an omitted one (leave them all on).
+func mapHarnessBuiltInTools(builtin *PromptHarnessBuiltInTools) *agent_api.HarnessBuiltInTools {
+	if builtin == nil {
+		return nil
+	}
+	if builtin.Allowed == nil && builtin.Excluded == nil {
+		return nil
+	}
+	mapped := &agent_api.HarnessBuiltInTools{}
+	if builtin.Allowed != nil {
+		mapped.Allowed = new(slices.Clone(*builtin.Allowed))
+	}
+	if builtin.Excluded != nil {
+		mapped.Excluded = new(slices.Clone(*builtin.Excluded))
+	}
+	return mapped
+}
+
+// API CreateAgentRequest expected by the Foundry prompt-agent endpoint.
+//
+// Prompt agents are simpler than hosted agents — the customer only declares
+// model + instructions (plus optional skills/policies), so no image/cpu/memory
+// fields are required from the customer for the minimum case.
+//
+// The agent's Harness is omitted entirely when nil: a harness-less prompt
+// agent is run directly by Foundry, while a managed agent names its harness
+// (e.g. "github_copilot_preview") and the platform provisions a Brain+Hand
+// sandbox for it.
+func CreatePromptAgentAPIRequest(
+	promptAgent PromptAgent,
+	buildConfig *AgentBuildConfig,
+) (*agent_api.CreateAgentRequest, error) {
+	if err := ValidateAgentName(promptAgent.Name); err != nil {
+		return nil, fmt.Errorf("invalid prompt agent name: %w", err)
+	}
+	if strings.TrimSpace(promptAgent.Model) == "" {
+		return nil, fmt.Errorf("prompt agent requires a non-empty model")
+	}
+	if strings.TrimSpace(promptAgent.Instructions) == "" {
+		return nil, fmt.Errorf("prompt agent requires non-empty instructions")
+	}
+	if err := promptAgent.ValidateHarness(); err != nil {
+		return nil, err
+	}
+	if err := promptAgent.ValidateHarnessBlock(); err != nil {
+		return nil, err
+	}
+	if err := promptAgent.ValidateTools(); err != nil {
+		return nil, err
+	}
+	if err := promptAgent.ValidatePolicies(); err != nil {
+		return nil, err
+	}
+
+	promptDef := agent_api.ManagedAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{
+			Kind:      agent_api.AgentKindPrompt,
+			RaiConfig: mapRaiConfig(promptAgent.Policies),
+		},
+		Model:        promptAgent.Model,
+		Harness:      mapHarness(promptAgent),
+		Instructions: promptAgent.Instructions,
+		Skills:       PromptAgentSkillReferences(promptAgent),
+	}
+
+	// Tools, tool_choice, and structured_inputs are passed through verbatim so
+	// authors can express any tool type the prompt-agent API accepts without
+	// this layer having to model each one. The YAML is decoded into
+	// JSON-compatible values (maps/slices/scalars) and re-serialized as-is.
+	if len(promptAgent.Tools) > 0 {
+		promptDef.Tools = promptAgent.Tools
+	}
+	if promptAgent.ToolChoice != nil {
+		promptDef.ToolChoice = promptAgent.ToolChoice
+	}
+	if len(promptAgent.StructuredInputs) > 0 {
+		promptDef.StructuredInputs = promptAgent.StructuredInputs
+	}
+
+	// Sampling and response-shape controls. Copied as pointers/any so an
+	// explicit zero (temperature: 0) survives as a zero rather than collapsing
+	// into "unset" and silently picking up the service default.
+	promptDef.Temperature = promptAgent.Temperature
+	promptDef.TopP = promptAgent.TopP
+	promptDef.Text = promptAgent.Text
+	promptDef.Reasoning = promptAgent.Reasoning
+
+	// promptAgent.Memory is deliberately NOT copied here: the API has no memory
+	// field. The deploy engine provisions the store and injects a
+	// memory_search_preview entry into Tools, which the block above forwards.
+
+	// Build-time environment variables (if supplied) get carried into the
+	// managed environment block so the Hand sandbox can read them.
+	if buildConfig != nil && len(buildConfig.EnvironmentVariables) > 0 {
+		promptDef.Environment = &agent_api.ManagedEnvironment{
+			EnvironmentVariables: maps.Clone(buildConfig.EnvironmentVariables),
+		}
+	}
+
+	// Prompt agents do not have endpoint or agent-card customization at the
+	// YAML layer today, so pass nil for both.
+	return createAgentAPIRequest(promptAgent.AgentDefinition, promptDef, nil, nil)
 }
 
 // Default audio-pipeline values for a voice agent. Authors don't specify the

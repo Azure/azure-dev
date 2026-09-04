@@ -304,6 +304,78 @@ keys throughout this block (`invocations_moderation`, `response_mode`,
 `input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
 (`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
 
+### Hosted voice wrapper (preview)
+
+A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
+and text-to-speech while routing conversation logic to a hosted agent in the
+same Foundry project. Hosted Voice samples use the same sample `azure.yaml`
+flow as other current Hosted Agent and `invocations_ws` samples:
+
+```powershell
+azd ai agent init -m .\path\to\azure.yaml
+```
+
+The local path can be replaced with its public GitHub URL after the sample is
+published.
+
+When the sample project is already present with its `azure.yaml`, run
+`azd ai agent init` from the project directory to reuse the existing azd
+configuration before provisioning and deployment.
+
+The sample `azure.yaml` contains both services and references the target by its
+service name:
+
+```yaml
+services:
+  ai-project:
+    host: azure.ai.project
+
+  voice-target:
+    host: azure.ai.agent
+    project: ./src/voice-target
+    language: csharp
+    kind: hosted
+    name: voice-target
+    uses:
+      - ai-project
+    protocols:
+      - protocol: invocations_ws
+        version: 1.0.0
+    metadata:
+      voiceLiveCompatible: "true"
+      bridgeProtocolVersion: "1.0"
+    container:
+      resources:
+        cpu: "1"
+        memory: 2Gi
+    codeConfiguration:
+      runtime: dotnet_10
+      entryPoint: VoiceHostedAgent.dll
+      dependencyResolution: bundled
+
+  voice-target-voice:
+    host: azure.ai.agent
+    kind: voice
+    name: voice-target-voice
+    uses:
+      - ai-project
+      - voice-target
+    modelType: hosted_agent
+    targetAgent:
+      service: voice-target
+      version: deployed
+    store: false
+```
+
+The `uses` edge deploys the target before the wrapper. `version: deployed`
+pins the wrapper to the target version produced by the current azd environment.
+Hosted voice wrappers use the unified Voice API.
+
+The target must be active, declare `invocations_ws/1.0.0`, and include
+`voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
+instructions, tools, and other conversation controls belong to the target;
+the wrapper owns audio, voice, store, avatar, and greeting configuration.
+
 ## Session idle timeout
 
 A hosted agent's runtime session sandbox is suspended by Foundry after a period

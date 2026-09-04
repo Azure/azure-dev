@@ -374,7 +374,7 @@ func TestAgentPoliciesInvocationsModerationNonHostedInline(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 
-			_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+			properties := map[string]any{
 				"kind": kind,
 				"name": "rai-agent",
 				"policies": []any{
@@ -388,7 +388,11 @@ func TestAgentPoliciesInvocationsModerationNonHostedInline(t *testing.T) {
 						},
 					},
 				},
-			}))
+			}
+			if kind == "prompt-voice" {
+				properties["model"] = map[string]any{"id": "gpt-realtime"}
+			}
+			_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, properties))
 			require.ErrorContains(t, err, "invocationsModeration is only supported for 'hosted' agents")
 		})
 	}

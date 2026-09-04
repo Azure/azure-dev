@@ -22,6 +22,9 @@ const (
 	// voice when building the create request. Reserving "prompt-voice" keeps a
 	// clean boundary against a future hosted (code) voice agent.
 	AgentKindPromptVoice AgentKind = "prompt-voice"
+	// AgentKindVoice is the preferred authoring kind for managed Voice agents.
+	// AgentKindPromptVoice remains accepted for backwards compatibility.
+	AgentKindVoice AgentKind = "voice"
 )
 
 // VoiceModelType selects the model-inference mode for a voice agent.
@@ -30,7 +33,16 @@ type VoiceModelType string
 const (
 	VoiceModelTypeManaged      VoiceModelType = "managed"
 	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
+	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
 )
+
+// VoiceTargetAgent identifies the hosted agent service that supplies the
+// conversation logic for a hosted voice wrapper. Service is an azure.yaml
+// service name; azd resolves it to the deployed Foundry agent name and version.
+type VoiceTargetAgent struct {
+	Service string `json:"service" yaml:"service"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
 
 // IsValidAgentKind checks if the provided AgentKind is valid
 func IsValidAgentKind(kind AgentKind) bool {
@@ -43,7 +55,13 @@ func ValidAgentKinds() []AgentKind {
 		AgentKindHosted,
 		AgentKindWorkflow,
 		AgentKindPromptVoice,
+		AgentKindVoice,
 	}
+}
+
+// IsVoiceAgentKind reports whether kind is a managed Voice agent authoring kind.
+func IsVoiceAgentKind(kind AgentKind) bool {
+	return kind == AgentKindPromptVoice || kind == AgentKindVoice
 }
 
 type ResourceKind string
@@ -208,6 +226,8 @@ type VoiceAgent struct {
 	// Model names the speech-to-speech model (e.g. "gpt-realtime"). Reuses the
 	// shared Model struct; only Id is required for voice.
 	Model *Model `json:"model,omitempty" yaml:"model,omitempty"`
+	// TargetAgent references the hosted agent service used when model_type is hosted_agent.
+	TargetAgent *VoiceTargetAgent `json:"targetAgent,omitempty" yaml:"target_agent,omitempty"`
 	// Instructions is the system prompt for the voice assistant.
 	Instructions *string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	// Voice is the output voice name (e.g. "en-US-Ava:DragonHDLatestNeural" for

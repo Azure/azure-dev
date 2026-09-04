@@ -329,3 +329,140 @@ include:
 		t.Fatalf("expected azure-speech include config to be valid, got: %v", err)
 	}
 }
+
+func TestValidateAgentDefinition_HostedVoiceAccepted(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-wrapper
+model_type: hosted_agent
+target_agent:
+  service: voice-target
+  version: deployed
+`)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected hosted voice definition to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_HostedVoiceAcceptedWithVoiceKind(t *testing.T) {
+	yamlContent := []byte(`
+kind: voice
+name: voice-wrapper
+model_type: hosted_agent
+target_agent:
+  service: voice-target
+  version: deployed
+`)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected hosted voice definition to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_HostedAgentRejectsHostedVoiceModelType(t *testing.T) {
+	yamlContent := []byte(`
+kind: hosted
+name: hosted-target
+model_type: hosted_agent
+target_agent:
+  service: target
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "model_type 'hosted_agent' is only valid") ||
+		!strings.Contains(err.Error(), "target_agent is only valid") {
+		t.Fatalf("expected hosted voice fields on hosted kind to fail, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_HostedVoiceRequiresTarget(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-wrapper
+model_type: hosted_agent
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "target_agent.service is required") {
+		t.Fatalf("expected target agent validation error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_HostedVoiceRejectsTargetOwnedFields(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-wrapper
+model_type: hosted_agent
+target_agent:
+  service: voice-target
+model:
+  id: gpt-realtime
+instructions: not allowed
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "belong to the target hosted agent") ||
+		!strings.Contains(err.Error(), "model is not allowed") {
+		t.Fatalf("expected target-owned field validation errors, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_HostedVoiceRejectsSchemas(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-wrapper
+model_type: hosted_agent
+target_agent:
+  service: voice-target
+inputSchema:
+  properties: []
+outputSchema:
+  properties: []
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "input_schema, output_schema") {
+		t.Fatalf("expected target-owned schema validation error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoiceRejectsProtocols(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice
+model:
+  id: gpt-realtime
+protocols:
+  - protocol: invocations_ws
+    version: 1.0.0
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "protocols is not supported") {
+		t.Fatalf("expected prompt voice protocols validation error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoiceRejectsPolicies(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice
+model:
+  id: gpt-realtime
+policies:
+  - type: rai_policy
+    rai_policy_name: policy
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "policies is not supported") {
+		t.Fatalf("expected prompt voice policy validation error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoiceRejectsMalformedPolicies(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice
+model:
+  id: gpt-realtime
+policies: invalid
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "template.policies is not valid") {
+		t.Fatalf("expected malformed policy validation error, got: %v", err)
+	}
+}

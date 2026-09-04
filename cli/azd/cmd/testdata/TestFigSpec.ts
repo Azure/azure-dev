@@ -4609,6 +4609,109 @@ const completionSpec: Fig.Spec = {
 					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add a reference to a local toolbox definition.',
+							subcommands: [
+								{
+									name: ['connection'],
+									description: 'Add a connection reference to toolbox.yaml.',
+									options: [
+										{
+											name: ['--file'],
+											description: 'Path to the local toolbox definition.',
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--index'],
+											description: 'Search index name used by a CognitiveSearch connection.',
+											args: [
+												{
+													name: 'index',
+												},
+											],
+										},
+										{
+											name: ['--instance-name'],
+											description: 'Custom search configuration used by a GroundingWithCustomSearch connection.',
+											args: [
+												{
+													name: 'instance-name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['skill'],
+									description: 'Add a skill reference to toolbox.yaml.',
+									options: [
+										{
+											name: ['--file'],
+											description: 'Path to the local toolbox definition.',
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['connection'],
 							description: 'Manage the connection-backed tools attached to a toolbox.',
 							subcommands: [
@@ -4818,6 +4921,31 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['deploy'],
+							description: 'Deploy a local toolbox definition.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
 										},
 									],
 								},

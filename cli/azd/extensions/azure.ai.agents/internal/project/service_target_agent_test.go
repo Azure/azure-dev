@@ -149,6 +149,23 @@ func TestTelephonyBindingMatches(t *testing.T) {
 	require.True(t, telephonyBindingMatches(remote, desired))
 }
 
+func TestTelephonyBindingMatches_ServiceOmittedFields(t *testing.T) {
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:       "azure-communication-service",
+		Identifier:     "28:orgid:00000000-0000-0000-0000-000000000001",
+		ConnectionName: "telephony-acs",
+	}
+	remote := &agent_api.TelephonyBinding{
+		ID:       "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000001",
+		Provider: "teams_phone_extension",
+		Status:   "active",
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
+
+	remote.ID = "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000002"
+	require.False(t, telephonyBindingMatches(remote, desired))
+}
+
 func TestTelephonyWireProvider(t *testing.T) {
 	require.Equal(t, "azure-communication-service", telephonyWireProvider("acs"))
 	require.Equal(t, "twilio", telephonyWireProvider("twilio"))

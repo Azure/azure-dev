@@ -2552,10 +2552,28 @@ func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_
 	if remote == nil || desired == nil {
 		return false
 	}
-	return strings.TrimSpace(remote.Provider) == strings.TrimSpace(desired.Provider) &&
-		strings.TrimSpace(remote.Identifier) == strings.TrimSpace(desired.Identifier) &&
-		strings.TrimSpace(remote.ConnectionName) == strings.TrimSpace(desired.ConnectionName) &&
-		reflect.DeepEqual(emptyTransferTargetsAsNil(remote.TransferTargets), emptyTransferTargetsAsNil(desired.TransferTargets))
+	desiredID := fmt.Sprintf("%s:%s", strings.TrimSpace(desired.Provider), strings.TrimSpace(desired.Identifier))
+	if strings.TrimSpace(remote.ID) != "" && strings.TrimSpace(remote.ID) != desiredID {
+		return false
+	}
+	if strings.TrimSpace(remote.Provider) != "" &&
+		strings.TrimSpace(remote.Provider) != strings.TrimSpace(desired.Provider) &&
+		!(strings.TrimSpace(desired.Provider) == "azure-communication-service" &&
+			strings.TrimSpace(remote.Provider) == "teams_phone_extension") {
+		return false
+	}
+	if strings.TrimSpace(remote.Identifier) != "" &&
+		strings.TrimSpace(remote.Identifier) != strings.TrimSpace(desired.Identifier) {
+		return false
+	}
+	if strings.TrimSpace(remote.ConnectionName) != "" &&
+		strings.TrimSpace(remote.ConnectionName) != strings.TrimSpace(desired.ConnectionName) {
+		return false
+	}
+	return reflect.DeepEqual(
+		emptyTransferTargetsAsNil(remote.TransferTargets),
+		emptyTransferTargetsAsNil(desired.TransferTargets),
+	)
 }
 
 func emptyTransferTargetsAsNil(targets []map[string]any) []map[string]any {

@@ -6,8 +6,13 @@ words:
   - conncmd
   # Contributors
   - harsheet
+  # Eval / optimize async job ID prefixes and terms
+  - datagen
+  - evaluatorgen
+  - signup
   # Terms
   - Reprompt
+  - MMDDH
   # Voice (prompt-voice) agents
   - BYOM
   - Nanami
@@ -61,6 +66,7 @@ words:
   - containerref
   - curr
   - dataagent
+  - defaultyourvalue
   - envkey
   - exterrors
   - goyaml
@@ -89,6 +95,7 @@ words:
   - Toolsets
   - underscoped
   - unparseable
+  - uvx
   - Vnext
   - VOICELIVE
   - webp

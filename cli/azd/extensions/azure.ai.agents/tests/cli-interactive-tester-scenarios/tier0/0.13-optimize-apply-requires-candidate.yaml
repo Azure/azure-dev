@@ -1,0 +1,22 @@
+# Tier 0 (offline) — `optimize` flag/required-argument validation.
+#
+# 'optimize apply' marks --candidate as required, so omitting it must fail fast
+# with a clear cobra "required flag" error, before any prompt or network call.
+name: "optimize-apply-requires-candidate"
+command: "azd ai agent optimize apply"
+cwd: "~/working/azd-agents-validate-optimize-{instance}"
+tags: ["tier:0", "cmd:optimize", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+pre:
+  - run: "rm -rf ~/working/azd-agents-validate-optimize-{instance}"
+    cwd: "~/working"
+    name: "reset to an empty working dir"
+
+goals:
+  - "Run 'optimize apply' with no --candidate flag in an empty directory."
+  - "Confirm it exits non-zero immediately with a clear message that the required --candidate flag was not set (it must NOT hang, prompt, or make a network call)."
+  - "Take a screenshot of the error output."
+  - "Report a finding if it hangs, prompts interactively, makes a network call, or the error does not identify the missing --candidate flag."

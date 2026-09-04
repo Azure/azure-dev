@@ -1,0 +1,50 @@
+# Tier 2 (cloud E2E) — `endpoint update` patches endpoint/card without a new version.
+#
+# Precondition: 2.00-setup-deploy-shared-agent.yaml has been run successfully.
+name: "endpoint-update"
+command: "azd ai agent endpoint update"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:endpoint", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 2.00-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+  # `endpoint update` reads agentEndpoint/agentCard from the unified service-level
+  # properties (via LoadAgentDefinition) and errors ("nothing to update") if
+  # neither is defined. The Basic Responses template defines neither, so inject a
+  # minimal agentCard beside the inline `kind: hosted` definition (idempotently)
+  # before the run so there is something to patch.
+  - run: |
+      f="$HOME/working/azd-agents-shared/{shared_agent_name}/azure.yaml"
+      if [ ! -f "$f" ]; then
+        echo "PRECONDITION FAILED: azure.yaml not found"
+        exit 1
+      fi
+      if ! grep -q '^    agentCard:' "$f"; then
+        if ! awk '/^    kind: hosted$/ && !inserted { print; print "    agentCard:"; print "      description: \"{prefix} endpoint-update test card\""; print "      skills:"; print "        - id: \"{prefix}-echo\""; print "          name: \"Echo\""; print "          description: \"Echoes input back\""; inserted=1; next } { print } END { if (!inserted) exit 1 }' "$f" > "$f.tmp"; then
+          rm -f "$f.tmp"
+          echo "PRECONDITION FAILED: inline hosted-agent definition not found"
+          exit 1
+        fi
+        mv "$f.tmp" "$f"
+      fi
+      if grep -q '^    agentCard:' "$f"; then
+        echo "Verified service-level agentCard in azure.yaml"
+      else
+        echo "PRECONDITION FAILED: service-level agentCard was not inserted"
+        exit 1
+      fi
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "inject agentCard into azure.yaml so there is something to patch"
+
+goals:
+  - "BEFORE running endpoint update, run 'azd ai agent show' first and note the current agent version number — you will need it to verify the update did not create a new version."
+  - "Run endpoint update for the default (auto-detected) agent service. NOTE: a minimal agentCard was injected into azure.yaml service properties during setup so the patch has content."
+  - "Confirm it patches the existing deployed agent's endpoint/card configuration and explicitly does NOT create a new agent version."
+  - "After it completes, run 'azd ai agent show' and confirm the agent version is unchanged from before the update."
+  - "Take a screenshot of the update result and the post-update 'show' output."
+  - "Report a finding if endpoint update creates a new version, errors against an already-deployed agent, or gives a confusing result."

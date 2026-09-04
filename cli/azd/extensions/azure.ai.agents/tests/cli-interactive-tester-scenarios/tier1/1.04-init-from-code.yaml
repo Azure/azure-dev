@@ -1,0 +1,44 @@
+# Tier 1 (auth, scaffold only) — init from existing code in the current directory.
+#
+# Requires Azure login (see README "Authentication"). Does NOT run `azd provision`;
+# no cost incurred.
+# Precondition: the cwd should already contain agent source code (and ideally an
+# agent manifest). The pre hooks seed a committed Python fixture so this is
+# guaranteed and the run is idempotent.
+name: "init-from-code"
+command: "azd ai agent init"
+cwd: "~/working/azd-agents-t1-from-code-{instance}"
+tags: ["tier:1", "cmd:init", "parallel-safe"]
+produces: "~/working/azd-agents-t1-from-code-{instance}"
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+pre:
+  - run: "rm -rf ~/working/azd-agents-t1-from-code-{instance}"
+    cwd: "~/working"
+    name: "reset working dir"
+  - run: "mkdir -p ~/working/azd-agents-t1-from-code-{instance} && cp -r \"{fixtures_dir}/from-code/.\" ~/working/azd-agents-t1-from-code-{instance}/"
+    cwd: "~/working"
+    name: "seed from-code agent fixture (app.py + requirements.txt)"
+
+goals:
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with '{prefix}-' and suffixed with this run's instance id '-{instance}' (e.g. '{prefix}-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
+  - "When prompted for the AGENT NAME, set it to EXACTLY '{prefix}-t1-from-code-{instance}' (clear any pre-filled default first, then type it). The from-code flow updates the current project directory; it does not create an agent-name subdirectory."
+  - "At the first 'How do you want to initialize your agent?' prompt, select 'Use the code in the current directory' (this is the from-code flow; there is no --from-code flag)."
+  - "Wait for the tool to inspect the current directory and treat its code as the agent source."
+  - "If an existing agent manifest is detected, confirm that you want to reuse it (answer yes / confirm)."
+  - "At the 'How would you like to deploy your agent?' prompt, select 'Source Code (ZIP upload)'."
+  - "At the 'Select the runtime for your agent' prompt, select 'Python 3.13'."
+  - "At the entry-point prompt, provide 'app.py'."
+  - "At the 'How should dependencies be resolved?' prompt, select 'Remote build (dependencies installed on server during deployment)'."
+  - "At the 'Which protocols does your agent support?' prompt, verify 'responses' is selected by default and every other protocol is unselected. Leave that selection unchanged and continue."
+  - "If asked to select an Azure AI Foundry project, choose to create a new one and name it with the '{prefix}-' prefix."
+  - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
+  - "If asked to select a subscription, search for and select the '{subscription}' subscription."
+  - "If asked for a location/region, search for and select '{region}'."
+  - "If asked to select a model, choose '{model}' and accept the defaults for model version, SKU, and capacity."
+  - "Wait for initialization to complete — look for 'Next:' in the output."
+  - "Verify the scaffold: confirm azure.yaml was created in the current working directory to reference the local code as an azure.ai.agent service, and that a .agentignore file was generated."
+  - "Take a screenshot of the completed init output."
+  - "STOP here — do NOT run 'azd provision'. Report a finding if code-detection misbehaves or if the manifest-reuse prompt is confusing."

@@ -1,0 +1,12 @@
+# Tier 0 (offline) — verify `azd ai agent code download --help` prints usage.
+name: "code-download-help"
+command: "azd ai agent code download --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:code", "parallel-safe"]
+
+goals:
+  - "Wait for the help text to render."
+  - "Confirm the output includes the command description, usage line, examples, and flags (--dest, --version, --zip)."
+  - "Confirm the process exits cleanly (exit 0) without error or stack trace."
+  - "Take a screenshot of the help output."
+  - "Report a finding if help text is missing, incomplete, or the command errors."

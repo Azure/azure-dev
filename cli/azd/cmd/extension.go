@@ -112,7 +112,7 @@ installs aren't tracked for updates; install a newer bundle to update.`,
 	// azd extension uninstall <extension-id>
 	group.Add("uninstall", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "uninstall [extension-id]",
+			Use:   "uninstall [extension-id...]",
 			Short: "Uninstall specified extensions.",
 			Long: `Uninstall one or more installed extensions.
 

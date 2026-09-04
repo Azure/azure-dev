@@ -108,6 +108,27 @@ func Test_PlanUninstall_DependencyFreedBySiblingRemovedLater(t *testing.T) {
 	require.Empty(t, plan.Retained)
 }
 
+func Test_PlanUninstall_CycleWithDependencyInstalledExtension(t *testing.T) {
+	t.Parallel()
+	// The upgrade flow tolerates cycles, so a -> b -> a can exist on disk. b was installed
+	// only for a, so removing a takes b along instead of b blocking the removal.
+	manager := newPlanTestManager(t, map[string]*Extension{
+		"a": installedRecord("a", "1.0.0", false, "b"),
+		"b": installedRecord("b", "1.0.0", true, "a"),
+	})
+
+	plan, err := manager.PlanUninstall([]string{"a"}, UninstallPlanOptions{})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocked)
+	require.Equal(t, []string{"b"}, extensionIds(plan.Orphaned))
+
+	// With dependencies kept, b stays and its declared need for a is a real block.
+	_, err = manager.PlanUninstall([]string{"a"}, UninstallPlanOptions{KeepDependencies: true})
+	requiredErr, ok := errors.AsType[*ExtensionRequiredError](err)
+	require.True(t, ok)
+	require.Equal(t, []string{"b"}, requiredErr.Blocked["a"])
+}
+
 func Test_PlanUninstall_BlockedByDependents(t *testing.T) {
 	t.Parallel()
 	manager := newPlanTestManager(t, foundryShapedInstall())
@@ -444,10 +465,54 @@ func Test_Upgrade_BackfillsDependencySnapshotOfCurrentChildren(t *testing.T) {
 
 	// The uninstall planner now protects the leaf through the child's snapshot.
 	_, err = manager.PlanUninstall([]string{"test.leaf"}, UninstallPlanOptions{})
-	require.Error(t, err)
-	var requiredErr *ExtensionRequiredError
-	require.ErrorAs(t, err, &requiredErr)
+	requiredErr, ok := errors.AsType[*ExtensionRequiredError](err)
+	require.True(t, ok)
 	require.Equal(t, []string{"test.child"}, requiredErr.Blocked["test.leaf"])
+}
+
+func Test_Upgrade_BackfillsUnconstrainedChildren(t *testing.T) {
+	// A dependency declared without a version constraint has nothing to reconcile, but a
+	// legacy record for it still needs its snapshot.
+	pack := &ExtensionMetadata{
+		Id:     "test.pack",
+		Source: MainRegistryName,
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.child"}},
+		}},
+	}
+	child := &ExtensionMetadata{
+		Id:     "test.child",
+		Source: MainRegistryName,
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Artifacts:    sampleArtifacts,
+			Dependencies: []ExtensionDependency{{Id: "test.leaf"}},
+		}},
+	}
+	leaf := &ExtensionMetadata{
+		Id:       "test.leaf",
+		Source:   MainRegistryName,
+		Versions: []ExtensionVersion{{Version: "1.0.0", Artifacts: sampleArtifacts}},
+	}
+	manager := newInstallTestManager(t, &mockSource{
+		name:       MainRegistryName,
+		extensions: []*ExtensionMetadata{pack, child, leaf},
+	})
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		"test.pack":  {Id: "test.pack", Version: "1.0.0", Source: MainRegistryName},
+		"test.child": {Id: "test.child", Version: "1.0.0", Source: MainRegistryName},
+		"test.leaf":  {Id: "test.leaf", Version: "1.0.0", Source: MainRegistryName},
+	}))
+	manager.installed = nil
+
+	_, results, err := manager.Upgrade(t.Context(), pack, DefaultUpgradeOptions(""))
+	require.NoError(t, err)
+	require.Empty(t, results)
+
+	childRecord, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, []ExtensionDependency{{Id: "test.leaf"}}, childRecord.Dependencies)
 }
 
 func Test_ReconcileDependencies_BackfillsLegacyDependencySnapshot(t *testing.T) {

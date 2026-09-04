@@ -61,6 +61,8 @@ type Arg struct {
 	Name        string
 	Description string
 	IsOptional  bool
+	// IsVariadic marks an argument that accepts several values (`[name...]` in Use).
+	IsVariadic  bool
 	Suggestions []string
 	// Generator is a single TypeScript generator expression (e.g. "azdGenerators.listEnvironments").
 	Generator string

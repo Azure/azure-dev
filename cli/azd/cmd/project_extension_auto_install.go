@@ -381,18 +381,39 @@ func resolveExtensionDependencies(
 
 // installedProvidesProvider reports whether an installed extension already supplies the provider,
 // in which case nothing needs to be installed for it.
-func installedProvidesProvider(
+// installedProviderExtensions returns the installed extensions that publish the provider,
+// sorted by id.
+func installedProviderExtensions(
 	installed map[string]*extensions.Extension,
 	capability extensions.CapabilityType,
 	providerName string,
-) bool {
-	for extension := range maps.Values(installed) {
+) []*extensions.Extension {
+	var providers []*extensions.Extension
+	for _, extension := range installed {
 		if extensionProvidesProvider(extension.Capabilities, extension.Providers, capability, providerName) {
-			return true
+			providers = append(providers, extension)
 		}
 	}
+	slices.SortFunc(providers, func(a, b *extensions.Extension) int {
+		return strings.Compare(a.Id, b.Id)
+	})
+	return providers
+}
 
-	return false
+// promoteProjectRequiredExtension marks an installed extension the project requires as an
+// explicit install, so a record that only a pack pulled in survives when that pack is
+// uninstalled. Explicit records are left untouched.
+func promoteProjectRequiredExtension(
+	extensionManager extensionAutoInstallManager,
+	installed *extensions.Extension,
+) error {
+	if !installed.InstalledAsDependency {
+		return nil
+	}
+	if err := extensionManager.MarkExplicitlyInstalled(installed.Id); err != nil {
+		return fmt.Errorf("marking extension %s as explicitly installed: %w", installed.Id, err)
+	}
+	return nil
 }
 
 func extensionProvidesProvider(
@@ -513,6 +534,11 @@ func missingProjectExtensions(
 				if err := validateInstalledExtensionVersion(installedExtension, versionPreference); err != nil {
 					return nil, err
 				}
+				// The project requires this extension in its own right, so a record that only
+				// a pack pulled in becomes explicit and survives when that pack is uninstalled.
+				if err := promoteProjectRequiredExtension(extensionManager, installedExtension); err != nil {
+					return nil, err
+				}
 				continue
 			}
 
@@ -553,8 +579,17 @@ func missingProjectExtensions(
 	}
 
 	addProvider := func(capability extensions.CapabilityType, provider string) error {
-		if provider == "" || providerIsBuiltIn(capability, provider) ||
-			installedProvidesProvider(installed, capability, provider) {
+		if provider == "" || providerIsBuiltIn(capability, provider) {
+			return nil
+		}
+		// An installed provider satisfies the requirement; the project needs that extension
+		// in its own right, so a dependency-installed record becomes explicit.
+		if providers := installedProviderExtensions(installed, capability, provider); len(providers) > 0 {
+			for _, extension := range providers {
+				if err := promoteProjectRequiredExtension(extensionManager, extension); err != nil {
+					return err
+				}
+			}
 			return nil
 		}
 

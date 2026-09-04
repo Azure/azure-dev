@@ -127,7 +127,7 @@ or --force is set.`,
 		Command: &cobra.Command{
 			Use:     "update [extension-id]",
 			Aliases: []string{"upgrade"},
-			Short:   "Update installed extensions.",
+			Short:   "Update installed extensions to the latest version.",
 			Long: `Also updates installed dependencies to compatible versions unless
 --no-dependency-updates is set.
 
@@ -2520,14 +2520,14 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	flags := &extensionUpgradeFlags{
 		global: global,
 	}
-	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "Exact version to install; defaults to latest.")
+	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to update to")
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
-		"Source name or registry URL/file. New sources require interactive mode.")
+		"The registered source name or registry location (URL or file path) to use for updates.")
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Update all installed extensions")
 	cmd.Flags().BoolVar(&flags.noDependencyUpdates, "no-dependency-updates", false,
-		"Keep installed dependency versions")
+		"Do not update dependencies when updating an extension that has dependencies")
 	cmd.Flags().BoolVar(&flags.noDependencyUpdates, "no-dependency-upgrades", false,
-		"Keep installed dependency versions")
+		"Do not update dependencies when updating an extension that has dependencies")
 	_ = cmd.Flags().MarkHidden("no-dependency-upgrades")
 
 	return flags

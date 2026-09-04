@@ -6630,11 +6630,13 @@ const completionSpec: Fig.Spec = {
 					isOptional: true,
 				},
 				{
-					name: 'args...',
+					name: 'args',
 					isOptional: true,
+					isVariadic: true,
 				},
 				{
-					name: 'script-args...',
+					name: 'script-args',
+					isVariadic: true,
 				},
 			],
 		},
@@ -6811,6 +6813,7 @@ const completionSpec: Fig.Spec = {
 					args: {
 						name: 'extension-id',
 						isOptional: true,
+						isVariadic: true,
 						generators: azdGenerators.listInstalledExtensions,
 					},
 				},
@@ -7347,8 +7350,9 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'tool-name...',
+						name: 'tool-name',
 						isOptional: true,
+						isVariadic: true,
 					},
 				},
 				{
@@ -7386,8 +7390,9 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'tool-name...',
+						name: 'tool-name',
 						isOptional: true,
+						isVariadic: true,
 					},
 				},
 				{
@@ -7414,8 +7419,9 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'tool-name...',
+						name: 'tool-name',
 						isOptional: true,
+						isVariadic: true,
 					},
 				},
 			],

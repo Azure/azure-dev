@@ -156,6 +156,42 @@ func (m *Manager) PlanUninstall(ids []string, opts UninstallPlanOptions) (*Unins
 		return dependents
 	}
 
+	// Walk the dependencies of everything being removed. A dependency joins the removal set
+	// when it was installed as a dependency and nothing outside the removal set requires it.
+	// Removed extensions are appended to the queue so their own dependencies are visited,
+	// which also re-examines a dependency that was first kept because of a sibling that is
+	// removed later (A -> B, A -> C, C -> B). This runs before the dependents check so that a
+	// dependency-installed extension in a cycle with a target (A -> B -> A) leaves with it
+	// instead of blocking it.
+	considered := map[string]*Extension{}
+	if !opts.KeepDependencies {
+		queue := slices.Clone(plan.Targets)
+		for i := 0; i < len(queue); i++ {
+			for _, dependency := range queue[i].Dependencies {
+				if strings.TrimSpace(dependency.Id) == "" {
+					continue
+				}
+				dependencyExtension, err := m.GetInstalled(FilterOptions{Id: dependency.Id})
+				if err != nil || dependencyExtension == nil {
+					continue
+				}
+				if _, removing := removal[dependencyExtension.Id]; removing {
+					continue
+				}
+				considered[dependencyExtension.Id] = dependencyExtension
+				if !dependencyExtension.InstalledAsDependency ||
+					len(dependentsOutsideRemoval(dependencyExtension.Id)) > 0 {
+					continue
+				}
+
+				removal[dependencyExtension.Id] = struct{}{}
+				delete(considered, dependencyExtension.Id)
+				plan.Orphaned = append(plan.Orphaned, dependencyExtension)
+				queue = append(queue, dependencyExtension)
+			}
+		}
+	}
+
 	blocked := map[string][]string{}
 	for _, target := range plan.Targets {
 		if dependents := dependentsOutsideRemoval(target.Id); len(dependents) > 0 {
@@ -167,42 +203,6 @@ func (m *Manager) PlanUninstall(ids []string, opts UninstallPlanOptions) (*Unins
 			return nil, &ExtensionRequiredError{Blocked: blocked}
 		}
 		plan.Blocked = blocked
-	}
-
-	if opts.KeepDependencies {
-		return plan, nil
-	}
-
-	// Walk the dependencies of everything being removed. A dependency joins the removal set
-	// when it was installed as a dependency and nothing outside the removal set requires it.
-	// Removed extensions are appended to the queue so their own dependencies are visited,
-	// which also re-examines a dependency that was first kept because of a sibling that is
-	// removed later (A -> B, A -> C, C -> B).
-	considered := map[string]*Extension{}
-	queue := slices.Clone(plan.Targets)
-	for i := 0; i < len(queue); i++ {
-		for _, dependency := range queue[i].Dependencies {
-			if strings.TrimSpace(dependency.Id) == "" {
-				continue
-			}
-			dependencyExtension, err := m.GetInstalled(FilterOptions{Id: dependency.Id})
-			if err != nil || dependencyExtension == nil {
-				continue
-			}
-			if _, removing := removal[dependencyExtension.Id]; removing {
-				continue
-			}
-			considered[dependencyExtension.Id] = dependencyExtension
-			if !dependencyExtension.InstalledAsDependency ||
-				len(dependentsOutsideRemoval(dependencyExtension.Id)) > 0 {
-				continue
-			}
-
-			removal[dependencyExtension.Id] = struct{}{}
-			delete(considered, dependencyExtension.Id)
-			plan.Orphaned = append(plan.Orphaned, dependencyExtension)
-			queue = append(queue, dependencyExtension)
-		}
 	}
 
 	for _, id := range slices.Sorted(maps.Keys(considered)) {

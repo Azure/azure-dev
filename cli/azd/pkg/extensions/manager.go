@@ -1242,13 +1242,34 @@ func (m *Manager) evaluateDependencyChanges(
 	var results []UpgradeResult
 
 	for _, dep := range parentVersion.Dependencies {
-		if dep.Version == "" {
-			continue
-		}
-
 		installed, err := m.GetInstalled(FilterOptions{Id: dep.Id})
 		if err != nil || installed == nil {
 			// Not installed — handled by the parent's Install dependency loop.
+			continue
+		}
+
+		// Dependency upgrades use the same parent-source then main-registry
+		// resolution policy as fresh dependency installs.
+		childMetadata, findErr := m.resolveDependency(
+			ctx,
+			parentExtension,
+			dep,
+			!opts.SkipMainRegistryDependencyFallback,
+			m.azdVersion,
+		)
+
+		// Children that predate dependency tracking learn their snapshot here, before any
+		// version logic, so one update of the parent protects the whole tree even when every
+		// child is already current or declared without a constraint.
+		if findErr == nil {
+			installedRelease := FindVersion(childMetadata.Versions, installed.Version)
+			if err := m.BackfillDependencies(dep.Id, installedRelease); err != nil {
+				log.Printf("Warning: %v", err)
+			}
+		}
+
+		// An unconstrained dependency has nothing to reconcile against.
+		if dep.Version == "" {
 			continue
 		}
 
@@ -1279,15 +1300,6 @@ func (m *Manager) evaluateDependencyChanges(
 		// upgrades, skips, or fails.
 		visited[dep.Id] = struct{}{}
 
-		// Dependency upgrades use the same parent-source then main-registry
-		// resolution policy as fresh dependency installs.
-		childMetadata, findErr := m.resolveDependency(
-			ctx,
-			parentExtension,
-			dep,
-			!opts.SkipMainRegistryDependencyFallback,
-			m.azdVersion,
-		)
 		if findErr != nil {
 			// Without registry data, only fail if the installed version violates the constraint.
 			if matchesVersionConstraint(dep.Version, installed.Version) {
@@ -1307,13 +1319,6 @@ func (m *Manager) evaluateDependencyChanges(
 				Suggestion:         suggestion,
 			})
 			continue
-		}
-
-		// Children that predate dependency tracking learn their snapshot here, so one update
-		// of the parent protects the whole tree even when every child is already current.
-		installedRelease := FindVersion(childMetadata.Versions, installed.Version)
-		if err := m.BackfillDependencies(dep.Id, installedRelease); err != nil {
-			log.Printf("Warning: %v", err)
 		}
 
 		bestVersion := bestSatisfyingVersionForAzd(dep.Version, childMetadata.Versions, m.azdVersion)

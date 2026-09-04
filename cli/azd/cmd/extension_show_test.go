@@ -107,6 +107,52 @@ func TestExtensionShowAction_ExplainsDependenciesAndDependents(t *testing.T) {
 	require.Equal(t, []extensionShowDependent{{Id: "azure.ai.agents", Version: "1.0.0"}}, projects.RequiredBy)
 }
 
+func TestExtensionShowAction_JSONKeys(t *testing.T) {
+	t.Parallel()
+
+	// Decoding into the tagged struct would accept the old PascalCase keys, so the contract
+	// is checked on the raw object: camelCase names and no empty fields.
+	mockCtx := mocks.NewMockContext(t.Context())
+	installed := map[string]*extensions.Extension{
+		"ext-a": {Id: "ext-a", Version: "1.0.0", Source: "test", InstalledAsDependency: true},
+	}
+	manager, sourceManager := createUpgradeTestManager(
+		t, mockCtx, installed, showTestRegistryURL,
+		testRegistry(&extensions.ExtensionMetadata{
+			Id:          "ext-a",
+			Source:      "test",
+			DisplayName: "A",
+			Versions:    []extensions.ExtensionVersion{{Version: "1.0.0"}},
+		}),
+	)
+
+	var buf bytes.Buffer
+	action := &extensionShowAction{
+		args:             []string{"ext-a"},
+		flags:            &extensionShowFlags{global: &internal.GlobalCommandOptions{NoPrompt: true}},
+		console:          mockinput.NewMockConsole(),
+		formatter:        &output.JsonFormatter{},
+		writer:           &buf,
+		sourceManager:    sourceManager,
+		extensionManager: manager,
+	}
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &raw))
+	require.Equal(t, "ext-a", raw["id"])
+	require.Equal(t, "1.0.0", raw["installedVersion"])
+	require.Equal(t, "1.0.0", raw["latestVersion"])
+	require.Equal(t, true, raw["installedAsDependency"])
+	for _, legacyKey := range []string{"Id", "Name", "InstalledVersion", "LatestVersion", "AvailableVersions"} {
+		require.NotContains(t, raw, legacyKey)
+	}
+	for _, emptyKey := range []string{"website", "namespace", "tags", "otherVersions", "dependencies", "requiredBy"} {
+		require.NotContains(t, raw, emptyKey, "empty fields are omitted")
+	}
+}
+
 func TestExtensionShowAction_InstalledWithoutRegistryEntry(t *testing.T) {
 	t.Parallel()
 

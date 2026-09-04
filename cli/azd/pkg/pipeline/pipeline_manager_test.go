@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_PipelineManager_Initialize(t *testing.T) {
@@ -575,6 +576,60 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 }
 
 func Test_promptForCiFiles(t *testing.T) {
+	t.Run("required extensions are installed for github", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
+		require.NoError(t, os.MkdirAll(path, osutil.PermissionDirectory))
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+
+		err := generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:         ciProviderGitHubActions,
+			InfraProvider:      infraProviderCustom,
+			RepoRoot:           tempDir,
+			BranchName:         "main",
+			AuthType:           AuthTypeFederated,
+			RequiredExtensions: []string{"azure.ai.projects"},
+		})
+
+		require.NoError(t, err)
+		content, err := os.ReadFile(expectedPath)
+		require.NoError(t, err)
+		generated := string(content)
+		assert.Contains(t, generated, "Install required azd extensions")
+		assert.Contains(t, generated, "azd extension install azure.ai.projects --no-prompt")
+		assert.Less(t, strings.Index(generated, "uses: Azure/setup-azd@v2"), strings.Index(
+			generated,
+			"azd extension install azure.ai.projects --no-prompt",
+		))
+	})
+
+	t.Run("required extensions are installed for azdo", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
+		require.NoError(t, os.MkdirAll(path, osutil.PermissionDirectory))
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
+
+		err := generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:         ciProviderAzureDevOps,
+			InfraProvider:      infraProviderCustom,
+			RepoRoot:           tempDir,
+			BranchName:         "main",
+			AuthType:           AuthTypeFederated,
+			RequiredExtensions: []string{"azure.ai.projects"},
+		})
+
+		require.NoError(t, err)
+		content, err := os.ReadFile(expectedPath)
+		require.NoError(t, err)
+		generated := string(content)
+		assert.Contains(t, generated, "Install required azd extensions")
+		assert.Contains(t, generated, "azd extension install azure.ai.projects --no-prompt")
+		assert.Less(t, strings.Index(generated, "task: setup-azd@1"), strings.Index(
+			generated,
+			"azd extension install azure.ai.projects --no-prompt",
+		))
+	})
+
 	t.Run("no files - github selected - no app host - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()
 		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])

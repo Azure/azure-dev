@@ -107,10 +107,9 @@ func Test_toInfraProviderType(t *testing.T) {
 			want:  infraProviderUndefined,
 		},
 		{
-			name:     "invalid provider",
-			input:    "pulumi",
-			wantErr:  true,
-			errMatch: "invalid infra provider type pulumi",
+			name:  "custom provider",
+			input: "pulumi",
+			want:  infraProviderCustom,
 		},
 	}
 	for _, tt := range tests {
@@ -986,6 +985,15 @@ func Test_PipelineManager_SetParameters(t *testing.T) {
 		pm.SetParameters(nil)
 		assert.Nil(t, pm.configOptions.providerParameters)
 	})
+}
+
+func Test_PipelineManager_SetRequiredExtensions(t *testing.T) {
+	pm := &PipelineManager{}
+
+	pm.SetRequiredExtensions([]string{"z.extension", "", " a.extension ", "z.extension"})
+
+	require.NotNil(t, pm.configOptions)
+	require.Equal(t, []string{"a.extension", "z.extension"}, pm.configOptions.requiredExtensions)
 }
 
 // ------------------------------------------------------------------

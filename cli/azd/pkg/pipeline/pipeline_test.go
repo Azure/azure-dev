@@ -4433,8 +4433,9 @@ func Test_toInfraProviderType_values_cov3(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, infraProviderTerraform, tfProvider)
 
-	_, err = toInfraProviderType("other")
-	require.Error(t, err)
+	customProvider, err := toInfraProviderType("other")
+	require.NoError(t, err)
+	assert.Equal(t, infraProviderCustom, customProvider)
 }
 
 // =====================================================================
@@ -6236,9 +6237,9 @@ func Test_toInfraProviderType_additionalCases(t *testing.T) {
 		{"bicep", infraProviderBicep, false},
 		{"terraform", infraProviderTerraform, false},
 		{"", infraProviderUndefined, false},
-		{"Bicep", "", true},
-		{"TERRAFORM", "", true},
-		{"pulumi", "", true},
+		{"Bicep", infraProviderCustom, false},
+		{"TERRAFORM", infraProviderCustom, false},
+		{"pulumi", infraProviderCustom, false},
 	}
 
 	for _, tt := range tests {

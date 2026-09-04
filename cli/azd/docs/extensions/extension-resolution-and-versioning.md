@@ -177,7 +177,7 @@ Once a version is resolved, installation proceeds through these steps:
    - `.tar.gz` — extracted as a gzipped tar archive
    - Other — treated as a raw binary and copied directly
 7. **Set permissions** — On Unix-like systems, set the executable permission on the extension binary.
-8. **Update configuration** — Record the installed extension and version in `~/.azd/config.json` under the `extension.installed` section.
+8. **Update configuration** - Record the installed extension and version in `~/.azd/config.json` under the `extension.installed` section. The record also stores the installed version's dependency list and an `installedAsDependency` flag. Installs by name (`azd extension install`, `azd init`, project auto-install) leave the flag unset and clear it on a record a pack pulled in earlier; updates preserve it.
 
 ### Re-installing over an existing extension
 
@@ -194,6 +194,18 @@ When the source **is** changing (for example installing a bundle build over a re
 Because each bundle install registers a unique transient source, installing from **any** bundle over an already-installed extension is always treated as a source change — so it prompts even when the bundled version matches the installed one (the two builds may not be byte-identical).
 
 For registry-backed installs, a required dependency must resolve from the parent's source or the main `azd` registry. For self-contained bundles, it must resolve from the bundle itself. If the dependency is not already installed and cannot be resolved from the applicable sources, the install fails with actionable guidance.
+
+## Uninstall Flow
+
+`azd extension uninstall <id>` plans the whole removal from the installed records before removing anything, without querying a registry.
+
+1. **Check dependents** - Any installed extension whose recorded dependencies include a requested id, and that is not itself being removed, blocks the request. `azd` fails with the list of dependents and a suggestion to uninstall them first. `--force` proceeds and warns which dependents are left without the extension.
+2. **Remove the requested extensions** - In the order given.
+3. **Remove orphaned dependencies** - A dependency of a removed extension is removed when it was installed as a dependency and no remaining extension requires it. Removed dependencies are walked in turn, so transitive dependencies are covered and a dependency first kept for a sibling is freed once that sibling goes. `azd` lists the dependencies it is about to remove and asks once; the default answer is yes and `--no-prompt` takes it. Declining keeps them, still recorded as dependency installs, with the command to remove them later. Kept dependencies are listed with the reason. `--no-dependencies` skips this step entirely.
+
+`azd extension uninstall --all` removes every installed extension.
+
+Records written before dependency tracking carry neither the dependency list nor the flag. They are treated as installs by name with no known dependencies: never removed as orphans and never blocking. `azd extension update` records the dependency list on such records, even when nothing is updated, so existing installs gain dependent protection after one update. Ownership is never guessed.
 
 ## Self-Contained Bundles
 

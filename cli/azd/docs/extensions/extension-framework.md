@@ -123,7 +123,7 @@ Lists matching extensions from one or more extension sources.
 
 #### `azd extension show <extension-id> [flags]`
 
-Shows detailed information for a specific extension, including description, tags, versions, and installation status.
+Shows details for a specific extension: description, tags, versions, installation status, azd compatibility, declared dependencies with their installed state, and the installed extensions that require it. An installed extension that no source lists (for example, a bundle install) is shown from its installed record, and one listed by several sources is shown from the source it was installed from.
 
 - `-s, --source` Uses a registered source name or registry location (URL or file path). Locations are queried read-only and are not registered.
 
@@ -144,9 +144,11 @@ Installs one or more extensions from any configured extension source.
 
 #### `azd extension uninstall <extension-ids> [flags]`
 
-Uninstalls one or more previously installed extensions.
+Uninstalls one or more installed extensions. Dependencies that were installed for them and are no longer required are listed and removed after a confirmation (`--no-prompt` proceeds). Uninstalling an extension that other installed extensions require fails before anything is removed, unless the dependents are named in the same command.
 
 - `--all` Removes all installed extensions when specified.
+- `-f, --force` Removes the extension even when other installed extensions depend on it, and warns which ones.
+- `--no-dependencies` Keeps the dependencies that were installed for the removed extensions.
 
 #### `azd extension update <extension-ids>`
 
@@ -1239,6 +1241,8 @@ dependencies:
 Pack manifests must include at least one dependency. They may omit `capabilities`, `namespace`, `entryPoint`, `usage`, and `examples` when the pack has no commands of its own. Installing a pack installs its dependencies recursively from the same extension source as the pack. Dependency versions in the manifest support semver constraints, but command-line `--version` values for `azd extension install` and `azd extension update` are exact versions.
 
 Updating a pack updates the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency updates with `azd extension update <pack-id> --no-dependency-updates`.
+
+Uninstalling a pack removes the pack and, after confirmation, every dependency, including transitive ones, that was installed for it and that nothing else requires. `azd` records on each installed extension whether it was requested by name or pulled in as a dependency, together with the installed version's dependency list, so no registry access is needed. A dependency is kept when it was installed by name (`azd extension install <id>`, `azd init`, or project auto-install on a dependency-installed extension marks it as explicit) or when another installed extension still requires it, and the reason is shown. Uninstalling a dependency while a pack or another extension requires it fails unless `--force` is passed. `azd extension show <id>` lists an extension's dependencies and the installed extensions that require it.
 
 #### Provider Registration
 

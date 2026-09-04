@@ -286,6 +286,12 @@ func IsVersionRange(expr string) bool {
 		hasWildcardPart
 }
 
+// SatisfiesConstraint reports whether an installed version satisfies a declared dependency
+// constraint. Empty, "latest", semver constraints, and exact non-semver tags are supported.
+func SatisfiesConstraint(constraint, version string) bool {
+	return matchesVersionConstraint(constraint, version)
+}
+
 // matchesVersionConstraint reports whether candidate satisfies expr.
 // Empty, "latest", semver constraints, and exact non-semver tags are supported.
 func matchesVersionConstraint(expr, candidate string) bool {
@@ -773,18 +779,21 @@ func (m *Manager) InstallWithOptions(
 	extension *ExtensionMetadata,
 	opts InstallOptions,
 ) (*ExtensionVersion, error) {
-	return m.installInternal(ctx, extension, opts, false, map[string]struct{}{})
+	return m.installInternal(ctx, extension, opts, false, false, map[string]struct{}{})
 }
 
 // installInternal installs an extension and its dependencies.
 // skipDependencyValidation bypasses the installed-dependency constraint check; it is set by the
 // upgrade flow so dependency reconciliation can run after the parent has been reinstalled.
+// asDependency records that the extension is being installed only because another extension
+// requires it; the flag is preserved across upgrades and consulted by PlanUninstall.
 // visited contains the ids currently in flight, which prevents dependency cycles.
 func (m *Manager) installInternal(
 	ctx context.Context,
 	extension *ExtensionMetadata,
 	opts InstallOptions,
 	skipDependencyValidation bool,
+	asDependency bool,
 	visited map[string]struct{},
 ) (extVersion *ExtensionVersion, err error) {
 	if extension == nil {
@@ -866,7 +875,7 @@ func (m *Manager) installInternal(
 				VersionPreference:                  dependency.Version,
 				SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
 			}
-			if _, err := m.installInternal(ctx, dependencyMetadata, dependencyOpts, false, visited); err != nil {
+			if _, err := m.installInternal(ctx, dependencyMetadata, dependencyOpts, false, true, visited); err != nil {
 				if !errors.Is(err, ErrExtensionInstalled) {
 					return nil, fmt.Errorf("failed to install dependency: %w", err)
 				}
@@ -980,6 +989,10 @@ func (m *Manager) installInternal(
 		SourceCategory: extension.SourceCategoryOrUnknown(),
 		Providers:      selectedVersion.Providers,
 		McpConfig:      selectedVersion.McpConfig,
+		// Declared dependencies are recorded even when SkipDependencies is set: they describe
+		// the installed version, and uninstall planning relies on them to protect dependencies.
+		Dependencies:          slices.Clone(selectedVersion.Dependencies),
+		InstalledAsDependency: asDependency,
 	}
 
 	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
@@ -1011,6 +1024,11 @@ func (m *Manager) installInternal(
 
 // Uninstall uninstalls an extension by name.
 func (m *Manager) Uninstall(ctx context.Context, id string) error {
+	// An empty id would match an arbitrary installed record.
+	if strings.TrimSpace(id) == "" {
+		return ErrEmptyExtensionId
+	}
+
 	// Get the installed extension
 	extension, err := m.GetInstalled(FilterOptions{Id: id})
 	if err != nil {
@@ -1064,6 +1082,11 @@ type UpgradeOptions struct {
 	// SkipMainRegistryDependencyFallback mirrors the InstallOptions behavior for
 	// the reinstall performed during upgrade.
 	SkipMainRegistryDependencyFallback bool
+	// PromoteToExplicit records the extension as explicitly installed even when the
+	// existing record was only a dependency install. `azd extension install <id>` sets
+	// it because the user named the extension; updates leave it unset so ownership is
+	// preserved.
+	PromoteToExplicit bool
 }
 
 // DefaultUpgradeOptions returns UpgradeOptions with dependency upgrades enabled.
@@ -1109,9 +1132,57 @@ func (m *Manager) ReconcileDependencies(
 		return selectedVersion, nil, nil
 	}
 
+	if err := m.BackfillDependencies(extension.Id, selectedVersion); err != nil {
+		return nil, nil, err
+	}
+
 	visited := map[string]struct{}{extension.Id: {}}
 	results := m.evaluateDependencyChanges(ctx, extension, selectedVersion, opts, visited)
 	return selectedVersion, results, nil
+}
+
+// BackfillDependencies records the dependency snapshot on an installed record that predates
+// dependency tracking. It only applies when the record is at the supplied version and has no
+// snapshot yet, so an update that keeps the extension current still teaches uninstall planning
+// about its graph. Ownership is never inferred.
+func (m *Manager) BackfillDependencies(id string, version *ExtensionVersion) error {
+	if version == nil {
+		return nil
+	}
+	installed, err := m.GetInstalled(FilterOptions{Id: id})
+	if err != nil || installed == nil {
+		return nil
+	}
+	if len(installed.Dependencies) > 0 ||
+		installed.Version != version.Version ||
+		len(version.Dependencies) == 0 {
+		return nil
+	}
+
+	installed.Dependencies = slices.Clone(version.Dependencies)
+	if err := m.UpdateInstalled(installed); err != nil {
+		return fmt.Errorf("failed to record dependencies for %s: %w", id, err)
+	}
+	return nil
+}
+
+// MarkExplicitlyInstalled records that the user asked for an extension directly, so it is no
+// longer removed along with the extensions that originally pulled it in. It is a no-op for
+// extensions that are already explicit.
+func (m *Manager) MarkExplicitlyInstalled(id string) error {
+	installed, err := m.GetInstalled(FilterOptions{Id: id})
+	if err != nil {
+		return err
+	}
+	if !installed.InstalledAsDependency {
+		return nil
+	}
+
+	installed.InstalledAsDependency = false
+	if err := m.UpdateInstalled(installed); err != nil {
+		return fmt.Errorf("failed to mark %s as explicitly installed: %w", id, err)
+	}
+	return nil
 }
 
 // upgradeInternal performs the reinstall and any dependency upgrades.
@@ -1122,6 +1193,14 @@ func (m *Manager) upgradeInternal(
 	opts UpgradeOptions,
 	visited map[string]struct{},
 ) (*ExtensionVersion, []UpgradeResult, error) {
+	// An update must not change who asked for the extension: a dependency-installed
+	// extension stays removable with its parents, and an explicit one stays explicit.
+	// Only an install by name (PromoteToExplicit) turns a dependency into an explicit record.
+	asDependency := false
+	if installed, err := m.GetInstalled(FilterOptions{Id: extension.Id}); err == nil && installed != nil {
+		asDependency = installed.InstalledAsDependency && !opts.PromoteToExplicit
+	}
+
 	if err := m.Uninstall(ctx, extension.Id); err != nil {
 		return nil, nil, fmt.Errorf("failed to uninstall extension: %w", err)
 	}
@@ -1132,7 +1211,7 @@ func (m *Manager) upgradeInternal(
 		VersionPreference:                  opts.VersionPreference,
 		SkipDependencies:                   opts.SkipDependencies,
 		SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
-	}, true, map[string]struct{}{})
+	}, true, asDependency, map[string]struct{}{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to install extension: %w", err)
 	}
@@ -1228,6 +1307,13 @@ func (m *Manager) evaluateDependencyChanges(
 				Suggestion:         suggestion,
 			})
 			continue
+		}
+
+		// Children that predate dependency tracking learn their snapshot here, so one update
+		// of the parent protects the whole tree even when every child is already current.
+		installedRelease := FindVersion(childMetadata.Versions, installed.Version)
+		if err := m.BackfillDependencies(dep.Id, installedRelease); err != nil {
+			log.Printf("Warning: %v", err)
 		}
 
 		bestVersion := bestSatisfyingVersionForAzd(dep.Version, childMetadata.Versions, m.azdVersion)
@@ -1362,6 +1448,16 @@ func (m *Manager) evaluateDependencyChanges(
 	}
 
 	return results
+}
+
+// FindVersion returns the release with the given version tag, or nil.
+func FindVersion(versions []ExtensionVersion, version string) *ExtensionVersion {
+	for i := range versions {
+		if versions[i].Version == version {
+			return &versions[i]
+		}
+	}
+	return nil
 }
 
 // Helper function to find the artifact for the current OS

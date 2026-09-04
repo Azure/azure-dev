@@ -197,6 +197,15 @@ func (m *fakeExtensionAutoInstallManager) ListInstalled() (map[string]*extension
 	return m.installed, nil
 }
 
+func (m *fakeExtensionAutoInstallManager) MarkExplicitlyInstalled(id string) error {
+	installed, ok := m.installed[id]
+	if !ok {
+		return extensions.ErrInstalledExtensionNotFound
+	}
+	installed.InstalledAsDependency = false
+	return nil
+}
+
 func TestMissingProjectExtensions(t *testing.T) {
 	versionConstraint := ">=1.0.0-beta.4"
 	manager := &fakeExtensionAutoInstallManager{
@@ -2467,4 +2476,28 @@ func TestProjectExtensionErrorsCarrySuggestions(t *testing.T) {
 		assert.Contains(t, suggestErr.Error(), "required extension does.not.exist not found")
 		assert.Contains(t, suggestErr.Suggestion, "azd extension source list")
 	})
+}
+
+func TestTryAutoInstallExtensionVersionPromotesDependencyInstalledExtension(t *testing.T) {
+	t.Parallel()
+
+	// The project requires an extension that a pack pulled in earlier; it must survive the
+	// pack's removal from now on.
+	manager := &fakeExtensionAutoInstallManager{
+		installed: map[string]*extensions.Extension{
+			"azure.ai.agents": {Id: "azure.ai.agents", Version: "1.0.0", InstalledAsDependency: true},
+		},
+	}
+
+	installed, err := tryAutoInstallExtensionVersion(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		extensions.ExtensionMetadata{Id: "azure.ai.agents"},
+		"",
+		false,
+	)
+	require.NoError(t, err)
+	require.False(t, installed, "already installed, so nothing is downloaded")
+	require.False(t, manager.installed["azure.ai.agents"].InstalledAsDependency)
 }

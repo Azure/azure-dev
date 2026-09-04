@@ -6323,6 +6323,15 @@ const completionSpec: Fig.Spec = {
 							name: ['--all'],
 							description: 'Uninstall all installed extensions',
 						},
+						{
+							name: ['--force', '-f'],
+							description: 'Uninstall even when other installed extensions depend on the extension',
+							isDangerous: true,
+						},
+						{
+							name: ['--no-dependencies'],
+							description: 'Uninstall only the specified extension(s), keeping dependencies that were installed for them',
+						},
 					],
 					args: {
 						name: 'extension-id',

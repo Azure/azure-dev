@@ -18,6 +18,7 @@ OpenTelemetry span name or event name.
 | `ExtensionRunEvent` | `ext.run` | Extension execution event |
 | `ExtensionInstallEvent` | `ext.install` | Extension install/upgrade event |
 | `ExtensionUpdateEvent` | `ext.update` | Single extension update attempt |
+| `ExtensionUninstallEvent` | `ext.uninstall` | Removal of one extension by `azd extension uninstall`, by name or as a no-longer-required dependency |
 | `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
 | `ExtensionUsageEvent` | `ext.usage` | One usage event reported by an extension through the telemetry service |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |

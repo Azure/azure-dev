@@ -964,6 +964,35 @@ func TestExtensionLifecycleTelemetrySpans(t *testing.T) {
 		}
 	})
 
+	// The tracing package wires its tracer to the first provider set in the process, so every
+	// span assertion in this package shares this recorder rather than installing its own.
+	t.Run("UninstallUsesPersistedCategory", func(t *testing.T) {
+		const sourceName = "private-source"
+		action, _ := newUninstallTestAction(t, map[string]*extensions.Extension{
+			"ext-a": {
+				Id:             "ext-a",
+				Version:        "1.0.0",
+				Source:         sourceName,
+				SourceCategory: extensions.SourceCategoryDev,
+			},
+		}, extensionUninstallFlags{}, "ext-a")
+
+		_, err := action.Run(t.Context())
+		require.NoError(t, err)
+
+		span := extensionEndedSpan(t, recorder, events.ExtensionUninstallEvent)
+		attributes := span.Attributes()
+		require.Equal(t, "ext-a",
+			extensionSpanAttribute(t, attributes, fields.ExtensionId.Key).Value.AsString())
+		require.Equal(t, "1.0.0",
+			extensionSpanAttribute(t, attributes, fields.ExtensionVersion.Key).Value.AsString())
+		require.Equal(t, string(extensions.SourceCategoryDev),
+			extensionSpanAttribute(t, attributes, fields.ExtensionSourceCategory.Key).Value.AsString())
+		for _, attr := range attributes {
+			require.NotContains(t, attr.Value.Emit(), sourceName)
+		}
+	})
+
 	t.Run("PromotionUsesFixedCategories", func(t *testing.T) {
 		emitPromotionEvent(
 			t.Context(),

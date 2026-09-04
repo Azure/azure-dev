@@ -438,6 +438,7 @@ type extensionAutoInstallManager interface {
 		opts extensions.InstallOptions,
 	) (*extensions.ExtensionVersion, error)
 	ListInstalled() (map[string]*extensions.Extension, error)
+	MarkExplicitlyInstalled(id string) error
 }
 
 func tryAutoInstallExtensionVersion(
@@ -455,6 +456,13 @@ func tryAutoInstallExtensionVersion(
 	if err == nil {
 		if err := validateInstalledExtensionVersion(installedExtension, versionPreference); err != nil {
 			return false, err
+		}
+		// The project requires this extension in its own right, so a record that only a
+		// pack pulled in becomes explicit and survives when that pack is uninstalled.
+		if installedExtension.InstalledAsDependency {
+			if err := extensionManager.MarkExplicitlyInstalled(extension.Id); err != nil {
+				return false, fmt.Errorf("marking extension %s as explicitly installed: %w", extension.Id, err)
+			}
 		}
 		return false, nil
 	}

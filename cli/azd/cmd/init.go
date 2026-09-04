@@ -1128,20 +1128,28 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 		return nil
 	}
 
-	installedExtensions, err := i.extensionsManager.ListInstalled()
-	if err != nil {
-		return fmt.Errorf("listing installed extensions: %w", err)
-	}
-
 	i.console.Message(ctx, "\nInstalling required extensions...")
 
 	for extensionId, versionConstraint := range projectConfig.RequiredVersions.Extensions {
 		stepMessage := extensionTaskMessage("Installing", extensionId)
 		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		installed, isInstalled := installedExtensions[extensionId]
-		if isInstalled {
-			stepMessage += output.WithGrayFormat(" (version %s already installed)", installed.Version)
+		// Look the record up each time: an extension pack installed earlier in this loop may
+		// have pulled in a later entry as a dependency.
+		if installed, err := i.extensionsManager.GetInstalled(extensions.FilterOptions{Id: extensionId}); err == nil {
+			skipNote := fmt.Sprintf(" (version %s already installed)", installed.Version)
+			// The project names this extension, so a record that only a pack pulled in
+			// becomes explicit and survives when that pack is uninstalled.
+			if installed.InstalledAsDependency {
+				if err := i.extensionsManager.MarkExplicitlyInstalled(extensionId); err != nil {
+					i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+					return fmt.Errorf("marking extension %s as explicitly installed: %w", extensionId, err)
+				}
+				skipNote = fmt.Sprintf(
+					" (version %s already installed, marked as explicitly installed)", installed.Version,
+				)
+			}
+			stepMessage += output.WithGrayFormat("%s", skipNote)
 			i.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
 		}

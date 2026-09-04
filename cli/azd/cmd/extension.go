@@ -114,6 +114,13 @@ installs aren't tracked for updates; install a newer bundle to update.`,
 		Command: &cobra.Command{
 			Use:   "uninstall [extension-id]",
 			Short: "Uninstall specified extensions.",
+			Long: `Uninstall one or more installed extensions.
+
+Dependencies that were installed for the removed extensions and are no longer
+required are listed and removed after confirmation; --no-prompt proceeds and
+--no-dependencies keeps them. Uninstalling an extension that other installed
+extensions require fails unless --force is set or the dependents are
+uninstalled in the same command. Use --all to remove every installed extension.`,
 		},
 		ActionResolver: newExtensionUninstallAction,
 		FlagsResolver:  newExtensionUninstallFlags,
@@ -593,21 +600,118 @@ func newExtensionShowAction(
 	}
 }
 
+// extensionShowItem is the `azd extension show` view model. Field names are the
+// `--output json` contract and follow the camelCase convention of other azd commands.
 type extensionShowItem struct {
-	Id                string
-	Name              string
-	Website           string
-	Source            string
-	Namespace         string
-	Description       string
-	Tags              []string
-	LatestVersion     string
-	InstalledVersion  string
-	AvailableVersions []string
-	Usage             string
-	Examples          []extensions.ExtensionExample
-	Providers         []extensions.Provider
-	Capabilities      []extensions.CapabilityType
+	Id          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Website     string   `json:"website,omitempty"`
+	Source      string   `json:"source"`
+	Namespace   string   `json:"namespace,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+
+	// LatestVersion is the highest published version regardless of azd compatibility.
+	// Empty when the extension is only known from its installed record.
+	LatestVersion string `json:"latestVersion,omitempty"`
+	// LatestCompatibleVersion is the highest published version the running azd can install.
+	LatestCompatibleVersion string `json:"latestCompatibleVersion,omitempty"`
+	// RequiresAzd is the azd version constraint declared by the latest version.
+	RequiresAzd string `json:"requiresAzd,omitempty"`
+	// OtherVersions lists the remaining published versions, newest first.
+	OtherVersions []string `json:"otherVersions,omitempty"`
+
+	InstalledVersion string `json:"installedVersion,omitempty"`
+	// InstalledSource is set when the extension is installed from a source other than the
+	// one being described, in which case update state is not reported.
+	InstalledSource       string `json:"installedSource,omitempty"`
+	InstalledAsDependency bool   `json:"installedAsDependency,omitempty"`
+	// UpdateAvailable is true when a newer version compatible with the running azd exists.
+	UpdateAvailable bool `json:"updateAvailable,omitempty"`
+
+	Dependencies []extensionShowDependency     `json:"dependencies,omitempty"`
+	RequiredBy   []extensionShowDependent      `json:"requiredBy,omitempty"`
+	Capabilities []extensions.CapabilityType   `json:"capabilities,omitempty"`
+	Providers    []extensions.Provider         `json:"providers,omitempty"`
+	Usage        string                        `json:"usage,omitempty"`
+	Examples     []extensions.ExtensionExample `json:"examples,omitempty"`
+
+	// azdVersion, latestIncompatible, and newerIncompatible drive the compatibility
+	// annotations in Display. latestIncompatible means the latest release cannot run on this
+	// azd (Requires azd row); newerIncompatible additionally means it is newer than what is
+	// installed (Installed row).
+	azdVersion         string
+	latestIncompatible bool
+	newerIncompatible  bool
+}
+
+// extensionShowDependency is one declared dependency together with its installed state.
+type extensionShowDependency struct {
+	Id string `json:"id"`
+	// Version is the declared constraint. Empty means any version.
+	Version          string `json:"version,omitempty"`
+	InstalledVersion string `json:"installedVersion,omitempty"`
+	// Satisfied is true when the dependency is installed at a version matching the constraint.
+	Satisfied bool `json:"satisfied"`
+}
+
+// extensionShowDependent is an installed extension that declares a dependency on the shown one.
+type extensionShowDependent struct {
+	Id      string `json:"id"`
+	Version string `json:"version"`
+}
+
+// installedSummary describes the installed state with at most one annotation, in priority
+// order: foreign source, compatible update, newer incompatible release, dependency install.
+func (t *extensionShowItem) installedSummary() string {
+	if t.InstalledVersion == "" {
+		return "Not installed"
+	}
+
+	summary := t.InstalledVersion
+	switch {
+	case t.InstalledSource != "":
+		summary += fmt.Sprintf(" (from %s)", t.InstalledSource)
+	case t.UpdateAvailable:
+		summary += fmt.Sprintf(" (update available: %s)", t.LatestCompatibleVersion)
+	case t.newerIncompatible:
+		summary += fmt.Sprintf(" (%s requires a newer azd)", t.LatestVersion)
+	case t.InstalledAsDependency:
+		summary += " (installed as a dependency)"
+	}
+	return summary
+}
+
+// requiresAzdSummary annotates the latest version's azd constraint when the running azd
+// cannot use it.
+func (t *extensionShowItem) requiresAzdSummary() string {
+	if !t.latestIncompatible || t.azdVersion == "" {
+		return t.RequiresAzd
+	}
+	if t.LatestCompatibleVersion != "" {
+		return fmt.Sprintf(
+			"%s (not compatible with azd %s; latest compatible is %s)",
+			t.RequiresAzd, t.azdVersion, t.LatestCompatibleVersion,
+		)
+	}
+	return fmt.Sprintf("%s (not compatible with azd %s)", t.RequiresAzd, t.azdVersion)
+}
+
+// summary renders the constraint and installed state of a dependency row.
+func (d extensionShowDependency) summary() string {
+	constraint := d.Version
+	if constraint == "" {
+		constraint = "any version"
+	}
+
+	switch {
+	case d.InstalledVersion == "":
+		return constraint + " (not installed)"
+	case d.Satisfied:
+		return fmt.Sprintf("%s (installed %s)", constraint, d.InstalledVersion)
+	default:
+		return fmt.Sprintf("%s (installed %s, outside constraint)", constraint, d.InstalledVersion)
+	}
 }
 
 func (t *extensionShowItem) Display(writer io.Writer) error {
@@ -648,16 +752,21 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 		return err
 	}
 
-	// Extension Information section
+	// Extension Information section. Rows without a value are omitted rather than shown blank.
 	extensionInfo := [][]string{
 		{"Id", ":", t.Id},
 		{"Name", ":", t.Name},
 		{"Description", ":", t.Description},
 		{"Source", ":", t.Source},
-		{"Namespace", ":", t.Namespace},
+	}
+	if t.Namespace != "" {
+		extensionInfo = append(extensionInfo, []string{"Namespace", ":", t.Namespace})
 	}
 	if t.Website != "" {
 		extensionInfo = append(extensionInfo, []string{"Website", ":", t.Website})
+	}
+	if len(t.Tags) > 0 {
+		extensionInfo = append(extensionInfo, []string{"Tags", ":", strings.Join(t.Tags, ", ")})
 	}
 	if err := writeSection("Extension Information", extensionInfo); err != nil {
 		return err
@@ -665,19 +774,41 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 
 	// Version Information section
 	versionInfo := [][]string{
-		{"Latest Version", ":", t.LatestVersion},
-		{"Installed Version", ":", t.InstalledVersion},
+		{"Installed", ":", t.installedSummary()},
 	}
-	// Only add Available Versions if there are any
-	if len(t.AvailableVersions) > 0 {
-		versionInfo = append(versionInfo, []string{"Available Versions", ":", strings.Join(t.AvailableVersions, ", ")})
+	if t.LatestVersion != "" {
+		versionInfo = append(versionInfo, []string{"Latest", ":", t.LatestVersion})
 	}
-	// Only add Tags if they are defined
-	if len(t.Tags) > 0 {
-		versionInfo = append(versionInfo, []string{"Tags", ":", strings.Join(t.Tags, ", ")})
+	if t.RequiresAzd != "" {
+		versionInfo = append(versionInfo, []string{"Requires azd", ":", t.requiresAzdSummary()})
+	}
+	if len(t.OtherVersions) > 0 {
+		versionInfo = append(versionInfo, []string{"Other Versions", ":", strings.Join(t.OtherVersions, ", ")})
 	}
 	if err := writeSection("Version Information", versionInfo); err != nil {
 		return err
+	}
+
+	// Dependencies section - only if the shown version declares any
+	if len(t.Dependencies) > 0 {
+		dependencyRows := [][]string{}
+		for _, dependency := range t.Dependencies {
+			dependencyRows = append(dependencyRows, []string{dependency.Id, ":", dependency.summary()})
+		}
+		if err := writeSection("Dependencies", dependencyRows); err != nil {
+			return err
+		}
+	}
+
+	// Required By section - only if installed extensions depend on this one
+	if len(t.RequiredBy) > 0 {
+		dependentRows := [][]string{}
+		for _, dependent := range t.RequiredBy {
+			dependentRows = append(dependentRows, []string{dependent.Id, ":", dependent.Version})
+		}
+		if err := writeSection("Required By", dependentRows); err != nil {
+			return err
+		}
 	}
 
 	// Capabilities section - only if there are capabilities
@@ -703,12 +834,14 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 		}
 	}
 
-	// Usage section
-	usageRows := [][]string{
-		{"", "", t.Usage},
-	}
-	if err := writeSection("Usage", usageRows); err != nil {
-		return err
+	// Usage section - only if the extension has one (packs typically do not)
+	if strings.TrimSpace(t.Usage) != "" {
+		usageRows := [][]string{
+			{"", "", t.Usage},
+		}
+		if err := writeSection("Usage", usageRows); err != nil {
+			return err
+		}
 	}
 
 	// Examples section - only if there are examples
@@ -763,42 +896,27 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, fmt.Errorf("failed to find extension: %w", err)
 	}
 
-	registryExtension, err := selectDistinctExtension(ctx, a.console, extensionId, extensionMatches, a.flags.global)
+	installedExtension, err := a.extensionManager.GetInstalled(extensions.FilterOptions{Id: extensionId})
 	if err != nil {
-		return nil, err
+		installedExtension = nil
 	}
 
-	latestVersion := extensions.LatestVersion(registryExtension.Versions)
-
-	var otherVersions []string
-	for _, version := range registryExtension.Versions {
-		if version.Version != latestVersion.Version {
-			otherVersions = append(otherVersions, version.Version)
+	// An installed extension that no configured source lists (bundle install, delisted, or
+	// source removed) is described from its installed record alone, unless --source asked
+	// for a specific source that does not carry it.
+	var registryExtension *extensions.ExtensionMetadata
+	installedOnly := len(extensionMatches) == 0 && installedExtension != nil &&
+		(a.flags.source == "" || strings.EqualFold(a.flags.source, installedExtension.Source))
+	if !installedOnly {
+		registryExtension, err = a.selectRegistryExtension(ctx, extensionId, extensionMatches, installedExtension)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	extensionDetails := extensionShowItem{
-		Id:                registryExtension.Id,
-		Name:              registryExtension.DisplayName,
-		Website:           registryExtension.Website,
-		Source:            registryExtension.Source,
-		Namespace:         registryExtension.Namespace,
-		Description:       registryExtension.Description,
-		Tags:              registryExtension.Tags,
-		LatestVersion:     latestVersion.Version,
-		AvailableVersions: otherVersions,
-		Usage:             latestVersion.Usage,
-		Examples:          latestVersion.Examples,
-		Providers:         latestVersion.Providers,
-		Capabilities:      latestVersion.Capabilities,
-		InstalledVersion:  "N/A",
-	}
-
-	installedExtension, err := a.extensionManager.GetInstalled(
-		extensions.FilterOptions{Id: extensionId},
-	)
-	if err == nil && installedExtension.Source == extensionDetails.Source {
-		extensionDetails.InstalledVersion = installedExtension.Version
+	extensionDetails, err := a.buildShowItem(extensionId, registryExtension, installedExtension)
+	if err != nil {
+		return nil, err
 	}
 
 	var formatErr error
@@ -810,6 +928,170 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	return nil, formatErr
+}
+
+// selectRegistryExtension picks the registry entry to describe. The source the extension is
+// installed from wins when it is among the matches, so an installed extension listed by several
+// sources is described without prompting. Otherwise the user chooses, as for install.
+func (a *extensionShowAction) selectRegistryExtension(
+	ctx context.Context,
+	extensionId string,
+	matches []*extensions.ExtensionMetadata,
+	installed *extensions.Extension,
+) (*extensions.ExtensionMetadata, error) {
+	if installed != nil {
+		for _, match := range matches {
+			if strings.EqualFold(match.Source, installed.Source) {
+				return match, nil
+			}
+		}
+	}
+	return selectDistinctExtension(ctx, a.console, extensionId, matches, a.flags.global)
+}
+
+// buildShowItem assembles the view model from the registry entry (when there is one) and the
+// installed record (when the extension is installed). Either may be nil, but not both.
+func (a *extensionShowAction) buildShowItem(
+	extensionId string,
+	registryExtension *extensions.ExtensionMetadata,
+	installed *extensions.Extension,
+) (*extensionShowItem, error) {
+	item := &extensionShowItem{Id: extensionId}
+	var dependencies []extensions.ExtensionDependency
+
+	if registryExtension != nil {
+		item.Id = registryExtension.Id
+		item.Name = registryExtension.DisplayName
+		item.Description = registryExtension.Description
+		item.Website = registryExtension.Website
+		item.Source = registryExtension.Source
+		item.Namespace = registryExtension.Namespace
+		item.Tags = registryExtension.Tags
+
+		if latest := extensions.LatestVersion(registryExtension.Versions); latest != nil {
+			item.LatestVersion = latest.Version
+			item.RequiresAzd = latest.RequiredAzdVersion
+			item.OtherVersions = otherVersionsNewestFirst(registryExtension.Versions, latest.Version)
+			item.Usage = latest.Usage
+			item.Examples = latest.Examples
+			item.Providers = latest.Providers
+			item.Capabilities = latest.Capabilities
+			dependencies = latest.Dependencies
+
+			if azdVersion := a.extensionManager.AzdVersion(); azdVersion != nil {
+				compat := extensions.FilterCompatibleVersions(registryExtension.Versions, azdVersion)
+				item.azdVersion = azdVersion.String()
+				item.latestIncompatible = compat.HasNewerIncompatible
+				item.newerIncompatible = compat.HasNewerIncompatible
+				if compat.LatestCompatible != nil {
+					item.LatestCompatibleVersion = compat.LatestCompatible.Version
+				}
+			} else {
+				// Without a compatibility policy (dev builds, IgnoreAzdCompatibility) every
+				// published version is installable.
+				item.LatestCompatibleVersion = latest.Version
+			}
+		}
+	}
+
+	if installed != nil {
+		item.InstalledVersion = installed.Version
+		item.InstalledAsDependency = installed.InstalledAsDependency
+
+		switch {
+		case registryExtension == nil:
+			item.Id = installed.Id
+			item.Name = installed.DisplayName
+			item.Description = installed.Description
+			item.Source = installed.Source
+			item.Namespace = installed.Namespace
+			item.Usage = installed.Usage
+			item.Capabilities = installed.Capabilities
+			item.Providers = installed.Providers
+		case !strings.EqualFold(installed.Source, registryExtension.Source):
+			item.InstalledSource = installed.Source
+		default:
+			applyShowUpdateState(item, installed.Version)
+		}
+
+		// The installed snapshot governs uninstall behavior, so it is what show explains.
+		// Records that predate the snapshot fall back to the registry entry for the installed
+		// version; the latest version's declaration says nothing about what is installed.
+		dependencies = installed.Dependencies
+		if len(dependencies) == 0 && registryExtension != nil {
+			if release := extensions.FindVersion(registryExtension.Versions, installed.Version); release != nil {
+				dependencies = release.Dependencies
+			}
+		}
+	}
+
+	for _, dependency := range dependencies {
+		row := extensionShowDependency{Id: dependency.Id, Version: dependency.Version}
+		dependencyInstalled, err := a.extensionManager.GetInstalled(extensions.FilterOptions{Id: dependency.Id})
+		if err == nil && dependencyInstalled != nil {
+			row.InstalledVersion = dependencyInstalled.Version
+			row.Satisfied = extensions.SatisfiesConstraint(dependency.Version, dependencyInstalled.Version)
+		}
+		item.Dependencies = append(item.Dependencies, row)
+	}
+
+	dependents, err := a.extensionManager.InstalledDependents(item.Id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list dependent extensions: %w", err)
+	}
+	for _, dependent := range dependents {
+		item.RequiredBy = append(item.RequiredBy, extensionShowDependent{
+			Id:      dependent.Id,
+			Version: dependent.Version,
+		})
+	}
+
+	return item, nil
+}
+
+// applyShowUpdateState derives the installed-row annotations for an extension installed from
+// the source being described. Non-semver tags have no ordering, so they report no update.
+func applyShowUpdateState(item *extensionShowItem, installedVersion string) {
+	installedSemver, err := semver.NewVersion(installedVersion)
+	if err != nil {
+		item.newerIncompatible = false
+		return
+	}
+
+	if candidate, err := semver.NewVersion(item.LatestCompatibleVersion); err == nil {
+		item.UpdateAvailable = candidate.GreaterThan(installedSemver)
+	}
+
+	// The installed row only mentions an incompatible release that is newer than what is
+	// installed; the Requires azd row keeps reporting the latest release's compatibility.
+	if item.newerIncompatible {
+		latestSemver, err := semver.NewVersion(item.LatestVersion)
+		item.newerIncompatible = err == nil && latestSemver.GreaterThan(installedSemver)
+	}
+}
+
+// otherVersionsNewestFirst lists every published version except latest, newest first. Tags
+// that do not parse as semver keep their published order after the semver releases.
+func otherVersionsNewestFirst(versions []extensions.ExtensionVersion, latest string) []string {
+	var releases []*semver.Version
+	var tags []string
+	for _, version := range versions {
+		if version.Version == latest {
+			continue
+		}
+		if release, err := semver.NewVersion(version.Version); err == nil {
+			releases = append(releases, release)
+		} else {
+			tags = append(tags, version.Version)
+		}
+	}
+	slices.SortFunc(releases, func(a, b *semver.Version) int { return b.Compare(a) })
+
+	others := make([]string, 0, len(releases)+len(tags))
+	for _, release := range releases {
+		others = append(others, release.Original())
+	}
+	return append(others, tags...)
 }
 
 type extensionInstallFlags struct {
@@ -1035,8 +1317,20 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			if !a.flags.force {
 				if sameSource {
 					if installedExtension.Version == targetVersion {
-						stepMessage += output.WithGrayFormat(
-							" (version %s already installed)", installedExtension.Version)
+						skipNote := fmt.Sprintf(" (version %s already installed)", installedExtension.Version)
+						// Asking for a dependency by name promotes it to an explicit install, so it
+						// survives when the extensions that pulled it in are uninstalled.
+						if installedExtension.InstalledAsDependency {
+							if err := a.extensionManager.MarkExplicitlyInstalled(extensionId); err != nil {
+								a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+								return nil, err
+							}
+							skipNote = fmt.Sprintf(
+								" (version %s already installed, marked as explicitly installed)",
+								installedExtension.Version,
+							)
+						}
+						stepMessage += output.WithGrayFormat("%s", skipNote)
 						a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 						continue
 					}
@@ -1082,12 +1376,15 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 			// Use upgrade logic for existing installations
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
+			// The user asked for this extension by name, so the reinstall records it as explicit
+			// even when the previous record was only a dependency install.
 			extensionVersion, _, err = a.extensionManager.Upgrade(
 				ctx, selectedExtension, extensions.UpgradeOptions{
 					VersionPreference:                  a.flags.version,
 					UpgradeDependencies:                !a.flags.noDependencies,
 					SkipDependencies:                   a.flags.noDependencies,
 					SkipMainRegistryDependencyFallback: a.bundleSourceName != "",
+					PromoteToExplicit:                  true,
 				},
 			)
 			if err != nil {
@@ -1972,12 +2269,18 @@ func inferSourceKind(location string) (extensions.SourceKind, bool) {
 
 // azd extension uninstall
 type extensionUninstallFlags struct {
-	all bool
+	all            bool
+	force          bool
+	noDependencies bool
 }
 
 func newExtensionUninstallFlags(cmd *cobra.Command) *extensionUninstallFlags {
 	flags := &extensionUninstallFlags{}
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Uninstall all installed extensions")
+	cmd.Flags().BoolVarP(&flags.force, "force", "f", false,
+		"Uninstall even when other installed extensions depend on the extension")
+	cmd.Flags().BoolVar(&flags.noDependencies, "no-dependencies", false,
+		"Uninstall only the specified extension(s), keeping dependencies that were installed for them")
 
 	return flags
 }
@@ -2022,7 +2325,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Uninstall an azd extension (azd extension uninstall)",
-		TitleNote: "Uninstalls the specified extension from the local machine",
+		TitleNote: "Uninstalls the specified extensions from the local machine",
 	})
 
 	extensionIds := a.args
@@ -2031,37 +2334,73 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 		if err != nil {
 			return nil, fmt.Errorf("failed to list installed extensions: %w", err)
 		}
-
-		extensionIds = make([]string, 0, len(installed))
-		for name := range installed {
-			extensionIds = append(extensionIds, name)
+		if len(installed) == 0 {
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        internal.ErrNoExtensionsAvailable,
+				Suggestion: "No extensions are currently installed. Run 'azd extension list' to verify.",
+			}
 		}
-	}
-
-	if len(extensionIds) == 0 {
-		return nil, &internal.ErrorWithSuggestion{
-			Err:        internal.ErrNoExtensionsAvailable,
-			Suggestion: "No extensions are currently installed. Run 'azd extension list' to verify.",
-		}
+		extensionIds = slices.Sorted(maps.Keys(installed))
 	}
 
 	for _, extensionId := range extensionIds {
-		stepMessage := extensionTaskMessage("Uninstalling", extensionId)
+		// A blank id would match an arbitrary installed record, so reject it outright.
+		if strings.TrimSpace(extensionId) == "" {
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        extensions.ErrEmptyExtensionId,
+				Suggestion: "Run 'azd extension uninstall <extension-id>' with the id of an installed extension.",
+			}
+		}
 
-		installed, err := a.extensionManager.GetInstalled(extensions.FilterOptions{
-			Id: extensionId,
-		})
-		if err != nil {
+		// Report an unknown id as a failed step, as the per-extension loop always has, before
+		// any planning takes place.
+		if _, err := a.extensionManager.GetInstalled(extensions.FilterOptions{Id: extensionId}); err != nil {
+			stepMessage := extensionTaskMessage("Uninstalling", extensionId)
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 
 			return nil, fmt.Errorf("failed to get installed extension: %w", err)
 		}
+	}
 
-		stepMessage = extensionTaskMessageWithVersion("Uninstalling", extensionId, installed.Version)
+	// Nothing is removed until the whole request is known to be safe (or forced). With --all
+	// every extension is in the removal set, so nothing can block it or be orphaned by it.
+	plan, err := a.extensionManager.PlanUninstall(extensionIds, extensions.UninstallPlanOptions{
+		KeepDependencies: a.flags.noDependencies,
+		IgnoreDependents: a.flags.force,
+	})
+	if err != nil {
+		return nil, internal.WrapErrorWithSuggestion(err)
+	}
+
+	// Blocked targets only reach this point under --force; say what is being left behind.
+	for _, extensionId := range slices.Sorted(maps.Keys(plan.Blocked)) {
+		a.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: fmt.Sprintf(
+				"%s is required by %s, which may stop working without it.",
+				extensionId, strings.Join(plan.Blocked[extensionId], ", "),
+			),
+		})
+	}
+
+	// Removing more than the user named deserves a look first. Declining keeps the
+	// dependencies exactly as they are, still recorded as dependency installs.
+	var keptDependencies []*extensions.Extension
+	if len(plan.Orphaned) > 0 {
+		remove, err := a.confirmDependencyRemoval(ctx, plan)
+		if err != nil {
+			return nil, err
+		}
+		if !remove {
+			keptDependencies, plan.Orphaned = plan.Orphaned, nil
+		}
+	}
+
+	for _, target := range plan.Targets {
+		stepMessage := extensionTaskMessageWithVersion("Uninstalling", target.Id, target.Version)
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		if err := a.extensionManager.Uninstall(ctx, extensionId); err != nil {
+		if err := a.uninstall(ctx, target); err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to uninstall extension: %w", err)
 		}
@@ -2069,11 +2408,111 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 		a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 	}
 
+	// Dependencies render flat under the targets, mirroring how install lists them.
+	for _, orphan := range plan.Orphaned {
+		if err := a.uninstall(ctx, orphan); err != nil {
+			a.console.Message(ctx, dependencyUninstallRow(
+				output.WithErrorFormat("(x) Failed:"), orphan, "no longer required"))
+			return nil, fmt.Errorf("failed to uninstall dependency: %w", err)
+		}
+		a.console.Message(ctx, dependencyUninstallRow(
+			output.WithSuccessFormat("(✓) Done:"), orphan, "no longer required"))
+	}
+	for _, kept := range keptDependencies {
+		a.console.Message(ctx, dependencyUninstallRow(output.WithGrayFormat("(-) Skipped:"), kept, "kept"))
+	}
+	for _, retained := range plan.Retained {
+		// A record without the dependency flag was installed by name or predates dependency
+		// tracking; azd cannot tell which, so the reason states only what is known.
+		reason := "not installed as a dependency"
+		if len(retained.RequiredBy) > 0 {
+			reason = "required by " + strings.Join(retained.RequiredBy, ", ")
+		}
+		a.console.Message(ctx, dependencyUninstallRow(
+			output.WithGrayFormat("(-) Skipped:"), retained.Extension, reason))
+	}
+	if len(keptDependencies) > 0 {
+		ids := make([]string, 0, len(keptDependencies))
+		for _, kept := range keptDependencies {
+			ids = append(ids, kept.Id)
+		}
+		a.console.Message(ctx, "")
+		a.console.Message(ctx, fmt.Sprintf(
+			"Run %s to remove them later.",
+			output.WithHighLightFormat("azd extension uninstall %s", strings.Join(ids, " ")),
+		))
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: "Extension(s) uninstalled successfully",
 		},
 	}, nil
+}
+
+// confirmDependencyRemoval lists the dependencies that would go along with the targets and
+// asks once. The default is to remove them, and --no-prompt takes the default: they are, by
+// construction, needed only by what is being removed.
+func (a *extensionUninstallAction) confirmDependencyRemoval(
+	ctx context.Context,
+	plan *extensions.UninstallPlan,
+) (bool, error) {
+	targets := make([]string, 0, len(plan.Targets))
+	for _, target := range plan.Targets {
+		targets = append(targets, target.Id)
+	}
+
+	a.console.Message(ctx, "")
+	a.console.Message(ctx, fmt.Sprintf(
+		"The following dependencies were installed for %s and are no longer required:",
+		strings.Join(targets, ", "),
+	))
+	for _, orphan := range plan.Orphaned {
+		a.console.Message(ctx, fmt.Sprintf(
+			"  %s %s",
+			output.WithHighLightFormat(orphan.Id),
+			output.WithGrayFormat("(%s)", orphan.Version),
+		))
+	}
+	a.console.Message(ctx, "")
+
+	question := "Remove this dependency as well?"
+	if len(plan.Orphaned) > 1 {
+		question = fmt.Sprintf("Remove these %d dependencies as well?", len(plan.Orphaned))
+	}
+	remove, err := a.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      question,
+		DefaultValue: true,
+	})
+	if err != nil {
+		return false, fmt.Errorf("confirming dependency removal: %w", err)
+	}
+	a.console.Message(ctx, "")
+	return remove, nil
+}
+
+// uninstall removes one extension and records the outcome in telemetry.
+func (a *extensionUninstallAction) uninstall(ctx context.Context, extension *extensions.Extension) error {
+	ctx, span := tracing.Start(ctx, events.ExtensionUninstallEvent)
+	span.SetAttributes(
+		fields.ExtensionId.String(extension.Id),
+		fields.ExtensionVersion.String(extension.Version),
+		fields.ExtensionSourceCategory.String(string(extension.SourceCategoryOrUnknown())),
+	)
+
+	err := a.extensionManager.Uninstall(ctx, extension.Id)
+	span.EndWithStatus(err)
+	return err
+}
+
+// dependencyUninstallRow renders one dependency outcome aligned under the parent step.
+func dependencyUninstallRow(status string, extension *extensions.Extension, reason string) string {
+	return fmt.Sprintf(
+		"  %s Uninstalling %s dependency %s",
+		status,
+		output.WithHighLightFormat(extension.Id),
+		output.WithGrayFormat("(%s, %s)", extension.Version, reason),
+	)
 }
 
 type extensionUpgradeFlags struct {
@@ -2575,6 +3014,13 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			)
 		}
 		return baseResult
+	}
+
+	// A record that predates dependency tracking learns its snapshot from the registry entry
+	// for the installed version, whatever the rest of this update decides to do.
+	installedRelease := findPublishedExtensionVersion(matches, installed.Source, installed.Version)
+	if err := a.extensionManager.BackfillDependencies(installed.Id, installedRelease); err != nil {
+		return fail(err)
 	}
 
 	var selectedExt *extensions.ExtensionMetadata

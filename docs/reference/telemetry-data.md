@@ -73,6 +73,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 | `ext.run` | Extension command execution |
 | `ext.install` | Extension installation |
 | `ext.update` | Extension update attempt |
+| `ext.uninstall` | Removal of one extension by `azd extension uninstall`, by name or as a no-longer-required dependency |
 | `ext.promote` | Registry promotion (e.g., dev → main) |
 | `ext.usage` | Usage event reported by an extension through the telemetry service (official-registry extensions only) |
 
@@ -486,7 +487,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |
 | `extension.version.to` | string | Version after an update or promotion (`ext.update`, `ext.promote`) |
 | `extension.source` | string | Registry source used for an update and admission check for `ext.usage` |
-| `extension.source.category` | string | Fixed source category: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, or `unknown` (`ext.install`, `ext.update`, `azd extension source add`) |
+| `extension.source.category` | string | Fixed source category: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, or `unknown` (`ext.install`, `ext.update`, `ext.uninstall`, `azd extension source add`) |
 | `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `update`) |
 | `extension.source.category.from` | string | Fixed source category before a promotion (`ext.promote`) |
 | `extension.source.category.to` | string | Fixed source category after a promotion (`ext.promote`) |
@@ -811,7 +812,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `cmd.*`, `ext.install`, `ext.update`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.event` (lifecycle hooks), `error.chain.types`, `error.extension.cause_types`, `error.mapper.source.type`, `error.mapper.destination.type`, `error.tool.name`, dynamic `ext.*` fields | Extension adoption, command and lifecycle-hook errors, and usage events |
+| **Extensions** | `ext.run`, `cmd.*`, `ext.install`, `ext.update`, `ext.uninstall`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.event` (lifecycle hooks), `error.chain.types`, `error.extension.cause_types`, `error.mapper.source.type`, `error.mapper.destination.type`, `error.tool.name`, dynamic `ext.*` fields | Extension adoption, command and lifecycle-hook errors, and usage events |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |

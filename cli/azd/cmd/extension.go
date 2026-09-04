@@ -1378,9 +1378,9 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
 			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 
-			if extensions.NewUpgradeSummary(dependencyResults).HasFailures() {
+			if dependencyErr := dependencyUpgradeError(dependencyResults); dependencyErr != nil {
 				displayDependencyUpgradeResults(ctx, a.console, dependencyResults, "  ")
-				return nil, fmt.Errorf("failed to update dependencies for extension %s", extensionId)
+				return nil, fmt.Errorf("failed to update dependencies for extension %s: %w", extensionId, dependencyErr)
 			}
 
 		} else {
@@ -3292,6 +3292,20 @@ func (a *extensionUpgradeAction) displayPromotionWarning(
 			extensionId, oldSource,
 		),
 	))
+}
+
+// dependencyUpgradeError preserves causes from failed dependencies, including nested results.
+func dependencyUpgradeError(results []extensions.UpgradeResult) error {
+	var failures []error
+	for _, result := range results {
+		if result.Status == extensions.UpgradeStatusFailed && result.Error != nil {
+			failures = append(failures, fmt.Errorf("dependency %s: %w", result.ExtensionId, result.Error))
+		}
+		if err := dependencyUpgradeError(result.DependencyUpgrades); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // displayDependencyUpgradeResults renders dependency upgrades as flat rows.

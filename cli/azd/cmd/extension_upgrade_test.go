@@ -16,6 +16,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	cmdinternal "github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -26,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -1242,6 +1244,18 @@ func TestExtensionCommands_ReportDependencyFailuresAfterParentUpdate(t *testing.
 				result, err := action.Run(t.Context())
 				require.ErrorContains(t, err, "failed to update dependencies for extension test.pack")
 				require.Nil(t, result)
+				dependencyErr, ok := errors.AsType[*extensions.DependencyVersionNotFoundError](err)
+				require.True(t, ok, "the command must preserve the dependency error for classification")
+				require.Equal(t, "test.child", dependencyErr.DependencyId)
+				require.Equal(t, "test.pack", dependencyErr.ParentId)
+				require.Equal(t, ">=2.0.0", dependencyErr.Constraint)
+
+				span := &mocktracing.Span{}
+				cmdinternal.MapError(err, span)
+				causeSpan := &mocktracing.Span{}
+				cmdinternal.MapError(dependencyErr, causeSpan)
+				require.Equal(t, causeSpan.Status.Description, span.Status.Description)
+				require.NotEqual(t, "internal.unclassified", span.Status.Description)
 			} else {
 				var formatter output.Formatter = &output.NoneFormatter{}
 				if command == "update-json" {
@@ -1290,6 +1304,36 @@ func TestExtensionCommands_ReportDependencyFailuresAfterParentUpdate(t *testing.
 			}
 		})
 	}
+}
+
+func TestDependencyUpgradeError(t *testing.T) {
+	t.Parallel()
+
+	childErr := &extensions.DependencyVersionNotFoundError{
+		DependencyId: "test.child", ParentId: "test.pack", Constraint: ">=2.0.0",
+	}
+	nestedErr := fmt.Errorf("saving dependency metadata: %w", context.Canceled)
+	results := []extensions.UpgradeResult{
+		{ExtensionId: "test.child", Status: extensions.UpgradeStatusFailed, Error: childErr},
+		{
+			ExtensionId: "test.parent", Status: extensions.UpgradeStatusUpgraded,
+			DependencyUpgrades: []extensions.UpgradeResult{{
+				ExtensionId: "test.nested", Status: extensions.UpgradeStatusFailed, Error: nestedErr,
+			}},
+		},
+	}
+
+	err := dependencyUpgradeError(results)
+	require.ErrorIs(t, err, childErr)
+	require.ErrorIs(t, err, nestedErr)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "dependency test.child:")
+	require.ErrorContains(t, err, "dependency test.nested:")
+	require.Nil(t, dependencyUpgradeError(nil))
+	require.Nil(t, dependencyUpgradeError([]extensions.UpgradeResult{
+		{Status: extensions.UpgradeStatusUpgraded},
+		{Status: extensions.UpgradeStatusSkipped},
+	}))
 }
 
 // ---------------------------------------------------------------------------

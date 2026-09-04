@@ -1406,6 +1406,7 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 		name             string
 		args             []string
 		envVars          map[string]string
+		terminal         bool
 		expectedNoPrompt bool
 	}{
 		{
@@ -1417,13 +1418,36 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 		{
 			name:             "agent detected via env var, no flag",
 			args:             []string{"up"},
-			envVars:          map[string]string{"CLAUDE_CODE": "1"},
+			envVars:          map[string]string{"CLAUDECODE": "1"},
 			expectedNoPrompt: true,
+		},
+		{
+			name:             "force TTY does not make detached agent input interactive",
+			args:             []string{"up"},
+			envVars:          map[string]string{"CLAUDECODE": "1", "AZD_FORCE_TTY": "true"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "disabled TTY rendering does not suppress prompts in an attached terminal",
+			args:             []string{"up"},
+			envVars:          map[string]string{"CLAUDECODE": "1", "AZD_FORCE_TTY": "false"},
+			terminal:         true,
+			expectedNoPrompt: false,
+		},
+		{
+			name: "inherited Claude marker remains interactive in a terminal",
+			args: []string{"up"},
+			envVars: map[string]string{
+				"CLAUDECODE":             "1",
+				"CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+			},
+			terminal:         true,
+			expectedNoPrompt: false,
 		},
 		{
 			name:             "agent detected but --no-prompt=false explicitly set",
 			args:             []string{"--no-prompt=false", "up"},
-			envVars:          map[string]string{"CLAUDE_CODE": "1"},
+			envVars:          map[string]string{"CLAUDECODE": "1"},
 			expectedNoPrompt: false,
 		},
 		{
@@ -1442,12 +1466,6 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			name:             "Gemini agent detected",
 			args:             []string{"init"},
 			envVars:          map[string]string{"GEMINI_CLI": "1"},
-			expectedNoPrompt: true,
-		},
-		{
-			name:             "GitHub Copilot CLI agent detected",
-			args:             []string{"deploy"},
-			envVars:          map[string]string{"GITHUB_COPILOT_CLI": "true"},
 			expectedNoPrompt: true,
 		},
 		{
@@ -1498,7 +1516,9 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			}
 
 			opts := &internal.GlobalCommandOptions{}
-			err := ParseGlobalFlags(tt.args, opts)
+			err := parseGlobalFlags(tt.args, opts, func(uintptr, uintptr) bool {
+				return tt.terminal
+			})
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.expectedNoPrompt, opts.NoPrompt,
@@ -1721,13 +1741,13 @@ func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
 	}
 
 	// Standalone test: prove that AZD_NON_INTERACTIVE presence suppresses agent detection.
-	// CLAUDE_CODE=1 would normally trigger NoPrompt via agent detection, but
+	// CLAUDECODE=1 would normally trigger NoPrompt via agent detection, but
 	// AZD_NON_INTERACTIVE=false should suppress agent detection entirely.
-	t.Run("AZD_NON_INTERACTIVE=false suppresses agent detection with CLAUDE_CODE set", func(t *testing.T) {
+	t.Run("AZD_NON_INTERACTIVE=false suppresses agent detection with CLAUDECODE set", func(t *testing.T) {
 		clearAgentEnvVarsForTest(t)
 		agentdetect.ResetDetection()
 
-		t.Setenv("CLAUDE_CODE", "1")
+		t.Setenv("CLAUDECODE", "1")
 		t.Setenv("AZD_NON_INTERACTIVE", "false")
 		agentdetect.ResetDetection()
 

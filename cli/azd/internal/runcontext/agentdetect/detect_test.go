@@ -19,14 +19,19 @@ func TestAgentType_DisplayName(t *testing.T) {
 		displayName string
 	}{
 		{AgentTypeClaudeCode, "Claude Code"},
-		{AgentTypeCodex, "Codex"},
+		{AgentTypeClaudeCodeDesktop, "Claude Code Desktop"},
+		{AgentTypeClaudeCodeVSCode, "Claude Code VSCode"},
+		{AgentTypeCodex, "Codex CLI"},
+		{AgentTypeCodexDesktop, "Codex Desktop"},
 		{AgentTypeCursor, "Cursor"},
 		{AgentTypeGitHubCopilotCLI, "GitHub Copilot CLI"},
 		{AgentTypeGitHubCopilotApp, "GitHub Copilot App"},
 		{AgentTypeGitHubCopilotVSCode, "GitHub Copilot VSCode"},
+		{AgentTypeGitHubCopilotCloudAgent, "GitHub Copilot Cloud Agent"},
 		{AgentTypeVSCodeCopilot, "VS Code GitHub Copilot"},
 		{AgentTypeGemini, "Gemini"},
 		{AgentTypeOpenCode, "OpenCode"},
+		{AgentTypePi, "Pi"},
 		{AgentTypeUnknown, "Unknown"},
 	}
 
@@ -70,12 +75,28 @@ func TestDetectFromEnvVars(t *testing.T) {
 		{
 			name: "GitHub Copilot VSCode takes precedence over Copilot CLI",
 			envVars: map[string]string{
-				"AI_AGENT":           "github_copilot_vscode_agent",
-				"GITHUB_COPILOT_CLI": "true",
-				"GH_COPILOT":         "1",
-				"COPILOT_CLI":        "1",
+				"AI_AGENT":    "github_copilot_vscode_agent",
+				"COPILOT_CLI": "1",
 			},
 			expectedAgent: AgentTypeGitHubCopilotVSCode,
+			detected:      true,
+		},
+		{
+			name: "GitHub Copilot cloud agent",
+			envVars: map[string]string{
+				"AI_AGENT":    "github_copilot_cloud_agent",
+				"COPILOT_CLI": "1",
+			},
+			expectedAgent: AgentTypeGitHubCopilotCloudAgent,
+			detected:      true,
+		},
+		{
+			name: "Pi coding agent",
+			envVars: map[string]string{
+				"AI_AGENT":    "pi",
+				"COPILOT_CLI": "1",
+			},
+			expectedAgent: AgentTypePi,
 			detected:      true,
 		},
 		{
@@ -108,16 +129,70 @@ func TestDetectFromEnvVars(t *testing.T) {
 			detected:      false,
 		},
 		{
-			name:          "Claude Code via CLAUDE_CODE",
-			envVars:       map[string]string{"CLAUDE_CODE": "1"},
+			name:          "Claude Code via CLAUDECODE",
+			envVars:       map[string]string{"CLAUDECODE": "1"},
 			expectedAgent: AgentTypeClaudeCode,
 			detected:      true,
 		},
 		{
-			name:          "Claude Code via CLAUDE_CODE_ENTRYPOINT",
-			envVars:       map[string]string{"CLAUDE_CODE_ENTRYPOINT": "cli"},
+			name: "Claude Code Desktop",
+			envVars: map[string]string{
+				"CLAUDECODE":             "1",
+				"CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+			},
+			expectedAgent: AgentTypeClaudeCodeDesktop,
+			detected:      true,
+		},
+		{
+			name: "Claude Code VSCode",
+			envVars: map[string]string{
+				"CLAUDECODE":             "1",
+				"CLAUDE_CODE_ENTRYPOINT": "claude-vscode",
+			},
+			expectedAgent: AgentTypeClaudeCodeVSCode,
+			detected:      true,
+		},
+		{
+			name: "Unknown Claude Code entrypoint falls back",
+			envVars: map[string]string{
+				"CLAUDECODE":             "1",
+				"CLAUDE_CODE_ENTRYPOINT": "sdk-ts",
+			},
 			expectedAgent: AgentTypeClaudeCode,
 			detected:      true,
+		},
+		{
+			name:          "CLAUDECODE requires exact value",
+			envVars:       map[string]string{"CLAUDECODE": "true"},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name:          "Legacy CLAUDE_CODE is ignored",
+			envVars:       map[string]string{"CLAUDE_CODE": "1"},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name:          "CLAUDE_CODE_ENTRYPOINT without CLAUDECODE is ignored",
+			envVars:       map[string]string{"CLAUDE_CODE_ENTRYPOINT": "claude-desktop"},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name: "Codex Desktop",
+			envVars: map[string]string{
+				"CODEX_INTERNAL_ORIGINATOR_OVERRIDE": "Codex Desktop",
+				"CODEX_THREAD_ID":                    "thread-id",
+			},
+			expectedAgent: AgentTypeCodexDesktop,
+			detected:      true,
+		},
+		{
+			name:          "Codex Desktop originator requires exact value",
+			envVars:       map[string]string{"CODEX_INTERNAL_ORIGINATOR_OVERRIDE": "codex-desktop"},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
 		},
 		{
 			name:          "Codex via CODEX_CI",
@@ -147,7 +222,8 @@ func TestDetectFromEnvVars(t *testing.T) {
 			name: "Codex takes precedence over inherited Claude marker",
 			envVars: map[string]string{
 				"CODEX_THREAD_ID":        "thread-id",
-				"CLAUDE_CODE_ENTRYPOINT": "cli",
+				"CLAUDECODE":             "1",
+				"CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
 			},
 			expectedAgent: AgentTypeCodex,
 			detected:      true,
@@ -194,8 +270,8 @@ func TestDetectFromEnvVars(t *testing.T) {
 		{
 			name: "Cursor takes precedence over inherited Claude marker",
 			envVars: map[string]string{
-				"CURSOR_AGENT":           "1",
-				"CLAUDE_CODE_ENTRYPOINT": "cli",
+				"CURSOR_AGENT": "1",
+				"CLAUDECODE":   "1",
 			},
 			expectedAgent: AgentTypeCursor,
 			detected:      true,
@@ -205,18 +281,6 @@ func TestDetectFromEnvVars(t *testing.T) {
 			envVars:       map[string]string{"CURSOR_CONVERSATION_ID": ""},
 			expectedAgent: AgentTypeUnknown,
 			detected:      false,
-		},
-		{
-			name:          "GitHub Copilot CLI via GITHUB_COPILOT_CLI",
-			envVars:       map[string]string{"GITHUB_COPILOT_CLI": "true"},
-			expectedAgent: AgentTypeGitHubCopilotCLI,
-			detected:      true,
-		},
-		{
-			name:          "GitHub Copilot CLI via GH_COPILOT",
-			envVars:       map[string]string{"GH_COPILOT": "1"},
-			expectedAgent: AgentTypeGitHubCopilotCLI,
-			detected:      true,
 		},
 		{
 			name:          "GitHub Copilot CLI via COPILOT_CLI",
@@ -538,7 +602,7 @@ func TestGetCallingAgent_Caching(t *testing.T) {
 	require.False(t, agent1.Detected)
 
 	// Set an env var - but cached result should be returned
-	t.Setenv("CLAUDE_CODE", "1")
+	t.Setenv("CLAUDECODE", "1")
 	agent2 := GetCallingAgent()
 	assert.False(t, agent2.Detected, "Should return cached result")
 
@@ -565,7 +629,7 @@ func TestIsRunningInAgent(t *testing.T) {
 func TestDisableAgentDetect(t *testing.T) {
 	// Even when an agent env var is set, detection should be disabled
 	// when AZD_DISABLE_AGENT_DETECT is set.
-	t.Setenv("CLAUDE_CODE", "1")
+	t.Setenv("CLAUDECODE", "1")
 	t.Setenv(DisableAgentDetectEnvVar, "1")
 	ResetDetection()
 
@@ -582,13 +646,13 @@ func clearAgentEnvVars(t *testing.T) {
 		// GitHub Copilot hosts
 		"AI_AGENT",
 		// Claude Code
-		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
+		"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
 		// Codex
-		"CODEX_CI", "CODEX_THREAD_ID", "CODEX_SESSION_ID",
+		"CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "CODEX_CI", "CODEX_THREAD_ID", "CODEX_SESSION_ID",
 		// Cursor
 		"CURSOR_AGENT", "CURSOR_CONVERSATION_ID",
 		// GitHub Copilot CLI
-		"GITHUB_COPILOT_CLI", "GH_COPILOT", "COPILOT_CLI",
+		"COPILOT_CLI",
 		// Gemini CLI
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		// OpenCode

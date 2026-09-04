@@ -45,7 +45,7 @@ integration.
 | `AZD_CONFIG_DIR` | The file path of the user-level configuration directory. |
 | `AZD_DEMO_MODE` | If true, enables demo mode. This hides personal output, such as subscription IDs, from being displayed in output. |
 | `AZD_FORCE_TTY` | If true, forces `azd` to write terminal-style output. |
-| `AZD_NON_INTERACTIVE` | Controls no-prompt mode. Accepts a boolean (`true`, `false`, `1`, `0`); other values are ignored with a warning. Set to `true` (or `1`) to run without interactive prompts (equivalent to `--no-prompt`). `azd` also auto-enables no-prompt mode when it detects a CI/CD or AI-agent environment; set `AZD_NON_INTERACTIVE=false` to opt out of that automatic enablement (the global no-prompt setting stays off in those environments). Note that some commands still avoid interactive prompts in CI/CD by design, independent of this variable. Explicit `--no-prompt`/`--non-interactive` flags take precedence over this variable. |
+| `AZD_NON_INTERACTIVE` | Controls no-prompt mode. Accepts a boolean (`true`, `false`, `1`, `0`); other values are ignored with a warning. Set to `true` (or `1`) to run without interactive prompts (equivalent to `--no-prompt`). `azd` also auto-enables no-prompt mode in CI/CD and for AI-agent invocations without an interactive terminal. Agent markers inherited by an interactive terminal do not disable prompts. Set `AZD_NON_INTERACTIVE=false` to opt out of automatic enablement. Note that some commands still avoid interactive prompts in CI/CD by design, independent of this variable. Explicit `--no-prompt`/`--non-interactive` flags take precedence over this variable. |
 | `AZD_IN_CLOUDSHELL` | If true, `azd` runs with Azure Cloud Shell specific behavior. |
 | `AZD_SKIP_UPDATE_CHECK` | If true, skips the out-of-date update check output that is typically printed at the end of the command. |
 | `AZD_SKIP_FIRST_RUN` | Reserved for the dormant first-run tool setup and background update experience. This variable has no effect while those middleware components are not registered. |
@@ -62,14 +62,13 @@ integration.
 
 ## AI Agent Detection
 
-`azd` detects when it is launched by a known AI coding agent and adjusts its behavior. Unless
-explicitly overridden, agent detection automatically enables no-prompt mode and treats the session
-as non-TTY. Detection checks the environment-variable markers below first, followed by known
-substrings in [`AZURE_DEV_USER_AGENT`](#telemetry--tracing), and then parent-process names.
+`azd` detects when it is launched by a known AI coding agent and records the agent for telemetry. Unless explicitly overridden, agent detection automatically enables no-prompt mode when stdin and stdout are not attached to an interactive terminal. An inherited agent marker does not disable prompts in an interactive terminal. Detection checks the environment-variable markers below first, followed by known substrings in [`AZURE_DEV_USER_AGENT`](#telemetry--tracing), and then parent-process names.
 
 These markers are normally set by the agents; `azd` only reads them. When several markers are set,
 the first matching row wins. Exact-value markers must match the documented string and do not use the
 general boolean parsing convention. All other markers must contain a non-empty value.
+
+Claude Code sets `CLAUDECODE=1` in all spawned subprocesses and in IDE-integrated terminals. `azd` uses it for agent attribution, while actual terminal capabilities determine whether prompting is available. When `CLAUDE_CODE_ENTRYPOINT` is exactly `claude-desktop` or `claude-vscode`, `azd` records the corresponding fixed Claude host value. Other entrypoint values fall back to `Claude Code` and are never emitted directly. This host refinement is best-effort because Anthropic does not document the environment variable as a compatibility contract.
 
 When the detected agent determines `execution.environment`, `azd` records only the fixed base value
 in the last column; fixed environment modifiers may be appended. Marker values are not added to
@@ -79,15 +78,16 @@ telemetry by the agent-detection path.
 | --- | --- | --- |
 | `AI_AGENT` | Exactly `github_copilot_app_agent` | GitHub Copilot App |
 | `AI_AGENT` | Exactly `github_copilot_vscode_agent` | GitHub Copilot VSCode |
+| `AI_AGENT` | Exactly `github_copilot_cloud_agent` | GitHub Copilot Cloud Agent |
+| `AI_AGENT` | Exactly `pi` | Pi |
+| `CODEX_INTERNAL_ORIGINATOR_OVERRIDE` | Exactly `Codex Desktop` | Codex Desktop |
 | `CODEX_CI` | Exactly `1` | Codex |
 | `CODEX_THREAD_ID` | Non-empty | Codex |
 | `CODEX_SESSION_ID` | Non-empty | Codex |
 | `CURSOR_AGENT` | Exactly `1` | Cursor |
 | `CURSOR_CONVERSATION_ID` | Non-empty | Cursor |
-| `CLAUDE_CODE` | Non-empty | Claude Code |
-| `CLAUDE_CODE_ENTRYPOINT` | Non-empty | Claude Code |
-| `GITHUB_COPILOT_CLI` | Non-empty | GitHub Copilot CLI |
-| `GH_COPILOT` | Non-empty | GitHub Copilot CLI |
+| `CLAUDECODE` | Exactly `1` | Claude Code |
+| `CLAUDE_CODE_ENTRYPOINT` | Exactly `claude-desktop` or `claude-vscode`, with `CLAUDECODE=1` | Claude Code Desktop or Claude Code VSCode |
 | `COPILOT_CLI` | Non-empty | GitHub Copilot CLI |
 | `GEMINI_CLI` | Non-empty | Gemini |
 | `GEMINI_CLI_NO_RELAUNCH` | Non-empty | Gemini |

@@ -1258,9 +1258,9 @@ func (m *Manager) evaluateDependencyChanges(
 			m.azdVersion,
 		)
 
-		// Children that predate dependency tracking learn their snapshot here, before any
-		// version logic, so one update of the parent protects the whole tree even when every
-		// child is already current or declared without a constraint.
+		// Direct children that predate dependency tracking learn their snapshot here, before
+		// any version logic. Deeper legacy records are backfilled when they are directly
+		// reconciled, updated, or reinstalled.
 		if findErr == nil {
 			installedRelease := FindVersion(childMetadata.Versions, installed.Version)
 			if err := m.BackfillDependencies(dep.Id, installedRelease); err != nil {

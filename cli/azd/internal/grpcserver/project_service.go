@@ -116,10 +116,10 @@ func (s *projectService) validateServiceExists(ctx context.Context, serviceName 
 	return nil
 }
 
-// Get retrieves the complete project configuration including all services and metadata.
+// Get retrieves the legacy project configuration including all services and metadata.
 // This method resolves environment variables in configuration values using the environment
 // for the current session and converts the internal project configuration to the protobuf
-// format for gRPC communication.
+// format for gRPC communication. Top-level layers projects must use ListLayers or GetLayer.
 //
 // The returned project includes:
 //   - Basic project metadata (name, resource group, path)
@@ -133,6 +133,10 @@ func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*az
 	projectConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
 		return nil, err
+	}
+	if projectConfig.Format() == project.ProjectFormatLayersV2 {
+		return nil, status.Error(codes.FailedPrecondition,
+			"Get is not supported for top-level layers projects; use ListLayers or GetLayer instead")
 	}
 
 	var project *azdext.ProjectConfig
@@ -195,6 +199,10 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 	if err != nil {
 		return nil, err
 	}
+	if projectConfig.Format() == project.ProjectFormatLayersV2 {
+		return nil, status.Error(codes.FailedPrecondition,
+			"AddService cannot modify a top-level layers project; use SetLayer instead")
+	}
 
 	serviceConfig := &project.ServiceConfig{}
 	if err := mapper.Convert(req.Service, &serviceConfig); err != nil {
@@ -231,6 +239,18 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 	}
 
 	return &azdext.EmptyResponse{}, nil
+}
+
+func rejectProjectLayersServiceConfig(ctx context.Context, projectFilePath, operation string) error {
+	config, err := project.LoadConfig(ctx, projectFilePath)
+	if err != nil {
+		return err
+	}
+	if _, has := config.Get("layers"); has {
+		return status.Errorf(codes.FailedPrecondition,
+			"%s is not supported for a top-level layers project; use GetLayer or SetLayer instead", operation)
+	}
+	return nil
 }
 
 // preserveUnchangedEnvTemplates restores the original env value templates from existing for
@@ -540,6 +560,9 @@ func (s *projectService) GetServiceConfigSection(
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectProjectLayersServiceConfig(ctx, azdContext.ProjectPath(), "GetServiceConfigSection"); err != nil {
+		return nil, err
+	}
 
 	// Validate service exists
 	if err := s.validateServiceExists(ctx, req.ServiceName); err != nil {
@@ -607,6 +630,9 @@ func (s *projectService) GetServiceConfigValue(
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectProjectLayersServiceConfig(ctx, azdContext.ProjectPath(), "GetServiceConfigValue"); err != nil {
+		return nil, err
+	}
 
 	// Validate service exists
 	if err := s.validateServiceExists(ctx, req.ServiceName); err != nil {
@@ -666,6 +692,9 @@ func (s *projectService) SetServiceConfigSection(
 
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
+		return nil, err
+	}
+	if err := rejectProjectLayersServiceConfig(ctx, azdContext.ProjectPath(), "SetServiceConfigSection"); err != nil {
 		return nil, err
 	}
 
@@ -733,6 +762,9 @@ func (s *projectService) SetServiceConfigValue(
 
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
+		return nil, err
+	}
+	if err := rejectProjectLayersServiceConfig(ctx, azdContext.ProjectPath(), "SetServiceConfigValue"); err != nil {
 		return nil, err
 	}
 
@@ -803,6 +835,9 @@ func (s *projectService) UnsetServiceConfig(
 
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
+		return nil, err
+	}
+	if err := rejectProjectLayersServiceConfig(ctx, azdContext.ProjectPath(), "UnsetServiceConfig"); err != nil {
 		return nil, err
 	}
 
@@ -920,7 +955,7 @@ func (s *projectService) GetServiceTargetResource(
 	}
 
 	// Validate the service exists
-	serviceConfig, exists := projectConfig.Services[req.ServiceName]
+	serviceConfig, exists := projectConfig.ServiceConfigs()[req.ServiceName]
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "service '%s' not found in project", req.ServiceName)
 	}

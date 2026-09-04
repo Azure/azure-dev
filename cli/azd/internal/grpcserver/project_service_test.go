@@ -218,6 +218,22 @@ func Test_ProjectService_Get_ResolvesServiceEnvironment(t *testing.T) {
 	}, getResponse.Project.Services["api"].Environment)
 }
 
+func Test_ProjectService_Get_RejectsLayersV2Project(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, "name: test-project\n"+
+		"layers:\n"+
+		"  - name: application\n"+
+		"    services:\n"+
+		"      api:\n"+
+		"        host: containerapp\n"+
+		"        image: example/api:latest\n")
+
+	_, err := service.Get(t.Context(), &azdext.EmptyRequest{})
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.ErrorContains(t, err, "use ListLayers or GetLayer instead")
+}
+
 // Test_ProjectService_AddService_PreservesEnvTemplates verifies that a read-modify-write
 // round trip through AddService keeps the original ${VAR} env templates in azure.yaml for
 // values the caller did not change, while changed or added values are persisted as literals
@@ -272,6 +288,7 @@ func Test_ProjectService_AddService_PreservesEnvTemplates(t *testing.T) {
 			RelativePath: "./src/api",
 			Language:     "python",
 			Host:         "containerapp",
+			Image:        "${REGISTRY}/api:${TAG}",
 			Environment: map[string]string{
 				"FROM_ENV": "resolved",  // unchanged: template must be preserved
 				"CHANGED":  "brand-new", // changed: persisted as literal
@@ -290,6 +307,19 @@ func Test_ProjectService_AddService_PreservesEnvTemplates(t *testing.T) {
 
 	updatedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
 	require.NoError(t, err)
+	image, err := updatedConfig.Services["api"].Image.Envsubst(func(key string) string {
+		switch key {
+		case "REGISTRY":
+			return "registry.example"
+		case "TAG":
+			return "v1"
+		default:
+			return ""
+		}
+	})
+	require.NoError(t, err)
+	require.Equal(t, "registry.example/api:v1", image)
+
 	updatedEnv, err := updatedConfig.Services["api"].Environment.Expand(func(key string) string {
 		if key == "SERVICE_VALUE" {
 			return "resolved-later"
@@ -2248,6 +2278,29 @@ func newProjectServiceWithYaml(t *testing.T, yamlContent string) azdext.ProjectS
 	return NewProjectService(lazyCtx, nil, lazyEnv, lazyPC, nil, nil)
 }
 
+// A few tests need to peek behind the server interface to inspect lazy state that isn't part of the public API.
+func requireProjectService(t *testing.T, service azdext.ProjectServiceServer) *projectService {
+	t.Helper()
+	projectService, ok := service.(*projectService)
+	require.True(t, ok)
+	return projectService
+}
+
+func getCachedLayerService(t *testing.T,
+	service azdext.ProjectServiceServer,
+	serviceName string,
+) *project.ServiceConfig {
+	t.Helper()
+	projectService := requireProjectService(t, service)
+
+	projectConfig, err := projectService.lazyProjectConfig.GetValue()
+	require.NoError(t, err)
+
+	serviceConfig, has := projectConfig.ServiceConfigs()[serviceName]
+	require.Truef(t, has, "service %s should exist", serviceName)
+	return serviceConfig
+}
+
 func TestProjectService_GetConfigValue_EmptyPath(t *testing.T) {
 	t.Parallel()
 	svc := newProjectServiceWithYaml(t, "name: test-project\n")
@@ -2256,6 +2309,759 @@ func TestProjectService_GetConfigValue_EmptyPath(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	require.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestProjectService_LayerFlow(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, "name: test-project\nlayers: []\n")
+
+	added, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{
+		Layer: &azdext.Layer{
+			Name: "foundry",
+			Infra: []*azdext.InfraOptions{
+				{Name: "account", Provider: "bicep", Path: "infra/account"},
+				{
+					Name:      "project",
+					Provider:  "microsoft.foundry",
+					DependsOn: []string{"account"},
+					Outputs:   map[string]string{"AZURE_AI_PROJECT_ID": "FOUNDRY_PROJECT_ID"},
+				},
+			},
+			Services: map[string]*azdext.ServiceConfig{
+				"ai-project": {Host: "containerapp", Image: "example/project:latest"},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "foundry", added.Layer.Name)
+	require.Len(t, added.Layer.Infra, 2)
+	require.Equal(t, "bicep", added.Layer.Infra[0].Provider)
+	require.Equal(t, "microsoft.foundry", added.Layer.Infra[1].Provider)
+	require.Empty(t, added.Layer.Infra[1].Path)
+
+	_, err = service.SetLayer(t.Context(), &azdext.SetLayerRequest{Layer: &azdext.Layer{
+		Name: "writer-agent",
+		Services: map[string]*azdext.ServiceConfig{
+			"writer-agent": {Host: "containerapp", Image: "example/writer:latest", Uses: []string{"ai-project"}},
+		},
+	}})
+	require.NoError(t, err)
+
+	writer, err := service.GetLayer(t.Context(), &azdext.GetLayerRequest{Name: "writer-agent"})
+	require.NoError(t, err)
+	require.Empty(t, writer.Layer.Infra)
+	require.Contains(t, writer.Layer.Services, "writer-agent")
+
+	layers, err := service.ListLayers(t.Context(), &azdext.EmptyRequest{})
+	require.NoError(t, err)
+	require.Len(t, layers.Layers, 2)
+	require.Equal(t, "foundry", layers.Layers[0].Name)
+	require.Equal(t, "writer-agent", layers.Layers[1].Name)
+
+	removed, err := service.RemoveLayer(t.Context(), &azdext.RemoveLayerRequest{Name: "writer-agent"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"writer-agent"}, removed.RemovedServices)
+
+	_, err = service.RemoveLayer(t.Context(), &azdext.RemoveLayerRequest{Name: "foundry"})
+	require.NoError(t, err)
+}
+
+func TestProjectService_LayerResponsesUseRawEnvTemplates(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t,
+		"name: test-project\n"+
+			"layers:\n"+
+			"  - name: application\n"+
+			"    services:\n"+
+			"      api:\n"+
+			"        host: containerapp\n"+
+			"        image: ${REGISTRY}/api:${TAG}\n"+
+			"        condition: ${ENABLED}\n"+
+			"        env:\n"+
+			"          ENDPOINT: https://${HOST}\n")
+	projectSvc := requireProjectService(t, service)
+	projectSvc.lazyEnv = lazy.From(environment.NewWithValues("dev", map[string]string{
+		"REGISTRY": "registry.example",
+		"TAG":      "v1",
+		"HOST":     "api.example",
+		"ENABLED":  "true",
+	}))
+
+	assertTemplates := func(t *testing.T, layer *azdext.Layer) {
+		t.Helper()
+		require.Equal(t, "${REGISTRY}/api:${TAG}", layer.Services["api"].Image)
+		require.Equal(t, "${ENABLED}", layer.Services["api"].Condition)
+		require.Equal(t, "https://${HOST}", layer.Services["api"].Environment["ENDPOINT"])
+	}
+
+	got, err := service.GetLayer(t.Context(), &azdext.GetLayerRequest{Name: "application"})
+	require.NoError(t, err)
+	assertTemplates(t, got.Layer)
+
+	expanded, err := service.GetLayer(t.Context(), &azdext.GetLayerRequest{
+		Name:     "application",
+		Envsubst: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "registry.example/api:v1", expanded.Layer.Services["api"].Image)
+	require.Equal(t, "true", expanded.Layer.Services["api"].Condition)
+	require.Equal(t, "https://api.example", expanded.Layer.Services["api"].Environment["ENDPOINT"])
+
+	listed, err := service.ListLayers(t.Context(), &azdext.EmptyRequest{})
+	require.NoError(t, err)
+	require.Len(t, listed.Layers, 1)
+	assertTemplates(t, listed.Layers[0])
+
+	set, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{Layer: &azdext.Layer{
+		Name: "application",
+		Services: map[string]*azdext.ServiceConfig{
+			"api": {
+				Host:        "containerapp",
+				Image:       "${REGISTRY}/api:${TAG}",
+				Condition:   "${ENABLED}",
+				Environment: map[string]string{"ENDPOINT": "https://${HOST}"},
+			},
+		},
+	}})
+	require.NoError(t, err)
+	assertTemplates(t, set.Layer)
+}
+
+func TestProjectService_GetLayerEnvsubstGatesTemplateEvaluation(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, `name: test-project
+layers:
+  - name: application
+    services:
+      api:
+        host: containerapp
+        image: ${MISSING_BRACE
+`)
+
+	raw, err := service.GetLayer(t.Context(), &azdext.GetLayerRequest{Name: "application"})
+	require.NoError(t, err)
+	require.Equal(t, "${MISSING_BRACE", raw.Layer.Services["api"].Image)
+
+	_, err = service.GetLayer(t.Context(), &azdext.GetLayerRequest{
+		Name:     "application",
+		Envsubst: true,
+	})
+	require.ErrorContains(t, err, "envsubst image")
+}
+
+func TestProjectService_LayerReadsDoNotResolveImportedServices(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, `name: test-project
+layers:
+  - name: application
+    services:
+      app-host:
+        language: dotnet
+        host: containerapp
+`)
+
+	response, err := service.GetLayer(t.Context(), &azdext.GetLayerRequest{Name: "application"})
+
+	require.NoError(t, err)
+	require.Contains(t, response.Layer.Services, "app-host")
+	require.Equal(t, "dotnet", response.Layer.Services["app-host"].Language)
+
+	listed, err := service.ListLayers(t.Context(), &azdext.EmptyRequest{})
+	require.NoError(t, err)
+	require.Len(t, listed.Layers, 1)
+	require.Contains(t, listed.Layers[0].Services, "app-host")
+
+	removed, err := service.RemoveLayer(t.Context(), &azdext.RemoveLayerRequest{Name: "application"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"app-host"}, removed.RemovedServices)
+}
+
+func TestProjectService_SetLayerRequiresV2Project(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, `name: test-project
+infra:
+  provider: bicep
+`)
+
+	_, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{
+		Layer: &azdext.Layer{
+			Name: "foundry",
+			Infra: []*azdext.InfraOptions{
+				{Name: "foundry", Provider: "microsoft.foundry"},
+			},
+		},
+	})
+
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.ErrorContains(t, err, "requires a project")
+}
+
+func TestEmptyLayerErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		call     func(*testing.T, azdext.ProjectServiceServer) error
+		wantCode codes.Code
+		wantErr  string
+	}{
+		{
+			name: "set layer without definition",
+			call: func(t *testing.T, service azdext.ProjectServiceServer) error {
+				_, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+			wantErr:  "layer name cannot be empty",
+		},
+		{
+			name: "set layer with empty name",
+			call: func(t *testing.T, service azdext.ProjectServiceServer) error {
+				_, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{
+					Layer: &azdext.Layer{
+						Infra: []*azdext.InfraOptions{{Name: "account", Provider: "bicep", Path: "infra/account"}},
+					},
+				})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+			wantErr:  "layer name cannot be empty",
+		},
+		{
+			name: "set layer with unnamed infrastructure entry",
+			call: func(t *testing.T, service azdext.ProjectServiceServer) error {
+				_, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{
+					Layer: &azdext.Layer{
+						Name:  "foundry",
+						Infra: []*azdext.InfraOptions{{Provider: "bicep", Path: "infra/account"}},
+					},
+				})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+			wantErr:  "infrastructure entry name cannot be empty",
+		},
+		{
+			name: "set layer with infrastructure provider omitted",
+			call: func(t *testing.T, service azdext.ProjectServiceServer) error {
+				_, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{
+					Layer: &azdext.Layer{
+						Name:  "foundry",
+						Infra: []*azdext.InfraOptions{{Name: "account", Path: "infra/account"}},
+					},
+				})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+			wantErr:  `infrastructure entry "account" must specify a provider`,
+		},
+		{
+			name: "set layer with duplicate infrastructure entries",
+			call: func(t *testing.T, service azdext.ProjectServiceServer) error {
+				_, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{
+					Layer: &azdext.Layer{
+						Name: "foundry",
+						Infra: []*azdext.InfraOptions{
+							{Name: "account", Provider: "bicep", Path: "infra/account"},
+							{Name: "account", Provider: "bicep", Path: "infra/other"},
+						},
+					},
+				})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+			wantErr:  "duplicate infrastructure entry 'account'",
+		},
+		{
+			name: "remove layer without request",
+			call: func(t *testing.T, service azdext.ProjectServiceServer) error {
+				_, err := service.RemoveLayer(t.Context(), nil)
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+			wantErr:  "layer name cannot be empty",
+		},
+		{
+			name: "remove layer with empty name",
+			call: func(t *testing.T, service azdext.ProjectServiceServer) error {
+				_, err := service.RemoveLayer(t.Context(), &azdext.RemoveLayerRequest{})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+			wantErr:  "layer name cannot be empty",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := newProjectServiceWithYaml(t, "name: test-project\nlayers: []\n")
+
+			err := test.call(t, service)
+			require.Equal(t, test.wantCode, status.Code(err))
+			require.ErrorContains(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestProjectService_SetLayerAssignsServices(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, "name: test-project\nlayers: []\n")
+
+	response, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{
+		Layer: &azdext.Layer{
+			Name:  "application",
+			Infra: []*azdext.InfraOptions{{Name: "app", Provider: "bicep", Path: "infra/app"}},
+			Services: map[string]*azdext.ServiceConfig{
+				"api":    {Host: "containerapp", Image: "example/api:latest"},
+				"worker": {Name: "ignored", Host: "containerapp", Image: "example/worker:latest"},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, response.Layer.Services, 2)
+	require.Equal(t, "api", response.Layer.Services["api"].Name)
+	require.Equal(t, "worker", response.Layer.Services["worker"].Name)
+	require.NotNil(t, getCachedLayerService(t, service, "api").EventDispatcher)
+}
+
+func TestProjectService_SetLayerReplacesCompleteLayer(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, `name: test-project
+layers:
+  - name: application
+    infra:
+      - name: old-infra
+        provider: terraform
+        path: infra/old
+    services:
+      old-service:
+        host: containerapp
+        image: example/old:latest
+`)
+
+	response, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{Layer: &azdext.Layer{
+		Name:  "application",
+		Infra: []*azdext.InfraOptions{{Name: "new-infra", Provider: "terraform", Path: "infra/new"}},
+		Services: map[string]*azdext.ServiceConfig{
+			"new-service": {Host: "containerapp", Image: "example/new:latest"},
+		},
+	}})
+
+	require.NoError(t, err)
+	require.Len(t, response.Layer.Infra, 1)
+	require.Equal(t, "new-infra", response.Layer.Infra[0].Name)
+	require.NotContains(t, response.Layer.Services, "old-service")
+	require.Contains(t, response.Layer.Services, "new-service")
+}
+
+// Every YAML-backed field absent from azdext.ServiceConfig or azdext.InfraOptions is asserted below.
+// Runtime-only fields tagged yaml:"-" are intentionally excluded.
+func TestProjectService_SetLayerRoundTripPreservesAllUnmappedPersistedFields(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	azdContext := azdcontext.NewAzdContextWithDirectory(projectDir)
+	original := &project.ProjectConfig{
+		Name: "test-project",
+		Layers: project.LayerConfigs{
+			{
+				Name: "application",
+				Infra: []provisioning.Options{
+					{
+						Name:     "app",
+						Provider: provisioning.Bicep,
+						Path:     "infra/app",
+						Hooks: provisioning.HooksConfig{
+							"preprovision": {{Shell: "sh", Run: "echo preparing infra"}},
+						},
+						DeploymentStacks: &provisioning.DeploymentStacksConfig{
+							ActionOnUnmanage: &provisioning.ActionOnUnmanageConfig{
+								Resources:      "delete",
+								ResourceGroups: "detach",
+							},
+							DenySettings: &provisioning.DenySettingsConfig{
+								Mode:               "denyDelete",
+								ApplyToChildScopes: new(false),
+							},
+						},
+					},
+				},
+				Services: map[string]*project.ServiceConfig{
+					"api": {
+						Host:         project.AksTarget,
+						RelativePath: "src/api",
+						K8s: project.AksOptions{
+							Namespace:      "api-namespace",
+							DeploymentPath: "deploy",
+							Ingress: project.AksIngressOptions{
+								Name:         "api-ingress",
+								RelativePath: "/api",
+							},
+							Deployment: project.AksDeploymentOptions{Name: "api-deployment"},
+							Service:    project.AksServiceOptions{Name: "api-service"},
+						},
+						Module: "api.bicep",
+						Infra: provisioning.Options{
+							Provider: provisioning.Bicep,
+							Path:     "service-infra",
+							Module:   "service-main",
+						},
+						Hooks: project.HooksConfig{
+							"predeploy": {{Shell: "sh", Run: "echo preparing service"}},
+						},
+						Condition:   osutil.NewExpandableString("true"),
+						RemoteBuild: new(false),
+					},
+				},
+			},
+		},
+	}
+	require.NoError(t, project.Save(t.Context(), original, azdContext.ProjectPath()))
+
+	baseline, err := project.Load(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	service := NewProjectService(
+		lazy.From(azdContext),
+		nil,
+		lazy.From(environment.NewWithValues("dev", nil)),
+		lazy.From(baseline),
+		project.NewImportManager(nil),
+		nil,
+	)
+
+	current, err := service.GetLayer(t.Context(), &azdext.GetLayerRequest{Name: "application"})
+	require.NoError(t, err)
+	_, err = service.SetLayer(t.Context(), &azdext.SetLayerRequest{Layer: &azdext.Layer{
+		Name:     current.Layer.Name,
+		Infra:    current.Layer.Infra,
+		Services: current.Layer.Services,
+	}})
+	require.NoError(t, err)
+
+	updated, err := project.Load(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	require.Len(t, updated.Layers, 1)
+	require.Len(t, updated.Layers[0].Infra, 1)
+	require.Contains(t, updated.Layers[0].Services, "api")
+
+	type unmappedPersistedFields struct {
+		InfrastructureHooks            provisioning.HooksConfig
+		InfrastructureDeploymentStacks *provisioning.DeploymentStacksConfig
+		ServiceK8s                     project.AksOptions
+		ServiceModule                  string
+		ServiceInfrastructure          provisioning.Options
+		ServiceHooks                   project.HooksConfig
+		ServiceCondition               string
+		ServiceRemoteBuild             *bool
+	}
+	extract := func(layer *project.LayerConfig) unmappedPersistedFields {
+		infra := layer.Infra[0]
+		service := layer.Services["api"]
+		return unmappedPersistedFields{
+			InfrastructureHooks:            infra.Hooks,
+			InfrastructureDeploymentStacks: infra.DeploymentStacks,
+			ServiceK8s:                     service.K8s,
+			ServiceModule:                  service.Module,
+			ServiceInfrastructure:          service.Infra,
+			ServiceHooks:                   service.Hooks,
+			ServiceCondition:               service.Condition.Raw(),
+			ServiceRemoteBuild:             service.RemoteBuild,
+		}
+	}
+
+	require.Equal(t, extract(baseline.Layers[0]), extract(updated.Layers[0]))
+}
+
+func TestProjectService_SetLayerReplacementPreservesRuntimeState(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, `name: test-project
+layers:
+  - name: application
+    services:
+      api:
+        host: containerapp
+        image: example/original:latest
+`)
+	original := getCachedLayerService(t, service, "api")
+	handlerCalled := false
+	require.NoError(t, original.AddHandler(
+		t.Context(),
+		project.ServiceEventDeploy,
+		func(context.Context, project.ServiceLifecycleEventArgs) error {
+			handlerCalled = true
+			return nil
+		},
+	))
+
+	_, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{Layer: &azdext.Layer{
+		Name: "application",
+		Services: map[string]*azdext.ServiceConfig{
+			"api": {Host: "containerapp", Image: "example/replacement:latest"},
+		},
+	}})
+	require.NoError(t, err)
+	updated := getCachedLayerService(t, service, "api")
+	require.Same(t, original.EventDispatcher, updated.EventDispatcher)
+	require.NoError(t, updated.RaiseEvent(
+		t.Context(),
+		project.ServiceEventDeploy,
+		project.ServiceLifecycleEventArgs{Service: updated},
+	))
+	require.True(t, handlerCalled)
+}
+
+func TestProjectService_SetLayerReplacementUsesRawEnvTemplates(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	azdContext := azdcontext.NewAzdContextWithDirectory(projectDir)
+	require.NoError(t, os.WriteFile(azdContext.ProjectPath(), []byte(`name: test-project
+layers:
+  - name: application
+    services:
+      api:
+        host: containerapp
+        image: example/original:latest
+        env:
+          FROM_ENV: ${SERVICE_VALUE}
+          CHANGED: ${OTHER_VALUE}
+`), 0600))
+
+	projectConfig, err := project.Load(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	service := NewProjectService(
+		lazy.From(azdContext),
+		nil,
+		lazy.From(environment.New("test")),
+		lazy.From(projectConfig),
+		nil,
+		nil,
+	)
+
+	_, err = service.SetLayer(t.Context(), &azdext.SetLayerRequest{Layer: &azdext.Layer{
+		Name: "application",
+		Services: map[string]*azdext.ServiceConfig{
+			"api": {
+				Host:  "containerapp",
+				Image: "example/replacement:latest",
+				Environment: map[string]string{
+					"FROM_ENV":       "resolved",
+					"CHANGED":        "${NEW_VALUE}",
+					"LITERAL_DOLLAR": "pa$$$$word",
+				},
+			},
+		},
+	}})
+	require.NoError(t, err)
+
+	rawYaml, err := os.ReadFile(azdContext.ProjectPath())
+	require.NoError(t, err)
+	require.NotContains(t, string(rawYaml), "${SERVICE_VALUE}")
+	require.Contains(t, string(rawYaml), "${NEW_VALUE}")
+
+	updatedConfig, err := project.Load(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	updatedEnv, err := updatedConfig.Layers[0].Services["api"].Environment.Expand(func(key string) string {
+		if key == "NEW_VALUE" {
+			return "newly-resolved"
+		}
+		return ""
+	})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"FROM_ENV":       "resolved",
+		"CHANGED":        "newly-resolved",
+		"LITERAL_DOLLAR": "pa$$word",
+	}, updatedEnv)
+}
+
+func TestProjectService_SetLayerFailureDoesNotMutateCache(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, `name: test-project
+layers:
+  - name: application
+    infra:
+      - name: app-infra
+        provider: bicep
+        path: infra/app
+`)
+
+	_, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{Layer: &azdext.Layer{
+		Name: "application",
+	}})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	response, err := service.GetLayer(t.Context(), &azdext.GetLayerRequest{Name: "application"})
+	require.NoError(t, err)
+	require.Len(t, response.Layer.Infra, 1)
+	require.Equal(t, "app-infra", response.Layer.Infra[0].Name)
+}
+
+func TestProjectService_SetLayerRejectsInvalidInfrastructureGraph(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, `name: test-project
+layers:
+  - name: shared
+    infra:
+      - name: shared-infra
+        provider: bicep
+        path: infra/shared
+`)
+
+	_, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{Layer: &azdext.Layer{
+		Name: "application",
+		Infra: []*azdext.InfraOptions{
+			{Name: "app-infra", Provider: "bicep", Path: "infra/app", DependsOn: []string{"missing-infra"}},
+		},
+	}})
+
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.ErrorContains(t, err, "depends on unknown infrastructure layer")
+	_, err = service.GetLayer(t.Context(), &azdext.GetLayerRequest{Name: "application"})
+	require.Equal(t, codes.NotFound, status.Code(err))
+}
+
+func TestProjectService_SetLayerRejectsUnnamedService(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, "name: test-project\nlayers: []\n")
+
+	_, err := service.SetLayer(t.Context(), &azdext.SetLayerRequest{
+		Layer: &azdext.Layer{
+			Name:     "application",
+			Infra:    []*azdext.InfraOptions{{Name: "app", Provider: "bicep", Path: "infra/app"}},
+			Services: map[string]*azdext.ServiceConfig{"": {Host: "containerapp"}},
+		},
+	})
+
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.ErrorContains(t, err, "service name cannot be empty")
+}
+
+func TestProjectService_SetLayerRejectsMalformedStructuredFields(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, "name: test-project\nlayers: []\n")
+	hooks, err := structpb.NewStruct(map[string]any{"predeploy": "not-a-hook-list"})
+	require.NoError(t, err)
+
+	_, err = service.SetLayer(t.Context(), &azdext.SetLayerRequest{Layer: &azdext.Layer{
+		Name: "application",
+		Services: map[string]*azdext.ServiceConfig{
+			"api": {Host: "containerapp", Image: "example/api:latest", Hooks: hooks},
+		},
+	}})
+
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.ErrorContains(t, err, "converting service hooks")
+}
+
+func TestProjectService_GetLayerRequiresV2Project(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"flat": "name: test-project\n",
+		"infra v1": `name: test-project
+infra:
+  provider: bicep
+  layers:
+    - name: application
+      path: infra/application
+`,
+	}
+
+	for name, yamlContent := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			service := newProjectServiceWithYaml(t, yamlContent)
+
+			_, err := service.GetLayer(t.Context(), &azdext.GetLayerRequest{})
+
+			require.Equal(t, codes.FailedPrecondition, status.Code(err))
+			require.ErrorContains(t, err, "requires a project")
+		})
+	}
+}
+
+func TestProjectService_ListAndRemoveLayerRequireV2Project(t *testing.T) {
+	t.Parallel()
+
+	projects := map[string]string{
+		"flat": "name: test-project\n",
+		"infra v1": `name: test-project
+infra:
+  provider: bicep
+  layers:
+    - name: application
+      path: infra/application
+`,
+	}
+	operations := map[string]func(*testing.T, azdext.ProjectServiceServer) error{
+		"list": func(t *testing.T, service azdext.ProjectServiceServer) error {
+			_, err := service.ListLayers(t.Context(), &azdext.EmptyRequest{})
+			return err
+		},
+		"remove": func(t *testing.T, service azdext.ProjectServiceServer) error {
+			_, err := service.RemoveLayer(t.Context(), &azdext.RemoveLayerRequest{Name: "application"})
+			return err
+		},
+	}
+
+	for projectName, yamlContent := range projects {
+		for operationName, operation := range operations {
+			t.Run(projectName+"/"+operationName, func(t *testing.T) {
+				t.Parallel()
+				service := newProjectServiceWithYaml(t, yamlContent)
+
+				err := operation(t, service)
+
+				require.Equal(t, codes.FailedPrecondition, status.Code(err))
+				require.ErrorContains(t, err, "requires a project")
+			})
+		}
+	}
+}
+
+func TestProjectService_LayerConfigToProto(t *testing.T) {
+	t.Parallel()
+
+	service := &projectService{}
+	layer := &project.LayerConfig{
+		Name: "application",
+		Infra: []provisioning.Options{
+			{
+				Name:     "application",
+				Provider: provisioning.Bicep,
+				Path:     "infra/application",
+				Inputs:   map[string]string{"API_INPUT": "SHARED_OUTPUT"},
+				Outputs:  map[string]string{"API_OUTPUT": "APPLICATION_OUTPUT"},
+			},
+		},
+		Services: map[string]*project.ServiceConfig{"api": {}},
+	}
+
+	actual, err := service.layerConfigToProto(t.Context(), layer, false)
+
+	require.NoError(t, err)
+	require.Equal(t, "application", actual.Name)
+	require.Len(t, actual.Infra, 1)
+	require.Equal(t, "bicep", actual.Infra[0].Provider)
+	require.Contains(t, actual.Services, "api")
+	require.Equal(t, map[string]string{"API_INPUT": "SHARED_OUTPUT"}, actual.Infra[0].Inputs)
+	require.Equal(t, map[string]string{"API_OUTPUT": "APPLICATION_OUTPUT"}, actual.Infra[0].Outputs)
 }
 
 func TestProjectService_GetConfigValue_Found(t *testing.T) {
@@ -2382,6 +3188,81 @@ func TestProjectService_AddService_NilService(t *testing.T) {
 	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
 	_, err := svc.AddService(t.Context(), &azdext.AddServiceRequest{Service: nil})
 	require.Error(t, err)
+}
+
+func TestProjectService_AddServiceRejectsV2Project(t *testing.T) {
+	t.Parallel()
+
+	service := newProjectServiceWithYaml(t, "name: test-project\nlayers: []\n")
+	_, err := service.AddService(t.Context(), &azdext.AddServiceRequest{Service: &azdext.ServiceConfig{
+		Name:  "api",
+		Host:  "containerapp",
+		Image: "example/api:latest",
+	}})
+
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.ErrorContains(t, err, "use SetLayer instead")
+}
+
+func TestProjectService_ServiceConfigMethodsRejectV2Project(t *testing.T) {
+	t.Parallel()
+
+	section, err := structpb.NewStruct(map[string]any{"enabled": true})
+	require.NoError(t, err)
+	value, err := structpb.NewValue(true)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name string
+		call func(context.Context, azdext.ProjectServiceServer) error
+	}{
+		{"GetServiceConfigSection", func(ctx context.Context, service azdext.ProjectServiceServer) error {
+			_, err := service.GetServiceConfigSection(ctx, &azdext.GetServiceConfigSectionRequest{ServiceName: "api"})
+			return err
+		}},
+		{"GetServiceConfigValue", func(ctx context.Context, service azdext.ProjectServiceServer) error {
+			_, err := service.GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+				ServiceName: "api", Path: "host",
+			})
+			return err
+		}},
+		{"SetServiceConfigSection", func(ctx context.Context, service azdext.ProjectServiceServer) error {
+			_, err := service.SetServiceConfigSection(ctx, &azdext.SetServiceConfigSectionRequest{
+				ServiceName: "api", Section: section,
+			})
+			return err
+		}},
+		{"SetServiceConfigValue", func(ctx context.Context, service azdext.ProjectServiceServer) error {
+			_, err := service.SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+				ServiceName: "api", Path: "enabled", Value: value,
+			})
+			return err
+		}},
+		{"UnsetServiceConfig", func(ctx context.Context, service azdext.ProjectServiceServer) error {
+			_, err := service.UnsetServiceConfig(ctx, &azdext.UnsetServiceConfigRequest{
+				ServiceName: "api", Path: "enabled",
+			})
+			return err
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			service := newProjectServiceWithYaml(t, `name: test-project
+layers:
+  - name: application
+    services:
+      api:
+        host: containerapp
+        image: example/api:latest
+`)
+
+			err := test.call(t.Context(), service)
+			require.Equal(t, codes.FailedPrecondition, status.Code(err))
+			require.ErrorContains(t, err, "use GetLayer or SetLayer instead")
+		})
+	}
 }
 
 func TestProjectService_AddService_AzdContextError(t *testing.T) {
@@ -2683,7 +3564,7 @@ services:
 	})
 	require.NoError(t, err)
 
-	projectService := svc.(*projectService)
+	projectService := requireProjectService(t, svc)
 	azdContext, err := projectService.lazyAzdContext.GetValue()
 	require.NoError(t, err)
 	saved, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())
@@ -2722,7 +3603,7 @@ services:
 	})
 	require.NoError(t, err)
 
-	projectService := svc.(*projectService)
+	projectService := requireProjectService(t, svc)
 	azdContext, err := projectService.lazyAzdContext.GetValue()
 	require.NoError(t, err)
 	cfg, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())
@@ -2775,7 +3656,7 @@ func TestProjectService_SetServiceConfigValue_Concurrent(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	projectService := svc.(*projectService)
+	projectService := requireProjectService(t, svc)
 	azdContext, err := projectService.lazyAzdContext.GetValue()
 	require.NoError(t, err)
 	cfg, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())

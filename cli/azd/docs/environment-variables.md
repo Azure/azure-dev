@@ -59,6 +59,7 @@ integration.
 | `AZD_UP_CONCURRENCY` | Maximum number of steps to run in parallel during `azd up`. Parsed as a positive integer; clamped to a maximum of `64`. Falls back to `AZD_DEPLOY_CONCURRENCY` when unset. When both are unset, concurrency is unlimited. |
 | `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | Sets the App Service deployment slot target for a service. Replace `{SERVICE}` with the uppercase service name (hyphens become underscores). Set to `production` to deploy to the main app, or a slot name (e.g., `staging`). When slots exist and this is not set, `--no-prompt` mode fails with an error listing available targets. Applies to `host: appservice` only; Function Apps always deploy to the main site. |
 | `AZD_DEPLOY_{SERVICE}_SKIP_STATUS_CHECK` | If `true`, skips deployment status tracking for the named Linux App Service after the zip deployment request is accepted. By default, azd waits up to five minutes without a deployment status change. Each new status resets the five-minute wait. If the status remains unchanged, azd completes deployment with a warning. Useful when the target web app is intentionally stopped. Parsed as a boolean (`true`/`false`/`1`/`0`). `{SERVICE}` follows the same naming rules as `AZD_DEPLOY_{SERVICE}_SLOT_NAME`. |
+| `AZD_PIPELINE_GITHUB_ENVIRONMENT` | The GitHub deployment environment mapped to the current azd environment by `azd pipeline config`. An explicitly empty value selects repository-scoped GitHub Actions variables and secrets. This variable is used only by the GitHub pipeline provider. |
 
 ## AI Agent Detection
 

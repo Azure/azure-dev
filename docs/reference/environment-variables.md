@@ -41,6 +41,12 @@ Override the path to external tools that azd invokes:
 |---|---|
 | `AZD_BUILDER_IMAGE` | Builder image for Dockerfile-less container builds |
 
+## Pipeline Configuration
+
+| Variable | Description |
+|---|---|
+| `AZD_PIPELINE_GITHUB_ENVIRONMENT` | Maps the current azd environment to a GitHub deployment environment. An empty value keeps repository-scoped GitHub Actions variables and secrets. GitHub provider only. |
+
 ## Provisioning
 
 | Variable | Description |

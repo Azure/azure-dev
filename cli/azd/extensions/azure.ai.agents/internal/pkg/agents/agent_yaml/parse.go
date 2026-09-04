@@ -398,6 +398,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				errors = append(errors,
 					validateInvocationsModerationKind(templateBytes, agentDef.Kind)...)
 			}
+			if agentDef.Kind != AgentKindPromptVoice && rawTemplateHasKey(templateBytes, "telephony") {
+				errors = append(errors, "template.telephony is only supported for prompt-voice agents")
+			}
 
 			switch AgentKind(agentDef.Kind) {
 			case AgentKindHosted:
@@ -605,6 +608,15 @@ func validateVoiceTelephony(telephony *VoiceTelephony) []string {
 		}
 	}
 	return errors
+}
+
+func rawTemplateHasKey(templateBytes []byte, key string) bool {
+	var raw map[string]any
+	if err := yaml.Unmarshal(templateBytes, &raw); err != nil {
+		return false
+	}
+	_, ok := raw[key]
+	return ok
 }
 
 func validateVoiceMaxOutputTokens(value any) error {

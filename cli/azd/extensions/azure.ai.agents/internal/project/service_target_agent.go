@@ -2434,7 +2434,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
 		return nil, err
 	}
-	if err := p.deployVoiceTelephonyBindings(ctx, agentClient, va, agentObject, azdEnv[voiceOverriddenHostEnvKey]); err != nil {
+	if err := p.deployVoiceTelephonyBindings(
+		ctx, agentClient, va, agentObject, azdEnv[voiceOverriddenHostEnvKey],
+	); err != nil {
 		return nil, err
 	}
 
@@ -2556,7 +2558,7 @@ func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_
 		return false
 	}
 	desiredID := fmt.Sprintf("%s:%s", strings.TrimSpace(desired.Provider), strings.TrimSpace(desired.Identifier))
-	if remoteID := normalizedTelephonyBindingID(remote.ID); remoteID != "" && remoteID != desiredID {
+	if remoteID := normalizedTelephonyBindingID(remote.ID); remoteID != desiredID {
 		return false
 	}
 	if strings.TrimSpace(remote.Provider) != "" &&
@@ -2569,14 +2571,23 @@ func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_
 		strings.TrimSpace(remote.Identifier) != strings.TrimSpace(desired.Identifier) {
 		return false
 	}
-	if strings.TrimSpace(remote.ConnectionName) != "" &&
-		strings.TrimSpace(remote.ConnectionName) != strings.TrimSpace(desired.ConnectionName) {
+	if remoteConnection := telephonyBindingConnection(remote); remoteConnection != strings.TrimSpace(desired.ConnectionName) {
 		return false
 	}
 	return reflect.DeepEqual(
 		emptyTransferTargetsAsNil(remote.TransferTargets),
 		emptyTransferTargetsAsNil(desired.TransferTargets),
 	)
+}
+
+func telephonyBindingConnection(remote *agent_api.TelephonyBinding) string {
+	if remote == nil {
+		return ""
+	}
+	if strings.TrimSpace(remote.ConnectionName) != "" {
+		return strings.TrimSpace(remote.ConnectionName)
+	}
+	return strings.TrimSpace(remote.Connection)
 }
 
 func normalizedTelephonyBindingID(value string) string {

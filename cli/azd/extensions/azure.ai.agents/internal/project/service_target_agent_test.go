@@ -157,9 +157,10 @@ func TestTelephonyBindingMatches_ServiceOmittedFields(t *testing.T) {
 		ConnectionName: "telephony-acs",
 	}
 	remote := &agent_api.TelephonyBinding{
-		ID:       "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000001",
-		Provider: "teams_phone_extension",
-		Status:   "active",
+		ID:         "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000001",
+		Provider:   "teams_phone_extension",
+		Connection: "telephony-acs",
+		Status:     "active",
 	}
 	require.True(t, telephonyBindingMatches(remote, desired))
 

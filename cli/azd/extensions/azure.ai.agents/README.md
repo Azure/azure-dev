@@ -258,6 +258,19 @@ Cleanup: delete telephony bindings before deleting test agents. The service may
 leave bindings behind when an agent is deleted, so do not rely on agent deletion
 as binding cleanup.
 
+Delete a binding with the agent-scoped telephony API before deleting the agent:
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Foundry-Features: VoiceAgents=V1Preview" \
+  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/$BINDING_ID?api-version=2025-11-15-preview"
+```
+
+The binding ID is the service provider plus identifier, for example
+`twilio:%2B14255550123` for `+14255550123`, or
+`azure-communication-service:28:orgid:<guid>` for ACS/TPE.
+
 ### Moderating invocations-protocol traffic
 
 For agents that expose the `invocations` protocol, the RAI policy alone is not

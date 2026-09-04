@@ -374,3 +374,21 @@ func TestValidateAgentDefinition_PromptVoice_InvalidTelephonyBindings(t *testing
 		})
 	}
 }
+
+func TestValidateAgentDefinition_RejectsTelephonyForNonPromptVoice(t *testing.T) {
+	yamlContent := []byte(`
+kind: hosted
+name: hosted-agent
+language: python
+image: example.azurecr.io/agent:latest
+telephony:
+  bindings:
+    - provider: twilio
+      identifier: +14255550123
+      connection: telephony-twilio
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "telephony is only supported for prompt-voice") {
+		t.Fatalf("expected telephony kind validation error, got: %v", err)
+	}
+}

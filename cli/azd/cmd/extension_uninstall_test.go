@@ -114,7 +114,7 @@ func TestExtensionUninstallAction_PackRemovesOrphanedDependencies(t *testing.T) 
 	output := strings.Join(console.Output(), "\n")
 	require.Contains(t, output,
 		"After uninstalling microsoft.foundry, no installed extension will require these dependencies:")
-	require.Contains(t, output, "Remove 4 dependencies?")
+	require.Contains(t, output, "Remove these 4 dependencies?")
 	for _, id := range []string{"azure.ai.agents", "azure.ai.projects", "azure.ai.inspector", "azure.ai.skills"} {
 		require.Contains(t, output, "  • "+id+" ")
 	}

@@ -5994,7 +5994,7 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'extension-id|extension-bundle.zip',
+						name: 'extension-id|bundle-path-or-url',
 						generators: [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })],
 					},
 				},

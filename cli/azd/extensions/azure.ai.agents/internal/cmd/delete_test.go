@@ -158,6 +158,7 @@ func TestDeleteCommand_ForceFlag(t *testing.T) {
 	if flag.DefValue != "false" {
 		t.Fatalf("expected --force default false, got %q", flag.DefValue)
 	}
+	assert.Contains(t, flag.Usage, "no-prompt")
 }
 
 func TestDeleteCommand_OutputFlagAnnotation(t *testing.T) {
@@ -175,6 +176,23 @@ func TestDeleteCommand_VersionFlag(t *testing.T) {
 	if flag.DefValue != "" {
 		t.Fatalf("expected --version default empty, got %q", flag.DefValue)
 	}
+}
+
+func TestDeleteConfirmation_NoPromptRequiresForce(t *testing.T) {
+	action := &DeleteAction{flags: &deleteFlags{noPrompt: true}}
+
+	err := action.confirmDelete(t.Context(), nil, "my-agent")
+
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeDeleteRequiresForce, localErr.Code)
+	assert.Contains(t, localErr.Suggestion, "--force")
+}
+
+func TestDeleteConfirmation_NoPromptForcePreConsents(t *testing.T) {
+	action := &DeleteAction{flags: &deleteFlags{noPrompt: true, force: true}}
+	require.NoError(t, action.confirmDelete(t.Context(), nil, "my-agent"))
 }
 
 // ---------------------------------------------------------------------------

@@ -117,6 +117,10 @@ func ErrorSuggestion(err error) string {
 		return svcErr.Suggestion
 	}
 
+	if toolErr, ok := errors.AsType[*ToolError](err); ok && toolErr.Suggestion != "" {
+		return toolErr.Suggestion
+	}
+
 	if actionable := ActionableErrorDetailFromError(err); actionable != nil && actionable.GetSuggestion() != "" {
 		return actionable.GetSuggestion()
 	}
@@ -124,8 +128,8 @@ func ErrorSuggestion(err error) string {
 	return ""
 }
 
-// ErrorMessage extracts the user-friendly message from a [LocalError], [ServiceError],
-// or a host gRPC error carrying an [ActionableErrorDetail]. Returns "" otherwise.
+// ErrorMessage extracts the user-friendly message from a structured error or
+// a host gRPC error carrying an [ActionableErrorDetail]. Returns "" otherwise.
 func ErrorMessage(err error) string {
 	if localErr, ok := errors.AsType[*LocalError](err); ok && localErr.Message != "" {
 		return localErr.Message
@@ -133,6 +137,10 @@ func ErrorMessage(err error) string {
 
 	if svcErr, ok := errors.AsType[*ServiceError](err); ok && svcErr.Message != "" {
 		return svcErr.Message
+	}
+
+	if toolErr, ok := errors.AsType[*ToolError](err); ok && toolErr.Message != "" {
+		return toolErr.Message
 	}
 
 	// Host-originated actionable errors carry the user-facing message in status.Message
@@ -158,6 +166,10 @@ func ErrorLinks(err error) []errorhandler.ErrorLink {
 		return svcErr.Links
 	}
 
+	if toolErr, ok := errors.AsType[*ToolError](err); ok && len(toolErr.Links) > 0 {
+		return toolErr.Links
+	}
+
 	if actionable := ActionableErrorDetailFromError(err); actionable != nil {
 		return UnwrapErrorLinks(actionable.GetLinks())
 	}
@@ -165,13 +177,18 @@ func ErrorLinks(err error) []errorhandler.ErrorLink {
 	return nil
 }
 
-// IsStructuredError reports whether err is an azd extension local or service error.
+// IsStructuredError reports whether err is an azd extension structured error.
 func IsStructuredError(err error) bool {
 	_, localErr := errors.AsType[*LocalError](err)
 	if localErr {
 		return true
 	}
 
-	_, svcErr := errors.AsType[*ServiceError](err)
-	return svcErr
+	_, serviceErr := errors.AsType[*ServiceError](err)
+	if serviceErr {
+		return true
+	}
+
+	_, toolErr := errors.AsType[*ToolError](err)
+	return toolErr
 }

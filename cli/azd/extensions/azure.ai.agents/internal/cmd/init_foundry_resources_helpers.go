@@ -464,9 +464,14 @@ func configureFoundryProjectEnv(
 	envName string,
 	project FoundryProjectInfo,
 	subscriptionId string,
+	acrConnection string,
 	skipACR bool,
 	bicepless bool,
 ) error {
+	if err := validateAcrConnectionInput(acrConnection, skipACR, false); err != nil {
+		return err
+	}
+
 	resourceId := project.ResourceId
 	if resourceId == "" {
 		resourceId = fmt.Sprintf(
@@ -506,7 +511,9 @@ func configureFoundryProjectEnv(
 		if skipACR {
 			return setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "none")
 		}
-		return configureExistingProjectAcr(ctx, azdClient, credential, envName, project, subscriptionId)
+		return configureExistingProjectAcr(
+			ctx, azdClient, credential, envName, project, subscriptionId, acrConnection,
+		)
 	}
 
 	// Discover and configure connections (ACR, AppInsights)
@@ -542,7 +549,9 @@ func configureFoundryProjectEnv(
 	}
 
 	if !skipACR {
-		if err := configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections); err != nil {
+		if err := configureAcrConnection(
+			ctx, azdClient, credential, envName, subscriptionId, acrConnections, acrConnection,
+		); err != nil {
 			return err
 		}
 	} else if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "none"); err != nil {
@@ -558,8 +567,7 @@ func configureFoundryProjectEnv(
 
 // configureExistingProjectAcr discovers the ACR connections on an existing
 // Foundry project and runs the ACR selection/question for a container agent in
-// the bicepless flow. A failure to list connections is non-fatal: configureAcrConnection
-// then prompts for a login server (or to create one during provision).
+// the bicepless flow.
 func configureExistingProjectAcr(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -567,27 +575,37 @@ func configureExistingProjectAcr(
 	envName string,
 	project FoundryProjectInfo,
 	subscriptionId string,
+	acrConnection string,
+) error {
+	return configureExistingProjectAcrWithConnectionsLoader(
+		ctx, azdClient, credential, envName, project, subscriptionId, acrConnection, listFoundryProjectConnections,
+	)
+}
+
+func configureExistingProjectAcrWithConnectionsLoader(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	credential azcore.TokenCredential,
+	envName string,
+	project FoundryProjectInfo,
+	subscriptionId string,
+	acrConnection string,
+	loadConnections foundryConnectionsLoader,
 ) error {
 	var acrConnections []azure.Connection
-	foundryClient, err := azure.NewFoundryProjectsClient(project.AccountName, project.ProjectName, credential)
+	connections, err := loadConnections(ctx, credential, project.AccountName, project.ProjectName)
 	if err != nil {
-		return fmt.Errorf("creating Foundry client: %w", err)
+		return fmt.Errorf("listing connections on project %q: %w", project.ProjectName, err)
 	}
-	connections, err := foundryClient.GetAllConnections(ctx)
-	if err != nil {
-		fmt.Printf(
-			"Could not get Microsoft Foundry project connections: %v. "+
-				"You will be asked to provide a container registry.\n", err)
-	} else {
-		for _, conn := range connections {
-			if conn.Type == azure.ConnectionTypeContainerRegistry {
-				acrConnections = append(acrConnections, conn)
-			}
+	for _, conn := range connections {
+		if conn.Type == azure.ConnectionTypeContainerRegistry {
+			acrConnections = append(acrConnections, conn)
 		}
 	}
 
 	return configureAcrConnectionWithPrincipal(
-		ctx, azdClient, credential, envName, subscriptionId, acrConnections, project.PrincipalId)
+		ctx, azdClient, credential, envName, subscriptionId, acrConnections, acrConnection, project.PrincipalId,
+	)
 }
 
 // configureAcrConnection handles ACR connection selection and env var setting.
@@ -598,8 +616,11 @@ func configureAcrConnection(
 	envName string,
 	subscriptionId string,
 	acrConnections []azure.Connection,
+	acrConnection string,
 ) error {
-	return configureAcrConnectionWithPrincipal(ctx, azdClient, credential, envName, subscriptionId, acrConnections, "")
+	return configureAcrConnectionWithPrincipal(
+		ctx, azdClient, credential, envName, subscriptionId, acrConnections, acrConnection, "",
+	)
 }
 
 func configureAcrConnectionWithPrincipal(
@@ -609,10 +630,11 @@ func configureAcrConnectionWithPrincipal(
 	envName string,
 	subscriptionId string,
 	acrConnections []azure.Connection,
+	acrConnection string,
 	projectPrincipalID string,
 ) error {
 	return configureAcrConnectionWithRegistryLoader(
-		ctx, azdClient, credential, envName, subscriptionId, acrConnections, listAcrResourceIds,
+		ctx, azdClient, credential, envName, subscriptionId, acrConnections, acrConnection, listAcrResourceIds,
 		projectPrincipalID,
 	)
 }
@@ -631,6 +653,7 @@ func configureAcrConnectionWithRegistryLoader(
 	envName string,
 	subscriptionId string,
 	acrConnections []azure.Connection,
+	acrConnection string,
 	loadRegistries acrRegistryLoader,
 	projectPrincipalIDs ...string,
 ) error {
@@ -664,6 +687,125 @@ func configureAcrConnectionWithRegistryLoader(
 			resourceId: resourceId,
 		})
 	}
+	slices.SortFunc(validatedConnections, func(a, b validatedAcrConnection) int {
+		if result := strings.Compare(
+			strings.ToLower(a.connection.Name),
+			strings.ToLower(b.connection.Name),
+		); result != 0 {
+			return result
+		}
+		if result := strings.Compare(a.connection.Name, b.connection.Name); result != 0 {
+			return result
+		}
+		return strings.Compare(
+			normalizeLoginServer(a.connection.Target),
+			normalizeLoginServer(b.connection.Target),
+		)
+	})
+
+	persistedConnection, err := getEnvValue(
+		ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+	)
+	if err != nil {
+		return err
+	}
+	persistedEndpoint, err := getEnvValue(
+		ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT",
+	)
+	if err != nil {
+		return err
+	}
+	persistedResourceId, err := getEnvValue(
+		ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+	)
+	if err != nil {
+		return err
+	}
+
+	var selectedConnection *validatedAcrConnection
+	if acrConnection != "" {
+		selectedConnection = findValidatedAcrConnectionByName(validatedConnections, acrConnection)
+		if selectedConnection == nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("container registry connection %q was not found or is not valid", acrConnection),
+				"pass --acr-connection with the name of a valid Foundry Azure Container Registry connection",
+			)
+		}
+	} else if persistedConnection != "" {
+		selectedConnection = findValidatedAcrConnectionByName(validatedConnections, persistedConnection)
+	}
+	if selectedConnection == nil && persistedEndpoint != "" {
+		selectedConnection = findValidatedAcrConnectionByEndpoint(validatedConnections, persistedEndpoint)
+	}
+	if selectedConnection == nil && persistedResourceId != "" {
+		for i := range validatedConnections {
+			if strings.EqualFold(validatedConnections[i].resourceId, persistedResourceId) {
+				selectedConnection = &validatedConnections[i]
+				break
+			}
+		}
+	}
+
+	if selectedConnection == nil && acrConnection == "" {
+		loginServer := normalizeLoginServer(persistedEndpoint)
+		resourceId, found := resourceIds[strings.ToLower(loginServer)]
+		if !found && persistedResourceId != "" {
+			for candidate, candidateResourceId := range resourceIds {
+				if strings.EqualFold(candidateResourceId, persistedResourceId) {
+					loginServer = candidate
+					resourceId = candidateResourceId
+					found = true
+					break
+				}
+			}
+		}
+		if found {
+			fmt.Printf("Using configured container registry: %s\n", loginServer)
+			if err := setEnvValue(
+				ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME", "",
+			); err != nil {
+				return err
+			}
+			if err := setEnvValue(
+				ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", loginServer,
+			); err != nil {
+				return err
+			}
+			if err := setEnvValue(
+				ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID", resourceId,
+			); err != nil {
+				return err
+			}
+			assigned := false
+			if len(projectPrincipalIDs) > 0 && projectPrincipalIDs[0] != "" {
+				assigned, err = hasAcrPullAssignment(ctx, credential, resourceId, projectPrincipalIDs[0])
+				if err != nil {
+					return fmt.Errorf("check existing AcrPull assignment: %w", err)
+				}
+			}
+			mode := "reuse-connect"
+			previousConnection := validatedAcrConnection{
+				connection: azure.Connection{Name: persistedConnection},
+				resourceId: resourceId,
+			}
+			if shouldPreserveCreatedAcrMode(previous, previousConnection) {
+				mode = "create"
+			}
+			if err := setEnvValue(
+				ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", fmt.Sprint(assigned),
+			); err != nil {
+				return err
+			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", mode); err != nil {
+				return err
+			}
+			if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
+				log.Printf("warning: failed to update acr provision signal: %v", err)
+			}
+			return nil
+		}
+	}
 
 	if len(validatedConnections) == 0 {
 		fmt.Println("\n" +
@@ -673,6 +815,29 @@ func configureAcrConnectionWithRegistryLoader(
 			"  • Use an existing ACR\n" +
 			"  • Or create a new one from the template during 'azd up'\n\n" +
 			"Learn more: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
+
+		if azdext.DetectInteractive().NoPrompt {
+			fmt.Println("No prompt mode enabled; a new container registry will be created during provisioning.")
+			for _, key := range []string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+			} {
+				if err := setEnvValue(ctx, azdClient, envName, key, ""); err != nil {
+					return err
+				}
+			}
+			if err := updatePendingACRSignal(ctx, azdClient, envName, false); err != nil {
+				log.Printf("warning: failed to update acr provision signal: %v", err)
+			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "create"); err != nil {
+				return err
+			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", "false"); err != nil {
+				return err
+			}
+			return nil
+		}
 
 		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
@@ -739,12 +904,23 @@ func configureAcrConnectionWithRegistryLoader(
 		return nil
 	}
 
-	var selectedConnection *validatedAcrConnection
-
-	if len(validatedConnections) == 1 {
+	if selectedConnection != nil {
+		fmt.Printf(
+			"Using container registry connection: %s (%s)\n",
+			selectedConnection.connection.Name,
+			selectedConnection.connection.Target,
+		)
+	} else if len(validatedConnections) == 1 {
 		selectedConnection = &validatedConnections[0]
 		fmt.Printf(
 			"Using container registry connection: %s (%s)\n",
+			selectedConnection.connection.Name,
+			selectedConnection.connection.Target,
+		)
+	} else if azdext.DetectInteractive().NoPrompt {
+		selectedConnection = &validatedConnections[0]
+		fmt.Printf(
+			"No prompt mode enabled; using the first container registry connection by name: %s (%s)\n",
 			selectedConnection.connection.Name,
 			selectedConnection.connection.Target,
 		)
@@ -769,6 +945,11 @@ func configureAcrConnectionWithRegistryLoader(
 		})
 		if err != nil {
 			return fmt.Errorf("failed to prompt for connection selection: %w", err)
+		}
+		if selectResp.Value == nil ||
+			int(*selectResp.Value) < 0 ||
+			int(*selectResp.Value) >= len(validatedConnections) {
+			return fmt.Errorf("container registry selection returned an invalid index")
 		}
 		selectedConnection = &validatedConnections[int(*selectResp.Value)]
 	}
@@ -815,6 +996,31 @@ func configureAcrConnectionWithRegistryLoader(
 		return err
 	}
 
+	return nil
+}
+
+func findValidatedAcrConnectionByName(
+	connections []validatedAcrConnection,
+	name string,
+) *validatedAcrConnection {
+	for i := range connections {
+		if strings.EqualFold(connections[i].connection.Name, name) {
+			return &connections[i]
+		}
+	}
+	return nil
+}
+
+func findValidatedAcrConnectionByEndpoint(
+	connections []validatedAcrConnection,
+	endpoint string,
+) *validatedAcrConnection {
+	normalized := normalizeLoginServer(endpoint)
+	for i := range connections {
+		if strings.EqualFold(normalizeLoginServer(connections[i].connection.Target), normalized) {
+			return &connections[i]
+		}
+	}
 	return nil
 }
 
@@ -1572,6 +1778,7 @@ func selectFoundryProject(
 	envName string,
 	subscriptionId string,
 	projectResourceId string,
+	acrConnection string,
 	skipACR bool,
 	filterHostedRegions bool,
 	bicepless bool,
@@ -1710,7 +1917,7 @@ func selectFoundryProject(
 
 	// Configure all Foundry project environment variables
 	if err := configureFoundryProjectEnv(
-		ctx, azdClient, credential, envName, selectedProject, subscriptionId, skipACR, bicepless,
+		ctx, azdClient, credential, envName, selectedProject, subscriptionId, acrConnection, skipACR, bicepless,
 	); err != nil {
 		return nil, fmt.Errorf("failed to configure Foundry project environment: %w", err)
 	}

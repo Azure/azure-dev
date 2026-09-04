@@ -202,7 +202,13 @@ func DeployPreparedStandaloneHostedAgent(
 	}
 
 	prepared.progress("Checking existing agent")
-	_, getErr := agentClient.GetAgent(ctx, prepared.definition.Name, agent_api.AgentEndpointAPIVersion)
+	localProfile := ResolveActivityProfile(prepared.definition)
+	existingAgent, getErr := agentClient.GetAgent(
+		ctx,
+		prepared.definition.Name,
+		agent_api.AgentEndpointAPIVersion,
+		true,
+	)
 	var agentObject *agent_api.AgentObject
 	if getErr != nil {
 		if responseError, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
@@ -219,6 +225,9 @@ func DeployPreparedStandaloneHostedAgent(
 			agent_api.AgentEndpointAPIVersion,
 		)
 	} else {
+		if err := reconcileStandaloneEndpointWithDeployedAgent(request, localProfile, existingAgent); err != nil {
+			return nil, err
+		}
 		prepared.progress("Creating a new agent version from code package")
 		writeExistingAgentVersionWarning(prepared.definition.Name)
 		agentObject, err = agentClient.UpdateAgentFromZip(
@@ -249,6 +258,11 @@ func DeployPreparedStandaloneHostedAgent(
 			return nil, err
 		}
 	}
+	if getErr != nil {
+		if err := reconcileStandaloneEndpointWithDeployedAgent(request, localProfile, agentObject); err != nil {
+			return nil, err
+		}
+	}
 	if err := provider.patchAgentEndpointFields(
 		ctx,
 		prepared.definition.Name,
@@ -275,6 +289,27 @@ func DeployPreparedStandaloneHostedAgent(
 		State:    version.Status,
 		Endpoint: endpoint,
 	}, nil
+}
+
+func reconcileStandaloneEndpointWithDeployedAgent(
+	request *agent_api.CreateAgentRequest,
+	localProfile ActivityProfile,
+	existingAgent *agent_api.AgentObject,
+) error {
+	resolvedProfile, err := ResolveDeployedActivityProfile(
+		localProfile,
+		existingAgent.DigitalWorkerType,
+	)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			err.Error(),
+			digitalWorkerTypeMismatchSuggestion(),
+		)
+	}
+
+	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, resolvedProfile)
+	return nil
 }
 
 func newStandaloneCredential() (azcore.TokenCredential, error) {

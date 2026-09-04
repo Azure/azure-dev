@@ -54,6 +54,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Error Handling](#error-handling)
   - [LocalError](#localerror)
   - [ServiceError](#serviceerror)
+  - [ToolError](#toolerror)
   - [LocalErrorCategory](#localerrorcategory)
 
 ---
@@ -712,12 +713,20 @@ type LocalError struct {
     Message    string
     Code       string
     Category   LocalErrorCategory
+    CauseTypes []string
     Suggestion string
 }
 ```
 
 Represents an error originating within the extension. The `Suggestion` field
-provides actionable guidance displayed to the user.
+provides actionable guidance displayed to the user. `CauseTypes` contains
+bounded diagnostic labels for unexpected fallback errors; it is extension-
+provided input and does not determine the error classification. The host
+normalizes these values at both gRPC boundaries by removing generic wrappers,
+duplicates, unsafe names, and values beyond the 16-item limit. For telemetry,
+the host records these labels only as case-insensitive hashes in
+`error.extension.cause_types`; they are never added to the reflected
+`error.chain.types` or used as `error.type`.
 
 ### ServiceError
 
@@ -732,6 +741,30 @@ type ServiceError struct {
 ```
 
 Represents an error from an Azure service call.
+
+### ToolError
+
+```go
+type ToolError struct {
+    Message    string
+    Err        error
+    ToolName   string
+    Kind       ToolErrorKind
+    ExitCode   *int
+    Suggestion string
+    Links      []errorhandler.ErrorLink
+}
+```
+
+Represents a failure from an external tool or subprocess. `Kind` is either
+`ToolErrorKindMissing` when the tool was not found or `ToolErrorKindFailed`
+when the tool ran and returned an error. `ExitCode` is populated only for a
+failed invocation that returned a process exit code. For telemetry, the host
+normalizes `ToolName` by taking the basename from either POSIX or Windows
+paths, removing the executable extension, and lowercasing it. Only 1-64 ASCII
+characters matching `[a-z0-9_-]` are accepted; invalid or oversized values
+are recorded as `other`. This normalization does not change the displayed
+error.
 
 ### LocalErrorCategory
 
@@ -750,8 +783,8 @@ const (
 ```
 
 Error categories enable structured telemetry classification and targeted error
-guidance. Use `WrapError(err)` to convert a `LocalError` or `ServiceError` to
-the gRPC `ExtensionError` proto for reporting.
+guidance. Use `WrapError(err)` to convert a `LocalError`, `ServiceError`, or
+`ToolError` to the gRPC `ExtensionError` proto for reporting.
 
 ---
 

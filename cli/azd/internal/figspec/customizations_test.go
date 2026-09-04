@@ -84,7 +84,7 @@ func TestCustomizations_GetCommandArgs(t *testing.T) {
 		ctx := &CommandContext{CommandPath: "azd extension install"}
 		args := c.GetCommandArgs(ctx)
 		require.Len(t, args, 1)
-		require.Equal(t, "extension-id|extension-bundle.zip", args[0].Name)
+		require.Equal(t, "extension-id|bundle-path-or-url", args[0].Name)
 		// Offers both extension-id completion and zip file-path suggestions.
 		require.Equal(t, []string{FigGenListExtensions, FigGenFilepathsZip}, args[0].Generators)
 		require.Empty(t, args[0].Generator)

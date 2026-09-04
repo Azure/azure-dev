@@ -9,11 +9,24 @@ import "models.proto";
 
 // ProjectService defines methods for managing projects and their configurations.
 service ProjectService {
-  // Gets the current project.
+  // Gets the current flat or infra.layers project.
+  // Top-level layers projects must use ListLayers or GetLayer.
   rpc Get(EmptyRequest) returns (GetProjectResponse);
 
   // AddService adds a new service to the project.
   rpc AddService(AddServiceRequest) returns (EmptyResponse);
+
+  // SetLayer creates or fully replaces a project layer.
+  rpc SetLayer(SetLayerRequest) returns (LayerResponse);
+
+  // GetLayer gets a resolved project layer. An empty name addresses the implicit layer.
+  rpc GetLayer(GetLayerRequest) returns (LayerResponse);
+
+  // ListLayers lists all resolved project layers.
+  rpc ListLayers(EmptyRequest) returns (ListLayersResponse);
+
+  // RemoveLayer removes a project layer and its contents.
+  rpc RemoveLayer(RemoveLayerRequest) returns (RemoveLayerResponse);
 }
 
 // GetProjectResponse message definition
@@ -24,4 +37,53 @@ message GetProjectResponse {
 // AddServiceRequest message definition
 message AddServiceRequest {
   ServiceConfig service = 1;
+}
+
+// LayerDefinition is the complete persisted configuration accepted by SetLayer.
+message LayerDefinition {
+  // Name identifies the layer. It cannot be empty.
+  string name = 1;
+  // Infra lists the provisioning entries owned by the layer.
+  repeated InfraOptions infra = 2;
+  // Services lists the service definitions owned by the layer, keyed by service name.
+  map<string, ServiceConfig> services = 3;
+}
+
+// Layer is the resolved view of an infrastructure-backed, service-only, or implicit layer.
+// Layer is only ever returned by azd; mutations accept LayerDefinition instead.
+message Layer {
+  // Name is empty for the implicit layer.
+  string name = 1;
+  // Infra is empty for service-only layers.
+  repeated InfraOptions infra = 2;
+  // Services is keyed by service name.
+  map<string, ServiceConfig> services = 3;
+  // DependsOn is the resolved set of layer names this layer waits on, sorted and deduplicated.
+  repeated string depends_on = 4;
+}
+
+message SetLayerRequest {
+  LayerDefinition layer = 1;
+}
+
+message GetLayerRequest {
+  string name = 1;
+  // Envsubst expands environment variable references in expandable service values when true.
+  bool envsubst = 2;
+}
+
+message LayerResponse {
+  Layer layer = 1;
+}
+
+message ListLayersResponse {
+  repeated Layer layers = 1;
+}
+
+message RemoveLayerRequest {
+  string name = 1;
+}
+
+message RemoveLayerResponse {
+  repeated string removed_services = 1;
 }

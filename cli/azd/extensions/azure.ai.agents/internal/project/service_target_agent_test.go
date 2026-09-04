@@ -162,6 +162,7 @@ func TestTelephonyBindingMatches(t *testing.T) {
 }
 
 func TestTelephonyBindingMatches_ServiceOmittedFields(t *testing.T) {
+	// ACS binding responses can omit request fields while still returning the stable binding id.
 	desired := &agent_api.TelephonyBindingRequest{
 		Provider:       "azure-communication-service",
 		Identifier:     "28:orgid:00000000-0000-0000-0000-000000000001",

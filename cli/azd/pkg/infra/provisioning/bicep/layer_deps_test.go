@@ -91,6 +91,39 @@ func TestAnalyzeLayerDependencies_NoDependencies(t *testing.T) {
 	require.Equal(t, [][]int{{0, 1}}, result.Levels)
 }
 
+func TestAnalyzeLayerDependencies_PromotesCrossProjectLayerEdge(t *testing.T) {
+	layers := []provisioning.Options{
+		{Name: "shared-a", Layer: "shared", Provider: provisioning.Terraform},
+		{Name: "shared-b", Layer: "shared", Provider: provisioning.Terraform},
+		{
+			Name:      "application-a",
+			Layer:     "application",
+			Provider:  provisioning.Terraform,
+			DependsOn: []string{"shared-a"},
+		},
+		{Name: "application-b", Layer: "application", Provider: provisioning.Terraform},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, t.TempDir())
+
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0, 1}, {2, 3}}, result.Levels)
+	require.ElementsMatch(t, []int{0, 1}, result.Edges[2])
+	require.ElementsMatch(t, []int{0, 1}, result.Edges[3])
+}
+
+func TestAnalyzeLayerDependencies_SameProjectLayerRemainsConcurrent(t *testing.T) {
+	layers := []provisioning.Options{
+		{Name: "application-a", Layer: "application", Provider: provisioning.Terraform},
+		{Name: "application-b", Layer: "application", Provider: provisioning.Terraform},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, t.TempDir())
+
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0, 1}}, result.Levels)
+}
+
 func TestAnalyzeLayerDependencies_LinearChain(t *testing.T) {
 	dir := t.TempDir()
 
@@ -397,6 +430,68 @@ func TestAnalyzeLayerDependencies_DuplicateOutputs(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "duplicate output")
 	require.Contains(t, err.Error(), "SHARED_VAR")
+}
+
+func TestAnalyzeLayerDependencies_RemappedDuplicateOutputs(t *testing.T) {
+	dir := t.TempDir()
+	layerDir := filepath.Join(dir, "storage")
+	mkTestDir(t, layerDir)
+	writeTestFile(t, filepath.Join(layerDir, "main.bicep"),
+		"output STORAGE_ACCOUNT_NAME string = 'storage'\n")
+
+	layers := []provisioning.Options{
+		{
+			Name:    "storage",
+			Path:    "storage",
+			Module:  "main",
+			Outputs: map[string]string{"STORAGE_ACCOUNT_NAME": "STG1_STORAGE_ACCOUNT_NAME"},
+		},
+		{
+			Name:    "storage2",
+			Path:    "storage",
+			Module:  "main",
+			Outputs: map[string]string{"STORAGE_ACCOUNT_NAME": "STG2_STORAGE_ACCOUNT_NAME"},
+		},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0, 1}}, result.Levels)
+}
+
+func TestAnalyzeLayerDependencies_MappedInputUsesEffectiveOutput(t *testing.T) {
+	dir := t.TempDir()
+	producerDir := filepath.Join(dir, "producer")
+	mkTestDir(t, producerDir)
+	writeTestFile(t, filepath.Join(producerDir, "main.bicep"),
+		"output RAW_PROJECT_ID string = 'project'\n")
+
+	consumerDir := filepath.Join(dir, "consumer")
+	mkTestDir(t, consumerDir)
+	writeTestFile(t, filepath.Join(consumerDir, "main.bicep"), "param projectId string\n")
+	writeTestFile(t, filepath.Join(consumerDir, "main.bicepparam"),
+		"using './main.bicep'\nparam projectId = readEnvironmentVariable('LOCAL_PROJECT_ID')\n")
+
+	layers := []provisioning.Options{
+		{
+			Name:    "producer",
+			Path:    "producer",
+			Module:  "main",
+			Outputs: map[string]string{"RAW_PROJECT_ID": "SHARED_PROJECT_ID"},
+		},
+		{
+			Name:   "consumer",
+			Path:   "consumer",
+			Module: "main",
+			Inputs: map[string]string{"LOCAL_PROJECT_ID": "SHARED_PROJECT_ID"},
+		},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+
+	require.NoError(t, err)
+	require.Equal(t, map[int][]int{1: {0}}, result.Edges)
 }
 
 func TestAnalyzeLayerDependencies_SameLayerDuplicateOutputIsAllowed(t *testing.T) {
@@ -909,6 +1004,40 @@ func TestAnalyzeLayerDependencies_MixedProviders(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 	require.Contains(t, result.Edges[1], 0)
+}
+
+func TestAnalyzeLayerDependencies_TerraformOutputMappingFeedsBicepInputMapping(t *testing.T) {
+	dir := t.TempDir()
+	terraformDir := filepath.Join(dir, "terraform")
+	bicepDir := filepath.Join(dir, "bicep")
+	mkTestDir(t, terraformDir)
+	mkTestDir(t, bicepDir)
+	writeTestFile(t, filepath.Join(terraformDir, "main.tf"), "# terraform\n")
+	writeTestFile(t, filepath.Join(bicepDir, "main.bicep"), "param projectId string\n")
+	writeTestFile(t, filepath.Join(bicepDir, "main.parameters.json"),
+		`{"parameters":{"projectId":{"value":"${PROJECT_INPUT}"}}}`)
+
+	layers := []provisioning.Options{
+		{
+			Name:     "terraform",
+			Path:     "terraform",
+			Module:   "main",
+			Provider: provisioning.Terraform,
+			Outputs:  map[string]string{"PROJECT_ID": "SHARED_PROJECT_ID"},
+		},
+		{
+			Name:     "bicep",
+			Path:     "bicep",
+			Module:   "main",
+			Provider: provisioning.Bicep,
+			Inputs:   map[string]string{"PROJECT_INPUT": "SHARED_PROJECT_ID"},
+		},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Equal(t, []int{0}, result.Edges[1])
 }
 
 func TestAnalyzeLayerDependencies_FoundryConsumesBicepOutput(t *testing.T) {

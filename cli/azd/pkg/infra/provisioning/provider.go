@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"dario.cat/mergo"
@@ -50,22 +51,54 @@ const (
 
 // Options for a provisioning provider.
 type Options struct {
-	Provider         ProviderKind            `yaml:"provider,omitempty"`
-	Path             string                  `yaml:"path,omitempty"`
-	Module           string                  `yaml:"module,omitempty"`
-	Name             string                  `yaml:"name,omitempty"`
+	Provider ProviderKind `yaml:"provider,omitempty"`
+	Path     string       `yaml:"path,omitempty"`
+	Module   string       `yaml:"module,omitempty"`
+	Name     string       `yaml:"name,omitempty"`
+	// Layer is assigned from the containing project layer.
+	Layer            string                  `yaml:"-" json:"layer,omitempty"`
 	Hooks            HooksConfig             `yaml:"hooks,omitempty"`
 	DeploymentStacks *DeploymentStacksConfig `yaml:"deploymentStacks,omitempty"`
 	// Config holds provider-specific configuration options
 	Config map[string]any `yaml:"config,omitempty"`
-	// DependsOn lists the names of other layers this layer must wait for
+	// DependsOn lists the names of other infrastructure entries this entry must wait for
 	// before being provisioned. Use this to declare hook-mediated edges
-	// (for example, when a postprovision hook in another layer writes an
-	// env var that this layer's bicepparam reads at provision time)
+	// (for example, when a postprovision hook in another entry writes an
+	// env var that this entry's bicepparam reads at provision time)
 	// that the static analyzer cannot infer from .bicep / .bicepparam /
-	// .parameters.json contents alone. Only valid on layer entries under
-	// the `infra.layers` array.
+	// .parameters.json contents alone. Valid under both `infra.layers[]`
+	// and `layers[].infra[]`.
 	DependsOn []string `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
+
+	// Inputs configures provider-local input values from azd environment variables.
+	//
+	// Each entry is:
+	//
+	//	PROVIDER_INPUT_NAME: AZD_ENVIRONMENT_VARIABLE_NAME
+	//
+	// Example:
+	//
+	//	inputs:
+	//	  LOCATION: MY_ISOLATED_LAYER_LOCATION
+	//
+	// This reads MY_ISOLATED_LAYER_LOCATION from the azd environment and exposes it
+	// to this provider/layer as LOCATION.
+	Inputs map[string]string `yaml:"inputs,omitempty" json:"inputs,omitempty"`
+
+	// Outputs configures shared azd environment variables from provider-local output values.
+	//
+	// Each entry is:
+	//
+	//	PROVIDER_OUTPUT_NAME: AZD_ENVIRONMENT_VARIABLE_NAME
+	//
+	// Example:
+	//
+	//	outputs:
+	//	  API_ENDPOINT: SERVICE_API_ENDPOINT
+	//
+	// This reads API_ENDPOINT from the provider/layer outputs and writes it to the
+	// shared azd environment as SERVICE_API_ENDPOINT.
+	Outputs map[string]string `yaml:"outputs,omitempty" json:"outputs,omitempty"`
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
 
@@ -123,11 +156,13 @@ func (o Options) AbsolutePath(projectPath string) string {
 //
 // The ordering is stable; and reflects the order defined in azure.yaml.
 func (o *Options) GetLayers() []Options {
-	if len(o.Layers) == 0 {
+	if o.Layers == nil {
 		return []Options{*o}
 	}
 
-	tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatLayers))
+	if len(o.Layers) > 0 {
+		tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatLayers))
+	}
 	return o.Layers
 }
 
@@ -165,7 +200,8 @@ func (o *Options) Validate() error {
 
 	if len(o.Layers) > 0 {
 		anyIncompatibleFieldsSet := func() bool {
-			return o.Name != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil
+			return o.Name != "" || o.Layer != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil ||
+				len(o.Config) > 0 || len(o.Inputs) > 0 || len(o.Outputs) > 0
 		}
 
 		if anyIncompatibleFieldsSet() {
@@ -216,13 +252,46 @@ func (o *Options) validateLayers() error {
 
 		seenLayers[layer.Name] = struct{}{}
 
-		if layer.Path == "" {
+		// NOTE: I'm treating 'NotSpecified' as 'bicep' - there's some downstream code that does that in 'provisioning/manager'.
+		// It might be nice to think about doing this earlier, or having that validation occurring in the providers instead.
+		if layer.Path == "" && (layer.Provider == NotSpecified || slices.Contains(builtInProviderKinds, layer.Provider)) {
 			return fmt.Errorf("%s: path must be specified", layer.Name)
+		}
+
+		if err := validateVarMappings(layer.Name, "input", layer.Inputs); err != nil {
+			return err
+		}
+		if err := validateVarMappings(layer.Name, "output", layer.Outputs); err != nil {
+			return err
 		}
 
 		if err := validateHooks(layer.Name, layer.Hooks); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func validateVarMappings(entryName, kind string, mappings map[string]string) error {
+	destinations := make(map[string]string, len(mappings))
+
+	for source, destination := range mappings {
+		if source == "" {
+			return fmt.Errorf("%s: %s mapping source cannot be empty", entryName, kind)
+		}
+
+		if destination == "" {
+			return fmt.Errorf("%s: %s mapping %q destination cannot be empty", entryName, kind, source)
+		}
+
+		if originalMapping, has := destinations[destination]; has {
+			return fmt.Errorf(
+				"%s: %s variable mappings %q and %q both target %q",
+				entryName, kind, originalMapping, source, destination,
+			)
+		}
+		destinations[destination] = source
 	}
 
 	return nil

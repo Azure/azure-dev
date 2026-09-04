@@ -1095,10 +1095,8 @@ type UpgradeOptions struct {
 	// SkipMainRegistryDependencyFallback mirrors the InstallOptions behavior for
 	// the reinstall performed during upgrade.
 	SkipMainRegistryDependencyFallback bool
-	// PromoteToExplicit records the extension as explicitly installed even when the
-	// existing record was only a dependency install. `azd extension install <id>` sets
-	// it because the user named the extension; updates leave it unset so ownership is
-	// preserved.
+	// PromoteToExplicit clears dependency ownership for an explicit reinstall.
+	// Updates leave it false to preserve ownership.
 	PromoteToExplicit bool
 }
 
@@ -1184,9 +1182,8 @@ func (m *Manager) BackfillDependencies(id, source string, version *ExtensionVers
 	return nil
 }
 
-// MarkExplicitlyInstalled records that the user asked for an extension directly, so it is no
-// longer removed along with the extensions that originally pulled it in. It is a no-op for
-// extensions that are already explicit.
+// MarkExplicitlyInstalled prevents automatic removal as an unused dependency.
+// Repeated calls are a no-op.
 func (m *Manager) MarkExplicitlyInstalled(id string) error {
 	installed, err := m.GetInstalled(FilterOptions{Id: id})
 	if err != nil {
@@ -1213,9 +1210,6 @@ func (m *Manager) upgradeInternal(
 	opts UpgradeOptions,
 	visited map[string]struct{},
 ) (*ExtensionVersion, []UpgradeResult, error) {
-	// An update must not change who asked for the extension: a dependency-installed
-	// extension stays removable with its parents, and an explicit one stays explicit.
-	// Only an install by name (PromoteToExplicit) turns a dependency into an explicit record.
 	asDependency := false
 	if installed, err := m.GetInstalled(FilterOptions{Id: extension.Id}); err == nil && installed != nil {
 		asDependency = installed.InstalledAsDependency && !opts.PromoteToExplicit

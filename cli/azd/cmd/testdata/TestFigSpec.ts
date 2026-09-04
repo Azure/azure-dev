@@ -6327,12 +6327,12 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--force', '-f'],
-							description: 'Uninstall even when other installed extensions depend on the extension',
+							description: 'Remove extensions required by other installed extensions',
 							isDangerous: true,
 						},
 						{
 							name: ['--no-dependencies'],
-							description: 'Uninstall only the specified extension(s), keeping dependencies that were installed for them',
+							description: 'Keep dependencies installed for the removed extensions',
 						},
 					],
 					args: {
@@ -6344,7 +6344,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['update', 'upgrade'],
-					description: 'Update installed extensions to the latest version.',
+					description: 'Update installed extensions.',
 					options: [
 						{
 							name: ['--all'],
@@ -6352,11 +6352,11 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--no-dependency-updates'],
-							description: 'Do not update dependencies when updating an extension that has dependencies',
+							description: 'Keep installed dependency versions',
 						},
 						{
 							name: ['--source', '-s'],
-							description: 'The registered source name or registry location (URL or file path) to use for updates.',
+							description: 'Source name or registry URL/file. New sources require interactive mode.',
 							args: [
 								{
 									name: 'source',
@@ -6365,7 +6365,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--version', '-v'],
-							description: 'The version of the extension to update to',
+							description: 'Exact version to install; defaults to latest.',
 							args: [
 								{
 									name: 'version',

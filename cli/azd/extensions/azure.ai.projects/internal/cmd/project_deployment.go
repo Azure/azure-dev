@@ -373,23 +373,6 @@ func deploymentCandidateKey(candidate *azdext.AiModelDeployment) string {
 	}, "\x00")
 }
 
-func reconcileDeployment(
-	ctx context.Context,
-	reconciler *projectServiceReconciler,
-	serviceName string,
-	requested synthesis.Deployment,
-	force bool,
-) (deploymentMutation, error) {
-	mutation, _, err := reconcileDeploymentWithRollback(
-		ctx,
-		reconciler,
-		serviceName,
-		requested,
-		force,
-	)
-	return mutation, err
-}
-
 func reconcileDeploymentWithRollback(
 	ctx context.Context,
 	reconciler *projectServiceReconciler,

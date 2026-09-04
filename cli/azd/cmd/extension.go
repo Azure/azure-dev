@@ -2480,7 +2480,7 @@ func (a *extensionUninstallAction) confirmDependencyRemoval(
 	if len(plan.Orphaned) != 1 {
 		noun = "dependencies"
 	}
-	question := fmt.Sprintf("Remove %d %s?", len(plan.Orphaned), noun)
+	question := fmt.Sprintf("Remove these %d %s?", len(plan.Orphaned), noun)
 	remove, err := a.console.Confirm(ctx, input.ConsoleOptions{
 		Message:      question,
 		DefaultValue: true,

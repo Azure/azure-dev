@@ -2464,22 +2464,23 @@ func (a *extensionUninstallAction) confirmDependencyRemoval(
 
 	a.console.Message(ctx, "")
 	a.console.Message(ctx, fmt.Sprintf(
-		"The following dependencies were installed for %s and are no longer required:",
+		"After uninstalling %s, no installed extension will require these dependencies:",
 		strings.Join(targets, ", "),
 	))
 	for _, orphan := range plan.Orphaned {
 		a.console.Message(ctx, fmt.Sprintf(
-			"  %s %s",
+			"  • %s %s",
 			output.WithHighLightFormat(orphan.Id),
 			output.WithGrayFormat("(%s)", orphan.Version),
 		))
 	}
 	a.console.Message(ctx, "")
 
-	question := "Remove this dependency as well?"
-	if len(plan.Orphaned) > 1 {
-		question = fmt.Sprintf("Remove these %d dependencies as well?", len(plan.Orphaned))
+	noun := "dependency"
+	if len(plan.Orphaned) != 1 {
+		noun = "dependencies"
 	}
+	question := fmt.Sprintf("Remove %d %s?", len(plan.Orphaned), noun)
 	remove, err := a.console.Confirm(ctx, input.ConsoleOptions{
 		Message:      question,
 		DefaultValue: true,

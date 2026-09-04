@@ -141,31 +141,13 @@ func TestPromptAgentInlineStrictValidation(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name: "harness as a string names the replacement block",
+			name: "harness as a string is rejected",
 			props: map[string]any{
 				"kind":    "prompt",
 				"name":    "a",
 				"harness": "github_copilot_preview",
 			},
-			wantErr: "harness must be a block, not a string",
-		},
-		{
-			name: "obsolete harness string is upgraded in the suggestion",
-			props: map[string]any{
-				"kind":    "prompt",
-				"name":    "a",
-				"harness": "ghcp",
-			},
-			wantErr: "type: github_copilot_preview",
-		},
-		{
-			name: "obsolete harness type is rejected by name",
-			props: map[string]any{
-				"kind":    "prompt",
-				"name":    "a",
-				"harness": map[string]any{"type": "ghcp"},
-			},
-			wantErr: "no longer accepted",
+			wantErr: "harness must be a block",
 		},
 		{
 			name: "harness typo binds nothing and is rejected",

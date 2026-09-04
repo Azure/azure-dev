@@ -152,16 +152,6 @@ func resolveInitHarness(harnessFlag, impliedHarness string) (string, error) {
 		return agent_api.ManagedAgentHarnessGitHubCopilot, nil
 	}
 
-	if replacement, removed := agent_api.RemovedManagedAgentHarnesses[harness]; removed {
-		// Named separately from the generic "unknown value" case so the error
-		// tells the user what to type instead of only what is allowed.
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--harness %q is no longer accepted", harness),
-			fmt.Sprintf("use --harness %s instead", replacement),
-		)
-	}
-
 	return "", exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		fmt.Sprintf("unknown --harness value %q", requested),

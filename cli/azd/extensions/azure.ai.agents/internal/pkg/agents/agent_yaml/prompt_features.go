@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/azure"
 )
 
@@ -59,29 +58,8 @@ func (p PromptAgent) ValidatePolicies() error {
 	return nil
 }
 
-// removedHarnesses maps a harness spelling that is no longer accepted to the
-// spelling that replaced it.
-//
-// Unlike tool types, an unrecognized harness is *not* rejected: a harness azd
-// has never heard of may simply be newer than this build, and hard-failing
-// would make every new Foundry harness a breaking change in azd. Only spellings
-// known to be wrong are refused, and each one names its replacement.
-var removedHarnesses = agent_api.RemovedManagedAgentHarnesses
-
-// ValidateHarness rejects harness spellings that have been replaced. The value
-// is passed to the service verbatim, and the service ignores a harness it does
-// not recognize rather than erroring — so an outdated spelling would otherwise
-// publish a plain prompt agent while the manifest claims a managed one.
+// ValidateHarness accepts open-ended harness names so newer service harnesses
+// do not require an azd release.
 func (p PromptAgent) ValidateHarness() error {
-	harness := p.HarnessType()
-	if harness == "" {
-		return nil
-	}
-	if replacement, removed := removedHarnesses[harness]; removed {
-		return fmt.Errorf(
-			"harness %q is no longer accepted; use %q instead",
-			harness, replacement,
-		)
-	}
 	return nil
 }

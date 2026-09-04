@@ -44,14 +44,6 @@ func TestResolveInitHarness(t *testing.T) {
 			expected:    agent_api.ManagedAgentHarnessGitHubCopilot,
 		},
 		{
-			// The old abbreviation is rejected rather than silently upgraded so
-			// the user learns the new spelling instead of keeping a value the
-			// service no longer knows.
-			name:        "removed ghcp spelling is rejected",
-			harnessFlag: "ghcp",
-			expectErr:   true,
-		},
-		{
 			name:           "none opts out of an implied harness",
 			harnessFlag:    " none ",
 			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
@@ -62,13 +54,6 @@ func TestResolveInitHarness(t *testing.T) {
 			harnessFlag:    agent_api.ManagedAgentHarnessGitHubCopilot,
 			impliedHarness: "",
 			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
-		},
-		{
-			// A manifest can name a harness azd no longer accepts; it is
-			// validated on the same path as the flag rather than passed through.
-			name:           "removed implied harness is rejected",
-			impliedHarness: "ghcp",
-			expectErr:      true,
 		},
 		{
 			name:        "unknown harness is rejected",

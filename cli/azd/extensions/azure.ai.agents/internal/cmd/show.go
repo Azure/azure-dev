@@ -222,7 +222,7 @@ func runPromptShow(ctx context.Context, flags *showFlags, pctx *promptServiceCon
 		return err
 	}
 
-	agent, err := client.GetAgent(ctx, agentName, pctx.Settings.EffectiveAPIVersion(), false)
+	agent, err := client.GetAgent(ctx, agentName, projectpkg.ProjectEndpointAPIVersion, false)
 	if err != nil {
 		return fmt.Errorf("failed to get prompt agent %q: %w", agentName, err)
 	}
@@ -297,18 +297,11 @@ func stringFromMap(m map[string]any, key string) string {
 }
 
 // promptHarnessFromMap decodes the `harness` block of a deployed definition.
-//
-// Both shapes are handled because the field changed: agents created by earlier
-// versions of azd carry a bare harness name, current ones carry an object.
-// Reading only one shape would blank the Harness row for half the agents in a
-// project.
 func promptHarnessFromMap(def map[string]any) *agent_yaml.PromptHarness {
 	if def == nil {
 		return nil
 	}
 	switch harness := def["harness"].(type) {
-	case string:
-		return &agent_yaml.PromptHarness{Type: strings.TrimSpace(harness)}
 	case map[string]any:
 		data, err := json.Marshal(harness)
 		if err != nil {

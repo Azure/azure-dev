@@ -466,7 +466,7 @@ func (a *DeleteAction) runPromptDelete(
 		return err
 	}
 
-	result, err := client.DeleteAgent(ctx, agentName, pctx.Settings.EffectiveAPIVersion(), a.flags.force)
+	result, err := client.DeleteAgent(ctx, agentName, project.ProjectEndpointAPIVersion, a.flags.force)
 	if err != nil {
 		return classifyDeleteError(err, agentName)
 	}

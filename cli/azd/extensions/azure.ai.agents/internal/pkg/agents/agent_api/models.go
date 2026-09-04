@@ -387,16 +387,6 @@ type ManagedEnvironment struct {
 // the discriminator when it leaves preview.
 const ManagedAgentHarnessGitHubCopilot = "github_copilot_preview"
 
-// RemovedManagedAgentHarnesses maps a harness spelling the service no longer
-// accepts to the spelling that replaced it.
-//
-// These are retained only so validation can name the replacement when it meets
-// an old manifest; none of them is ever sent on the wire or accepted as input.
-var RemovedManagedAgentHarnesses = map[string]string{
-	"ghcp":           ManagedAgentHarnessGitHubCopilot,
-	"github-copilot": ManagedAgentHarnessGitHubCopilot,
-}
-
 // SkillReference identifies a Foundry skill available to a prompt agent.
 //
 // Version is not optional in practice. The API contract says an omitted version
@@ -445,24 +435,6 @@ type HarnessEnvironment struct {
 type HarnessBuiltInTools struct {
 	Allowed  *[]string `json:"allowed,omitempty"`
 	Excluded *[]string `json:"excluded,omitempty"`
-}
-
-// UnmarshalJSON accepts either the object form or the bare string form the
-// harness was originally sent as, so definitions read back from agents created
-// by earlier versions of azd still decode.
-func (h *ManagedAgentHarness) UnmarshalJSON(data []byte) error {
-	var asString string
-	if err := json.Unmarshal(data, &asString); err == nil {
-		*h = ManagedAgentHarness{Type: asString}
-		return nil
-	}
-	type harnessAlias ManagedAgentHarness
-	var alias harnessAlias
-	if err := json.Unmarshal(data, &alias); err != nil {
-		return err
-	}
-	*h = ManagedAgentHarness(alias)
-	return nil
 }
 
 // ManagedAgentDefinition represents a Foundry "managed" agent — a prompt agent

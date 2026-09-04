@@ -484,11 +484,9 @@ type HarnessSkillRef struct {
 
 // PromptHarness is the `harness:` block of a prompt agent's agent.yaml.
 //
-// It is an object rather than the bare harness name it used to be, because the
-// harness owns configuration of its own: which skills are provisioned into its
+// It is an object because the harness owns configuration of its own: which skills are provisioned into its
 // sandbox, how large that sandbox is, and which of its built-in capabilities the
-// agent is allowed to reach. Only Type is required; a block that names nothing
-// else is equivalent to the old `harness: <name>` string.
+// agent is allowed to reach. Only Type is required.
 type PromptHarness struct {
 	// Type is the harness discriminator, e.g.
 	// agent_api.ManagedAgentHarnessGitHubCopilot ("github_copilot_preview").
@@ -539,25 +537,11 @@ type PromptHarnessBuiltInTools struct {
 	Excluded *[]string `json:"excluded,omitempty" yaml:"excluded,omitempty"`
 }
 
-// harnessTypeGitHubCopilotPreview duplicates
-// agent_api.ManagedAgentHarnessGitHubCopilot. It is repeated here rather than
-// imported because agent_api already depends on this package.
-const harnessTypeGitHubCopilotPreview = "github_copilot_preview"
-
-// harnessTypeObsoleteAbbreviation is the pre-release spelling of
-// harnessTypeGitHubCopilotPreview. It is rejected by name so an author who
-// copied an older sample is told what to write instead, rather than having the
-// value forwarded to a service that reports it as an opaque bad request.
-const harnessTypeObsoleteAbbreviation = "ghcp"
-
 // UnmarshalYAML decodes the `harness:` block.
 //
 // Two things happen here that a plain struct decode would not do:
 //
-//   - A scalar is rejected with the block that replaces it. `harness:` used to
-//     be a bare string, so an author carrying a manifest forward would otherwise
-//     get go-yaml's "cannot unmarshal !!str into agent_yaml.PromptHarness",
-//     which names a Go type and no fix.
+//   - A scalar is rejected with a clear shape error.
 //   - Unknown keys are rejected. Every field of this block changes what the
 //     sandbox can do, so a typo that silently binds nothing — `builtin_tool:`
 //     for `builtin_tools:` — would deploy an agent with capabilities the author
@@ -565,7 +549,7 @@ const harnessTypeObsoleteAbbreviation = "ghcp"
 //     tool type newer than this build still passes through.
 func (h *PromptHarness) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind == yaml.ScalarNode {
-		return errHarnessStringForm(value.Value)
+		return fmt.Errorf("harness must be a block with a `type:` key, got string")
 	}
 
 	if value.Kind != yaml.MappingNode {
@@ -577,10 +561,6 @@ func (h *PromptHarness) UnmarshalYAML(value *yaml.Node) error {
 	var decoded harnessFields
 	if err := decodeStrict(value, &decoded); err != nil {
 		return fmt.Errorf("harness: %w", err)
-	}
-
-	if decoded.Type == harnessTypeObsoleteAbbreviation {
-		return errHarnessObsoleteType()
 	}
 
 	*h = PromptHarness(decoded)

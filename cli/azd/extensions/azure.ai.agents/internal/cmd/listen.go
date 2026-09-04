@@ -691,7 +691,7 @@ func deletePromptAgentOnDown(
 		log.Printf("predown: failed to build harness client for %q: %v", svc.Name, err)
 		return
 	}
-	if _, err := client.DeleteAgent(ctx, agentName, settings.EffectiveAPIVersion(), true); err != nil {
+	if _, err := client.DeleteAgent(ctx, agentName, project.ProjectEndpointAPIVersion, true); err != nil {
 		log.Printf("predown: failed to delete prompt agent %q from harness: %v", agentName, err)
 		return
 	}

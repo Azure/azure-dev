@@ -73,10 +73,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		)
 	}
 
-	bypass := foundryEndpointValidationBypassed()
-
-	if !strings.EqualFold(u.Scheme, "https") &&
-		!(bypass && strings.EqualFold(u.Scheme, "http")) {
+	if !strings.EqualFold(u.Scheme, "https") {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-endpoint must use https",
@@ -92,7 +89,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 			agentEndpointHint,
 		)
 	}
-	if !bypass && !isFoundryHost(host) {
+	if !isFoundryHost(host) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("--agent-endpoint host %q is not a Foundry host (*%s)", u.Hostname(), agentEndpointHostHint),
@@ -102,8 +99,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 
 	// Reject explicit ports — Foundry endpoints always use the default HTTPS port,
 	// and silently dropping a non-default port would route requests to a different origin.
-	// The override path allows ports (e.g. http://localhost:5000) for local backends.
-	if !bypass && u.Port() != "" {
+	if u.Port() != "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("--agent-endpoint host %q must not include a port", u.Host),
@@ -167,16 +163,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		apiVersion = values[0]
 	}
 
-	// Rebuild the project-scoped endpoint. On the override path preserve the
-	// caller's scheme and host:port verbatim: forcing https and dropping the port
-	// would rewrite an `http://localhost:5000` override to `https://localhost/...`
-	// and never reach the local backend the override exists to target. This
-	// mirrors what validateProjectEndpoint does in project_endpoint.go.
-	scheme, authority := "https", host
-	if bypass {
-		scheme, authority = strings.ToLower(u.Scheme), u.Host
-	}
-	projectEndpoint := fmt.Sprintf("%s://%s/api/projects/%s", scheme, authority, projectSegment)
+	projectEndpoint := fmt.Sprintf("https://%s/api/projects/%s", host, projectSegment)
 
 	return &parsedAgentEndpoint{
 		ProjectEndpoint: projectEndpoint,

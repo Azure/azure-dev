@@ -728,7 +728,7 @@ func printManagedInitSummary(
 	if settings.ProjectEndpoint != "" {
 		fmt.Printf("  Project:       %s\n", settings.ProjectEndpoint)
 	}
-	if settings.ModelEndpoint != "" && settings.ModelEndpoint != project.DefaultPromptModelEndpoint {
+	if settings.ModelEndpoint != "" {
 		fmt.Printf("  Model endpoint: %s\n", settings.ModelEndpoint)
 	}
 

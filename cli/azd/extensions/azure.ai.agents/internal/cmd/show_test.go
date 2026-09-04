@@ -408,22 +408,19 @@ func TestDisplayHarness(t *testing.T) {
 	assert.Equal(t, "custom-harness", displayHarness("custom-harness"))
 }
 
-// TestHarnessTypeFromMap covers both shapes `show` can be handed: agents
-// created before the harness became a block still carry a bare string.
 func TestHarnessTypeFromMap(t *testing.T) {
 	assert.Equal(t, "github_copilot_preview", harnessTypeFromMap(map[string]any{
 		"harness": map[string]any{"type": "github_copilot_preview"},
 	}))
-	assert.Equal(t, "ghcp", harnessTypeFromMap(map[string]any{"harness": "ghcp"}))
 	assert.Equal(t, "", harnessTypeFromMap(map[string]any{"harness": map[string]any{}}))
 	assert.Equal(t, "", harnessTypeFromMap(nil))
 }
 
 func TestPromptDefinitionMap(t *testing.T) {
 	version := agent_api.AgentVersionObject{
-		Definition: map[string]any{"harness": "github_copilot_preview"},
+		Definition: map[string]any{"harness": map[string]any{"type": "github_copilot_preview"}},
 	}
-	assert.Equal(t, "github_copilot_preview", stringFromMap(promptDefinitionMap(version), "harness"))
+	assert.NotNil(t, promptDefinitionMap(version)["harness"])
 
 	// Non-map definition yields nil, and stringFromMap tolerates nil.
 	assert.Nil(t, promptDefinitionMap(agent_api.AgentVersionObject{Definition: "not-a-map"}))
@@ -458,11 +455,6 @@ func TestPromptHarnessFromMap(t *testing.T) {
 	require.NotNil(t, harness.BuiltinTools)
 	require.NotNil(t, harness.BuiltinTools.Allowed)
 	assert.Equal(t, []string{"bash"}, *harness.BuiltinTools.Allowed)
-
-	// Legacy bare-string shape still yields a type.
-	legacy := promptHarnessFromMap(map[string]any{"harness": "github_copilot_preview"})
-	require.NotNil(t, legacy)
-	assert.Equal(t, "github_copilot_preview", legacy.Type)
 
 	assert.Nil(t, promptHarnessFromMap(nil))
 	assert.Nil(t, promptHarnessFromMap(map[string]any{}))

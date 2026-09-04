@@ -25,29 +25,6 @@ import (
 // [PromptHarness.UnmarshalYAML] and [PromptMemory.UnmarshalYAML] apply to a
 // yaml.Node, so both routes reject the same manifests with the same messages.
 
-// errHarnessStringForm reports the pre-block `harness: <string>` spelling,
-// echoing the block that replaces it. An author carrying an older manifest
-// forward is shown the replacement rather than a Go type name.
-func errHarnessStringForm(value string) error {
-	replacement := value
-	if replacement == harnessTypeObsoleteAbbreviation {
-		replacement = harnessTypeGitHubCopilotPreview
-	}
-	return fmt.Errorf(
-		"harness must be a block, not a string: replace `harness: %s` with\n"+
-			"  harness:\n"+
-			"    type: %s",
-		value, replacement)
-}
-
-// errHarnessObsoleteType reports the retired `ghcp` harness type by name so the
-// value is not forwarded to a service that reports it as an opaque bad request.
-func errHarnessObsoleteType() error {
-	return fmt.Errorf(
-		"harness.type %q is no longer accepted: use %q",
-		harnessTypeObsoleteAbbreviation, harnessTypeGitHubCopilotPreview)
-}
-
 // ValidateInlinePromptAgent applies the authored-block rules to prompt-agent
 // properties that were decoded outside this package, such as the inline
 // definition carried on an azure.yaml service entry.
@@ -76,11 +53,8 @@ func validateInlineHarness(value any) error {
 		// An empty block leaves the zero value in place, matching decodeStrict.
 		return nil
 	case string:
-		return errHarnessStringForm(v)
+		return fmt.Errorf("harness must be a block with a `type:` key, got string")
 	case map[string]any:
-		if declared, ok := v["type"].(string); ok && declared == harnessTypeObsoleteAbbreviation {
-			return errHarnessObsoleteType()
-		}
 		// A distinct type so the YAML method is not inherited, matching the
 		// decoder path.
 		type harnessFields PromptHarness

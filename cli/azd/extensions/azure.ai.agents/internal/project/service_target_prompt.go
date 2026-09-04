@@ -66,12 +66,12 @@ func (p *AgentServiceTargetProvider) promptAgentSettings(env map[string]string) 
 // that knows it: `azd provision` writes the subscription, resource group,
 // workspace, and project endpoint there, and they change per environment. That
 // keeps environment-specific routing values out of azure.yaml.
-//
-// Process-environment AZD_MANAGED_AGENT_* overrides are applied last.
 func ResolvePromptAgentSettings(env map[string]string) (*PromptAgentSettings, error) {
 	settings := DefaultPromptAgentSettings()
 	settings.overlay(promptAgentSettingsFromEnv(env))
-	settings.ApplyEnvOverrides()
+	if _, err := ResolvePromptTargetFromEnv(&settings, env); err != nil {
+		return nil, err
+	}
 	if err := settings.Validate(); err != nil {
 		return nil, err
 	}
@@ -311,28 +311,14 @@ func validatePromptAgentRawFields(data []byte) error {
 			)
 		}
 	}
-	// `harness` used to be the harness name on its own. It is an object now, so
-	// the typed decode below would reject a string with a decoder-level type
-	// error that names neither the old shape nor the new one.
-	if harness, ok := probe["harness"].(string); ok {
+	if _, ok := probe["harness"].(string); ok {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml sets harness to the string %q, but harness is now a block", harness),
-			fmt.Sprintf("replace it with:\n  harness:\n    type: %s", promptHarnessTypeFor(harness)),
+			"agent.yaml harness must be a block with a type key",
+			"use:\n  harness:\n    type: github_copilot_preview",
 		)
 	}
 	return nil
-}
-
-// promptHarnessTypeFor maps an old bare harness name to the type to write in the
-// new block, so the suggestion above can be pasted even when the name itself
-// was also renamed.
-func promptHarnessTypeFor(harness string) string {
-	harness = strings.TrimSpace(harness)
-	if replacement, removed := agent_api.RemovedManagedAgentHarnesses[harness]; removed {
-		return replacement
-	}
-	return harness
 }
 
 // deployPromptAgent creates (or updates) the prompt agent on the managed
@@ -537,12 +523,9 @@ func ResolvePromptTargetFromEnv(settings *PromptAgentSettings, env map[string]st
 	}
 
 	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
-		// The project data-plane contract uses api-version=v1.
-		settings.APIVersion = ProjectEndpointAPIVersion
 		// x-model-endpoint targets the account host backing the project.
 		if u, perr := url.Parse(pe); perr == nil && u.Host != "" {
-			if strings.TrimSpace(settings.ModelEndpoint) == "" ||
-				strings.EqualFold(strings.TrimSpace(settings.ModelEndpoint), DefaultPromptModelEndpoint) {
+			if strings.TrimSpace(settings.ModelEndpoint) == "" {
 				settings.ModelEndpoint = u.Scheme + "://" + u.Host
 			}
 		}
@@ -585,9 +568,7 @@ func overlayPromptSettingsFromProjectResourceID(settings *PromptAgentSettings, e
 	if parsedResource.Parent != nil {
 		accountName := strings.TrimSpace(parsedResource.Parent.Name)
 		if accountName != "" {
-			sameAsDefault := strings.TrimSpace(settings.ModelEndpoint) == "" ||
-				strings.EqualFold(strings.TrimSpace(settings.ModelEndpoint), DefaultPromptModelEndpoint)
-			if sameAsDefault {
+			if strings.TrimSpace(settings.ModelEndpoint) == "" {
 				settings.ModelEndpoint = fmt.Sprintf("https://%s.services.ai.azure.com", accountName)
 			}
 		}
@@ -629,7 +610,7 @@ func (p *AgentServiceTargetProvider) waitForPromptAgentActive(
 			progress(fmt.Sprintf("Polling prompt agent status (attempt %d)", attempt))
 		}
 
-		agent, err := client.GetAgentWithHeaders(ctx, agentName, settings.EffectiveAPIVersion(), headers)
+		agent, err := client.GetAgentWithHeaders(ctx, agentName, ProjectEndpointAPIVersion, headers)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
 			continue
@@ -781,7 +762,7 @@ func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 	settings *PromptAgentSettings,
 	headers map[string]string,
 ) (*agent_api.AgentObject, error) {
-	apiVersion := settings.EffectiveAPIVersion()
+	apiVersion := ProjectEndpointAPIVersion
 
 	agent, err := client.CreateAgentWithHeaders(ctx, request, apiVersion, headers)
 	if err == nil {

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -53,49 +52,11 @@ func ResolvePromptCredential(
 	return credential, nil
 }
 
-// Environment-variable overrides for the prompt-agent (managed) harness
-// client. When set, these take precedence over the corresponding fields in
-// the azure.yaml service config so developers can temporarily retarget the
-// harness without editing the project file.
-const (
-	PromptSubscriptionEnvVar    = "AZD_MANAGED_AGENT_SUBSCRIPTION_ID"
-	PromptResourceGroupEnvVar   = "AZD_MANAGED_AGENT_RESOURCE_GROUP"
-	PromptProjectEndpointEnvVar = "AZD_MANAGED_AGENT_PROJECT_ENDPOINT"
-	PromptAPIVersionEnvVar      = "AZD_MANAGED_AGENT_API_VERSION"
-	PromptModelEndpointEnvVar   = "AZD_MANAGED_AGENT_MODEL_ENDPOINT"
-)
-
-const (
-	DefaultPromptSubscriptionID = "00000000-0000-0000-0000-000000000001"
-	DefaultPromptResourceGroup  = "test-rg"
-)
-
-// DefaultPromptAPIVersion is the api-version query parameter sent on every
-// prompt-agent request.
-const DefaultPromptAPIVersion = "2025-05-15-preview"
-
-// DefaultPromptModelEndpoint is the model gateway the harness calls to reach
-// the LLM. It is sent on invoke (Responses) requests via the x-model-endpoint
-// header.
-//
-// This is a private development resource and is only a last-resort fallback:
-// EffectiveModelEndpoint prefers the user's own resolved Foundry project
-// endpoint, which is the correct gateway for anyone outside the dev
-// subscription. Do not rely on this constant being reachable.
-const DefaultPromptModelEndpoint = "https://va-dev-fdp-resource.services.ai.azure.com"
-
 // PromptAgentSettings captures the harness connection details for a prompt agent.
 //
-// `azd ai agent init` writes every field as a ${VAR} reference rather than a
-// literal, so azure.yaml carries no subscription, resource group, or workspace
-// of its own and can be copied between Foundry projects unchanged. Deploy
-// expands the references against the azd environment and falls back to the
-// built-in defaults for any variable that is unset.
-//
-// Every field is omitempty so a field with nothing to say is left out entirely.
-// Persisting empty strings would put a shape into azure.yaml that carries no
-// information but looks like configuration a developer must fill in, and
-// overlay() treats an empty value as "not configured" in either case.
+// Values are resolved from the active azd environment. Keeping this
+// environment-specific routing state out of azure.yaml allows the project to be
+// reused across Foundry projects unchanged.
 type PromptAgentSettings struct {
 	// SubscriptionID is the Azure subscription containing the Foundry project.
 	SubscriptionID string `json:"subscriptionId,omitempty"`
@@ -111,26 +72,15 @@ type PromptAgentSettings struct {
 	// from FOUNDRY_PROJECT_ENDPOINT in the azd environment.
 	ProjectEndpoint string `json:"projectEndpoint,omitempty"`
 
-	// APIVersion is the api-version query parameter sent on every request.
-	// Defaults to DefaultPromptAPIVersion when empty.
-	APIVersion string `json:"apiVersion,omitempty"`
-
 	// ModelEndpoint is the model gateway the harness calls to reach the LLM.
-	// Sent on invoke requests via the x-model-endpoint header. Defaults to
-	// DefaultPromptModelEndpoint when empty.
+	// Sent on invoke requests via the x-model-endpoint header.
 	ModelEndpoint string `json:"modelEndpoint,omitempty"`
 }
 
-// DefaultPromptAgentSettings returns settings populated with public managed
-// prompt-agent defaults plus placeholder workspace tuple values used by
-// non-guided init.
+// DefaultPromptAgentSettings returns unresolved prompt-agent settings. Init may
+// scaffold these before provision; deployment resolves real values from azd.
 func DefaultPromptAgentSettings() PromptAgentSettings {
-	return PromptAgentSettings{
-		SubscriptionID: DefaultPromptSubscriptionID,
-		ResourceGroup:  DefaultPromptResourceGroup,
-		APIVersion:     DefaultPromptAPIVersion,
-		ModelEndpoint:  DefaultPromptModelEndpoint,
-	}
+	return PromptAgentSettings{}
 }
 
 // overlay copies every non-empty field of src onto s, leaving s's existing
@@ -146,7 +96,6 @@ func (s *PromptAgentSettings) overlay(src *PromptAgentSettings) {
 		{&s.SubscriptionID, src.SubscriptionID},
 		{&s.ResourceGroup, src.ResourceGroup},
 		{&s.ProjectEndpoint, src.ProjectEndpoint},
-		{&s.APIVersion, src.APIVersion},
 		{&s.ModelEndpoint, src.ModelEndpoint},
 	} {
 		if v := strings.TrimSpace(f.src); v != "" {
@@ -200,15 +149,6 @@ func validateAuthenticatedPromptEndpoint(endpoint string) error {
 	return nil
 }
 
-// EffectiveAPIVersion returns the configured api-version, falling back to the
-// package-level default when empty.
-func (s *PromptAgentSettings) EffectiveAPIVersion() string {
-	if s == nil || strings.TrimSpace(s.APIVersion) == "" {
-		return DefaultPromptAPIVersion
-	}
-	return strings.TrimSpace(s.APIVersion)
-}
-
 // EffectiveModelEndpoint returns the model gateway to advertise to the
 // harness. An explicitly configured ModelEndpoint wins. Otherwise the resolved
 // Foundry project endpoint is used, because the model deployments this agent
@@ -217,9 +157,9 @@ func (s *PromptAgentSettings) EffectiveAPIVersion() string {
 // they cannot access.
 func (s *PromptAgentSettings) EffectiveModelEndpoint() string {
 	if s == nil {
-		return DefaultPromptModelEndpoint
+		return ""
 	}
-	if v := strings.TrimSpace(s.ModelEndpoint); v != "" && v != DefaultPromptModelEndpoint {
+	if v := strings.TrimSpace(s.ModelEndpoint); v != "" {
 		return v
 	}
 	if pe := strings.TrimSpace(s.ProjectEndpoint); pe != "" {
@@ -229,34 +169,7 @@ func (s *PromptAgentSettings) EffectiveModelEndpoint() string {
 			return u.Scheme + "://" + u.Host
 		}
 	}
-	if strings.TrimSpace(s.ModelEndpoint) != "" {
-		return s.ModelEndpoint
-	}
-	return DefaultPromptModelEndpoint
-}
-
-// ApplyEnvOverrides updates any non-empty environment variables into the
-// settings. Env vars trump stored values so a developer can temporarily
-// retarget the harness without editing azure.yaml.
-func (s *PromptAgentSettings) ApplyEnvOverrides() {
-	if s == nil {
-		return
-	}
-	if v := strings.TrimSpace(os.Getenv(PromptSubscriptionEnvVar)); v != "" {
-		s.SubscriptionID = v
-	}
-	if v := strings.TrimSpace(os.Getenv(PromptResourceGroupEnvVar)); v != "" {
-		s.ResourceGroup = v
-	}
-	if v := strings.TrimSpace(os.Getenv(PromptProjectEndpointEnvVar)); v != "" {
-		s.ProjectEndpoint = v
-	}
-	if v := strings.TrimSpace(os.Getenv(PromptAPIVersionEnvVar)); v != "" {
-		s.APIVersion = v
-	}
-	if v := strings.TrimSpace(os.Getenv(PromptModelEndpointEnvVar)); v != "" {
-		s.ModelEndpoint = v
-	}
+	return ""
 }
 
 // NewPromptAgentClient constructs the unified project-scoped agent client.
@@ -267,7 +180,6 @@ func NewPromptAgentClient(
 	if settings == nil {
 		return nil, fmt.Errorf("NewPromptAgentClient: settings is nil")
 	}
-	settings.ApplyEnvOverrides()
 	if err := settings.Validate(); err != nil {
 		return nil, err
 	}
@@ -317,38 +229,30 @@ func promptCredential(tenantID string) *azidentity.AzureDeveloperCLICredential {
 	return nil
 }
 
-// OverlayAzdProjectEnv fills any harness target field still at its package
-// default placeholder from the provisioned azd project environment values.
+// OverlayAzdProjectEnv fills unresolved harness target fields from the
+// provisioned azd project environment values.
 //
 // Real values resolved at init time (a user-selected Foundry project) are
 // non-default and are preserved. This makes the "create a new Foundry project"
 // init path work end-to-end: `azd up` provisions the project and writes the
 // AZURE_* env vars, and the deploy then targets that provisioned project.
 //
-// The overlay is atomic on the presence of a resolved project: when the azd
-// environment has no AZURE_AI_PROJECT_NAME (e.g. a scaffold that was never
-// provisioned), nothing is changed and placeholder defaults are preserved.
 // env is the azd environment key/value map; missing keys are ignored.
 func (s *PromptAgentSettings) OverlayAzdProjectEnv(env map[string]string) {
 	if s == nil || env == nil {
 		return
 	}
-	// Gate on a resolved/provisioned project. Without one there is nothing to
-	// overlay and placeholder tuple values must be preserved.
-	if strings.TrimSpace(env["AZURE_AI_PROJECT_NAME"]) == "" {
-		return
-	}
-	if strings.TrimSpace(s.SubscriptionID) == "" || s.SubscriptionID == DefaultPromptSubscriptionID {
+	if strings.TrimSpace(s.SubscriptionID) == "" {
 		if v := strings.TrimSpace(env["AZURE_SUBSCRIPTION_ID"]); v != "" {
 			s.SubscriptionID = v
 		}
 	}
-	if strings.TrimSpace(s.ResourceGroup) == "" || s.ResourceGroup == DefaultPromptResourceGroup {
+	if strings.TrimSpace(s.ResourceGroup) == "" {
 		if v := strings.TrimSpace(env["AZURE_RESOURCE_GROUP"]); v != "" {
 			s.ResourceGroup = v
 		}
 	}
-	if strings.TrimSpace(s.ModelEndpoint) == "" || s.ModelEndpoint == DefaultPromptModelEndpoint {
+	if strings.TrimSpace(s.ModelEndpoint) == "" {
 		if v := strings.TrimSpace(env["AZURE_AI_ACCOUNT_NAME"]); v != "" {
 			s.ModelEndpoint = fmt.Sprintf("https://%s.services.ai.azure.com", v)
 		}

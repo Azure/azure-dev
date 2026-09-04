@@ -61,33 +61,18 @@ memory:
 	require.Nil(t, agent.Memory.Options.ProceduralMemoryEnabled)
 }
 
-// TestPromptAgent_ValidateHarness pins the removed-value check. The list is
-// deliberately a rejection list rather than an allowlist: a harness the service
-// adds after this build shipped must keep working, so only spellings we know
-// were withdrawn are refused.
+// TestPromptAgent_ValidateHarness keeps harness names open-ended so service
+// additions do not require an azd release.
 func TestPromptAgent_ValidateHarness(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		harness     string
-		wantErrPart string
+		name    string
+		harness string
 	}{
 		{name: "absent harness is a plain prompt agent", harness: ""},
 		{name: "whitespace is treated as absent", harness: "   "},
 		{name: "current spelling is accepted", harness: "github_copilot_preview"},
-		{
-			name:        "abbreviated spelling names its replacement",
-			harness:     "ghcp",
-			wantErrPart: "github_copilot_preview",
-		},
-		{
-			// The pre-preview spelling azd used to write is now a removed
-			// value, so an older agent.yaml is told what to change it to.
-			name:        "pre-preview spelling names its replacement",
-			harness:     "github-copilot",
-			wantErrPart: "github_copilot_preview",
-		},
 		{
 			name:    "unknown harness is left to the service",
 			harness: "some-future-harness",
@@ -98,13 +83,7 @@ func TestPromptAgent_ValidateHarness(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := PromptAgent{Harness: NewPromptHarness(tc.harness)}.ValidateHarness()
-			if tc.wantErrPart == "" {
-				require.NoError(t, err)
-				return
-			}
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tc.wantErrPart)
+			require.NoError(t, PromptAgent{Harness: NewPromptHarness(tc.harness)}.ValidateHarness())
 		})
 	}
 }

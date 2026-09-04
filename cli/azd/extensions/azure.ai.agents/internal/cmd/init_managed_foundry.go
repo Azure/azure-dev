@@ -121,7 +121,6 @@ func resolvePromptHarnessTarget(
 	settings.ProjectEndpoint = fmt.Sprintf(
 		"https://%s.services.ai.azure.com/api/projects/%s", proj.AccountName, proj.ProjectName,
 	)
-	settings.APIVersion = project.ProjectEndpointAPIVersion
 
 	azureContext.Scope.Location = proj.Location
 	if proj.Location != "" {

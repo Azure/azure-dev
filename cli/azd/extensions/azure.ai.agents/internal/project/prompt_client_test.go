@@ -11,20 +11,26 @@ import (
 
 func TestDefaultPromptAgentSettings(t *testing.T) {
 	settings := DefaultPromptAgentSettings()
-	require.Equal(t, DefaultPromptAPIVersion, settings.APIVersion)
-	require.Equal(t, DefaultPromptModelEndpoint, settings.ModelEndpoint)
+	require.Empty(t, settings.SubscriptionID)
+	require.Empty(t, settings.ResourceGroup)
+	require.Empty(t, settings.ProjectEndpoint)
+	require.Empty(t, settings.ModelEndpoint)
 }
 
 func TestPromptAgentSettingsValidateRequiresFoundryProject(t *testing.T) {
 	settings := DefaultPromptAgentSettings()
 	require.ErrorContains(t, settings.Validate(), "projectEndpoint")
 
+	settings.SubscriptionID = "sub"
+	settings.ResourceGroup = "rg"
 	settings.ProjectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
 	require.NoError(t, settings.Validate())
 }
 
 func TestPromptAgentSettingsValidateRejectsAuthenticatedCustomEndpoint(t *testing.T) {
 	settings := DefaultPromptAgentSettings()
+	settings.SubscriptionID = "sub"
+	settings.ResourceGroup = "rg"
 	settings.ProjectEndpoint = "https://attacker.example/api/projects/project"
 
 	require.ErrorContains(t, settings.Validate(), "HTTPS Foundry project URL")

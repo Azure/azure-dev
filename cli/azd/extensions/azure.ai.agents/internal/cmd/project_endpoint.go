@@ -6,7 +6,6 @@ package cmd
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -38,24 +37,6 @@ var foundryHostSuffixes = []string{
 
 // projectEndpointPathPrefix is the expected path prefix for Foundry project endpoints.
 const projectEndpointPathPrefix = "/api/projects/"
-
-// FoundryEndpointOverrideEnvVar is the environment variable that, when set,
-// causes the project-endpoint validator to skip the Foundry host suffix check
-// and accept http:// (in addition to https://). It exists so developers can
-// point the extension at a locally running Foundry backend (for example, a
-// managed-harness service on http://localhost:5000) for end-to-end testing.
-//
-// IMPORTANT: This bypass is for development/testing only. Never document it
-// in user-facing help; it is intentionally undocumented and may change or be
-// removed at any time.
-const FoundryEndpointOverrideEnvVar = "AZD_FOUNDRY_ENDPOINT_OVERRIDE"
-
-// foundryEndpointValidationBypassed reports whether the
-// AZD_FOUNDRY_ENDPOINT_OVERRIDE environment variable is set to any non-empty
-// value. When true, validateProjectEndpoint relaxes its scheme and host checks.
-func foundryEndpointValidationBypassed() bool {
-	return strings.TrimSpace(os.Getenv(FoundryEndpointOverrideEnvVar)) != ""
-}
 
 // isFoundryHost reports whether the hostname ends with one of the recognized
 // Foundry host suffixes.
@@ -97,12 +78,7 @@ func validateProjectEndpoint(raw string) (normalized string, pathWarning bool, e
 		)
 	}
 
-	// When the override env var is set we accept http:// in addition to
-	// https:// so developers can target a locally running Foundry backend.
-	bypass := foundryEndpointValidationBypassed()
-
-	if !strings.EqualFold(u.Scheme, "https") &&
-		!(bypass && strings.EqualFold(u.Scheme, "http")) {
+	if !strings.EqualFold(u.Scheme, "https") {
 		return "", false, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"project endpoint must use https",
@@ -118,7 +94,7 @@ func validateProjectEndpoint(raw string) (normalized string, pathWarning bool, e
 			"provide a URL with a hostname",
 		)
 	}
-	if !bypass && !isFoundryHost(host) {
+	if !isFoundryHost(host) {
 		return "", false, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf(
@@ -129,7 +105,7 @@ func validateProjectEndpoint(raw string) (normalized string, pathWarning bool, e
 		)
 	}
 
-	if !bypass && u.Port() != "" {
+	if u.Port() != "" {
 		return "", false, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("project endpoint host %q must not include a port", u.Host),
@@ -137,8 +113,7 @@ func validateProjectEndpoint(raw string) (normalized string, pathWarning bool, e
 		)
 	}
 
-	// Normalize: lowercase host, strip trailing slash. Preserve the scheme as
-	// originally supplied so the override path can keep http:// for localhost.
+	// Normalize: lowercase host and strip trailing slash.
 	scheme := strings.ToLower(u.Scheme)
 	path := strings.TrimRight(u.EscapedPath(), "/")
 	hostPart := strings.ToLower(host)
@@ -147,11 +122,9 @@ func validateProjectEndpoint(raw string) (normalized string, pathWarning bool, e
 	}
 	normalized = fmt.Sprintf("%s://%s%s", scheme, hostPart, path)
 
-	// Warn when the path does not look like /api/projects/<proj>. The override
-	// path skips this warning entirely — local backends often expose a simpler
-	// path layout.
-	if !bypass && (!strings.HasPrefix(path, projectEndpointPathPrefix) ||
-		strings.TrimPrefix(path, projectEndpointPathPrefix) == "") {
+	// Warn when the path does not look like /api/projects/<proj>.
+	if !strings.HasPrefix(path, projectEndpointPathPrefix) ||
+		strings.TrimPrefix(path, projectEndpointPathPrefix) == "" {
 		pathWarning = true
 	}
 

@@ -203,6 +203,25 @@ func TestApiCall(t *testing.T) {
 		require.True(t, ok, "expected error to be *ApiError, got: %v", err)
 		require.Equal(t, "https://api.github.com/bad", apiErr.URL)
 	})
+
+	t.Run("WithEnvironment", func(t *testing.T) {
+		t.Parallel()
+		cli, mockCtx := newTestCli(t)
+		mockCtx.CommandRunner.When(
+			func(_ exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "secret list") &&
+					strings.Contains(cmd, "--env prod")
+			},
+		).Respond(exec.NewRunResult(0, "SECRET_A\tUpdated\n", ""))
+
+		secrets, err := cli.ListSecrets(
+			t.Context(),
+			"o/r",
+			&EnvironmentOptions{Environment: "prod"},
+		)
+		require.NoError(t, err)
+		require.Equal(t, []string{"SECRET_A"}, secrets)
+	})
 }
 
 // --------------- Secrets ---------------
@@ -217,7 +236,7 @@ func TestListSecrets(t *testing.T) {
 			"SECRET_A\tUpdated\nSECRET_B\tUpdated\n",
 		)
 
-		secrets, err := cli.ListSecrets(t.Context(), "o/r")
+		secrets, err := cli.ListSecrets(t.Context(), "o/r", nil)
 		require.NoError(t, err)
 		require.Equal(t, []string{"SECRET_A", "SECRET_B"}, secrets)
 	})
@@ -227,11 +246,31 @@ func TestListSecrets(t *testing.T) {
 		cli, mockCtx := newTestCli(t)
 		respondErr(mockCtx, "secret list")
 
-		_, err := cli.ListSecrets(t.Context(), "o/r")
+		_, err := cli.ListSecrets(t.Context(), "o/r", nil)
 		require.Error(t, err)
 		require.Contains(
 			t, err.Error(), "failed running gh secret list",
 		)
+	})
+
+	t.Run("WithEnvironment", func(t *testing.T) {
+		t.Parallel()
+		cli, mockCtx := newTestCli(t)
+		mockCtx.CommandRunner.When(
+			func(_ exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "secret set") &&
+					strings.Contains(cmd, "--env prod")
+			},
+		).Respond(exec.NewRunResult(0, "", ""))
+
+		err := cli.SetSecret(
+			t.Context(),
+			"o/r",
+			"KEY",
+			"val",
+			&EnvironmentOptions{Environment: "prod"},
+		)
+		require.NoError(t, err)
 	})
 }
 
@@ -242,7 +281,7 @@ func TestSetSecret(t *testing.T) {
 		cli, mockCtx := newTestCli(t)
 		respondOK(mockCtx, "secret set", "")
 
-		err := cli.SetSecret(t.Context(), "o/r", "KEY", "val")
+		err := cli.SetSecret(t.Context(), "o/r", "KEY", "val", nil)
 		require.NoError(t, err)
 	})
 
@@ -251,11 +290,30 @@ func TestSetSecret(t *testing.T) {
 		cli, mockCtx := newTestCli(t)
 		respondErr(mockCtx, "secret set")
 
-		err := cli.SetSecret(t.Context(), "o/r", "KEY", "val")
+		err := cli.SetSecret(t.Context(), "o/r", "KEY", "val", nil)
 		require.Error(t, err)
 		require.Contains(
 			t, err.Error(), "failed running gh secret set",
 		)
+	})
+
+	t.Run("WithEnvironment", func(t *testing.T) {
+		t.Parallel()
+		cli, mockCtx := newTestCli(t)
+		mockCtx.CommandRunner.When(
+			func(_ exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "secret delete") &&
+					strings.Contains(cmd, "--env prod")
+			},
+		).Respond(exec.NewRunResult(0, "", ""))
+
+		err := cli.DeleteSecret(
+			t.Context(),
+			"o/r",
+			"KEY",
+			&EnvironmentOptions{Environment: "prod"},
+		)
+		require.NoError(t, err)
 	})
 }
 
@@ -266,7 +324,7 @@ func TestDeleteSecret(t *testing.T) {
 		cli, mockCtx := newTestCli(t)
 		respondOK(mockCtx, "secret delete", "")
 
-		err := cli.DeleteSecret(t.Context(), "o/r", "KEY")
+		err := cli.DeleteSecret(t.Context(), "o/r", "KEY", nil)
 		require.NoError(t, err)
 	})
 
@@ -275,11 +333,63 @@ func TestDeleteSecret(t *testing.T) {
 		cli, mockCtx := newTestCli(t)
 		respondErr(mockCtx, "secret delete")
 
-		err := cli.DeleteSecret(t.Context(), "o/r", "KEY")
+		err := cli.DeleteSecret(t.Context(), "o/r", "KEY", nil)
 		require.Error(t, err)
 		require.Contains(
 			t, err.Error(), "failed running gh secret delete",
 		)
+	})
+
+	t.Run("WithEnvironment", func(t *testing.T) {
+		t.Parallel()
+		cli, mockCtx := newTestCli(t)
+		mockCtx.CommandRunner.When(
+			func(_ exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "variable delete") &&
+					strings.Contains(cmd, "--env prod")
+			},
+		).Respond(exec.NewRunResult(0, "", ""))
+
+		err := cli.DeleteVariable(
+			t.Context(),
+			"o/r",
+			"K",
+			&EnvironmentOptions{Environment: "prod"},
+		)
+		require.NoError(t, err)
+	})
+}
+
+func TestEnvironments(t *testing.T) {
+	t.Parallel()
+
+	t.Run("List", func(t *testing.T) {
+		t.Parallel()
+		cli, mockCtx := newTestCli(t)
+		mockCtx.CommandRunner.When(
+			func(_ exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "api --paginate") &&
+					strings.Contains(cmd, "/repos/o/r/environments?per_page=100")
+			},
+		).Respond(exec.NewRunResult(0, "development\nproduction\n", ""))
+
+		environments, err := cli.ListEnvironments(t.Context(), "o/r")
+		require.NoError(t, err)
+		require.Equal(t, []string{"development", "production"}, environments)
+	})
+
+	t.Run("Create", func(t *testing.T) {
+		t.Parallel()
+		cli, mockCtx := newTestCli(t)
+		mockCtx.CommandRunner.When(
+			func(_ exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "api -X PUT") &&
+					strings.Contains(cmd, "/repos/o/r/environments/prod%2Fwest")
+			},
+		).Respond(exec.NewRunResult(0, "", ""))
+
+		err := cli.CreateEnvironmentIfNotExist(t.Context(), "o/r", "prod/west")
+		require.NoError(t, err)
 	})
 }
 
@@ -389,7 +499,7 @@ func TestDeleteVariable(t *testing.T) {
 		cli, mockCtx := newTestCli(t)
 		respondOK(mockCtx, "variable delete", "")
 
-		err := cli.DeleteVariable(t.Context(), "o/r", "K")
+		err := cli.DeleteVariable(t.Context(), "o/r", "K", nil)
 		require.NoError(t, err)
 	})
 
@@ -398,7 +508,7 @@ func TestDeleteVariable(t *testing.T) {
 		cli, mockCtx := newTestCli(t)
 		respondErr(mockCtx, "variable delete")
 
-		err := cli.DeleteVariable(t.Context(), "o/r", "K")
+		err := cli.DeleteVariable(t.Context(), "o/r", "K", nil)
 		require.Error(t, err)
 		require.Contains(
 			t, err.Error(), "failed running gh variable delete",
@@ -666,7 +776,7 @@ func TestRunInterceptor_NotLoggedIn(t *testing.T) {
 	})
 
 	// Use DeleteSecret as a simple method that goes through run().
-	err := cli.DeleteSecret(t.Context(), "o/r", "K")
+	err := cli.DeleteSecret(t.Context(), "o/r", "K", nil)
 	require.ErrorIs(t, err, ErrGitHubCliNotLoggedIn)
 }
 
@@ -682,7 +792,7 @@ func TestRunInterceptor_UserNotAuthorized(t *testing.T) {
 		), errors.New("exit 1")
 	})
 
-	err := cli.DeleteSecret(t.Context(), "o/r", "K")
+	err := cli.DeleteSecret(t.Context(), "o/r", "K", nil)
 	require.ErrorIs(t, err, ErrUserNotAuthorized)
 }
 

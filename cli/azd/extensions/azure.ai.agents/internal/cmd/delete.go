@@ -37,8 +37,8 @@ func newDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "delete [name]",
-		Short: "Delete a hosted agent.",
-		Long: `Delete a hosted agent and all of its versions.
+		Short: "Delete a hosted or voice agent.",
+		Long: `Delete a hosted or voice agent and all of its versions.
 
 If --version is specified, only that version is deleted (the agent itself remains).
 

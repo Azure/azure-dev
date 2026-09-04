@@ -86,9 +86,7 @@ type initFlags struct {
 	// template/language selection, no ACR). An empty value keeps the existing
 	// inference-from-inputs behavior. Additive: existing kinds remain inferred.
 	kind string
-	// voice optionally overrides the output voice name for hidden/private
-	// prompt-voice automation. Public interactive flows use the default and let
-	// users edit azure.yaml for customization.
+	// voice optionally overrides the output voice name for prompt-voice agents.
 	voice string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
@@ -1236,14 +1234,20 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
-		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
-		Long: `Initialize a new AI agent project.
+		Short: fmt.Sprintf("Initialize a new hosted or voice agent project. %s", color.YellowString("(Preview)")),
+		Long: `Initialize a new hosted or voice agent project.
 
 When -m points at a sample's unified azure.yaml (a project manifest that
 declares a service with host: azure.ai.agent), that azure.yaml is adopted as
 the project manifest and its referenced files are placed at the project root.
 When -m points at an agent manifest instead, the project's azure.yaml is
 generated from it.
+
+Use --kind prompt-voice to initialize a managed prompt voice agent without
+source code or container scaffolding. Prompt voice agents support model, audio,
+voice, tool, greeting, avatar, handoff, and telephony settings in azure.yaml.
+Hosted voice wrappers use kind: voice in azure.yaml and are typically initialized
+from a sample or existing project manifest.
 
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
@@ -1266,6 +1270,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
   # Initialize from local agent code
   azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
+
+  # Initialize a managed prompt voice agent
+  azd ai agent init --kind prompt-voice --agent-name support-voice
+
+  # Initialize a prompt voice agent with an explicit realtime model and voice
+  azd ai agent init --kind prompt-voice --agent-name support-voice \
+    --model gpt-realtime --voice en-US-Ava:DragonHDLatestNeural
 
   # Non-interactive code deploy (CI/CD)
   azd ai agent init --no-prompt --project-id "<resource-id>" \
@@ -1385,13 +1396,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						exterrors.CodeInvalidParameter,
 						fmt.Sprintf("unsupported --kind value %q", flags.kind),
 						fmt.Sprintf("the only supported --kind value is %q", kindFlagPromptVoice),
-					)
-				}
-				if !promptVoicePreviewEnabled() {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("%s agent init is private preview", flags.kind),
-						fmt.Sprintf("set %s=true to enable prompt voice init", promptVoicePreviewEnvVar),
 					)
 				}
 				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.image != "" {
@@ -1999,9 +2003,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"without code scaffolding.")
 
 	cmd.Flags().StringVar(&flags.voice, "voice", "",
-		"Output voice name for private prompt-voice automation. Hidden until public preview.")
-	_ = cmd.Flags().MarkHidden("kind")
-	_ = cmd.Flags().MarkHidden("voice")
+		"Output voice name for prompt-voice agents (for example, en-US-Ava:DragonHDLatestNeural).")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. "+

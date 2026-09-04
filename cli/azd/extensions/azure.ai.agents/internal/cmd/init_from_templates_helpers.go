@@ -26,13 +26,6 @@ import (
 
 const agentTemplatesURL = "https://aka.ms/foundry-agents-samples"
 
-const promptVoicePreviewEnvVar = "AZD_AI_AGENT_ENABLE_PROMPT_VOICE"
-
-func promptVoicePreviewEnabled() bool {
-	value := strings.TrimSpace(os.Getenv(promptVoicePreviewEnvVar))
-	return strings.EqualFold(value, "1") || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
-}
-
 // Template type constants
 const (
 	// TemplateTypeAgent is a template that points to an agent.yaml manifest file.
@@ -110,8 +103,6 @@ const (
 )
 
 // voiceInitChoice is the interactive menu entry for creating a prompt voice agent.
-// It is appended to the init-mode choices only when prompt voice private preview
-// is explicitly enabled.
 var voiceInitChoice = &azdext.SelectChoice{
 	Label: "Create a prompt voice agent",
 	Value: initModeVoice,
@@ -120,8 +111,7 @@ var voiceInitChoice = &azdext.SelectChoice{
 // promptInitMode asks the user whether to use existing code, start from a
 // template, or create a prompt voice agent.
 // If the current directory is empty, the "use existing code" option is omitted
-// (there is no code to use). The voice option is private preview and only shown
-// when promptVoicePreviewEnabled returns true.
+// (there is no code to use).
 // In no-prompt mode the directory contents decide: empty -> template, otherwise
 // use the current directory. Voice is only selectable interactively (or via
 // --kind prompt-voice in no-prompt mode).
@@ -138,11 +128,6 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 		}
 		return initModeFromCode, nil
 	}
-	voicePreviewEnabled := promptVoicePreviewEnabled()
-	if empty && !voicePreviewEnabled {
-		return initModeTemplate, nil
-	}
-
 	var choices []*azdext.SelectChoice
 	if empty {
 		// No local code to adopt; offer template + voice.
@@ -155,9 +140,7 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 			{Label: "Start new from a template", Value: initModeTemplate},
 		}
 	}
-	if voicePreviewEnabled {
-		choices = append(choices, voiceInitChoice)
-	}
+	choices = append(choices, voiceInitChoice)
 
 	defaultIndex := int32(0)
 

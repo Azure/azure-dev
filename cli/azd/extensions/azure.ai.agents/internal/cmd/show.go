@@ -46,8 +46,8 @@ func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show the status of a hosted agent.",
-		Long: `Show the status of a hosted agent.
+		Short: "Show the status of a hosted or voice agent.",
+		Long: `Show the status of a hosted or voice agent.
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name

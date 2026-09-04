@@ -25,6 +25,7 @@ const (
 	AgentProtocolInvocationsWS          AgentProtocol = "invocations_ws"
 	AgentProtocolResponses              AgentProtocol = "responses"
 	AgentProtocolA2A                    AgentProtocol = "a2a"
+	AgentProtocolVoice                  AgentProtocol = "voice"
 )
 
 // IsActivityProtocolName reports whether the given definition-level protocol name

@@ -80,13 +80,17 @@ func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "invoke [name] [message]",
-		Short: "Send a message to your agent.",
-		Long: `Send a message to your agent.
+		Short: "Send a message to your hosted agent.",
+		Long: `Send a message to your hosted agent.
 
 By default the agent is invoked remotely on Foundry. When a single
 argument is provided it is treated as the message and the agent name
 is auto-detected from azure.yaml. With two arguments the first is the
 agent name and the second is the message.
+
+For voice agents, use the voice WebSocket endpoint shown by 'azd show' or
+'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
+hosted agent protocols such as responses, invocations, and a2a.
 
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
@@ -237,6 +241,13 @@ be combined with --timeout.`,
 
 			if flags.protocol != "" {
 				p := agent_api.AgentProtocol(flags.protocol)
+				if p == agent_api.AgentProtocolVoice {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"voice endpoints require a Voice Live WebSocket client and cannot be invoked with this command",
+						"use the voice WebSocket endpoint shown by 'azd show' or 'azd ai agent show' with a Voice Live client",
+					)
+				}
 				if !p.IsInvocable() {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,

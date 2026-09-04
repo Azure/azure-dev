@@ -199,6 +199,7 @@ func TestNewUpgradeSummary(t *testing.T) {
 		assert.Equal(t, 0, s.Skipped)
 		assert.Equal(t, 0, s.Promoted)
 		assert.Equal(t, 0, s.Failed)
+		assert.False(t, s.HasFailures())
 	})
 
 	t.Run("mixed_results", func(t *testing.T) {
@@ -217,6 +218,7 @@ func TestNewUpgradeSummary(t *testing.T) {
 		assert.Equal(t, 1, s.Skipped)
 		assert.Equal(t, 1, s.Promoted)
 		assert.Equal(t, 2, s.Failed)
+		assert.True(t, s.HasFailures())
 	})
 
 	t.Run("all_upgraded", func(t *testing.T) {

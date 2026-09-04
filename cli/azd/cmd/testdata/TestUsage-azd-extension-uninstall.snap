@@ -2,10 +2,12 @@
 Uninstall specified extensions.
 
 Usage
-  azd extension uninstall [extension-id] [flags]
+  azd extension uninstall [extension-id...] [flags]
 
 Flags
-        --all 	: Uninstall all installed extensions
+        --all             	: Uninstall all installed extensions
+    -f, --force           	: Remove extensions required by other installed extensions
+        --no-dependencies 	: Keep dependencies installed for the removed extensions
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

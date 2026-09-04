@@ -383,6 +383,17 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 				"1 skipped",
 			},
 		},
+		{
+			name: "dependency_failure_preserves_parent_success",
+			results: []extensions.UpgradeResult{{
+				Status: extensions.UpgradeStatusUpgraded,
+				DependencyUpgrades: []extensions.UpgradeResult{
+					{Status: extensions.UpgradeStatusFailed},
+					{Status: extensions.UpgradeStatusFailed},
+				},
+			}},
+			wantMsgs: []string{"1 updated", "2 dependencies failed", "azd extension update <name>"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -445,6 +456,22 @@ func TestUpgradeActionResult(t *testing.T) {
 			"Extensions updated successfully",
 			actionResult.Message.Header,
 		)
+	})
+
+	t.Run("nested_dependency_failure_returns_error", func(t *testing.T) {
+		t.Parallel()
+		results := []extensions.UpgradeResult{{
+			Status: extensions.UpgradeStatusUpgraded,
+			DependencyUpgrades: []extensions.UpgradeResult{{
+				Status: extensions.UpgradeStatusUpgraded,
+				DependencyUpgrades: []extensions.UpgradeResult{{
+					Status: extensions.UpgradeStatusFailed,
+				}},
+			}},
+		}}
+		result, err := upgradeActionResult(results)
+		require.Nil(t, result)
+		require.EqualError(t, err, "1 extension dependency failed to update")
 	})
 
 	t.Run(
@@ -1144,18 +1171,18 @@ func Test_ExtensionShowItem_Display_Minimal(t *testing.T) {
 func Test_ExtensionShowItem_Display_AllFields(t *testing.T) {
 	t.Parallel()
 	item := &extensionShowItem{
-		Id:                "full.ext",
-		Name:              "Full Extension",
-		Description:       "Full desc",
-		Source:            "custom-src",
-		Namespace:         "full",
-		Website:           "https://example.com",
-		LatestVersion:     "2.0.0",
-		InstalledVersion:  "1.0.0",
-		AvailableVersions: []string{"1.0.0", "1.5.0", "2.0.0"},
-		Tags:              []string{"tool", "testing"},
-		Usage:             "azd full do-thing",
-		Capabilities:      []extensions.CapabilityType{"mcp"},
+		Id:               "full.ext",
+		Name:             "Full Extension",
+		Description:      "Full desc",
+		Source:           "custom-src",
+		Namespace:        "full",
+		Website:          "https://example.com",
+		LatestVersion:    "2.0.0",
+		InstalledVersion: "1.0.0",
+		OtherVersions:    []string{"1.5.0", "1.0.0"},
+		Tags:             []string{"tool", "testing"},
+		Usage:            "azd full do-thing",
+		Capabilities:     []extensions.CapabilityType{"mcp"},
 		Providers: []extensions.Provider{
 			{Name: "prov1", Type: "host", Description: "Provider 1"},
 		},

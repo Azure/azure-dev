@@ -25,6 +25,7 @@ import (
 func TestTelemetryEventConstants(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "ext.update", events.ExtensionUpdateEvent)
+	require.Equal(t, "ext.uninstall", events.ExtensionUninstallEvent)
 }
 
 // TestTelemetryFieldConstants verifies that all telemetry field constants added for
@@ -1275,21 +1276,22 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"extension show",    // extension.source.kind
 		// extension.source.category
 		"extension source add",
-		"extension update", // extension.source.kind + extension update spans
-		"hooks run",        // hooks.name, hooks.type
-		"infra generate",   // infra.provider
-		"init",             // init.method, appinit.* fields
-		"package",          // (via hooks middleware)
-		"pipeline config",  // pipeline.provider, pipeline.auth
-		"provision",        // infra.provider (resolved provider, via provisioning manager)
-		"restore",          // (via hooks middleware)
-		"tool check",       // tool.check.updates_available
-		"tool install",     // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
-		"tool show",        // tool.id
-		"tool uninstall",   // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
-		"tool update",      // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.update.* versions
-		"up",               // infra.provider (via provisioning manager; composes provision+deploy)
-		"update",           // update.* fields
+		"extension uninstall", // ext.uninstall span per attempted extension removal
+		"extension update",    // extension.source.kind + extension update spans
+		"hooks run",           // hooks.name, hooks.type
+		"infra generate",      // infra.provider
+		"init",                // init.method, appinit.* fields
+		"package",             // (via hooks middleware)
+		"pipeline config",     // pipeline.provider, pipeline.auth
+		"provision",           // infra.provider (resolved provider, via provisioning manager)
+		"restore",             // (via hooks middleware)
+		"tool check",          // tool.check.updates_available
+		"tool install",        // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
+		"tool show",           // tool.id
+		"tool uninstall",      // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
+		"tool update",         // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.update.* versions
+		"up",                  // infra.provider (via provisioning manager; composes provision+deploy)
+		"update",              // update.* fields
 	}
 
 	// Commands that rely ONLY on global middleware telemetry (command name, flags,

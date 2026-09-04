@@ -65,6 +65,11 @@ provide the project identity and Azure environment values required by
 `project add`; incomplete non-interactive input fails before the deployment is
 changed.
 
+Managed deployment resolution requires one Azure location. Pass `--location`,
+set `AZURE_AI_DEPLOYMENTS_LOCATION`, or set `AZURE_LOCATION`. Interactive runs
+prompt for a location when none is configured; `--no-prompt` returns actionable
+guidance instead of searching all subscription regions.
+
 Use `--force` with an explicit `--project-id` or `--project-endpoint` when
 replacing a different configured project. The command rejects `--force`
 without an explicit target instead of silently ignoring the flag.

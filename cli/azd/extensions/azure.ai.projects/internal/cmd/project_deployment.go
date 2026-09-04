@@ -190,13 +190,21 @@ func deploymentLocations(
 	projectLocation string,
 	explicitLocation string,
 ) ([]string, error) {
-	if explicitLocation != "" {
-		return []string{explicitLocation}, nil
+	if location := strings.TrimSpace(explicitLocation); location != "" {
+		return []string{location}, nil
 	}
-	if projectLocation != "" {
-		return []string{projectLocation}, nil
+	if location := strings.TrimSpace(projectLocation); location != "" {
+		return []string{location}, nil
 	}
-	return nil, nil
+	return nil, missingDeploymentLocationError()
+}
+
+func missingDeploymentLocationError() error {
+	return exterrors.Dependency(
+		exterrors.CodeMissingAzureLocation,
+		"an Azure deployment location is required to resolve model deployments",
+		"pass --location or set AZURE_AI_DEPLOYMENTS_LOCATION or AZURE_LOCATION and retry",
+	)
 }
 
 func azureContextLocation(azureContext *azdext.AzureContext) string {
@@ -220,6 +228,9 @@ func resolveDeploymentCandidates(
 	modelName string,
 	options *azdext.AiModelDeploymentOptions,
 ) ([]*azdext.AiModelDeployment, error) {
+	if options == nil || len(options.GetLocations()) == 0 {
+		return nil, missingDeploymentLocationError()
+	}
 	locations := options.GetLocations()
 	if len(locations) <= 1 {
 		return resolveDeploymentCandidatesAtLocation(

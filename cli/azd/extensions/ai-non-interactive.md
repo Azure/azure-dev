@@ -46,4 +46,5 @@ no non-interactive equivalent is a bug.
 | --- | --- | --- | --- |
 | `microsoft.foundry` provisioning | Azure subscription | `AZURE_SUBSCRIPTION_ID` in the active azd environment | Returns actionable missing-subscription guidance. |
 | `microsoft.foundry` provisioning | Azure location | `AZURE_LOCATION` in the active azd environment | Returns actionable missing-location guidance. |
+| `ai project deployment add` | Managed model deployment location | `--location`, `AZURE_AI_DEPLOYMENTS_LOCATION`, or `AZURE_LOCATION` | Returns actionable missing-location guidance instead of searching all subscription regions. |
 | `azd down` with `microsoft.foundry` | Delete the Foundry resource group | `azd down --force` | Refuses deletion and instructs the caller to pass `--force`. |

@@ -230,6 +230,15 @@ func TestDeploymentLocationsUsesProjectLocationByDefault(t *testing.T) {
 	assert.Equal(t, []string{"westus"}, locations)
 }
 
+func TestDeploymentLocationsRequiresLocation(t *testing.T) {
+	_, err := deploymentLocations("", "")
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeMissingAzureLocation, localErr.Code)
+}
+
 func TestRequiresExistingProjectID(t *testing.T) {
 	existingEndpointService := &projectServiceInfo{
 		Resolved: map[string]any{
@@ -373,6 +382,7 @@ func TestResolveDeploymentAzureContextRequiresSubscription(t *testing.T) {
 		t.Context(),
 		nil,
 		map[string]string{"AZURE_AI_DEPLOYMENTS_LOCATION": "eastus"},
+		"",
 		true,
 	)
 	require.Error(t, err)
@@ -380,6 +390,101 @@ func TestResolveDeploymentAzureContextRequiresSubscription(t *testing.T) {
 	var localErr *azdext.LocalError
 	require.ErrorAs(t, err, &localErr)
 	assert.Equal(t, exterrors.CodeMissingAzureSubscription, localErr.Code)
+}
+
+func TestResolveDeploymentAzureContextRequiresLocation(t *testing.T) {
+	_, err := resolveDeploymentAzureContext(
+		t.Context(),
+		nil,
+		map[string]string{"AZURE_SUBSCRIPTION_ID": "subscription"},
+		"",
+		true,
+	)
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeMissingAzureLocation, localErr.Code)
+}
+
+func TestResolveDeploymentAzureContextLocationPrecedence(t *testing.T) {
+	tests := []struct {
+		name             string
+		explicitLocation string
+		deploymentEnv    string
+		azureEnv         string
+		want             string
+	}{
+		{
+			name:             "explicit location",
+			explicitLocation: "westus",
+			deploymentEnv:    "centralus",
+			azureEnv:         "eastus",
+			want:             "westus",
+		},
+		{
+			name:          "deployment location environment",
+			deploymentEnv: "centralus",
+			azureEnv:      "eastus",
+			want:          "centralus",
+		},
+		{
+			name:     "Azure location environment",
+			azureEnv: "eastus",
+			want:     "eastus",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			azureContext, err := resolveDeploymentAzureContext(
+				t.Context(),
+				nil,
+				map[string]string{
+					"AZURE_SUBSCRIPTION_ID":         "subscription",
+					"AZURE_AI_DEPLOYMENTS_LOCATION": test.deploymentEnv,
+					"AZURE_LOCATION":                test.azureEnv,
+				},
+				test.explicitLocation,
+				true,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, test.want, azureContext.Scope.Location)
+		})
+	}
+}
+
+func TestResolveDeploymentAzureContextPromptsForLocation(t *testing.T) {
+	promptServer := &azureContextPromptServer{
+		location: &azdext.Location{Name: "centralus"},
+	}
+	accountServer := &azureContextAccountServer{tenantID: "user-tenant"}
+	client := newAzureContextClient(t, promptServer, accountServer)
+
+	azureContext, err := resolveDeploymentAzureContext(
+		t.Context(),
+		client,
+		map[string]string{
+			"AZURE_SUBSCRIPTION_ID": "subscription",
+		},
+		"",
+		false,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "centralus", azureContext.Scope.Location)
+	require.NotNil(t, promptServer.locationRequest)
+	assert.Equal(
+		t,
+		"subscription",
+		promptServer.locationRequest.AzureContext.Scope.SubscriptionId,
+	)
+	assert.Equal(
+		t,
+		"user-tenant",
+		promptServer.locationRequest.AzureContext.Scope.TenantId,
+	)
+	assert.Equal(t, 1, accountServer.calls)
+	assert.Equal(t, 1, promptServer.locationCalls)
 }
 
 func TestDeploymentNoMatchErrorsAreRecoverable(t *testing.T) {

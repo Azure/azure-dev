@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.projects/internal/exterrors"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -167,7 +169,10 @@ func (s *selfInitializingEnvironmentServer) SetValue(
 
 type selfInitializingAIService struct {
 	azdext.UnimplementedAiModelServiceServer
-	calls int
+	calls          int
+	request        *azdext.ResolveModelDeploymentsRequest
+	location       string
+	respectRequest bool
 }
 
 type selfInitializingWorkflowServer struct {
@@ -201,15 +206,20 @@ func (s *selfInitializingWorkflowServer) Run(
 
 func (s *selfInitializingAIService) ResolveModelDeployments(
 	_ context.Context,
-	_ *azdext.ResolveModelDeploymentsRequest,
+	request *azdext.ResolveModelDeploymentsRequest,
 ) (*azdext.ResolveModelDeploymentsResponse, error) {
 	s.calls++
+	s.request = request
+	location := s.location
+	if s.respectRequest && len(request.GetOptions().GetLocations()) == 1 {
+		location = request.GetOptions().GetLocations()[0]
+	}
 	return &azdext.ResolveModelDeploymentsResponse{
 		Deployments: []*azdext.AiModelDeployment{{
 			ModelName: "gpt-4.1",
 			Format:    "OpenAI",
 			Version:   "2025-04-14",
-			Location:  "eastus",
+			Location:  location,
 			Sku: &azdext.AiModelSku{
 				Name:            "GlobalStandard",
 				DefaultCapacity: 1,
@@ -246,7 +256,10 @@ func newSelfInitializingDeploymentClient(
 			"AZURE_LOCATION":        "eastus",
 		},
 	}
-	aiServer := &selfInitializingAIService{}
+	aiServer := &selfInitializingAIService{
+		location:       "eastus",
+		respectRequest: true,
+	}
 	workflowServer := &selfInitializingWorkflowServer{root: root}
 
 	server := grpc.NewServer()
@@ -390,4 +403,55 @@ func TestProjectDeploymentAddStopsWhenProjectSetupFails(t *testing.T) {
 	assert.False(t, projectServer.deploymentSet)
 	assert.Empty(t, projectServer.services)
 	assert.Equal(t, 0, aiServer.calls)
+}
+
+func TestSelectModelDeploymentRequiresLocation(t *testing.T) {
+	root := t.TempDir()
+	client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
+
+	_, err := selectModelDeployment(
+		t.Context(),
+		client,
+		&azdext.AzureContext{
+			Scope: &azdext.AzureScope{SubscriptionId: "subscription"},
+		},
+		modelSelection{Name: "gpt-4.1"},
+		deploymentSelectionOptions{},
+		true,
+	)
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeMissingAzureLocation, localErr.Code)
+	assert.Equal(t, 0, aiServer.calls)
+}
+
+func TestSelectModelDeploymentUsesRequestedLocationForEmptyCandidate(t *testing.T) {
+	root := t.TempDir()
+	client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
+	aiServer.location = ""
+	aiServer.respectRequest = false
+
+	selected, err := selectModelDeployment(
+		t.Context(),
+		client,
+		&azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "subscription",
+				Location:       "eastus",
+			},
+		},
+		modelSelection{Name: "gpt-4.1"},
+		deploymentSelectionOptions{},
+		true,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "eastus", selected.Location)
+	require.NotNil(t, aiServer.request)
+	assert.Equal(
+		t,
+		[]string{"eastus"},
+		aiServer.request.Options.Locations,
+	)
 }

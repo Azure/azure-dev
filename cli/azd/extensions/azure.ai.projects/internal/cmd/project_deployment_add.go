@@ -204,7 +204,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		)
 	}
 	azureContext, err := resolveDeploymentAzureContext(
-		ctx, client, values, a.noPrompt(),
+		ctx, client, values, a.flags.location, a.noPrompt(),
 	)
 	if err != nil {
 		return err
@@ -361,37 +361,76 @@ func resolveDeploymentAzureContext(
 	ctx context.Context,
 	client *azdext.AzdClient,
 	values map[string]string,
+	explicitLocation string,
 	noPrompt bool,
 ) (*azdext.AzureContext, error) {
+	location := firstNonEmpty(
+		strings.TrimSpace(explicitLocation),
+		strings.TrimSpace(values["AZURE_AI_DEPLOYMENTS_LOCATION"]),
+		strings.TrimSpace(values["AZURE_LOCATION"]),
+	)
 	azureContext := &azdext.AzureContext{
 		Scope: &azdext.AzureScope{
-			TenantId:       values["AZURE_TENANT_ID"],
-			SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
-			Location:       values["AZURE_AI_DEPLOYMENTS_LOCATION"],
+			TenantId:       strings.TrimSpace(values["AZURE_TENANT_ID"]),
+			SubscriptionId: strings.TrimSpace(values["AZURE_SUBSCRIPTION_ID"]),
+			Location:       location,
 		},
 	}
-	if azureContext.Scope.Location == "" {
-		azureContext.Scope.Location = values["AZURE_LOCATION"]
-	}
-	if azureContext.Scope.SubscriptionId != "" {
-		return azureContext, nil
-	}
-	if noPrompt {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAzureSubscription,
-			"an Azure subscription is required to resolve model deployments",
-			"set AZURE_SUBSCRIPTION_ID in the active azd environment and retry",
+	if azureContext.Scope.SubscriptionId == "" {
+		if noPrompt {
+			return nil, exterrors.Dependency(
+				exterrors.CodeMissingAzureSubscription,
+				"an Azure subscription is required to resolve model deployments",
+				"set AZURE_SUBSCRIPTION_ID in the active azd environment and retry",
+			)
+		}
+		subscriptionID, userTenantID, err := resolveInteractiveSubscription(
+			ctx, client, values,
 		)
-	}
-	subscriptionID, userTenantID, err := resolveInteractiveSubscription(
-		ctx, client, values,
-	)
-	if err != nil {
-		return nil, err
-	}
-	azureContext.Scope.SubscriptionId = subscriptionID
-	if userTenantID != "" {
+		if err != nil {
+			return nil, err
+		}
+		azureContext.Scope.SubscriptionId = subscriptionID
+		if userTenantID != "" {
+			azureContext.Scope.TenantId = userTenantID
+		}
+	} else if azureContext.Scope.Location == "" &&
+		!noPrompt &&
+		azureContext.Scope.TenantId == "" {
+		subscriptionID, userTenantID, err := resolveInteractiveSubscription(
+			ctx, client, values,
+		)
+		if err != nil {
+			return nil, err
+		}
+		azureContext.Scope.SubscriptionId = subscriptionID
 		azureContext.Scope.TenantId = userTenantID
+	}
+	if azureContext.Scope.Location == "" {
+		if noPrompt {
+			return nil, missingDeploymentLocationError()
+		}
+		response, promptErr := client.Prompt().PromptLocation(
+			ctx,
+			&azdext.PromptLocationRequest{AzureContext: azureContext},
+		)
+		if promptErr != nil {
+			if exterrors.IsCancellation(promptErr) {
+				return nil, exterrors.Cancelled(
+					"Azure location selection was cancelled",
+				)
+			}
+			return nil, fmt.Errorf("select Azure location: %w", promptErr)
+		}
+		if response.GetLocation() == nil {
+			return nil, missingDeploymentLocationError()
+		}
+		azureContext.Scope.Location = strings.TrimSpace(
+			response.Location.GetName(),
+		)
+		if azureContext.Scope.Location == "" {
+			return nil, missingDeploymentLocationError()
+		}
 	}
 	return azureContext, nil
 }

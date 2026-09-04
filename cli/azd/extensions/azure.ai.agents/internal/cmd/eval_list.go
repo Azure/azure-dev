@@ -22,8 +22,9 @@ import (
 
 // evalListFlags holds CLI flags for the eval list command.
 type evalListFlags struct {
-	envName string // explicit environment name (from -e flag)
-	limit   int    // maximum number of evals to return
+	envName         string // explicit environment name (from -e flag)
+	projectEndpoint string // explicit project endpoint (from --project-endpoint flag)
+	limit           int    // maximum number of evals to return
 }
 
 func newEvalListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -37,9 +38,10 @@ func newEvalListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			logCleanup := setupDebugLogging(cmd.Flags())
 			defer logCleanup()
 			flags.envName = extCtx.Environment
-			return runEvalList(ctx, flags)
+			return runEvalList(ctx, flags, extCtx.NoPrompt)
 		},
 	}
+	addEvalProjectEndpointFlag(cmd, &flags.projectEndpoint)
 	cmd.Flags().IntVar(&flags.limit, "limit", 10, "Maximum number of evals to return")
 	return cmd
 }
@@ -50,8 +52,13 @@ type evalRunSummary struct {
 	lastRunStatus string
 }
 
-func runEvalList(ctx context.Context, flags *evalListFlags) error {
-	resolved, err := resolveEvalContext(ctx, evalContextOptions{envName: flags.envName})
+func runEvalList(ctx context.Context, flags *evalListFlags, noPrompt bool) error {
+	resolved, err := resolveEvalContext(ctx, evalContextOptions{
+		envName:         flags.envName,
+		projectEndpoint: flags.projectEndpoint,
+		skipAgent:       true,
+		noPrompt:        noPrompt,
+	})
 	if err != nil {
 		return err
 	}

@@ -26,6 +26,20 @@ func TestGitignoreEmbedded(t *testing.T) {
 	}
 }
 
+func TestNonGoScaffoldIncludesStructuredErrorProtocol(t *testing.T) {
+	errorsProto, err := Languages.ReadFile("languages/proto/errors.proto")
+	require.NoError(t, err)
+	require.Contains(t, string(errorsProto), "message ExtensionError")
+	require.Contains(t, string(errorsProto), "optional int64 exit_code = 3;")
+
+	eventProto, err := Languages.ReadFile("languages/proto/event.proto")
+	require.NoError(t, err)
+	eventContents := string(eventProto)
+	require.Contains(t, eventContents, `import "errors.proto";`)
+	require.Contains(t, eventContents, "ExtensionError error = 4;")
+	require.Contains(t, eventContents, "ExtensionError error = 5;")
+}
+
 // TestGoGitignoreExcludesBin ensures the generated Go extension ignores the build
 // output directory so binaries are not accidentally committed.
 func TestGoGitignoreExcludesBin(t *testing.T) {

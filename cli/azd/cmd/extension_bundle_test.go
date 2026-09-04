@@ -11,8 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,13 +46,13 @@ func TestIsBundleArg(t *testing.T) {
 	require.False(t, isBundleArg([]string{dir})) // directory, not a file
 	require.False(t, isBundleArg(nil))
 
-	// Remote bundle URLs are recognized without touching the local file system.
-	// HTTP is detected here so the install path can return actionable HTTPS guidance.
+	// Any positional HTTP(S) URL is downloaded and validated as a bundle.
 	require.True(t, isBundleArg([]string{"https://example.com/my-ext_1.0.0.zip"}))
 	require.True(t, isBundleArg([]string{"http://example.com/path/my-ext.ZIP"}))
 	require.True(t, isBundleArg([]string{"https://example.com/my-ext.zip?token=abc"}))
 	require.True(t, isBundleArg([]string{"https://example.com/%ZZ/my-ext.zip?token=abc"}))
-	require.False(t, isBundleArg([]string{"https://example.com/registry.json"}))
+	require.True(t, isBundleArg([]string{"https://tinyurl.com/wbcdrbh6"}))
+	require.True(t, isBundleArg([]string{"https://example.com/registry.json"}))
 	require.True(t, isBundleArg([]string{"https:///my-ext.zip"}))
 	require.False(t, isBundleArg([]string{"ftp://example.com/my-ext.zip"}))
 	require.False(t, isBundleArg([]string{"https://example.com/my-ext_1.0.0.zip", "other"}))
@@ -265,7 +267,7 @@ func TestConfirmSourceChange(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.True(t, proceed)
-		require.Contains(t, lastConfirmMessage(console),
+		require.Contains(t, lastConfirmQuestion(console),
 			`azure.ai.agents 1.0.0 is already installed from source "azd". Reinstall from bundle?`)
 	})
 
@@ -279,7 +281,7 @@ func TestConfirmSourceChange(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.True(t, proceed)
-		require.Contains(t, lastConfirmMessage(console),
+		require.Contains(t, lastConfirmQuestion(console),
 			`azure.ai.agents 1.0.0 is already installed from source "azd". Update to 2.0.0 from bundle?`)
 	})
 
@@ -293,7 +295,7 @@ func TestConfirmSourceChange(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.False(t, proceed)
-		require.Contains(t, lastConfirmMessage(console),
+		require.Contains(t, lastConfirmQuestion(console),
 			`azure.ai.agents 1.0.0 is already installed from source "azd". Downgrade to 0.9.0 from bundle?`)
 	})
 
@@ -314,7 +316,7 @@ func TestConfirmSourceChange(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.True(t, proceed)
-		require.Contains(t, lastConfirmMessage(console),
+		require.Contains(t, lastConfirmQuestion(console),
 			`azure.ai.agents 1.0.0 is already installed from a bundle. Reinstall from source "azd"?`)
 	})
 
@@ -331,13 +333,11 @@ func TestConfirmSourceChange(t *testing.T) {
 	})
 }
 
-// lastConfirmMessage returns the most recent non-empty message the mock console
-// captured, which for a confirm prompt is the prompt text (ignoring blank-line
-// spacing messages).
-func lastConfirmMessage(console *mockinput.MockConsole) string {
+// lastConfirmQuestion returns the latest prompt from the mock console.
+func lastConfirmQuestion(console *mockinput.MockConsole) string {
 	out := console.Output()
 	for i := len(out) - 1; i >= 0; i-- {
-		if out[i] != "" {
+		if strings.HasSuffix(strings.TrimSpace(out[i]), "?") {
 			return out[i]
 		}
 	}
@@ -358,7 +358,11 @@ func TestConfirmReplace(t *testing.T) {
 		proceed, err := action.confirmReplace(context.Background(), "Installing", question, skipSuffix)
 		require.NoError(t, err)
 		require.True(t, proceed)
-		require.Contains(t, lastConfirmMessage(console), question)
+		require.Contains(t, lastConfirmQuestion(console), question)
+		require.Contains(t, console.SpinnerOps(), mockinput.SpinnerOp{
+			Op:     mockinput.SpinnerOpStop,
+			Format: input.Step,
+		})
 	})
 
 	t.Run("Declined", func(t *testing.T) {
@@ -530,6 +534,45 @@ func TestPrepareBundleInstall_Success(t *testing.T) {
 	require.ErrorIs(t, err, extensions.ErrSourceNotFound)
 }
 
+func TestExtensionInstall_BundleReinstallDeclinedReturnsNoSuccessMessage(t *testing.T) {
+	t.Parallel()
+
+	action, userConfigManager := newBundleInstallTestAction(t)
+	zipPath := makeBundleZip(t, []*extensions.ExtensionMetadata{
+		{
+			Id:          "test.ext",
+			DisplayName: "Test Extension",
+			Versions: []extensions.ExtensionVersion{
+				{Version: "1.0.0", Artifacts: map[string]extensions.ExtensionArtifact{
+					"linux/amd64": {URL: "artifacts/ext.tar.gz"},
+				}},
+			},
+		},
+	})
+
+	cfg, err := userConfigManager.Load()
+	require.NoError(t, err)
+	require.NoError(t, cfg.Set("extension.installed", map[string]*extensions.Extension{
+		"test.ext": {
+			Id:      "test.ext",
+			Version: "1.0.0",
+			Source:  extensions.BundleSourceName,
+		},
+	}))
+	require.NoError(t, userConfigManager.Save(cfg))
+	require.NoError(t, action.extensionManager.ReloadUserConfig())
+
+	console, ok := action.console.(*mockinput.MockConsole)
+	require.True(t, ok)
+	console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(false)
+	action.args = []string{zipPath}
+
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Nil(t, result.Message)
+}
+
 // respondWithBundleZip stubs the mock HTTP client so any request for bundleURL
 // returns the bytes of the bundle .zip at zipPath.
 func respondWithBundleZip(t *testing.T, mockContext *mocks.MockContext, bundleURL string, zipPath string) {
@@ -556,7 +599,7 @@ func TestPrepareBundleInstall_RemoteURL(t *testing.T) {
 	t.Parallel()
 
 	const (
-		bundleURL   = "https://example.com/builds/path-secret.zip?sig=query-secret"
+		bundleURL   = "https://example.com/download/path-secret?sig=query-secret"
 		pathSecret  = "path-secret"
 		querySecret = "query-secret"
 	)
@@ -652,17 +695,303 @@ func TestExtensionInstall_InvalidRemoteURLDoesNotExposeURL(t *testing.T) {
 	}
 }
 
-func TestDownloadBundle_RejectsInsecureRedirectHop(t *testing.T) {
+func newBundleDownloadTestAction(
+	t *testing.T,
+	console input.Console,
+	client *http.Client,
+) *extensionInstallAction {
+	t.Helper()
+
+	action := &extensionInstallAction{
+		console:   console,
+		transport: client,
+	}
+	t.Cleanup(func() {
+		if action.bundleTempZip != "" {
+			require.NoError(t, os.Remove(action.bundleTempZip))
+		}
+	})
+	return action
+}
+
+func replaceTestURLHostname(t *testing.T, rawURL string, hostname string) string {
+	t.Helper()
+
+	parsedURL, err := url.Parse(rawURL)
+	require.NoError(t, err)
+	parsedURL.Host = net.JoinHostPort(hostname, parsedURL.Port())
+	return parsedURL.String()
+}
+
+func crossHostnameTestClient(t *testing.T, server *httptest.Server) *http.Client {
+	t.Helper()
+
+	client := server.Client()
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(t, ok)
+	transport = transport.Clone()
+	transport.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // Local httptest servers use mismatched hostnames.
+	client.Transport = transport
+	return client
+}
+
+func TestDownloadBundle_HTTPSRedirectFollowsWithoutPromptOrWarning(t *testing.T) {
+	t.Parallel()
+
+	const (
+		targetUsername = "redirect-user"
+		targetPassword = "redirect-password"
+		targetPath     = "download/signed-path-token/bundle.zip"
+		targetQuery    = "target-query-secret"
+		targetFragment = "target-fragment-secret"
+	)
+
+	type requestDetails struct {
+		path     string
+		query    string
+		username string
+		password string
+	}
+	targetRequest := make(chan requestDetails, 3)
+	targetServer := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		username, password, _ := request.BasicAuth()
+		targetRequest <- requestDetails{
+			path:     request.URL.Path,
+			query:    request.URL.RawQuery,
+			username: username,
+			password: password,
+		}
+		_, _ = writer.Write([]byte("bundle"))
+	}))
+	t.Cleanup(targetServer.Close)
+
+	targetURL, err := url.Parse(replaceTestURLHostname(t, targetServer.URL, "localhost"))
+	require.NoError(t, err)
+	targetURL.User = url.UserPassword(targetUsername, targetPassword)
+	targetURL.Path = "/" + targetPath
+	targetURL.RawQuery = "sig=" + targetQuery
+	targetURL.Fragment = targetFragment
+
+	sourceServer := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, targetURL.String(), http.StatusFound)
+	}))
+	t.Cleanup(sourceServer.Close)
+
+	tests := []struct {
+		name  string
+		flags *extensionInstallFlags
+	}{
+		{name: "default"},
+		{name: "force", flags: &extensionInstallFlags{force: true}},
+		{
+			name: "no prompt",
+			flags: &extensionInstallFlags{
+				global: &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			console := mockinput.NewMockConsole()
+			action := newBundleDownloadTestAction(t, console, crossHostnameTestClient(t, sourceServer))
+			action.flags = test.flags
+
+			downloadedPath, err := action.downloadBundle(t.Context(), sourceServer.URL+"/bundle.zip")
+			require.NoError(t, err)
+			require.FileExists(t, downloadedPath)
+
+			request := <-targetRequest
+			require.Equal(t, "/"+targetPath, request.path)
+			require.Equal(t, "sig="+targetQuery, request.query)
+			require.Equal(t, targetUsername, request.username)
+			require.Equal(t, targetPassword, request.password)
+
+			outputText := strings.Join(console.Output(), "\n")
+			require.Empty(t, lastConfirmQuestion(console))
+			require.NotContains(t, outputText, "WARNING")
+			require.NotContains(t, outputText, targetUsername)
+			require.NotContains(t, outputText, targetPassword)
+			require.NotContains(t, outputText, targetPath)
+			require.NotContains(t, outputText, targetQuery)
+			require.NotContains(t, outputText, targetFragment)
+		})
+	}
+}
+
+func TestBundleTransportWithRedirectWarning_ReportsEachHTTPSDowngradeTargetOnce(t *testing.T) {
+	t.Parallel()
+
+	var warnings []string
+	transport := bundleTransportWithRedirectWarning(
+		&http.Client{},
+		func(_ context.Context, targetURL *url.URL) {
+			warnings = append(warnings, targetURL.String())
+		},
+	)
+	client, ok := transport.(*http.Client)
+	require.True(t, ok)
+
+	httpsSource := &http.Request{URL: &url.URL{Scheme: "https", Host: "start.example"}}
+	httpsTarget := &http.Request{URL: &url.URL{Scheme: "https", Host: "cdn.example"}}
+	require.NoError(t, client.CheckRedirect(httpsTarget, []*http.Request{httpsSource}))
+
+	httpTarget := &http.Request{URL: &url.URL{Scheme: "http", Host: "cdn.example"}}
+	require.NoError(t, client.CheckRedirect(httpTarget, []*http.Request{httpsSource, httpsTarget}))
+	require.NoError(t, client.CheckRedirect(httpTarget, []*http.Request{httpsSource, httpsTarget}))
+
+	secondHTTP := &http.Request{URL: &url.URL{Scheme: "http", Host: "assets.example"}}
+	require.NoError(t, client.CheckRedirect(secondHTTP, []*http.Request{httpsSource, httpsTarget, httpTarget}))
+
+	returnToHTTPS := &http.Request{URL: &url.URL{Scheme: "https", Host: "assets.example"}}
+	require.NoError(t, client.CheckRedirect(
+		returnToHTTPS,
+		[]*http.Request{httpsSource, httpsTarget, httpTarget, secondHTTP},
+	))
+
+	secondDowngrade := &http.Request{URL: &url.URL{Scheme: "http", Host: "mirror.example"}}
+	require.NoError(t, client.CheckRedirect(
+		secondDowngrade,
+		[]*http.Request{httpsSource, httpsTarget, httpTarget, secondHTTP, returnToHTTPS},
+	))
+	require.NoError(t, client.CheckRedirect(
+		secondDowngrade,
+		[]*http.Request{httpsSource, httpsTarget, httpTarget, secondHTTP, returnToHTTPS},
+	))
+
+	require.Equal(t, []string{"http://cdn.example", "http://mirror.example"}, warnings)
+}
+
+func TestDownloadBundle_AllowsHTTPSDowngradeWithWarning(t *testing.T) {
+	t.Parallel()
+
+	const (
+		targetUsername = "redirect-user"
+		targetPassword = "redirect-password"
+		targetPath     = "download/path-token/bundle.zip"
+		targetQuery    = "target-query-secret"
+		targetFragment = "target-fragment-secret"
+	)
+
+	type requestDetails struct {
+		path     string
+		query    string
+		username string
+		password string
+	}
+	targetRequest := make(chan requestDetails, 3)
+	targetServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		username, password, _ := request.BasicAuth()
+		targetRequest <- requestDetails{
+			path:     request.URL.Path,
+			query:    request.URL.RawQuery,
+			username: username,
+			password: password,
+		}
+		_, _ = writer.Write([]byte("bundle"))
+	}))
+	t.Cleanup(targetServer.Close)
+
+	targetURL, err := url.Parse(targetServer.URL)
+	require.NoError(t, err)
+	targetURL.User = url.UserPassword(targetUsername, targetPassword)
+	targetURL.Path = "/" + targetPath
+	targetURL.RawQuery = "sig=" + targetQuery
+	targetURL.Fragment = targetFragment
+
+	sourceServer := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, targetURL.String(), http.StatusFound)
+	}))
+	t.Cleanup(sourceServer.Close)
+
+	tests := []struct {
+		name  string
+		flags *extensionInstallFlags
+	}{
+		{name: "default"},
+		{name: "force", flags: &extensionInstallFlags{force: true}},
+		{
+			name: "no prompt",
+			flags: &extensionInstallFlags{
+				global: &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			console := mockinput.NewMockConsole()
+			action := newBundleDownloadTestAction(t, console, sourceServer.Client())
+			action.flags = test.flags
+
+			downloadedPath, err := action.downloadBundle(t.Context(), sourceServer.URL+"/bundle.zip")
+			require.NoError(t, err)
+			require.FileExists(t, downloadedPath)
+
+			request := <-targetRequest
+			require.Equal(t, "/"+targetPath, request.path)
+			require.Equal(t, "sig="+targetQuery, request.query)
+			require.Equal(t, targetUsername, request.username)
+			require.Equal(t, targetPassword, request.password)
+
+			outputText := strings.Join(console.Output(), "\n")
+			require.Contains(
+				t,
+				outputText,
+				"WARNING: Download redirected from HTTPS to HTTP\n"+targetURL.String(),
+			)
+			require.Empty(t, lastConfirmQuestion(console))
+			require.Contains(t, outputText, "(✓) Done: Downloading extension bundle")
+			require.Contains(t, outputText, targetUsername)
+			require.Contains(t, outputText, targetPassword)
+			require.Contains(t, outputText, targetPath)
+			require.Contains(t, outputText, targetQuery)
+			require.Contains(t, outputText, targetFragment)
+		})
+	}
+}
+
+func TestBundleTransportWithRedirectWarning_PreservesExistingRedirectCheck(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("redirect rejected by existing policy")
+	existingCheckCalled := false
+	warnCalled := false
+
+	transport := bundleTransportWithRedirectWarning(
+		&http.Client{
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				existingCheckCalled = true
+				return expectedErr
+			},
+		},
+		func(context.Context, *url.URL) {
+			warnCalled = true
+		},
+	)
+	client, ok := transport.(*http.Client)
+	require.True(t, ok)
+
+	redirectRequest := &http.Request{URL: &url.URL{Scheme: "http", Host: "cdn.example"}}
+	err := client.CheckRedirect(
+		redirectRequest,
+		[]*http.Request{{URL: &url.URL{Scheme: "https", Host: "start.example"}}},
+	)
+	require.ErrorIs(t, err, expectedErr)
+	require.True(t, existingCheckCalled)
+	require.False(t, warnCalled)
+}
+
+func TestDownloadBundle_ContinuesAfterHTTPSDowngrade(t *testing.T) {
 	t.Parallel()
 
 	var insecureRequested atomic.Bool
 	var finalRequested atomic.Bool
 	var insecureServer *httptest.Server
+	var insecureTargetURL string
 
 	secureServer := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/bundle.zip":
-			http.Redirect(writer, request, insecureServer.URL+"/redirect", http.StatusFound)
+			http.Redirect(writer, request, insecureTargetURL, http.StatusFound)
 		case "/final.zip":
 			finalRequested.Store(true)
 			writer.WriteHeader(http.StatusOK)
@@ -677,24 +1006,30 @@ func TestDownloadBundle_RejectsInsecureRedirectHop(t *testing.T) {
 		http.Redirect(writer, request, secureServer.URL+"/final.zip", http.StatusFound)
 	}))
 	t.Cleanup(insecureServer.Close)
+	targetURL, err := url.Parse(insecureServer.URL)
+	require.NoError(t, err)
+	targetURL.User = url.UserPassword("redirect-user", "redirect-password")
+	targetURL.Path = "/redirect.zip"
+	targetURL.RawQuery = "sig=redirect-query-secret"
+	targetURL.Fragment = "redirect-fragment-secret"
+	insecureTargetURL = targetURL.String()
 
-	action := &extensionInstallAction{
-		console:   mockinput.NewMockConsole(),
-		transport: secureServer.Client(),
-	}
-	t.Cleanup(func() {
-		if action.bundleTempZip != "" {
-			_ = os.Remove(action.bundleTempZip)
-		}
-	})
+	console := mockinput.NewMockConsole()
+	action := newBundleDownloadTestAction(t, console, secureServer.Client())
 
-	_, err := action.downloadBundle(t.Context(), secureServer.URL+"/bundle.zip")
-	require.Error(t, err)
-	require.ErrorIs(t, err, errInsecureBundleRedirect)
-	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
-	require.False(t, insecureRequested.Load(), "HTTP redirect target should not be requested")
-	require.False(t, finalRequested.Load(), "redirect chain should stop before the final HTTPS target")
-	require.Empty(t, action.bundleTempZip)
+	downloadedPath, err := action.downloadBundle(t.Context(), secureServer.URL+"/bundle.zip")
+	require.NoError(t, err)
+	require.FileExists(t, downloadedPath)
+	require.True(t, insecureRequested.Load())
+	require.True(t, finalRequested.Load())
+
+	outputText := strings.Join(console.Output(), "\n")
+	require.Contains(
+		t,
+		outputText,
+		"WARNING: Download redirected from HTTPS to HTTP\n"+targetURL.String(),
+	)
+	require.Empty(t, lastConfirmQuestion(console))
 }
 
 func TestPrepareBundleInstall_RemoteDownloadFailure(t *testing.T) {

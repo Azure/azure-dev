@@ -162,10 +162,14 @@ func shortenResourceID(id string) string {
 // validation) that would otherwise look like "0 changes".
 func whatIfFailure(r armresources.WhatIfOperationResult) error {
 	if r.Error != nil {
+		suggestion := "fix the underlying ARM error and retry `azd provision --preview`"
+		if quotaSuggestion := exterrors.QuotaSuggestionForARMError(r.Error); quotaSuggestion != "" {
+			suggestion = quotaSuggestion
+		}
 		return exterrors.Validation(
 			exterrors.CodeArmWhatIfFailed,
 			"ARM what-if reported a failure: "+formatArmErrorResponse(r.Error),
-			"fix the underlying ARM error and retry `azd provision --preview`",
+			suggestion,
 		)
 	}
 	if r.Status != nil && !strings.EqualFold(*r.Status, "Succeeded") {

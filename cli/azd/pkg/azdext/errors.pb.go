@@ -144,8 +144,9 @@ func (x *ServiceErrorDetail) GetServiceName() string {
 // Used when ErrorOrigin is ERROR_ORIGIN_LOCAL.
 type LocalErrorDetail struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`         // Extension-defined error code (e.g., "invalid_config")
-	Category      string                 `protobuf:"bytes,2,opt,name=category,proto3" json:"category,omitempty"` // Error category (e.g., "user", "validation", "dependency", "internal")
+	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`                               // Extension-defined error code (e.g., "invalid_config")
+	Category      string                 `protobuf:"bytes,2,opt,name=category,proto3" json:"category,omitempty"`                       // Error category (e.g., "user", "validation", "dependency", "internal")
+	CauseTypes    []string               `protobuf:"bytes,3,rep,name=cause_types,json=causeTypes,proto3" json:"cause_types,omitempty"` // Bounded extension-provided diagnostic labels
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -194,6 +195,75 @@ func (x *LocalErrorDetail) GetCategory() string {
 	return ""
 }
 
+func (x *LocalErrorDetail) GetCauseTypes() []string {
+	if x != nil {
+		return x.CauseTypes
+	}
+	return nil
+}
+
+// ToolErrorDetail contains structured information about a local tool failure.
+// Used when ErrorOrigin is ERROR_ORIGIN_TOOL.
+type ToolErrorDetail struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ToolName      string                 `protobuf:"bytes,1,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`          // Normalized tool name (for example, "docker")
+	FailureKind   string                 `protobuf:"bytes,2,opt,name=failure_kind,json=failureKind,proto3" json:"failure_kind,omitempty"` // Stable failure kind: "missing" or "failed"
+	ExitCode      *int64                 `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`   // Process exit code when the tool ran and failed
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolErrorDetail) Reset() {
+	*x = ToolErrorDetail{}
+	mi := &file_errors_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolErrorDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolErrorDetail) ProtoMessage() {}
+
+func (x *ToolErrorDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_errors_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolErrorDetail.ProtoReflect.Descriptor instead.
+func (*ToolErrorDetail) Descriptor() ([]byte, []int) {
+	return file_errors_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ToolErrorDetail) GetToolName() string {
+	if x != nil {
+		return x.ToolName
+	}
+	return ""
+}
+
+func (x *ToolErrorDetail) GetFailureKind() string {
+	if x != nil {
+		return x.FailureKind
+	}
+	return ""
+}
+
+func (x *ToolErrorDetail) GetExitCode() int64 {
+	if x != nil && x.ExitCode != nil {
+		return *x.ExitCode
+	}
+	return 0
+}
+
 // ErrorLink contains a reference link with a URL and optional title.
 type ErrorLink struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -205,7 +275,7 @@ type ErrorLink struct {
 
 func (x *ErrorLink) Reset() {
 	*x = ErrorLink{}
-	mi := &file_errors_proto_msgTypes[2]
+	mi := &file_errors_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -217,7 +287,7 @@ func (x *ErrorLink) String() string {
 func (*ErrorLink) ProtoMessage() {}
 
 func (x *ErrorLink) ProtoReflect() protoreflect.Message {
-	mi := &file_errors_proto_msgTypes[2]
+	mi := &file_errors_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -230,7 +300,7 @@ func (x *ErrorLink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorLink.ProtoReflect.Descriptor instead.
 func (*ErrorLink) Descriptor() ([]byte, []int) {
-	return file_errors_proto_rawDescGZIP(), []int{2}
+	return file_errors_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ErrorLink) GetUrl() string {
@@ -252,7 +322,7 @@ func (x *ErrorLink) GetTitle() string {
 // without parsing status message text.
 //
 // Direction: host -> extension only. Extensions returning errors to the host should use
-// LocalError / ServiceError (transported via ExtensionError) instead.
+// LocalError / ServiceError / ToolError (transported via ExtensionError) instead.
 //
 // The user-facing error message lives in google.rpc.Status.message; this detail does not
 // duplicate it.
@@ -266,7 +336,7 @@ type ActionableErrorDetail struct {
 
 func (x *ActionableErrorDetail) Reset() {
 	*x = ActionableErrorDetail{}
-	mi := &file_errors_proto_msgTypes[3]
+	mi := &file_errors_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -278,7 +348,7 @@ func (x *ActionableErrorDetail) String() string {
 func (*ActionableErrorDetail) ProtoMessage() {}
 
 func (x *ActionableErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_errors_proto_msgTypes[3]
+	mi := &file_errors_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -291,7 +361,7 @@ func (x *ActionableErrorDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionableErrorDetail.ProtoReflect.Descriptor instead.
 func (*ActionableErrorDetail) Descriptor() ([]byte, []int) {
-	return file_errors_proto_rawDescGZIP(), []int{3}
+	return file_errors_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ActionableErrorDetail) GetSuggestion() string {
@@ -325,6 +395,7 @@ type ExtensionError struct {
 	//
 	//	*ExtensionError_ServiceError
 	//	*ExtensionError_LocalError
+	//	*ExtensionError_ToolError
 	Source        isExtensionError_Source `protobuf_oneof:"source"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -332,7 +403,7 @@ type ExtensionError struct {
 
 func (x *ExtensionError) Reset() {
 	*x = ExtensionError{}
-	mi := &file_errors_proto_msgTypes[4]
+	mi := &file_errors_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -344,7 +415,7 @@ func (x *ExtensionError) String() string {
 func (*ExtensionError) ProtoMessage() {}
 
 func (x *ExtensionError) ProtoReflect() protoreflect.Message {
-	mi := &file_errors_proto_msgTypes[4]
+	mi := &file_errors_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -357,7 +428,7 @@ func (x *ExtensionError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExtensionError.ProtoReflect.Descriptor instead.
 func (*ExtensionError) Descriptor() ([]byte, []int) {
-	return file_errors_proto_rawDescGZIP(), []int{4}
+	return file_errors_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ExtensionError) GetMessage() string {
@@ -413,6 +484,15 @@ func (x *ExtensionError) GetLocalError() *LocalErrorDetail {
 	return nil
 }
 
+func (x *ExtensionError) GetToolError() *ToolErrorDetail {
+	if x != nil {
+		if x, ok := x.Source.(*ExtensionError_ToolError); ok {
+			return x.ToolError
+		}
+	}
+	return nil
+}
+
 type isExtensionError_Source interface {
 	isExtensionError_Source()
 }
@@ -422,12 +502,18 @@ type ExtensionError_ServiceError struct {
 }
 
 type ExtensionError_LocalError struct {
-	LocalError *LocalErrorDetail `protobuf:"bytes,11,opt,name=local_error,json=localError,proto3,oneof"` // ToolErrorDetail tool_error = 12;
+	LocalError *LocalErrorDetail `protobuf:"bytes,11,opt,name=local_error,json=localError,proto3,oneof"`
+}
+
+type ExtensionError_ToolError struct {
+	ToolError *ToolErrorDetail `protobuf:"bytes,12,opt,name=tool_error,json=toolError,proto3,oneof"`
 }
 
 func (*ExtensionError_ServiceError) isExtensionError_Source() {}
 
 func (*ExtensionError_LocalError) isExtensionError_Source() {}
+
+func (*ExtensionError_ToolError) isExtensionError_Source() {}
 
 var File_errors_proto protoreflect.FileDescriptor
 
@@ -439,10 +525,18 @@ const file_errors_proto_rawDesc = "" +
 	"error_code\x18\x01 \x01(\tR\terrorCode\x12\x1f\n" +
 	"\vstatus_code\x18\x02 \x01(\x05R\n" +
 	"statusCode\x12!\n" +
-	"\fservice_name\x18\x03 \x01(\tR\vserviceName\"B\n" +
+	"\fservice_name\x18\x03 \x01(\tR\vserviceName\"c\n" +
 	"\x10LocalErrorDetail\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x1a\n" +
-	"\bcategory\x18\x02 \x01(\tR\bcategory\"3\n" +
+	"\bcategory\x18\x02 \x01(\tR\bcategory\x12\x1f\n" +
+	"\vcause_types\x18\x03 \x03(\tR\n" +
+	"causeTypes\"\x81\x01\n" +
+	"\x0fToolErrorDetail\x12\x1b\n" +
+	"\ttool_name\x18\x01 \x01(\tR\btoolName\x12!\n" +
+	"\ffailure_kind\x18\x02 \x01(\tR\vfailureKind\x12 \n" +
+	"\texit_code\x18\x03 \x01(\x03H\x00R\bexitCode\x88\x01\x01B\f\n" +
+	"\n" +
+	"_exit_code\"3\n" +
 	"\tErrorLink\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\"`\n" +
@@ -450,7 +544,7 @@ const file_errors_proto_rawDesc = "" +
 	"\n" +
 	"suggestion\x18\x01 \x01(\tR\n" +
 	"suggestion\x12'\n" +
-	"\x05links\x18\x02 \x03(\v2\x11.azdext.ErrorLinkR\x05links\"\xb6\x02\n" +
+	"\x05links\x18\x02 \x03(\v2\x11.azdext.ErrorLinkR\x05links\"\xf0\x02\n" +
 	"\x0eExtensionError\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12+\n" +
 	"\x06origin\x18\x04 \x01(\x0e2\x13.azdext.ErrorOriginR\x06origin\x12\x1e\n" +
@@ -461,7 +555,9 @@ const file_errors_proto_rawDesc = "" +
 	"\rservice_error\x18\n" +
 	" \x01(\v2\x1a.azdext.ServiceErrorDetailH\x00R\fserviceError\x12;\n" +
 	"\vlocal_error\x18\v \x01(\v2\x18.azdext.LocalErrorDetailH\x00R\n" +
-	"localErrorB\b\n" +
+	"localError\x128\n" +
+	"\n" +
+	"tool_error\x18\f \x01(\v2\x17.azdext.ToolErrorDetailH\x00R\ttoolErrorB\b\n" +
 	"\x06sourceJ\x04\b\x01\x10\x02J\x04\b\x03\x10\x04*t\n" +
 	"\vErrorOrigin\x12\x1c\n" +
 	"\x18ERROR_ORIGIN_UNSPECIFIED\x10\x00\x12\x16\n" +
@@ -482,26 +578,28 @@ func file_errors_proto_rawDescGZIP() []byte {
 }
 
 var file_errors_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_errors_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_errors_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_errors_proto_goTypes = []any{
 	(ErrorOrigin)(0),              // 0: azdext.ErrorOrigin
 	(*ServiceErrorDetail)(nil),    // 1: azdext.ServiceErrorDetail
 	(*LocalErrorDetail)(nil),      // 2: azdext.LocalErrorDetail
-	(*ErrorLink)(nil),             // 3: azdext.ErrorLink
-	(*ActionableErrorDetail)(nil), // 4: azdext.ActionableErrorDetail
-	(*ExtensionError)(nil),        // 5: azdext.ExtensionError
+	(*ToolErrorDetail)(nil),       // 3: azdext.ToolErrorDetail
+	(*ErrorLink)(nil),             // 4: azdext.ErrorLink
+	(*ActionableErrorDetail)(nil), // 5: azdext.ActionableErrorDetail
+	(*ExtensionError)(nil),        // 6: azdext.ExtensionError
 }
 var file_errors_proto_depIdxs = []int32{
-	3, // 0: azdext.ActionableErrorDetail.links:type_name -> azdext.ErrorLink
+	4, // 0: azdext.ActionableErrorDetail.links:type_name -> azdext.ErrorLink
 	0, // 1: azdext.ExtensionError.origin:type_name -> azdext.ErrorOrigin
-	3, // 2: azdext.ExtensionError.links:type_name -> azdext.ErrorLink
+	4, // 2: azdext.ExtensionError.links:type_name -> azdext.ErrorLink
 	1, // 3: azdext.ExtensionError.service_error:type_name -> azdext.ServiceErrorDetail
 	2, // 4: azdext.ExtensionError.local_error:type_name -> azdext.LocalErrorDetail
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	3, // 5: azdext.ExtensionError.tool_error:type_name -> azdext.ToolErrorDetail
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_errors_proto_init() }
@@ -509,9 +607,11 @@ func file_errors_proto_init() {
 	if File_errors_proto != nil {
 		return
 	}
-	file_errors_proto_msgTypes[4].OneofWrappers = []any{
+	file_errors_proto_msgTypes[2].OneofWrappers = []any{}
+	file_errors_proto_msgTypes[5].OneofWrappers = []any{
 		(*ExtensionError_ServiceError)(nil),
 		(*ExtensionError_LocalError)(nil),
+		(*ExtensionError_ToolError)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -519,7 +619,7 @@ func file_errors_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_errors_proto_rawDesc), len(file_errors_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

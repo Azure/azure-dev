@@ -35,8 +35,10 @@ var manifestFileNames = []string{
 }
 
 // populateManifestResources walks each service's agent.manifest.yaml
-// (when present) and aggregates the declared model/toolbox/connection
-// resources onto state. The walker is strictly best-effort: missing
+// (when present) and aggregates the declared model resources onto
+// state. Toolbox resources are collected by populateToolboxes so
+// unified configuration can control legacy fallback. The walker is
+// strictly best-effort: missing
 // files, unreadable bytes, malformed YAML, and unknown resource kinds
 // are all silently skipped so an in-flight `azd ai agent init` (which
 // rewrites the manifest mid-flight) or a template with no manifest
@@ -46,12 +48,10 @@ var manifestFileNames = []string{
 //
 //   - Has* flags are true when at least one resource of the matching
 //     kind is found across all services.
-//   - Slices are sorted by Name (ties broken by ServiceName) and the
-//     pair (ServiceName, Name) is the de-duplication key — the same
-//     name appearing under two services surfaces twice; the same name
-//     listed twice in one service collapses to one entry. This
-//     matches the doctor-check expectation that per-service failures
-//     remain individually addressable.
+//   - ModelRefs are sorted by Name (ties broken by ServiceName) and
+//     the pair (ServiceName, Name) is the de-duplication key — the
+//     same name appearing under two services surfaces twice; the same
+//     name listed twice in one service collapses to one entry.
 //   - The Detail field carries a kind-specific summary (model id,
 //     connection target/category, empty for toolboxes) so doctor
 //     remediation lines have enough context to be actionable without
@@ -67,7 +67,6 @@ func populateManifestResources(projectPath string, state *State) {
 	}
 
 	models := map[resourceKey]ResourceRef{}
-	toolboxes := map[resourceKey]ResourceRef{}
 
 	for _, svc := range state.Services {
 		data := readManifestBytes(projectPath, svc.RelativePath)
@@ -93,27 +92,12 @@ func populateManifestResources(projectPath string, state *State) {
 					ServiceName: svc.Name,
 					Detail:      r.Id,
 				}
-			case agent_yaml.ToolboxResource:
-				if r.Name == "" {
-					continue
-				}
-				k := resourceKey{service: svc.Name, name: r.Name}
-				if _, dup := toolboxes[k]; dup {
-					continue
-				}
-				toolboxes[k] = ResourceRef{
-					Name:          r.Name,
-					ServiceName:   svc.Name,
-					ToolboxSource: ToolboxSourceLegacyManifest,
-				}
 			}
 		}
 	}
 
 	state.ModelRefs = sortedResourceRefs(models)
-	state.Toolboxes = sortedResourceRefs(toolboxes)
 	state.HasModels = len(state.ModelRefs) > 0
-	state.HasToolboxes = len(state.Toolboxes) > 0
 }
 
 // populateSplitToolboxes adds active toolbox dependencies to state.
@@ -129,7 +113,7 @@ func populateSplitToolboxes(
 		return splitToolboxResult{}
 	}
 
-	candidates, excludedAgents := splitToolboxDependencies(
+	candidates, excludedAgents, checkedAgents := splitToolboxDependencies(
 		ctx,
 		src,
 		envName,
@@ -143,9 +127,12 @@ func populateSplitToolboxes(
 	}
 	if len(candidates) == 0 {
 		slices.Sort(state.ToolboxDependencyErrors)
+		slices.Sort(state.ToolboxLoadErrors)
 		return splitToolboxResult{
 			excludedAgents: excludedAgents,
+			checkedAgents:  checkedAgents,
 			endpointKeys:   endpointKeys,
+			reservedKeys:   make(map[string]struct{}),
 		}
 	}
 
@@ -160,6 +147,7 @@ func populateSplitToolboxes(
 	for _, key := range keys {
 		candidate := candidates[key]
 		reserved[key] = struct{}{}
+
 		enabled, err := isServiceEnabled(
 			ctx,
 			src,
@@ -185,6 +173,7 @@ func populateSplitToolboxes(
 					err,
 				),
 			)
+			recordToolboxLoadIssue(state, issue)
 			continue
 		}
 		if !enabled {
@@ -197,14 +186,41 @@ func populateSplitToolboxes(
 				state.ToolboxDependencyErrors,
 				issue,
 			)
-			*errs = append(
-				*errs,
-				errors.New(issue),
-			)
+			*errs = append(*errs, errors.New(issue))
 			continue
 		}
 
-		split[key] = candidate.ref
+		svc := projectCfg.Services[candidate.configName]
+		resolved, err := resolveToolboxServiceProperties(
+			svc,
+			projectCfg.Path,
+		)
+		if err != nil {
+			recordToolboxLoadError(
+				state,
+				errs,
+				fmt.Sprintf(
+					"toolbox service %q: %v",
+					candidate.ref.ServiceName,
+					err,
+				),
+			)
+			continue
+		}
+		if resolvedToolboxConditionError(
+			state,
+			errs,
+			"toolbox service",
+			candidate.ref.ServiceName,
+			resolved,
+		) {
+			continue
+		}
+
+		if existing, found := split[key]; !found ||
+			candidate.ref.ServiceName < existing.ServiceName {
+			split[key] = candidate.ref
+		}
 	}
 
 	merged := make([]ResourceRef, 0, len(state.Toolboxes)+len(split))
@@ -228,13 +244,17 @@ func populateSplitToolboxes(
 	slices.Sort(state.ToolboxDependencyErrors)
 	return splitToolboxResult{
 		excludedAgents: excludedAgents,
+		checkedAgents:  checkedAgents,
 		endpointKeys:   endpointKeys,
+		reservedKeys:   reserved,
 	}
 }
 
 type splitToolboxResult struct {
 	excludedAgents map[string]struct{}
+	checkedAgents  map[string]struct{}
 	endpointKeys   map[string]struct{}
+	reservedKeys   map[string]struct{}
 }
 
 type splitToolboxCandidate struct {
@@ -255,15 +275,16 @@ func splitToolboxDependencies(
 	projectCfg *azdext.ProjectConfig,
 	state *State,
 	errs *[]error,
-) (map[string]splitToolboxCandidate, map[string]struct{}) {
+) (map[string]splitToolboxCandidate, map[string]struct{}, map[string]struct{}) {
 	services := make(map[string]splitToolboxService)
-	for serviceName, svc := range projectCfg.Services {
+	for _, serviceName := range sortedServiceKeys(projectCfg) {
+		svc := projectCfg.Services[serviceName]
 		if svc == nil || svc.GetHost() != toolboxHost {
 			continue
 		}
-		name := svc.GetName()
+		name := strings.TrimSpace(serviceName)
 		if name == "" {
-			name = serviceName
+			name = strings.TrimSpace(svc.GetName())
 		}
 		if name == "" {
 			continue
@@ -278,18 +299,22 @@ func splitToolboxDependencies(
 			configName: serviceName,
 		}
 		services[serviceName] = service
-		services[name] = service
+		if name != serviceName {
+			services[name] = service
+		}
 	}
 
 	candidates := make(map[string]splitToolboxCandidate)
 	excludedAgents := make(map[string]struct{})
-	for serviceName, svc := range projectCfg.Services {
+	checkedAgents := make(map[string]struct{})
+	for _, serviceName := range sortedServiceKeys(projectCfg) {
+		svc := projectCfg.Services[serviceName]
 		if svc == nil || svc.GetHost() != agentHost {
 			continue
 		}
-		agentName := svc.GetName()
+		agentName := strings.TrimSpace(serviceName)
 		if agentName == "" {
-			agentName = serviceName
+			agentName = strings.TrimSpace(svc.GetName())
 		}
 		dependencies := make([]splitToolboxService, 0)
 		for _, dependencyName := range svc.GetUses() {
@@ -300,21 +325,12 @@ func splitToolboxDependencies(
 			dependencies = append(dependencies, service)
 		}
 
+		if len(dependencies) == 0 {
+			continue
+		}
+		checkedAgents[serviceName] = struct{}{}
 		enabled, err := isServiceEnabled(ctx, src, envName, serviceName)
 		if err != nil {
-			if len(dependencies) == 0 {
-				*errs = append(
-					*errs,
-					fmt.Errorf(
-						"agent service %q deployment condition: %w",
-						agentName,
-						err,
-					),
-				)
-				excludedAgents[agentName] = struct{}{}
-				excludedAgents[serviceName] = struct{}{}
-				continue
-			}
 			names := make([]string, 0, len(dependencies))
 			for _, service := range dependencies {
 				names = appendUnique(names, service.ref.ServiceName)
@@ -330,6 +346,7 @@ func splitToolboxDependencies(
 				state.ToolboxDependencyErrors,
 				issue,
 			)
+			recordToolboxLoadIssue(state, issue)
 			*errs = append(
 				*errs,
 				fmt.Errorf(
@@ -345,9 +362,6 @@ func splitToolboxDependencies(
 		if !enabled {
 			excludedAgents[agentName] = struct{}{}
 			excludedAgents[serviceName] = struct{}{}
-			continue
-		}
-		if len(dependencies) == 0 {
 			continue
 		}
 
@@ -368,7 +382,7 @@ func splitToolboxDependencies(
 		slices.Sort(candidate.agents)
 		candidates[key] = candidate
 	}
-	return candidates, excludedAgents
+	return candidates, excludedAgents, checkedAgents
 }
 
 func appendUnique(values []string, value string) []string {

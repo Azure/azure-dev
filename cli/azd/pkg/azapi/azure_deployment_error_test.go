@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -158,4 +159,17 @@ func Test_AzureDeploymentError_ErrorsAs_DeploymentErrorLine(t *testing.T) {
 	var line *DeploymentErrorLine
 	require.True(t, errors.As(deployErr, &line),
 		"errors.As should find DeploymentErrorLine in tree")
+}
+
+func Test_DeploymentErrorLine_Target(t *testing.T) {
+	jsonErr := `{"error":{"code":"DeploymentFailed","details":[` +
+		`{"code":"InsufficientQuota","target":"ai-account",` +
+		`"message":"Cannot create/update/move resource 'ai-account'."}]}}`
+	deployErr := NewAzureDeploymentError(
+		"test", jsonErr, DeploymentOperationValidate)
+
+	require.NotNil(t, deployErr.Details)
+	require.Len(t, deployErr.Details.Inner, 1)
+	require.Len(t, deployErr.Details.Inner[0].Inner, 1)
+	assert.Equal(t, "ai-account", deployErr.Details.Inner[0].Inner[0].Target)
 }

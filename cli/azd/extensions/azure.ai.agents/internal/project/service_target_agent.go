@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1474,7 +1475,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 	addAgentToolboxDependency(serviceTargetConfig, agentDef.Toolbox)
-	activityProfile, err := ResolveActivityProfileWithSettings(agentDef, serviceTargetConfig.Activity)
+	activityProfile, err := ResolveActivityProfileForDeploy(agentDef, serviceTargetConfig.Activity)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -1528,14 +1529,15 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
+	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
+	agentClient := agent_api.NewAgentClient(
+		projectEndpoint,
+		p.credential,
+	)
+
 	// Poll until agent version is active
 	if result.agentVersion.Status != "active" {
 		progress("Agent version created; waiting for activation")
-		projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
-		agentClient := agent_api.NewAgentClient(
-			projectEndpoint,
-			p.credential,
-		)
 		polledVersion, pollErr := p.waitForAgentActive(
 			ctx,
 			agentClient,
@@ -1551,6 +1553,29 @@ func (p *AgentServiceTargetProvider) Deploy(
 	} else {
 		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", result.agentVersion.Version)
 	}
+
+	// Read the deployed version so post-deploy behavior uses the service-side
+	// Digital Worker classification rather than only the local authoring intent.
+	deployedVersion, err := agentClient.GetAgentVersion(
+		ctx,
+		result.agentName,
+		result.agentVersion.Version,
+		agent_api.AgentEndpointAPIVersion,
+		true,
+	)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)
+	}
+	result.agentVersion = deployedVersion
+	activityProfile, err = ResolveDeployedActivityProfile(activityProfile, deployedVersion.DigitalWorkerType)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			err.Error(),
+			digitalWorkerTypeMismatchSuggestion(),
+		)
+	}
+	ensureActivityEndpointAuthSchemeForProfile(result.request, activityProfile)
 
 	// Patch agent-level endpoint/card fields
 	if result.request.AgentEndpoint != nil || result.request.AgentCard != nil {
@@ -2166,6 +2191,19 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	}
 
 	applyAgentMetadata(request)
+	if foundryAgentConfig != nil &&
+		foundryAgentConfig.Activity != nil &&
+		foundryAgentConfig.Activity.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		request.DigitalWorkerType = agent_api.DigitalWorkerTypeM365
+	}
+	_, err = ResolveActivityProfileForDeploy(agentDef, foundryAgentConfig.Activity)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentRequest,
+			fmt.Sprintf("failed to resolve Activity configuration: %s", err),
+			"check the activity configuration in azure.yaml",
+		)
+	}
 
 	// Default to "responses" protocol when none specified in agent.yaml.
 	protocols := agentDef.Protocols
@@ -2180,6 +2218,19 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		request:         request,
 		protocols:       protocols,
 	}, nil
+}
+
+func ensureActivityEndpointAuthSchemeForProfile(
+	request *agent_api.CreateAgentRequest,
+	profile ActivityProfile,
+) {
+	if !profile.IsActivity {
+		return
+	}
+	if request.AgentEndpoint == nil {
+		return
+	}
+	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, profile)
 }
 
 // deployResult holds the intermediate results from a deploy method (code or container)
@@ -2490,7 +2541,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentRemote(
 	if shouldUpdate {
 		progress("Updating voice agent using unified API")
 		updateRequest := &agent_api.UpdateAgentRequest{
-			CreateAgentVersionRequest: request.CreateAgentVersionRequest,
+			Description: request.Description,
+			Metadata:    request.Metadata,
+			Definition:  request.Definition,
 		}
 		agentObject, err := agentClient.UpdateVoiceAgent(
 			ctx, request.Name, updateRequest, agent_api.AgentEndpointAPIVersion, overriddenHost,
@@ -2948,9 +3001,10 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Build the metadata for multipart upload
 	versionRequest := &agent_api.CreateAgentVersionRequest{
-		Description: prep.request.Description,
-		Metadata:    prep.request.Metadata,
-		Definition:  prep.request.Definition,
+		Description:       prep.request.Description,
+		Metadata:          prep.request.Metadata,
+		Definition:        prep.request.Definition,
+		DigitalWorkerType: prep.request.DigitalWorkerType,
 	}
 
 	// Create agent client
@@ -2961,7 +3015,16 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Check if agent already exists (GET /agents/{name})
 	progress("Checking existing agent")
-	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agent_api.AgentEndpointAPIVersion)
+	localProfile := ResolveActivityProfile(agentDef)
+	if versionRequest.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		localProfile = ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
+	}
+	existingAgent, getErr := agentClient.GetAgent(
+		ctx,
+		agentDef.Name,
+		agent_api.AgentEndpointAPIVersion,
+		localProfile.IsActivity,
+	)
 	var agentResp *agent_api.AgentObject
 
 	if getErr != nil {
@@ -2979,11 +3042,23 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 		}
 	} else {
+		if localProfile.IsActivity {
+			if _, err := ResolveDeployedActivityProfile(localProfile, existingAgent.DigitalWorkerType); err != nil {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidServiceConfig,
+					err.Error(),
+					"delete and recreate the agent so its immutable digital_worker_type matches "+
+						"activity.digitalWorkerType",
+				)
+			}
+		}
 		// Agent exists — update
 		progress("Updating existing agent from code package")
 		writeExistingAgentVersionWarning(agentDef.Name)
+		updateVersionRequest := *versionRequest
+		updateVersionRequest.DigitalWorkerType = ""
 		agentResp, err = agentClient.UpdateAgentFromZip(
-			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
+			ctx, agentDef.Name, &updateVersionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
 		if err != nil {
 			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
@@ -3319,7 +3394,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		attempt++
 		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
-		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion)
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion, false)
 		if err != nil {
 			lastPollErr = err
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
@@ -3401,13 +3476,25 @@ func (p *AgentServiceTargetProvider) createAgent(
 		p.credential,
 	)
 
-	writeExistingAgentVersionWarningIfPresent(ctx, agentClient, request.Name)
+	updatingExisting, err := reconcileCreateRequestWithDeployedDigitalWorkerType(
+		ctx,
+		agentClient,
+		request,
+		agent_api.AgentEndpointAPIVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if updatingExisting {
+		writeExistingAgentVersionWarning(request.Name)
+	}
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{
-		Description: request.Description,
-		Metadata:    request.Metadata,
-		Definition:  request.Definition,
+		Description:       request.Description,
+		Metadata:          request.Metadata,
+		Definition:        request.Definition,
+		DigitalWorkerType: request.DigitalWorkerType,
 	}
 
 	// Create agent version
@@ -3421,6 +3508,48 @@ func (p *AgentServiceTargetProvider) createAgent(
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
 
 	return agentVersionResponse, nil
+}
+
+func reconcileCreateRequestWithDeployedDigitalWorkerType(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	request *agent_api.CreateAgentRequest,
+	apiVersion string,
+) (bool, error) {
+	localProfile := activityProfileFromCreateRequest(request)
+	existingAgent, getErr := agentClient.GetAgent(ctx, request.Name, apiVersion, localProfile.IsActivity)
+	if getErr != nil {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
+			respErr.StatusCode != http.StatusNotFound {
+			return false, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
+		}
+		return false, nil
+	}
+
+	if localProfile.IsActivity {
+		if _, err := ResolveDeployedActivityProfile(localProfile, existingAgent.DigitalWorkerType); err != nil {
+			return true, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				err.Error(),
+				"delete and recreate the agent so its immutable digital_worker_type matches "+
+					"activity.digitalWorkerType",
+			)
+		}
+	}
+
+	request.DigitalWorkerType = ""
+	return true, nil
+}
+
+func activityProfileFromCreateRequest(request *agent_api.CreateAgentRequest) ActivityProfile {
+	if request.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
+	}
+	if request.AgentEndpoint != nil &&
+		slices.Contains(request.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity) {
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
+	}
+	return ActivityProfile{}
 }
 
 // displayAgentInfo displays information about the agent being deployed
@@ -3527,19 +3656,14 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		)
 	}
 	if activityProfile.UseCase == ActivityUseCaseDigitalWorker {
-		if activitySettings == nil || activitySettings.Publish == nil {
-			return fmt.Errorf("Digital Worker publish configuration is missing")
-		}
 		blueprint := agentVersionResponse.Blueprint
-		if blueprint == nil || strings.TrimSpace(blueprint.ClientID) == "" {
-			return fmt.Errorf("Digital Worker agent version is missing Blueprint client ID")
+		if blueprint != nil && strings.TrimSpace(blueprint.ClientID) != "" {
+			envVars = append(envVars, azdext.SetEnvRequest{
+				EnvName: p.env.Name,
+				Key:     envkey.AgentBlueprintClientID(serviceConfig.Name),
+				Value:   blueprint.ClientID,
+			})
 		}
-
-		envVars = append(envVars, azdext.SetEnvRequest{
-			EnvName: p.env.Name,
-			Key:     envkey.AgentBlueprintClientID(serviceConfig.Name),
-			Value:   blueprint.ClientID,
-		})
 	}
 
 	for i := range envVars {

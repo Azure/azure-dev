@@ -14,6 +14,7 @@ const (
 	CodeConflictingArguments   = "conflicting_arguments"
 	CodeInvalidRoutineManifest = "invalid_routine_manifest"
 	CodeRoutineAlreadyExists   = "routine_already_exists"
+	CodeProjectServiceConflict = "project_service_conflict"
 )
 
 // Error codes for dependency errors.

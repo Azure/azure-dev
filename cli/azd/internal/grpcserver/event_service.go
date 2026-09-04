@@ -143,70 +143,72 @@ func (s *eventService) createProjectEventHandler(
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
 ) ext.EventHandlerFn[project.ProjectLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
-		previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
-		defer s.syncExtensionOutput(ctx, extension, previewTitle)()
-
-		resolver := noEnvResolver
-		env, err := s.lazyEnv.GetValue()
-		if err == nil && env != nil {
-			resolver = env.Getenv
-		}
-
-		var protoProjectConfig *azdext.ProjectConfig
-		if err := mapper.WithResolver(resolver).Convert(args.Project, &protoProjectConfig); err != nil {
-			return err
-		}
-
-		// Send invoke message and wait for status using broker's Send method
-		invokeMsg := &azdext.EventMessage{
-			MessageType: &azdext.EventMessage_InvokeProjectHandler{
-				InvokeProjectHandler: &azdext.InvokeProjectHandler{
-					EventName: eventName,
-					Project:   protoProjectConfig,
-				},
-			},
-		}
-
 		var handlerFollowUp *string
 		var handlerCompleted bool
-		err = s.runWithEnvReload(ctx, func() error {
-			// Use streamCtx which has extension claims for correlation
-			response, err := broker.SendAndWait(streamCtx, invokeMsg)
-			if err != nil {
-				return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
+		err := func() error {
+			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
+			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
+
+			resolver := noEnvResolver
+			env, err := s.lazyEnv.GetValue()
+			if err == nil && env != nil {
+				resolver = env.Getenv
 			}
 
-			// Extract status from response
-			statusMsg, ok := response.MessageType.(*azdext.EventMessage_ProjectHandlerStatus)
-			if !ok {
-				return fmt.Errorf("unexpected response type for project event %s", eventName)
+			var protoProjectConfig *azdext.ProjectConfig
+			if err := mapper.WithResolver(resolver).Convert(args.Project, &protoProjectConfig); err != nil {
+				return err
 			}
 
-			if statusMsg.ProjectHandlerStatus.Status == "failed" {
-				if extErr := azdext.UnwrapError(statusMsg.ProjectHandlerStatus.Error); extErr != nil {
-					log.Printf(
-						"extension %s project hook %s failed with structured error: %v",
+			// Send invoke message and wait for status using broker's Send method
+			invokeMsg := &azdext.EventMessage{
+				MessageType: &azdext.EventMessage_InvokeProjectHandler{
+					InvokeProjectHandler: &azdext.InvokeProjectHandler{
+						EventName: eventName,
+						Project:   protoProjectConfig,
+					},
+				},
+			}
+
+			return s.runWithEnvReload(ctx, func() error {
+				// Use streamCtx which has extension claims for correlation
+				response, err := broker.SendAndWait(streamCtx, invokeMsg)
+				if err != nil {
+					return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
+				}
+
+				// Extract status from response
+				statusMsg, ok := response.MessageType.(*azdext.EventMessage_ProjectHandlerStatus)
+				if !ok {
+					return fmt.Errorf("unexpected response type for project event %s", eventName)
+				}
+
+				if statusMsg.ProjectHandlerStatus.Status == "failed" {
+					if extErr := azdext.UnwrapError(statusMsg.ProjectHandlerStatus.Error); extErr != nil {
+						log.Printf(
+							"extension %s project hook %s failed with structured error: %v",
+							extension.Id,
+							eventName,
+							extErr,
+						)
+						return extErr
+					}
+					return fmt.Errorf(
+						"extension %s project hook %s failed: %s",
 						extension.Id,
 						eventName,
-						extErr,
+						statusMsg.ProjectHandlerStatus.Message,
 					)
-					return extErr
 				}
-				return fmt.Errorf(
-					"extension %s project hook %s failed: %s",
-					extension.Id,
-					eventName,
-					statusMsg.ProjectHandlerStatus.Message,
-				)
-			}
 
-			if statusMsg.ProjectHandlerStatus.Status == "completed" {
-				handlerCompleted = true
-				handlerFollowUp = statusMsg.ProjectHandlerStatus.FollowUp
-			}
+				if statusMsg.ProjectHandlerStatus.Status == "completed" {
+					handlerCompleted = true
+					handlerFollowUp = statusMsg.ProjectHandlerStatus.FollowUp
+				}
 
-			return nil
-		})
+				return nil
+			})
+		}()
 		if err == nil && handlerCompleted &&
 			strings.HasPrefix(eventName, "post") &&
 			handlerFollowUp != nil {
@@ -220,7 +222,7 @@ func (s *eventService) createProjectEventHandler(
 			}
 		}
 
-		return err
+		return extensions.WrapInvocationError(err, extension.Id, extension.Version, eventName)
 	}
 }
 
@@ -290,79 +292,83 @@ func (s *eventService) createServiceEventHandler(
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
-		previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
-		defer s.syncExtensionOutput(ctx, extension, previewTitle)()
+		err := func() error {
+			previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
+			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
 
-		resolver := noEnvResolver
-		env, err := s.lazyEnv.GetValue()
-		if err == nil && env != nil {
-			resolver = env.Getenv
-		}
+			resolver := noEnvResolver
+			env, err := s.lazyEnv.GetValue()
+			if err == nil && env != nil {
+				resolver = env.Getenv
+			}
 
-		objectMapper := mapper.WithResolver(resolver)
+			objectMapper := mapper.WithResolver(resolver)
 
-		var protoProjectConfig *azdext.ProjectConfig
-		if err := objectMapper.Convert(args.Project, &protoProjectConfig); err != nil {
-			return err
-		}
+			var protoProjectConfig *azdext.ProjectConfig
+			if err := objectMapper.Convert(args.Project, &protoProjectConfig); err != nil {
+				return err
+			}
 
-		var protoServiceConfig *azdext.ServiceConfig
-		if err := objectMapper.Convert(args.Service, &protoServiceConfig); err != nil {
-			return err
-		}
+			var protoServiceConfig *azdext.ServiceConfig
+			if err := objectMapper.Convert(args.Service, &protoServiceConfig); err != nil {
+				return err
+			}
 
-		var protoServiceContext *azdext.ServiceContext
-		if err := objectMapper.Convert(args.ServiceContext, &protoServiceContext); err != nil {
-			return err
-		}
+			var protoServiceContext *azdext.ServiceContext
+			if err := objectMapper.Convert(args.ServiceContext, &protoServiceContext); err != nil {
+				return err
+			}
 
-		// Send invoke message and wait for status using broker's Send method
-		invokeMsg := &azdext.EventMessage{
-			MessageType: &azdext.EventMessage_InvokeServiceHandler{
-				InvokeServiceHandler: &azdext.InvokeServiceHandler{
-					EventName:      eventName,
-					Project:        protoProjectConfig,
-					Service:        protoServiceConfig,
-					ServiceContext: protoServiceContext,
+			// Send invoke message and wait for status using broker's Send method
+			invokeMsg := &azdext.EventMessage{
+				MessageType: &azdext.EventMessage_InvokeServiceHandler{
+					InvokeServiceHandler: &azdext.InvokeServiceHandler{
+						EventName:      eventName,
+						Project:        protoProjectConfig,
+						Service:        protoServiceConfig,
+						ServiceContext: protoServiceContext,
+					},
 				},
-			},
-		}
-
-		return s.runWithEnvReload(ctx, func() error {
-			// Use streamCtx which has extension claims for correlation
-			response, err := broker.SendAndWait(streamCtx, invokeMsg)
-			if err != nil {
-				return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
 			}
 
-			// Extract status from response
-			statusMsg, ok := response.MessageType.(*azdext.EventMessage_ServiceHandlerStatus)
-			if !ok {
-				return fmt.Errorf("unexpected response type for service event %s", eventName)
-			}
+			return s.runWithEnvReload(ctx, func() error {
+				// Use streamCtx which has extension claims for correlation
+				response, err := broker.SendAndWait(streamCtx, invokeMsg)
+				if err != nil {
+					return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
+				}
 
-			if statusMsg.ServiceHandlerStatus.Status == "failed" {
-				if extErr := azdext.UnwrapError(statusMsg.ServiceHandlerStatus.Error); extErr != nil {
-					log.Printf(
-						"extension %s service hook %s.%s failed with structured error: %v",
+				// Extract status from response
+				statusMsg, ok := response.MessageType.(*azdext.EventMessage_ServiceHandlerStatus)
+				if !ok {
+					return fmt.Errorf("unexpected response type for service event %s", eventName)
+				}
+
+				if statusMsg.ServiceHandlerStatus.Status == "failed" {
+					if extErr := azdext.UnwrapError(statusMsg.ServiceHandlerStatus.Error); extErr != nil {
+						log.Printf(
+							"extension %s service hook %s.%s failed with structured error: %v",
+							extension.Id,
+							args.Service.Name,
+							eventName,
+							extErr,
+						)
+						return extErr
+					}
+					return fmt.Errorf(
+						"extension %s service hook %s.%s failed: %s",
 						extension.Id,
 						args.Service.Name,
 						eventName,
-						extErr,
+						statusMsg.ServiceHandlerStatus.Message,
 					)
-					return extErr
 				}
-				return fmt.Errorf(
-					"extension %s service hook %s.%s failed: %s",
-					extension.Id,
-					args.Service.Name,
-					eventName,
-					statusMsg.ServiceHandlerStatus.Message,
-				)
-			}
 
-			return nil
-		})
+				return nil
+			})
+		}()
+
+		return extensions.WrapInvocationError(err, extension.Id, extension.Version, eventName)
 	}
 }
 

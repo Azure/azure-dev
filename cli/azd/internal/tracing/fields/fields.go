@@ -928,11 +928,34 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// ErrChainTypes records the wrapped-error type chain (outermost
-	// first). Type names are code-defined and PII-free, so they're
-	// emitted as system metadata for triaging the catch-all bucket.
+	// ErrChainTypes records the host-observed wrapped-error type chain
+	// (outermost first). These reflected type names are system metadata.
 	ErrChainTypes = AttributeKey{
 		Key:            attribute.Key("error.chain.types"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ErrExtensionCauseTypes records normalized extension-provided cause
+	// types as hashes because the extension controls their contents.
+	ErrExtensionCauseTypes = AttributeKey{
+		Key:            attribute.Key("error.extension.cause_types"),
+		Classification: EndUserPseudonymizedInformation,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// MapperSourceType records the sanitized Go type used as the source of a
+	// mapper conversion failure.
+	MapperSourceType = AttributeKey{
+		Key:            attribute.Key("mapper.source.type"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// MapperDestinationType records the sanitized Go type expected by a mapper
+	// conversion failure.
+	MapperDestinationType = AttributeKey{
+		Key:            attribute.Key("mapper.destination.type"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
@@ -1219,9 +1242,8 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionEvent is the event name an extension chose for a usage
-	// event. Extensions own this value; it exists so queries can filter
-	// an extension's events without parsing its attributes.
+	// ExtensionEvent identifies a usage report or failed invocation event.
+	// Extensions own this value, which lets queries filter their events.
 	ExtensionEvent = AttributeKey{
 		Key:            attribute.Key("extension.event"),
 		Classification: SystemMetadata,

@@ -2,6 +2,10 @@
 
 Manage Microsoft Foundry Project resources from your terminal. (Preview)
 
+See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
+for every prompt's flag, environment/configuration input, or deterministic
+no-prompt behavior.
+
 ## `azure.yaml` ownership
 
 This extension owns `host: azure.ai.project` services and the `microsoft.foundry` provisioning provider. A project service carries account-level settings such as an existing project endpoint, model deployments, and private networking.
@@ -34,5 +38,10 @@ azd env set AZURE_AI_PROJECT_ID "/subscriptions/<subscription-id>/resourceGroups
 ```
 
 `azd ai agent init` sets this value when initialized against an existing project. An endpoint-only service with no resources to reconcile does not require it.
+
+When provisioning reports insufficient Cognitive Services quota, check usage for the target region with
+`az cognitiveservices usage list --location <region>` or request a quota increase in the Azure portal. If an
+existing Foundry project should be reused instead, configure its endpoint and set `AZURE_AI_PROJECT_ID` to the
+full project resource ID before retrying.
 
 The `azd ai project set`, `show`, and `unset` commands manage the default Foundry project endpoint context. They do not currently author the project service in `azure.yaml`.

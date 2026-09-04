@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -89,4 +92,80 @@ language: python
 	assert.NotEmpty(t, prepared.zipData)
 	assert.NotEmpty(t, prepared.sha256Hex)
 	assert.NotNil(t, prepared.credential)
+}
+
+func TestReconcileStandaloneEndpointWithDeployedDigitalWorker(t *testing.T) {
+	t.Parallel()
+
+	definition := agent_yaml.ContainerAgent{
+		Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}},
+	}
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+			AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+			},
+		},
+	}
+	existingAgent := &agent_api.AgentObject{DigitalWorkerType: agent_api.DigitalWorkerTypeM365}
+
+	err := reconcileStandaloneEndpointWithDeployedAgent(request, ResolveActivityProfile(definition), existingAgent)
+
+	require.NoError(t, err)
+	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+	}, request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestReconcileStandaloneEndpointUsesServiceDefaultForDeployedDigitalWorker(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+	existingAgent := &agent_api.AgentObject{DigitalWorkerType: agent_api.DigitalWorkerTypeM365}
+
+	err := reconcileStandaloneEndpointWithDeployedAgent(request, ActivityProfile{}, existingAgent)
+
+	require.NoError(t, err)
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestReconcileStandaloneEndpointUsesServiceDefaultForSimpleActivity(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+	existingAgent := &agent_api.AgentObject{}
+
+	err := reconcileStandaloneEndpointWithDeployedAgent(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseSimple,
+	}, existingAgent)
+
+	require.NoError(t, err)
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestReconcileStandaloneEndpointPromotesNonActivityDefinitionForDeployedDigitalWorker(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
+			AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeEntra},
+			},
+		},
+	}
+	existingAgent := &agent_api.AgentObject{DigitalWorkerType: agent_api.DigitalWorkerTypeM365}
+
+	err := reconcileStandaloneEndpointWithDeployedAgent(request, ActivityProfile{}, existingAgent)
+
+	require.NoError(t, err)
+	require.Equal(t, []agent_api.AgentEndpointProtocol{
+		agent_api.AgentEndpointProtocolResponses,
+		agent_api.AgentEndpointProtocolActivity,
+	}, request.AgentEndpoint.Protocols)
+	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+		{Type: agent_api.AgentEndpointAuthSchemeEntra},
+	}, request.AgentEndpoint.AuthorizationSchemes)
 }

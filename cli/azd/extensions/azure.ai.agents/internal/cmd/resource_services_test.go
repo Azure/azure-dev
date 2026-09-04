@@ -8,9 +8,11 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/pkg/servicekey"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -64,9 +66,9 @@ func agentService(t *testing.T, name string, toolConnections ...project.ToolConn
 func TestSanitizeServiceName(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "MyAgent", sanitizeServiceName("  My Agent  "))
-	assert.Equal(t, "gpt4o", sanitizeServiceName("gpt 4 o"))
-	assert.Equal(t, "", sanitizeServiceName("   "))
+	assert.Equal(t, "MyAgent", servicekey.SanitizeServiceName("  My Agent  "))
+	assert.Equal(t, "gpt4o", servicekey.SanitizeServiceName("gpt 4 o"))
+	assert.Equal(t, "", servicekey.SanitizeServiceName("   "))
 }
 
 // TestReserveServiceName verifies distinct service keys are accepted and that
@@ -512,6 +514,10 @@ type recordingProjectServer struct {
 	// simulate a service that already carries an env section (raw,
 	// on-disk templates).
 	rawEnv                map[string]map[string]any
+	projectPath           string
+	nilProject            bool
+	getProjectErr         error
+	setServiceConfigErr   error
 	unsetPaths            []string
 	setEnvironmentErr     error
 	unsetServiceConfigErr error
@@ -528,8 +534,14 @@ func (s *recordingProjectServer) Get(
 ) (*azdext.GetProjectResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.getProjectErr != nil {
+		return nil, s.getProjectErr
+	}
+	if s.nilProject {
+		return &azdext.GetProjectResponse{}, nil
+	}
 	return &azdext.GetProjectResponse{
-		Project: &azdext.ProjectConfig{Services: s.existing},
+		Project: &azdext.ProjectConfig{Path: s.projectPath, Services: s.existing},
 	}, nil
 }
 
@@ -559,6 +571,19 @@ func (s *recordingProjectServer) GetServiceConfigValue(
 			}, nil
 		}
 	}
+	if req.Path == "uses" {
+		if service := s.existing[req.ServiceName]; service != nil && len(service.GetUses()) > 0 {
+			items := make([]any, len(service.GetUses()))
+			for i, use := range service.GetUses() {
+				items[i] = use
+			}
+			value, err := structpb.NewValue(items)
+			if err != nil {
+				return nil, err
+			}
+			return &azdext.GetServiceConfigValueResponse{Found: true, Value: value}, nil
+		}
+	}
 	return &azdext.GetServiceConfigValueResponse{}, nil
 }
 
@@ -567,6 +592,9 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 ) (*azdext.EmptyResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.setServiceConfigErr != nil {
+		return nil, s.setServiceConfigErr
+	}
 	if s.uses == nil {
 		s.uses = map[string][]string{}
 	}
@@ -582,6 +610,9 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 				}
 			}
 			s.uses[req.ServiceName] = vals
+			if service := s.existing[req.ServiceName]; service != nil {
+				service.Uses = slices.Clone(vals)
+			}
 		}
 	} else if req.Value != nil {
 		if str, ok := req.Value.AsInterface().(string); ok {

@@ -116,6 +116,9 @@ func applyMapDelta(destination, initial, updated map[string]any) {
 		initialMap, initialIsMap := initialValue.(map[string]any)
 		updatedMap, updatedIsMap := updatedValue.(map[string]any)
 		if initialIsMap && updatedIsMap {
+			if reflect.DeepEqual(initialMap, updatedMap) {
+				continue
+			}
 			destinationMap, destinationIsMap := destination[key].(map[string]any)
 			if !destinationIsMap {
 				destinationMap = map[string]any{}

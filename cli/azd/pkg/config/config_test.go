@@ -31,6 +31,19 @@ func TestCloneAndApplyDelta(t *testing.T) {
 	require.Equal(t, "preserved", valueAt(t, destination, "concurrent"))
 }
 
+func TestApplyDeltaPreservesConcurrentNestedMapReplacement(t *testing.T) {
+	destination := NewConfig(map[string]any{
+		"shared": map[string]any{"unchanged": "initial"},
+	})
+	initial := Clone(destination)
+	updated := Clone(initial)
+	require.NoError(t, destination.Set("shared", "concurrent"))
+
+	ApplyDelta(destination, initial, updated)
+
+	require.Equal(t, "concurrent", valueAt(t, destination, "shared"))
+}
+
 func valueAt(t *testing.T, source Config, path string) any {
 	t.Helper()
 	value, has := source.Get(path)

@@ -5,6 +5,7 @@ package lazy
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,38 @@ func Test_Lazy_Init(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expected, actual)
 	require.True(t, ran)
+}
+
+func Test_Lazy_Init_BypassInitializer(t *testing.T) {
+	initFn := func() (string, error) {
+		require.Fail(t, "THIS SHOULD NEVER BE CALLED")
+		return "", errors.New("NEVER USED")
+	}
+
+	instance := NewLazy(initFn)
+	instance.SetValue("explicitly set!")
+	actualValue, err := instance.GetValue()
+	require.Equal(t, "explicitly set!", actualValue)
+	require.NoError(t, err)
+}
+
+func Test_Lazy_SetValueRecoversFromInitializationError(t *testing.T) {
+	initializerCalls := 0
+	instance := NewLazy(func() (string, error) {
+		initializerCalls++
+		return "", errors.New("FAIL ON PURPOSE")
+	})
+
+	value, err := instance.GetValue()
+	require.EqualError(t, err, "FAIL ON PURPOSE")
+	require.Empty(t, value)
+	require.Equal(t, 1, initializerCalls)
+
+	instance.SetValue("recovered")
+	value, err = instance.GetValue()
+	require.NoError(t, err)
+	require.Equal(t, "recovered", value)
+	require.Equal(t, 1, initializerCalls)
 }
 
 func Test_Lazy_GetValue(t *testing.T) {
@@ -105,6 +138,30 @@ func Test_Lazy_SetValue(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func Test_Lazy_GetValueAndSetValue_Concurrent(t *testing.T) {
+	instance := From(0)
+	start := make(chan struct{})
+	var waitGroup sync.WaitGroup
+
+	for writerValue := 1; writerValue <= 4; writerValue++ {
+		waitGroup.Go(func() {
+			<-start
+			for range 1_000 {
+				instance.SetValue(writerValue)
+			}
+		})
+		waitGroup.Go(func() {
+			<-start
+			for range 1_000 {
+				_, _ = instance.GetValue()
+			}
+		})
+	}
+
+	close(start)
+	waitGroup.Wait()
+}
+
 func Test_Lazy_GetValue_Concurrent(t *testing.T) {
 	expected := "test"
 	callCount := 0
@@ -119,25 +176,23 @@ func Test_Lazy_GetValue_Concurrent(t *testing.T) {
 
 	instance := NewLazy(initFn)
 
-	var actual string
-	var err error
+	type result struct {
+		value string
+		err   error
+	}
+	results := make(chan result, 2)
 
-	res := make(chan bool, 2)
+	for range 2 {
+		go func() {
+			actual, err := instance.GetValue()
+			results <- result{value: actual, err: err}
+		}()
+	}
 
-	go func() {
-		actual, err = instance.GetValue()
-		res <- true
-	}()
-
-	go func() {
-		actual, err = instance.GetValue()
-		res <- true
-	}()
-
-	done := <-res
-
-	require.True(t, done)
-	require.Equal(t, expected, actual)
-	require.NoError(t, err)
+	for range 2 {
+		actual := <-results
+		require.Equal(t, expected, actual.value)
+		require.NoError(t, actual.err)
+	}
 	require.Equal(t, 1, callCount)
 }

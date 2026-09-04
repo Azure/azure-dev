@@ -12,6 +12,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestExpandableMap_Raw(t *testing.T) {
+	values := ExpandableMap{
+		"TEMPLATE": NewExpandableString("${VALUE}"),
+		"STATIC":   NewExpandableString("static-value"),
+	}
+
+	assert.Equal(t, map[string]string{
+		"TEMPLATE": "${VALUE}",
+		"STATIC":   "static-value",
+	}, values.Raw())
+}
+
 func TestExpandableMap_Expand(t *testing.T) {
 	t.Run("EmptyMap", func(t *testing.T) {
 		em := ExpandableMap{}

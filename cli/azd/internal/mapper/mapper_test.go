@@ -194,6 +194,36 @@ func TestMappingWithoutResolver(t *testing.T) {
 	assert.True(t, result.Ready)
 }
 
+func TestMappingWithContext(t *testing.T) {
+	clearRegistry()
+
+	type conversionModeKey struct{}
+	Register(func(ctx context.Context, src string) (string, error) {
+		mode, _ := ctx.Value(conversionModeKey{}).(string)
+		return mode + ":" + src, nil
+	})
+
+	ctx := context.WithValue(t.Context(), conversionModeKey{}, "template")
+	var result string
+	err := WithContext(ctx).Convert("value", &result)
+
+	require.NoError(t, err)
+	assert.Equal(t, "template:value", result)
+}
+
+func TestMapperWithEnvSubst(t *testing.T) {
+	base := WithContext(t.Context())
+	require.True(t, EnvSubstEnabled(base.ctx))
+
+	disabled := base.WithResolver(func(key string) string {
+		return "resolved-" + key
+	}).WithEnvSubst(false)
+	require.False(t, EnvSubstEnabled(disabled.ctx))
+	require.Equal(t, "resolved-value", GetResolver(disabled.ctx)("value"))
+	require.True(t, EnvSubstEnabled(base.ctx))
+	require.Nil(t, GetResolver(base.ctx))
+}
+
 func TestMappingWithEnvironmentResolver(t *testing.T) {
 	clearRegistry()
 

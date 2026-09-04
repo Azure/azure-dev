@@ -10,6 +10,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCloneAndApplyDelta(t *testing.T) {
+	destination := NewConfig(map[string]any{
+		"shared": map[string]any{"unchanged": "initial", "removed": "old"},
+	})
+	initial := Clone(destination)
+	updated := Clone(initial)
+
+	require.NoError(t, updated.Set("shared.unchanged", "provider"))
+	require.NoError(t, updated.Unset("shared.removed"))
+	require.NoError(t, updated.Set("shared.added", "new"))
+	require.NoError(t, destination.Set("concurrent", "preserved"))
+
+	ApplyDelta(destination, initial, updated)
+
+	require.Equal(t, "provider", valueAt(t, destination, "shared.unchanged"))
+	_, hasRemoved := destination.Get("shared.removed")
+	require.False(t, hasRemoved)
+	require.Equal(t, "new", valueAt(t, destination, "shared.added"))
+	require.Equal(t, "preserved", valueAt(t, destination, "concurrent"))
+}
+
+func valueAt(t *testing.T, source Config, path string) any {
+	t.Helper()
+	value, has := source.Get(path)
+	require.True(t, has)
+	return value
+}
+
 func Test_SetGetUnsetWithValue(t *testing.T) {
 	tests := []struct {
 		name  string

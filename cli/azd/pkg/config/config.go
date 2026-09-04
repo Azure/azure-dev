@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -63,6 +64,98 @@ func NewConfig(data map[string]any) Config {
 
 	return &config{
 		data: data,
+	}
+}
+
+// Clone returns an independent copy of source, including its local vault state.
+// Vault references remain references; secret values are not materialized in the raw data.
+func Clone(source Config) Config {
+	if source == nil {
+		return NewEmptyConfig()
+	}
+
+	cloned := &config{data: cloneMap(source.Raw())}
+	if sourceConfig, ok := source.(*config); ok {
+		cloned.vaultId = sourceConfig.vaultId
+		if sourceConfig.vault != nil {
+			cloned.vault = Clone(sourceConfig.vault)
+		}
+	}
+	return cloned
+}
+
+// ApplyDelta applies changes made between initial and updated to destination.
+// Unchanged values do not replace values written to destination after initial was captured.
+func ApplyDelta(destination, initial, updated Config) {
+	applyMapDelta(destination.Raw(), initial.Raw(), updated.Raw())
+
+	destinationConfig, destinationOK := destination.(*config)
+	initialConfig, initialOK := initial.(*config)
+	updatedConfig, updatedOK := updated.(*config)
+	if !destinationOK || !initialOK || !updatedOK || updatedConfig.vault == nil {
+		return
+	}
+	if destinationConfig.vault == nil {
+		destinationConfig.vault = NewEmptyConfig()
+	}
+	if initialConfig.vault == nil {
+		initialConfig.vault = NewEmptyConfig()
+	}
+	ApplyDelta(destinationConfig.vault, initialConfig.vault, updatedConfig.vault)
+	destinationConfig.vaultId = updatedConfig.vaultId
+}
+
+func applyMapDelta(destination, initial, updated map[string]any) {
+	for key, initialValue := range initial {
+		updatedValue, hasUpdated := updated[key]
+		if !hasUpdated {
+			delete(destination, key)
+			continue
+		}
+
+		initialMap, initialIsMap := initialValue.(map[string]any)
+		updatedMap, updatedIsMap := updatedValue.(map[string]any)
+		if initialIsMap && updatedIsMap {
+			destinationMap, destinationIsMap := destination[key].(map[string]any)
+			if !destinationIsMap {
+				destinationMap = map[string]any{}
+				destination[key] = destinationMap
+			}
+			applyMapDelta(destinationMap, initialMap, updatedMap)
+			continue
+		}
+		if !reflect.DeepEqual(initialValue, updatedValue) {
+			destination[key] = cloneValue(updatedValue)
+		}
+	}
+
+	for key, updatedValue := range updated {
+		if _, existed := initial[key]; !existed {
+			destination[key] = cloneValue(updatedValue)
+		}
+	}
+}
+
+func cloneMap(source map[string]any) map[string]any {
+	cloned := make(map[string]any, len(source))
+	for key, value := range source {
+		cloned[key] = cloneValue(value)
+	}
+	return cloned
+}
+
+func cloneValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		return cloneMap(value)
+	case []any:
+		cloned := make([]any, len(value))
+		for i, item := range value {
+			cloned[i] = cloneValue(item)
+		}
+		return cloned
+	default:
+		return value
 	}
 }
 

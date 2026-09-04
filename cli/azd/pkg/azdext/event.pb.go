@@ -419,8 +419,10 @@ type ProjectHandlerStatus struct {
 	Message string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	// Optional structured error details (set when status is "failed").
 	Error *ExtensionError `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
-	// Optional command-level follow-up text for successful post* events.
-	// Presence distinguishes no contribution from an explicit clear.
+	// Optional follow-up text for the parent command completion
+	// message. Presence distinguishes no contribution from an
+	// explicit empty retraction. Hosts collect this only from
+	// successful project post* handlers.
 	FollowUp      *string `protobuf:"bytes,5,opt,name=follow_up,json=followUp,proto3,oneof" json:"follow_up,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

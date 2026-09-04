@@ -100,8 +100,16 @@ func TestUxMiddleware_MergesCollectedFollowUp(t *testing.T) {
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
 		collector := commandresult.FollowUpCollectorFromContext(ctx)
-		recordFollowUp(collector, "z.extension", "postdeploy", "z")
-		recordFollowUp(collector, "a.extension", "postdeploy", "a")
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "z.extension",
+			EventName:   "postdeploy",
+			Text:        "z",
+		})
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "a.extension",
+			EventName:   "postdeploy",
+			Text:        "a",
+		})
 		return actionResult, nil
 	})
 
@@ -123,18 +131,16 @@ func TestUxMiddleware_AzdUpUsesLatestExtensionFollowUp(t *testing.T) {
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
 		collector := commandresult.FollowUpCollectorFromContext(ctx)
-		recordFollowUp(
-			collector,
-			"azure.ai.agents",
-			"postbuild",
-			"Next:\n  azd deploy",
-		)
-		recordFollowUp(
-			collector,
-			"azure.ai.agents",
-			"postdeploy",
-			"Next:\n  azd ai agent show",
-		)
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "azure.ai.agents",
+			EventName:   "postprovision",
+			Text:        "Next:\n  azd deploy",
+		})
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "azure.ai.agents",
+			EventName:   "postdeploy",
+			Text:        "Next:\n  azd ai agent show",
+		})
 		return &actions.ActionResult{}, nil
 	})
 
@@ -159,19 +165,21 @@ func TestUxMiddleware_AzdUpClearsStaleExtensionFollowUp(t *testing.T) {
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
 		collector := commandresult.FollowUpCollectorFromContext(ctx)
-		recordFollowUp(
-			collector,
-			"azure.ai.agents",
-			"postbuild",
-			"Next:\n  azd deploy",
-		)
-		recordFollowUp(
-			collector,
-			"other.extension",
-			"postdeploy",
-			"other guidance",
-		)
-		recordFollowUp(collector, "azure.ai.agents", "postdeploy", "")
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "azure.ai.agents",
+			EventName:   "postprovision",
+			Text:        "Next:\n  azd deploy",
+		})
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "other.extension",
+			EventName:   "postdeploy",
+			Text:        "other guidance",
+		})
+		collector.Add(commandresult.FollowUp{
+			ExtensionID: "azure.ai.agents",
+			EventName:   "postdeploy",
+			Text:        "",
+		})
 		return actionResult, nil
 	})
 
@@ -192,11 +200,12 @@ func TestUxMiddleware_CreatesResultForCollectedFollowUp(t *testing.T) {
 	result, err := ux.Run(*mockContext.Context, func(
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
-		recordFollowUp(
-			commandresult.FollowUpCollectorFromContext(ctx),
-			"test.extension",
-			"postdeploy",
-			"Run azd deploy",
+		commandresult.FollowUpCollectorFromContext(ctx).Add(
+			commandresult.FollowUp{
+				ExtensionID: "test.extension",
+				EventName:   "postprovision",
+				Text:        "Run azd deploy",
+			},
 		)
 		return nil, nil
 	})
@@ -224,11 +233,12 @@ func TestUxMiddleware_DoesNotMergeFollowUpIntoJSON(t *testing.T) {
 	result, err := ux.Run(*mockContext.Context, func(
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
-		recordFollowUp(
-			commandresult.FollowUpCollectorFromContext(ctx),
-			"test.extension",
-			"postdeploy",
-			"Run azd deploy",
+		commandresult.FollowUpCollectorFromContext(ctx).Add(
+			commandresult.FollowUp{
+				ExtensionID: "test.extension",
+				EventName:   "postprovision",
+				Text:        "Run azd deploy",
+			},
 		)
 		return actionResult, nil
 	})
@@ -255,11 +265,12 @@ func TestUxMiddleware_DiscardsFollowUpOnError(t *testing.T) {
 	result, err := ux.Run(*mockContext.Context, func(
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
-		recordFollowUp(
-			commandresult.FollowUpCollectorFromContext(ctx),
-			"test.extension",
-			"postdeploy",
-			"Run azd deploy",
+		commandresult.FollowUpCollectorFromContext(ctx).Add(
+			commandresult.FollowUp{
+				ExtensionID: "test.extension",
+				EventName:   "postprovision",
+				Text:        "Run azd deploy",
+			},
 		)
 		return actionResult, handlerError
 	})
@@ -267,13 +278,4 @@ func TestUxMiddleware_DiscardsFollowUpOnError(t *testing.T) {
 	require.ErrorIs(t, err, handlerError)
 	require.Same(t, actionResult, result)
 	require.Equal(t, "existing", result.Message.FollowUp)
-}
-
-func recordFollowUp(
-	collector *commandresult.FollowUpCollector,
-	extensionID string,
-	eventName string,
-	text string,
-) {
-	collector.Record(extensionID, eventName, "", &text)
 }

@@ -430,75 +430,75 @@ func TestEventService_createProjectEventHandler(t *testing.T) {
 
 func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 	tests := []struct {
-		name        string
-		eventName   string
-		status      string
-		message     string
-		followUp    string
-		followUpSet bool
-		initial     string
-		want        string
-		wantError   bool
+		name      string
+		eventName string
+		status    string
+		message   string
+		followUp  *string
+		initial   string
+		want      string
+		wantError bool
 	}{
 		{
-			name:        "completed post event",
-			eventName:   "postdeploy",
-			status:      "completed",
-			message:     "legacy status details",
-			followUp:    "Run azd show",
-			followUpSet: true,
-			initial:     "old guidance",
-			want:        "Run azd show",
-		},
-		{
-			name:        "completed pre event with follow-up",
-			eventName:   "predeploy",
-			status:      "completed",
-			followUp:    "ignored",
-			followUpSet: true,
-			initial:     "old guidance",
-			want:        "old guidance",
-		},
-		{
-			name:      "completed post event with legacy message only",
+			name:      "completed post event",
 			eventName: "postdeploy",
 			status:    "completed",
-			message:   "legacy status details",
+			followUp:  new("Run azd show"),
+			initial:   "old guidance",
+			want:      "Run azd show",
+		},
+		{
+			name:      "completed pre event",
+			eventName: "predeploy",
+			status:    "completed",
+			followUp:  new("Run azd show"),
 			initial:   "old guidance",
 			want:      "old guidance",
 		},
 		{
-			name:        "completed post event with explicit empty follow-up",
-			eventName:   "postdeploy",
-			status:      "completed",
-			message:     "legacy status details",
-			followUpSet: true,
-			initial:     "old guidance",
+			name:      "completed post event without follow-up",
+			eventName: "postdeploy",
+			status:    "completed",
+			initial:   "old guidance",
+			want:      "old guidance",
 		},
 		{
-			name:        "completed post event with whitespace follow-up",
-			eventName:   "postdeploy",
-			status:      "completed",
-			followUp:    " \n\t ",
-			followUpSet: true,
-			initial:     "old guidance",
+			name:      "completed post event ignores message",
+			eventName: "postdeploy",
+			status:    "completed",
+			message:   "not follow-up",
+			initial:   "old guidance",
+			want:      "old guidance",
 		},
 		{
-			name:        "failed post event",
-			eventName:   "postdeploy",
-			status:      "failed",
-			message:     "hook failed",
-			followUp:    "ignored",
-			followUpSet: true,
-			initial:     "old guidance",
-			want:        "old guidance",
-			wantError:   true,
+			name:      "completed post event with empty follow-up",
+			eventName: "postdeploy",
+			status:    "completed",
+			followUp:  new(""),
+			initial:   "old guidance",
+		},
+		{
+			name:      "completed post event with whitespace follow-up",
+			eventName: "postdeploy",
+			status:    "completed",
+			followUp:  new(" \n\t "),
+			initial:   "old guidance",
+		},
+		{
+			name:      "failed post event",
+			eventName: "postdeploy",
+			status:    "failed",
+			message:   "hook failed",
+			followUp:  new("Run azd show"),
+			initial:   "old guidance",
+			want:      "old guidance",
+			wantError: true,
 		},
 		{
 			name:      "incomplete post event",
 			eventName: "postdeploy",
 			status:    "running",
-			message:   "not complete",
+			followUp:  new("not complete"),
 			initial:   "old guidance",
 			want:      "old guidance",
 		},
@@ -518,18 +518,14 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 					invoke := msg.GetInvokeProjectHandler()
 					require.NotNil(t, invoke)
 
-					status := &azdext.ProjectHandlerStatus{
-						EventName: tt.eventName,
-						Status:    tt.status,
-						Message:   tt.message,
-					}
-					if tt.followUpSet {
-						status.FollowUp = &tt.followUp
-					}
-
 					return &azdext.EventMessage{
 						MessageType: &azdext.EventMessage_ProjectHandlerStatus{
-							ProjectHandlerStatus: status,
+							ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+								EventName: tt.eventName,
+								Status:    tt.status,
+								Message:   tt.message,
+								FollowUp:  tt.followUp,
+							},
 						},
 					}
 				},
@@ -543,14 +539,11 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 				broker,
 			)
 			collector := commandresult.NewFollowUpCollector()
-			if tt.initial != "" {
-				collector.Record(
-					extension.Id,
-					"postdeploy",
-					"",
-					&tt.initial,
-				)
-			}
+			collector.Add(commandresult.FollowUp{
+				ExtensionID: extension.Id,
+				EventName:   "postprovision",
+				Text:        tt.initial,
+			})
 			ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
 
 			err = handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})
@@ -564,14 +557,12 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 	}
 }
 
-func TestEventService_createProjectEventHandler_UsesLayerIdentity(t *testing.T) {
+func TestEventService_createProjectEventHandler_CollectsLayerFollowUp(t *testing.T) {
 	service, _ := createTestEventService()
 	extension := createTestExtension()
 	projectConfig, err := service.lazyProject.GetValue()
 	require.NoError(t, err)
 
-	responses := []string{"from-layer-b", "from-layer-a"}
-	responseIndex := 0
 	broker, streamCtx, cleanup := createBrokerForEventHandler(
 		t,
 		extension.Id,
@@ -579,14 +570,12 @@ func TestEventService_createProjectEventHandler_UsesLayerIdentity(t *testing.T) 
 			invoke := msg.GetInvokeProjectHandler()
 			require.NotNil(t, invoke)
 
-			followUp := responses[responseIndex]
-			responseIndex++
 			return &azdext.EventMessage{
 				MessageType: &azdext.EventMessage_ProjectHandlerStatus{
 					ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
-						EventName: "postprovision",
+						EventName: invoke.EventName,
 						Status:    "completed",
-						FollowUp:  &followUp,
+						FollowUp:  new("from-app"),
 					},
 				},
 			}
@@ -601,25 +590,22 @@ func TestEventService_createProjectEventHandler_UsesLayerIdentity(t *testing.T) 
 		broker,
 	)
 	collector := commandresult.NewFollowUpCollector()
+	collector.Add(commandresult.FollowUp{
+		ExtensionID: extension.Id,
+		EventName:   "postprovision",
+		Layer:       "data",
+		Text:        "from-data",
+	})
 	ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
 
 	err = handler(ctx, project.ProjectLifecycleEventArgs{
 		Project: projectConfig,
 		Args: map[string]any{
-			"layer": "layer-b",
+			"layer": "app",
 		},
 	})
 	require.NoError(t, err)
-
-	err = handler(ctx, project.ProjectLifecycleEventArgs{
-		Project: projectConfig,
-		Args: map[string]any{
-			"layer": "layer-a",
-		},
-	})
-	require.NoError(t, err)
-
-	require.Equal(t, "from-layer-b", collector.Text())
+	require.Equal(t, "from-data", collector.Text())
 }
 
 func TestEventService_createServiceEventHandler(t *testing.T) {

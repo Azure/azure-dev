@@ -28,9 +28,10 @@ type EventManager struct {
 type ProjectEventArgs struct {
 	Project *ProjectConfig
 
-	// FollowUp is optional text for the parent command's
-	// completion message. A nil value leaves an existing
-	// contribution unchanged; a non-nil empty value clears it.
+	// FollowUp is optional command completion text. Nil
+	// means no contribution. A later lifecycle event
+	// replaces this extension's value. An explicit empty
+	// string retracts it.
 	FollowUp *string
 }
 

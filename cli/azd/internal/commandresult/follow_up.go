@@ -4,7 +4,6 @@
 package commandresult
 
 import (
-	"cmp"
 	"context"
 	"maps"
 	"slices"
@@ -14,140 +13,128 @@ import (
 
 type followUpCollectorKey struct{}
 
-type followUpContributionKey struct {
-	eventName  string
-	instanceID string
+// FollowUp is one explicit contribution from a completed
+// project post* handler.
+type FollowUp struct {
+	ExtensionID string
+	EventName   string
+	Layer       string
+	Text        string
 }
 
-type followUpContribution struct {
-	eventName  string
-	instanceID string
-	text       string
+type followUpKey struct {
+	extensionID string
+	eventName   string
+	layer       string
 }
 
-// FollowUpCollector gathers extension follow-up text for one command.
+// FollowUpCollector gathers extension follow-up text for one
+// command.
 type FollowUpCollector struct {
 	mu            sync.RWMutex
-	contributions map[string]map[followUpContributionKey]string
+	contributions map[followUpKey]string
 }
 
-// NewFollowUpCollector creates an empty command follow-up collector.
+// NewFollowUpCollector creates an empty command follow-up
+// collector.
 func NewFollowUpCollector() *FollowUpCollector {
 	return &FollowUpCollector{
-		contributions: make(map[string]map[followUpContributionKey]string),
+		contributions: make(map[followUpKey]string),
 	}
 }
 
-// WithFollowUpCollector stores a collector in the command context.
+// WithFollowUpCollector stores a collector in the command
+// context.
 func WithFollowUpCollector(ctx context.Context, collector *FollowUpCollector) context.Context {
 	return context.WithValue(ctx, followUpCollectorKey{}, collector)
 }
 
-// FollowUpCollectorFromContext returns the collector, if present.
+// FollowUpCollectorFromContext returns the collector, if
+// present.
 func FollowUpCollectorFromContext(ctx context.Context) *FollowUpCollector {
 	collector, _ := ctx.Value(followUpCollectorKey{}).(*FollowUpCollector)
 	return collector
 }
 
-// Record records an explicit follow-up value for an extension event.
-// A nil value does not change the existing contribution.
-func (c *FollowUpCollector) Record(
-	extensionID string,
-	eventName string,
-	instanceID string,
-	followUp *string,
-) {
-	if c == nil || followUp == nil {
+// Add records an explicit follow-up. Empty text retracts that
+// extension's value for this event and layer. Callers must
+// invoke Add only when follow_up was set.
+func (c *FollowUpCollector) Add(item FollowUp) {
+	if c == nil {
 		return
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.contributions == nil {
-		c.contributions = make(map[string]map[followUpContributionKey]string)
+		c.contributions = make(map[followUpKey]string)
 	}
-	if c.contributions[extensionID] == nil {
-		c.contributions[extensionID] =
-			make(map[followUpContributionKey]string)
-	}
-	c.contributions[extensionID][followUpContributionKey{
-		eventName:  eventName,
-		instanceID: instanceID,
-	}] = *followUp
+	c.contributions[followUpKey{
+		extensionID: item.ExtensionID,
+		eventName:   item.EventName,
+		layer:       item.Layer,
+	}] = item.Text
 }
 
-// Text returns contributions in deterministic lifecycle and extension order.
+// postEventRank orders known project post* events. Later
+// events replace earlier ones for the same extension.
+var postEventRank = map[string]int{
+	"postrestore":   1,
+	"postprovision": 2,
+	"postbuild":     3,
+	"postpackage":   4,
+	"postpublish":   5,
+	"postdeploy":    6,
+}
+
+func eventOrder(eventName string) (int, string) {
+	if rank, ok := postEventRank[eventName]; ok {
+		return rank, eventName
+	}
+	return len(postEventRank) + 1, eventName
+}
+
+func laterFollowUp(candidate, current followUpKey) bool {
+	candidateRank, candidateEvent := eventOrder(candidate.eventName)
+	currentRank, currentEvent := eventOrder(current.eventName)
+	if candidateRank != currentRank {
+		return candidateRank > currentRank
+	}
+	if candidateEvent != currentEvent {
+		return candidateEvent > currentEvent
+	}
+	return candidate.layer > current.layer
+}
+
+// Text resolves contributions after the command. For each
+// extension, the latest lifecycle event wins. Within that
+// event, the last layer in lexicographic order wins. Empty
+// winning text retracts the extension. Remaining texts are
+// joined in extension ID order.
 func (c *FollowUpCollector) Text() string {
 	if c == nil {
 		return ""
 	}
 
 	c.mu.RLock()
-	contributionsByExtension := make(
-		map[string][]followUpContribution,
-		len(c.contributions),
-	)
-	for extensionID, contributions := range c.contributions {
-		entries := make([]followUpContribution, 0, len(contributions))
-		for key, text := range contributions {
-			entries = append(entries, followUpContribution{
-				eventName:  key.eventName,
-				instanceID: key.instanceID,
-				text:       text,
-			})
-		}
-		contributionsByExtension[extensionID] = entries
-	}
-	c.mu.RUnlock()
+	defer c.mu.RUnlock()
 
-	result := make([]string, 0, len(contributionsByExtension))
-	for _, extensionID := range slices.Sorted(maps.Keys(contributionsByExtension)) {
-		entries := contributionsByExtension[extensionID]
-		slices.SortFunc(entries, compareFollowUpContributions)
-
-		var followUp string
-		for _, entry := range entries {
-			followUp = strings.TrimSpace(entry.text)
-		}
-		if followUp != "" {
-			result = append(result, followUp)
+	winners := make(map[string]followUpKey, len(c.contributions))
+	values := make(map[string]string, len(c.contributions))
+	for key, text := range c.contributions {
+		current, ok := winners[key.extensionID]
+		if !ok || laterFollowUp(key, current) {
+			winners[key.extensionID] = key
+			values[key.extensionID] = text
 		}
 	}
 
-	return strings.Join(result, "\n\n")
-}
+	contributions := make([]string, 0, len(winners))
+	for _, extensionID := range slices.Sorted(maps.Keys(winners)) {
+		if followUp := strings.TrimSpace(values[extensionID]); followUp != "" {
+			contributions = append(contributions, followUp)
+		}
+	}
 
-func compareFollowUpContributions(
-	left followUpContribution,
-	right followUpContribution,
-) int {
-	if result := cmp.Compare(
-		followUpEventRank(left.eventName),
-		followUpEventRank(right.eventName),
-	); result != 0 {
-		return result
-	}
-	if result := cmp.Compare(left.eventName, right.eventName); result != 0 {
-		return result
-	}
-	return cmp.Compare(left.instanceID, right.instanceID)
-}
-
-func followUpEventRank(eventName string) int {
-	switch eventName {
-	case "postrestore":
-		return 0
-	case "postbuild":
-		return 1
-	case "postpackage":
-		return 2
-	case "postprovision":
-		return 3
-	case "postpublish":
-		return 4
-	case "postdeploy":
-		return 5
-	default:
-		return 6
-	}
+	return strings.Join(contributions, "\n\n")
 }

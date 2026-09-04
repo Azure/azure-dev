@@ -89,21 +89,19 @@ Project lifecycle handlers can provide command-level guidance by setting
 ```go
 host.WithProjectEventHandler("postdeploy",
     func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-        followUp := "Next:\n  azd ai agent show my-agent"
-        args.FollowUp = &followUp
+        args.FollowUp = new("Next:\n  azd ai agent show my-agent")
         return nil
     })
 ```
 
 The host appends this text to the parent command's human-readable completion
 message. It treats the text as opaque, collects only successful project
-`post*` events, and leaves JSON output unchanged. Leave `FollowUp` nil when
-there is no guidance to add; set a non-empty pointer to contribute guidance,
-or an empty pointer to explicitly retract the extension's earlier contribution.
-Lifecycle event order and stable layer identity make each extension's result
-deterministic when handlers complete concurrently; extension IDs determine
-display order. Other extensions and existing core follow-up text are preserved.
-Do not use it for service-level events or for error messages.
+`post*` events that set `FollowUp`, and leaves JSON output unchanged. Nil
+means no contribution. Within one command, a later lifecycle event replaces
+the earlier result from that extension; an empty value retracts it. Concurrent
+layers of the same event resolve by stable layer identity, not completion
+time. Other extensions and existing core follow-up text are preserved. Do not
+use it for service-level events or for error messages.
 
 ## Extension Design Guidelines
 

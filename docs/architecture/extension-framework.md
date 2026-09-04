@@ -48,20 +48,21 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 ### Lifecycle follow-up messages
 
 A project lifecycle handler can set `ProjectEventArgs.FollowUp` after a
-successful `post*` event. The host carries this opaque text in a dedicated
-optional status field and appends it to the parent command's human-readable
-completion message. The host combines contributions from multiple extensions
-deterministically and does not collect `pre*` or failed handler messages.
+successful `post*` event. Nil means no contribution. The host carries this
+opaque text through a dedicated `follow_up` status field and appends it to
+the parent command's human-readable completion message. The host combines
+contributions from multiple extensions deterministically and does not collect
+`pre*` or failed handler messages.
 
-Leave `FollowUp` nil when the handler has no contribution. A non-empty pointer
-sets the extension's guidance, while an empty or whitespace-only pointer
-explicitly removes it without affecting other extensions or the core command's
-follow-up text. Lifecycle event order and stable layer identity determine the
-result when handlers complete concurrently.
+Within one top-level command, a later lifecycle event from an extension
+replaces its earlier result. Concurrent layers of the same event resolve by
+stable layer identity, not completion time. Setting `FollowUp` to an empty
+string removes that extension's earlier contribution without affecting other
+extensions or the core command's follow-up text.
 
 Follow-up text is not included in `--output json` results. Extensions should
-leave the field nil when they have no command-level guidance. Older hosts
-ignore this optional success field, so handlers remain backward compatible.
+leave the field unset when they have no command-level guidance to add. Older
+hosts ignore this optional field, so handlers remain backward compatible.
 
 ## Capabilities
 

@@ -207,24 +207,34 @@ func (s *eventService) createProjectEventHandler(
 
 			return nil
 		})
-		if err == nil && handlerCompleted && strings.HasPrefix(eventName, "post") &&
+		if err == nil && handlerCompleted &&
+			strings.HasPrefix(eventName, "post") &&
 			handlerFollowUp != nil {
 			if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
-				instanceID := ""
-				if layer, ok := args.Args["layer"].(string); ok {
-					instanceID = layer
-				}
-				collector.Record(
-					extension.Id,
-					eventName,
-					instanceID,
-					handlerFollowUp,
-				)
+				collector.Add(commandresult.FollowUp{
+					ExtensionID: extension.Id,
+					EventName:   eventName,
+					Layer:       followUpLayer(args),
+					Text:        *handlerFollowUp,
+				})
 			}
 		}
 
 		return err
 	}
+}
+
+func followUpLayer(args project.ProjectLifecycleEventArgs) string {
+	if args.Args == nil {
+		return ""
+	}
+	if layer, ok := args.Args["layer"].(string); ok && layer != "" {
+		return layer
+	}
+	if path, ok := args.Args["path"].(string); ok {
+		return path
+	}
+	return ""
 }
 
 // ----- Service Event Handlers -----

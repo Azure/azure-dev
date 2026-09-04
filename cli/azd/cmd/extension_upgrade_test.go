@@ -989,7 +989,7 @@ func TestExtensionLifecycleTelemetrySpans(t *testing.T) {
 		require.Equal(t, string(extensions.SourceCategoryDev),
 			extensionSpanAttribute(t, attributes, fields.ExtensionSourceCategory.Key).Value.AsString())
 		for _, attr := range attributes {
-			require.NotContains(t, attr.Value.Emit(), sourceName)
+			require.NotContains(t, attr.Value.String(), sourceName)
 		}
 	})
 

@@ -1,5 +1,30 @@
 # Release History
 
+## 1.0.0-beta.14 (2026-09-04)
+
+### Breaking Changes
+
+- [[#9781]](https://github.com/Azure/azure-dev/pull/9781) Change `azd ai agent add` to manage typed service dependencies from `azure.yaml` instead of editing agent definition files directly. Thanks @JerryYangKai for the contribution!
+
+### Features Added
+
+- [[#9703]](https://github.com/Azure/azure-dev/pull/9703) Add attached resumable Responses invocation through `azd ai agent invoke --resumable`.
+- [[#9728]](https://github.com/Azure/azure-dev/pull/9728) Allow hosted agent session idle timeouts as low as 120 seconds. Thanks @Deeksharma for the contribution!
+- [[#9735]](https://github.com/Azure/azure-dev/pull/9735) Add local Connection and Toolbox definitions with standalone deploy workflows and dependency-aware Agent deployment. Thanks @JerryYangKai for the contribution!
+- [[#9789]](https://github.com/Azure/azure-dev/pull/9789) Update Digital Worker agent and Microsoft 365 publishing contracts with configurable permission scopes and access boundaries.
+
+### Bugs Fixed
+
+- [[#9720]](https://github.com/Azure/azure-dev/pull/9720) Make AI extension prompts deterministic in no-prompt mode so automation receives explicit results instead of interactive prompts.
+- [[#9678]](https://github.com/Azure/azure-dev/pull/9678) Honor disabled Connection services before agent initialization and tool discovery.
+- [[#9741]](https://github.com/Azure/azure-dev/pull/9741) Preserve connection audience and connector name during agent infrastructure synthesis.
+- [[#9809]](https://github.com/Azure/azure-dev/pull/9809) Add unified Toolbox diagnostics to Doctor and next-step guidance.
+- [[#9846]](https://github.com/Azure/azure-dev/pull/9846) Fix agent deploy and endpoint update from creating authorization defaults when configuration omits them.
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to v1.83.1 to address the GHSA-vp52-pcj8-j9qc security advisory.
+
 ## 1.0.0-beta.13 (2026-08-27)
 
 ### Features Added

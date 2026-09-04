@@ -1,5 +1,15 @@
 # Release History
 
+## 1.0.0-beta.6 (2026-09-04)
+
+### Features Added
+
+- [[#9860]](https://github.com/Azure/azure-dev/pull/9860) Refresh the embedded Inspector UI with event search, filtering, export actions, restored approvals, and improved tool and error details. Thanks @herohua for the contribution!
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to v1.83.1 to address the GHSA-vp52-pcj8-j9qc security advisory.
+
 ## 1.0.0-beta.5 (2026-08-24)
 
 ### Other Changes

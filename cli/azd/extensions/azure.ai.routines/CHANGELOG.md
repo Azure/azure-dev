@@ -1,5 +1,16 @@
 # Release History
 
+## 1.0.0-beta.5 (2026-09-04)
+
+### Features Added
+
+- [[#9758]](https://github.com/Azure/azure-dev/pull/9758) Resolve local `$ref` manifests for `azure.ai.routine` services during deployment. Thanks @Yimin-Jin for the contribution!
+- [[#9736]](https://github.com/Azure/azure-dev/pull/9736) Add `azd ai routine add` to author file-backed Routine services in `azure.yaml`. Thanks @Yimin-Jin for the contribution!
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to v1.83.1 to address the GHSA-vp52-pcj8-j9qc security advisory.
+
 ## 1.0.0-beta.4 (2026-08-06)
 
 ### Features Added

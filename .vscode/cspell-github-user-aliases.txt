@@ -16,6 +16,7 @@ briandowns
 buger
 cobey
 denormal
+Deeksharma
 dnaeon
 eerhardt
 ellismg
@@ -26,6 +27,7 @@ gofrs
 gimenete
 haoozhang
 hemarina
+herohua
 huimiu
 hyoshis
 imatiach
@@ -71,4 +73,5 @@ v1212
 vivazqu
 weilim
 Yionse
+Yimin
 Zyysurely

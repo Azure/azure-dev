@@ -18,6 +18,19 @@ type Event string
 
 type EventHandlerFn[T any] func(ctx context.Context, args T) error
 
+type multipleHandlerErrors struct {
+	message string
+	errs    []error
+}
+
+func (e *multipleHandlerErrors) Error() string {
+	return e.message
+}
+
+func (e *multipleHandlerErrors) Unwrap() []error {
+	return e.errs
+}
+
 var (
 	ErrInvalidEvent = errors.New("invalid event name for the current type")
 )
@@ -135,7 +148,7 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 			return handlerErrors[0]
 		}
 
-		// For multiple errors, join them as before
+		// Keep the old message and preserve each error in the chain.
 		lines := make([]string, len(handlerErrors))
 		// If any of the errors have a suggestion, collect them.
 		// ErrorWithSuggestion takes precedence — it has an Unwrap() so a nested
@@ -150,7 +163,10 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 				suggestions = append(suggestions, s)
 			}
 		}
-		combinedErr := errors.New(strings.Join(lines, ","))
+		combinedErr := &multipleHandlerErrors{
+			message: strings.Join(lines, ","),
+			errs:    handlerErrors,
+		}
 		if len(suggestions) > 0 {
 			return &internal.ErrorWithSuggestion{
 				Err:        combinedErr,

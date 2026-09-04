@@ -108,12 +108,9 @@ func TestTypes_RespectsCap(t *testing.T) {
 
 func TestTypes_CycleSafe(t *testing.T) {
 	t.Parallel()
-	// selfRefErr.Unwrap() returns itself; only the cap stops us.
+	// selfRefErr.Unwrap() returns itself; identity tracking stops traversal.
 	got := Types(&selfRefErr{})
-	require.Len(t, got, MaxChainLen)
-	for _, n := range got {
-		require.Equal(t, "*errchain.selfRefErr", n)
-	}
+	require.Equal(t, []string{"*errchain.selfRefErr"}, got)
 }
 
 func TestDeepestNamedType_Nil(t *testing.T) {
@@ -172,6 +169,7 @@ func TestIsGenericWrapper(t *testing.T) {
 	require.True(t, IsGenericWrapper("*errors.joinError"))
 	require.True(t, IsGenericWrapper("*errorhandler.ErrorWithSuggestion"))
 	require.True(t, IsGenericWrapper("*internal.ErrorWithTraceId"))
+	require.True(t, IsGenericWrapper("*extensions.InvocationError"))
 	require.False(t, IsGenericWrapper("*azcore.ResponseError"))
 	require.False(t, IsGenericWrapper("*errchain.typedErr"))
 }

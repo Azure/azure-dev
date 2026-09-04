@@ -126,7 +126,10 @@ These are set once at process startup via `resource.New()` and attached to every
 | Error category | `error.category` | SystemMetadata | PerformanceAndHealth | |
 | Error code | `error.code` | SystemMetadata | PerformanceAndHealth | |
 | Error type | `error.type` | SystemMetadata | PerformanceAndHealth | ResultCode or Go type for the classified error |
-| Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | Wrapped Go error type chain, outermost first |
+| Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | At most 16 host-reflected Go error type names, outermost first |
+| Extension cause types | `error.extension.cause_types` | EndUserPseudonymizedInformation | PerformanceAndHealth | Case-insensitive hashes of at most 16 normalized extension-provided cause labels; never used as `error.type` |
+| Mapper source type | `error.mapper.source.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go source type on a mapper conversion failure |
+| Mapper destination type | `error.mapper.destination.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go destination type on a mapper conversion failure |
 
 Error classification is handled by `MapError` in `internal/cmd/errors.go`, which categorizes
 errors into: update errors, auth errors, service (Azure) errors, deployment errors, extension
@@ -135,8 +138,11 @@ errors, tool errors, sentinel errors, and network errors. Each receives an `erro
 
 Generic-only error chains now use the catch-all ResultCode `internal.unclassified` instead of
 the previous `internal.errors_errorString`. Use `error.chain.types` to inspect the concrete
-wrapper types behind that bucket. The removed `error.inner` and `error.frame` attributes were
-not emitted by azd spans.
+wrapper types behind that bucket. Host-originated gRPC statuses use
+`internal.grpc.<status>` when no more specific mapping applies, and mapper conversion failures
+use `internal.mapper_conversion` with the mapper type fields above. Structured extension
+tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `error.inner` and
+`error.frame` attributes were not emitted by azd spans.
 
 ### Service Attributes
 
@@ -153,7 +159,7 @@ not emitted by azd spans.
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Tool name | `tool.name` | SystemMetadata | PerformanceAndHealth | |
+| Tool name | `tool.name` | SystemMetadata | PerformanceAndHealth | Stable identifier; core missing-tool display names use a fixed mapping and unknown names become `other`; extension-provided names are limited to 1-64 ASCII characters from `[a-z0-9_-]`; multiple missing tools remain comma-separated |
 | Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 
 ### Performance
@@ -231,6 +237,7 @@ not emitted by azd spans.
 |-------|----------|----------------|---------|-------|
 | Extension ID | `extension.id` | SystemMetadata | FeatureInsight | |
 | Extension version | `extension.version` | SystemMetadata | FeatureInsight | |
+| Extension event | `extension.event` | SystemMetadata | FeatureInsight | Extension-defined usage event or failed-invocation event |
 | Extension installed | `extension.installed` | SystemMetadata | FeatureInsight | List of installed extensions, each formatted `id@version` |
 | Installed extension source category | `extension.installed.source.category` | SystemMetadata | FeatureInsight | List formatted `id@category`; categories: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an update |
@@ -249,7 +256,11 @@ not emitted by azd spans.
 Extensions do not have individual fields listed in this document. An extension
 reports a named event with an arbitrary attribute map, and `azd` records it on
 an `ext.usage` span alongside `extension.id`, `extension.version`,
-`extension.source`, and `extension.event`.
+`extension.source`, and `extension.event`. Failed extension commands use
+`extension.id` and `extension.version` on the failed `ext.run` span, but do
+not set `extension.event` or create an `ext.usage` span. Failed lifecycle
+hooks use the enclosing `cmd.*` span and include the extension ID, version,
+and lifecycle event.
 
 `azd` core carries no product-specific telemetry semantics for these fields.
 The following rules are enforced by the host and are what this schema

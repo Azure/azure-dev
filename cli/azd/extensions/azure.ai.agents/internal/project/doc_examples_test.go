@@ -796,7 +796,7 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 		{
 			name: "session idle timeout min valid",
 			mutate: func(value *fixture) {
-				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 300}
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 120}
 			},
 		},
 		{
@@ -808,7 +808,7 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 		{
 			name: "session idle timeout below min",
 			mutate: func(value *fixture) {
-				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 299}
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 119}
 			},
 			wantErr: true,
 		},

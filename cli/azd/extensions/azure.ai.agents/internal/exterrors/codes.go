@@ -119,6 +119,7 @@ const (
 const (
 	CodeAgentNotFound          = "agent_not_found"
 	CodeAgentHasActiveSessions = "agent_has_active_sessions"
+	CodeDeleteRequiresForce    = "delete_requires_force"
 )
 
 // Error codes for file operation errors.

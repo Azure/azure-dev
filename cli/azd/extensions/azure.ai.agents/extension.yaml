@@ -5,17 +5,17 @@ displayName: Foundry agents (Beta)
 description: Ship agents with Microsoft Foundry from your terminal. (Beta)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 1.0.0-beta.13
+version: 1.0.0-beta.14
 requiredAzdVersion: ">=1.32.0"
 dependencies:
   - id: azure.ai.inspector
     version: "~1.0.0-beta.1"
   - id: azure.ai.projects
-    version: "~1.0.0-beta.6"
+    version: "~1.0.0-beta.9"
   - id: azure.ai.connections
-    version: "~1.0.0-beta.4"
+    version: "~1.0.0-beta.6"
   - id: azure.ai.toolboxes
-    version: "~1.0.0-beta.5"
+    version: "~1.0.0-beta.6"
 language: go
 capabilities:
   - custom-commands

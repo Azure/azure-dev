@@ -310,7 +310,7 @@ type ContainerConfigurationAPI struct {
 // its own defaults.
 type SessionConfigurationAPI struct {
 	// IdleTimeoutSeconds maps to session_configuration.idle_timeout_seconds. Valid
-	// range is 300–3600 (inclusive). When the field is unset the whole
+	// range is 120–3600 (inclusive). When the field is unset the whole
 	// session_configuration block is omitted and the service default (900) applies.
 	IdleTimeoutSeconds int `json:"idle_timeout_seconds"`
 }

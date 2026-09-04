@@ -9,7 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,14 +25,18 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestInvokeCommandResumableFlagRegistered(t *testing.T) {
+func TestInvokeCommandLifecycleFlagsRegistered(t *testing.T) {
 	t.Parallel()
 
 	flags := newInvokeCommand(nil).Flags()
-	flag := flags.Lookup("resumable")
-	require.NotNil(t, flag)
-	assert.Equal(t, "false", flag.DefValue)
+	for _, name := range []string{"resumable", "resume", "cancel"} {
+		flag := flags.Lookup(name)
+		require.NotNil(t, flag)
+		assert.Equal(t, "false", flag.DefValue)
+	}
+	assert.Nil(t, flags.Lookup("agent-name"))
 	assert.Nil(t, flags.Lookup("background"))
+	assert.Nil(t, flags.Lookup("continue"))
 }
 
 type orderingResponseStore struct {
@@ -37,10 +44,12 @@ type orderingResponseStore struct {
 	saveErr      error
 	saves        []savedBackgroundResponse
 	saveContexts []context.Context
+	record       savedBackgroundResponse
+	getRecord    *savedBackgroundResponse
 }
 
 func (s *orderingResponseStore) Get(context.Context, string) (*savedBackgroundResponse, error) {
-	return nil, nil
+	return s.getRecord, nil
 }
 
 func (s *orderingResponseStore) Save(ctx context.Context, _ string, record savedBackgroundResponse) error {
@@ -50,6 +59,7 @@ func (s *orderingResponseStore) Save(ctx context.Context, _ string, record saved
 	}
 	s.saved = true
 	s.saves = append(s.saves, record)
+	s.record = record
 	return nil
 }
 
@@ -60,6 +70,14 @@ func (s *orderingResponseStore) Delete(context.Context, string) error {
 type afterSaveWriter struct {
 	store  *orderingResponseStore
 	output strings.Builder
+}
+
+type failingWriter struct {
+	err error
+}
+
+func (w failingWriter) Write([]byte) (int, error) {
+	return 0, w.err
 }
 
 func (w *afterSaveWriter) Write(p []byte) (int, error) {
@@ -392,6 +410,678 @@ func TestBackgroundProgressPersisterSurfacesTimerError(t *testing.T) {
 	require.NoError(t, persister.Close())
 }
 
+func TestHandleRejectedResponseCancelTreatsTerminalSnapshotAsSuccess(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []string{"completed", "failed", "incomplete", "cancelled"} {
+		t.Run(status, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, err := fmt.Fprintf(w, `{"id":"resp_123","status":%q}`, status)
+				assert.NoError(t, err)
+			}))
+			defer server.Close()
+
+			store := &orderingResponseStore{}
+			rc := &remoteContext{
+				name:            "agent",
+				agentKey:        "agent-key",
+				projectEndpoint: server.URL,
+				apiVersion:      "2026-05-01",
+				bearerToken:     "test-token",
+			}
+			var output strings.Builder
+			cancelErr := errors.New("cancel rejected")
+			err := (&InvokeAction{flags: &invokeFlags{}}).handleRejectedResponseCancel(
+				t.Context(),
+				rc,
+				store,
+				savedBackgroundResponse{ResponseID: "resp_123", Status: "in_progress"},
+				cancelErr,
+				&output,
+			)
+
+			require.NoError(t, err)
+			require.Len(t, store.saves, 1)
+			assert.Equal(t, status, store.saves[0].Status)
+			assert.Equal(t, "Response resp_123 is already "+status+"; nothing to cancel.\n", output.String())
+		})
+	}
+}
+
+func TestHandleRejectedResponseCancelPreservesOriginalError(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name       string
+		statusCode int
+		body       string
+		wantSaves  int
+	}{
+		{
+			name:       "snapshot remains active",
+			statusCode: http.StatusOK,
+			body:       `{"id":"resp_123","status":"in_progress"}`,
+			wantSaves:  1,
+		},
+		{
+			name:       "snapshot retrieval fails",
+			statusCode: http.StatusInternalServerError,
+			body:       `{"error":{"message":"snapshot unavailable"}}`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				_, err := io.WriteString(w, tt.body)
+				assert.NoError(t, err)
+			}))
+			defer server.Close()
+
+			store := &orderingResponseStore{}
+			rc := &remoteContext{
+				name:            "agent",
+				agentKey:        "agent-key",
+				projectEndpoint: server.URL,
+				apiVersion:      "2026-05-01",
+				bearerToken:     "test-token",
+			}
+			var output strings.Builder
+			cancelErr := errors.New("cancel rejected")
+			err := (&InvokeAction{flags: &invokeFlags{}}).handleRejectedResponseCancel(
+				t.Context(),
+				rc,
+				store,
+				savedBackgroundResponse{ResponseID: "resp_123", Status: "in_progress"},
+				cancelErr,
+				&output,
+			)
+
+			require.ErrorIs(t, err, cancelErr)
+			assert.Len(t, store.saves, tt.wantSaves)
+			assert.Empty(t, output.String())
+		})
+	}
+}
+
+func TestPrintResponseStatus(t *testing.T) {
+	t.Parallel()
+
+	var output strings.Builder
+	require.NoError(t, printResponseStatus(&output, "completed"))
+	assert.Equal(t, "Status: completed\n", output.String())
+}
+
+func TestPrintResponseStatusPropagatesWriterError(t *testing.T) {
+	t.Parallel()
+
+	writeErr := errors.New("write failed")
+	require.ErrorIs(t, printResponseStatus(failingWriter{err: writeErr}, "completed"), writeErr)
+}
+
+func TestFollowBackgroundResponseWithSavedTerminalStatusDoesNotFetch(t *testing.T) {
+	t.Parallel()
+
+	var output strings.Builder
+	err := (&InvokeAction{}).followBackgroundResponse(
+		t.Context(),
+		nil,
+		nil,
+		savedBackgroundResponse{ResponseID: "resp_123", Status: "completed"},
+		&output,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, "Status: completed\n", output.String())
+}
+
+func TestHandleEmptyBackgroundFollow(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name       string
+		status     string
+		wantOutput string
+		wantErr    string
+	}{
+		{
+			name:       "terminal snapshot renders output and status",
+			status:     "completed",
+			wantOutput: "[agent] recovered output\nStatus: completed\n",
+		},
+		{
+			name:    "active snapshot returns guidance without rendering",
+			status:  "in_progress",
+			wantErr: "no new stream events were available",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, err := fmt.Fprintf(
+					w,
+					`{"id":"resp_123","status":%q,"output":[{"content":[{"type":"output_text","text":"recovered output"}]}]}`,
+					tt.status,
+				)
+				assert.NoError(t, err)
+			}))
+			defer server.Close()
+
+			store := &orderingResponseStore{}
+			rc := &remoteContext{
+				name:            "agent",
+				agentKey:        "agent-key",
+				projectEndpoint: server.URL,
+				apiVersion:      "2026-05-01",
+				bearerToken:     "test-token",
+			}
+			var output strings.Builder
+			attempt, err := (&InvokeAction{flags: &invokeFlags{}}).handleEmptyBackgroundFollow(
+				t.Context(),
+				rc,
+				store,
+				savedBackgroundResponse{ResponseID: "resp_123", Status: "in_progress"},
+				&output,
+			)
+
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				assert.True(t, attempt.completed)
+				assert.Equal(t, tt.status, attempt.record.Status)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.False(t, attempt.completed)
+			}
+			assert.Equal(t, tt.wantOutput, output.String())
+			require.Len(t, store.saves, 1)
+			assert.Equal(t, tt.status, store.saves[0].Status)
+		})
+	}
+}
+
+func TestPrepareResponseStateForNewTurnRequiresAzdState(t *testing.T) {
+	t.Parallel()
+
+	for _, background := range []bool{false, true} {
+		t.Run(fmt.Sprintf("background=%t", background), func(t *testing.T) {
+			t.Parallel()
+			action := &InvokeAction{flags: &invokeFlags{resumable: background}}
+			store, err := action.prepareResponseStateForNewTurn(t.Context(), &remoteContext{
+				agentKey: "endpoint-derived-key",
+			})
+
+			assert.Nil(t, store)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeResponseStateUnavailable, localErr.Code)
+			require.ErrorContains(t, err, "remote Responses require access to azd state")
+		})
+	}
+}
+
+func TestEnsureNoActiveBackgroundResponseRefreshesStaleState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		initialStatus string
+		freshStatus   string
+		wantRefresh   bool
+		wantErr       string
+	}{
+		{
+			name:          "completed response allows new turn",
+			initialStatus: "in_progress",
+			freshStatus:   "completed",
+			wantRefresh:   true,
+		},
+		{
+			name:          "still active response blocks new turn",
+			initialStatus: "queued",
+			freshStatus:   "in_progress",
+			wantRefresh:   true,
+			wantErr:       "background Response resp_123 is still active",
+		},
+		{
+			name:          "known terminal response skips refresh",
+			initialStatus: "failed",
+			freshStatus:   "completed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var requestCount atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requestCount.Add(1)
+				assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+				_, err := fmt.Fprintf(w, `{"id":"resp_123","status":%q}`, tt.freshStatus)
+				assert.NoError(t, err)
+			}))
+			defer server.Close()
+
+			record := &savedBackgroundResponse{ResponseID: "resp_123", Status: tt.initialStatus}
+			store := &orderingResponseStore{getRecord: record}
+			action := &InvokeAction{flags: &invokeFlags{}}
+			rc := &remoteContext{
+				name:            "agent",
+				agentKey:        "agent-key",
+				projectEndpoint: server.URL,
+				apiVersion:      "2026-05-01",
+				bearerToken:     "test-token",
+			}
+			err := action.ensureNoActiveBackgroundResponse(t.Context(), rc, store)
+
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+			if tt.wantRefresh {
+				assert.Equal(t, int32(1), requestCount.Load())
+				require.Len(t, store.saves, 1)
+				assert.Equal(t, tt.freshStatus, store.saves[0].Status)
+			} else {
+				assert.Zero(t, requestCount.Load())
+				assert.Empty(t, store.saves)
+			}
+		})
+	}
+}
+
+func TestRefreshResponseSnapshotPersistsWithoutRendering(t *testing.T) {
+	t.Parallel()
+
+	var requestPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestPath = r.URL.Path
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		_, err := io.WriteString(w, `{"id":"resp_123","status":"completed"}`)
+		assert.NoError(t, err)
+	}))
+	defer server.Close()
+
+	store := &orderingResponseStore{}
+	record := savedBackgroundResponse{
+		ResponseID:     "resp_123",
+		Status:         "in_progress",
+		SessionID:      "sess_123",
+		ConversationID: "conv_123",
+	}
+	action := &InvokeAction{flags: &invokeFlags{}}
+	rc := &remoteContext{
+		name:            "agent",
+		agentKey:        "agent-key",
+		projectEndpoint: server.URL,
+		apiVersion:      "2026-05-01",
+	}
+
+	updated, result, err := action.refreshResponseSnapshot(t.Context(), rc, store, record, "test-token")
+
+	require.NoError(t, err)
+	assert.Contains(t, requestPath, "/agents/agent/endpoint/protocols/openai/responses/resp_123")
+	assert.Equal(t, "completed", result.snapshot.Status)
+	assert.JSONEq(t, `{"id":"resp_123","status":"completed"}`, string(result.raw))
+	assert.Equal(t, "in_progress", record.Status, "input record must not be mutated")
+	assert.Equal(t, "completed", updated.Status)
+	require.Len(t, store.saves, 1)
+	assert.Equal(t, updated, store.saves[0])
+}
+
+func TestRefreshResponseSnapshotRejectsMismatchedIdentityWithoutPersisting(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, err := io.WriteString(w, `{"id":"resp_other","status":"completed"}`)
+		assert.NoError(t, err)
+	}))
+	defer server.Close()
+
+	store := &orderingResponseStore{}
+	record := savedBackgroundResponse{ResponseID: "resp_123", Status: "in_progress"}
+	rc := &remoteContext{
+		name:            "agent",
+		agentKey:        "agent-key",
+		projectEndpoint: server.URL,
+		apiVersion:      "2026-05-01",
+	}
+	updated, _, err := (&InvokeAction{flags: &invokeFlags{}}).refreshResponseSnapshot(
+		t.Context(), rc, store, record, "test-token",
+	)
+
+	require.ErrorContains(t, err, `snapshot ID "resp_other" does not match saved ID "resp_123"`)
+	assert.Equal(t, savedBackgroundResponse{}, updated)
+	assert.Equal(t, "in_progress", record.Status)
+	assert.Empty(t, store.saves)
+}
+
+func TestNextReconnectFailureCount(t *testing.T) {
+	t.Parallel()
+
+	failures := 0
+	for attempt := range maxConsecutiveReconnectFailures {
+		failures = nextReconnectFailureCount(failures, false)
+		assert.Equal(t, attempt+1, failures)
+		assert.Equal(t, attempt+1 >= maxConsecutiveReconnectFailures, failures >= maxConsecutiveReconnectFailures)
+	}
+
+	failures = nextReconnectFailureCount(maxConsecutiveReconnectFailures-1, true)
+	assert.Equal(t, 1, failures)
+	assert.Less(t, failures, maxConsecutiveReconnectFailures)
+}
+
+func TestReconnectRetryDelay(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, 4*time.Second, reconnectRetryDelay(0, 2))
+	assert.Equal(t, 5*time.Second, reconnectRetryDelay(5*time.Second, 2))
+	assert.Equal(t, 30*time.Second, reconnectRetryDelay(time.Minute, 2))
+}
+
+func TestClassifyBackgroundFollowResponse(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		status         int
+		header         http.Header
+		wantFatal      bool
+		wantRetryAfter time.Duration
+	}{
+		{name: "success", status: http.StatusOK},
+		{name: "non-retryable", status: http.StatusBadRequest, wantFatal: true},
+		{
+			name:           "retry after seconds",
+			status:         http.StatusTooManyRequests,
+			header:         http.Header{"Retry-After": []string{"5"}},
+			wantRetryAfter: 5 * time.Second,
+		},
+		{
+			name:           "retry after milliseconds",
+			status:         http.StatusServiceUnavailable,
+			header:         http.Header{"Retry-After-Ms": []string{"150"}},
+			wantRetryAfter: 150 * time.Millisecond,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			resp := &http.Response{
+				StatusCode: tt.status,
+				Status:     http.StatusText(tt.status),
+				Header:     tt.header,
+				Body:       io.NopCloser(strings.NewReader("response body")),
+			}
+			result, err := classifyBackgroundFollowResponse(resp, "https://example.test/responses/resp_123")
+			if tt.wantFatal {
+				require.ErrorContains(t, err, "response body")
+				return
+			}
+
+			require.NoError(t, err)
+			if tt.status < 400 {
+				assert.Same(t, resp, result.response)
+				return
+			}
+			require.Error(t, result.retryCause)
+			assert.Equal(t, tt.wantRetryAfter, result.retryAfter)
+		})
+	}
+}
+
+func TestClassifyResponseLifecycleHTTPError(t *testing.T) {
+	t.Parallel()
+
+	for _, operation := range []string{
+		exterrors.OpResumeBackgroundResponse,
+		exterrors.OpCancelBackgroundResponse,
+	} {
+		t.Run(operation, func(t *testing.T) {
+			t.Parallel()
+			cause := errors.Join(
+				errors.New("operation failed"),
+				&responseLifecycleHTTPError{
+					method:     http.MethodGet,
+					requestURL: "https://project.services.ai.azure.com/responses/resp_123",
+					statusCode: http.StatusForbidden,
+					status:     "403 Forbidden",
+					body:       []byte(`{"error":{"message":"sensitive response"}}`),
+				},
+			)
+
+			err := classifyResponseLifecycleHTTPError(cause, operation)
+
+			serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+			require.True(t, ok)
+			assert.Equal(t, operation+".403", serviceErr.ErrorCode)
+			assert.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
+			assert.Equal(t, "project.services.ai.azure.com", serviceErr.ServiceName)
+			assert.NotContains(t, serviceErr.Message, "sensitive response")
+		})
+	}
+}
+
+func TestClassifyResponseLifecycleHTTPErrorPreservesOtherErrors(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("local failure")
+	assert.Same(t, cause, classifyResponseLifecycleHTTPError(cause, exterrors.OpResumeBackgroundResponse))
+}
+
+func TestClassifyBackgroundFollowResponseUsesHTTPDate(t *testing.T) {
+	t.Parallel()
+
+	resp := &http.Response{
+		StatusCode: http.StatusServiceUnavailable,
+		Status:     http.StatusText(http.StatusServiceUnavailable),
+		Header: http.Header{
+			"Retry-After": []string{time.Now().Add(5 * time.Second).UTC().Format(time.RFC1123)},
+		},
+		Body: io.NopCloser(strings.NewReader("response body")),
+	}
+	result, err := classifyBackgroundFollowResponse(resp, "https://example.test/responses/resp_123")
+	require.NoError(t, err)
+	require.Error(t, result.retryCause)
+	assert.GreaterOrEqual(t, result.retryAfter, 3*time.Second)
+	assert.LessOrEqual(t, result.retryAfter, 5*time.Second)
+}
+
+func TestRetryableResponseStatus(t *testing.T) {
+	t.Parallel()
+
+	for status, want := range map[int]bool{
+		http.StatusBadRequest:          false,
+		http.StatusRequestTimeout:      true,
+		http.StatusTooManyRequests:     true,
+		http.StatusInternalServerError: true,
+		http.StatusServiceUnavailable:  true,
+	} {
+		assert.Equal(t, want, isRetryableResponseStatus(status), "status %d", status)
+	}
+}
+
+func TestSleepWithContextStopsOnCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	started := time.Now()
+	err := sleepWithContext(ctx, time.Hour)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, time.Since(started), time.Second)
+}
+
+func TestValidateInvokeOperationFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		flags   invokeFlags
+		changed map[string]string
+		wantErr string
+	}{
+		{name: "ordinary invoke requires input", wantErr: "a message argument or --input-file is required"},
+		{name: "ordinary invoke accepts message", flags: invokeFlags{message: "hello"}},
+		{name: "ordinary invoke accepts file", flags: invokeFlags{inputFile: "request.json"}},
+		{
+			name:    "ordinary invoke rejects message and file",
+			flags:   invokeFlags{message: "hello", inputFile: "request.json"},
+			wantErr: "cannot use --input-file and a message argument together",
+		},
+		{
+			name:    "background requires input",
+			flags:   invokeFlags{resumable: true},
+			wantErr: "a message argument or --input-file is required",
+		},
+		{name: "background accepts input", flags: invokeFlags{resumable: true, message: "hello"}},
+		{
+			name:  "background accepts no wait",
+			flags: invokeFlags{resumable: true, noWait: true, message: "hello"},
+		},
+		{
+			name:    "no wait requires background",
+			flags:   invokeFlags{noWait: true, message: "hello"},
+			wantErr: "--no-wait requires --resumable",
+		},
+		{name: "continue accepts empty input", flags: invokeFlags{resume: true}},
+		{
+			name:    "continue rejects message",
+			flags:   invokeFlags{resume: true, message: "hello"},
+			wantErr: "--resume and --cancel do not accept a message or --input-file",
+		},
+		{
+			name:    "continue rejects file",
+			flags:   invokeFlags{resume: true, inputFile: "request.json"},
+			wantErr: "--resume and --cancel do not accept a message or --input-file",
+		},
+		{name: "cancel accepts empty input", flags: invokeFlags{cancel: true}},
+		{
+			name:    "cancel rejects input",
+			flags:   invokeFlags{cancel: true, message: "hello"},
+			wantErr: "--resume and --cancel do not accept a message or --input-file",
+		},
+		{
+			name:    "continue and cancel are exclusive",
+			flags:   invokeFlags{resume: true, cancel: true},
+			wantErr: "--resume and --cancel are mutually exclusive",
+		},
+		{
+			name:    "background and continue are exclusive",
+			flags:   invokeFlags{resumable: true, resume: true, message: "hello"},
+			wantErr: "--resumable cannot be combined with --resume or --cancel",
+		},
+		{
+			name:    "background and cancel are exclusive",
+			flags:   invokeFlags{resumable: true, cancel: true, message: "hello"},
+			wantErr: "--resumable cannot be combined with --resume or --cancel",
+		},
+		{
+			name:    "continue rejects session id",
+			flags:   invokeFlags{resume: true},
+			changed: map[string]string{"session-id": "sess_123"},
+			wantErr: "use the saved session and conversation",
+		},
+		{
+			name:    "continue rejects new session",
+			flags:   invokeFlags{resume: true},
+			changed: map[string]string{"new-session": "true"},
+			wantErr: "use the saved session and conversation",
+		},
+		{
+			name:    "cancel rejects conversation id",
+			flags:   invokeFlags{cancel: true},
+			changed: map[string]string{"conversation-id": "conv_123"},
+			wantErr: "use the saved session and conversation",
+		},
+		{
+			name:    "cancel rejects new conversation",
+			flags:   invokeFlags{cancel: true},
+			changed: map[string]string{"new-conversation": "true"},
+			wantErr: "use the saved session and conversation",
+		},
+		{
+			name:    "continue rejects timeout",
+			flags:   invokeFlags{resume: true},
+			changed: map[string]string{"timeout": "1"},
+			wantErr: "--timeout is not supported with --resume or --cancel",
+		},
+		{
+			name:    "cancel rejects timeout",
+			flags:   invokeFlags{cancel: true},
+			changed: map[string]string{"timeout": "1"},
+			wantErr: "--timeout is not supported with --resume or --cancel",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := newInvokeCommand(nil)
+			for name, value := range tt.changed {
+				require.NoError(t, cmd.Flags().Set(name, value))
+			}
+
+			err := validateInvokeOperationFlags(cmd, &tt.flags)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseInvokeArgs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		flags       invokeFlags
+		args        []string
+		wantName    string
+		wantMessage string
+	}{
+		{name: "single positional is message", args: []string{"hello"}, wantMessage: "hello"},
+		{
+			name:     "single positional with input file is agent",
+			flags:    invokeFlags{inputFile: "request.json"},
+			args:     []string{"agent"},
+			wantName: "agent",
+		},
+		{
+			name:     "single positional with resume is agent",
+			flags:    invokeFlags{resume: true},
+			args:     []string{"agent"},
+			wantName: "agent",
+		},
+		{
+			name:     "single positional with cancel is agent",
+			flags:    invokeFlags{cancel: true},
+			args:     []string{"agent"},
+			wantName: "agent",
+		},
+		{
+			name:        "two positionals are agent and message",
+			args:        []string{"agent", "hello"},
+			wantName:    "agent",
+			wantMessage: "hello",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			parseInvokeArgs(&tt.flags, tt.args)
+			assert.Equal(t, tt.wantName, tt.flags.name)
+			assert.Equal(t, tt.wantMessage, tt.flags.message)
+		})
+	}
+}
+
 func TestInvokeCommandBackgroundValidation(t *testing.T) {
 	t.Parallel()
 
@@ -409,7 +1099,7 @@ func TestInvokeCommandBackgroundValidation(t *testing.T) {
 		{
 			name: "rejects explicit invocations protocol",
 			args: []string{"--resumable", "--protocol", "invocations", "hello"},
-			want: "--resumable is not supported with the invocations protocol",
+			want: "resumable operations are not supported with the invocations protocol",
 		},
 		{
 			name:     "rejects explicit timeout",

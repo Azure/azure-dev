@@ -16,7 +16,10 @@ import (
 
 const maxResponsesSSEEventBytes = 4 * 1024 * 1024
 
-var errResponsesStreamEndedBeforeIdentity = errors.New("Responses stream ended before its identity was received")
+var (
+	errResponsesStreamEndedBeforeIdentity = errors.New("Responses stream ended before its identity was received")
+	errResponsesStreamDisconnected        = errors.New("Responses stream disconnected before terminal state")
+)
 
 type responsesStreamProgress struct {
 	ResponseID string
@@ -95,6 +98,8 @@ func readResponsesSSE(
 	var cursor *int64
 	var status string
 	var terminal bool
+	var acceptedEvent bool
+	seenInProgress := options.initialState != nil && options.initialState.Status == "in_progress"
 	defer func() {
 		if printed && !terminal {
 			_, err := fmt.Fprintln(writer)
@@ -151,6 +156,7 @@ func readResponsesSSE(
 		if envelope.SequenceNumber != nil && cursor != nil && *envelope.SequenceNumber <= *cursor {
 			return nil
 		}
+		acceptedEvent = true
 		if snapshot.Status == "" {
 			switch event.name {
 			case "response.completed":
@@ -165,6 +171,27 @@ func readResponsesSSE(
 		}
 		if options.requireTerminal && identity == "" && isTerminalResponseStatus(snapshot.Status) {
 			return errResponsesStreamEndedBeforeIdentity
+		}
+
+		if event.name == "response.in_progress" {
+			if seenInProgress {
+				if printed {
+					if _, err := fmt.Fprintln(writer); err != nil {
+						return err
+					}
+				}
+				if _, err := fmt.Fprintln(writer, "--- RESPONSE RECOVERED: OUTPUT RESET TO LAST CHECKPOINT ---"); err != nil {
+					return err
+				}
+				if err := renderResponseSnapshot(writer, agentName, responseSnapshotResult{
+					snapshot: snapshot,
+					raw:      envelope.Response,
+				}); err != nil {
+					return err
+				}
+				printed = false
+			}
+			seenInProgress = true
 		}
 
 		switch event.name {
@@ -281,13 +308,16 @@ func readResponsesSSE(
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading response stream: %w", err)
+		return errors.Join(errResponsesStreamDisconnected, fmt.Errorf("read Responses stream: %w", err))
 	}
 	if options.requireTerminal && identity == "" {
 		return errResponsesStreamEndedBeforeIdentity
 	}
 	if options.requireTerminal && !terminal {
-		return fmt.Errorf("background Response %s disconnected before reaching a terminal state", identity)
+		if !acceptedEvent {
+			return errResponsesStreamEndedBeforeIdentity
+		}
+		return fmt.Errorf("%w: %s", errResponsesStreamDisconnected, identity)
 	}
 	return nil
 }

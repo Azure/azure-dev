@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -176,6 +177,36 @@ func buildResponsesURL(projectEndpoint, agentName, apiVersion string) string {
 		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
 		projectEndpoint, agentName, url.QueryEscape(apiVersion),
 	)
+}
+
+func buildResponseLifecycleURL(
+	projectEndpoint, agentName, responseID, apiVersion string,
+	stream bool,
+	startingAfter *int64,
+) string {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	base := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/responses/%s",
+		projectEndpoint,
+		agentName,
+		url.PathEscape(responseID),
+	)
+	query := url.Values{"api-version": []string{apiVersion}}
+	if stream {
+		query.Set("stream", "true")
+	}
+	if startingAfter != nil {
+		query.Set("starting_after", strconv.FormatInt(*startingAfter, 10))
+	}
+	return base + "?" + query.Encode()
+}
+
+func buildResponseCancelURL(projectEndpoint, agentName, responseID, apiVersion string) string {
+	lifecycleURL := buildResponseLifecycleURL(projectEndpoint, agentName, responseID, apiVersion, false, nil)
+	parts := strings.SplitN(lifecycleURL, "?", 2)
+	return parts[0] + "/cancel?" + parts[1]
 }
 
 // buildInvocationsURL builds the Foundry "invocations" protocol URL for an agent.

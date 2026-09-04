@@ -218,6 +218,7 @@ const (
 	OpPackTeamsApp             = "pack_teams_app"
 	OpPublishTeamsApp          = "publish_teams_app"
 	OpResumeBackgroundResponse = "resume_background_response"
+	OpSteerBackgroundResponse  = "steer_background_response"
 	OpCancelBackgroundResponse = "cancel_background_response"
 )
 

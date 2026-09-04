@@ -29,7 +29,7 @@ func TestInvokeCommandLifecycleFlagsRegistered(t *testing.T) {
 	t.Parallel()
 
 	flags := newInvokeCommand(nil).Flags()
-	for _, name := range []string{"resumable", "resume", "cancel"} {
+	for _, name := range []string{"resumable", "resume", "steer", "cancel"} {
 		flag := flags.Lookup(name)
 		require.NotNil(t, flag)
 		assert.Equal(t, "false", flag.DefValue)
@@ -838,6 +838,7 @@ func TestClassifyResponseLifecycleHTTPError(t *testing.T) {
 
 	for _, operation := range []string{
 		exterrors.OpResumeBackgroundResponse,
+		exterrors.OpSteerBackgroundResponse,
 		exterrors.OpCancelBackgroundResponse,
 	} {
 		t.Run(operation, func(t *testing.T) {
@@ -947,16 +948,23 @@ func TestValidateInvokeOperationFlags(t *testing.T) {
 			flags:   invokeFlags{noWait: true, message: "hello"},
 			wantErr: "--no-wait requires --resumable",
 		},
-		{name: "continue accepts empty input", flags: invokeFlags{resume: true}},
+		{name: "resume accepts empty input", flags: invokeFlags{resume: true}},
 		{
-			name:    "continue rejects message",
+			name:    "resume rejects message",
 			flags:   invokeFlags{resume: true, message: "hello"},
 			wantErr: "--resume and --cancel do not accept a message or --input-file",
 		},
 		{
-			name:    "continue rejects file",
+			name:    "resume rejects file",
 			flags:   invokeFlags{resume: true, inputFile: "request.json"},
 			wantErr: "--resume and --cancel do not accept a message or --input-file",
+		},
+		{name: "steer accepts message", flags: invokeFlags{steer: true, message: "hello"}},
+		{name: "steer accepts file", flags: invokeFlags{steer: true, inputFile: "request.json"}},
+		{
+			name:    "steer requires input",
+			flags:   invokeFlags{steer: true},
+			wantErr: "--steer requires a message argument or --input-file",
 		},
 		{name: "cancel accepts empty input", flags: invokeFlags{cancel: true}},
 		{
@@ -965,19 +973,29 @@ func TestValidateInvokeOperationFlags(t *testing.T) {
 			wantErr: "--resume and --cancel do not accept a message or --input-file",
 		},
 		{
-			name:    "continue and cancel are exclusive",
-			flags:   invokeFlags{resume: true, cancel: true},
-			wantErr: "--resume and --cancel are mutually exclusive",
+			name:    "resume and steer are exclusive",
+			flags:   invokeFlags{resume: true, steer: true, message: "hello"},
+			wantErr: "--resume, --steer, and --cancel are mutually exclusive",
 		},
 		{
-			name:    "background and continue are exclusive",
+			name:    "steer and cancel are exclusive",
+			flags:   invokeFlags{steer: true, cancel: true, message: "hello"},
+			wantErr: "--resume, --steer, and --cancel are mutually exclusive",
+		},
+		{
+			name:    "background and resume are exclusive",
 			flags:   invokeFlags{resumable: true, resume: true, message: "hello"},
-			wantErr: "--resumable cannot be combined with --resume or --cancel",
+			wantErr: "--resumable cannot be combined with --resume, --steer, or --cancel",
+		},
+		{
+			name:    "background and steer are exclusive",
+			flags:   invokeFlags{resumable: true, steer: true, message: "hello"},
+			wantErr: "--resumable cannot be combined with --resume, --steer, or --cancel",
 		},
 		{
 			name:    "background and cancel are exclusive",
 			flags:   invokeFlags{resumable: true, cancel: true, message: "hello"},
-			wantErr: "--resumable cannot be combined with --resume or --cancel",
+			wantErr: "--resumable cannot be combined with --resume, --steer, or --cancel",
 		},
 		{
 			name:    "continue rejects session id",
@@ -989,6 +1007,12 @@ func TestValidateInvokeOperationFlags(t *testing.T) {
 			name:    "continue rejects new session",
 			flags:   invokeFlags{resume: true},
 			changed: map[string]string{"new-session": "true"},
+			wantErr: "use the saved session and conversation",
+		},
+		{
+			name:    "steer rejects conversation id",
+			flags:   invokeFlags{steer: true, message: "hello"},
+			changed: map[string]string{"conversation-id": "conv_123"},
 			wantErr: "use the saved session and conversation",
 		},
 		{
@@ -1004,16 +1028,22 @@ func TestValidateInvokeOperationFlags(t *testing.T) {
 			wantErr: "use the saved session and conversation",
 		},
 		{
-			name:    "continue rejects timeout",
+			name:    "resume rejects timeout",
 			flags:   invokeFlags{resume: true},
 			changed: map[string]string{"timeout": "1"},
-			wantErr: "--timeout is not supported with --resume or --cancel",
+			wantErr: "--timeout is not supported with --resume, --steer, or --cancel",
+		},
+		{
+			name:    "steer rejects timeout",
+			flags:   invokeFlags{steer: true, message: "hello"},
+			changed: map[string]string{"timeout": "1"},
+			wantErr: "--timeout is not supported with --resume, --steer, or --cancel",
 		},
 		{
 			name:    "cancel rejects timeout",
 			flags:   invokeFlags{cancel: true},
 			changed: map[string]string{"timeout": "1"},
-			wantErr: "--timeout is not supported with --resume or --cancel",
+			wantErr: "--timeout is not supported with --resume, --steer, or --cancel",
 		},
 	}
 
@@ -1057,6 +1087,12 @@ func TestParseInvokeArgs(t *testing.T) {
 			flags:    invokeFlags{resume: true},
 			args:     []string{"agent"},
 			wantName: "agent",
+		},
+		{
+			name:        "single positional with steer is message",
+			flags:       invokeFlags{steer: true},
+			args:        []string{"revised requirements"},
+			wantMessage: "revised requirements",
 		},
 		{
 			name:     "single positional with cancel is agent",

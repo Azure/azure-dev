@@ -156,13 +156,9 @@ func (m *Manager) PlanUninstall(ids []string, opts UninstallPlanOptions) (*Unins
 		return dependents
 	}
 
-	// Walk the dependencies of everything being removed. A dependency joins the removal set
-	// when it was installed as a dependency and nothing outside the removal set requires it.
-	// Removed extensions are appended to the queue so their own dependencies are visited,
-	// which also re-examines a dependency that was first kept because of a sibling that is
-	// removed later (A -> B, A -> C, C -> B). This runs before the dependents check so that a
-	// dependency-installed extension in a cycle with a target (A -> B -> A) leaves with it
-	// instead of blocking it.
+	// Queue removed dependencies to revisit shared children as their dependents leave
+	// (A -> B, A -> C, C -> B). Expand removals before checking blockers so a dependency
+	// in a cycle with a target (A -> B -> A) can leave with it.
 	considered := map[string]*Extension{}
 	if !opts.KeepDependencies {
 		queue := slices.Clone(plan.Targets)

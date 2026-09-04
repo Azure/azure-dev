@@ -77,10 +77,8 @@ from an unregistered location show the location itself in the SOURCE column.`,
 		Command: &cobra.Command{
 			Use:   "show <extension-id>",
 			Short: "Show details for a specific extension.",
-			Long: `Show details for a specific extension from a registered extension source.
-
-The --source flag accepts a registered source name or registry location (URL or
-file path). Locations are queried read-only and are not registered.`,
+			Long: `Includes version compatibility, dependencies, and installed dependents.
+Uses installed metadata when no registry lists the extension.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
@@ -114,13 +112,11 @@ installs aren't tracked for updates; install a newer bundle to update.`,
 		Command: &cobra.Command{
 			Use:   "uninstall [extension-id...]",
 			Short: "Uninstall specified extensions.",
-			Long: `Uninstall one or more installed extensions.
+			Long: `Also removes unused dependency installs after confirmation.
+Use --no-dependencies to keep them; --no-prompt accepts their removal.
 
-Dependencies that were installed for the removed extensions and are no longer
-required are listed and removed after confirmation; --no-prompt proceeds and
---no-dependencies keeps them. Uninstalling an extension that other installed
-extensions require fails unless --force is set or the dependents are
-uninstalled in the same command. Use --all to remove every installed extension.`,
+Required extensions cannot be removed unless their dependents are also removed
+or --force is set.`,
 		},
 		ActionResolver: newExtensionUninstallAction,
 		FlagsResolver:  newExtensionUninstallFlags,
@@ -131,31 +127,12 @@ uninstalled in the same command. Use --all to remove every installed extension.`
 		Command: &cobra.Command{
 			Use:     "update [extension-id]",
 			Aliases: []string{"upgrade"},
-			Short:   "Update installed extensions to the latest version.",
-			Long: `Update one or more installed extensions.
+			Short:   "Update installed extensions.",
+			Long: `Also updates installed dependencies to compatible versions unless
+--no-dependency-updates is set.
 
-By default, uses the stored registry source for each extension. If the stored
-source is unavailable, falls back to the main (azd) registry. Extensions that
-were installed from a non-main registry (e.g., dev) are automatically promoted
-to the main registry when a newer version is available there.
-
-Use --source to override the registry source for the update. It accepts a
-registered source name or registry location (URL or file path); locations are
-registered first and the updated extension's stored source is updated. Because
-registration is interactive, locations are rejected under --no-prompt. Use --all
-to update all installed extensions in a single batch; failures in one extension
-do not prevent the remaining extensions from being updated.
-
-When updating an extension that has dependencies, any installed
-dependencies are automatically updated too, to the highest version
-satisfying the extension's declared constraints. Use
---no-dependency-updates to opt out and update only the named
-extension.
-
-The command returns an error if any extension or dependency fails. Completed
-updates are not rolled back.
-
-Use --output json for a structured report of all update results.`,
+Failures return a nonzero exit code. Other extensions continue updating;
+completed updates are kept.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
@@ -2289,9 +2266,9 @@ func newExtensionUninstallFlags(cmd *cobra.Command) *extensionUninstallFlags {
 	flags := &extensionUninstallFlags{}
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Uninstall all installed extensions")
 	cmd.Flags().BoolVarP(&flags.force, "force", "f", false,
-		"Uninstall even when other installed extensions depend on the extension")
+		"Remove extensions required by other installed extensions")
 	cmd.Flags().BoolVar(&flags.noDependencies, "no-dependencies", false,
-		"Uninstall only the specified extension(s), keeping dependencies that were installed for them")
+		"Keep dependencies installed for the removed extensions")
 
 	return flags
 }
@@ -2468,9 +2445,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 	}, nil
 }
 
-// confirmDependencyRemoval lists the dependencies that would go along with the targets and
-// asks once. The default is to remove them, and --no-prompt takes the default: they are, by
-// construction, needed only by what is being removed.
+// confirmDependencyRemoval previews the additional removals before asking once.
 func (a *extensionUninstallAction) confirmDependencyRemoval(
 	ctx context.Context,
 	plan *extensions.UninstallPlan,
@@ -2482,7 +2457,7 @@ func (a *extensionUninstallAction) confirmDependencyRemoval(
 
 	a.console.Message(ctx, "")
 	a.console.Message(ctx, fmt.Sprintf(
-		"After uninstalling %s, no installed extension will require these dependencies:",
+		"Uninstalling %s will leave these dependencies unused:",
 		strings.Join(targets, ", "),
 	))
 	for _, orphan := range plan.Orphaned {
@@ -2545,14 +2520,14 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	flags := &extensionUpgradeFlags{
 		global: global,
 	}
-	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to update to")
+	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "Exact version to install; defaults to latest.")
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
-		"The registered source name or registry location (URL or file path) to use for updates.")
+		"Source name or registry URL/file. New sources require interactive mode.")
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Update all installed extensions")
 	cmd.Flags().BoolVar(&flags.noDependencyUpdates, "no-dependency-updates", false,
-		"Do not update dependencies when updating an extension that has dependencies")
+		"Keep installed dependency versions")
 	cmd.Flags().BoolVar(&flags.noDependencyUpdates, "no-dependency-upgrades", false,
-		"Do not update dependencies when updating an extension that has dependencies")
+		"Keep installed dependency versions")
 	_ = cmd.Flags().MarkHidden("no-dependency-upgrades")
 
 	return flags

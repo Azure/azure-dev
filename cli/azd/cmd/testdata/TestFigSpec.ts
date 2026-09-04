@@ -6344,7 +6344,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['update', 'upgrade'],
-					description: 'Update installed extensions.',
+					description: 'Update installed extensions to the latest version.',
 					options: [
 						{
 							name: ['--all'],
@@ -6352,11 +6352,11 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--no-dependency-updates'],
-							description: 'Keep installed dependency versions',
+							description: 'Do not update dependencies when updating an extension that has dependencies',
 						},
 						{
 							name: ['--source', '-s'],
-							description: 'Source name or registry URL/file. New sources require interactive mode.',
+							description: 'The registered source name or registry location (URL or file path) to use for updates.',
 							args: [
 								{
 									name: 'source',
@@ -6365,7 +6365,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--version', '-v'],
-							description: 'Exact version to install; defaults to latest.',
+							description: 'The version of the extension to update to',
 							args: [
 								{
 									name: 'version',

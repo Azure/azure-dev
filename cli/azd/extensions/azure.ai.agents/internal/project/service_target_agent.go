@@ -2581,7 +2581,8 @@ func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_
 		strings.TrimSpace(remote.Identifier) != strings.TrimSpace(desired.Identifier) {
 		return false
 	}
-	if remoteConnection := telephonyBindingConnection(remote); remoteConnection != strings.TrimSpace(desired.ConnectionName) {
+	remoteConnection := telephonyBindingConnection(remote)
+	if remoteConnection != strings.TrimSpace(desired.ConnectionName) {
 		return false
 	}
 	return reflect.DeepEqual(

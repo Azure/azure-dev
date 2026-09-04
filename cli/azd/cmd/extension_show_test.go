@@ -237,6 +237,35 @@ func TestExtensionShowAction_InstalledFromAnotherSource(t *testing.T) {
 	require.False(t, item.UpdateAvailable, "update state is only reported against the installed source")
 }
 
+func TestExtensionShowAction_LegacyDependenciesUseInstalledSource(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{"test", "other"} {
+		t.Run(source, func(t *testing.T) {
+			t.Parallel()
+			mockCtx := mocks.NewMockContext(t.Context())
+			manager, sourceManager := createUpgradeTestManager(
+				t, mockCtx,
+				map[string]*extensions.Extension{
+					"test.ext": {Id: "test.ext", Version: "1.0.0", Source: source},
+				},
+				showTestRegistryURL,
+				testRegistry(&extensions.ExtensionMetadata{
+					Id: "test.ext", Source: "test",
+					Versions: []extensions.ExtensionVersion{{
+						Version: "1.0.0", Dependencies: []extensions.ExtensionDependency{{Id: "test.leaf"}},
+					}},
+				}),
+			)
+			item := runShowJSON(t, manager, sourceManager, "test.ext")
+			if source == "test" {
+				require.Equal(t, []extensionShowDependency{{Id: "test.leaf"}}, item.Dependencies)
+			} else {
+				require.Empty(t, item.Dependencies, "another source's release does not describe the installed extension")
+			}
+		})
+	}
+}
+
 func TestExtensionShowAction_SourceFilterIsNotBypassedByInstalledRecord(t *testing.T) {
 	t.Parallel()
 
@@ -328,6 +357,8 @@ func TestExtensionShowItem_Display_Layout(t *testing.T) {
 		require.NotContains(t, out, "Website")
 		require.NotContains(t, out, "Usage")
 		require.Contains(t, out, "1.0.0 (update available: 1.1.0)")
+		require.Contains(t, out, "Installed as")
+		require.Contains(t, out, "Dependency")
 		require.Contains(t, out, ">=9.0.0 (not compatible with azd 1.5.0; latest compatible is 1.1.0)")
 		require.Contains(t, out, "Other Versions")
 		require.Contains(t, out, "1.1.0, 1.0.0")
@@ -398,7 +429,8 @@ func TestExtensionShowItem_Display_Layout(t *testing.T) {
 
 		var buf bytes.Buffer
 		require.NoError(t, item.Display(&buf))
-		require.Contains(t, buf.String(), "1.0.0 (installed as a dependency)")
+		require.Contains(t, buf.String(), "Installed as")
+		require.Contains(t, buf.String(), "Dependency")
 	})
 
 	t.Run("installed_from_other_source", func(t *testing.T) {

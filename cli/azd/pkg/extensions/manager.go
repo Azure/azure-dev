@@ -649,22 +649,35 @@ func (m *Manager) IsOfficialRegistrySource(ctx context.Context, name string) (bo
 
 // UpdateInstalled updates an installed extension's metadata in the config
 func (m *Manager) UpdateInstalled(extension *Extension) error {
-	extensions, err := m.ListInstalled()
+	return m.updateInstalled(extension.Id, func(*Extension) *Extension { return extension })
+}
+
+// updateInstalled transforms freshly decoded metadata and invalidates the cache after saving.
+func (m *Manager) updateInstalled(id string, update func(*Extension) *Extension) error {
+	var installed map[string]*Extension
+	_, err := m.userConfig.GetSection(installedConfigKey, &installed)
 	if err != nil {
 		return fmt.Errorf("failed to list installed extensions: %w", err)
 	}
 
-	if _, exists := extensions[extension.Id]; !exists {
+	current, exists := installed[id]
+	if !exists {
 		return ErrInstalledExtensionNotFound
 	}
 
-	extensions[extension.Id] = extension
-
-	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
+	installed[id] = update(current)
+	previous, _ := m.userConfig.Get(installedConfigKey)
+	if err := m.userConfig.Set(installedConfigKey, installed); err != nil {
 		return fmt.Errorf("failed to set extensions section: %w", err)
 	}
 
 	if err := m.configManager.Save(m.userConfig); err != nil {
+		if restoreErr := m.userConfig.Set(installedConfigKey, previous); restoreErr != nil {
+			return errors.Join(
+				fmt.Errorf("failed to save user config: %w", err),
+				fmt.Errorf("failed to restore installed extension metadata: %w", restoreErr),
+			)
+		}
 		return fmt.Errorf("failed to save user config: %w", err)
 	}
 
@@ -1132,7 +1145,7 @@ func (m *Manager) ReconcileDependencies(
 		return selectedVersion, nil, nil
 	}
 
-	if err := m.BackfillDependencies(extension.Id, selectedVersion); err != nil {
+	if err := m.BackfillDependencies(extension.Id, extension.Source, selectedVersion); err != nil {
 		return nil, nil, err
 	}
 
@@ -1142,10 +1155,9 @@ func (m *Manager) ReconcileDependencies(
 }
 
 // BackfillDependencies records the dependency snapshot on an installed record that predates
-// dependency tracking. It only applies when the record is at the supplied version and has no
-// snapshot yet, so an update that keeps the extension current still teaches uninstall planning
-// about its graph. Ownership is never inferred.
-func (m *Manager) BackfillDependencies(id string, version *ExtensionVersion) error {
+// dependency tracking. It only applies to metadata from the installed source and version when
+// the record has no snapshot. Ownership is never inferred.
+func (m *Manager) BackfillDependencies(id, source string, version *ExtensionVersion) error {
 	if version == nil {
 		return nil
 	}
@@ -1157,13 +1169,16 @@ func (m *Manager) BackfillDependencies(id string, version *ExtensionVersion) err
 		return fmt.Errorf("failed to get installed extension %s: %w", id, err)
 	}
 	if len(installed.Dependencies) > 0 ||
+		!strings.EqualFold(installed.Source, source) ||
 		installed.Version != version.Version ||
 		len(version.Dependencies) == 0 {
 		return nil
 	}
 
-	installed.Dependencies = slices.Clone(version.Dependencies)
-	if err := m.UpdateInstalled(installed); err != nil {
+	if err := m.updateInstalled(installed.Id, func(record *Extension) *Extension {
+		record.Dependencies = slices.Clone(version.Dependencies)
+		return record
+	}); err != nil {
 		return fmt.Errorf("failed to record dependencies for %s: %w", id, err)
 	}
 	return nil
@@ -1181,8 +1196,10 @@ func (m *Manager) MarkExplicitlyInstalled(id string) error {
 		return nil
 	}
 
-	installed.InstalledAsDependency = false
-	if err := m.UpdateInstalled(installed); err != nil {
+	if err := m.updateInstalled(installed.Id, func(record *Extension) *Extension {
+		record.InstalledAsDependency = false
+		return record
+	}); err != nil {
 		return fmt.Errorf("failed to mark %s as explicitly installed: %w", id, err)
 	}
 	return nil
@@ -1266,8 +1283,16 @@ func (m *Manager) evaluateDependencyChanges(
 		// reconciled, updated, or reinstalled.
 		if findErr == nil {
 			installedRelease := FindVersion(childMetadata.Versions, installed.Version)
-			if err := m.BackfillDependencies(dep.Id, installedRelease); err != nil {
-				log.Printf("Warning: %v", err)
+			if err := m.BackfillDependencies(dep.Id, childMetadata.Source, installedRelease); err != nil {
+				results = append(results, UpgradeResult{
+					ExtensionId:        dep.Id,
+					Status:             UpgradeStatusFailed,
+					FromVersion:        installed.Version,
+					FromSource:         installed.Source,
+					FromSourceCategory: installed.SourceCategoryOrUnknown(),
+					Error:              err,
+				})
+				continue
 			}
 		}
 

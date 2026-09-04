@@ -2502,11 +2502,11 @@ func TestTryAutoInstallExtensionVersionPromotesDependencyInstalledExtension(t *t
 	require.False(t, manager.installed["azure.ai.agents"].InstalledAsDependency)
 }
 
-func TestMissingProjectExtensionsPromotesInstalledDependencyRecords(t *testing.T) {
+func TestMissingProjectExtensionsPromotesOnlyExplicitRequirements(t *testing.T) {
 	t.Parallel()
 
-	// Both a requiredVersions entry and a provider requirement are satisfied by extensions
-	// that a pack pulled in earlier. Discovery promotes them without touching a registry.
+	// Only the named requiredVersions entry becomes explicit. Reusing an inferred provider
+	// does not change its ownership, including on repeated project commands.
 	manager := &fakeExtensionAutoInstallManager{
 		installed: map[string]*extensions.Extension{
 			"azure.ai.projects": {
@@ -2530,9 +2530,11 @@ func TestMissingProjectExtensionsPromotesInstalledDependencyRecords(t *testing.T
 		},
 	}
 
-	requirements, err := missingProjectExtensions(t.Context(), mockinput.NewMockConsole(), manager, projectConfig)
-	require.NoError(t, err)
-	require.Empty(t, requirements, "everything the project needs is already installed")
-	require.False(t, manager.installed["azure.ai.projects"].InstalledAsDependency)
-	require.False(t, manager.installed["azure.ai.agents"].InstalledAsDependency)
+	for range 2 {
+		requirements, err := missingProjectExtensions(t.Context(), mockinput.NewMockConsole(), manager, projectConfig)
+		require.NoError(t, err)
+		require.Empty(t, requirements, "everything the project needs is already installed")
+		require.False(t, manager.installed["azure.ai.projects"].InstalledAsDependency)
+		require.True(t, manager.installed["azure.ai.agents"].InstalledAsDependency)
+	}
 }

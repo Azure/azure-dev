@@ -547,7 +547,7 @@ func Test_BackfillDependencies_ReturnsInstalledConfigError(t *testing.T) {
 	require.NoError(t, manager.userConfig.Set(installedConfigKey, "invalid"))
 	manager.installed = nil
 
-	err := manager.BackfillDependencies("test.pack", &ExtensionVersion{
+	err := manager.BackfillDependencies("test.pack", MainRegistryName, &ExtensionVersion{
 		Version:      "1.0.0",
 		Dependencies: []ExtensionDependency{{Id: "test.leaf"}},
 	})
@@ -568,4 +568,134 @@ func Test_MarkExplicitlyInstalled(t *testing.T) {
 
 	require.NoError(t, manager.MarkExplicitlyInstalled("test.leaf"))
 	require.ErrorIs(t, manager.MarkExplicitlyInstalled("missing"), ErrInstalledExtensionNotFound)
+}
+
+type backfillSaveFailure struct {
+	config.UserConfigManager
+	extensionID string
+	err         error
+}
+
+func (m *backfillSaveFailure) Save(cfg config.Config) error {
+	var installed map[string]*Extension
+	if _, err := cfg.GetSection(installedConfigKey, &installed); err != nil {
+		return err
+	}
+	if record := installed[m.extensionID]; record != nil &&
+		(len(record.Dependencies) > 0 || !record.InstalledAsDependency) && m.err != nil {
+		return m.err
+	}
+	return m.UserConfigManager.Save(cfg)
+}
+
+func Test_InstalledMetadata_SaveFailurePreservesState(t *testing.T) {
+	for _, operation := range []string{"backfill", "promote"} {
+		t.Run(operation, func(t *testing.T) {
+			manager := newInstallTestManager(t)
+			require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+				"test.child": installedRecord("test.child", "1.0.0", true),
+			}))
+			persistent := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+			require.NoError(t, persistent.Save(manager.userConfig))
+			saveErr := errors.New("metadata write failed")
+			failing := &backfillSaveFailure{UserConfigManager: persistent, extensionID: "test.child", err: saveErr}
+			manager.configManager = failing
+
+			original, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+			require.NoError(t, err)
+			update := func() error {
+				if operation == "promote" {
+					return manager.MarkExplicitlyInstalled("test.child")
+				}
+				return manager.BackfillDependencies("test.child", MainRegistryName, &ExtensionVersion{
+					Version: "1.0.0", Dependencies: []ExtensionDependency{{Id: "test.leaf"}},
+				})
+			}
+			require.ErrorIs(t, update(), saveErr)
+
+			cached, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+			require.NoError(t, err)
+			require.Same(t, original, cached)
+			require.Empty(t, cached.Dependencies)
+			require.True(t, cached.InstalledAsDependency)
+
+			onDisk, err := persistent.Load()
+			require.NoError(t, err)
+			for _, cfg := range []config.Config{manager.userConfig, onDisk} {
+				var installed map[string]*Extension
+				_, err := cfg.GetSection(installedConfigKey, &installed)
+				require.NoError(t, err)
+				require.Contains(t, installed, "test.child")
+				require.Empty(t, installed["test.child"].Dependencies)
+				require.True(t, installed["test.child"].InstalledAsDependency)
+			}
+
+			failing.err = nil
+			require.NoError(t, update())
+			onDisk, err = persistent.Load()
+			require.NoError(t, err)
+			var installed map[string]*Extension
+			_, err = onDisk.GetSection(installedConfigKey, &installed)
+			require.NoError(t, err)
+			require.Contains(t, installed, "test.child")
+			if operation == "promote" {
+				require.False(t, installed["test.child"].InstalledAsDependency)
+			} else {
+				require.Equal(t, []ExtensionDependency{{Id: "test.leaf"}}, installed["test.child"].Dependencies)
+			}
+		})
+	}
+}
+
+func Test_ReconcileDependencies_ReportsChildBackfillSaveFailure(t *testing.T) {
+	for _, constraint := range []string{"", ">=1.0.0"} {
+		t.Run("constraint="+constraint, func(t *testing.T) {
+			pack, child := packWithLeaf("1.0.0", "1.0.0")
+			pack.Versions[0].Dependencies[0].Version = constraint
+			child.Versions[0].Dependencies = []ExtensionDependency{{Id: "test.grandchild"}}
+			manager := newInstallTestManager(t, &mockSource{
+				name: MainRegistryName, extensions: []*ExtensionMetadata{pack, child},
+			})
+			require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+				pack.Id:  installedRecord(pack.Id, "1.0.0", false, child.Id),
+				child.Id: installedRecord(child.Id, "1.0.0", true),
+			}))
+			persistent := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+			require.NoError(t, persistent.Save(manager.userConfig))
+			saveErr := errors.New("child metadata write failed")
+			manager.configManager = &backfillSaveFailure{
+				UserConfigManager: persistent, extensionID: child.Id, err: saveErr,
+			}
+
+			version, results, err := manager.ReconcileDependencies(t.Context(), pack, DefaultUpgradeOptions(""))
+			require.NoError(t, err, "parent reconciliation succeeded")
+			require.Equal(t, "1.0.0", version.Version)
+			require.Len(t, results, 1)
+			require.Equal(t, child.Id, results[0].ExtensionId)
+			require.Equal(t, UpgradeStatusFailed, results[0].Status)
+			require.ErrorIs(t, results[0].Error, saveErr)
+			require.True(t, NewUpgradeSummary(results).HasFailures())
+			require.ErrorContains(t, results[0].Error, "failed to record dependencies")
+		})
+	}
+}
+
+func Test_ReconcileDependencies_DoesNotBackfillFromAnotherSource(t *testing.T) {
+	pack, child := packWithLeaf("1.0.0", "1.0.0")
+	child.Versions[0].Dependencies = []ExtensionDependency{{Id: "wrong.leaf"}}
+	manager := newInstallTestManager(t, &mockSource{
+		name: MainRegistryName, extensions: []*ExtensionMetadata{pack, child},
+	})
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		pack.Id:  installedRecord(pack.Id, "1.0.0", false, child.Id),
+		child.Id: {Id: child.Id, Version: "1.0.0", Source: "dev"},
+	}))
+
+	_, results, err := manager.ReconcileDependencies(t.Context(), pack, DefaultUpgradeOptions(""))
+	require.NoError(t, err)
+	require.Empty(t, results)
+	record, err := manager.GetInstalled(FilterOptions{Id: child.Id})
+	require.NoError(t, err)
+	require.Equal(t, "dev", record.Source)
+	require.Empty(t, record.Dependencies, "the azd release cannot describe a dev installation")
 }

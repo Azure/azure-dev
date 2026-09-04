@@ -381,23 +381,17 @@ func resolveExtensionDependencies(
 
 // installedProvidesProvider reports whether an installed extension already supplies the provider,
 // in which case nothing needs to be installed for it.
-// installedProviderExtensions returns the installed extensions that publish the provider,
-// sorted by id.
-func installedProviderExtensions(
+func installedProvidesProvider(
 	installed map[string]*extensions.Extension,
 	capability extensions.CapabilityType,
 	providerName string,
-) []*extensions.Extension {
-	var providers []*extensions.Extension
+) bool {
 	for _, extension := range installed {
 		if extensionProvidesProvider(extension.Capabilities, extension.Providers, capability, providerName) {
-			providers = append(providers, extension)
+			return true
 		}
 	}
-	slices.SortFunc(providers, func(a, b *extensions.Extension) int {
-		return strings.Compare(a.Id, b.Id)
-	})
-	return providers
+	return false
 }
 
 // promoteProjectRequiredExtension marks an installed extension the project requires as an
@@ -582,14 +576,8 @@ func missingProjectExtensions(
 		if provider == "" || providerIsBuiltIn(capability, provider) {
 			return nil
 		}
-		// An installed provider satisfies the requirement; the project needs that extension
-		// in its own right, so a dependency-installed record becomes explicit.
-		if providers := installedProviderExtensions(installed, capability, provider); len(providers) > 0 {
-			for _, extension := range providers {
-				if err := promoteProjectRequiredExtension(extensionManager, extension); err != nil {
-					return err
-				}
-			}
+		// Reusing an inferred provider does not make it an explicitly requested installation.
+		if installedProvidesProvider(installed, capability, provider) {
 			return nil
 		}
 

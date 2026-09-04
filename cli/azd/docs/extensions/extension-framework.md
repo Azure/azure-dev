@@ -123,7 +123,7 @@ Lists matching extensions from one or more extension sources.
 
 #### `azd extension show <extension-id> [flags]`
 
-Shows details for a specific extension: description, tags, versions, installation status, azd compatibility, declared dependencies with their installed state, and the installed extensions that require it. An installed extension that no source lists (for example, a bundle install) is shown from its installed record, and one listed by several sources is shown from the source it was installed from.
+Shows details for a specific extension: description, tags, versions, installation status, azd compatibility, declared dependencies with their installed state, and the installed extensions that require it. Dependency installs have an `Installed as: Dependency` row that remains visible alongside update notices. An installed extension that no source lists (for example, a bundle install) is shown from its installed record, and one listed by several sources is shown from the source it was installed from. Legacy dependency details fall back only to metadata matching the installed source and version.
 
 - `-s, --source` Uses a registered source name or registry location (URL or file path). Locations are queried read-only and are not registered.
 
@@ -155,6 +155,8 @@ Uninstalls one or more installed extensions. Dependencies that were installed fo
 > Aliased as `azd extension upgrade` for backward compatibility.
 
 Updates one or more extensions to the latest versions.
+
+The command returns a nonzero exit code if any extension or dependency fails, including a failure to save dependency metadata. Successful updates are not rolled back. JSON output preserves each individual result; top-level summary counts exclude dependency results.
 
 - `--all` Updates all previously installed extensions when specified.
 - `-v, --version` Updates a specified extension to an exact version, if provided.
@@ -1242,7 +1244,7 @@ Pack manifests must include at least one dependency. They may omit `capabilities
 
 Updating a pack updates the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency updates with `azd extension update <pack-id> --no-dependency-updates`.
 
-Uninstalling a pack removes the pack and, after confirmation, every dependency, including transitive ones, that was installed for it and that nothing else requires. `azd` records on each installed extension whether it was requested by name or pulled in as a dependency, together with the installed version's dependency list, so no registry access is needed. A dependency is kept when it was installed by name (`azd extension install <id>`, `azd init`, or project auto-install on a dependency-installed extension marks it as explicit) or when another installed extension still requires it, and the reason is shown. Uninstalling a dependency while a pack or another extension requires it fails unless `--force` is passed. `azd extension show <id>` lists an extension's dependencies and the installed extensions that require it.
+Uninstalling a pack removes the pack and, after confirmation, every dependency, including transitive ones, that was installed for it and that nothing else requires. `azd` records on each installed extension whether it was requested by name or pulled in as a dependency, together with the installed version's dependency list, so no registry access is needed. Explicit installs and named `requiredVersions.extensions` entries mark an extension as explicit, so it stays when the pack is removed. Reusing an installed extension as an inferred provider does not change its ownership. A dependency also stays when another installed extension requires it, and the reason is shown. Uninstalling a required dependency fails unless `--force` is passed, including when a user declines removal of a dependent in the confirmation prompt. `azd extension show <id>` lists an extension's dependencies and the installed extensions that require it.
 
 #### Provider Registration
 

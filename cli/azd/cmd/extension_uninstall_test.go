@@ -150,7 +150,7 @@ func TestExtensionUninstallAction_NoPromptWithoutOrphans(t *testing.T) {
 
 	_, err := action.Run(t.Context())
 	require.NoError(t, err)
-	require.NotContains(t, strings.Join(console.Output(), "\n"), "as well?")
+	require.NotContains(t, strings.Join(console.Output(), "\n"), "Remove ")
 }
 
 func TestExtensionUninstallAction_RetainedDependenciesAreExplained(t *testing.T) {
@@ -169,6 +169,34 @@ func TestExtensionUninstallAction_RetainedDependenciesAreExplained(t *testing.T)
 	output := strings.Join(console.Output(), "\n")
 	require.Contains(t, output, "not installed as a dependency")
 	require.Contains(t, output, "required by azure.ai.agents")
+	require.Contains(t, output, "Remove this dependency?")
+	require.NotContains(t, output, "these 1")
+}
+
+func TestExtensionUninstallAction_DeclinedRemovalRevalidatesDependents(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		name := "blocked"
+		if force {
+			name = "forced"
+		}
+		t.Run(name, func(t *testing.T) {
+			action, console := newUninstallTestAction(t, map[string]*extensions.Extension{
+				"test.parent": uninstallTestRecord("test.parent", "1.0.0", false, "test.child"),
+				"test.child":  uninstallTestRecord("test.child", "1.0.0", true, "test.parent"),
+			}, extensionUninstallFlags{force: force}, "test.parent")
+			console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(false)
+
+			_, err := action.Run(t.Context())
+			if !force {
+				require.ErrorContains(t, err, "test.parent is required by installed extensions: test.child")
+				require.Len(t, remainingInstalledIds(t, action.extensionManager), 2)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, []string{"test.child"}, remainingInstalledIds(t, action.extensionManager))
+			require.Contains(t, strings.Join(console.Output(), "\n"), "test.parent is required by test.child")
+		})
+	}
 }
 
 func TestExtensionUninstallAction_NoDependencies(t *testing.T) {

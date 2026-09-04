@@ -383,6 +383,17 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 				"1 skipped",
 			},
 		},
+		{
+			name: "dependency_failure_preserves_parent_success",
+			results: []extensions.UpgradeResult{{
+				Status: extensions.UpgradeStatusUpgraded,
+				DependencyUpgrades: []extensions.UpgradeResult{
+					{Status: extensions.UpgradeStatusFailed},
+					{Status: extensions.UpgradeStatusFailed},
+				},
+			}},
+			wantMsgs: []string{"1 updated", "2 dependencies failed", "azd extension update <name>"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -445,6 +456,22 @@ func TestUpgradeActionResult(t *testing.T) {
 			"Extensions updated successfully",
 			actionResult.Message.Header,
 		)
+	})
+
+	t.Run("nested_dependency_failure_returns_error", func(t *testing.T) {
+		t.Parallel()
+		results := []extensions.UpgradeResult{{
+			Status: extensions.UpgradeStatusUpgraded,
+			DependencyUpgrades: []extensions.UpgradeResult{{
+				Status: extensions.UpgradeStatusUpgraded,
+				DependencyUpgrades: []extensions.UpgradeResult{{
+					Status: extensions.UpgradeStatusFailed,
+				}},
+			}},
+		}}
+		result, err := upgradeActionResult(results)
+		require.Nil(t, result)
+		require.EqualError(t, err, "1 extension dependency failed to update")
 	})
 
 	t.Run(

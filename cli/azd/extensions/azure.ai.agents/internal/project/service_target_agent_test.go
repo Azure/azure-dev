@@ -45,6 +45,9 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 		Instructions: &instructions,
 		Voice:        &voice,
 		Store:        &store,
+		Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
+			{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
+		}},
 	}, nil)
 	require.NoError(t, err)
 
@@ -67,6 +70,11 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	require.Equal(t, voice, *got.Voice)
 	require.NotNil(t, got.Store)
 	require.Equal(t, store, *got.Store)
+	require.NotNil(t, got.Telephony)
+	require.Len(t, got.Telephony.Bindings, 1)
+	require.Equal(t, "twilio", got.Telephony.Bindings[0].Provider)
+	require.Equal(t, "+14255550123", got.Telephony.Bindings[0].Identifier)
+	require.Equal(t, "telephony-twilio", got.Telephony.Bindings[0].Connection)
 }
 
 func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
@@ -172,6 +180,71 @@ func TestApplyAgentMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServiceHasTelephony(t *testing.T) {
+	props := &structpb.Struct{Fields: map[string]*structpb.Value{
+		"telephony": structpb.NewStructValue(&structpb.Struct{}),
+	}}
+	require.True(t, serviceHasTelephony(&azdext.ServiceConfig{AdditionalProperties: props}))
+	require.False(t, serviceHasTelephony(&azdext.ServiceConfig{}))
+}
+
+func TestShouldRejectTelephonyForNonVoice(t *testing.T) {
+	props := &structpb.Struct{Fields: map[string]*structpb.Value{
+		"telephony": structpb.NewStructValue(&structpb.Struct{}),
+	}}
+	svc := &azdext.ServiceConfig{AdditionalProperties: props}
+
+	require.False(t, shouldRejectTelephonyForNonVoice(true, false, svc))
+	require.False(t, shouldRejectTelephonyForNonVoice(false, true, svc))
+	require.True(t, shouldRejectTelephonyForNonVoice(false, false, svc))
+}
+
+func TestTelephonyBindingMatches(t *testing.T) {
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
+	}
+	remote := &agent_api.TelephonyBinding{
+		ID:              "twilio:%2B14255550123",
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
+	remote.ConnectionName = "other"
+	require.False(t, telephonyBindingMatches(remote, desired))
+	remote.ConnectionName = "telephony-twilio"
+	remote.TransferTargets = []map[string]any{}
+	desired.TransferTargets = nil
+	require.True(t, telephonyBindingMatches(remote, desired))
+}
+
+func TestTelephonyBindingMatches_ServiceOmittedFields(t *testing.T) {
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:       "azure-communication-service",
+		Identifier:     "28:orgid:00000000-0000-0000-0000-000000000001",
+		ConnectionName: "telephony-acs",
+	}
+	remote := &agent_api.TelephonyBinding{
+		ID:         "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000001",
+		Provider:   "teams_phone_extension",
+		Connection: "telephony-acs",
+		Status:     "active",
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
+
+	remote.ID = "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000002"
+	require.False(t, telephonyBindingMatches(remote, desired))
+}
+
+func TestTelephonyWireProvider(t *testing.T) {
+	require.Equal(t, "azure-communication-service", telephonyWireProvider("acs"))
+	require.Equal(t, "twilio", telephonyWireProvider("twilio"))
 }
 
 type fakeProjectAgentChecker struct {

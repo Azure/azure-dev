@@ -140,7 +140,7 @@ type AgentDefinitionInline struct {
 	Policies             []agent_yaml.Policy               `json:"policies,omitempty"`
 	SessionConfiguration *agent_yaml.SessionConfiguration  `json:"sessionConfiguration,omitempty"`
 
-	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
+	// Voice-agent fields (kind: prompt-voice or voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
 	ModelType         agent_yaml.VoiceModelType    `json:"modelType,omitempty"`
 	Model             *agent_yaml.Model            `json:"model,omitempty"`
@@ -159,6 +159,7 @@ type AgentDefinitionInline struct {
 	ParallelToolCalls *bool                        `json:"parallelToolCalls,omitempty"`
 	MaxOutputTokens   any                          `json:"maxOutputTokens,omitempty"`
 	Include           []string                     `json:"include,omitempty"`
+	Telephony         *agent_yaml.VoiceTelephony   `json:"telephony,omitempty"`
 }
 
 // voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
@@ -183,6 +184,7 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 		ParallelToolCalls: va.ParallelToolCalls,
 		MaxOutputTokens:   va.MaxOutputTokens,
 		Include:           va.Include,
+		Telephony:         va.Telephony,
 	}
 }
 
@@ -207,6 +209,7 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 		ParallelToolCalls: d.ParallelToolCalls,
 		MaxOutputTokens:   d.MaxOutputTokens,
 		Include:           d.Include,
+		Telephony:         d.Telephony,
 	}
 }
 

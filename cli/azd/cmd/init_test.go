@@ -1999,3 +1999,40 @@ func TestInitializeExtensionsPromotesDependencyInstalledExtension(t *testing.T) 
 	require.NoError(t, err)
 	require.False(t, child.InstalledAsDependency)
 }
+
+func TestInitializeExtensionsReturnsInstalledConfigError(t *testing.T) {
+	const registryURL = "https://test.example.com/init-registry.json"
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	cfg := config.NewEmptyConfig()
+	require.NoError(t, cfg.Set("extension.installed", "invalid"))
+	mockCtx.ConfigManager.WithConfig(cfg)
+
+	manager, _ := createUpgradeTestManager(
+		t,
+		mockCtx,
+		nil,
+		registryURL,
+		extensions.Registry{SchemaVersion: extensions.CurrentRegistrySchemaVersion},
+	)
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	require.NoError(t, project.Save(t.Context(), &project.ProjectConfig{
+		Name: "test-project",
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{"test.extension": nil},
+		},
+	}, azdCtx.ProjectPath()))
+	action := &initAction{
+		console:           mockCtx.Console,
+		extensionsManager: manager,
+		flags:             &initFlags{global: &internal.GlobalCommandOptions{}},
+	}
+
+	err := action.initializeExtensions(t.Context(), azdCtx)
+	require.ErrorContains(t, err, "checking installed extension test.extension")
+	require.ErrorContains(t, err, "failed to get extensions section")
+	require.Equal(t, []mockinput.SpinnerOp{
+		{Op: mockinput.SpinnerOpShow, Message: "Installing test.extension", Format: input.Step},
+		{Op: mockinput.SpinnerOpStop, Message: "Installing test.extension", Format: input.StepFailed},
+	}, mockCtx.Console.SpinnerOps())
+}

@@ -1136,7 +1136,8 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 
 		// Look the record up each time: an extension pack installed earlier in this loop may
 		// have pulled in a later entry as a dependency.
-		if installed, err := i.extensionsManager.GetInstalled(extensions.FilterOptions{Id: extensionId}); err == nil {
+		installed, err := i.extensionsManager.GetInstalled(extensions.FilterOptions{Id: extensionId})
+		if err == nil {
 			skipNote := fmt.Sprintf(" (version %s already installed)", installed.Version)
 			// The project names this extension, so a record that only a pack pulled in
 			// becomes explicit and survives when that pack is uninstalled.
@@ -1152,6 +1153,10 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 			stepMessage += output.WithGrayFormat("%s", skipNote)
 			i.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
+		}
+		if !errors.Is(err, extensions.ErrInstalledExtensionNotFound) {
+			i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return fmt.Errorf("checking installed extension %s: %w", extensionId, err)
 		}
 
 		installConstraint := "latest"

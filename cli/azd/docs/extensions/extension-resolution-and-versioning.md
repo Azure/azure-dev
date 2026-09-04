@@ -205,7 +205,7 @@ For registry-backed installs, a required dependency must resolve from the parent
 
 `azd extension uninstall --all` removes every installed extension.
 
-Records written before dependency tracking carry neither the dependency list nor the flag. They are treated as installs by name with no known dependencies: never removed as orphans and never blocking. `azd extension update` records the dependency list on such records, even when nothing is updated, so existing installs gain dependent protection after one update. Ownership is never guessed.
+Records written before dependency tracking carry neither the dependency list nor the flag. They are treated as installs by name with no known dependencies: never removed as orphans and never blocking. `azd extension update` records the dependency list on the extension being updated and on installed dependencies it directly reconciles, even when their versions do not change. Deeper legacy records gain their snapshot when they are directly updated, reconciled, or reinstalled. Ownership is never guessed.
 
 ## Self-Contained Bundles
 

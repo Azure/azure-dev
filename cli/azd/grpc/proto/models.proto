@@ -99,6 +99,12 @@ message ServiceConfig {
   google.protobuf.Struct additional_properties = 12;
   repeated string uses = 13;
   map<string, string> environment = 14;
+  google.protobuf.Struct k8s = 15;
+  string module = 16;
+  InfraOptions infra = 17;
+  google.protobuf.Struct hooks = 18;
+  string condition = 19;
+  optional bool remote_build = 20;
 }
 
 // InfraOptions message definition
@@ -106,6 +112,13 @@ message InfraOptions {
   string provider = 1;
   string path = 2;
   string module = 3;
+  google.protobuf.Struct config = 4;
+  string name = 5;
+  repeated string depends_on = 6;
+  map<string, string> inputs = 7;
+  map<string, string> outputs = 8;
+  google.protobuf.Struct hooks = 9;
+  google.protobuf.Struct deployment_stacks = 10;
 }
 
 // DockerProjectOptions message definition

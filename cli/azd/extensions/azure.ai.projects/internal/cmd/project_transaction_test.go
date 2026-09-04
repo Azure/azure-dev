@@ -44,6 +44,21 @@ func TestRollbackProjectAddUsesApplicationOrder(t *testing.T) {
 	assert.Equal(t, []string{"environment", "service", "infra"}, order)
 }
 
+func TestWithProjectRollbackContextIgnoresCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	called := false
+	err := withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+		called = true
+		assert.NoError(t, rollbackCtx.Err())
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.True(t, called)
+}
+
 func TestReconcileProjectEnvironmentRollbackRestoresValues(t *testing.T) {
 	envServer := &transactionEnvironmentServer{
 		values: map[string]string{
@@ -108,6 +123,111 @@ func TestReconcileProjectServiceRollbackRestoresSection(t *testing.T) {
 		"endpoint": "https://account.services.ai.azure.com/api/projects/old",
 		"custom":   "preserve",
 	}, projectServer.serviceSection.Section.AsMap())
+}
+
+func TestReconcileDeploymentRollbackRestoresDeclaration(t *testing.T) {
+	section, err := structpb.NewStruct(map[string]any{
+		"project": map[string]any{
+			"deployments": []any{
+				map[string]any{
+					"name": "chat",
+					"model": map[string]any{
+						"format":  "OpenAI",
+						"name":    "gpt-4.1",
+						"version": "2024-01-01",
+					},
+					"sku": map[string]any{
+						"name":     "GlobalStandard",
+						"capacity": 1,
+					},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	projectServer := &transactionProjectServer{
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: aiProjectHost},
+			},
+		},
+		section: section,
+	}
+	client := newTransactionProjectClient(t, projectServer)
+	reconciler := &projectServiceReconciler{client: client}
+	requested := synthesis.Deployment{
+		Name: "chat",
+		Model: synthesis.DeploymentModel{
+			Format:  "OpenAI",
+			Name:    "gpt-4.1",
+			Version: "2025-01-01",
+		},
+		Sku: synthesis.DeploymentSku{
+			Name:     "GlobalStandard",
+			Capacity: 10,
+		},
+	}
+
+	mutation, rollback, err := reconcileDeploymentWithRollback(
+		t.Context(),
+		reconciler,
+		"project",
+		requested,
+		true,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, deploymentReplaced, mutation)
+	require.NotNil(t, rollback)
+	require.NoError(t, rollback())
+	require.Len(t, projectServer.serviceValues, 2)
+	assert.Equal(
+		t,
+		"2024-01-01",
+		projectServer.serviceValues[1].Value.AsInterface().([]any)[0].(map[string]any)["model"].(map[string]any)["version"],
+	)
+}
+
+func TestReconcileNewDeploymentRollbackUnsetsDeclaration(t *testing.T) {
+	section, err := structpb.NewStruct(map[string]any{
+		"project": map[string]any{},
+	})
+	require.NoError(t, err)
+	projectServer := &transactionProjectServer{
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: aiProjectHost},
+			},
+		},
+		section: section,
+	}
+	client := newTransactionProjectClient(t, projectServer)
+	reconciler := &projectServiceReconciler{client: client}
+
+	_, rollback, err := reconcileDeploymentWithRollback(
+		t.Context(),
+		reconciler,
+		"project",
+		synthesis.Deployment{
+			Name: "chat",
+			Model: synthesis.DeploymentModel{
+				Format:  "OpenAI",
+				Name:    "gpt-4.1",
+				Version: "2025-01-01",
+			},
+			Sku: synthesis.DeploymentSku{
+				Name:     "GlobalStandard",
+				Capacity: 10,
+			},
+		},
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, rollback)
+	require.NoError(t, rollback())
+	assert.Equal(t, []string{"deployments"}, projectServer.unsetServicePaths)
 }
 
 func TestEjectExistingProjectBicepAcceptsPostInitIdentity(t *testing.T) {
@@ -429,13 +549,15 @@ func (s *transactionEnvironmentServer) SetValue(
 
 type transactionProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
-	project        *azdext.ProjectConfig
-	section        *structpb.Struct
-	serviceValue   *azdext.SetServiceConfigValueRequest
-	serviceSection *azdext.SetServiceConfigSectionRequest
-	setConfig      []*azdext.SetProjectConfigValueRequest
-	unsetPaths     []string
-	unsetErrors    []error
+	project           *azdext.ProjectConfig
+	section           *structpb.Struct
+	serviceValue      *azdext.SetServiceConfigValueRequest
+	serviceValues     []*azdext.SetServiceConfigValueRequest
+	serviceSection    *azdext.SetServiceConfigSectionRequest
+	setConfig         []*azdext.SetProjectConfigValueRequest
+	unsetPaths        []string
+	unsetServicePaths []string
+	unsetErrors       []error
 }
 
 func (s *transactionProjectServer) Get(
@@ -467,6 +589,7 @@ func (s *transactionProjectServer) SetServiceConfigValue(
 	request *azdext.SetServiceConfigValueRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.serviceValue = request
+	s.serviceValues = append(s.serviceValues, request)
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -498,6 +621,14 @@ func (s *transactionProjectServer) UnsetConfig(
 			return nil, err
 		}
 	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *transactionProjectServer) UnsetServiceConfig(
+	_ context.Context,
+	request *azdext.UnsetServiceConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	s.unsetServicePaths = append(s.unsetServicePaths, request.Path)
 	return &azdext.EmptyResponse{}, nil
 }
 

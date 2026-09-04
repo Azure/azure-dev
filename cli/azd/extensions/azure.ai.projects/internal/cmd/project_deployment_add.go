@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -121,7 +122,12 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	}
 
 	projectRoot := projectRootPath()
-	project, _, err := ensureProject(ctx, client, projectRoot)
+	project, _, err := ensureProjectWithEnvironment(
+		ctx,
+		client,
+		projectRoot,
+		a.environmentName(),
+	)
 	if err != nil {
 		return err
 	}
@@ -238,28 +244,64 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			"specify a deployable model tuple and retry",
 		)
 	}
-	mutation, err := reconcileDeployment(
+	mutation, restoreDeployment, err := reconcileDeploymentWithRollback(
 		ctx, reconciler, service.Name, selected.Deployment, force,
 	)
 	if err != nil {
 		return err
 	}
+	locationWriteAttempted := false
+	defaultWriteAttempted := false
+	restoreEnvironment := func() error {
+		return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+			var restoreErrs []error
+			if defaultWriteAttempted {
+				if _, err := client.Environment().SetValue(rollbackCtx, &azdext.SetEnvRequest{
+					EnvName: envName,
+					Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+					Value:   values["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
+				}); err != nil {
+					restoreErrs = append(restoreErrs, err)
+				}
+			}
+			if locationWriteAttempted {
+				if _, err := client.Environment().SetValue(rollbackCtx, &azdext.SetEnvRequest{
+					EnvName: envName,
+					Key:     "AZURE_AI_DEPLOYMENTS_LOCATION",
+					Value:   values["AZURE_AI_DEPLOYMENTS_LOCATION"],
+				}); err != nil {
+					restoreErrs = append(restoreErrs, err)
+				}
+			}
+			return errors.Join(restoreErrs...)
+		})
+	}
 	if selected.Location != "" && selected.Location != values["AZURE_AI_DEPLOYMENTS_LOCATION"] {
+		locationWriteAttempted = true
 		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: envName,
 			Key:     "AZURE_AI_DEPLOYMENTS_LOCATION",
 			Value:   selected.Location,
 		}); err != nil {
-			return fmt.Errorf("set deployment location: %w", err)
+			return rollbackProjectDeploymentAdd(
+				fmt.Errorf("set deployment location: %w", err),
+				restoreEnvironment,
+				restoreDeployment,
+			)
 		}
 	}
 	if setAsDefault {
+		defaultWriteAttempted = true
 		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: envName,
 			Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
 			Value:   selected.Deployment.Name,
 		}); err != nil {
-			return fmt.Errorf("set default model deployment: %w", err)
+			return rollbackProjectDeploymentAdd(
+				fmt.Errorf("set default model deployment: %w", err),
+				restoreEnvironment,
+				restoreDeployment,
+			)
 		}
 	}
 	result := projectDeploymentAddOutput{
@@ -291,6 +333,28 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		fmt.Printf("Managed deployment %q %s.\n", selected.Deployment.Name, mutation)
 	}
 	return nil
+}
+
+func rollbackProjectDeploymentAdd(
+	operationErr error,
+	rollbacks ...func() error,
+) error {
+	var rollbackErrs []error
+	for _, rollback := range rollbacks {
+		if rollback == nil {
+			continue
+		}
+		if err := rollback(); err != nil {
+			rollbackErrs = append(
+				rollbackErrs,
+				fmt.Errorf("rollback project deployment add: %w", err),
+			)
+		}
+	}
+	if len(rollbackErrs) == 0 {
+		return operationErr
+	}
+	return errors.Join(append([]error{operationErr}, rollbackErrs...)...)
 }
 
 func resolveDeploymentAzureContext(

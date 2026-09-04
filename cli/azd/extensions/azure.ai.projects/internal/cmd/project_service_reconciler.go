@@ -172,7 +172,9 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 			return "", "", func() error { return nil }, err
 		}
 		return name, "created", func() error {
-			return removeProjectService(ctx, r.client, name)
+			return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+				return removeProjectService(rollbackCtx, r.client, name)
+			})
 		}, nil
 	}
 
@@ -194,7 +196,9 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 			return "", "", func() error { return nil }, err
 		}
 		return name, "migrated", func() error {
-			return removeProjectService(ctx, r.client, name)
+			return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+				return removeProjectService(rollbackCtx, r.client, name)
+			})
 		}, nil
 	}
 
@@ -230,9 +234,11 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 	}
 	_ = mode
 	return service.Name, "updated", func() error {
-		return restoreProjectServiceConfig(
-			ctx, r.client, service.Name, previous,
-		)
+		return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+			return restoreProjectServiceConfig(
+				rollbackCtx, r.client, service.Name, previous,
+			)
+		})
 	}, nil
 }
 
@@ -350,8 +356,15 @@ func (r *projectServiceReconciler) addService(
 		},
 	); err != nil {
 		persistErr := fmt.Errorf("persist project service %q configuration: %w", name, err)
-		if rollbackErr := unsetProjectConfigValue(
-			ctx, r.client, "services."+name,
+		if rollbackErr := withProjectRollbackContext(
+			ctx,
+			func(rollbackCtx context.Context) error {
+				return unsetProjectConfigValue(
+					rollbackCtx,
+					r.client,
+					"services."+name,
+				)
+			},
 		); rollbackErr != nil {
 			return errors.Join(
 				persistErr,

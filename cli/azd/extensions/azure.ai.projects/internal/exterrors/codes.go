@@ -11,6 +11,7 @@ const CodeCancelled = "cancelled"
 // fail validation.
 const (
 	CodeInvalidParameter         = "invalid_parameter"
+	CodeConflictingArguments     = "conflicting_arguments"
 	CodeInvalidServiceConfig     = "invalid_service_config"
 	CodeInvalidAzureYaml         = "invalid_azure_yaml"
 	CodeMissingResourceGroup     = "missing_resource_group"

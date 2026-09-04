@@ -174,7 +174,15 @@ func reconcileProjectEnvironmentWithRollback(
 		}
 	}
 	return func() error {
-		return restoreProjectEnvironment(ctx, client, envName, old, plan)
+		return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+			return restoreProjectEnvironment(
+				rollbackCtx,
+				client,
+				envName,
+				old,
+				plan,
+			)
+		})
 	}, nil
 }
 
@@ -186,8 +194,17 @@ func rollbackProjectEnvironment(
 	plan environmentPlan,
 	operationErr error,
 ) error {
-	if restoreErr := restoreProjectEnvironment(
-		ctx, client, envName, old, plan,
+	if restoreErr := withProjectRollbackContext(
+		ctx,
+		func(rollbackCtx context.Context) error {
+			return restoreProjectEnvironment(
+				rollbackCtx,
+				client,
+				envName,
+				old,
+				plan,
+			)
+		},
 	); restoreErr != nil {
 		return errors.Join(operationErr, restoreErr)
 	}

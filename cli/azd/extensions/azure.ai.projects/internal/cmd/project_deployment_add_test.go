@@ -337,7 +337,7 @@ func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {
 				t,
 				[]string{
 					"init", "--minimal", "--no-prompt",
-					"--environment", deriveProjectEnvironmentName(root),
+					"--environment", "test",
 				},
 				workflowServer.args[0],
 			)

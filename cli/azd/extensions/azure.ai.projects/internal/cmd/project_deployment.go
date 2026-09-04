@@ -369,12 +369,29 @@ func reconcileDeployment(
 	requested synthesis.Deployment,
 	force bool,
 ) (deploymentMutation, error) {
+	mutation, _, err := reconcileDeploymentWithRollback(
+		ctx,
+		reconciler,
+		serviceName,
+		requested,
+		force,
+	)
+	return mutation, err
+}
+
+func reconcileDeploymentWithRollback(
+	ctx context.Context,
+	reconciler *projectServiceReconciler,
+	serviceName string,
+	requested synthesis.Deployment,
+	force bool,
+) (deploymentMutation, func() error, error) {
 	service, _, err := reconciler.discoverProjectService(ctx)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if service == nil || service.Name != serviceName {
-		return "", exterrors.Dependency(
+		return "", nil, exterrors.Dependency(
 			"project_service_not_found",
 			fmt.Sprintf("project service %q was not found", serviceName),
 			"run `azd ai project add` before adding a deployment",
@@ -382,13 +399,18 @@ func reconcileDeployment(
 	}
 	rawItems, resolvedItems, err := deploymentItems(service, reconciler.projectRoot)
 	if err != nil {
-		return "", err
+		return "", nil, err
+	}
+	originalItems := slices.Clone(rawItems)
+	hadDeployments := false
+	if service.Raw != nil {
+		_, hadDeployments = service.Raw["deployments"]
 	}
 	seenNames := map[string]struct{}{}
 	for _, item := range resolvedItems {
 		name, ok := item["name"].(string)
 		if !ok || strings.TrimSpace(name) == "" {
-			return "", exterrors.Validation(
+			return "", nil, exterrors.Validation(
 				"project_deployment_invalid",
 				fmt.Sprintf("project service %q contains a deployment without a name", service.Name),
 				"add a unique name to every deployment declaration",
@@ -396,7 +418,7 @@ func reconcileDeployment(
 		}
 		key := strings.ToLower(name)
 		if _, exists := seenNames[key]; exists {
-			return "", exterrors.Validation(
+			return "", nil, exterrors.Validation(
 				"project_deployment_duplicate",
 				fmt.Sprintf("project service %q contains duplicate deployment name %q", service.Name, name),
 				"remove the duplicate deployment declarations and retry",
@@ -412,11 +434,11 @@ func reconcileDeployment(
 		}
 		if !deploymentSemanticallyEqual(item, requested) {
 			if service.ServiceRef != "" {
-				return "", projectServiceRefError(service.Name, service.ServiceRef)
+				return "", nil, projectServiceRefError(service.Name, service.ServiceRef)
 			}
 			if index < len(rawItems) {
 				if _, referenced := rawItems[index]["$ref"]; referenced {
-					return "", exterrors.Validation(
+					return "", nil, exterrors.Validation(
 						"project_deployment_ref_conflict",
 						fmt.Sprintf("deployment %q is defined by a referenced file", name),
 						"edit the referenced deployment file instead of using --force",
@@ -424,22 +446,91 @@ func reconcileDeployment(
 				}
 			}
 			if !force {
-				return "", exterrors.Validation(
+				return "", nil, exterrors.Validation(
 					"project_deployment_conflict",
 					fmt.Sprintf("deployment %q already exists with different settings", name),
 					"use --force to replace the inline declaration",
 				)
 			}
 			rawItems[index] = deploymentMap(requested)
-			return deploymentMutationUpdate(ctx, reconciler, service.Name, rawItems, deploymentReplaced)
+			mutation, err := deploymentMutationUpdate(
+				ctx, reconciler, service.Name, rawItems, deploymentReplaced,
+			)
+			if err != nil {
+				return "", nil, err
+			}
+			return mutation, func() error {
+				return restoreDeploymentDeclaration(
+					ctx,
+					reconciler,
+					service.Name,
+					originalItems,
+					hadDeployments,
+				)
+			}, nil
 		}
-		return deploymentUnchanged, nil
+		return deploymentUnchanged, nil, nil
 	}
 	if service.ServiceRef != "" {
-		return "", projectServiceRefError(service.Name, service.ServiceRef)
+		return "", nil, projectServiceRefError(service.Name, service.ServiceRef)
 	}
 	rawItems = append(rawItems, deploymentMap(requested))
-	return deploymentMutationUpdate(ctx, reconciler, service.Name, rawItems, deploymentCreated)
+	mutation, err := deploymentMutationUpdate(
+		ctx, reconciler, service.Name, rawItems, deploymentCreated,
+	)
+	if err != nil {
+		return "", nil, err
+	}
+	return mutation, func() error {
+		return restoreDeploymentDeclaration(
+			ctx,
+			reconciler,
+			service.Name,
+			originalItems,
+			hadDeployments,
+		)
+	}, nil
+}
+
+func restoreDeploymentDeclaration(
+	ctx context.Context,
+	reconciler *projectServiceReconciler,
+	serviceName string,
+	items []map[string]any,
+	hadDeployments bool,
+) error {
+	return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+		if !hadDeployments {
+			if _, err := reconciler.client.Project().UnsetServiceConfig(
+				rollbackCtx,
+				&azdext.UnsetServiceConfigRequest{
+					ServiceName: serviceName,
+					Path:        "deployments",
+				},
+			); err != nil {
+				return fmt.Errorf(
+					"restore project service %q deployments: %w",
+					serviceName,
+					err,
+				)
+			}
+			return nil
+		}
+		if _, err := deploymentMutationUpdate(
+			rollbackCtx,
+			reconciler,
+			serviceName,
+			items,
+			deploymentUnchanged,
+		); err != nil {
+			return fmt.Errorf(
+				"restore project service %q deployments: %w",
+				serviceName,
+				err,
+			)
+		}
+		return nil
+	})
 }
 
 func deploymentMutationUpdate(

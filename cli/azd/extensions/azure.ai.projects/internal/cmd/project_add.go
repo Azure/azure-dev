@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"text/template"
+	"time"
 
 	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
@@ -36,21 +38,23 @@ type projectAddFlags struct {
 	projectEndpoint string
 	infra           string
 	force           bool
+	forceSet        bool
 	noPrompt        bool
 	output          string
 }
 
 type resolvedProject struct {
-	Mode              projectMode
-	ResourceId        string
-	SubscriptionId    string
-	UserTenantId      string
-	ResourceGroupName string
-	AccountName       string
-	ProjectName       string
-	Location          string
-	Endpoint          string
-	OpenAIEndpoint    string
+	Mode                projectMode
+	ResourceId          string
+	SubscriptionId      string
+	UserTenantId        string
+	ResourceGroupName   string
+	AccountName         string
+	ProjectName         string
+	Location            string
+	Endpoint            string
+	OpenAIEndpoint      string
+	EndpointPathWarning bool
 }
 
 var projectResourceIDPattern = regexp.MustCompile(
@@ -94,6 +98,7 @@ func newProjectAuthoringCommand(
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
 			flags.noPrompt = extCtx.NoPrompt
+			flags.forceSet = cmd.Flags().Changed("force")
 			action := &ProjectAddAction{flags: flags, extCtx: extCtx}
 			return action.Run(cmd.Context())
 		},
@@ -126,6 +131,14 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			"specify only one project target",
 		)
 	}
+	if a.flags.forceSet &&
+		a.flags.projectID == "" && a.flags.projectEndpoint == "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--force requires --project-id or --project-endpoint",
+			"specify an explicit project target or remove --force",
+		)
+	}
 	var err error
 	if a.flags.infra != "" {
 		if a.flags.infra, err = parseInfraProvider(a.flags.infra); err != nil {
@@ -148,7 +161,12 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	a.client = client
 
 	projectRoot := projectRootPath()
-	project, _, err := ensureProject(ctx, client, projectRoot)
+	project, _, err := ensureProjectWithEnvironment(
+		ctx,
+		client,
+		projectRoot,
+		a.environmentName(),
+	)
 	if err != nil {
 		return err
 	}
@@ -237,27 +255,31 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		if !providerChanged {
 			return nil
 		}
-		return restoreProjectInfraConfig(
-			ctx, client, oldProvider, oldPath,
-		)
+		return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+			return restoreProjectInfraConfig(
+				rollbackCtx, client, oldProvider, oldPath,
+			)
+		})
 	}
 	restoreInfra := func() error {
-		var restoreErrs []error
-		if infra := a.flags.infra; infra != "" {
-			if err := restoreProjectInfraConfig(
-				ctx, client, oldProvider, oldPath,
-			); err != nil {
-				restoreErrs = append(restoreErrs, err)
-			}
-			if infraDeclaration.layerCount > 0 {
-				if err := restoreProjectInfraLayers(
-					ctx, client, infraDeclaration.layers,
+		return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+			var restoreErrs []error
+			if infra := a.flags.infra; infra != "" {
+				if err := restoreProjectInfraConfig(
+					rollbackCtx, client, oldProvider, oldPath,
 				); err != nil {
 					restoreErrs = append(restoreErrs, err)
 				}
+				if infraDeclaration.layerCount > 0 {
+					if err := restoreProjectInfraLayers(
+						rollbackCtx, client, infraDeclaration.layers,
+					); err != nil {
+						restoreErrs = append(restoreErrs, err)
+					}
+				}
 			}
-		}
-		return errors.Join(restoreErrs...)
+			return errors.Join(restoreErrs...)
+		})
 	}
 	serviceName, mutation, restoreService, err := reconciler.reconcileEndpoint(
 		ctx, serviceProjectName, target.Endpoint, target.Mode,
@@ -297,6 +319,12 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		Endpoint:        target.Endpoint,
 		ResourceID:      target.ResourceId,
 	}
+	writeProjectEndpointWarning(
+		os.Stderr,
+		target.EndpointPathWarning,
+		a.flags.output,
+		a.flags.noPrompt,
+	)
 
 	if a.flags.output == "none" {
 		return nil
@@ -329,6 +357,36 @@ func rollbackProjectAdd(
 		return operationErr
 	}
 	return errors.Join(append([]error{operationErr}, rollbackErrs...)...)
+}
+
+const projectRollbackTimeout = 30 * time.Second
+
+func withProjectRollbackContext(
+	ctx context.Context,
+	rollback func(context.Context) error,
+) error {
+	rollbackCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		projectRollbackTimeout,
+	)
+	defer cancel()
+	return rollback(rollbackCtx)
+}
+
+func writeProjectEndpointWarning(
+	writer io.Writer,
+	pathWarning bool,
+	output string,
+	noPrompt bool,
+) {
+	if !pathWarning || noPrompt || output == "json" || output == "none" {
+		return
+	}
+	_, _ = fmt.Fprintln(
+		writer,
+		"warning: the endpoint path does not look like /api/projects/<project>; "+
+			"verify this is the correct Foundry project endpoint.",
+	)
 }
 
 func (a *ProjectAddAction) environmentName() string {
@@ -739,7 +797,7 @@ func projectFromResourceID(resourceID string) (*resolvedProject, error) {
 }
 
 func resolvedProjectFromEndpoint(endpoint string) (*resolvedProject, error) {
-	normalized, _, err := validateProjectEndpoint(endpoint)
+	normalized, pathWarning, err := validateProjectEndpoint(endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -755,10 +813,11 @@ func resolvedProjectFromEndpoint(endpoint string) (*resolvedProject, error) {
 		)
 	}
 	return &resolvedProject{
-		Mode:        projectModeExistingEndpoint,
-		AccountName: account,
-		ProjectName: projectName,
-		Endpoint:    normalized,
+		Mode:                projectModeExistingEndpoint,
+		AccountName:         account,
+		ProjectName:         projectName,
+		Endpoint:            normalized,
+		EndpointPathWarning: pathWarning,
 	}, nil
 }
 
@@ -826,12 +885,24 @@ func ensureProject(
 	client *azdext.AzdClient,
 	projectRoot string,
 ) (*azdext.ProjectConfig, bool, error) {
+	return ensureProjectWithEnvironment(ctx, client, projectRoot, "")
+}
+
+func ensureProjectWithEnvironment(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	projectRoot string,
+	environment string,
+) (*azdext.ProjectConfig, bool, error) {
 	exists, err := projectFileExists(projectRoot)
 	if err != nil {
 		return nil, false, err
 	}
 	if !exists {
-		envName := deriveProjectEnvironmentName(projectRoot)
+		envName := environment
+		if envName == "" {
+			envName = deriveProjectEnvironmentName(projectRoot)
+		}
 		if err := scaffoldProject(ctx, client, envName); err != nil {
 			return nil, false, err
 		}
@@ -928,11 +999,16 @@ func writeFoundryProvider(
 	}
 	if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
 		operationErr := fmt.Errorf("remove starter infrastructure path: %w", err)
-		if restoreErr := restoreProjectInfraConfig(
+		if restoreErr := withProjectRollbackContext(
 			ctx,
-			client,
-			oldProvider,
-			oldPath,
+			func(rollbackCtx context.Context) error {
+				return restoreProjectInfraConfig(
+					rollbackCtx,
+					client,
+					oldProvider,
+					oldPath,
+				)
+			},
 		); restoreErr != nil {
 			return errors.Join(
 				operationErr,
@@ -1592,18 +1668,28 @@ func ejectProjectInfra(
 	}
 	rollback := func(operationErr error) error {
 		operationErr = cleanup(operationErr)
-		var restoreErr error
-		switch {
-		case layersChanged:
-			restoreErr = restoreProjectInfraLayers(ctx, client, oldLayers)
-		case !target.layer:
-			restoreErr = restoreProjectInfraConfig(
-				ctx,
-				client,
-				oldProvider,
-				oldPath,
-			)
-		}
+		restoreErr := withProjectRollbackContext(
+			ctx,
+			func(rollbackCtx context.Context) error {
+				switch {
+				case layersChanged:
+					return restoreProjectInfraLayers(
+						rollbackCtx,
+						client,
+						oldLayers,
+					)
+				case !target.layer:
+					return restoreProjectInfraConfig(
+						rollbackCtx,
+						client,
+						oldProvider,
+						oldPath,
+					)
+				default:
+					return nil
+				}
+			},
+		)
 		if restoreErr != nil {
 			return errors.Join(
 				operationErr,

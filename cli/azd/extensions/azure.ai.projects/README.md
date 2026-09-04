@@ -65,6 +65,10 @@ provide the project identity and Azure environment values required by
 `project add`; incomplete non-interactive input fails before the deployment is
 changed.
 
+Use `--force` with an explicit `--project-id` or `--project-endpoint` when
+replacing a different configured project. The command rejects `--force`
+without an explicit target instead of silently ignoring the flag.
+
 To use an existing project in automation, initialize it with its full ARM
 resource ID. This stores the project identity in the active azd environment
 and allows managed deployment declarations to be reconciled:

@@ -79,6 +79,21 @@ func TestResolvedProjectFromEndpoint(t *testing.T) {
 	)
 }
 
+func TestProjectAddRejectsExplicitForceWithoutTarget(t *testing.T) {
+	action := &ProjectAddAction{
+		flags: &projectAddFlags{
+			force:    true,
+			forceSet: true,
+		},
+	}
+
+	err := action.Run(t.Context())
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+}
+
 func TestWriteTerraformEjectedInfra(t *testing.T) {
 	for _, test := range []struct {
 		name       string

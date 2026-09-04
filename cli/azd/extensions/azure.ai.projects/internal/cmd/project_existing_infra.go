@@ -215,14 +215,27 @@ func ejectExistingProjectInfra(
 				fmt.Errorf("restore generated infrastructure: %w", restoreErr),
 			)
 		}
-		var restoreErr error
-		if layersChanged {
-			restoreErr = restoreProjectInfraLayers(ctx, client, declaration.layers)
-		} else if !target.layer {
-			restoreErr = restoreProjectInfraConfig(
-				ctx, client, oldProvider, oldPath,
-			)
-		}
+		restoreErr := withProjectRollbackContext(
+			ctx,
+			func(rollbackCtx context.Context) error {
+				if layersChanged {
+					return restoreProjectInfraLayers(
+						rollbackCtx,
+						client,
+						declaration.layers,
+					)
+				}
+				if !target.layer {
+					return restoreProjectInfraConfig(
+						rollbackCtx,
+						client,
+						oldProvider,
+						oldPath,
+					)
+				}
+				return nil
+			},
+		)
 		if restoreErr != nil {
 			rollbackErrs = append(
 				rollbackErrs,

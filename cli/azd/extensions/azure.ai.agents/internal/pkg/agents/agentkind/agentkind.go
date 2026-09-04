@@ -53,7 +53,7 @@ func IsPromptVoice(svc *azdext.ServiceConfig, projectRoot, overridePath string) 
 	if err != nil {
 		return false, err
 	}
-	return kind == string(agent_yaml.AgentKindPromptVoice), nil
+	return agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(kind)), nil
 }
 
 // IsHosted reports whether the service resolves to kind: hosted.

@@ -333,7 +333,6 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 	}
 
-	// Prompt user for supported protocols
 	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.noPrompt, a.flags.protocols)
 	if err != nil {
 		return nil, err
@@ -830,6 +829,7 @@ func (a *InitFromCodeAction) addToProject(
 	isCodeDeploy bool,
 ) error {
 	agentName := definition.Name
+	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
 	if targetDir == "." {
@@ -883,13 +883,11 @@ func (a *InitFromCodeAction) addToProject(
 		strings.HasPrefix(definition.CodeConfiguration.Runtime, "dotnet_") {
 		language = "csharp"
 	}
-
 	serviceImage := ""
 	if !isCodeDeploy {
 		serviceImage = strings.TrimSpace(definition.Image)
 	}
 
-	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	serviceConfig := &azdext.ServiceConfig{
 		Name:                 agentServiceName,
 		RelativePath:         targetDir,

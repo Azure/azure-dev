@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -2434,7 +2435,39 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Deploying voice agent")
 
-	request, err := agent_yaml.CreateVoiceAgentAPIRequest(va)
+	var request *agent_api.CreateAgentRequest
+	var hostedTarget *hostedVoiceTarget
+	var err error
+	if va.ModelType == agent_yaml.VoiceModelTypeHostedAgent {
+		if va.TargetAgent != nil && p.dependencyEnabled != nil {
+			enabled, enabledErr := p.dependencyEnabled(ctx, strings.TrimSpace(va.TargetAgent.Service))
+			if enabledErr != nil {
+				return nil, enabledErr
+			}
+			if !enabled {
+				return nil, exterrors.Dependency(
+					exterrors.CodeFoundryDependencyNotReady,
+					fmt.Sprintf("hosted voice target service %q is disabled", va.TargetAgent.Service),
+					"enable the target hosted agent service or remove the voice wrapper",
+				)
+			}
+		}
+		hostedTarget, err = resolveHostedVoiceTarget(
+			serviceConfig, va.TargetAgent, p.projectServices, azdEnv, p.projectPath,
+		)
+		if err != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf("cannot resolve hosted voice target: %s", err),
+				"deploy the target hosted agent in the same project, then retry",
+			)
+		}
+		request, err = agent_yaml.CreateHostedVoiceAgentAPIRequest(va, agent_api.VoiceTargetAgentReference{
+			Name: hostedTarget.AgentName, Version: hostedTarget.AgentVersion,
+		})
+	} else {
+		request, err = agent_yaml.CreateVoiceAgentAPIRequest(va)
+	}
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -2454,6 +2487,12 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}
 
 	agentClient := agent_api.NewAgentClient(projectEndpoint, p.credential)
+	if hostedTarget != nil {
+		progress("Validating hosted voice target")
+		if err := fetchAndValidateHostedVoiceTarget(ctx, hostedTarget, agentClient.GetAgentVersion); err != nil {
+			return nil, err
+		}
+	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	agentObject, deployOp, err := p.deployVoiceAgentRemote(
@@ -2485,6 +2524,8 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
 		{versionKey, versionValue},
 		{fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", serviceKey), strings.TrimRight(projectEndpoint, "/")},
+		{fmt.Sprintf("AGENT_%s_TARGET_NAME", serviceKey), hostedVoiceTargetName(hostedTarget)},
+		{fmt.Sprintf("AGENT_%s_TARGET_VERSION", serviceKey), hostedVoiceTargetVersion(hostedTarget)},
 		{endpointKey, baseEndpoint},
 	} {
 		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -2508,6 +2549,82 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}}
 
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
+}
+
+type getAgentVersionFunc func(
+	context.Context, string, string, string, bool,
+) (*agent_api.AgentVersionObject, error)
+
+func fetchAndValidateHostedVoiceTarget(
+	ctx context.Context,
+	target *hostedVoiceTarget,
+	getVersion getAgentVersionFunc,
+) error {
+	version, err := getVersion(
+		ctx, target.AgentName, target.AgentVersion, agent_api.AgentEndpointAPIVersion, false,
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, "getting hosted voice target version")
+	}
+	if err := validateHostedVoiceTargetVersion(version); err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("hosted voice target is not compatible: %s", err),
+			"deploy an active Voice Bridge 1.0 hosted agent with invocations_ws/1.0.0, then retry",
+		)
+	}
+	return nil
+}
+
+func hostedVoiceTargetName(target *hostedVoiceTarget) string {
+	if target == nil {
+		return ""
+	}
+	return target.AgentName
+}
+
+func hostedVoiceTargetVersion(target *hostedVoiceTarget) string {
+	if target == nil {
+		return ""
+	}
+	return target.AgentVersion
+}
+
+func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) error {
+	if version == nil {
+		return fmt.Errorf("target version response is empty")
+	}
+	if version.Status != "active" {
+		return fmt.Errorf("target %s:%s has status %q, expected active", version.Name, version.Version, version.Status)
+	}
+	definitionJSON, err := json.Marshal(version.Definition)
+	if err != nil {
+		return fmt.Errorf("reading target definition: %w", err)
+	}
+	var definition agent_api.HostedAgentDefinition
+	if err := json.Unmarshal(definitionJSON, &definition); err != nil {
+		return fmt.Errorf("reading target definition: %w", err)
+	}
+	if definition.Kind != agent_api.AgentKindHosted {
+		return fmt.Errorf("target kind is %q, expected hosted", definition.Kind)
+	}
+	compatibleProtocol := false
+	for _, protocol := range definition.ProtocolVersions {
+		if protocol.Protocol == agent_api.AgentProtocolInvocationsWS && protocol.Version == "1.0.0" {
+			compatibleProtocol = true
+			break
+		}
+	}
+	if !compatibleProtocol {
+		return fmt.Errorf("target does not declare invocations_ws/1.0.0")
+	}
+	if !strings.EqualFold(strings.TrimSpace(version.Metadata["voiceLiveCompatible"]), "true") {
+		return fmt.Errorf("target metadata voiceLiveCompatible must be true")
+	}
+	if strings.TrimSpace(version.Metadata["bridgeProtocolVersion"]) != "1.0" {
+		return fmt.Errorf("target metadata bridgeProtocolVersion must be 1.0")
+	}
+	return nil
 }
 
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {

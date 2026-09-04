@@ -1,0 +1,25 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - gosec
+    - lll
+    - unused
+    - errorlint
+  settings:
+    lll:
+      line-length: 125
+      tab-width: 4
+  exclusions:
+    rules:
+      # G304 cannot apply to a path a test computed from its own t.TempDir().
+      # Production reads stay covered; the few there carry their own #nosec.
+      - path: _test\.go$
+        text: G304
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt

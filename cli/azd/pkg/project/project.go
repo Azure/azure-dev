@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -53,8 +54,13 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 			err,
 		)
 	}
+	var topLevelFields map[string]yaml.Node
+	if err := yaml.Unmarshal([]byte(yamlContent), &topLevelFields); err != nil {
+		return nil, fmt.Errorf("unable to inspect azure.yaml fields: %w", err)
+	}
+	_, projectConfig.infraPresent = topLevelFields["infra"]
 
-	if err := validateParsedConfig(&projectConfig); err != nil {
+	if err := projectConfig.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -73,10 +79,6 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 				*projectConfig.RequiredVersions.Azd,
 				internal.VersionInfo().Version.String())
 		}
-	}
-
-	if err := projectConfig.Infra.Validate(); err != nil {
-		return nil, err
 	}
 
 	var err error
@@ -99,57 +101,34 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		}
 	}
 
+	for _, layer := range projectConfig.Layers {
+		for i := range layer.Infra {
+			layer.Infra[i].Provider, err = provisioning.ParseProvider(layer.Infra[i].Provider)
+			if err != nil {
+				return nil, fmt.Errorf("parsing layer %q infrastructure %q provider: %w",
+					layer.Name, layer.Infra[i].Name, err)
+			}
+			layer.Infra[i].Layer = layer.Name
+			layer.Infra[i].Path = filepath.FromSlash(strings.ReplaceAll(layer.Infra[i].Path, "\\", "/"))
+		}
+
+		for name, service := range layer.Services {
+			if err := parseServiceConfig(&projectConfig, name, service); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {
 		projectConfig.Infra.Path = strings.ReplaceAll(projectConfig.Infra.Path, "\\", "/")
 	}
 
 	projectConfig.Infra.Path = filepath.FromSlash(projectConfig.Infra.Path)
 
-	for key, svc := range projectConfig.Services {
-		svc.Name = key
-		svc.Project = &projectConfig
-		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
-
-		var err error
-		svc.Language, err = parseServiceLanguage(svc.Language)
-		if err != nil {
-			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+	for key, service := range projectConfig.Services {
+		if err := parseServiceConfig(&projectConfig, key, service); err != nil {
+			return nil, err
 		}
-
-		svc.Host, err = parseServiceHost(svc.Host)
-		if err != nil {
-			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
-		}
-
-		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
-		if err != nil {
-			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
-		}
-
-		if strings.Contains(svc.Infra.Path, "\\") && !strings.Contains(svc.Infra.Path, "/") {
-			svc.Infra.Path = strings.ReplaceAll(svc.Infra.Path, "\\", "/")
-		}
-
-		svc.Infra.Path = filepath.FromSlash(svc.Infra.Path)
-
-		// TODO: Move parsing/validation requirements for service targets into their respective components.
-		// When working within container based applications users may be using external/pre-built images instead of source
-		// In this case it is valid to have not specified a language but would be required to specify a source image
-		if svc.Host == ContainerAppTarget && svc.Language == ServiceLanguageNone && svc.Image.Empty() {
-			return nil, fmt.Errorf("parsing service %s: must specify language or image", svc.Name)
-		}
-
-		if strings.ContainsRune(svc.RelativePath, '\\') && !strings.ContainsRune(svc.RelativePath, '/') {
-			svc.RelativePath = strings.ReplaceAll(svc.RelativePath, "\\", "/")
-		}
-
-		svc.RelativePath = filepath.FromSlash(svc.RelativePath)
-
-		if strings.ContainsRune(svc.OutputPath, '\\') && !strings.ContainsRune(svc.OutputPath, '/') {
-			svc.OutputPath = strings.ReplaceAll(svc.OutputPath, "\\", "/")
-		}
-
-		svc.OutputPath = filepath.FromSlash(svc.OutputPath)
 	}
 
 	for key, svc := range projectConfig.Resources {
@@ -158,6 +137,36 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	}
 
 	return &projectConfig, nil
+}
+
+func parseServiceConfig(projectConfig *ProjectConfig, name string, service *ServiceConfig) error {
+	service.Name = name
+	service.Project = projectConfig
+	service.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
+
+	var err error
+	service.Language, err = parseServiceLanguage(service.Language)
+	if err != nil {
+		return fmt.Errorf("parsing service %s: %w", service.Name, err)
+	}
+	service.Host, err = parseServiceHost(service.Host)
+	if err != nil {
+		return fmt.Errorf("parsing service %s: %w", service.Name, err)
+	}
+	service.Infra.Provider, err = provisioning.ParseProvider(service.Infra.Provider)
+	if err != nil {
+		return fmt.Errorf("parsing service %s: %w", service.Name, err)
+	}
+
+	service.Infra.Path = filepath.FromSlash(strings.ReplaceAll(service.Infra.Path, "\\", "/"))
+	service.RelativePath = filepath.FromSlash(strings.ReplaceAll(service.RelativePath, "\\", "/"))
+	service.OutputPath = filepath.FromSlash(strings.ReplaceAll(service.OutputPath, "\\", "/"))
+
+	if service.Host == ContainerAppTarget && service.Language == ServiceLanguageNone && service.Image.Empty() {
+		return fmt.Errorf("parsing service %s: must specify language or image", service.Name)
+	}
+
+	return nil
 }
 
 // Load hydrates the azure.yaml configuring into an viewable structure
@@ -227,11 +236,12 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		tracing.SetUsageAttributes(fields.StringHashed(fields.ProjectNameKey, projectConfig.Name))
 	}
 
-	if projectConfig.Services != nil {
-		hosts := make([]string, len(projectConfig.Services))
-		languages := make([]string, len(projectConfig.Services))
+	services := projectConfig.ServiceConfigs()
+	if len(services) > 0 {
+		hosts := make([]string, len(services))
+		languages := make([]string, len(services))
 		i := 0
-		for _, svcConfig := range projectConfig.Services {
+		for _, svcConfig := range services {
 			hosts[i] = string(svcConfig.Host)
 			languages[i] = string(svcConfig.Language)
 			i++
@@ -302,6 +312,26 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 
 		copy.Services[name] = &svcCopy
 	}
+	if projectConfig.Layers != nil {
+		copy.Layers = make(LayerConfigs, len(projectConfig.Layers))
+		for i, layer := range projectConfig.Layers {
+			layerCopy := *layer
+			layerCopy.Infra = slices.Clone(layer.Infra)
+			for j := range layerCopy.Infra {
+				layerCopy.Infra[j].Path = filepath.ToSlash(layerCopy.Infra[j].Path)
+			}
+			layerCopy.Services = make(map[string]*ServiceConfig, len(layer.Services))
+			for name, service := range layer.Services {
+				serviceCopy := *service
+				serviceCopy.Project = &copy
+				serviceCopy.Infra.Path = filepath.ToSlash(service.Infra.Path)
+				serviceCopy.RelativePath = filepath.ToSlash(service.RelativePath)
+				serviceCopy.OutputPath = filepath.ToSlash(service.OutputPath)
+				layerCopy.Services[name] = &serviceCopy
+			}
+			copy.Layers[i] = &layerCopy
+		}
+	}
 
 	projectBytes, err := yaml.Marshal(copy)
 	if err != nil {
@@ -309,7 +339,9 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 	}
 
 	version := "v1.0"
-	if projectConfig.MetaSchemaVersion != "" {
+	if projectConfig.Format() == ProjectFormatLayersV2 {
+		version = "alpha"
+	} else if projectConfig.MetaSchemaVersion != "" {
 		version = projectConfig.MetaSchemaVersion
 	}
 
@@ -322,7 +354,8 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		return fmt.Errorf("preparing new project file contents: %w", err)
 	}
 
-	err = os.WriteFile(projectFilePath, projectFileContents.Bytes(), osutil.PermissionFile)
+	// Atomic write so readers never observe a partially written azure.yaml.
+	err = azdext.WriteFileAtomic(projectFilePath, projectFileContents.Bytes(), osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("saving project file: %w", err)
 	}

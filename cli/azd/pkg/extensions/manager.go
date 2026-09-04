@@ -1150,8 +1150,11 @@ func (m *Manager) BackfillDependencies(id string, version *ExtensionVersion) err
 		return nil
 	}
 	installed, err := m.GetInstalled(FilterOptions{Id: id})
-	if err != nil || installed == nil {
+	if errors.Is(err, ErrInstalledExtensionNotFound) {
 		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get installed extension %s: %w", id, err)
 	}
 	if len(installed.Dependencies) > 0 ||
 		installed.Version != version.Version ||

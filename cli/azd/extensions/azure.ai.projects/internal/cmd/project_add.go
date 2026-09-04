@@ -77,23 +77,11 @@ type ProjectAddAction struct {
 }
 
 func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	return newProjectAuthoringCommand(
-		"add",
-		"Add or update a Microsoft Foundry project.",
-		extCtx,
-	)
-}
-
-func newProjectAuthoringCommand(
-	use string,
-	short string,
-	extCtx *azdext.ExtensionContext,
-) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	flags := &projectAddFlags{}
 	cmd := &cobra.Command{
-		Use:   use,
-		Short: short,
+		Use:   "add",
+		Short: "Add or update a Microsoft Foundry project.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat

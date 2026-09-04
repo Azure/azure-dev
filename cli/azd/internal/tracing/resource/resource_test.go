@@ -274,6 +274,12 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 			want:    fields.EnvGitHubCopilotApp,
 		},
 		{
+			name:     "Antigravity",
+			envVar:   "ANTIGRAVITY_AGENT",
+			envValue: "1",
+			want:     fields.EnvAntigravity,
+		},
+		{
 			name:    "GitHub Copilot VSCode",
 			aiAgent: "github_copilot_vscode_agent",
 			want:    fields.EnvGitHubCopilotVSCode,
@@ -300,6 +306,8 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, envVar := range []string{
+				"ANTIGRAVITY_AGENT",
+				"ANTIGRAVITY_CONVERSATION_ID",
 				"CLAUDE_CODE",
 				"CLAUDE_CODE_ENTRYPOINT",
 				"CODEX_CI",

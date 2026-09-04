@@ -71,6 +71,8 @@ func execEnvFromAgent() string {
 
 	// Map agent types to telemetry environment values
 	switch agent.Type {
+	case agentdetect.AgentTypeAntigravity:
+		return fields.EnvAntigravity
 	case agentdetect.AgentTypeClaudeCode:
 		return fields.EnvClaudeCode
 	case agentdetect.AgentTypeCodex:

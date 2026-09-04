@@ -20,6 +20,10 @@ type envVarPattern struct {
 // knownEnvVarPatterns defines environment variables that indicate known AI agents.
 // These are checked in order, so more specific patterns should come first.
 var knownEnvVarPatterns = []envVarPattern{
+	// Antigravity may be launched from another agent host, so its session markers take precedence.
+	{envVar: "ANTIGRAVITY_AGENT", expectedValue: "1", agentType: AgentTypeAntigravity},
+	{envVar: "ANTIGRAVITY_CONVERSATION_ID", agentType: AgentTypeAntigravity},
+
 	// GitHub Copilot hosts can expose Copilot CLI markers, so check their host-specific markers first.
 	{
 		envVar:        "AI_AGENT",
@@ -92,6 +96,7 @@ var userAgentPatterns = []struct {
 	{substring: "copilot-cli", agentType: AgentTypeGitHubCopilotCLI},
 	{substring: "claude-code", agentType: AgentTypeClaudeCode},
 	{substring: "claude", agentType: AgentTypeClaudeCode},
+	{substring: "antigravity-cli", agentType: AgentTypeAntigravity},
 	{substring: "gemini", agentType: AgentTypeGemini},
 	{substring: "opencode", agentType: AgentTypeOpenCode},
 }

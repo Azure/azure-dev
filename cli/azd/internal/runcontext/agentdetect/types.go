@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 // Package agentdetect provides functionality to detect when azd is invoked
-// by known AI coding agents (Claude Code, Codex, Cursor, GitHub Copilot, Gemini, OpenCode)
+// by known AI coding agents (Antigravity, Claude Code, Codex, Cursor, GitHub Copilot, Gemini, OpenCode)
 // and enables automatic adjustment of behavior (e.g., no-prompt mode).
 package agentdetect
 
@@ -12,6 +12,8 @@ type AgentType string
 const (
 	// AgentTypeUnknown indicates no agent was detected.
 	AgentTypeUnknown AgentType = ""
+	// AgentTypeAntigravity is Google's Antigravity CLI.
+	AgentTypeAntigravity AgentType = "antigravity"
 	// AgentTypeClaudeCode is Anthropic's Claude Code agent.
 	AgentTypeClaudeCode AgentType = "claude-code"
 	// AgentTypeCodex is OpenAI's Codex agent.
@@ -40,6 +42,8 @@ func (a AgentType) String() string {
 // DisplayName returns a human-readable name for the agent type.
 func (a AgentType) DisplayName() string {
 	switch a {
+	case AgentTypeAntigravity:
+		return "Antigravity"
 	case AgentTypeClaudeCode:
 		return "Claude Code"
 	case AgentTypeCodex:
@@ -61,6 +65,16 @@ func (a AgentType) DisplayName() string {
 	default:
 		return "Unknown"
 	}
+}
+
+// SupportsInteractiveInput reports whether the agent's shell tool can answer interactive prompts.
+func (a AgentType) SupportsInteractiveInput() bool {
+	return a == AgentTypeAntigravity
+}
+
+// SupportsInteractiveOutput reports whether the agent's shell tool supports interactive terminal rendering.
+func (a AgentType) SupportsInteractiveOutput() bool {
+	return a == AgentTypeAntigravity
 }
 
 // DetectionSource indicates how an agent was detected.

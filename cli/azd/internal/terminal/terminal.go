@@ -12,6 +12,11 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
+// IsInputTerminal returns true if the given input file descriptor is attached to a terminal.
+func IsInputTerminal(stdinFd uintptr) bool {
+	return isatty.IsTerminal(stdinFd)
+}
+
 // IsTerminal returns true if the given file descriptors are attached to a terminal,
 // taking into account of environment variables that force TTY behavior.
 func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
@@ -27,10 +32,11 @@ func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
 		return false
 	}
 
-	// If running under an AI coding agent, disable TTY mode to prevent interactive prompts.
-	if agentdetect.IsRunningInAgent() {
+	// Disable TTY rendering only for agents whose shell tool cannot support it.
+	agent := agentdetect.GetCallingAgent()
+	if agent.Detected && !agent.Type.SupportsInteractiveOutput() {
 		return false
 	}
 
-	return isatty.IsTerminal(stdoutFd) && isatty.IsTerminal(stdinFd)
+	return isatty.IsTerminal(stdoutFd) && IsInputTerminal(stdinFd)
 }

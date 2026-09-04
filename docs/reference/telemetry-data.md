@@ -645,6 +645,7 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `VS Code Azure GitHub Copilot` | Azure Copilot in VS Code |
 | `GitHub Copilot VSCode` | GitHub Copilot in VS Code |
 | `Azure CloudShell` | Azure Cloud Shell |
+| `Antigravity` | Google Antigravity CLI |
 | `Claude Code` | Claude Code AI agent |
 | `Codex` | Codex AI agent |
 | `Cursor` | Cursor AI agent |

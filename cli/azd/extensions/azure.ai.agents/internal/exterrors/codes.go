@@ -27,6 +27,7 @@ const (
 	CodeInvalidAgentRequest       = "invalid_agent_request"
 	CodeInvalidAgentName          = "invalid_agent_name"
 	CodeInvalidAgentVersion       = "invalid_agent_version"
+	CodeTelephonyBindingDrift     = "telephony_binding_drift"
 	CodeInvalidSessionId          = "invalid_session_id"
 	CodeInvalidParameter          = "invalid_parameter"
 	CodeUnsupportedHost           = "unsupported_host"

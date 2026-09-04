@@ -212,6 +212,52 @@ Details:
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
 
+## Prompt voice telephony bindings
+
+Prompt voice agents can declare Foundry-side telephony bindings in `azure.yaml`.
+This lets `azd deploy` bind an existing phone-provider route to the deployed
+agent. Telephony is only supported for `kind: prompt-voice` services.
+
+```yaml
+services:
+  support-voice:
+    host: azure.ai.agent
+    kind: prompt-voice
+    name: support-voice
+    model:
+      id: gpt-realtime
+    telephony:
+      bindings:
+        - provider: twilio
+          identifier: "+14255550123"
+          connection: telephony-twilio
+        - provider: acs
+          identifier: "28:orgid:00000000-0000-0000-0000-000000000001"
+          connection: telephony-acs
+```
+
+Prerequisites:
+
+- The phone provider account/resource and phone number already exist.
+- The Foundry project connection named by `connection` already exists.
+- Provider-side callbacks, such as Twilio webhooks or ACS Event Subscriptions,
+  are configured by the user/admin.
+
+Supported providers and identifiers:
+
+- `twilio`: use a Twilio phone number in E.164 format, such as `+14255550123`.
+- `acs`: use `28:orgid:<guid>` for Teams Phone Extensibility Resource Accounts
+  or `4:+<E.164>` for ACS-purchased numbers. azd maps `acs` to the service
+  provider value `azure-communication-service`.
+
+Bindings are create-only in this preview. If a remote binding exists and matches
+the YAML, deploy continues. If the remote binding has different configuration,
+azd fails with a remediation message instead of silently keeping stale routing.
+
+Cleanup: delete telephony bindings before deleting test agents. The service may
+leave bindings behind when an agent is deleted, so do not rely on agent deletion
+as binding cleanup.
+
 ### Moderating invocations-protocol traffic
 
 For agents that expose the `invocations` protocol, the RAI policy alone is not

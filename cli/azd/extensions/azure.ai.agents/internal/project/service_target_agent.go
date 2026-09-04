@@ -2510,10 +2510,10 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 		)
 		if getErr == nil {
 			if !telephonyBindingMatches(remoteBinding, request) {
-				return fmt.Errorf(
-					"telephony binding %q already exists with different configuration; "+
-						"delete or update the remote binding, then run azd deploy again",
-					bindingID,
+				return exterrors.Validation(
+					exterrors.CodeTelephonyBindingDrift,
+					fmt.Sprintf("telephony binding %q already exists with different configuration", bindingID),
+					"delete or update the remote binding, then run azd deploy again",
 				)
 			}
 			fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)

@@ -991,7 +991,7 @@ func TestGetTelephonyBinding_GetsAgentScopedBinding(t *testing.T) {
 	client, transport := newCaptureClient(http.StatusOK, body)
 
 	binding, err := client.GetTelephonyBinding(
-		t.Context(), "my-voice", "twilio:+14255550123", TelephonyBindingAPIVersion,
+		t.Context(), "my-voice", "twilio:+14255550123", TelephonyBindingAPIVersion, "regional.hyena.example.com",
 	)
 
 	require.NoError(t, err)
@@ -1002,6 +1002,7 @@ func TestGetTelephonyBinding_GetsAgentScopedBinding(t *testing.T) {
 	require.Equal(t, "/api/projects/proj/agents/my-voice/telephony/twilio:%2B14255550123", req.URL.EscapedPath())
 	require.Equal(t, TelephonyBindingAPIVersion, req.URL.Query().Get("api-version"))
 	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
 }
 
 func TestCreateTelephonyBinding_PostsAgentScopedBinding(t *testing.T) {
@@ -1017,6 +1018,7 @@ func TestCreateTelephonyBinding_PostsAgentScopedBinding(t *testing.T) {
 			ConnectionName: "telephony-twilio",
 		},
 		TelephonyBindingAPIVersion,
+		"regional.hyena.example.com",
 	)
 
 	require.NoError(t, err)
@@ -1026,6 +1028,7 @@ func TestCreateTelephonyBinding_PostsAgentScopedBinding(t *testing.T) {
 	require.Equal(t, "/api/projects/proj/agents/my-voice/telephony", req.URL.Path)
 	require.Equal(t, TelephonyBindingAPIVersion, req.URL.Query().Get("api-version"))
 	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
 	reqBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	require.Contains(t, string(reqBody), `"connection_name":"telephony-twilio"`)

@@ -135,6 +135,7 @@ func TestTelephonyBindingMatches(t *testing.T) {
 		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
 	}
 	remote := &agent_api.TelephonyBinding{
+		ID:              "twilio:%2B14255550123",
 		Provider:        "twilio",
 		Identifier:      "+14255550123",
 		ConnectionName:  "telephony-twilio",

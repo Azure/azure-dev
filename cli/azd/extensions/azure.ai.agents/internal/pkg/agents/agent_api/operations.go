@@ -293,6 +293,7 @@ func (c *AgentClient) GetTelephonyBinding(
 	agentName string,
 	bindingID string,
 	apiVersion string,
+	overriddenHost string,
 ) (*TelephonyBinding, error) {
 	url := fmt.Sprintf(
 		"%s/agents/%s/telephony/%s?api-version=%s",
@@ -306,6 +307,9 @@ func (c *AgentClient) GetTelephonyBinding(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Raw().Header.Set("Foundry-Features", voiceAgentsPreviewFeature)
+	if overriddenHost != "" {
+		req.Raw().Header.Set("x-ms-overridden-host", overriddenHost)
+	}
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -336,6 +340,7 @@ func (c *AgentClient) CreateTelephonyBinding(
 	agentName string,
 	request *TelephonyBindingRequest,
 	apiVersion string,
+	overriddenHost string,
 ) (*TelephonyBinding, error) {
 	url := fmt.Sprintf("%s/agents/%s/telephony?api-version=%s", c.endpoint, url.PathEscape(agentName), apiVersion)
 	payload, err := json.Marshal(request)
@@ -347,6 +352,9 @@ func (c *AgentClient) CreateTelephonyBinding(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Raw().Header.Set("Foundry-Features", voiceAgentsPreviewFeature)
+	if overriddenHost != "" {
+		req.Raw().Header.Set("x-ms-overridden-host", overriddenHost)
+	}
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}

@@ -2434,7 +2434,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
 		return nil, err
 	}
-	if err := p.deployVoiceTelephonyBindings(ctx, agentClient, va, agentObject); err != nil {
+	if err := p.deployVoiceTelephonyBindings(ctx, agentClient, va, agentObject, azdEnv[voiceOverriddenHostEnvKey]); err != nil {
 		return nil, err
 	}
 
@@ -2487,6 +2487,7 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 	agentClient *agent_api.AgentClient,
 	voiceAgent agent_yaml.VoiceAgent,
 	agentObject *agent_api.AgentObject,
+	overriddenHost string,
 ) error {
 	if voiceAgent.Telephony == nil || len(voiceAgent.Telephony.Bindings) == 0 {
 		return nil
@@ -2505,6 +2506,7 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 			agentObject.Name,
 			bindingID,
 			agent_api.TelephonyBindingAPIVersion,
+			overriddenHost,
 		)
 		if getErr == nil {
 			if !telephonyBindingMatches(remoteBinding, request) {
@@ -2526,6 +2528,7 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 			agentObject.Name,
 			request,
 			agent_api.TelephonyBindingAPIVersion,
+			overriddenHost,
 		)
 		if err != nil {
 			return exterrors.ServiceFromAzure(err, exterrors.OpCreateTelephonyBinding)
@@ -2553,7 +2556,7 @@ func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_
 		return false
 	}
 	desiredID := fmt.Sprintf("%s:%s", strings.TrimSpace(desired.Provider), strings.TrimSpace(desired.Identifier))
-	if strings.TrimSpace(remote.ID) != "" && strings.TrimSpace(remote.ID) != desiredID {
+	if remoteID := normalizedTelephonyBindingID(remote.ID); remoteID != "" && remoteID != desiredID {
 		return false
 	}
 	if strings.TrimSpace(remote.Provider) != "" &&
@@ -2574,6 +2577,18 @@ func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_
 		emptyTransferTargetsAsNil(remote.TransferTargets),
 		emptyTransferTargetsAsNil(desired.TransferTargets),
 	)
+}
+
+func normalizedTelephonyBindingID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	unescaped, err := url.PathUnescape(value)
+	if err != nil {
+		return value
+	}
+	return unescaped
 }
 
 func emptyTransferTargetsAsNil(targets []map[string]any) []map[string]any {

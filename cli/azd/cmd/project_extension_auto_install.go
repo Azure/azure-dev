@@ -66,6 +66,8 @@ func projectCommandSupportsExtensionAutoInstall(cmd *cobra.Command) bool {
 		return true
 	case "env":
 		return len(path) > 1 && path[1] == "refresh"
+	case "pipeline":
+		return len(path) > 1 && path[1] == "config"
 	default:
 		return false
 	}

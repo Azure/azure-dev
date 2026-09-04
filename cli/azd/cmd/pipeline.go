@@ -9,6 +9,7 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -129,11 +130,17 @@ type pipelineConfigAction struct {
 	alphaFeatureManager *alpha.FeatureManager
 	manager             *pipeline.PipelineManager
 	provisioningManager *provisioning.Manager
+	extensionActivator  pipelineProvisioningProviderActivator
 	env                 *environment.Environment
 	console             input.Console
 	prompters           prompt.Prompter
 	projectConfig       *project.ProjectConfig
 	importManager       *project.ImportManager
+}
+
+type pipelineProvisioningProviderActivator interface {
+	EnsureProvisioningProviders(ctx context.Context, providerNames []string, environmentName string) (func(), error)
+	ExtensionsForProvisioningProviders(providerNames []string) ([]string, error)
 }
 
 func newPipelineConfigAction(
@@ -144,6 +151,7 @@ func newPipelineConfigAction(
 	prompters prompt.Prompter,
 	manager *pipeline.PipelineManager,
 	provisioningManager *provisioning.Manager,
+	extensionActivator *middleware.ExtensionActivator,
 	importManager *project.ImportManager,
 	projectConfig *project.ProjectConfig,
 ) actions.Action {
@@ -155,6 +163,7 @@ func newPipelineConfigAction(
 		console:             console,
 		prompters:           prompters,
 		provisioningManager: provisioningManager,
+		extensionActivator:  extensionActivator,
 		importManager:       importManager,
 		projectConfig:       projectConfig,
 	}
@@ -184,6 +193,23 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	})
 
 	layers := infra.Options.GetLayers()
+	providerNames := make([]string, 0, len(layers))
+	for _, layer := range layers {
+		providerNames = append(providerNames, string(layer.Provider))
+	}
+
+	cleanupProviders, err := p.extensionActivator.EnsureProvisioningProviders(ctx, providerNames, p.env.Name())
+	if err != nil {
+		return nil, fmt.Errorf("activating provisioning provider extensions: %w", err)
+	}
+	defer cleanupProviders()
+
+	requiredExtensions, err := p.extensionActivator.ExtensionsForProvisioningProviders(providerNames)
+	if err != nil {
+		return nil, fmt.Errorf("resolving provisioning provider extensions: %w", err)
+	}
+	p.manager.SetRequiredExtensions(requiredExtensions)
+
 	allParameters := []provisioning.Parameter{}
 
 	inputParameters := func(layer provisioning.Options) ([]provisioning.Parameter, error) {

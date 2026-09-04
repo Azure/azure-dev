@@ -1291,6 +1291,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		InstallDotNetForAspire bool
 		Variables              []string
 		Secrets                []string
+		RequiredExtensions     []string
 		AlphaFeatures          []string
 		IsTerraform            bool
 	}{
@@ -1299,6 +1300,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		InstallDotNetForAspire: props.HasAppHost,
 		Variables:              props.Variables,
 		Secrets:                props.Secrets,
+		RequiredExtensions:     props.RequiredExtensions,
 		AlphaFeatures:          props.RequiredAlphaFeatures,
 		IsTerraform:            props.InfraProvider == infraProviderTerraform,
 	}
@@ -1442,6 +1444,22 @@ func (pm *PipelineManager) SetParameters(parameters []provisioning.Parameter) {
 	pm.configOptions.providerParameters = parameters
 }
 
+// SetRequiredExtensions configures the azd extensions that generated pipelines must install.
+func (pm *PipelineManager) SetRequiredExtensions(extensionIds []string) {
+	if pm.configOptions == nil {
+		pm.configOptions = &configurePipelineOptions{}
+	}
+
+	normalized := make([]string, 0, len(extensionIds))
+	for _, extensionId := range extensionIds {
+		if extensionId = strings.TrimSpace(extensionId); extensionId != "" {
+			normalized = append(normalized, extensionId)
+		}
+	}
+	slices.Sort(normalized)
+	pm.configOptions.requiredExtensions = slices.Compact(normalized)
+}
+
 func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	// pipeline definition files
 	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
@@ -1485,6 +1503,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 			AuthType:              authType,
 			Variables:             pm.prjConfig.Pipeline.Variables,
 			Secrets:               pm.prjConfig.Pipeline.Secrets,
+			RequiredExtensions:    pm.configOptions.requiredExtensions,
 			RequiredAlphaFeatures: requiredAlphaFeatures,
 			providerParameters:    pm.configOptions.providerParameters,
 		})

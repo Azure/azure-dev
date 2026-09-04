@@ -145,6 +145,30 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 	return cleanup, nil
 }
 
+// ExtensionsForProvisioningProviders returns the installed extension IDs that declare any of the
+// requested provisioning providers. The result is de-duplicated and sorted by extension ID.
+func (a *ExtensionActivator) ExtensionsForProvisioningProviders(
+	providerNames []string,
+) ([]string, error) {
+	names := distinctProviderNames(providerNames)
+	if len(names) == 0 {
+		return nil, nil
+	}
+
+	installed, err := a.extensionManager.ListInstalled()
+	if err != nil {
+		return nil, err
+	}
+
+	matches := extensionsForProviders(installed, names)
+	extensionIds := make([]string, len(matches))
+	for i, extension := range matches {
+		extensionIds[i] = extension.Id
+	}
+
+	return extensionIds, nil
+}
+
 // SuggestExtensionForProvider finds an installable extension for a missing provisioning provider.
 // It returns a compatibility error when matching releases require another azd version.
 func (a *ExtensionActivator) SuggestExtensionForProvider(ctx context.Context, providerName string) (string, error) {

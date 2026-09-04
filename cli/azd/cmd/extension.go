@@ -152,6 +152,9 @@ satisfying the extension's declared constraints. Use
 --no-dependency-updates to opt out and update only the named
 extension.
 
+The command returns an error if any extension or dependency fails. Completed
+updates are not rolled back.
+
 Use --output json for a structured report of all update results.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
@@ -662,7 +665,7 @@ type extensionShowDependent struct {
 }
 
 // installedSummary describes the installed state with at most one annotation, in priority
-// order: foreign source, compatible update, newer incompatible release, dependency install.
+// order: foreign source, compatible update, newer incompatible release.
 func (t *extensionShowItem) installedSummary() string {
 	if t.InstalledVersion == "" {
 		return "Not installed"
@@ -676,8 +679,6 @@ func (t *extensionShowItem) installedSummary() string {
 		summary += fmt.Sprintf(" (update available: %s)", t.LatestCompatibleVersion)
 	case t.newerIncompatible:
 		summary += fmt.Sprintf(" (%s requires a newer azd)", t.LatestVersion)
-	case t.InstalledAsDependency:
-		summary += " (installed as a dependency)"
 	}
 	return summary
 }
@@ -775,6 +776,9 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 	// Version Information section
 	versionInfo := [][]string{
 		{"Installed", ":", t.installedSummary()},
+	}
+	if t.InstalledAsDependency {
+		versionInfo = append(versionInfo, []string{"Installed as", ":", "Dependency"})
 	}
 	if t.LatestVersion != "" {
 		versionInfo = append(versionInfo, []string{"Latest", ":", t.LatestVersion})
@@ -1018,7 +1022,8 @@ func (a *extensionShowAction) buildShowItem(
 		// Records that predate the snapshot fall back to the registry entry for the installed
 		// version; the latest version's declaration says nothing about what is installed.
 		dependencies = installed.Dependencies
-		if len(dependencies) == 0 && registryExtension != nil {
+		if len(dependencies) == 0 && registryExtension != nil &&
+			strings.EqualFold(installed.Source, registryExtension.Source) {
 			if release := extensions.FindVersion(registryExtension.Versions, installed.Version); release != nil {
 				dependencies = release.Dependencies
 			}
@@ -1378,7 +1383,8 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 			// The user asked for this extension by name, so the reinstall records it as explicit
 			// even when the previous record was only a dependency install.
-			extensionVersion, _, err = a.extensionManager.Upgrade(
+			var dependencyResults []extensions.UpgradeResult
+			extensionVersion, dependencyResults, err = a.extensionManager.Upgrade(
 				ctx, selectedExtension, extensions.UpgradeOptions{
 					VersionPreference:                  a.flags.version,
 					UpgradeDependencies:                !a.flags.noDependencies,
@@ -1394,6 +1400,11 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
 			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+
+			if extensions.NewUpgradeSummary(dependencyResults).HasFailures() {
+				displayDependencyUpgradeResults(ctx, a.console, dependencyResults, "  ")
+				return nil, fmt.Errorf("failed to update dependencies for extension %s", extensionId)
+			}
 
 		} else {
 			// Extension not installed - proceed with fresh install
@@ -2373,16 +2384,6 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 		return nil, internal.WrapErrorWithSuggestion(err)
 	}
 
-	// Blocked targets only reach this point under --force; say what is being left behind.
-	for _, extensionId := range slices.Sorted(maps.Keys(plan.Blocked)) {
-		a.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: fmt.Sprintf(
-				"%s is required by %s, which may stop working without it.",
-				extensionId, strings.Join(plan.Blocked[extensionId], ", "),
-			),
-		})
-	}
-
 	// Removing more than the user named deserves a look first. Declining keeps the
 	// dependencies exactly as they are, still recorded as dependency installs.
 	var keptDependencies []*extensions.Extension
@@ -2392,8 +2393,25 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 			return nil, err
 		}
 		if !remove {
-			keptDependencies, plan.Orphaned = plan.Orphaned, nil
+			keptDependencies = plan.Orphaned
+			plan, err = a.extensionManager.PlanUninstall(extensionIds, extensions.UninstallPlanOptions{
+				KeepDependencies: true,
+				IgnoreDependents: a.flags.force,
+			})
+			if err != nil {
+				return nil, internal.WrapErrorWithSuggestion(err)
+			}
 		}
+	}
+
+	// Use the final plan: keeping dependencies can introduce blockers that only --force bypasses.
+	for _, extensionId := range slices.Sorted(maps.Keys(plan.Blocked)) {
+		a.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: fmt.Sprintf(
+				"%s is required by %s, which may stop working without it.",
+				extensionId, strings.Join(plan.Blocked[extensionId], ", "),
+			),
+		})
 	}
 
 	for _, target := range plan.Targets {
@@ -2476,11 +2494,10 @@ func (a *extensionUninstallAction) confirmDependencyRemoval(
 	}
 	a.console.Message(ctx, "")
 
-	noun := "dependency"
-	if len(plan.Orphaned) != 1 {
-		noun = "dependencies"
+	question := "Remove this dependency?"
+	if len(plan.Orphaned) > 1 {
+		question = fmt.Sprintf("Remove these %d dependencies?", len(plan.Orphaned))
 	}
-	question := fmt.Sprintf("Remove these %d %s?", len(plan.Orphaned), noun)
 	remove, err := a.console.Confirm(ctx, input.ConsoleOptions{
 		Message:      question,
 		DefaultValue: true,
@@ -3020,7 +3037,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	// A record that predates dependency tracking learns its snapshot from the registry entry
 	// for the installed version, whatever the rest of this update decides to do.
 	installedRelease := findPublishedExtensionVersion(matches, installed.Source, installed.Version)
-	if err := a.extensionManager.BackfillDependencies(installed.Id, installedRelease); err != nil {
+	if err := a.extensionManager.BackfillDependencies(installed.Id, installed.Source, installedRelease); err != nil {
 		return fail(err)
 	}
 
@@ -3428,12 +3445,19 @@ func displayUpgradeSummary(
 			"%d failed", summary.Failed,
 		))
 	}
+	if failed := summary.DependencyUpgradesByStatus[extensions.UpgradeStatusFailed]; failed > 0 {
+		noun := "dependencies"
+		if failed == 1 {
+			noun = "dependency"
+		}
+		parts = append(parts, output.WithErrorFormat("%d %s failed", failed, noun))
+	}
 
 	if len(parts) > 0 {
 		console.Message(ctx, "  "+strings.Join(parts, ", "))
 	}
 
-	if summary.Failed > 0 {
+	if summary.HasFailures() {
 		console.Message(ctx, "")
 		console.Message(ctx, fmt.Sprintf(
 			"  Run '%s' to retry failed extensions.",
@@ -3445,17 +3469,28 @@ func displayUpgradeSummary(
 }
 
 // upgradeActionResult builds the ActionResult and error from batch
-// upgrade results. Returns a non-nil error when any extension failed.
+// upgrade results. Returns a non-nil error when any extension or dependency failed.
 func upgradeActionResult(
 	results []extensions.UpgradeResult,
 ) (*actions.ActionResult, error) {
 	summary := extensions.NewUpgradeSummary(results)
 
+	var failures []error
 	if summary.Failed > 0 {
-		return nil, fmt.Errorf(
+		failures = append(failures, fmt.Errorf(
 			"%d of %d extensions failed to update",
 			summary.Failed, summary.Total,
-		)
+		))
+	}
+	if failed := summary.DependencyUpgradesByStatus[extensions.UpgradeStatusFailed]; failed > 0 {
+		noun := "dependencies"
+		if failed == 1 {
+			noun = "dependency"
+		}
+		failures = append(failures, fmt.Errorf("%d extension %s failed to update", failed, noun))
+	}
+	if err := errors.Join(failures...); err != nil {
+		return nil, err
 	}
 
 	return &actions.ActionResult{

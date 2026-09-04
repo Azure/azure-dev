@@ -177,7 +177,7 @@ Once a version is resolved, installation proceeds through these steps:
    - `.tar.gz` — extracted as a gzipped tar archive
    - Other — treated as a raw binary and copied directly
 7. **Set permissions** — On Unix-like systems, set the executable permission on the extension binary.
-8. **Update configuration** - Record the installed extension and version in `~/.azd/config.json` under the `extension.installed` section. The record also stores the installed version's dependency list and an `installedAsDependency` flag. Installs by name (`azd extension install`, `azd init`, project auto-install) leave the flag unset and clear it on a record a pack pulled in earlier; updates preserve it.
+8. **Update configuration** - Record the installed extension and version in `~/.azd/config.json` under the `extension.installed` section. The record also stores the installed version's dependency list and an `installedAsDependency` flag. Explicit installs and named `requiredVersions.extensions` entries clear the flag on an extension a pack pulled in earlier; updates preserve it. Auto-installing a provider independently records an explicit install, but reusing an already-installed provider does not change its ownership.
 
 ### Re-installing over an existing extension
 
@@ -201,11 +201,15 @@ For registry-backed installs, a required dependency must resolve from the parent
 
 1. **Check dependents** - Any installed extension whose recorded dependencies include a requested id, and that is not itself being removed, blocks the request. `azd` fails with the list of dependents and a suggestion to uninstall them first. `--force` proceeds and warns which dependents are left without the extension.
 2. **Remove the requested extensions** - In the order given.
-3. **Remove orphaned dependencies** - A dependency of a removed extension is removed when it was installed as a dependency and no remaining extension requires it. Removed dependencies are walked in turn, so transitive dependencies are covered and a dependency first kept for a sibling is freed once that sibling goes. `azd` lists the dependencies it is about to remove and asks once; the default answer is yes and `--no-prompt` takes it. Declining keeps them, still recorded as dependency installs, with the command to remove them later. Kept dependencies are listed with the reason. `--no-dependencies` skips this step entirely.
+3. **Remove orphaned dependencies** - A dependency of a removed extension is removed when it was installed as a dependency and no remaining extension requires it. Removed dependencies are walked in turn, so transitive dependencies are covered and a dependency first kept for a sibling is freed once that sibling goes. `azd` lists the dependencies it is about to remove and asks once; the default answer is yes and `--no-prompt` takes it. Declining keeps them, still recorded as dependency installs, and replans with the same safety rules as `--no-dependencies`: a kept dependency that requires a target blocks its removal unless `--force` is set. Otherwise, azd removes the targets and prints the command to remove the kept dependencies later. Kept dependencies are listed with the reason. `--no-dependencies` skips automatic dependency removal entirely.
 
 `azd extension uninstall --all` removes every installed extension.
 
-Records written before dependency tracking carry neither the dependency list nor the flag. They are treated as installs by name with no known dependencies: never removed as orphans and never blocking. `azd extension update` records the dependency list on the extension being updated and on installed dependencies it directly reconciles, even when their versions do not change. Deeper legacy records gain their snapshot when they are directly updated, reconciled, or reinstalled. Ownership is never guessed.
+Records written before dependency tracking carry neither the dependency list nor the flag. They are treated as installs by name with no known dependencies: never removed as orphans and never blocking. `azd extension update` records the dependency list on the extension being updated and on installed dependencies it directly reconciles, even when their versions do not change, using only metadata matching the installed source and version. Deeper legacy records gain their snapshot when they are directly updated, reconciled, or reinstalled. Missing metadata is left unknown, and ownership is never guessed.
+
+### Update failures
+
+If an extension or dependency fails to update or save its metadata, `azd extension update` returns a nonzero exit code, including with `--output json`. Successful updates remain installed and retain their individual success status. The JSON summary counts top-level extensions; nested dependency failures appear in `dependencyUpgrades`. Installing over an existing extension also reports dependency failures instead of reporting a successful installation.
 
 ## Self-Contained Bundles
 

@@ -1204,6 +1204,94 @@ func TestUpgradeAction_AllWithSourceSkipsExtensionsOutsideSource(t *testing.T) {
 	require.Equal(t, "extension not available in source 'test'", report.Extensions[0].SkipReason)
 }
 
+func TestExtensionCommands_ReportDependencyFailuresAfterParentUpdate(t *testing.T) {
+	for _, command := range []string{"install", "update", "update-json"} {
+		t.Run(command, func(t *testing.T) {
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			mockCtx := mocks.NewMockContext(t.Context())
+			manager, sourceManager := createUpgradeTestManager(
+				t, mockCtx,
+				map[string]*extensions.Extension{
+					"test.pack":  {Id: "test.pack", Version: "1.0.0", Source: "test"},
+					"test.child": {Id: "test.child", Version: "1.0.0", Source: "test"},
+				},
+				"https://test.example.com/dependency-failure-registry.json",
+				testRegistry(
+					&extensions.ExtensionMetadata{
+						Id: "test.pack", Source: "test",
+						Versions: []extensions.ExtensionVersion{{
+							Version: "2.0.0",
+							Dependencies: []extensions.ExtensionDependency{
+								{Id: "test.child", Version: ">=2.0.0"},
+							},
+						}},
+					},
+					testExtMeta("test.child", "1.0.0", "test"),
+				),
+			)
+			console := mockinput.NewMockConsole()
+			var buf bytes.Buffer
+			if command == "install" {
+				action := &extensionInstallAction{
+					args: []string{"test.pack"},
+					flags: &extensionInstallFlags{
+						global: &internal.GlobalCommandOptions{NoPrompt: true},
+					},
+					console: console, sourceManager: sourceManager, extensionManager: manager,
+				}
+				result, err := action.Run(t.Context())
+				require.ErrorContains(t, err, "failed to update dependencies for extension test.pack")
+				require.Nil(t, result)
+			} else {
+				var formatter output.Formatter = &output.NoneFormatter{}
+				if command == "update-json" {
+					formatter = &output.JsonFormatter{}
+				}
+				action := &extensionUpgradeAction{
+					args: []string{"test.pack"},
+					flags: &extensionUpgradeFlags{
+						global: &internal.GlobalCommandOptions{NoPrompt: true},
+					},
+					console: console, sourceManager: sourceManager, extensionManager: manager,
+					formatter: formatter, writer: &buf,
+				}
+				result, err := action.Run(t.Context())
+				require.ErrorContains(t, err, "1 extension dependency failed to update")
+				require.Nil(t, result)
+			}
+
+			parent, err := manager.GetInstalled(extensions.FilterOptions{Id: "test.pack"})
+			require.NoError(t, err)
+			require.Equal(t, "2.0.0", parent.Version, "the successful parent update is not rolled back")
+			if command == "update-json" {
+				var report struct {
+					Extensions []struct {
+						Status             string
+						DependencyUpgrades []struct{ Name, Status, Error string }
+					}
+					Summary extensions.UpgradeSummary
+				}
+				require.NoError(t, json.Unmarshal(buf.Bytes(), &report))
+				require.Len(t, report.Extensions, 1)
+				require.Equal(t, "upgraded", report.Extensions[0].Status)
+				require.Len(t, report.Extensions[0].DependencyUpgrades, 1)
+				require.Equal(t, "failed", report.Extensions[0].DependencyUpgrades[0].Status)
+				require.Equal(t, "test.child", report.Extensions[0].DependencyUpgrades[0].Name)
+				require.NotEmpty(t, report.Extensions[0].DependencyUpgrades[0].Error)
+				require.Equal(t, 1, report.Summary.Upgraded)
+				require.Zero(t, report.Summary.Failed, "top-level counters keep their existing meaning")
+			} else {
+				rendered := strings.Join(console.Output(), "\n")
+				require.Contains(t, rendered, "(x) Failed: Updating test.child dependency")
+				if command == "update" {
+					require.Contains(t, rendered, "1 updated")
+					require.Contains(t, rendered, "1 dependency failed")
+				}
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // isNetworkError tests
 // ---------------------------------------------------------------------------

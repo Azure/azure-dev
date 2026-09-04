@@ -335,6 +335,31 @@ func TestRoutineAddRequiresFileAndCreateUpdateRemainRemoteOnly(t *testing.T) {
 	assert.Nil(t, newRoutineUpdateCommand(extensionContext).Flags().Lookup("add-to-project"))
 }
 
+func TestRoutineAddCommandUsesConfiguredOutputWriter(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	command := newRoutineAddCommandWithDependencies(
+		&azdext.ExtensionContext{},
+		func(string) (*routines.Routine, error) {
+			return &routines.Routine{
+				Triggers: map[string]routines.RoutineTrigger{"default": {Type: "schedule"}},
+				Action:   &routines.RoutineAction{Type: "invoke_agent_responses_api"},
+			}, nil
+		},
+		func(
+			_ context.Context, routine *routines.Routine, _ string,
+		) (*routineServiceUpsertResult, error) {
+			return &routineServiceUpsertResult{Name: routine.Name, Host: aiRoutineHost, Created: true}, nil
+		},
+	)
+	command.SetOut(&output)
+	command.SetArgs([]string{"nightly-summary", "--file", "routine.yaml"})
+
+	require.NoError(t, command.ExecuteContext(t.Context()))
+	assert.Equal(t, "Added routine 'nightly-summary' in azure.yaml.\n", output.String())
+}
+
 func routineManifestFixture(t *testing.T, agentName string) (string, string, *routines.Routine) {
 	t.Helper()
 	projectRoot := t.TempDir()

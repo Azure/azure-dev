@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"azure.ai.routines/internal/exterrors"
@@ -25,6 +24,18 @@ type routineAddFlags struct {
 }
 
 func newRoutineAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	return newRoutineAddCommandWithDependencies(
+		extCtx,
+		readRoutineManifest,
+		upsertRoutineServiceToProject,
+	)
+}
+
+func newRoutineAddCommandWithDependencies(
+	extCtx *azdext.ExtensionContext,
+	load func(string) (*routines.Routine, error),
+	upsert func(context.Context, *routines.Routine, string) (*routineServiceUpsertResult, error),
+) *cobra.Command {
 	flags := &routineAddFlags{}
 	cmd := &cobra.Command{
 		Use:   "add <name>",
@@ -41,9 +52,9 @@ create or update the routine in Microsoft Foundry.`,
 			flags.output = strings.ToLower(extCtx.OutputFormat)
 			action := &routineAddAction{
 				flags:  flags,
-				load:   readRoutineManifest,
-				upsert: upsertRoutineServiceToProject,
-				writer: os.Stdout,
+				load:   load,
+				upsert: upsert,
+				writer: cmd.OutOrStdout(),
 			}
 			return action.Run(cmd.Context())
 		},

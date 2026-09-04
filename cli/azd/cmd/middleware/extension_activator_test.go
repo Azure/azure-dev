@@ -194,6 +194,38 @@ func Test_EnsureProvisioningProviders_AlreadyResolvable(t *testing.T) {
 	cleanup()
 }
 
+func Test_ExtensionsForProvisioningProviders(t *testing.T) {
+	t.Parallel()
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	installed := map[string]*extensions.Extension{
+		"z.extension": {
+			Id:           "z.extension",
+			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+			Providers:    []extensions.Provider{{Name: "provider.z"}},
+		},
+		"a.extension": {
+			Id:           "a.extension",
+			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+			Providers: []extensions.Provider{
+				{Name: "provider.a"},
+				{Name: "provider.shared"},
+			},
+		},
+	}
+	activator := newTestExtensionActivator(t, mockCtx, installed)
+
+	extensionIds, err := activator.ExtensionsForProvisioningProviders([]string{
+		"provider.z",
+		"provider.shared",
+		"provider.a",
+		"bicep",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.extension", "z.extension"}, extensionIds)
+}
+
 func Test_SuggestExtensionForProvider(t *testing.T) {
 	t.Parallel()
 

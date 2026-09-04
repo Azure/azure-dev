@@ -13,6 +13,17 @@ steps:
   - task: setup-azd@1
     displayName: Install azd
 
+{{- if .RequiredExtensions }}
+  - task: Bash@3
+    displayName: Install required azd extensions
+    inputs:
+      targetType: 'inline'
+      script: |
+{{- range $extension := .RequiredExtensions }}
+        azd extension install {{ $extension }} --no-prompt
+{{- end }}
+{{ end }}
+
   # If you can't install above task in your organization, you can comment it and uncomment below task to install azd
   # - task: Bash@3
   #   displayName: Install azd

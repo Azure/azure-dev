@@ -7,12 +7,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"reflect"
+	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/braydonk/yaml"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -157,6 +161,39 @@ func registerProjectMappings() {
 			}
 		}
 
+		var k8s *structpb.Struct
+		if !reflect.ValueOf(src.K8s).IsZero() {
+			k8s, err = yamlValueToProtoStruct(src.K8s)
+			if err != nil {
+				return nil, fmt.Errorf("converting service k8s options: %w", err)
+			}
+		}
+
+		var infra *azdext.InfraOptions
+		if !reflect.ValueOf(src.Infra).IsZero() {
+			if err := mapper.Convert(src.Infra, &infra); err != nil {
+				return nil, fmt.Errorf("converting service infrastructure options: %w", err)
+			}
+		}
+
+		var hooks *structpb.Struct
+		if len(src.Hooks) > 0 {
+			hooks, err = yamlValueToProtoStruct(src.Hooks)
+			if err != nil {
+				return nil, fmt.Errorf("converting service hooks: %w", err)
+			}
+		}
+
+		condition, err := envsubstIfEnabled(ctx, src.Condition, envResolver)
+		if err != nil {
+			return nil, fmt.Errorf("envsubst service condition: %w", err)
+		}
+
+		var remoteBuild *bool
+		if src.RemoteBuild != nil {
+			remoteBuild = new(*src.RemoteBuild)
+		}
+
 		return &azdext.ServiceConfig{
 			Name:                 src.Name,
 			ResourceGroupName:    resourceGroupName,
@@ -172,6 +209,12 @@ func registerProjectMappings() {
 			AdditionalProperties: protoAdditionalProperties,
 			Uses:                 src.Uses,
 			Environment:          serviceEnv,
+			K8S:                  k8s,
+			Module:               src.Module,
+			Infra:                infra,
+			Hooks:                hooks,
+			Condition:            condition,
+			RemoteBuild:          remoteBuild,
 		}, nil
 	})
 
@@ -411,6 +454,26 @@ func registerProjectMappings() {
 		if src.AdditionalProperties != nil {
 			result.AdditionalProperties = src.AdditionalProperties.AsMap()
 		}
+		if src.K8S != nil {
+			if err := protoStructToYAMLValue(src.K8S, &result.K8s); err != nil {
+				return nil, fmt.Errorf("converting service k8s options: %w", err)
+			}
+		}
+		result.Module = src.Module
+		if src.Infra != nil {
+			if err := mapper.Convert(src.Infra, &result.Infra); err != nil {
+				return nil, fmt.Errorf("converting service infrastructure options: %w", err)
+			}
+		}
+		if src.Hooks != nil {
+			if err := protoStructToYAMLValue(src.Hooks, &result.Hooks); err != nil {
+				return nil, fmt.Errorf("converting service hooks: %w", err)
+			}
+		}
+		result.Condition = osutil.NewExpandableString(src.Condition)
+		if src.RemoteBuild != nil {
+			result.RemoteBuild = new(*src.RemoteBuild)
+		}
 
 		if len(src.Environment) > 0 {
 			result.Environment = make(osutil.ExpandableMap, len(src.Environment))
@@ -423,6 +486,139 @@ func registerProjectMappings() {
 			}
 		}
 
+		return result, nil
+	})
+
+	// provisioning.Options -> proto InfraOptions conversion
+	mapper.MustRegister(func(ctx context.Context, src provisioning.Options) (*azdext.InfraOptions, error) {
+		var protoConfig *structpb.Struct
+		if src.Config != nil {
+			var err error
+			protoConfig, err = structpb.NewStruct(src.Config)
+			if err != nil {
+				return nil, fmt.Errorf("converting infrastructure config to structpb: %w", err)
+			}
+		}
+
+		var hooks *structpb.Struct
+		if len(src.Hooks) > 0 {
+			var err error
+			hooks, err = yamlValueToProtoStruct(src.Hooks)
+			if err != nil {
+				return nil, fmt.Errorf("converting infrastructure hooks: %w", err)
+			}
+		}
+
+		var deploymentStacks *structpb.Struct
+		if src.DeploymentStacks != nil {
+			var err error
+			deploymentStacks, err = yamlValueToProtoStruct(src.DeploymentStacks)
+			if err != nil {
+				return nil, fmt.Errorf("converting infrastructure deployment stacks: %w", err)
+			}
+		}
+
+		return &azdext.InfraOptions{
+			Provider:         string(src.Provider),
+			Path:             src.Path,
+			Module:           src.Module,
+			Config:           protoConfig,
+			Name:             src.Name,
+			DependsOn:        slices.Clone(src.DependsOn),
+			Inputs:           maps.Clone(src.Inputs),
+			Outputs:          maps.Clone(src.Outputs),
+			Hooks:            hooks,
+			DeploymentStacks: deploymentStacks,
+		}, nil
+	})
+
+	// proto InfraOptions -> provisioning.Options conversion
+	mapper.MustRegister(func(ctx context.Context, src *azdext.InfraOptions) (provisioning.Options, error) {
+		if src == nil {
+			return provisioning.Options{}, nil
+		}
+
+		result := provisioning.Options{
+			Provider:  provisioning.ProviderKind(src.Provider),
+			Path:      src.Path,
+			Module:    src.Module,
+			Name:      src.Name,
+			DependsOn: slices.Clone(src.DependsOn),
+			Inputs:    maps.Clone(src.Inputs),
+			Outputs:   maps.Clone(src.Outputs),
+		}
+		if src.Config != nil {
+			result.Config = src.Config.AsMap()
+		}
+		if src.Hooks != nil {
+			if err := protoStructToYAMLValue(src.Hooks, &result.Hooks); err != nil {
+				return provisioning.Options{}, fmt.Errorf("converting infrastructure hooks: %w", err)
+			}
+		}
+		if src.DeploymentStacks != nil {
+			if err := protoStructToYAMLValue(src.DeploymentStacks, &result.DeploymentStacks); err != nil {
+				return provisioning.Options{}, fmt.Errorf("converting infrastructure deployment stacks: %w", err)
+			}
+		}
+		return result, nil
+	})
+
+	// LayerConfig -> proto Layer conversion
+	mapper.MustRegister(func(ctx context.Context, src *LayerConfig) (*azdext.Layer, error) {
+		if src == nil {
+			return nil, nil
+		}
+
+		result := &azdext.Layer{
+			Name:     src.Name,
+			Infra:    make([]*azdext.InfraOptions, len(src.Infra)),
+			Services: make(map[string]*azdext.ServiceConfig, len(src.Services)),
+		}
+		for i, infra := range src.Infra {
+			if err := mapper.Convert(infra, &result.Infra[i]); err != nil {
+				return nil, err
+			}
+		}
+		for name, service := range src.Services {
+			var mapped *azdext.ServiceConfig
+			if err := mapper.WithContext(ctx).Convert(service, &mapped); err != nil {
+				return nil, err
+			}
+			if mapped != nil {
+				mapped.Name = name
+			}
+			result.Services[name] = mapped
+		}
+		return result, nil
+	})
+
+	// proto Layer -> LayerConfig conversion
+	mapper.MustRegister(func(ctx context.Context, src *azdext.Layer) (*LayerConfig, error) {
+		if src == nil {
+			return nil, nil
+		}
+
+		result := &LayerConfig{
+			Name:     src.Name,
+			Infra:    make([]provisioning.Options, len(src.Infra)),
+			Services: make(map[string]*ServiceConfig, len(src.Services)),
+		}
+		for i, infra := range src.Infra {
+			if err := mapper.Convert(infra, &result.Infra[i]); err != nil {
+				return nil, err
+			}
+			result.Infra[i].Layer = src.Name
+		}
+		for name, service := range src.Services {
+			var mapped *ServiceConfig
+			if err := mapper.WithContext(ctx).Convert(service, &mapped); err != nil {
+				return nil, err
+			}
+			if mapped != nil {
+				mapped.Name = name
+			}
+			result.Services[name] = mapped
+		}
 		return result, nil
 	})
 
@@ -734,6 +930,11 @@ func registerProjectMappings() {
 			services[i] = serviceConfig
 		}
 
+		var infra *azdext.InfraOptions
+		if err := mapper.Convert(src.Infra, &infra); err != nil {
+			return nil, fmt.Errorf("converting infrastructure options: %w", err)
+		}
+
 		// Convert additional properties if present
 		var protoAdditionalProperties *structpb.Struct
 		if src.AdditionalProperties != nil {
@@ -754,11 +955,7 @@ func registerProjectMappings() {
 				}
 				return nil
 			}(),
-			Infra: &azdext.InfraOptions{
-				Provider: string(src.Infra.Provider),
-				Path:     src.Infra.Path,
-				Module:   src.Infra.Module,
-			},
+			Infra:                infra,
 			Services:             services,
 			AdditionalProperties: protoAdditionalProperties,
 		}
@@ -797,10 +994,8 @@ func registerProjectMappings() {
 
 		// Convert infra options if present
 		if src.Infra != nil {
-			result.Infra = provisioning.Options{
-				Provider: provisioning.ProviderKind(src.Infra.Provider),
-				Path:     src.Infra.Path,
-				Module:   src.Infra.Module,
+			if err := mapper.Convert(src.Infra, &result.Infra); err != nil {
+				return nil, fmt.Errorf("converting infrastructure options: %w", err)
 			}
 		}
 
@@ -822,6 +1017,38 @@ func getEnvResolver(resolver mapper.Resolver) func(string) string {
 	return func(string) string { return "" }
 }
 
+func yamlValueToProtoStruct(value any) (*structpb.Struct, error) {
+	yamlBytes, err := yaml.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+
+	var yamlMap map[string]any
+	if err := yaml.Unmarshal(yamlBytes, &yamlMap); err != nil {
+		return nil, err
+	}
+	jsonBytes, err := json.Marshal(yamlMap)
+	if err != nil {
+		return nil, err
+	}
+
+	var jsonMap map[string]any
+	if err := json.Unmarshal(jsonBytes, &jsonMap); err != nil {
+		return nil, err
+	}
+	return structpb.NewStruct(jsonMap)
+}
+
+func protoStructToYAMLValue(value *structpb.Struct, target any) error {
+	yamlBytes, err := yaml.Marshal(value.AsMap())
+	if err != nil {
+		return err
+	}
+	return yaml.Unmarshal(yamlBytes, target)
+}
+
+// envsubstIfEnabled does environment substitution if it's enabled in the context,
+// otherwise just returns the raw literal.
 func envsubstIfEnabled(
 	ctx context.Context,
 	value osutil.ExpandableString,

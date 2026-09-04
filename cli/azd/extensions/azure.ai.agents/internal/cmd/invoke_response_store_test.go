@@ -80,6 +80,10 @@ func TestCleanupAgentStateForKey(t *testing.T) {
 		agentKey: {ResponseID: "resp_123"},
 		otherKey: {ResponseID: "resp_other"},
 	})
+	server.setJSON(t, invocationsConfigPath, map[string]savedInvocation{
+		agentKey: {InvocationID: "inv_123"},
+		otherKey: {InvocationID: "inv_other"},
+	})
 	client := newInvokeTestAzdClient(t, server)
 
 	require.True(t, cleanupAgentStateForKey(t.Context(), client, agentKey))
@@ -98,4 +102,9 @@ func TestCleanupAgentStateForKey(t *testing.T) {
 	server.getJSON(t, backgroundResponsesConfigPath, &responses)
 	assert.NotContains(t, responses, agentKey)
 	assert.Equal(t, "resp_other", responses[otherKey].ResponseID)
+
+	var invocations map[string]savedInvocation
+	server.getJSON(t, invocationsConfigPath, &invocations)
+	assert.NotContains(t, invocations, agentKey)
+	assert.Equal(t, "inv_other", invocations[otherKey].InvocationID)
 }

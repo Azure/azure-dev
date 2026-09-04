@@ -171,11 +171,12 @@ var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
 
 // AgentServiceTargetProvider is a minimal implementation of ServiceTargetProvider for demonstration
 type AgentServiceTargetProvider struct {
-	azdClient           *azdext.AzdClient
-	serviceConfig       *azdext.ServiceConfig
-	agentDefinitionPath string
-	projectPath         string
-	servicePath         string
+	azdClient                  *azdext.AzdClient
+	serviceConfig              *azdext.ServiceConfig
+	agentDefinitionPath        string
+	agentDefinitionPathFromEnv bool
+	projectPath                string
+	servicePath                string
 	// deployContextReady is set by every successful ensureDeployContext path;
 	// agentDefinitionPath is only set for the file-based and env-override paths
 	// (not the inline unified shape), so both are checked as the idempotency guard.
@@ -432,6 +433,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 		}
 
 		p.agentDefinitionPath = envPath
+		p.agentDefinitionPathFromEnv = true
 		fmt.Printf("Using agent definition from environment variable: %s\n", color.New(color.FgHiGreen).Sprint(envPath))
 		p.deployContextReady = true
 		return nil
@@ -1406,7 +1408,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	if !isVoice && p.agentDefinitionPath == "" && serviceHasTelephony(serviceConfig) {
+	if shouldRejectTelephonyForNonVoice(isVoice, p.agentDefinitionPathFromEnv, serviceConfig) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"telephony bindings are only supported for prompt voice agents",
@@ -2310,6 +2312,14 @@ func serviceHasTelephony(serviceConfig *azdext.ServiceConfig) bool {
 		}
 	}
 	return false
+}
+
+func shouldRejectTelephonyForNonVoice(
+	isVoice bool,
+	agentDefinitionPathFromEnv bool,
+	serviceConfig *azdext.ServiceConfig,
+) bool {
+	return !isVoice && !agentDefinitionPathFromEnv && serviceHasTelephony(serviceConfig)
 }
 
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.

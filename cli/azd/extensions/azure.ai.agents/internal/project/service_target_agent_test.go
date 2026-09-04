@@ -127,6 +127,17 @@ func TestServiceHasTelephony(t *testing.T) {
 	require.False(t, serviceHasTelephony(&azdext.ServiceConfig{}))
 }
 
+func TestShouldRejectTelephonyForNonVoice(t *testing.T) {
+	props := &structpb.Struct{Fields: map[string]*structpb.Value{
+		"telephony": structpb.NewStructValue(&structpb.Struct{}),
+	}}
+	svc := &azdext.ServiceConfig{AdditionalProperties: props}
+
+	require.False(t, shouldRejectTelephonyForNonVoice(true, false, svc))
+	require.False(t, shouldRejectTelephonyForNonVoice(false, true, svc))
+	require.True(t, shouldRejectTelephonyForNonVoice(false, false, svc))
+}
+
 func TestTelephonyBindingMatches(t *testing.T) {
 	desired := &agent_api.TelephonyBindingRequest{
 		Provider:        "twilio",

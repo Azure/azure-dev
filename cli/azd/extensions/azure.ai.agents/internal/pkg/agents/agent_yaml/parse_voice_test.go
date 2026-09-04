@@ -359,10 +359,37 @@ func TestValidateAgentDefinition_PromptVoice_InvalidTelephonyBindings(t *testing
 		yaml string
 		want string
 	}{
-		{name: "empty bindings", yaml: "telephony:\n  bindings: []", want: "bindings must not be empty"},
-		{name: "bad provider", yaml: "telephony:\n  bindings:\n    - provider: sip\n      identifier: +14255550123\n      connection: c", want: "provider must be acs or twilio"},
-		{name: "bad twilio id", yaml: "telephony:\n  bindings:\n    - provider: twilio\n      identifier: not-a-number\n      connection: c", want: "identifier must be +<E.164>"},
-		{name: "missing connection", yaml: "telephony:\n  bindings:\n    - provider: acs\n      identifier: 4:+14255550123", want: "connection is required"},
+		{
+			name: "empty bindings",
+			yaml: "telephony:\n  bindings: []",
+			want: "bindings must not be empty",
+		},
+		{
+			name: "bad provider",
+			yaml: `telephony:
+  bindings:
+    - provider: sip
+      identifier: +14255550123
+      connection: c`,
+			want: "provider must be acs or twilio",
+		},
+		{
+			name: "bad twilio id",
+			yaml: `telephony:
+  bindings:
+    - provider: twilio
+      identifier: not-a-number
+      connection: c`,
+			want: "identifier must be +<E.164>",
+		},
+		{
+			name: "missing connection",
+			yaml: `telephony:
+  bindings:
+    - provider: acs
+      identifier: 4:+14255550123`,
+			want: "connection is required",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -17,7 +17,9 @@ import (
 
 var validAgentNamePattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
 var e164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
-var acsTpeRawIDPattern = regexp.MustCompile(`^28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var acsTpeRawIDPattern = regexp.MustCompile(
+	`^28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-` +
+		`[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // LoadAndValidateAgentManifest parses YAML content and validates it as an AgentManifest
 // Returns the parsed manifest and any validation errors

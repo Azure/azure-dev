@@ -1967,6 +1967,16 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env var and config)',
 									args: [
@@ -2022,6 +2032,31 @@ const completionSpec: Fig.Spec = {
 									name: ['--force'],
 									description: 'Skip confirmation prompt',
 									isDangerous: true,
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['deploy'],
+							description: 'Deploy a local connection definition.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
 								},
 								{
 									name: ['--project-endpoint', '-p'],

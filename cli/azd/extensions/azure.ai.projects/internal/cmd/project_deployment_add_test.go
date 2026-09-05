@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -22,11 +23,14 @@ import (
 
 type selfInitializingProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
+	azdext.UnimplementedPromptServiceServer
 	project       *azdext.ProjectConfig
 	services      map[string]map[string]any
 	setConfigErr  error
 	providerSet   bool
 	deploymentSet bool
+	subscription  *azdext.Subscription
+	location      *azdext.Location
 }
 
 func (s *selfInitializingProjectServer) Get(
@@ -34,6 +38,22 @@ func (s *selfInitializingProjectServer) Get(
 	*azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
 	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+func (s *selfInitializingProjectServer) PromptSubscription(
+	context.Context,
+	*azdext.PromptSubscriptionRequest,
+) (*azdext.PromptSubscriptionResponse, error) {
+	return &azdext.PromptSubscriptionResponse{
+		Subscription: s.subscription,
+	}, nil
+}
+
+func (s *selfInitializingProjectServer) PromptLocation(
+	context.Context,
+	*azdext.PromptLocationRequest,
+) (*azdext.PromptLocationResponse, error) {
+	return &azdext.PromptLocationResponse{Location: s.location}, nil
 }
 
 func (s *selfInitializingProjectServer) GetConfigSection(
@@ -267,6 +287,7 @@ func newSelfInitializingDeploymentClient(
 	azdext.RegisterEnvironmentServiceServer(server, environmentServer)
 	azdext.RegisterAiModelServiceServer(server, aiServer)
 	azdext.RegisterWorkflowServiceServer(server, workflowServer)
+	azdext.RegisterPromptServiceServer(server, projectServer)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() {
@@ -372,6 +393,61 @@ func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {
 	}
 }
 
+func TestProjectDeploymentAddPersistsPromptedAzureContext(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("name: test\n"),
+		0600,
+	))
+
+	client, projectServer, environmentServer, _, _ :=
+		newSelfInitializingDeploymentClient(t, root)
+	projectServer.project.Services["project"] = &azdext.ServiceConfig{
+		Name: "project",
+		Host: "azure.ai.project",
+	}
+	projectServer.services["project"] = map[string]any{}
+	projectServer.subscription = &azdext.Subscription{
+		Id:           "prompted-subscription",
+		UserTenantId: "prompted-tenant",
+	}
+	projectServer.location = &azdext.Location{Name: "centralus"}
+	environmentServer.values = map[string]string{}
+
+	action := &ProjectDeploymentAddAction{
+		client: client,
+		flags: &projectDeploymentFlags{
+			model:  "gpt-4.1",
+			output: "none",
+		},
+		extCtx: &azdext.ExtensionContext{
+			Environment:  "test",
+			OutputFormat: "none",
+		},
+	}
+
+	require.NoError(t, action.Run(t.Context()))
+	assert.Equal(
+		t,
+		"prompted-subscription",
+		environmentServer.values["AZURE_SUBSCRIPTION_ID"],
+	)
+	assert.Equal(
+		t,
+		"prompted-tenant",
+		environmentServer.values["AZURE_TENANT_ID"],
+	)
+	assert.Equal(t, "centralus", environmentServer.values["AZURE_LOCATION"])
+	assert.Equal(
+		t,
+		"centralus",
+		environmentServer.values["AZURE_AI_DEPLOYMENTS_LOCATION"],
+	)
+}
+
 func TestProjectDeploymentAddStopsWhenProjectSetupFails(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -454,4 +530,96 @@ func TestSelectModelDeploymentUsesRequestedLocationForEmptyCandidate(t *testing.
 		[]string{"eastus"},
 		aiServer.request.Options.Locations,
 	)
+}
+
+func TestFindEjectedFoundryProjectInfrastructure(t *testing.T) {
+	params := map[string]any{
+		"deployments":           []synthesis.Deployment{},
+		"connections":           []synthesis.Connection{},
+		"connectionCredentials": map[string]map[string]any{},
+	}
+	tests := []struct {
+		name          string
+		writeInfra    func(string) error
+		parameterFile string
+	}{
+		{
+			name: "bicep",
+			writeInfra: func(infraDir string) error {
+				return writeExistingProjectBicep(
+					infraDir,
+					"main",
+					params,
+					projectEjectAcrNone,
+					nil,
+				)
+			},
+			parameterFile: "main.parameters.json",
+		},
+		{
+			name: "terraform",
+			writeInfra: func(infraDir string) error {
+				return writeExistingProjectTerraform(
+					infraDir,
+					"main",
+					params,
+					projectEjectAcrNone,
+					nil,
+				)
+			},
+			parameterFile: "main.tfvars.json",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"),
+				[]byte("name: test\n"),
+				0600,
+			))
+			infraDir := filepath.Join(root, "infra")
+			require.NoError(t, os.MkdirAll(infraDir, 0750))
+			require.NoError(t, test.writeInfra(infraDir))
+
+			ejected, err := findEjectedFoundryProjectInfrastructure(
+				&azdext.ProjectConfig{Path: root},
+			)
+			require.NoError(t, err)
+			require.NotNil(t, ejected)
+			assert.Equal(
+				t,
+				filepath.Join(infraDir, test.parameterFile),
+				ejected.parameterFile,
+			)
+		})
+	}
+}
+
+func TestFindEjectedFoundryProjectInfrastructureReturnsNilForEmbedded(
+	t *testing.T,
+) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("name: test\n"),
+		0600,
+	))
+
+	ejected, err := findEjectedFoundryProjectInfrastructure(
+		&azdext.ProjectConfig{Path: root},
+	)
+	require.NoError(t, err)
+	assert.Nil(t, ejected)
+}
+
+func TestProjectDeploymentEjectedInfraError(t *testing.T) {
+	err := projectDeploymentEjectedInfraError(
+		`C:\project\infra\main.parameters.json`,
+	)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeProjectDeploymentEjected, localErr.Code)
+	assert.Contains(t, localErr.Message, "main.parameters.json")
+	assert.Contains(t, localErr.Suggestion, "azd provision")
 }

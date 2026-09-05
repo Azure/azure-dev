@@ -32,6 +32,172 @@ const (
 	projectEjectAcrAlreadyConnected projectEjectAcrMode = "already-connected"
 )
 
+type ejectedFoundryProjectInfrastructure struct {
+	parameterFile string
+}
+
+func findEjectedFoundryProjectInfrastructure(
+	project *azdext.ProjectConfig,
+) (*ejectedFoundryProjectInfrastructure, error) {
+	if project == nil || project.GetPath() == "" {
+		return nil, nil
+	}
+	declaration, err := readProjectInfraDeclaration(project)
+	if err != nil {
+		return nil, err
+	}
+
+	checkTarget := func(target projectInfraEjectTarget) (
+		*ejectedFoundryProjectInfrastructure, error,
+	) {
+		infraDir := filepath.Join(
+			project.GetPath(),
+			filepath.FromSlash(target.path),
+		)
+		if isFoundryTerraformLayer(
+			project.GetPath(), target.path, target.module,
+		) {
+			return &ejectedFoundryProjectInfrastructure{
+				parameterFile: filepath.Join(
+					infraDir,
+					target.module+".tfvars.json",
+				),
+			}, nil
+		}
+		isBicep, err := isFoundryBicepEjection(
+			infraDir,
+			target.module,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if isBicep {
+			return &ejectedFoundryProjectInfrastructure{
+				parameterFile: filepath.Join(
+					infraDir,
+					target.module+".parameters.json",
+				),
+			}, nil
+		}
+		return nil, nil
+	}
+
+	if declaration.layerCount == 0 {
+		target := projectInfraEjectTarget{
+			path:   "infra",
+			module: normalizeProjectInfraEjectModule(declaration.rootModule),
+		}
+		if err := validateProjectInfraEjectModule(target.module); err != nil {
+			return nil, err
+		}
+		return checkTarget(target)
+	}
+
+	for _, layer := range declaration.layers {
+		path, _ := layer["path"].(string)
+		module, _ := layer["module"].(string)
+		provider, _ := layer["provider"].(string)
+		if strings.TrimSpace(provider) == "" {
+			provider = declaration.rootProvider
+		}
+		if strings.TrimSpace(provider) != provisioning.TerraformProviderName ||
+			!isFoundryTerraformLayer(
+				project.GetPath(),
+				strings.TrimSpace(path),
+				strings.TrimSpace(module),
+			) {
+			continue
+		}
+		target := projectInfraEjectTarget{
+			path:   strings.TrimSpace(path),
+			module: normalizeProjectInfraEjectModule(module),
+			layer:  true,
+		}
+		if err := validateProjectInfraEjectModule(target.module); err != nil {
+			return nil, err
+		}
+		return checkTarget(target)
+	}
+
+	if declaration.foundryLayerCount != 1 ||
+		declaration.foundryLayer == nil {
+		return nil, nil
+	}
+	target := projectInfraEjectTarget{
+		path: declaration.foundryLayer.path,
+		module: normalizeProjectInfraEjectModule(
+			declaration.foundryLayer.module,
+		),
+		layer: true,
+	}
+	if err := validateProjectInfraEjectModule(target.module); err != nil {
+		return nil, err
+	}
+	return checkTarget(target)
+}
+
+func isFoundryBicepEjection(infraDir, module string) (bool, error) {
+	if module == "" {
+		module = "main"
+	}
+	bicepPath := filepath.Join(infraDir, module+".bicep")
+	parametersPath := filepath.Join(infraDir, module+".parameters.json")
+	projectModulePath := filepath.Join(
+		infraDir,
+		"modules",
+		"foundry-project.bicep",
+	)
+	for _, path := range []string{
+		bicepPath,
+		parametersPath,
+		projectModulePath,
+	} {
+		info, err := os.Stat(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("inspect ejected infrastructure %q: %w", path, err)
+		}
+		if info.IsDir() {
+			return false, nil
+		}
+	}
+	// #nosec G304 -- paths are derived from project infrastructure config.
+	entrypoint, err := os.ReadFile(bicepPath)
+	if err != nil {
+		return false, fmt.Errorf("read ejected infrastructure %q: %w", bicepPath, err)
+	}
+	// #nosec G304 -- paths are derived from project infrastructure config.
+	projectModule, err := os.ReadFile(projectModulePath)
+	if err != nil {
+		return false, fmt.Errorf(
+			"read ejected infrastructure %q: %w",
+			projectModulePath,
+			err,
+		)
+	}
+	return strings.Contains(
+		string(entrypoint),
+		"module projectResources 'modules/foundry-project.bicep'",
+	) && strings.Contains(string(projectModule), "resource modelDeployments"), nil
+}
+
+func projectDeploymentEjectedInfraError(parameterFile string) error {
+	parameterFile = filepath.ToSlash(parameterFile)
+	return exterrors.Validation(
+		exterrors.CodeProjectDeploymentEjected,
+		fmt.Sprintf(
+			"managed model deployments are controlled by ejected infrastructure in %q",
+			parameterFile,
+		),
+		fmt.Sprintf(
+			"edit %q directly and run `azd provision` instead",
+			parameterFile,
+		),
+	)
+}
+
 // ejectProjectInfraWithTarget preserves the target selected by init.
 // The endpoint is needed when the daemon persists the service after
 // the local azure.yaml has been read.

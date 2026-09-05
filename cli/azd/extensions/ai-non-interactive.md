@@ -44,7 +44,17 @@ no non-interactive equivalent is a bug.
 
 | Command or area | Interactive decision | Non-interactive input | Behavior when omitted in no-prompt mode |
 | --- | --- | --- | --- |
+| `ai project add` | Foundry project: existing or new | `--project-id` selects an existing project; `--project-endpoint` adopts an existing endpoint | Creates a new project configuration when no target is supplied. |
+| `ai project add` | Azure subscription for a new or existing project | `AZURE_SUBSCRIPTION_ID`, or the subscription embedded in `--project-id` | Defers Azure setup; provisioning reports missing subscription guidance. |
+| `ai project add` | Existing Foundry project selection | `--project-id` selects the exact project; `--project-endpoint` adopts an endpoint without listing projects | Fails when an existing project cannot be resolved from explicit or persisted state. |
+| `ai project add` | Azure location for a new project | `AZURE_LOCATION` | Defers Azure setup; provisioning reports missing location guidance. |
+| `ai project add` | Project service and environment identity mismatch | `--project-id` selects the environment project; `--project-endpoint` keeps the configured endpoint | Fails and asks for an explicit target instead of choosing implicitly. |
+| `ai project add` | Replace a different configured project | `--force` with `--project-id` or `--project-endpoint` | Refuses replacement unless `--force` is present. |
 | `microsoft.foundry` provisioning | Azure subscription | `AZURE_SUBSCRIPTION_ID` in the active azd environment | Returns actionable missing-subscription guidance. |
 | `microsoft.foundry` provisioning | Azure location | `AZURE_LOCATION` in the active azd environment | Returns actionable missing-location guidance. |
+| `ai project deployment add` | Model name | `--model` | Requires `--model` and returns missing-input guidance. |
+| `ai project deployment add` | Azure subscription | `AZURE_SUBSCRIPTION_ID` in the active azd environment | Returns actionable missing-subscription guidance. |
 | `ai project deployment add` | Managed model deployment location | `--location`, `AZURE_AI_DEPLOYMENTS_LOCATION`, or `AZURE_LOCATION` | Returns actionable missing-location guidance instead of searching all subscription regions. |
+| `ai project deployment add` | Model version, SKU, capacity, and candidate | `--version`, `--sku`, `--capacity`, and `--location` | Selects the only valid candidate; fails when multiple candidates remain. |
+| `ai project deployment add` | Add a deployment after infrastructure ejection | Edit the generated Bicep `.parameters.json` or Terraform `.tfvars.json` file | Refuses the command and points to the generated parameter file. |
 | `azd down` with `microsoft.foundry` | Delete the Foundry resource group | `azd down --force` | Refuses deletion and instructs the caller to pass `--force`. |

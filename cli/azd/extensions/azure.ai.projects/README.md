@@ -120,7 +120,11 @@ without managing it. Terraform registry output is always named
 
 Terraform ejection does not support private networking and cannot adopt a
 registry already created by the `microsoft.foundry` provider. After ejection,
-future `azd provision` runs use the generated files.
+future `azd provision` runs use the generated files. To add another managed
+model deployment after ejection, edit the generated Bicep
+`<module>.parameters.json` or Terraform `<module>.tfvars.json` file directly,
+then run `azd provision`; `project deployment add` does not update ejected
+parameter files.
 
 When provisioning reports insufficient Cognitive Services quota, check usage for the target region with
 `az cognitiveservices usage list --location <region>` or request a quota increase in the Azure portal. If an

@@ -22,6 +22,7 @@ const (
 	CodeOnDiskTemplateMissing    = "ondisk_template_missing"
 	CodeArmWhatIfFailed          = "arm_what_if_failed"
 	CodeInfraEjectWriteFailed    = "infra_eject_write_failed"
+	CodeProjectDeploymentEjected = "project_deployment_ejected_infra"
 )
 
 // Error codes commonly used for dependency errors.

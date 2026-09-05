@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
@@ -50,7 +51,7 @@ func newProjectDeploymentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 	flags := &projectDeploymentFlags{}
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Add an azd-managed model deployment to the project.",
+		Short: "Add an azd-managed model deployment before ejection.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
@@ -147,7 +148,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		projectRoot:       projectRoot,
 		environmentValues: values,
 	}
-	service, _, err := reconciler.discoverProjectService(ctx)
+	service, projectConfig, err := reconciler.discoverProjectService(ctx)
 	if err != nil {
 		return err
 	}
@@ -179,7 +180,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			projectRoot:       projectRoot,
 			environmentValues: values,
 		}
-		service, _, err = reconciler.discoverProjectService(ctx)
+		service, projectConfig, err = reconciler.discoverProjectService(ctx)
 		if err != nil {
 			return err
 		}
@@ -190,6 +191,13 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 				"run `azd ai project add` and retry adding the deployment",
 			)
 		}
+	}
+	if ejected, err := findEjectedFoundryProjectInfrastructure(
+		projectConfig,
+	); err != nil {
+		return err
+	} else if ejected != nil {
+		return projectDeploymentEjectedInfraError(ejected.parameterFile)
 	}
 	if err := validateConfiguredProjectIdentity(values, service); err != nil {
 		return err
@@ -244,45 +252,69 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			"specify a deployable model tuple and retry",
 		)
 	}
-	mutation, restoreDeployment, err := reconcileDeploymentWithRollback(
-		ctx, reconciler, service.Name, selected.Deployment, force,
-	)
-	if err != nil {
-		return err
-	}
-	locationWriteAttempted := false
-	defaultWriteAttempted := false
+	environmentWriteAttempted := map[string]bool{}
 	restoreEnvironment := func() error {
 		return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
-			var restoreErrs []error
-			if defaultWriteAttempted {
-				if _, err := client.Environment().SetValue(rollbackCtx, &azdext.SetEnvRequest{
-					EnvName: envName,
-					Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-					Value:   values["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
-				}); err != nil {
-					restoreErrs = append(restoreErrs, err)
-				}
+			keys := make([]string, 0, len(environmentWriteAttempted))
+			for key := range environmentWriteAttempted {
+				keys = append(keys, key)
 			}
-			if locationWriteAttempted {
+			slices.Sort(keys)
+			var restoreErrs []error
+			for _, key := range keys {
 				if _, err := client.Environment().SetValue(rollbackCtx, &azdext.SetEnvRequest{
 					EnvName: envName,
-					Key:     "AZURE_AI_DEPLOYMENTS_LOCATION",
-					Value:   values["AZURE_AI_DEPLOYMENTS_LOCATION"],
+					Key:     key,
+					Value:   values[key],
 				}); err != nil {
-					restoreErrs = append(restoreErrs, err)
+					restoreErrs = append(
+						restoreErrs,
+						fmt.Errorf("restore environment value %s: %w", key, err),
+					)
 				}
 			}
 			return errors.Join(restoreErrs...)
 		})
 	}
-	if selected.Location != "" && selected.Location != values["AZURE_AI_DEPLOYMENTS_LOCATION"] {
-		locationWriteAttempted = true
+	setEnvironmentValue := func(key, value string) error {
+		if strings.TrimSpace(value) == "" || value == values[key] {
+			return nil
+		}
+		environmentWriteAttempted[key] = true
 		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: envName,
-			Key:     "AZURE_AI_DEPLOYMENTS_LOCATION",
-			Value:   selected.Location,
+			Key:     key,
+			Value:   value,
 		}); err != nil {
+			return err
+		}
+		return nil
+	}
+	contextValues := deploymentAzureContextValues(values, azureContext)
+	contextKeys := make([]string, 0, len(contextValues))
+	for key := range contextValues {
+		contextKeys = append(contextKeys, key)
+	}
+	slices.Sort(contextKeys)
+	for _, key := range contextKeys {
+		if err := setEnvironmentValue(key, contextValues[key]); err != nil {
+			return rollbackProjectDeploymentAdd(
+				fmt.Errorf("set project environment value %s: %w", key, err),
+				restoreEnvironment,
+			)
+		}
+	}
+	mutation, restoreDeployment, err := reconcileDeploymentWithRollback(
+		ctx, reconciler, service.Name, selected.Deployment, force,
+	)
+	if err != nil {
+		return rollbackProjectDeploymentAdd(err, restoreEnvironment)
+	}
+	if selected.Location != "" {
+		if err := setEnvironmentValue(
+			"AZURE_AI_DEPLOYMENTS_LOCATION",
+			selected.Location,
+		); err != nil {
 			return rollbackProjectDeploymentAdd(
 				fmt.Errorf("set deployment location: %w", err),
 				restoreEnvironment,
@@ -291,12 +323,10 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		}
 	}
 	if setAsDefault {
-		defaultWriteAttempted = true
-		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envName,
-			Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-			Value:   selected.Deployment.Name,
-		}); err != nil {
+		if err := setEnvironmentValue(
+			"AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			selected.Deployment.Name,
+		); err != nil {
 			return rollbackProjectDeploymentAdd(
 				fmt.Errorf("set default model deployment: %w", err),
 				restoreEnvironment,
@@ -333,6 +363,27 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		fmt.Printf("Managed deployment %q %s.\n", selected.Deployment.Name, mutation)
 	}
 	return nil
+}
+
+func deploymentAzureContextValues(
+	oldValues map[string]string,
+	azureContext *azdext.AzureContext,
+) map[string]string {
+	if azureContext == nil || azureContext.Scope == nil {
+		return nil
+	}
+	updates := map[string]string{}
+	for key, value := range map[string]string{
+		"AZURE_SUBSCRIPTION_ID": azureContext.Scope.SubscriptionId,
+		"AZURE_TENANT_ID":       azureContext.Scope.TenantId,
+		"AZURE_LOCATION":        azureContext.Scope.Location,
+	} {
+		value = strings.TrimSpace(value)
+		if value != "" && strings.TrimSpace(oldValues[key]) == "" {
+			updates[key] = value
+		}
+	}
+	return updates
 }
 
 func rollbackProjectDeploymentAdd(

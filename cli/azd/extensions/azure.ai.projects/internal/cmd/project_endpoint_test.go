@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
@@ -77,6 +78,7 @@ func TestValidateProjectEndpoint_Rejections(t *testing.T) {
 		{"non-foundry host", "https://example.com/api/projects/p"},
 		{"explicit port", "https://my-acct.services.ai.azure.com:8080/api/projects/p"},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -84,6 +86,44 @@ func TestValidateProjectEndpoint_Rejections(t *testing.T) {
 			require.Error(t, err)
 			var localErr *azdext.LocalError
 			assert.ErrorAs(t, err, &localErr)
+		})
+	}
+}
+
+func TestResolvedProjectFromEndpointPreservesPathWarning(t *testing.T) {
+	project, err := resolvedProjectFromEndpoint(
+		"https://account.services.ai.azure.com",
+	)
+	require.NoError(t, err)
+	assert.True(t, project.EndpointPathWarning)
+}
+
+func TestWriteProjectEndpointWarningOutput(t *testing.T) {
+	tests := []struct {
+		name     string
+		output   string
+		noPrompt bool
+		wantWarn bool
+	}{
+		{name: "default", output: "default", wantWarn: true},
+		{name: "json", output: "json"},
+		{name: "none", output: "none"},
+		{name: "no prompt", output: "default", noPrompt: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output bytes.Buffer
+			writeProjectEndpointWarning(
+				&output,
+				true,
+				tt.output,
+				tt.noPrompt,
+			)
+			if tt.wantWarn {
+				assert.Contains(t, output.String(), "endpoint path")
+			} else {
+				assert.Empty(t, output.String())
+			}
 		})
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -171,11 +172,12 @@ var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
 
 // AgentServiceTargetProvider is a minimal implementation of ServiceTargetProvider for demonstration
 type AgentServiceTargetProvider struct {
-	azdClient           *azdext.AzdClient
-	serviceConfig       *azdext.ServiceConfig
-	agentDefinitionPath string
-	projectPath         string
-	servicePath         string
+	azdClient                  *azdext.AzdClient
+	serviceConfig              *azdext.ServiceConfig
+	agentDefinitionPath        string
+	agentDefinitionPathFromEnv bool
+	projectPath                string
+	servicePath                string
 	// deployContextReady is set by every successful ensureDeployContext path;
 	// agentDefinitionPath is only set for the file-based and env-override paths
 	// (not the inline unified shape), so both are checked as the idempotency guard.
@@ -432,6 +434,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 		}
 
 		p.agentDefinitionPath = envPath
+		p.agentDefinitionPathFromEnv = true
 		fmt.Printf("Using agent definition from environment variable: %s\n", color.New(color.FgHiGreen).Sprint(envPath))
 		p.deployContextReady = true
 		return nil
@@ -1406,6 +1409,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	if shouldRejectTelephonyForNonVoice(isVoice, p.agentDefinitionPathFromEnv, serviceConfig) {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"telephony bindings are only supported for prompt voice agents",
+			"remove telephony from this service or set kind: prompt-voice",
+		)
+	}
 
 	var agentDef agent_yaml.ContainerAgent
 	if !isVoice {
@@ -2343,6 +2353,26 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 	}, nil
 }
 
+func serviceHasTelephony(serviceConfig *azdext.ServiceConfig) bool {
+	for _, props := range []*structpb.Struct{serviceConfig.GetAdditionalProperties(), serviceConfig.GetConfig()} {
+		if props == nil {
+			continue
+		}
+		if _, ok := props.GetFields()["telephony"]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldRejectTelephonyForNonVoice(
+	isVoice bool,
+	agentDefinitionPathFromEnv bool,
+	serviceConfig *azdext.ServiceConfig,
+) bool {
+	return !isVoice && !agentDefinitionPathFromEnv && serviceHasTelephony(serviceConfig)
+}
+
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.
 func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
@@ -2465,6 +2495,11 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
 		return nil, err
 	}
+	if err := p.deployVoiceTelephonyBindings(
+		ctx, agentClient, va, agentObject, azdEnv[voiceOverriddenHostEnvKey],
+	); err != nil {
+		return nil, err
+	}
 
 	fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
 
@@ -2508,6 +2543,132 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}}
 
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
+}
+
+func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	voiceAgent agent_yaml.VoiceAgent,
+	agentObject *agent_api.AgentObject,
+	overriddenHost string,
+) error {
+	if voiceAgent.Telephony == nil || len(voiceAgent.Telephony.Bindings) == 0 {
+		return nil
+	}
+	for _, binding := range voiceAgent.Telephony.Bindings {
+		request := &agent_api.TelephonyBindingRequest{
+			Provider:        telephonyWireProvider(binding.Provider),
+			Identifier:      strings.TrimSpace(binding.Identifier),
+			ConnectionName:  strings.TrimSpace(binding.Connection),
+			TransferTargets: binding.TransferTargets,
+		}
+
+		bindingID := fmt.Sprintf("%s:%s", request.Provider, request.Identifier)
+		remoteBinding, getErr := agentClient.GetTelephonyBinding(
+			ctx,
+			agentObject.Name,
+			bindingID,
+			agent_api.TelephonyBindingAPIVersion,
+			overriddenHost,
+		)
+		if getErr == nil {
+			if !telephonyBindingMatches(remoteBinding, request) {
+				return exterrors.Validation(
+					exterrors.CodeTelephonyBindingDrift,
+					fmt.Sprintf("telephony binding %q already exists with different configuration", bindingID),
+					"delete or update the remote binding, then run azd deploy again",
+				)
+			}
+			fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)
+			continue
+		}
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
+			return exterrors.ServiceFromAzure(getErr, exterrors.OpGetTelephonyBinding)
+		}
+
+		created, err := agentClient.CreateTelephonyBinding(
+			ctx,
+			agentObject.Name,
+			request,
+			agent_api.TelephonyBindingAPIVersion,
+			overriddenHost,
+		)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCreateTelephonyBinding)
+		}
+		id := created.ID
+		if id == "" {
+			id = bindingID
+		}
+		fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
+	}
+	return nil
+}
+
+func telephonyWireProvider(provider string) string {
+	switch strings.TrimSpace(provider) {
+	case "acs":
+		return "azure-communication-service"
+	default:
+		return strings.TrimSpace(provider)
+	}
+}
+
+func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_api.TelephonyBindingRequest) bool {
+	if remote == nil || desired == nil {
+		return false
+	}
+	desiredID := fmt.Sprintf("%s:%s", strings.TrimSpace(desired.Provider), strings.TrimSpace(desired.Identifier))
+	if remoteID := normalizedTelephonyBindingID(remote.ID); remoteID != desiredID {
+		return false
+	}
+	if strings.TrimSpace(remote.Provider) != "" &&
+		strings.TrimSpace(remote.Provider) != strings.TrimSpace(desired.Provider) &&
+		!(strings.TrimSpace(desired.Provider) == "azure-communication-service" &&
+			strings.TrimSpace(remote.Provider) == "teams_phone_extension") {
+		return false
+	}
+	if strings.TrimSpace(remote.Identifier) != "" &&
+		strings.TrimSpace(remote.Identifier) != strings.TrimSpace(desired.Identifier) {
+		return false
+	}
+	remoteConnection := telephonyBindingConnection(remote)
+	if remoteConnection != strings.TrimSpace(desired.ConnectionName) {
+		return false
+	}
+	return reflect.DeepEqual(
+		emptyTransferTargetsAsNil(remote.TransferTargets),
+		emptyTransferTargetsAsNil(desired.TransferTargets),
+	)
+}
+
+func telephonyBindingConnection(remote *agent_api.TelephonyBinding) string {
+	if remote == nil {
+		return ""
+	}
+	if strings.TrimSpace(remote.ConnectionName) != "" {
+		return strings.TrimSpace(remote.ConnectionName)
+	}
+	return strings.TrimSpace(remote.Connection)
+}
+
+func normalizedTelephonyBindingID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	unescaped, err := url.PathUnescape(value)
+	if err != nil {
+		return value
+	}
+	return unescaped
+}
+
+func emptyTransferTargetsAsNil(targets []map[string]any) []map[string]any {
+	if len(targets) == 0 {
+		return nil
+	}
+	return targets
 }
 
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {

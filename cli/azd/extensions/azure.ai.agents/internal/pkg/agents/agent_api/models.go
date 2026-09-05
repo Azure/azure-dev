@@ -463,6 +463,26 @@ type VoiceAgentDefinition struct {
 	Include           []string          `json:"include,omitempty"`
 }
 
+// TelephonyBindingRequest creates an agent telephony binding.
+type TelephonyBindingRequest struct {
+	Provider        string           `json:"provider"`
+	Identifier      string           `json:"identifier"`
+	ConnectionName  string           `json:"connection_name,omitempty"`
+	TransferTargets []map[string]any `json:"transfer_targets,omitempty"`
+}
+
+// TelephonyBinding describes a Foundry-side phone number binding.
+type TelephonyBinding struct {
+	ID              string           `json:"id,omitempty"`
+	Provider        string           `json:"provider,omitempty"`
+	Identifier      string           `json:"identifier,omitempty"`
+	Status          string           `json:"status,omitempty"`
+	Connection      string           `json:"connection,omitempty"`
+	ConnectionName  string           `json:"connection_name,omitempty"`
+	TransferTargets []map[string]any `json:"transfer_targets,omitempty"`
+	ETag            string           `json:"etag,omitempty"`
+}
+
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
 	Description       *string           `json:"description,omitempty"`

@@ -142,22 +142,23 @@ type AgentDefinitionInline struct {
 
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
-	ModelType         agent_yaml.VoiceModelType `json:"modelType,omitempty"`
-	Model             *agent_yaml.Model         `json:"model,omitempty"`
-	Instructions      *string                   `json:"instructions,omitempty"`
-	Voice             *string                   `json:"voice,omitempty"`
-	StructuredInputs  map[string]any            `json:"structuredInputs,omitempty"`
-	Audio             *agent_yaml.VoiceAudio    `json:"audio,omitempty"`
-	OutputModalities  []string                  `json:"outputModalities,omitempty"`
-	Store             *bool                     `json:"store,omitempty"`
-	Tools             []map[string]any          `json:"tools,omitempty"`
-	Avatar            map[string]any            `json:"avatar,omitempty"`
-	Greeting          map[string]any            `json:"greeting,omitempty"`
-	Handoff           map[string]any            `json:"handoff,omitempty"`
-	ToolChoice        any                       `json:"toolChoice,omitempty"`
-	ParallelToolCalls *bool                     `json:"parallelToolCalls,omitempty"`
-	MaxOutputTokens   any                       `json:"maxOutputTokens,omitempty"`
-	Include           []string                  `json:"include,omitempty"`
+	ModelType         agent_yaml.VoiceModelType  `json:"modelType,omitempty"`
+	Model             *agent_yaml.Model          `json:"model,omitempty"`
+	Instructions      *string                    `json:"instructions,omitempty"`
+	Voice             *string                    `json:"voice,omitempty"`
+	StructuredInputs  map[string]any             `json:"structuredInputs,omitempty"`
+	Audio             *agent_yaml.VoiceAudio     `json:"audio,omitempty"`
+	OutputModalities  []string                   `json:"outputModalities,omitempty"`
+	Store             *bool                      `json:"store,omitempty"`
+	Tools             []map[string]any           `json:"tools,omitempty"`
+	Avatar            map[string]any             `json:"avatar,omitempty"`
+	Greeting          map[string]any             `json:"greeting,omitempty"`
+	Handoff           map[string]any             `json:"handoff,omitempty"`
+	ToolChoice        any                        `json:"toolChoice,omitempty"`
+	ParallelToolCalls *bool                      `json:"parallelToolCalls,omitempty"`
+	MaxOutputTokens   any                        `json:"maxOutputTokens,omitempty"`
+	Include           []string                   `json:"include,omitempty"`
+	Telephony         *agent_yaml.VoiceTelephony `json:"telephony,omitempty"`
 }
 
 // voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
@@ -181,6 +182,7 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 		ParallelToolCalls: va.ParallelToolCalls,
 		MaxOutputTokens:   va.MaxOutputTokens,
 		Include:           va.Include,
+		Telephony:         va.Telephony,
 	}
 }
 
@@ -204,6 +206,7 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 		ParallelToolCalls: d.ParallelToolCalls,
 		MaxOutputTokens:   d.MaxOutputTokens,
 		Include:           d.Include,
+		Telephony:         d.Telephony,
 	}
 }
 

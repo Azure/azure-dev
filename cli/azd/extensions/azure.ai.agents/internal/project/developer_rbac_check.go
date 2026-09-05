@@ -113,13 +113,8 @@ var sufficientRoleAssignWriteRoles = []string{
 //
 // Missing roles are reported as warnings rather than errors so that deployment can proceed.
 // The developer may need to obtain the missing roles separately for full functionality.
-func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error {
+func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, envName string) error {
 	envClient := azdClient.Environment()
-	envResp, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-	envName := envResp.Environment.Name
 
 	skipValue := ""
 	skipResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{

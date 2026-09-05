@@ -24,7 +24,7 @@ func TestProvisionMemoryStores_NoStoresIsNoOp(t *testing.T) {
 }
 
 func TestProvisionMemoryStores_RequiresProjectEndpoint(t *testing.T) {
-	p := &AgentServiceTargetProvider{}
+	p := &AgentServiceTargetProvider{env: &azdext.Environment{Name: "dev"}}
 
 	cfg := &ServiceTargetAgentConfig{
 		MemoryStores: []MemoryStore{
@@ -35,6 +35,9 @@ func TestProvisionMemoryStores_RequiresProjectEndpoint(t *testing.T) {
 	err := p.provisionMemoryStores(t.Context(), cfg, "", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "project endpoint")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Contains(t, localErr.Suggestion, `azd -e "dev" env set FOUNDRY_PROJECT_ENDPOINT`)
 }
 
 func TestProvisionMemoryStores_ValidatesRequiredFields(t *testing.T) {

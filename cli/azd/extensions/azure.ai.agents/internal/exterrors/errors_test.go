@@ -204,6 +204,23 @@ func TestFromHost_PrioritizesCancellationAndAuthentication(t *testing.T) {
 	})
 }
 
+func TestRenderMissingInputSuggestionUsesSourceLabels(t *testing.T) {
+	suggestion := renderMissingInputSuggestion([]RequiredInput{{
+		Name: "input",
+		Sources: []InputSource{
+			{Kind: InputSourceFlag, Name: "--input"},
+			{Kind: InputSourceEnvironment, Name: "INPUT"},
+			{Kind: InputSourceConfig, Name: "config"},
+			{Name: "other"},
+		},
+	}})
+
+	assert.Contains(t, suggestion, "\n  - Flag: --input")
+	assert.Contains(t, suggestion, "\n  - Environment: INPUT")
+	assert.Contains(t, suggestion, "\n  - Config: config")
+	assert.Contains(t, suggestion, "\n  - Source: other")
+}
+
 func TestInternalFromErrorPreservesStructuredError(t *testing.T) {
 	expected := &azdext.LocalError{
 		Message:  "missing dependency",
@@ -313,10 +330,12 @@ func TestFromPrompt(t *testing.T) {
 			wantCode:     CodeCancelled,
 		},
 		{
-			name:        "Non-auth error returns wrapped error",
-			err:         status.Error(codes.Internal, "server error"),
-			contextMsg:  "failed to prompt for subscription",
-			wantContain: "failed to prompt for subscription",
+			name:         "Non-auth error returns structured internal error",
+			err:          status.Error(codes.Internal, "server error"),
+			contextMsg:   "failed to prompt for subscription",
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     CodePromptFailed,
+			wantContain:  "failed to prompt for subscription",
 		},
 		{
 			name: "Nil returns nil",
@@ -343,6 +362,23 @@ func TestFromPrompt(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFromPromptPreservesActionableSuggestion(t *testing.T) {
+	hostSuggestion := "Choose -e/--environment, set AZD_ENVIRONMENT, or run azd env select <name>.\n" +
+		"Example: azd -e dev provision"
+	actionable := &azdext.ActionableErrorDetail{Suggestion: hostSuggestion}
+
+	st, err := status.New(codes.FailedPrecondition, "environment selection is required").WithDetails(actionable)
+	require.NoError(t, err)
+	assert.True(t, IsPromptRequired(st.Err()))
+
+	result := FromPrompt(st.Err(), "failed to select an environment")
+
+	local, ok := errors.AsType[*azdext.LocalError](result)
+	require.True(t, ok)
+	assert.Equal(t, hostSuggestion, local.Suggestion)
+	assert.Contains(t, result.Error(), "environment selection is required")
 }
 
 func TestIsPromptRequired(t *testing.T) {

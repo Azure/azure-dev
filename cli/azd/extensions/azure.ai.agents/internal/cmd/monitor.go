@@ -95,20 +95,18 @@ when streaming session logs.`,
 			}
 			defer azdClient.Close()
 
-			info, err := resolveMonitorAgentInfo(ctx, azdClient, flags.name, extCtx.NoPrompt)
+			info, err := resolveMonitorAgentInfo(
+				ctx, azdClient, flags.name, extCtx.NoPrompt, extCtx.Environment,
+			)
 			if err != nil {
 				return err
 			}
 
 			if info.AgentName == "" {
-				return fmt.Errorf(
-					"agent name could not be resolved from azd environment for service '%s'\n\n"+
-						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
-					info.ServiceName,
-				)
+				return missingDeployedAgentStateError(info.ServiceName, "name", extCtx.Environment)
 			}
 
-			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
+			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version, info.EnvironmentName)
 			if err != nil {
 				return monitorEndpointError(err)
 			}
@@ -157,8 +155,11 @@ func resolveMonitorAgentInfo(
 	azdClient *azdext.AzdClient,
 	name string,
 	noPrompt bool,
+	environmentName string,
 ) (*AgentServiceInfo, error) {
-	info, err := resolveAgentServiceFromProject(ctx, azdClient, name, noPrompt)
+	info, err := resolveAgentServiceFromProject(
+		ctx, azdClient, name, noPrompt, withEnvironmentName(environmentName),
+	)
 	if err == nil {
 		return info, nil
 	}

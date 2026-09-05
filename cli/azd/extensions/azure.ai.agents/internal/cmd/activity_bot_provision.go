@@ -5,10 +5,10 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
@@ -33,16 +33,13 @@ func shouldProvisionActivityBot(service *azdext.ServiceConfig, projectRoot strin
 func provisionActivityBotNames(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	environmentName string,
 	args *azdext.ProjectEventArgs,
 ) error {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	envName, err := resolveActivityEnvironmentName(ctx, azdClient, environmentName)
 	if err != nil {
-		return fmt.Errorf("getting current environment: %w", err)
+		return err
 	}
-	if envResp == nil || envResp.Environment == nil || envResp.Environment.Name == "" {
-		return errors.New("no current azd environment is selected")
-	}
-	envName := envResp.Environment.Name
 
 	valuesResp, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {
@@ -96,4 +93,63 @@ func provisionActivityBotNames(
 	}
 
 	return nil
+}
+
+func resolveActivityEnvironmentName(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+) (string, error) {
+	if envName := strings.TrimSpace(environmentName); envName != "" {
+		return envName, nil
+	}
+
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", missingActivityEnvironmentError(err)
+	}
+	if envResp == nil || envResp.Environment == nil || strings.TrimSpace(envResp.Environment.Name) == "" {
+		return "", missingActivityEnvironmentError(nil)
+	}
+	return strings.TrimSpace(envResp.Environment.Name), nil
+}
+
+func missingActivityEnvironmentError(cause error) error {
+	return missingEnvironmentError(
+		cause,
+		"no azd environment is selected for activity bot provisioning",
+		"Select the environment used by this provision command.",
+		"provision",
+	)
+}
+
+func missingEnvironmentError(cause error, message, description, command string) error {
+	return exterrors.MissingInputValidation(
+		exterrors.CodeEnvironmentNotFound,
+		message,
+		exterrors.RequiredInput{
+			Name:        "azd environment",
+			Description: description,
+			Sources: []exterrors.InputSource{
+				{
+					Kind:         exterrors.InputSourceFlag,
+					Name:         "-e/--environment",
+					ExampleValue: "dev",
+					Example:      fmt.Sprintf("azd -e dev %s", command),
+				},
+				{
+					Kind:         exterrors.InputSourceEnvironment,
+					Name:         "AZD_ENVIRONMENT",
+					ExampleValue: "dev",
+					Example:      fmt.Sprintf(`$env:AZD_ENVIRONMENT = "dev"; azd %s`, command),
+				},
+				{
+					Kind:         exterrors.InputSourceConfig,
+					Name:         "azd env select <name>",
+					ExampleValue: "dev",
+					Example:      fmt.Sprintf("azd env select dev; azd %s", command),
+				},
+			},
+		},
+	).WithCause(cause)
 }

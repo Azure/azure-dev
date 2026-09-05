@@ -34,6 +34,8 @@ type InputSource struct {
 	Kind         InputSourceKind `json:"kind"`
 	Name         string          `json:"name"`
 	ExampleValue string          `json:"exampleValue,omitempty"`
+	// Example is a complete command that demonstrates how to provide the input through this source.
+	Example string `json:"example,omitempty"`
 }
 
 // RequiredInput describes a missing input and the supported sources that can provide it.
@@ -67,15 +69,36 @@ func (e *PromptRequiredError) Error() string {
 // ToString returns a formatted message with the missing inputs and short remediation guidance.
 func (e *PromptRequiredError) ToString(currentIndentation string) string {
 	if len(e.Inputs) == 0 && e.PromptMessage != "" {
-		return e.promptMessageToString()
+		return e.Suggestion()
 	}
 
 	var buf strings.Builder
 	separator := "──────────────────────────────────────────────────────────────"
 
 	buf.WriteString(separator + "\n")
-	buf.WriteString(e.message() + "\n")
+	buf.WriteString(e.MessageText() + "\n")
 	buf.WriteString(separator + "\n\n")
+	buf.WriteString(e.Suggestion())
+
+	return buf.String()
+}
+
+// MessageText returns the user-facing error headline.
+func (e *PromptRequiredError) MessageText() string {
+	if e.Message != "" {
+		return e.Message
+	}
+
+	return DefaultPromptRequiredMessage
+}
+
+// Suggestion returns remediation guidance for the missing inputs or interactive prompt.
+func (e *PromptRequiredError) Suggestion() string {
+	if len(e.Inputs) == 0 && e.PromptMessage != "" {
+		return e.promptMessageToString()
+	}
+
+	var buf strings.Builder
 
 	switch len(e.Inputs) {
 	case 0:
@@ -107,22 +130,17 @@ func (e *PromptRequiredError) ToString(currentIndentation string) string {
 		buf.WriteString("\n")
 	}
 
-	if e.hasEnvironmentSource() {
-		exampleSources := e.environmentSourcesWithExamples()
-		if len(exampleSources) == 0 {
+	examples := e.examples()
+	if len(examples) > 0 {
+		if len(examples) == 1 {
 			buf.WriteString("Example:\n")
-			buf.WriteString("  azd env set <ENV_VAR_NAME> <value>\n\n")
 		} else {
-			if len(exampleSources) == 1 {
-				buf.WriteString("Example:\n")
-			} else {
-				buf.WriteString("Examples:\n")
-			}
-			for _, source := range exampleSources {
-				buf.WriteString(fmt.Sprintf("  azd env set %s %s\n", source.Name, source.ExampleValue))
-			}
-			buf.WriteString("\n")
+			buf.WriteString("Examples:\n")
 		}
+		for _, example := range examples {
+			buf.WriteString(fmt.Sprintf("  %s\n", example))
+		}
+		buf.WriteString("\n")
 	}
 
 	return buf.String()
@@ -146,17 +164,9 @@ func (e *PromptRequiredError) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(contracts.ErrorEnvelope[details]{
 		Code:    promptRequiredCode,
-		Message: e.message(),
+		Message: e.MessageText(),
 		Details: d,
 	})
-}
-
-func (e *PromptRequiredError) message() string {
-	if e.Message != "" {
-		return e.Message
-	}
-
-	return DefaultPromptRequiredMessage
 }
 
 func (e *PromptRequiredError) promptMessageToString() string {
@@ -171,30 +181,33 @@ func (e *PromptRequiredError) promptMessageToString() string {
 	return buf.String()
 }
 
-func (e *PromptRequiredError) hasEnvironmentSource() bool {
+func (e *PromptRequiredError) examples() []string {
+	var examples []string
+	hasEnvironmentSource := false
+
 	for _, input := range e.Inputs {
 		for _, source := range input.Sources {
 			if source.Kind == InputSourceEnvironment {
-				return true
+				hasEnvironmentSource = true
+			}
+
+			if source.Example != "" {
+				examples = append(examples, source.Example)
+				continue
+			}
+
+			switch {
+			case source.Kind == InputSourceEnvironment && source.ExampleValue != "":
+				examples = append(examples, fmt.Sprintf("azd env set %s %s", source.Name, source.ExampleValue))
 			}
 		}
 	}
 
-	return false
-}
-
-func (e *PromptRequiredError) environmentSourcesWithExamples() []InputSource {
-	var sources []InputSource
-
-	for _, input := range e.Inputs {
-		for _, source := range input.Sources {
-			if source.Kind == InputSourceEnvironment && source.ExampleValue != "" {
-				sources = append(sources, source)
-			}
-		}
+	if len(examples) == 0 && hasEnvironmentSource {
+		return []string{"azd env set <ENV_VAR_NAME> <value>"}
 	}
 
-	return sources
+	return examples
 }
 
 func sourceKindLabel(kind InputSourceKind) string {

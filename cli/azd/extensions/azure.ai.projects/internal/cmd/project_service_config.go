@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -29,6 +30,16 @@ func projectLifecycleHandler(
 	azdClient *azdext.AzdClient,
 	args *azdext.ProjectEventArgs,
 ) error {
+	return projectLifecycleHandlerForEnvironment(ctx, azdClient, "", "up", args)
+}
+
+func projectLifecycleHandlerForEnvironment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+	command string,
+	args *azdext.ProjectEventArgs,
+) error {
 	if args == nil || args.Project == nil {
 		return fmt.Errorf("project lifecycle event has no project")
 	}
@@ -44,15 +55,27 @@ func projectLifecycleHandler(
 		return nil
 	}
 
-	current, err := azdClient.Environment().GetCurrent(
-		ctx,
-		&azdext.EmptyRequest{},
-	)
-	if err != nil {
-		return fmt.Errorf("resolving current azd environment: %w", err)
-	}
-	if current.GetEnvironment().GetName() == "" {
-		return fmt.Errorf("current azd environment has no name")
+	envName := strings.TrimSpace(environmentName)
+	if envName == "" {
+		current, err := azdClient.Environment().GetCurrent(
+			ctx,
+			&azdext.EmptyRequest{},
+		)
+		if err != nil {
+			return exterrors.MissingEnvironmentName(
+				exterrors.CodeEnvironmentNotFound,
+				command,
+				err,
+			)
+		}
+		envName = strings.TrimSpace(current.GetEnvironment().GetName())
+		if envName == "" {
+			return exterrors.MissingEnvironmentName(
+				exterrors.CodeEnvironmentNotFound,
+				command,
+				nil,
+			)
+		}
 	}
 
 	value, err := encodeProjectDeployments(cfg.Deployments)
@@ -62,7 +85,7 @@ func projectLifecycleHandler(
 	if _, err := azdClient.Environment().SetValue(
 		ctx,
 		&azdext.SetEnvRequest{
-			EnvName: current.GetEnvironment().GetName(),
+			EnvName: envName,
 			Key:     projectDeploymentsEnvKey,
 			Value:   value,
 		},

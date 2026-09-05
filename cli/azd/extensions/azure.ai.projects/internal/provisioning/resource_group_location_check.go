@@ -94,20 +94,24 @@ func (c *ResourceGroupLocationCheck) Validate(
 		return empty, nil
 	}
 
+	envClient := c.azdClient.Environment()
+	envName, ok := valCtx.EnvName()
+	envName = strings.TrimSpace(envName)
+	if !ok || envName == "" {
+		envResp, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return empty, nil // Non-critical: can't resolve the environment.
+		}
+		envName = envResp.GetEnvironment().GetName()
+	}
+
 	// Existing projects only create a resource group when azd owns an adjunct ACR.
 	if c.isBrownfieldFoundryProject(ctx) {
-		if !c.existingProjectCreatesResourceGroup(ctx) {
+		if !c.existingProjectCreatesResourceGroup(ctx, envName) {
 			return empty, nil
 		}
 		usesFoundryLayer = true
 	}
-
-	envClient := c.azdClient.Environment()
-	envResp, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return empty, nil // Non-critical: can't resolve the environment.
-	}
-	envName := envResp.Environment.Name
 
 	// Prefer the values supplied in the lean "provision" validation context;
 	// fall back to reading the azd environment directly. Context values are
@@ -173,12 +177,7 @@ func (c *ResourceGroupLocationCheck) Validate(
 	), nil
 }
 
-func (c *ResourceGroupLocationCheck) existingProjectCreatesResourceGroup(ctx context.Context) bool {
-	current, err := c.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || current.GetEnvironment().GetName() == "" {
-		return false
-	}
-	envName := current.GetEnvironment().GetName()
+func (c *ResourceGroupLocationCheck) existingProjectCreatesResourceGroup(ctx context.Context, envName string) bool {
 	mode := envValueOrEmpty(ctx, c.azdClient.Environment(), envName, "AZD_FOUNDRY_ACR_MODE")
 	if mode != "" {
 		return strings.EqualFold(mode, "create")

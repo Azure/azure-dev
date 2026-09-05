@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
@@ -27,11 +28,12 @@ import (
 //
 // Auth-related errors are reported with codes.Unauthenticated and an azd.auth ErrorInfo detail
 // (preserving AADSTS<code> reasons from Entra). ErrorWithSuggestion errors carry an
-// ActionableErrorDetail so consumers receive suggestion + links structurally.
+// ActionableErrorDetail so consumers receive suggestion + links structurally. PromptRequiredError
+// values carry their rendered remediation through the existing suggestion field.
 //
-// status.Message is always err.Error() (or ErrorWithSuggestion.Message when set). Suggestion
-// text is never concatenated into status.Message; consumers must read ActionableErrorDetail
-// for remediation guidance.
+// status.Message is err.Error(), ErrorWithSuggestion.Message, or the PromptRequiredError headline.
+// Suggestion text is never concatenated into status.Message; consumers must read
+// ActionableErrorDetail for remediation guidance.
 func mapHostError(err error) error {
 	if err == nil {
 		return nil
@@ -42,23 +44,28 @@ func mapHostError(err error) error {
 	responseErr, hasResponseError := errors.AsType[*azcore.ResponseError](err)
 	relayedErr := relayedExtensionError(err)
 	existingStatus, hasExistingStatus := azdext.GRPCStatusFromError(err)
-	if !hasSuggestion && !isAuthErr && !hasResponseError && relayedErr == nil {
+	promptErr, hasPromptRequired := errors.AsType[*input.PromptRequiredError](err)
+	if !hasSuggestion && !isAuthErr && !hasResponseError && relayedErr == nil && !hasPromptRequired {
 		return err
 	}
 
 	code := codes.Unknown
 	if hasExistingStatus {
 		code = existingStatus.Code()
+	} else if hasPromptRequired {
+		code = codes.FailedPrecondition
 	}
 	if isAuthErr {
 		code = codes.Unauthenticated
 	}
 
-	st := hostErrorStatus(existingStatus, hasExistingStatus, code, statusMessage(err, suggestionErr))
+	st := hostErrorStatus(existingStatus, hasExistingStatus, code, statusMessage(err, suggestionErr, promptErr))
 	if isAuthErr {
 		st = withAuthErrorInfo(st, err)
 	}
-	if hasSuggestion {
+	if hasPromptRequired {
+		st = withPromptRequiredSuggestion(st, promptErr)
+	} else if hasSuggestion {
 		st = withActionableErrorDetail(st, suggestionErr)
 	}
 	if relayedErr != nil {
@@ -157,12 +164,20 @@ func responseErrorServiceName(responseErr *azcore.ResponseError) string {
 }
 
 // statusMessage returns the user-facing message that should populate status.Message.
-// When the source is an ErrorWithSuggestion with an explicit Message, that wins. Otherwise,
-// if err is already a gRPC status error, use its Message (avoids nesting "rpc error: ..."
-// prefixes in the new status). Falls back to err.Error(). Suggestion text is never appended.
-func statusMessage(err error, suggestionErr *internal.ErrorWithSuggestion) string {
+// When the source is an ErrorWithSuggestion with an explicit Message, that wins. Prompt-required
+// errors use their headline instead of their intentionally terse Error() string. Otherwise, if err
+// is already a gRPC status error, use its Message (avoids nesting "rpc error: ..." prefixes in the
+// new status). Falls back to err.Error(). Suggestion text is never appended.
+func statusMessage(
+	err error,
+	suggestionErr *internal.ErrorWithSuggestion,
+	promptErr *input.PromptRequiredError,
+) string {
 	if suggestionErr != nil && suggestionErr.Message != "" {
 		return suggestionErr.Message
+	}
+	if promptErr != nil {
+		return promptErr.MessageText()
 	}
 	if st, ok := azdext.GRPCStatusFromError(err); ok {
 		return st.Message()
@@ -214,6 +229,22 @@ func withActionableErrorDetail(st *status.Status, err *internal.ErrorWithSuggest
 	})
 	if detailErr != nil {
 		log.Printf("failed to attach ActionableErrorDetail to gRPC status: %v", detailErr)
+		return st
+	}
+
+	return withDetails
+}
+
+func withPromptRequiredSuggestion(st *status.Status, err *input.PromptRequiredError) *status.Status {
+	if err == nil {
+		return st
+	}
+
+	withDetails, detailErr := st.WithDetails(&azdext.ActionableErrorDetail{
+		Suggestion: err.Suggestion(),
+	})
+	if detailErr != nil {
+		log.Printf("failed to attach prompt-required suggestion to gRPC status: %v", detailErr)
 		return st
 	}
 

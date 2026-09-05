@@ -23,10 +23,62 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// InputSourceKind identifies a supported way to provide a required input.
+type InputSourceKind = input.InputSourceKind
+
+const (
+	InputSourceFlag        = input.InputSourceFlag
+	InputSourceEnvironment = input.InputSourceEnvironment
+	InputSourceConfig      = input.InputSourceConfig
+)
+
+// InputSource describes one supported source for a required input.
+type InputSource struct {
+	Kind         InputSourceKind
+	Name         string
+	ExampleValue string
+	Example      string
+}
+
+// RequiredInput describes a user-fixable input and all supported ways to provide it.
+type RequiredInput struct {
+	Name        string
+	Description string
+	Sources     []InputSource
+}
+
+// MissingInputError renders required-input guidance through the extension SDK's
+// currently supported LocalError transport.
+type MissingInputError struct {
+	LocalError *azdext.LocalError
+	cause      error
+}
+
+// Error implements the error interface.
+func (e *MissingInputError) Error() string {
+	return e.LocalError.Error()
+}
+
+// Unwrap exposes the LocalError transport and optional cause.
+func (e *MissingInputError) Unwrap() []error {
+	errs := []error{e.LocalError}
+	if e.cause != nil {
+		errs = append(errs, e.cause)
+	}
+	return errs
+}
+
+// WithCause preserves the lower-level failure that prevented input resolution.
+func (e *MissingInputError) WithCause(cause error) *MissingInputError {
+	e.cause = cause
+	return e
+}
 
 // ---------------------------------------------------------------------------
 // Structured error factories
@@ -49,6 +101,89 @@ func Dependency(code, message, suggestion string) error {
 		Code:       code,
 		Category:   azdext.LocalErrorCategoryDependency,
 		Suggestion: suggestion,
+	}
+}
+
+// MissingInputValidation returns an actionable validation error for required user input.
+func MissingInputValidation(code, message string, inputs ...RequiredInput) *MissingInputError {
+	return newMissingInputError(azdext.LocalErrorCategoryValidation, code, message, inputs...)
+}
+
+// MissingInputDependency returns an actionable dependency error for required external state.
+func MissingInputDependency(code, message string, inputs ...RequiredInput) *MissingInputError {
+	return newMissingInputError(azdext.LocalErrorCategoryDependency, code, message, inputs...)
+}
+
+func newMissingInputError(
+	category azdext.LocalErrorCategory,
+	code string,
+	message string,
+	inputs ...RequiredInput,
+) *MissingInputError {
+	return &MissingInputError{
+		LocalError: &azdext.LocalError{
+			Message:    message,
+			Code:       code,
+			Category:   category,
+			Suggestion: renderMissingInputSuggestion(inputs),
+		},
+	}
+}
+
+func renderMissingInputSuggestion(inputs []RequiredInput) string {
+	var b strings.Builder
+	b.WriteString("Provide the required input using one of the supported sources:")
+
+	examples := make([]string, 0)
+	seenExamples := map[string]struct{}{}
+	for _, input := range inputs {
+		b.WriteString("\n\n")
+		b.WriteString(input.Name)
+		if input.Description != "" {
+			b.WriteString(": ")
+			b.WriteString(input.Description)
+		}
+
+		for _, source := range input.Sources {
+			b.WriteString("\n  - ")
+			b.WriteString(inputSourceLabel(source.Kind))
+			b.WriteString(": ")
+			b.WriteString(source.Name)
+			if source.ExampleValue != "" {
+				b.WriteString(" (example value: ")
+				b.WriteString(source.ExampleValue)
+				b.WriteString(")")
+			}
+			if source.Example != "" {
+				if _, found := seenExamples[source.Example]; !found {
+					seenExamples[source.Example] = struct{}{}
+					examples = append(examples, source.Example)
+				}
+			}
+		}
+	}
+
+	if len(examples) > 0 {
+		b.WriteString("\n\nExamples:")
+		for _, example := range examples {
+			b.WriteString("\n  ")
+			b.WriteString(example)
+		}
+	}
+
+	return b.String()
+}
+
+func inputSourceLabel(kind InputSourceKind) string {
+	switch kind {
+	case InputSourceFlag:
+		return "Flag"
+	case InputSourceEnvironment:
+		return "Environment"
+	case InputSourceConfig:
+		return "Config"
+	default:
+		return "Source"
 	}
 }
 
@@ -253,12 +388,14 @@ func FromAiService(err error, fallbackCode string) error {
 	return Internal(code, st.Message())
 }
 
-// FromPrompt wraps a gRPC error from an azd host Prompt call into a structured error.
-// Auth errors ([codes.Unauthenticated]) are classified as Auth errors with a suggestion
-// to re-authenticate. Other errors are returned with the provided context message.
+// FromPrompt converts a gRPC error from an azd host Prompt call into a structured error.
+// It preserves actionable remediation emitted through the existing ActionableErrorDetail fields.
 func FromPrompt(err error, contextMsg string) error {
 	if err == nil {
 		return nil
+	}
+	if structured := structuredError(err); structured != nil {
+		return structured
 	}
 
 	if IsCancellation(err) {
@@ -270,12 +407,22 @@ func FromPrompt(err error, contextMsg string) error {
 		return authFromGrpcMessage(fmt.Sprintf("%s: %s", contextMsg, st.Message()))
 	}
 
-	return fmt.Errorf("%s: %w", contextMsg, err)
-}
+	if ok {
+		actionable := azdext.ActionableErrorDetailFromError(err)
+		if actionable != nil {
+			return &azdext.LocalError{
+				Message:    fmt.Sprintf("%s: %s", contextMsg, st.Message()),
+				Code:       CodePromptFailed,
+				Category:   azdext.LocalErrorCategoryValidation,
+				Suggestion: actionable.GetSuggestion(),
+				Links:      azdext.UnwrapErrorLinks(actionable.GetLinks()),
+			}
+		}
+		return Internal(CodePromptFailed, fmt.Sprintf("%s: %s", contextMsg, st.Message()))
+	}
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+	return Internal(CodePromptFailed, fmt.Sprintf("%s: %s", contextMsg, err))
+}
 
 // authFromGrpcMessage creates a structured Auth error from a gRPC Unauthenticated message.
 // It classifies the error as not_logged_in, login_expired, or a generic auth_failed
@@ -293,6 +440,9 @@ func authFromGrpcMessage(msg string) error {
 func structuredError(err error) error {
 	if serviceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
 		return serviceErr
+	}
+	if missingInputErr, ok := errors.AsType[*MissingInputError](err); ok {
+		return missingInputErr
 	}
 	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
 		return localErr
@@ -365,26 +515,21 @@ func IsCancellation(err error) bool {
 	return false
 }
 
-// IsPromptRequired reports whether err looks like a `--no-prompt` failure
-// propagated from the azd host (a [*input.PromptRequiredError] crossing the
-// gRPC boundary).
-//
-// The host's *input.PromptRequiredError loses its type identity when it
-// crosses gRPC (see internal/grpcserver/errors.go: only *ErrorWithSuggestion
-// and auth errors are translated to structured details; everything else is
-// flattened to a status with the original Error() text). The error reaches
-// the extension as a gRPC status whose message contains the literal
-// "prompt required" string from PromptRequiredError.Error().
-//
-// Callers use this to decide whether attaching env-var-specific guidance
-// (e.g. "set AZURE_SUBSCRIPTION_ID") is appropriate. When this returns false,
-// the prompt failed for a different reason (transport, panic, etc.) and the
-// caller should fall back to a less prescriptive message.
+// IsPromptRequired reports whether err is a `--no-prompt` failure propagated
+// from the azd host. Current hosts return FailedPrecondition with actionable
+// guidance; older hosts expose PromptRequiredError text in the status message.
 func IsPromptRequired(err error) bool {
 	if err == nil {
 		return false
 	}
+	if _, ok := errors.AsType[*input.PromptRequiredError](err); ok {
+		return true
+	}
 	if st, ok := status.FromError(err); ok {
+		if st.Code() == codes.FailedPrecondition &&
+			azdext.ActionableErrorDetailFromStatus(st) != nil {
+			return true
+		}
 		return strings.Contains(strings.ToLower(st.Message()), "prompt required")
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "prompt required")

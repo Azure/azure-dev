@@ -116,13 +116,18 @@ func TestDestroy_NoPromptRequiresForce(t *testing.T) {
 // TestDestroy_PromptRequiredFallsBackToForce verifies compatibility with hosts
 // that return a prompt-required error instead of the request's default value.
 func TestDestroy_PromptRequiredFallsBackToForce(t *testing.T) {
+	promptRequired, err := status.New(codes.FailedPrecondition, "confirmation is required").WithDetails(
+		&azdext.ActionableErrorDetail{Suggestion: "run interactively to confirm"},
+	)
+	require.NoError(t, err)
+
 	prompt := &destroyConfirmStubPromptServer{
-		confirmErr: status.Error(codes.FailedPrecondition, "prompt required: no terminal"),
+		confirmErr: promptRequired.Err(),
 	}
 	client := newDestroyConfirmTestClient(t, prompt)
 
 	p := &FoundryProvisioningProvider{azdClient: client, rgName: "rg-foundry-test", rgExplicit: true}
-	_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: false}, func(string) {})
+	_, err = p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: false}, func(string) {})
 
 	require.Error(t, err)
 	var local *azdext.LocalError

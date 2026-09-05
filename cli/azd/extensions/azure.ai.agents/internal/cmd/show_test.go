@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -68,6 +69,26 @@ func TestNewAgentContext_PartialFlags(t *testing.T) {
 	_, err := newAgentContext(t.Context(), "myAccount", "", "my-agent", "1")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "both --account-name and --project-name must be provided together")
+}
+
+func TestNewAgentContext_SelectedEnvironmentEndpoint(t *testing.T) {
+	orig := readAzdHostedSourcesFunc
+	readAzdHostedSourcesFunc = func(_ context.Context, environmentName string) (azdHostedSources, error) {
+		endpoint := "https://default.services.ai.azure.com/api/projects/default"
+		if environmentName == "selected" {
+			endpoint = "https://selected.services.ai.azure.com/api/projects/selected"
+		}
+		return azdHostedSources{EnvValue: endpoint, EnvName: environmentName}, nil
+	}
+	t.Cleanup(func() { readAzdHostedSourcesFunc = orig })
+
+	defaultContext, err := newAgentContext(t.Context(), "", "", "my-agent", "1")
+	require.NoError(t, err)
+	selectedContext, err := newAgentContext(t.Context(), "", "", "my-agent", "1", "selected")
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://default.services.ai.azure.com/api/projects/default", defaultContext.ProjectEndpoint)
+	assert.Equal(t, "https://selected.services.ai.azure.com/api/projects/selected", selectedContext.ProjectEndpoint)
 }
 
 func TestShowCommand_DefaultOutputFormat(t *testing.T) {

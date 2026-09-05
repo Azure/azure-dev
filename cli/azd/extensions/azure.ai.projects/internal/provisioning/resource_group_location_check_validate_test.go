@@ -38,8 +38,9 @@ func (s *validateStubProjectServer) Get(
 // environment fallback.
 type validateStubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	envName string
-	get     map[string]string
+	envName  string
+	get      map[string]string
+	getByEnv map[string]map[string]string
 }
 
 func (s *validateStubEnvServer) GetCurrent(
@@ -51,6 +52,9 @@ func (s *validateStubEnvServer) GetCurrent(
 func (s *validateStubEnvServer) GetValue(
 	_ context.Context, req *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
+	if values, ok := s.getByEnv[req.EnvName]; ok {
+		return &azdext.KeyValueResponse{Value: values[req.Key]}, nil
+	}
 	return &azdext.KeyValueResponse{Value: s.get[req.Key]}, nil
 }
 
@@ -441,6 +445,38 @@ func TestValidate_GreenfieldFoundry(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, resp.Results, 1)
 		assert.Equal(t, "rg-from-env", gotRG)
+	})
+
+	t.Run("uses the context environment instead of the persisted default", func(t *testing.T) {
+		env := &validateStubEnvServer{
+			envName: "prod",
+			getByEnv: map[string]map[string]string{
+				"prod": {
+					"AZURE_SUBSCRIPTION_ID": "00000000-0000-0000-0000-000000000002",
+					"AZURE_LOCATION":        "eastus",
+					"AZURE_RESOURCE_GROUP":  "rg-prod",
+				},
+				"dev": {
+					"AZURE_SUBSCRIPTION_ID": sub,
+					"AZURE_LOCATION":        "westus2",
+					"AZURE_RESOURCE_GROUP":  "rg-dev",
+				},
+			},
+		}
+		var gotSubscription, gotRG string
+		c := newCheck(t, env, func(_ context.Context, subscription, rg string) (string, bool, error) {
+			gotSubscription = subscription
+			gotRG = rg
+			return "westus2", true, nil
+		})
+		valCtx := provisionContext("", "", "")
+		valCtx.Data[azdext.ValidationContextEnvName] = []byte("dev")
+
+		resp, err := c.Validate(t.Context(), valCtx, &azdext.ValidationCheckRequest{})
+		require.NoError(t, err)
+		assert.Empty(t, resp.Results)
+		assert.Equal(t, sub, gotSubscription)
+		assert.Equal(t, "rg-dev", gotRG)
 	})
 
 	t.Run("defaults the resource group name when none is provided", func(t *testing.T) {

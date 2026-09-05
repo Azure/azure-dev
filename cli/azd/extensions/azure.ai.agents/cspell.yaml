@@ -82,6 +82,7 @@ words:
   - posixpath
   - projectconfig
   - projectpkg
+  - protowire
   - protocolversionrecord
   - Qdrant
   - schedulerun

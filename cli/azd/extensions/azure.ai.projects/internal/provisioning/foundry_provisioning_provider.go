@@ -79,6 +79,7 @@ type FoundryProvisioningProvider struct {
 	synthResult                 *synthesis.Result // nil when onDiskSource != nil
 	serviceEnvironments         map[string]map[string]string
 	connectionEnvironmentScopes map[string]bool
+	requestedEnvName            string
 	envName                     string
 	subID                       string
 	location                    string
@@ -125,10 +126,16 @@ func readProjectFile(projectRoot string) ([]byte, string, error) {
 	return nil, "", nil
 }
 
-// NewFoundryProvisioningProvider constructs the provider with a live
-// AzdClient. The host calls Initialize before any other method.
-func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.ProvisioningProvider {
-	return &FoundryProvisioningProvider{azdClient: azdClient}
+// NewFoundryProvisioningProvider constructs the provider with a live AzdClient
+// and the environment selected for the current azd invocation.
+func NewFoundryProvisioningProvider(
+	azdClient *azdext.AzdClient,
+	environmentName string,
+) azdext.ProvisioningProvider {
+	return &FoundryProvisioningProvider{
+		azdClient:        azdClient,
+		requestedEnvName: strings.TrimSpace(environmentName),
+	}
 }
 
 // Initialize loads azure.yaml, decides between the embedded ARM template
@@ -619,13 +626,7 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 		log.Printf("[debug] foundry provider: no environment client; network ${VAR} uses process env only")
 		return out
 	}
-	curr, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || curr.GetEnvironment() == nil {
-		log.Printf("[debug] foundry provider: no current azd environment (%v); "+
-			"network ${VAR} uses process env only", err)
-		return out
-	}
-	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: curr.GetEnvironment().GetName()})
+	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: p.envName})
 	if err != nil {
 		log.Printf("[debug] foundry provider: GetValues failed (%s); network ${VAR} uses process env only", err)
 		return out
@@ -790,6 +791,18 @@ func foundryServiceEndpointAtRoot(
 	return strings.TrimSpace(service.Endpoint), nil
 }
 
+// resolveEnvName resolves just the active azd environment name. The brownfield
+// (endpoint:) path uses it instead of resolveEnv because connecting to an
+// existing project needs no subscription, location, or resource group.
+func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error {
+	envName, err := p.currentEnvName(ctx)
+	if err != nil {
+		return err
+	}
+	p.envName = envName
+	return nil
+}
+
 // defaultResourceGroupName returns the default resource group azd provisions
 // into, matching azd's standard rg-<env> convention.
 func defaultResourceGroupName(envName string) string {
@@ -876,15 +889,11 @@ func sameExistingProjectEndpoint(a, b string) bool {
 func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	envClient := p.azdClient.Environment()
 
-	currEnv, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	envName, err := p.currentEnvName(ctx)
 	if err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeEnvironmentNotFound,
-			fmt.Sprintf("get current azd environment: %s", err),
-			"run 'azd env new' to create an environment",
-		)
+		return err
 	}
-	p.envName = currEnv.Environment.Name
+	p.envName = envName
 
 	get := func(key string) (string, error) {
 		if value := strings.TrimSpace(p.virtualEnv[key]); value != "" {
@@ -995,21 +1004,29 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	return nil
 }
 
-func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error {
+func (p *FoundryProvisioningProvider) currentEnvName(ctx context.Context) (string, error) {
+	if envName := strings.TrimSpace(p.requestedEnvName); envName != "" {
+		return envName, nil
+	}
+
 	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || currEnv.GetEnvironment().GetName() == "" {
-		message := "current azd environment is empty"
-		if err != nil {
-			message = err.Error()
-		}
-		return exterrors.Dependency(
+	if err != nil {
+		return "", exterrors.MissingEnvironmentName(
 			exterrors.CodeEnvironmentNotFound,
-			fmt.Sprintf("get current azd environment: %s", message),
-			"run 'azd env new' to create an environment",
+			"provision",
+			err,
 		)
 	}
-	p.envName = currEnv.GetEnvironment().GetName()
-	return nil
+
+	envName := strings.TrimSpace(currEnv.GetEnvironment().GetName())
+	if envName == "" {
+		return "", exterrors.MissingEnvironmentName(
+			exterrors.CodeEnvironmentNotFound,
+			"provision",
+			nil,
+		)
+	}
+	return envName, nil
 }
 
 // promptSubscription asks the user to select an Azure subscription when
@@ -1022,6 +1039,11 @@ func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error 
 // headless callers stay deterministic. Tenant resolution is left to
 // ensureCredential, which looks up the user access tenant from the subscription.
 func (p *FoundryProvisioningProvider) promptSubscription(ctx context.Context) error {
+	envSetCommand := fmt.Sprintf(
+		"azd -e %q env set %s 11111111-1111-1111-1111-111111111111",
+		p.envName,
+		envKeySubscriptionID,
+	)
 	resp, err := p.azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -1031,14 +1053,13 @@ func (p *FoundryProvisioningProvider) promptSubscription(ctx context.Context) er
 			return exterrors.Dependency(
 				exterrors.CodeMissingAzureSubscription,
 				fmt.Sprintf("%s is required but not set in azd environment %q", envKeySubscriptionID, p.envName),
-				fmt.Sprintf("run `azd env set %s <subscription-id>`, or run interactively to pick one",
-					envKeySubscriptionID),
+				fmt.Sprintf("run `%s`, or run interactively to pick one", envSetCommand),
 			)
 		}
 		return exterrors.Dependency(
 			exterrors.CodeMissingAzureSubscription,
 			fmt.Sprintf("failed to select an Azure subscription: %s", err),
-			"retry, or run interactively to pick one",
+			fmt.Sprintf("retry interactively, or run `%s`", envSetCommand),
 		)
 	}
 
@@ -1047,7 +1068,7 @@ func (p *FoundryProvisioningProvider) promptSubscription(ctx context.Context) er
 		return exterrors.Dependency(
 			exterrors.CodeMissingAzureSubscription,
 			"subscription selection returned an empty subscription id",
-			fmt.Sprintf("retry, or run `azd env set %s <subscription-id>`", envKeySubscriptionID),
+			fmt.Sprintf("retry, or run `%s`", envSetCommand),
 		)
 	}
 	p.subID = subID
@@ -1060,6 +1081,7 @@ func (p *FoundryProvisioningProvider) promptSubscription(ctx context.Context) er
 // scoped to the resolved subscription; no region allow-list is applied, matching
 // core `azd up`.
 func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error {
+	envSetCommand := fmt.Sprintf("azd -e %q env set %s eastus2", p.envName, envKeyLocation)
 	resp, err := p.azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{SubscriptionId: p.subID, TenantId: p.tenantID},
@@ -1073,13 +1095,13 @@ func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error 
 			return exterrors.Dependency(
 				exterrors.CodeMissingAzureLocation,
 				fmt.Sprintf("%s is required but not set in azd environment %q", envKeyLocation, p.envName),
-				fmt.Sprintf("run `azd env set %s <region>`, or run interactively to pick one", envKeyLocation),
+				fmt.Sprintf("run `%s`, or run interactively to pick one", envSetCommand),
 			)
 		}
 		return exterrors.Dependency(
 			exterrors.CodeMissingAzureLocation,
 			fmt.Sprintf("failed to select an Azure location: %s", err),
-			"retry, or run interactively to pick one",
+			fmt.Sprintf("retry interactively, or run `%s`", envSetCommand),
 		)
 	}
 
@@ -1088,7 +1110,7 @@ func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error 
 		return exterrors.Dependency(
 			exterrors.CodeMissingAzureLocation,
 			"location selection returned an empty location name",
-			fmt.Sprintf("retry, or run `azd env set %s <region>`", envKeyLocation),
+			fmt.Sprintf("retry, or run `%s`", envSetCommand),
 		)
 	}
 	p.location = location

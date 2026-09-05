@@ -86,9 +86,7 @@ type initFlags struct {
 	// template/language selection, no ACR). An empty value keeps the existing
 	// inference-from-inputs behavior. Additive: existing kinds remain inferred.
 	kind string
-	// voice optionally overrides the output voice name for hidden/private
-	// prompt-voice automation. Public interactive flows use the default and let
-	// users edit azure.yaml for customization.
+	// voice optionally overrides the output voice name for prompt-voice agents.
 	voice string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
@@ -380,7 +378,6 @@ func resolveAgentNameFromManifestPointer(
 		flags.agentName = validated
 		return validated, nil
 	}
-
 	peeked := peekManifestName(ctx, manifestPointer, httpClient)
 	if peeked == "" {
 		// Defer to the inner flow which has access to the fully-loaded manifest.
@@ -1211,6 +1208,8 @@ func agentDefiningFlagsSet(flags *initFlags, srcBlocksReuse bool) bool {
 		flags.acrConnection != "" ||
 		flags.image != "" ||
 		flags.registryConnection != "" ||
+		flags.kind != "" ||
+		flags.voice != "" ||
 		srcBlocksReuse ||
 		len(flags.protocols) > 0
 }
@@ -1235,14 +1234,20 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
-		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
-		Long: `Initialize a new AI agent project.
+		Short: fmt.Sprintf("Initialize a new hosted or voice agent project. %s", color.YellowString("(Preview)")),
+		Long: `Initialize a new hosted or voice agent project.
 
 When -m points at a sample's unified azure.yaml (a project manifest that
 declares a service with host: azure.ai.agent), that azure.yaml is adopted as
 the project manifest and its referenced files are placed at the project root.
 When -m points at an agent manifest instead, the project's azure.yaml is
 generated from it.
+
+Use --kind prompt-voice to initialize a managed prompt voice agent without
+source code or container scaffolding. Prompt voice agents support model, audio,
+voice, tool, greeting, avatar, handoff, and telephony settings in azure.yaml.
+Hosted voice wrappers use kind: voice in azure.yaml and are typically initialized
+from a sample or existing project manifest.
 
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
@@ -1265,6 +1270,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
   # Initialize from local agent code
   azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
+
+  # Initialize a managed prompt voice agent
+  azd ai agent init --kind prompt-voice --agent-name support-voice
+
+  # Initialize a prompt voice agent with an explicit realtime model and voice
+  azd ai agent init --kind prompt-voice --agent-name support-voice \
+    --model gpt-realtime --voice en-US-Ava:DragonHDLatestNeural
 
   # Non-interactive code deploy (CI/CD)
   azd ai agent init --no-prompt --project-id "<resource-id>" \
@@ -1386,21 +1398,14 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						fmt.Sprintf("the only supported --kind value is %q", kindFlagPromptVoice),
 					)
 				}
-				if !promptVoicePreviewEnabled() {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"prompt voice agent init is private preview",
-						fmt.Sprintf("set %s=true to enable prompt voice init", promptVoicePreviewEnvVar),
-					)
-				}
-				if flags.image != "" {
+				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.image != "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						"--kind prompt-voice cannot be combined with --image",
 						"a voice agent is managed and has no container image; drop --image",
 					)
 				}
-				if flags.manifestPointer != "" {
+				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.manifestPointer != "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						"--kind prompt-voice cannot be combined with --manifest",
@@ -1446,7 +1451,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// language prompts and code scaffolding). Mirrors the --image fast path.
 			// --kind value and --image incompatibility are validated above, before
 			// either synthesis branch.
-			if flags.kind != "" && flags.manifestPointer == "" {
+			if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.manifestPointer == "" {
 				if flags.agentName == "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
@@ -1994,14 +1999,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Requires a pre-built image and is incompatible with code deploy.")
 
 	cmd.Flags().StringVar(&flags.kind, "kind", "",
-		"Agent kind to initialize non-interactively. Currently supports 'prompt-voice' to create a "+
-			"declarative (managed) voice agent, skipping template/language selection and code scaffolding. "+
-			"Use --model to name the speech-to-speech model and --voice to set the output voice.")
+		"Agent kind to initialize. Supports 'prompt-voice' to create a managed declarative Voice Agent "+
+			"without code scaffolding.")
 
 	cmd.Flags().StringVar(&flags.voice, "voice", "",
-		"Output voice name for private prompt-voice automation. Hidden until public preview.")
-	_ = cmd.Flags().MarkHidden("kind")
-	_ = cmd.Flags().MarkHidden("voice")
+		"Output voice name for prompt-voice agents (for example, en-US-Ava:DragonHDLatestNeural).")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. "+
@@ -2073,7 +2075,6 @@ func (a *InitAction) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("downloading agent.yaml: %w", err)
 		}
-
 		// Prompt for deploy mode (code vs container) for hosted agents.
 		// Code deploy is supported for Python and .NET projects.
 		if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
@@ -2096,10 +2097,27 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 			if a.isCodeDeploy {
 				// Prompt for code configuration and update the manifest
-				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
+				codeOptions := codeDeployOptions{
 					runtime:       a.flags.runtime,
 					entryPoint:    a.flags.entryPoint,
 					depResolution: a.flags.depResolution,
+				}
+				if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok &&
+					hostedAgent.CodeConfiguration != nil {
+					if codeOptions.runtime == "" {
+						codeOptions.runtime = hostedAgent.CodeConfiguration.Runtime
+					}
+					if codeOptions.entryPoint == "" {
+						codeOptions.entryPoint = hostedAgent.CodeConfiguration.EntryPoint
+					}
+					if codeOptions.depResolution == "" && hostedAgent.CodeConfiguration.DependencyResolution != nil {
+						codeOptions.depResolution = *hostedAgent.CodeConfiguration.DependencyResolution
+					}
+				}
+				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
+					runtime:       codeOptions.runtime,
+					entryPoint:    codeOptions.entryPoint,
+					depResolution: codeOptions.depResolution,
 				}, a.userProvidedManifest)
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
@@ -2554,7 +2572,7 @@ func (a *InitAction) configureModelChoice(
 	// filtering (isHostedAgent). Best-effort: a parse failure here leaves the
 	// default non-voice behavior unchanged.
 	if kind, err := agentManifestKind(agentManifest); err == nil {
-		a.isVoiceAgent = kind == agent_yaml.AgentKindPromptVoice
+		a.isVoiceAgent = agent_yaml.IsVoiceAgentKind(kind)
 	}
 
 	// When no --project-id flag was given, check whether the azd environment already
@@ -3373,7 +3391,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// Voice agents (kind: prompt-voice) carry no container/image/code config and
 	// take an entirely different service-entry shape. Handle them in an isolated
 	// branch and return early so the container path below is unaffected.
-	if agentDef.Kind == agent_yaml.AgentKindPromptVoice {
+	if agent_yaml.IsVoiceAgentKind(agentDef.Kind) {
 		return a.addVoiceAgentToProject(ctx, targetDir, agentManifest)
 	}
 
@@ -4734,8 +4752,15 @@ func (a *InitAction) validateCodeDeployFlags() error {
 	); err != nil {
 		return err
 	}
+	noPrompt := a.flags.noPrompt
+	if a.flags.manifestPointer != "" {
+		// A standard manifest can provide runtime, entry point, and dependency
+		// resolution. Validate values now and enforce completeness after the
+		// manifest has been loaded and merged with explicit CLI overrides.
+		noPrompt = false
+	}
 	return validateCodeDeployInput(
-		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
+		noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
 }
 
 // validateImageFlag checks that --image is valid when provided.

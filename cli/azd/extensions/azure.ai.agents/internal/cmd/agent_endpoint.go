@@ -27,13 +27,13 @@ const agentEndpointHint = "run `azd ai agent show` to see the agent endpoint URL
 //
 //	[1] project name (URL-escaped),
 //	[2] agent name (URL-escaped),
-//	[3] protocol tail ("invocations", "a2a", or "openai/responses").
+//	[3] protocol tail ("invocations", "a2a", "openai/responses", or "voice").
 //
 // The "openai/v1/responses" tail is also accepted and rebuilt to the canonical
 // query-parameter form when invoked.
 var agentEndpointPathRegex = regexp.MustCompile(
 	`^/api/projects/([^/]+)/agents/([^/]+)/endpoint/protocols/` +
-		`(invocations|a2a|openai/v1/responses|openai/responses)/?$`,
+		`(invocations|a2a|openai/v1/responses|openai/responses|voice)/?$`,
 )
 
 // parsedAgentEndpoint describes a deployed agent invocation endpoint.
@@ -52,6 +52,7 @@ type parsedAgentEndpoint struct {
 //
 //	https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/invocations[?api-version=…]
 //	https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses?api-version=v1
+//	wss://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/voice?api-version=v1
 //
 // The host must be a `*.services.ai.azure.com` Foundry host. The path must include the
 // protocol-specific suffix; the protocol is derived from the URL.
@@ -73,10 +74,10 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		)
 	}
 
-	if !strings.EqualFold(u.Scheme, "https") {
+	if !strings.EqualFold(u.Scheme, "https") && !strings.EqualFold(u.Scheme, "wss") {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"--agent-endpoint must use https",
+			"--agent-endpoint must use https or wss",
 			agentEndpointHint,
 		)
 	}
@@ -139,6 +140,22 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		protocol = agent_api.AgentProtocolA2A
 	case "openai/responses", "openai/v1/responses":
 		protocol = agent_api.AgentProtocolResponses
+	case "voice":
+		protocol = agent_api.AgentProtocolVoice
+	}
+	if protocol == agent_api.AgentProtocolVoice && !strings.EqualFold(u.Scheme, "wss") {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--agent-endpoint voice URLs must use wss",
+			agentEndpointHint,
+		)
+	}
+	if protocol != agent_api.AgentProtocolVoice && !strings.EqualFold(u.Scheme, "https") {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--agent-endpoint HTTP protocol URLs must use https",
+			agentEndpointHint,
+		)
 	}
 
 	// Reject an explicit but empty api-version query parameter; the default fallback would

@@ -66,6 +66,20 @@ func TestInitCommand_AcrConnectionFlag(t *testing.T) {
 	require.Empty(t, flag.DefValue)
 }
 
+func TestInitCommand_VoiceFlagsArePublic(t *testing.T) {
+	cmd := newInitCommand(nil)
+
+	kindFlag := cmd.Flags().Lookup("kind")
+	require.NotNil(t, kindFlag)
+	require.False(t, kindFlag.Hidden)
+	require.Contains(t, kindFlag.Usage, "prompt-voice")
+
+	voiceFlag := cmd.Flags().Lookup("voice")
+	require.NotNil(t, voiceFlag)
+	require.False(t, voiceFlag.Hidden)
+	require.Contains(t, voiceFlag.Usage, "prompt-voice")
+}
+
 // TestHasFoundryProviderDeclared covers the predicate ensureProject
 // uses to suppress the "missing infra/" warning.
 func TestHasFoundryProviderDeclared(t *testing.T) {
@@ -3407,6 +3421,13 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 		{
 			name:    "code deploy without noPrompt skips validation",
 			flags:   initFlags{noPrompt: false, deployMode: "code"},
+			wantErr: false,
+		},
+		{
+			name: "no-prompt manifest can provide code configuration",
+			flags: initFlags{
+				noPrompt: true, deployMode: "code", manifestPointer: "agent.manifest.yaml",
+			},
 			wantErr: false,
 		},
 		{

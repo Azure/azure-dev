@@ -803,6 +803,12 @@ func TestProtocolFlagValidation(t *testing.T) {
 			wantErr: true,
 			errSub:  "--client-header is not supported with the a2a protocol",
 		},
+		{
+			name:    "rejects voice protocol",
+			args:    []string{"--protocol", "voice", "hello"},
+			wantErr: true,
+			errSub:  "Voice Live WebSocket client",
+		},
 	}
 
 	for _, tt := range tests {
@@ -883,6 +889,16 @@ func TestAgentEndpointFlagValidation(t *testing.T) {
 			args:    []string{"--agent-endpoint", "https://evil.com/foo", "hi"},
 			wantErr: true,
 			errSub:  "Foundry host",
+		},
+		{
+			name: "rejects voice websocket endpoint",
+			args: []string{
+				"--agent-endpoint",
+				"wss://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/voice?api-version=v1",
+				"hi",
+			},
+			wantErr: true,
+			errSub:  "Voice Live WebSocket client",
 		},
 	}
 

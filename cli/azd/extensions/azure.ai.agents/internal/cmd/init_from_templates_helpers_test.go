@@ -250,10 +250,9 @@ func TestPromptInitMode_NoPromptEmptyDirUsesTemplate(t *testing.T) {
 	require.Equal(t, initModeTemplate, mode)
 }
 
-func TestPromptInitMode_HidesVoiceChoiceByDefault(t *testing.T) {
+func TestPromptInitMode_ShowsVoiceChoiceByDefault(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	t.Setenv(promptVoicePreviewEnvVar, "")
 
 	prompts := &helpersPromptServer{selectIndex: 0}
 	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
@@ -262,13 +261,14 @@ func TestPromptInitMode_HidesVoiceChoiceByDefault(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, initModeTemplate, mode)
-	require.Nil(t, prompts.lastSelect)
+	require.NotNil(t, prompts.lastSelect)
+	require.Len(t, prompts.lastSelect.Options.Choices, 2)
+	require.Equal(t, "Create a prompt voice agent", prompts.lastSelect.Options.Choices[1].Label)
 }
 
-func TestPromptInitMode_ShowsVoiceChoiceWhenPreviewEnabled(t *testing.T) {
+func TestPromptInitMode_SelectsVoiceChoice(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	t.Setenv(promptVoicePreviewEnvVar, "true")
 
 	prompts := &helpersPromptServer{selectIndex: 1}
 	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)

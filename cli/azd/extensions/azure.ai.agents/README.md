@@ -238,6 +238,65 @@ Details:
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
 
+## Prompt voice telephony bindings
+
+Prompt voice agents can declare Foundry-side telephony bindings in `azure.yaml`.
+This lets `azd deploy` bind an existing phone-provider route to the deployed
+agent. Telephony is only supported for `kind: prompt-voice` services.
+
+```yaml
+services:
+  support-voice:
+    host: azure.ai.agent
+    kind: prompt-voice
+    name: support-voice
+    model:
+      id: gpt-realtime
+    telephony:
+      bindings:
+        - provider: twilio
+          identifier: "+14255550123"
+          connection: telephony-twilio
+        - provider: acs
+          identifier: "28:orgid:00000000-0000-0000-0000-000000000001"
+          connection: telephony-acs
+```
+
+Prerequisites:
+
+- The phone provider account/resource and phone number already exist.
+- The Foundry project connection named by `connection` already exists.
+- Provider-side callbacks, such as Twilio webhooks or ACS Event Subscriptions,
+  are configured by the user/admin.
+
+Supported providers and identifiers:
+
+- `twilio`: use a Twilio phone number in E.164 format, such as `+14255550123`.
+- `acs`: use `28:orgid:<guid>` for Teams Phone Extensibility Resource Accounts
+  or `4:+<E.164>` for ACS-purchased numbers. azd maps `acs` to the service
+  provider value `azure-communication-service`.
+
+Bindings are create-only in this preview. If a remote binding exists and matches
+the YAML, deploy continues. If the remote binding has different configuration,
+azd fails with a remediation message instead of silently keeping stale routing.
+
+Cleanup: delete telephony bindings before deleting test agents. The service may
+leave bindings behind when an agent is deleted, so do not rely on agent deletion
+as binding cleanup.
+
+Delete a binding with the agent-scoped telephony API before deleting the agent:
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Foundry-Features: VoiceAgents=V1Preview" \
+  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/$BINDING_ID?api-version=2025-11-15-preview"
+```
+
+The binding ID is the service provider plus identifier, for example
+`twilio:%2B14255550123` for `+14255550123`, or
+`azure-communication-service:28:orgid:<guid>` for ACS/TPE.
+
 ### Moderating invocations-protocol traffic
 
 For agents that expose the `invocations` protocol, the RAI policy alone is not
@@ -303,6 +362,78 @@ As with `raiPolicyName`, the deprecated on-disk `agent.yaml` shape uses snake_ca
 keys throughout this block (`invocations_moderation`, `response_mode`,
 `input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
 (`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
+
+### Hosted voice wrapper (preview)
+
+A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
+and text-to-speech while routing conversation logic to a hosted agent in the
+same Foundry project. Hosted Voice samples use the same sample `azure.yaml`
+flow as other current Hosted Agent and `invocations_ws` samples:
+
+```powershell
+azd ai agent init -m .\path\to\azure.yaml
+```
+
+The local path can be replaced with its public GitHub URL after the sample is
+published.
+
+When the sample project is already present with its `azure.yaml`, run
+`azd ai agent init` from the project directory to reuse the existing azd
+configuration before provisioning and deployment.
+
+The sample `azure.yaml` contains both services and references the target by its
+service name:
+
+```yaml
+services:
+  ai-project:
+    host: azure.ai.project
+
+  voice-target:
+    host: azure.ai.agent
+    project: ./src/voice-target
+    language: csharp
+    kind: hosted
+    name: voice-target
+    uses:
+      - ai-project
+    protocols:
+      - protocol: invocations_ws
+        version: 1.0.0
+    metadata:
+      voiceLiveCompatible: "true"
+      bridgeProtocolVersion: "1.0"
+    container:
+      resources:
+        cpu: "1"
+        memory: 2Gi
+    codeConfiguration:
+      runtime: dotnet_10
+      entryPoint: VoiceHostedAgent.dll
+      dependencyResolution: bundled
+
+  voice-target-voice:
+    host: azure.ai.agent
+    kind: voice
+    name: voice-target-voice
+    uses:
+      - ai-project
+      - voice-target
+    modelType: hosted_agent
+    targetAgent:
+      service: voice-target
+      version: deployed
+    store: false
+```
+
+The `uses` edge deploys the target before the wrapper. `version: deployed`
+pins the wrapper to the target version produced by the current azd environment.
+Hosted voice wrappers use the unified Voice API.
+
+The target must be active, declare `invocations_ws/1.0.0`, and include
+`voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
+instructions, tools, and other conversation controls belong to the target;
+the wrapper owns audio, voice, store, avatar, and greeting configuration.
 
 ## Session idle timeout
 

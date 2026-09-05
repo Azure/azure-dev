@@ -2,7 +2,7 @@
 id: azure.ai.agents
 namespace: ai.agent
 displayName: Foundry agents (Beta)
-description: Ship agents with Microsoft Foundry from your terminal. (Beta)
+description: Ship hosted and voice agents with Microsoft Foundry from your terminal. (Beta)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
 version: 1.0.0-beta.14
@@ -29,5 +29,8 @@ providers:
     description: Deploys agents to the Foundry Agent Service
 examples:
   - name: init
-    description: Initialize a new AI agent project.
+    description: Initialize a new hosted or voice agent project.
     usage: azd ai agent init
+  - name: init-prompt-voice
+    description: Initialize a new prompt voice agent.
+    usage: azd ai agent init --kind prompt-voice --agent-name my-voice-agent

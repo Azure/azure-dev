@@ -25,6 +25,7 @@ const (
 	AgentProtocolInvocationsWS          AgentProtocol = "invocations_ws"
 	AgentProtocolResponses              AgentProtocol = "responses"
 	AgentProtocolA2A                    AgentProtocol = "a2a"
+	AgentProtocolVoice                  AgentProtocol = "voice"
 )
 
 // IsActivityProtocolName reports whether the given definition-level protocol name
@@ -363,7 +364,16 @@ type VoiceModelType string
 const (
 	VoiceModelTypeManaged      VoiceModelType = "managed"
 	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
+	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
 )
+
+// VoiceTargetAgentReference is the data-plane target_agent object on a managed
+// voice wrapper. Name identifies the hosted agent that receives Voice Bridge
+// turns; Version optionally pins the wrapper to one immutable hosted version.
+type VoiceTargetAgentReference struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
 
 // VoiceAudioFormat describes a PCM audio stream format (e.g. audio/pcm @ 24 kHz).
 type VoiceAudioFormat struct {
@@ -446,21 +456,42 @@ type VoiceAudioConfig struct {
 // prompt voice agent. Its Kind is always AgentKindVoice ("voice").
 type VoiceAgentDefinition struct {
 	AgentDefinition
-	ModelType         VoiceModelType    `json:"model_type"`
-	Model             string            `json:"model"`
-	Instructions      string            `json:"instructions,omitempty"`
-	StructuredInputs  map[string]any    `json:"structured_inputs,omitempty"`
-	Audio             *VoiceAudioConfig `json:"audio,omitempty"`
-	OutputModalities  []string          `json:"output_modalities,omitempty"`
-	Store             *bool             `json:"store,omitempty"`
-	Tools             []map[string]any  `json:"tools,omitempty"`
-	Avatar            map[string]any    `json:"avatar,omitempty"`
-	Greeting          map[string]any    `json:"greeting,omitempty"`
-	Handoff           map[string]any    `json:"handoff,omitempty"`
-	ToolChoice        any               `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool             `json:"parallel_tool_calls,omitempty"`
-	MaxOutputTokens   any               `json:"max_output_tokens,omitempty"`
-	Include           []string          `json:"include,omitempty"`
+	ModelType         VoiceModelType             `json:"model_type"`
+	Model             string                     `json:"model,omitempty"`
+	TargetAgent       *VoiceTargetAgentReference `json:"target_agent,omitempty"`
+	Instructions      string                     `json:"instructions,omitempty"`
+	StructuredInputs  map[string]any             `json:"structured_inputs,omitempty"`
+	Audio             *VoiceAudioConfig          `json:"audio,omitempty"`
+	OutputModalities  []string                   `json:"output_modalities,omitempty"`
+	Store             *bool                      `json:"store,omitempty"`
+	Tools             []map[string]any           `json:"tools,omitempty"`
+	Avatar            map[string]any             `json:"avatar,omitempty"`
+	Greeting          map[string]any             `json:"greeting,omitempty"`
+	Handoff           map[string]any             `json:"handoff,omitempty"`
+	ToolChoice        any                        `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool                      `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens   any                        `json:"max_output_tokens,omitempty"`
+	Include           []string                   `json:"include,omitempty"`
+}
+
+// TelephonyBindingRequest creates an agent telephony binding.
+type TelephonyBindingRequest struct {
+	Provider        string           `json:"provider"`
+	Identifier      string           `json:"identifier"`
+	ConnectionName  string           `json:"connection_name,omitempty"`
+	TransferTargets []map[string]any `json:"transfer_targets,omitempty"`
+}
+
+// TelephonyBinding describes a Foundry-side phone number binding.
+type TelephonyBinding struct {
+	ID              string           `json:"id,omitempty"`
+	Provider        string           `json:"provider,omitempty"`
+	Identifier      string           `json:"identifier,omitempty"`
+	Status          string           `json:"status,omitempty"`
+	Connection      string           `json:"connection,omitempty"`
+	ConnectionName  string           `json:"connection_name,omitempty"`
+	TransferTargets []map[string]any `json:"transfer_targets,omitempty"`
+	ETag            string           `json:"etag,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version

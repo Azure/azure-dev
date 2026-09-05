@@ -820,10 +820,8 @@ func provisionSingleLayer(
 	return err
 }
 
-// runProvisionSingleLayer provisions a single infrastructure layer. It creates
-// an isolated environment clone so that parallel layers don't interfere with
-// each other's parameter resolution, then merges outputs back into the shared
-// env.
+// runProvisionSingleLayer provisions a single infrastructure layer against the
+// shared environment, then merges its outputs back into that environment.
 //
 // The lifecycle matches the sequential path in [ProvisionAction]:
 //
@@ -837,23 +835,17 @@ func provisionSingleLayer(
 //  8. Final reload of deps.env from disk (capture hook/event subprocess writes)
 //
 // Steps 1-2 and 5-7 are serialized via hookMu to protect non-threadsafe
-// handlers. envMu (separate from hookMu) protects deps.env reads/writes in
-// steps 0, 4, and 8. Hook subprocesses in steps 1, 5, 6, 7 may write to the
-// dotenv file on disk via their own envManager; deps.env in this process
-// is intentionally NOT kept live during that window — step 8's reload is
-// the single point at which we re-converge with disk before returning.
-// Concurrent sibling layers (no dependsOn edge) running their own steps 0/4
-// will therefore not observe this layer's mid-flight hook writes, which is
-// the correct behavior — sibling layers without an explicit dependency on
-// us are by definition not allowed to read our hook-mediated values.
+// handlers. envMu (separate from hookMu) serializes the reload-modify-save
+// cycles against disk in steps 4 and 8; in-memory access to deps.env needs no
+// coordination here because [environment.Environment] and its [config.Config]
+// are internally synchronized.
 //
-// Cross-layer ordering contract: when the dependency graph contains an edge
-// `B → A` (either detected by [bicep.AnalyzeLayerDependencies] or declared
-// via `infra.layers[].dependsOn`), the scheduler treats this entire function
-// invocation as a single graph node. Layer B's node is only scheduled after
-// layer A's node returns, which by construction means after step 8
-// completes. Therefore B's clone of deps.env at the start of its own
-// invocation observes:
+// Parallel layers share deps.env, so a layer may observe a sibling's writes.
+// Cross-layer ordering is a scheduling concern, not an isolation one: when the
+// graph contains an edge `B → A` (detected by [bicep.AnalyzeLayerDependencies]
+// or declared via `infra.layers[].dependsOn`), B's node is only scheduled after
+// A's node returns, which by construction means after step 8 completes.
+// Therefore B observes:
 //
 //   - all of A's deployment outputs (merged in step 4), AND
 //   - any env mutations performed by A's hooks or event handlers via
@@ -862,7 +854,7 @@ func provisionSingleLayer(
 // The latter is the "hook-mediated edge" case the static analyzer is blind
 // to. Authors who need this guarantee must declare the edge explicitly via
 // `infra.layers[].dependsOn`; without an explicit edge, A and B may run in
-// parallel and B's clone may pre-date A's reload.
+// parallel and B may read deps.env before A's reload.
 //
 // Returns the raw [provisioning.DeployResult] so callers can record skip
 // semantics; on [provisioning.ProvisionValidationCanceledSkipped] it returns
@@ -876,23 +868,11 @@ func runProvisionSingleLayer(
 	console input.Console,
 	envMu *sync.Mutex,
 ) (*provisioning.DeployResult, error) {
-	// Snapshot the shared environment so this layer resolves parameters
-	// from current values (including outputs from prior phases).
-	envMu.Lock()
-	layerEnv := environment.NewWithValues(
-		deps.env.Name(), deps.env.Dotenv(),
-	)
-	envMu.Unlock()
-
-	// Use a noop-save env manager for the per-layer manager. Saves happen
-	// against the shared environment after outputs are merged.
-	noopMgr := &noopSaveEnvManager{Manager: deps.envManager}
-
 	mgr := provisioning.NewManager(
 		deps.serviceLocator,
 		deps.defaultProvider,
-		noopMgr,
-		layerEnv,
+		deps.envManager,
+		deps.env,
 		console,
 		deps.alphaFeatureManager,
 		deps.fileShareService,
@@ -915,8 +895,8 @@ func runProvisionSingleLayer(
 			Cwd: layerPath, ProjectDir: deps.projectPath,
 		}, deps.commandRunner)
 		hooksRunner = ext.NewHooksRunner(
-			hooksManager, deps.commandRunner, noopMgr, console,
-			layerPath, layer.Hooks, layerEnv, deps.serviceLocator,
+			hooksManager, deps.commandRunner, deps.envManager, console,
+			layerPath, layer.Hooks, deps.env, deps.serviceLocator,
 		)
 
 		// Validate layer hooks and warn about issues (mirrors sequential path).
@@ -1061,7 +1041,7 @@ func runProvisionSingleLayer(
 		}
 	}
 
-	// ── Step 8: Final reload of shared env ──
+	// ── Step 8: Reconcile layer-local saves and reload shared env ──
 	//
 	// Hooks (steps 1, 7) and event handlers (steps 2, 5, 6) may invoke
 	// `azd env set` in a subprocess to write values that downstream layers
@@ -1069,13 +1049,8 @@ func runProvisionSingleLayer(
 	// the static analyzer cannot infer. Each subprocess writes to disk via
 	// its own envManager but does not touch the parent process's in-memory
 	// deps.env. Without a final reload here, the next layer in topological
-	// order would clone from a stale deps.env and miss those values, making
+	// order would read a stale deps.env and miss those values, making
 	// `dependsOn: ["this-layer"]` declarations silently incomplete.
-	//
-	// Reload is idempotent: if no out-of-band writes happened, deps.env
-	// already matches disk (we Save'd into it in step 4) and Reload is a
-	// no-op. The cost is one stat + one read of the .env file per layer,
-	// which is negligible compared to a provisioning round-trip.
 	if err := reloadSharedEnvLocked(ctx, deps, envMu); err != nil {
 		return deployResult, fmt.Errorf(
 			"reloading shared env after layer %s: %w", stepName, err,
@@ -1122,12 +1097,8 @@ func mergeLayerOutputsLocked(
 	return provisioning.UpdateEnvironment(ctx, outputs, deps.env, deps.envManager)
 }
 
-// reloadSharedEnvLocked acquires envMu and reloads deps.env from disk,
-// capturing any out-of-band writes performed by hook / event subprocesses.
-// Required to make `dependsOn` ordering semantically complete for
-// hook-mediated env values: without it, the in-memory deps.env stays stale
-// and the next layer's clone of deps.env.Dotenv() misses subprocess writes
-// even though disk has them.
+// reloadSharedEnvLocked refreshes deps.env from disk under envMu so writes made
+// by hook and event-handler subprocesses are visible to subsequent layers.
 func reloadSharedEnvLocked(
 	ctx context.Context,
 	deps *provisionLayerDeps,
@@ -1135,7 +1106,11 @@ func reloadSharedEnvLocked(
 ) error {
 	envMu.Lock()
 	defer envMu.Unlock()
-	return deps.envManager.Reload(ctx, deps.env)
+
+	if err := deps.envManager.Reload(ctx, deps.env); err != nil {
+		return fmt.Errorf("reloading shared env: %w", err)
+	}
+	return nil
 }
 
 // resolveOutputString converts a provisioning output parameter to its string
@@ -1219,25 +1194,4 @@ func (c *syncConsole) EnsureBlankLine(ctx context.Context) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Console.EnsureBlankLine(ctx)
-}
-
-// noopSaveEnvManager wraps an [environment.Manager], suppressing Save and
-// SaveWithOptions. Per-layer managers use this to avoid partial environment
-// writes; the authoritative save happens through the shared environment.
-type noopSaveEnvManager struct {
-	environment.Manager
-}
-
-func (*noopSaveEnvManager) Save(
-	_ context.Context, _ *environment.Environment,
-) error {
-	return nil
-}
-
-func (*noopSaveEnvManager) SaveWithOptions(
-	_ context.Context,
-	_ *environment.Environment,
-	_ *environment.SaveOptions,
-) error {
-	return nil
 }

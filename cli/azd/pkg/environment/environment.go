@@ -261,6 +261,15 @@ func (e *Environment) replaceState(dotenv map[string]string, deletedKeys map[str
 	e.deletedKeys = deletedKeys
 }
 
+// replaceConfig replaces the configuration contents in place. Used by data stores
+// during Reload: assigning the exported Config field instead would race with every
+// concurrent reader of env.Config, and would strand holders of the previous value.
+func (e *Environment) replaceConfig(cfg config.Config) {
+	if e.Config == nil || !config.Replace(e.Config, cfg) {
+		e.Config = cfg
+	}
+}
+
 // Name gets the name of the environment
 // If empty will fallback to the value of the AZURE_ENV_NAME environment variable
 func (e *Environment) Name() string {

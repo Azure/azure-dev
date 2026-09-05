@@ -11,8 +11,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 )
@@ -66,8 +68,161 @@ func NewConfig(data map[string]any) Config {
 	}
 }
 
+// Clone returns an independent copy of source, including its local vault state.
+// Vault references remain references; secret values are not materialized in the raw data.
+func Clone(source Config) Config {
+	if source == nil {
+		return NewEmptyConfig()
+	}
+
+	sourceConfig, ok := source.(*config)
+	if !ok {
+		return &config{data: cloneMap(source.Raw())}
+	}
+
+	sourceConfig.mu.RLock()
+	defer sourceConfig.mu.RUnlock()
+
+	cloned := &config{data: cloneMap(sourceConfig.data), vaultId: sourceConfig.vaultId}
+	if sourceConfig.vault != nil {
+		cloned.vault = Clone(sourceConfig.vault)
+	}
+	return cloned
+}
+
+// Replace swaps destination's contents for source's in place, so existing holders of
+// destination observe the new state without the pointer swap that reassigning a
+// Config field would require. Reports whether the replacement was performed.
+func Replace(destination, source Config) bool {
+	destinationConfig, ok := destination.(*config)
+	if !ok {
+		return false
+	}
+
+	data := snapshotRaw(source)
+
+	var (
+		vaultId string
+		vault   Config
+	)
+	if sourceConfig, sourceOK := source.(*config); sourceOK {
+		sourceConfig.mu.RLock()
+		vaultId = sourceConfig.vaultId
+		vault = sourceConfig.vault
+		sourceConfig.mu.RUnlock()
+	}
+
+	destinationConfig.mu.Lock()
+	defer destinationConfig.mu.Unlock()
+
+	destinationConfig.data = data
+	destinationConfig.vaultId = vaultId
+	destinationConfig.vault = vault
+	return true
+}
+
+// ApplyDelta applies changes made between initial and updated to destination.
+// Unchanged values do not replace values written to destination after initial was captured.
+//
+// Only destination is locked: initial and updated are caller-owned snapshots.
+func ApplyDelta(destination, initial, updated Config) {
+	destinationConfig, destinationOK := destination.(*config)
+	if destinationOK {
+		destinationConfig.mu.Lock()
+		defer destinationConfig.mu.Unlock()
+	}
+
+	applyMapDelta(rawData(destination), rawData(initial), rawData(updated))
+
+	initialConfig, initialOK := initial.(*config)
+	updatedConfig, updatedOK := updated.(*config)
+	if !destinationOK || !initialOK || !updatedOK || updatedConfig.vault == nil {
+		return
+	}
+	if destinationConfig.vault == nil {
+		destinationConfig.vault = NewEmptyConfig()
+	}
+	if initialConfig.vault == nil {
+		initialConfig.vault = NewEmptyConfig()
+	}
+	ApplyDelta(destinationConfig.vault, initialConfig.vault, updatedConfig.vault)
+	destinationConfig.vaultId = updatedConfig.vaultId
+}
+
+func applyMapDelta(destination, initial, updated map[string]any) {
+	for key, initialValue := range initial {
+		updatedValue, hasUpdated := updated[key]
+		if !hasUpdated {
+			delete(destination, key)
+			continue
+		}
+
+		initialMap, initialIsMap := initialValue.(map[string]any)
+		updatedMap, updatedIsMap := updatedValue.(map[string]any)
+		if initialIsMap && updatedIsMap {
+			if reflect.DeepEqual(initialMap, updatedMap) {
+				continue
+			}
+			destinationMap, destinationIsMap := destination[key].(map[string]any)
+			if !destinationIsMap {
+				destinationMap = map[string]any{}
+				destination[key] = destinationMap
+			}
+			applyMapDelta(destinationMap, initialMap, updatedMap)
+			continue
+		}
+		if !reflect.DeepEqual(initialValue, updatedValue) {
+			destination[key] = cloneValue(updatedValue)
+		}
+	}
+
+	for key, updatedValue := range updated {
+		if _, existed := initial[key]; existed {
+			continue
+		}
+		updatedMap, updatedIsMap := updatedValue.(map[string]any)
+		if !updatedIsMap {
+			destination[key] = cloneValue(updatedValue)
+			continue
+		}
+		destinationMap, destinationIsMap := destination[key].(map[string]any)
+		if !destinationIsMap {
+			destinationMap = map[string]any{}
+			destination[key] = destinationMap
+		}
+		applyMapDelta(destinationMap, map[string]any{}, updatedMap)
+	}
+}
+
+func cloneMap(source map[string]any) map[string]any {
+	cloned := make(map[string]any, len(source))
+	for key, value := range source {
+		cloned[key] = cloneValue(value)
+	}
+	return cloned
+}
+
+func cloneValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		return cloneMap(value)
+	case []any:
+		cloned := make([]any, len(value))
+		for i, item := range value {
+			cloned[i] = cloneValue(item)
+		}
+		return cloned
+	default:
+		return value
+	}
+}
+
 // Top level AZD configuration
+//
+// Exported methods are safe for concurrent use. A single Config is shared across
+// parallel provision layers and deploy steps via environment.Environment.
 type config struct {
+	mu      sync.RWMutex
 	vaultId string
 	vault   Config
 	data    map[string]any
@@ -75,18 +230,49 @@ type config struct {
 
 // Returns a value indicating whether the configuration is empty
 func (c *config) IsEmpty() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	return len(c.data) == 0
 }
 
-// Gets the raw values stored in the configuration as a Go map
+// Gets the raw values stored in the configuration as a Go map.
+//
+// The returned map is the live backing store, not a copy. Callers that mutate it, or
+// that read it while another goroutine may be writing, must synchronize externally.
+// Within this package use rawData or snapshotRaw instead.
 func (c *config) Raw() map[string]any {
 	return c.data
+}
+
+// rawData returns the live backing map without acquiring any lock.
+func rawData(source Config) map[string]any {
+	if sourceConfig, ok := source.(*config); ok {
+		return sourceConfig.data
+	}
+
+	return source.Raw()
+}
+
+// snapshotRaw returns a deep copy of the raw data taken under the read lock.
+func snapshotRaw(source Config) map[string]any {
+	if sourceConfig, ok := source.(*config); ok {
+		sourceConfig.mu.RLock()
+		defer sourceConfig.mu.RUnlock()
+
+		return cloneMap(sourceConfig.data)
+	}
+
+	return source.Raw()
 }
 
 const vaultKeyName = "vault"
 
 // Gets the raw values stored in the configuration and resolve any vault references
 func (c *config) ResolvedRaw() map[string]any {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	resolvedRaw := &config{
 		data: map[string]any{},
 	}
@@ -99,7 +285,7 @@ func (c *config) ResolvedRaw() map[string]any {
 			continue
 		}
 		// get will always return true (no need to check) because the path was gotten from the raw config
-		value, _ := c.Get(path)
+		value, _ := c.get(path)
 		if err := resolvedRaw.Set(path, value); err != nil {
 			panic(fmt.Errorf("failed setting resolved raw value: %w", err))
 		}
@@ -126,10 +312,13 @@ func paths(start map[string]any) []string {
 
 // SetSecret stores the secrets at the specified path within a local user vault
 func (c *config) SetSecret(path string, value string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.vaultId == "" {
 		c.vault = NewConfig(nil)
 		c.vaultId = uuid.New().String()
-		if err := c.Set(vaultKeyName, c.vaultId); err != nil {
+		if err := c.set(vaultKeyName, c.vaultId); err != nil {
 			return fmt.Errorf("failed setting vault id: %w", err)
 		}
 	}
@@ -140,11 +329,18 @@ func (c *config) SetSecret(path string, value string) error {
 		return fmt.Errorf("failed setting secret value: %w", err)
 	}
 
-	return c.Set(path, vaultRef)
+	return c.set(path, vaultRef)
 }
 
 // Sets a value at the specified location
 func (c *config) Set(path string, value any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.set(path, value)
+}
+
+func (c *config) set(path string, value any) error {
 	depth := 1
 	currentNode := c.data
 	parts := strings.Split(path, ".")
@@ -178,6 +374,13 @@ func (c *config) Set(path string, value any) error {
 // When the path location is an object will remove the whole node
 // When the path does not exist, will return a `nil` value
 func (c *config) Unset(path string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.unset(path)
+}
+
+func (c *config) unset(path string) error {
 	depth := 1
 	currentNode := c.data
 	parts := strings.Split(path, ".")
@@ -210,6 +413,13 @@ func (c *config) Unset(path string) error {
 // Gets the value stored at the specified location
 // Returns the value if exists, otherwise returns nil & a value indicating if the value existing
 func (c *config) Get(path string) (any, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.get(path)
+}
+
+func (c *config) get(path string) (any, bool) {
 	depth := 1
 	currentNode := c.data
 	parts := strings.Split(path, ".")
@@ -243,7 +453,10 @@ func (c *config) Get(path string) (any, bool) {
 
 // GetMap retrieves the map stored at the specified path
 func (c *config) GetMap(path string) (map[string]any, bool) {
-	value, ok := c.Get(path)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	value, ok := c.get(path)
 	if !ok {
 		return nil, false
 	}
@@ -254,7 +467,10 @@ func (c *config) GetMap(path string) (map[string]any, bool) {
 
 // GetSlice retrieves the slice stored at the specified path
 func (c *config) GetSlice(path string) ([]any, bool) {
-	value, ok := c.Get(path)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	value, ok := c.get(path)
 	if !ok {
 		return nil, false
 	}
@@ -265,7 +481,10 @@ func (c *config) GetSlice(path string) ([]any, bool) {
 
 // Gets the value stored at the specified location as a string
 func (c *config) GetString(path string) (string, bool) {
-	value, ok := c.Get(path)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	value, ok := c.get(path)
 	if !ok {
 		return "", false
 	}
@@ -275,7 +494,10 @@ func (c *config) GetString(path string) (string, bool) {
 }
 
 func (c *config) GetSection(path string, section any) (bool, error) {
-	sectionConfig, ok := c.Get(path)
+	c.mu.RLock()
+	sectionConfig, ok := c.get(path)
+	c.mu.RUnlock()
+
 	if !ok {
 		return false, nil
 	}

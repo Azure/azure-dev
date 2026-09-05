@@ -128,6 +128,7 @@ endpoint URL.
 | Lock                     | Protects                                          | Acquired by                                                                |
 |--------------------------|---------------------------------------------------|----------------------------------------------------------------------------|
 | `mu sync.RWMutex`        | `dotenv map[string]string`, `deletedKeys`         | `Getenv`, `LookupEnv`, `Dotenv`, `DotenvSet`, `DotenvDelete`, `Reload`, all helpers |
+| `Config` (own `sync.RWMutex`) | the config tree behind `Environment.Config`  | every `config.Config` method, plus `config.Clone`, `config.ApplyDelta`, `config.Replace` |
 
 **Contract**: All readers acquire `mu.RLock()`; all writers acquire `mu.Lock()`.
 Iteration over the underlying map (e.g. snapshotting for a hook) must hold
@@ -138,6 +139,21 @@ then range over a captured map reference.
 steps, parallel service deploy steps, and pre/post-provision/-deploy hooks.
 A second goroutine reading `dotenv` while another writes it is a data race
 and Go's runtime will panic on a concurrent map write.
+
+**`Environment.Config` is also internally synchronized.** Parallel provision
+layers share a single `Environment`, and providers write config directly during
+deployment (Bicep persists prompted parameters under `infra.parameters.*`), so
+the default `config.Config` implementation guards its own map.
+
+Two rules follow:
+
+1. **Never assign the `Config` field on a live `Environment`.** Reassignment
+   races with every concurrent reader of `env.Config` and strands goroutines
+   holding the previous value. Data stores call `env.replaceConfig`, which
+   swaps the contents in place via `config.Replace`.
+2. **`Config.Raw()` returns the live backing map, not a copy.** Mutating it, or
+   reading it while another goroutine may write, bypasses the lock. Inside
+   `pkg/config` use `snapshotRaw` (as `manager.Save` does when marshalling).
 
 ---
 

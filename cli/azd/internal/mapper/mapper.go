@@ -99,8 +99,10 @@ type Resolver func(key string) string
 type MapperFunc func(ctx context.Context, src any, dst any) error
 
 type resolverKeyType struct{}
+type envSubstKeyType struct{}
 
 var resolverKey = resolverKeyType{}
+var envSubstKey = envSubstKeyType{}
 
 var (
 	registry = make(map[[2]reflect.Type]MapperFunc)
@@ -126,6 +128,36 @@ type Mapper struct {
 
 // Default mapper instance for convenience functions
 var defaultMapper = &Mapper{ctx: context.Background()}
+
+// WithContext sets the context that will be passed to converters (ie, registered with
+// [MustRegister]). This allows you to set and pass converter-specific settings per mapping call.
+func WithContext(ctx context.Context) *Mapper {
+	return &Mapper{ctx: ctx}
+}
+
+// WithResolver returns a copy configured with an environment variable resolver.
+func (m *Mapper) WithResolver(resolver Resolver) *Mapper {
+	if resolver == nil {
+		return &Mapper{ctx: m.ctx}
+	}
+
+	ctx := context.WithValue(m.ctx, resolverKey, func(key string) string {
+		return resolver(key)
+	})
+	return &Mapper{ctx: ctx}
+}
+
+// WithEnvSubst returns a copy configured to enable or disable environment substitution.
+// Environment substitution is enabled by default.
+func (m *Mapper) WithEnvSubst(enabled bool) *Mapper {
+	return &Mapper{ctx: context.WithValue(m.ctx, envSubstKey, enabled)}
+}
+
+// EnvSubstEnabled reports whether environment substitution is enabled for a conversion.
+func EnvSubstEnabled(ctx context.Context) bool {
+	enabled, configured := ctx.Value(envSubstKey).(bool)
+	return !configured || enabled
+}
 
 // Register a type converter function that transforms type S to type T.
 //
@@ -280,14 +312,7 @@ func Convert(src any, dst any) error {
 //	    return &azdext.Service{Image: expandedImage}, nil
 //	}
 func WithResolver(resolver Resolver) *Mapper {
-	if resolver == nil {
-		return &Mapper{ctx: context.Background()}
-	}
-
-	ctx := context.WithValue(context.Background(), resolverKey, func(key string) string {
-		return resolver(key)
-	})
-	return &Mapper{ctx: ctx}
+	return WithContext(context.Background()).WithResolver(resolver)
 }
 
 // Convert performs type conversion using this mapper's context.

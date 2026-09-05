@@ -110,6 +110,36 @@ func TestServiceConfigMappingWithResolver(t *testing.T) {
 	}, protoConfig.Environment)
 }
 
+func TestServiceConfigMappingWithoutEnvSubst(t *testing.T) {
+	serviceConfig := &ServiceConfig{
+		ResourceGroupName: osutil.NewExpandableString("rg-${ENV}"),
+		ResourceName:      osutil.NewExpandableString("app-${ENV}"),
+		Image:             osutil.NewExpandableString("${REGISTRY}/app:${TAG}"),
+		Environment: osutil.ExpandableMap{
+			"ENDPOINT": osutil.NewExpandableString("${API_ENDPOINT}"),
+		},
+		Docker: DockerProjectOptions{
+			Registry:  osutil.NewExpandableString("${REGISTRY}"),
+			Image:     osutil.NewExpandableString("app-${ENV}"),
+			Tag:       osutil.NewExpandableString("${TAG}"),
+			BuildArgs: []osutil.ExpandableString{osutil.NewExpandableString("ENV=${ENV}")},
+		},
+	}
+
+	var protoConfig *azdext.ServiceConfig
+	err := mapper.WithContext(t.Context()).WithEnvSubst(false).Convert(serviceConfig, &protoConfig)
+	require.NoError(t, err)
+
+	require.Equal(t, "rg-${ENV}", protoConfig.ResourceGroupName)
+	require.Equal(t, "app-${ENV}", protoConfig.ResourceName)
+	require.Equal(t, "${REGISTRY}/app:${TAG}", protoConfig.Image)
+	require.Equal(t, map[string]string{"ENDPOINT": "${API_ENDPOINT}"}, protoConfig.Environment)
+	require.Equal(t, "${REGISTRY}", protoConfig.Docker.Registry)
+	require.Equal(t, "app-${ENV}", protoConfig.Docker.Image)
+	require.Equal(t, "${TAG}", protoConfig.Docker.Tag)
+	require.Equal(t, []string{"ENV=${ENV}"}, protoConfig.Docker.BuildArgs)
+}
+
 func TestServiceConfigMappingWithConfig(t *testing.T) {
 	// Test ServiceConfig with various Config field scenarios
 	tests := []struct {
@@ -351,6 +381,56 @@ func TestServiceConfigReverseMapping(t *testing.T) {
 			tt.validateFn(t, serviceConfig)
 		})
 	}
+}
+
+func TestServiceConfigReverseMappingWithEnvironmentTemplates(t *testing.T) {
+	protoConfig := &azdext.ServiceConfig{
+		ResourceGroupName: "rg-${ENV}",
+		ResourceName:      "app-${ENV}",
+		Image:             "${REGISTRY}/app:${TAG}",
+		Environment: map[string]string{
+			"FROM_ENV":       "${ENV_VALUE}",
+			"LITERAL_DOLLAR": "cost: $$5",
+		},
+		Docker: &azdext.DockerProjectOptions{
+			Registry:  "${REGISTRY}",
+			Image:     "app-${ENV}",
+			Tag:       "${TAG}",
+			BuildArgs: []string{"ENV=${ENV}"},
+		},
+	}
+
+	var serviceConfig *ServiceConfig
+	err := mapper.WithContext(t.Context()).WithEnvSubst(false).Convert(protoConfig, &serviceConfig)
+	require.NoError(t, err)
+
+	resolver := func(key string) string {
+		switch key {
+		case "ENV":
+			return "dev"
+		case "REGISTRY":
+			return "registry.example"
+		case "TAG":
+			return "latest"
+		case "ENV_VALUE":
+			return "resolved"
+		}
+		return ""
+	}
+	require.Equal(t, "rg-dev", serviceConfig.ResourceGroupName.MustEnvsubst(resolver))
+	require.Equal(t, "app-dev", serviceConfig.ResourceName.MustEnvsubst(resolver))
+	require.Equal(t, "registry.example/app:latest", serviceConfig.Image.MustEnvsubst(resolver))
+	require.Equal(t, "registry.example", serviceConfig.Docker.Registry.MustEnvsubst(resolver))
+	require.Equal(t, "app-dev", serviceConfig.Docker.Image.MustEnvsubst(resolver))
+	require.Equal(t, "latest", serviceConfig.Docker.Tag.MustEnvsubst(resolver))
+	require.Equal(t, "ENV=dev", serviceConfig.Docker.BuildArgs[0].MustEnvsubst(resolver))
+
+	expanded, err := serviceConfig.Environment.Expand(resolver)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"FROM_ENV":       "resolved",
+		"LITERAL_DOLLAR": "cost: $5",
+	}, expanded)
 }
 
 func TestServiceConfigRoundTripMapping(t *testing.T) {
@@ -1087,6 +1167,28 @@ func TestProjectConfigMapping(t *testing.T) {
 			"ENV_NAME": "dev",
 			"STATIC":   "static-value",
 		}, protoConfig.Services["web"].Environment)
+	})
+
+	t.Run("without envsubst", func(t *testing.T) {
+		projectConfig := &ProjectConfig{
+			ResourceGroupName: osutil.NewExpandableString("rg-${ENV}"),
+			Services: map[string]*ServiceConfig{
+				"api": {
+					Image: osutil.NewExpandableString("${REGISTRY}/api"),
+				},
+			},
+		}
+
+		var protoConfig *azdext.ProjectConfig
+		err := mapper.WithContext(t.Context()).WithEnvSubst(false).Convert(projectConfig, &protoConfig)
+		require.NoError(t, err)
+		require.Equal(t, "rg-${ENV}", protoConfig.ResourceGroupName)
+		require.Equal(t, "${REGISTRY}/api", protoConfig.Services["api"].Image)
+
+		var roundTrip *ProjectConfig
+		err = mapper.WithContext(t.Context()).WithEnvSubst(false).Convert(protoConfig, &roundTrip)
+		require.NoError(t, err)
+		require.Equal(t, "rg-dev", roundTrip.ResourceGroupName.MustEnvsubst(func(string) string { return "dev" }))
 	})
 
 	t.Run("proto ProjectConfig -> ProjectConfig", func(t *testing.T) {

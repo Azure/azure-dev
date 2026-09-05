@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -141,6 +143,8 @@ func (s *eventService) createProjectEventHandler(
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
 ) ext.EventHandlerFn[project.ProjectLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
+		var handlerFollowUp *string
+		var handlerCompleted bool
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
 			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
@@ -197,12 +201,42 @@ func (s *eventService) createProjectEventHandler(
 					)
 				}
 
+				if statusMsg.ProjectHandlerStatus.Status == "completed" {
+					handlerCompleted = true
+					handlerFollowUp = statusMsg.ProjectHandlerStatus.FollowUp
+				}
+
 				return nil
 			})
 		}()
+		if err == nil && handlerCompleted &&
+			strings.HasPrefix(eventName, "post") &&
+			handlerFollowUp != nil {
+			if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
+				collector.Add(commandresult.FollowUp{
+					ExtensionID: extension.Id,
+					EventName:   eventName,
+					Layer:       followUpLayer(args),
+					Text:        *handlerFollowUp,
+				})
+			}
+		}
 
 		return extensions.WrapInvocationError(err, extension.Id, extension.Version, eventName)
 	}
+}
+
+func followUpLayer(args project.ProjectLifecycleEventArgs) string {
+	if args.Args == nil {
+		return ""
+	}
+	if layer, ok := args.Args["layer"].(string); ok && layer != "" {
+		return layer
+	}
+	if path, ok := args.Args["path"].(string); ok {
+		return path
+	}
+	return ""
 }
 
 // ----- Service Event Handlers -----

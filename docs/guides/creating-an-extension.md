@@ -81,6 +81,28 @@ For extensions that are still in development or preview, consider publishing to 
 > [!NOTE]
 > Extensions in the dev registry have no stability guarantees, are unsigned, and are not covered by Azure support. This is expected and appropriate for pre-release testing. See the [Dev/Experimental Extension Registry](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for full details.
 
+## Command-level lifecycle follow-up
+
+Project lifecycle handlers can provide command-level guidance by setting
+`ProjectEventArgs.FollowUp` during a successful `post*` event:
+
+```go
+host.WithProjectEventHandler("postdeploy",
+    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+        args.FollowUp = new("Next:\n  azd ai agent show my-agent")
+        return nil
+    })
+```
+
+The host appends this text to the parent command's human-readable completion
+message. It treats the text as opaque, collects only successful project
+`post*` events that set `FollowUp`, and leaves JSON output unchanged. Nil
+means no contribution. Within one command, a later lifecycle event replaces
+the earlier result from that extension; an empty value retracts it. Concurrent
+layers of the same event resolve by stable layer identity, not completion
+time. Other extensions and existing core follow-up text are preserved. Do not
+use it for service-level events or for error messages.
+
 ## Extension Design Guidelines
 
 - **Extend existing command categories** — Use verb-first structure (e.g., `azd add <resource>`)

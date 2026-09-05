@@ -16,6 +16,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [ExtensionCommandOptions](#extensioncommandoptions)
   - [ExtensionContext](#extensioncontext)
   - [NewListenCommand](#newlistencommand)
+  - [Project lifecycle follow-up](#project-lifecycle-follow-up)
   - [NewMetadataCommand](#newmetadatacommand)
   - [NewVersionCommand](#newversioncommand)
 - [MCP Server Builder](#mcp-server-builder)
@@ -205,6 +206,36 @@ rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
     host.WithProjectEventHandler("preprovision", myHandler)
 }))
 ```
+
+### Project lifecycle follow-up
+
+```go
+type ProjectEventArgs struct {
+    Project  *ProjectConfig
+    FollowUp *string
+}
+```
+
+Set `FollowUp` from a successful project `post*` handler when the parent azd
+command needs a text-only next step:
+
+```go
+host.WithProjectEventHandler("postdeploy",
+    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+        args.FollowUp = new("Next:\n  azd ai agent show my-agent")
+        return nil
+    })
+```
+
+The host appends the text to the parent command's human-readable completion
+message and combines contributions from multiple extensions in a deterministic
+order. It ignores `pre*` and failed handler messages. The text is opaque to the
+host and is not included in JSON output. Nil means no contribution. Within one
+command, a later lifecycle event replaces the earlier result from that
+extension. An empty `FollowUp` retracts that extension's earlier contribution
+without affecting other extensions. Concurrent layers of the same event
+resolve by stable layer identity, not completion time. Older hosts ignore this
+optional field.
 
 ### NewMetadataCommand
 

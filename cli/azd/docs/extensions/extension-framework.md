@@ -202,6 +202,29 @@ if err := host.Run(ctx); err != nil {
 }
 ```
 
+##### Command-level follow-up text
+
+Successful project `post*` handlers may set `ProjectEventArgs.FollowUp` to
+provide command-level guidance:
+
+```go
+host.WithProjectEventHandler("postprovision",
+  func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+    args.FollowUp = new("Next:\n  azd deploy")
+    return nil
+  })
+```
+
+azd appends the opaque text to the parent command's human-readable completion
+message. It combines contributions from multiple extensions, ignores
+`pre*` and failed handlers, and does not include the text in JSON output.
+Nil means no contribution. Within one command, a later lifecycle event
+replaces the earlier result from that extension. An empty `FollowUp` retracts
+that extension's earlier contribution without affecting other extensions.
+Concurrent layers of the same event resolve by stable layer identity, not
+completion time. Older hosts ignore this optional field. Service handlers do
+not contribute to this field.
+
 #### Service Target Providers
 
 Extensions can implement custom service targets that handle the full deployment lifecycle (package, publish, deploy) for specialized Azure services or custom deployment patterns. `ExtensionHost` handles registration and readiness by default.

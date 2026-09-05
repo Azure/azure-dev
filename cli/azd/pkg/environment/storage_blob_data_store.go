@@ -172,11 +172,11 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 	defer configBuffer.Close()
 
 	if cfg, err := sbd.configManager.Load(configBuffer); errors.Is(err, os.ErrNotExist) {
-		env.Config = config.NewEmptyConfig()
+		env.replaceConfig(config.NewEmptyConfig())
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	} else {
-		env.Config = cfg
+		env.replaceConfig(cfg)
 	}
 
 	if env.Name() != "" {

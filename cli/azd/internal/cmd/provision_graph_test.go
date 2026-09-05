@@ -19,31 +19,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
-
-func TestNoopSaveEnvManager(t *testing.T) {
-	t.Parallel()
-
-	inner := &mockenv.MockEnvManager{}
-	noop := &noopSaveEnvManager{Manager: inner}
-
-	env := environment.NewWithValues("test", nil)
-
-	// Save and SaveWithOptions must be no-ops — the inner mock should
-	// never be called for these methods.
-	require.NoError(t, noop.Save(t.Context(), env))
-	require.NoError(t, noop.SaveWithOptions(t.Context(), env, nil))
-
-	// Non-save methods delegate to the inner manager.
-	inner.On("Reload", mock.Anything, env).Return(nil)
-	require.NoError(t, noop.Reload(t.Context(), env))
-	inner.AssertCalled(t, "Reload", mock.Anything, env)
-}
 
 func TestSyncConsole_SerializesMessages(t *testing.T) {
 	t.Parallel()
@@ -350,13 +329,8 @@ func TestMergeLayerOutputsLocked_PreservesSubprocessWrites(t *testing.T) {
 	assert.Equal(t, "deploy-value", dotenv["DEPLOY_KEY"])
 }
 
-// TestReloadSharedEnvLocked_RefreshesDepsEnvFromDisk asserts the
-// behavioral primitive that the hook-mediated propagation contract on
-// [runProvisionSingleLayer] step 8 stands on: after a subprocess writes
-// a key directly to the dotenv file on disk, calling
-// [reloadSharedEnvLocked] must make that key visible in the in-memory
-// deps.env (and therefore in any subsequent
-// `environment.NewWithValues(name, deps.env.Dotenv())` clone).
+// TestReconcileLayerEnvironmentLocked_RefreshesDepsEnvWithoutDelta asserts
+// that step 8 still reloads out-of-process changes when no provider called Save.
 //
 // This is intentionally a unit test of the helper, not of the full
 // runProvisionSingleLayer lifecycle: the lifecycle test would need to
@@ -364,7 +338,7 @@ func TestMergeLayerOutputsLocked_PreservesSubprocessWrites(t *testing.T) {
 // which are mocked here. The full-lifecycle assertion is enforced by
 // inspection — runProvisionSingleLayer's step 8 is the only call site,
 // and the docstring above runProvisionSingleLayer pins the contract.
-func TestReloadSharedEnvLocked_RefreshesDepsEnvFromDisk(t *testing.T) {
+func TestReloadSharedEnvLocked_RefreshesDepsEnv(t *testing.T) {
 	t.Parallel()
 
 	deps, envMu, envPath := newPropagationTestDeps(t)
@@ -386,17 +360,12 @@ func TestReloadSharedEnvLocked_RefreshesDepsEnvFromDisk(t *testing.T) {
 		"precondition: in-memory deps.env should not see subprocess write before reload",
 	)
 
-	// The contract: reloadSharedEnvLocked makes the subprocess write
-	// visible in deps.env — and therefore to any downstream layer that
-	// clones from deps.env.Dotenv() at its own step 0.
+	// The contract: step 8's reload makes the subprocess write visible in
+	// deps.env — and therefore to every downstream layer, which now reads
+	// deps.env directly rather than cloning it.
 	require.NoError(t, reloadSharedEnvLocked(t.Context(), deps, envMu))
 
-	// Downstream layer's clone (this is exactly what runProvisionSingleLayer
-	// does at the start of B's invocation, line ~847).
-	downstreamLayerEnv := environment.NewWithValues(
-		deps.env.Name(), deps.env.Dotenv(),
-	)
-	assert.Equal(t, "from-a", downstreamLayerEnv.Dotenv()["HOOK_VAL"],
+	assert.Equal(t, "from-a", deps.env.Dotenv()["HOOK_VAL"],
 		"downstream layer did not see layer-A's hook-mediated env write — "+
 			"dependsOn ordering is silently incomplete",
 	)
@@ -443,6 +412,52 @@ func TestMergeLayerOutputsLocked_ConcurrentMergesConverge(t *testing.T) {
 	assert.Contains(t, disk, "BASE=\"value\"", "seed value lost")
 	assert.Contains(t, disk, "FROM_A=\"a-value\"", "layer-a output clobbered by layer-b merge")
 	assert.Contains(t, disk, "FROM_B=\"b-value\"", "layer-b output clobbered by layer-a merge")
+}
+
+// TestSharedLayerEnvironment_ConcurrentProviderWritesAreSafe pins the contract that
+// replaced per-layer environment clones. Parallel layers now write directly to the
+// shared environment, so Environment and its Config must tolerate concurrent access
+// while another layer persists. Run under -race; without synchronized config this
+// panics with "concurrent map writes".
+func TestSharedLayerEnvironment_ConcurrentProviderWritesAreSafe(t *testing.T) {
+	t.Parallel()
+
+	deps, _, _ := newPropagationTestDeps(t)
+	layers := []string{"a", "b", "c", "d"}
+
+	var wg sync.WaitGroup
+	for _, name := range layers {
+		// Mirrors bicep's mustSetParamAsConfig + dotenv writes during Deploy.
+		wg.Go(func() {
+			for i := range 50 {
+				deps.env.DotenvSet("FROM_"+name, name)
+				assert.NoError(t, deps.env.Config.Set("infra.parameters."+name, i))
+				_, _ = deps.env.Config.Get("infra.parameters." + name)
+				_ = deps.env.Dotenv()
+			}
+		})
+	}
+
+	// A sibling layer persisting mid-flight marshals the same config.
+	wg.Go(func() {
+		for range 10 {
+			assert.NoError(t, deps.envManager.Save(t.Context(), deps.env))
+		}
+	})
+	wg.Wait()
+
+	for _, name := range layers {
+		assert.Equal(t, name, deps.env.Getenv("FROM_"+name))
+		// Saves round-trip through JSON, so the numeric type is not preserved.
+		assert.EqualValues(t, 49, valueAtConfigPath(t, deps.env.Config, "infra.parameters."+name))
+	}
+}
+
+func valueAtConfigPath(t *testing.T, source config.Config, path string) any {
+	t.Helper()
+	value, has := source.Get(path)
+	require.True(t, has)
+	return value
 }
 
 // newPropagationTestDeps builds a minimal provisionLayerDeps backed by a

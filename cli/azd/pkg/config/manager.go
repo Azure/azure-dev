@@ -30,7 +30,8 @@ func NewManager() Manager {
 
 // Saves the azd configuration to the specified file path
 func (c *manager) Save(config Config, writer io.Writer) error {
-	configJson, err := json.MarshalIndent(config.Raw(), "", "  ")
+	// Snapshot under the read lock: a parallel layer may be writing while we marshal.
+	configJson, err := json.MarshalIndent(snapshotRaw(config), "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed marshalling config JSON: %w", err)
 	}

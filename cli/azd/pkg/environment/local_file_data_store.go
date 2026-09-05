@@ -171,7 +171,26 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 // reloadLocked performs the actual reload work. Caller MUST hold the env
 // file lock.
 func (fs *LocalFileDataStore) reloadLocked(ctx context.Context, env *Environment) error {
-	// Reload env values
+	if err := fs.reloadDotenvLocked(env); err != nil {
+		return err
+	}
+
+	// Reload env config
+	if cfg, err := fs.configManager.Load(fs.ConfigPath(env)); errors.Is(err, os.ErrNotExist) {
+		env.replaceConfig(config.NewEmptyConfig())
+	} else if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	} else {
+		env.replaceConfig(cfg)
+	}
+
+	fs.recordEnvTracing(env)
+
+	return nil
+}
+
+// reloadDotenvLocked reloads only the .env values. Caller MUST hold the env file lock.
+func (fs *LocalFileDataStore) reloadDotenvLocked(env *Environment) error {
 	var newDotenv map[string]string
 	if envMap, err := godotenv.Read(fs.EnvPath(env)); errors.Is(err, os.ErrNotExist) {
 		newDotenv = make(map[string]string)
@@ -182,15 +201,10 @@ func (fs *LocalFileDataStore) reloadLocked(ctx context.Context, env *Environment
 	}
 	env.replaceState(newDotenv, make(map[string]struct{}))
 
-	// Reload env config
-	if cfg, err := fs.configManager.Load(fs.ConfigPath(env)); errors.Is(err, os.ErrNotExist) {
-		env.Config = config.NewEmptyConfig()
-	} else if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	} else {
-		env.Config = cfg
-	}
+	return nil
+}
 
+func (fs *LocalFileDataStore) recordEnvTracing(env *Environment) {
 	if env.Name() != "" {
 		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
 	}
@@ -200,8 +214,6 @@ func (fs *LocalFileDataStore) reloadLocked(ctx context.Context, env *Environment
 	} else {
 		tracing.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
 	}
-
-	return nil
 }
 
 // Save saves the environment to the persistent data store
@@ -239,9 +251,13 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	deletedValues := maps.Clone(env.deletedKeys)
 	env.mu.RUnlock()
 
-	// reloadLocked replaces env.dotenv via replaceState (acquires env.mu
+	// reloadDotenvLocked replaces env.dotenv via replaceState (acquires env.mu
 	// internally) — we must NOT hold env.mu here or we deadlock.
-	if err := fs.reloadLocked(ctx, env); err != nil {
+	//
+	// Only .env is reloaded: config was written above under this same lock, so
+	// reading it back would discard config writes made by a parallel layer since
+	// that write, and would coerce values through JSON on every save.
+	if err := fs.reloadDotenvLocked(env); err != nil {
 		return fmt.Errorf("failed reloading env vars, %w", err)
 	}
 

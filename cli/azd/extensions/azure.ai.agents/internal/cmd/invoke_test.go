@@ -772,6 +772,172 @@ func TestResolveProtocol_ExplicitFlag(t *testing.T) {
 	}
 }
 
+func TestInvokeValidatesInputFileBeforeRemoteProtocolLookup(t *testing.T) {
+	action := &InvokeAction{
+		flags: &invokeFlags{
+			inputFile: filepath.Join(t.TempDir(), "missing.json"),
+		},
+		endpoint: &parsedAgentEndpoint{
+			ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			AgentName:       "agent",
+		},
+	}
+
+	err := action.Run(t.Context())
+	if err == nil {
+		t.Fatal("expected input file error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to read input file") {
+		t.Fatalf("error = %q, want input file error", err)
+	}
+}
+
+func TestSelectRemoteInvokeProtocol(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		deployed []agent_api.AgentProtocol
+		local    []agent_api.AgentProtocol
+		want     agent_api.AgentProtocol
+		wantErr  bool
+	}{
+		{
+			name: "unique deployed protocol",
+			deployed: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolInvocations,
+			},
+			local: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+			},
+			want: agent_api.AgentProtocolInvocations,
+		},
+		{
+			name: "local definition disambiguates deployed protocols",
+			deployed: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+				agent_api.AgentProtocolInvocations,
+			},
+			local: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolInvocations,
+			},
+			want: agent_api.AgentProtocolInvocations,
+		},
+		{
+			name: "multiple deployed protocols require explicit choice",
+			deployed: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+				agent_api.AgentProtocolInvocations,
+			},
+			wantErr: true,
+		},
+		{
+			name: "stale local protocol does not disambiguate",
+			deployed: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+				agent_api.AgentProtocolInvocations,
+			},
+			local: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolA2A,
+			},
+			wantErr: true,
+		},
+		{
+			name: "local definition supplies protocol when deployment data is unavailable",
+			local: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolResponses,
+			},
+			want: agent_api.AgentProtocolResponses,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := selectRemoteInvokeProtocol(tt.deployed, tt.local)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				if _, ok := errors.AsType[*azdext.LocalError](err); !ok {
+					t.Fatalf("error type = %T, want *azdext.LocalError", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("protocol = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveDeployedProtocolUsesPersistedEndpointWithoutMetadata(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	protocol, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{
+			name: "agent",
+			// This represents the endpoint data persisted by deployment. A
+			// Foundry Agent Consumer can invoke this endpoint without
+			// permission to read GET /agents/{name} metadata.
+			invocableProtocols: invocableProtocolsFromEndpoints(map[agent_api.AgentProtocol]string{
+				agent_api.AgentProtocolInvocations: "https://example.test/invocations",
+			}),
+		},
+	)
+	if err != nil {
+		t.Fatalf("resolveDeployedProtocol() unexpected error: %v", err)
+	}
+	if protocol != agent_api.AgentProtocolInvocations {
+		t.Errorf("protocol = %q, want %q", protocol, agent_api.AgentProtocolInvocations)
+	}
+}
+
+func TestResolveDeployedProtocolUsesPersistedA2AEndpoint(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	protocol, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{
+			name: "agent",
+			invocableProtocols: invocableProtocolsFromEndpoints(map[agent_api.AgentProtocol]string{
+				agent_api.AgentProtocolA2A: "https://example.test/a2a",
+			}),
+		},
+	)
+	if err != nil {
+		t.Fatalf("resolveDeployedProtocol() unexpected error: %v", err)
+	}
+	if protocol != agent_api.AgentProtocolA2A {
+		t.Errorf("protocol = %q, want %q", protocol, agent_api.AgentProtocolA2A)
+	}
+}
+
+func TestResolveDeployedProtocolRequiresExplicitProtocolWithoutMetadata(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	_, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{name: "agent"},
+	)
+	if err == nil {
+		t.Fatal("expected protocol selection error, got nil")
+	}
+	if !strings.Contains(err.Error(), "could not determine an invocable protocol") {
+		t.Errorf("error = %q, want protocol selection guidance", err)
+	}
+	if suggestion := azdext.WrapError(err).GetSuggestion(); !strings.Contains(suggestion, "--protocol") {
+		t.Errorf("suggestion = %q, want explicit protocol guidance", suggestion)
+	}
+}
+
 func TestProtocolFlagValidation(t *testing.T) {
 	t.Parallel()
 

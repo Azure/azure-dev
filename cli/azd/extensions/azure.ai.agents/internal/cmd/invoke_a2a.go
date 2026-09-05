@@ -117,7 +117,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 		return err
 	}
 
-	rc, err := a.resolveRemoteContext(ctx)
+	rc, err := a.resolveRemoteContextForInvoke(ctx)
 	if err != nil {
 		return err
 	}

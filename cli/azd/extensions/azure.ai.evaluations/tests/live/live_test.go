@@ -258,6 +258,14 @@ func TestLiveEvalLifecycle(t *testing.T) {
 	group, err := env.evalClient.CreateOpenAIEval(ctx, req)
 	require.NoError(t, err, "creating the eval")
 	require.NotEmpty(t, group.ID, "the service assigns the id; name is not unique")
+	// Registered against the id the moment it exists: a full suite run otherwise
+	// leaves a group behind in the real project every time.
+	//
+	// context.Background rather than ctx, because t.Context is already cancelled
+	// by the time cleanup runs.
+	t.Cleanup(func() {
+		_ = env.evalClient.DeleteOpenAIEval(context.Background(), group.ID)
+	})
 	t.Logf("created eval %s (name %q)", group.ID, group.Name)
 
 	fetched, err := env.evalClient.GetOpenAIEval(ctx, group.ID)
@@ -361,6 +369,11 @@ func TestLiveRun(t *testing.T) {
 		}},
 	})
 	require.NoError(t, err, "creating the eval for the run")
+	// The run below is cancelled but the group holding it was not removed, so a
+	// full suite run left one behind here too.
+	t.Cleanup(func() {
+		_ = env.evalClient.DeleteOpenAIEval(context.Background(), group.ID)
+	})
 
 	ds := eval_api.NewAgentTargetDataSource(agentName, nil)
 	ds.SetFileContent([]map[string]any{

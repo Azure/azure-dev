@@ -323,6 +323,19 @@ func (ec *evalContext) generateDataset(
 	if err := refuseUnusableSources(sources, unbuildable); err != nil {
 		return nil, err
 	}
+
+	// Agent-seeded generation fails server-side for every agent, and the waiting
+	// path below answers that with a prompt-only retry. Nothing retries under
+	// --no-wait -- the client is gone by then -- so submitting the shape that is
+	// known to fail would bill a job that cannot succeed and leave `job show`
+	// reporting it. The shape that works is the one submitted.
+	if noWait {
+		if promptOnly := eval_api.WithoutAgentSource(sources); len(promptOnly) != len(sources) &&
+			eval_api.HasPromptSource(promptOnly) {
+			fmt.Fprint(out, messages.WarningAgentSeedSkippedAsync(plan.Agent))
+			sources = promptOnly
+		}
+	}
 	req := eval_api.NewDataGenerationJobRequest(plan.Name, plan.Model, plan.SampleSize, sources)
 
 	job, err := ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)

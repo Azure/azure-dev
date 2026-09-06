@@ -11,10 +11,26 @@
 # below, so a change that breaks them cannot reach main unnoticed.
 #
 # TODO before the first release: PR CI runs this script on windows, linux and
-# darwin amd64, so the untagged tests are covered on all three. The live and
-# hero suites are only type-checked, never executed, and both have only ever
-# run on Windows by hand. Run them once on linux, where they assume a path
-# separator and shell out to `azd` and to a proxy address.
+# darwin amd64, so the untagged tests are covered on all three. The cli, live
+# and hero suites are only type-checked, never executed. What each one needs
+# before it can run anywhere but a developer's machine:
+#
+#   cli   - a live Foundry project. fixture_test.go builds an eval_api client
+#           with AzureDeveloperCLICredential and passes --project-endpoint, so
+#           this is a credentialed suite despite the name and belongs in the
+#           internal pipeline rather than public PR CI.
+#   live  - the same, plus AZURE_AI_EVAL_E2E_LIVE.
+#   hero  - azd on PATH with this extension packed and installed
+#           (`azd x pack --rebuild` then `azd extension install ... --source
+#           local`). `init` itself makes no service calls, so this suite is the
+#           one candidate for credential-free CI once the install step is
+#           scripted. It also runs against the caller's AZD_CONFIG_DIR today,
+#           which has to be isolated first or CI shares state with whatever
+#           else is on the agent.
+#
+# All three have only ever run on Windows by hand. Run them once on linux,
+# where they assume a path separator and shell out to `azd` and to a proxy
+# address.
 
 $gopath = go env GOPATH
 $gotestsumBinary = "gotestsum"

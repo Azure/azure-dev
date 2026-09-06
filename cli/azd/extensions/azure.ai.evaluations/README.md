@@ -196,7 +196,9 @@ prints that path on stderr.
 
 ## TODO before release
 
-Both are files the azd extensions team owns, so they are not changed here:
+The first two are files the azd extensions team owns, so they are not changed
+here. The last two are not files at all — YAML alone does not provision a
+pipeline, and no evaluations release check runs on this PR because of it.
 
 - [ ] **`cli/azd/extensions/registry.json`** — add the `azure.ai.evaluations`
   entry. Until it exists `azd extension install azure.ai.evaluations` cannot
@@ -205,3 +207,8 @@ Both are files the azd extensions team owns, so they are not changed here:
 - [ ] **`microsoft.foundry/extension.yaml`** — add the dependency, but only
   after the registry entry lands. Declaring a dependency that cannot resolve
   breaks installing the bundle.
+- [ ] **Register the release YAML as an Azure DevOps pipeline** under
+  `azure-dev/extensions`, with access to the shared release infrastructure.
+  Checking the file in does not create the pipeline, so nothing runs it.
+- [ ] **Create the `ext-azure.ai.evaluations` issue label**, which is how
+  issues are routed to this extension.

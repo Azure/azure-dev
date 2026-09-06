@@ -797,6 +797,15 @@ func WarningAgentSeedFailedRetrying(agent string) string {
 			"retrying from the instruction alone.\n", agent)
 }
 
+// WarningAgentSeedSkippedAsync reports the agent source dropped before it is
+// submitted, on the path that has nothing left to retry it.
+func WarningAgentSeedSkippedAsync(agent string) string {
+	return fmt.Sprintf(
+		"  warning: generating from agent %q fails in the service, and "+
+			"--no-wait returns before that can be retried; "+
+			"submitting from the instruction alone.\n", agent)
+}
+
 // GeneratingRubric reports a rubric generation job about to be submitted.
 func GeneratingRubric(name string) string {
 	return fmt.Sprintf("Generating rubric %s...\n", name)

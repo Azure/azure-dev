@@ -2,8 +2,12 @@
 
 Register and version Foundry datasets from your terminal.
 
+Until the registry entry lands (see the release checklist at the end), install
+from a local build rather than the public registry:
+
 ```console
-$ azd extension install azure.ai.dataset
+$ azd x pack && azd x publish
+$ azd extension install azure.ai.dataset --source local
 $ azd ai dataset --help
 ```
 
@@ -44,14 +48,16 @@ Every command resolves the Foundry project endpoint in this order:
 1. `--project-endpoint`
 2. `FOUNDRY_PROJECT_ENDPOINT` in the active azd environment, then
    `AZURE_AI_PROJECT_ENDPOINT` there
-3. `extensions.ai-agents.project.context.endpoint` in azd's global config,
-   which `azure.ai.agents` writes and this extension only reads
+3. `extensions.ai-projects.context.endpoint` in azd's global config, which
+   `azd ai project` writes and this extension only reads. A config that has not
+   been migrated yet falls back to `extensions.ai-agents.project.context.endpoint`,
+   the key `azure.ai.agents` used before `azd ai project show` moved it.
 4. `FOUNDRY_PROJECT_ENDPOINT` in the host environment, then
    `AZURE_AI_PROJECT_ENDPOINT`
 
 Level 3 is worth knowing about: it is machine-wide rather than per-project, so
-a project context left behind by `azd ai agent` somewhere else takes precedence
-over the variable exported in this shell. `--debug` prints which level answered.
+a project selected with `azd ai project` somewhere else takes precedence over
+the variable exported in this shell. `--debug` prints which level answered.
 
 ## Debug logging
 

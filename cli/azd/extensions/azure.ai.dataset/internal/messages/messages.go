@@ -229,6 +229,15 @@ func DatasetDeleted(dataset, version string) string {
 	return fmt.Sprintf("Deleted dataset %s version %s\n", dataset, version)
 }
 
+// DatasetAlreadyAbsent reports a version that was gone before the delete ran.
+//
+// Not an error: a cleanup script ends by deleting things that may never have
+// been registered, so reaching the requested state is a success however many
+// times it is asked for.
+func DatasetAlreadyAbsent(dataset, version string) string {
+	return fmt.Sprintf("No dataset %s version %s to delete; nothing to do\n", dataset, version)
+}
+
 // ConfirmDeleteDataset is the question asked before a version is removed.
 func ConfirmDeleteDataset(dataset, version string) string {
 	return fmt.Sprintf(

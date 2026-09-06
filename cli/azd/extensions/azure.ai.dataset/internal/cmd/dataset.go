@@ -598,6 +598,12 @@ func (a *datasetDeleteAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.deleteWith(ctx, ec)
+}
+
+// deleteWith is the part that needs only a client, so the idempotency contract
+// can be tested without an azd host to build the context from.
+func (a *datasetDeleteAction) deleteWith(ctx context.Context, ec *datasetContext) error {
 	goAhead, err := confirmDelete(a.cmd, ec, a.name, a.version, a.force)
 	if err != nil {
 		return err
@@ -607,19 +613,29 @@ func (a *datasetDeleteAction) Run() error {
 		return nil
 	}
 
+	// A version that is already gone is the state the caller asked for, so this
+	// exits 0 rather than failing the cleanup script that ran twice. Every other
+	// status keeps its own error.
+	alreadyAbsent := false
 	if err := ec.datasetClient.DeleteDatasetVersion(
 		ctx, a.name, a.version, ProjectEndpointAPIVersion,
 	); err != nil {
-		if dataset_api.IsNotFound(err) {
-			return messages.DatasetVersionNotFound(a.name, a.version)
+		if !dataset_api.IsNotFound(err) {
+			return messages.DeletingDatasetVersion(a.name, a.version, err)
 		}
-		return messages.DeletingDatasetVersion(a.name, a.version, err)
+		alreadyAbsent = true
 	}
 
 	if isJSON(a.cmd) {
+		// One shape either way: the document reports the state reached, which is
+		// what a script branches on, not which call happened to reach it.
 		return emitJSON(a.cmd.OutOrStdout(), map[string]string{
 			"name": a.name, "version": a.version, "status": "deleted",
 		})
+	}
+	if alreadyAbsent {
+		fmt.Fprint(a.cmd.OutOrStdout(), messages.DatasetAlreadyAbsent(a.name, a.version))
+		return nil
 	}
 	fmt.Fprint(a.cmd.OutOrStdout(), messages.DatasetDeleted(a.name, a.version))
 	return nil

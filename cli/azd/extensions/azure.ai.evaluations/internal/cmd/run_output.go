@@ -77,7 +77,8 @@ func newRunOutputListCommand() *cobra.Command {
 		"Show only the items that failed. Shorthand for --status failed.")
 	cmd.Flags().StringVar(&flags.status, "status", "",
 		"Show only items with these outcomes: passed, failed, errored, skipped (comma-separated).")
-	cmd.Flags().StringVar(&flags.outFile, "output-file", "", "Write JSON results to this path.")
+	cmd.Flags().StringVar(&flags.outFile, "output-file", "",
+		"Write JSON results to this path. Writes every row unless --limit narrows it.")
 	addPagingFlags(cmd, &flags.limit, &flags.pageToken, &flags.all, defaultPageSize)
 	addRunFlag(cmd, &flags.run)
 	addEvalFlag(cmd, &flags.groupName)
@@ -86,6 +87,16 @@ func newRunOutputListCommand() *cobra.Command {
 	addEvalPathFlag(cmd, new(string))
 	cmd.Flags().StringVar(&flags.endpoint, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+// walksEveryPage reports whether the listing should fetch every page.
+//
+// --output-file is a bulk destination and takes the whole run by default, but
+// an explicit --limit is the caller naming a size, and quietly writing more
+// than they asked for is no smaller a surprise than writing less. Changed()
+// rather than the value, so an explicit 0 still counts as having asked.
+func (f *runOutputListFlags) walksEveryPage(cmd *cobra.Command) bool {
+	return f.all || (f.outFile != "" && !cmd.Flags().Changed("limit"))
 }
 
 func (a *runOutputListAction) Run() error {
@@ -112,9 +123,7 @@ func (a *runOutputListAction) Run() error {
 	// totals rather than failing.
 	// A generated dataset runs to a thousand rows, each carrying a
 	// result per evaluator, so an unbounded listing floods the terminal.
-	// --output-file and `run output export` are the bulk paths and take
-	// everything.
-	pageSize := pageSizeOr(a.flags.limit, a.flags.all || a.flags.outFile != "", defaultPageSize)
+	pageSize := pageSizeOr(a.flags.limit, a.flags.walksEveryPage(a.cmd), defaultPageSize)
 	items, err := ec.evalClient.ListOutputItemsPage(ctx, evalID, run.ID, pageSize, a.flags.pageToken)
 	if err != nil {
 		return messages.ReadingRunResults(run.ID, err)
@@ -155,7 +164,16 @@ func (a *runOutputListAction) Run() error {
 		if err := emitJSONList(&body, rows); err != nil {
 			return err
 		}
-		return writeFileAtomic(a.flags.outFile, body.Bytes())
+		if err := writeFileAtomic(a.flags.outFile, body.Bytes()); err != nil {
+			return err
+		}
+		// A file narrowed by --limit holds part of the run, and on disk there is
+		// nothing left to say so. Stdout carries no rows on this path, so the
+		// cursor goes there rather than leaving the file to look complete.
+		if items.HasMore && items.LastID != "" && !isJSON(a.cmd) {
+			fmt.Fprint(a.cmd.OutOrStdout(), messages.MoreItemsToList(items.LastID))
+		}
+		return nil
 	}
 	if isJSON(a.cmd) {
 		return emitJSONList(a.cmd.OutOrStdout(), rows)

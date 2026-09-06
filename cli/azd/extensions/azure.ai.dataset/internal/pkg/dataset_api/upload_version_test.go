@@ -4,7 +4,6 @@
 package dataset_api
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -104,7 +103,7 @@ func TestUploadNextVersionWalksPastAStaleListing(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	ds, err := client.UploadNextVersion(context.Background(), "ds", "", datasetRows, "2025-11-15-preview")
+	ds, err := client.UploadNextVersion(t.Context(), "ds", "", datasetRows, "2025-11-15-preview")
 	require.NoError(t, err, "a stale listing must not surface as a conflict")
 	assert.Equal(t, "2.0", ds.Version)
 	assert.Equal(t, []string{"1.0", "2.0"}, server.attempts,
@@ -128,7 +127,7 @@ func TestUploadVersionPublishesTheVersionDeclared(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	ds, err := client.UploadVersion(context.Background(), "ds", "7.0", datasetRows, "2025-11-15-preview")
+	ds, err := client.UploadVersion(t.Context(), "ds", "7.0", datasetRows, "2025-11-15-preview")
 	require.NoError(t, err)
 	assert.Equal(t, "7.0", ds.Version, "the version asked for is the version written")
 	assert.Equal(t, []string{"7.0"}, server.attempts,
@@ -155,7 +154,7 @@ func TestUploadVersionDoesNotWalkPastAConflict(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	_, err := client.UploadVersion(context.Background(), "ds", "7.0", datasetRows, "2025-11-15-preview")
+	_, err := client.UploadVersion(t.Context(), "ds", "7.0", datasetRows, "2025-11-15-preview")
 	require.Error(t, err, "the version the author named is taken, and that is theirs to resolve")
 	assert.True(t, IsVersionConflict(err), "the refusal has to read as a conflict")
 	assert.Equal(t, []string{"7.0"}, server.attempts,
@@ -179,7 +178,7 @@ func TestUploadNextVersionPrefersACaughtUpListing(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	ds, err := client.UploadNextVersion(context.Background(), "ds", "", datasetRows, "2025-11-15-preview")
+	ds, err := client.UploadNextVersion(t.Context(), "ds", "", datasetRows, "2025-11-15-preview")
 	require.NoError(t, err)
 	assert.Equal(t, "4.0", ds.Version)
 }
@@ -201,7 +200,7 @@ func TestUploadNextVersionGivesUpBounded(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	_, err := client.UploadNextVersion(context.Background(), "ds", "", datasetRows, "2025-11-15-preview")
+	_, err := client.UploadNextVersion(t.Context(), "ds", "", datasetRows, "2025-11-15-preview")
 	require.Error(t, err)
 	assert.True(t, IsVersionConflict(err))
 	assert.Len(t, server.attempts, versionConflictAttempts)

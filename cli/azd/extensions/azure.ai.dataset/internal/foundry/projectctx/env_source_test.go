@@ -132,7 +132,7 @@ func TestReadEnvHostedSource_TellsAbsenceApartFromFailure(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			value, name, err := readEnvHostedSource(context.Background(), tc.env)
+			value, name, err := readEnvHostedSource(t.Context(), tc.env)
 
 			if tc.wantErr != "" {
 				require.Error(t, err, "a failure to answer must stop the cascade")
@@ -154,7 +154,7 @@ func TestReadEnvHostedSource_PrefersTheNewerKey(t *testing.T) {
 		values:  map[string]string{foundryEnvKey: "https://new", azureAiEnvKey: "https://old"},
 	}
 
-	value, _, err := readEnvHostedSource(context.Background(), env)
+	value, _, err := readEnvHostedSource(t.Context(), env)
 
 	require.NoError(t, err)
 	assert.Equal(t, "https://new", value)

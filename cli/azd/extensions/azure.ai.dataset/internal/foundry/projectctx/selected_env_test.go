@@ -65,7 +65,7 @@ func twoEnvironments() *perEnv {
 func TestSelectedEnvironmentIsTheOneRead(t *testing.T) {
 	fake := twoEnvironments()
 
-	ctx := WithSelectedEnvironment(context.Background(), "staging")
+	ctx := WithSelectedEnvironment(t.Context(), "staging")
 	value, name, err := readEnvHostedSource(ctx, fake)
 
 	require.NoError(t, err)
@@ -79,7 +79,7 @@ func TestSelectedEnvironmentIsTheOneRead(t *testing.T) {
 func TestWithoutSelectionAzdsCurrentEnvironmentIsRead(t *testing.T) {
 	fake := twoEnvironments()
 
-	value, name, err := readEnvHostedSource(context.Background(), fake)
+	value, name, err := readEnvHostedSource(t.Context(), fake)
 
 	require.NoError(t, err)
 	assert.Equal(t, "https://from-default/", value)
@@ -93,7 +93,7 @@ func TestSelectedEnvironmentWithNoEndpointDoesNotFallBack(t *testing.T) {
 	fake := twoEnvironments()
 	fake.values["staging"] = map[string]string{}
 
-	ctx := WithSelectedEnvironment(context.Background(), "staging")
+	ctx := WithSelectedEnvironment(t.Context(), "staging")
 	value, _, err := readEnvHostedSource(ctx, fake)
 
 	require.NoError(t, err)
@@ -104,10 +104,10 @@ func TestSelectedEnvironmentWithNoEndpointDoesNotFallBack(t *testing.T) {
 
 // An empty name is "none given", not "the environment called empty string".
 func TestWithSelectedEnvironmentIgnoresAnEmptyName(t *testing.T) {
-	assert.Empty(t, SelectedEnvironment(WithSelectedEnvironment(context.Background(), "")))
+	assert.Empty(t, SelectedEnvironment(WithSelectedEnvironment(t.Context(), "")))
 	assert.Equal(t, "staging",
-		SelectedEnvironment(WithSelectedEnvironment(context.Background(), "staging")))
-	assert.Empty(t, SelectedEnvironment(context.Background()))
+		SelectedEnvironment(WithSelectedEnvironment(t.Context(), "staging")))
+	assert.Empty(t, SelectedEnvironment(t.Context()))
 }
 
 // failingEnv answers GetValue with a fixed error, which is how azd reports an
@@ -141,7 +141,7 @@ func TestATypoedEnvironmentNameIsReportedNotSteppedOver(t *testing.T) {
 		err: status.Error(codes.Unknown, "'does-not-exist': environment not found"),
 	}
 
-	ctx := WithSelectedEnvironment(context.Background(), "does-not-exist")
+	ctx := WithSelectedEnvironment(t.Context(), "does-not-exist")
 	_, _, err := readEnvHostedSource(ctx, fake)
 
 	require.Error(t, err, "a named environment azd does not have must stop the cascade")
@@ -155,7 +155,7 @@ func TestTheSameAnswerWithoutANameIsStillAbsence(t *testing.T) {
 		err: status.Error(codes.Unknown, "'default': environment not found"),
 	}
 
-	value, name, err := readEnvHostedSource(context.Background(), fake)
+	value, name, err := readEnvHostedSource(t.Context(), fake)
 
 	require.NoError(t, err, "without -e this is absence, and the cascade continues")
 	assert.Empty(t, value)
@@ -167,7 +167,7 @@ func TestTheSameAnswerWithoutANameIsStillAbsence(t *testing.T) {
 func TestANamedEnvironmentThatFailsDifferentlyStillFails(t *testing.T) {
 	fake := &failingEnv{err: status.Error(codes.Internal, "the store is on fire")}
 
-	ctx := WithSelectedEnvironment(context.Background(), "staging")
+	ctx := WithSelectedEnvironment(t.Context(), "staging")
 	_, _, err := readEnvHostedSource(ctx, fake)
 
 	require.Error(t, err)

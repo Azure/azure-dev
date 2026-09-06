@@ -43,7 +43,7 @@ func TestAnEnvironmentAzdDoesNotHaveIsRefused(t *testing.T) {
 		err: status.Error(codes.Unknown, "'typo': environment not found"),
 	}
 
-	err := verifyEnvironment(context.Background(), stub, "typo")
+	err := verifyEnvironment(t.Context(), stub, "typo")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "typo")
@@ -53,7 +53,7 @@ func TestAnEnvironmentAzdDoesNotHaveIsRefused(t *testing.T) {
 func TestAnEnvironmentAzdHasIsAccepted(t *testing.T) {
 	stub := &lookupStub{}
 
-	require.NoError(t, verifyEnvironment(context.Background(), stub, "staging"))
+	require.NoError(t, verifyEnvironment(t.Context(), stub, "staging"))
 	assert.Equal(t, []string{"staging"}, stub.asked)
 }
 
@@ -67,12 +67,12 @@ func TestAFailureThatIsNotAnAnswerDoesNotRefuse(t *testing.T) {
 		status.Error(codes.Unknown, "no project exists; to create a new project, run `azd init`"),
 	} {
 		stub := &lookupStub{err: err}
-		assert.NoError(t, verifyEnvironment(context.Background(), stub, "staging"),
+		assert.NoError(t, verifyEnvironment(t.Context(), stub, "staging"),
 			"unexpected refusal for %v", err)
 	}
 }
 
 // Nothing named means azd's default, which needs no confirming.
 func TestNoSelectionAsksNothing(t *testing.T) {
-	require.NoError(t, VerifySelectedEnvironment(context.Background()))
+	require.NoError(t, VerifySelectedEnvironment(t.Context()))
 }

@@ -4,7 +4,6 @@
 package dataset_api
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,7 +22,7 @@ import (
 func TestNameSeparatorsStayEscapedOnTheWire(t *testing.T) {
 	client, calls := recordingDatasetClient(t, 200, `{"value":[]}`)
 
-	_, err := client.ListDatasetVersions(context.Background(), "ds-../../etc/passwd", "2025-01-01")
+	_, err := client.ListDatasetVersions(t.Context(), "ds-../../etc/passwd", "2025-01-01")
 	require.NoError(t, err)
 	require.Len(t, *calls, 1)
 

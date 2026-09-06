@@ -4,7 +4,6 @@
 package dataset_api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -56,7 +55,7 @@ func TestAnUploadWithNowhereToRegisterItIsRefusedBeforeTheBlobIsWritten(t *testi
 	client, asked := pendingUploadServer(t,
 		`{"blobReference":{"credential":{"sasUri":"https://blob.example.invalid/c?sig=s"}}}`)
 
-	_, err := client.UploadVersion(context.Background(), "golden", "1", oneJSONLBody(t), "2024-01-01")
+	_, err := client.UploadVersion(t.Context(), "golden", "1", oneJSONLBody(t), "2024-01-01")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "blob URI")
@@ -73,7 +72,7 @@ func TestAnUploadWithNowhereToRegisterItIsRefusedBeforeTheBlobIsWritten(t *testi
 func TestAnUploadWithNowhereToWriteKeepsItsOwnMessage(t *testing.T) {
 	client, _ := pendingUploadServer(t, `{"blobReference":{"blobUri":"https://blob.example.invalid/c"}}`)
 
-	_, err := client.UploadVersion(context.Background(), "golden", "1", oneJSONLBody(t), "2024-01-01")
+	_, err := client.UploadVersion(t.Context(), "golden", "1", oneJSONLBody(t), "2024-01-01")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "upload SAS URI")

@@ -4,7 +4,6 @@
 package dataset_api
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -38,7 +37,7 @@ func TestRequestConstructionErrorsDoNotCarryTheSAS(t *testing.T) {
 	require.Contains(t, raw, constructionSASSecret, "the fixture has to carry a secret to leak")
 
 	client := constructionClient(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	cases := []struct {
 		name string

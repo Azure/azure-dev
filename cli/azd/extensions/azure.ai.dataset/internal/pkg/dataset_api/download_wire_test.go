@@ -4,7 +4,6 @@
 package dataset_api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -117,7 +116,7 @@ func TestDownloadDatasetContentReadsABlobURIDirectly(t *testing.T) {
 	}
 	client, _ := server.start(t)
 
-	data, err := client.DownloadDatasetContent(context.Background(), "ds", "1.0", testAPIVersion)
+	data, err := client.DownloadDatasetContent(t.Context(), "ds", "1.0", testAPIVersion)
 	require.NoError(t, err)
 	assert.Equal(t, `{"query":"direct"}`, string(data))
 	assert.Nil(t, server.gotListQuery, "a blob URI needs no container listing")
@@ -136,7 +135,7 @@ func TestDownloadDatasetContentListsAContainerURI(t *testing.T) {
 	}
 	client, _ := server.start(t)
 
-	data, err := client.DownloadDatasetContent(context.Background(), "ds", "1.0", testAPIVersion)
+	data, err := client.DownloadDatasetContent(t.Context(), "ds", "1.0", testAPIVersion)
 	require.NoError(t, err)
 	assert.Equal(t, `{"query":"from the container"}`, string(data),
 		"the JSONL is chosen over the metadata sitting beside it")
@@ -157,7 +156,7 @@ func TestDownloadDatasetContentFallsBackWhenTheBlobReadFails(t *testing.T) {
 	}
 	client, _ := server.start(t)
 
-	data, err := client.DownloadDatasetContent(context.Background(), "ds", "1.0", testAPIVersion)
+	data, err := client.DownloadDatasetContent(t.Context(), "ds", "1.0", testAPIVersion)
 	require.NoError(t, err, "a 409 on the direct read is the container case, not a failure")
 	assert.Equal(t, `{"query":"found by listing"}`, string(data))
 	assert.NotNil(t, server.gotListQuery)
@@ -169,7 +168,7 @@ func TestDownloadDatasetContentReportsAnEmptyContainer(t *testing.T) {
 	server := &storageServer{uriPath: "/empty", blobs: map[string]string{}}
 	client, _ := server.start(t)
 
-	_, err := client.DownloadDatasetContent(context.Background(), "ds", "1.0", testAPIVersion)
+	_, err := client.DownloadDatasetContent(t.Context(), "ds", "1.0", testAPIVersion)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no downloadable file")
 }
@@ -186,7 +185,7 @@ func TestDownloadDatasetContentRequiresADownloadURI(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		srv.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	_, err := client.DownloadDatasetContent(context.Background(), "ds", "1.0", testAPIVersion)
+	_, err := client.DownloadDatasetContent(t.Context(), "ds", "1.0", testAPIVersion)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no download URI")
 }
@@ -204,7 +203,7 @@ func TestDownloadBlobKeepsTheSASToken(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		srv.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	data, err := client.DownloadBlob(context.Background(), srv.URL+"/container?sig=secret", "data.jsonl")
+	data, err := client.DownloadBlob(t.Context(), srv.URL+"/container?sig=secret", "data.jsonl")
 	require.NoError(t, err)
 	assert.Equal(t, "rows", string(data))
 	assert.Equal(t, "/container/data.jsonl", gotPath)
@@ -222,7 +221,7 @@ func TestDownloadBlobReportsTheStatusAndName(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		srv.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	_, err := client.DownloadBlob(context.Background(), srv.URL+"/c", "data.jsonl")
+	_, err := client.DownloadBlob(t.Context(), srv.URL+"/c", "data.jsonl")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "403")
 	assert.Contains(t, err.Error(), "data.jsonl")
@@ -234,13 +233,13 @@ func TestBlobOperationsRejectAnUnparseableURI(t *testing.T) {
 	client := NewDatasetClientFromPipeline(
 		"https://example", runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
 
-	_, err := client.DownloadBlob(context.Background(), "://nope", "x.jsonl")
+	_, err := client.DownloadBlob(t.Context(), "://nope", "x.jsonl")
 	require.Error(t, err)
 
-	_, err = client.ListContainerBlobs(context.Background(), "://nope")
+	_, err = client.ListContainerBlobs(t.Context(), "://nope")
 	require.Error(t, err)
 
-	err = client.UploadBlob(context.Background(), "://nope", "x.jsonl", []byte("{}"))
+	err = client.UploadBlob(t.Context(), "://nope", "x.jsonl", []byte("{}"))
 	require.Error(t, err)
 }
 

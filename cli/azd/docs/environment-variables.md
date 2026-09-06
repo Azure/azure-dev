@@ -222,7 +222,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | `AZURE_AI_PROJECT_ENDPOINT` | Fallback for the project endpoint, consulted only when `FOUNDRY_PROJECT_ENDPOINT` is unset, and read in the same two places: the active azd environment first, then the host shell environment. |
 | `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID, used to build portal links for an eval run. |
 | `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The model deployment `azd ai eval init` offers as the judge when one is not named on the command line. |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | The Application Insights connection string used to read the traces a trace-backed eval evaluates. |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | A detection signal, not a credential this extension consumes: `azd ai eval init` and `generate` check only whether it is set, and default to a trace-backed source when it is. The value is never read or transmitted by the extension — Foundry reads the traces server-side. |
 
 ### azure.ai.routines
 

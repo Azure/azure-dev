@@ -178,6 +178,11 @@ func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
 	if err := json.Unmarshal(definition, &doc); err != nil {
 		return nil, messages.DefinitionNotJSONObject(err)
 	}
+	// JSON null decodes into a nil map and reports no error, so without this
+	// the assignment below panics instead of refusing the document.
+	if doc == nil {
+		return nil, messages.DefinitionIsNull()
+	}
 	if _, ok := doc["type"]; ok {
 		return definition, nil
 	}
@@ -191,6 +196,11 @@ func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return nil, messages.NotValidJSON(err)
+	}
+	// A whole document of null decodes the same way, and reporting it as a
+	// rubric missing its dimensions sends the author looking for the wrong thing.
+	if probe == nil {
+		return nil, messages.DefinitionIsNull()
 	}
 
 	if definition, hasDefinition := probe["definition"]; hasDefinition {

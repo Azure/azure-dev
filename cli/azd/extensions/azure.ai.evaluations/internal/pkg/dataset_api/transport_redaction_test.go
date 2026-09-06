@@ -5,8 +5,10 @@ package dataset_api
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -47,4 +49,51 @@ func TestATransportFailureDoesNotCarryTheNextLinkCredential(t *testing.T) {
 	assert.NotContains(t, err.Error(), "sig=")
 	assert.Contains(t, err.Error(), "acct.blob.core.windows.net",
 		"the host stays, so the message still says where it failed")
+}
+
+// refusingTransport answers with a status the caller has to report, on a
+// request whose URL still carries the SAS the caller was handed.
+type refusingTransport struct{ status int }
+
+func (r refusingTransport) Do(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: r.status,
+		Status:     http.StatusText(r.status),
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(`{"error":"denied"}`)),
+		Request:    req,
+	}, nil
+}
+
+// The third way out of this function.
+//
+// azcore renders only scheme, host and path for a failed response, so the SAS
+// in the query does not reach the user today. Its own comment says the message
+// "is not contractual and can change over time", and this is the error most
+// likely to be pasted into a bug report, so the guarantee is pinned here
+// rather than assumed to hold across an SDK bump.
+func TestARefusedContinuationDoesNotCarryItsCredential(t *testing.T) {
+	for _, status := range []int{
+		http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
+				&policy.ClientOptions{
+					Transport: refusingTransport{status: status},
+					Retry:     policy.RetryOptions{MaxRetries: -1},
+				})
+			client := NewDatasetClientFromPipeline("https://acct.blob.core.windows.net", pipeline)
+
+			const secret = "s0m3-l1v3-s1gnatur3"
+			_, err := client.doRequestGetURL(t.Context(),
+				"https://acct.blob.core.windows.net/c/rows.jsonl?sv=2021-08-06&sig="+secret)
+
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), secret,
+				"a refused continuation must not show the signature to the user")
+			assert.NotContains(t, err.Error(), "sig=")
+			assert.Contains(t, err.Error(), "acct.blob.core.windows.net",
+				"the host stays, so the message still says which service refused")
+		})
+	}
 }

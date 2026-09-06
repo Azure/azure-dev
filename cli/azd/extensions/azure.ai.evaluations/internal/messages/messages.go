@@ -1406,6 +1406,15 @@ func DefinitionNotJSONObject(err error) error {
 	return fmt.Errorf("the definition is not a JSON object: %w", err)
 }
 
+// DefinitionIsNull reports a definition written as JSON null.
+//
+// Separate from DefinitionNotJSONObject because null is the one non-object the
+// decoder accepts without complaint: it leaves a nil map behind rather than an
+// error, so this is the only shape that reached the code below it.
+func DefinitionIsNull() error {
+	return errors.New("the definition is null; expected a JSON object")
+}
+
 // NotValidJSON reports an evaluator file that will not parse at all.
 func NotValidJSON(err error) error {
 	return fmt.Errorf("not valid JSON: %w", err)

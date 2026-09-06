@@ -580,10 +580,14 @@ func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 	if item == nil {
 		return messages.OutputItemEmpty()
 	}
+	// The listing reports the derived outcome, and the service's own status is
+	// `completed` even for a row whose every result errored, so printing that
+	// alone made a failed row read as a success.
 	if err := emitDetail(w, []field{
 		{"Item", item.ID},
 		{"Run", item.RunID},
-		{"Status", item.Status},
+		{"Outcome", classifyItem(*item).Status},
+		{"Service Status", item.Status},
 	}); err != nil {
 		return err
 	}

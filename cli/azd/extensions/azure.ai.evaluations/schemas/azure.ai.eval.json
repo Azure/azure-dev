@@ -253,13 +253,14 @@
     },
     "Target": {
       "type": "object",
-      "required": ["type", "name"],
+      "required": ["name"],
       "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string",
           "enum": ["agent", "model"],
-          "description": "What kind of thing is invoked."
+          "default": "agent",
+          "description": "What kind of thing is invoked. Omitting it means agent, which is what the CLI does with a target that names only a service."
         },
         "name": {
           "type": "string",

@@ -2498,6 +2498,18 @@ func ServiceRefPointsElsewhere(serviceName, have, want string) error {
 			"--path %s", serviceName, have, want, have)
 }
 
+// ConfigValueNotAScalar reports an entry whose value is a mapping or sequence
+// where a plain value was expected.
+//
+// The edit path replaces only the value, tag and style, so writing over a
+// mapping would leave its children in place and serialize a tagged mapping the
+// next strict read refuses.
+func ConfigValueNotAScalar(key string) error {
+	return fmt.Errorf(
+		"the %q entry is not a plain value, so it cannot be rewritten here; "+
+			"edit it by hand", key)
+}
+
 // ConfigLockNotARegularFile reports something other than a lock file standing
 // at the lock path.
 //

@@ -200,10 +200,16 @@ func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool,
 
 	if entry == nil {
 		seq.Content = append(seq.Content, catalogEntryNode(name, field, value))
-	} else if !setMappingScalar(entry, field, value) {
-		// The entry already says this. Rewriting the file to change nothing
-		// would still rewrite it, and this is the repeated-generate path.
-		return false, false, nil
+	} else {
+		changed, setErr := setMappingScalar(entry, field, value)
+		if setErr != nil {
+			return false, false, setErr
+		}
+		if !changed {
+			// The entry already says this. Rewriting the file to change nothing
+			// would still rewrite it, and this is the repeated-generate path.
+			return false, false, nil
+		}
 	}
 
 	out, err := marshalConfigDocument(doc)
@@ -296,23 +302,31 @@ func mappingHasName(item *yaml.Node, name string) bool {
 }
 
 // setMappingScalar sets key on mapping, reporting whether that changed anything.
-func setMappingScalar(mapping *yaml.Node, key, value string) bool {
+//
+// Only Value, Tag and Style are replaced, so an existing mapping or sequence
+// would keep its Kind and its children and serialize as a tagged mapping --
+// written as a success, and refused by the next strict read of the file.
+func setMappingScalar(mapping *yaml.Node, key, value string) (bool, error) {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		if mapping.Content[i].Value != key {
 			continue
 		}
-		if mapping.Content[i+1].Value == value {
-			return false
+		existing := mapping.Content[i+1]
+		if existing.Kind != yaml.ScalarNode {
+			return false, messages.ConfigValueNotAScalar(key)
 		}
-		mapping.Content[i+1].Value = value
-		mapping.Content[i+1].Tag = "!!str"
-		mapping.Content[i+1].Style = 0
-		return true
+		if existing.Value == value {
+			return false, nil
+		}
+		existing.Value = value
+		existing.Tag = "!!str"
+		existing.Style = 0
+		return true, nil
 	}
 	mapping.Content = append(mapping.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value})
-	return true
+	return true, nil
 }
 
 // catalogEntryNode builds the entry appended for a name the file does not

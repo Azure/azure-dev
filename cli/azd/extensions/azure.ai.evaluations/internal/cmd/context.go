@@ -70,6 +70,27 @@ type evalContext struct {
 // with none of that and would need its own cleanup lifecycle.
 const privateStatePath = "eval.state"
 
+// stateEndpointKey records which Foundry project the rest of the section
+// describes.
+//
+// Everything else in it -- fingerprints, versions, resolved ids -- is only true
+// of one project, but the section lives in the azd environment, and an
+// environment can be repointed at another endpoint (or run against one named
+// with --project-endpoint). State left from the previous project then reported
+// a dataset unchanged that the new one had never seen, and the configured file
+// was never published.
+//
+// Two leading underscores because every real key is built from
+// project.FingerprintKey or the EVAL_SUBSTANCE_ prefix, so nothing can collide
+// with it.
+const stateEndpointKey = "__endpoint"
+
+// normalizedEndpoint is the endpoint reduced to what identifies the project, so
+// a trailing slash or a change of case does not read as a different one.
+func normalizedEndpoint(endpoint string) string {
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(endpoint), "/"))
+}
+
 // newEvalContext resolves the project endpoint and builds the data-plane
 // clients. The resolution order is projectctx's, so that every Foundry
 // extension answers the same question the same way:
@@ -243,8 +264,18 @@ func (ec *evalContext) loadPrivateState(ctx context.Context) map[string]string {
 	switch {
 	case err != nil:
 		ec.stateErr = err
+		// What the section holds is unknown, so it is not this function's to
+		// discard. The caller already refuses to write over an unread baseline.
+		return ec.state
 	case found:
 		ec.state = stored
+	}
+
+	// Scoped to the project it describes rather than to the environment holding
+	// it, so repointing an environment starts from nothing instead of inheriting
+	// another project's fingerprints.
+	if want := normalizedEndpoint(ec.endpoint); ec.state[stateEndpointKey] != want {
+		ec.state = map[string]string{stateEndpointKey: want}
 	}
 	return ec.state
 }

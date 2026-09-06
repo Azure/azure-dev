@@ -241,28 +241,43 @@ func (r *evalReconciler) EnsureDataset(
 		// explicit `version:` is the author saying which version they want, so
 		// it settles the question and the check does not apply.
 		if version := r.ec.privateValue(ctx, versionKey("dataset", decl.Name)); version != "" {
-			if decl.Version != "" {
-				// A pin settles which version to use, not whether it is still
-				// there. Skipping the service entirely let a deleted version
-				// report as unchanged while the eval pointed at nothing. Only a
-				// confirmed 404 refuses: anything else leaves the pin alone
-				// rather than failing a deploy on a transient read.
-				if _, err := r.ec.datasetClient.GetDataset(
-					ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
-				); err != nil && dataset_api.IsNotFound(err) {
-					return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
+			if decl.Version == "" {
+				if err := r.checkDatasetDrift(ctx, decl.Name, version); err != nil {
+					return "", false, err
 				}
+				return version, false, nil
+			}
+
+			// A pin settles which version to use, not whether it is still
+			// there. Skipping the service entirely let a deleted version
+			// report as unchanged while the eval pointed at nothing.
+			_, getErr := r.ec.datasetClient.GetDataset(
+				ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
+			)
+			switch {
+			case getErr == nil || !dataset_api.IsNotFound(getErr):
 				// Deliberately not recorded. The key means "the version this file's
 				// content published", which is what the drift check compares
 				// against: writing the pin here made removing it later read as
 				// somebody having published behind the configuration's back, and
 				// failed the deploy. The run reads the pin from the declaration.
+				//
+				// Anything short of a confirmed absence leaves the pin alone
+				// rather than failing a deploy on a transient read.
 				return decl.Version, false, nil
+
+			case decl.Version == version:
+				// The pin names the version this file already published, and it
+				// is gone -- someone deleted it out from under the deployment,
+				// which is what `create` hit straight after `dataset delete`.
+				// Republishing here would quietly undo that.
+				return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
 			}
-			if err := r.checkDatasetDrift(ctx, decl.Name, version); err != nil {
-				return "", false, err
-			}
-			return version, false, nil
+			// The pin names some other version, and it is not there: that is the
+			// author asking for it to be published, since `version` beside
+			// `file` is the version to publish rather than one to count from.
+			// Falls through to the upload instead of refusing over the version
+			// it was asked to create.
 		}
 	}
 
@@ -365,7 +380,20 @@ func (r *evalReconciler) checkDatasetDrift(
 		// our back. A listing we could not read is not evidence there was none.
 		return err
 	}
-	if latest == "" || latest == recorded {
+	if latest == "" {
+		// An empty listing is not proof the recorded version is gone: it is
+		// equally what a listing that has not caught up reports, and what a
+		// project the state does not belong to reports. The point read settles
+		// it, and only a confirmed 404 refuses -- the same rule the pinned path
+		// uses, so a transient read still does not fail a deploy.
+		if _, getErr := r.ec.datasetClient.GetDataset(
+			ctx, name, recorded, ProjectEndpointAPIVersion,
+		); getErr != nil && dataset_api.IsNotFound(getErr) {
+			return messages.DatasetVersionNotFoundWithHint(name, recorded)
+		}
+		return nil
+	}
+	if latest == recorded {
 		return nil
 	}
 	if !dataset_api.VersionGreater(latest, recorded) {

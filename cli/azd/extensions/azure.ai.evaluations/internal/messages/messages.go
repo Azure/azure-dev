@@ -2498,6 +2498,18 @@ func ServiceRefPointsElsewhere(serviceName, have, want string) error {
 			"--path %s", serviceName, have, want, have)
 }
 
+// ConfigLockNotARegularFile reports something other than a lock file standing
+// at the lock path.
+//
+// A symbolic link there is the one that matters: the permission repair and the
+// lock itself both follow it, so a link committed to the repository would
+// choose which file this process widens.
+func ConfigLockNotARegularFile(path string) error {
+	return fmt.Errorf(
+		"%q is not a regular file, so it cannot be used as the configuration lock; "+
+			"remove it and run the command again", filepath.ToSlash(path))
+}
+
 // ServiceNameTaken reports a service this extension does not own standing where
 // the scaffold would be written.
 //

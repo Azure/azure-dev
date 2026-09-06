@@ -84,7 +84,16 @@ func ensureEvalDir(location string) (string, error) {
 // namesAFile reports whether a location is the configuration file rather than
 // the directory holding it. A path that does not exist is read as a directory,
 // which is what `init` is given before it writes anything.
+//
+// Except when the name itself settles it. Stat can only answer for a path that
+// exists, so a recorded or $ref-declared configuration that had since been
+// deleted read as a directory: `init` then wrote <path>/azure.eval.yaml while
+// the wiring still pointed at <path>, and `azd up` deployed neither.
 func namesAFile(location string) bool {
+	switch filepath.Base(location) {
+	case EvalConfigBase, LegacyEvalConfigBase:
+		return true
+	}
 	info, err := os.Stat(location)
 	return err == nil && !info.IsDir()
 }

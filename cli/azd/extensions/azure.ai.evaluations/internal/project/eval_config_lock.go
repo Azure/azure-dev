@@ -78,11 +78,20 @@ func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
 	}
 
 	lockPath := filepath.Join(evalDir, evalConfigLockName)
-	// A lock file left at 0600 by an earlier version keeps locking the second
-	// user out, and only its owner can widen it. Best effort: whoever owns it
-	// repairs it the next time they run, and everyone else carries on.
-	if info, statErr := os.Stat(lockPath); statErr == nil && info.Mode().Perm() != evalConfigLockPerm {
-		_ = os.Chmod(lockPath, evalConfigLockPerm)
+	// Lstat, not Stat: a symbolic link here is not a lock file, and both the
+	// chmod below and the lock itself would act on whatever it points at -- a
+	// link committed to the repository would get to choose which file this
+	// widens to 0666.
+	if info, statErr := os.Lstat(lockPath); statErr == nil {
+		if !info.Mode().IsRegular() {
+			return nil, messages.ConfigLockNotARegularFile(lockPath)
+		}
+		// A lock file left at 0600 by an earlier version keeps locking the second
+		// user out, and only its owner can widen it. Best effort: whoever owns it
+		// repairs it the next time they run, and everyone else carries on.
+		if info.Mode().Perm() != evalConfigLockPerm {
+			_ = os.Chmod(lockPath, evalConfigLockPerm)
+		}
 	}
 
 	lock := flock.New(lockPath, flock.SetPermissions(evalConfigLockPerm))

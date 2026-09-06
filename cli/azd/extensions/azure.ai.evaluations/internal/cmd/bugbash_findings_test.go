@@ -52,7 +52,7 @@ func TestRefToLeavesAnAbsolutePathAlone(t *testing.T) {
 	abs := filepath.Join(t.TempDir(), "evals", "azure.eval.yaml")
 	require.True(t, filepath.IsAbs(abs), "the fixture has to be absolute to test this")
 
-	got := refTo(abs)
+	got := refTo(t.TempDir(), abs)
 
 	assert.False(t, strings.HasPrefix(got, "./"),
 		"an absolute path is already a path; %q is not one", got)
@@ -60,10 +60,11 @@ func TestRefToLeavesAnAbsolutePathAlone(t *testing.T) {
 }
 
 // A relative one still gets the prefix, so the directive reads as a path rather
-// than as a registry name.
+// than as a registry name. With no project root to rebase onto, it is written
+// as given.
 func TestRefToMarksARelativePath(t *testing.T) {
 	assert.Equal(t, "./evals/azure.eval.yaml",
-		refTo(filepath.Join("evals", "azure.eval.yaml")))
+		refTo("", filepath.Join("evals", "azure.eval.yaml")))
 }
 
 // `generate` and the named verbs disagree about what a name may contain, and

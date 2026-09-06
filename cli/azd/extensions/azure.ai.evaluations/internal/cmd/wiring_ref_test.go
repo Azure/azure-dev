@@ -4,6 +4,9 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaieval/internal/messages"
@@ -56,4 +59,58 @@ func TestServiceRefConflictNamesBothPaths(t *testing.T) {
 	assert.Contains(t, err.Error(), "./evals/azure.eval.yaml")
 	assert.Contains(t, err.Error(), "./quality/azure.eval.yaml")
 	assert.Contains(t, err.Error(), "support-agent-evals")
+}
+
+// projectLayout makes a project root with a subdirectory and stands the test in
+// it, answering with the root as the process now spells it.
+//
+// os.Getwd resolves symlinks -- /var is /private/var on macOS -- so a root
+// taken straight from t.TempDir() and a working directory taken from Getwd are
+// two spellings of one place, and filepath.Rel between them walks all the way
+// up and back down.
+func projectLayout(t *testing.T, subdir string) string {
+	t.Helper()
+	sub := filepath.Join(t.TempDir(), subdir)
+	require.NoError(t, os.MkdirAll(sub, 0o750))
+	t.Chdir(sub)
+
+	here, err := os.Getwd()
+	require.NoError(t, err)
+	root := here
+	for range strings.Count(filepath.ToSlash(subdir), "/") + 1 {
+		root = filepath.Dir(root)
+	}
+	return root
+}
+
+// A `$ref` is read relative to the directory holding azure.yaml, but --path is
+// relative to wherever the caller stood. Writing the one as the other meant
+// `init` run from src/api wrote the scaffold under src/api and then told
+// azure.yaml it was at the project root, so `azd up` deployed a file that was
+// never there -- and the scaffold the reader was looking at never deployed.
+func TestRefToIsRelativeToTheProjectRootNotTheCaller(t *testing.T) {
+	root := projectLayout(t, filepath.Join("src", "api"))
+
+	got := refTo(root, filepath.Join("evals", "azure.eval.yaml"))
+
+	assert.Equal(t, "./src/api/evals/azure.eval.yaml", got,
+		"the ref has to name the file from the root it will be resolved against")
+}
+
+// Standing at the root is the case that always worked, and has to keep working.
+func TestRefToFromTheProjectRootIsUnchanged(t *testing.T) {
+	root := projectLayout(t, "here")
+
+	assert.Equal(t, "./evals/azure.eval.yaml",
+		refTo(filepath.Join(root, "here"), filepath.Join("evals", "azure.eval.yaml")))
+}
+
+// A configuration kept outside the project is still resolved against the root,
+// so it is named from there; a `./` in front of `../` would only be noise.
+func TestRefToOutsideTheProjectClimbsOutOfIt(t *testing.T) {
+	root := projectLayout(t, "project")
+
+	got := refTo(filepath.Join(root, "project"), filepath.Join("..", "shared", "azure.eval.yaml"))
+
+	assert.Equal(t, "../shared/azure.eval.yaml", got)
 }

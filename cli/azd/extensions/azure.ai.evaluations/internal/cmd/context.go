@@ -588,7 +588,11 @@ const (
 // again -- this time for a reason nobody could reproduce.
 //
 // declared is best-effort by contrast: outside an azd project there is no
-// azure.yaml to read, which is ordinary rather than a failure.
+// azure.yaml to read, which is ordinary rather than a failure. It also answers
+// the in-project default, because that default is `evals` under the project
+// root and only this level knows where the root is. What remains below is the
+// answer for a caller who is not in a project at all, where the caller's own
+// directory is the only base there is.
 func evalDirCascade(
 	flagValue string,
 	recorded func() (string, error),
@@ -616,7 +620,9 @@ func evalDirCascade(
 	return project.DefaultEvalDir, nil
 }
 
-// declaredEvalConfig reads the location azure.yaml's `$ref` points at.
+// projectEvalLocation is where the project puts its evaluation configuration:
+// the location azure.yaml's `$ref` points at, or the default beneath the
+// project root when nothing declares one.
 //
 // The service entry is the project's own statement of where its evaluation
 // configuration lives, and `azd up` has always deployed from it. The full path
@@ -624,13 +630,24 @@ func evalDirCascade(
 // declaring `./config/nightly.yaml` means that file, not whatever
 // `azure.eval.yaml` happens to sit beside it.
 //
-// Returns empty outside an azd project, or when nothing declares the eval host.
+// Both answers are resolved against the directory holding azure.yaml, because
+// that is what a `$ref` is written relative to and where `azd up` deploys from.
+// Returned raw they were opened against the extension's working directory
+// instead, so running any command from a subdirectory of the project reported
+// the configuration missing and `generate` wrote a second one -- while the
+// deploy went on using the first.
+//
+// The default belongs here and not in the cascade's last line for the same
+// reason: inside a project it means <root>/evals, and only outside one does it
+// mean `evals` beside the caller.
+//
+// Returns empty outside an azd project.
 //
 // GetServices is a map, so "the first entry that matches" is whichever one Go
 // happened to visit first. A project declaring two evaluation services is a
 // question this cannot answer, so it says so rather than picking one and
 // operating on a configuration the author did not mean.
-func declaredEvalConfig(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
+func projectEvalLocation(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
 	if azdClient == nil {
 		return "", nil
 	}
@@ -638,6 +655,7 @@ func declaredEvalConfig(ctx context.Context, azdClient *azdext.AzdClient) (strin
 	if err != nil || resp.GetProject() == nil {
 		return "", nil
 	}
+	root := resp.GetProject().GetPath()
 
 	seen := map[string]bool{}
 	var refs []string
@@ -663,10 +681,14 @@ func declaredEvalConfig(ctx context.Context, azdClient *azdext.AzdClient) (strin
 
 	switch len(refs) {
 	case 0:
-		return "", nil
+		// In a project, but nothing declares the eval host yet -- which is where
+		// `init` is about to write, and it writes under the project root.
+		return project.UnderRoot(root, project.DefaultEvalDir), nil
 	case 1:
-		return refs[0], nil
+		return project.UnderRoot(root, refs[0]), nil
 	default:
+		// The refs are reported as the author wrote them, not as resolved paths:
+		// the reader has to find them in azure.yaml.
 		sort.Strings(refs)
 		return "", messages.AmbiguousEvalServices(refs)
 	}
@@ -680,7 +702,7 @@ func (ec *evalContext) evalDir(ctx context.Context, flagValue string) (string, e
 		}
 		return readRecordedEvalPath(ctx, ec.azdClient, ec.envName)
 	}, func() (string, error) {
-		return declaredEvalConfig(ctx, ec.azdClient)
+		return projectEvalLocation(ctx, ec.azdClient)
 	})
 }
 
@@ -725,7 +747,7 @@ func resolveEvalDir(ctx context.Context, flagValue string) (string, error) {
 			return "", nil
 		}
 		defer azdClient.Close()
-		return declaredEvalConfig(ctx, azdClient)
+		return projectEvalLocation(ctx, azdClient)
 	})
 }
 

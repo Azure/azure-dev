@@ -247,17 +247,10 @@ func (p *EvalServiceTargetProvider) projectRoot(ctx context.Context) string {
 //
 // The same join is what agent_instructions.go does with the same helper.
 //
-// azd does not re-root an absolute `$ref` or an absolute `project:`, so neither
-// does this: joining one under the project produced <root>/C:/shared/evals,
-// which is the bug this fixes, reached from a different input. An empty root is
-// azd having failed to name the project, where the relative path is what the
-// extension did before and is better than resolving against nothing.
+// UnderRoot carries the absolute-path and empty-root rules, so the CLI paths
+// that resolve a `$ref` answer the same way this one does.
 func baseDirUnder(projectRoot string, serviceConfig *azdext.ServiceConfig) string {
-	relative := serviceRelativeDir(serviceConfig)
-	if filepath.IsAbs(relative) || projectRoot == "" {
-		return relative
-	}
-	return filepath.Join(projectRoot, relative)
+	return UnderRoot(projectRoot, serviceRelativeDir(serviceConfig))
 }
 
 // describeResult reports whether a version was published or reused, so a

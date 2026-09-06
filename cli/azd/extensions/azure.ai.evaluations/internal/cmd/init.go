@@ -385,12 +385,44 @@ func settleInitSource(
 // registry name. An absolute one already is a path, and prefixing it produced
 // `.//tmp/evals/azure.eval.yaml`: `init` wrote the configuration where it was
 // asked, and `azd up` then resolved something else under the project.
-func refTo(configPath string) string {
-	slashed := filepath.ToSlash(configPath)
+//
+// configPath is relative to where the caller stood; a `$ref` is read relative
+// to the directory holding azure.yaml. Written as the one and read as the
+// other, `init` run from a subdirectory recorded `./evals/...` for a scaffold
+// it had just written under that subdirectory, and `azd up` deployed a file
+// that was never there.
+func refTo(projectRoot, configPath string) string {
 	if filepath.IsAbs(configPath) {
-		return slashed
+		return filepath.ToSlash(configPath)
 	}
-	return "./" + slashed
+	rebased := filepath.ToSlash(relativeToRoot(projectRoot, configPath))
+	if rebased == ".." || strings.HasPrefix(rebased, "../") {
+		// Outside the project, but still resolved against the root, so `./`
+		// would only be noise in front of it.
+		return rebased
+	}
+	return "./" + rebased
+}
+
+// relativeToRoot restates a path given relative to the caller's directory as
+// one relative to the project root.
+//
+// Falls back to the path as given when there is no root to rebase onto or the
+// two share no common base, which is what this did before and is better than
+// resolving against nothing.
+func relativeToRoot(projectRoot, configPath string) string {
+	if projectRoot == "" {
+		return configPath
+	}
+	absolute, err := filepath.Abs(configPath)
+	if err != nil {
+		return configPath
+	}
+	relative, err := filepath.Rel(projectRoot, absolute)
+	if err != nil {
+		return configPath
+	}
+	return relative
 }
 
 // defaultEvalName names an eval after what it evaluates and what it reads.
@@ -880,11 +912,20 @@ func detectModelDeployments(proj *azdext.ProjectConfig) []string {
 // recordEvalPath remembers where the configuration was written, so the commands
 // that read it afterwards do not need --path repeated.
 //
+// Recorded absolute. `--path` is relative to where the caller stood when they
+// typed it, and the commands that read this back run from wherever they like,
+// so storing it as given pointed a later command at a different directory than
+// the one `init` wrote to.
+//
 // Best effort: `init` works outside an azd environment, and a path that could
 // not be recorded only costs the caller a flag later. It is never a reason to
 // fail a scaffold that already succeeded.
 func recordEvalPath(ctx context.Context, path string) {
 	if path == "" || path == project.DefaultEvalDir {
+		return
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
 		return
 	}
 	azdClient, err := azdext.NewAzdClient()
@@ -900,7 +941,7 @@ func recordEvalPath(ctx context.Context, path string) {
 	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: envName,
 		Key:     envKeyEvalPath,
-		Value:   filepath.ToSlash(path),
+		Value:   filepath.ToSlash(absolute),
 	})
 }
 
@@ -932,7 +973,7 @@ func ensureRootEvalService(
 	// host alone reported the wiring present after `init --path` moved the
 	// configuration, and `azd up` went on deploying the file that was left
 	// behind -- the scaffold the reader was looking at was never deployed.
-	wantRef := refTo(configPath)
+	wantRef := refTo(resp.GetProject().GetPath(), configPath)
 	if svc, ok := resp.GetProject().GetServices()[serviceName]; ok {
 		// AddService assigns into the services map by name, so a service this
 		// extension does not own would be replaced rather than added to.

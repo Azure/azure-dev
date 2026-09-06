@@ -65,6 +65,27 @@ func EvalDirOf(location string) string {
 	return location
 }
 
+// UnderRoot resolves a project-relative path against the directory holding
+// azure.yaml, which is what a `$ref` and the default eval directory are written
+// relative to.
+//
+// The extension's working directory is not that root and cannot stand in for
+// it: azd finds azure.yaml by walking up from wherever the caller stood, and
+// AZD_CWD carries the --cwd flag and nothing else. Resolving against the
+// process directory instead is why `azd up` from a subdirectory reported every
+// dataset as not yet generated.
+//
+// azd does not re-root an absolute path, so neither does this: joining one
+// under the project produced <root>/C:/shared/evals. An empty root is azd
+// having failed to name the project, where the path as given is better than
+// resolving against nothing.
+func UnderRoot(projectRoot, path string) string {
+	if projectRoot == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(projectRoot, path)
+}
+
 // ensureEvalDir creates the directory a location lives in, and returns it.
 //
 // Every caller here is handed a location, which is the directory before

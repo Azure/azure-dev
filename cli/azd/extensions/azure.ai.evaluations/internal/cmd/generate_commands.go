@@ -85,9 +85,18 @@ func resolvePlan(f *generateFlags, name string, defaultOutputDir string) (genera
 		return generationPlan{}, err
 	}
 
+	// Only consulted when --target was not given, so an ambiguous configuration
+	// is not an error for a caller who already said which agent they meant.
+	agent := f.target
+	if agent == "" {
+		if agent, err = declaredTarget(f.path); err != nil {
+			return generationPlan{}, err
+		}
+	}
+
 	plan := generationPlan{
 		Name:        name,
-		Agent:       firstNonEmpty(f.target, declaredTarget(f.path)),
+		Agent:       agent,
 		Model:       f.model,
 		Instruction: instruction,
 		BaseDir:     project.EvalDirOf(f.path),
@@ -159,17 +168,34 @@ func (ec *evalContext) agentDeployment(
 // where the target is already declared, so `generate` does not need it
 // repeated. Best effort: generation runs from the instruction alone when there
 // is no configuration to read, which is the case in a bare directory.
-func declaredTarget(evalDir string) string {
+//
+// A file may declare evals for several agents. Taking the first one silently
+// sent a billed job the wrong agent's instructions and model, so more than one
+// distinct target is refused and --target has to say which.
+func declaredTarget(evalDir string) (string, error) {
 	cfg, err := project.OpenEvalConfig(evalDir)
 	if err != nil || cfg == nil {
-		return ""
+		return "", nil
 	}
+
+	seen := map[string]bool{}
+	targets := make([]string, 0, len(cfg.Evals))
 	for _, eval := range cfg.Evals {
-		if eval.Target != nil && eval.Target.Name != "" {
-			return eval.Target.Name
+		if eval.Target == nil || eval.Target.Name == "" || seen[eval.Target.Name] {
+			continue
 		}
+		seen[eval.Target.Name] = true
+		targets = append(targets, eval.Target.Name)
 	}
-	return ""
+
+	switch len(targets) {
+	case 0:
+		return "", nil
+	case 1:
+		return targets[0], nil
+	default:
+		return "", messages.AmbiguousAgentTarget(targets)
+	}
 }
 
 func firstNonEmpty(values ...string) string {

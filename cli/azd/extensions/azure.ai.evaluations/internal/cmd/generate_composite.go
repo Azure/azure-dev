@@ -134,7 +134,14 @@ func (a *generateAction) Run() error {
 	}
 	a.flags.shared.path = resolvedPath
 
-	target := firstNonEmpty(a.flags.shared.target, declaredTarget(a.flags.shared.path))
+	// Only consulted when --target was not given, so a configuration declaring
+	// evals for several agents is refused rather than silently taking the first.
+	target := a.flags.shared.target
+	if target == "" {
+		if target, err = declaredTarget(a.flags.shared.path); err != nil {
+			return err
+		}
+	}
 	plans, err := buildGeneratePlans(generateRequest{
 		flags:         &a.flags.shared,
 		target:        target,

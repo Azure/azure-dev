@@ -115,7 +115,10 @@ func (s *testEnvServer) stored(t *testing.T, key string) string {
 
 // newTestAzdClient serves the environment over gRPC the way azd itself does,
 // rather than faking the accessor, so the client code under test is the real one.
-func newTestAzdClient(t *testing.T, env *testEnvServer) *azdext.AzdClient {
+//
+// Takes the service interface so a test can stand up a server that answers the
+// same calls differently -- one that keeps a section per environment, say.
+func newTestAzdClient(t *testing.T, env azdext.EnvironmentServiceServer) *azdext.AzdClient {
 	t.Helper()
 
 	server := grpc.NewServer()

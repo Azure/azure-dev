@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -50,9 +51,8 @@ type evalContext struct {
 	// state is nil until it has been loaded, which is what tells an unread
 	// store from one that is genuinely empty. stateErr holds a read that failed,
 	// which is a third thing again: empty to a reader, and unsafe to write over.
-	configHelper *azdext.ConfigHelper
-	state        map[string]string
-	stateErr     error
+	state    map[string]string
+	stateErr error
 }
 
 // privateStatePath is the one environment-config section this extension owns.
@@ -255,12 +255,11 @@ func (ec *evalContext) loadPrivateState(ctx context.Context) map[string]string {
 	}
 	ec.state = map[string]string{}
 
-	helper, err := ec.config()
-	if err != nil {
+	if ec.azdClient == nil {
 		return ec.state
 	}
 	stored := map[string]string{}
-	found, err := helper.GetEnvJSON(ctx, privateStatePath, &stored)
+	found, err := ec.getEnvConfig(ctx, privateStatePath, &stored)
 	switch {
 	case err != nil:
 		ec.stateErr = err
@@ -280,20 +279,42 @@ func (ec *evalContext) loadPrivateState(ctx context.Context) map[string]string {
 	return ec.state
 }
 
-// config builds the environment-config accessor once.
-func (ec *evalContext) config() (*azdext.ConfigHelper, error) {
-	if ec.configHelper != nil {
-		return ec.configHelper, nil
-	}
-	if ec.azdClient == nil {
-		return nil, errNoAzdEnvironment
-	}
-	helper, err := azdext.NewConfigHelper(ec.azdClient)
+// getEnvConfig reads one section of the environment this command acts on.
+//
+// azdext's ConfigHelper sends no environment name, so it always reads azd's
+// current one. With -e naming another, the reconciliation state was read from
+// the default environment and written back there: `-e staging` could take
+// production's fingerprints, decide a dataset was unchanged, and record its own
+// results over them. The request has carried an EnvName all along.
+func (ec *evalContext) getEnvConfig(ctx context.Context, path string, out any) (bool, error) {
+	resp, err := ec.azdClient.Environment().GetConfig(ctx, &azdext.GetConfigRequest{
+		Path:    path,
+		EnvName: ec.envName,
+	})
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	ec.configHelper = helper
-	return helper, nil
+	if !resp.GetFound() || len(resp.GetValue()) == 0 {
+		return false, nil
+	}
+	if err := json.Unmarshal(resp.GetValue(), out); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+// setEnvConfig writes one section back to the same environment it was read from.
+func (ec *evalContext) setEnvConfig(ctx context.Context, path string, value any) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = ec.azdClient.Environment().SetConfig(ctx, &azdext.SetConfigRequest{
+		Path:    path,
+		Value:   data,
+		EnvName: ec.envName,
+	})
+	return err
 }
 
 // setPrivate records one entry of reconciliation state.
@@ -302,8 +323,7 @@ func (ec *evalContext) config() (*azdext.ConfigHelper, error) {
 // path and this extension keeps its state as one object; the alternative is a
 // config path per key, which puts the same sprawl in a different file.
 func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error {
-	helper, err := ec.config()
-	if err != nil {
+	if ec.azdClient == nil {
 		return messages.NoAzdEnvironmentToWrite(key)
 	}
 	state := ec.loadPrivateState(ctx)
@@ -319,7 +339,7 @@ func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error 
 	}
 	previous, had := state[key]
 	state[key] = value
-	if err := helper.SetEnvJSON(ctx, privateStatePath, state); err != nil {
+	if err := ec.setEnvConfig(ctx, privateStatePath, state); err != nil {
 		// The in-memory copy goes back to what it was, so a later read in this
 		// same command reports what is still persisted. Deleting the key
 		// instead dropped a value the write never touched, and a resource that

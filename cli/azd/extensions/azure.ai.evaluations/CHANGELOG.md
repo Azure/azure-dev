@@ -24,7 +24,11 @@ First release of the Foundry evaluations extension.
 - Atomic commands for every operation -- `dataset`, `evaluator`, `eval`, `run`,
   `run output` and `job` -- each supporting `-o json` and `--no-prompt`.
 - `job` reattaches to a generation started with `--no-wait`, or one whose client
-  was interrupted, rather than paying for it again.
+  was interrupted, rather than paying for it again. `job show` completes it:
+  once the job has succeeded it downloads the artifact, writes it under `evals/`
+  or the `--output-dir` given, and adds the catalog entry, so a generation and a
+  reattached generation leave the same state behind. It is safe to run
+  repeatedly, and reports a job still running without writing anything.
 - `dataset --version` names the version to publish, on `create` and `update`
   alike, and means the same thing as `version:` in the configuration.
 - Testing criteria are shaped from each evaluator's published contract, so

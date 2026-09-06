@@ -2531,6 +2531,14 @@ func ConfigLockNotARegularFile(path string) error {
 			"remove it and run the command again", filepath.ToSlash(path))
 }
 
+// RubricJobReturnedNoName reports an evaluator job that finished without
+// naming what it produced, so there is nothing to write the rubric as.
+func RubricJobReturnedNoName() error {
+	return errors.New(
+		"the evaluator generation job returned no name, so there is nothing to " +
+			"save the rubric as; re-run `azd ai eval generate --evaluator`")
+}
+
 // ServiceNameTaken reports a service this extension does not own standing where
 // the scaffold would be written.
 //

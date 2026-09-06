@@ -56,6 +56,21 @@ func (s JobStatus) IsFailed() bool {
 	return false
 }
 
+// Succeeded reports a job that finished with something to collect.
+//
+// Terminal alone is the wrong question, because a cancelled or failed job is
+// also finished and has nothing to download. IsFailed covers cancellation as
+// well as failure, so terminal-and-not-failed leaves exactly the two statuses
+// that produced an artifact. An unrecognized status is not terminal and so is
+// never collected, which is the safe way to be wrong.
+func (j *GenerationJob) Succeeded() bool {
+	if j == nil {
+		return false
+	}
+	status := ParseJobStatus(j.Status)
+	return status.IsTerminal() && !status.IsFailed()
+}
+
 // String returns the status as a plain string.
 func (s JobStatus) String() string {
 	return string(s)

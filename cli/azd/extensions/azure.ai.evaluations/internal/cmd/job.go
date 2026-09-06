@@ -6,9 +6,11 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
 
 	"github.com/spf13/cobra"
 )
@@ -31,6 +33,19 @@ type jobKind struct {
 	get    func(context.Context, *evalContext, string) (*eval_api.GenerationJob, error)
 	cancel func(context.Context, *evalContext, string) (*eval_api.GenerationJob, error)
 	remove func(context.Context, *evalContext, string) error
+	// collect finishes a succeeded job: it writes the artifact and hands back
+	// the catalog entry for it. This is the half `generate --no-wait` cannot do,
+	// because it returns before the job has produced anything.
+	collect func(
+		ctx context.Context, ec *evalContext, job *eval_api.GenerationJob,
+		baseDir, outputDir string, out io.Writer,
+	) (*project.ArtifactRef, error)
+	// outputDir is where this kind's artifact lands when the caller did not name
+	// a directory of their own.
+	outputDir string
+	// addToCatalog records the collected artifact in the configuration, which is
+	// the half that makes the artifact usable rather than just present on disk.
+	addToCatalog func(*cobra.Command, string, *project.ArtifactRef) error
 }
 
 // Data generation is the one collection on its own API version, so the job
@@ -54,6 +69,16 @@ var datasetJobs = jobKind{
 	remove: func(ctx context.Context, ec *evalContext, id string) error {
 		return ec.evalClient.DeleteDataGenerationJob(ctx, id, DataGenerationAPIVersion)
 	},
+	collect: func(
+		ctx context.Context, ec *evalContext, job *eval_api.GenerationJob,
+		baseDir, outputDir string, out io.Writer,
+	) (*project.ArtifactRef, error) {
+		// No declared name: reattaching has only the job, so the service's own
+		// name is what the file is called.
+		return ec.collectDataset(ctx, job, "", baseDir, outputDir, out)
+	},
+	outputDir:    project.DefaultDatasetsDir,
+	addToCatalog: addDatasetToCatalog,
 }
 
 var evaluatorJobs = jobKind{
@@ -74,6 +99,14 @@ var evaluatorJobs = jobKind{
 	remove: func(ctx context.Context, ec *evalContext, id string) error {
 		return ec.evalClient.DeleteEvaluatorGenerationJob(ctx, id, ProjectEndpointAPIVersion)
 	},
+	collect: func(
+		_ context.Context, ec *evalContext, job *eval_api.GenerationJob,
+		baseDir, outputDir string, out io.Writer,
+	) (*project.ArtifactRef, error) {
+		return ec.collectRubric(job, "", baseDir, outputDir, out)
+	},
+	outputDir:    project.DefaultEvaluatorsDir,
+	addToCatalog: addEvaluatorToCatalog,
 }
 
 // jobSelector binds a command to one of the two generation collections.
@@ -137,6 +170,13 @@ func newJobCommand() *cobra.Command {
 type jobFlags struct {
 	sel      jobSelector
 	endpoint string
+	// path locates the configuration an artifact is collected beside. Only
+	// `show` collects, so only `show` registers it.
+	path string
+	// outputDir is where `show` writes the artifact. `generate` refuses this
+	// flag alongside --no-wait because it returns before there is anything to
+	// write, and points the caller here -- so here has to accept it.
+	outputDir string
 }
 
 // bind registers them together, so a command cannot declare one and forget
@@ -226,14 +266,24 @@ func newJobShowCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show <job-id>",
-		Short: "Show a generation job.",
-		Args:  requiredArgs(1),
+		Short: "Show a generation job, and collect its artifact once it has finished.",
+		Long: "Show a generation job, and collect its artifact once it has finished.\n\n" +
+			"`generate --no-wait` returns before the job has produced anything, so " +
+			"the download and the catalog entry are left for this command. A job " +
+			"still running is reported and nothing is written; a job that has " +
+			"succeeded is completed here, and running it again is harmless.",
+		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&jobShowAction{cmd: cmd, flags: flags, jobID: args[0]}).Run()
 		},
 	}
 
 	flags.bind(cmd)
+	// The artifact lands beside the configuration, so this command resolves it
+	// the same way every other one does.
+	addEvalPathFlag(cmd, &flags.path)
+	cmd.Flags().StringVar(&flags.outputDir, "output-dir", "",
+		"Directory the collected artifact is written to.")
 	return cmd
 }
 
@@ -255,14 +305,71 @@ func (a *jobShowAction) Run() error {
 		return jobLookupError("reading", kind, a.jobID, err)
 	}
 
+	out := a.cmd.OutOrStdout()
+	if !isJSON(a.cmd) {
+		fmt.Fprint(out, messages.JobLine(job.ID, job.Status))
+		if job.Error != nil && job.Error.Message != "" {
+			fmt.Fprint(out, messages.JobErrorLine(job.Error.Message))
+		}
+	}
+
+	// The half `generate --no-wait` could not do. Only a job that has finished
+	// has anything to collect; one still running is reported above and left
+	// alone, so this stays safe to run repeatedly while waiting.
+	ref, collectErr := a.collect(ctx, ec, kind, job, out)
+
 	if isJSON(a.cmd) {
-		return emitJSON(a.cmd.OutOrStdout(), job)
+		// The job is still the document, with the artifact added when there was
+		// one: a caller polling this has to be able to read both from one read.
+		doc := map[string]any{"job": job}
+		if ref != nil {
+			doc[kind.name] = ref
+		}
+		if err := emitJSON(out, doc); err != nil {
+			return err
+		}
 	}
-	fmt.Fprint(a.cmd.OutOrStdout(), messages.JobLine(job.ID, job.Status))
-	if job.Error != nil && job.Error.Message != "" {
-		fmt.Fprint(a.cmd.OutOrStdout(), messages.JobErrorLine(job.Error.Message))
+	return collectErr
+}
+
+// collect finishes a job that has succeeded, and reports nothing for one that
+// has not.
+//
+// Idempotent by construction: the artifact is written atomically over whatever
+// was there, and the catalog entry is only added when the file does not already
+// declare it, so a caller polling `job show` does not accumulate anything.
+func (a *jobShowAction) collect(
+	ctx context.Context,
+	ec *evalContext,
+	kind jobKind,
+	job *eval_api.GenerationJob,
+	out io.Writer,
+) (*project.ArtifactRef, error) {
+	if kind.collect == nil || !job.Succeeded() {
+		return nil, nil
 	}
-	return nil
+
+	evalDir, err := ec.evalDir(ctx, a.flags.path)
+	if err != nil {
+		return nil, err
+	}
+	baseDir := project.EvalDirOf(evalDir)
+
+	// An unset flag leaves the artifact in the kind's own directory, which is
+	// where `generate` without --output-dir would have put it.
+	outputDir := a.flags.outputDir
+	if outputDir == "" {
+		outputDir = kind.outputDir
+	}
+
+	ref, err := kind.collect(ctx, ec, job, baseDir, outputDir, out)
+	if err != nil {
+		return nil, err
+	}
+	if err := kind.addToCatalog(a.cmd, evalDir, ref); err != nil {
+		return ref, err
+	}
+	return ref, nil
 }
 
 // jobCancelAction cancels an in-flight generation job.

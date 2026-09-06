@@ -237,16 +237,36 @@ func (ec *evalContext) generateRubric(
 		return nil, messages.RubricGeneration(err)
 	}
 
-	path := project.ArtifactPath(plan.BaseDir, plan.OutputDir, plan.Name, ".json")
+	return ec.collectRubric(completed, plan.Name, plan.BaseDir, plan.OutputDir, out)
+}
+
+// collectRubric writes a finished evaluator job's rubric and describes it.
+//
+// Split from the submit so `job show` can finish a generation started with
+// --no-wait: the artifact is what the job was billed for, and the client that
+// submitted it is long gone.
+func (ec *evalContext) collectRubric(
+	completed *eval_api.GenerationJob,
+	name, baseDir, outputDir string,
+	out io.Writer,
+) (*project.ArtifactRef, error) {
+	resolvedName, version := completed.ResolvedNameVersion()
+	if name == "" {
+		name = resolvedName
+	}
+	if name == "" {
+		return nil, messages.RubricJobReturnedNoName()
+	}
+
+	path := project.ArtifactPath(baseDir, outputDir, name, ".json")
 	if err := writeRubric(path, completed.Result); err != nil {
 		return nil, err
 	}
 	fmt.Fprint(out, messages.WroteArtifact(path))
 
-	_, version := completed.ResolvedNameVersion()
 	return &project.ArtifactRef{
-		Name:    plan.Name,
-		Source:  relativeSource(plan.BaseDir, path),
+		Name:    name,
+		Source:  relativeSource(baseDir, path),
 		Version: version,
 	}, nil
 }
@@ -381,9 +401,31 @@ func (ec *evalContext) generateDataset(
 		return nil, messages.DataGeneration(explainDataGenerationFailure(err, plan.Agent))
 	}
 
+	return ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, out)
+}
+
+// collectDataset downloads a finished data job's dataset and records what a
+// deploy would have recorded.
+//
+// Split from the submit so `job show` can finish a generation started with
+// --no-wait: the rows are what the job was billed for, and the client that
+// submitted it is long gone.
+func (ec *evalContext) collectDataset(
+	ctx context.Context,
+	completed *eval_api.GenerationJob,
+	declaredName, baseDir, outputDir string,
+	out io.Writer,
+) (*project.ArtifactRef, error) {
 	name, version := completed.ResolvedNameVersion()
 	if name == "" {
 		return nil, messages.DataJobReturnedNoDataset()
+	}
+	// The path is named for what the author asked for, which is what the
+	// catalog entry and any later regeneration use. Reattaching has only the
+	// job, so the service's own name stands in.
+	localName := declaredName
+	if localName == "" {
+		localName = name
 	}
 
 	// Confirm the version exists before reading it, so a missing dataset is
@@ -398,7 +440,7 @@ func (ec *evalContext) generateDataset(
 		return nil, messages.DownloadingGeneratedDataset(name, err)
 	}
 
-	path := project.ArtifactPath(plan.BaseDir, plan.OutputDir, plan.Name, ".jsonl")
+	path := project.ArtifactPath(baseDir, outputDir, localName, ".jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, messages.Creating(filepath.Dir(path), err)
 	}
@@ -414,11 +456,11 @@ func (ec *evalContext) generateDataset(
 	// state a deploy would have left behind is recorded now. Without it the
 	// next `azd up` finds no fingerprint for this dataset, reads the file as
 	// new, and publishes a second version identical to the one just generated.
-	ec.recordDeployedDataset(ctx, plan.Name, path, version)
+	ec.recordDeployedDataset(ctx, localName, path, version)
 
 	return &project.ArtifactRef{
-		Name:    plan.Name,
-		Source:  relativeSource(plan.BaseDir, path),
+		Name:    localName,
+		Source:  relativeSource(baseDir, path),
 		Version: version,
 	}, nil
 }

@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -689,13 +688,17 @@ func (ec *evalContext) readRegisteredDataset(
 		return nil, messages.DatasetHasNoVersionsToRead(name)
 	}
 
-	content, err := ec.datasetClient.DownloadDatasetContent(
+	body, err := ec.datasetClient.OpenDatasetContent(
 		ctx, name, version, ProjectEndpointAPIVersion)
 	if err != nil {
 		return nil, messages.ReadingDatasetVersion(name, version, err)
 	}
+	// Closed before the end when a cap is in force, which is what stops the
+	// transfer: reading the blob into memory first made --max-samples bound the
+	// parse and nothing else.
+	defer body.Close()
 
-	items, err := readJSONLBytes(content, maxSamples)
+	items, err := scanJSONL(body, maxSamples)
 	if err != nil {
 		return nil, messages.ReadingDatasetVersion(name, version, err)
 	}
@@ -822,14 +825,9 @@ func readJSONL(path string, limit int) ([]map[string]any, error) {
 	return items, nil
 }
 
-// readJSONLBytes parses JSONL already in memory, which is how a registered
-// dataset arrives.
-func readJSONLBytes(content []byte, limit int) ([]map[string]any, error) {
-	return scanJSONL(bytes.NewReader(content), limit)
-}
-
 // scanJSONL reads rows until the limit is reached, so a subset costs only the
-// rows it needs to parse.
+// rows it needs to parse -- and, when the reader is a response body, only the
+// bytes it needs to transfer.
 func scanJSONL(r io.Reader, limit int) ([]map[string]any, error) {
 	var items []map[string]any
 	scanner := bufio.NewScanner(r)

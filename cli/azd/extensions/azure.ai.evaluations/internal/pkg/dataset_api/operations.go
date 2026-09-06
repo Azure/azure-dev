@@ -409,6 +409,33 @@ func (c *DatasetClient) DownloadDatasetContent(
 	version string,
 	apiVersion string,
 ) ([]byte, error) {
+	body, err := c.OpenDatasetContent(ctx, name, version, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, messages.ReadingDatasetContent(err)
+	}
+	return data, nil
+}
+
+// OpenDatasetContent resolves a published dataset the same way
+// DownloadDatasetContent does and hands back the body unread.
+//
+// For a caller that stops early: `run --max-samples N` parses N rows, and
+// reading the blob into memory first made the cap bound the parse and nothing
+// else, so a large registered dataset was transferred and held in full to score
+// a handful of rows. The caller closes it, and closing before the end is how
+// the transfer is cut short.
+func (c *DatasetClient) OpenDatasetContent(
+	ctx context.Context,
+	name string,
+	version string,
+	apiVersion string,
+) (io.ReadCloser, error) {
 	cred, err := c.GetDatasetCredential(ctx, name, version, apiVersion)
 	if err != nil {
 		return nil, messages.ReadingDownloadCredentials(name, err)
@@ -422,9 +449,9 @@ func (c *DatasetClient) DownloadDatasetContent(
 	// A URI whose last path segment carries a file extension is the blob
 	// itself; anything else is the container holding it.
 	if looksLikeBlobURI(sasURI) {
-		data, err := c.DownloadDataset(ctx, sasURI)
+		body, err := c.openDataset(ctx, sasURI)
 		if err == nil {
-			return data, nil
+			return body, nil
 		}
 		// 409 is how storage says the URI names a container, and the extension
 		// on the last segment was only ever a guess. Every other failure is this
@@ -444,7 +471,7 @@ func (c *DatasetClient) DownloadDatasetContent(
 	if blobName == "" {
 		return nil, messages.DatasetHasNoFile(name)
 	}
-	return c.DownloadBlob(ctx, sasURI, blobName)
+	return c.openBlob(ctx, sasURI, blobName)
 }
 
 // looksLikeBlobURI reports whether the URI's final segment names a file.
@@ -477,6 +504,28 @@ func pickDatasetBlob(names []string) string {
 // Returns the raw content as bytes. The downloadURL should be the full URL with SAS token
 // (e.g., from DatasetCredential.ResolvedDownloadURI()).
 func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string) ([]byte, error) {
+	body, err := c.openDataset(ctx, downloadURL)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, messages.ReadingDatasetContent(err)
+	}
+
+	log.Printf("[dataset_api] downloaded %d bytes", len(data))
+	return data, nil
+}
+
+// openDataset starts the download and hands back the body unread.
+//
+// A caller that keeps only the first rows should not pay for the rest: reading
+// the whole blob first made --max-samples bound the parse and nothing else, so
+// a large registered dataset was transferred and held in memory in full to
+// score ten rows of it.
+func (c *DatasetClient) openDataset(ctx context.Context, downloadURL string) (io.ReadCloser, error) {
 	req, err := runtime.NewRequest(ctx, http.MethodGet, downloadURL)
 	if err != nil {
 		return nil, messages.CreatingDownloadRequest(urlsafe.Error(err))
@@ -490,19 +539,12 @@ func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string)
 	if err != nil {
 		return nil, messages.DownloadingDatasetBlob(urlsafe.Error(err))
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
 		return nil, blobStatusError{status: resp.StatusCode, err: messages.BlobDownloadStatus(resp.StatusCode)}
 	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, messages.ReadingDatasetContent(err)
-	}
-
-	log.Printf("[dataset_api] downloaded %d bytes", len(data))
-	return data, nil
+	return resp.Body, nil
 }
 
 // ListContainerBlobs lists blobs in a container using a container-level SAS URI.
@@ -587,6 +629,23 @@ func (c *DatasetClient) readBlobPage(req *http.Request) ([]string, string, error
 // DownloadBlob downloads a single blob from a container using the container SAS URI
 // and the blob name. Returns the blob content as bytes.
 func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobName string) ([]byte, error) {
+	body, err := c.openBlob(ctx, containerSASUri, blobName)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, messages.ReadingBlobContent(err)
+	}
+
+	log.Printf("[dataset_api] downloaded blob %s (%d bytes)", blobName, len(data))
+	return data, nil
+}
+
+// openBlob starts the blob download and hands back the body unread.
+func (c *DatasetClient) openBlob(ctx context.Context, containerSASUri, blobName string) (io.ReadCloser, error) {
 	u, err := url.Parse(containerSASUri)
 	if err != nil {
 		return nil, messages.InvalidContainerURI(urlsafe.Error(err))
@@ -605,19 +664,12 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 	if err != nil {
 		return nil, messages.DownloadingBlob(urlsafe.Error(err))
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
 		return nil, messages.BlobDownloadStatusFor(resp.StatusCode, blobName)
 	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, messages.ReadingBlobContent(err)
-	}
-
-	log.Printf("[dataset_api] downloaded blob %s (%d bytes)", blobName, len(data))
-	return data, nil
+	return resp.Body, nil
 }
 
 // parseBlobNames extracts blob names from the Azure Blob Storage XML list response

@@ -53,6 +53,11 @@ type evalContext struct {
 	// which is a third thing again: empty to a reader, and unsafe to write over.
 	state    map[string]string
 	stateErr error
+
+	// Where azure.yaml sits, resolved on first use. rootKnown separates "not
+	// asked yet" from "asked, and azd reports no project".
+	root      string
+	rootKnown bool
 }
 
 // privateStatePath is the one environment-config section this extension owns.
@@ -69,6 +74,11 @@ type evalContext struct {
 // returned by `azd env get-values`. A separate file under .azure would sync
 // with none of that and would need its own cleanup lifecycle.
 const privateStatePath = "eval.state"
+
+// azdEnvironmentDirName is azd's own directory under the project root. The lock
+// guarding privateStatePath lives here because that is what every eval service
+// in the environment shares -- their configurations do not.
+const azdEnvironmentDirName = ".azure"
 
 // stateEndpointKey records which Foundry project the rest of the section
 // describes.
@@ -258,25 +268,41 @@ func (ec *evalContext) loadPrivateState(ctx context.Context) map[string]string {
 	if ec.azdClient == nil {
 		return ec.state
 	}
-	stored := map[string]string{}
-	found, err := ec.getEnvConfig(ctx, privateStatePath, &stored)
-	switch {
-	case err != nil:
+	fresh, err := ec.readPrivateState(ctx)
+	if err != nil {
 		ec.stateErr = err
 		// What the section holds is unknown, so it is not this function's to
 		// discard. The caller already refuses to write over an unread baseline.
 		return ec.state
-	case found:
-		ec.state = stored
+	}
+	ec.state = fresh
+	return ec.state
+}
+
+// readPrivateState reads the section from azd, ignoring anything this command
+// already cached.
+//
+// Separate from loadPrivateState because the write path needs a baseline taken
+// under the lock rather than one taken at the start of the command: a sibling
+// service's deploy may have added keys since then, and the write replaces the
+// whole section.
+func (ec *evalContext) readPrivateState(ctx context.Context) (map[string]string, error) {
+	stored := map[string]string{}
+	found, err := ec.getEnvConfig(ctx, privateStatePath, &stored)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		stored = map[string]string{}
 	}
 
 	// Scoped to the project it describes rather than to the environment holding
 	// it, so repointing an environment starts from nothing instead of inheriting
 	// another project's fingerprints.
-	if want := normalizedEndpoint(ec.endpoint); ec.state[stateEndpointKey] != want {
-		ec.state = map[string]string{stateEndpointKey: want}
+	if want := normalizedEndpoint(ec.endpoint); stored[stateEndpointKey] != want {
+		return map[string]string{stateEndpointKey: want}, nil
 	}
-	return ec.state
+	return stored, nil
 }
 
 // getEnvConfig reads one section of the environment this command acts on.
@@ -322,6 +348,14 @@ func (ec *evalContext) setEnvConfig(ctx context.Context, path string, value any)
 // The whole section is rewritten because azd's config store is addressed by
 // path and this extension keeps its state as one object; the alternative is a
 // config path per key, which puts the same sprawl in a different file.
+//
+// Rewriting the whole section is what makes the lock necessary. azd deploys
+// services concurrently by default, and each service's deploy builds its own
+// context with its own copy of this section, so two of them writing unlocked
+// both report success and the later write drops the other's ids and
+// fingerprints. The baseline is therefore re-read inside the lock: holding it
+// only around the write would still publish a view taken before the sibling
+// service started.
 func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error {
 	if ec.azdClient == nil {
 		return messages.NoAzdEnvironmentToWrite(key)
@@ -337,21 +371,59 @@ func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error 
 	if state[key] == value {
 		return nil
 	}
-	previous, had := state[key]
-	state[key] = value
-	if err := ec.setEnvConfig(ctx, privateStatePath, state); err != nil {
-		// The in-memory copy goes back to what it was, so a later read in this
-		// same command reports what is still persisted. Deleting the key
-		// instead dropped a value the write never touched, and a resource that
-		// reads as untracked gets another immutable version published for it.
-		if had {
-			state[key] = previous
-		} else {
-			delete(state, key)
-		}
+
+	unlock, err := ec.lockPrivateState(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	merged, err := ec.readPrivateState(ctx)
+	if err != nil {
+		return messages.PrivateStateUnreadable(key, err)
+	}
+	merged[key] = value
+	if err := ec.setEnvConfig(ctx, privateStatePath, merged); err != nil {
+		// ec.state is left as it was, so a later read in this same command
+		// reports what is still persisted. Recording the key anyway dropped a
+		// value the write never touched, and a resource that reads as untracked
+		// gets another immutable version published for it.
 		return messages.WritingEnvValue(key, err)
 	}
+	ec.state = merged
 	return nil
+}
+
+// lockPrivateState takes the cross-process lock on the reconciliation section.
+//
+// Outside an azd project there is nothing to share the section with and no
+// directory to put a lock file in, so the write goes ahead unguarded.
+func (ec *evalContext) lockPrivateState(ctx context.Context) (func(), error) {
+	root := ec.projectRoot(ctx)
+	if root == "" {
+		return func() {}, nil
+	}
+	return project.LockEvalState(ctx, filepath.Join(root, azdEnvironmentDirName))
+}
+
+// projectRoot is the directory holding azure.yaml, cached for the command.
+//
+// Empty when azd does not report a project, which is every standalone
+// invocation against the data plane.
+func (ec *evalContext) projectRoot(ctx context.Context) string {
+	if ec.rootKnown {
+		return ec.root
+	}
+	ec.rootKnown = true
+	if ec.azdClient == nil {
+		return ""
+	}
+	resp, err := ec.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return ""
+	}
+	ec.root = resp.GetProject().GetPath()
+	return ec.root
 }
 
 // privateValue reads one entry of reconciliation state.

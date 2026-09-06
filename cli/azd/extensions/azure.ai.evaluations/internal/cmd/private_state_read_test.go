@@ -54,3 +54,50 @@ func TestAReadableStateStillRecords(t *testing.T) {
 	assert.Equal(t, "eval_1", env.stored(t, "eval:existing"),
 		"recording one key must not drop the others")
 }
+
+// azd deploys services concurrently by default, and each service's deploy gets
+// its own context holding its own copy of this section. So between one service
+// reading the section and writing it back, a sibling can have added keys to it
+// -- and the write replaces the whole section.
+//
+// Writing the view taken at the start of the command deletes them, and the loss
+// only shows up on the next `azd up`, which reads those resources as untracked
+// and publishes a second immutable version of each. The baseline has to be the
+// section as it is at the moment of writing, not as it was at the first read.
+func TestRecordingMergesIntoTheStateAsItIsNow(t *testing.T) {
+	env := &testEnvServer{state: map[string]string{"dataset:golden:v": "3"}}
+	ec := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
+
+	// This command reads the section, which is what caches it.
+	require.Equal(t, "3", ec.privateValue(t.Context(), "dataset:golden:v"))
+
+	// A sibling service's deploy records a key of its own.
+	env.state["eval:sibling"] = "eval_9"
+
+	// And this command records one of its own afterwards.
+	require.NoError(t, ec.setPrivate(t.Context(), "eval:mine", "eval_1"))
+
+	assert.Equal(t, "eval_9", env.stored(t, "eval:sibling"),
+		"a key added since this command's read has to survive its write")
+	assert.Equal(t, "eval_1", env.stored(t, "eval:mine"))
+	assert.Equal(t, "3", env.stored(t, "dataset:golden:v"))
+}
+
+// A failed re-read is the same refusal as a failed first read, for the same
+// reason: the write replaces everything, so it must not go out over a baseline
+// nobody could read.
+func TestAStateRereadThatFailedIsNotWrittenOver(t *testing.T) {
+	env := &testEnvServer{state: map[string]string{"eval:existing": "eval_1"}}
+	ec := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
+
+	// The first read succeeds, so the refusal below can only come from the one
+	// taken at write time.
+	require.Equal(t, "eval_1", ec.privateValue(t.Context(), "eval:existing"))
+	env.failGetConfig = true
+
+	err := ec.setPrivate(t.Context(), "eval:added", "eval_2")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "could not be read")
+	assert.Nil(t, env.config[privateStatePath], "nothing may be written")
+}

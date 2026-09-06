@@ -495,7 +495,7 @@ func (c *EvalClient) ListOpenAIEvalsPage(
 // into a wrong choice. fetch reports how many rows it added and the cursor it
 // was given, so the two listings share this loop instead of a third copy.
 //
-// The two ways of not finishing therefore return an error rather than the rows
+// Every way of not finishing therefore returns an error rather than the rows
 // gathered so far. Logging them was as good as saying nothing, since log is
 // pointed at io.Discard without --debug, and a caller cannot tell a partial
 // catalog from a complete one.
@@ -525,12 +525,22 @@ func collectPages(
 		}
 		gathered += added
 
-		if !hasMore || lastID == "" || added == 0 {
+		if !hasMore {
 			return nil
 		}
 		if limit > 0 && gathered >= limit {
 			return nil
 		}
+		// The service says there is more and named nothing to resume from, so
+		// the walk cannot continue. Returning here reported the rows in hand as
+		// the whole listing, which is the one answer this loop exists to avoid.
+		if lastID == "" {
+			return fmt.Errorf(
+				"listing reported more results but returned no cursor to resume from, " +
+					"so the results so far are incomplete")
+		}
+		// An empty page is not the end while a new cursor is still being handed
+		// over: maxPages and the repeat check below are what bound this.
 		if seen[lastID] {
 			return fmt.Errorf(
 				"listing did not advance: the service returned the cursor %q twice, "+

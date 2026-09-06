@@ -80,6 +80,11 @@ func TestListOpenAIEvalsStopsWithoutACursor(t *testing.T) {
 
 // has_more with no last_id is the other way a service can leave the walk
 // without an anchor, and repeating the same request would never terminate.
+//
+// Stopping is right; stopping quietly was not. The service said there is more
+// and named nowhere to continue from, so the rows in hand are not the listing,
+// and returning them as one turned "is this name ambiguous?" into a wrong
+// answer instead of a refusal.
 func TestListOpenAIEvalsStopsWhenTheCursorIsEmpty(t *testing.T) {
 	calls := 0
 	c := clientServing(t, func(w http.ResponseWriter, r *http.Request) {
@@ -88,10 +93,10 @@ func TestListOpenAIEvalsStopsWhenTheCursorIsEmpty(t *testing.T) {
 		fmt.Fprint(w, `{"data":[{"id":"eval_1"}],"has_more":true,"last_id":""}`)
 	})
 
-	list, err := c.ListOpenAIEvals(context.Background(), 0)
+	_, err := c.ListOpenAIEvals(context.Background(), 0)
 
-	require.NoError(t, err)
-	assert.Len(t, list.Data, 1)
+	require.Error(t, err, "more results with no cursor is a truncation, not an ending")
+	assert.Contains(t, err.Error(), "incomplete")
 	assert.Equal(t, 1, calls, "has_more without last_id has nowhere to go")
 }
 

@@ -3086,18 +3086,36 @@ func CouldNotReadAgentForModel(agent string, err error) string {
 // generate refuses without naming the cause.
 //
 // Double quotes are what cmd, PowerShell, bash and zsh all read the same way.
-// A value containing $ or a backtick has no portable answer and is wrapped
-// anyway: one argument that may expand still beats two that certainly break.
-// Backslashes are left alone, so a Windows path comes back out as itself.
+// What they do not do is make the value literal: $, $(...) and backticks still
+// expand inside them in POSIX shells and PowerShell, and \" does not escape a
+// quote in PowerShell at all. There is no wrapping that is literal in all four.
+//
+// These values come out of the configuration file, so a printed command that
+// carried one of those characters would run it when pasted. They are named
+// rather than inlined: the command stops being copy-and-run for that argument,
+// which is the honest outcome, because it cannot be made both runnable and
+// safe here. Backslashes are left alone, so a Windows path comes back as itself.
 func shellArg(v string) string {
 	if v == "" {
 		return `""`
 	}
-	if !strings.ContainsAny(v, " \t\n\"'`$&|;<>()*?[]#~!") {
+	// The three that cannot survive being wrapped: two expand, one breaks the
+	// quoting itself.
+	if strings.ContainsAny(v, "$`\"") {
+		return shellArgNeedsQuoting
+	}
+	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]#~!") {
 		return v
 	}
-	return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"`
+	return `"` + v + `"`
 }
+
+// shellArgNeedsQuoting stands in for a value no portable quoting makes literal.
+//
+// Deliberately inert: it carries no metacharacter, so a reader who pastes the
+// line without noticing gets a command that fails on the name rather than one
+// that runs something the configuration chose.
+const shellArgNeedsQuoting = "VALUE_NEEDS_QUOTING"
 
 // ShellArg is shellArg for the command builders outside this package, so one
 // rule decides how every printed command quotes what it carries.

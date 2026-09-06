@@ -100,6 +100,11 @@ func TestListOutputItemsHonoursTheLimitAcrossPages(t *testing.T) {
 }
 
 // A page that claims more but carries nothing would otherwise loop forever.
+//
+// It terminates on the repeated cursor rather than on the empty page, because
+// stopping at the first empty one reported whatever had been gathered as the
+// whole listing. These rows decide "which run is newest", so a short answer is
+// a wrong answer; the walk is bounded and the shortfall is reported.
 func TestListOutputItemsStopsOnAnEmptyPage(t *testing.T) {
 	var requests atomic.Int32
 
@@ -113,11 +118,11 @@ func TestListOutputItemsStopsOnAnEmptyPage(t *testing.T) {
 		})
 	})
 
-	list, err := client.ListOutputItems(context.Background(), "eval_1", "run_1", 0)
+	_, err := client.ListOutputItems(context.Background(), "eval_1", "run_1", 0)
 
-	require.NoError(t, err)
-	assert.Empty(t, list.Data)
-	assert.EqualValues(t, 1, requests.Load())
+	require.Error(t, err, "a listing that never advances is not a complete listing")
+	assert.Contains(t, err.Error(), "incomplete")
+	assert.LessOrEqual(t, requests.Load(), int32(2), "and it stops rather than spinning")
 }
 
 // writeJSON is called from the server's goroutine, so it asserts rather than

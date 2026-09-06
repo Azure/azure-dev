@@ -44,11 +44,11 @@ func TestEvalServiceUses_OnlyWhatTheProjectDeclares(t *testing.T) {
 // `init` detects the judge deployment from the project, because it makes no
 // service calls and this is the only place it can read one.
 func TestDetectModelDeployment(t *testing.T) {
-	assert.Empty(t, detectModelDeployment(projectWith("api", "web")))
+	assert.Empty(t, detectModelDeployments(projectWith("api", "web")))
 
 	proj := projectWith("api")
 	proj.Services["chat"] = &azdext.ServiceConfig{Name: "chat", Host: aiModelHost}
-	assert.Equal(t, "chat", detectModelDeployment(proj),
+	assert.Equal(t, []string{"chat"}, detectModelDeployments(proj),
 		"the service name is the deployment name when nothing more specific is declared")
 
 	named := projectWith()
@@ -59,7 +59,35 @@ func TestDetectModelDeployment(t *testing.T) {
 			"deployment": "gpt-5.6-luna",
 		}),
 	}
-	assert.Equal(t, "gpt-5.6-luna", detectModelDeployment(named))
+	assert.Equal(t, []string{"gpt-5.6-luna"}, detectModelDeployments(named))
+}
+
+// Two declared model services is a choice the author has to make, so both are
+// returned rather than the first one silently winning.
+func TestDetectModelDeploymentsReturnsEveryCandidate(t *testing.T) {
+	proj := projectWith("api")
+	proj.Services["alpha"] = &azdext.ServiceConfig{Name: "alpha", Host: aiModelHost}
+	proj.Services["beta"] = &azdext.ServiceConfig{Name: "beta", Host: aiModelHost}
+
+	assert.Equal(t, []string{"alpha", "beta"}, detectModelDeployments(proj),
+		"sorted, so the ambiguity a caller is asked about does not change run to run")
+}
+
+// Two services naming the same deployment leave nothing to choose between.
+func TestDetectModelDeploymentsCollapsesADuplicateDeployment(t *testing.T) {
+	proj := projectWith()
+	for _, name := range []string{"one", "two"} {
+		proj.Services[name] = &azdext.ServiceConfig{
+			Name: name,
+			Host: aiModelHost,
+			AdditionalProperties: mustStruct(t, map[string]any{
+				"deployment": "gpt-5.6-luna",
+			}),
+		}
+	}
+
+	assert.Equal(t, []string{"gpt-5.6-luna"}, detectModelDeployments(proj),
+		"the same deployment twice is one deployment, not an ambiguity")
 }
 
 func mustStruct(t *testing.T, m map[string]any) *structpb.Struct {

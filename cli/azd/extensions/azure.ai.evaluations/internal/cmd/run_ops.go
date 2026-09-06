@@ -235,7 +235,11 @@ func (a *runShowAction) Run() error {
 		if pollErr != nil {
 			return pollErr
 		}
-		run = final
+		// Decorated again: the link is synthesized here rather than returned by
+		// the service, so taking the polled run whole drops it, and only the
+		// waited path lost it. `run start` decorates after its poll for the
+		// same reason.
+		run = ec.withPortalLink(ctx, evalID, final)
 	}
 
 	// The spec puts --fail-on on the commands that wait. Gating a run

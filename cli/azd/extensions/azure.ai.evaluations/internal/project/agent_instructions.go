@@ -71,8 +71,13 @@ func AgentInstructionsFromProject(
 	data, err := os.ReadFile(filepath.Join(configDir, agentMetadataFile)) //nolint:gosec // under the project
 	if err != nil {
 		// An agent that was never optimized has no such directory, which is
-		// the common case rather than a problem.
-		return "", "", nil
+		// the common case rather than a problem. A permission or I/O failure
+		// is not: reading it as "never optimized" bills a generation against
+		// the remote instructions while the local ones sit unread.
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", "", nil
+		}
+		return "", "", messages.ReadingPath(filepath.Join(configDir, agentMetadataFile), err)
 	}
 
 	var meta agentConfigMetadata

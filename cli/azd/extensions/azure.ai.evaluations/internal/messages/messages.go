@@ -2498,6 +2498,19 @@ func ServiceRefPointsElsewhere(serviceName, have, want string) error {
 			"--path %s", serviceName, have, want, have)
 }
 
+// ServiceNameTaken reports a service this extension does not own standing where
+// the scaffold would be written.
+//
+// The name is derived from the target, so a project can already have one; azd's
+// AddService assigns into the services map by name, so writing anyway would
+// replace it silently and the loss would only surface at the next deploy.
+func ServiceNameTaken(serviceName, host string) error {
+	return fmt.Errorf(
+		"service %q already exists with host %q, and this would replace it; "+
+			"rename that service, or scaffold under a different target name",
+		serviceName, host)
+}
+
 // InstructionFileOutsideProject reports metadata pointing outside the project.
 //
 // The pointer is read from a file in the checkout, so it is only as trustworthy

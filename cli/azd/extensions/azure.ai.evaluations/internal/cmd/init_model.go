@@ -72,8 +72,11 @@ func modelDeployments(proj *azdext.ProjectConfig) []string {
 // for later: `init` would otherwise exit 0 having written a configuration that
 // cannot be deployed.
 func resolveJudgeModel(cmd *cobra.Command, proj *azdext.ProjectConfig) (string, error) {
-	if model := detectModelDeployment(proj); model != "" {
-		return model, nil
+	// A declared model service is the most specific answer available without a
+	// service call, but two of them is a question rather than a detection, so it
+	// goes through the same path the project's own deployments take.
+	if declared := detectModelDeployments(proj); len(declared) > 0 {
+		return chooseJudgeModel(cmd, declared)
 	}
 
 	deployments := modelDeployments(proj)
@@ -87,14 +90,21 @@ func resolveJudgeModel(cmd *cobra.Command, proj *azdext.ProjectConfig) (string, 
 			return model, nil
 		}
 		return "", messages.JudgeModelRequired()
-	case 1:
-		return deployments[0], nil
 	}
+	return chooseJudgeModel(cmd, deployments)
+}
 
-	if noPrompt(cmd) {
-		return "", messages.AmbiguousJudgeModel(deployments)
+// chooseJudgeModel settles a list of candidates: one is the answer, more than
+// one is a question, and asking it the same way whatever the candidates came
+// from is what keeps the two sources from disagreeing.
+func chooseJudgeModel(cmd *cobra.Command, candidates []string) (string, error) {
+	if len(candidates) == 1 {
+		return candidates[0], nil
 	}
-	return promptJudgeModel(cmd, deployments)
+	if noPrompt(cmd) {
+		return "", messages.AmbiguousJudgeModel(candidates)
+	}
+	return promptJudgeModel(cmd, candidates)
 }
 
 // tracesConnected reports whether the azd environment records an Application

@@ -833,13 +833,16 @@ func projectCanProvision(proj *azdext.ProjectConfig) bool {
 // call.
 const aiModelHost = "azure.ai.model"
 
-// detectModelDeployment finds the deployment the graders judge with, from what
-// the project already declares.
+// detectModelDeployments finds the deployments the graders could judge with,
+// from what the project already declares.
 //
 // `init` makes no service calls, so detection is limited to the project file.
 // Coming back empty leaves it to resolveJudgeModel, which reads the Foundry
 // project's deployments: and then asks or names --judge-model.
-func detectModelDeployment(proj *azdext.ProjectConfig) string {
+//
+// Every match is returned rather than the first, because two declared model
+// services is a choice for the author to make, not something to settle here.
+func detectModelDeployments(proj *azdext.ProjectConfig) []string {
 	// Sorted, because GetServices is a map: without an order, a project with
 	// two model services judged with a different deployment run to run.
 	services := proj.GetServices()
@@ -849,21 +852,29 @@ func detectModelDeployment(proj *azdext.ProjectConfig) string {
 	}
 	sort.Strings(names)
 
+	seen := map[string]bool{}
+	found := make([]string, 0, len(names))
 	for _, name := range names {
 		svc := services[name]
 		if svc.GetHost() != aiModelHost {
 			continue
 		}
+		deployment := name
 		if props := svc.GetAdditionalProperties().AsMap(); props != nil {
 			for _, key := range []string{"deployment", "deploymentName", "name", "model"} {
 				if v, ok := props[key].(string); ok && v != "" {
-					return v
+					deployment = v
+					break
 				}
 			}
 		}
-		return name
+		// Two services naming the same deployment are not a choice.
+		if !seen[deployment] {
+			seen[deployment] = true
+			found = append(found, deployment)
+		}
 	}
-	return ""
+	return found
 }
 
 // recordEvalPath remembers where the configuration was written, so the commands
@@ -922,7 +933,12 @@ func ensureRootEvalService(
 	// configuration, and `azd up` went on deploying the file that was left
 	// behind -- the scaffold the reader was looking at was never deployed.
 	wantRef := refTo(configPath)
-	if svc, ok := resp.GetProject().GetServices()[serviceName]; ok && svc.GetHost() == project.EvalHost {
+	if svc, ok := resp.GetProject().GetServices()[serviceName]; ok {
+		// AddService assigns into the services map by name, so a service this
+		// extension does not own would be replaced rather than added to.
+		if svc.GetHost() != project.EvalHost {
+			return "", messages.ServiceNameTaken(serviceName, svc.GetHost())
+		}
 		if have := serviceConfigRef(svc); have != "" && !sameRefTarget(have, wantRef) {
 			return "", messages.ServiceRefPointsElsewhere(serviceName, have, wantRef)
 		}

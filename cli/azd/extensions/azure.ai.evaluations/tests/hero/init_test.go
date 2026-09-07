@@ -17,8 +17,10 @@
 // terminal output the spec pins line for line.
 //
 //	azd x pack --rebuild
-//	azd extension install azure.ai.evaluations --source local
 //	go test -tags hero -v ./tests/hero/...
+//
+// The suite installs the packed extension into a configuration directory of its
+// own, so nothing here reads or writes the developer's.
 package hero
 
 import (
@@ -26,23 +28,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-// reinstall is what to run when the installed extension is not this code.
+// repack is what to run when the packed artifact is not this code.
 //
 // `azd x pack` rewrites the artifacts but leaves the checksum in the local
-// registry alone when the version has not changed, so a plain reinstall then
-// fails validation. Bumping the version in extension.yaml is the way through.
-const reinstall = "  azd x pack --rebuild\n" +
-	"  azd extension uninstall azure.ai.evaluations\n" +
-	"  azd extension install azure.ai.evaluations --source local\n"
+// registry alone when the version has not changed, so a plain repack then fails
+// validation. Bumping the version in extension.yaml is the way through.
+const repack = "  azd x pack --rebuild\n"
 
-// TestMain refuses to run against an azd that cannot reach the extension, or
-// that is hosting a different build of it.
+// heroSource is what the suite registers the developer's local registry as,
+// inside its own configuration.
+const heroSource = "herolocal"
+
+// azdEnv is the environment every azd subprocess in this suite runs with.
+//
+// Set before the first azd call, and never nil afterwards: an inherited
+// environment is the thing this suite is avoiding.
+var azdEnv []string
+
+// TestMain gives the suite its own azd configuration, installs this extension
+// into it, and refuses to run if what got installed is not this code.
 //
 // Skipping would be worse than failing here: these tests exist because nothing
 // else covers the azd-hosted path, so a silent skip returns the suite to the
@@ -52,25 +63,109 @@ const reinstall = "  azd x pack --rebuild\n" +
 func TestMain(m *testing.M) {
 	if os.Getenv("AZURE_AI_EVAL_HERO") != "1" {
 		fmt.Fprintf(os.Stderr,
-			"set AZURE_AI_EVAL_HERO=1 to run the hero scenarios. They need azd "+
-				"hosting this extension:\n%s", reinstall)
+			"set AZURE_AI_EVAL_HERO=1 to run the hero scenarios. They need this "+
+				"extension packed:\n%s", repack)
 		os.Exit(0)
 	}
 
-	hosted, err := exec.Command("azd", "ai", "eval", "init", "--help").CombinedOutput()
-	if err != nil || !strings.Contains(string(hosted), "Scaffold evaluation config") {
-		fmt.Fprintf(os.Stderr,
-			"azd cannot reach the evaluations extension. Install it first:\n%s\n%s\n",
-			reinstall, hosted)
+	cleanup, err := isolateAzd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n\n%s", err, repack)
 		os.Exit(1)
 	}
 
-	if err := requireCurrentInstall(string(hosted)); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n\n%s", err, reinstall)
+	// os.Exit runs no deferred call, so every path out of here releases the
+	// configuration directory itself.
+	fail := func(format string, args ...any) {
+		cleanup()
+		fmt.Fprintf(os.Stderr, format, args...)
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	hosted, err := azd("ai", "eval", "init", "--help")
+	if err != nil || !strings.Contains(hosted, "Scaffold evaluation config") {
+		fail("azd cannot reach the evaluations extension:\n%s\n%s\n", repack, hosted)
+	}
+
+	if err := requireCurrentInstall(hosted); err != nil {
+		fail("%v\n\n%s", err, repack)
+	}
+
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
+}
+
+// isolateAzd installs this extension into a configuration directory of the
+// suite's own and points every later azd call at it, answering the release.
+//
+// Sharing the developer's AZD_CONFIG_DIR meant the suite ran against whichever
+// build they happened to have installed, wrote its cache and telemetry into
+// their profile, and raced any other run on the same machine. What is installed
+// here is the artifact `azd x pack` wrote to their local registry, which is read
+// and never written; requireCurrentInstall is what proves that artifact is this
+// working tree.
+func isolateAzd() (func(), error) {
+	// Read before azdEnv is set, because this is the one path that is meant to
+	// resolve against the developer's own configuration.
+	registry, err := localRegistry()
+	if err != nil {
+		return nil, err
+	}
+
+	dir, err := os.MkdirTemp("", "azdeval-hero-config")
+	if err != nil {
+		return nil, err
+	}
+	release := func() { _ = os.RemoveAll(dir) }
+
+	azdEnv = append(os.Environ(),
+		"AZD_CONFIG_DIR="+dir,
+		// A test run is not a person using the product.
+		"AZURE_DEV_COLLECT_TELEMETRY=no",
+	)
+
+	// Registered first, and by name. Handing `install --source` a bare path
+	// makes azd stop and ask what to call the source, which in a test is a hang
+	// with no output rather than a failure.
+	if out, err := azd("extension", "source", "add",
+		"-n", heroSource, "-t", "file", "-l", registry); err != nil {
+		release()
+		return nil, fmt.Errorf("registering the packed extension for this suite:\n%s", out)
+	}
+
+	out, err := azd("extension", "install", "azure.ai.evaluations", "--source", heroSource)
+	if err != nil {
+		release()
+		return nil, fmt.Errorf("installing the extension for this suite:\n%s", out)
+	}
+	return release, nil
+}
+
+// localRegistry is the registry.json `azd x pack` writes to.
+func localRegistry() (string, error) {
+	base := os.Getenv("AZD_CONFIG_DIR")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		base = filepath.Join(home, ".azd")
+	}
+
+	path := filepath.Join(base, "registry.json")
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("no packed extension to install from at %s", path)
+	}
+	return path, nil
+}
+
+// azd runs the CLI with the suite's own configuration.
+func azd(args ...string) (string, error) {
+	cmd := exec.Command("azd", args...)
+	cmd.Env = azdEnv
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 // requireCurrentInstall compares the installed extension's help against this
@@ -140,6 +235,7 @@ func azdEval(t *testing.T, dir string, args ...string) (string, int) {
 
 	cmd := exec.Command("azd", append([]string{"ai", "eval"}, args...)...)
 	cmd.Dir = dir
+	cmd.Env = azdEnv
 	var out strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -254,7 +350,9 @@ func TestHeroInitMakesNoServiceCalls(t *testing.T) {
 	// A proxy pointing nowhere fails any outbound request, so a command that
 	// stays offline is unaffected and one that does not cannot be mistaken for
 	// working.
-	cmd.Env = append(os.Environ(),
+	// Cloned, not appended to: azdEnv is shared, and append would write these
+	// into the spare capacity every other test is reading from.
+	cmd.Env = append(slices.Clone(azdEnv),
 		"HTTPS_PROXY=http://127.0.0.1:9",
 		"HTTP_PROXY=http://127.0.0.1:9",
 		"NO_PROXY=",

@@ -2595,7 +2595,7 @@ func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) err
 	if version == nil {
 		return fmt.Errorf("target version response is empty")
 	}
-	if version.Status != "active" {
+	if !strings.EqualFold(version.Status, "active") {
 		return fmt.Errorf("target %s:%s has status %q, expected active", version.Name, version.Version, version.Status)
 	}
 	definitionJSON, err := json.Marshal(version.Definition)

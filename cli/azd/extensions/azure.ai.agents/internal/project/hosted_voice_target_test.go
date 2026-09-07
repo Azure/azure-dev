@@ -184,6 +184,13 @@ func TestResolveHostedVoiceTargetRejectsDifferentProject(t *testing.T) {
 }
 
 func TestValidateHostedVoiceTarget(t *testing.T) {
+	version := compatibleHostedVoiceVersion()
+	version.Status = "Active"
+	err := validateHostedVoiceTargetVersion(version)
+	require.NoError(t, err)
+}
+
+func TestValidateHostedVoiceTargetAcceptsLowercaseActiveStatus(t *testing.T) {
 	err := validateHostedVoiceTargetVersion(&agent_api.AgentVersionObject{
 		Name:    "remote-target",
 		Version: "4",

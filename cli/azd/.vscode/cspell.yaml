@@ -105,6 +105,7 @@ words:
   - santhosh
   - tekuri
   - jsonschema
+  - innererror
   - rustc
   - figspec
   - finetune

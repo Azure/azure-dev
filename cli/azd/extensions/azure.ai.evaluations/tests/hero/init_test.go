@@ -292,15 +292,19 @@ func TestHeroScenario1ColdStart(t *testing.T) {
 		"--evaluator", "builtin.task_adherence", "--judge-model", judge)
 	require.Zero(t, code, "init makes no service calls, so nothing can fail it here")
 
+	// The fixture is an eval-only project: an azure.yaml with no infra
+	// directory, and no azd environment. So both conditional lines below take
+	// their unprovisioned branch, and that is the scenario's own shape rather
+	// than a gap in the fixture.
 	want := `(✓) Done: Detected agent target: support-agent
-(✓) Done: Using data source: traces (Application Insights)
+(✓) Done: Using data source: traces. No Application Insights connection is recorded in this environment, so the run finds rows only if the project has one
 (✓) Done: Judge model deployment: gpt-5.6-luna
 
 Created
   evals/azure.eval.yaml             evaluation configuration
   azure.yaml                        added service 'support-agent-evals'
 
-Next: azd up
+Next: azd ai eval create
       azd ai eval run start`
 
 	require.Equal(t, want, normalize(out))
@@ -475,7 +479,9 @@ func TestHeroInitSuppliedDatasetIsNotGenerated(t *testing.T) {
 
 	text := normalize(out)
 	require.NotContains(t, text, "dataset generate")
-	require.Contains(t, text, "Next: azd up",
+	// The deploy, and specifically the one that works here: the fixture has no
+	// infra to provision, where `azd up` exits 1.
+	require.Contains(t, text, "Next: azd ai eval create",
 		"with nothing left to generate, the next step is the deploy")
 
 	body, err := os.ReadFile(filepath.Join(dir, "evals", "azure.eval.yaml"))

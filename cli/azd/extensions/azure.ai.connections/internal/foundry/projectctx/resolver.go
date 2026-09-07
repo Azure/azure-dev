@@ -6,7 +6,11 @@ package projectctx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
+
+	"azure.ai.connections/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/codes"
@@ -16,6 +20,52 @@ import (
 // ReadAzdHostedSourcesFunc is a package-level seam so tests can stub the
 // daemon-backed lookup without spinning up a real azd gRPC server.
 var ReadAzdHostedSourcesFunc = readAzdHostedSources
+
+// ResolveEnvironment resolves an endpoint exclusively from a named azd
+// environment for lifecycle operations. Unlike Resolve, it never reads the
+// default environment, global project context, or process environment.
+func ResolveEnvironment(ctx context.Context, environmentName string) (*Resolved, error) {
+	if strings.TrimSpace(environmentName) == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"an azd environment is required for lifecycle deployment",
+			"select an azd environment with --environment <name>",
+		)
+	}
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		return nil, fmt.Errorf("connect to azd for environment %q: %w", environmentName, err)
+	}
+	defer client.Close()
+
+	// GetValues returns persisted values only. GetValue uses Getenv, which
+	// includes process-variable fallbacks and would defeat this isolation.
+	response, err := client.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: environmentName})
+	if err != nil {
+		return nil, fmt.Errorf("read project endpoint from azd environment %q: %w", environmentName, err)
+	}
+	values := make(map[string]string, len(response.GetKeyValues()))
+	for _, item := range response.GetKeyValues() {
+		values[item.GetKey()] = item.GetValue()
+	}
+	for _, key := range []string{foundryEnvKey, azureAiEnvKey} {
+		value := values[key]
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		endpoint, _, err := Validate(value)
+		if err != nil {
+			return nil, err
+		}
+		return &Resolved{Endpoint: endpoint, Source: SourceAzdEnv, AzdEnvName: environmentName}, nil
+	}
+	return nil, exterrors.Dependency(
+		exterrors.CodeMissingProjectEndpoint,
+		fmt.Sprintf("azd environment %q has no Foundry project endpoint", environmentName),
+		fmt.Sprintf("run 'azd provision --environment %q' or set FOUNDRY_PROJECT_ENDPOINT "+
+			"(or AZURE_AI_PROJECT_ENDPOINT) in that azd environment", environmentName),
+	)
+}
 
 // readAzdHostedSources dials the azd daemon (if reachable) and reads both the
 // active environment's project endpoint and the global-config project context

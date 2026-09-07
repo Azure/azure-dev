@@ -55,7 +55,7 @@ func newConnectionServiceTarget(
 		name string,
 		properties rawConnectionProperties,
 	) (string, error) {
-		connectionContext, err := resolveConnectionContextForEnvironment(ctx, "", environmentName)
+		connectionContext, err := resolveConnectionContextForEnvironment(ctx, environmentName)
 		if err != nil {
 			return "", err
 		}

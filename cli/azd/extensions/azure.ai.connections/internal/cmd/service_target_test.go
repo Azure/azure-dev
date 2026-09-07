@@ -5,11 +5,16 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"azure.ai.connections/internal/definition"
+	"azure.ai.connections/internal/exterrors"
+	"azure.ai.connections/internal/foundry/projectctx"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -84,6 +89,82 @@ func TestDeployUpsertsLogicalConnectionAndPublishesMarker(t *testing.T) {
 	assert.Equal(t, "https://account.services.ai.azure.com/api/projects/project", markerProject)
 	require.Len(t, progressMsgs, 1)
 	assert.Contains(t, progressMsgs[0], "Private Registry")
+}
+
+func TestDeployMissingEnvironmentEndpointDoesNotUpsertOrPublish(t *testing.T) {
+	const production = "https://production.services.ai.azure.com/api/projects/production"
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", production)
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", production)
+	original := projectctx.ReadAzdHostedSourcesFunc
+	projectctx.ReadAzdHostedSourcesFunc = func(context.Context, string) (projectctx.AzdHostedSources, error) {
+		t.Error("deploy consulted the standalone cascade")
+		// Stop a regressed implementation before it can issue a real Azure call.
+		return projectctx.AzdHostedSources{}, errors.New("standalone cascade must not be used")
+	}
+	t.Cleanup(func() { projectctx.ReadAzdHostedSourcesFunc = original })
+
+	for _, selection := range []string{"staging", ""} {
+		t.Run("selection="+selection, func(t *testing.T) {
+			expectedEnvironment := selection
+			if expectedEnvironment == "" {
+				expectedEnvironment = "default"
+			}
+			environment := &missingEndpointEnvironmentServer{t: t, name: expectedEnvironment}
+			server := grpc.NewServer()
+			azdext.RegisterEnvironmentServiceServer(server, environment)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+			t.Setenv("AZD_SERVER", listener.Addr().String())
+			client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+			require.NoError(t, err)
+			t.Cleanup(func() { client.Close() })
+
+			// Keep the production upsert callback so this test covers the wiring
+			// from Deploy through connection context to the strict resolver.
+			target, ok := newConnectionServiceTarget(client, selection).(*connectionServiceTarget)
+			require.True(t, ok)
+			target.projectClient = &recordingProjectConfigReader{path: t.TempDir()}
+			target.envClient = &recordingServiceEnvironmentClient{}
+			published := false
+			target.publishMarker = func(context.Context, string, string, string) error {
+				published = true
+				return nil
+			}
+			props, err := structpb.NewStruct(map[string]any{
+				"category": "RemoteTool", "target": "https://example.test/mcp", "authType": "None",
+			})
+			require.NoError(t, err)
+			result, err := target.Deploy(t.Context(), &azdext.ServiceConfig{
+				Name: "search", Host: aiConnectionHost, AdditionalProperties: props,
+				Environment: map[string]string{"FOUNDRY_PROJECT_ENDPOINT": production},
+			}, nil, nil, nil)
+			require.Error(t, err)
+			require.Nil(t, result)
+			var localErr *azdext.LocalError
+			require.ErrorAs(t, err, &localErr)
+			assert.Equal(t, exterrors.CodeMissingProjectEndpoint, localErr.Code)
+			assert.Contains(t, localErr.Message, expectedEnvironment)
+			assert.False(t, published)
+			assert.Equal(t, int32(1), environment.calls.Load())
+		})
+	}
+}
+
+type missingEndpointEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	t     *testing.T
+	name  string
+	calls atomic.Int32
+}
+
+func (s *missingEndpointEnvironmentServer) GetValues(
+	_ context.Context, request *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	s.calls.Add(1)
+	assert.Equal(s.t, s.name, request.GetName())
+	return &azdext.KeyValueListResponse{}, nil
 }
 
 func TestParseConnectionServiceConfigResolvesFileRefs(t *testing.T) {
@@ -193,10 +274,10 @@ func TestSetConnectionProjectMarkerCommitsToSelectedEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, environment.setRequests, 2)
 	assert.Equal(t, "staging", environment.setRequests[0].GetEnvName())
-	assert.Equal(t, "CONNECTION_MY_CONNECTION_PROJECT_ENDPOINT", environment.setRequests[0].GetKey())
+	assert.Equal(t, "CONNECTION_V2_6D7920636F6E6E656374696F6E_PROJECT_ENDPOINT", environment.setRequests[0].GetKey())
 	assert.Empty(t, environment.setRequests[0].GetValue())
 	assert.Equal(t, "staging", environment.setRequests[1].GetEnvName())
-	assert.Equal(t, "CONNECTION_MY_CONNECTION_PROJECT_ENDPOINT", environment.setRequests[1].GetKey())
+	assert.Equal(t, "CONNECTION_V2_6D7920636F6E6E656374696F6E_PROJECT_ENDPOINT", environment.setRequests[1].GetKey())
 	assert.Equal(t,
 		"https://account.services.ai.azure.com/api/projects/project",
 		environment.setRequests[1].GetValue(),

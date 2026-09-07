@@ -537,7 +537,7 @@ func TestValidateFoundryDependenciesConnectionUsesDeployMarker(t *testing.T) {
 			envkey.ConnectionServiceProjectEndpoint("connection"): "https://example.test/projects/old",
 		}
 		err := validateFoundryDependencies(t.Context(), agent, nil, services, env, nil)
-		require.ErrorContains(t, err, "CONNECTION_CONNECTION_PROJECT_ENDPOINT")
+		require.ErrorContains(t, err, envkey.ConnectionServiceProjectEndpoint("connection"))
 	})
 
 	t.Run("missing marker recommends targeted deploy", func(t *testing.T) {
@@ -548,4 +548,24 @@ func TestValidateFoundryDependenciesConnectionUsesDeployMarker(t *testing.T) {
 		require.Contains(t, localErr.Suggestion, `azd deploy "connection"`)
 		require.NotContains(t, localErr.Suggestion, "azd provision")
 	})
+}
+
+func TestValidateFoundryConnectionDependencyDoesNotAcceptAnotherServiceMarker(t *testing.T) {
+	t.Parallel()
+	const endpoint = "https://example.test/projects/current"
+	env := map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT":                               endpoint,
+		envkey.ConnectionServiceProjectEndpoint("my connection"): endpoint,
+	}
+	require.Empty(t, validateFoundryConnectionDependency(&azdext.ServiceConfig{Name: "my connection"}, env))
+	for _, other := range []string{"my--connection", "my_connection", "My Connection"} {
+		require.NotEmpty(t, validateFoundryConnectionDependency(&azdext.ServiceConfig{Name: other}, env))
+	}
+
+	// Ambiguous markers from the old normalization cannot prove readiness.
+	oldMarkers := map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT":                  endpoint,
+		"CONNECTION_MY_CONNECTION_PROJECT_ENDPOINT": endpoint,
+	}
+	require.NotEmpty(t, validateFoundryConnectionDependency(&azdext.ServiceConfig{Name: "my connection"}, oldMarkers))
 }

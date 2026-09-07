@@ -44,23 +44,27 @@ func resolveConnectionContext(
 	ctx context.Context,
 	flagEndpoint string,
 ) (*connectionContext, error) {
-	return resolveConnectionContextForEnvironment(ctx, flagEndpoint, "")
-}
-
-func resolveConnectionContextForEnvironment(
-	ctx context.Context,
-	flagEndpoint string,
-	environmentName string,
-) (*connectionContext, error) {
-	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{
-		FlagValue:       flagEndpoint,
-		EnvironmentName: environmentName,
-	})
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: flagEndpoint})
 	if err != nil {
 		return nil, err
 	}
-	endpoint := resolved.Endpoint
+	return newConnectionContext(ctx, resolved.Endpoint, "")
+}
 
+// resolveConnectionContextForEnvironment is the lifecycle-only path. An absent
+// endpoint must fail before creating clients or discovering ARM resources.
+func resolveConnectionContextForEnvironment(
+	ctx context.Context,
+	environmentName string,
+) (*connectionContext, error) {
+	resolved, err := projectctx.ResolveEnvironment(ctx, environmentName)
+	if err != nil {
+		return nil, err
+	}
+	return newConnectionContext(ctx, resolved.Endpoint, environmentName)
+}
+
+func newConnectionContext(ctx context.Context, endpoint, environmentName string) (*connectionContext, error) {
 	account, project, err := parseEndpointComponents(endpoint)
 	if err != nil {
 		return nil, err

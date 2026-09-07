@@ -105,6 +105,36 @@ func emitJSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
+// jsonListPage is the envelope every machine listing answers with.
+//
+// A bare array cannot say that it is one page of several, so `--limit` either
+// had to be ignored for `-o json` -- leaving the flag doing nothing on half the
+// surface -- or had to hand a script a short list it would read as the whole
+// collection. The envelope is what lets the flag work: count is what arrived,
+// total_count is what there was, and continuation_token is null only on the
+// last page.
+type jsonListPage[T any] struct {
+	Items             []T     `json:"items"`
+	Count             int     `json:"count"`
+	TotalCount        *int    `json:"total_count,omitempty"`
+	ContinuationToken *string `json:"continuation_token"`
+}
+
+// emitJSONPage writes one page of a listing.
+//
+// totalCount is nil where the service does not report one; the key is then
+// absent rather than zero, because "none" and "not said" are different answers.
+func emitJSONPage[T any](w io.Writer, items []T, totalCount *int, continuation string) error {
+	if items == nil {
+		items = []T{}
+	}
+	page := jsonListPage[T]{Items: items, Count: len(items), TotalCount: totalCount}
+	if continuation != "" {
+		page.ContinuationToken = &continuation
+	}
+	return emitJSON(w, page)
+}
+
 // emitJSONList writes items as a JSON array.
 //
 // List commands emit a bare array rather than the envelope the service replied

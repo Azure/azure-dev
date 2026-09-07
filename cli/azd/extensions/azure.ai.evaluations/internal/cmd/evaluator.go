@@ -356,14 +356,14 @@ func (a *evaluatorVersionsListAction) Run() error {
 }
 
 func renderEvaluators(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) error {
+	shown, total, trimmed := trimForDisplay(cmd, list.Value)
 	if isJSON(cmd) {
-		return emitJSONList(cmd.OutOrStdout(), list.Value)
+		return emitJSONPage(cmd.OutOrStdout(), shown, &total, "")
 	}
 	if len(list.Value) == 0 {
 		fmt.Fprint(cmd.OutOrStdout(), messages.NoEvaluators())
 		return nil
 	}
-	shown, total, trimmed := trimForDisplay(cmd, list.Value)
 	rows := make([][]string, 0, len(shown))
 	for _, e := range shown {
 		rows = append(rows, []string{e.Name, e.Version, e.Type()})
@@ -395,14 +395,14 @@ func evaluatorPassThreshold(e *eval_api.EvaluatorSummary) string {
 // scenario reads a version list for is how the rubric changed, which is the
 // date, the pass mark and the description the author left.
 func renderEvaluatorVersions(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) error {
+	shown, total, trimmed := trimForDisplay(cmd, list.Value)
 	if isJSON(cmd) {
-		return emitJSONList(cmd.OutOrStdout(), list.Value)
+		return emitJSONPage(cmd.OutOrStdout(), shown, &total, "")
 	}
 	if len(list.Value) == 0 {
 		fmt.Fprint(cmd.OutOrStdout(), messages.NoEvaluators())
 		return nil
 	}
-	shown, total, trimmed := trimForDisplay(cmd, list.Value)
 	rows := make([][]string, 0, len(shown))
 	for _, e := range shown {
 		rows = append(rows, []string{

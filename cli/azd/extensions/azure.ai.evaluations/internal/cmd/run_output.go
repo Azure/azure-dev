@@ -176,7 +176,11 @@ func (a *runOutputListAction) Run() error {
 		return nil
 	}
 	if isJSON(a.cmd) {
-		return emitJSONList(a.cmd.OutOrStdout(), rows)
+		cursor := ""
+		if items.HasMore {
+			cursor = items.LastID
+		}
+		return emitJSONPage(a.cmd.OutOrStdout(), rows, nil, cursor)
 	}
 	if err := renderResults(a.cmd.OutOrStdout(), run, rows, a.flags.failedOnly); err != nil {
 		return err

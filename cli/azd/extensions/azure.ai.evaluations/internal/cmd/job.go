@@ -233,14 +233,14 @@ func (a *jobListAction) Run() error {
 		return messages.ListingJobs(kind.name, err)
 	}
 
+	shown, total, trimmed := trimForDisplay(a.cmd, jobs)
 	if isJSON(a.cmd) {
-		return emitJSONList(a.cmd.OutOrStdout(), jobs)
+		return emitJSONPage(a.cmd.OutOrStdout(), shown, &total, "")
 	}
 	if len(jobs) == 0 {
 		fmt.Fprint(a.cmd.OutOrStdout(), messages.NoJobs(kind.name))
 		return nil
 	}
-	shown, total, trimmed := trimForDisplay(a.cmd, jobs)
 	table := make([][]string, 0, len(shown))
 	for _, j := range shown {
 		table = append(table, []string{j.ID, j.Status})

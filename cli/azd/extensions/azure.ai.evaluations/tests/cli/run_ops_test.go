@@ -7,7 +7,6 @@ package cli
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -44,11 +43,11 @@ func TestCLIRunList(t *testing.T) {
 
 	t.Run("json", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "run", "list", "--eval", f.EvalID, "-o", "json"))
-		require.True(t, strings.HasPrefix(strings.TrimSpace(r.Stdout), "["),
-			"a list must be a bare array, not the service's envelope")
+		require.NotContains(t, r.Stdout, `"data"`,
+			"the service's own envelope must not reach the caller")
 
 		var runs []runSummary
-		r.JSON(t, &runs)
+		r.JSONItems(t, &runs)
 		require.GreaterOrEqual(t, len(runs), 2)
 
 		byID := map[string]runSummary{}
@@ -69,7 +68,7 @@ func TestCLIRunList(t *testing.T) {
 	t.Run("limit", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "run", "list", "--eval", f.EvalID, "--limit", "1", "-o", "json"))
 		var runs []runSummary
-		r.JSON(t, &runs)
+		r.JSONItems(t, &runs)
 		require.Len(t, runs, 1, "--limit must reach the service")
 	})
 
@@ -99,7 +98,7 @@ func TestCLIRunShow(t *testing.T) {
 	t.Run("defaults to the most recent run", func(t *testing.T) {
 		listed := requireSuccess(t, run(t, "run", "list", "--eval", f.EvalID, "--limit", "1", "-o", "json"))
 		var newest []runSummary
-		listed.JSON(t, &newest)
+		listed.JSONItems(t, &newest)
 		require.Len(t, newest, 1)
 
 		r := requireSuccess(t, run(t, "run", "show", "--eval", f.EvalID, "-o", "json"))

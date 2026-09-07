@@ -123,14 +123,13 @@ func addDisplayPagingFlags(cmd *cobra.Command, limit *int, all *bool, defaultPag
 
 // trimForDisplay cuts a fully-fetched listing to one page and reports the total.
 //
-// -o json is never trimmed: a caller piping a listing into a parser asked for
-// the collection, and handing back part of it without saying so is how a script
-// comes to believe a name does not exist.
+// It trims `-o json` too. It used to hand a machine reader the whole collection
+// whatever --limit said, because a bare array cannot say it is short and a
+// script that got one would read it as everything. The envelope emitJSONPage
+// writes says exactly that, so the flag can mean the same thing on both
+// surfaces instead of silently doing nothing on one.
 func trimForDisplay[T any](cmd *cobra.Command, rows []T) (shown []T, total int, trimmed bool) {
 	total = len(rows)
-	if isJSON(cmd) {
-		return rows, total, false
-	}
 
 	all, _ := cmd.Flags().GetBool("all")
 	if all {

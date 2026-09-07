@@ -101,10 +101,14 @@ func (a *runListAction) Run() error {
 		// this is the only place a script can read one; narrowing these
 		// to the table's columns would drop it silently.
 		var runs []eval_api.OpenAIEvalRun
+		cursor := ""
 		if list != nil {
 			runs = list.Data
+			if list.HasMore {
+				cursor = list.LastID
+			}
 		}
-		return emitJSONList(a.cmd.OutOrStdout(), runs)
+		return emitJSONPage(a.cmd.OutOrStdout(), runs, nil, cursor)
 	}
 	if list == nil || len(list.Data) == 0 {
 		fmt.Fprint(a.cmd.OutOrStdout(), messages.EvalHasNoRunsLine(evalID))

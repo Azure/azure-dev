@@ -102,6 +102,26 @@ func (r result) JSON(t *testing.T, into any) {
 		"-o json must emit parseable JSON on stdout; got:\n%s", r.Stdout)
 }
 
+// JSONItems decodes a listing's rows out of the page envelope.
+//
+// Every list command answers with `{items, count, total_count,
+// continuation_token}` rather than a bare array, so that --limit can mean the
+// same thing for a script as it does for a reader: a short list says it is
+// short instead of being read as the whole collection.
+func (r result) JSONItems(t *testing.T, into any) {
+	t.Helper()
+	page := struct {
+		Items             json.RawMessage `json:"items"`
+		Count             int             `json:"count"`
+		TotalCount        *int            `json:"total_count"`
+		ContinuationToken *string         `json:"continuation_token"`
+	}{}
+	require.NoError(t, json.Unmarshal([]byte(r.Stdout), &page),
+		"-o json must emit a page envelope on stdout; got:\n%s", r.Stdout)
+	require.NotNil(t, page.Items, "the envelope must always carry items, even when empty")
+	require.NoError(t, json.Unmarshal(page.Items, into))
+}
+
 // run invokes the binary with the project endpoint already supplied.
 func run(t *testing.T, args ...string) result {
 	t.Helper()

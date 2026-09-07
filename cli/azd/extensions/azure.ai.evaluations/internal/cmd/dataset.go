@@ -353,14 +353,14 @@ func (a *datasetVersionsListAction) Run() error {
 
 func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty string) error {
 	// JSON is decided before emptiness: a caller piping this into a parser needs
-	// an empty array, not the sentence a human would read.
+	// an empty list, not the sentence a human would read.
 	if list == nil {
 		list = &dataset_api.DatasetList{}
 	}
-	if isJSON(cmd) {
-		return emitJSONList(cmd.OutOrStdout(), list.Value)
-	}
 	shown, total, trimmed := trimForDisplay(cmd, list.Value)
+	if isJSON(cmd) {
+		return emitJSONPage(cmd.OutOrStdout(), shown, &total, "")
+	}
 	rows := make([][]string, 0, len(shown))
 	tagged := false
 	for _, d := range shown {

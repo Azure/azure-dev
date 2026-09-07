@@ -22,7 +22,7 @@ func TestCLIEvaluatorListBuiltin(t *testing.T) {
 		Name          string `json:"name"`
 		EvaluatorType string `json:"evaluator_type"`
 	}
-	r.JSON(t, &builtins)
+	r.JSONItems(t, &builtins)
 	require.NotEmpty(t, builtins, "the project must expose built-in evaluators")
 
 	for _, b := range builtins {
@@ -37,12 +37,19 @@ func TestCLIEvaluatorListBuiltin(t *testing.T) {
 	require.Contains(t, table.Stdout, "VERSION")
 }
 
-// TestCLIJSONListsAreBareArrays pins the envelope.
+// TestCLIJSONListsShareOnePageEnvelope pins the shape every listing answers in.
 //
 // The service wraps listings in {"value":[...]} or {"data":[...]} depending on
-// the route. Leaking either would make every consumer special-case the
-// command it came from, so the CLI unwraps them, and this is what says so.
-func TestCLIJSONListsAreBareArrays(t *testing.T) {
+// the route. Leaking either would make every consumer special-case the command
+// it came from, so the CLI unwraps them and re-wraps them the same way
+// everywhere.
+//
+// A bare array was the shape until --limit had to work for a script too. An
+// array cannot say it is one page of several, so the flag either did nothing
+// for `-o json` or handed back a short list that reads as the whole
+// collection; count and total_count are what let it mean the same thing on
+// both surfaces.
+func TestCLIJSONListsShareOnePageEnvelope(t *testing.T) {
 	for _, args := range [][]string{
 		{"evaluator", "list", "--builtin", "-o", "json"},
 		{"dataset", "list", "-o", "json"},
@@ -50,11 +57,15 @@ func TestCLIJSONListsAreBareArrays(t *testing.T) {
 		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
 			r := requireSuccess(t, run(t, args...))
 			trimmed := strings.TrimSpace(r.Stdout)
-			require.True(t, strings.HasPrefix(trimmed, "["),
-				"a list must be a bare array, not an envelope; got:\n%s", firstLine(trimmed))
+			require.True(t, strings.HasPrefix(trimmed, "{"),
+				"a list must be a page envelope; got:\n%s", firstLine(trimmed))
+			require.NotContains(t, trimmed, `"value"`,
+				"the service's own wrapper must not reach the caller")
+			require.NotContains(t, trimmed, `"data"`,
+				"nor the other one it uses on a different route")
 
 			var out []any
-			r.JSON(t, &out)
+			r.JSONItems(t, &out)
 		})
 	}
 }

@@ -103,7 +103,7 @@ func TestCLIDatasetList(t *testing.T) {
 	t.Run("versions list scopes to one dataset's versions", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "dataset", "versions", "list", ds.Name, "-o", "json"))
 		var listed []datasetSummary
-		r.JSON(t, &listed)
+		r.JSONItems(t, &listed)
 		require.NotEmpty(t, listed)
 
 		seen := map[string]bool{}
@@ -122,7 +122,7 @@ func TestCLIDatasetList(t *testing.T) {
 	t.Run("unscoped lists the project's datasets", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "dataset", "list", "-o", "json"))
 		var all []datasetSummary
-		r.JSON(t, &all)
+		r.JSONItems(t, &all)
 		require.NotEmpty(t, all)
 
 		found := false
@@ -138,7 +138,7 @@ func TestCLIDatasetList(t *testing.T) {
 		r := requireSuccess(t, run(t, "dataset", "versions", "list",
 			"azdcli-no-such-dataset", "-o", "json"))
 		var listed []datasetSummary
-		r.JSON(t, &listed)
+		r.JSONItems(t, &listed)
 		require.Empty(t, listed)
 	})
 }
@@ -221,7 +221,7 @@ func TestCLIDatasetDelete(t *testing.T) {
 		listed := requireSuccess(t, run(t, "dataset", "versions", "list",
 			"azdcli-no-such-dataset", "-o", "json"))
 		var remaining []datasetSummary
-		listed.JSON(t, &remaining)
+		listed.JSONItems(t, &remaining)
 		require.Empty(t, remaining, "nothing was there to delete in the first place")
 	})
 
@@ -240,7 +240,7 @@ func TestCLIDatasetDelete(t *testing.T) {
 		listed := requireSuccess(t, run(t, "dataset", "versions", "list",
 			ds.Name, "-o", "json"))
 		var remaining []datasetSummary
-		listed.JSON(t, &remaining)
+		listed.JSONItems(t, &remaining)
 
 		versions := map[string]bool{}
 		for _, v := range remaining {

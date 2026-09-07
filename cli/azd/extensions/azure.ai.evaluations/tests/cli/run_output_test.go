@@ -22,33 +22,34 @@ import (
 // verdict and a score, and filtering by verdict returns a subset that agrees
 // with the totals.
 
-// resultsPayload is what `results show -o json` emits: the run and the rows.
-type resultsPayload struct {
-	Run struct {
-		ID           string `json:"id"`
-		Status       string `json:"status"`
-		ResultCounts struct {
-			Total   int `json:"total"`
-			Passed  int `json:"passed"`
-			Failed  int `json:"failed"`
-			Errored int `json:"errored"`
-		} `json:"result_counts"`
-		PerTestingCriteria []struct {
-			TestingCriteria string `json:"testing_criteria"`
-			Passed          int    `json:"passed"`
-			Failed          int    `json:"failed"`
-		} `json:"per_testing_criteria_results"`
-	} `json:"run"`
-	OutputItems []struct {
-		ID             string         `json:"id"`
-		Status         string         `json:"status"`
-		DataSourceItem map[string]any `json:"datasource_item"`
-		Results        []struct {
-			Name   string   `json:"name"`
-			Score  *float64 `json:"score"`
-			Passed bool     `json:"passed"`
-		} `json:"results"`
-	} `json:"output_items"`
+// runPayload is what `run show -o json` emits. The listing does not repeat it:
+// a script iterating rows should not have to walk past the run to reach them.
+type runPayload struct {
+	ID           string `json:"id"`
+	Status       string `json:"status"`
+	ResultCounts struct {
+		Total   int `json:"total"`
+		Passed  int `json:"passed"`
+		Failed  int `json:"failed"`
+		Errored int `json:"errored"`
+	} `json:"result_counts"`
+	PerTestingCriteria []struct {
+		TestingCriteria string `json:"testing_criteria"`
+		Passed          int    `json:"passed"`
+		Failed          int    `json:"failed"`
+	} `json:"per_testing_criteria_results"`
+}
+
+// outputItem is one row of `run output list -o json`.
+type outputItem struct {
+	ID             string         `json:"id"`
+	Status         string         `json:"status"`
+	DataSourceItem map[string]any `json:"datasource_item"`
+	Results        []struct {
+		Name   string   `json:"name"`
+		Score  *float64 `json:"score"`
+		Passed bool     `json:"passed"`
+	} `json:"results"`
 }
 
 // TestCLIResultsShowRendersTheRows is the difference between `results show` and
@@ -78,24 +79,25 @@ func TestCLIResultsShowRendersTheRows(t *testing.T) {
 func TestCLIResultsShowJSON(t *testing.T) {
 	f := sharedEval(t)
 
-	payload := resultsFor(t, f.EvalID, f.FirstRunID)
+	run := runFor(t, f.EvalID, f.FirstRunID)
+	items := itemsFor(t, f.EvalID, f.FirstRunID)
 
-	require.Equal(t, f.FirstRunID, payload.Run.ID)
-	require.Equal(t, "completed", payload.Run.Status)
-	require.Equal(t, len(fixtureQueries), payload.Run.ResultCounts.Total)
-	require.Zero(t, payload.Run.ResultCounts.Errored,
+	require.Equal(t, f.FirstRunID, run.ID)
+	require.Equal(t, "completed", run.Status)
+	require.Equal(t, len(fixtureQueries), run.ResultCounts.Total)
+	require.Zero(t, run.ResultCounts.Errored,
 		"an errored row means the fixture measured nothing")
 
-	require.Len(t, payload.Run.PerTestingCriteria, 1)
-	require.Equal(t, f.EvaluatorName, payload.Run.PerTestingCriteria[0].TestingCriteria)
+	require.Len(t, run.PerTestingCriteria, 1)
+	require.Equal(t, f.EvaluatorName, run.PerTestingCriteria[0].TestingCriteria)
 
 	// The rows are the reason this command exists, and a run reporting counts
 	// while returning none would still satisfy everything above.
-	require.Len(t, payload.OutputItems, len(fixtureQueries),
+	require.Len(t, items, len(fixtureQueries),
 		"every dataset row must come back as an item")
 
 	passed := 0
-	for _, item := range payload.OutputItems {
+	for _, item := range items {
 		require.NotEmpty(t, item.DataSourceItem["query"],
 			"each row must carry the column it was evaluated on")
 		require.Len(t, item.Results, 1)
@@ -105,7 +107,7 @@ func TestCLIResultsShowJSON(t *testing.T) {
 			passed++
 		}
 	}
-	require.Equal(t, payload.Run.ResultCounts.Passed, passed,
+	require.Equal(t, run.ResultCounts.Passed, passed,
 		"the per-row verdicts must agree with the totals")
 }
 
@@ -118,13 +120,13 @@ func TestCLIResultsShowJSON(t *testing.T) {
 func TestCLIResultsShowFailedOnly(t *testing.T) {
 	f := sharedEval(t)
 
-	payload := resultsFor(t, f.EvalID, f.FirstRunID)
+	items := itemsFor(t, f.EvalID, f.FirstRunID)
 
 	// One rendered row is one evaluator's verdict on one sample, so the count
 	// to expect is failing *results*, not failing rows: a sample that fails two
 	// evaluators is two lines. `ResultCounts.Failed` answers the other question.
 	failing := 0
-	for _, item := range payload.OutputItems {
+	for _, item := range items {
 		for _, r := range item.Results {
 			if !r.Passed {
 				failing++
@@ -153,10 +155,21 @@ func TestCLIResultsShowFailedOnly(t *testing.T) {
 
 // resultsFor reads a run's results as JSON, which several tests need before
 // they can decide what the rendered output should say.
-func resultsFor(t *testing.T, evalID, runID string) resultsPayload {
+// itemsFor reads every row the listing returns for a run.
+func itemsFor(t *testing.T, evalID, runID string) []outputItem {
 	t.Helper()
-	r := requireSuccess(t, run(t, "run", "output", "list", runID, "--eval", evalID, "-o", "json"))
-	var payload resultsPayload
+	r := requireSuccess(t, run(t, "run", "output", "list", runID, "--eval", evalID,
+		"--all", "-o", "json"))
+	var items []outputItem
+	r.JSONItems(t, &items)
+	return items
+}
+
+// runFor reads the run the totals live on.
+func runFor(t *testing.T, evalID, runID string) runPayload {
+	t.Helper()
+	r := requireSuccess(t, run(t, "run", "show", runID, "--eval", evalID, "-o", "json"))
+	var payload runPayload
 	r.JSON(t, &payload)
 	return payload
 }

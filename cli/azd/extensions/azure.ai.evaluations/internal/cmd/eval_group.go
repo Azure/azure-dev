@@ -249,7 +249,7 @@ func (a *evalListAction) Run() error {
 	}
 
 	if isJSON(a.cmd) {
-		return emitJSONList(a.cmd.OutOrStdout(), matched)
+		return emitJSONPage(a.cmd.OutOrStdout(), matched, &total, "")
 	}
 	out := a.cmd.OutOrStdout()
 	if len(matched) == 0 {

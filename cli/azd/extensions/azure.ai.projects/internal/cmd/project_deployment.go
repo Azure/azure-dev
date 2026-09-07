@@ -242,10 +242,14 @@ func resolveDeploymentCandidates(
 	var candidates []*azdext.AiModelDeployment
 	var lastNoMatch error
 	for _, location := range locations {
-		locationOptions := *options
-		locationOptions.Locations = []string{location}
+		locationOptions := &azdext.AiModelDeploymentOptions{
+			Locations: []string{location},
+			Versions:  slices.Clone(options.GetVersions()),
+			Skus:      slices.Clone(options.GetSkus()),
+			Capacity:  options.Capacity,
+		}
 		locationCandidates, err := resolveDeploymentCandidatesAtLocation(
-			ctx, client, azureContext, modelName, &locationOptions, true,
+			ctx, client, azureContext, modelName, locationOptions, true,
 		)
 		if err != nil {
 			if isDeploymentNoMatchError(err) {

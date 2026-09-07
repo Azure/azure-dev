@@ -497,6 +497,7 @@ func TestExistingProjectEjectionDoesNotEmitReplacedRegistryState(t *testing.T) {
 		{
 			name: "Bicep",
 			read: func(dir string) ([]byte, error) {
+				// #nosec G304 -- dir is created by t.TempDir().
 				return os.ReadFile(filepath.Join(dir, "main.parameters.json"))
 			},
 			write: func(
@@ -512,6 +513,7 @@ func TestExistingProjectEjectionDoesNotEmitReplacedRegistryState(t *testing.T) {
 		{
 			name: "Terraform",
 			read: func(dir string) ([]byte, error) {
+				// #nosec G304 -- dir is created by t.TempDir().
 				return os.ReadFile(filepath.Join(dir, "main.tfvars.json"))
 			},
 			write: func(

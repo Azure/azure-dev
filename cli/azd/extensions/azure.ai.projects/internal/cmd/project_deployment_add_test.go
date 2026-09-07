@@ -191,6 +191,7 @@ type selfInitializingAIService struct {
 	azdext.UnimplementedAiModelServiceServer
 	calls          int
 	request        *azdext.ResolveModelDeploymentsRequest
+	requests       []*azdext.ResolveModelDeploymentsRequest
 	location       string
 	respectRequest bool
 }
@@ -230,6 +231,7 @@ func (s *selfInitializingAIService) ResolveModelDeployments(
 ) (*azdext.ResolveModelDeploymentsResponse, error) {
 	s.calls++
 	s.request = request
+	s.requests = append(s.requests, request)
 	location := s.location
 	if s.respectRequest && len(request.GetOptions().GetLocations()) == 1 {
 		location = request.GetOptions().GetLocations()[0]
@@ -532,6 +534,37 @@ func TestSelectModelDeploymentUsesRequestedLocationForEmptyCandidate(t *testing.
 	)
 }
 
+func TestResolveDeploymentCandidatesPreservesFiltersAcrossLocations(t *testing.T) {
+	root := t.TempDir()
+	client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
+	capacity := int32(10)
+	options := &azdext.AiModelDeploymentOptions{
+		Locations: []string{"eastus", "westus"},
+		Versions:  []string{"2025-04-14"},
+		Skus:      []string{"GlobalStandard"},
+		Capacity:  &capacity,
+	}
+
+	_, err := resolveDeploymentCandidates(
+		t.Context(),
+		client,
+		&azdext.AzureContext{
+			Scope: &azdext.AzureScope{SubscriptionId: "subscription"},
+		},
+		"gpt-4.1",
+		options,
+	)
+	require.NoError(t, err)
+	require.Len(t, aiServer.requests, 2)
+	for index, location := range options.Locations {
+		requestOptions := aiServer.requests[index].GetOptions()
+		assert.Equal(t, []string{location}, requestOptions.GetLocations())
+		assert.Equal(t, options.GetVersions(), requestOptions.GetVersions())
+		assert.Equal(t, options.GetSkus(), requestOptions.GetSkus())
+		assert.Equal(t, capacity, requestOptions.GetCapacity())
+	}
+}
+
 func TestFindEjectedFoundryProjectInfrastructure(t *testing.T) {
 	params := map[string]any{
 		"deployments":           []synthesis.Deployment{},
@@ -552,6 +585,19 @@ func TestFindEjectedFoundryProjectInfrastructure(t *testing.T) {
 					params,
 					projectEjectAcrNone,
 					nil,
+				)
+			},
+			parameterFile: "main.parameters.json",
+		},
+		{
+			name: "greenfield bicep",
+			writeInfra: func(infraDir string) error {
+				if err := copyEmbeddedBicep(infraDir, "main"); err != nil {
+					return err
+				}
+				return writeJSONFile(
+					filepath.Join(infraDir, "main.parameters.json"),
+					map[string]any{"parameters": map[string]any{}},
 				)
 			},
 			parameterFile: "main.parameters.json",

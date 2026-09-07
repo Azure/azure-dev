@@ -143,15 +143,9 @@ func isFoundryBicepEjection(infraDir, module string) (bool, error) {
 	}
 	bicepPath := filepath.Join(infraDir, module+".bicep")
 	parametersPath := filepath.Join(infraDir, module+".parameters.json")
-	projectModulePath := filepath.Join(
-		infraDir,
-		"modules",
-		"foundry-project.bicep",
-	)
 	for _, path := range []string{
 		bicepPath,
 		parametersPath,
-		projectModulePath,
 	} {
 		info, err := os.Stat(path)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -169,19 +163,55 @@ func isFoundryBicepEjection(infraDir, module string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("read ejected infrastructure %q: %w", bicepPath, err)
 	}
-	// #nosec G304 -- paths are derived from project infrastructure config.
-	projectModule, err := os.ReadFile(projectModulePath)
-	if err != nil {
-		return false, fmt.Errorf(
-			"read ejected infrastructure %q: %w",
-			projectModulePath,
-			err,
+	entrypointText := string(entrypoint)
+	for _, signature := range []struct {
+		entrypoint string
+		modulePath string
+	}{
+		{
+			entrypoint: "module projectResources 'modules/foundry-project.bicep'",
+			modulePath: "modules/foundry-project.bicep",
+		},
+		{
+			entrypoint: "module resources 'modules/resources.bicep'",
+			modulePath: "modules/resources.bicep",
+		},
+	} {
+		if !strings.Contains(entrypointText, signature.entrypoint) {
+			continue
+		}
+		projectModulePath := filepath.Join(
+			infraDir,
+			filepath.FromSlash(signature.modulePath),
 		)
+		info, err := os.Stat(projectModulePath)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return false, fmt.Errorf(
+				"inspect ejected infrastructure %q: %w",
+				projectModulePath,
+				err,
+			)
+		}
+		if info.IsDir() {
+			continue
+		}
+		// #nosec G304 -- paths are derived from project infrastructure config.
+		projectModule, err := os.ReadFile(projectModulePath)
+		if err != nil {
+			return false, fmt.Errorf(
+				"read ejected infrastructure %q: %w",
+				projectModulePath,
+				err,
+			)
+		}
+		if strings.Contains(string(projectModule), "resource modelDeployments") {
+			return true, nil
+		}
 	}
-	return strings.Contains(
-		string(entrypoint),
-		"module projectResources 'modules/foundry-project.bicep'",
-	) && strings.Contains(string(projectModule), "resource modelDeployments"), nil
+	return false, nil
 }
 
 func projectDeploymentEjectedInfraError(parameterFile string) error {

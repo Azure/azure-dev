@@ -17,7 +17,10 @@ import (
 // reference nor the job id for work they paid for, and no way to reattach.
 func TestTheOutcomeDocumentSurvivesAPartialFailure(t *testing.T) {
 	outcomes := []generationOutcome{
-		{plan: generationPlan{Kind: generateKindDataset}, jobID: "job-42"},
+		{
+			plan:   generationPlan{Kind: generateKindDataset},
+			report: generationReport{jobID: "job-42"},
+		},
 		{plan: generationPlan{Kind: generateKindEvaluator}, err: assert.AnError},
 	}
 

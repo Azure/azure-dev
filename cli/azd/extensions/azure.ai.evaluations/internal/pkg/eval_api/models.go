@@ -95,6 +95,100 @@ type GenerationJob struct {
 	Status string          `json:"status"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *JobError       `json:"error,omitempty"`
+	// Warnings is what the service said about a job it nonetheless completed --
+	// most often that the input it was given was too thin to generate from. It
+	// was decoded nowhere, so a job that came back qualified was reported as an
+	// unqualified success and the artifact went into a configuration with
+	// nothing saying to look at it first.
+	Warnings []JobWarning `json:"warnings,omitempty"`
+}
+
+// JobWarning is one qualification on a completed job.
+//
+// The service sends these either as bare codes or as objects, so both are
+// accepted: binding only the object shape silently produced a warning with no
+// code, which reads as no warning at all.
+type JobWarning struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// UnmarshalJSON accepts a bare string as the warning's code.
+func (w *JobWarning) UnmarshalJSON(data []byte) error {
+	var code string
+	if err := json.Unmarshal(data, &code); err == nil {
+		w.Code = strings.TrimSpace(code)
+		return nil
+	}
+	type plain JobWarning
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*w = JobWarning(p)
+	return nil
+}
+
+// AllWarnings is every qualification the job carries, wherever it put them.
+//
+// The service has used both a top-level array and one inside the result
+// envelope, and reading only the first reported a warned job as a clean one.
+func (j *GenerationJob) AllWarnings() []JobWarning {
+	seen := map[string]bool{}
+	var all []JobWarning
+	add := func(warnings []JobWarning) {
+		for _, w := range warnings {
+			w.Code = strings.TrimSpace(w.Code)
+			w.Message = strings.TrimSpace(w.Message)
+			if w.Code == "" && w.Message == "" {
+				continue
+			}
+			key := w.Code + "\x00" + w.Message
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			all = append(all, w)
+		}
+	}
+	add(j.Warnings)
+	add(j.resultWarnings())
+	return all
+}
+
+// resultWarnings reads the warnings the result envelope carries.
+func (j *GenerationJob) resultWarnings() []JobWarning {
+	if len(j.Result) == 0 {
+		return nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(j.Result, &m); err != nil {
+		return nil
+	}
+
+	var found []JobWarning
+	if raw, ok := m["warnings"]; ok {
+		var warnings []JobWarning
+		if err := json.Unmarshal(raw, &warnings); err == nil {
+			found = append(found, warnings...)
+		}
+	}
+	if rawOutputs, ok := m["outputs"]; ok {
+		var outputs []map[string]json.RawMessage
+		if err := json.Unmarshal(rawOutputs, &outputs); err == nil {
+			for _, output := range outputs {
+				raw, ok := output["warnings"]
+				if !ok {
+					continue
+				}
+				var warnings []JobWarning
+				if err := json.Unmarshal(raw, &warnings); err == nil {
+					found = append(found, warnings...)
+				}
+			}
+		}
+	}
+	return found
 }
 
 // JobError captures error details from a failed generation job.

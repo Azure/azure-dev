@@ -43,7 +43,7 @@ func TestNoWaitSubmitsTheShapeThatCanSucceed(t *testing.T) {
 	ec := &evalContext{evalClient: eval_api.NewEvalClientFromPipeline(srv.URL, pipeline)}
 
 	var out bytes.Buffer
-	var jobID string
+	var report generationReport
 	_, err := ec.generateDataset(t.Context(), generationPlan{
 		Name:        "golden",
 		Model:       "gpt-4.1-nano",
@@ -51,7 +51,7 @@ func TestNoWaitSubmitsTheShapeThatCanSucceed(t *testing.T) {
 		Instruction: "score the answers",
 		From:        []string{"agent", "prompt"},
 		SampleSize:  10,
-	}, &out, true, &jobID)
+	}, &out, true, &report)
 
 	require.NoError(t, err)
 	require.NotEmpty(t, submitted, "the job has to reach the service")
@@ -60,7 +60,7 @@ func TestNoWaitSubmitsTheShapeThatCanSucceed(t *testing.T) {
 		"the agent source is what fails, and nothing is left to retry it here")
 	assert.Contains(t, out.String(), "--no-wait",
 		"and the caller is told why the agent was dropped")
-	assert.Equal(t, "job_1", jobID, "the submitted job is still what they reattach to")
+	assert.Equal(t, "job_1", report.jobID, "the submitted job is still what they reattach to")
 }
 
 // The waiting path keeps its retry: it can see the failure, so it submits the
@@ -90,7 +90,7 @@ func TestWaitingStillSubmitsTheAgentSourceFirst(t *testing.T) {
 	ec := &evalContext{evalClient: eval_api.NewEvalClientFromPipeline(srv.URL, pipeline)}
 
 	var out bytes.Buffer
-	var jobID string
+	var report generationReport
 	_, _ = ec.generateDataset(t.Context(), generationPlan{
 		Name:        "golden",
 		Model:       "gpt-4.1-nano",
@@ -98,7 +98,7 @@ func TestWaitingStillSubmitsTheAgentSourceFirst(t *testing.T) {
 		Instruction: "score the answers",
 		From:        []string{"agent", "prompt"},
 		SampleSize:  10,
-	}, &out, false, &jobID)
+	}, &out, false, &report)
 
 	require.NotEmpty(t, first)
 	assert.True(t, strings.Contains(string(first), "support-agent"),

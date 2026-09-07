@@ -3232,6 +3232,41 @@ func Warning(err error) string {
 	return fmt.Sprintf("warning: %v\n", err)
 }
 
+// GenerationWarning reports what the service said about a job it completed.
+//
+// A generation that came back qualified is not a clean one. The code is
+// printed as the service sent it, and the known ones are explained: nobody
+// reading `input_quality` on a terminal knows it means the rows the judge was
+// shown were too thin to build from, and the file is already on disk by then.
+func GenerationWarning(kind, code, message, path string) string {
+	var b strings.Builder
+	label := code
+	if label == "" {
+		label = "warning"
+	}
+	fmt.Fprintf(&b, "  (!) %s generated with warning: %s\n", kind, label)
+	if explained := explainGenerationWarning(code); explained != "" {
+		fmt.Fprintf(&b, "      %s\n", explained)
+	}
+	if message != "" && message != code {
+		fmt.Fprintf(&b, "      %s\n", message)
+	}
+	if path != "" {
+		fmt.Fprintf(&b, "      Review %s before use.\n", filepath.ToSlash(path))
+	}
+	return b.String()
+}
+
+// explainGenerationWarning says what a known code means, or nothing.
+func explainGenerationWarning(code string) string {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "input_quality":
+		return "The service found the generation input insufficient or low quality."
+	default:
+		return ""
+	}
+}
+
 // PortalLink closes a detail view with the asset's portal URL.
 func PortalLink(url string) string {
 	return fmt.Sprintf("Portal: %s\n", url)

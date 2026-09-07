@@ -330,7 +330,7 @@ func nameIsAPathComponent(name string) bool {
 type generationOutcome struct {
 	plan   generationPlan
 	ref    *project.ArtifactRef
-	jobID  string
+	report generationReport
 	output bytes.Buffer
 	err    error
 }
@@ -361,10 +361,10 @@ func (ec *evalContext) runGenerations(
 			switch o.plan.Kind {
 			case generateKindDataset:
 				o.ref, o.err = ec.generateDataset(
-					cmd.Context(), o.plan, &o.output, flags.noWait, &o.jobID)
+					cmd.Context(), o.plan, &o.output, flags.noWait, &o.report)
 			default:
 				o.ref, o.err = ec.generateRubric(
-					cmd.Context(), o.plan, &o.output, flags.noWait, &o.jobID)
+					cmd.Context(), o.plan, &o.output, flags.noWait, &o.report)
 			}
 		})
 	}
@@ -425,18 +425,32 @@ func (ec *evalContext) runGenerations(
 
 // generationDocument keys each outcome by the artifact it was for, so a caller
 // reads the two generations apart rather than by position.
+//
+// Warnings ride alongside the artifact rather than replacing it: a warned
+// generation still produced something, and a caller that only looked at the
+// reference would read it as clean.
 func generationDocument(outcomes []generationOutcome) map[string]any {
 	produced := map[string]any{}
 	for i := range outcomes {
 		o := &outcomes[i]
+		var entry any
 		switch {
 		case o.ref != nil:
-			produced[string(o.plan.Kind)] = o.ref
-		case o.jobID != "":
-			produced[string(o.plan.Kind)] = map[string]string{"job_id": o.jobID}
-		default:
-			produced[string(o.plan.Kind)] = nil
+			entry = o.ref
+		case o.report.jobID != "":
+			entry = map[string]string{"job_id": o.report.jobID}
 		}
+		if len(o.report.warnings) > 0 {
+			warned := map[string]any{"warnings": o.report.warnings}
+			if entry != nil {
+				warned["artifact"] = entry
+			}
+			if o.report.jobID != "" {
+				warned["job_id"] = o.report.jobID
+			}
+			entry = warned
+		}
+		produced[string(o.plan.Kind)] = entry
 	}
 	return produced
 }

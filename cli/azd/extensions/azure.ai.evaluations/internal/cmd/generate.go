@@ -201,13 +201,22 @@ func (ec *evalContext) agentInstructionsFromProject(
 }
 
 // generateRubric submits the evaluator generation job and saves the rubric.
+// generationReport is what the caller learns about a job besides its artifact.
+//
+// Both fields outlive the artifact: under --no-wait there is no artifact at all
+// and the id is the only thing to reattach to, and a warning has to reach the
+// JSON document even though it is not part of what was produced.
+type generationReport struct {
+	jobID    string
+	warnings []eval_api.JobWarning
+}
+
 func (ec *evalContext) generateRubric(
 	ctx context.Context,
 	plan generationPlan,
 	out io.Writer,
 	noWait bool,
-	// jobID receives the submitted job's id, for the same reason as above.
-	jobID *string,
+	report *generationReport,
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingRubric(plan.Name))
 
@@ -223,9 +232,7 @@ func (ec *evalContext) generateRubric(
 	if err != nil {
 		return nil, messages.SubmittingRubricJob(err)
 	}
-	if jobID != nil {
-		*jobID = job.ID
-	}
+	report.record(job.ID)
 	if noWait {
 		reportSubmitted(out, "evaluator", job.ID)
 		return nil, nil
@@ -236,8 +243,23 @@ func (ec *evalContext) generateRubric(
 	if err != nil {
 		return nil, messages.RubricGeneration(err)
 	}
+	report.warn(completed)
 
 	return ec.collectRubric(completed, plan.Name, plan.BaseDir, plan.OutputDir, out)
+}
+
+// record remembers the job the caller can reattach to.
+func (r *generationReport) record(jobID string) {
+	if r != nil {
+		r.jobID = jobID
+	}
+}
+
+// warn remembers what the service said about a job it completed.
+func (r *generationReport) warn(job *eval_api.GenerationJob) {
+	if r != nil && job != nil {
+		r.warnings = job.AllWarnings()
+	}
 }
 
 // collectRubric writes a finished evaluator job's rubric and describes it.
@@ -270,12 +292,25 @@ func (ec *evalContext) collectRubric(
 		return nil, err
 	}
 	fmt.Fprint(out, messages.WroteArtifact(path))
+	writeJobWarnings(out, "evaluator", completed, path)
 
 	return &project.ArtifactRef{
 		Name:    name,
 		Source:  relativeSource(baseDir, path),
 		Version: version,
 	}, nil
+}
+
+// writeJobWarnings reports what the service said about a job it completed.
+//
+// Printed beside the artifact it qualifies rather than collected at the end,
+// because a run that generated two things has to say which one to look at. A
+// warned job used to be reported as an unqualified success, and the artifact
+// went into the configuration with nothing saying to read it first.
+func writeJobWarnings(out io.Writer, kind string, job *eval_api.GenerationJob, path string) {
+	for _, w := range job.AllWarnings() {
+		fmt.Fprint(out, messages.GenerationWarning(kind, w.Code, w.Message, path))
+	}
 }
 
 // refuseUnbuildableSources reports a --from the plan could not honour.
@@ -337,10 +372,7 @@ func (ec *evalContext) generateDataset(
 	plan generationPlan,
 	out io.Writer,
 	noWait bool,
-	// jobID receives the submitted job's id. Under --no-wait nothing is
-	// downloaded and there is no artifact to return, so this is the only thing
-	// the caller can report or reattach to.
-	jobID *string,
+	report *generationReport,
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingDataset(plan.Name, plan.SampleSize))
 
@@ -369,9 +401,7 @@ func (ec *evalContext) generateDataset(
 	if err != nil {
 		return nil, messages.SubmittingDataJob(err)
 	}
-	if jobID != nil {
-		*jobID = job.ID
-	}
+	report.record(job.ID)
 	if noWait {
 		reportSubmitted(out, "dataset", job.ID)
 		return nil, nil
@@ -397,9 +427,7 @@ func (ec *evalContext) generateDataset(
 			// The retry is a second billed job, so the id the caller reports
 			// has to move with it. Leaving it on the abandoned first job points
 			// every resume and every `job show` at the wrong one.
-			if jobID != nil {
-				*jobID = job.ID
-			}
+			report.record(job.ID)
 			completed, err = ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
 				ec.evalClient.GetDataGenerationJob)
 		}
@@ -407,6 +435,7 @@ func (ec *evalContext) generateDataset(
 	if err != nil {
 		return nil, messages.DataGeneration(explainDataGenerationFailure(err, plan.Agent))
 	}
+	report.warn(completed)
 
 	return ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, out)
 }
@@ -464,6 +493,7 @@ func (ec *evalContext) collectDataset(
 		return nil, err
 	}
 	fmt.Fprint(out, messages.WroteArtifact(path))
+	writeJobWarnings(out, "dataset", completed, path)
 
 	// The job registered the version and this file is a copy of it, so the
 	// state a deploy would have left behind is recorded now. Without it the

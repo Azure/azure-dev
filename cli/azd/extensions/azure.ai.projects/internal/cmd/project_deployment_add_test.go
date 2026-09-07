@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -193,6 +194,7 @@ type selfInitializingAIService struct {
 	calls          int
 	request        *azdext.ResolveModelDeploymentsRequest
 	requests       []*azdext.ResolveModelDeploymentsRequest
+	deployment     *azdext.AiModelDeployment
 	location       string
 	respectRequest bool
 }
@@ -237,8 +239,9 @@ func (s *selfInitializingAIService) ResolveModelDeployments(
 	if s.respectRequest && len(request.GetOptions().GetLocations()) == 1 {
 		location = request.GetOptions().GetLocations()[0]
 	}
-	return &azdext.ResolveModelDeploymentsResponse{
-		Deployments: []*azdext.AiModelDeployment{{
+	deployment := s.deployment
+	if deployment == nil {
+		deployment = &azdext.AiModelDeployment{
 			ModelName: "gpt-4.1",
 			Format:    "OpenAI",
 			Version:   "2025-04-14",
@@ -248,7 +251,14 @@ func (s *selfInitializingAIService) ResolveModelDeployments(
 				DefaultCapacity: 1,
 			},
 			Capacity: 1,
-		}},
+		}
+	} else if s.respectRequest && len(request.GetOptions().GetLocations()) == 1 {
+		cloned := proto.Clone(deployment).(*azdext.AiModelDeployment)
+		cloned.Location = location
+		deployment = cloned
+	}
+	return &azdext.ResolveModelDeploymentsResponse{
+		Deployments: []*azdext.AiModelDeployment{deployment},
 	}, nil
 }
 
@@ -533,6 +543,41 @@ func TestSelectModelDeploymentUsesRequestedLocationForEmptyCandidate(t *testing.
 		[]string{"eastus"},
 		aiServer.request.Options.Locations,
 	)
+}
+
+func TestSelectModelDeploymentUsesSkuBaselineForMissingCapacity(t *testing.T) {
+	root := t.TempDir()
+	client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
+	aiServer.deployment = &azdext.AiModelDeployment{
+		ModelName: "gpt-4.1",
+		Format:    "OpenAI",
+		Version:   "2025-04-14",
+		Location:  "eastus",
+		Sku: &azdext.AiModelSku{
+			Name:            "GlobalStandard",
+			MinCapacity:     100,
+			CapacityStep:    100,
+			DefaultCapacity: 0,
+		},
+		Capacity: 0,
+	}
+
+	selected, err := selectModelDeployment(
+		t.Context(),
+		client,
+		&azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "subscription",
+				Location:       "eastus",
+			},
+		},
+		modelSelection{Name: "gpt-4.1"},
+		deploymentSelectionOptions{},
+		true,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selected)
+	assert.Equal(t, 100, selected.Deployment.Sku.Capacity)
 }
 
 func TestResolveDeploymentCandidatesPreservesFiltersAcrossLocations(t *testing.T) {

@@ -144,12 +144,9 @@ func selectModelDeployment(
 			"choose a different model",
 		)
 	}
-	capacity := candidate.GetCapacity()
-	if capacity <= 0 {
-		capacity = candidate.GetSku().GetDefaultCapacity()
-	}
-	if capacity <= 0 {
-		capacity = 1
+	capacity, err := resolveDeploymentCapacity(candidate)
+	if err != nil {
+		return nil, err
 	}
 	location := candidate.GetLocation()
 	if location == "" && len(locations) == 1 {
@@ -170,6 +167,57 @@ func selectModelDeployment(
 		},
 		Location: location,
 	}, nil
+}
+
+func resolveDeploymentCapacity(candidate *azdext.AiModelDeployment) (int32, error) {
+	sku := candidate.GetSku()
+	capacities := []int32{
+		candidate.GetCapacity(),
+		sku.GetDefaultCapacity(),
+		deploymentCapacityBaseline(sku),
+	}
+	for _, capacity := range capacities {
+		if deploymentCapacityValid(sku, capacity) {
+			return capacity, nil
+		}
+	}
+
+	return 0, exterrors.Validation(
+		"model_deployment_capacity_invalid",
+		fmt.Sprintf("model deployment SKU %q has no valid capacity", sku.GetName()),
+		"choose a capacity that satisfies the SKU's minimum, maximum, and step constraints",
+	)
+}
+
+func deploymentCapacityBaseline(sku *azdext.AiModelSku) int32 {
+	if minCapacity := sku.GetMinCapacity(); minCapacity > 0 {
+		return minCapacity
+	}
+	if capacityStep := sku.GetCapacityStep(); capacityStep > 0 {
+		return capacityStep
+	}
+	return 1
+}
+
+func deploymentCapacityValid(sku *azdext.AiModelSku, capacity int32) bool {
+	if capacity <= 0 {
+		return false
+	}
+	if minCapacity := sku.GetMinCapacity(); minCapacity > 0 &&
+		capacity < minCapacity {
+		return false
+	}
+	if maxCapacity := sku.GetMaxCapacity(); maxCapacity > 0 &&
+		capacity > maxCapacity {
+		return false
+	}
+	if capacityStep := sku.GetCapacityStep(); capacityStep > 0 {
+		baseline := deploymentCapacityBaseline(sku)
+		if capacity < baseline || (capacity-baseline)%capacityStep != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func validateDeploymentSelection(selection deploymentSelectionOptions) error {

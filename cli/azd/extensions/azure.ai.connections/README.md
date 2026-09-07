@@ -30,9 +30,31 @@ used. Local `$ref` files and nested credential values are resolved by this
 extension. Removing the service from `azure.yaml` stops managing it but does
 not delete the remote Connection; use `azd ai connection delete` to delete it.
 
-The embedded `microsoft.foundry` provider no longer provisions split
-`azure.ai.connection` services. Existing ejected or user-owned infrastructure
-continues to receive its declared Connection inputs for compatibility.
+The `microsoft.foundry` provider no longer provisions declared Connection
+services in any mode. Embedded, ejected Bicep, and ejected Terraform templates
+contain no generic Connection resources or credential parameters. The Projects
+extension still owns the system ACR connection associated with its registry.
+
+### Breaking migration
+
+Upgrade the Agents, Projects, Connections, and Toolboxes extensions together.
+Move bundled Connection and Toolbox definitions into independent
+`azure.ai.connection` and `azure.ai.toolbox` services, and wire Agent dependencies
+using `uses` or `azd ai agent add connection|toolbox`.
+
+For previously ejected infrastructure, remove the old generic Connection modules,
+resources, `connections` / `connectionCredentials` parameters and aggregate
+readiness outputs, or regenerate the infrastructure after saving custom changes.
+Upgrading extensions alone does not rewrite existing IaC. The Foundry provider
+rejects the removed Connection contract in on-disk Bicep; user-owned Terraform
+must be updated before applying it. When removing Terraform resources from
+configuration, plan a state handoff so Terraform does not destroy Connections
+now managed by this extension. Existing Azure Connections are not deleted by
+the migration.
+
+Run `azd provision` for the Project, then `azd deploy --all` for Connections,
+Toolboxes, and Agents (or use `azd up`). A targeted Agent deployment does not
+automatically deploy all of its dependencies.
 
 ### Deployment environment isolation
 
@@ -53,5 +75,5 @@ preserving punctuation and case so distinct services cannot share a marker.
 The Agents extension uses the same encoding for dependency validation.
 
 Old normalized per-service markers are not trusted. Redeploy Connections after
-updating both extensions to regenerate their readiness markers. Legacy aggregate
-markers from infrastructure provisioning remain supported.
+updating the extensions to regenerate their readiness markers. Legacy aggregate
+markers from infrastructure provisioning are no longer accepted.

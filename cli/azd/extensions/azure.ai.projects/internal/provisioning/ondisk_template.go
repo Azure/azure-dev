@@ -67,21 +67,6 @@ type bicepCompiler interface {
 	BuildBicepParam(ctx context.Context, file string, env []string) (bicep.BuildResult, error)
 }
 
-// onDiskEnvironment keeps connection service scopes separate.
-// Project values remain the fallback for legacy connections.
-type onDiskEnvironment struct {
-	project           map[string]string
-	services          map[string]map[string]string
-	scopedConnections map[string]string // Connection resource name -> service key
-}
-
-func (e onDiskEnvironment) connection(name string) map[string]string {
-	if serviceKey, scoped := e.scopedConnections[name]; scoped {
-		return e.services[serviceKey]
-	}
-	return e.project
-}
-
 // loadOnDiskTemplate compiles the on-disk Bicep source (if any) and returns
 // a fully-resolved templateSource. Returns (nil, nil) -- not an error -- when
 // no on-disk template is found, so the caller falls back to the embedded path.
@@ -100,26 +85,12 @@ func loadOnDiskTemplate(
 	compiler bicepCompiler,
 	envValues map[string]string,
 ) (*templateSource, error) {
-	return loadOnDiskTemplateWithEnvironment(
-		ctx,
-		projectPath,
-		compiler,
-		onDiskEnvironment{project: envValues},
-	)
-}
-
-func loadOnDiskTemplateWithEnvironment(
-	ctx context.Context,
-	projectPath string,
-	compiler bicepCompiler,
-	environment onDiskEnvironment,
-) (*templateSource, error) {
-	return loadOnDiskTemplateAtWithEnvironment(
+	return loadOnDiskTemplateAt(
 		ctx,
 		filepath.Join(projectPath, onDiskInfraDir),
 		onDiskModule,
 		compiler,
-		environment,
+		envValues,
 	)
 }
 
@@ -131,22 +102,6 @@ func loadOnDiskTemplateAt(
 	module string,
 	compiler bicepCompiler,
 	envValues map[string]string,
-) (*templateSource, error) {
-	return loadOnDiskTemplateAtWithEnvironment(
-		ctx,
-		infraDir,
-		module,
-		compiler,
-		onDiskEnvironment{project: envValues},
-	)
-}
-
-func loadOnDiskTemplateAtWithEnvironment(
-	ctx context.Context,
-	infraDir string,
-	module string,
-	compiler bicepCompiler,
-	environment onDiskEnvironment,
 ) (*templateSource, error) {
 	if module == "" {
 		module = onDiskModule
@@ -160,7 +115,7 @@ func loadOnDiskTemplateAtWithEnvironment(
 			ctx,
 			bicepparamPath,
 			compiler,
-			environment.project,
+			envValues,
 		)
 	case fileExistsAt(bicepPath):
 		paramsPath := filepath.Join(infraDir, module+".parameters.json")
@@ -169,7 +124,7 @@ func loadOnDiskTemplateAtWithEnvironment(
 			bicepPath,
 			paramsPath,
 			compiler,
-			environment,
+			envValues,
 		)
 	default:
 		return nil, nil
@@ -183,8 +138,11 @@ func loadFromBicep(
 	ctx context.Context,
 	bicepPath, paramsPath string,
 	compiler bicepCompiler,
-	environment onDiskEnvironment,
+	envValues map[string]string,
 ) (*templateSource, error) {
+	if err := rejectLegacyConnectionSource(bicepPath); err != nil {
+		return nil, err
+	}
 	res, err := compiler.Build(ctx, bicepPath)
 	if err != nil {
 		return nil, exterrors.Validation(
@@ -199,9 +157,9 @@ func loadFromBicep(
 		return nil, err
 	}
 
-	params, err := loadParametersFileWithEnvironment(
+	params, err := loadParametersFile(
 		paramsPath,
-		environment,
+		envValues,
 	)
 	if err != nil {
 		return nil, err
@@ -223,6 +181,9 @@ func loadFromBicepParam(
 	compiler bicepCompiler,
 	envValues map[string]string,
 ) (*templateSource, error) {
+	if err := rejectLegacyConnectionSource(bicepparamPath); err != nil {
+		return nil, err
+	}
 	env := envValuesToKeyEquals(envValues)
 	res, err := compiler.BuildBicepParam(ctx, bicepparamPath, env)
 	if err != nil {
@@ -277,16 +238,6 @@ func loadFromBicepParam(
 // Each parameter is substituted in isolation so one unresolved VAR doesn't
 // affect siblings.
 func loadParametersFile(paramFilePath string, envValues map[string]string) (map[string]any, error) {
-	return loadParametersFileWithEnvironment(
-		paramFilePath,
-		onDiskEnvironment{project: envValues},
-	)
-}
-
-func loadParametersFileWithEnvironment(
-	paramFilePath string,
-	environment onDiskEnvironment,
-) (map[string]any, error) {
 	//nolint:gosec // paramFilePath is derived from projectPath supplied by azd-core
 	raw, err := os.ReadFile(paramFilePath)
 	if err != nil {
@@ -308,11 +259,11 @@ func loadParametersFileWithEnvironment(
 
 	out := make(map[string]any, len(pre))
 	for name, raw := range pre {
-		kept, err := substituteParameterValue(
+		kept, err := substituteParamValue(
 			raw,
 			paramFilePath,
 			name,
-			environment,
+			envValues,
 		)
 		if err != nil {
 			return nil, err
@@ -323,126 +274,6 @@ func loadParametersFileWithEnvironment(
 		out[name] = kept
 	}
 	return out, nil
-}
-
-func substituteParameterValue(
-	rawEntry any,
-	sourcePath, name string,
-	environment onDiskEnvironment,
-) (any, error) {
-	switch name {
-	case "connections":
-		return substituteConnectionsParameter(
-			rawEntry,
-			sourcePath,
-			name,
-			environment,
-		)
-	case "connectionCredentials":
-		return substituteConnectionCredentialsParameter(
-			rawEntry,
-			sourcePath,
-			name,
-			environment,
-		)
-	default:
-		return substituteParamValue(
-			rawEntry,
-			sourcePath,
-			name,
-			environment.project,
-		)
-	}
-}
-
-func substituteConnectionsParameter(
-	rawEntry any,
-	sourcePath, name string,
-	environment onDiskEnvironment,
-) (any, error) {
-	entry, ok := rawEntry.(map[string]any)
-	if !ok {
-		return substituteParamValue(
-			rawEntry,
-			sourcePath,
-			name,
-			environment.project,
-		)
-	}
-	connections, ok := entry["value"].([]any)
-	if !ok {
-		return substituteParamValue(
-			rawEntry,
-			sourcePath,
-			name,
-			environment.project,
-		)
-	}
-
-	resolvedConnections := make([]any, len(connections))
-	for i, connection := range connections {
-		connectionName := ""
-		if fields, ok := connection.(map[string]any); ok {
-			connectionName, _ = fields["name"].(string)
-		}
-		resolved, _, err := substituteJSONValue(
-			connection,
-			sourcePath,
-			name,
-			environment.connection(connectionName),
-		)
-		if err != nil {
-			return nil, err
-		}
-		resolvedConnections[i] = resolved
-	}
-
-	resolvedEntry := maps.Clone(entry)
-	resolvedEntry["value"] = resolvedConnections
-	return resolvedEntry, nil
-}
-
-func substituteConnectionCredentialsParameter(
-	rawEntry any,
-	sourcePath, name string,
-	environment onDiskEnvironment,
-) (any, error) {
-	entry, ok := rawEntry.(map[string]any)
-	if !ok {
-		return substituteParamValue(
-			rawEntry,
-			sourcePath,
-			name,
-			environment.project,
-		)
-	}
-	credentials, ok := entry["value"].(map[string]any)
-	if !ok {
-		return substituteParamValue(
-			rawEntry,
-			sourcePath,
-			name,
-			environment.project,
-		)
-	}
-
-	resolvedCredentials := make(map[string]any, len(credentials))
-	for connectionName, credential := range credentials {
-		resolved, _, err := substituteJSONValue(
-			credential,
-			sourcePath,
-			name,
-			environment.connection(connectionName),
-		)
-		if err != nil {
-			return nil, err
-		}
-		resolvedCredentials[connectionName] = resolved
-	}
-
-	resolvedEntry := maps.Clone(entry)
-	resolvedEntry["value"] = resolvedCredentials
-	return resolvedEntry, nil
 }
 
 // substituteParamValue runs envsubst over the JSON encoding of one parameter
@@ -544,6 +375,10 @@ func extractParametersFromARMFile(raw []byte, sourcePath string) (map[string]any
 	if doc.Parameters == nil {
 		return map[string]any{}, nil
 	}
+	// Reject the old contract before env substitution can resolve credentials.
+	if err := rejectLegacyConnectionParameters(doc.Parameters, sourcePath); err != nil {
+		return nil, err
+	}
 	return doc.Parameters, nil
 }
 
@@ -586,6 +421,9 @@ func unmarshalARMTemplate(raw, sourcePath string) (map[string]any, error) {
 			exterrors.CodeOnDiskBicepParseFailed,
 			fmt.Sprintf("parse compiled ARM JSON from %s: %s", sourcePath, err),
 		)
+	}
+	if err := validateProjectTemplate(tmpl, sourcePath); err != nil {
+		return nil, err
 	}
 	return tmpl, nil
 }

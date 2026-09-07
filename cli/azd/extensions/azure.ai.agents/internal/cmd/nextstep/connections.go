@@ -29,8 +29,8 @@ type bundledConnectionConfig struct {
 }
 
 // populateConnections prefers enabled unified connections.
-// Bundled and manifest sources are used only as a fallback.
-// This matches provision's connection source selection.
+// Bundled and manifest sources are retained only for legacy diagnostics;
+// they are not supported by provisioning or agent deployment.
 func populateConnections(
 	ctx context.Context,
 	src Source,

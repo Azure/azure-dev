@@ -3480,8 +3480,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// the deployments, connections, and toolboxes move out of the agent config
 	// into sibling azure.ai.project/connection/toolbox services emitted below.
 	// The agent keeps its container, resources, tool connections, and startup
-	// command. The provisioning handlers re-source the moved data from the
-	// sibling services.
+	// command. The owning extensions handle each sibling service's lifecycle.
 	resourceDeployments := agentConfig.Deployments
 	resourceConnections := agentConfig.Connections
 	resourceToolboxes := agentConfig.Toolboxes
@@ -3560,7 +3559,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// Emit the sibling Foundry resource services (project + deployments,
 	// connections, toolboxes) and wire the agent's uses: to them. A selected
 	// existing project contributes its endpoint so provision reuses it.
-	emittedConnections, err := emitResourceServices(
+	_, err = emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
 		a.selectedFoundryProject.Endpoint(),
@@ -3569,13 +3568,6 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if err != nil {
 		return err
 	}
-	recordPendingConnectionProvision(
-		ctx,
-		a.azdClient,
-		a.environment.Name,
-		emittedConnections,
-	)
-
 	printAgentAddedMessage(agentDef.Name)
 
 	// Replace the legacy hardcoded `azd up` / `azd deploy` hint with the

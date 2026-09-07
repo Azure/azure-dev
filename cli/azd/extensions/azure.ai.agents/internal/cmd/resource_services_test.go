@@ -45,14 +45,6 @@ func connectionService(t *testing.T, name string, conn project.Connection) *azde
 	return svc
 }
 
-func toolboxService(t *testing.T, name string, toolbox project.Toolbox) *azdext.ServiceConfig {
-	t.Helper()
-	svc := mustMarshalConfig(t, &toolbox)
-	svc.Name = name
-	svc.Host = AiToolboxHost
-	return svc
-}
-
 func agentService(t *testing.T, name string, toolConnections ...project.ToolConnection) *azdext.ServiceConfig {
 	t.Helper()
 	svc := mustMarshalConfig(t, &project.ServiceTargetAgentConfig{ToolConnections: toolConnections})
@@ -232,7 +224,7 @@ func TestCollectConnections(t *testing.T) {
 	assert.Equal(t, "zeta", connections[1].Name)
 }
 
-func TestCollectConnections_UsesAgentConfigPrecedence(t *testing.T) {
+func TestCollectConnections_IgnoresBundledAgentConfig(t *testing.T) {
 	t.Parallel()
 
 	inline, err := structpb.NewStruct(map[string]any{
@@ -268,11 +260,12 @@ func TestCollectConnections_UsesAgentConfigPrecedence(t *testing.T) {
 
 	connections, err := collectConnections(services, "")
 	require.NoError(t, err)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "legacy-connection", connections[0].Name)
+	require.Empty(t, connections)
+	_, err = project.LoadServiceTargetAgentConfig(services["agent"])
+	require.ErrorContains(t, err, "bundled connections")
 }
 
-func TestCollectConnections_UsesResolvedInlineConfig(t *testing.T) {
+func TestCollectConnections_IgnoresBundledAgentFileRef(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -314,25 +307,10 @@ func TestCollectConnections_UsesResolvedInlineConfig(t *testing.T) {
 
 	connections, err := collectConnections(services, root)
 	require.NoError(t, err)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "inline-connection", connections[0].Name)
-}
-
-// TestCollectToolboxes verifies toolboxes are sourced from azure.ai.toolbox
-// services only.
-func TestCollectToolboxes(t *testing.T) {
-	t.Parallel()
-
-	services := map[string]*azdext.ServiceConfig{
-		"tb":    toolboxService(t, "tb", project.Toolbox{Name: "tb", Tools: []map[string]any{{"type": "mcp"}}}),
-		"agent": agentService(t, "agent"),
-	}
-
-	toolboxes, err := collectToolboxes(services, "")
-	require.NoError(t, err)
-	require.Len(t, toolboxes, 1)
-	assert.Equal(t, "tb", toolboxes[0].Name)
-	require.Len(t, toolboxes[0].Tools, 1)
+	require.Empty(t, connections)
+	require.NoError(t, project.ResolveServiceConfigInPlace(services["agent"], root))
+	_, err = project.LoadServiceTargetAgentConfig(services["agent"])
+	require.ErrorContains(t, err, "bundled connections")
 }
 
 func TestCollectResourceServices_ResolvesFileRefs(t *testing.T) {
@@ -432,23 +410,15 @@ func TestCollectHelpers_EmptyAndNilConfigs(t *testing.T) {
 	connections, err := collectConnections(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, connections)
-
-	toolboxes, err := collectToolboxes(services, "")
-	require.NoError(t, err)
-	assert.Empty(t, toolboxes)
 }
 
-// TestCollect_FallbackToBundledAgentConfig verifies that a pre-split azure.yaml
-// -- deployments, connections, and toolboxes bundled on the agent service with
-// no sibling azure.ai.<kind> services -- still yields those resources, so
-// existing projects provision without re-running init.
-func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
+// Legacy project deployments remain supported independently of the breaking
+// Connection and Toolbox ownership migration.
+func TestCollect_FallbackToLegacyProjectDeployments(t *testing.T) {
 	t.Parallel()
 
 	bundled := &project.ServiceTargetAgentConfig{
 		Deployments: []project.Deployment{{Name: "gpt-4o", Model: project.DeploymentModel{Name: "gpt-4o"}}},
-		Connections: []project.Connection{{Name: "conn", Category: "ApiKey"}},
-		Toolboxes:   []project.Toolbox{{Name: "tb", Tools: []map[string]any{{"type": "mcp"}}}},
 	}
 	svc := mustMarshalConfig(t, bundled)
 	svc.Name = "my-agent"
@@ -462,13 +432,7 @@ func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
 
 	connections, err := collectConnections(services, "")
 	require.NoError(t, err)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "conn", connections[0].Name)
-
-	toolboxes, err := collectToolboxes(services, "")
-	require.NoError(t, err)
-	require.Len(t, toolboxes, 1)
-	assert.Equal(t, "tb", toolboxes[0].Name)
+	require.Empty(t, connections)
 }
 
 func TestCollectLegacyProjectDeploymentsSplitDisablesFallback(

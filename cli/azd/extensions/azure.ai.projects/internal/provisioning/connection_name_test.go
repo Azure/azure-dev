@@ -4,93 +4,83 @@
 package provisioning
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"azure.ai.projects/internal/synthesis"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestOnDiskConnectionsUsePayloadNamesAndServiceKeyScopes(t *testing.T) {
+func TestLegacyConnectionParameterNamesRejectedBeforeSubstitution(t *testing.T) {
 	t.Parallel()
+	for _, name := range []string{"connections", "connectionCredentials"} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), onDiskParamsFile)
+			// A malformed env expression would fail if substitution were reached.
+			body := minimalARMParametersFile(t, map[string]any{name: "${unterminated"})
+			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+			parameters, err := loadParametersFile(path, nil)
+			requireConnectionMigrationError(t, err)
+			assert.Nil(t, parameters)
+		})
+	}
+}
+
+func TestLegacyConnectionSourceRejectedBeforeCompile(t *testing.T) {
+	for _, tt := range []struct {
+		name, file, source string
+	}{
+		{"Bicep array", onDiskBicepFile, "param connections array = []"},
+		{"Bicep secure object", onDiskBicepFile, "@secure()\nparam connectionCredentials object = {}"},
+		{"Bicep commented whitespace", onDiskBicepFile, "param /* note */ connections array = []"},
+		{"BicepParam credentials", onDiskBicepParamFile,
+			"using './main.bicep'\nparam connectionCredentials = readEnvironmentVariable('UNSET_KEY')"},
+		{"BicepParam array", onDiskBicepParamFile, "using './main.bicep'\nparam connections = []"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			infraDir := filepath.Join(root, onDiskInfraDir)
+			require.NoError(t, os.MkdirAll(infraDir, 0o750))
+			path := filepath.Join(infraDir, tt.file)
+			require.NoError(t, os.WriteFile(path, []byte(tt.source), 0o600))
+			compiler := &stubCompiler{
+				buildErr:      errors.New("must not compile"),
+				buildParamErr: errors.New("must not evaluate credentials"),
+			}
+			source, err := loadOnDiskTemplate(t.Context(), root, compiler, nil)
+			requireConnectionMigrationError(t, err)
+			assert.Nil(t, source)
+			assert.Empty(t, compiler.buildCalls)
+			assert.Empty(t, compiler.buildParamCalls)
+			//nolint:gosec // Test-owned file under t.TempDir.
+			raw, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, tt.source, string(raw))
+		})
+	}
+}
+
+func TestConnectionSourceCheckIgnoresCommentsAndLiterals(t *testing.T) {
 	root := t.TempDir()
-	raw := []byte(`services:
-  project:
-    host: azure.ai.project
-  connection-service:
-    host: azure.ai.connection
-    name: '  Deployed Connection  '
-    category: RemoteTool
-    target: ${ENDPOINT}
-    authType: ApiKey
-    credentials: {key: '${KEY}'}
-    env:
-      ENDPOINT: ${SERVICE_ENDPOINT}
-      KEY: ${SERVICE_KEY}
-  isolated-service:
-    host: azure.ai.connection
-    name: Isolated
-    category: RemoteTool
-    target: ${ENDPOINT}
-    authType: ApiKey
-    credentials: {key: '${KEY}'}
-    env: {}
-`)
-	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), raw, 0o600))
 	infraDir := filepath.Join(root, onDiskInfraDir)
 	require.NoError(t, os.MkdirAll(infraDir, 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// bicep\n"), 0o600))
-	// Generate the same public and secure parameter shapes as init --infra.
-	ejected, err := synthesis.Synthesize(synthesis.Input{
-		RawAzureYAML: raw, ServiceName: "project", ProjectRoot: root, PreserveVarRefs: true,
-	})
+	raw := `// param connections array = []
+/*
+param connectionCredentials object = {}
+*/
+var example = '''
+param connections array = []
+'''
+@description('Example: param connectionCredentials object')
+param custom string = 'quoted \' param connections'
+param connectionsEnabled bool = true
+`
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte(raw), 0o600))
+	compiler := &stubCompiler{buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()}}
+	_, err := loadOnDiskTemplate(t.Context(), root, compiler, nil)
 	require.NoError(t, err)
-	params := minimalARMParametersFile(t, ejected.Parameters)
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
-	client := newValidateTestClient(t,
-		&validateStubProjectServer{project: &azdext.ProjectConfig{
-			Path: root,
-			Services: map[string]*azdext.ServiceConfig{
-				"connection-service": {Environment: map[string]string{
-					"ENDPOINT": "https://service.example", "KEY": "service-key",
-				}},
-				// A different service happens to be keyed by the resource name.
-				"Deployed Connection": {Environment: map[string]string{"KEY": "wrong-service-key"}},
-			},
-		}},
-		&validateStubEnvServer{envName: "test", get: map[string]string{
-			envKeySubscriptionID: "sub-id", envKeyLocation: "eastus",
-			"ENDPOINT": "https://project.example", "KEY": "project-key",
-		}},
-	)
-	provider := &FoundryProvisioningProvider{
-		azdClient:        client,
-		bicepCliInstance: &stubCompiler{buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()}},
-	}
-	require.NoError(t, provider.Initialize(t.Context(), root, &azdext.ProvisioningOptions{Provider: FoundryProviderName}))
-	source, err := provider.resolveTemplate(t.Context(), func(string) {})
-	require.NoError(t, err)
-	asMap := func(value any) map[string]any {
-		t.Helper()
-		result, ok := value.(map[string]any)
-		require.True(t, ok, "expected object, got %T", value)
-		return result
-	}
-	connections, ok := asMap(source.parameters["connections"])["value"].([]any)
-	require.True(t, ok)
-	require.Len(t, connections, 2)
-	assert.Equal(t, "Deployed Connection", asMap(connections[0])["name"])
-	assert.Equal(t, "https://service.example", asMap(connections[0])["target"])
-	assert.Equal(t, "Isolated", asMap(connections[1])["name"])
-	assert.Equal(t, "", asMap(connections[1])["target"])
-	credentials := asMap(asMap(source.parameters["connectionCredentials"])["value"])
-	require.Len(t, credentials, 2)
-	assert.Equal(t, "service-key", asMap(credentials["Deployed Connection"])["key"])
-	assert.Equal(t, "", asMap(credentials["Isolated"])["key"])
-	assert.NotContains(t, credentials, "connection-service")
+	assert.Len(t, compiler.buildCalls, 1)
 }

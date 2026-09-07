@@ -228,22 +228,22 @@ func classifyToolboxResults(
 			toolbox.ToolboxSource == nextstep.ToolboxSourceLegacyManifest ||
 			toolbox.ToolboxSource == nextstep.ToolboxSourceUnknown
 	}
-	suggestion := "Run `azd provision` to materialize toolbox infrastructure, or " +
-		"`azd env set <ENV_VAR> <endpoint>` to point at an existing toolbox."
+	legacyMigration := "Migrate legacy toolboxes to azure.ai.toolbox services and add them to agent uses; " +
+		"set endpoint on the toolbox service to reuse an existing toolbox, then run `azd deploy --all`."
+	suggestion := legacyMigration
 	switch {
 	case hasBundled && hasSplit && hasLegacy:
 		suggestion = bundledToolboxMigrationSuggestion(missing) +
-			" Run `azd provision` for legacy toolbox resources."
+			" " + legacyMigration
 	case hasBundled && hasSplit:
 		suggestion = bundledToolboxMigrationSuggestion(missing)
 	case hasBundled && hasLegacy:
 		suggestion = bundledToolboxMigrationSuggestion(missing) +
-			" Run `azd provision` for legacy toolbox resources."
+			" " + legacyMigration
 	case hasBundled:
 		suggestion = bundledToolboxMigrationSuggestion(missing)
 	case hasSplit && hasLegacy:
-		suggestion = "Run `azd deploy` for split toolbox services and `azd provision` " +
-			"for legacy toolbox resources, or set an existing endpoint."
+		suggestion = legacyMigration
 	case hasSplit:
 		suggestion = "Run `azd deploy` to materialize split toolbox services."
 	}

@@ -92,14 +92,13 @@ func TestValidateFoundryDependencies(t *testing.T) {
 				"other-agent": {Name: "other-agent", Host: foundryAgentHost},
 			},
 			env: map[string]string{
-				"FOUNDRY_PROJECT_ENDPOINT":                 "https://example.test/projects/test",
-				envkey.ConnectionProjectEndpoint:           "https://example.test/projects/test",
-				"AZURE_AI_PROJECT_CONNECTION_NAMES":        "connection, another",
-				envkey.ToolboxMCPEndpoint("toolbox"):       "https://example.test/toolbox/mcp",
-				envkey.ToolboxProjectEndpoint("toolbox"):   "https://example.test/projects/test",
-				"AGENT_OTHER_AGENT_NAME":                   "other-agent",
-				"AGENT_OTHER_AGENT_VERSION":                "1",
-				envkey.AgentProjectEndpoint("other-agent"): "https://example.test/projects/test",
+				"FOUNDRY_PROJECT_ENDPOINT":                            "https://example.test/projects/test",
+				envkey.ConnectionServiceProjectEndpoint("connection"): "https://example.test/projects/test",
+				envkey.ToolboxMCPEndpoint("toolbox"):                  "https://example.test/toolbox/mcp",
+				envkey.ToolboxProjectEndpoint("toolbox"):              "https://example.test/projects/test",
+				"AGENT_OTHER_AGENT_NAME":                              "other-agent",
+				"AGENT_OTHER_AGENT_VERSION":                           "1",
+				envkey.AgentProjectEndpoint("other-agent"):            "https://example.test/projects/test",
 			},
 		},
 		{
@@ -149,9 +148,8 @@ func TestValidateFoundryDependencies(t *testing.T) {
 				"connection-service": {Name: "connection-service", Host: foundryConnectionHost},
 			},
 			env: map[string]string{
-				"FOUNDRY_PROJECT_ENDPOINT":          "https://example.test/projects/test",
-				envkey.ConnectionProjectEndpoint:    "https://example.test/projects/test",
-				"AZURE_AI_PROJECT_CONNECTION_NAMES": "connection-service",
+				"FOUNDRY_PROJECT_ENDPOINT":                                    "https://example.test/projects/test",
+				envkey.ConnectionServiceProjectEndpoint("connection-service"): "https://example.test/projects/test",
 			},
 		},
 		{
@@ -210,7 +208,7 @@ func TestValidateFoundryDependencies(t *testing.T) {
 			wantDetail: []string{"summarize (azure.ai.skill): SKILL_SUMMARIZE_VERSION is not set", `azd deploy "summarize"`},
 		},
 		{
-			name: "legacy connection names without scope are accepted",
+			name: "legacy connection names without scope are rejected",
 			uses: []string{"connection"},
 			services: map[string]*azdext.ServiceConfig{
 				"connection": {Name: "connection", Host: foundryConnectionHost},
@@ -218,6 +216,8 @@ func TestValidateFoundryDependencies(t *testing.T) {
 			env: map[string]string{
 				"AZURE_AI_PROJECT_CONNECTION_NAMES": "connection",
 			},
+			wantErr:    true,
+			wantDetail: []string{envkey.ConnectionServiceProjectEndpoint("connection") + " is not set"},
 		},
 		{
 			name: "connection readiness from another project fails",
@@ -226,13 +226,12 @@ func TestValidateFoundryDependencies(t *testing.T) {
 				"connection": {Name: "connection", Host: foundryConnectionHost},
 			},
 			env: map[string]string{
-				"FOUNDRY_PROJECT_ENDPOINT":          "https://example.test/projects/current",
-				envkey.ConnectionProjectEndpoint:    "https://example.test/projects/old",
-				"AZURE_AI_PROJECT_CONNECTION_NAMES": "connection",
+				"FOUNDRY_PROJECT_ENDPOINT":                            "https://example.test/projects/current",
+				envkey.ConnectionServiceProjectEndpoint("connection"): "https://example.test/projects/old",
 			},
 			wantErr: true,
 			wantDetail: []string{
-				"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT does not match FOUNDRY_PROJECT_ENDPOINT",
+				envkey.ConnectionServiceProjectEndpoint("connection") + " does not match FOUNDRY_PROJECT_ENDPOINT",
 			},
 		},
 		{
@@ -305,8 +304,8 @@ func TestValidateFoundryDependenciesLegacyToolbox(t *testing.T) {
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
-	require.Contains(t, localErr.Message, "legacy bundled toolbox")
-	require.Contains(t, localErr.Suggestion, "migrate bundled toolboxes")
+	require.Contains(t, localErr.Message, "no azure.ai.toolbox service")
+	require.Contains(t, localErr.Suggestion, "declare azure.ai.toolbox services")
 }
 
 func TestValidateFoundryDependenciesRejectsLegacyToolboxFromAnotherProject(t *testing.T) {
@@ -320,7 +319,7 @@ func TestValidateFoundryDependenciesRejectsLegacyToolboxFromAnotherProject(t *te
 	err := validateFoundryDependencies(
 		t.Context(), agent, config, map[string]*azdext.ServiceConfig{"agent": agent}, env, nil,
 	)
-	require.ErrorContains(t, err, "does not belong to FOUNDRY_PROJECT_ENDPOINT")
+	require.ErrorContains(t, err, "no azure.ai.toolbox service")
 }
 
 func TestValidateFoundryDependenciesSplitToolboxReference(t *testing.T) {
@@ -434,7 +433,7 @@ func TestValidateFoundryDependenciesCombinesMigrationAndProvisionRemediation(t *
 	err := validateFoundryDependencies(t.Context(), agent, config, services, nil, nil)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
-	require.Contains(t, localErr.Suggestion, "migrate bundled toolboxes")
+	require.Contains(t, localErr.Suggestion, "declare azure.ai.toolbox services")
 	require.Contains(t, localErr.Suggestion, "azd provision")
 	require.Contains(t, localErr.Suggestion, "azd deploy --all")
 }
@@ -548,6 +547,58 @@ func TestValidateFoundryDependenciesConnectionUsesDeployMarker(t *testing.T) {
 		require.Contains(t, localErr.Suggestion, `azd deploy "connection"`)
 		require.NotContains(t, localErr.Suggestion, "azd provision")
 	})
+
+	t.Run("aggregate markers cannot establish readiness", func(t *testing.T) {
+		t.Parallel()
+		env := map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT":                      "https://example.test/projects/current",
+			"AZURE_AI_PROJECT_CONNECTION_NAMES":             "connection",
+			"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": "https://example.test/projects/current",
+		}
+		err := validateFoundryDependencies(t.Context(), agent, nil, services, env, nil)
+		require.ErrorContains(t, err, envkey.ConnectionServiceProjectEndpoint("connection")+" is not set")
+	})
+
+	t.Run("service marker without active project is rejected", func(t *testing.T) {
+		t.Parallel()
+		env := map[string]string{
+			envkey.ConnectionServiceProjectEndpoint("connection"): "https://example.test/projects/current",
+		}
+		err := validateFoundryDependencies(t.Context(), agent, nil, services, env, nil)
+		require.ErrorContains(t, err, "does not match FOUNDRY_PROJECT_ENDPOINT")
+	})
+}
+
+func TestValidateFoundryDependenciesToolboxRequiresSplitService(t *testing.T) {
+	t.Parallel()
+	const endpoint = "https://example.test/projects/current"
+	agent := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, Uses: []string{"tools"}}
+	config := &ServiceTargetAgentConfig{Toolboxes: []Toolbox{{Name: "tools"}}}
+	env := map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT":             endpoint,
+		envkey.ToolboxMCPEndpoint("tools"):     endpoint + "/toolboxes/tools/mcp",
+		envkey.ToolboxProjectEndpoint("tools"): endpoint,
+	}
+	err := validateFoundryDependencies(t.Context(), agent, config, nil, env, nil)
+	require.ErrorContains(t, err, "no azure.ai.toolbox service")
+
+	// External reuse still requires a split service and its owning extension's
+	// readiness output. Merely declaring endpoint cannot bypass deployment.
+	props, err := MarshalStruct(new(map[string]any{"endpoint": "https://external.test/mcp"}))
+	require.NoError(t, err)
+	services := map[string]*azdext.ServiceConfig{
+		"tools": {Name: "tools", Host: foundryToolboxHost, AdditionalProperties: props},
+	}
+	env[envkey.ToolboxMCPEndpoint("tools")] = "https://external.test/mcp"
+	require.NoError(t, validateFoundryDependencies(t.Context(), agent, config, services, env, nil))
+	delete(env, envkey.ToolboxMCPEndpoint("tools"))
+	require.ErrorContains(t,
+		validateFoundryDependencies(t.Context(), agent, config, services, env, nil), "TOOLBOX_TOOLS_MCP_ENDPOINT is not set")
+	env[envkey.ToolboxMCPEndpoint("tools")] = "https://external.test/mcp"
+	delete(env, "FOUNDRY_PROJECT_ENDPOINT")
+	delete(env, envkey.ToolboxProjectEndpoint("tools"))
+	require.ErrorContains(t,
+		validateFoundryDependencies(t.Context(), agent, config, services, env, nil), "FOUNDRY_PROJECT_ENDPOINT is not set")
 }
 
 func TestValidateFoundryConnectionDependencyDoesNotAcceptAnotherServiceMarker(t *testing.T) {

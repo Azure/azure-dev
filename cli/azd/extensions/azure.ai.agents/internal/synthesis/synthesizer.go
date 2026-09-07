@@ -52,15 +52,9 @@ type Input struct {
 	// value is not checked (only existence and endpoint: are).
 	AcceptedHosts []string
 
-	// Env maps project-wide azd values.
-	// Network fields always use it.
-	// Legacy connection services use it when service env is absent.
+	// Env maps project-wide azd values used by network fields and conditions.
 	// Missing values may fall back to the process environment.
 	Env map[string]string
-
-	// ServiceEnvironments contains core-expanded values by service.
-	// Connection fields prefer these values over the legacy Env map.
-	ServiceEnvironments map[string]map[string]string
 
 	// PreserveVarRefs keeps ${VAR} references verbatim instead of resolving
 	// them. Used by the eject path, where the synthesized main.parameters.json
@@ -68,12 +62,6 @@ type Input struct {
 	// ${VAR} from the azd environment at provision time. When false (the
 	// provision path), ${VAR} is resolved here and a missing variable fails.
 	PreserveVarRefs bool
-
-	// ExcludeConnectionServices leaves split host: azure.ai.connection
-	// services out of provider-managed infrastructure. The Connections
-	// extension reconciles them during deploy. Legacy bundled connections
-	// remain included, and ejected/on-disk infrastructure leaves this false.
-	ExcludeConnectionServices bool
 
 	// ProjectRoot is the directory holding azure.yaml. When set, $ref file
 	// includes in the service entry (and its deployment items) are resolved
@@ -116,105 +104,6 @@ type DeploymentSku struct {
 	Capacity int    `yaml:"capacity" json:"capacity"`
 }
 
-// Connection mirrors the connectionType in modules/connections.bicep: the
-// synthesized shape of a host: azure.ai.connection service. Name is the trimmed
-// payload name, falling back to the service key. Credentials, metadata, OAuth
-// settings, and identity audience pass through so every supported authentication
-// type can be expressed.
-type Connection struct {
-	Name             string            `yaml:"name" json:"name"`
-	Category         string            `yaml:"category" json:"category"`
-	Target           string            `yaml:"target" json:"target"`
-	AuthType         string            `yaml:"authType" json:"authType"`
-	Credentials      map[string]any    `yaml:"credentials,omitempty" json:"credentials,omitempty"`
-	Metadata         map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
-	Audience         string            `yaml:"audience,omitempty" json:"audience,omitempty"`
-	AuthorizationURL string            `yaml:"authorizationUrl,omitempty" json:"authorizationUrl,omitempty"`
-	TokenURL         string            `yaml:"tokenUrl,omitempty" json:"tokenUrl,omitempty"`
-	RefreshURL       string            `yaml:"refreshUrl,omitempty" json:"refreshUrl,omitempty"`
-	Scopes           []string          `yaml:"scopes,omitempty" json:"scopes,omitempty"`
-	ConnectorName    string            `yaml:"connectorName,omitempty" json:"connectorName,omitempty"`
-}
-
-// SplitConnectionCredentials separates credential values.
-// ARM carries them in a secure object parameter.
-func SplitConnectionCredentials(
-	connections []Connection,
-) ([]Connection, map[string]map[string]any) {
-	if connections == nil {
-		connections = []Connection{}
-	}
-
-	withoutCredentials := slices.Clone(connections)
-	credentials := map[string]map[string]any{}
-	for i := range withoutCredentials {
-		if len(withoutCredentials[i].Credentials) > 0 || strings.EqualFold(withoutCredentials[i].AuthType, "OAuth2") {
-			value := withoutCredentials[i].Credentials
-			if value == nil {
-				value = map[string]any{}
-			}
-			credentials[withoutCredentials[i].Name] = value
-			withoutCredentials[i].Credentials = nil
-		}
-	}
-
-	return withoutCredentials, credentials
-}
-
-// JoinConnectionCredentials restores credentials for Terraform.
-// Terraform isolates them with sensitive_body.
-func JoinConnectionCredentials(
-	connections []Connection,
-	credentials map[string]map[string]any,
-) []Connection {
-	joined := slices.Clone(connections)
-	for i := range joined {
-		if value, ok := credentials[joined[i].Name]; ok {
-			joined[i].Credentials = value
-		}
-	}
-	return joined
-}
-
-// connectionService is the subset of a host: azure.ai.connection service body
-// the synthesizer reads. The payload name overrides the service key, matching
-// the owning extension's deploy target.
-type connectionService struct {
-	Host             string            `yaml:"host"`
-	Name             string            `yaml:"name,omitempty"`
-	Category         string            `yaml:"category,omitempty"`
-	Target           string            `yaml:"target,omitempty"`
-	AuthType         string            `yaml:"authType,omitempty"`
-	Credentials      map[string]any    `yaml:"credentials,omitempty"`
-	Metadata         map[string]string `yaml:"metadata,omitempty"`
-	Audience         string            `yaml:"audience,omitempty"`
-	AuthorizationURL string            `yaml:"authorizationUrl,omitempty"`
-	TokenURL         string            `yaml:"tokenUrl,omitempty"`
-	RefreshURL       string            `yaml:"refreshUrl,omitempty"`
-	Scopes           []string          `yaml:"scopes,omitempty"`
-	ConnectorName    string            `yaml:"connectorName,omitempty"`
-}
-
-func (s connectionService) connectionName(serviceKey string) string {
-	if name := strings.TrimSpace(s.Name); name != "" {
-		return name
-	}
-	return serviceKey
-}
-
-// aiConnectionHost is the host: value that marks a service as a Foundry
-// connection. Matches the azure.ai.connection service-target provider name.
-const aiConnectionHost = "azure.ai.connection"
-
-// normalizeConnectionAuthType maps legacy aliases to ARM values.
-func normalizeConnectionAuthType(authType string) string {
-	if authType == "AgenticIdentity" {
-		return "AgenticIdentityToken"
-	}
-
-	return authType
-}
-
 // codeConfigBlock marks an agent as a code (ZIP) deploy. Its presence is the
 // signal; the keys are camelCase because the unified azure.ai.agent service
 // entry is serialized from the agent definition's JSON tags.
@@ -248,7 +137,6 @@ type projectService struct {
 	Host        string        `yaml:"host"`
 	Endpoint    string        `yaml:"endpoint,omitempty"`
 	Deployments []Deployment  `yaml:"deployments,omitempty"`
-	Connections []Connection  `yaml:"connections,omitempty"`
 	Agents      []agentBlock  `yaml:"agents,omitempty"`
 	Network     *networkBlock `yaml:"network,omitempty"`
 }
@@ -334,22 +222,6 @@ func Synthesize(in Input) (*Result, error) {
 		deployments = []Deployment{}
 	}
 
-	connections := []Connection{}
-	if in.ExcludeConnectionServices {
-		connections, err = expandLegacyConnections(svc.Connections, in.Env, !in.PreserveVarRefs)
-	} else {
-		connections, err = collectConnections(
-			root.Services,
-			in.Env,
-			in.ServiceEnvironments,
-			!in.PreserveVarRefs,
-			in.ProjectRoot,
-		)
-	}
-	if err != nil {
-		return nil, err
-	}
-	connections, connectionCredentials := SplitConnectionCredentials(connections)
 	netParams, netMode, err := synthesizeNetwork(svc.Network, in.ServiceName, in.Env, !in.PreserveVarRefs)
 	if err != nil {
 		return nil, err
@@ -361,10 +233,8 @@ func Synthesize(in Input) (*Result, error) {
 	}
 
 	params := map[string]any{
-		"deployments":           deployments,
-		"includeAcr":            includeAcr,
-		"connections":           connections,
-		"connectionCredentials": connectionCredentials,
+		"deployments": deployments,
+		"includeAcr":  includeAcr,
 	}
 	maps.Copy(params, netParams)
 
@@ -408,73 +278,15 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	connections := []Connection{}
-	if in.ExcludeConnectionServices {
-		connections, err = expandLegacyConnections(svc.Connections, in.Env, !in.PreserveVarRefs)
-	} else {
-		connections, err = collectConnections(
-			root.Services,
-			in.Env,
-			in.ServiceEnvironments,
-			!in.PreserveVarRefs,
-			in.ProjectRoot,
-		)
-	}
-	if err != nil {
-		return nil, err
-	}
-	connections, connectionCredentials := SplitConnectionCredentials(connections)
 	deployments := svc.Deployments
 	if deployments == nil {
 		deployments = []Deployment{}
 	}
 
 	return &Result{Parameters: map[string]any{
-		"deployments":           deployments,
-		"includeAcr":            includeAcr,
-		"connections":           connections,
-		"connectionCredentials": connectionCredentials,
+		"deployments": deployments,
+		"includeAcr":  includeAcr,
 	}, NetworkMode: NetworkModeNone}, nil
-}
-
-// ConnectionEnvironmentScopes maps resource names to the service keys of enabled
-// connections that declare env. On-disk parameters use resource names, whereas
-// core-expanded environments use service keys. Empty env blocks still establish
-// isolated scopes; disabled connections are omitted.
-func ConnectionEnvironmentScopes(
-	raw []byte,
-	projectRoot string,
-	env map[string]string,
-) (map[string]string, error) {
-	if len(raw) == 0 {
-		return nil, errors.New("synthesis: raw azure.yaml is empty")
-	}
-
-	var root projectFile
-	if err := yaml.Unmarshal(raw, &root); err != nil {
-		return nil, fmt.Errorf("parse azure.yaml: %w", err)
-	}
-
-	scopes := map[string]string{}
-	err := visitEnabledConnectionServices(
-		root.Services,
-		projectRoot,
-		env,
-		func(name string, node yaml.Node) error {
-			if connectionEnvDeclared(node) {
-				var svc connectionService
-				if err := node.Decode(&svc); err != nil {
-					return fmt.Errorf("services.%s: decode connection: %w", name, err)
-				}
-				scopes[svc.connectionName(name)] = name
-			}
-			return nil
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	return scopes, nil
 }
 
 // BrownfieldDeployments returns the model deployments declared on a brownfield
@@ -505,37 +317,6 @@ func BrownfieldDeployments(
 	}
 
 	return svc.Deployments, nil
-}
-
-// BrownfieldConnections returns the host: azure.ai.connection services declared
-// in azure.yaml, for a brownfield (endpoint:) project. Synthesize short-circuits
-// with ErrEndpointBrownfield before collecting connections, so the provider uses
-// this to create the same connections on the existing account. ${VAR} is
-// resolved from env since brownfield provisions immediately; Foundry ${{...}}
-// expressions pass through. Returns an empty slice (not an error) when none
-// are declared.
-func BrownfieldConnections(
-	raw []byte,
-	env map[string]string,
-	serviceEnvironments map[string]map[string]string,
-	projectRoot string,
-) ([]Connection, error) {
-	if len(raw) == 0 {
-		return nil, errors.New("synthesis: raw azure.yaml is empty")
-	}
-
-	var root projectFile
-	if err := yaml.Unmarshal(raw, &root); err != nil {
-		return nil, fmt.Errorf("parse azure.yaml: %w", err)
-	}
-
-	return collectConnections(
-		root.Services,
-		env,
-		serviceEnvironments,
-		true,
-		projectRoot,
-	)
 }
 
 // ProjectEndpoint returns the endpoint configured on a Foundry project service.
@@ -571,6 +352,9 @@ func loadProjectService(
 	if !ok {
 		return projectService{}, ErrServiceNotFound
 	}
+	if err := rejectBundledDeclarations(node, serviceName); err != nil {
+		return projectService{}, err
+	}
 	if projectRoot != "" {
 		var err error
 		node, err = resolveServiceRefs(node, projectRoot, serviceName)
@@ -578,12 +362,64 @@ func loadProjectService(
 			return projectService{}, err
 		}
 	}
+	if err := rejectBundledDeclarations(node, serviceName); err != nil {
+		return projectService{}, err
+	}
 
 	var svc projectService
 	if err := node.Decode(&svc); err != nil {
 		return projectService{}, fmt.Errorf("decode service %q: %w", serviceName, err)
 	}
 	return svc, nil
+}
+
+// rejectBundledDeclarations rejects legacy resource payloads, not agent references
+// to independently owned resources. Check before expanding nested payload refs.
+func rejectBundledDeclarations(node yaml.Node, path string) error {
+	var fields map[string]yaml.Node
+	if err := node.Decode(&fields); err != nil {
+		return nil
+	}
+	for _, field := range []string{"connections", "toolboxes"} {
+		value, ok := fields[field]
+		if !ok {
+			continue
+		}
+		if field == "toolboxes" && value.Kind == yaml.SequenceNode {
+			if !slices.ContainsFunc(value.Content, func(item *yaml.Node) bool {
+				if item.Kind == yaml.ScalarNode && item.Tag == "!!str" && strings.TrimSpace(item.Value) != "" {
+					return false
+				}
+				var reference map[string]yaml.Node
+				if err := item.Decode(&reference); err != nil || len(reference) != 1 {
+					return true
+				}
+				// A reference-only item is validated again after file expansion.
+				if ref := reference["$ref"]; ref.Kind == yaml.ScalarNode && ref.Tag == "!!str" {
+					return false
+				}
+				name := reference["name"]
+				return name.Kind != yaml.ScalarNode || name.Tag != "!!str" || strings.TrimSpace(name.Value) == ""
+			}) {
+				continue
+			}
+		}
+		return fmt.Errorf("services.%s.%s: bundled declarations are no longer supported; "+
+			"migrate them to independent azure.ai.connection or azure.ai.toolbox services", path, field)
+	}
+	if config, ok := fields["config"]; ok {
+		if err := rejectBundledDeclarations(config, path+".config"); err != nil {
+			return err
+		}
+	}
+	if agents, ok := fields["agents"]; ok && agents.Kind == yaml.SequenceNode {
+		for i, agent := range agents.Content {
+			if err := rejectBundledDeclarations(*agent, fmt.Sprintf("%s.agents[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // resolveServiceRefs expands $ref file includes in one service entry. It decodes
@@ -723,45 +559,44 @@ func deriveIncludeAcr(
 	projectRoot string,
 	env map[string]string,
 ) (bool, error) {
-	if slices.ContainsFunc(svc.Agents, agentNeedsAcr) {
-		return true, nil
-	}
-
+	includeAcr := slices.ContainsFunc(svc.Agents, agentNeedsAcr)
 	lookup := projectConditionLookup(env)
-	for serviceName, node := range services {
-		// A ref-only connection has no host to filter yet.
-		skip, err := skipDisabledConnectionWithoutRef(node, lookup)
-		if err != nil {
-			return false, fmt.Errorf(
-				"services.%s.condition: %w",
-				serviceName,
-				err,
-			)
+	for _, serviceName := range slices.Sorted(maps.Keys(services)) {
+		node := services[serviceName]
+		var selector struct {
+			Host string `yaml:"host"`
+			Ref  string `yaml:"$ref"`
 		}
-		if skip {
+		if err := node.Decode(&selector); err != nil {
 			continue
 		}
-
-		var matches bool
-		node, matches, err = serviceForHost(
-			node,
-			projectRoot,
-			serviceName,
-			"azure.ai.agent",
-		)
+		// Other service targets own their payloads, refs and conditions.
+		if selector.Host != "azure.ai.agent" && (selector.Host != "" || selector.Ref == "") {
+			continue
+		}
+		enabled, err := serviceNodeEnabled(node, lookup)
+		if err != nil {
+			return false, fmt.Errorf("services.%s.condition: %w", serviceName, err)
+		}
+		if !enabled {
+			continue
+		}
+		if err := rejectBundledDeclarations(node, serviceName); err != nil {
+			return false, err
+		}
+		node, matches, err := serviceForHost(node, projectRoot, serviceName, "azure.ai.agent")
 		if err != nil {
 			return false, err
 		}
 		if !matches {
 			continue
 		}
+		if err := rejectBundledDeclarations(node, serviceName); err != nil {
+			return false, err
+		}
 		var service serviceBlock
 		if err := node.Decode(&service); err != nil {
-			return false, fmt.Errorf(
-				"decode service %q: %w",
-				serviceName,
-				err,
-			)
+			return false, fmt.Errorf("decode service %q: %w", serviceName, err)
 		}
 		agent := agentBlock{
 			Kind:              service.Kind,
@@ -779,11 +614,9 @@ func deriveIncludeAcr(
 				agent.CodeConfiguration = service.Config.CodeConfiguration
 			}
 		}
-		if agentNeedsAcr(agent) {
-			return true, nil
-		}
+		includeAcr = includeAcr || agentNeedsAcr(agent)
 	}
-	return false, nil
+	return includeAcr, nil
 }
 
 // agentNeedsAcr reports whether a single agent entry builds a container image
@@ -800,272 +633,6 @@ func agentNeedsAcr(a agentBlock) bool {
 	// default-to-hosted with an explicit allowlist so it does not trigger ACR.
 	kind := strings.TrimSpace(a.Kind)
 	return kind == "" || strings.EqualFold(kind, "hosted")
-}
-
-// collectConnections scans enabled host: azure.ai.connection services
-// and returns them sorted by resolved resource name so the synthesized
-// parameter is deterministic regardless of YAML map order. Disabled services are omitted before payload
-// expansion so their ${VAR} values cannot fail provision.
-//
-// Provisioning resolves ${VAR} from service env when present.
-// Legacy services use project and process values.
-// Eject keeps references, and Foundry ${{...}} remains unchanged.
-func collectConnections(
-	services map[string]yaml.Node,
-	env map[string]string,
-	serviceEnvironments map[string]map[string]string,
-	resolve bool,
-	projectRoot string,
-) ([]Connection, error) {
-	connections := []Connection{}
-	err := visitEnabledConnectionServices(
-		services,
-		projectRoot,
-		env,
-		func(name string, node yaml.Node) error {
-			var svc connectionService
-			if err := node.Decode(&svc); err != nil {
-				return fmt.Errorf(
-					"services.%s: decode connection: %w",
-					name,
-					err,
-				)
-			}
-
-			declared := len(serviceEnvironments[name]) > 0 ||
-				connectionEnvDeclared(node)
-			mapping := connectionEnvironmentMapping(
-				env,
-				serviceEnvironments[name],
-				declared,
-			)
-			target, err := maybeExpand(svc.Target, mapping, resolve)
-			if err != nil {
-				return fmt.Errorf("services.%s.target: %w", name, err)
-			}
-			audience, err := maybeExpand(svc.Audience, mapping, resolve)
-			if err != nil {
-				return fmt.Errorf("services.%s.audience: %w", name, err)
-			}
-			authorizationURL, err := maybeExpand(svc.AuthorizationURL, mapping, resolve)
-			if err != nil {
-				return fmt.Errorf("services.%s.authorizationUrl: %w", name, err)
-			}
-			tokenURL, err := maybeExpand(svc.TokenURL, mapping, resolve)
-			if err != nil {
-				return fmt.Errorf("services.%s.tokenUrl: %w", name, err)
-			}
-			refreshURL, err := maybeExpand(svc.RefreshURL, mapping, resolve)
-			if err != nil {
-				return fmt.Errorf("services.%s.refreshUrl: %w", name, err)
-			}
-			scopes, err := expandStrings(svc.Scopes, mapping, resolve)
-			if err != nil {
-				return fmt.Errorf("services.%s.scopes: %w", name, err)
-			}
-			connectorName, err := maybeExpand(svc.ConnectorName, mapping, resolve)
-			if err != nil {
-				return fmt.Errorf("services.%s.connectorName: %w", name, err)
-			}
-
-			credentials, err := expandCredentials(
-				svc.Credentials,
-				mapping,
-				resolve,
-			)
-			if err != nil {
-				return fmt.Errorf(
-					"services.%s.credentials: %w",
-					name,
-					err,
-				)
-			}
-
-			metadata, err := expandMetadata(
-				svc.Metadata,
-				mapping,
-				resolve,
-			)
-			if err != nil {
-				return fmt.Errorf(
-					"services.%s.metadata: %w",
-					name,
-					err,
-				)
-			}
-			connections = append(connections, Connection{
-				Name:             svc.connectionName(name),
-				Category:         svc.Category,
-				Target:           target,
-				AuthType:         normalizeConnectionAuthType(svc.AuthType),
-				Credentials:      credentials,
-				Metadata:         metadata,
-				Audience:         audience,
-				AuthorizationURL: authorizationURL,
-				TokenURL:         tokenURL,
-				RefreshURL:       refreshURL,
-				Scopes:           scopes,
-				ConnectorName:    connectorName,
-			})
-			return nil
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	slices.SortFunc(connections, func(a, b Connection) int {
-		return strings.Compare(a.Name, b.Name)
-	})
-	return connections, nil
-}
-
-func expandLegacyConnections(
-	connections []Connection,
-	environment map[string]string,
-	resolve bool,
-) ([]Connection, error) {
-	mapping := connectionEnvironmentMapping(environment, nil, false)
-	result := slices.Clone(connections)
-	for i := range result {
-		connection := &result[i]
-		var err error
-		for field, target := range map[string]*string{
-			"target":           &connection.Target,
-			"audience":         &connection.Audience,
-			"authorizationUrl": &connection.AuthorizationURL,
-			"tokenUrl":         &connection.TokenURL,
-			"refreshUrl":       &connection.RefreshURL,
-			"connectorName":    &connection.ConnectorName,
-		} {
-			*target, err = maybeExpand(*target, mapping, resolve)
-			if err != nil {
-				return nil, fmt.Errorf("legacy connection %q %s: %w", connection.Name, field, err)
-			}
-		}
-		connection.Scopes, err = expandStrings(connection.Scopes, mapping, resolve)
-		if err != nil {
-			return nil, fmt.Errorf("legacy connection %q scopes: %w", connection.Name, err)
-		}
-		connection.Credentials, err = expandCredentials(connection.Credentials, mapping, resolve)
-		if err != nil {
-			return nil, fmt.Errorf("legacy connection %q credentials: %w", connection.Name, err)
-		}
-		connection.Metadata, err = expandMetadata(connection.Metadata, mapping, resolve)
-		if err != nil {
-			return nil, fmt.Errorf("legacy connection %q metadata: %w", connection.Name, err)
-		}
-		connection.AuthType = normalizeConnectionAuthType(connection.AuthType)
-	}
-	return result, nil
-}
-
-// visitEnabledConnectionServices walks azure.ai.connection services
-// whose condition is enabled. Condition uses the project environment,
-// not the connection service env: block. A root host plus an
-// explicit false condition skips payload $ref resolution.
-func visitEnabledConnectionServices(
-	services map[string]yaml.Node,
-	projectRoot string,
-	env map[string]string,
-	visit func(name string, node yaml.Node) error,
-) error {
-	lookup := projectConditionLookup(env)
-	for name, node := range services {
-		skip, err := skipDisabledConnectionWithoutRef(node, lookup)
-		if err != nil {
-			return fmt.Errorf("services.%s.condition: %w", name, err)
-		}
-		if skip {
-			continue
-		}
-
-		resolved, matches, err := serviceForHost(
-			node,
-			projectRoot,
-			name,
-			aiConnectionHost,
-		)
-		if err != nil {
-			return err
-		}
-		if !matches {
-			continue
-		}
-
-		if err := validateConnectionCondition(node, resolved, name); err != nil {
-			return err
-		}
-		enabled, err := serviceNodeEnabled(resolved, lookup)
-		if err != nil {
-			return fmt.Errorf("services.%s.condition: %w", name, err)
-		}
-		if !enabled {
-			continue
-		}
-		if err := visit(name, resolved); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func skipDisabledConnectionWithoutRef(
-	node yaml.Node,
-	lookup func(string) string,
-) (bool, error) {
-	var selector struct {
-		Host string `yaml:"host"`
-		Ref  string `yaml:"$ref"`
-	}
-	if err := node.Decode(&selector); err != nil {
-		return false, nil
-	}
-	if selector.Host != "" && selector.Host != aiConnectionHost {
-		return false, nil
-	}
-	if selector.Host == "" && selector.Ref == "" {
-		return false, nil
-	}
-	value, present, err := serviceConditionValue(node)
-	if err != nil {
-		return false, err
-	}
-	if !present {
-		return false, nil
-	}
-	enabled, err := evaluateCondition(value, lookup)
-	if err != nil {
-		return false, err
-	}
-	return !enabled, nil
-}
-
-func validateConnectionCondition(
-	rootNode yaml.Node,
-	resolvedNode yaml.Node,
-	serviceName string,
-) error {
-	_, rootPresent, err := serviceConditionValue(rootNode)
-	if err != nil {
-		return err
-	}
-	if rootPresent {
-		return nil
-	}
-
-	_, resolvedPresent, err := serviceConditionValue(resolvedNode)
-	if err != nil {
-		return err
-	}
-	if resolvedPresent {
-		return fmt.Errorf(
-			"services.%s: put condition beside host in azure.yaml; "+
-				"referenced payloads must not define condition",
-			serviceName,
-		)
-	}
-	return nil
 }
 
 func serviceNodeEnabled(
@@ -1108,154 +675,6 @@ func projectConditionLookup(env map[string]string) func(string) string {
 		value, _ := os.LookupEnv(name)
 		return value
 	}
-}
-
-// connectionEnvDeclared reports whether the service node
-// declares an env: key, including an empty env: {}. Core
-// collapses an empty env to an omitted one, so the raw node
-// is the only signal that a service opted into an isolated
-// (possibly empty) scope.
-func connectionEnvDeclared(node yaml.Node) bool {
-	var fields map[string]yaml.Node
-	if err := node.Decode(&fields); err != nil {
-		return false
-	}
-	_, ok := fields["env"]
-	return ok
-}
-
-// Use scoped values when the service declares env.
-// Legacy services use the project and process environments.
-func connectionEnvironmentMapping(
-	env map[string]string,
-	serviceEnvironment map[string]string,
-	declared bool,
-) func(string) string {
-	if declared {
-		return func(name string) string {
-			return serviceEnvironment[name]
-		}
-	}
-
-	return func(name string) string {
-		if value, found := env[name]; found {
-			return value
-		}
-		value, _ := os.LookupEnv(name)
-		return value
-	}
-}
-
-// maybeExpand expands ${VAR} references in s when resolve is true, preserving
-// Foundry ${{...}} expressions; when resolve is false it returns s unchanged so
-// the eject path keeps references verbatim.
-func maybeExpand(
-	s string,
-	mapping func(string) string,
-	resolve bool,
-) (string, error) {
-	if !resolve || s == "" {
-		return s, nil
-	}
-	return foundry.ExpandEnv(s, mapping)
-}
-
-func expandStrings(
-	values []string,
-	mapping func(string) string,
-	resolve bool,
-) ([]string, error) {
-	if values == nil {
-		return nil, nil
-	}
-	out := make([]string, len(values))
-	for i, value := range values {
-		expanded, err := maybeExpand(value, mapping, resolve)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = expanded
-	}
-	return out, nil
-}
-
-// expandCredentials deep-copies a credentials map, expanding ${VAR} in every
-// string leaf (recursing into nested maps like CustomKeys' keys:). Non-string
-// leaves are copied as-is. A nil map returns nil so the connection omits
-// credentials entirely (e.g. None / identity auth).
-func expandCredentials(
-	creds map[string]any,
-	mapping func(string) string,
-	resolve bool,
-) (map[string]any, error) {
-	if creds == nil {
-		return nil, nil
-	}
-	out := make(map[string]any, len(creds))
-	for k, v := range creds {
-		expanded, err := expandValue(v, mapping, resolve)
-		if err != nil {
-			return nil, err
-		}
-		out[k] = expanded
-	}
-	return out, nil
-}
-
-// expandValue recursively expands ${VAR} in string values, map values, and
-// slice elements, leaving other types untouched.
-func expandValue(
-	v any,
-	mapping func(string) string,
-	resolve bool,
-) (any, error) {
-	switch val := v.(type) {
-	case string:
-		return maybeExpand(val, mapping, resolve)
-	case map[string]any:
-		out := make(map[string]any, len(val))
-		for k, inner := range val {
-			expanded, err := expandValue(inner, mapping, resolve)
-			if err != nil {
-				return nil, err
-			}
-			out[k] = expanded
-		}
-		return out, nil
-	case []any:
-		out := make([]any, len(val))
-		for i, inner := range val {
-			expanded, err := expandValue(inner, mapping, resolve)
-			if err != nil {
-				return nil, err
-			}
-			out[i] = expanded
-		}
-		return out, nil
-	default:
-		return v, nil
-	}
-}
-
-// expandMetadata deep-copies a metadata map, expanding ${VAR} in each value.
-// A nil map returns nil so the connection omits metadata entirely.
-func expandMetadata(
-	metadata map[string]string,
-	mapping func(string) string,
-	resolve bool,
-) (map[string]string, error) {
-	if metadata == nil {
-		return nil, nil
-	}
-	out := make(map[string]string, len(metadata))
-	for k, v := range metadata {
-		expanded, err := maybeExpand(v, mapping, resolve)
-		if err != nil {
-			return nil, err
-		}
-		out[k] = expanded
-	}
-	return out, nil
 }
 
 // Network mode values surfaced for telemetry and emitted as bicep params.

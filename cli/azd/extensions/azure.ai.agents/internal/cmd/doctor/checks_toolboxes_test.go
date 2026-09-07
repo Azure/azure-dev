@@ -235,7 +235,8 @@ func TestCheckToolboxes_FailsWhenSomeEndpointsMissing(t *testing.T) {
 	require.Contains(t, res.Message, "code-runner")
 	require.Contains(t, res.Message, "TOOLBOX_CODE_RUNNER_MCP_ENDPOINT")
 	require.NotContains(t, res.Message, "web-search-tools")
-	require.Contains(t, res.Suggestion, "azd provision")
+	require.Contains(t, res.Suggestion, "Migrate legacy toolboxes to azure.ai.toolbox services")
+	require.NotContains(t, res.Suggestion, "azd provision")
 	require.Equal(t, 1, res.Details["matchedCount"])
 }
 
@@ -383,7 +384,8 @@ func TestCheckToolboxes_MixedSourcesShowBothRemediations(t *testing.T) {
 	}, nil)
 	require.Equal(t, StatusFail, res.Status)
 	require.Contains(t, res.Suggestion, "azd deploy")
-	require.Contains(t, res.Suggestion, "azd provision")
+	require.Contains(t, res.Suggestion, "Migrate legacy toolboxes to azure.ai.toolbox services")
+	require.NotContains(t, res.Suggestion, "azd provision")
 }
 
 func TestCheckToolboxes_BundledSourceAvoidsManualEndpointGuidance(t *testing.T) {

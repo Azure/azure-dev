@@ -12,6 +12,21 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+func TestAgentDependencyCommandsRemainRegistered(t *testing.T) {
+	// The SDK changes Cobra's global traversal setting when constructing a root.
+	root := NewRootCommand()
+	for _, kind := range []string{"toolbox", "connection"} {
+		command, remaining, err := root.Find([]string{"add", kind})
+		require.NoError(t, err)
+		require.Empty(t, remaining)
+		require.Equal(t, kind, command.Name())
+		require.NotNil(t, command.RunE)
+		require.NotNil(t, command.Flags().Lookup("agent"))
+		require.NoError(t, command.Args(command, []string{"dependency"}))
+		require.Error(t, command.Args(command, nil))
+	}
+}
+
 type resourceExtensionManifest struct {
 	Dependencies []struct {
 		ID      string `yaml:"id"`

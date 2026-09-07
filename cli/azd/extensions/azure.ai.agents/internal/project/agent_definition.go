@@ -506,13 +506,35 @@ func AgentDefinitionFromService(
 
 // LoadServiceTargetAgentConfig reads the agent service's deploy/provision config
 // (container settings, tool resources, tool connections, startup command, and —
-// for pre-split projects — bundled deployments/connections/toolboxes) from the
+// for pre-split projects — bundled deployments) from the
 // service-level properties, falling back to the deprecated config-nested shape.
+// Callers resolve file references before loading the effective configuration.
+// Connections and toolbox definitions belong to standalone services, not agents.
 func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgentConfig, error) {
 	s := ServiceConfigProps(svc)
 	cfg := &ServiceTargetAgentConfig{}
 	if s == nil {
 		return cfg, nil
+	}
+	if s.GetFields()["connections"] != nil {
+		return nil, fmt.Errorf(
+			"bundled connections on agent service %q are not supported; move them to azure.ai.connection services, "+
+				"add them to the agent uses list, and run 'azd deploy --all'", svc.GetName(),
+		)
+	}
+	for _, toolbox := range s.GetFields()["toolboxes"].GetListValue().GetValues() {
+		if name, ok := toolbox.Kind.(*structpb.Value_StringValue); ok && strings.TrimSpace(name.StringValue) != "" {
+			continue
+		}
+		fields := toolbox.GetStructValue().GetFields()
+		if len(fields) == 1 && strings.TrimSpace(fields["name"].GetStringValue()) != "" {
+			continue
+		}
+		return nil, fmt.Errorf(
+			"bundled toolbox definitions on agent service %q are not supported; move them to azure.ai.toolbox services, "+
+				"keep only strings or name-only objects in agent toolboxes, add them to uses, and run 'azd deploy --all'; "+
+				"set endpoint on the toolbox service to reuse an existing toolbox", svc.GetName(),
+		)
 	}
 	if activity := s.GetFields()["activity"].GetStructValue(); activity.GetFields()["useCase"] != nil {
 		return nil, fmt.Errorf(

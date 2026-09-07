@@ -29,6 +29,18 @@ new service key. Then attach that service with the command above and run `azd de
 The add command only updates the agent's `uses` list; it does not rewrite
 `toolboxes`, create the service, or deploy it.
 
+Bundled `connections` and full `toolboxes` definitions on `azure.ai.agent` are
+not supported, including definitions loaded through `$ref`. Move connections
+to `azure.ai.connection` services and attach them through `uses`. Agent
+`toolboxes` accepts strings or name-only objects referencing local
+`azure.ai.toolbox` services. To reuse an external toolbox, set `endpoint` on
+its split toolbox service instead of setting a legacy MCP environment marker.
+Run `azd deploy --all` to reconcile these dependencies before their agents;
+`azd provision` does not create Connections or Toolboxes. Agent manifest
+Connection and Toolbox resources remain supported as inputs to `azd ai agent init`,
+which generates split services. Agent runtime `toolConnections` and environment
+references remain agent-owned.
+
 ## Running Local Agents
 
 `azd ai agent run` starts the selected agent locally and, by default, opens the

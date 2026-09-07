@@ -77,7 +77,7 @@ func validateRegistryConnectionDependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("registry connection service %s is not declared in %s uses",
 				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
-			fmt.Sprintf("add %s to the %s service uses list, run 'azd provision', then retry the agent deployment",
+			fmt.Sprintf("add %s to the %s service uses list, run 'azd deploy --all', then retry the agent deployment",
 				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
 		)
 	}
@@ -184,32 +184,11 @@ func validateFoundryDependencies(
 				})
 				continue
 			}
-			key := envkey.ToolboxMCPEndpoint(toolbox.Name)
-			if strings.TrimSpace(env[key]) == "" {
-				failures = append(failures, foundryDependencyFailure{
-					name:              toolbox.Name,
-					host:              foundryToolboxHost,
-					detail:            fmt.Sprintf("legacy bundled toolbox has no endpoint in %s", key),
-					requiresMigration: true,
-				})
-				continue
-			}
-			projectKey := envkey.ToolboxProjectEndpoint(toolbox.Name)
-			if strings.TrimSpace(env[projectKey]) != "" {
-				if !sameProjectEndpoint(env[projectKey], env["FOUNDRY_PROJECT_ENDPOINT"]) {
-					failures = append(failures, foundryDependencyFailure{
-						name: toolbox.Name, host: foundryToolboxHost,
-						detail:            fmt.Sprintf("legacy bundled toolbox %s does not match FOUNDRY_PROJECT_ENDPOINT", projectKey),
-						requiresMigration: true,
-					})
-				}
-			} else if !endpointBelongsToProject(env[key], env["FOUNDRY_PROJECT_ENDPOINT"]) {
-				failures = append(failures, foundryDependencyFailure{
-					name: toolbox.Name, host: foundryToolboxHost,
-					detail:            "legacy bundled toolbox endpoint does not belong to FOUNDRY_PROJECT_ENDPOINT",
-					requiresMigration: true,
-				})
-			}
+			failures = append(failures, foundryDependencyFailure{
+				name: toolbox.Name, host: foundryToolboxHost,
+				detail:            "toolbox reference has no azure.ai.toolbox service; legacy endpoint markers are not supported",
+				requiresMigration: true,
+			})
 		}
 	}
 
@@ -240,7 +219,8 @@ func validateFoundryDependencies(
 
 	actions := slices.Clone(configurationFixes)
 	if requiresMigration {
-		actions = append(actions, "migrate bundled toolboxes to azure.ai.toolbox services")
+		actions = append(actions, "declare azure.ai.toolbox services and add them to the agent uses list "+
+			"(set endpoint on the toolbox service to reuse an existing toolbox)")
 	}
 	if requiresProvision {
 		actions = append(actions, "run 'azd provision'")
@@ -351,28 +331,11 @@ func validateFoundryProjectDependency(_ *azdext.ServiceConfig, env map[string]st
 func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[string]string) string {
 	serviceProjectKey := envkey.ConnectionServiceProjectEndpoint(service.GetName())
 	serviceProject := strings.TrimSpace(env[serviceProjectKey])
-	if serviceProject != "" {
-		if !sameProjectEndpoint(serviceProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
-			return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", serviceProjectKey)
-		}
-		return ""
+	if serviceProject == "" {
+		return fmt.Sprintf("%s is not set", serviceProjectKey)
 	}
-
-	// Fall back to aggregate markers written by legacy provider-managed
-	// infrastructure so existing and ejected projects remain compatible.
-	connectionProject := strings.TrimSpace(env[envkey.ConnectionProjectEndpoint])
-	if connectionProject != "" && !sameProjectEndpoint(connectionProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
-		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
-	}
-	found := false
-	for name := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
-		if strings.TrimSpace(name) == service.GetName() {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return "connection is not listed in AZURE_AI_PROJECT_CONNECTION_NAMES"
+	if !sameProjectEndpoint(serviceProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", serviceProjectKey)
 	}
 	return ""
 }
@@ -381,6 +344,9 @@ func validateFoundryToolboxDependency(service *azdext.ServiceConfig, env map[str
 	key := envkey.ToolboxMCPEndpoint(service.GetName())
 	if strings.TrimSpace(env[key]) == "" {
 		return fmt.Sprintf("%s is not set", key)
+	}
+	if strings.TrimSpace(env["FOUNDRY_PROJECT_ENDPOINT"]) == "" {
+		return "FOUNDRY_PROJECT_ENDPOINT is not set"
 	}
 	projectKey := envkey.ToolboxProjectEndpoint(service.GetName())
 	if strings.TrimSpace(env[projectKey]) == "" && endpointBelongsToProject(env[key], env["FOUNDRY_PROJECT_ENDPOINT"]) {

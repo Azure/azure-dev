@@ -13,6 +13,20 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+// builtinEvaluators are the four `init` offers, and they judge at either
+// evaluation level, so Turn and Conversation share one picker.
+//
+// A hardcoded list drifts from the service's full catalogue, which is why this
+// is deliberately the offered set rather than a copy of it: init makes no
+// service call, and anything outside these four is still reachable with
+// --evaluator.
+var builtinEvaluators = []string{
+	evalcore.BuiltinPrefix + "task_completion",
+	evalcore.BuiltinPrefix + "customer_satisfaction",
+	evalcore.BuiltinPrefix + "coherence",
+	evalcore.BuiltinPrefix + "groundedness",
+}
+
 // defaultEvaluators is what `init` proposes: one built-in that judges whether
 // the agent did what was asked.
 //
@@ -21,7 +35,7 @@ import (
 // to a rubric that did not exist until a separate generate ran, and `azd up`
 // failed on it. Generation is its own command; init writes only what is there.
 func defaultEvaluators() []string {
-	return []string{evalcore.BuiltinPrefix + "task_adherence"}
+	return []string{builtinEvaluators[0]}
 }
 
 // evaluatorChoices are the references `init` can offer.
@@ -41,7 +55,7 @@ func evaluatorChoices(cfg *project.EvalConfig) []string {
 		out = append(out, ref)
 	}
 
-	for _, ref := range defaultEvaluators() {
+	for _, ref := range builtinEvaluators {
 		add(ref)
 	}
 	if cfg != nil {

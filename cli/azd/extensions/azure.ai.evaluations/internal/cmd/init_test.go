@@ -180,7 +180,7 @@ func TestScaffold_DefaultEvaluators(t *testing.T) {
 		dataset: "prod-golden",
 	})
 
-	require.Equal(t, []string{"builtin.task_adherence"}, plan.evaluatorNames())
+	require.Equal(t, []string{"builtin.task_completion"}, plan.evaluatorNames())
 
 	// Every evaluator carries the judge deployment, because the judging
 	// built-ins declare it and an eval that leaves it off is rejected.

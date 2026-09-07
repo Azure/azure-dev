@@ -545,10 +545,9 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 
 	refs := evalcore.EvaluatorList{}
 	if len(in.evaluators) == 0 {
-		refs = append(refs,
-			withModel(evalcore.EvaluatorRef{
-				Evaluator: evalcore.BuiltinPrefix + "task_adherence",
-			}))
+		for _, ref := range defaultEvaluators() {
+			refs = append(refs, withModel(evalcore.EvaluatorRef{Evaluator: ref}))
+		}
 	} else {
 		for _, e := range in.evaluators {
 			ref := evalcore.EvaluatorRef{Evaluator: e}

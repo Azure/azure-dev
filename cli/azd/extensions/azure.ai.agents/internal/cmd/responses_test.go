@@ -54,23 +54,22 @@ func TestPrintResponseSnapshotTable(t *testing.T) {
 	assert.Contains(t, output.String(), "Session ID   sess_123")
 }
 
-func TestReadResponsesSSETracksProcessLocalCursor(t *testing.T) {
+func TestReadResponsesSSEReportsProgress(t *testing.T) {
 	stream := "event: response.created\n" +
 		"data: {\"type\":\"response.created\",\"sequence_number\":0," +
 		"\"response\":{\"id\":\"resp_123\",\"status\":\"queued\"}}\n\n" +
 		"event: response.completed\n" +
 		"data: {\"type\":\"response.completed\",\"sequence_number\":1," +
 		"\"response\":{\"id\":\"resp_123\",\"status\":\"completed\"}}\n\n"
-	var cursor *int64
+	var progressCount int
 	var output bytes.Buffer
 	err := readResponsesSSE(t.Context(), bytes.NewBufferString(stream), &output, "agent", responsesSSEOptions{
 		requireTerminal: true,
-		onProgress: func(progress responsesStreamProgress) error {
-			cursor = progress.Cursor
+		onProgress: func(responsesStreamProgress) error {
+			progressCount++
 			return nil
 		},
 	})
 	require.NoError(t, err)
-	require.NotNil(t, cursor)
-	assert.Equal(t, int64(1), *cursor)
+	assert.Equal(t, 2, progressCount)
 }

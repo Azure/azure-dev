@@ -1628,29 +1628,25 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			},
 		},
 	)
+	followCommand := fmt.Sprintf(
+		"azd ai agent responses follow --response-id %s",
+		tracker.responseID,
+	)
+	if a.endpoint != nil {
+		followCommand += fmt.Sprintf(" --agent-endpoint %q", a.flags.agentEndpoint)
+	} else if targetName := rc.nextStepName(); targetName != "" {
+		followCommand += fmt.Sprintf(" --agent-name %q", targetName)
+	}
 	if errors.Is(streamErr, errBackgroundNoWait) {
-		followCommand := fmt.Sprintf(
-			"azd ai agent responses follow --response-id %s",
-			tracker.responseID,
-		)
-		if a.endpoint != nil {
-			followCommand += fmt.Sprintf(" --agent-endpoint %q", a.flags.agentEndpoint)
-		} else if targetName := rc.nextStepName(); targetName != "" {
-			followCommand += fmt.Sprintf(" --agent-name %q", targetName)
-		}
 		fmt.Printf("\nNext:\n  %s\n", followCommand)
 		return nil
 	}
 	if streamErr != nil {
 		if a.flags.background && tracker.responseID != "" &&
-			errors.Is(streamErr, errResponsesStreamDisconnected) && ctx.Err() == nil {
-			_ = resp.Body.Close()
-			if err := a.followResponse(ctx, rc, tracker.responseID, tracker.cursor, os.Stdout); err != nil {
-				return err
-			}
-		} else {
-			return streamErr
+			errors.Is(streamErr, errResponsesStreamDisconnected) {
+			return fmt.Errorf("%w; replay and follow it with `%s`", streamErr, followCommand)
 		}
+		return streamErr
 	}
 	totalDuration := time.Since(invokeStart)
 	printInvokeTiming(os.Stdout, totalDuration, ttfb)

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -185,7 +184,6 @@ func buildResponseLifecycleURL(
 	responseID string,
 	apiVersion string,
 	stream bool,
-	startingAfter *int64,
 ) string {
 	if apiVersion == "" {
 		apiVersion = DefaultAgentAPIVersion
@@ -200,14 +198,11 @@ func buildResponseLifecycleURL(
 	if stream {
 		query.Set("stream", "true")
 	}
-	if startingAfter != nil {
-		query.Set("starting_after", strconv.FormatInt(*startingAfter, 10))
-	}
 	return base + "?" + query.Encode()
 }
 
 func buildResponseCancelURL(projectEndpoint, agentName, responseID, apiVersion string) string {
-	lifecycleURL := buildResponseLifecycleURL(projectEndpoint, agentName, responseID, apiVersion, false, nil)
+	lifecycleURL := buildResponseLifecycleURL(projectEndpoint, agentName, responseID, apiVersion, false)
 	parts := strings.SplitN(lifecycleURL, "?", 2)
 	return parts[0] + "/cancel?" + parts[1]
 }

@@ -23,16 +23,14 @@ var (
 
 type responsesStreamProgress struct {
 	ResponseID string
-	Cursor     *int64
 	Status     string
 	EventType  string
 	Terminal   bool
 }
 
 type responsesEventEnvelope struct {
-	Type           string          `json:"type"`
-	SequenceNumber *int64          `json:"sequence_number"`
-	Response       json.RawMessage `json:"response"`
+	Type     string          `json:"type"`
+	Response json.RawMessage `json:"response"`
 }
 
 type responsesSnapshot struct {
@@ -68,16 +66,10 @@ type responsesSSEEvent struct {
 	data []byte
 }
 
-type responsesStreamInitialState struct {
-	ResponseID string
-	Cursor     *int64
-	Status     string
-}
-
 type responsesSSEOptions struct {
-	requireTerminal bool
-	initialState    *responsesStreamInitialState
-	onProgress      func(responsesStreamProgress) error
+	requireTerminal    bool
+	expectedResponseID string
+	onProgress         func(responsesStreamProgress) error
 }
 
 func readResponsesSSE(
@@ -94,8 +86,7 @@ func readResponsesSSE(
 	var eventData bytes.Buffer
 	var dataSeen bool
 	var printed bool
-	var identity string
-	var cursor *int64
+	identity := options.expectedResponseID
 	var status string
 	var terminal bool
 	defer func() {
@@ -104,12 +95,6 @@ func readResponsesSSE(
 			returnErr = errors.Join(returnErr, err)
 		}
 	}()
-	if options.initialState != nil {
-		identity = options.initialState.ResponseID
-		cursor = options.initialState.Cursor
-		status = options.initialState.Status
-	}
-
 	dispatch := func() error {
 		if !dataSeen {
 			eventName = ""
@@ -150,9 +135,6 @@ func readResponsesSSE(
 			if responseID != "" {
 				identity = responseID
 			}
-		}
-		if envelope.SequenceNumber != nil && cursor != nil && *envelope.SequenceNumber <= *cursor {
-			return nil
 		}
 		if snapshot.Status == "" {
 			switch event.name {
@@ -211,9 +193,6 @@ func readResponsesSSE(
 			return fmt.Errorf("agent error (%s): %s", streamErr.Code, streamErr.Message)
 		}
 
-		if envelope.SequenceNumber != nil {
-			cursor = new(*envelope.SequenceNumber)
-		}
 		if snapshot.Status != "" {
 			status = snapshot.Status
 		}
@@ -223,7 +202,6 @@ func readResponsesSSE(
 		if options.onProgress != nil {
 			if err := options.onProgress(responsesStreamProgress{
 				ResponseID: identity,
-				Cursor:     cursor,
 				Status:     status,
 				EventType:  event.name,
 				Terminal:   terminal,

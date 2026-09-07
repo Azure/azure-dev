@@ -265,7 +265,7 @@ func runResponseFollow(ctx context.Context, flags *responseCommandFlags, writer 
 		defer rc.azdClient.Close()
 	}
 	return classifyResponseLifecycleError(
-		action.followResponse(ctx, rc, responseID, nil, writer),
+		action.followResponse(ctx, rc, responseID, writer),
 		exterrors.OpFollowResponse,
 		"following Response",
 	)
@@ -345,7 +345,7 @@ func (a *InvokeAction) getResponseSnapshot(
 	if err != nil {
 		return responseSnapshotResult{}, err
 	}
-	snapshotURL := buildResponseLifecycleURL(rc.projectEndpoint, rc.name, responseID, rc.apiVersion, false, nil)
+	snapshotURL := buildResponseLifecycleURL(rc.projectEndpoint, rc.name, responseID, rc.apiVersion, false)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, snapshotURL, nil)
 	if err != nil {
 		return responseSnapshotResult{}, fmt.Errorf("create Response show request: %w", err)

@@ -51,7 +51,7 @@ func (s *userConfigResponseStateStore) Get(ctx context.Context, agentKey string)
 	}
 
 	// Read the preview schema written by versions containing PR #9703.
-	// Unknown cursor/status/context fields are intentionally ignored. Fall back
+	// Fields beyond the legacy Response ID are intentionally ignored. Fall back
 	// per key so one newly saved agent does not hide legacy state for another.
 	records = nil
 	found, err = config.GetUserJSON(ctx, legacyBackgroundResponsesConfigPath, &records)

@@ -71,7 +71,7 @@ Invocations primitives are delivered in a second stacked PR. Existing synchronou
 5. **Execution mode and steering are independent.** Foreground and background only describe client-disconnect behavior.
 6. **Current IDs are conveniences, not lifecycle state.** The latest identified resource is saved for omission of an explicit ID.
 7. **Explicit targeting is side-effect free.** Show, follow, and cancel with an explicit ID never change current selection.
-8. **Replay starts from the beginning.** Durable playback cursors are not stored.
+8. **Replay starts from the beginning.** azd does not maintain a playback cursor.
 
 ## Current resource selection
 
@@ -97,7 +97,7 @@ extensions:
         responseId: resp_123
 ```
 
-No Response status, session, conversation, or sequence cursor is persisted. Existing session and conversation stores remain responsible for subsequent create context.
+No Response status, session, conversation, or event sequence is persisted. Existing session and conversation stores remain responsible for subsequent create context.
 
 ## Responses create
 
@@ -114,7 +114,7 @@ All Responses creates use `stream=true` so azd can render output and identify th
 
 A foreground or background create never retrieves or evaluates the status of the previous current Response. Reusing the existing conversation preserves history and lets the service apply steering or concurrency behavior.
 
-If an attached background create disconnects after its Response ID is known, azd may continue through the follow API. It never retries the creating POST.
+If an attached background create disconnects after its Response ID is known, azd reports the ID and directs the user to `responses follow`. It does not retry the creating POST or reconnect automatically.
 
 `--output raw` remains unsupported for background create because `--no-wait` and create-to-follow recovery require event parsing. Existing foreground raw output remains unchanged and does not promise current-ID extraction when the wire response cannot be inspected without changing raw output.
 
@@ -137,24 +137,9 @@ GET /responses/{id}?stream=true
 
 It intentionally omits `starting_after`, including when the Response is already terminal. Buffered events replay from the beginning and the command follows new events until terminal completion.
 
-During one running command, azd tracks the latest fully decoded and applied `sequence_number` in memory. After a retryable disconnect, the next request includes:
+The command makes one streaming GET and does not track event sequence numbers or reconnect automatically. If the connection ends before a terminal event, it reports the Response ID and directs the user to rerun `responses follow`, which replays from the beginning.
 
-```text
-starting_after=<last in-memory sequence>
-```
-
-This cursor prevents duplicate output during that command only. It is never persisted. A separately launched follow command replays from the beginning again.
-
-Follow retains:
-
-- SSE framing and bounded event decoding.
-- Response identity validation.
-- Duplicate sequence suppression during reconnect.
-- Retry of transport failures and HTTP 408, 429, and 5xx.
-- `Retry-After`, exponential backoff, and fresh tokens on reconnect.
-- Terminal status handling.
-
-Follow does not silently become show. If reconnect attempts are exhausted, it reports the Response ID and suggests explicit show or follow commands.
+Follow retains SSE framing, bounded event decoding, Response identity validation, and terminal status handling. It does not silently become show or retry the request.
 
 A completed Response replays and exits successfully. Failed, incomplete, and cancelled terminal outcomes preserve their existing command error behavior after rendering available output.
 
@@ -189,7 +174,7 @@ This design deliberately removes the earlier resumable-work orchestration introd
 
 - No `invoke --resume`, `invoke --continue`, `invoke --steer`, or invoke-level `--cancel`.
 - No active-Response guard or snapshot preflight before create.
-- No durable cursor or periodic cursor persistence.
+- No event cursor, replay offset, or periodic progress persistence.
 - No persisted Response status, session, or conversation metadata.
 - No terminal-state network short circuit.
 - No lifecycle context inheritance from a saved Response record.
@@ -207,8 +192,7 @@ Responses coverage must include:
 - Explicit lifecycle operations with `--agent-endpoint` and no local state.
 - Explicit operations not changing current selection.
 - Show JSON and table output.
-- Initial follow without `starting_after`.
-- In-process reconnect with the last sequence number.
+- Follow without `starting_after` or automatic retries.
 - A new follow replaying from the beginning.
 - Terminal replay success.
 - Idempotent terminal cancellation.

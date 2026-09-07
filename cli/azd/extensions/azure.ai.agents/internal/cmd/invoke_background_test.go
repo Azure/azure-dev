@@ -90,21 +90,12 @@ func TestResponseProgressTrackerPersistsIdentityOnlyOnce(t *testing.T) {
 	var output bytes.Buffer
 	tracker := &responseProgressTracker{store: store, agentKey: "agent", writer: &output}
 
-	require.NoError(t, tracker.Apply(t.Context(), responsesStreamProgress{
-		ResponseID: "resp_123",
-		Cursor:     new(int64(0)),
-		Status:     "queued",
-	}))
-	require.NoError(t, tracker.Apply(t.Context(), responsesStreamProgress{
-		ResponseID: "resp_123",
-		Cursor:     new(int64(9)),
-		Status:     "in_progress",
-	}))
+	require.NoError(t, tracker.Apply(t.Context(), responsesStreamProgress{ResponseID: "resp_123"}))
+	require.NoError(t, tracker.Apply(t.Context(), responsesStreamProgress{ResponseID: "resp_123"}))
 
 	require.NotNil(t, store.record)
 	assert.Equal(t, "resp_123", store.record.ResponseID)
 	assert.Equal(t, 1, store.saves)
-	assert.Equal(t, int64(9), *tracker.cursor)
 	assert.Equal(t, "Response:     resp_123\n", output.String())
 }
 
@@ -151,13 +142,7 @@ func TestResponseLifecycleURLs(t *testing.T) {
 	assert.Equal(
 		t,
 		"https://example.test/agents/agent/endpoint/protocols/openai/responses/resp_1?api-version=v1&stream=true",
-		buildResponseLifecycleURL("https://example.test", "agent", "resp_1", "v1", true, nil),
-	)
-	assert.Equal(
-		t,
-		"https://example.test/agents/agent/endpoint/protocols/openai/responses/resp_1?"+
-			"api-version=v1&starting_after=4&stream=true",
-		buildResponseLifecycleURL("https://example.test", "agent", "resp_1", "v1", true, new(int64(4))),
+		buildResponseLifecycleURL("https://example.test", "agent", "resp_1", "v1", true),
 	)
 	assert.Equal(
 		t,

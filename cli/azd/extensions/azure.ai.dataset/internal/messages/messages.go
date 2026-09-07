@@ -544,18 +544,19 @@ func isCredentialUnavailable(err error) bool {
 }
 
 // ServiceRefused turns an unauthorized answer into one that says what to do.
-// Every other status is left as the service reported it.
+// Every other status is reduced to the sentence the service sent.
 func ServiceRefused(status int, err error) error {
+	concise := conciseServiceError(err)
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		return exterrors.Auth(
 			exterrors.CodeAuthFailed,
 			fmt.Sprintf(
 				"the Foundry project refused the request (HTTP %d): %v. "+
 					"Run `azd auth login`, and check you have access to this project",
-				status, err),
+				status, concise),
 			"run `azd auth login`, and check you have access to this project")
 	}
-	return err
+	return concise
 }
 
 // isCredentialFailure reports whether the request failed because no token could

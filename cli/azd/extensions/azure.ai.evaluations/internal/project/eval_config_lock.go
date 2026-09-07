@@ -49,7 +49,7 @@ const evalLockPerm = 0o666
 
 // evalStateLockName is the lock file guarding the reconciliation state.
 //
-// It sits in azd's own .azure directory rather than beside a configuration,
+// It sits in the .azure directory azd owns rather than beside a configuration,
 // because the state it guards is one section of one environment's config.json
 // and every eval service in that environment writes to it. Two services have
 // two different `$ref` directories, so a lock beside either one would not put
@@ -102,7 +102,7 @@ func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
 // dropped key is not noticed until the next `azd up` reads that resource as
 // untracked and publishes a second immutable version of it.
 //
-// stateDir is azd's .azure directory. The state is one section of one
+// stateDir is the .azure directory azd owns. The state is one section of one
 // environment's config.json and every eval service in that environment writes
 // to it, while two services have two different `$ref` directories -- so a lock
 // beside either configuration would not put them behind the same gate.

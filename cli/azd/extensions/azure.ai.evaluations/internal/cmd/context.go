@@ -85,7 +85,7 @@ const azdEnvironmentDirName = ".azure"
 //
 // Everything else in it -- fingerprints, versions, resolved ids -- is only true
 // of one project, but the section lives in the azd environment, and an
-// environment can be repointed at another endpoint (or run against one named
+// environment can be pointed at another endpoint (or run against one named
 // with --project-endpoint). State left from the previous project then reported
 // a dataset unchanged that the new one had never seen, and the configured file
 // was never published.
@@ -297,8 +297,8 @@ func (ec *evalContext) readPrivateState(ctx context.Context) (map[string]string,
 	}
 
 	// Scoped to the project it describes rather than to the environment holding
-	// it, so repointing an environment starts from nothing instead of inheriting
-	// another project's fingerprints.
+	// it, so an environment pointed at another project starts from nothing
+	// instead of inheriting the previous one's fingerprints.
 	if want := normalizedEndpoint(ec.endpoint); stored[stateEndpointKey] != want {
 		return map[string]string{stateEndpointKey: want}, nil
 	}

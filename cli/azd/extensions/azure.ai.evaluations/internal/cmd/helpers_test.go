@@ -125,15 +125,47 @@ func TestItemColumn(t *testing.T) {
 func TestDefaultEvalName(t *testing.T) {
 	assert.Equal(t, "support-agent-trace-eval",
 		defaultEvalName("support-agent", initSourceTraces))
-	assert.Equal(t, "support-agent-eval",
+	assert.Equal(t, "support-agent-dataset-eval",
 		defaultEvalName("support-agent", "dataset"))
-	assert.Equal(t, "support-agent-eval",
+	assert.Equal(t, "support-agent-dataset-eval",
 		defaultEvalName("support-agent", ""))
 
 	assert.NotEqual(t,
 		defaultEvalName("support-agent", initSourceTraces),
 		defaultEvalName("support-agent", "dataset"),
 		"the source is in the name so the two do not collide")
+}
+
+// A second init in the same project used to suggest the name it had already
+// written and then refuse it, so the command failed on its own proposal.
+func TestUniqueEvalName(t *testing.T) {
+	empty := &project.EvalConfig{}
+	assert.Equal(t, "a-trace-eval", uniqueEvalName(empty, "a-trace-eval"),
+		"an unused name is not decorated")
+
+	taken := &project.EvalConfig{Evals: []project.Eval{
+		{Name: "a-trace-eval"}, {Name: "a-trace-eval-2"}, {Name: "a-trace-eval-3"},
+	}}
+	assert.Equal(t, "a-trace-eval-4", uniqueEvalName(taken, "a-trace-eval"),
+		"the first free number, not the next one after the highest")
+
+	gap := &project.EvalConfig{Evals: []project.Eval{
+		{Name: "a-trace-eval"}, {Name: "a-trace-eval-3"},
+	}}
+	assert.Equal(t, "a-trace-eval-2", uniqueEvalName(gap, "a-trace-eval"))
+}
+
+// The suffix has to fit. A name the service would reject for length is not a
+// suggestion, and appending to one already at the limit produces exactly that.
+func TestUniqueEvalNameStaysWithinTheServiceLimit(t *testing.T) {
+	long := strings.Repeat("a", assetNameMaxLength)
+	cfg := &project.EvalConfig{Evals: []project.Eval{{Name: long}}}
+
+	got := uniqueEvalName(cfg, long)
+	assert.LessOrEqual(t, len(got), assetNameMaxLength,
+		"the stem is shortened to make room rather than the name overflowing")
+	assert.True(t, strings.HasSuffix(got, "-2"))
+	assert.True(t, validAssetName(got), "and what comes out is still a name the service takes")
 }
 
 // The reattach line printed by --no-wait has to name the group the job

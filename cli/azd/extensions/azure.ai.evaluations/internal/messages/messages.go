@@ -607,6 +607,26 @@ func SelectingDataset(err error) error {
 	return fmt.Errorf("selecting a dataset to evaluate against: %w", err)
 }
 
+// SelectDataSourcePrompt asks which rows an eval grades.
+func SelectDataSourcePrompt() string {
+	return "Select a data source:"
+}
+
+// DataSourceChoice names one source the way the prompt shows it.
+func DataSourceChoice(source string) string {
+	switch source {
+	case "traces":
+		return "Traces"
+	default:
+		return "Dataset"
+	}
+}
+
+// SelectingDataSource reports a failed data-source prompt.
+func SelectingDataSource(err error) error {
+	return fmt.Errorf("selecting a data source: %w", err)
+}
+
 // SelectEvaluationLevelPrompt asks what one evaluated sample represents.
 func SelectEvaluationLevelPrompt() string {
 	return "What should each evaluation sample represent?"

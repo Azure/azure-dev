@@ -10,7 +10,9 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -76,7 +78,8 @@ func newInitCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&flags.evalName, "name", "",
-		"Name of the eval. Defaults to <target>-eval, or <target>-trace-eval under --source traces.")
+		"Name of the eval. Defaults to <target>-dataset-eval, or <target>-trace-eval "+
+			"under --source traces, numbered when that name is taken.")
 	cmd.Flags().StringVar(&flags.target, "target", "",
 		"Name of the agent to evaluate. Detected when the project has one agent; prompts when it has several.")
 	cmd.Flags().StringVar(&flags.source, "source", "",
@@ -130,37 +133,6 @@ func (a *initAction) Run() error {
 	if err := validateEvaluatorRefs(a.flags.evaluators); err != nil {
 		return err
 	}
-	evaluationLevel, err := resolveEvaluationLevel(a.cmd, a.flags.evaluationLevel)
-	if err != nil {
-		return err
-	}
-	// Asked twice -- once to pick the default source, once to say so --
-	// and each call opens an azd connection. The answer cannot change
-	// mid-command, and a run that never asks never connects.
-	tracesWired := sync.OnceValue(func() bool {
-		return tracesConnected(commandContext(a.cmd))
-	})
-	settled, err := settleInitSource(
-		source,
-		a.cmd.Flags().Changed("max-traces"),
-		a.cmd.Flags().Changed("trace-days"),
-		tracesWired)
-	if err != nil {
-		return err
-	}
-	source = settled
-
-	// Only meaningful for a trace-backed eval, and only asked for one: a
-	// dataset-backed scaffold that stopped to ask how far back to read would
-	// be asking about rows it is not going to read.
-	lookbackHours := 0
-	if source == initSourceTraces {
-		lookbackHours, err = resolveTraceWindow(
-			a.cmd, a.flags.traceDays, a.cmd.Flags().Changed("trace-days"))
-		if err != nil {
-			return err
-		}
-	}
 	// The same cascade every other command reads the configuration
 	// through. init merges into the configuration it finds, so a second
 	// `init` in a project scaffolded at ./quality has to find that one --
@@ -179,27 +151,6 @@ func (a *initAction) Run() error {
 		return err
 	}
 
-	// The target is what the whole scaffold is named and shaped around,
-	// so it is settled before anything derived from it.
-	target := a.flags.target
-	if target == "" {
-		target, err = resolveAgentTarget(a.cmd, azdProject)
-		if err != nil {
-			return err
-		}
-	}
-	evalName := a.flags.evalName
-	if evalName == "" {
-		evalName = defaultEvalName(target, source)
-	}
-	judgeModel := a.flags.judgeModel
-	if judgeModel == "" {
-		judgeModel, err = resolveJudgeModel(a.cmd, azdProject)
-		if err != nil {
-			return err
-		}
-	}
-
 	configPath, err := project.ResolveEvalConfigPath(path)
 	if err != nil {
 		return err
@@ -213,22 +164,84 @@ func (a *initAction) Run() error {
 		return err
 	}
 	cfg := declaredSoFar(authored)
-	// Checked before the prompt as well as after it, so a name that is
-	// already taken is reported without asking a question first.
-	if cfg.HasEval(evalName) && !a.flags.force {
+	evalDir := project.EvalDirOf(path)
+
+	// From here to the lock the questions run in the order the spec asks
+	// them, because each one changes what the next is about: the source
+	// decides whether a dataset or a trace window is even a question, and
+	// the target and the source together are what the name is derived from.
+	//
+	// Every one of them is a human pause, so all of them are outside the
+	// lock. What they produce is a proposal; the configuration is read again
+	// under the lock and the proposal validated against it.
+
+	// Asked twice -- once to pick the default source, once to say so --
+	// and each call opens an azd connection. The answer cannot change
+	// mid-command, and a run that never asks never connects.
+	tracesWired := sync.OnceValue(func() bool {
+		return tracesConnected(commandContext(a.cmd))
+	})
+	source, err = settleInitSource(a.cmd, initSourceInput{
+		explicit:       source,
+		maxTracesGiven: a.cmd.Flags().Changed("max-traces"),
+		traceDaysGiven: a.cmd.Flags().Changed("trace-days"),
+		usableDatasets: usableDatasetCount(cfg, evalDir),
+		tracesWired:    tracesWired,
+	})
+	if err != nil {
+		return err
+	}
+
+	// The target is what the whole scaffold is named and shaped around,
+	// so it is settled before anything derived from it.
+	target := a.flags.target
+	if target == "" {
+		target, err = resolveAgentTarget(a.cmd, azdProject)
+		if err != nil {
+			return err
+		}
+	}
+	judgeModel := a.flags.judgeModel
+	if judgeModel == "" {
+		judgeModel, err = resolveJudgeModel(a.cmd, azdProject)
+		if err != nil {
+			return err
+		}
+	}
+
+	// A name someone typed is theirs, so a collision is refused rather than
+	// worked around. A name init suggested is init's problem: suggesting one
+	// already taken and then refusing it is the command failing on its own
+	// proposal.
+	evalName := a.flags.evalName
+	if evalName == "" {
+		evalName = uniqueEvalName(cfg, defaultEvalName(target, source))
+	} else if cfg.HasEval(evalName) && !a.flags.force {
+		// Checked before the prompts as well as after them, so a name that is
+		// already taken is reported without asking a question first.
 		return messages.EvalAlreadyDeclared(
 			evalName, filepath.ToSlash(configPath))
+	}
+
+	// A dataset-backed eval needs a dataset that already exists, and refusing
+	// outright ends the first command a developer runs on an error where a
+	// question would do.
+	datasetRef := a.flags.dataset
+	if source != initSourceTraces {
+		datasetRef, err = resolveDataset(a.cmd, cfg, datasetRef)
+		if err != nil {
+			return err
+		}
+	}
+
+	evaluationLevel, err := resolveEvaluationLevel(a.cmd, a.flags.evaluationLevel)
+	if err != nil {
+		return err
 	}
 
 	// Asked, not detected: an eval grades on a set, so there is no
 	// "the only one" to settle on, and which criteria define quality
 	// is the substantive decision in the configuration.
-	//
-	// Deliberately outside the lock below. This is an unbounded human
-	// pause, and a lock held across it would either block a concurrent
-	// `generate` for as long as someone leaves the terminal, or -- once
-	// that side gave up waiting -- protect nothing at all. The listing
-	// it offers is only a menu; the authoritative read is taken after.
 	evaluators := a.flags.evaluators
 	evaluatorsWereChosen := len(evaluators) > 0
 	if len(evaluators) == 0 {
@@ -240,15 +253,13 @@ func (a *initAction) Run() error {
 		evaluatorsWereChosen = asked
 	}
 
-	// Asked in the same breath and for the same reason: a dataset-backed eval
-	// needs a dataset that already exists, and refusing outright ends the first
-	// command a developer runs on an error where a question would do.
-	//
-	// Also outside the lock, and also only a proposal -- planScaffold re-reads
-	// the configuration under the lock and validates the answer against it.
-	datasetRef := a.flags.dataset
-	if source != initSourceTraces {
-		datasetRef, err = resolveDataset(a.cmd, cfg, datasetRef)
+	// Only meaningful for a trace-backed eval, and only asked for one: a
+	// dataset-backed scaffold that stopped to ask how far back to read would
+	// be asking about rows it is not going to read.
+	lookbackHours := 0
+	if source == initSourceTraces {
+		lookbackHours, err = resolveTraceWindow(
+			a.cmd, a.flags.traceDays, a.cmd.Flags().Changed("trace-days"))
 		if err != nil {
 			return err
 		}
@@ -289,7 +300,6 @@ func (a *initAction) Run() error {
 
 	// The location may be the file azure.yaml names rather than the
 	// directory holding it, and artifacts sit beside the configuration.
-	evalDir := project.EvalDirOf(path)
 	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultDatasetsDir), 0o750); err != nil {
 		return messages.CreatingDatasetsDir(err)
 	}
@@ -401,31 +411,133 @@ func (a *initAction) Run() error {
 //
 // tracesWired is a function, not a value, so a run that was told its source
 // never opens an azd connection to answer a question nobody asked.
-func settleInitSource(
-	explicit string,
-	maxTracesGiven bool,
-	traceDaysGiven bool,
-	tracesWired func() bool,
-) (string, error) {
-	source := explicit
+// initSourceInput is what settling the data source depends on.
+type initSourceInput struct {
+	explicit       string
+	maxTracesGiven bool
+	traceDaysGiven bool
+	// usableDatasets counts declarations this scaffold could point at, which
+	// is what makes "dataset" a defensible default rather than a coin toss.
+	usableDatasets int
+	tracesWired    func() bool
+}
+
+// settleInitSource returns the data source the eval will read, and refuses the
+// trace-only flags when that source will not be traces.
+//
+// The defaulting and the rules live together because they were once apart, and
+// disagreed: the rule ran on the flag as typed, so `init --max-traces 50` with
+// no --source was refused for "not a trace source" even in a project wired for
+// traces, where the very next line was about to choose traces. Reading the flag
+// as its own request for traces would be the other way to fix it, but that
+// silently overrides a project that has no traces to read; refusing after the
+// source is known says the true thing.
+//
+// Nothing here proves what exists remotely. A project with no telemetry marker
+// may still have traces, and a declared dataset may have been deleted, so the
+// two signals order the prompt rather than answer it.
+//
+// tracesWired is a function, not a value, so a run that was told its source
+// never opens an azd connection to answer a question nobody asked.
+func settleInitSource(cmd *cobra.Command, in initSourceInput) (string, error) {
+	source := in.explicit
 	if source == "" {
-		// The same signal `generate --from` defaults on, read from the azd
-		// environment rather than the service, so init still makes no service
-		// calls. Traces are real conversations; a project wired to collect them
-		// should not have to ask for them by flag.
-		if tracesWired() {
-			source = initSourceTraces
-		} else {
-			source = initSourceDataset
+		var err error
+		if source, err = chooseInitSource(cmd, in); err != nil {
+			return "", err
 		}
 	}
-	if maxTracesGiven && source != initSourceTraces {
+	if in.maxTracesGiven && source != initSourceTraces {
 		return "", messages.MaxTracesNeedsTraceSource()
 	}
-	if traceDaysGiven && source != initSourceTraces {
+	if in.traceDaysGiven && source != initSourceTraces {
 		return "", messages.TraceDaysNeedsTraceSource()
 	}
 	return source, nil
+}
+
+// chooseInitSource settles an unstated source, asking where it can.
+func chooseInitSource(cmd *cobra.Command, in initSourceInput) (string, error) {
+	// The same signal `generate --from` defaults on, read from the azd
+	// environment rather than the service, so init still makes no service
+	// calls. Traces are real conversations; a project wired to collect them
+	// should not have to ask for them by flag.
+	preferred := ""
+	switch {
+	case in.tracesWired():
+		preferred = initSourceTraces
+	case in.usableDatasets == 1:
+		preferred = initSourceDataset
+	}
+	if noPrompt(cmd) {
+		// With neither signal there is still nobody to ask, and dataset is
+		// what the flag's own documentation promises. A dataset-backed
+		// scaffold with nothing to point at then fails naming --dataset,
+		// which is the actionable half of the same answer.
+		return cmp.Or(preferred, initSourceDataset), nil
+	}
+	return promptInitSource(cmd, preferred)
+}
+
+// promptInitSource asks which rows the eval grades.
+func promptInitSource(cmd *cobra.Command, preferred string) (string, error) {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return "", messages.ConnectingToAzd(err)
+	}
+	defer azdClient.Close()
+
+	offered := []string{initSourceTraces, initSourceDataset}
+	choices := make([]*azdext.SelectChoice, 0, len(offered))
+	for _, name := range offered {
+		choices = append(choices, &azdext.SelectChoice{
+			Label: messages.DataSourceChoice(name),
+			Value: name,
+		})
+	}
+
+	options := &azdext.SelectOptions{
+		Message: messages.SelectDataSourcePrompt(),
+		Choices: choices,
+	}
+	// Left unset where neither signal fired: highlighting one of two sources
+	// on no evidence is a recommendation the command cannot support.
+	if i := slices.Index(offered, preferred); i >= 0 {
+		options.SelectedIndex = preselect(i)
+	}
+
+	resp, err := azdClient.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{Options: options})
+	if err != nil {
+		return "", messages.SelectingDataSource(err)
+	}
+	// Value is optional on the wire, so an unset one arrives as 0 from GetValue
+	// and would read as a deliberate answer of "traces".
+	if resp == nil || resp.Value == nil {
+		return cmp.Or(preferred, initSourceDataset), nil
+	}
+	index := int(resp.GetValue())
+	if index < 0 || index >= len(offered) {
+		return cmp.Or(preferred, initSourceDataset), nil
+	}
+	return offered[index], nil
+}
+
+// usableDatasetCount counts declarations this scaffold could point at.
+//
+// A declaration whose local file is gone is not one of them: offering it as
+// the reason to default to a dataset source would recommend the eval that
+// cannot run.
+func usableDatasetCount(cfg *project.EvalConfig, evalDir string) int {
+	usable := 0
+	for _, decl := range cfg.Datasets {
+		if decl.File != "" {
+			if _, err := os.Stat(filepath.Join(evalDir, filepath.FromSlash(decl.File))); err != nil {
+				continue
+			}
+		}
+		usable++
+	}
+	return usable
 }
 
 // refTo is the `$ref` value for a configuration at path.
@@ -479,7 +591,38 @@ func defaultEvalName(target, source string) string {
 	if source == initSourceTraces {
 		return target + "-trace-eval"
 	}
-	return target + "-eval"
+	return target + "-dataset-eval"
+}
+
+// uniqueEvalName is the suggested name, made one the file can still accept.
+//
+// init suggested a name and then refused it when the file already had one, so
+// a second `azd ai eval init` in the same project failed on the command's own
+// proposal and left the developer to invent a name. A name someone typed is
+// still refused: that one is theirs, and silently grading something else under
+// a nearby name is worse than saying no.
+func uniqueEvalName(cfg *project.EvalConfig, base string) string {
+	if name := trimEvalName(base, 0); !cfg.HasEval(name) {
+		return name
+	}
+	// Terminates: each attempt is a distinct name and the file declares
+	// finitely many.
+	for n := 2; ; n++ {
+		suffix := "-" + strconv.Itoa(n)
+		candidate := trimEvalName(base, len(suffix)) + suffix
+		if !cfg.HasEval(candidate) {
+			return candidate
+		}
+	}
+}
+
+// trimEvalName shortens the stem so that reserve more characters still fit.
+func trimEvalName(base string, reserve int) string {
+	limit := assetNameMaxLength - reserve
+	if limit < 1 || len(base) <= limit {
+		return base
+	}
+	return base[:limit]
 }
 
 // scaffoldInput is everything planScaffold needs, gathered so the signature

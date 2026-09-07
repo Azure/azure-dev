@@ -293,9 +293,10 @@ func TestHeroScenario1ColdStart(t *testing.T) {
 	require.Zero(t, code, "init makes no service calls, so nothing can fail it here")
 
 	// The fixture is an eval-only project: an azure.yaml with no infra
-	// directory, and no azd environment. So both conditional lines below take
-	// their unprovisioned branch, and that is the scenario's own shape rather
-	// than a gap in the fixture.
+	// directory and no azd environment, so both conditional lines take their
+	// unprovisioned branch. The spec writes its transcripts for a project that
+	// does provision, and says to read every `azd up` in them as the
+	// `azd ai eval create` that init prints here.
 	want := `(✓) Done: Detected agent target: support-agent
 (✓) Done: Using data source: traces. No Application Insights connection is recorded in this environment, so the run finds rows only if the project has one
 (✓) Done: Judge model deployment: gpt-5.6-luna

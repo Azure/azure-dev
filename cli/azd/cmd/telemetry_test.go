@@ -57,6 +57,38 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		}
 	})
 
+	t.Run("ErrorAttributionFields", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			key             fields.AttributeKey
+			expectedName    string
+			expectedClass   fields.Classification
+			expectedPurpose fields.Purpose
+		}{
+			{
+				fields.ErrChainTypes, "error.chain.types",
+				fields.SystemMetadata, fields.PerformanceAndHealth,
+			},
+			{
+				fields.ErrExtensionCauseTypes, "error.extension.cause_types",
+				fields.EndUserPseudonymizedInformation, fields.PerformanceAndHealth,
+			},
+			{
+				fields.MapperSourceType, "mapper.source.type",
+				fields.SystemMetadata, fields.PerformanceAndHealth,
+			},
+			{
+				fields.MapperDestinationType, "mapper.destination.type",
+				fields.SystemMetadata, fields.PerformanceAndHealth,
+			},
+		}
+		for _, tt := range tests {
+			require.Equal(t, tt.expectedName, string(tt.key.Key))
+			require.Equal(t, tt.expectedClass, tt.key.Classification)
+			require.Equal(t, tt.expectedPurpose, tt.key.Purpose)
+		}
+	})
+
 	// Auth command telemetry fields
 	t.Run("AuthFields", func(t *testing.T) {
 		t.Parallel()

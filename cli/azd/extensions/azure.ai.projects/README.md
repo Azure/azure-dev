@@ -4,8 +4,8 @@ Manage Microsoft Foundry Project resources from your terminal. (Preview)
 
 ## Extension telemetry API
 
-Extension code can report best-effort usage events through
-`internal/telemetry`:
+Extension code can report best-effort usage events through the shared
+`pkg/foundry/telemetry` package:
 
 ```go
 reporter := telemetry.NewReporter(azdClient.Telemetry(), nil)
@@ -29,6 +29,12 @@ transport error details. Put approved event builders and finite-value types in
 service-target, or provisioning code. Never include project endpoints, ARM IDs,
 deployment names, resource names, paths, URLs, or other customer content. The azd
 host records events only for extensions installed from the official registry.
+
+## Non-interactive automation
+
+See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
+for every prompt's flag, environment/configuration input, or deterministic
+no-prompt behavior.
 
 ## `azure.yaml` ownership
 

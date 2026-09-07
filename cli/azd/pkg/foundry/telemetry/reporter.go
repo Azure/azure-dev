@@ -1,16 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package telemetry reports best-effort usage events through the azd host.
+// Package telemetry reports best-effort usage events from Microsoft Foundry extensions.
 package telemetry
 
 import (
 	"context"
-	"log"
 	"maps"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -43,19 +39,19 @@ type Client interface {
 // Options configures a Reporter.
 type Options struct {
 	Timeout time.Duration
-	Logger  func(format string, args ...any)
+	Logger  *azdext.Logger
 }
 
 type reporter struct {
 	client  Client
 	timeout time.Duration
-	logger  func(format string, args ...any)
+	logger  *azdext.Logger
 }
 
 // NewReporter creates a best-effort usage reporter backed by the azd host.
 func NewReporter(client Client, options *Options) Reporter {
 	timeout := defaultReportTimeout
-	logger := debugLogf
+	logger := azdext.NewLogger("foundry.telemetry")
 	if options != nil {
 		if options.Timeout > 0 {
 			timeout = options.Timeout
@@ -81,21 +77,14 @@ func (r *reporter) Report(ctx context.Context, event Event) {
 		Attributes: maps.Clone(event.Attributes),
 	})
 	if err != nil {
-		r.logger("telemetry event %q was not reported: code=%s", event.Name, status.Code(err))
+		r.logger.Debug(
+			"telemetry event was not reported",
+			"event", event.Name,
+			"code", status.Code(err).String(),
+		)
 		return
 	}
 	if response == nil {
-		r.logger("telemetry event %q returned an empty response", event.Name)
-	}
-}
-
-func debugLogf(format string, args ...any) {
-	value := os.Getenv("AZD_DEBUG")
-	enabled, err := strconv.ParseBool(value)
-	if err != nil {
-		enabled = strings.EqualFold(value, "yes")
-	}
-	if enabled {
-		log.Printf(format, args...)
+		r.logger.Debug("telemetry event returned an empty response", "event", event.Name)
 	}
 }

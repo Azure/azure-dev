@@ -335,7 +335,7 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		if len(state.Services) > 0 {
 			populateManifestResources(project.Path, state)
 		}
-		splitToolboxState = populateSplitToolboxes(
+		splitToolboxState = populateToolboxes(
 			ctx,
 			src,
 			envName,
@@ -354,6 +354,17 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 	}
 
 	if project != nil && envName != "" {
+		collectAgentConditionsForMissingVars(
+			ctx,
+			src,
+			envName,
+			project,
+			state.Services,
+			splitToolboxState.excludedAgents,
+			splitToolboxState.checkedAgents,
+			&errs,
+			state,
+		)
 		state.MissingInfraVars, state.MissingManualVars, state.UnresolvedPlaceholders =
 			detectMissingVars(
 				ctx,
@@ -369,13 +380,100 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		populateOpenAPIPayload(ctx, cfg, project.Path, envName, state)
 	}
 
-	if envName != "" && len(state.Toolboxes) > 0 {
+	if envName != "" && len(state.Toolboxes) > 0 &&
+		len(state.ToolboxLoadErrors) == 0 {
 		state.MissingToolboxEndpoints = probeToolboxEndpoints(
 			ctx, src, envName, state.Toolboxes, &state.ToolboxEndpointErrors, &errs)
 		state.ToolboxEndpointsChecked = true
 	}
 
 	return state, errs
+}
+
+func collectAgentConditionsForMissingVars(
+	ctx context.Context,
+	src Source,
+	envName string,
+	projectCfg *azdext.ProjectConfig,
+	services []ServiceState,
+	excludedAgents map[string]struct{},
+	checkedAgents map[string]struct{},
+	errs *[]error,
+	state *State,
+) {
+	if projectCfg == nil {
+		return
+	}
+	if excludedAgents == nil {
+		excludedAgents = make(map[string]struct{})
+	}
+	if checkedAgents == nil {
+		checkedAgents = make(map[string]struct{})
+	}
+
+	serviceStates := make(map[string]ServiceState, len(services))
+	for _, service := range services {
+		serviceStates[service.Name] = service
+	}
+
+	for _, serviceName := range sortedServiceKeys(projectCfg) {
+		svc := projectCfg.Services[serviceName]
+		if svc == nil || svc.GetHost() != agentHost {
+			continue
+		}
+		if _, excluded := excludedAgents[serviceName]; excluded {
+			continue
+		}
+
+		serviceState, found := serviceStates[serviceName]
+		if !found {
+			serviceState, found = serviceStates[svc.GetName()]
+		}
+		if !found {
+			continue
+		}
+		refs, placeholders := extractEnvironmentRefs(serviceState.EnvironmentValues)
+		if len(refs) == 0 && len(placeholders) == 0 {
+			continue
+		}
+
+		agentName := serviceName
+		if strings.TrimSpace(svc.GetName()) != "" {
+			agentName = svc.GetName()
+		}
+		enabled, err := ensureAgentServiceEnabled(
+			ctx,
+			src,
+			envName,
+			serviceName,
+			checkedAgents,
+		)
+		if err != nil {
+			issue := fmt.Sprintf(
+				"agent service %q deployment condition: %v",
+				agentName,
+				err,
+			)
+			state.EnvironmentLoadErrors = append(
+				state.EnvironmentLoadErrors,
+				issue,
+			)
+			*errs = append(
+				*errs,
+				fmt.Errorf(
+					"agent service %q deployment condition: %w",
+					agentName,
+					err,
+				),
+			)
+			addExcludedAgent(excludedAgents, serviceName)
+			continue
+		}
+		if !enabled {
+			addExcludedAgent(excludedAgents, serviceName)
+		}
+	}
+	slices.Sort(state.EnvironmentLoadErrors)
 }
 
 func detectMissingAzureContextVars(ctx context.Context, src Source, envName string, errs *[]error) []string {
@@ -396,8 +494,8 @@ func detectMissingAzureContextVars(ctx context.Context, src Source, envName stri
 }
 
 // probeToolboxEndpoints reads each canonical toolbox endpoint once.
-// azd produces these values, so the probe does not depend on agent
-// environment references.
+// Missing results keep every owning agent so attach guidance is
+// complete; only the env-var read is deduplicated.
 func probeToolboxEndpoints(
 	ctx context.Context,
 	src Source,
@@ -407,21 +505,24 @@ func probeToolboxEndpoints(
 	errs *[]error,
 ) []ResourceRef {
 	seen := make(map[string]struct{}, len(toolboxes))
+	missingKeys := make(map[string]struct{}, len(toolboxes))
 	var missing []ResourceRef
 	for _, toolbox := range toolboxes {
 		key := envkey.ToolboxMCPEndpoint(toolbox.Name)
-		if _, ok := seen[key]; ok {
-			continue
+		if _, ok := seen[key]; !ok {
+			seen[key] = struct{}{}
+			value, err := src.EnvValue(ctx, envName, key)
+			if err != nil {
+				probeErr := fmt.Errorf("read toolbox endpoint %s: %w", key, err)
+				*endpointErrors = append(*endpointErrors, probeErr.Error())
+				*errs = append(*errs, probeErr)
+				continue
+			}
+			if strings.TrimSpace(value) == "" {
+				missingKeys[key] = struct{}{}
+			}
 		}
-		seen[key] = struct{}{}
-		value, err := src.EnvValue(ctx, envName, key)
-		if err != nil {
-			probeErr := fmt.Errorf("read toolbox endpoint %s: %w", key, err)
-			*endpointErrors = append(*endpointErrors, probeErr.Error())
-			*errs = append(*errs, probeErr)
-			continue
-		}
-		if strings.TrimSpace(value) == "" {
+		if _, ok := missingKeys[key]; ok {
 			missing = append(missing, toolbox)
 		}
 	}

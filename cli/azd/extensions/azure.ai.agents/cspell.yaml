@@ -85,6 +85,7 @@ words:
   - protocolversionrecord
   - Qdrant
   - schedulerun
+  - servicekey
   - Toolsets
   - underscoped
   - unparseable

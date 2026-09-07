@@ -88,6 +88,24 @@ type ConversionError struct {
 	Err     error
 }
 
+// SourceTypeName returns the sanitized source type name for diagnostics.
+func (e *ConversionError) SourceTypeName() string {
+	if e == nil {
+		return "<nil>"
+	}
+
+	return cleanTypeName(e.SrcType)
+}
+
+// DestinationTypeName returns the sanitized destination type name for diagnostics.
+func (e *ConversionError) DestinationTypeName() string {
+	if e == nil {
+		return "<nil>"
+	}
+
+	return cleanTypeName(e.DstType)
+}
+
 func (e *NoMapperError) Error() string {
 	srcName := cleanTypeName(e.SrcType)
 	dstName := cleanTypeName(e.DstType)
@@ -163,9 +181,12 @@ func cleanTypeName(t reflect.Type) string {
 }
 
 func (e *ConversionError) Error() string {
-	srcName := cleanTypeName(e.SrcType)
-	dstName := cleanTypeName(e.DstType)
-	return fmt.Sprintf("conversion failed from %s to %s: %v", srcName, dstName, e.Err)
+	return fmt.Sprintf(
+		"conversion failed from %s to %s: %v",
+		e.SourceTypeName(),
+		e.DestinationTypeName(),
+		e.Err,
+	)
 }
 
 // Unwrap returns the wrapped error for errors.Unwrap() support

@@ -4,8 +4,8 @@ Manage Microsoft Foundry Toolboxes from your terminal. (Preview)
 
 ## Extension telemetry API
 
-Extension code can report best-effort usage events through
-`internal/telemetry`:
+Extension code can report best-effort usage events through the shared
+`pkg/foundry/telemetry` package:
 
 ```go
 reporter := telemetry.NewReporter(azdClient.Telemetry(), nil)

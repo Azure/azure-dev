@@ -66,6 +66,19 @@ func TestParseRoutineServiceConfig_ConfigFallback(t *testing.T) {
 	assert.Equal(t, "legacy", body.Description)
 }
 
+func TestParseRoutineServiceConfig_MixedShapeUsesInlineProperties(t *testing.T) {
+	t.Parallel()
+
+	body, err := parseRoutineServiceConfig(&azdext.ServiceConfig{
+		Name:                 "mixed",
+		Host:                 aiRoutineHost,
+		AdditionalProperties: mustStruct(t, map[string]any{"custom": "inline"}),
+		Config:               mustStruct(t, map[string]any{"description": "legacy"}),
+	}, "")
+	require.NoError(t, err)
+	assert.Empty(t, body.Description)
+}
+
 func TestParseRoutineServiceConfig_FileRef(t *testing.T) {
 	t.Parallel()
 

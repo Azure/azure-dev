@@ -747,7 +747,8 @@ func TestZipDeployRequest_MultipartFormat(t *testing.T) {
 
 	desc := "test desc"
 	metadata := &CreateAgentVersionRequest{
-		Description: &desc,
+		Description:       &desc,
+		DigitalWorkerType: DigitalWorkerTypeM365,
 	}
 	zipData := []byte("PK\x03\x04fake-zip-content")
 	sha256Hex := "abcdef1234567890"
@@ -765,6 +766,7 @@ func TestZipDeployRequest_MultipartFormat(t *testing.T) {
 	// Verify required headers
 	require.Equal(t, sha256Hex, transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
 	require.Equal(t, "test-agent", transport.lastReq.Header.Get("x-ms-agent-name"))
+	require.Equal(t, DigitalWorkerPreviewFeature, transport.lastReq.Header.Get("Foundry-Features"))
 
 	// Verify multipart content type with boundary
 	contentType := transport.lastReq.Header.Get("Content-Type")
@@ -785,6 +787,7 @@ func TestZipDeployRequest_MultipartFormat(t *testing.T) {
 	var parsedMeta map[string]any
 	require.NoError(t, json.Unmarshal(part1Data, &parsedMeta))
 	require.Equal(t, "test desc", parsedMeta["description"])
+	require.Equal(t, "m365", parsedMeta["digital_worker_type"])
 
 	// Part 2: code ZIP
 	part2, err := reader.NextPart()
@@ -793,6 +796,113 @@ func TestZipDeployRequest_MultipartFormat(t *testing.T) {
 	require.Equal(t, "agent.zip", part2.FileName())
 	part2Data, _ := io.ReadAll(part2)
 	require.Equal(t, zipData, part2Data)
+}
+
+func TestCreateAgentVersion_DigitalWorkerContract(t *testing.T) {
+	transport := &capturingTransport{
+		statusCode: http.StatusCreated,
+		respBody:   `{"name":"worker","version":"1","digital_worker_type":"m365"}`,
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	got, err := client.CreateAgentVersion(
+		t.Context(),
+		"worker",
+		&CreateAgentVersionRequest{
+			Definition:        map[string]any{"kind": "hosted"},
+			DigitalWorkerType: DigitalWorkerTypeM365,
+		},
+		"v1",
+	)
+	require.NoError(t, err)
+	require.Equal(t, DigitalWorkerTypeM365, got.DigitalWorkerType)
+	require.Equal(t, DigitalWorkerPreviewFeature, transport.lastReq.Header.Get("Foundry-Features"))
+	require.Contains(t, string(transport.lastBody), `"digital_worker_type":"m365"`)
+}
+
+func TestCreateAgentVersion_SimpleContractOmitsDigitalWorkerPreview(t *testing.T) {
+	transport := &capturingTransport{
+		statusCode: http.StatusCreated,
+		respBody:   `{"name":"simple-agent","version":"1"}`,
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	_, err := client.CreateAgentVersion(
+		t.Context(),
+		"simple-agent",
+		&CreateAgentVersionRequest{Definition: map[string]any{"kind": "hosted"}},
+		"v1",
+	)
+	require.NoError(t, err)
+	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
+	require.NotContains(t, string(transport.lastBody), "digital_worker_type")
+}
+
+func TestGetAgent_StandardContractOmitsDigitalWorkerPreview(t *testing.T) {
+	transport := &capturingTransport{
+		statusCode: http.StatusOK,
+		respBody:   `{"name":"simple-agent","versions":{"latest":{"version":"1"}}}`,
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	_, err := client.GetAgent(t.Context(), "simple-agent", "v1", false)
+	require.NoError(t, err)
+	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
+}
+
+func TestGetAgent_DigitalWorkerContract(t *testing.T) {
+	transport := &capturingTransport{
+		statusCode: http.StatusOK,
+		respBody:   `{"name":"worker","digital_worker_type":"m365","versions":{"latest":{"version":"1"}}}`,
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	got, err := client.GetAgent(t.Context(), "worker", "v1", true)
+	require.NoError(t, err)
+	require.Equal(t, DigitalWorkerTypeM365, got.DigitalWorkerType)
+	require.Equal(t, DigitalWorkerPreviewFeature, transport.lastReq.Header.Get("Foundry-Features"))
+}
+
+func TestUpdateAgent_OmitsDigitalWorkerPreview(t *testing.T) {
+	transport := &capturingTransport{
+		statusCode: http.StatusOK,
+		respBody:   `{"name":"simple-agent","versions":{"latest":{"version":"2"}}}`,
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	_, err := client.UpdateAgent(
+		t.Context(),
+		"simple-agent",
+		&UpdateAgentRequest{Definition: map[string]any{"kind": "hosted"}},
+		"v1",
+	)
+	require.NoError(t, err)
+	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
+}
+
+func TestGetAgentVersion_DigitalWorkerContract(t *testing.T) {
+	transport := &capturingTransport{
+		statusCode: http.StatusOK,
+		respBody:   `{"name":"worker","version":"1","digital_worker_type":"m365"}`,
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	got, err := client.GetAgentVersion(t.Context(), "worker", "1", "v1", true)
+	require.NoError(t, err)
+	require.Equal(t, DigitalWorkerTypeM365, got.DigitalWorkerType)
+	require.Equal(t, DigitalWorkerPreviewFeature, transport.lastReq.Header.Get("Foundry-Features"))
+}
+
+func TestGetAgentVersion_StandardContractOmitsDigitalWorkerPreview(t *testing.T) {
+	transport := &capturingTransport{
+		statusCode: http.StatusOK,
+		respBody:   `{"name":"simple-agent","version":"1"}`,
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	_, err := client.GetAgentVersion(t.Context(), "simple-agent", "1", "v1", false)
+	require.NoError(t, err)
+	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
 }
 
 func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {
@@ -814,6 +924,7 @@ func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {
 	require.Empty(t, transport.lastReq.Header.Get("x-ms-agent-name"))
 	// But other required headers should still be present
 	require.Equal(t, "sha", transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
+	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
 }
 
 // ---------------------------------------------------------------------------

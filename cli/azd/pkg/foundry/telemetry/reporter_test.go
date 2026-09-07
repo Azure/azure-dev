@@ -4,10 +4,12 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,7 +24,7 @@ type recordingClient struct {
 	request  *azdext.ReportUsageRequest
 	response *azdext.ReportUsageResponse
 	err      error
-	calls    int
+	calls    atomic.Int64
 }
 
 func (c *recordingClient) ReportUsage(
@@ -32,7 +34,7 @@ func (c *recordingClient) ReportUsage(
 ) (*azdext.ReportUsageResponse, error) {
 	c.ctx = ctx
 	c.request = request
-	c.calls++
+	c.calls.Add(1)
 	return c.response, c.err
 }
 
@@ -41,15 +43,14 @@ func TestReporterForwardsEvent(t *testing.T) {
 
 	client := &recordingClient{response: &azdext.ReportUsageResponse{Accepted: true}}
 	reporter := NewReporter(client, nil)
-	reporter.Report(t.Context(), Event{
-		Name:       "resource.created",
-		Attributes: map[string]string{"mode": "declarative"},
-	})
+	attributes := map[string]string{"mode": "declarative"}
+	reporter.Report(t.Context(), Event{Name: "resource.created", Attributes: attributes})
+	attributes["mode"] = "changed"
 
 	require.NotNil(t, client.request)
 	assert.Equal(t, "resource.created", client.request.EventName)
 	assert.Equal(t, map[string]string{"mode": "declarative"}, client.request.Attributes)
-	assert.Equal(t, 1, client.calls)
+	assert.Equal(t, int64(1), client.calls.Load())
 	_, hasDeadline := client.ctx.Deadline()
 	assert.True(t, hasDeadline)
 }
@@ -71,20 +72,20 @@ func TestReporterIsBestEffort(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			var logs []string
-			reporter := NewReporter(test.client, &Options{
-				Logger: func(format string, args ...any) {
-					logs = append(logs, fmt.Sprintf(format, args...))
-				},
-			})
+
+			var logs bytes.Buffer
+			reporter := NewReporter(test.client, &Options{Logger: azdext.NewLogger(
+				"test",
+				azdext.LoggerOptions{Debug: true, Writer: &logs},
+			)})
 			reporter.Report(t.Context(), Event{
 				Name:       "resource.created",
 				Attributes: map[string]string{"credential": "customer-secret"},
 			})
 
-			assert.Equal(t, test.wantLogs, len(logs) > 0)
-			assert.NotContains(t, strings.Join(logs, " "), "customer-secret")
-			assert.NotContains(t, strings.Join(logs, " "), "secret transport detail")
+			assert.Equal(t, test.wantLogs, logs.Len() > 0)
+			assert.NotContains(t, logs.String(), "customer-secret")
+			assert.NotContains(t, logs.String(), "secret transport detail")
 		})
 	}
 }
@@ -96,13 +97,54 @@ func TestReporterHonorsTimeoutWithoutRetry(t *testing.T) {
 	reporter := NewReporter(client, &Options{Timeout: time.Millisecond})
 	reporter.Report(t.Context(), Event{Name: "resource.created"})
 
-	assert.Equal(t, 1, client.calls)
+	assert.Equal(t, int64(1), client.calls.Load())
 	assert.ErrorIs(t, client.err, context.DeadlineExceeded)
 }
 
+func TestReporterHonorsCallerCancellation(t *testing.T) {
+	t.Parallel()
+
+	client := &blockingClient{}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	NewReporter(client, nil).Report(ctx, Event{Name: "resource.created"})
+
+	assert.Equal(t, int64(1), client.calls.Load())
+	assert.ErrorIs(t, client.err, context.Canceled)
+}
+
+func TestReporterSupportsConcurrentCalls(t *testing.T) {
+	t.Parallel()
+
+	client := &concurrentClient{}
+	reporter := NewReporter(client, nil)
+	var waitGroup sync.WaitGroup
+	for range 20 {
+		waitGroup.Go(func() {
+			reporter.Report(t.Context(), Event{Name: "resource.created"})
+		})
+	}
+	waitGroup.Wait()
+
+	assert.Equal(t, int64(20), client.calls.Load())
+}
+
 type blockingClient struct {
-	calls int
+	calls atomic.Int64
 	err   error
+}
+
+type concurrentClient struct {
+	calls atomic.Int64
+}
+
+func (c *concurrentClient) ReportUsage(
+	_ context.Context,
+	_ *azdext.ReportUsageRequest,
+	_ ...grpc.CallOption,
+) (*azdext.ReportUsageResponse, error) {
+	c.calls.Add(1)
+	return &azdext.ReportUsageResponse{Accepted: true}, nil
 }
 
 func (c *blockingClient) ReportUsage(
@@ -110,8 +152,27 @@ func (c *blockingClient) ReportUsage(
 	_ *azdext.ReportUsageRequest,
 	_ ...grpc.CallOption,
 ) (*azdext.ReportUsageResponse, error) {
-	c.calls++
+	c.calls.Add(1)
 	<-ctx.Done()
 	c.err = ctx.Err()
 	return nil, c.err
+}
+
+func TestReporterLogsStatusWithoutSensitiveDetails(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	client := &recordingClient{err: errors.New("secret transport detail")}
+	reporter := NewReporter(client, &Options{Logger: azdext.NewLogger(
+		"test",
+		azdext.LoggerOptions{Debug: true, Writer: &logs},
+	)})
+	reporter.Report(t.Context(), Event{
+		Name:       "resource.created",
+		Attributes: map[string]string{"credential": "customer-secret"},
+	})
+
+	assert.True(t, strings.Contains(logs.String(), "resource.created"))
+	assert.NotContains(t, logs.String(), "customer-secret")
+	assert.NotContains(t, logs.String(), "secret transport detail")
 }

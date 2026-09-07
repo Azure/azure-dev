@@ -357,6 +357,12 @@ func resolveAgentConnectionConfig(
 	if err != nil {
 		return nil, err
 	}
+	if mapHasConnectionKind(inline) {
+		if _, found := inline["connections"]; !found {
+			return nil, nil
+		}
+		return inline, nil
+	}
 	legacy, err := resolveAgentConnectionProperties(
 		svc.GetConfig(),
 		projectRoot,

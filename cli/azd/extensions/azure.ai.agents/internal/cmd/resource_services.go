@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"azureaiagent/internal/pkg/servicekey"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -113,7 +114,7 @@ func emitResourceServices(
 
 	for i := range connections {
 		conn := connections[i]
-		connName := sanitizeServiceName(conn.Name)
+		connName := servicekey.SanitizeServiceName(conn.Name)
 		if connName == "" {
 			fmt.Fprintf(os.Stderr,
 				"warning: connection %q has no characters usable as an azure.yaml service key; "+
@@ -138,7 +139,7 @@ func emitResourceServices(
 
 	for i := range toolboxes {
 		toolbox := toolboxes[i]
-		toolboxName := sanitizeServiceName(toolbox.Name)
+		toolboxName := servicekey.SanitizeServiceName(toolbox.Name)
 		if toolboxName == "" {
 			fmt.Fprintf(os.Stderr,
 				"warning: toolbox %q has no characters usable as an azure.yaml service key; "+
@@ -226,7 +227,7 @@ func resolveProjectServiceKey(
 	if existing := existingProjectServiceKey(ctx, azdClient); existing != "" {
 		return existing
 	}
-	if key := sanitizeServiceName(projectName); key != "" && key != agentServiceName {
+	if key := servicekey.SanitizeServiceName(projectName); key != "" && key != agentServiceName {
 		return key
 	}
 	return aiProjectServiceName
@@ -483,16 +484,6 @@ func setServiceUses(ctx context.Context, azdClient *azdext.AzdClient, serviceNam
 	}
 
 	return nil
-}
-
-// sanitizeServiceName converts a resource name into an azure.yaml service key by
-// trimming surrounding whitespace and removing interior spaces, matching how the
-// agent service name is derived from the agent name. Only spaces are stripped, so
-// the name is expected to otherwise consist of characters valid in a YAML map key
-// (letters, digits, '-', '_', '.'); Foundry resource names already meet this. A
-// name that reduces to an empty string is skipped by the caller with a warning.
-func sanitizeServiceName(name string) string {
-	return strings.ReplaceAll(strings.TrimSpace(name), " ", "")
 }
 
 // reserveServiceName records an azure.yaml service key derived from a Foundry

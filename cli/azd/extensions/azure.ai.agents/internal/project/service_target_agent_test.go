@@ -119,6 +119,7 @@ func (f fakeProjectAgentChecker) GetAgent(
 	context.Context,
 	string,
 	string,
+	bool,
 ) (*agent_api.AgentObject, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -1306,10 +1307,7 @@ func TestRegisterAgentEnvironmentVariables_PersistsDigitalWorkerBlueprintClientI
 		azdClient: newEnvTestClient(t, envStub),
 		env:       &azdext.Environment{Name: "test-env"},
 	}
-	publish := &ActivityPublishConfig{
-		PublishAsAutopilot: true,
-		PublishScope:       "tenant",
-	}
+	publish := &ActivityPublishConfig{PublishScope: "tenant"}
 
 	err := provider.registerAgentEnvironmentVariables(
 		t.Context(),
@@ -1327,7 +1325,7 @@ func TestRegisterAgentEnvironmentVariables_PersistsDigitalWorkerBlueprintClientI
 		"",
 		false,
 		ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
-		&ActivitySettings{UseCase: ActivityUseCaseDigitalWorker, Publish: publish},
+		&ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365, Publish: publish},
 	)
 	require.NoError(t, err)
 	require.Equal(t, "blueprint-client-id", envStub.values[envkey.AgentBlueprintClientID("my-svc")])
@@ -1927,6 +1925,7 @@ func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
 		Name:                 "basic-agent",
 		AdditionalProperties: props,
 	}
+
 	provider := &AgentServiceTargetProvider{}
 
 	prep, err := provider.prepareDeploy(
@@ -1945,6 +1944,264 @@ func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, DefaultCpu, definition.CPU)
 	require.Equal(t, DefaultMemory, definition.Memory)
+}
+
+func TestPrepareDeploySetsDigitalWorkerType(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = &agent_yaml.AgentEndpoint{
+		Protocols: []string{"activity"},
+		AuthorizationSchemes: []agent_yaml.AuthorizationScheme{
+			{Type: string(agent_api.AgentEndpointAuthSchemeBotServiceRbac)},
+		},
+	}
+	props, err := AgentDefinitionToServiceProperties(agentDef, &ServiceTargetAgentConfig{
+		Activity: &ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "digital-worker",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/worker:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, agent_api.DigitalWorkerTypeM365, prep.request.DigitalWorkerType)
+	require.NotNil(t, prep.request.AgentEndpoint)
+	require.Equal(
+		t,
+		[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+		prep.request.AgentEndpoint.Protocols,
+	)
+	require.Len(t, prep.request.AgentEndpoint.AuthorizationSchemes, 1)
+	require.Equal(t, agent_api.AgentEndpointAuthSchemeBotServiceRbac, prep.request.AgentEndpoint.AuthorizationSchemes[0].Type)
+}
+
+func TestPrepareDeployLeavesOmittedDigitalWorkerEndpointNil(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = nil
+	agentDef.AgentCard = nil
+	props, err := AgentDefinitionToServiceProperties(agentDef, &ServiceTargetAgentConfig{
+		Activity: &ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "digital-worker",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/worker:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, agent_api.DigitalWorkerTypeM365, prep.request.DigitalWorkerType)
+	require.Nil(t, prep.request.AgentEndpoint)
+	require.Nil(t, prep.request.AgentCard)
+}
+
+func TestPrepareDeployPreservesOmittedSimpleActivityAuthorizationSchemes(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = &agent_yaml.AgentEndpoint{Protocols: []string{"activity"}}
+	props, err := AgentDefinitionToServiceProperties(agentDef, nil)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "simple-activity",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/activity:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, prep.request.DigitalWorkerType)
+	require.NotNil(t, prep.request.AgentEndpoint)
+	require.Equal(
+		t,
+		[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+		prep.request.AgentEndpoint.Protocols,
+	)
+	require.Empty(t, prep.request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForPromotedDigitalWorkerPreservesExplicitScheme(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+			AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeEntra},
+				{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+			},
+		},
+	}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+		{Type: agent_api.AgentEndpointAuthSchemeEntra},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+	}, request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForDigitalWorkerUsesServiceDefault(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForDigitalWorkerPreservesEndpointWithoutAddingScheme(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
+		},
+	}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Equal(t, []agent_api.AgentEndpointProtocol{
+		agent_api.AgentEndpointProtocolResponses,
+		agent_api.AgentEndpointProtocolActivity,
+	}, request.AgentEndpoint.Protocols)
+	require.Empty(t, request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForSimpleActivityUsesServiceDefault(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseSimple,
+	})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestEnsureActivityEndpointAuthSchemePreservesExplicitLegacyBotService(t *testing.T) {
+	t.Parallel()
+
+	for _, useCase := range []ActivityUseCase{
+		ActivityUseCaseDigitalWorker,
+		ActivityUseCaseSimple,
+	} {
+		t.Run(string(useCase), func(t *testing.T) {
+			request := &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+						{Type: agent_api.AgentEndpointAuthSchemeEntra},
+						{Type: agent_api.AgentEndpointAuthSchemeBotService},
+					},
+				},
+			}
+
+			ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+				IsActivity: true,
+				UseCase:    useCase,
+			})
+
+			require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeEntra},
+				{Type: agent_api.AgentEndpointAuthSchemeBotService},
+			}, request.AgentEndpoint.AuthorizationSchemes)
+		})
+	}
+}
+
+func TestEnsureActivityEndpointAuthSchemeForNonActivityDoesNotCreateEndpoint(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestActivityProfileFromCreateRequest(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		request *agent_api.CreateAgentRequest
+		want    ActivityProfile
+	}{
+		{
+			name: "digital worker",
+			request: &agent_api.CreateAgentRequest{
+				CreateAgentVersionRequest: agent_api.CreateAgentVersionRequest{
+					DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+				},
+			},
+			want: ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
+		},
+		{
+			name: "simple activity",
+			request: &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+				},
+			},
+			want: ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple},
+		},
+		{
+			name: "non activity",
+			request: &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
+				},
+			},
+			want: ActivityProfile{},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, activityProfileFromCreateRequest(test.request))
+		})
+	}
 }
 
 func TestValidateRegistryConnectionDefinition(t *testing.T) {

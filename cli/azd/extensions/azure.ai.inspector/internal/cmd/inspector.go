@@ -14,9 +14,9 @@ import (
 	"strings"
 
 	"azureaiinspector/internal/inspector"
-	"azureaiinspector/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundrytelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/cli/browser"
 	"github.com/spf13/cobra"
 )
@@ -150,13 +150,13 @@ func newUsageReporter(ctx context.Context) (inspector.ReportUsageFunc, func()) {
 		return nil, func() {}
 	}
 
-	return usageReporter(ctx, telemetry.NewReporter(azdClient.Telemetry(), nil)), azdClient.Close
+	return usageReporter(ctx, foundrytelemetry.NewReporter(azdClient.Telemetry(), nil)), azdClient.Close
 }
 
-func usageReporter(ctx context.Context, reporter telemetry.Reporter) inspector.ReportUsageFunc {
+func usageReporter(ctx context.Context, reporter foundrytelemetry.Reporter) inspector.ReportUsageFunc {
 	// Capture the command context because WebSocket request contexts do not carry
 	// the azd access token or parent trace metadata needed by ReportUsage.
-	reportUsage := func(event telemetry.Event) {
+	reportUsage := func(event foundrytelemetry.Event) {
 		reporter.Report(ctx, event)
 	}
 

@@ -15,8 +15,9 @@ func TestCreateAgentRequest_RoundTrip(t *testing.T) {
 	original := CreateAgentRequest{
 		Name: "test-agent",
 		CreateAgentVersionRequest: CreateAgentVersionRequest{
-			Description: new("A test agent"),
-			Metadata:    map[string]string{"env": "test"},
+			Description:       new("A test agent"),
+			Metadata:          map[string]string{"env": "test"},
+			DigitalWorkerType: DigitalWorkerTypeM365,
 			Definition: HostedAgentDefinition{
 				AgentDefinition: AgentDefinition{
 					Kind:      AgentKindHosted,
@@ -35,7 +36,9 @@ func TestCreateAgentRequest_RoundTrip(t *testing.T) {
 
 	// Verify JSON tag names
 	s := string(data)
-	for _, field := range []string{`"name"`, `"description"`, `"metadata"`, `"definition"`} {
+	for _, field := range []string{
+		`"name"`, `"description"`, `"metadata"`, `"definition"`, `"digital_worker_type":"m365"`,
+	} {
 		if !strings.Contains(s, field) {
 			t.Errorf("expected JSON to contain %s, got: %s", field, s)
 		}
@@ -55,15 +58,19 @@ func TestCreateAgentRequest_RoundTrip(t *testing.T) {
 	if got.Metadata["env"] != "test" {
 		t.Errorf("Metadata[env] = %q, want %q", got.Metadata["env"], "test")
 	}
+	if got.DigitalWorkerType != DigitalWorkerTypeM365 {
+		t.Errorf("DigitalWorkerType = %q, want %q", got.DigitalWorkerType, DigitalWorkerTypeM365)
+	}
 }
 
 func TestAgentObject_RoundTrip(t *testing.T) {
 	t.Parallel()
 
 	original := AgentObject{
-		Object: "agent",
-		ID:     "agent-123",
-		Name:   "my-agent",
+		Object:            "agent",
+		ID:                "agent-123",
+		Name:              "my-agent",
+		DigitalWorkerType: DigitalWorkerTypeM365,
 		Versions: struct {
 			Latest AgentVersionObject `json:"latest"`
 		}{
@@ -85,7 +92,9 @@ func TestAgentObject_RoundTrip(t *testing.T) {
 	}
 
 	s := string(data)
-	for _, field := range []string{`"object"`, `"id"`, `"name"`, `"versions"`, `"latest"`} {
+	for _, field := range []string{
+		`"object"`, `"id"`, `"name"`, `"versions"`, `"latest"`, `"digital_worker_type":"m365"`,
+	} {
 		if !strings.Contains(s, field) {
 			t.Errorf("expected JSON to contain %s", field)
 		}
@@ -104,6 +113,30 @@ func TestAgentObject_RoundTrip(t *testing.T) {
 	}
 	if got.Versions.Latest.CreatedAt != 1700000000 {
 		t.Errorf("Latest.CreatedAt = %d, want %d", got.Versions.Latest.CreatedAt, int64(1700000000))
+	}
+}
+
+func TestCreateAgentVersionRequest_OmitsEmptyDigitalWorkerType(t *testing.T) {
+	t.Parallel()
+
+	data, err := json.Marshal(CreateAgentVersionRequest{Definition: map[string]any{"kind": "hosted"}})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(data), "digital_worker_type") {
+		t.Fatalf("simple agent request must omit digital_worker_type: %s", data)
+	}
+}
+
+func TestUpdateAgentRequest_HasNoDigitalWorkerType(t *testing.T) {
+	t.Parallel()
+
+	data, err := json.Marshal(UpdateAgentRequest{Definition: map[string]any{"kind": "voice"}})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(data), "digital_worker_type") {
+		t.Fatalf("update request must omit immutable digital_worker_type: %s", data)
 	}
 }
 
@@ -297,7 +330,8 @@ func TestAgentVersionObject_RoundTrip(t *testing.T) {
 			Type:        "ManagedAgentIdentityBlueprint",
 			BlueprintID: "my-agent-abc12",
 		},
-		AgentGUID: "abc12345-0000-1111-2222-333344445555",
+		AgentGUID:         "abc12345-0000-1111-2222-333344445555",
+		DigitalWorkerType: DigitalWorkerTypeM365,
 	}
 
 	data, err := json.Marshal(original)
@@ -309,7 +343,7 @@ func TestAgentVersionObject_RoundTrip(t *testing.T) {
 	for _, field := range []string{
 		`"object"`, `"id"`, `"version"`, `"created_at"`,
 		`"status"`, `"instance_identity"`, `"blueprint"`,
-		`"blueprint_reference"`, `"agent_guid"`,
+		`"blueprint_reference"`, `"agent_guid"`, `"digital_worker_type"`,
 	} {
 		if !strings.Contains(s, field) {
 			t.Errorf("expected JSON to contain %s", field)
@@ -335,6 +369,9 @@ func TestAgentVersionObject_RoundTrip(t *testing.T) {
 	}
 	if got.AgentGUID != "abc12345-0000-1111-2222-333344445555" {
 		t.Errorf("AgentGUID = %q, want %q", got.AgentGUID, "abc12345-0000-1111-2222-333344445555")
+	}
+	if got.DigitalWorkerType != DigitalWorkerTypeM365 {
+		t.Errorf("DigitalWorkerType = %q, want %q", got.DigitalWorkerType, DigitalWorkerTypeM365)
 	}
 	if got.InstanceIdentity == nil || got.InstanceIdentity.PrincipalID != "inst-principal-id" {
 		t.Errorf("InstanceIdentity.PrincipalID mismatch")

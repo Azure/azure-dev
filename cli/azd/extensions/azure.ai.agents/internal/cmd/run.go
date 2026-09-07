@@ -31,6 +31,7 @@ import (
 	"azureaiagent/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundrytelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -157,7 +158,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	suppressClient := flags.noInspector || flags.noClient
 	reportLocalClientRouteSelected(
 		ctx,
-		telemetry.NewReporter(azdClient.Telemetry(), nil),
+		foundrytelemetry.NewReporter(azdClient.Telemetry(), nil),
 		activityProfile,
 		suppressClient,
 	)
@@ -406,7 +407,7 @@ func isAgentProcessCanceled(err error) bool {
 
 func reportLocalClientRouteSelected(
 	ctx context.Context,
-	reporter telemetry.Reporter,
+	reporter foundrytelemetry.Reporter,
 	activityProfile activityRunProfile,
 	suppressClient bool,
 ) {

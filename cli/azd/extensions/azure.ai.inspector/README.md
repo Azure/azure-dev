@@ -5,11 +5,13 @@ azd extension.
 
 ## Extension telemetry API
 
-Extension code reports best-effort usage events through `internal/telemetry`:
+Extension code reports best-effort usage events through the shared
+`pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
+`internal/telemetry`:
 
 ```go
-reporter := telemetry.NewReporter(azdClient.Telemetry(), nil)
-reporter.Report(ctx, telemetry.InspectorUIReady())
+reporter := foundrytelemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, extensiontelemetry.InspectorUIReady())
 ```
 
 `Report` has no return value and never changes Inspector behavior. It applies a

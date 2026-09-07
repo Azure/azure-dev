@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -102,6 +103,32 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.NotNil(t, cfg.Container)
 	require.NotNil(t, cfg.Container.Resources)
 	require.Equal(t, "1", cfg.Container.Resources.Cpu)
+}
+
+func TestLoadServiceTargetAgentConfigDigitalWorkerType(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"activity": map[string]any{"digitalWorkerType": "m365"},
+	})
+	require.NoError(t, err)
+
+	cfg, err := LoadServiceTargetAgentConfig(&azdext.ServiceConfig{AdditionalProperties: props})
+	require.NoError(t, err)
+	require.Equal(t, agent_api.DigitalWorkerTypeM365, cfg.Activity.DigitalWorkerType)
+}
+
+func TestLoadServiceTargetAgentConfigRejectsUseCase(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"activity": map[string]any{"useCase": "digital_worker"},
+	})
+	require.NoError(t, err)
+
+	_, err = LoadServiceTargetAgentConfig(&azdext.ServiceConfig{AdditionalProperties: props})
+	require.ErrorContains(t, err, "activity.useCase is not supported")
+	require.ErrorContains(t, err, "activity.digitalWorkerType: m365")
 }
 
 // TestAgentDefinitionRoundTrip_SessionConfiguration verifies the optional

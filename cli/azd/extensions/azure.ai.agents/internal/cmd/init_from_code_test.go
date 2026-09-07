@@ -4,12 +4,14 @@
 package cmd
 
 import (
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -17,6 +19,28 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestConfirmExistingDefinitionOverwrite_NoPromptRequiresForce(t *testing.T) {
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "agent.yaml"), []byte("name: existing\n"), 0o600))
+
+	action := &InitFromCodeAction{flags: &initFlags{noPrompt: true}}
+	err := action.confirmExistingDefinitionOverwrite(t.Context(), srcDir)
+
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+	require.Contains(t, localErr.Suggestion, "--force")
+}
+
+func TestConfirmExistingDefinitionOverwrite_ForcePreConsents(t *testing.T) {
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "agent.yaml"), []byte("name: existing\n"), 0o600))
+
+	action := &InitFromCodeAction{flags: &initFlags{noPrompt: true, force: true}}
+	require.NoError(t, action.confirmExistingDefinitionOverwrite(t.Context(), srcDir))
+}
 
 func TestSanitizeAgentName(t *testing.T) {
 	t.Parallel()
@@ -525,6 +549,39 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 			}
 		}
 	}
+}
+
+func TestCreateDefinitionFromLocalAgent_LoadsPersistedProjectBeforeAcrValidation(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0o600))
+
+	const envName = "agent-dev"
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			envName: {"AZURE_AI_PROJECT_ID": "invalid-project-id"},
+		},
+	}
+	action := &InitFromCodeAction{
+		azdClient:   newTestAzdClient(t, envServer, &testWorkflowServiceServer{}),
+		environment: &azdext.Environment{Name: envName},
+		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{
+			SubscriptionId: "subscription-id",
+			Location:       "eastus2",
+		}},
+		flags: &initFlags{
+			noPrompt:      true,
+			env:           envName,
+			agentName:     "test-agent",
+			acrConnection: "registry-connection",
+			deployMode:    "container",
+		},
+	}
+
+	_, err := action.createDefinitionFromLocalAgent(t.Context())
+
+	require.ErrorContains(t, err, "invalid --project-id value")
+	require.Equal(t, "invalid-project-id", action.flags.projectResourceId)
 }
 
 func TestFoundryDeploymentInfo(t *testing.T) {

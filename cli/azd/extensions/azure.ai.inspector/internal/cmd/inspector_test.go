@@ -12,8 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"azureaiinspector/internal/telemetry"
-
+	foundrytelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 )
@@ -25,12 +24,12 @@ func TestUsageReporterForwardsEventWithCommandContext(t *testing.T) {
 	))
 	reporter := &recordingUsageReporter{}
 
-	usageReporter(ctx, reporter)(telemetry.Event{Name: "inspector.funnel.stage", Attributes: map[string]string{
+	usageReporter(ctx, reporter)(foundrytelemetry.Event{Name: "inspector.funnel.stage", Attributes: map[string]string{
 		"stage":   "ui_ready",
 		"outcome": "succeeded",
 	}})
 
-	require.Equal(t, telemetry.Event{
+	require.Equal(t, foundrytelemetry.Event{
 		Name: "inspector.funnel.stage",
 		Attributes: map[string]string{
 			"stage":   "ui_ready",
@@ -128,10 +127,10 @@ func (r errorReader) Read([]byte) (int, error) {
 
 type recordingUsageReporter struct {
 	ctx   context.Context
-	event telemetry.Event
+	event foundrytelemetry.Event
 }
 
-func (r *recordingUsageReporter) Report(ctx context.Context, event telemetry.Event) {
+func (r *recordingUsageReporter) Report(ctx context.Context, event foundrytelemetry.Event) {
 	r.ctx = ctx
 	r.event = event
 }

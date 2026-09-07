@@ -114,6 +114,11 @@ type State struct {
 	// dependency conditions.
 	ToolboxDependencyErrors []string
 
+	// ToolboxLoadErrors contains failures loading unified toolbox
+	// configuration or referenced files. These errors block local-run
+	// guidance because the assembled toolbox state is incomplete.
+	ToolboxLoadErrors []string
+
 	// ToolboxEndpointsChecked is true after assembly probes every
 	// active toolbox endpoint.
 	ToolboxEndpointsChecked bool
@@ -160,7 +165,8 @@ type State struct {
 
 	// HasModels, HasToolboxes, and HasConnections are aggregate flags.
 	// They describe resources. Models still come from agent manifests.
-	// Toolboxes include split services and manifest resources.
+	// Toolboxes include split services, bundled definitions, and
+	// legacy manifest resources.
 	// Connections prefer enabled azure.ai.connection services.
 	// Bundled agent config and legacy manifest resources are fallback
 	// sources. Doctor checks skip when no matching resource exists,

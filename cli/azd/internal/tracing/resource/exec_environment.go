@@ -73,8 +73,14 @@ func execEnvFromAgent() string {
 	switch agent.Type {
 	case agentdetect.AgentTypeClaudeCode:
 		return fields.EnvClaudeCode
+	case agentdetect.AgentTypeClaudeCodeDesktop:
+		return fields.EnvClaudeCodeDesktop
+	case agentdetect.AgentTypeClaudeCodeVSCode:
+		return fields.EnvClaudeCodeVSCode
 	case agentdetect.AgentTypeCodex:
 		return fields.EnvCodex
+	case agentdetect.AgentTypeCodexDesktop:
+		return fields.EnvCodexDesktop
 	case agentdetect.AgentTypeCursor:
 		return fields.EnvCursor
 	case agentdetect.AgentTypeGitHubCopilotCLI:
@@ -83,12 +89,16 @@ func execEnvFromAgent() string {
 		return fields.EnvGitHubCopilotApp
 	case agentdetect.AgentTypeGitHubCopilotVSCode:
 		return fields.EnvGitHubCopilotVSCode
+	case agentdetect.AgentTypeGitHubCopilotCloudAgent:
+		return fields.EnvGitHubCopilotCloudAgent
 	case agentdetect.AgentTypeVSCodeCopilot:
 		return fields.EnvVSCodeAzureCopilot
 	case agentdetect.AgentTypeGemini:
 		return fields.EnvGemini
 	case agentdetect.AgentTypeOpenCode:
 		return fields.EnvOpenCode
+	case agentdetect.AgentTypePi:
+		return fields.EnvPi
 	default:
 		return ""
 	}

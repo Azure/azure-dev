@@ -3,6 +3,8 @@
 
 package telemetry
 
+import foundrytelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+
 const (
 	inspectorFunnelStageEvent       = "inspector.funnel.stage"
 	inspectorFunnelStageAttribute   = "stage"
@@ -13,8 +15,8 @@ const (
 )
 
 // InspectorUIReady creates the event emitted after the Inspector UI mounts.
-func InspectorUIReady() Event {
-	return Event{
+func InspectorUIReady() foundrytelemetry.Event {
+	return foundrytelemetry.Event{
 		Name: inspectorFunnelStageEvent,
 		Attributes: map[string]string{
 			inspectorFunnelStageAttribute:   inspectorFunnelStageUIReady,

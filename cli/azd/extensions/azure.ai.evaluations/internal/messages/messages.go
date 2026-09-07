@@ -259,6 +259,29 @@ func EvaluatorResultsHeading() string {
 	return "\nEVALUATOR RESULTS\n"
 }
 
+// ViewItemDetails names the command that opens one test case.
+//
+// The eval, the run and an item from the table are all filled in, so the line
+// runs as printed. A suggestion carrying <item> reads like a command and is
+// not one; the reader swaps in another row id when they want a different row.
+func ViewItemDetails(eval, runID, itemID string) string {
+	return fmt.Sprintf(
+		"\nView details:\n  azd ai eval run output show %s --eval %s --run %s\n",
+		itemID, eval, runID)
+}
+
+// ExportCompleteResults names the command that writes the whole run to disk.
+//
+// Offered beside the detail command because the listing is paged and truncated
+// by design: the reader who needs every evaluator, every reason and every
+// dimension is not going to get them from a table.
+func ExportCompleteResults(eval, runID string) string {
+	return fmt.Sprintf(
+		"\nExport complete results:\n"+
+			"  azd ai eval run output export --eval %s --run %s --output-file ./%s.json\n",
+		eval, runID, runID)
+}
+
 // ViewFailingSamples points at the command that lists the rows that failed.
 func ViewFailingSamples() string {
 	return "\nView failing samples: azd ai eval run output list --failed-only\n"

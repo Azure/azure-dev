@@ -125,6 +125,34 @@ func TestErroredRowIsReportedAsErrored(t *testing.T) {
 		"which is stated as the outcome it is, not as an absence the reader decodes")
 }
 
+// The listing is paged and every cell is truncated, so the two commands that
+// get past both have to be printed with it -- resolved, not as a shape.
+//
+// A reader who has to work out which eval a run belonged to, and then retype a
+// row id, is being asked to redo the lookup the listing just did.
+func TestListingPrintsItsFollowUpCommandsResolved(t *testing.T) {
+	run := &eval_api.OpenAIEvalRun{
+		ID:       "evalrun_1",
+		Status:   "completed",
+		Metadata: map[string]string{metaEvalName: "support-agent-dataset-eval"},
+	}
+	items := []eval_api.OutputItem{{
+		ID:      "oi_first",
+		Results: []eval_api.OutputResult{{Name: "relevance", Passed: new(false), Reason: "Off topic."}},
+	}}
+
+	var out bytes.Buffer
+	require.NoError(t, renderResults(&out, run, items, false))
+	text := out.String()
+
+	assert.Contains(t, text,
+		"azd ai eval run output show oi_first --eval support-agent-dataset-eval --run evalrun_1",
+		"the detail command names a row from the table above it:\n%s", text)
+	assert.Contains(t, text, "azd ai eval run output export --eval support-agent-dataset-eval --run evalrun_1")
+	assert.NotContains(t, text, "<item>",
+		"a line with a placeholder in it reads like a command and is not one")
+}
+
 // filterItems mirrors what the command does, so the render tests exercise the
 // same predicate the listing uses.
 func filterItems(items []eval_api.OutputItem, keep map[string]bool) []eval_api.OutputItem {

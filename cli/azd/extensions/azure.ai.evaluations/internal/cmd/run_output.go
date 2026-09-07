@@ -767,6 +767,7 @@ func renderResults(
 		fmt.Fprintln(w)
 		rows := make([][]string, 0, len(items))
 		shown := 0
+		firstItem := ""
 		for _, it := range items {
 			// One row per evaluated sample, not per verdict: a sample that
 			// failed three evaluators is one sample to go and look at, and
@@ -781,6 +782,9 @@ func renderResults(
 				continue
 			}
 			shown++
+			if firstItem == "" {
+				firstItem = it.ID
+			}
 
 			// No position column. It numbered within the current filter, so the
 			// same sample carried a different number depending on the flags while
@@ -808,12 +812,31 @@ func renderResults(
 		if failedOnly {
 			fmt.Fprint(w, messages.FilteredItemCount(shown, len(items), itemFailed))
 		}
+		if firstItem != "" {
+			// Printed resolved, down to an item that is actually in the table
+			// above. A reader who has to work out which eval a run belonged to,
+			// and then retype a row id, is being asked to redo the lookup the
+			// listing just did -- and a line with a placeholder in it reads like
+			// a command and is not one.
+			fmt.Fprint(w, messages.ViewItemDetails(runEvalName(run), run.ID, firstItem))
+			fmt.Fprint(w, messages.ExportCompleteResults(runEvalName(run), run.ID))
+		}
 	}
 
 	if url := runLink(run.ReportURL, run.PortalURL); url != "" {
 		fmt.Fprint(w, messages.PortalLinkAfterRows(color.CyanString(url)))
 	}
 	return nil
+}
+
+// runEvalName is the declared name the run belongs to, falling back to the
+// service id. The declared one is what the reader recognizes; the id is what
+// the response carries.
+func runEvalName(run *eval_api.OpenAIEvalRun) string {
+	if name := run.Metadata[metaEvalName]; name != "" {
+		return name
+	}
+	return run.EvalID
 }
 
 // truncate keeps a table readable when a reason runs to a paragraph. The full

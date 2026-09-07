@@ -84,6 +84,9 @@ type resolveEnvStubPromptServer struct {
 	deploymentErr   error
 	deploymentErrs  []error
 	deployRequests  []*azdext.PromptAiDeploymentRequest
+	selectValue     *int32
+	selectErr       error
+	selectRequests  []*azdext.SelectRequest
 }
 
 func (s *resolveEnvStubPromptServer) PromptSubscription(
@@ -132,19 +135,32 @@ func (s *resolveEnvStubPromptServer) PromptAiDeployment(
 	return &azdext.PromptAiDeploymentResponse{Deployment: s.deployment}, nil
 }
 
+func (s *resolveEnvStubPromptServer) Select(
+	_ context.Context,
+	req *azdext.SelectRequest,
+) (*azdext.SelectResponse, error) {
+	s.selectRequests = append(s.selectRequests, req)
+	if s.selectErr != nil {
+		return nil, s.selectErr
+	}
+	return &azdext.SelectResponse{Value: s.selectValue}, nil
+}
+
 type resolveEnvStubAiServer struct {
 	azdext.UnimplementedAiModelServiceServer
-	deployments []*azdext.AiModelDeployment
-	models      []*azdext.AiModel
-	err         error
-	resolveErr  error
-	requests    []*azdext.ResolveModelDeploymentsRequest
+	deployments  []*azdext.AiModelDeployment
+	models       []*azdext.AiModel
+	err          error
+	resolveErr   error
+	listRequests []*azdext.ListModelsRequest
+	requests     []*azdext.ResolveModelDeploymentsRequest
 }
 
 func (s *resolveEnvStubAiServer) ListModels(
 	_ context.Context,
-	_ *azdext.ListModelsRequest,
+	req *azdext.ListModelsRequest,
 ) (*azdext.ListModelsResponse, error) {
+	s.listRequests = append(s.listRequests, req)
 	if s.err != nil {
 		return nil, s.err
 	}

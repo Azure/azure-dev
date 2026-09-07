@@ -250,11 +250,12 @@ type serviceBlock struct {
 // projectService is the subset of a host: azure.ai.project service body the synthesizer reads.
 // Unknown fields are intentionally ignored: they are reconciled in deploy-time service targets.
 type projectService struct {
-	Host        string        `yaml:"host"`
-	Endpoint    string        `yaml:"endpoint,omitempty"`
-	Deployments []Deployment  `yaml:"deployments,omitempty"`
-	Agents      []agentBlock  `yaml:"agents,omitempty"`
-	Network     *networkBlock `yaml:"network,omitempty"`
+	Host                 string        `yaml:"host"`
+	Endpoint             string        `yaml:"endpoint,omitempty"`
+	Deployments          []Deployment  `yaml:"deployments,omitempty"`
+	DeploymentReferences []Deployment  `yaml:"deploymentReferences,omitempty"`
+	Agents               []agentBlock  `yaml:"agents,omitempty"`
+	Network              *networkBlock `yaml:"network,omitempty"`
 }
 
 // networkBlock mirrors the network: sub-tree on the service body.
@@ -513,25 +514,72 @@ func BrownfieldDeployments(
 	return svc.Deployments, nil
 }
 
-// ProjectDeployments returns resolved Foundry deployments.
-// It preserves environment references for reconciliation.
-func ProjectDeployments(raw []byte, serviceName string, projectRoot string) ([]Deployment, error) {
+// ProjectDeploymentConfiguration reads project deployment config.
+func ProjectDeploymentConfiguration(
+	raw []byte,
+	serviceName string,
+	projectRoot string,
+) (ProjectDeploymentConfigurationResult, error) {
 	if len(raw) == 0 {
-		return nil, errors.New("synthesis: raw azure.yaml is empty")
+		return ProjectDeploymentConfigurationResult{},
+			errors.New("synthesis: raw azure.yaml is empty")
 	}
 	if serviceName == "" {
-		return nil, errors.New("synthesis: serviceName is empty")
+		return ProjectDeploymentConfigurationResult{},
+			errors.New("synthesis: serviceName is empty")
 	}
 
 	var root projectFile
 	if err := yaml.Unmarshal(raw, &root); err != nil {
-		return nil, fmt.Errorf("parse azure.yaml: %w", err)
+		return ProjectDeploymentConfigurationResult{},
+			fmt.Errorf("parse azure.yaml: %w", err)
 	}
 	svc, err := loadProjectService(root.Services, serviceName, projectRoot)
 	if err != nil {
+		return ProjectDeploymentConfigurationResult{}, err
+	}
+	return ProjectDeploymentConfigurationResult{
+		Deployments:          svc.Deployments,
+		DeploymentReferences: svc.DeploymentReferences,
+	}, nil
+}
+
+// ProjectDeploymentConfigurationResult holds deployment config.
+type ProjectDeploymentConfigurationResult struct {
+	Deployments          []Deployment
+	DeploymentReferences []Deployment
+}
+
+// ProjectDeployments returns resolved Foundry deployments.
+// It preserves environment references for reconciliation.
+func ProjectDeployments(raw []byte, serviceName string, projectRoot string) ([]Deployment, error) {
+	configuration, err := ProjectDeploymentConfiguration(
+		raw,
+		serviceName,
+		projectRoot,
+	)
+	if err != nil {
 		return nil, err
 	}
-	return svc.Deployments, nil
+	return configuration.Deployments, nil
+}
+
+// ProjectDeploymentReferences returns non-managed references.
+// It preserves environment references for reconciliation.
+func ProjectDeploymentReferences(
+	raw []byte,
+	serviceName string,
+	projectRoot string,
+) ([]Deployment, error) {
+	configuration, err := ProjectDeploymentConfiguration(
+		raw,
+		serviceName,
+		projectRoot,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return configuration.DeploymentReferences, nil
 }
 
 // ResolveDeployments expands references and normalizes capacities.

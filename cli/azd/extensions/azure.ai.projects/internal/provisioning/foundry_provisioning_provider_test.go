@@ -281,6 +281,56 @@ services:
 	require.Equal(t, "https://service.example", connections[0].Target)
 }
 
+func TestInitializeReferenceOnlyProjectRequiresReconciliation(t *testing.T) {
+	t.Parallel()
+
+	projectPath := t.TempDir()
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectPath, "azure.yaml"),
+		[]byte(`
+services:
+  project:
+    host: azure.ai.project
+    endpoint: `+endpoint+`
+    deploymentReferences:
+      - name: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+        model:
+          name: ${AZURE_AI_MODEL_NAME}
+          format: ${AZURE_AI_MODEL_FORMAT}
+          version: ${AZURE_AI_MODEL_VERSION}
+        sku:
+          name: ${AZURE_AI_MODEL_SKU_NAME}
+          capacity: ${AZURE_AI_MODEL_SKU_CAPACITY}
+`),
+		0o600,
+	))
+	projectServer := &validateStubProjectServer{
+		project: &azdext.ProjectConfig{Path: projectPath},
+	}
+	env := &validateStubEnvServer{
+		envName: "test",
+		get: map[string]string{
+			envKeySubscriptionID:       "sub",
+			envKeyLocation:             "eastus",
+			"AZURE_AI_PROJECT_ID":      testFoundryProjectResourceID,
+			"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+		},
+	}
+	client := newValidateTestClient(t, projectServer, env)
+	provider := &FoundryProvisioningProvider{azdClient: client}
+
+	require.NoError(t, provider.Initialize(
+		t.Context(),
+		projectPath,
+		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
+	))
+	assert.False(t, provider.existingProjectConnectionOnly)
+	assert.Equal(t, testFoundryProjectResourceID, provider.existingProjectID)
+	assert.NotNil(t, provider.synthResult)
+	assert.NotContains(t, provider.synthResult.Parameters, "deploymentReferences")
+}
+
 func TestResolveTemplateUsesOnDiskConnectionServiceEnvironment(
 	t *testing.T,
 ) {

@@ -166,6 +166,11 @@ type foundryDeploymentEntry struct {
 	referenceIndex   int
 }
 
+type foundryDeploymentReference struct {
+	ServiceName string
+	Deployment  project.Deployment
+}
+
 // azureYamlServices is the minimal typed structure for parsing deployments from
 // a unified azure.yaml. Only the fields needed for deployment verification are
 // declared; yaml.v3 ignores unrecognized keys.
@@ -202,6 +207,57 @@ func foundryDeployments(content []byte) []foundryDeploymentEntry {
 	return entries
 }
 
+func foundryDeploymentReferences(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+) ([]foundryDeploymentReference, error) {
+	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("reading adopted project services: %w", err)
+	}
+	projectConfig := response.GetProject()
+	if projectConfig == nil {
+		return nil, fmt.Errorf("reading adopted project services: project is missing")
+	}
+
+	serviceNames := slices.Sorted(maps.Keys(projectConfig.GetServices()))
+	references := make([]foundryDeploymentReference, 0)
+	for _, serviceName := range serviceNames {
+		service := projectConfig.GetServices()[serviceName]
+		if service == nil || service.GetHost() != AiProjectHost {
+			continue
+		}
+		rawReferences, err := projectServiceDeploymentValues(
+			ctx,
+			azdClient,
+			serviceName,
+			"deploymentReferences",
+		)
+		if err != nil {
+			return nil, err
+		}
+		deployments, err := resolveProjectDeploymentValues(
+			rawReferences,
+			"deploymentReferences",
+			projectConfig.GetPath(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"reading project service %q deployment references: %w",
+				serviceName,
+				err,
+			)
+		}
+		for _, deployment := range deployments {
+			references = append(references, foundryDeploymentReference{
+				ServiceName: serviceName,
+				Deployment:  deployment,
+			})
+		}
+	}
+	return references, nil
+}
+
 // verifyAzureYamlDeployments checks each model deployment declared in the
 // unified azure.yaml against the selected Foundry project's existing
 // deployments. It prompts the user for each deployment and returns the filtered
@@ -217,7 +273,7 @@ func verifyAzureYamlDeployments(
 	noPrompt bool,
 	modelDeploymentFlag string,
 	modelFlag string,
-) (keptEntries []foundryDeploymentEntry, referencedDeployments []project.Deployment, modified bool, err error) {
+) (keptEntries []foundryDeploymentEntry, referencedDeployments []foundryDeploymentReference, modified bool, err error) {
 	// Get the Foundry project ID from the environment.
 	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
@@ -252,18 +308,21 @@ func verifyAzureYamlDeployments(
 			if strings.EqualFold(d.Name, modelDeploymentFlag) {
 				log.Printf("--model-deployment: using existing deployment '%s' (model: %s, version: %s)",
 					d.Name, d.ModelName, d.Version)
-				referencedDeployments = append(referencedDeployments, project.Deployment{
-					Name: d.Name,
-					Model: project.DeploymentModel{
-						Name:    d.ModelName,
-						Format:  d.ModelFormat,
-						Version: d.Version,
+				referencedDeployments = referencesForSelectedDeployment(
+					entries,
+					project.Deployment{
+						Name: d.Name,
+						Model: project.DeploymentModel{
+							Name:    d.ModelName,
+							Format:  d.ModelFormat,
+							Version: d.Version,
+						},
+						Sku: project.DeploymentSku{
+							Name:     d.SkuName,
+							Capacity: d.SkuCapacity,
+						},
 					},
-					Sku: project.DeploymentSku{
-						Name:     d.SkuName,
-						Capacity: d.SkuCapacity,
-					},
-				})
+				)
 				// All azure.yaml deployments are removed (existing deployment is used instead).
 				return nil, referencedDeployments, true, nil
 			}
@@ -275,9 +334,12 @@ func verifyAzureYamlDeployments(
 		)
 	}
 
-	appendReference := func(deployment project.Deployment) int {
+	appendReference := func(serviceName string, deployment project.Deployment) int {
 		index := len(referencedDeployments)
-		referencedDeployments = append(referencedDeployments, deployment)
+		referencedDeployments = append(referencedDeployments, foundryDeploymentReference{
+			ServiceName: serviceName,
+			Deployment:  deployment,
+		})
 		return index
 	}
 	appendKept := func(
@@ -289,7 +351,7 @@ func verifyAzureYamlDeployments(
 		entry.preserveManifest = preserveManifest
 		entry.referenceIndex = -1
 		if !preserveManifest {
-			entry.referenceIndex = appendReference(deployment)
+			entry.referenceIndex = appendReference(entry.ServiceName, deployment)
 		}
 		keptEntries = append(keptEntries, entry)
 	}
@@ -325,7 +387,7 @@ func verifyAzureYamlDeployments(
 					"--no-prompt: using existing deployment '%s' (version: %s) for model '%s'",
 					name, existing.Version, dep.Model.Name,
 				)
-				appendReference(project.Deployment{
+				appendReference(entry.ServiceName, project.Deployment{
 					Name: name,
 					Model: project.DeploymentModel{
 						Name:    dep.Model.Name,
@@ -415,7 +477,7 @@ func verifyAzureYamlDeployments(
 			case strings.HasPrefix(selected, "use:"):
 				name := strings.TrimPrefix(selected, "use:")
 				existing := matchingDeployments[name]
-				appendReference(project.Deployment{
+				appendReference(entry.ServiceName, project.Deployment{
 					Name: name,
 					Model: project.DeploymentModel{
 						Name:    dep.Model.Name,
@@ -442,7 +504,7 @@ func verifyAzureYamlDeployments(
 					if !isExisting {
 						appendKept(entry, *newDep, false)
 					} else {
-						appendReference(*newDep)
+						appendReference(entry.ServiceName, *newDep)
 					}
 				}
 				modified = true
@@ -511,7 +573,7 @@ func verifyAzureYamlDeployments(
 					if !isExisting {
 						appendKept(entry, *newDep, false)
 					} else {
-						appendReference(*newDep)
+						appendReference(entry.ServiceName, *newDep)
 					}
 				}
 				modified = true
@@ -527,6 +589,30 @@ func verifyAzureYamlDeployments(
 	return keptEntries, referencedDeployments, modified, nil
 }
 
+func referencesForSelectedDeployment(
+	entries []foundryDeploymentEntry,
+	deployment project.Deployment,
+) []foundryDeploymentReference {
+	serviceNames := map[string]struct{}{}
+	for _, entry := range entries {
+		if entry.ServiceName != "" {
+			serviceNames[entry.ServiceName] = struct{}{}
+		}
+	}
+	references := make(
+		[]foundryDeploymentReference,
+		0,
+		len(serviceNames),
+	)
+	for _, serviceName := range slices.Sorted(maps.Keys(serviceNames)) {
+		references = append(references, foundryDeploymentReference{
+			ServiceName: serviceName,
+			Deployment:  deployment,
+		})
+	}
+	return references
+}
+
 // persistAdoptedDeploymentEnvironment persists every selected concrete
 // deployment while preserving the source shape of retained manifest entries.
 func persistAdoptedDeploymentEnvironment(
@@ -535,13 +621,47 @@ func persistAdoptedDeploymentEnvironment(
 	keptEntries []foundryDeploymentEntry,
 	referencedDeployments []project.Deployment,
 ) ([]foundryDeploymentEntry, error) {
-	references, err := persistDeploymentEnvironment(
+	references := make(
+		[]foundryDeploymentReference,
+		len(referencedDeployments),
+	)
+	for i, deployment := range referencedDeployments {
+		references[i].Deployment = deployment
+	}
+	keptEntries, _, err := persistAdoptedDeploymentConfiguration(
 		ctx,
 		setEnv,
-		referencedDeployments,
+		keptEntries,
+		references,
+		nil,
+	)
+	return keptEntries, err
+}
+
+func persistAdoptedDeploymentConfiguration(
+	ctx context.Context,
+	setEnv envValueSetter,
+	keptEntries []foundryDeploymentEntry,
+	referencedDeployments []foundryDeploymentReference,
+	reservedDeployments []project.Deployment,
+) ([]foundryDeploymentEntry, []foundryDeploymentReference, error) {
+	deployments := make([]project.Deployment, len(referencedDeployments))
+	for i, reference := range referencedDeployments {
+		deployments[i] = reference.Deployment
+	}
+	for _, entry := range keptEntries {
+		if entry.preserveManifest {
+			reservedDeployments = append(reservedDeployments, entry.Deployment)
+		}
+	}
+	references, err := persistDeploymentEnvironmentWithReserved(
+		ctx,
+		setEnv,
+		deployments,
+		reservedDeployments,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	for i := range keptEntries {
@@ -550,14 +670,17 @@ func persistAdoptedDeploymentEnvironment(
 		}
 		index := keptEntries[i].referenceIndex
 		if index < 0 || index >= len(references) {
-			return nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"deployment reference index %d is out of range",
 				index,
 			)
 		}
 		keptEntries[i].Deployment = references[index]
 	}
-	return keptEntries, nil
+	for i := range referencedDeployments {
+		referencedDeployments[i].Deployment = references[i]
+	}
+	return keptEntries, referencedDeployments, nil
 }
 
 // promptAlternativeDeployment lets the user browse the model catalog or pick an
@@ -1200,6 +1323,24 @@ func runInitFromAzureYaml(
 	// or skip, we update the on-disk azure.yaml accordingly.
 	deploymentEntries := foundryDeployments(content)
 	if len(deploymentEntries) > 0 && result != nil && result.Credential != nil {
+		manifestDeploymentReferences, err := foundryDeploymentReferences(
+			ctx,
+			azdClient,
+		)
+		if err != nil {
+			return err
+		}
+		reservedDeployments := make(
+			[]project.Deployment,
+			0,
+			len(manifestDeploymentReferences),
+		)
+		for _, reference := range manifestDeploymentReferences {
+			reservedDeployments = append(
+				reservedDeployments,
+				reference.Deployment,
+			)
+		}
 		keptEntries, referencedDeployments, deploymentsModified, err := verifyAzureYamlDeployments(
 			ctx, azdClient, result.Credential, azureContext, env.Name,
 			deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model,
@@ -1236,11 +1377,12 @@ func runInitFromAzureYaml(
 		setEnv := func(ctx context.Context, key, value string) error {
 			return setEnvValue(ctx, azdClient, env.Name, key, value)
 		}
-		keptEntries, err = persistAdoptedDeploymentEnvironment(
+		keptEntries, referencedDeployments, err = persistAdoptedDeploymentConfiguration(
 			ctx,
 			setEnv,
 			keptEntries,
 			referencedDeployments,
+			reservedDeployments,
 		)
 		if err != nil {
 			return fmt.Errorf("persist model deployment environment: %w", err)
@@ -1260,6 +1402,27 @@ func runInitFromAzureYaml(
 				if err := updateAzureYamlDeployments(ctx, azdClient, svcName, deps); err != nil {
 					return err
 				}
+			}
+		}
+
+		referencesByService := make(map[string][]project.Deployment)
+		for _, reference := range referencedDeployments {
+			if reference.ServiceName == "" {
+				return fmt.Errorf("selected model deployment is missing its project service name")
+			}
+			referencesByService[reference.ServiceName] = append(
+				referencesByService[reference.ServiceName],
+				reference.Deployment,
+			)
+		}
+		for _, svcName := range slices.Sorted(maps.Keys(referencesByService)) {
+			if err := mergeProjectServiceDeploymentReferences(
+				ctx,
+				azdClient,
+				svcName,
+				referencesByService[svcName],
+			); err != nil {
+				return err
 			}
 		}
 	}

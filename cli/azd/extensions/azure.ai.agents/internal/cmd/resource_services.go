@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -62,8 +63,36 @@ func emitResourceServices(
 	connections []project.Connection,
 	toolboxes []project.Toolbox,
 ) (int, error) {
+	return emitResourceServicesWithDeploymentReferences(
+		ctx,
+		azdClient,
+		agentServiceName,
+		projectName,
+		projectEndpoint,
+		deployments,
+		nil,
+		connections,
+		toolboxes,
+	)
+}
+
+func emitResourceServicesWithDeploymentReferences(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentServiceName string,
+	projectName string,
+	projectEndpoint string,
+	deployments []project.Deployment,
+	deploymentReferences []project.Deployment,
+	connections []project.Connection,
+	toolboxes []project.Toolbox,
+) (int, error) {
 	var agentUses []string
 	emittedConnections := 0
+	existingProject, err := loadExistingProjectDeploymentConfig(ctx, azdClient)
+	if err != nil {
+		return 0, err
+	}
 
 	// Track every azure.yaml service key we emit so two resource names that
 	// sanitize to the same key (e.g. "my conn" and "myconn") fail fast instead
@@ -91,18 +120,40 @@ func emitResourceServices(
 	// deployments (e.g. "Skip model configuration") -- so every agent has one
 	// project sibling that connections and toolboxes can depend on to enforce
 	// provisioning order. A non-empty endpoint marks an existing project.
-	projectCfg, err := project.MarshalStruct(&project.ServiceTargetAgentConfig{
-		Endpoint:    projectEndpoint,
-		Deployments: deployments,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("marshaling project service config: %w", err)
-	}
 	projectServiceName := resolveProjectServiceKey(ctx, azdClient, projectName, agentServiceName)
+	if existingProject != nil {
+		projectServiceName = existingProject.serviceName
+	}
 	if err := reserveServiceName(usedNames, projectServiceName, "project service"); err != nil {
 		return 0, err
 	}
-	if err := addResourceService(ctx, azdClient, projectServiceName, AiProjectHost, projectCfg, nil); err != nil {
+	if existingProject == nil {
+		projectCfg, err := project.MarshalStruct(&project.ServiceTargetAgentConfig{
+			Endpoint:             projectEndpoint,
+			Deployments:          deployments,
+			DeploymentReferences: deploymentReferences,
+		})
+		if err != nil {
+			return 0, fmt.Errorf("marshaling project service config: %w", err)
+		}
+		if err := addResourceService(
+			ctx,
+			azdClient,
+			projectServiceName,
+			AiProjectHost,
+			projectCfg,
+			nil,
+		); err != nil {
+			return 0, err
+		}
+	} else if err := mergeProjectDeploymentConfig(
+		ctx,
+		azdClient,
+		existingProject,
+		projectEndpoint,
+		deployments,
+		deploymentReferences,
+	); err != nil {
 		return 0, err
 	}
 	agentUses = append(agentUses, projectServiceName)
@@ -175,6 +226,454 @@ func emitResourceServices(
 	}
 
 	return emittedConnections, nil
+}
+
+type projectDeploymentConfig struct {
+	serviceName          string
+	endpoint             string
+	deployments          []project.Deployment
+	deploymentReferences []project.Deployment
+	rawDeployments       []any
+	rawReferences        []any
+}
+
+func loadExistingProjectDeploymentConfig(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+) (*projectDeploymentConfig, error) {
+	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("reading project services: %w", err)
+	}
+	projectConfig := response.GetProject()
+	if projectConfig == nil {
+		return nil, nil
+	}
+
+	serviceName := projectServiceKey(projectConfig)
+	if serviceName == "" {
+		return nil, nil
+	}
+
+	endpoint, err := projectServiceStringValue(
+		ctx,
+		azdClient,
+		serviceName,
+		"endpoint",
+	)
+	if err != nil {
+		return nil, err
+	}
+	rawDeployments, err := projectServiceDeploymentValues(
+		ctx,
+		azdClient,
+		serviceName,
+		"deployments",
+	)
+	if err != nil {
+		return nil, err
+	}
+	rawReferences, err := projectServiceDeploymentValues(
+		ctx,
+		azdClient,
+		serviceName,
+		"deploymentReferences",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	deployments, err := resolveProjectDeploymentValues(
+		rawDeployments,
+		"deployments",
+		projectConfig.GetPath(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"reading project service %q deployments: %w",
+			serviceName,
+			err,
+		)
+	}
+	references, err := resolveProjectDeploymentValues(
+		rawReferences,
+		"deploymentReferences",
+		projectConfig.GetPath(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"reading project service %q deployment references: %w",
+			serviceName,
+			err,
+		)
+	}
+
+	return &projectDeploymentConfig{
+		serviceName:          serviceName,
+		endpoint:             endpoint,
+		deployments:          deployments,
+		deploymentReferences: references,
+		rawDeployments:       rawDeployments,
+		rawReferences:        rawReferences,
+	}, nil
+}
+
+func projectServiceKey(projectConfig *azdext.ProjectConfig) string {
+	if projectConfig == nil {
+		return ""
+	}
+	var keys []string
+	for name, service := range projectConfig.GetServices() {
+		if service.GetHost() == AiProjectHost {
+			keys = append(keys, name)
+		}
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	slices.Sort(keys)
+	return keys[0]
+}
+
+func projectServiceStringValue(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	path string,
+) (string, error) {
+	value, found, err := projectServiceConfigValue(
+		ctx,
+		azdClient,
+		serviceName,
+		path,
+	)
+	if err != nil || !found {
+		return "", err
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf(
+			"project service %q %s must be a string",
+			serviceName,
+			path,
+		)
+	}
+	return text, nil
+}
+
+func projectServiceDeploymentValues(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	path string,
+) ([]any, error) {
+	value, found, err := projectServiceConfigValue(
+		ctx,
+		azdClient,
+		serviceName,
+		path,
+	)
+	if err != nil || !found {
+		return nil, err
+	}
+	values, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf(
+			"project service %q %s must be a list",
+			serviceName,
+			path,
+		)
+	}
+	return values, nil
+}
+
+func projectServiceConfigValue(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	path string,
+) (any, bool, error) {
+	response, err := azdClient.Project().GetServiceConfigValue(
+		ctx,
+		&azdext.GetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        path,
+		},
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf(
+			"reading project service %q %s: %w",
+			serviceName,
+			path,
+			err,
+		)
+	}
+	if !response.GetFound() || response.GetValue() == nil {
+		return nil, false, nil
+	}
+	return response.GetValue().AsInterface(), true, nil
+}
+
+func resolveProjectDeploymentValues(
+	values []any,
+	path string,
+	projectRoot string,
+) ([]project.Deployment, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+
+	config := map[string]any{path: values}
+	if projectRoot != "" {
+		resolved, err := foundry.ResolveFileRefs(config, projectRoot)
+		if err != nil {
+			return nil, err
+		}
+		config = resolved
+	}
+	data, err := json.Marshal(config[path])
+	if err != nil {
+		return nil, fmt.Errorf("encoding %s: %w", path, err)
+	}
+	var deployments []project.Deployment
+	if err := json.Unmarshal(data, &deployments); err != nil {
+		return nil, fmt.Errorf("decoding %s: %w", path, err)
+	}
+	return deployments, nil
+}
+
+func mergeProjectDeploymentConfig(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	existing *projectDeploymentConfig,
+	projectEndpoint string,
+	deployments []project.Deployment,
+	deploymentReferences []project.Deployment,
+) error {
+	if projectEndpoint != "" {
+		if existing.endpoint == "" {
+			if err := setProjectServiceConfigValue(
+				ctx,
+				azdClient,
+				existing.serviceName,
+				"endpoint",
+				projectEndpoint,
+			); err != nil {
+				return err
+			}
+		} else if !strings.EqualFold(
+			strings.TrimSpace(existing.endpoint),
+			strings.TrimSpace(projectEndpoint),
+		) {
+			return fmt.Errorf(
+				"project service %q already targets a different Foundry project",
+				existing.serviceName,
+			)
+		}
+	}
+
+	mergedDeployments, changed, err := mergeProjectDeploymentValues(
+		existing.rawDeployments,
+		existing.deployments,
+		deployments,
+	)
+	if err != nil {
+		return fmt.Errorf("merge project deployments: %w", err)
+	}
+	if changed {
+		if err := setProjectServiceConfigValue(
+			ctx,
+			azdClient,
+			existing.serviceName,
+			"deployments",
+			mergedDeployments,
+		); err != nil {
+			return err
+		}
+	}
+
+	mergedReferences, changed, err := mergeProjectDeploymentValues(
+		existing.rawReferences,
+		existing.deploymentReferences,
+		deploymentReferences,
+	)
+	if err != nil {
+		return fmt.Errorf("merge project deployment references: %w", err)
+	}
+	if changed {
+		if err := setProjectServiceConfigValue(
+			ctx,
+			azdClient,
+			existing.serviceName,
+			"deploymentReferences",
+			mergedReferences,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func mergeProjectServiceDeploymentReferences(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	incoming []project.Deployment,
+) error {
+	if len(incoming) == 0 {
+		return nil
+	}
+	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading project services: %w", err)
+	}
+	projectConfig := response.GetProject()
+	if projectConfig == nil {
+		return fmt.Errorf("reading project services: project is missing")
+	}
+	service := projectConfig.GetServices()[serviceName]
+	if service == nil || service.GetHost() != AiProjectHost {
+		return fmt.Errorf(
+			"project service %q is not an %s service",
+			serviceName,
+			AiProjectHost,
+		)
+	}
+	rawReferences, err := projectServiceDeploymentValues(
+		ctx,
+		azdClient,
+		serviceName,
+		"deploymentReferences",
+	)
+	if err != nil {
+		return err
+	}
+	existing, err := resolveProjectDeploymentValues(
+		rawReferences,
+		"deploymentReferences",
+		projectConfig.GetPath(),
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"reading project service %q deployment references: %w",
+			serviceName,
+			err,
+		)
+	}
+	merged, changed, err := mergeProjectDeploymentValues(
+		rawReferences,
+		existing,
+		incoming,
+	)
+	if err != nil {
+		return fmt.Errorf("merge project deployment references: %w", err)
+	}
+	if !changed {
+		return nil
+	}
+	return setProjectServiceConfigValue(
+		ctx,
+		azdClient,
+		serviceName,
+		"deploymentReferences",
+		merged,
+	)
+}
+
+func mergeProjectDeploymentValues(
+	existingValues []any,
+	existingDeployments []project.Deployment,
+	incoming []project.Deployment,
+) ([]any, bool, error) {
+	merged := slices.Clone(existingValues)
+	known := make(map[string]struct{}, len(existingDeployments)+len(incoming))
+	for i, deployment := range existingDeployments {
+		identity, err := deploymentReferenceIdentity(deployment)
+		if err != nil {
+			return nil, false, fmt.Errorf("existing deployment %d: %w", i+1, err)
+		}
+		known[identity] = struct{}{}
+	}
+
+	changed := false
+	for i, deployment := range incoming {
+		identity, err := deploymentReferenceIdentity(deployment)
+		if err != nil {
+			return nil, false, fmt.Errorf("incoming deployment %d: %w", i+1, err)
+		}
+		if _, exists := known[identity]; exists {
+			continue
+		}
+		value, err := deploymentConfigValue(deployment)
+		if err != nil {
+			return nil, false, err
+		}
+		merged = append(merged, value)
+		known[identity] = struct{}{}
+		changed = true
+	}
+	return merged, changed, nil
+}
+
+func deploymentReferenceIdentity(deployment project.Deployment) (string, error) {
+	index, canonical, err := canonicalDeploymentIndex(deployment)
+	if err != nil {
+		return "", err
+	}
+	if canonical {
+		return fmt.Sprintf("canonical:%d", index), nil
+	}
+	data, err := json.Marshal(deployment)
+	if err != nil {
+		return "", fmt.Errorf("encoding deployment: %w", err)
+	}
+	return string(data), nil
+}
+
+func deploymentConfigValue(deployment project.Deployment) (any, error) {
+	data, err := json.Marshal(deployment)
+	if err != nil {
+		return nil, fmt.Errorf("encoding deployment: %w", err)
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil, fmt.Errorf("decoding deployment: %w", err)
+	}
+	return value, nil
+}
+
+func setProjectServiceConfigValue(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	path string,
+	value any,
+) error {
+	protoValue, err := structpb.NewValue(value)
+	if err != nil {
+		return fmt.Errorf(
+			"encoding project service %q %s: %w",
+			serviceName,
+			path,
+			err,
+		)
+	}
+	if _, err := azdClient.Project().SetServiceConfigValue(
+		ctx,
+		&azdext.SetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        path,
+			Value:       protoValue,
+		},
+	); err != nil {
+		return fmt.Errorf(
+			"setting project service %q %s: %w",
+			serviceName,
+			path,
+			err,
+		)
+	}
+	return nil
 }
 
 func toolboxConnectionReferences(tools []map[string]any) []string {

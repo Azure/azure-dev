@@ -11,9 +11,12 @@ import (
 	"strconv"
 	"strings"
 
+	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/status"
@@ -39,6 +42,29 @@ type deploymentReferences struct {
 	modelVersion   string
 	skuName        string
 	capacity       string
+}
+
+type deploymentEnvironmentEntry struct {
+	deployment synthesis.Deployment
+	references deploymentReferences
+	managed    bool
+}
+
+type deploymentQuotaReservations map[string]float64
+
+type modelDeploymentTarget struct {
+	subscriptionID string
+	resourceGroup  string
+	accountName    string
+}
+
+type foundryModelDeployment struct {
+	name         string
+	modelName    string
+	modelFormat  string
+	modelVersion string
+	skuName      string
+	capacity     int32
 }
 
 func canonicalDeploymentReferences(
@@ -158,26 +184,19 @@ func (p *FoundryProvisioningProvider) reconcileDeploymentEnvironment(
 	serviceName string,
 ) error {
 	p.resolvedDeploymentEnv = nil
-	deployments, err := synthesis.ProjectDeployments(rawYAML, serviceName, p.projectPath)
+	configuration, err := synthesis.ProjectDeploymentConfiguration(
+		rawYAML,
+		serviceName,
+		p.projectPath,
+	)
 	if err != nil {
 		return foundrySynthesisError(serviceName, err)
 	}
-	hasCanonicalDeployment := false
-	for i, deployment := range deployments {
-		_, canonical, err := canonicalDeploymentReferences(deployment)
-		if err != nil {
-			return fmt.Errorf(
-				"validate model deployment %d references: %w",
-				i+1,
-				err,
-			)
-		}
-		if canonical {
-			hasCanonicalDeployment = true
-			break
-		}
+	entries, err := deploymentEnvironmentEntries(configuration)
+	if err != nil {
+		return err
 	}
-	if !hasCanonicalDeployment {
+	if len(entries) == 0 {
 		return nil
 	}
 
@@ -203,19 +222,10 @@ func (p *FoundryProvisioningProvider) reconcileDeploymentEnvironment(
 			}
 		}
 	}
-	for i, deployment := range deployments {
-		references, canonical, err := canonicalDeploymentReferences(deployment)
-		if err != nil {
-			return fmt.Errorf(
-				"validate model deployment %d references: %w",
-				i+1,
-				err,
-			)
-		}
-		if !canonical {
-			continue
-		}
-		keys := references.keys()
+	reservations := deploymentQuotaReservations{}
+	for i, entry := range entries {
+		deploymentIndex := i + 1
+		keys := entry.references.keys()
 
 		missing := make([]string, 0, len(keys))
 		for _, key := range keys {
@@ -225,11 +235,16 @@ func (p *FoundryProvisioningProvider) reconcileDeploymentEnvironment(
 		}
 		issue := deploymentEnvironmentMissing
 		if len(missing) == 0 {
-			valid, err := p.validateDeploymentEnvironment(ctx, references, env)
+			valid, err := p.validateDeploymentEnvironment(
+				ctx,
+				entry,
+				env,
+				reservations,
+			)
 			if err != nil {
 				return fmt.Errorf(
 					"validate model deployment %d environment: %w",
-					i+1,
+					deploymentIndex,
 					err,
 				)
 			}
@@ -240,34 +255,116 @@ func (p *FoundryProvisioningProvider) reconcileDeploymentEnvironment(
 			issue = deploymentEnvironmentIncompatible
 		}
 
-		resolved, err := p.promptDeploymentEnvironment(
-			ctx, deployment, references, i+1, issue, missing, env)
+		var resolved resolvedDeploymentEnvironment
+		if entry.managed {
+			resolved, err = p.promptDeploymentEnvironment(
+				ctx,
+				entry.deployment,
+				entry.references,
+				deploymentIndex,
+				issue,
+				missing,
+				env,
+				reservations,
+			)
+		} else {
+			resolved, err = p.promptExistingDeploymentEnvironment(
+				ctx,
+				entry.references,
+				deploymentIndex,
+				issue,
+				missing,
+			)
+		}
 		if err != nil {
 			return err
 		}
-		values := map[string]string{
-			references.deploymentName: resolved.deploymentName,
-			references.modelName:      resolved.modelName,
-			references.modelFormat:    resolved.modelFormat,
-			references.modelVersion:   resolved.modelVersion,
-			references.skuName:        resolved.skuName,
-			references.capacity:       resolved.capacity,
+		if err := p.persistResolvedDeploymentEnvironment(
+			ctx,
+			deploymentIndex,
+			entry.references,
+			resolved,
+			env,
+		); err != nil {
+			return err
 		}
-		for _, key := range keys {
-			if err := p.setEnv(ctx, key, values[key]); err != nil {
-				return exterrors.Dependency(
-					exterrors.CodeEnvironmentValuesFailed,
-					fmt.Sprintf("persist deployment %d environment value %s: %s", i+1, key, err),
-					"verify the azd environment is writable, then retry",
+	}
+	return nil
+}
+
+func deploymentEnvironmentEntries(
+	configuration synthesis.ProjectDeploymentConfigurationResult,
+) ([]deploymentEnvironmentEntry, error) {
+	entries := make(
+		[]deploymentEnvironmentEntry,
+		0,
+		len(configuration.Deployments)+len(configuration.DeploymentReferences),
+	)
+	entryByKey := map[string]int{}
+	appendEntries := func(deployments []synthesis.Deployment, managed bool) error {
+		for _, deployment := range deployments {
+			references, canonical, err := canonicalDeploymentReferences(deployment)
+			if err != nil {
+				return fmt.Errorf(
+					"validate model deployment %d references: %w",
+					len(entries)+1,
+					err,
 				)
 			}
-			env[key] = values[key]
-			if p.virtualEnv == nil {
-				p.virtualEnv = map[string]string{}
+			if !canonical {
+				continue
 			}
-			p.virtualEnv[key] = values[key]
-			p.resolvedDeploymentEnv[key] = values[key]
+			if index, found := entryByKey[references.deploymentName]; found {
+				entries[index].managed = entries[index].managed || managed
+				continue
+			}
+			entryByKey[references.deploymentName] = len(entries)
+			entries = append(entries, deploymentEnvironmentEntry{
+				deployment: deployment,
+				references: references,
+				managed:    managed,
+			})
 		}
+		return nil
+	}
+	if err := appendEntries(configuration.Deployments, true); err != nil {
+		return nil, err
+	}
+	if err := appendEntries(configuration.DeploymentReferences, false); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func (p *FoundryProvisioningProvider) persistResolvedDeploymentEnvironment(
+	ctx context.Context,
+	deploymentIndex int,
+	references deploymentReferences,
+	resolved resolvedDeploymentEnvironment,
+	env map[string]string,
+) error {
+	values := map[string]string{
+		references.deploymentName: resolved.deploymentName,
+		references.modelName:      resolved.modelName,
+		references.modelFormat:    resolved.modelFormat,
+		references.modelVersion:   resolved.modelVersion,
+		references.skuName:        resolved.skuName,
+		references.capacity:       resolved.capacity,
+	}
+	for _, key := range references.keys() {
+		if err := p.setEnv(ctx, key, values[key]); err != nil {
+			return exterrors.Dependency(
+				exterrors.CodeEnvironmentValuesFailed,
+				fmt.Sprintf("persist deployment %d environment value %s: %s", deploymentIndex, key, err),
+				"verify the azd environment is writable, then retry",
+			)
+		}
+		env[key] = values[key]
+		if p.virtualEnv == nil {
+			p.virtualEnv = map[string]string{}
+		}
+		p.virtualEnv[key] = values[key]
+		p.resolvedDeploymentEnv[key] = values[key]
 	}
 	return nil
 }
@@ -345,11 +442,13 @@ func (p *FoundryProvisioningProvider) promptDeploymentEnvironment(
 	issue deploymentEnvironmentIssue,
 	affectedKeys []string,
 	env map[string]string,
+	reservations deploymentQuotaReservations,
 ) (resolvedDeploymentEnvironment, error) {
+	location := p.modelDeploymentLocation()
 	azureContext := &azdext.AzureContext{
 		Scope: &azdext.AzureScope{
 			SubscriptionId: p.subID,
-			Location:       p.location,
+			Location:       location,
 			TenantId:       p.tenantID,
 		},
 	}
@@ -361,7 +460,7 @@ func (p *FoundryProvisioningProvider) promptDeploymentEnvironment(
 	modelResponse, err := p.azdClient.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
 		AzureContext: azureContext,
 		Filter: &azdext.AiModelFilterOptions{
-			Locations:    []string{p.location},
+			Locations:    []string{location},
 			Capabilities: []string{agentsV2ModelCapability},
 		},
 		Quota:        &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
@@ -372,7 +471,12 @@ func (p *FoundryProvisioningProvider) promptDeploymentEnvironment(
 	})
 	if err != nil {
 		return resolvedDeploymentEnvironment{}, p.deploymentPromptError(
-			err, deploymentIndex, issue, affectedKeys)
+			err,
+			deploymentIndex,
+			issue,
+			affectedKeys,
+			"select a compatible model",
+		)
 	}
 	model := modelResponse.GetModel()
 	if model == nil || strings.TrimSpace(model.GetName()) == "" {
@@ -394,13 +498,41 @@ func (p *FoundryProvisioningProvider) promptDeploymentEnvironment(
 	}
 	if err != nil {
 		return resolvedDeploymentEnvironment{}, p.deploymentPromptError(
-			err, deploymentIndex, issue, affectedKeys)
+			err,
+			deploymentIndex,
+			issue,
+			affectedKeys,
+			"select a compatible model",
+		)
 	}
 	selected := deploymentResponse.GetDeployment()
 	if selected == nil || selected.GetSku() == nil {
 		return resolvedDeploymentEnvironment{}, exterrors.Internal(
 			exterrors.CodeMissingModelDeployment,
 			"model deployment selection returned an empty deployment",
+		)
+	}
+	fitsQuota, err := reserveDeploymentQuota(
+		selected,
+		selected.GetCapacity(),
+		reservations,
+	)
+	if err != nil {
+		return resolvedDeploymentEnvironment{}, fmt.Errorf(
+			"reserve model deployment %d quota: %w",
+			deploymentIndex,
+			err,
+		)
+	}
+	if !fitsQuota {
+		return resolvedDeploymentEnvironment{}, exterrors.Dependency(
+			exterrors.CodeMissingModelDeployment,
+			fmt.Sprintf(
+				"model deployment %d exceeds the remaining quota after "+
+					"other deployments in this environment",
+				deploymentIndex,
+			),
+			"choose a smaller capacity or remove another managed deployment",
 		)
 	}
 
@@ -421,19 +553,126 @@ func (p *FoundryProvisioningProvider) promptDeploymentEnvironment(
 	}, nil
 }
 
+func (p *FoundryProvisioningProvider) promptExistingDeploymentEnvironment(
+	ctx context.Context,
+	references deploymentReferences,
+	deploymentIndex int,
+	issue deploymentEnvironmentIssue,
+	affectedKeys []string,
+) (resolvedDeploymentEnvironment, error) {
+	target, found, err := p.modelDeploymentTarget(ctx)
+	if err != nil {
+		return resolvedDeploymentEnvironment{}, err
+	}
+	if !found {
+		return resolvedDeploymentEnvironment{}, exterrors.Dependency(
+			exterrors.CodeMissingModelDeployment,
+			fmt.Sprintf(
+				"model deployment %d is user-managed and has no target Foundry project",
+				deploymentIndex,
+			),
+			"configure an existing Foundry project endpoint and "+
+				"AZURE_AI_PROJECT_ID, then retry",
+		)
+	}
+	deployments, err := p.listFoundryModelDeployments(ctx, target)
+	if err != nil {
+		return resolvedDeploymentEnvironment{}, err
+	}
+
+	type deploymentChoice struct {
+		label      string
+		deployment foundryModelDeployment
+	}
+	items := make([]deploymentChoice, 0, len(deployments))
+	for _, deployment := range deployments {
+		if deployment.name == "" || deployment.modelName == "" ||
+			deployment.modelFormat == "" || deployment.modelVersion == "" ||
+			deployment.skuName == "" || deployment.capacity <= 0 {
+			continue
+		}
+		items = append(items, deploymentChoice{
+			label: fmt.Sprintf(
+				"%s (%s v%s, %s)",
+				deployment.name,
+				deployment.modelName,
+				deployment.modelVersion,
+				deployment.skuName,
+			),
+			deployment: deployment,
+		})
+	}
+	if len(items) == 0 {
+		return resolvedDeploymentEnvironment{}, exterrors.Dependency(
+			exterrors.CodeMissingModelDeployment,
+			fmt.Sprintf(
+				"target Foundry project has no selectable existing model "+
+					"deployments for deployment %d",
+				deploymentIndex,
+			),
+			"create a compatible deployment in the target Foundry project, "+
+				"then retry",
+		)
+	}
+	slices.SortFunc(items, func(a, b deploymentChoice) int {
+		return strings.Compare(a.label, b.label)
+	})
+	choices := make([]*azdext.SelectChoice, len(items))
+	for i, item := range items {
+		choices[i] = &azdext.SelectChoice{
+			Label: item.label,
+			Value: item.deployment.name,
+		}
+	}
+	defaultIndex := int32(0)
+	response, err := p.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "Select an existing model deployment for this azd environment",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
+	if err != nil {
+		return resolvedDeploymentEnvironment{}, p.deploymentPromptError(
+			err,
+			deploymentIndex,
+			issue,
+			affectedKeys,
+			"select an existing model deployment",
+		)
+	}
+	if response == nil || response.Value == nil ||
+		*response.Value < 0 || int(*response.Value) >= len(items) {
+		return resolvedDeploymentEnvironment{}, exterrors.Internal(
+			exterrors.CodeMissingModelDeployment,
+			"existing model deployment selection returned an invalid value",
+		)
+	}
+	selected := items[*response.Value].deployment
+	return resolvedDeploymentEnvironment{
+		deploymentName: selected.name,
+		modelName:      selected.modelName,
+		modelFormat:    selected.modelFormat,
+		modelVersion:   selected.modelVersion,
+		skuName:        selected.skuName,
+		capacity:       strconv.Itoa(int(selected.capacity)),
+	}, nil
+}
+
 func (p *FoundryProvisioningProvider) promptAiDeployment(
 	ctx context.Context,
 	azureContext *azdext.AzureContext,
 	modelName string,
 	capacity *int32,
 ) (*azdext.PromptAiDeploymentResponse, error) {
+	location := p.modelDeploymentLocation()
 	return p.azdClient.Prompt().PromptAiDeployment(
 		ctx,
 		&azdext.PromptAiDeploymentRequest{
 			AzureContext: azureContext,
 			ModelName:    modelName,
 			Options: &azdext.AiModelDeploymentOptions{
-				Locations: []string{p.location},
+				Locations: []string{location},
 				Capacity:  capacity,
 			},
 			Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
@@ -443,31 +682,104 @@ func (p *FoundryProvisioningProvider) promptAiDeployment(
 
 func (p *FoundryProvisioningProvider) validateDeploymentEnvironment(
 	ctx context.Context,
-	references deploymentReferences,
+	entry deploymentEnvironmentEntry,
 	env map[string]string,
+	reservations deploymentQuotaReservations,
 ) (bool, error) {
+	references := entry.references
+	deploymentName := strings.TrimSpace(env[references.deploymentName])
 	modelName := strings.TrimSpace(env[references.modelName])
 	modelFormat := strings.TrimSpace(env[references.modelFormat])
 	modelVersion := strings.TrimSpace(env[references.modelVersion])
 	skuName := strings.TrimSpace(env[references.skuName])
 	capacityValue, err := strconv.ParseInt(strings.TrimSpace(
 		env[references.capacity]), 10, 32)
-	if err != nil || modelName == "" || modelFormat == "" ||
+	if err != nil || deploymentName == "" || modelName == "" || modelFormat == "" ||
 		modelVersion == "" || skuName == "" || capacityValue <= 0 {
 		return false, nil
 	}
 	capacity := int32(capacityValue)
 
+	configuration := modelDeploymentConfiguration{
+		name:         deploymentName,
+		modelName:    modelName,
+		modelFormat:  modelFormat,
+		modelVersion: modelVersion,
+		skuName:      skuName,
+		capacity:     capacity,
+	}
+	target, hasTarget, err := p.modelDeploymentTarget(ctx)
+	if err != nil {
+		return false, err
+	}
+	if hasTarget {
+		deployments, err := p.listFoundryModelDeployments(ctx, target)
+		if err != nil {
+			return false, err
+		}
+		if existing, found := findFoundryModelDeployment(
+			deployments,
+			configuration.name,
+		); found {
+			if modelDeploymentMatches(existing, configuration) {
+				return true, nil
+			}
+			if !entry.managed {
+				return false, nil
+			}
+			if sameModelDeploymentConfiguration(existing, configuration) {
+				additionalCapacity := configuration.capacity - existing.capacity
+				if additionalCapacity <= 0 {
+					return true, nil
+				}
+				return p.modelDeploymentFitsQuota(
+					ctx,
+					configuration,
+					additionalCapacity,
+					reservations,
+				)
+			}
+		} else if !entry.managed {
+			return false, nil
+		}
+	} else if !entry.managed {
+		return false, nil
+	}
+
+	return p.modelDeploymentFitsQuota(
+		ctx,
+		configuration,
+		configuration.capacity,
+		reservations,
+	)
+}
+
+type modelDeploymentConfiguration struct {
+	name         string
+	modelName    string
+	modelFormat  string
+	modelVersion string
+	skuName      string
+	capacity     int32
+}
+
+func (p *FoundryProvisioningProvider) modelDeploymentFitsQuota(
+	ctx context.Context,
+	configuration modelDeploymentConfiguration,
+	capacity int32,
+	reservations deploymentQuotaReservations,
+) (bool, error) {
+	location := p.modelDeploymentLocation()
 	modelResponse, err := p.azdClient.Ai().ListModels(ctx,
 		&azdext.ListModelsRequest{
 			AzureContext: &azdext.AzureContext{
 				Scope: &azdext.AzureScope{
 					SubscriptionId: p.subID,
-					Location:       p.location,
+					Location:       location,
 				},
 			},
 			Filter: &azdext.AiModelFilterOptions{
-				Locations:    []string{p.location},
+				Locations:    []string{location},
 				Capabilities: []string{agentsV2ModelCapability},
 			},
 		},
@@ -485,7 +797,7 @@ func (p *FoundryProvisioningProvider) validateDeploymentEnvironment(
 	modelAvailable := slices.ContainsFunc(modelResponse.GetModels(),
 		func(model *azdext.AiModel) bool {
 			return model != nil &&
-				strings.EqualFold(model.GetName(), modelName) &&
+				strings.EqualFold(model.GetName(), configuration.modelName) &&
 				slices.Contains(model.GetCapabilities(), agentsV2ModelCapability)
 		})
 	if !modelAvailable {
@@ -497,14 +809,14 @@ func (p *FoundryProvisioningProvider) validateDeploymentEnvironment(
 			AzureContext: &azdext.AzureContext{
 				Scope: &azdext.AzureScope{
 					SubscriptionId: p.subID,
-					Location:       p.location,
+					Location:       location,
 				},
 			},
-			ModelName: modelName,
+			ModelName: configuration.modelName,
 			Options: &azdext.AiModelDeploymentOptions{
-				Locations: []string{p.location},
-				Versions:  []string{modelVersion},
-				Skus:      []string{skuName},
+				Locations: []string{location},
+				Versions:  []string{configuration.modelVersion},
+				Skus:      []string{configuration.skuName},
 				Capacity:  new(capacity),
 			},
 			Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
@@ -521,14 +833,211 @@ func (p *FoundryProvisioningProvider) validateDeploymentEnvironment(
 	}
 
 	for _, candidate := range response.GetDeployments() {
-		if candidate.GetFormat() == modelFormat &&
-			candidate.GetVersion() == modelVersion &&
-			candidate.GetSku().GetName() == skuName &&
+		if candidate.GetFormat() == configuration.modelFormat &&
+			candidate.GetVersion() == configuration.modelVersion &&
+			candidate.GetSku().GetName() == configuration.skuName &&
 			candidate.GetCapacity() == capacity {
-			return true, nil
+			fitsQuota, err := reserveDeploymentQuota(
+				candidate,
+				capacity,
+				reservations,
+			)
+			if err != nil {
+				return false, err
+			}
+			if fitsQuota {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
+}
+
+func (p *FoundryProvisioningProvider) modelDeploymentLocation() string {
+	if location := strings.TrimSpace(p.deploymentLocation); location != "" {
+		return location
+	}
+	return p.location
+}
+
+func reserveDeploymentQuota(
+	deployment *azdext.AiModelDeployment,
+	capacity int32,
+	reservations deploymentQuotaReservations,
+) (bool, error) {
+	if deployment == nil {
+		return false, fmt.Errorf("model deployment quota response is empty")
+	}
+	if capacity <= 0 {
+		return false, fmt.Errorf(
+			"model deployment quota response has invalid capacity %d",
+			capacity,
+		)
+	}
+	if deployment.RemainingQuota == nil {
+		return true, nil
+	}
+	if deployment.GetSku() == nil {
+		return false, fmt.Errorf("model deployment quota response has no SKU")
+	}
+	if reservations == nil {
+		return false, fmt.Errorf("model deployment quota reservations are required")
+	}
+	usageName := strings.TrimSpace(deployment.GetSku().GetUsageName())
+	if usageName == "" {
+		return false, fmt.Errorf(
+			"model deployment quota response has no usage name",
+		)
+	}
+	key := strings.ToLower(usageName)
+	required := reservations[key] + float64(capacity)
+	if required > deployment.GetRemainingQuota() {
+		return false, nil
+	}
+	reservations[key] = required
+	return true, nil
+}
+
+func (p *FoundryProvisioningProvider) modelDeploymentTarget(
+	ctx context.Context,
+) (modelDeploymentTarget, bool, error) {
+	if p.existingProjectID != "" {
+		projectID, err := arm.ParseResourceID(p.existingProjectID)
+		if err != nil || projectID.Parent == nil || projectID.Parent.Name == "" {
+			return modelDeploymentTarget{}, false, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				"AZURE_AI_PROJECT_ID is not a valid Foundry project resource ID",
+				"re-run `azd ai agent init` against the configured existing project",
+			)
+		}
+		return modelDeploymentTarget{
+			subscriptionID: projectID.SubscriptionID,
+			resourceGroup:  projectID.ResourceGroupName,
+			accountName:    projectID.Parent.Name,
+		}, true, nil
+	}
+
+	accountName, err := p.envValue(ctx, envKeyAccountName)
+	if err != nil {
+		return modelDeploymentTarget{}, false, exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf(
+				"read %s from azd environment %q: %s",
+				envKeyAccountName,
+				p.envName,
+				err,
+			),
+			"verify the azd environment is accessible, then retry",
+		)
+	}
+	if accountName == "" || p.subID == "" || p.rgName == "" {
+		return modelDeploymentTarget{}, false, nil
+	}
+	return modelDeploymentTarget{
+		subscriptionID: p.subID,
+		resourceGroup:  p.rgName,
+		accountName:    accountName,
+	}, true, nil
+}
+
+func (p *FoundryProvisioningProvider) listFoundryModelDeployments(
+	ctx context.Context,
+	target modelDeploymentTarget,
+) ([]foundryModelDeployment, error) {
+	if p.modelDeploymentLister != nil {
+		return p.modelDeploymentLister(ctx, target)
+	}
+	if err := p.ensureCredential(ctx); err != nil {
+		return nil, err
+	}
+	client, err := armcognitiveservices.NewDeploymentsClient(
+		target.subscriptionID,
+		p.credential,
+		azure.NewArmClientOptions(),
+	)
+	if err != nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("create Cognitive Services deployments client: %s", err),
+		)
+	}
+
+	var deployments []foundryModelDeployment
+	pager := client.NewListPager(target.resourceGroup, target.accountName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			if isNotFound(err) {
+				return nil, nil
+			}
+			return nil, exterrors.ServiceFromAzure(
+				err,
+				exterrors.OpCognitiveDeploymentList,
+			)
+		}
+		for _, deployment := range page.Value {
+			if deployment == nil {
+				continue
+			}
+			item := foundryModelDeployment{}
+			if deployment.Name != nil {
+				item.name = *deployment.Name
+			}
+			if deployment.Properties != nil && deployment.Properties.Model != nil {
+				model := deployment.Properties.Model
+				if model.Name != nil {
+					item.modelName = *model.Name
+				}
+				if model.Format != nil {
+					item.modelFormat = *model.Format
+				}
+				if model.Version != nil {
+					item.modelVersion = *model.Version
+				}
+			}
+			if deployment.SKU != nil {
+				if deployment.SKU.Name != nil {
+					item.skuName = *deployment.SKU.Name
+				}
+				if deployment.SKU.Capacity != nil {
+					item.capacity = *deployment.SKU.Capacity
+				}
+			}
+			deployments = append(deployments, item)
+		}
+	}
+	return deployments, nil
+}
+
+func findFoundryModelDeployment(
+	deployments []foundryModelDeployment,
+	name string,
+) (foundryModelDeployment, bool) {
+	for _, deployment := range deployments {
+		if strings.EqualFold(deployment.name, name) {
+			return deployment, true
+		}
+	}
+	return foundryModelDeployment{}, false
+}
+
+func modelDeploymentMatches(
+	deployment foundryModelDeployment,
+	configuration modelDeploymentConfiguration,
+) bool {
+	return strings.EqualFold(deployment.name, configuration.name) &&
+		sameModelDeploymentConfiguration(deployment, configuration) &&
+		deployment.capacity == configuration.capacity
+}
+
+func sameModelDeploymentConfiguration(
+	deployment foundryModelDeployment,
+	configuration modelDeploymentConfiguration,
+) bool {
+	return strings.EqualFold(deployment.modelName, configuration.modelName) &&
+		strings.EqualFold(deployment.modelFormat, configuration.modelFormat) &&
+		strings.EqualFold(deployment.modelVersion, configuration.modelVersion) &&
+		strings.EqualFold(deployment.skuName, configuration.skuName)
 }
 
 func hasAiErrorReason(err error, reasons ...string) bool {
@@ -553,6 +1062,7 @@ func (p *FoundryProvisioningProvider) deploymentPromptError(
 	deploymentIndex int,
 	issue deploymentEnvironmentIssue,
 	affectedKeys []string,
+	action string,
 ) error {
 	if exterrors.IsCancellation(err) {
 		return exterrors.Cancelled("model deployment selection was cancelled")
@@ -568,14 +1078,15 @@ func (p *FoundryProvisioningProvider) deploymentPromptError(
 				strings.Join(affectedKeys, ", "),
 			),
 			"set the complete deployment tuple with `azd env set <name> <value>`, "+
-				"or run interactively to select a compatible model",
+				"or run interactively to "+action,
 		)
 	}
 	return exterrors.Dependency(
 		exterrors.CodeMissingModelDeployment,
 		fmt.Sprintf(
-			"select a compatible model for deployment %d with %s "+
+			"%s for deployment %d with %s "+
 				"environment values (%s): %s",
+			action,
 			deploymentIndex,
 			issue,
 			strings.Join(affectedKeys, ", "),

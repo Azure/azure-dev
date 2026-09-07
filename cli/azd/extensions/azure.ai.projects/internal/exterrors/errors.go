@@ -28,6 +28,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -254,10 +255,14 @@ func IsPromptRequired(err error) bool {
 		return false
 	}
 	if grpcStatus, ok := status.FromError(err); ok {
-		return strings.Contains(
-			strings.ToLower(grpcStatus.Message()),
-			"prompt required",
-		)
+		for _, detail := range grpcStatus.Details() {
+			errorInfo, ok := detail.(*errdetails.ErrorInfo)
+			if ok && errorInfo.Domain == azdext.AiErrorDomain &&
+				errorInfo.Reason == azdext.AiErrorReasonInteractiveRequired {
+				return true
+			}
+		}
+		return strings.Contains(strings.ToLower(grpcStatus.Message()), "prompt required")
 	}
 	return strings.Contains(
 		strings.ToLower(err.Error()),

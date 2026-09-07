@@ -44,14 +44,16 @@ var _ azdext.ProvisioningProvider = (*FoundryProvisioningProvider)(nil)
 
 // Env keys consumed and produced by the Foundry provisioning provider.
 const (
-	envKeySubscriptionID = "AZURE_SUBSCRIPTION_ID"
-	envKeyLocation       = "AZURE_LOCATION"
-	envKeyResourceGroup  = "AZURE_RESOURCE_GROUP"
-	envKeyFoundryRG      = "AZURE_FOUNDRY_RESOURCE_GROUP"
-	envKeyFoundryRGOwner = "AZD_FOUNDRY_RESOURCE_GROUP_ID"
-	envKeyTenantID       = "AZURE_TENANT_ID"
-	envKeyProjectName    = "AZURE_AI_PROJECT_NAME"
-	envKeyPrincipalID    = "AZURE_PRINCIPAL_ID"
+	envKeySubscriptionID     = "AZURE_SUBSCRIPTION_ID"
+	envKeyLocation           = "AZURE_LOCATION"
+	envKeyDeploymentLocation = "AZURE_AI_DEPLOYMENTS_LOCATION"
+	envKeyResourceGroup      = "AZURE_RESOURCE_GROUP"
+	envKeyFoundryRG          = "AZURE_FOUNDRY_RESOURCE_GROUP"
+	envKeyFoundryRGOwner     = "AZD_FOUNDRY_RESOURCE_GROUP_ID"
+	envKeyTenantID           = "AZURE_TENANT_ID"
+	envKeyAccountName        = "AZURE_AI_ACCOUNT_NAME"
+	envKeyProjectName        = "AZURE_AI_PROJECT_NAME"
+	envKeyPrincipalID        = "AZURE_PRINCIPAL_ID"
 )
 
 const (
@@ -85,6 +87,7 @@ type FoundryProvisioningProvider struct {
 	envName                     string
 	subID                       string
 	location                    string
+	deploymentLocation          string
 	rgName                      string
 	rgExplicit                  bool // active resource-group env key came from env, not the default
 	foundryRGOwnerID            string
@@ -108,6 +111,10 @@ type FoundryProvisioningProvider struct {
 	existingAcrPullAssigned       bool
 	resourceTokenSalt             string
 	resourceGroupState            func(context.Context) (map[string]*string, bool, error)
+	modelDeploymentLister         func(
+		context.Context,
+		modelDeploymentTarget,
+	) ([]foundryModelDeployment, error)
 
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
@@ -347,7 +354,16 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if synthErr != nil {
 			return foundrySynthesisError(svcName, synthErr)
 		}
-		if !existingProjectHasMutations(connectionOnlyResult) {
+		deploymentReferences, referencesErr := synthesis.ProjectDeploymentReferences(
+			rawYAML,
+			svcName,
+			projectRoot,
+		)
+		if referencesErr != nil {
+			return foundrySynthesisError(svcName, referencesErr)
+		}
+		if !existingProjectHasMutations(connectionOnlyResult) &&
+			len(deploymentReferences) == 0 {
 			p.brownfieldEndpoint = endpoint
 			p.existingProjectConnectionOnly = true
 			p.synthResult = connectionOnlyResult
@@ -990,6 +1006,21 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 		if err := p.promptLocation(ctx); err != nil {
 			return err
 		}
+	}
+	if p.deploymentLocation, err = get(envKeyDeploymentLocation); err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf(
+				"read %s from azd environment %q: %s",
+				envKeyDeploymentLocation,
+				p.envName,
+				err,
+			),
+			"verify the azd environment is accessible, then retry",
+		)
+	}
+	if p.deploymentLocation == "" {
+		p.deploymentLocation = p.location
 	}
 
 	rgKey := envKeyResourceGroup

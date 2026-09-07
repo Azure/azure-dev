@@ -31,6 +31,39 @@ services:
 
 When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
 
+### Managed deployments and references
+
+`deployments` is azd-managed desired state: provisioning can create or update
+those deployments. `deploymentReferences` is for user-owned deployments that
+an agent should use without transferring ownership to azd. Reference metadata
+is used only to resolve and validate the selected deployment for the active
+environment; it never creates, updates, or deletes an Azure deployment.
+
+For example, keep a deployment managed by another process outside of
+`deployments`:
+
+```yaml
+services:
+  my-project:
+    host: azure.ai.project
+    endpoint: https://my-account.services.ai.azure.com/api/projects/my-project
+    deploymentReferences:
+      - name: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+        model:
+          name: ${AZURE_AI_MODEL_NAME}
+          format: ${AZURE_AI_MODEL_FORMAT}
+          version: ${AZURE_AI_MODEL_VERSION}
+        sku:
+          name: ${AZURE_AI_MODEL_SKU_NAME}
+          capacity: ${AZURE_AI_MODEL_SKU_CAPACITY}
+```
+
+Each azd environment resolves its own complete tuple. A reference-only
+configuration requires an existing target Foundry project and a deployment
+already present in that account. If the active environment has no matching
+tuple, interactive provisioning lets you select an existing target deployment;
+it does not offer to create one.
+
 Hosted-agent initialization stores generated deployment settings in the active
 azd environment and writes references into `azure.yaml`. The first deployment
 uses these keys; additional deployments use `_2`, `_3`, and so on:
@@ -49,10 +82,13 @@ region, model catalog, and remaining quota. If the tuple is missing or no
 longer compatible, interactive provisioning selects and persists a replacement.
 Static literal deployments and custom environment references remain supported.
 
-To reconcile deployments, connections, or a pending container registry on an existing project, set the project's full ARM resource ID in the active azd environment:
+To reconcile deployments, deployment references, connections, or a pending
+container registry on an existing project, set the project's full ARM resource
+ID and matching endpoint in the active azd environment:
 
 ```sh
 azd env set AZURE_AI_PROJECT_ID "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>"
+azd env set FOUNDRY_PROJECT_ENDPOINT "https://<account>.services.ai.azure.com/api/projects/<project>"
 ```
 
 `azd ai agent init` sets this value when initialized against an existing project. An endpoint-only service with no resources to reconcile does not require it.

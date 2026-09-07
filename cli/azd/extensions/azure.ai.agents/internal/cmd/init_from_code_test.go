@@ -12,8 +12,10 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -492,6 +494,70 @@ func TestInitFromCodeAddToProjectRejectsUnqualifiedImage(t *testing.T) {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	require.Empty(t, server.added)
+}
+
+func TestInitFromCodeAddToProjectWritesExistingDeploymentReference(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	const envName = "test"
+	server := &recordingProjectServer{}
+	env := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	client := newProjectRecorderClient(t, server, env)
+	action := &InitFromCodeAction{
+		azdClient:     client,
+		projectConfig: &azdext.ProjectConfig{Path: t.TempDir()},
+		environment:   &azdext.Environment{Name: envName},
+		selectedFoundryProject: &FoundryProjectInfo{
+			AccountName: "account",
+			ProjectName: "project",
+		},
+		deploymentReferences: []project.Deployment{{
+			Name:  "existing-chat",
+			Model: project.DeploymentModel{Name: "gpt-4.1", Format: "OpenAI", Version: "1"},
+			Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+		}},
+		flags: &initFlags{},
+	}
+	definition := &agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "my-agent",
+		},
+	}
+
+	require.NoError(t, action.addToProject(
+		t.Context(),
+		"src/my-agent",
+		definition,
+		true,
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.added, 2)
+	projectService := server.added[1]
+	assert.Equal(t, AiProjectHost, projectService.GetHost())
+	properties := projectService.GetAdditionalProperties().AsMap()
+	assert.NotContains(t, properties, "deployments")
+	references, ok := properties["deploymentReferences"].([]any)
+	require.True(t, ok)
+	require.Len(t, references, 1)
+	reference, ok := references[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(
+		t,
+		"${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+		reference["name"],
+	)
+	assert.Equal(
+		t,
+		"existing-chat",
+		env.values[envName]["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
+	)
 }
 
 func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *testing.T) {

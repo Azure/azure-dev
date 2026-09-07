@@ -861,8 +861,10 @@ func (a *InitFromCodeAction) addToProject(
 		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
 	}
 	var err error
-	agentConfig.Deployments, err = persistDeploymentConfigurations(
+	deploymentConfig, err := persistProjectDeploymentConfigurations(
 		ctx,
+		a.azdClient,
+		environmentName(a.environment),
 		setEnv,
 		a.deploymentReferences,
 		a.deploymentReferenceIndices,
@@ -871,6 +873,14 @@ func (a *InitFromCodeAction) addToProject(
 	if err != nil {
 		return fmt.Errorf("persist model deployment environment: %w", err)
 	}
+	if err := rewriteContainerDeploymentReferences(
+		definition,
+		deploymentConfig.allReferences,
+	); err != nil {
+		return fmt.Errorf("rewrite agent model deployment references: %w", err)
+	}
+	agentConfig.Deployments = deploymentConfig.managed
+	agentConfig.DeploymentReferences = deploymentConfig.references
 
 	// Detect startup command only for source-container deploys. Code deploy and
 	// pre-built images do not use it.
@@ -885,7 +895,9 @@ func (a *InitFromCodeAction) addToProject(
 	// Move the model deployments out of the agent config into a sibling
 	// azure.ai.project service, emitted after the agent service below.
 	resourceDeployments := agentConfig.Deployments
+	resourceDeploymentReferences := agentConfig.DeploymentReferences
 	agentConfig.Deployments = nil
+	agentConfig.DeploymentReferences = nil
 
 	// Embed the agent definition (formerly written to agent.yaml) as
 	// service-level properties on the azure.ai.agent entry, merged with the
@@ -954,11 +966,11 @@ func (a *InitFromCodeAction) addToProject(
 	// Emit the sibling azure.ai.project service carrying the model deployments
 	// and wire the agent's uses: to it. A selected existing project contributes
 	// its endpoint so provision reuses it instead of creating a new project.
-	if _, err := emitResourceServices(
+	if _, err := emitResourceServicesWithDeploymentReferences(
 		ctx, a.azdClient, agentServiceName,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
 		a.selectedFoundryProject.Endpoint(),
-		resourceDeployments, nil, nil,
+		resourceDeployments, resourceDeploymentReferences, nil, nil,
 	); err != nil {
 		return err
 	}

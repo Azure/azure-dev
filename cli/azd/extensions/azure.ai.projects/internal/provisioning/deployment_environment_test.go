@@ -4,9 +4,12 @@
 package provisioning
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -136,6 +139,53 @@ func TestReconcileDeploymentEnvironmentKeepsValidTuple(t *testing.T) {
 	assert.Equal(t, "gpt-5-mini", ai.requests[0].GetModelName())
 	assert.Empty(t, prompt.modelRequests)
 	assert.Empty(t, env.set)
+}
+
+func TestReconcileDeploymentEnvironmentUsesDeploymentLocation(t *testing.T) {
+	env := &resolveEnvStubEnvServer{
+		envName: "test",
+		get:     validDeploymentEnvironment(),
+	}
+	prompt := &resolveEnvStubPromptServer{}
+	ai := &resolveEnvStubAiServer{
+		deployments: []*azdext.AiModelDeployment{validDeployment()},
+	}
+	client := newResolveEnvTestClient(t, env, prompt, ai)
+	provider := &FoundryProvisioningProvider{
+		azdClient:          client,
+		projectPath:        t.TempDir(),
+		envName:            "test",
+		subID:              "sub",
+		location:           "eastus2",
+		deploymentLocation: "westus3",
+	}
+
+	require.NoError(t, provider.reconcileDeploymentEnvironment(
+		t.Context(), []byte(deploymentReferenceYAML), "project",
+	))
+
+	require.Len(t, ai.listRequests, 1)
+	assert.Equal(
+		t,
+		"westus3",
+		ai.listRequests[0].GetAzureContext().GetScope().GetLocation(),
+	)
+	assert.Equal(
+		t,
+		[]string{"westus3"},
+		ai.listRequests[0].GetFilter().GetLocations(),
+	)
+	require.Len(t, ai.requests, 1)
+	assert.Equal(
+		t,
+		"westus3",
+		ai.requests[0].GetAzureContext().GetScope().GetLocation(),
+	)
+	assert.Equal(
+		t,
+		[]string{"westus3"},
+		ai.requests[0].GetOptions().GetLocations(),
+	)
 }
 
 func TestReconcileDeploymentEnvironmentPrefersActiveValues(
@@ -458,6 +508,368 @@ func TestReconcileDeploymentEnvironmentValidatesIndexedTuples(t *testing.T) {
 		ai.requests[1].GetModelName())
 	assert.Empty(t, prompt.modelRequests)
 }
+
+func TestReconcileDeploymentEnvironmentSelectsExistingReference(
+	t *testing.T,
+) {
+	env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{}}
+	prompt := &resolveEnvStubPromptServer{selectValue: new(int32(0))}
+	client := newResolveEnvTestClient(t, env, prompt)
+	provider := &FoundryProvisioningProvider{
+		azdClient:         client,
+		projectPath:       t.TempDir(),
+		envName:           "test",
+		subID:             "sub",
+		location:          "eastus2",
+		existingProjectID: testFoundryProjectResourceID,
+		modelDeploymentLister: func(
+			_ context.Context,
+			target modelDeploymentTarget,
+		) ([]foundryModelDeployment, error) {
+			assert.Equal(t, "sub", target.subscriptionID)
+			assert.Equal(t, "rg", target.resourceGroup)
+			assert.Equal(t, "account", target.accountName)
+			return []foundryModelDeployment{{
+				name:         "existing-chat",
+				modelName:    "gpt-5-mini",
+				modelFormat:  "OpenAI",
+				modelVersion: "2025-08-07",
+				skuName:      "GlobalStandard",
+				capacity:     50,
+			}}, nil
+		},
+	}
+	raw := []byte(strings.Replace(
+		deploymentReferenceYAML,
+		"deployments:",
+		"deploymentReferences:",
+		1,
+	))
+
+	require.NoError(t, provider.reconcileDeploymentEnvironment(
+		t.Context(), raw, "project",
+	))
+
+	assert.Equal(t, "existing-chat", env.set["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
+	assert.Equal(t, "gpt-5-mini", env.set["AZURE_AI_MODEL_NAME"])
+	assert.Equal(t, "50", env.set["AZURE_AI_MODEL_SKU_CAPACITY"])
+	assert.Empty(t, prompt.modelRequests)
+	assert.Empty(t, prompt.deployRequests)
+	require.Len(t, prompt.selectRequests, 1)
+	assert.Equal(
+		t,
+		"Select an existing model deployment for this azd environment",
+		prompt.selectRequests[0].GetOptions().GetMessage(),
+	)
+}
+
+func TestReconcileDeploymentEnvironmentReferenceRequiresTarget(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{}}
+	prompt := &resolveEnvStubPromptServer{}
+	client := newResolveEnvTestClient(t, env, prompt)
+	provider := &FoundryProvisioningProvider{
+		azdClient:   client,
+		projectPath: t.TempDir(),
+		envName:     "test",
+		subID:       "sub",
+		location:    "eastus2",
+	}
+	raw := []byte(strings.Replace(
+		deploymentReferenceYAML,
+		"deployments:",
+		"deploymentReferences:",
+		1,
+	))
+
+	err := provider.reconcileDeploymentEnvironment(t.Context(), raw, "project")
+
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Equal(t, exterrors.CodeMissingModelDeployment, local.Code)
+	assert.Contains(t, local.Message, "has no target Foundry project")
+	assert.Empty(t, prompt.selectRequests)
+}
+
+func TestReconcileDeploymentEnvironmentMapsStructuredNoPromptError(
+	t *testing.T,
+) {
+	env := &resolveEnvStubEnvServer{envName: "ci", get: map[string]string{}}
+	prompt := &resolveEnvStubPromptServer{
+		selectErr: aiReasonError(
+			t,
+			codes.FailedPrecondition,
+			azdext.AiErrorReasonInteractiveRequired,
+		),
+	}
+	client := newResolveEnvTestClient(t, env, prompt)
+	provider := &FoundryProvisioningProvider{
+		azdClient:         client,
+		projectPath:       t.TempDir(),
+		envName:           "ci",
+		subID:             "sub",
+		location:          "eastus2",
+		existingProjectID: testFoundryProjectResourceID,
+		modelDeploymentLister: func(
+			context.Context,
+			modelDeploymentTarget,
+		) ([]foundryModelDeployment, error) {
+			return []foundryModelDeployment{{
+				name:         "existing-chat",
+				modelName:    "gpt-5-mini",
+				modelFormat:  "OpenAI",
+				modelVersion: "2025-08-07",
+				skuName:      "GlobalStandard",
+				capacity:     50,
+			}}, nil
+		},
+	}
+	raw := []byte(strings.Replace(
+		deploymentReferenceYAML,
+		"deployments:",
+		"deploymentReferences:",
+		1,
+	))
+
+	err := provider.reconcileDeploymentEnvironment(t.Context(), raw, "project")
+
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Equal(t, exterrors.CodeMissingModelDeployment, local.Code)
+	assert.Contains(t, local.Message, "are missing")
+	assert.Contains(t, local.Suggestion, "existing model deployment")
+}
+
+func TestReconcileDeploymentEnvironmentKeepsExistingManagedDeployment(
+	t *testing.T,
+) {
+	envValues := validDeploymentEnvironment()
+	envValues[envKeyAccountName] = "account"
+	env := &resolveEnvStubEnvServer{envName: "test", get: envValues}
+	prompt := &resolveEnvStubPromptServer{}
+	ai := &resolveEnvStubAiServer{}
+	client := newResolveEnvTestClient(t, env, prompt, ai)
+	provider := &FoundryProvisioningProvider{
+		azdClient:   client,
+		projectPath: t.TempDir(),
+		envName:     "test",
+		subID:       "sub",
+		location:    "eastus2",
+		rgName:      "rg",
+		modelDeploymentLister: func(
+			context.Context,
+			modelDeploymentTarget,
+		) ([]foundryModelDeployment, error) {
+			return []foundryModelDeployment{{
+				name:         "chat",
+				modelName:    "gpt-5-mini",
+				modelFormat:  "OpenAI",
+				modelVersion: "2025-08-07",
+				skuName:      "GlobalStandard",
+				capacity:     50,
+			}}, nil
+		},
+	}
+
+	require.NoError(t, provider.reconcileDeploymentEnvironment(
+		t.Context(), []byte(deploymentReferenceYAML), "project",
+	))
+
+	assert.Empty(t, ai.requests)
+	assert.Empty(t, prompt.modelRequests)
+	assert.Empty(t, env.set)
+}
+
+func TestReconcileDeploymentEnvironmentChecksOnlyCapacityIncrease(
+	t *testing.T,
+) {
+	envValues := validDeploymentEnvironment()
+	envValues[envKeyAccountName] = "account"
+	env := &resolveEnvStubEnvServer{envName: "test", get: envValues}
+	prompt := &resolveEnvStubPromptServer{}
+	ai := &resolveEnvStubAiServer{
+		deployments: []*azdext.AiModelDeployment{{
+			ModelName: "gpt-5-mini",
+			Format:    "OpenAI",
+			Version:   "2025-08-07",
+			Sku:       &azdext.AiModelSku{Name: "GlobalStandard"},
+			Capacity:  10,
+		}},
+	}
+	client := newResolveEnvTestClient(t, env, prompt, ai)
+	provider := &FoundryProvisioningProvider{
+		azdClient:   client,
+		projectPath: t.TempDir(),
+		envName:     "test",
+		subID:       "sub",
+		location:    "eastus2",
+		rgName:      "rg",
+		modelDeploymentLister: func(
+			context.Context,
+			modelDeploymentTarget,
+		) ([]foundryModelDeployment, error) {
+			return []foundryModelDeployment{{
+				name:         "chat",
+				modelName:    "gpt-5-mini",
+				modelFormat:  "OpenAI",
+				modelVersion: "2025-08-07",
+				skuName:      "GlobalStandard",
+				capacity:     40,
+			}}, nil
+		},
+	}
+
+	require.NoError(t, provider.reconcileDeploymentEnvironment(
+		t.Context(), []byte(deploymentReferenceYAML), "project",
+	))
+
+	require.Len(t, ai.requests, 1)
+	assert.EqualValues(t, 10, ai.requests[0].GetOptions().GetCapacity())
+	assert.Empty(t, prompt.modelRequests)
+	assert.Empty(t, env.set)
+}
+
+func TestValidateDeploymentEnvironmentReservesSharedQuota(t *testing.T) {
+	remainingQuota := float64(50)
+	ai := &resolveEnvStubAiServer{
+		deployments: []*azdext.AiModelDeployment{{
+			ModelName: "gpt-5-mini",
+			Format:    "OpenAI",
+			Version:   "2025-08-07",
+			Sku: &azdext.AiModelSku{
+				Name:      "GlobalStandard",
+				UsageName: "OpenAI.GlobalStandard.gpt-5-mini",
+			},
+			Capacity:       30,
+			RemainingQuota: &remainingQuota,
+		}},
+	}
+	client := newResolveEnvTestClient(
+		t,
+		&resolveEnvStubEnvServer{envName: "test", get: validDeploymentEnvironment()},
+		&resolveEnvStubPromptServer{},
+		ai,
+	)
+	provider := &FoundryProvisioningProvider{
+		azdClient:   client,
+		projectPath: t.TempDir(),
+		envName:     "test",
+		subID:       "sub",
+		location:    "eastus2",
+	}
+	references := deploymentReferences{
+		deploymentName: "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+		modelName:      "AZURE_AI_MODEL_NAME",
+		modelFormat:    "AZURE_AI_MODEL_FORMAT",
+		modelVersion:   "AZURE_AI_MODEL_VERSION",
+		skuName:        "AZURE_AI_MODEL_SKU_NAME",
+		capacity:       "AZURE_AI_MODEL_SKU_CAPACITY",
+	}
+	env := validDeploymentEnvironment()
+	env[references.capacity] = "30"
+	entry := deploymentEnvironmentEntry{
+		references: references,
+		managed:    true,
+	}
+	reservations := deploymentQuotaReservations{}
+
+	valid, err := provider.validateDeploymentEnvironment(
+		t.Context(),
+		entry,
+		env,
+		reservations,
+	)
+
+	require.NoError(t, err)
+	assert.True(t, valid)
+	assert.Equal(
+		t,
+		float64(30),
+		reservations["openai.globalstandard.gpt-5-mini"],
+	)
+
+	valid, err = provider.validateDeploymentEnvironment(
+		t.Context(),
+		entry,
+		env,
+		reservations,
+	)
+
+	require.NoError(t, err)
+	assert.False(t, valid)
+}
+
+func TestPromptDeploymentEnvironmentReservesSharedQuota(t *testing.T) {
+	remainingQuota := float64(50)
+	prompt := &resolveEnvStubPromptServer{
+		model: &azdext.AiModel{Name: "gpt-5-mini", Format: "OpenAI"},
+		deployment: &azdext.AiModelDeployment{
+			ModelName: "gpt-5-mini",
+			Format:    "OpenAI",
+			Version:   "2025-08-07",
+			Sku: &azdext.AiModelSku{
+				Name:      "GlobalStandard",
+				UsageName: "OpenAI.GlobalStandard.gpt-5-mini",
+			},
+			Capacity:       30,
+			RemainingQuota: &remainingQuota,
+		},
+	}
+	client := newResolveEnvTestClient(
+		t,
+		&resolveEnvStubEnvServer{envName: "test", get: map[string]string{}},
+		prompt,
+	)
+	provider := &FoundryProvisioningProvider{
+		azdClient:   client,
+		projectPath: t.TempDir(),
+		envName:     "test",
+		subID:       "sub",
+		location:    "eastus2",
+	}
+	references := deploymentReferences{
+		deploymentName: "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+		modelName:      "AZURE_AI_MODEL_NAME",
+		modelFormat:    "AZURE_AI_MODEL_FORMAT",
+		modelVersion:   "AZURE_AI_MODEL_VERSION",
+		skuName:        "AZURE_AI_MODEL_SKU_NAME",
+		capacity:       "AZURE_AI_MODEL_SKU_CAPACITY",
+	}
+	reservations := deploymentQuotaReservations{}
+
+	_, err := provider.promptDeploymentEnvironment(
+		t.Context(),
+		synthesis.Deployment{},
+		references,
+		1,
+		deploymentEnvironmentMissing,
+		references.keys(),
+		map[string]string{},
+		reservations,
+	)
+
+	require.NoError(t, err)
+
+	_, err = provider.promptDeploymentEnvironment(
+		t.Context(),
+		synthesis.Deployment{},
+		references,
+		2,
+		deploymentEnvironmentMissing,
+		references.keys(),
+		map[string]string{},
+		reservations,
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds the remaining quota")
+}
+
+const testFoundryProjectResourceID = "/subscriptions/sub/resourceGroups/rg/" +
+	"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
 
 func validDeploymentEnvironment() map[string]string {
 	return map[string]string{

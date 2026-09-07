@@ -514,6 +514,7 @@ type recordingProjectServer struct {
 	// simulate a service that already carries an env section (raw,
 	// on-disk templates).
 	rawEnv                map[string]map[string]any
+	rawConfig             map[string]map[string]any
 	projectPath           string
 	nilProject            bool
 	getProjectErr         error
@@ -559,6 +560,18 @@ func (s *recordingProjectServer) GetServiceConfigValue(
 ) (*azdext.GetServiceConfigValueResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if values := s.rawConfig[req.ServiceName]; values != nil {
+		if raw, found := values[req.Path]; found {
+			value, err := structpb.NewValue(raw)
+			if err != nil {
+				return nil, err
+			}
+			return &azdext.GetServiceConfigValueResponse{
+				Found: true,
+				Value: value,
+			}, nil
+		}
+	}
 	if req.Path == "env" {
 		if raw, ok := s.rawEnv[req.ServiceName]; ok {
 			value, err := structpb.NewValue(raw)
@@ -615,6 +628,13 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 			}
 		}
 	} else if req.Value != nil {
+		if s.rawConfig == nil {
+			s.rawConfig = map[string]map[string]any{}
+		}
+		if s.rawConfig[req.ServiceName] == nil {
+			s.rawConfig[req.ServiceName] = map[string]any{}
+		}
+		s.rawConfig[req.ServiceName][req.Path] = req.Value.AsInterface()
 		if str, ok := req.Value.AsInterface().(string); ok {
 			s.configValues[req.Path] = configValueRecord{
 				serviceName: req.ServiceName,
@@ -661,11 +681,15 @@ func (s *recordingProjectServer) UnsetServiceConfig(
 func newProjectRecorderClient(
 	t *testing.T,
 	server azdext.ProjectServiceServer,
+	environment ...azdext.EnvironmentServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, server)
+	if len(environment) > 0 {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, environment[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -925,6 +949,169 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 	})
 }
 
+func TestEmitResourceServicesMergesExistingDeploymentConfig(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "deployments"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "deployments", "chat.yaml"),
+		[]byte(
+			"name: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}\n"+
+				"model:\n"+
+				"  name: ${AZURE_AI_MODEL_NAME}\n"+
+				"  format: ${AZURE_AI_MODEL_FORMAT}\n"+
+				"  version: ${AZURE_AI_MODEL_VERSION}\n"+
+				"sku:\n"+
+				"  name: ${AZURE_AI_MODEL_SKU_NAME}\n"+
+				"  capacity: ${AZURE_AI_MODEL_SKU_CAPACITY}\n",
+		),
+		0o600,
+	))
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	server := &recordingProjectServer{
+		projectPath: root,
+		existing: map[string]*azdext.ServiceConfig{
+			"foundry": {Name: "foundry", Host: AiProjectHost},
+		},
+		rawConfig: map[string]map[string]any{
+			"foundry": {
+				"endpoint": endpoint,
+				"custom":   "keep-me",
+				"deployments": []any{
+					map[string]any{"$ref": "./deployments/chat.yaml"},
+				},
+				"deploymentReferences": []any{
+					map[string]any{"$ref": "./deployments/chat.yaml"},
+				},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+	newDeployment := project.Deployment{
+		Name: "${AZURE_AI_MODEL_DEPLOYMENT_NAME_2}",
+		Model: project.DeploymentModel{
+			Name:    "${AZURE_AI_MODEL_NAME_2}",
+			Format:  "${AZURE_AI_MODEL_FORMAT_2}",
+			Version: "${AZURE_AI_MODEL_VERSION_2}",
+		},
+		Sku: project.DeploymentSku{
+			Name:     "${AZURE_AI_MODEL_SKU_NAME_2}",
+			Capacity: "${AZURE_AI_MODEL_SKU_CAPACITY_2}",
+		},
+	}
+
+	for range 2 {
+		_, err := emitResourceServicesWithDeploymentReferences(
+			t.Context(),
+			client,
+			"agent",
+			"ignored-project-name",
+			endpoint,
+			[]project.Deployment{newDeployment},
+			[]project.Deployment{newDeployment},
+			nil,
+			nil,
+		)
+		require.NoError(t, err)
+	}
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	assert.Empty(t, server.added)
+	assert.Equal(t, endpoint, server.rawConfig["foundry"]["endpoint"])
+	assert.Equal(t, "keep-me", server.rawConfig["foundry"]["custom"])
+	for _, path := range []string{"deployments", "deploymentReferences"} {
+		values, ok := server.rawConfig["foundry"][path].([]any)
+		require.True(t, ok)
+		require.Len(t, values, 2)
+		assert.Equal(
+			t,
+			map[string]any{"$ref": "./deployments/chat.yaml"},
+			values[0],
+		)
+		deployment, ok := values[1].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(
+			t,
+			"${AZURE_AI_MODEL_DEPLOYMENT_NAME_2}",
+			deployment["name"],
+		)
+	}
+}
+
+func TestMergeProjectServiceDeploymentReferencesRejectsNonProjectService(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent": {Name: "agent", Host: AiAgentHost},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := mergeProjectServiceDeploymentReferences(
+		t.Context(),
+		client,
+		"agent",
+		[]project.Deployment{{
+			Name:  "existing-chat",
+			Model: project.DeploymentModel{Name: "gpt-4.1", Format: "OpenAI", Version: "1"},
+			Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+		}},
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not an azure.ai.project service")
+	assert.Empty(t, server.rawConfig)
+}
+
+func TestMergeProjectServiceDeploymentReferencesKeepsOtherProjectsUntouched(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"project-a": {Name: "project-a", Host: AiProjectHost},
+			"project-b": {Name: "project-b", Host: AiProjectHost},
+		},
+		rawConfig: map[string]map[string]any{
+			"project-a": {
+				"deploymentReferences": []any{
+					map[string]any{"name": "reference-a"},
+				},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	require.NoError(t, mergeProjectServiceDeploymentReferences(
+		t.Context(),
+		client,
+		"project-b",
+		[]project.Deployment{{
+			Name:  "reference-b",
+			Model: project.DeploymentModel{Name: "gpt-4.1", Format: "OpenAI", Version: "1"},
+			Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+		}},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	assert.Equal(t, []any{
+		map[string]any{"name": "reference-a"},
+	}, server.rawConfig["project-a"]["deploymentReferences"])
+	values, ok := server.rawConfig["project-b"]["deploymentReferences"].([]any)
+	require.True(t, ok)
+	require.Len(t, values, 1)
+	deployment, ok := values[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "reference-b", deployment["name"])
+}
+
 // TestEmitResourceServices_ProjectServiceKey verifies how the azure.ai.project
 // service key is resolved: reuse an existing key, else derive from the project
 // name, else fall back to "ai-project".
@@ -962,8 +1149,8 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		assert.Equal(t, "old-project-key", server.added[0].Name)
+		assert.Empty(t, server.added)
+		assert.Equal(t, []string{"old-project-key"}, server.uses["myagent"])
 	})
 
 	t.Run("falls back when project name collides with agent", func(t *testing.T) {

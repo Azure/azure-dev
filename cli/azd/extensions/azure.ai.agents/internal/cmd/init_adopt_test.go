@@ -14,6 +14,7 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -258,6 +259,103 @@ func TestFoundryProjectName(t *testing.T) {
 			require.Equal(t, tt.want, foundryProjectName([]byte(tt.content)))
 		})
 	}
+}
+
+func TestReferencesForSelectedDeploymentPreservesServiceIdentity(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	deployment := project.Deployment{
+		Name:  "existing-chat",
+		Model: project.DeploymentModel{Name: "gpt-4.1", Format: "OpenAI", Version: "1"},
+		Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+	}
+	references := referencesForSelectedDeployment(
+		[]foundryDeploymentEntry{
+			{ServiceName: "project-b"},
+			{ServiceName: "project-a"},
+			{ServiceName: "project-a"},
+		},
+		deployment,
+	)
+
+	assert.Equal(t, []foundryDeploymentReference{
+		{ServiceName: "project-a", Deployment: deployment},
+		{ServiceName: "project-b", Deployment: deployment},
+	}, references)
+}
+
+func TestFoundryDeploymentReferencesResolveFileRefs(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "deployment.yaml"),
+		[]byte(`name: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+model:
+  name: ${AZURE_AI_MODEL_NAME}
+  format: ${AZURE_AI_MODEL_FORMAT}
+  version: ${AZURE_AI_MODEL_VERSION}
+sku:
+  name: ${AZURE_AI_MODEL_SKU_NAME}
+  capacity: ${AZURE_AI_MODEL_SKU_CAPACITY}
+`),
+		0o600,
+	))
+	server := &recordingProjectServer{
+		projectPath: root,
+		existing: map[string]*azdext.ServiceConfig{
+			"project-a": {Name: "project-a", Host: AiProjectHost},
+		},
+		rawConfig: map[string]map[string]any{
+			"project-a": {
+				"deploymentReferences": []any{
+					map[string]any{"$ref": "./deployment.yaml"},
+				},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	existing, err := foundryDeploymentReferences(t.Context(), client)
+
+	require.NoError(t, err)
+	require.Len(t, existing, 1)
+	assert.Equal(t, "project-a", existing[0].ServiceName)
+	index, canonical, err := canonicalDeploymentIndex(existing[0].Deployment)
+	require.NoError(t, err)
+	assert.True(t, canonical)
+	assert.Equal(t, 0, index)
+
+	values := map[string]string{}
+	_, references, err := persistAdoptedDeploymentConfiguration(
+		t.Context(),
+		func(_ context.Context, key, value string) error {
+			values[key] = value
+			return nil
+		},
+		nil,
+		[]foundryDeploymentReference{{
+			ServiceName: "project-a",
+			Deployment: project.Deployment{
+				Name:  "new-chat",
+				Model: project.DeploymentModel{Name: "gpt-4.1", Format: "OpenAI", Version: "1"},
+				Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+			},
+		}},
+		[]project.Deployment{existing[0].Deployment},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, references, 1)
+	assert.Equal(
+		t,
+		"${AZURE_AI_MODEL_DEPLOYMENT_NAME_2}",
+		references[0].Deployment.Name,
+	)
+	assert.NotContains(t, values, "AZURE_AI_MODEL_DEPLOYMENT_NAME")
+	assert.Equal(t, "new-chat", values["AZURE_AI_MODEL_DEPLOYMENT_NAME_2"])
 }
 
 func TestParentDirOf(t *testing.T) {

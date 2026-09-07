@@ -793,3 +793,30 @@ func TagFilterRepeatsKey(key, first, second string) error {
 			"key, so no dataset can match both",
 		key, first, second)
 }
+
+// PortalLink closes a detail view with the asset's portal URL.
+func PortalLink(url string) string {
+	return fmt.Sprintf("Portal: %s\n", url)
+}
+
+// ParsingProjectResourceID reports a project ARM id that will not parse.
+func ParsingProjectResourceID(err error) error {
+	return fmt.Errorf("failed to parse project resource ID: %w", err)
+}
+
+// EncodingSubscriptionID reports a subscription that would not encode for a URL.
+func EncodingSubscriptionID(err error) error {
+	return fmt.Errorf("failed to encode subscription ID: %w", err)
+}
+
+// NotAFoundryProjectResourceID reports an ARM id that names something else.
+func NotAFoundryProjectResourceID(resourceID string) error {
+	return fmt.Errorf(
+		"resource ID does not represent a Foundry project (missing parent account): %s",
+		resourceID)
+}
+
+// InvalidSubscriptionID reports a subscription id that is not a GUID.
+func InvalidSubscriptionID(err error) error {
+	return fmt.Errorf("invalid subscription ID format: %w", err)
+}

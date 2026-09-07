@@ -20,6 +20,17 @@ const outputJSON = "json"
 
 const outputTable = "table"
 
+// writePortalLink closes a view with the asset's portal URL.
+//
+// Silent when there is no URL: the link is a convenience on top of work already
+// done, so its absence must not look like a failure.
+func writePortalLink(w io.Writer, url string) {
+	if url == "" {
+		return
+	}
+	fmt.Fprint(w, messages.PortalLink(url))
+}
+
 // registerOutputFormats constrains -o/--output to the formats these commands
 // implement.
 //

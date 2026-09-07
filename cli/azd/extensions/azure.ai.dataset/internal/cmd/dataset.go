@@ -575,12 +575,23 @@ func (a *datasetShowAction) Run() error {
 	if isJSON(a.cmd) {
 		return emitJSON(a.cmd.OutOrStdout(), ds)
 	}
-	return emitDetail(a.cmd.OutOrStdout(), []field{
+	out := a.cmd.OutOrStdout()
+	fields := []field{
 		{"Name", ds.Name},
 		{"Version", ds.Version},
 		{"Type", ds.Type},
 		{"URI", ds.ResolvedBlobURI()},
-	})
+	}
+	if tags := tagSummary(ds.Tags); tags != "-" {
+		fields = append(fields, field{"Tags", tags})
+	}
+	if err := emitDetail(out, fields); err != nil {
+		return err
+	}
+	if prefix := ec.portalPrefix(ctx); prefix != nil {
+		writePortalLink(out, prefix.DatasetURL(ds.Name, ds.Version))
+	}
+	return nil
 }
 
 // datasetDeleteAction removes one dataset version.

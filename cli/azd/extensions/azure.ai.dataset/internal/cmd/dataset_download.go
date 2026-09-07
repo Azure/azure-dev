@@ -104,8 +104,12 @@ func (a *datasetDownloadAction) Run() error {
 			"singleFile": content.SingleFile,
 		})
 	}
-	fmt.Fprint(a.cmd.OutOrStdout(), messages.DownloadedDataset(
+	out := a.cmd.OutOrStdout()
+	fmt.Fprint(out, messages.DownloadedDataset(
 		a.name, version, content.SingleFile, written, path))
+	if prefix := ec.portalPrefix(ctx); prefix != nil {
+		writePortalLink(out, prefix.DatasetURL(a.name, version))
+	}
 	return nil
 }
 

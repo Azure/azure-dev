@@ -22,6 +22,11 @@ import (
 // endpoint the data-plane clients target.
 const projectEndpointEnvKey = "FOUNDRY_PROJECT_ENDPOINT"
 
+// projectResourceIDEnvKey holds the project's ARM resource ID, which is what the
+// Foundry portal addresses a project by. azd provisioning writes it, and the
+// sibling extensions read the same key to build the same links.
+const projectResourceIDEnvKey = "AZURE_AI_PROJECT_ID"
+
 // datasetContext carries everything the commands need to reach the data plane.
 type datasetContext struct {
 	azdClient *azdext.AzdClient
@@ -152,6 +157,37 @@ func lookupEndpointFromAzd(ctx context.Context, azdClient *azdext.AzdClient) (en
 // These commands work standalone against the data plane, so running outside a
 // project is ordinary rather than a problem worth reporting.
 var errNoAzdEnvironment = messages.ErrNoAzdEnvironment
+
+// portalPrefix builds the portal link base from the project's ARM id, or nil.
+//
+// Best effort by design: the link is a convenience on top of work already done,
+// so a project whose id azd never recorded gets output without it rather than a
+// failure. Outside an azd environment there is nothing to read at all.
+func (dc *datasetContext) portalPrefix(ctx context.Context) *dataset_api.PortalPrefix {
+	if dc.azdClient == nil {
+		return nil
+	}
+	envName := dc.envName
+	if envName == "" {
+		envName = azdEnvironmentName(ctx, dc.azdClient)
+	}
+	if envName == "" {
+		return nil
+	}
+	val, err := dc.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     projectResourceIDEnvKey,
+	})
+	if err != nil || val == nil || val.Value == "" {
+		return nil
+	}
+	prefix, err := dataset_api.NewPortalPrefix(val.Value)
+	if err != nil {
+		log.Printf("[portal] %s is not a project resource ID: %v", projectResourceIDEnvKey, err)
+		return nil
+	}
+	return prefix
+}
 
 // setEnvValue persists a value into the active azd environment.
 func (dc *datasetContext) setEnvValue(ctx context.Context, key, value string) error {

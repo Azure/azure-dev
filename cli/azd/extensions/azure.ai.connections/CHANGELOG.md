@@ -1,5 +1,19 @@
 # Release History
 
+## 1.0.0-beta.6 (2026-09-04)
+
+### Features Added
+
+- [[#9735]](https://github.com/Azure/azure-dev/pull/9735) Add local `connection.yaml` definitions and `azd ai connection deploy` for project connections. Thanks @JerryYangKai for the contribution!
+
+### Bugs Fixed
+
+- [[#9741]](https://github.com/Azure/azure-dev/pull/9741) Preserve connection audience and connector name during Foundry connection provisioning.
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to v1.83.1 to address the GHSA-vp52-pcj8-j9qc security advisory.
+
 ## 1.0.0-beta.4 (2026-08-06)
 
 ### Features Added

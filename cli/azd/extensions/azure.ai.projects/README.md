@@ -2,6 +2,10 @@
 
 Manage Microsoft Foundry Project resources from your terminal. (Preview)
 
+See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
+for every prompt's flag, environment/configuration input, or deterministic
+no-prompt behavior.
+
 ## `azure.yaml` ownership
 
 This extension owns `host: azure.ai.project` services and the `microsoft.foundry` provisioning provider. A project service carries account-level settings such as an existing project endpoint, model deployments, and private networking.

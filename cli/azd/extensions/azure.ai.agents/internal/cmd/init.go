@@ -53,6 +53,7 @@ import (
 
 type initFlags struct {
 	projectResourceId string
+	acrConnection     string
 	modelDeployment   string
 	model             string
 	manifestPointer   string
@@ -1209,6 +1210,7 @@ func agentDefiningFlagsSet(flags *initFlags, srcBlocksReuse bool) bool {
 		flags.model != "" ||
 		flags.modelDeployment != "" ||
 		flags.projectResourceId != "" ||
+		flags.acrConnection != "" ||
 		flags.image != "" ||
 		flags.registryConnection != "" ||
 		srcBlocksReuse ||
@@ -1224,6 +1226,7 @@ func canReuseExistingAgentConfiguration(
 	srcBlocksReuse bool,
 ) bool {
 	return flags.manifestPointer == "" &&
+		!flags.force &&
 		!manifestDetectedButDeclined &&
 		!agentDefiningFlagsSet(flags, srcBlocksReuse)
 }
@@ -1943,6 +1946,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
+	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "",
+		"Foundry Azure Container Registry connection name to use for an existing project; "+
+			"incompatible with code deploy, --image, and prompt-voice agents")
+
 	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
 
@@ -1999,8 +2006,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	_ = cmd.Flags().MarkHidden("voice")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
-		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
-			"Required together with --no-prompt when init would otherwise need confirmation.")
+		"Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. "+
+			"Required together with --no-prompt when init would otherwise need overwrite confirmation.")
 
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
@@ -2568,6 +2575,14 @@ func (a *InitAction) configureModelChoice(
 		}
 	}
 
+	if err := validateAcrConnectionInput(
+		a.flags.acrConnection,
+		a.skipACR(),
+		a.flags.noPrompt && a.flags.projectResourceId == "",
+	); err != nil {
+		return nil, err
+	}
+
 	// If --project-id is provided (or reused from environment), validate the ARM
 	// format and extract the subscription ID so ensureSubscription can skip the
 	// prompt and just resolve the tenant.
@@ -2607,7 +2622,7 @@ func (a *InitAction) configureModelChoice(
 	if !hasModelResources {
 		result, err := configureFoundryProject(
 			ctx, a.azdClient, a.azureContext, a.environment.Name,
-			a.flags.projectResourceId, a.flags.noPrompt, a.skipACR(),
+			a.flags.projectResourceId, a.flags.acrConnection, a.flags.noPrompt, a.skipACR(),
 			a.isHostedAgent(), // filterHostedRegions: voice/managed agents are not region-restricted
 		)
 		if err != nil {
@@ -2636,6 +2651,7 @@ func (a *InitAction) configureModelChoice(
 		selectedProject, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			a.flags.acrConnection,
 			a.skipACR(),
 			a.isHostedAgent(), // filterHostedRegions
 			true,              // bicepless
@@ -2716,6 +2732,7 @@ func (a *InitAction) configureModelChoice(
 			selectedProject, err := selectFoundryProject(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
+				a.flags.acrConnection,
 				a.skipACR(),
 				a.isHostedAgent(), // filterHostedRegions
 				true,              // bicepless
@@ -2730,6 +2747,9 @@ func (a *InitAction) configureModelChoice(
 				fmt.Println(output.WithGrayFormat(
 					"No existing Foundry project was selected. Falling back to creating new resources.",
 				))
+				if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
+					return nil, err
+				}
 				if err := setEnvValue(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 				); err != nil {
@@ -2746,6 +2766,9 @@ func (a *InitAction) configureModelChoice(
 				}
 			}
 		default:
+			if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
+				return nil, err
+			}
 			newCred, err := ensureSubscriptionAndLocation(
 				ctx, a.azdClient, a.azureContext, a.environment.Name,
 				"Select an Azure subscription to look up available models and provision your Foundry project resources.",
@@ -4715,6 +4738,13 @@ func verifyRegistryConnectionOnProject(
 func (a *InitAction) validateCodeDeployFlags() error {
 	// First validate image and registry flags (they have incompatibilities with other flags).
 	if err := validateImageFlag(a.flags.image, a.flags.deployMode); err != nil {
+		return err
+	}
+	skipACR := a.flags.deployMode == "code" ||
+		a.flags.image != "" ||
+		a.isVoiceAgent ||
+		strings.EqualFold(a.flags.kind, kindFlagPromptVoice)
+	if err := validateAcrConnectionInput(a.flags.acrConnection, skipACR, false); err != nil {
 		return err
 	}
 	if err := validateRegistryConnectionFlag(

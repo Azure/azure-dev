@@ -148,8 +148,8 @@ func Test_Telemetry_Run(t *testing.T) {
 			sourceCategoryAttr.Value.AsStringSlice(),
 		)
 		for _, attr := range span.Attributes {
-			require.NotContains(t, attr.Value.Emit(), "customer-private-registry")
-			require.NotContains(t, attr.Value.Emit(), "/private/legacy/path")
+			require.NotContains(t, attr.Value.String(), "customer-private-registry")
+			require.NotContains(t, attr.Value.String(), "/private/legacy/path")
 		}
 	})
 

@@ -114,11 +114,11 @@ func TestReconcileStandaloneEndpointWithDeployedDigitalWorker(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
 	}, request.AgentEndpoint.AuthorizationSchemes)
 }
 
-func TestReconcileStandaloneEndpointCreatesEndpointForDeployedDigitalWorker(t *testing.T) {
+func TestReconcileStandaloneEndpointUsesServiceDefaultForDeployedDigitalWorker(t *testing.T) {
 	t.Parallel()
 
 	request := &agent_api.CreateAgentRequest{}
@@ -127,13 +127,22 @@ func TestReconcileStandaloneEndpointCreatesEndpointForDeployedDigitalWorker(t *t
 	err := reconcileStandaloneEndpointWithDeployedAgent(request, ActivityProfile{}, existingAgent)
 
 	require.NoError(t, err)
-	require.NotNil(t, request.AgentEndpoint)
-	require.Equal(t, []agent_api.AgentEndpointProtocol{
-		agent_api.AgentEndpointProtocolActivity,
-	}, request.AgentEndpoint.Protocols)
-	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
-	}, request.AgentEndpoint.AuthorizationSchemes)
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestReconcileStandaloneEndpointUsesServiceDefaultForSimpleActivity(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+	existingAgent := &agent_api.AgentObject{}
+
+	err := reconcileStandaloneEndpointWithDeployedAgent(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseSimple,
+	}, existingAgent)
+
+	require.NoError(t, err)
+	require.Nil(t, request.AgentEndpoint)
 }
 
 func TestReconcileStandaloneEndpointPromotesNonActivityDefinitionForDeployedDigitalWorker(t *testing.T) {
@@ -158,6 +167,5 @@ func TestReconcileStandaloneEndpointPromotesNonActivityDefinitionForDeployedDigi
 	}, request.AgentEndpoint.Protocols)
 	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
 		{Type: agent_api.AgentEndpointAuthSchemeEntra},
-		{Type: agent_api.AgentEndpointAuthSchemeBotServiceTenant},
 	}, request.AgentEndpoint.AuthorizationSchemes)
 }

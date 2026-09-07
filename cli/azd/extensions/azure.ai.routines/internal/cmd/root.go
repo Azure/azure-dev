@@ -39,6 +39,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newContextCommand())
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
+	rootCmd.AddCommand(newRoutineAddCommand(extCtx))
 	rootCmd.AddCommand(newRoutineCreateCommand(extCtx))
 	rootCmd.AddCommand(newRoutineUpdateCommand(extCtx))
 	rootCmd.AddCommand(newRoutineShowCommand(extCtx))

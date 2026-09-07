@@ -12,7 +12,7 @@ import (
 	"io"
 	"log"
 	"net"
-	"path/filepath"
+	osexec "os/exec"
 	"regexp"
 	"strings"
 
@@ -21,6 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/errchain"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -29,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -38,6 +40,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	grpcCodes "google.golang.org/grpc/codes"
 )
 
 // MapError maps the given error to a telemetry span, setting status (the
@@ -48,10 +51,15 @@ import (
 func MapError(err error, span tracing.Span) {
 	code, attrs := classify(err)
 
-	// Always emit the wrapped-error type chain so engineers can see
-	// what hides behind a generic ResultCode like internal.unclassified
-	// without needing to repro. Type names are code-defined and PII-free.
-	span.SetAttributes(fields.ErrChainTypes.StringSlice(errchain.Types(err)))
+	// Always emit the host-observed wrapped-error type chain so engineers
+	// can see what hides behind internal.unclassified.
+	chainTypes := errchain.Types(err)
+	remoteTypes := causeTypesForTelemetry(err)
+	if len(remoteTypes) > 0 {
+		span.SetAttributes(fields.StringSliceHashed(
+			fields.ErrExtensionCauseTypes, remoteTypes))
+	}
+	span.SetAttributes(fields.ErrChainTypes.StringSlice(chainTypes))
 
 	if len(attrs) > 0 {
 		// Prefix all detail attributes with "error." so they group in
@@ -62,7 +70,42 @@ func MapError(err error, span tracing.Span) {
 		span.SetAttributes(attrs...)
 	}
 
+	if invocation, ok := errors.AsType[extensions.InvocationMetadataProvider](err); ok {
+		if invocation.InvocationExtensionId() != "" {
+			span.SetAttributes(fields.ExtensionId.String(invocation.InvocationExtensionId()))
+		}
+		if invocation.InvocationExtensionVersion() != "" {
+			span.SetAttributes(fields.ExtensionVersion.String(invocation.InvocationExtensionVersion()))
+		}
+		if invocation.InvocationEvent() != "" {
+			span.SetAttributes(fields.ExtensionEvent.String(invocation.InvocationEvent()))
+		}
+	}
+
 	span.SetStatus(codes.Error, code)
+}
+
+func causeTypesForTelemetry(err error) []string {
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return errorchain.NormalizeCauseTypes(localErr.CauseTypes)
+	}
+
+	st, ok := azdext.GRPCStatusFromError(err)
+	if !ok {
+		return nil
+	}
+
+	relayed := azdext.ExtensionErrorFromStatus(st)
+	if relayed == nil {
+		return nil
+	}
+
+	localErr, ok := errors.AsType[*azdext.LocalError](azdext.UnwrapError(relayed))
+	if !ok {
+		return nil
+	}
+
+	return errorchain.NormalizeCauseTypes(localErr.CauseTypes)
 }
 
 // classify runs the typed/sentinel decision tree and returns the
@@ -93,6 +136,9 @@ func classify(err error) (string, []attribute.KeyValue) {
 	if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		return classifyErrorWithSuggestion(errWithSuggestion)
 	}
+	if conversionErr, ok := errors.AsType[*mapper.ConversionError](err); ok {
+		return classifyConversionError(conversionErr)
+	}
 	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return classifyResponseError(respErr)
 	}
@@ -105,14 +151,14 @@ func classify(err error) (string, []attribute.KeyValue) {
 	if extLocalErr, ok := errors.AsType[*azdext.LocalError](err); ok {
 		return classifyExtLocalError(extLocalErr)
 	}
+	if extToolErr, ok := errors.AsType[*azdext.ToolError](err); ok {
+		return classifyExtToolError(extToolErr)
+	}
 	if _, ok := errors.AsType[*extensions.ExtensionRunError](err); ok {
 		return "ext.run.failed", nil
 	}
 	if toolExecErr, ok := errors.AsType[*exec.ExitError](err); ok {
-		toolName := "other"
-		if cmdName := cmdAsName(toolExecErr.Cmd); cmdName != "" {
-			toolName = cmdName
-		}
+		toolName := normalizeToolName(toolExecErr.Cmd)
 		return fmt.Sprintf("tool.%s.failed", toolName), []attribute.KeyValue{
 			fields.ToolExitCode.Int(toolExecErr.ExitCode),
 			fields.ToolName.String(toolName),
@@ -120,12 +166,28 @@ func classify(err error) (string, []attribute.KeyValue) {
 	}
 	if toolCheckErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
 		if len(toolCheckErr.ToolNames) == 1 {
-			toolName := toolCheckErr.ToolNames[0]
+			toolName := tools.TelemetryName(toolCheckErr.ToolNames[0])
 			return fmt.Sprintf("tool.%s.missing", toolName),
 				[]attribute.KeyValue{fields.ToolName.String(toolName)}
 		}
+		toolNames := make([]string, 0, len(toolCheckErr.ToolNames))
+		for _, name := range toolCheckErr.ToolNames {
+			toolNames = append(toolNames, tools.TelemetryName(name))
+		}
 		return "tool.multiple.missing", []attribute.KeyValue{
-			fields.ToolName.String(strings.Join(toolCheckErr.ToolNames, ",")),
+			fields.ToolName.String(strings.Join(toolNames, ",")),
+		}
+	}
+	if processErr, ok := errors.AsType[*osexec.Error](err); ok {
+		toolName := normalizeToolName(processErr.Name)
+
+		failureKind := "failed"
+		if errors.Is(processErr.Err, osexec.ErrNotFound) {
+			failureKind = "missing"
+		}
+
+		return fmt.Sprintf("tool.%s.%s", toolName, failureKind), []attribute.KeyValue{
+			fields.ToolName.String(toolName),
 		}
 	}
 	if authFailedErr, ok := errors.AsType[*auth.AuthFailedError](err); ok {
@@ -145,6 +207,9 @@ func classify(err error) (string, []attribute.KeyValue) {
 			fields.ErrType.String(errchain.DeepestNamedType(err)),
 		}
 	}
+	if code, attrs, ok := classifyGRPCStatus(err); ok {
+		return code, attrs
+	}
 
 	// Generic fallback: walk the chain and keep the deepest non-generic
 	// type so wrappers like *fmt.wrapError or *errorhandler.ErrorWithSuggestion
@@ -156,6 +221,65 @@ func classify(err error) (string, []attribute.KeyValue) {
 	}
 	return fmt.Sprintf("internal.%s", errchain.SanitizeTypeName(deepest)),
 		[]attribute.KeyValue{fields.ErrType.String(deepest)}
+}
+
+func classifyConversionError(conversionErr *mapper.ConversionError) (string, []attribute.KeyValue) {
+	return "internal.mapper_conversion", []attribute.KeyValue{
+		fields.MapperSourceType.String(conversionErr.SourceTypeName()),
+		fields.MapperDestinationType.String(conversionErr.DestinationTypeName()),
+	}
+}
+
+func classifyGRPCStatus(err error) (string, []attribute.KeyValue, bool) {
+	st, ok := azdext.GRPCStatusFromError(err)
+	if !ok {
+		return "", nil, false
+	}
+
+	if relayedErr := azdext.ExtensionErrorFromStatus(st); relayedErr != nil {
+		code, attrs := classify(azdext.UnwrapError(relayedErr))
+		return code, attrs, true
+	}
+
+	if serviceDetail := azdext.ServiceErrorDetailFromStatus(st); serviceDetail != nil {
+		code, attrs := classifyExtServiceError(&azdext.ServiceError{
+			ErrorCode:   serviceDetail.GetErrorCode(),
+			StatusCode:  int(serviceDetail.GetStatusCode()),
+			ServiceName: serviceDetail.GetServiceName(),
+		})
+		return code, attrs, true
+	}
+
+	if st.Code() == grpcCodes.Unauthenticated {
+		switch azdext.AuthErrorReason(st) {
+		case azdext.AuthErrorReasonNotLoggedIn:
+			return "auth.not_logged_in", []attribute.KeyValue{
+				fields.ErrCategory.String("auth"),
+			}, true
+		case azdext.AuthErrorReasonLoginRequired:
+			return "auth.login_required", []attribute.KeyValue{
+				fields.ErrCategory.String("auth"),
+			}, true
+		default:
+			return "auth.unauthenticated", []attribute.KeyValue{
+				fields.ErrCategory.String("auth"),
+			}, true
+		}
+	}
+
+	// gRPC status errors do not unwrap to context.Canceled or
+	// context.DeadlineExceeded, so preserve the host-side cancellation
+	// classifications explicitly at the transport boundary.
+	switch st.Code() {
+	case grpcCodes.Canceled:
+		return "user.canceled", nil, true
+	case grpcCodes.DeadlineExceeded:
+		return "internal.timeout", nil, true
+	}
+
+	grpcCode := st.Code().String()
+	return fmt.Sprintf("internal.grpc.%s", normalizeCodeSegment(grpcCode, "unknown")),
+		[]attribute.KeyValue{fields.ErrCode.String(grpcCode)}, true
 }
 
 // classifyErrorWithSuggestion handles *internal.ErrorWithSuggestion.
@@ -279,6 +403,42 @@ func classifyExtLocalError(extLocalErr *azdext.LocalError) (string, []attribute.
 		fields.ErrCategory.String(domain),
 		fields.ErrCode.String(code),
 	}
+}
+
+func classifyExtToolError(extToolErr *azdext.ToolError) (string, []attribute.KeyValue) {
+	toolName := normalizeToolName(extToolErr.ToolName)
+
+	if extToolErr.Kind == azdext.ToolErrorKindMissing {
+		return fmt.Sprintf("tool.%s.missing", toolName), []attribute.KeyValue{
+			fields.ToolName.String(toolName),
+		}
+	}
+
+	attrs := []attribute.KeyValue{fields.ToolName.String(toolName)}
+	if extToolErr.ExitCode != nil {
+		attrs = append(attrs, fields.ToolExitCode.Int(*extToolErr.ExitCode))
+	}
+	return fmt.Sprintf("tool.%s.failed", toolName), attrs
+}
+
+const maxTelemetryToolNameLength = 64
+
+func normalizeToolName(toolName string) string {
+	toolName = exec.CommandName(toolName)
+	if len(toolName) == 0 || len(toolName) > maxTelemetryToolNameLength {
+		return "other"
+	}
+
+	for i := range toolName {
+		char := toolName[i]
+		if (char < 'a' || char > 'z') &&
+			(char < '0' || char > '9') &&
+			char != '_' && char != '-' {
+			return "other"
+		}
+	}
+
+	return toolName
 }
 
 func authFailedTelemetryDetails(authFailedErr *auth.AuthFailedError) []attribute.KeyValue {
@@ -480,23 +640,7 @@ func isNetworkError(err error) bool {
 }
 
 func cmdAsName(cmd string) string {
-	cmd = filepath.Base(cmd)
-	if len(cmd) > 0 && cmd[0] == '.' { // hidden file, simply ignore the first period
-		if len(cmd) == 1 {
-			return ""
-		}
-
-		cmd = cmd[1:]
-	}
-
-	for i := range cmd {
-		if cmd[i] == '.' { // do not include any extensions
-			cmd = cmd[:i]
-			break
-		}
-	}
-
-	return strings.ToLower(cmd)
+	return exec.CommandName(cmd)
 }
 
 var (

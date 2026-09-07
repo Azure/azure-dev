@@ -74,8 +74,9 @@ func digitalWorkerTypeMismatchSuggestion() string {
 		"activity.digitalWorkerType"
 }
 
-// EnsureActivityEndpointAuthSchemeForProfile aligns an Activity endpoint's BotService
-// authorization scheme with the resolved Activity use case.
+// EnsureActivityEndpointAuthSchemeForProfile preserves explicitly authored
+// authorization schemes and ensures an existing Activity endpoint advertises
+// the Activity protocol. The service owns defaults when schemes are omitted.
 func EnsureActivityEndpointAuthSchemeForProfile(
 	endpoint *agent_api.AgentEndpoint,
 	profile ActivityProfile,
@@ -84,48 +85,13 @@ func EnsureActivityEndpointAuthSchemeForProfile(
 		return
 	}
 
-	if profile.UseCase == ActivityUseCaseDigitalWorker {
-		EnsureActivityEndpointAuthScheme(endpoint, agent_api.AgentEndpointAuthSchemeBotServiceTenant)
-		return
-	}
-
-	EnsureActivityEndpointAuthScheme(endpoint, agent_api.AgentEndpointAuthSchemeBotServiceRbac)
+	ensureActivityEndpointProtocol(endpoint)
 }
 
-// EnsureActivityEndpointAuthScheme ensures the Activity protocol is advertised
-// and keeps exactly one BotService-family authorization scheme on the endpoint.
-func EnsureActivityEndpointAuthScheme(
-	endpoint *agent_api.AgentEndpoint,
-	schemeType agent_api.AgentEndpointAuthorizationSchemeType,
-) {
+func ensureActivityEndpointProtocol(endpoint *agent_api.AgentEndpoint) {
 	if !slices.Contains(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity) {
 		endpoint.Protocols = append(endpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
 	}
-
-	schemes := endpoint.AuthorizationSchemes[:0]
-	hasTarget := false
-	for _, scheme := range endpoint.AuthorizationSchemes {
-		if scheme.Type == agent_api.AgentEndpointAuthSchemeBotService ||
-			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac ||
-			scheme.Type == agent_api.AgentEndpointAuthSchemeBotServiceTenant {
-			if scheme.Type == schemeType && !hasTarget {
-				schemes = append(schemes, scheme)
-				hasTarget = true
-			}
-			continue
-		}
-
-		if scheme.Type == schemeType {
-			hasTarget = true
-		}
-		schemes = append(schemes, scheme)
-	}
-
-	if !hasTarget {
-		schemes = append(schemes, agent_api.AgentEndpointAuthorizationScheme{Type: schemeType})
-	}
-
-	endpoint.AuthorizationSchemes = schemes
 }
 
 // IsActivityProtocol reports whether a hosted agent definition opts into the
@@ -267,12 +233,12 @@ func ValidateDigitalWorkerAccessBoundaries(boundaries []string) error {
 // (responses/invocations/...). Activity is not exclusive: the platform models
 // every protocol as a sibling per-protocol entry on the same endpoint, and the
 // endpoint carries a list of protocols and a list of authorization schemes. This
-// helper therefore (1) advertises every selected protocol on the endpoint,
+// helper therefore advertises every selected protocol on the endpoint,
 // normalizing the legacy "activity_protocol" spelling to the canonical
-// "activity", and (2) ensures the BotServiceRbac scheme Activity requires is
-// present without dropping any scheme already declared. For a pure-activity
-// agent the result is protocols=["activity"] guarded by BotServiceRbac — the same
-// declaration the manifest path emits. No-op inputs (nil existing endpoint) start fresh.
+// "activity", and applies BotServiceRbac when authorization schemes are omitted.
+// This init-time helper produces the Simple Activity shape; deploy-time Digital
+// Worker defaults are handled separately. No-op inputs (nil existing endpoint)
+// start fresh.
 func ComposeActivityAgentEndpoint(
 	existing *agent_yaml.AgentEndpoint,
 	protocols []agent_yaml.ProtocolVersionRecord,
@@ -304,15 +270,10 @@ func ComposeActivityAgentEndpoint(
 		seen[name] = true
 	}
 
-	// Ensure the BotServiceRbac scheme Activity requires is present, keeping any
-	// scheme already declared for the other protocols.
-	for _, s := range ep.AuthorizationSchemes {
-		if s.Type == string(agent_api.AgentEndpointAuthSchemeBotServiceRbac) {
-			return ep
-		}
+	if len(ep.AuthorizationSchemes) == 0 {
+		ep.AuthorizationSchemes = append(ep.AuthorizationSchemes, agent_yaml.AuthorizationScheme{
+			Type: string(agent_api.AgentEndpointAuthSchemeBotServiceRbac),
+		})
 	}
-	ep.AuthorizationSchemes = append(ep.AuthorizationSchemes, agent_yaml.AuthorizationScheme{
-		Type: string(agent_api.AgentEndpointAuthSchemeBotServiceRbac),
-	})
 	return ep
 }

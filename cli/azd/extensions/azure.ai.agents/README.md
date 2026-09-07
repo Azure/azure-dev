@@ -14,6 +14,12 @@ validates the complete tuple for the selected subscription, region, model
 catalog, and remaining quota before using it. Static literal deployments and
 custom environment references remain supported.
 
+## Non-interactive automation
+
+See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
+for every prompt's flag, environment/configuration input, or deterministic
+no-prompt behavior.
+
 ## Composing Agent Dependencies
 
 Use the Agent command surface to attach existing Toolbox or Connection services
@@ -337,7 +343,7 @@ seconds).
 
 Details:
 
-- `idleTimeoutSeconds` must be between **300 and 3600** seconds (inclusive).
+- `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
 - In the deprecated on-disk `agent.yaml` shape the keys are snake_case

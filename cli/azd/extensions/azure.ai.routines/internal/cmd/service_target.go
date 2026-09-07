@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // aiRoutineHost is the azure.yaml service host kind owned by this extension. A
@@ -160,10 +161,7 @@ func (p *routineServiceTarget) Deploy(
 // routine API model, falling back to the deprecated config: shape for azure.yaml
 // files written before the per-resource service split.
 func parseRoutineServiceConfig(svc *azdext.ServiceConfig, projectRoot string) (*routines.Routine, error) {
-	props := svc.GetAdditionalProperties()
-	if props == nil || len(props.GetFields()) == 0 {
-		props = svc.GetConfig()
-	}
+	props := routineConfigProperties(svc)
 	body := &routines.Routine{}
 	if props == nil {
 		return body, nil
@@ -187,15 +185,20 @@ func parseRoutineServiceConfig(svc *azdext.ServiceConfig, projectRoot string) (*
 }
 
 func routineServiceHasRef(svc *azdext.ServiceConfig) bool {
-	props := svc.GetAdditionalProperties()
-	if props == nil || len(props.GetFields()) == 0 {
-		props = svc.GetConfig()
-	}
+	props := routineConfigProperties(svc)
 	if props == nil {
 		return false
 	}
 	_, found := props.GetFields()["$ref"]
 	return found
+}
+
+func routineConfigProperties(svc *azdext.ServiceConfig) *structpb.Struct {
+	properties := svc.GetAdditionalProperties()
+	if properties != nil && len(properties.GetFields()) > 0 {
+		return properties
+	}
+	return svc.GetConfig()
 }
 
 func routineProjectRoot(

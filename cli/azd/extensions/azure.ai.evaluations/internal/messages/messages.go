@@ -3232,6 +3232,23 @@ func Warning(err error) string {
 	return fmt.Sprintf("warning: %v\n", err)
 }
 
+// StaleRecordedEvalPath reports an environment value that disagrees with the
+// project's own declaration.
+//
+// The recorded value is an absolute path from whichever machine ran init, in a
+// file that gets committed and shared, so a teammate or a rebuilt agent
+// inherits a directory that does not exist for them. The `$ref` is the
+// project's own statement and travels, so it wins -- and the disagreement is
+// said out loud, because the alternative is a command silently reading a
+// different file than the one the caller's environment names.
+func StaleRecordedEvalPath(recorded, declared, key string) error {
+	return fmt.Errorf(
+		"%s records %s, but this project's evaluation service points at %s; using "+
+			"the project's own reference. Remove %s from the azd environment to stop "+
+			"this warning",
+		key, filepath.ToSlash(recorded), filepath.ToSlash(declared), key)
+}
+
 // GenerationWarning reports what the service said about a job it completed.
 //
 // A generation that came back qualified is not a clean one. The code is

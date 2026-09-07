@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -83,7 +84,7 @@ func TestEvalDirCascadeAnswersInOrder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := evalDirCascade(tc.flag, func() (string, error) {
 				return tc.recorded, nil
-			}, nil)
+			}, nil, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 		})
@@ -99,18 +100,55 @@ func TestEvalDirCascadeAnswersInOrder(t *testing.T) {
 func TestEvalDirCascadeReadsTheDeclaredRef(t *testing.T) {
 	got, err := evalDirCascade("",
 		func() (string, error) { return "", nil },
-		func() (string, error) { return "config", nil })
+		func() (string, error) { return "config", nil }, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "config", got)
 }
 
-// The recorded path is what `--path` wrote on this machine, so it answers over
-// a declaration that may predate it.
-func TestEvalDirCascadePrefersTheRecordedPathOverTheDeclaredRef(t *testing.T) {
+// The project's own declaration outranks the recorded path.
+//
+// EVAL_CONFIG_PATH is an absolute path from whichever machine ran init, in a
+// file that gets committed and shared, so a teammate or a rebuilt agent
+// inherited a directory that does not exist for them -- while azure.yaml's
+// `$ref` said where the configuration actually is, in a form that travels.
+func TestEvalDirCascadePrefersTheDeclaredRefOverTheRecordedPath(t *testing.T) {
+	var warnedRecorded, warnedDeclared string
 	got, err := evalDirCascade("",
 		func() (string, error) { return "quality", nil },
-		func() (string, error) { return "config", nil })
+		func() (string, error) { return "config", nil },
+		func(recorded, declared string) { warnedRecorded, warnedDeclared = recorded, declared })
+
+	require.NoError(t, err)
+	assert.Equal(t, "config", got)
+	assert.Equal(t, "quality", warnedRecorded,
+		"the disagreement is said out loud, not silently resolved")
+	assert.Equal(t, "config", warnedDeclared)
+}
+
+// The two naming the same place is not a disagreement. One is recorded
+// absolute and the other is resolved from a `$ref`, so comparing them as
+// written reported every project as disagreeing with itself.
+func TestEvalDirCascadeIsQuietWhenBothAgree(t *testing.T) {
+	absolute, err := filepath.Abs("config")
+	require.NoError(t, err)
+
+	warned := 0
+	got, err := evalDirCascade("",
+		func() (string, error) { return filepath.ToSlash(absolute), nil },
+		func() (string, error) { return "config", nil },
+		func(string, string) { warned++ })
+
+	require.NoError(t, err)
+	assert.Equal(t, "config", got)
+	assert.Zero(t, warned)
+}
+
+// A project scaffolded before any service entry existed still resolves.
+func TestEvalDirCascadeStillReadsTheRecordedPathWhenNothingIsDeclared(t *testing.T) {
+	got, err := evalDirCascade("",
+		func() (string, error) { return "quality", nil },
+		func() (string, error) { return "", nil }, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "quality", got)
@@ -120,7 +158,7 @@ func TestEvalDirCascadePrefersTheRecordedPathOverTheDeclaredRef(t *testing.T) {
 func TestEvalDirCascadeFallsBackWhenNothingIsDeclared(t *testing.T) {
 	got, err := evalDirCascade("",
 		func() (string, error) { return "", nil },
-		func() (string, error) { return "", nil })
+		func() (string, error) { return "", nil }, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, project.DefaultEvalDir, got)
@@ -133,7 +171,7 @@ func TestEvalDirCascadeReportsAnAmbiguousDeclaration(t *testing.T) {
 		func() (string, error) { return "", nil },
 		func() (string, error) {
 			return "", messages.AmbiguousEvalServices([]string{"a.yaml", "b.yaml"})
-		})
+		}, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--path",
@@ -145,7 +183,7 @@ func TestEvalDirCascadeSkipsBothLookupsWhenPathWasGiven(t *testing.T) {
 	var declaredAsked int
 	got, err := evalDirCascade("./given",
 		func() (string, error) { return "recorded", nil },
-		func() (string, error) { declaredAsked++; return "config", nil })
+		func() (string, error) { declaredAsked++; return "config", nil }, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "./given", got)
@@ -158,7 +196,7 @@ func TestEvalDirCascadeSkipsBothLookupsWhenPathWasGiven(t *testing.T) {
 func TestEvalDirCascadeDoesNotDefaultOnAFailedRead(t *testing.T) {
 	boom := errors.New("the environment could not be read")
 
-	got, err := evalDirCascade("", func() (string, error) { return "", boom }, nil)
+	got, err := evalDirCascade("", func() (string, error) { return "", boom }, nil, nil)
 
 	require.ErrorIs(t, err, boom)
 	assert.Empty(t, got, "a failed read must not answer with the default")
@@ -169,7 +207,7 @@ func TestEvalDirCascadeDoesNotDefaultOnAFailedRead(t *testing.T) {
 func TestEvalDirCascadeIgnoresAFailedReadWhenPathWasGiven(t *testing.T) {
 	got, err := evalDirCascade("./given", func() (string, error) {
 		return "", errors.New("the environment could not be read")
-	}, nil)
+	}, nil, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "./given", got)
@@ -181,7 +219,7 @@ func TestEvalDirCascadeAsksForTheRecordedPathOnce(t *testing.T) {
 	got, err := evalDirCascade("", func() (string, error) {
 		asked++
 		return "", nil
-	}, nil)
+	}, nil, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, project.DefaultEvalDir, got)
@@ -191,7 +229,7 @@ func TestEvalDirCascadeAsksForTheRecordedPathOnce(t *testing.T) {
 	_, err = evalDirCascade("./given", func() (string, error) {
 		asked++
 		return "", nil
-	}, nil)
+	}, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 0, asked, "a --path that was given should not cost a round trip")
 }

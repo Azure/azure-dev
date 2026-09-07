@@ -314,8 +314,6 @@ func (a *initAction) Run() error {
 		return err
 	}
 
-	recordEvalPath(a.cmd.Context(), path)
-
 	if isJSON(a.cmd) {
 		return emitJSON(out, map[string]any{
 			"eval":          evalName,
@@ -1032,42 +1030,6 @@ func detectModelDeployments(proj *azdext.ProjectConfig) []string {
 		}
 	}
 	return found
-}
-
-// recordEvalPath remembers where the configuration was written, so the commands
-// that read it afterwards do not need --path repeated.
-//
-// Recorded absolute. `--path` is relative to where the caller stood when they
-// typed it, and the commands that read this back run from wherever they like,
-// so storing it as given pointed a later command at a different directory than
-// the one `init` wrote to.
-//
-// Best effort: `init` works outside an azd environment, and a path that could
-// not be recorded only costs the caller a flag later. It is never a reason to
-// fail a scaffold that already succeeded.
-func recordEvalPath(ctx context.Context, path string) {
-	if path == "" || path == project.DefaultEvalDir {
-		return
-	}
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return
-	}
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return
-	}
-	defer azdClient.Close()
-
-	envName := azdEnvironmentName(ctx, azdClient)
-	if envName == "" {
-		return
-	}
-	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: envName,
-		Key:     envKeyEvalPath,
-		Value:   filepath.ToSlash(absolute),
-	})
 }
 
 // planRootEvalService reports the azure.yaml edit init would make, without

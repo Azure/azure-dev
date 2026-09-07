@@ -665,31 +665,58 @@ const (
 // root and only this level knows where the root is. What remains below is the
 // answer for a caller who is not in a project at all, where the caller's own
 // directory is the only base there is.
+//
+// declared outranks recorded. EVAL_CONFIG_PATH is a machine-local absolute
+// path in a file that gets committed and shared, so a teammate, a container or
+// a rebuilt agent inherits a directory that does not exist on their disk --
+// while azure.yaml's `$ref` says where the configuration actually is, in a form
+// that travels. The recorded value is still read for a project scaffolded
+// before any service entry existed, and a disagreement is reported rather than
+// silently resolved.
 func evalDirCascade(
 	flagValue string,
 	recorded func() (string, error),
 	declared func() (string, error),
+	disagreed func(recorded, declared string),
 ) (string, error) {
 	if flagValue != "" {
 		return flagValue, nil
+	}
+	dir := ""
+	if declared != nil {
+		var err error
+		if dir, err = declared(); err != nil {
+			return "", err
+		}
 	}
 	path, err := recorded()
 	if err != nil {
 		return "", err
 	}
+	if dir != "" {
+		if path != "" && !sameEvalLocation(path, dir) && disagreed != nil {
+			disagreed(path, dir)
+		}
+		return dir, nil
+	}
 	if path != "" {
 		return path, nil
 	}
-	if declared != nil {
-		dir, err := declared()
-		if err != nil {
-			return "", err
-		}
-		if dir != "" {
-			return dir, nil
-		}
-	}
 	return project.DefaultEvalDir, nil
+}
+
+// sameEvalLocation reports whether two answers name the same configuration.
+//
+// Compared as absolute paths: one is recorded absolute and the other is
+// resolved from a `$ref` relative to azure.yaml, so comparing them as written
+// reported every project as disagreeing with itself.
+func sameEvalLocation(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return a == b
+	}
+	return strings.EqualFold(filepath.Clean(absA), filepath.Clean(absB))
 }
 
 // projectEvalLocation is where the project puts its evaluation configuration:
@@ -775,6 +802,9 @@ func (ec *evalContext) evalDir(ctx context.Context, flagValue string) (string, e
 		return readRecordedEvalPath(ctx, ec.azdClient, ec.envName)
 	}, func() (string, error) {
 		return projectEvalLocation(ctx, ec.azdClient)
+	}, func(recorded, declared string) {
+		fmt.Fprint(os.Stderr, messages.Warning(
+			messages.StaleRecordedEvalPath(recorded, declared, envKeyEvalPath)))
 	})
 }
 
@@ -820,6 +850,9 @@ func resolveEvalDir(ctx context.Context, flagValue string) (string, error) {
 		}
 		defer azdClient.Close()
 		return projectEvalLocation(ctx, azdClient)
+	}, func(recorded, declared string) {
+		fmt.Fprint(os.Stderr, messages.Warning(
+			messages.StaleRecordedEvalPath(recorded, declared, envKeyEvalPath)))
 	})
 }
 

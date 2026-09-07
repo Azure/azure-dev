@@ -421,6 +421,24 @@ outputSchema:
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoiceRejectsCodeAndSessionConfig(t *testing.T) {
+	yamlContent := []byte(`
+kind: voice
+name: voice
+model:
+  id: gpt-realtime
+code_configuration:
+  runtime: dotnet_10
+session_configuration:
+  idleTimeoutMinutes: 10
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "code_configuration is not supported") ||
+		!strings.Contains(err.Error(), "session_configuration is not supported") {
+		t.Fatalf("expected prompt voice code/session config validation errors, got: %v", err)
+	}
+}
+
 func TestValidateAgentDefinition_PromptVoiceRejectsProtocols(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice

@@ -467,6 +467,16 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
 					var fields map[string]yaml.Node
 					if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+						if _, hasCodeConfig := fields["code_configuration"]; hasCodeConfig {
+							errors = append(errors,
+								"template.code_configuration is not supported for a prompt-voice agent; "+
+									"configure code settings on the hosted target")
+						}
+						if _, hasSessionConfig := fields["session_configuration"]; hasSessionConfig {
+							errors = append(errors,
+								"template.session_configuration is not supported for a prompt-voice agent; "+
+									"configure session settings on the hosted target")
+						}
 						if _, hasToolbox := fields["toolbox"]; hasToolbox {
 							errors = append(errors,
 								"template.toolbox is not supported for a prompt-voice agent; "+

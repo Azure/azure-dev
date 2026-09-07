@@ -87,7 +87,7 @@ func TestSourceDeclKeys(t *testing.T) {
 // out under `definition`, which a `$ref` may fill from a file of its own.
 func TestCatalogKeys(t *testing.T) {
 	assert.ElementsMatch(t,
-		[]string{"name", "file", "version"}, yamlKeys(t, DatasetDecl{}))
+		[]string{"name", "file", "version", "tags"}, yamlKeys(t, DatasetDecl{}))
 	assert.ElementsMatch(t,
 		[]string{"name", "source", "version", "definition"},
 		yamlKeys(t, EvaluatorDecl{}))

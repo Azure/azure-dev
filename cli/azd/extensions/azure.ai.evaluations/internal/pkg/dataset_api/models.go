@@ -37,6 +37,12 @@ type Dataset struct {
 	Version string `json:"version"`
 	Type    string `json:"type,omitempty"`
 	Format  string `json:"format,omitempty"`
+	// Tags is how a dataset says where it came from: a generation job records
+	// its id here, and an evaluator-generation artifact records what produced
+	// it and which kinds it holds. Dropping them from the typed model made
+	// `-o json` lose data the response carried, so the only way to see which
+	// job wrote a dataset was to call the API by hand.
+	Tags map[string]string `json:"tags,omitempty"`
 
 	// camelCase spellings (project endpoint).
 	DataURICamel    string `json:"dataUri,omitempty"`
@@ -150,12 +156,13 @@ func (p *PendingUploadResponse) ResolvedBlobURI() string {
 // FinalizeDatasetRequest is the request body for finalizing a dataset version
 // after blob upload.
 type FinalizeDatasetRequest struct {
-	Name        string `json:"name"`
-	Version     string `json:"version"`
-	Description string `json:"description"`
-	Type        string `json:"type"`
-	IsReference bool   `json:"isReference"`
-	DataURI     string `json:"dataUri"`
+	Name        string            `json:"name"`
+	Version     string            `json:"version"`
+	Description string            `json:"description"`
+	Type        string            `json:"type"`
+	IsReference bool              `json:"isReference"`
+	DataURI     string            `json:"dataUri"`
+	Tags        map[string]string `json:"tags,omitempty"`
 }
 
 // NextVersion computes the next dataset version string.

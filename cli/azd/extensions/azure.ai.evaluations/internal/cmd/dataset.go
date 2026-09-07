@@ -35,6 +35,7 @@ func newDatasetCommand() *cobra.Command {
 		newDatasetUpdateCommand(),
 		newDatasetListCommand(),
 		newDatasetShowCommand(),
+		newDatasetDownloadCommand(),
 		newDatasetDeleteCommand(),
 		newDatasetVersionsCommand(),
 	)
@@ -241,29 +242,38 @@ func datasetUploadSource(path string) (string, error) {
 type datasetListAction struct {
 	cmd      *cobra.Command
 	endpoint string
+	tags     []string
 }
 
 func newDatasetListCommand() *cobra.Command {
 	var endpointFlg string
 	var displayLimit int
 	var showAll bool
+	var tags []string
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the project's datasets.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&datasetListAction{cmd: cmd, endpoint: endpointFlg}).Run()
+			return (&datasetListAction{cmd: cmd, endpoint: endpointFlg, tags: tags}).Run()
 		},
 	}
 
 	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
+	addTagFilterFlag(cmd, &tags)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
 func (a *datasetListAction) Run() error {
 	ctx := a.cmd.Context()
+	// Refused before the call: a listing that spends a round trip to report a
+	// mistyped filter is a slower way of saying the same thing.
+	filters, err := parseTagFilters(a.tags)
+	if err != nil {
+		return err
+	}
 	ec, err := newEvalContext(ctx, a.endpoint)
 	if err != nil {
 		return err
@@ -274,7 +284,8 @@ func (a *datasetListAction) Run() error {
 	if err != nil {
 		return messages.ListingDatasets(err)
 	}
-	return renderDatasets(a.cmd, list, messages.NoDatasets())
+	return renderDatasets(a.cmd, applyTagFilter(list, filters),
+		messages.NoDatasets(a.tags...))
 }
 
 // newDatasetVersionsCommand groups the version listing, so that `list` means
@@ -351,8 +362,18 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 	}
 	shown, total, trimmed := trimForDisplay(cmd, list.Value)
 	rows := make([][]string, 0, len(shown))
+	tagged := false
 	for _, d := range shown {
-		rows = append(rows, []string{d.Name, d.Version, d.Type})
+		if len(d.Tags) > 0 {
+			tagged = true
+		}
+	}
+	for _, d := range shown {
+		row := []string{d.Name, d.Version, d.Type}
+		if tagged {
+			row = append(row, truncate(tagSummary(d.Tags), 48))
+		}
+		rows = append(rows, row)
 	}
 	if len(rows) == 0 {
 		fmt.Fprint(cmd.OutOrStdout(), whenEmpty)
@@ -360,7 +381,14 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 	}
 	// TYPE, not FORMAT: the service populates type (`uri_file`) and leaves
 	// format empty, so the column was blank on every row.
-	if err := emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows); err != nil {
+	//
+	// TAGS only when something carries them, for the same reason: a project
+	// that tags nothing gets a column of dashes.
+	headers := []string{"NAME", "VERSION", "TYPE"}
+	if tagged {
+		headers = append(headers, "TAGS")
+	}
+	if err := emitTable(cmd.OutOrStdout(), headers, rows); err != nil {
 		return err
 	}
 	if trimmed {

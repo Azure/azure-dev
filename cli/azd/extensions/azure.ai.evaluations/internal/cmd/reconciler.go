@@ -245,6 +245,9 @@ func (r *evalReconciler) EnsureDataset(
 				if err := r.checkDatasetDrift(ctx, decl.Name, version); err != nil {
 					return "", false, err
 				}
+				if err := r.applyDatasetTags(ctx, decl, version); err != nil {
+					return "", false, err
+				}
 				return version, false, nil
 			}
 
@@ -290,8 +293,8 @@ func (r *evalReconciler) EnsureDataset(
 	// Reaching here means the content differs from what that version holds, so
 	// republishing over it would change a version the author pinned.
 	if decl.Version != "" {
-		ds, err := r.ec.datasetClient.UploadVersion(
-			ctx, decl.Name, decl.Version, dir, ProjectEndpointAPIVersion,
+		ds, err := r.ec.datasetClient.UploadVersionTagged(
+			ctx, decl.Name, decl.Version, dir, decl.Tags, ProjectEndpointAPIVersion,
 		)
 		if err != nil {
 			if dataset_api.IsVersionConflict(err) {
@@ -306,8 +309,8 @@ func (r *evalReconciler) EnsureDataset(
 
 	// UploadNextVersion discovers the currently registered version when none is
 	// declared, so the upload does not restart at 1.0 and collide.
-	ds, err := r.ec.datasetClient.UploadNextVersion(
-		ctx, decl.Name, decl.Version, dir, ProjectEndpointAPIVersion,
+	ds, err := r.ec.datasetClient.UploadNextVersionTagged(
+		ctx, decl.Name, decl.Version, dir, decl.Tags, ProjectEndpointAPIVersion,
 	)
 	if err != nil {
 		return "", false, err
@@ -317,6 +320,55 @@ func (r *evalReconciler) EnsureDataset(
 	r.ec.remember(ctx, versionKey("dataset", decl.Name), ds.Version)
 
 	return ds.Version, true, nil
+}
+
+// applyDatasetTags brings a published version's tags up to the declaration.
+//
+// A tag-only edit is not a new dataset, so it does not publish one: renumbering
+// the version would move every reference to it for a change to a label. Only a
+// declaration carrying `file:` is updated -- without one the dataset belongs
+// to somebody else and this configuration only refers to it.
+func (r *evalReconciler) applyDatasetTags(
+	ctx context.Context,
+	decl project.DatasetDecl,
+	version string,
+) error {
+	if len(decl.Tags) == 0 || decl.File == "" {
+		return nil
+	}
+	current, err := r.ec.datasetClient.GetDataset(
+		ctx, decl.Name, version, ProjectEndpointAPIVersion,
+	)
+	if err != nil {
+		// Not fatal: the deploy has a working dataset and a stale label, and
+		// failing here would block an eval over a tag nobody reads at run time.
+		return nil
+	}
+	if tagsAlreadyApplied(current.Tags, decl.Tags) {
+		return nil
+	}
+	// Merged, not replaced. The service records what produced a dataset here,
+	// and a declaration that named two tags would otherwise delete that.
+	merged := make(map[string]string, len(current.Tags)+len(decl.Tags))
+	maps.Copy(merged, current.Tags)
+	maps.Copy(merged, decl.Tags)
+
+	if _, err := r.ec.datasetClient.UpdateVersionTags(
+		ctx, decl.Name, version, merged, ProjectEndpointAPIVersion,
+	); err != nil {
+		return messages.TaggingDataset(decl.Name, version, err)
+	}
+	return nil
+}
+
+// tagsAlreadyApplied reports whether every declared tag is already recorded.
+func tagsAlreadyApplied(have, want map[string]string) bool {
+	for key, value := range want {
+		if have[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 // validateJSONL checks that every row is a JSON object before the file is

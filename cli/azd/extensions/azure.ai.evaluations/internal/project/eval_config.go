@@ -37,6 +37,11 @@ type DatasetDecl struct {
 	Name    string `yaml:"name,omitempty"    json:"name,omitempty"`
 	File    string `yaml:"file,omitempty"    json:"file,omitempty"`
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+	// Tags are applied to the version this configuration publishes. They are
+	// only honoured on a declaration carrying `file:`: without one the dataset
+	// belongs to somebody else, and changing its tags would edit a resource this
+	// configuration only refers to.
+	Tags map[string]string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
 
 // EvaluatorDecl is a catalog entry for a custom evaluator. Built-ins are

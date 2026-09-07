@@ -51,6 +51,7 @@ func TestCommandTreeMatchesTheSpec(t *testing.T) {
 		"dataset",
 		"dataset create",
 		"dataset delete",
+		"dataset download",
 		"dataset list",
 		"dataset show",
 		"dataset update",

@@ -110,6 +110,18 @@ func (c *DatasetClient) UploadNextVersion(
 	localDir string,
 	apiVersion string,
 ) (*Dataset, error) {
+	return c.UploadNextVersionTagged(ctx, name, currentVersion, localDir, nil, apiVersion)
+}
+
+// UploadNextVersionTagged publishes the next version carrying the declared tags.
+func (c *DatasetClient) UploadNextVersionTagged(
+	ctx context.Context,
+	name string,
+	currentVersion string,
+	localDir string,
+	tags map[string]string,
+	apiVersion string,
+) (*Dataset, error) {
 	if currentVersion == "" {
 		latest, err := c.latestRegisteredVersion(ctx, name, apiVersion)
 		if err != nil {
@@ -121,7 +133,8 @@ func (c *DatasetClient) UploadNextVersion(
 	var err error
 	for range versionConflictAttempts {
 		var ds *Dataset
-		ds, err = c.UploadNewVersion(ctx, name, currentVersion, localDir, apiVersion)
+		ds, err = c.UploadVersionTagged(
+			ctx, name, NextVersion(currentVersion), localDir, tags, apiVersion)
 		if err == nil || !IsVersionConflict(err) {
 			return ds, err
 		}
@@ -248,6 +261,18 @@ func (c *DatasetClient) UploadVersion(
 	localDir string,
 	apiVersion string,
 ) (*Dataset, error) {
+	return c.UploadVersionTagged(ctx, name, version, localDir, nil, apiVersion)
+}
+
+// UploadVersionTagged publishes the version carrying the declared tags.
+func (c *DatasetClient) UploadVersionTagged(
+	ctx context.Context,
+	name string,
+	version string,
+	localDir string,
+	tags map[string]string,
+	apiVersion string,
+) (*Dataset, error) {
 	content, err := ReadFirstJSONLFile(localDir)
 	if err != nil {
 		return nil, messages.ReadingDatasetFromDir(localDir, err)
@@ -290,7 +315,7 @@ func (c *DatasetClient) UploadVersion(
 
 	// Step 3: Finalize the dataset version with the full blob URI.
 	dataURI := strings.TrimSuffix(blobURI, "/") + "/" + blobName
-	return c.FinalizeDatasetVersion(ctx, name, newVersion, dataURI, apiVersion)
+	return c.FinalizeDatasetVersionTagged(ctx, name, newVersion, dataURI, tags, apiVersion)
 }
 
 // StartPendingUpload initiates a pending upload for a dataset version.
@@ -357,14 +382,58 @@ func (c *DatasetClient) FinalizeDatasetVersion(
 	dataURI string,
 	apiVersion string,
 ) (*Dataset, error) {
+	return c.FinalizeDatasetVersionTagged(ctx, name, version, dataURI, nil, apiVersion)
+}
+
+// FinalizeDatasetVersionTagged publishes the version carrying the tags the
+// configuration declared.
+//
+// Tags are what a dataset says about itself -- which job produced it, what
+// level it grades at, which team owns it -- and they are only useful if they
+// arrive with the version rather than being applied afterwards, where a failed
+// second call leaves a published version nobody can find by filter.
+func (c *DatasetClient) FinalizeDatasetVersionTagged(
+	ctx context.Context,
+	name string,
+	version string,
+	dataURI string,
+	tags map[string]string,
+	apiVersion string,
+) (*Dataset, error) {
 	path := fmt.Sprintf("%s/%s/versions/%s", pathDatasets, url.PathEscape(name), url.PathEscape(version))
 	request := &FinalizeDatasetRequest{
 		Name:    name,
 		Version: version,
 		Type:    "uri_file",
 		DataURI: dataURI,
+		Tags:    tags,
 	}
 	return doRequestTyped[Dataset](c, ctx, http.MethodPut, path, nil, request, apiVersion)
+}
+
+// UpdateVersionTags updates a published version's tags without republishing
+// its data.
+//
+// It re-sends the version's own dataUri, so the bytes the version points at do
+// not move. A tag-only edit to the configuration is not a new dataset, and
+// publishing one would renumber every reference to it.
+func (c *DatasetClient) UpdateVersionTags(ctx context.Context,
+	name string,
+	version string,
+	tags map[string]string,
+	apiVersion string,
+) (*Dataset, error) {
+	current, err := c.GetDataset(ctx, name, version, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+	dataURI := current.ResolvedBlobURI()
+	if dataURI == "" {
+		// Without it the PUT would publish a version pointing at nothing, which
+		// is a worse outcome than leaving the tags as they were.
+		return nil, messages.NoBlobURI()
+	}
+	return c.FinalizeDatasetVersionTagged(ctx, name, version, dataURI, tags, apiVersion)
 }
 
 // GetDataset retrieves metadata for a dataset by name and version.

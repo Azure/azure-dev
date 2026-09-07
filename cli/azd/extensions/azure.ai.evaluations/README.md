@@ -94,7 +94,7 @@ Eval groups are immutable, so a change to a group's evaluators, target or
 | Group | Commands |
 |---|---|
 | `azd ai eval` | `init` · `generate` · `create [name]` · `list` · `show <eval>` · `delete <eval>` |
-| `azd ai eval dataset` | `create` · `update` · `list` · `show` · `delete` · `versions list` |
+| `azd ai eval dataset` | `create` · `update` · `list` · `show` · `download` · `delete` · `versions list` |
 | `azd ai eval evaluator` | `create` · `update` · `list` · `show` · `delete` · `versions list` |
 | `azd ai eval run` | `start` · `list` · `show` · `cancel` · `delete` · `output list` · `output show` · `output export` |
 | `azd ai eval job` | `list` · `show` · `cancel` · `delete` |

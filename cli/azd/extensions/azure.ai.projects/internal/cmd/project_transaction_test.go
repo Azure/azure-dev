@@ -70,7 +70,7 @@ func TestReconcileProjectEnvironmentRollbackRestoresValues(t *testing.T) {
 	}
 	client := newProjectEnvironmentClient(t, envServer)
 
-	_, err := reconcileProjectEnvironmentWithRollback(
+	_, _, err := reconcileProjectEnvironmentWithRollback(
 		t.Context(),
 		client,
 		"test",
@@ -435,6 +435,109 @@ func TestResolveProjectEjectAcrMode(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, test.want, got)
+		})
+	}
+}
+
+func TestExistingProjectEjectionDoesNotEmitReplacedRegistryState(t *testing.T) {
+	const (
+		oldEndpoint = "https://old.azurecr.io"
+		oldResource = "/subscriptions/sub/resourceGroups/old-rg/providers/" +
+			"Microsoft.ContainerRegistry/registries/old"
+		oldProjectEndpoint = "https://old-account.services.ai.azure.com/api/projects/old-project"
+		oldProjectID       = "/subscriptions/sub/resourceGroups/old-rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/old-account/projects/old-project"
+		newProjectEndpoint = "https://new-account.services.ai.azure.com/api/projects/new-project"
+		newProjectID       = "/subscriptions/sub/resourceGroups/new-rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/new-account/projects/new-project"
+	)
+	params := map[string]any{
+		"includeAcr":            true,
+		"deployments":           []synthesis.Deployment{},
+		"connections":           []synthesis.Connection{},
+		"connectionCredentials": map[string]map[string]any{},
+	}
+	oldValues := map[string]string{
+		"AZURE_AI_PROJECT_ID":                  oldProjectID,
+		"FOUNDRY_PROJECT_ENDPOINT":             oldProjectEndpoint,
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT":    oldEndpoint,
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": oldResource,
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "old-connection",
+		"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
+		"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "false",
+		"AZURE_FOUNDRY_RESOURCE_GROUP":         "old-foundry-rg",
+		"AZD_FOUNDRY_RESOURCE_GROUP_ID":        "/subscriptions/sub/resourceGroups/old-foundry-rg",
+	}
+	target := &resolvedProject{
+		Mode:              projectModeExistingID,
+		ResourceId:        newProjectID,
+		ResourceGroupName: "new-rg",
+		AccountName:       "new-account",
+		ProjectName:       "new-project",
+		Endpoint:          newProjectEndpoint,
+	}
+	require.True(t, projectIdentityChanged(oldValues, oldProjectEndpoint, target))
+	envServer := &transactionEnvironmentServer{values: oldValues}
+	client := newProjectEnvironmentClient(t, envServer)
+	_, effective, err := reconcileProjectEnvironmentWithRollback(
+		t.Context(),
+		client,
+		"test",
+		target.Mode,
+		target,
+		true,
+	)
+	require.NoError(t, err)
+
+	for _, test := range []struct {
+		name  string
+		read  func(string) ([]byte, error)
+		write func(string, projectEjectAcrMode, map[string]string) error
+	}{
+		{
+			name: "Bicep",
+			read: func(dir string) ([]byte, error) {
+				return os.ReadFile(filepath.Join(dir, "main.parameters.json"))
+			},
+			write: func(
+				dir string,
+				mode projectEjectAcrMode,
+				values map[string]string,
+			) error {
+				return writeExistingProjectBicep(
+					dir, "main", params, mode, values,
+				)
+			},
+		},
+		{
+			name: "Terraform",
+			read: func(dir string) ([]byte, error) {
+				return os.ReadFile(filepath.Join(dir, "main.tfvars.json"))
+			},
+			write: func(
+				dir string,
+				mode projectEjectAcrMode,
+				values map[string]string,
+			) error {
+				return writeExistingProjectTerraform(
+					dir, "main", params, mode, values,
+				)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			mode, err := resolveProjectEjectAcrMode(params, effective)
+			require.NoError(t, err)
+			assert.Equal(t, projectEjectAcrCreate, mode)
+			require.NoError(t, test.write(dir, mode, effective))
+
+			raw, err := test.read(dir)
+			require.NoError(t, err)
+			output := string(raw)
+			assert.NotContains(t, output, oldEndpoint)
+			assert.NotContains(t, output, oldResource)
+			assert.NotContains(t, output, "old-connection")
 		})
 	}
 }

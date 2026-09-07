@@ -545,29 +545,135 @@ func TestProjectServiceReferenceMutationPreflight(t *testing.T) {
 }
 
 func TestProjectEnvironmentTransitions(t *testing.T) {
+	const (
+		oldEndpoint = "https://old-account.services.ai.azure.com/api/projects/old-project"
+		newEndpoint = "https://new-account.services.ai.azure.com/api/projects/new-project"
+		oldID       = "/subscriptions/sub/resourceGroups/old-rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/old-account/projects/old-project"
+		newID = "/subscriptions/sub/resourceGroups/new-rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/new-account/projects/new-project"
+	)
 	old := map[string]string{
-		"AZURE_AI_PROJECT_ID":            "old-id",
-		"AZURE_AI_ACCOUNT_NAME":          "old-account",
-		"AZURE_AI_PROJECT_NAME":          "old-project",
-		"FOUNDRY_PROJECT_ENDPOINT":       "https://old.services.ai.azure.com/api/projects/old",
-		"AZURE_OPENAI_ENDPOINT":          "https://old.openai.azure.com/",
-		"AZURE_RESOURCE_GROUP":           "old-rg",
-		"AZURE_AI_DEPLOYMENTS_LOCATION":  "eastus",
-		"AZURE_AI_MODEL_DEPLOYMENT_NAME": "chat",
+		"AZURE_AI_PROJECT_ID":               oldID,
+		"AZURE_AI_ACCOUNT_NAME":             "old-account",
+		"AZURE_AI_PROJECT_NAME":             "old-project",
+		"FOUNDRY_PROJECT_ENDPOINT":          oldEndpoint,
+		"AZURE_OPENAI_ENDPOINT":             "https://old.openai.azure.com/",
+		"AZURE_RESOURCE_GROUP":              "old-rg",
+		"AZURE_AI_DEPLOYMENTS_LOCATION":     "eastus",
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME":    "chat",
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT": "https://old.azurecr.io",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/acr-rg/providers/" +
+			"Microsoft.ContainerRegistry/registries/old",
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME":          "old-connection",
+		"AZD_FOUNDRY_ACR_MODE":                          "reuse-connect",
+		"AZD_FOUNDRY_ACR_PULL_ASSIGNED":                 "true",
+		"AZURE_AI_PROJECT_CONNECTION_NAMES":             "search",
+		"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": oldEndpoint,
+		"AZURE_FOUNDRY_RESOURCE_GROUP":                  "old-foundry-rg",
+		"AZD_FOUNDRY_RESOURCE_GROUP_ID":                 "/subscriptions/sub/resourceGroups/old-foundry-rg",
 	}
-	plan := planProjectEnvironment(old, projectModeExistingEndpoint, &resolvedProject{
-		Endpoint:    "https://new.services.ai.azure.com/api/projects/new",
-		ProjectName: "new",
-	}, true)
-	assert.Equal(t, "true", plan.Sets["USE_EXISTING_AI_PROJECT"])
-	assert.Equal(t, []string{
-		"AZURE_AI_ACCOUNT_NAME",
-		"AZURE_AI_DEPLOYMENTS_LOCATION",
-		"AZURE_AI_MODEL_DEPLOYMENT_NAME",
-		"AZURE_AI_PROJECT_ID",
-		"AZURE_OPENAI_ENDPOINT",
-		"AZURE_RESOURCE_GROUP",
-	}, plan.Unsets)
+	resetKeys := projectReplacementEnvironmentKeys
+	tests := []struct {
+		name            string
+		serviceEndpoint string
+		values          func(map[string]string)
+		target          *resolvedProject
+		wantReplacement bool
+	}{
+		{
+			name:            "genuine replacement",
+			serviceEndpoint: oldEndpoint,
+			target: &resolvedProject{
+				Mode:              projectModeExistingID,
+				ResourceId:        newID,
+				ResourceGroupName: "new-rg",
+				AccountName:       "new-account",
+				ProjectName:       "new-project",
+				Endpoint:          newEndpoint,
+			},
+			wantReplacement: true,
+		},
+		{
+			name:            "same project preserves state",
+			serviceEndpoint: oldEndpoint,
+			target: &resolvedProject{
+				Mode:              projectModeExistingID,
+				ResourceId:        oldID,
+				ResourceGroupName: "old-rg",
+				AccountName:       "old-account",
+				ProjectName:       "old-project",
+				Endpoint:          oldEndpoint,
+			},
+		},
+		{
+			name:            "fills missing project ID",
+			serviceEndpoint: oldEndpoint,
+			values: func(values map[string]string) {
+				delete(values, "AZURE_AI_PROJECT_ID")
+			},
+			target: &resolvedProject{
+				Mode:              projectModeExistingID,
+				ResourceId:        oldID,
+				ResourceGroupName: "old-rg",
+				AccountName:       "old-account",
+				ProjectName:       "old-project",
+				Endpoint:          oldEndpoint,
+			},
+		},
+		{
+			name:            "fills missing endpoint",
+			serviceEndpoint: "",
+			values: func(values map[string]string) {
+				delete(values, "FOUNDRY_PROJECT_ENDPOINT")
+			},
+			target: &resolvedProject{
+				Mode:              projectModeExistingID,
+				ResourceId:        oldID,
+				ResourceGroupName: "old-rg",
+				AccountName:       "old-account",
+				ProjectName:       "old-project",
+				Endpoint:          oldEndpoint,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values := map[string]string{}
+			for key, value := range old {
+				values[key] = value
+			}
+			if test.values != nil {
+				test.values(values)
+			}
+
+			replaced := projectIdentityChanged(
+				values,
+				test.serviceEndpoint,
+				test.target,
+			)
+			assert.Equal(t, test.wantReplacement, replaced)
+
+			plan := planProjectEnvironment(
+				values,
+				test.target.Mode,
+				test.target,
+				replaced,
+			)
+			assert.Equal(t, "true", plan.Sets["USE_EXISTING_AI_PROJECT"])
+			effective := applyProjectEnvironmentPlan(values, plan)
+			for _, key := range resetKeys {
+				if test.wantReplacement {
+					assert.NotContains(t, effective, key)
+					assert.Contains(t, plan.Unsets, key)
+				} else {
+					assert.Equal(t, old[key], effective[key])
+					assert.NotContains(t, plan.Unsets, key)
+				}
+			}
+		})
+	}
 }
 
 func TestProjectEnvironmentClearsOnlyNonEmptyValues(t *testing.T) {

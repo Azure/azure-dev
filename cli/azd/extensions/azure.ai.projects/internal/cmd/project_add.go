@@ -224,8 +224,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if service != nil {
 		oldEndpoint = serviceEndpoint(service.Resolved)
 	}
-	identityChanged := !equalProjectEndpoint(oldEndpoint, target.Endpoint) ||
-		!strings.EqualFold(oldValues["AZURE_AI_PROJECT_ID"], target.ResourceId)
+	projectReplaced := projectIdentityChanged(oldValues, oldEndpoint, target)
 	oldProvider, oldPath := projectInfraConfig(projectConfig)
 	infraDeclaration, err := readProjectInfraDeclaration(projectConfig)
 	if err != nil {
@@ -275,8 +274,8 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return rollbackProjectAdd(err, restoreProvider)
 	}
-	restoreEnvironment, err := reconcileProjectEnvironmentWithRollback(
-		ctx, client, envName, target.Mode, target, identityChanged,
+	restoreEnvironment, effectiveValues, err := reconcileProjectEnvironmentWithRollback(
+		ctx, client, envName, target.Mode, target, projectReplaced,
 	)
 	if err != nil {
 		return rollbackProjectAdd(err, restoreService, restoreProvider)
@@ -290,7 +289,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			infra,
 			target.Endpoint,
 			target.ResourceId,
-			oldValues,
+			effectiveValues,
 		); err != nil {
 			return rollbackProjectAdd(
 				err, restoreEnvironment, restoreService, restoreInfra,

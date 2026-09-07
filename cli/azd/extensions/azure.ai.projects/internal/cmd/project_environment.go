@@ -20,13 +20,99 @@ type environmentPlan struct {
 	Unsets []string
 }
 
+// Registry endpoints and resource IDs are reset with project-bound state.
+// Reusing them after a replacement must go through an explicit, validated
+// registry-selection path rather than inheriting the old environment.
+var projectReplacementEnvironmentKeys = []string{
+	"AZURE_AI_MODEL_DEPLOYMENT_NAME",
+	"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+	"AZD_FOUNDRY_ACR_MODE",
+	"AZD_FOUNDRY_ACR_PULL_ASSIGNED",
+	"AZURE_AI_PROJECT_CONNECTION_NAMES",
+	"AZURE_FOUNDRY_RESOURCE_GROUP",
+	"AZD_FOUNDRY_RESOURCE_GROUP_ID",
+}
+
+func projectIdentityChanged(
+	oldValues map[string]string,
+	oldEndpoint string,
+	project *resolvedProject,
+) bool {
+	if project == nil {
+		return false
+	}
+
+	oldEndpoint = strings.TrimSpace(oldEndpoint)
+	if oldEndpoint == "" {
+		oldEndpoint = strings.TrimSpace(oldValues["FOUNDRY_PROJECT_ENDPOINT"])
+	}
+	oldID := strings.TrimSpace(oldValues["AZURE_AI_PROJECT_ID"])
+
+	if project.Mode == projectModeNew {
+		for _, key := range []string{
+			"AZURE_AI_PROJECT_ID",
+			"AZURE_AI_ACCOUNT_NAME",
+			"AZURE_AI_PROJECT_NAME",
+			"FOUNDRY_PROJECT_ENDPOINT",
+		} {
+			if strings.TrimSpace(oldValues[key]) != "" {
+				return true
+			}
+		}
+		return oldEndpoint != ""
+	}
+
+	targetEndpoint := strings.TrimSpace(project.Endpoint)
+	targetID := strings.TrimSpace(project.ResourceId)
+	if oldEndpoint != "" && targetEndpoint != "" &&
+		!equalProjectEndpoint(oldEndpoint, targetEndpoint) {
+		return true
+	}
+	if oldID != "" && targetID != "" &&
+		!strings.EqualFold(oldID, targetID) {
+		return true
+	}
+	if oldEndpoint == "" && oldID != "" && targetEndpoint != "" {
+		oldProject, err := projectFromResourceID(oldID)
+		if err != nil ||
+			!equalProjectEndpoint(oldProject.Endpoint, targetEndpoint) {
+			return true
+		}
+	}
+	if oldID == "" && oldEndpoint != "" && targetID != "" {
+		if targetProject, err := projectFromResourceID(targetID); err == nil &&
+			!equalProjectEndpoint(oldEndpoint, targetProject.Endpoint) {
+			return true
+		}
+	}
+	if strings.TrimSpace(oldValues["AZURE_AI_ACCOUNT_NAME"]) != "" &&
+		project.AccountName != "" &&
+		!strings.EqualFold(
+			strings.TrimSpace(oldValues["AZURE_AI_ACCOUNT_NAME"]),
+			strings.TrimSpace(project.AccountName),
+		) {
+		return true
+	}
+	if strings.TrimSpace(oldValues["AZURE_AI_PROJECT_NAME"]) != "" &&
+		project.ProjectName != "" &&
+		!strings.EqualFold(
+			strings.TrimSpace(oldValues["AZURE_AI_PROJECT_NAME"]),
+			strings.TrimSpace(project.ProjectName),
+		) {
+		return true
+	}
+	return false
+}
+
 // planProjectEnvironment calculates environment mutations.
 // It is independent from gRPC for daemon-free tests.
 func planProjectEnvironment(
 	oldValues map[string]string,
 	mode projectMode,
 	project *resolvedProject,
-	identityChanged bool,
+	projectReplaced bool,
 ) environmentPlan {
 	sets := map[string]string{}
 	if project == nil {
@@ -98,8 +184,10 @@ func planProjectEnvironment(
 			deleteKeys[key] = struct{}{}
 		}
 	}
-	if identityChanged {
-		deleteKeys["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = struct{}{}
+	if projectReplaced {
+		for _, key := range projectReplacementEnvironmentKeys {
+			deleteKeys[key] = struct{}{}
+		}
 	}
 	for key := range sets {
 		delete(deleteKeys, key)
@@ -114,18 +202,35 @@ func planProjectEnvironment(
 	return environmentPlan{Sets: sets, Unsets: unsets}
 }
 
+func applyProjectEnvironmentPlan(
+	oldValues map[string]string,
+	plan environmentPlan,
+) map[string]string {
+	effective := make(map[string]string, len(oldValues)+len(plan.Sets))
+	for key, value := range oldValues {
+		effective[key] = value
+	}
+	for key, value := range plan.Sets {
+		effective[key] = value
+	}
+	for _, key := range plan.Unsets {
+		delete(effective, key)
+	}
+	return effective
+}
+
 func reconcileProjectEnvironmentWithRollback(
 	ctx context.Context,
 	client *azdext.AzdClient,
 	envName string,
 	mode projectMode,
 	project *resolvedProject,
-	identityChanged bool,
-) (func() error, error) {
+	projectReplaced bool,
+) (func() error, map[string]string, error) {
 	response, err := client.Environment().GetValues(ctx,
 		&azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {
-		return func() error { return nil }, exterrors.Dependency(
+		return func() error { return nil }, nil, exterrors.Dependency(
 			exterrors.CodeEnvironmentValuesFailed,
 			fmt.Sprintf("read project environment %q: %s", envName, err),
 			"select or create an azd environment before initializing a project",
@@ -137,7 +242,7 @@ func reconcileProjectEnvironmentWithRollback(
 			old[pair.GetKey()] = pair.GetValue()
 		}
 	}
-	plan := planProjectEnvironment(old, mode, project, identityChanged)
+	plan := planProjectEnvironment(old, mode, project, projectReplaced)
 	keys := make([]string, 0, len(plan.Sets))
 	for key := range plan.Sets {
 		keys = append(keys, key)
@@ -152,7 +257,7 @@ func reconcileProjectEnvironmentWithRollback(
 			operationErr := fmt.Errorf(
 				"set project environment value %s: %w", key, err,
 			)
-			return func() error { return nil },
+			return func() error { return nil }, nil,
 				rollbackProjectEnvironment(
 					ctx, client, envName, old, plan, operationErr,
 				)
@@ -167,7 +272,7 @@ func reconcileProjectEnvironmentWithRollback(
 			operationErr := fmt.Errorf(
 				"clear project environment value %s: %w", key, err,
 			)
-			return func() error { return nil },
+			return func() error { return nil }, nil,
 				rollbackProjectEnvironment(
 					ctx, client, envName, old, plan, operationErr,
 				)
@@ -183,7 +288,7 @@ func reconcileProjectEnvironmentWithRollback(
 				plan,
 			)
 		})
-	}, nil
+	}, applyProjectEnvironmentPlan(old, plan), nil
 }
 
 func rollbackProjectEnvironment(

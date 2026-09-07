@@ -374,6 +374,8 @@ func renderEvaluators(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) 
 	if trimmed {
 		fmt.Fprint(cmd.OutOrStdout(), messages.ShowingSomeOf(len(rows), total))
 	}
+	fmt.Fprint(cmd.OutOrStdout(), messages.ViewDetailsHint(fmt.Sprintf(
+		"azd ai eval evaluator show %s --version %s", shown[0].Name, shown[0].Version)))
 	return nil
 }
 

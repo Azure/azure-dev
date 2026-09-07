@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"cmp"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -270,6 +271,8 @@ func (a *evalListAction) Run() error {
 	if page.HasMore && page.LastID != "" {
 		fmt.Fprint(out, messages.MoreEvalsToList(page.LastID))
 	}
+	fmt.Fprint(out, messages.ViewDetailsHint(
+		"azd ai eval show "+cmp.Or(matched[0].Name, matched[0].ID)))
 	return nil
 }
 

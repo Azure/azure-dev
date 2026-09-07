@@ -266,6 +266,18 @@
           "required": ["codeConfiguration"]
         }
       }
+    },
+    {
+      "$comment": "Telephony bindings are only supported for prompt voice agents.",
+      "if": {
+        "required": ["telephony"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "const": "prompt-voice" }
+        },
+        "required": ["kind"]
+      }
     }
   ],
   "definitions": {

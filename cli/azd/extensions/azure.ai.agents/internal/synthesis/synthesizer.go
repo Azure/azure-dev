@@ -69,6 +69,12 @@ type Input struct {
 	// provision path), ${VAR} is resolved here and a missing variable fails.
 	PreserveVarRefs bool
 
+	// ExcludeConnectionServices leaves split host: azure.ai.connection
+	// services out of provider-managed infrastructure. The Connections
+	// extension reconciles them during deploy. Legacy bundled connections
+	// remain included, and ejected/on-disk infrastructure leaves this false.
+	ExcludeConnectionServices bool
+
 	// ProjectRoot is the directory holding azure.yaml. When set, $ref file
 	// includes in the service entry (and its deployment items) are resolved
 	// against it before synthesis, so refs become the actual content rather
@@ -233,6 +239,7 @@ type projectService struct {
 	Host        string        `yaml:"host"`
 	Endpoint    string        `yaml:"endpoint,omitempty"`
 	Deployments []Deployment  `yaml:"deployments,omitempty"`
+	Connections []Connection  `yaml:"connections,omitempty"`
 	Agents      []agentBlock  `yaml:"agents,omitempty"`
 	Network     *networkBlock `yaml:"network,omitempty"`
 }
@@ -318,13 +325,18 @@ func Synthesize(in Input) (*Result, error) {
 		deployments = []Deployment{}
 	}
 
-	connections, err := collectConnections(
-		root.Services,
-		in.Env,
-		in.ServiceEnvironments,
-		!in.PreserveVarRefs,
-		in.ProjectRoot,
-	)
+	connections := []Connection{}
+	if in.ExcludeConnectionServices {
+		connections, err = expandLegacyConnections(svc.Connections, in.Env, !in.PreserveVarRefs)
+	} else {
+		connections, err = collectConnections(
+			root.Services,
+			in.Env,
+			in.ServiceEnvironments,
+			!in.PreserveVarRefs,
+			in.ProjectRoot,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -387,13 +399,18 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	connections, err := collectConnections(
-		root.Services,
-		in.Env,
-		in.ServiceEnvironments,
-		!in.PreserveVarRefs,
-		in.ProjectRoot,
-	)
+	connections := []Connection{}
+	if in.ExcludeConnectionServices {
+		connections, err = expandLegacyConnections(svc.Connections, in.Env, !in.PreserveVarRefs)
+	} else {
+		connections, err = collectConnections(
+			root.Services,
+			in.Env,
+			in.ServiceEnvironments,
+			!in.PreserveVarRefs,
+			in.ProjectRoot,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -889,6 +906,46 @@ func collectConnections(
 		return strings.Compare(a.Name, b.Name)
 	})
 	return connections, nil
+}
+
+func expandLegacyConnections(
+	connections []Connection,
+	environment map[string]string,
+	resolve bool,
+) ([]Connection, error) {
+	mapping := connectionEnvironmentMapping(environment, nil, false)
+	result := slices.Clone(connections)
+	for i := range result {
+		connection := &result[i]
+		var err error
+		for field, target := range map[string]*string{
+			"target":           &connection.Target,
+			"audience":         &connection.Audience,
+			"authorizationUrl": &connection.AuthorizationURL,
+			"tokenUrl":         &connection.TokenURL,
+			"refreshUrl":       &connection.RefreshURL,
+			"connectorName":    &connection.ConnectorName,
+		} {
+			*target, err = maybeExpand(*target, mapping, resolve)
+			if err != nil {
+				return nil, fmt.Errorf("legacy connection %q %s: %w", connection.Name, field, err)
+			}
+		}
+		connection.Scopes, err = expandStrings(connection.Scopes, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("legacy connection %q scopes: %w", connection.Name, err)
+		}
+		connection.Credentials, err = expandCredentials(connection.Credentials, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("legacy connection %q credentials: %w", connection.Name, err)
+		}
+		connection.Metadata, err = expandMetadata(connection.Metadata, mapping, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("legacy connection %q metadata: %w", connection.Name, err)
+		}
+		connection.AuthType = normalizeConnectionAuthType(connection.AuthType)
+	}
+	return result, nil
 }
 
 // visitEnabledConnectionServices walks azure.ai.connection services

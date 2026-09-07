@@ -63,3 +63,10 @@ func TestReadinessScopeKeys(t *testing.T) {
 	require.Equal(t, "AGENT_MY_AGENT_BLUEPRINT_CLIENT_ID", AgentBlueprintClientID("my-agent"))
 	require.Equal(t, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT", ConnectionProjectEndpoint)
 }
+
+func TestConnectionServiceProjectEndpoint(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "CONNECTION_MY_CONNECTION_PROJECT_ENDPOINT", ConnectionServiceProjectEndpoint("my connection"))
+	require.Equal(t, "CONNECTION_MY_CONNECTION_PROJECT_ENDPOINT", ConnectionServiceProjectEndpoint("my--connection"))
+}

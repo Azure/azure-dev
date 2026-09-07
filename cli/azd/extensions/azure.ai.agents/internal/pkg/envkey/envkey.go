@@ -109,3 +109,10 @@ func AgentBlueprintClientID(agentName string) string {
 
 // ConnectionProjectEndpoint scopes provisioned connection names to a Foundry project.
 const ConnectionProjectEndpoint = "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"
+
+// ConnectionServiceProjectEndpoint scopes one Connection service deployment
+// marker to the Foundry project where the owning extension reconciled it.
+func ConnectionServiceProjectEndpoint(connectionName string) string {
+	sanitized := nonAlphanumRe.ReplaceAllString(strings.ToUpper(connectionName), "_")
+	return fmt.Sprintf("CONNECTION_%s_PROJECT_ENDPOINT", sanitized)
+}

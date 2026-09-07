@@ -1003,6 +1003,12 @@ func normalizeAuthType(armAuthType string) string {
 // Used for auth types that lack ARM SDK structs and require raw REST.
 func normalizeAuthTypeToARM(cliAuthType string) string {
 	switch cliAuthType {
+	case "api-key":
+		return "ApiKey"
+	case "custom-keys":
+		return "CustomKeys"
+	case "none":
+		return "None"
 	case "oauth2":
 		return "OAuth2"
 	case "user-entra-token":

@@ -491,7 +491,7 @@ func TestValidateFoundryDependenciesRejectsCrossProjectMarkers(t *testing.T) {
 	}
 }
 
-func TestValidateFoundryDependenciesProvisionOnlyRemediation(t *testing.T) {
+func TestValidateFoundryDependenciesProvisionAndConnectionDeployRemediation(t *testing.T) {
 	t.Parallel()
 
 	agent := &azdext.ServiceConfig{
@@ -509,5 +509,43 @@ func TestValidateFoundryDependenciesProvisionOnlyRemediation(t *testing.T) {
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	require.Contains(t, localErr.Suggestion, "azd provision")
-	require.NotContains(t, localErr.Suggestion, "azd deploy --all")
+	require.Contains(t, localErr.Suggestion, "azd deploy --all")
+}
+
+func TestValidateFoundryDependenciesConnectionUsesDeployMarker(t *testing.T) {
+	t.Parallel()
+
+	agent := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, Uses: []string{"connection"}}
+	services := map[string]*azdext.ServiceConfig{
+		"agent":      agent,
+		"connection": {Name: "connection", Host: foundryConnectionHost},
+	}
+
+	t.Run("matching project is ready", func(t *testing.T) {
+		t.Parallel()
+		env := map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT":                            "https://example.test/projects/current",
+			envkey.ConnectionServiceProjectEndpoint("connection"): "https://example.test/projects/current/",
+		}
+		require.NoError(t, validateFoundryDependencies(t.Context(), agent, nil, services, env, nil))
+	})
+
+	t.Run("other project is rejected", func(t *testing.T) {
+		t.Parallel()
+		env := map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT":                            "https://example.test/projects/current",
+			envkey.ConnectionServiceProjectEndpoint("connection"): "https://example.test/projects/old",
+		}
+		err := validateFoundryDependencies(t.Context(), agent, nil, services, env, nil)
+		require.ErrorContains(t, err, "CONNECTION_CONNECTION_PROJECT_ENDPOINT")
+	})
+
+	t.Run("missing marker recommends targeted deploy", func(t *testing.T) {
+		t.Parallel()
+		err := validateFoundryDependencies(t.Context(), agent, nil, services, nil, nil)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Contains(t, localErr.Suggestion, `azd deploy "connection"`)
+		require.NotContains(t, localErr.Suggestion, "azd provision")
+	})
 }

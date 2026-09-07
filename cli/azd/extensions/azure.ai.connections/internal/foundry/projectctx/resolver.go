@@ -24,7 +24,7 @@ var ReadAzdHostedSourcesFunc = readAzdHostedSources
 // `azd ai agent init` / `azd add` persist). Errors talking to the daemon are
 // returned only for non-Unavailable cases on the config read — Unavailable is
 // treated as "no daemon" and the caller falls through to subsequent levels.
-func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
+func readAzdHostedSources(ctx context.Context, environmentName string) (AzdHostedSources, error) {
 	var out AzdHostedSources
 
 	azdClient, err := azdext.NewAzdClient()
@@ -34,17 +34,23 @@ func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 	}
 	defer azdClient.Close()
 
-	if envResp, err := azdClient.Environment().GetCurrent(
-		ctx, &azdext.EmptyRequest{},
-	); err == nil {
+	envName := environmentName
+	if envName == "" {
+		if envResp, err := azdClient.Environment().GetCurrent(
+			ctx, &azdext.EmptyRequest{},
+		); err == nil {
+			envName = envResp.GetEnvironment().GetName()
+		}
+	}
+	if envName != "" {
 		for _, key := range []string{foundryEnvKey, azureAiEnvKey} {
 			envVal, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-				EnvName: envResp.Environment.Name,
+				EnvName: envName,
 				Key:     key,
 			})
 			if valErr == nil && envVal.Value != "" {
 				out.EnvValue = envVal.Value
-				out.EnvName = envResp.Environment.Name
+				out.EnvName = envName
 				break
 			}
 		}
@@ -101,7 +107,7 @@ func Resolve(ctx context.Context, opts ResolveOpts) (*Resolved, error) {
 	}
 
 	// Levels 2 + 3: azd-hosted sources (active env, then global config).
-	sources, err := ReadAzdHostedSourcesFunc(ctx)
+	sources, err := ReadAzdHostedSourcesFunc(ctx, opts.EnvironmentName)
 	if err != nil {
 		return nil, err
 	}

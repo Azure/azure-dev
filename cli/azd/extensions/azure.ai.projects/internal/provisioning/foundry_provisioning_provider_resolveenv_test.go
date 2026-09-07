@@ -444,11 +444,9 @@ func newPromptOrderTestClient(
 	return client
 }
 
-func TestInitializeResolvesEnvBeforeReadingServiceEnvironments(t *testing.T) {
-	// Greenfield: neither AZURE_SUBSCRIPTION_ID nor AZURE_LOCATION is
-	// set, so Initialize must prompt first. Reading service
-	// environments before the prompt would synthesize the connection
-	// with an empty target.
+func TestInitializeLeavesSplitConnectionEnvironmentToOwningExtension(t *testing.T) {
+	// Greenfield project inputs still resolve normally, but the embedded
+	// provider must not read or synthesize a split Connection's service env.
 	projectPath := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectPath, "azure.yaml"),
@@ -493,8 +491,7 @@ services:
 	require.NotNil(t, provider.synthResult)
 	connections, ok := provider.synthResult.Parameters["connections"].([]synthesis.Connection)
 	require.True(t, ok)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "https://search.westus2.example", connections[0].Target)
+	require.Empty(t, connections)
 }
 
 func TestInitializeValidatesConfigBeforePrompting(t *testing.T) {

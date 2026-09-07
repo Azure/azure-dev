@@ -133,13 +133,12 @@ func validateFoundryDependencies(
 		detail := validateFoundryDependency(dependency, env)
 		if detail != "" {
 			failures = append(failures, foundryDependencyFailure{
-				name:   dependencyName,
-				host:   host,
-				detail: detail,
-				requiresProvision: host == foundryProjectHost || host == legacyFoundryHost ||
-					host == foundryConnectionHost,
-				requiresDeploy: host == foundryToolboxHost || host == foundryAgentHost ||
-					host == foundrySkillHost,
+				name:              dependencyName,
+				host:              host,
+				detail:            detail,
+				requiresProvision: host == foundryProjectHost || host == legacyFoundryHost,
+				requiresDeploy: host == foundryConnectionHost || host == foundryToolboxHost ||
+					host == foundryAgentHost || host == foundrySkillHost,
 			})
 		}
 	}
@@ -350,6 +349,17 @@ func validateFoundryProjectDependency(_ *azdext.ServiceConfig, env map[string]st
 }
 
 func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[string]string) string {
+	serviceProjectKey := envkey.ConnectionServiceProjectEndpoint(service.GetName())
+	serviceProject := strings.TrimSpace(env[serviceProjectKey])
+	if serviceProject != "" {
+		if !sameProjectEndpoint(serviceProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+			return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", serviceProjectKey)
+		}
+		return ""
+	}
+
+	// Fall back to aggregate markers written by legacy provider-managed
+	// infrastructure so existing and ejected projects remain compatible.
 	connectionProject := strings.TrimSpace(env[envkey.ConnectionProjectEndpoint])
 	if connectionProject != "" && !sameProjectEndpoint(connectionProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
 		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)

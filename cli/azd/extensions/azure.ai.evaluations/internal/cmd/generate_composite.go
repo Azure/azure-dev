@@ -46,6 +46,9 @@ type generateCommandFlags struct {
 type generateAction struct {
 	cmd   *cobra.Command
 	flags *generateCommandFlags
+	// resolved holds what only the service can supply, kept so a second pass
+	// through the confirmation does not read the agent again.
+	resolved generationPlan
 }
 
 func newGenerateCommand() *cobra.Command {
@@ -91,7 +94,6 @@ func newGenerateCommand() *cobra.Command {
 
 func (a *generateAction) Run() error {
 	dataset, evaluator := selectedArtifacts(a.flags.wantDataset, a.flags.wantEvaluator)
-
 	// Checked before any network work, so a flag that cannot apply
 	// costs nothing to find out about. Changed() rather than the value,
 	// so a zero the caller actually typed is still caught and an
@@ -142,37 +144,74 @@ func (a *generateAction) Run() error {
 			return err
 		}
 	}
-	plans, err := buildGeneratePlans(generateRequest{
-		flags:         &a.flags.shared,
-		target:        target,
-		dataset:       dataset,
-		evaluator:     evaluator,
-		datasetName:   a.flags.datasetName,
-		evaluatorName: a.flags.evaluatorName,
-		maxSamples:    a.flags.maxSamples,
-		from:          a.flags.from,
-		traceDays:     a.flags.traceDays,
-	})
-	if err != nil {
-		return err
-	}
+	// Everything up to the confirmation is read-only. Generation calls a model
+	// and registers artifacts in a shared project, and none of that was
+	// confirmed: the first thing a reader saw was a job id for work already
+	// submitted, which is why Cancel has to come before any of it.
+	choices := generateChoices{dataset: dataset, evaluator: evaluator}
+	var ec *evalContext
+	var plans []generationPlan
+	for {
+		plans, err = buildGeneratePlans(generateRequest{
+			flags:         &a.flags.shared,
+			target:        target,
+			dataset:       choices.dataset,
+			evaluator:     choices.evaluator,
+			datasetName:   a.flags.datasetName,
+			evaluatorName: a.flags.evaluatorName,
+			maxSamples:    a.flags.maxSamples,
+			from:          a.flags.from,
+			traceDays:     a.flags.traceDays,
+		})
+		if err != nil {
+			return err
+		}
 
-	ec, resolved, err := prepareGeneration(a.cmd, &a.flags.shared, plans[0])
-	if err != nil {
-		return err
-	}
-	defer ec.Close()
+		// Built once and reused across a second pass: resolving the agent's
+		// instructions and deployment is two service reads, and the answer
+		// cannot change while the reader is looking at the plan.
+		if ec == nil {
+			var resolved generationPlan
+			ec, resolved, err = prepareGeneration(a.cmd, &a.flags.shared, plans[0])
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+			a.resolved = resolved
+		}
 
-	// prepareGeneration settles the inputs only the service can supply.
-	// They are the same for both artifacts, so they are read once.
-	for i := range plans {
-		plans[i].Instruction = resolved.Instruction
-		plans[i].Model = resolved.Model
-	}
-	if dataset && len(plans[0].From) == 0 {
-		plans[0].From = defaultGenerationSource(
-			ec.getEnvValue(a.cmd.Context(), appInsightsEnvKey),
-		)
+		// prepareGeneration settles the inputs only the service can supply.
+		// They are the same for both artifacts, so they are read once.
+		for i := range plans {
+			plans[i].Instruction = a.resolved.Instruction
+			plans[i].Model = a.resolved.Model
+		}
+		if choices.dataset && len(plans[0].From) == 0 {
+			plans[0].From = defaultGenerationSource(
+				ec.getEnvValue(a.cmd.Context(), appInsightsEnvKey),
+			)
+		}
+
+		decision, err := confirmGeneration(a.cmd, a.cmd.OutOrStdout(), generationSummary{
+			plans:      plans,
+			model:      a.resolved.Model,
+			instructed: a.resolved.Instruction != "",
+			configPath: a.flags.shared.path,
+			noWait:     a.flags.shared.noWait,
+		})
+		if err != nil {
+			return err
+		}
+		if decision == generateCancel {
+			fmt.Fprint(a.cmd.OutOrStdout(), messages.GenerationCancelled())
+			return nil
+		}
+		if decision == generateProceed {
+			break
+		}
+		if choices, err = a.askGenerateArtifacts(); err != nil {
+			return err
+		}
 	}
 
 	return ec.runGenerations(a.cmd, plans, a.flags.shared)

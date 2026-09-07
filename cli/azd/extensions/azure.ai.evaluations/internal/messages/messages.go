@@ -3232,6 +3232,111 @@ func Warning(err error) string {
 	return fmt.Sprintf("warning: %v\n", err)
 }
 
+// SelectGenerateScopePrompt asks which artifacts to generate.
+func SelectGenerateScopePrompt() string {
+	return "What do you want to generate?"
+}
+
+// GenerateScopeChoice names one scope the way the prompt shows it.
+func GenerateScopeChoice(dataset, evaluator bool) string {
+	switch {
+	case dataset && evaluator:
+		return "Dataset and evaluator"
+	case dataset:
+		return "Dataset only"
+	default:
+		return "Evaluator only"
+	}
+}
+
+// SelectingGenerateScope reports a failed scope prompt.
+func SelectingGenerateScope(err error) error {
+	return fmt.Errorf("selecting what to generate: %w", err)
+}
+
+// GenerationPlanHeading opens the block the confirmation is asked about.
+func GenerationPlanHeading() string {
+	return "\nGeneration plan\n\n"
+}
+
+// GenerationPlanLine is one settled value, in a column a reader can scan.
+func GenerationPlanLine(label, value string) string {
+	return fmt.Sprintf("  %-13s %s\n", label, value)
+}
+
+// GenerationPlanDetail is the qualifier under the value it qualifies.
+func GenerationPlanDetail(detail string) string {
+	if detail == "" {
+		return ""
+	}
+	return fmt.Sprintf("  %-13s %s\n", "", detail)
+}
+
+// DatasetPlanDetail says how many rows and from where.
+func DatasetPlanDetail(sampleSize int, from []string) string {
+	rows := "service default rows"
+	if sampleSize > 0 {
+		rows = fmt.Sprintf("%d test cases", sampleSize)
+	}
+	if len(from) == 0 {
+		return rows
+	}
+	return fmt.Sprintf("%s · source: %s", rows, strings.Join(from, ", "))
+}
+
+// EvaluatorPlanDetail says whether traces seed the rubric.
+func EvaluatorPlanDetail(traceDays int) string {
+	if traceDays <= 0 {
+		return "traces off"
+	}
+	return fmt.Sprintf("seeded from %d day(s) of traces", traceDays)
+}
+
+// GenerationPlanLocal says what lands on this machine.
+func GenerationPlanLocal(artifacts int, configPath string, noWait bool) string {
+	files := fmt.Sprintf("%d artifact file(s)", artifacts)
+	if noWait {
+		return "nothing yet"
+	}
+	return fmt.Sprintf("%s + update %s", files, configPath)
+}
+
+// GenerationPlanNoWait says what --no-wait defers.
+//
+// Stated in the plan rather than discovered afterwards: the jobs are billed
+// either way, and a reader who expected files is owed the difference before
+// they approve it.
+func GenerationPlanNoWait() string {
+	return "--no-wait: the jobs are submitted, but no file or config change happens"
+}
+
+// ConfirmGenerationPrompt asks whether to spend what the plan described.
+func ConfirmGenerationPrompt() string {
+	return "Generate these artifacts?"
+}
+
+// GenerateProceedChoice submits the jobs.
+func GenerateProceedChoice() string { return "Generate" }
+
+// GenerateChangeChoice runs the questions again.
+func GenerateChangeChoice() string { return "Change selections" }
+
+// GenerateCancelChoice submits nothing.
+func GenerateCancelChoice() string { return "Cancel" }
+
+// GenerationCancelled reports a generation nobody approved.
+//
+// It says what was not done rather than exiting silently: a command that bills
+// a model has to be distinguishable from one that did not.
+func GenerationCancelled() string {
+	return "\nCancelled. No jobs were submitted and nothing was written.\n"
+}
+
+// ConfirmingGeneration reports a failed confirmation prompt.
+func ConfirmingGeneration(err error) error {
+	return fmt.Errorf("confirming the artifacts to generate: %w", err)
+}
+
 // StaleRecordedEvalPath reports an environment value that disagrees with the
 // project's own declaration.
 //

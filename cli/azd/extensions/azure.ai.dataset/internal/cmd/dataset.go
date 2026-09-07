@@ -312,6 +312,8 @@ type datasetListAction struct {
 func newDatasetListCommand() *cobra.Command {
 	var endpointFlg string
 	var tags []string
+	var displayLimit int
+	var showAll bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -322,6 +324,7 @@ func newDatasetListCommand() *cobra.Command {
 		},
 	}
 
+	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
 	addTagFilterFlag(cmd, &tags)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	registerOutputFormats(cmd)
@@ -393,6 +396,8 @@ type datasetVersionsListAction struct {
 
 func newDatasetVersionsListCommand() *cobra.Command {
 	var endpointFlg string
+	var displayLimit int
+	var showAll bool
 
 	cmd := &cobra.Command{
 		Use:   "list <name>",
@@ -405,6 +410,7 @@ func newDatasetVersionsListCommand() *cobra.Command {
 		},
 	}
 
+	addDisplayPagingFlags(cmd, &displayLimit, &showAll, defaultPageSize)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	registerOutputFormats(cmd)
 	return cmd
@@ -443,17 +449,18 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 	if list == nil {
 		list = &dataset_api.DatasetList{}
 	}
+	shown, total, trimmed := trimForDisplay(cmd, list.Value)
 	if isJSON(cmd) {
-		return emitJSONList(cmd.OutOrStdout(), list.Value)
+		return emitJSONPage(cmd.OutOrStdout(), shown, &total, "")
 	}
-	rows := make([][]string, 0, len(list.Value))
+	rows := make([][]string, 0, len(shown))
 	tagged := false
-	for _, d := range list.Value {
+	for _, d := range shown {
 		if len(d.Tags) > 0 {
 			tagged = true
 		}
 	}
-	for _, d := range list.Value {
+	for _, d := range shown {
 		row := []string{d.Name, d.Version, d.Type}
 		if tagged {
 			row = append(row, tagSummary(d.Tags))
@@ -472,7 +479,13 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 	if tagged {
 		headers = append(headers, "TAGS")
 	}
-	return emitTable(cmd.OutOrStdout(), headers, rows)
+	if err := emitTable(cmd.OutOrStdout(), headers, rows); err != nil {
+		return err
+	}
+	if trimmed {
+		fmt.Fprint(cmd.OutOrStdout(), messages.ShowingSomeOf(len(rows), total))
+	}
+	return nil
 }
 
 // latestVersionForShow resolves the version `show` reads when none was named.

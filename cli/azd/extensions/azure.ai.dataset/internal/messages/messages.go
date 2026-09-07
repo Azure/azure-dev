@@ -176,6 +176,14 @@ func NoDatasets(tags ...string) string {
 	return fmt.Sprintf("No datasets carry %s.\n", strings.Join(tags, " and "))
 }
 
+// ShowingSomeOf reports a listing bounded for display.
+//
+// Rows arriving with nothing to say whether they were all of them is how a
+// reader concludes a dataset does not exist.
+func ShowingSomeOf(shown, total int) string {
+	return fmt.Sprintf("\nShowing %d of %d. Use --limit or --all to see more.\n", shown, total)
+}
+
 // NoDatasetVersions reports a name nothing is published under.
 //
 // Listing a name that does not exist is not an error — a delete is checked for

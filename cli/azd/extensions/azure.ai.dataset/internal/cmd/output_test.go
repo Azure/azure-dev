@@ -61,10 +61,15 @@ func TestEmitJSONListNormalizesNil(t *testing.T) {
 	assert.Equal(t, "a", round[0]["name"])
 }
 
-// The list emits a bare array, not the envelope the service replied with: the
-// envelopes disagree with each other and carry paging this extension does not
-// follow.
-func TestEmitJSONListDropsTheEnvelope(t *testing.T) {
+// The list drops the envelope the service replied with and answers in this
+// extension's own: the service's envelopes disagree with each other and carry
+// paging this extension does not follow.
+//
+// The CLI's envelope is not the same thing. It exists so --limit can mean
+// something for a script: an array cannot say it is one page of several, so the
+// flag either did nothing for `-o json` or handed back a short list that reads
+// as the whole collection.
+func TestEmitJSONListDropsTheServiceEnvelope(t *testing.T) {
 	cmd := commandWithOutput(t, "json")
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
@@ -74,10 +79,19 @@ func TestEmitJSONListDropsTheEnvelope(t *testing.T) {
 		NextLink: "https://example/page2",
 	}, messages.NoDatasets()))
 
-	assert.True(t, strings.HasPrefix(strings.TrimSpace(buf.String()), "["),
-		"a list answers with an array")
+	var page struct {
+		Items      []map[string]any `json:"items"`
+		Count      int              `json:"count"`
+		TotalCount *int             `json:"total_count"`
+	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &page))
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "a", page.Items[0]["name"])
+	assert.Equal(t, 1, page.Count)
 	assert.NotContains(t, buf.String(), "nextLink",
 		"paging this extension does not follow must not suggest there is more to fetch")
+	assert.NotContains(t, buf.String(), `"value"`,
+		"nor must the service's own wrapper reach the caller")
 }
 
 // A list view is uppercase headers over a rule. The rule is what separates the
@@ -134,9 +148,10 @@ func TestRenderDatasetsSaysWhichNameHasNoVersions(t *testing.T) {
 	assert.NotContains(t, buf.String(), "NAME")
 }
 
-// The empty result is still a success with an empty array: a delete is checked
-// for idempotence by listing what is left, and `-o json` callers range over it.
-func TestVersionsListEmptyIsStillAnEmptyJSONArray(t *testing.T) {
+// The empty result is still a success carrying an empty list: a delete is
+// checked for idempotence by listing what is left, and `-o json` callers range
+// over items.
+func TestVersionsListEmptyIsStillAnEmptyJSONList(t *testing.T) {
 	cmd := commandWithOutput(t, "json")
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
@@ -144,8 +159,15 @@ func TestVersionsListEmptyIsStillAnEmptyJSONArray(t *testing.T) {
 	require.NoError(t, renderDatasets(cmd, &dataset_api.DatasetList{},
 		messages.NoDatasetVersions("golden")))
 
-	assert.Equal(t, "[]", strings.TrimSpace(buf.String()),
-		"the sentence is for a reader; a parser still gets an array")
+	var page struct {
+		Items []map[string]any `json:"items"`
+		Count int              `json:"count"`
+	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &page))
+	assert.NotNil(t, page.Items,
+		"the sentence is for a reader; a parser still gets something to range over")
+	assert.Empty(t, page.Items)
+	assert.Equal(t, 0, page.Count)
 }
 
 // A detail view is Title Case key/value, the shape `show` uses, and a blank

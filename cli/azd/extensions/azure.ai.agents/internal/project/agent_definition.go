@@ -856,6 +856,14 @@ func agentDefinitionFromStruct(
 		return agent_yaml.ContainerAgent{}, false, nil
 	}
 
+	if inline.ModelType == agent_yaml.VoiceModelTypeHostedAgent || inline.TargetAgent != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"hosted voice wrapper fields are not supported on hosted agents",
+			"move modelType: hosted_agent and targetAgent to a voice wrapper service",
+		)
+	}
+
 	var cfg ServiceTargetAgentConfig
 	if err := UnmarshalStruct(s, &cfg); err != nil {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(

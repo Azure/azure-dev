@@ -150,6 +150,16 @@ func TestVoiceAgentInlineServicePropertiesRejectsCodeAndSessionConfig(t *testing
 	require.ErrorContains(t, err, "sessionConfiguration is not supported on voice agents")
 }
 
+func TestHostedAgentInlineServicePropertiesRejectsHostedVoiceFields(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":        "hosted",
+		"name":        "target",
+		"modelType":   "hosted_agent",
+		"targetAgent": map[string]any{"service": "other-agent"},
+	}))
+	require.ErrorContains(t, err, "hosted voice wrapper fields are not supported on hosted agents")
+}
+
 func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
 		name         string

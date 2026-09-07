@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -496,6 +497,65 @@ func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 			))
 		})
 	}
+}
+
+func TestExistingProjectArtifactsNormalizeAcrEndpoint(t *testing.T) {
+	params := map[string]any{
+		"deployments":           []synthesis.Deployment{},
+		"connections":           []synthesis.Connection{},
+		"connectionCredentials": map[string]map[string]any{},
+	}
+	values := map[string]string{
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT": "https://user:password@" +
+			"registry.azurecr.io?sig=secret-token#fragment",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/" +
+			"resourceGroups/rg/providers/Microsoft.ContainerRegistry/" +
+			"registries/registry",
+	}
+
+	t.Run("bicep", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, writeExistingProjectBicep(
+			dir, "main", params, projectEjectAcrReuseConnect, values,
+		))
+		// #nosec G304
+		raw, err := os.ReadFile(filepath.Join(dir, "main.parameters.json"))
+		require.NoError(t, err)
+		output := string(raw)
+		assert.Contains(t, output, "https://registry.azurecr.io")
+		assert.NotContains(t, output, "user")
+		assert.NotContains(t, output, "password")
+		assert.NotContains(t, output, "secret-token")
+		assert.NotContains(t, output, "fragment")
+	})
+
+	t.Run("terraform", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, writeExistingProjectTerraform(
+			dir, "main", params, projectEjectAcrReuseConnect, values,
+		))
+		// #nosec G304
+		raw, err := os.ReadFile(filepath.Join(dir, "main.tfvars.json"))
+		require.NoError(t, err)
+		output := string(raw)
+		assert.Contains(t, output, "https://registry.azurecr.io")
+		assert.NotContains(t, output, "user")
+		assert.NotContains(t, output, "password")
+		assert.NotContains(t, output, "secret-token")
+		assert.NotContains(t, output, "fragment")
+	})
+}
+
+func TestNormalizeContainerRegistryEndpointRejectsInvalidURL(t *testing.T) {
+	_, err := normalizeContainerRegistryEndpoint(
+		"https://registry.azurecr.io/%zz?sig=secret-token",
+	)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "secret-token")
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
 }
 
 func mustReadProjectFile(t *testing.T, root string) []byte {

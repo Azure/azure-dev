@@ -117,6 +117,8 @@ during initialization: it creates a registry when none exists, connects an
 existing registry when needed, or references an existing project connection
 without managing it. Terraform registry output is always named
 `container-registry.tf`; Bicep uses `modules/container-registry.bicep`.
+Before writing generated files, existing registry endpoints are normalized to
+remove URL credentials, query parameters, and fragments.
 
 Terraform ejection does not support private networking and cannot adopt a
 registry already created by the `microsoft.foundry` provider. After ejection,

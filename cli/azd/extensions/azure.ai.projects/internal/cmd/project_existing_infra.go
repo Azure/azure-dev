@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -671,6 +672,17 @@ func resolveProjectEjectAcrMode(
 	endpoint := strings.TrimSpace(
 		values["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
 	)
+	if mode == "" || mode == projectEjectAcrReuseConnect ||
+		mode == projectEjectAcrAlreadyConnected {
+		var err error
+		endpoint, err = normalizeContainerRegistryEndpoint(endpoint)
+		if err != nil {
+			return "", err
+		}
+		if endpoint != "" && values != nil {
+			values["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = endpoint
+		}
+	}
 	resourceID := strings.TrimSpace(
 		values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"],
 	)
@@ -717,6 +729,45 @@ func resolveProjectEjectAcrMode(
 	return projectEjectAcrAlreadyConnected, nil
 }
 
+func normalizeContainerRegistryEndpoint(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+
+	parsed, err := url.Parse(raw)
+	endpointPart := raw
+	if index := strings.IndexAny(endpointPart, "?#"); index >= 0 {
+		endpointPart = endpointPart[:index]
+	}
+	if err != nil || parsed == nil ||
+		(parsed.Scheme != "" && parsed.Host == "") ||
+		(parsed.User == nil && strings.Contains(endpointPart, "@")) {
+		return "", invalidContainerRegistryEndpointError()
+	}
+
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
+	normalized := parsed.String()
+	if normalized == "" {
+		return "", invalidContainerRegistryEndpointError()
+	}
+	return normalized, nil
+}
+
+func invalidContainerRegistryEndpointError() error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidServiceConfig,
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT is not a valid registry endpoint",
+		"set AZURE_CONTAINER_REGISTRY_ENDPOINT to a registry login "+
+			"server without credentials, query parameters, or fragments, "+
+			"then retry",
+	)
+}
+
 func projectEjectHasAcrState(values map[string]string) bool {
 	for _, key := range []string{
 		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
@@ -737,6 +788,17 @@ func writeExistingProjectBicep(
 	mode projectEjectAcrMode,
 	values map[string]string,
 ) error {
+	existingAcrEndpoint := ""
+	if mode == projectEjectAcrReuseConnect ||
+		mode == projectEjectAcrAlreadyConnected {
+		var err error
+		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
+			values["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+		)
+		if err != nil {
+			return err
+		}
+	}
 	source, err := fs.ReadFile(
 		synthesis.TemplatesFS(),
 		"templates/existing-project-eject.bicep.tmpl",
@@ -851,7 +913,7 @@ func writeExistingProjectBicep(
 		}
 	case projectEjectAcrReuseConnect, projectEjectAcrAlreadyConnected:
 		outputParams["existingAcrEndpoint"] =
-			values["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
+			existingAcrEndpoint
 		outputParams["existingAcrResourceId"] =
 			values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 		if mode == projectEjectAcrAlreadyConnected {
@@ -886,6 +948,17 @@ func writeExistingProjectTerraform(
 	mode projectEjectAcrMode,
 	values map[string]string,
 ) error {
+	existingAcrEndpoint := ""
+	if mode == projectEjectAcrReuseConnect ||
+		mode == projectEjectAcrAlreadyConnected {
+		var err error
+		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
+			values["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+		)
+		if err != nil {
+			return err
+		}
+	}
 	filesystem := synthesis.ExistingProjectTerraformTemplatesFS()
 	entries, err := fs.ReadDir(
 		filesystem, "templates/terraform-existing-project",
@@ -987,7 +1060,7 @@ func writeExistingProjectTerraform(
 		"resource_group_name":          "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}",
 		"environment_name":             "${AZURE_ENV_NAME}",
 		"resource_token_salt":          "${AZD_RESOURCE_TOKEN_SALT}",
-		"existing_acr_endpoint":        values["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+		"existing_acr_endpoint":        existingAcrEndpoint,
 		"existing_acr_resource_id":     values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"],
 		"existing_acr_connection_name": values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"],
 	}

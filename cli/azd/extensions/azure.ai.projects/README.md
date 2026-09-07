@@ -47,11 +47,16 @@ The system ACR connection used by the Project's registry remains Project-owned.
 
 ### Breaking migration
 
-Upgrade the related Foundry extensions together. Older on-disk Bicep with generic
-Connection modules/resources or `connections` / `connectionCredentials`
-parameters is rejected with migration guidance. Remove those declarations and
-their aggregate readiness outputs, or regenerate the IaC after saving custom
-changes. Update previously ejected Terraform manually as well, including any
+Upgrade the related Foundry extensions together. On-disk Bicep whose compiled
+template declares generic Foundry Connection resources (including inline nested
+deployments) is rejected with migration guidance. Remove those resources, their
+associated parameters and aggregate readiness outputs, or regenerate the IaC
+after saving custom changes. Unrelated user-owned parameters named `connections`
+or `connectionCredentials` are allowed and retain normal parameter substitution;
+parameter names alone do not identify the removed Foundry contract. Linked
+templates are not fetched or inspected by this validation.
+
+Update previously ejected Terraform manually as well, including any
 required state handoff to avoid destroying resources when removing declarations.
 Extension upgrades do not automatically rewrite user-owned IaC.
 

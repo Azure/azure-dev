@@ -4,6 +4,7 @@
 package provisioning
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,22 +15,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLegacyConnectionParameterNamesRejectedBeforeSubstitution(t *testing.T) {
+func TestConnectionParameterNamesUseNormalSubstitution(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"connections", "connectionCredentials"} {
+	for _, name := range []string{"connections", "connectionCredentials", "ConnectionCredentials"} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), onDiskParamsFile)
-			// A malformed env expression would fail if substitution were reached.
-			body := minimalARMParametersFile(t, map[string]any{name: "${unterminated"})
+			body := minimalARMParametersFile(t, map[string]any{name: map[string]any{"target": "${NETWORK}"}})
 			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
-			parameters, err := loadParametersFile(path, nil)
-			requireConnectionMigrationError(t, err)
-			assert.Nil(t, parameters)
+			parameters, err := loadParametersFile(path, map[string]string{"NETWORK": "network-value"})
+			require.NoError(t, err)
+			assert.Equal(t, map[string]any{name: map[string]any{
+				"value": map[string]any{"target": "network-value"},
+			}}, parameters)
 		})
 	}
 }
 
-func TestLegacyConnectionSourceRejectedBeforeCompile(t *testing.T) {
+func TestConnectionNamedSourceParametersReachCompiler(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name, file, source string
 	}{
@@ -37,7 +40,7 @@ func TestLegacyConnectionSourceRejectedBeforeCompile(t *testing.T) {
 		{"Bicep secure object", onDiskBicepFile, "@secure()\nparam connectionCredentials object = {}"},
 		{"Bicep commented whitespace", onDiskBicepFile, "param /* note */ connections array = []"},
 		{"BicepParam credentials", onDiskBicepParamFile,
-			"using './main.bicep'\nparam connectionCredentials = readEnvironmentVariable('UNSET_KEY')"},
+			"using './main.bicep'\nparam connectionCredentials = {}"},
 		{"BicepParam array", onDiskBicepParamFile, "using './main.bicep'\nparam connections = []"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -46,21 +49,37 @@ func TestLegacyConnectionSourceRejectedBeforeCompile(t *testing.T) {
 			require.NoError(t, os.MkdirAll(infraDir, 0o750))
 			path := filepath.Join(infraDir, tt.file)
 			require.NoError(t, os.WriteFile(path, []byte(tt.source), 0o600))
+			envelope, err := json.Marshal(map[string]string{
+				"templateJson": minimalARMTemplate(), "parametersJson": minimalARMParametersFile(t, nil),
+			})
+			require.NoError(t, err)
 			compiler := &stubCompiler{
-				buildErr:      errors.New("must not compile"),
-				buildParamErr: errors.New("must not evaluate credentials"),
+				buildResult:      bicep.BuildResult{Compiled: minimalARMTemplate()},
+				buildParamResult: bicep.BuildResult{Compiled: string(envelope)},
 			}
 			source, err := loadOnDiskTemplate(t.Context(), root, compiler, nil)
-			requireConnectionMigrationError(t, err)
-			assert.Nil(t, source)
-			assert.Empty(t, compiler.buildCalls)
-			assert.Empty(t, compiler.buildParamCalls)
+			require.NoError(t, err)
+			require.NotNil(t, source)
+			assert.Equal(t, 1, len(compiler.buildCalls)+len(compiler.buildParamCalls))
 			//nolint:gosec // Test-owned file under t.TempDir.
 			raw, err := os.ReadFile(path)
 			require.NoError(t, err)
 			assert.Equal(t, tt.source, string(raw))
 		})
 	}
+}
+
+func TestConnectionNamedParametersDoNotMaskCompilerErrors(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	infraDir := filepath.Join(root, onDiskInfraDir)
+	require.NoError(t, os.MkdirAll(infraDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("param connections array"), 0o600))
+	compiler := &stubCompiler{buildErr: errors.New("synthetic compiler failure")}
+	source, err := loadOnDiskTemplate(t.Context(), root, compiler, nil)
+	require.ErrorContains(t, err, "synthetic compiler failure")
+	assert.NotContains(t, err.Error(), "removed generic Connection provisioning contract")
+	assert.Nil(t, source)
 }
 
 func TestConnectionSourceCheckIgnoresCommentsAndLiterals(t *testing.T) {

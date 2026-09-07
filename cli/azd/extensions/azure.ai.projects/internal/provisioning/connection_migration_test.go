@@ -53,6 +53,17 @@ func TestLoadOnDiskTemplateRejectsLegacyConnectionContract(t *testing.T) {
 							name: map[string]any{"key": "synthetic-private-value", "target": "${ENDPOINT}"},
 						})
 					}
+					// Parameter names alone do not identify the removed contract.
+					// An actual generic Foundry resource is the migration evidence.
+					var compiled map[string]any
+					require.NoError(t, json.Unmarshal([]byte(template), &compiled))
+					compiled["resources"] = []any{map[string]any{
+						"type":       "Microsoft.CognitiveServices/accounts/projects/connections",
+						"properties": map[string]any{"category": "RemoteTool", "authType": "None"},
+					}}
+					compiledJSON, err := json.Marshal(compiled)
+					require.NoError(t, err)
+					template = string(compiledJSON)
 					bicepPath := filepath.Join(infraDir, onDiskBicepFile)
 					paramsPath := filepath.Join(infraDir, onDiskParamsFile)
 					bicepBody := "// user-owned Bicep"
@@ -112,10 +123,8 @@ func TestValidateProjectTemplateRejectsGenericConnections(t *testing.T) {
 			{"type":"projects","resources":[{"type":"connections","properties":{"category":"CognitiveSearch"}}]}]}]}`},
 		{"expression properties", `{"resources":[{"type":"Microsoft.CognitiveServices/accounts/projects/connections",
 			"properties":"[variables('customPayload')]"}]}`},
-		{"nested parameter declaration", `{"resources":[{"type":"Microsoft.Resources/deployments","properties":{
-			"template":{"parameters":{"connections":{"type":"array","defaultValue":[]}}}}}]}`},
-		{"linked module parameter", `{"resources":[{"type":"Microsoft.Resources/deployments","properties":{
-			"parameters":{"connectionCredentials":{"value":{}}},"templateLink":{"uri":"https://example.com"}}}]}`},
+		{"nested parameter consumption", `{"resources":[{"type":"Microsoft.Resources/deployments","properties":{
+			"template":{"parameters":{"connections":{"type":"array","defaultValue":[]}},"resources":[` + connection + `]}}}]}`},
 		{"disabled resource", `{"resources":[{"type":"Microsoft.CognitiveServices/accounts/projects/connections",
 			"condition":false}]}`},
 		{"non-system registry", `{"resources":[{"type":"Microsoft.CognitiveServices/accounts/projects/connections",
@@ -125,6 +134,62 @@ func TestValidateProjectTemplateRejectsGenericConnections(t *testing.T) {
 			_, err := unmarshalARMTemplate(tt.template, "project.bicep")
 			requireConnectionMigrationError(t, err)
 		})
+	}
+}
+
+func TestLoadOnDiskTemplateAllowsUnrelatedConnectionParameters(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []templateMode{templateModeBicep, templateModeBicepParam} {
+		for _, shape := range []string{"direct", "nested", "symbolic", "linked"} {
+			t.Run(mode.String()+"/"+shape, func(t *testing.T) {
+				root := t.TempDir()
+				infraDir := filepath.Join(root, onDiskInfraDir)
+				require.NoError(t, os.MkdirAll(infraDir, 0o750))
+				// These names are legitimate inputs to networking or other custom IaC.
+				inner := `{"parameters":{"connections":{"type":"array"},"connectionCredentials":{"type":"secureObject"}},
+					"resources":[{"type":"Microsoft.Network/connections","name":"network-link","properties":{
+					"customValues":"[parameters('connections')]","credentials":"[parameters('connectionCredentials')]"}}]}`
+				template := inner
+				switch shape {
+				case "nested":
+					template = `{"resources":[{"type":"Microsoft.Resources/deployments","properties":{
+						"parameters":{"connections":{"value":[]},"connectionCredentials":{"value":{}}},"template":` + inner + `}}]}`
+				case "symbolic":
+					template = `{"languageVersion":"2.0","resources":{"networkModule":{
+						"type":"Microsoft.Resources/deployments","properties":{"template":` + inner + `}}}}`
+				case "linked":
+					template = `{"resources":[{"type":"Microsoft.Resources/deployments","properties":{
+						"parameters":{"connections":{"value":[]},"connectionCredentials":{"value":{}}},
+						"templateLink":{"uri":"https://example.test/network.json"}}}]}`
+				}
+				value := "${NETWORK}"
+				if mode == templateModeBicepParam {
+					value = "network-value" // build-params has already evaluated its values.
+				}
+				params := minimalARMParametersFile(t, map[string]any{
+					"connections": []any{value}, "connectionCredentials": map[string]any{"custom": value},
+				})
+				require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile),
+					[]byte("param connections array\n@secure()\nparam connectionCredentials object\n"), 0o600))
+				require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
+				compiler := &stubCompiler{buildResult: bicep.BuildResult{Compiled: template}}
+				if mode == templateModeBicepParam {
+					require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepParamFile),
+						[]byte("using './main.bicep'\nparam connections = []\nparam connectionCredentials = {}\n"), 0o600))
+					envelope, err := json.Marshal(map[string]string{"templateJson": template, "parametersJson": params})
+					require.NoError(t, err)
+					compiler.buildParamResult = bicep.BuildResult{Compiled: string(envelope)}
+				}
+				source, err := loadOnDiskTemplate(t.Context(), root, compiler, map[string]string{"NETWORK": "network-value"})
+				require.NoError(t, err)
+				require.NotNil(t, source)
+				assert.Equal(t, mode, source.mode)
+				assert.Equal(t, map[string]any{
+					"connections":           map[string]any{"value": []any{"network-value"}},
+					"connectionCredentials": map[string]any{"value": map[string]any{"custom": "network-value"}},
+				}, source.parameters)
+			})
+		}
 	}
 }
 

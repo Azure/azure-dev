@@ -46,7 +46,9 @@ For previously ejected infrastructure, remove the old generic Connection modules
 resources, `connections` / `connectionCredentials` parameters and aggregate
 readiness outputs, or regenerate the infrastructure after saving custom changes.
 Upgrading extensions alone does not rewrite existing IaC. The Foundry provider
-rejects the removed Connection contract in on-disk Bicep; user-owned Terraform
+rejects generic Foundry Connection resources found in compiled on-disk Bicep,
+including inline nested deployments. It does not reject unrelated parameters
+merely named `connections` or `connectionCredentials`; user-owned Terraform
 must be updated before applying it. When removing Terraform resources from
 configuration, plan a state handoff so Terraform does not destroy Connections
 now managed by this extension. Existing Azure Connections are not deleted by

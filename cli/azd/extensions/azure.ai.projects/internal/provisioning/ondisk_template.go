@@ -140,9 +140,6 @@ func loadFromBicep(
 	compiler bicepCompiler,
 	envValues map[string]string,
 ) (*templateSource, error) {
-	if err := rejectLegacyConnectionSource(bicepPath); err != nil {
-		return nil, err
-	}
 	res, err := compiler.Build(ctx, bicepPath)
 	if err != nil {
 		return nil, exterrors.Validation(
@@ -181,9 +178,6 @@ func loadFromBicepParam(
 	compiler bicepCompiler,
 	envValues map[string]string,
 ) (*templateSource, error) {
-	if err := rejectLegacyConnectionSource(bicepparamPath); err != nil {
-		return nil, err
-	}
 	env := envValuesToKeyEquals(envValues)
 	res, err := compiler.BuildBicepParam(ctx, bicepparamPath, env)
 	if err != nil {
@@ -374,10 +368,6 @@ func extractParametersFromARMFile(raw []byte, sourcePath string) (map[string]any
 	}
 	if doc.Parameters == nil {
 		return map[string]any{}, nil
-	}
-	// Reject the old contract before env substitution can resolve credentials.
-	if err := rejectLegacyConnectionParameters(doc.Parameters, sourcePath); err != nil {
-		return nil, err
 	}
 	return doc.Parameters, nil
 }

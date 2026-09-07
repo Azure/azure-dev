@@ -37,7 +37,7 @@ func TestAPassingRowStillCarriesAReason(t *testing.T) {
 		"a passing evaluator's reason is what explains the score:\n%s", text)
 	assert.Contains(t, text, itemPassed,
 		"the status column states the outcome instead of leaving it to be inferred")
-	assert.Contains(t, text, "1P/0F",
+	assert.Contains(t, text, "1 passed",
 		"and the row says how many criterion results stand behind that status")
 }
 

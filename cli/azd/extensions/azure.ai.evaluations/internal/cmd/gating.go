@@ -92,6 +92,21 @@ func scoredPassRate(counts *eval_api.EvalRunResultCounts) (rate float64, scored 
 	return float64(counts.Passed) / float64(scored), scored, true
 }
 
+// unscoredSplit says what the pass rate left out, split by what it was.
+//
+// A skip is the service declining to grade a row and an error is it failing to,
+// so the two are reported apart. Anything the totals do not account for is
+// counted as errored: the run says it had more rows than it graded and cannot
+// say what became of them, which is a failure to grade, not a decision.
+func unscoredSplit(counts *eval_api.EvalRunResultCounts, scored int) (errored, skipped int) {
+	skipped = counts.Skipped
+	errored = counts.Total - scored - skipped
+	if errored < 0 {
+		return counts.Errored, skipped
+	}
+	return errored, skipped
+}
+
 // breach reports why the run missed the threshold, or empty when it met it.
 //
 // A run that scored nothing at all breaches every threshold rather than
@@ -153,8 +168,9 @@ func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
 	if g.set && !g.anyFailure {
 		if c := run.ResultCounts; c != nil {
 			if _, scored, ok := scoredPassRate(c); ok && c.Total > scored {
+				errored, skipped := unscoredSplit(c, scored)
 				fmt.Fprint(os.Stderr,
-					messages.Warning(messages.GateSawUnscoredRows(c.Total-scored, c.Total)))
+					messages.Warning(messages.GateSawUnscoredRows(errored, skipped, c.Total)))
 			}
 		}
 	}

@@ -215,24 +215,31 @@ func RunFinishedWithStatus(runID, status string) error {
 	return fmt.Errorf("run %s finished with status %s", runID, status)
 }
 
-// OverallPassRate reports the share of the rows an evaluator scored that passed
-// every evaluator.
+// OverallPassRate reports the share of the test cases that were graded and
+// passed every evaluator.
 //
-// The denominator is named rather than left as a bare fraction. Rows nothing
-// could grade are outside it, so a run that errored on most of its samples can
-// report a high rate, and "of N scored" is what stops that reading as a verdict
-// on the whole run. It is also the figure `--fail-on pass-rate` compares.
-func OverallPassRate(rate string, passed, scored, unscored int) string {
-	if unscored > 0 {
-		return fmt.Sprintf("\nOverall pass rate: %s  (%d of %d scored; %d not scored)\n",
-			rate, passed, scored, unscored)
-	}
-	return fmt.Sprintf("\nOverall pass rate: %s  (%d/%d)\n", rate, passed, scored)
+// The denominator is spelled out rather than left as a bare fraction. Rows
+// nothing could grade are outside it, so a run that errored on most of its
+// samples can report a high rate, and naming the two terms is what stops that
+// reading as a verdict on the whole run. It is also the figure
+// `--fail-on pass-rate` compares.
+func OverallPassRate(rate string, passed, failed int) string {
+	return fmt.Sprintf("\nOverall pass rate: %s  (%d / (%d passed + %d failed))\n",
+		rate, passed, passed, failed)
 }
 
 // SamplesErrored reports rows the run could not score at all.
 func SamplesErrored(errored int) string {
 	return fmt.Sprintf("%d sample(s) errored and were not scored.\n", errored)
+}
+
+// SamplesSkipped reports rows the run declined to score.
+//
+// Said apart from the errored count because it asks for something different: a
+// skip is a decision about the data, not a failure to run, and folding the two
+// together sent a reader to retry a run that had nothing to retry.
+func SamplesSkipped(skipped int) string {
+	return fmt.Sprintf("%d sample(s) were skipped and were not scored.\n", skipped)
 }
 
 // ViewFailingSamples points at the command that lists the rows that failed.
@@ -513,11 +520,27 @@ func UnknownItemStatus(given string, known []string) error {
 // its samples can clear a threshold on the few that survived. The gate is the
 // one place a pipeline is guaranteed to read, so it is said there rather than
 // left for someone to notice in the summary.
-func GateSawUnscoredRows(unscored, total int) error {
+//
+// Errored and skipped are named apart because they ask for different things: a
+// run that errored is one to retry, and one that skipped is one to look at the
+// data for. A single "not scored" count answered neither question.
+func GateSawUnscoredRows(errored, skipped, total int) error {
 	return fmt.Errorf(
-		"%d of %d samples were not scored, so the pass rate this gate read covers "+
+		"%s of %d samples were not scored, so the pass rate this gate read covers "+
 			"only the rest; use --fail-on any-failure to count them against the run",
-		unscored, total)
+		unscoredBreakdown(errored, skipped), total)
+}
+
+// unscoredBreakdown counts what a pass rate left out, by what it was.
+func unscoredBreakdown(errored, skipped int) string {
+	switch {
+	case errored > 0 && skipped > 0:
+		return fmt.Sprintf("%d errored and %d skipped", errored, skipped)
+	case skipped > 0:
+		return fmt.Sprintf("%d skipped", skipped)
+	default:
+		return fmt.Sprintf("%d errored", errored)
+	}
 }
 
 // GeneratedNameNotAFileName reports a generated artifact name that would not
@@ -621,6 +644,16 @@ func OutputItemMetric(metric, score, verdict string) string {
 // OutputItemReason is the judge's explanation, indented under its verdict.
 func OutputItemReason(reason string) string {
 	return fmt.Sprintf("  %s\n", reason)
+}
+
+// EvaluatorReturnedNothing explains a result that arrived with no status, no
+// label and no pass/fail verdict.
+//
+// Such a result is counted as errored rather than passed -- the evaluator was
+// asked and answered with nothing -- and the row has to say that outright, or
+// an empty explanation reads as output that failed to render.
+func EvaluatorReturnedNothing() string {
+	return "Evaluator returned no status or pass/fail result."
 }
 
 // OutputFileCannotHoldBothArtifacts reports one --output-dir file for two

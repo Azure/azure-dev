@@ -119,8 +119,10 @@ func TestErroredRowIsReportedAsErrored(t *testing.T) {
 
 	text := out.String()
 	assert.Contains(t, text, itemErrored, "the status column states the outcome directly")
-	assert.Contains(t, text, "relevance: no verdict",
+	assert.Contains(t, text, "relevance: errored",
 		"and the row names the evaluator that returned nothing")
+	assert.NotContains(t, text, "no verdict",
+		"which is stated as the outcome it is, not as an absence the reader decodes")
 }
 
 // filterItems mirrors what the command does, so the render tests exercise the

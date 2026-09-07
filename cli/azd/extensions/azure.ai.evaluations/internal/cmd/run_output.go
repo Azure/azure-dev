@@ -612,8 +612,8 @@ func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 			r := results[0]
 			fmt.Fprint(w, messages.OutputItemVerdict(
 				name, formatScore(r.Score), verdictWord(r)))
-			if r.Reason != "" {
-				fmt.Fprint(w, messages.OutputItemReason(r.Reason))
+			if why := resultExplanation(r); why != "" {
+				fmt.Fprint(w, messages.OutputItemReason(why))
 			}
 			continue
 		}
@@ -626,25 +626,51 @@ func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 			}
 			fmt.Fprint(w, messages.OutputItemMetric(
 				label, formatScore(r.Score), verdictWord(r)))
-			if r.Reason != "" {
-				fmt.Fprint(w, messages.OutputItemReason(r.Reason))
+			if why := resultExplanation(r); why != "" {
+				fmt.Fprint(w, messages.OutputItemReason(why))
 			}
 		}
 	}
 	return nil
 }
 
-// verdictWord spells a boolean the way the rest of the output does.
+// verdictWord names what the evaluator reported, in the words the rest of the
+// output uses.
+//
+// It used to print "no verdict" for anything without a boolean, which erased
+// the distinction the service had already drawn: a row it deliberately skipped
+// and a row its evaluator errored on both came out as the same shrug. The
+// outcome is what the service said, so that is what is shown.
 func verdictWord(r eval_api.OutputResult) string {
-	if !r.Judged() {
-		// The evaluator returned no verdict, which is not the same as returning
-		// a failing one -- it says nothing about the sample.
-		return "no verdict"
+	return r.Outcome()
+}
+
+// resultExplanation is the line printed under a verdict to say why.
+//
+// A judge's reason is what a failing row is looked at for, so it wins. An
+// evaluator that never ran has no reason to give but does carry the failure it
+// recorded, and printing a bare "errored" with nothing under it sent the reader
+// to the portal for a code the response already held. A result that arrived
+// carrying neither is its own finding, and saying so is what stops it reading
+// as a rendering bug.
+func resultExplanation(r eval_api.OutputResult) string {
+	if r.Reason != "" {
+		return r.Reason
 	}
-	if r.DidPass() {
-		return "pass"
+	if e := r.SampleError(); e != nil {
+		switch {
+		case e.Code != "" && e.Message != "":
+			return e.Code + ": " + e.Message
+		case e.Code != "":
+			return e.Code
+		default:
+			return e.Message
+		}
 	}
-	return "fail"
+	if r.Outcome() == eval_api.ResultErrored && r.Status == "" {
+		return messages.EvaluatorReturnedNothing()
+	}
+	return ""
 }
 
 // formatScore prints a judge's score at the two decimals the scale carries.

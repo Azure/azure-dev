@@ -47,7 +47,9 @@ func TestRenderRunReportsEveryEvaluator(t *testing.T) {
 	}
 	assert.Contains(t, text, "90.0%", "relevance passed 9 of 10")
 	assert.Contains(t, text, "70.0%", "coherence passed 7 of 10")
-	assert.Contains(t, text, "7/10", "the sample counts must be shown, not just the rate")
+	assert.Contains(t, text, "(7 / (7 passed + 3 failed))",
+		"the counts behind the rate must be shown, and the denominator named: "+
+			"a bare 7/10 does not say whether the 3 failed or never ran")
 }
 
 // Two runs of the same eval have to read the same way. The service returns the

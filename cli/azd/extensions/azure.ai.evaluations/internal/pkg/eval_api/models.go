@@ -632,6 +632,13 @@ type OutputResult struct {
 	Metric string       `json:"metric,omitempty"`
 	Score  LenientFloat `json:"score"`
 	Label  string       `json:"label,omitempty"`
+	// Status is the evaluator's own report of whether it ran. It is separate
+	// from the verdict: an evaluator that errored or was skipped says so here
+	// while carrying no score and no verdict at all.
+	Status string `json:"status,omitempty"`
+	// Sample is what the evaluator recorded about the call it made, which is
+	// where a failure to run surfaces with a code and a message.
+	Sample *OutputSample `json:"sample,omitempty"`
 	// Passed is a pointer because an absent verdict and a failing one are
 	// different claims. As a plain bool a result the service sent without one --
 	// an evaluator that errored on this row -- read as a definite "fail", which
@@ -641,6 +648,67 @@ type OutputResult struct {
 	// Reason is the judge's explanation, which is the part a failing row is
 	// actually looked at for.
 	Reason string `json:"reason,omitempty"`
+}
+
+// OutputSample is the evaluator's record of the call it made.
+type OutputSample struct {
+	Error *SampleError `json:"error,omitempty"`
+}
+
+// SampleError is why an evaluator produced no verdict.
+type SampleError struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// Evaluator result outcomes. An evaluator that did not run is not the same as
+// one that judged badly, and a skip is not an error.
+const (
+	ResultPassed  = "passed"
+	ResultFailed  = "failed"
+	ResultSkipped = "skipped"
+	ResultErrored = "errored"
+)
+
+// Outcome classifies one evaluator result.
+//
+// The order is the contract's, and it matters: an explicit error status or a
+// sample error outranks any verdict, then an explicit skip, then the verdict
+// itself from either `passed` or `label`. Collapsing skipped and errored into
+// one "unscored" bucket reported a row the service deliberately skipped as an
+// infrastructure failure, and rendered both as "no verdict" -- which is neither
+// of the two things the service actually said.
+//
+// A result carrying none of these is errored rather than passed: the evaluator
+// was asked and returned nothing, which is a failure to run.
+func (r OutputResult) Outcome() string {
+	status := strings.ToLower(strings.TrimSpace(r.Status))
+	label := strings.ToLower(strings.TrimSpace(r.Label))
+
+	if status == "error" || status == "errored" || r.SampleError() != nil {
+		return ResultErrored
+	}
+	if status == "skipped" || label == "skipped" {
+		return ResultSkipped
+	}
+	if (r.Passed != nil && !*r.Passed) || label == "fail" || label == "failed" {
+		return ResultFailed
+	}
+	if (r.Passed != nil && *r.Passed) || label == "pass" || label == "passed" {
+		return ResultPassed
+	}
+	return ResultErrored
+}
+
+// SampleError is the recorded failure to run, or nil.
+func (r OutputResult) SampleError() *SampleError {
+	if r.Sample == nil || r.Sample.Error == nil {
+		return nil
+	}
+	if r.Sample.Error.Code == "" && r.Sample.Error.Message == "" {
+		return nil
+	}
+	return r.Sample.Error
 }
 
 // Failed reports whether this row is one to look at: any evaluator failed it,

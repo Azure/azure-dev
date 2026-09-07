@@ -239,7 +239,10 @@ Valid values for `project.service.languages` and `project.service.language`:
 | `error.category` | string | High-level error category |
 | `error.code` | string | Specific error code |
 | `error.type` | string | Same as `ResultCode` — the classified error type |
-| `error.chain.types` | string[] | Full Go error type chain, outermost first |
+| `error.chain.types` | string[] | At most 16 host-reflected Go error type names, outermost first |
+| `error.extension.cause_types` | string[] | Case-insensitive hashes of at most 16 normalized extension-provided cause labels |
+| `error.mapper.source.type` | string | Sanitized source Go type for a mapper conversion failure |
+| `error.mapper.destination.type` | string | Sanitized destination Go type for a mapper conversion failure |
 
 #### Error Classification (ResultCode Taxonomy)
 
@@ -259,6 +262,8 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `ext.validation.*` | Extension validation error | `ext.validation.config` |
 | `ext.auth.*` | Extension auth error | `ext.auth.expired` |
 | `ext.dependency.*` | Extension dependency error | `ext.dependency.missing` |
+| `internal.grpc.<status>` | Host-originated gRPC status without a more specific mapping | `internal.grpc.unavailable` |
+| `internal.mapper_conversion` | Conversion between registered Go mapper types failed | — |
 | `internal.unclassified` | Catch-all for unclassified errors | — |
 | `internal.errors_errorString` | Legacy catch-all (being replaced by `internal.unclassified`) | — |
 
@@ -268,14 +273,17 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 
 ### Service Attributes (Azure API Calls)
 
+These attributes are emitted as classified error details. `MapError` prefixes their declared
+`service.*` keys with `error.`, so the table lists the runtime keys used in queries.
+
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `service.host` | string | Azure service host |
-| `service.name` | string | Azure service name (on service call spans) |
-| `service.statusCode` | measurement | HTTP status code |
-| `service.method` | string | HTTP method |
-| `service.errorCode` | measurement | Service-specific error code |
-| `service.correlationId` | string | Azure correlation ID |
+| `error.service.host` | string | Azure service host |
+| `error.service.name` | string | Azure service name associated with the failure |
+| `error.service.statusCode` | measurement or string | Numeric HTTP/service status code; AAD authentication errors use a string OAuth status such as `invalid_grant` |
+| `error.service.method` | string | HTTP method |
+| `error.service.errorCode` | string | Service-specific error code; some ARM deployment errors encode structured JSON |
+| `error.service.correlationId` | string | Azure correlation ID |
 
 ### Tool Invocation Attributes (External CLI Tools)
 
@@ -283,7 +291,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `error.tool.name` | string | Name of the failed external tool (comma-separated list when multiple required tools are missing) |
+| `error.tool.name` | string | Stable identifier for the failed external tool; core missing-tool display names use a fixed mapping, unknown names become `other`, and extension-provided `ToolError` names are limited to 1-64 ASCII characters from `[a-z0-9_-]`. Multiple missing tools remain comma-separated |
 | `error.tool.exitCode` | measurement | Exit code returned by the failed tool |
 
 ### Performance Fields
@@ -306,6 +314,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 | Field Key | Type | Values |
 |-----------|------|--------|
 | `auth.method` | string | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
+| `auth.cache_clear_failed` | string | `auth`, `subscriptions` — which cache failed to clear during the pre-login cleanup. Emitted on `auth login`. |
 </details>
 
 <details>
@@ -426,6 +435,15 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `container.remoteBuild.count` | measurement | Number of remote container builds performed |
+| `container.remotebuild` | bool | Whether a remote (ACR) build was requested (the configured preference) rather than a local build. |
+</details>
+
+<details>
+<summary><strong>AKS</strong></summary>
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `skip.reason` | string | Why AKS postprovision Kubernetes context setup was skipped. Bounded enum: `cluster_not_provisioned`. Emitted on `aks.postprovision.skip`. |
 </details>
 
 <details>
@@ -458,8 +476,11 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 |-----------|------|-------------|
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
-| `extension.event` | string | Extension-chosen event name on an `ext.usage` span |
+| `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined lifecycle event on a failed lifecycle-hook `cmd.*` span |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
+| `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
+| `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
+| `ext.outcome` | string | Agent Inspector funnel-stage outcome: currently `succeeded` (`inspector.funnel.stage`) |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
 | `extension.installed.source.category` | string[] | Installed extension source categories (`id@category`) |
 | `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |
@@ -477,10 +498,14 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 Each `ext.usage` span contains `extension.id`, `extension.version`,
 `extension.source`, `extension.event`, and any number of dynamic `ext.*`
 fields. The host writes the identity fields and applies the `ext.` prefix; the
-extension chooses the event name, the key suffixes, and the values. The whole
-class is classified as `SystemMetadata` for `FeatureInsight`. Extension authors
-are responsible for keeping values low cardinality and free of customer
-content, and for having them privacy reviewed with their extension.
+extension chooses the event name, the key suffixes, and the values. Failed
+extension commands instead carry `extension.id` and `extension.version` on
+the failed `ext.run` span and do not set `extension.event`. Failed lifecycle
+hooks carry `extension.id`, `extension.version`, and the lifecycle event on the
+enclosing `cmd.*` span. The whole class is classified as `SystemMetadata` for
+`FeatureInsight`. Extension authors are responsible
+for keeping usage values low cardinality and free of customer content, and for
+having them privacy reviewed with their extension.
 
 Only extensions whose configured `azd` source matches the verified official
 registry name, type, and normalized URL produce these spans, which is what ties
@@ -488,6 +513,13 @@ the recorded values to that privacy review. A report from any other install
 source succeeds but records nothing, as does any report past the limit of 100
 spans per `azd` invocation. This is a configuration-based admission check, not
 a cryptographic provenance guarantee.
+
+Reviewed first-party extension usage events currently include:
+
+| Extension | `extension.event` | Trigger | Dynamic attributes |
+|-----------|-------------------|---------|--------------------|
+| `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
+| `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage=ui_ready`; `ext.outcome=succeeded`; this does not indicate agent connection |
 
 Source-category fields are classified from the configured source type and location, not the user-defined source name.
 Raw source names, URLs, paths, and hosts are not emitted in those fields.
@@ -554,7 +586,7 @@ The first-run middleware is not currently registered, so these fields are not em
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `exegraph.step.count` | measurement | Total steps in graph |
-| `exegraph.max_concurrency` | string | Effective concurrency limit |
+| `exegraph.max_concurrency` | measurement | Effective concurrency limit |
 | `exegraph.error_policy` | string | `fail_fast` or `continue_on_error` |
 | `exegraph.step.name` | string | Step name. **SHA-256 hashed** — embeds user-defined service/layer names from `azure.yaml` |
 | `exegraph.step.deps` | string[] | Step dependencies (other step names). **SHA-256 hashed** for the same reason |
@@ -598,7 +630,7 @@ The first-run middleware is not currently registered, so these fields are not em
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `agent.fix.attempts` | string | Number of fix attempts |
+| `agent.fix.attempts` | measurement | Number of fix attempts |
 </details>
 
 ### Execution Environments
@@ -614,14 +646,21 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `GitHub Copilot VSCode` | GitHub Copilot in VS Code |
 | `Azure CloudShell` | Azure Cloud Shell |
 | `Claude Code` | Claude Code AI agent |
+| `Claude Code Desktop` | Best-effort detection of Claude Code launched from Claude Desktop |
+| `Claude Code VSCode` | Best-effort detection of the Claude Code VS Code integration |
+| `Codex` | Codex CLI |
+| `Codex Desktop` | Codex Desktop app |
+| `Cursor` | Cursor AI agent |
 | `GitHub Copilot CLI` | GitHub Copilot CLI |
 | `GitHub Copilot App` | GitHub Copilot App |
+| `GitHub Copilot Cloud Agent` | GitHub Copilot cloud agent |
 | `Gemini` | Gemini AI agent |
 | `OpenCode` | OpenCode AI agent |
+| `Pi` | Pi coding agent |
 | `GitHub Actions` | GitHub Actions CI |
 | `Azure Pipelines` | Azure Pipelines CI |
 | `GitHub Codespaces` | GitHub Codespaces |
-| Other CI systems | `AppVeyor`, `Bamboo`, `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`, `Google Cloud Build`, `TeamCity`, `JetBrains Space` |
+| Other CI systems | `UnknownCI`, `AppVeyor`, `Bamboo`, `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`, `TeamCity`, `JetBrains Space` |
 
 **Modifiers:** `Azure App Spaces Portal` and `Microsoft Foundry Skill` may be appended as modifiers (`;` separated).
 
@@ -747,7 +786,7 @@ Many failed commands produce the catch-all result code `internal.errors_errorStr
 
 **To investigate these errors:**
 1. Check `error.chain.types` (if available) for the full error type chain
-2. Correlate with `service.errorCode` or `service.statusCode` for Azure API failures
+2. Correlate with `error.service.errorCode` or `error.service.statusCode` for Azure API failures
 3. Look at surrounding span context (same `OperationId`) for additional detail
 
 ### Hashed Fields and Template Joins
@@ -777,7 +816,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `ext.install`, `ext.update`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.event`, dynamic `ext.*` fields | Extension adoption, errors, usage events |
+| **Extensions** | `ext.run`, `cmd.*`, `ext.install`, `ext.update`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.event` (lifecycle hooks), `error.chain.types`, `error.extension.cause_types`, `error.mapper.source.type`, `error.mapper.destination.type`, `error.tool.name`, dynamic `ext.*` fields | Extension adoption, command and lifecycle-hook errors, and usage events |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |
@@ -785,7 +824,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Execution Environment** | All events | `execution.environment` | Usage by environment, CI vs local |
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
-| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
+| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image`, `container.remotebuild` | Build method usage (local vs. remote ACR build), success rates |
 | **App Detection (Aspire polyglot)** | `aspire.apphost.unsupported` | `aspire.apphost.language` (`typescript`/`python`/`go`/`java`/`rust`) | How often an unsupported Aspire polyglot (non-C#) AppHost is encountered, by language. **Emitted only during app detection for `init` and fresh `up` (no existing `azure.yaml`)** — not for already-initialized projects, so absence does not mean zero unsupported AppHosts. |
 | **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.update`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy` | Install/update/uninstall success, update availability |
 

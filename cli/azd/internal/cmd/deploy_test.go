@@ -249,6 +249,11 @@ func (m *mockDeployProjectManager) Initialize(ctx context.Context, projectConfig
 	return args.Error(0)
 }
 
+func (m *mockDeployProjectManager) InitializeServices(ctx context.Context, services []*project.ServiceConfig) error {
+	args := m.Called(services)
+	return args.Error(0)
+}
+
 func (m *mockDeployProjectManager) InitializeFrameworks(
 	ctx context.Context, projectConfig *project.ProjectConfig,
 ) ([]*project.ServiceConfig, []project.ServiceFrameworkInitFailure, error) {
@@ -270,33 +275,29 @@ func (m *mockDeployProjectManager) DefaultServiceFromWd(
 
 func (m *mockDeployProjectManager) EnsureAllTools(
 	ctx context.Context,
-	projectConfig *project.ProjectConfig,
-	serviceFilterFn project.ServiceFilterPredicate,
+	services []*project.ServiceConfig,
 ) error {
 	return nil
 }
 
 func (m *mockDeployProjectManager) EnsureFrameworkTools(
 	ctx context.Context,
-	projectConfig *project.ProjectConfig,
-	serviceFilterFn project.ServiceFilterPredicate,
+	services []*project.ServiceConfig,
 ) error {
 	return nil
 }
 
 func (m *mockDeployProjectManager) EnsureServiceTargetTools(
 	ctx context.Context,
-	projectConfig *project.ProjectConfig,
-	serviceFilterFn project.ServiceFilterPredicate,
+	services []*project.ServiceConfig,
 ) error {
-	args := m.Called(projectConfig)
+	args := m.Called(services)
 	return args.Error(0)
 }
 
 func (m *mockDeployProjectManager) EnsureRestoreTools(
 	ctx context.Context,
-	projectConfig *project.ProjectConfig,
-	serviceFilterFn project.ServiceFilterPredicate,
+	services []*project.ServiceConfig,
 ) error {
 	return nil
 }
@@ -418,8 +419,8 @@ func newDeployActionForTimeoutTest(
 
 	action := newDeployTimeoutAction(t, flagTimeout)
 	projectManager := &mockDeployProjectManager{}
-	projectManager.On("Initialize", action.projectConfig).Return(nil).Once()
-	projectManager.On("EnsureServiceTargetTools", action.projectConfig).Return(nil).Once()
+	projectManager.On("InitializeServices", mock.Anything).Return(nil).Once()
+	projectManager.On("EnsureServiceTargetTools", mock.Anything).Return(nil).Once()
 	t.Cleanup(func() {
 		projectManager.AssertExpectations(t)
 	})

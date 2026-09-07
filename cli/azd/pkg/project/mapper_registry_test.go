@@ -445,12 +445,12 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 
 func TestDockerProjectOptionsMapping(t *testing.T) {
 	dockerOptions := DockerProjectOptions{
-		Path:        "./Dockerfile",
-		Context:     ".",
-		Platform:    "linux/amd64",
-		Target:      "production",
-		Network:     "host",
-		RemoteBuild: true,
+		Path:             "./Dockerfile",
+		Context:          ".",
+		Platform:         "linux/amd64",
+		Target:           "production",
+		Network:          "host",
+		ImagePassthrough: true,
 	}
 
 	var protoOptions *azdext.DockerProjectOptions
@@ -462,7 +462,8 @@ func TestDockerProjectOptionsMapping(t *testing.T) {
 	require.Equal(t, "linux/amd64", protoOptions.Platform)
 	require.Equal(t, "production", protoOptions.Target)
 	require.Equal(t, "host", protoOptions.Network)
-	require.True(t, protoOptions.RemoteBuild)
+	require.False(t, protoOptions.RemoteBuild)
+	require.True(t, protoOptions.ImagePassthrough)
 }
 
 func TestServiceBuildResultMapping(t *testing.T) {
@@ -725,16 +726,17 @@ func TestFromProtoServiceConfigMapping(t *testing.T) {
 func TestFromProtoDockerProjectOptionsMapping(t *testing.T) {
 	// Create test proto docker options
 	protoOptions := &azdext.DockerProjectOptions{
-		Path:        "./Dockerfile.test",
-		Context:     "..",
-		Platform:    "linux/arm64",
-		Target:      "test",
-		Network:     "host",
-		Registry:    "testregistry.azurecr.io",
-		Image:       "testimage",
-		Tag:         "v2.0.0",
-		RemoteBuild: false,
-		BuildArgs:   []string{"TEST_ARG=test_value"},
+		Path:             "./Dockerfile.test",
+		Context:          "..",
+		Platform:         "linux/arm64",
+		Target:           "test",
+		Network:          "host",
+		Registry:         "testregistry.azurecr.io",
+		Image:            "testimage",
+		Tag:              "v2.0.0",
+		RemoteBuild:      false,
+		ImagePassthrough: true,
+		BuildArgs:        []string{"TEST_ARG=test_value"},
 	}
 
 	var dockerOptions *DockerProjectOptions
@@ -750,6 +752,7 @@ func TestFromProtoDockerProjectOptionsMapping(t *testing.T) {
 	require.Equal(t, "testimage", dockerOptions.Image.MustEnvsubst(func(string) string { return "" }))
 	require.Equal(t, "v2.0.0", dockerOptions.Tag.MustEnvsubst(func(string) string { return "" }))
 	require.False(t, dockerOptions.RemoteBuild)
+	require.True(t, dockerOptions.ImagePassthrough)
 	require.Len(t, dockerOptions.BuildArgs, 1)
 	require.Equal(t, "TEST_ARG=test_value", dockerOptions.BuildArgs[0].MustEnvsubst(func(string) string { return "" }))
 }

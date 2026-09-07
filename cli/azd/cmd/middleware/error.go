@@ -176,15 +176,14 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return actionResult, err
 	}
 
-	// Check if error already has a suggestion
-	if _, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
-		// Already has a suggestion, return as-is
-		return actionResult, err
-	}
-
 	// Skip the YAML pipeline for typed extension errors so host-side rules don't
 	// override the extension's structured classification or user guidance.
 	if azdext.IsStructuredError(err) {
+		return actionResult, err
+	}
+
+	err = internal.WrapErrorWithSuggestion(err)
+	if _, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		return actionResult, err
 	}
 

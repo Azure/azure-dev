@@ -12,6 +12,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
@@ -84,11 +85,20 @@ func teamsPackScopeFlags() []string {
 // loudly when the agent is missing, is not an activity agent, or has not been
 // deployed yet.
 type teamsPackContext struct {
-	proj        *azdext.ProjectConfig
-	svc         *azdext.ServiceConfig
-	agentName   string
-	botArmID    string
-	agentClient *agent_api.AgentClient
+	proj             *azdext.ProjectConfig
+	svc              *azdext.ServiceConfig
+	agentName        string
+	botArmID         string
+	agentClient      *agent_api.AgentClient
+	activityProfile  project.ActivityProfile
+	activitySettings *project.ActivitySettings
+}
+
+func resolveTeamsPackActivityProfile(
+	ca agent_yaml.ContainerAgent,
+	settings *project.ActivitySettings,
+) (project.ActivityProfile, error) {
+	return project.ResolveActivityProfileWithSettings(ca, settings)
 }
 
 // resolveTeamsPackContext resolves the target activity agent and derives the Azure
@@ -109,7 +119,11 @@ func resolveTeamsPackContext(
 		return nil, err
 	}
 
-	ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+	effectiveSvc, err := resolveAgentServiceConfigWithProjectOverrides(svc, proj.Path)
+	if err != nil {
+		return nil, err
+	}
+	ca, isHosted, _, err := project.LoadAgentDefinition(effectiveSvc, proj.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +133,23 @@ func resolveTeamsPackContext(
 			fmt.Sprintf("agent service %q is not an Activity (Teams) agent", svc.Name),
 			"'azd ai agent pack' and 'azd ai agent publish' only apply to hosted agents that "+
 				"speak the Activity protocol; check the agent's protocols in azure.yaml",
+		)
+	}
+
+	serviceTargetConfig, err := project.LoadServiceTargetAgentConfig(effectiveSvc)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("failed to parse service target config: %s", err),
+			"check the activity configuration in azure.yaml",
+		)
+	}
+	activityProfile, err := resolveTeamsPackActivityProfile(ca, serviceTargetConfig.Activity)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid Activity configuration: %s", err),
+			"check the activity configuration in azure.yaml",
 		)
 	}
 
@@ -156,30 +187,6 @@ func resolveTeamsPackContext(
 		)
 	}
 
-	subscriptionID, err := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
-	if err != nil {
-		return nil, err
-	}
-	resourceGroup, err := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
-	if err != nil {
-		return nil, err
-	}
-	botName, err := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
-	if err != nil {
-		return nil, exterrors.Dependency(
-			exterrors.CodeAgentNotDeployed,
-			fmt.Sprintf("agent %q has no recorded Teams bot name in environment %q", agentName, envName),
-			"run 'azd deploy' first; the Teams bot name is recorded during deploy and is required "+
-				"before packaging or publishing",
-		)
-	}
-	botResourceGroup := readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name))
-
-	botArmID, err := teamsBotArmID(subscriptionID, resourceGroup, botName, botResourceGroup)
-	if err != nil {
-		return nil, err
-	}
-
 	endpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
 		return nil, err
@@ -188,13 +195,59 @@ func resolveTeamsPackContext(
 	if err != nil {
 		return nil, err
 	}
+	agentClient := agent_api.NewAgentClient(endpoint, credential)
+	remoteVersion, err := agentClient.GetAgentVersion(
+		ctx, agentName, version, agent_api.AgentEndpointAPIVersion, true,
+	)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)
+	}
+	activityProfile, err = project.ResolveDeployedActivityProfile(activityProfile, remoteVersion.DigitalWorkerType)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			err.Error(),
+			"delete and recreate the agent so its immutable digital_worker_type matches "+
+				"activity.digitalWorkerType",
+		)
+	}
+
+	botArmID := ""
+	if activityProfile.UseCase != project.ActivityUseCaseDigitalWorker {
+		subscriptionID, readErr := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
+		if readErr != nil {
+			return nil, readErr
+		}
+		resourceGroup, readErr := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
+		if readErr != nil {
+			return nil, readErr
+		}
+		botName, readErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
+		if readErr != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeAgentNotDeployed,
+				fmt.Sprintf("agent %q has no recorded Teams bot name in environment %q", agentName, envName),
+				"run 'azd deploy' first; the Teams bot name is recorded during deploy and is required "+
+					"before packaging or publishing",
+			)
+		}
+		botResourceGroup := readOptionalEnvValue(
+			ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name),
+		)
+		botArmID, err = teamsBotArmID(subscriptionID, resourceGroup, botName, botResourceGroup)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return &teamsPackContext{
-		proj:        proj,
-		svc:         svc,
-		agentName:   agentName,
-		botArmID:    botArmID,
-		agentClient: agent_api.NewAgentClient(endpoint, credential),
+		proj:             proj,
+		svc:              svc,
+		agentName:        agentName,
+		botArmID:         botArmID,
+		agentClient:      agentClient,
+		activityProfile:  activityProfile,
+		activitySettings: serviceTargetConfig.Activity,
 	}, nil
 }
 
@@ -219,9 +272,14 @@ func teamsBotArmID(subscriptionID, defaultResourceGroup, botName, botResourceGro
 // app package/publish request. Zero-value fields fall back to sensible defaults
 // derived from the agent name.
 type teamsAppRequestOptions struct {
-	scope       teamsPackScope
-	displayName string
-	appVersion  string
+	scope                    teamsPackScope
+	agentName                string
+	useCase                  project.ActivityUseCase
+	displayName              string
+	appVersion               string
+	publish                  *project.ActivityPublishConfig
+	optionalPermissionScopes []agent_api.Microsoft365PermissionScopes
+	accessBoundaries         *[]string
 }
 
 // buildTeamsAppPackageRequest assembles the Microsoft 365 request body shared by
@@ -235,22 +293,76 @@ func buildTeamsAppPackageRequest(
 ) agent_api.TeamsAppPackageRequest {
 	displayName := strings.TrimSpace(opts.displayName)
 	appVersion := strings.TrimSpace(opts.appVersion)
+	publish := opts.publish
+	if publish != nil {
+		if displayName == "" {
+			displayName = strings.TrimSpace(publish.AgentDisplayName)
+		}
+		if appVersion == "" {
+			appVersion = strings.TrimSpace(publish.AppVersion)
+		}
+		if strings.TrimSpace(publish.PublishScope) != "" {
+			if scope, err := resolveTeamsPackScope(publish.PublishScope); err == nil {
+				if strings.TrimSpace(opts.scope.api) == "" {
+					opts.scope = scope
+				}
+			}
+		}
+	}
 	if appVersion == "" {
 		appVersion = "1.0.0"
 	}
-	return agent_api.TeamsAppPackageRequest{
-		BotServiceArmID:          botArmID,
-		PublishScope:             opts.scope.api,
-		AgentDisplayName:         displayName,
-		AppVersion:               appVersion,
-		ShortDescription:         fmt.Sprintf("%s agent", displayName),
-		FullDescription:          fmt.Sprintf("%s agent on Microsoft Teams (activity protocol)", displayName),
-		DeveloperName:            "Azure AI Foundry",
-		DeveloperWebsiteURL:      "https://learn.microsoft.com/azure/ai-foundry/",
-		PrivacyURL:               "https://learn.microsoft.com/azure/ai-foundry/",
-		TermsOfUseURL:            "https://learn.microsoft.com/azure/ai-foundry/",
-		CanRespondWithoutMention: true,
+	if displayName == "" {
+		displayName = strings.TrimSpace(opts.agentName)
 	}
+	if displayName == "" {
+		displayName = "Agent"
+	}
+
+	request := agent_api.TeamsAppPackageRequest{
+		BotServiceArmID:     botArmID,
+		PublishScope:        opts.scope.api,
+		AgentDisplayName:    displayName,
+		AppVersion:          appVersion,
+		ShortDescription:    fmt.Sprintf("%s agent", displayName),
+		FullDescription:     fmt.Sprintf("%s agent on Microsoft Teams (activity protocol)", displayName),
+		DeveloperName:       "Azure AI Foundry",
+		DeveloperWebsiteURL: "https://learn.microsoft.com/azure/ai-foundry/",
+		PrivacyURL:          "https://learn.microsoft.com/azure/ai-foundry/",
+		TermsOfUseURL:       "https://learn.microsoft.com/azure/ai-foundry/",
+	}
+	if opts.useCase == project.ActivityUseCaseDigitalWorker {
+		request.PublishAsAutopilot = true
+		request.OptionalPermissionScopes = opts.optionalPermissionScopes
+		request.AccessBoundaries = opts.accessBoundaries
+	}
+	if publish != nil {
+		if request.AgentDisplayName == "" && strings.TrimSpace(publish.AgentDisplayName) != "" {
+			request.AgentDisplayName = publish.AgentDisplayName
+		}
+		if strings.TrimSpace(publish.ShortDescription) != "" {
+			request.ShortDescription = publish.ShortDescription
+		}
+		if strings.TrimSpace(publish.FullDescription) != "" {
+			request.FullDescription = publish.FullDescription
+		}
+		if strings.TrimSpace(publish.DeveloperName) != "" {
+			request.DeveloperName = publish.DeveloperName
+		}
+		if strings.TrimSpace(publish.DeveloperWebsiteURL) != "" {
+			request.DeveloperWebsiteURL = publish.DeveloperWebsiteURL
+		}
+		if strings.TrimSpace(publish.PrivacyURL) != "" {
+			request.PrivacyURL = publish.PrivacyURL
+		}
+		if strings.TrimSpace(publish.TermsOfUseURL) != "" {
+			request.TermsOfUseURL = publish.TermsOfUseURL
+		}
+		if publish.CanRespondWithoutMention != nil {
+			request.CanRespondWithoutMention = publish.CanRespondWithoutMention
+		}
+	}
+	return request
 }
 
 // teamsAppDeepLink returns the Teams v2 launcher link for a Microsoft Organization

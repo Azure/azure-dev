@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -32,7 +33,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/sethvargo/go-retry"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -204,11 +204,11 @@ func (t *aksTarget) Publish(
 		}
 	}
 
-	// Only publish the container image if a package output has been defined
-	// Empty package details is a valid scenario for any AKS deployment that does not build any containers
-	// Ex) Helm charts, or other manifests that reference external images
-	if serviceConfig.Docker.RemoteBuild || hasPackage {
-		// Login, tag & push container image to ACR
+	// Only handle a container image when remote build, image passthrough, or a package output is configured.
+	// Empty package details is a valid scenario for an AKS deployment that does not build any containers,
+	// such as Helm charts or other manifests that reference external images.
+	if serviceConfig.Docker.RemoteBuild || serviceConfig.Docker.ImagePassthrough || hasPackage {
+		// Build and publish the image, or pass through the final remote image reference.
 		publishResult, err := t.containerHelper.Publish(
 			ctx, serviceConfig, serviceContext, targetResource, t.env, progress, publishOptions)
 		if err != nil {
@@ -944,8 +944,7 @@ func (t *aksTarget) setK8sContext(
 	// (credentials, RBAC, namespace) are real failures that should surface
 	// even during postprovision.
 	if targetResource.ResourceName() == "" && eventName == postProvisionEvent {
-		return t.skipPostprovisionK8sSetup(
-			ctx, fmt.Errorf("AKS cluster resource not yet provisioned"))
+		return t.skipPostprovisionK8sSetup(ctx, aksSkipClusterNotProvisioned)
 	}
 
 	defaultNamespace := t.getK8sNamespace(serviceConfig)
@@ -973,13 +972,21 @@ func (t *aksTarget) setK8sContext(
 	return nil
 }
 
+// aksSkipClusterNotProvisioned is the bounded skip.reason code emitted on
+// events.AksPostprovisionSkipEvent when the AKS cluster resource does not exist
+// yet (delayed provisioning during multi-phase workflows) and Kubernetes
+// context setup is deferred until a deployment is performed. Reason codes must
+// stay a small, compile-time enum — never raw or user-derived text. Keep in
+// sync with docs/reference/telemetry-data.md.
+const aksSkipClusterNotProvisioned = "cluster_not_provisioned"
+
 // skipPostprovisionK8sSetup logs a warning and returns nil so that
-// postprovision continues even when Kubernetes context setup fails.
+// postprovision continues even when Kubernetes context setup is skipped.
 // The context will be configured later when a deployment is performed.
 // Context cancellation/timeouts are always propagated.
 func (t *aksTarget) skipPostprovisionK8sSetup(
 	ctx context.Context,
-	reason error,
+	reason string,
 ) error {
 	// Propagate context cancellation — the user (or system) asked
 	// to stop; swallowing that would be incorrect.
@@ -988,11 +995,11 @@ func (t *aksTarget) skipPostprovisionK8sSetup(
 	}
 
 	_, span := tracing.Start(ctx, events.AksPostprovisionSkipEvent)
-	span.SetAttributes(attribute.String("skip.reason", reason.Error()))
+	span.SetAttributes(fields.AksSkipReasonKey.String(reason))
 	span.End()
 
 	log.Printf(
-		"skipping k8s context setup during postprovision: %v", reason)
+		"skipping k8s context setup during postprovision: %s", reason)
 	t.console.Message(ctx, output.WithWarningFormat(
 		"AKS cluster not available yet, skipping Kubernetes "+
 			"context setup. It will be configured when the "+

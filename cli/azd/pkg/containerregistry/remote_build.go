@@ -126,6 +126,41 @@ func (r *RemoteBuildManager) UploadBuildSource(
 	return sourceUploadRes.SourceUploadDefinition, nil
 }
 
+// RemoteBuildRunError represents a terminal failure reported by an Azure Container Registry remote build.
+type RemoteBuildRunError struct {
+	Status   armcontainerregistry.RunStatus
+	buildLog string
+}
+
+// Error returns the remote build failure and its existing user-facing build log.
+func (e *RemoteBuildRunError) Error() string {
+	if e == nil {
+		return "remote build failed"
+	}
+
+	return fmt.Sprintf("remote build failed: %s", e.buildLog)
+}
+
+// DiagnosticCode returns a stable suffix for the terminal ACR run status, or an empty string for an unknown status.
+func (e *RemoteBuildRunError) DiagnosticCode() string {
+	if e == nil {
+		return ""
+	}
+
+	switch e.Status {
+	case armcontainerregistry.RunStatusFailed:
+		return "acr_run_failed"
+	case armcontainerregistry.RunStatusError:
+		return "acr_run_error"
+	case armcontainerregistry.RunStatusTimeout:
+		return "acr_run_timeout"
+	case armcontainerregistry.RunStatusCanceled:
+		return "acr_run_canceled"
+	default:
+		return ""
+	}
+}
+
 // terminalContainerRegistryRunStates is the list of states we consider terminal when waiting for a container registry run
 // to complete. Unfortunately, in the current version of the armcontainerregistry package, the poller returned by
 // BeginScheduleRun treats all states as terminal and so calling `PollUntilDone` will return even if if the run is still
@@ -191,7 +226,6 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 	}
 
 	var buildLog bytes.Buffer
-
 	err = streamLogs(ctx, logBlobClient, io.MultiWriter(&buildLog, writer))
 	if err != nil {
 		return err
@@ -208,13 +242,19 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 			if err != nil {
 				return err
 			}
+			if runRes.Properties == nil || runRes.Properties.Status == nil {
+				return retry.RetryableError(errors.New("remote build status is missing"))
+			}
 
 			if !slices.Contains(terminalContainerRegistryRunStates, *runRes.Properties.Status) {
 				return retry.RetryableError(errors.New("remote build still in progress"))
 			}
 
 			if *runRes.Properties.Status != armcontainerregistry.RunStatusSucceeded {
-				return fmt.Errorf("remote build failed: %v", buildLog.String())
+				return &RemoteBuildRunError{
+					Status:   *runRes.Properties.Status,
+					buildLog: buildLog.String(),
+				}
 			}
 
 			return nil

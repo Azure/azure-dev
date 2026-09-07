@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	environmentListPageSize = 200
+	environmentListPageSize = 100
 	environmentListMaxPages = 100
 )
 
@@ -66,11 +66,6 @@ func (a *listAction) Run() error {
 	if output.IsJSON() {
 		return output.JSON(environments)
 	}
-	if len(environments) == 0 {
-		output.Message("No RLE environments found in this Foundry project.")
-		return nil
-	}
-
 	rows := make([][]string, 0, len(environments))
 	for _, environment := range environments {
 		rows = append(rows, []string{
@@ -81,33 +76,39 @@ func (a *listAction) Run() error {
 			environment.UpdatedAt,
 		})
 	}
-	output.Message("")
-	output.Table(
+	renderTableOrNoResults(output,
 		[]string{"NAME", "VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED"},
 		rows,
+		noEnvironmentsMessage,
 	)
-	output.Message("")
 	return nil
 }
 
 func listAllEnvironments(ctx context.Context, client *rleClient) ([]environmentResource, error) {
-	var environments []environmentResource
-	for pageNumber := range environmentListMaxPages {
-		skip := pageNumber * environmentListPageSize
-		page, err := client.listEnvironments(ctx, skip, environmentListPageSize)
+	environments := make([]environmentResource, 0)
+	continuationToken := ""
+	seenCursors := map[string]struct{}{}
+	for range environmentListMaxPages {
+		page, err := client.listEnvironments(ctx, continuationToken, environmentListPageSize)
 		if err != nil {
 			return nil, serviceError(err)
 		}
-		environments = append(environments, page.Value...)
-		if len(page.Value) < environmentListPageSize {
+		environments = append(environments, page.Data...)
+		if strings.TrimSpace(page.NextContinuationToken) == "" {
 			return environments, nil
 		}
+		continuationToken, err = nextPaginationCursor(seenCursors, page.NextContinuationToken, func() error {
+			return &azdext.LocalError{
+				Message:  "Environment list pagination did not return a new continuation token.",
+				Code:     "rle_environment_list_cursor_invalid",
+				Category: azdext.LocalErrorCategoryInternal,
+			}
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
-	return nil, &azdext.LocalError{
-		Message:  fmt.Sprintf("Environment list exceeded the %d-item safety limit.", environmentListPageSize*environmentListMaxPages),
-		Code:     "rle_environment_list_safety_limit",
-		Category: azdext.LocalErrorCategoryInternal,
-	}
+	return nil, paginationSafetyLimitError("Environment list", "rle_environment_list_safety_limit")
 }
 
 func resolveEnvironmentListProjectEndpoint() (string, error) {

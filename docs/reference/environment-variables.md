@@ -35,6 +35,16 @@ Override the path to external tools that azd invokes:
 | `AZD_GH_TOOL_PATH` | Path to the GitHub CLI binary |
 | `AZD_PACK_TOOL_PATH` | Path to the Cloud Native Buildpacks (`pack`) binary |
 
+## GitHub Repository Access
+
+Used by `azd init --template` when checking GitHub repository metadata before cloning:
+
+| Variable | Description |
+|---|---|
+| `GH_TOKEN` / `GITHUB_TOKEN` | Authenticate repository metadata requests to `github.com` and GitHub Enterprise Cloud `*.ghe.com` hosts |
+| `GH_HOST` / `GITHUB_SERVER_URL` | Identify a GitHub Enterprise host for repository metadata checks |
+| `GH_ENTERPRISE_TOKEN` / `GITHUB_ENTERPRISE_TOKEN` | Authenticate repository metadata requests to a recognized GitHub Enterprise Server host |
+
 ## Build Configuration
 
 | Variable | Description |
@@ -53,9 +63,9 @@ Set by IDE hosts (VS Code, Visual Studio) when spawning azd as a subprocess. Use
 
 | Variable | Description |
 |---|---|
-| `AZD_AUTH_ENDPOINT` | Authentication endpoint URL set by IDE hosts for integrated authentication |
-| `AZD_AUTH_KEY` | Authentication key set by IDE hosts for integrated authentication |
-| `AZD_AUTH_CERT` | Authentication certificate/TLS trust configuration set by IDE hosts |
+| `AZD_AUTH_ENDPOINT` | Authentication endpoint URL set by IDE hosts for integrated authentication. Supports `https://host:port`, `unix:/path/to/socket`, and Windows named pipes as `npipe:<pipe-name>`, `npipe://./pipe/<pipe-name>`, or `npipe:////./pipe/<pipe-name>`. Named-pipe owners and ACLs are validated; the Windows default read-only Everyone/Anonymous ACEs are accepted, but broader access is refused. |
+| `AZD_AUTH_KEY` | Authentication key set by IDE hosts for integrated authentication. Required for all schemes (`https:`, `unix:`, `npipe:`). |
+| `AZD_AUTH_CERT` | Optional authentication certificate/TLS trust configuration set by IDE hosts. When set, the endpoint must use `https:` and `azd` pins the connection to this certificate. Must NOT be set for `unix:` / `npipe:`. |
 
 For details on the external authentication protocol, see [cli/azd/docs/external-authentication.md](../../cli/azd/docs/external-authentication.md).
 

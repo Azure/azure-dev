@@ -14,6 +14,7 @@ func fileShapeBlurb(includeDescription bool) string {
 		return `File shape (JSON example):
 
   {
+    "name": "research",
     "description": "research toolbox",
     "connections": [
       { "name": "my-mcp" },
@@ -31,11 +32,13 @@ func fileShapeBlurb(includeDescription bool) string {
     ],
     "policies": {
       "rai_config": { "rai_policy_name": "Microsoft.Default" }
-    }
+    },
+    "metadata": { "owner": "research-team" }
   }
 
 Equivalent YAML:
 
+  name: research
   description: research toolbox
   connections:
     - name: my-mcp
@@ -56,8 +59,12 @@ Equivalent YAML:
   policies:
     rai_config:
       rai_policy_name: Microsoft.Default
+  metadata:
+    owner: research-team
 
 Fields:
+  name            Optional for 'create', which takes the name positionally;
+                  required when using 'azd ai toolbox deploy'.
   description     Optional. Stored on the initial toolbox version.
   connections     List of existing project connections to attach. Each entry
                   needs 'name' (the project connection short name).
@@ -80,11 +87,12 @@ Fields:
                   policies.rai_config.rai_policy_name selects the Responsible
                   AI content-filter policy applied to this toolbox version
                   (the alias 'name' is also accepted).
+  metadata        Optional string key-value metadata stored on the version.
 
 At least one of 'connections', 'skills', or 'tools' must be non-empty.
 
 Project connections must already exist on the Foundry project; this command
-does not create them. Run 'azd ai agent connection list' to see available
+does not create them. Run 'azd ai connection list' to see available
 connections.`
 	}
 
@@ -123,6 +131,6 @@ The toolbox's existing description is carried forward unchanged; the
 description is set at create time and cannot be changed later.
 
 Project connections must already exist on the Foundry project; this command
-does not create them. Run 'azd ai agent connection list' to see available
+does not create them. Run 'azd ai connection list' to see available
 connections.`
 }

@@ -1,5 +1,75 @@
 # Release History
 
+<!-- cspell:ignore Deeksharma JerryYangKai -->
+
+## 1.0.0-beta.14 (2026-09-04)
+
+### Breaking Changes
+
+- [[#9781]](https://github.com/Azure/azure-dev/pull/9781) Change `azd ai agent add` to manage typed service dependencies from `azure.yaml` instead of editing agent definition files directly. Thanks @JerryYangKai for the contribution!
+
+### Features Added
+
+- [[#9703]](https://github.com/Azure/azure-dev/pull/9703) Add attached resumable Responses invocation through `azd ai agent invoke --resumable`.
+- [[#9728]](https://github.com/Azure/azure-dev/pull/9728) Allow hosted agent session idle timeouts as low as 120 seconds. Thanks @Deeksharma for the contribution!
+- [[#9735]](https://github.com/Azure/azure-dev/pull/9735) Add local Connection and Toolbox definitions with standalone deploy workflows and dependency-aware Agent deployment. Thanks @JerryYangKai for the contribution!
+- [[#9789]](https://github.com/Azure/azure-dev/pull/9789) Update Digital Worker agent and Microsoft 365 publishing contracts with configurable permission scopes and access boundaries.
+
+### Bugs Fixed
+
+- [[#9720]](https://github.com/Azure/azure-dev/pull/9720) Make AI extension prompts deterministic in no-prompt mode so automation receives explicit results instead of interactive prompts.
+- [[#9678]](https://github.com/Azure/azure-dev/pull/9678) Honor disabled Connection services before agent initialization and tool discovery.
+- [[#9741]](https://github.com/Azure/azure-dev/pull/9741) Preserve connection audience and connector name during agent infrastructure synthesis.
+- [[#9809]](https://github.com/Azure/azure-dev/pull/9809) Add unified Toolbox diagnostics to Doctor and next-step guidance.
+- [[#9846]](https://github.com/Azure/azure-dev/pull/9846) Fix agent deploy and endpoint update from creating authorization defaults when configuration omits them.
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to v1.83.1 to address the GHSA-vp52-pcj8-j9qc security advisory.
+
+## 1.0.0-beta.13 (2026-08-27)
+
+### Features Added
+
+- [[#9586]](https://github.com/Azure/azure-dev/pull/9586) Add support for private non-ACR registry connections when authoring and deploying hosted agents.
+- [[#9634]](https://github.com/Azure/azure-dev/pull/9634) Update prompt voice agents to use the unified Agents API with versioned voice endpoints.
+- [[#9655]](https://github.com/Azure/azure-dev/pull/9655) Add advanced prompt voice settings for audio, turn detection, modalities, tools, and service features.
+- [[#9683]](https://github.com/Azure/azure-dev/pull/9683) Add editable Bicep and Terraform infrastructure ejection for existing Foundry projects while preserving ownership of existing resources.
+
+### Bugs Fixed
+
+- [[#9680]](https://github.com/Azure/azure-dev/pull/9680) Fix Doctor and next-step diagnostics for unified Foundry connections and invalid connection conditions.
+
+### Other Changes
+
+- [[#9726]](https://github.com/Azure/azure-dev/pull/9726) Add Microsoft Foundry Skill User-Agent attribution to extension requests when enabled.
+
+## 1.0.0-beta.12 (2026-08-24)
+
+### Features Added
+
+- [[#9596]](https://github.com/Azure/azure-dev/pull/9596) Add invocation moderation configuration for RAI policies used with the `invocations` protocol.
+- [[#9610]](https://github.com/Azure/azure-dev/pull/9610) Add end-to-end Digital Worker deployment, packaging, and Microsoft 365 publishing workflows.
+
+### Bugs Fixed
+
+- [[#9596]](https://github.com/Azure/azure-dev/pull/9596) Reject agent manifests that declare multiple `rai_policy` entries instead of silently discarding additional policies.
+- [[#9679]](https://github.com/Azure/azure-dev/pull/9679) Prompt users to provision after agent initialization adds a standalone Foundry connection service.
+
+## 1.0.0-beta.11 (2026-08-20)
+
+### Features Added
+
+- [[#9444]](https://github.com/Azure/azure-dev/pull/9444) Add the `max_concurrent_agent_runs` optimize YAML option to run agent evaluations in parallel.
+- [[#9472]](https://github.com/Azure/azure-dev/pull/9472) Add `initialization_parameters` to evaluator configuration in optimize YAML files.
+- [[#9612]](https://github.com/Azure/azure-dev/pull/9612) Support `sessionConfiguration.idleTimeoutSeconds` for hosted agent services in `azure.yaml`.
+
+### Bugs Fixed
+
+- [[#9563]](https://github.com/Azure/azure-dev/pull/9563) Fix Doctor and next-step guidance for toolboxes declared as standalone `azure.ai.toolbox` services.
+- [[#9600]](https://github.com/Azure/azure-dev/pull/9600) Report local agent process failures instead of reporting that the agent stopped successfully.
+- [[#9636]](https://github.com/Azure/azure-dev/pull/9636) Preserve actionable structured errors returned through nested azd host calls.
+
 ## 1.0.0-beta.10 (2026-08-13)
 
 ### Features Added

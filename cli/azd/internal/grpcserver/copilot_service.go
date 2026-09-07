@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -104,7 +105,7 @@ func (s *copilotService) ListSessions(
 		}
 		protoSessions[i] = &azdext.CopilotSessionMetadata{
 			SessionId:    session.SessionID,
-			ModifiedTime: session.ModifiedTime,
+			ModifiedTime: session.ModifiedTime.Format(time.RFC3339),
 			Summary:      summary,
 		}
 	}
@@ -368,7 +369,7 @@ func convertFileChangeType(ct watch.FileChangeType) azdext.CopilotFileChangeType
 // partial data.
 func convertSessionEvent(event agent.SessionEvent) *azdext.CopilotSessionEvent {
 	protoEvent := &azdext.CopilotSessionEvent{
-		Type:      string(event.Type),
+		Type:      string(event.Type()),
 		Timestamp: event.Timestamp.Format("2006-01-02T15:04:05.000Z"),
 	}
 
@@ -377,7 +378,7 @@ func convertSessionEvent(event agent.SessionEvent) *azdext.CopilotSessionEvent {
 	if err != nil {
 		log.Printf(
 			"[copilot-service] failed to marshal event data for event type %q: %v",
-			event.Type, err,
+			event.Type(), err,
 		)
 		return protoEvent
 	}
@@ -386,7 +387,7 @@ func convertSessionEvent(event agent.SessionEvent) *azdext.CopilotSessionEvent {
 	if err := json.Unmarshal(jsonBytes, &dataMap); err != nil {
 		log.Printf(
 			"[copilot-service] failed to unmarshal event data to map for event type %q: %v",
-			event.Type, err,
+			event.Type(), err,
 		)
 		return protoEvent
 	}
@@ -395,7 +396,7 @@ func convertSessionEvent(event agent.SessionEvent) *azdext.CopilotSessionEvent {
 	if err != nil {
 		log.Printf(
 			"[copilot-service] failed to create protobuf struct for event type %q: %v",
-			event.Type, err,
+			event.Type(), err,
 		)
 		return protoEvent
 	}

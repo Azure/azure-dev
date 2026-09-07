@@ -1,6 +1,7 @@
 ---
 name: Extension PR Labeler
 description: Labels PRs that touch azd extension folders with matching ext-* labels.
+run-name: "Extension PR Labeler #${{ github.event.pull_request.number }}"
 on:
   pull_request_target:
     types: [opened, reopened, synchronize]
@@ -12,6 +13,7 @@ permissions:
   copilot-requests: write
   pull-requests: read
   issues: read
+checkout: false
 strict: true
 network:
   allowed: [defaults, github]
@@ -20,6 +22,7 @@ tools:
     mode: gh-proxy
     toolsets: [default, pull_requests]
 safe-outputs:
+  group-reports: true
   add-labels:
     allowed: [area/extensions, ext-*]
     max: 10

@@ -8,10 +8,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"azureaiagent/internal/cmd/nextstep"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // newCheckManualEnvVars produces Check `local.manual-env-vars` — the
@@ -90,13 +86,7 @@ func newCheckManualEnvVars(deps Dependencies) Check {
 				}
 			}
 
-			assembler := deps.assembleState
-			if assembler == nil {
-				assembler = func(c context.Context, client *azdext.AzdClient) (*nextstep.State, []error) {
-					return nextstep.AssembleState(c, client)
-				}
-			}
-			state, errs := assembler(ctx, deps.AzdClient)
+			state, errs := deps.AssembleAgentState(ctx)
 			if state == nil {
 				// AssembleState always returns a non-nil State even when errs
 				// is non-empty — but defend against a future contract change

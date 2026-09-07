@@ -84,8 +84,8 @@ func containsGRPCCode(err error, code codes.Code) bool {
 //
 //  1. --project-endpoint flag
 //  2. Active azd env value (FOUNDRY_PROJECT_ENDPOINT, then AZURE_AI_PROJECT_ENDPOINT)
-//  3. Global config: extensions.ai-agents.project.context.endpoint (read-only;
-//     owned by azure.ai.agents)
+//  3. Global config: extensions.ai-projects.context.endpoint (read-only;
+//     owned by azure.ai.projects)
 //  4. Host environment variable (FOUNDRY_PROJECT_ENDPOINT, then AZURE_AI_PROJECT_ENDPOINT)
 //  5. Structured error with actionable suggestion
 //

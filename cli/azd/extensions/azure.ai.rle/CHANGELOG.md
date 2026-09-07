@@ -1,6 +1,17 @@
 # Release History
 
-## 0.3.0-preview (Unreleased)
+## 0.4.0-preview (Unreleased)
+
+- Align environment discovery and remote invocation with the refreshed RLE service routes and cursor-based response contracts.
+- Use `/rl_environments` consistently for environment and instance lifecycle APIs.
+- Manage remote invoke through temporary instance groups and instances instead of direct sandbox lifecycle APIs.
+- Retry runtime creation while a published environment's disk image is still being prepared.
+- Use saved-state and explicit versions when present; otherwise let unversioned group creation resolve the latest version.
+- Delete the temporary instance and group on exit with Ctrl+C-independent cleanup and concise terminal status.
+- Persist the environment name as `environmentName` while continuing to read legacy `name` state files.
+- Authenticate and API-version OpenEnv gateway requests on the configured Foundry project origin, wait for runtime health before reporting readiness, and route the browser playground through an authenticated local proxy.
+
+## 0.3.0-preview
 
 - Add `azd ai rle list` to list environments in the configured Foundry project.
 - Add `azd ai rle show <environment-name>` to inspect an environment's full details and version history.

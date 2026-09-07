@@ -557,6 +557,20 @@ func mergeParameters(userParams, hostParams map[string]any) map[string]any {
 	return out
 }
 
+// parametersDeclaredByTemplate keeps host-derived values only when the
+// compiled on-disk template declares the matching parameter. User-authored
+// parameters are deliberately not filtered so ARM still reports misspellings.
+func parametersDeclaredByTemplate(hostParams, armTemplate map[string]any) map[string]any {
+	declared, _ := armTemplate["parameters"].(map[string]any)
+	out := make(map[string]any, min(len(hostParams), len(declared)))
+	for name, value := range hostParams {
+		if _, ok := declared[name]; ok {
+			out[name] = value
+		}
+	}
+	return out
+}
+
 // unmarshalARMTemplate parses an ARM template JSON string into the untyped
 // map shape armresources.DeploymentProperties.Template expects.
 func unmarshalARMTemplate(raw, sourcePath string) (map[string]any, error) {

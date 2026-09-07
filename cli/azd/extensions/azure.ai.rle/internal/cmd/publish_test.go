@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -70,5 +71,27 @@ func TestBuildEnvironmentCreateRequestIncludesVersionBump(t *testing.T) {
 	request := buildEnvironmentCreateRequest("echo_env", "example.azurecr.io/echo_env:latest", "Patch")
 	if request.VersionBump != "Patch" {
 		t.Fatalf("expected version bump to be included, got %#v", request)
+	}
+}
+
+func TestEnvironmentOutputUsesEnvironmentNameField(t *testing.T) {
+	body, err := json.Marshal(environmentOutput{
+		EnvironmentId:      "env-1",
+		EnvironmentVersion: "1.0.0",
+		EnvironmentName:    "echo_env",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["environmentName"] != "echo_env" {
+		t.Fatalf("expected environmentName field, got %v", payload)
+	}
+	if _, exists := payload["name"]; exists {
+		t.Fatalf("expected legacy name field to be omitted, got %v", payload)
 	}
 }

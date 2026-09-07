@@ -1,5 +1,21 @@
 # Release History
 
+## 1.0.0-beta.5 (2026-09-04)
+
+### Breaking Changes
+
+- [[#9843]](https://github.com/Azure/azure-dev/pull/9843) Prefer `FOUNDRY_PROJECT_ENDPOINT` over `AZURE_AI_PROJECT_ENDPOINT` when both are set.
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to v1.83.1 to address the GHSA-vp52-pcj8-j9qc security advisory.
+
+## 1.0.0-beta.4 (2026-08-20)
+
+### Features Added
+
+- [[#9622]](https://github.com/Azure/azure-dev/pull/9622) Reconcile archive-backed skills declared in `azure.yaml`, including `.zip` archives and directories with a root `SKILL.md`.
+
 ## 1.0.0-beta.3 (2026-08-06)
 
 ### Bugs Fixed

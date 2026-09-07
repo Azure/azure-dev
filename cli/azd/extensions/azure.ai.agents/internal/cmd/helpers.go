@@ -477,7 +477,7 @@ func resolveConversationID(
 // setACREnvVar sets the AZD_AGENT_SKIP_ACR environment variable based on whether ACR
 // should be skipped. ACR is skipped when:
 // - Code deploy mode (no container registry needed)
-// - Pre-built image provided via --image flag (user manages their own registry)
+// - Pre-built image provided by a flag, manifest, or detected source definition
 //
 // This env var is consumed by the Bicep template in Azure-Samples/azd-ai-starter-basic
 // (infra/main.bicep) as `param skipAcr bool` to conditionally skip ACR resource creation.

@@ -41,6 +41,8 @@ const (
 	// match the archive uncompressed limit; a legitimate zip is far smaller
 	// after compression, so this only trips on egregious responses.
 	MaxDownloadBytes = 512 * 1024 * 1024
+	// MaxUploadBytes is the service limit for skill-version archive uploads.
+	MaxUploadBytes = 25 * 1024 * 1024
 
 	//nolint:gosec // OAuth scope identifier, not a credential
 	BearerScope = "https://ai.azure.com/.default"

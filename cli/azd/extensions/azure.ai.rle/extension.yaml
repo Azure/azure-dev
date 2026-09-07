@@ -2,7 +2,7 @@
 capabilities:
   - custom-commands
   - metadata
-description: Manage RLE resources from your terminal. (Preview)
+description: Manage RLE resources from your terminal. Commands are hidden by default; set AZD_AI_RLE_ENABLE=true to enable them. (Preview)
 displayName: RLE (Preview)
 id: azure.ai.rle
 language: go
@@ -10,24 +10,24 @@ namespace: ai.rle
 tags:
   - ai
   - rle
-usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle <command> [options]
-version: 0.3.0-preview
+usage: azd ai rle <command> [options]
+version: 0.4.0-preview
 examples:
   - name: init
     description: Copy the OpenEnv echo sample into a local RLE environment.
-    usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle init
+    usage: azd ai rle init
   - name: publish
     description: Build, push, and create or update the RLE environment.
-    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"; $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"; azd ai rle publish --version-bump major
+    usage: azd ai rle publish --version-bump major
   - name: run
     description: Build and run the local RLE environment container.
-    usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle run
+    usage: azd ai rle run
   - name: invoke
-    description: Lease a deployed RLE sandbox and open an OpenEnv runtime shell.
-    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"; azd ai rle invoke <environment-name> [--version <version>]
+    description: Create a temporary RLE instance and open an OpenEnv runtime shell.
+    usage: azd ai rle invoke [environment-name] [--version <version>]
   - name: list
     description: List RLE environments in a Foundry project.
-    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"; azd ai rle list
+    usage: azd ai rle list
   - name: show
     description: Show the details and version history for an RLE environment.
-    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"; azd ai rle show <environment-name>
+    usage: azd ai rle show [environment-name]

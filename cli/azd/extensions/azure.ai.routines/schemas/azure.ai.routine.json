@@ -6,6 +6,10 @@
   "type": "object",
   "additionalProperties": true,
   "properties": {
+    "$ref": {
+      "type": "string",
+      "description": "Local YAML or JSON routine manifest path. Sibling service properties override referenced values."
+    },
     "description": {
       "type": "string",
       "description": "Description of the routine."

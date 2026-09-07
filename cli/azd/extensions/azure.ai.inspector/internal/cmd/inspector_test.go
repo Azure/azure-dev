@@ -4,13 +4,46 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
+
+func TestUsageReporterForwardsEventWithCommandContext(t *testing.T) {
+	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
+		"authorization", "token",
+		"traceparent", "00-11111111111111111111111111111111-2222222222222222-01",
+	))
+	telemetry := &recordingTelemetryClient{}
+
+	usageReporter(ctx, telemetry)("inspector.funnel.stage", map[string]string{
+		"stage":   "ui_ready",
+		"outcome": "succeeded",
+	})
+
+	require.Equal(t, &azdext.ReportUsageRequest{
+		EventName: "inspector.funnel.stage",
+		Attributes: map[string]string{
+			"stage":   "ui_ready",
+			"outcome": "succeeded",
+		},
+	}, telemetry.request)
+	md, ok := metadata.FromOutgoingContext(telemetry.ctx)
+	require.True(t, ok)
+	require.Equal(t, []string{"token"}, md.Get("authorization"))
+	require.Equal(t, []string{
+		"00-11111111111111111111111111111111-2222222222222222-01",
+	}, md.Get("traceparent"))
+}
 
 func TestInjectSSEEventsSynthesizesEventLines(t *testing.T) {
 	input := "data: {\"type\":\"response.output_text.delta\"}\n\n"
@@ -91,4 +124,19 @@ type errorReader struct {
 
 func (r errorReader) Read([]byte) (int, error) {
 	return 0, r.err
+}
+
+type recordingTelemetryClient struct {
+	ctx     context.Context
+	request *azdext.ReportUsageRequest
+}
+
+func (c *recordingTelemetryClient) ReportUsage(
+	ctx context.Context,
+	request *azdext.ReportUsageRequest,
+	_ ...grpc.CallOption,
+) (*azdext.ReportUsageResponse, error) {
+	c.ctx = ctx
+	c.request = request
+	return &azdext.ReportUsageResponse{Accepted: true}, nil
 }

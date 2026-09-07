@@ -67,14 +67,12 @@ func TestDetectInteractive_NoPromptEnv(t *testing.T) {
 
 func TestDetectInteractive_AgentDetection(t *testing.T) {
 	clearCIEnv(t)
+	clearAgentEnv(t)
 
-	t.Setenv("CLAUDE_CODE", "1")
+	t.Setenv("CLAUDECODE", "1")
 	info := DetectInteractive()
 	if !info.Agent {
-		t.Error("DetectInteractive().Agent = false with CLAUDE_CODE=1, want true")
-	}
-	if info.CanPrompt() {
-		t.Error("CanPrompt() = true with agent detected, want false")
+		t.Error("DetectInteractive().Agent = false with CLAUDECODE=1, want true")
 	}
 }
 
@@ -83,6 +81,8 @@ func TestDetectInteractive_AgentDetection(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCanPrompt_AllConditions(t *testing.T) {
+	clearAgentEnv(t)
+
 	// Test with a non-TTY environment (typical in tests/CI).
 	info := InteractiveInfo{
 		StdinTTY:  true,
@@ -107,6 +107,36 @@ func TestCanPrompt_AllConditions(t *testing.T) {
 	info.NoPrompt = true
 	if info.CanPrompt() {
 		t.Error("CanPrompt() with NoPrompt = true, want false")
+	}
+}
+
+func TestCanPrompt_AgentMarkerDoesNotOverrideTTY(t *testing.T) {
+	clearAgentEnv(t)
+	t.Setenv("CLAUDECODE", "1")
+
+	info := InteractiveInfo{
+		StdinTTY:  true,
+		StdoutTTY: true,
+		Agent:     true,
+	}
+
+	if !info.CanPrompt() {
+		t.Error("CanPrompt() with interactive TTY and agent marker = false, want true")
+	}
+}
+
+func TestCanPrompt_InheritedClaudeMarkerDoesNotOverrideTTY(t *testing.T) {
+	clearAgentEnv(t)
+	t.Setenv("CLAUDECODE", "1")
+
+	info := InteractiveInfo{
+		StdinTTY:  true,
+		StdoutTTY: true,
+		Agent:     true,
+	}
+
+	if !info.CanPrompt() {
+		t.Error("CanPrompt() with inherited Claude marker = false, want true")
 	}
 }
 
@@ -200,23 +230,51 @@ func TestIsCIEnv(t *testing.T) {
 	})
 }
 
-func TestIsAgentEnv(t *testing.T) {
-	for _, key := range agentEnvVars {
-		t.Run(key, func(t *testing.T) {
+func TestDetectAgentEnv(t *testing.T) {
+	for _, pattern := range agentEnvPatterns {
+		value := pattern.expectedValue
+		if value == "" {
+			value = "1"
+		}
+
+		t.Run(pattern.envVar+"="+value, func(t *testing.T) {
 			clearAgentEnv(t)
-			t.Setenv(key, "1")
-			if !isAgentEnv() {
-				t.Errorf("isAgentEnv() with %s=1 = false, want true", key)
+			t.Setenv(pattern.envVar, value)
+
+			if !detectAgentEnv() {
+				t.Errorf("detectAgentEnv() with %s=%s did not detect an agent", pattern.envVar, value)
 			}
 		})
 	}
 
 	t.Run("none", func(t *testing.T) {
 		clearAgentEnv(t)
-		if isAgentEnv() {
-			t.Error("isAgentEnv() with no agent vars = true, want false")
+		if detectAgentEnv() {
+			t.Error("detectAgentEnv() with no agent vars detected an agent")
 		}
 	})
+}
+
+func TestDetectAgentEnv_RejectsIncorrectClaudeMarkers(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "CLAUDECODE", value: "true"},
+		{name: "CLAUDE_CODE", value: "1"},
+		{name: "CLAUDE_CODE_ENTRYPOINT", value: "cli"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearAgentEnv(t)
+			t.Setenv(tt.name, tt.value)
+
+			if detectAgentEnv() {
+				t.Errorf("detectAgentEnv() incorrectly accepted %s=%s", tt.name, tt.value)
+			}
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -233,8 +291,13 @@ func clearCIEnv(t *testing.T) {
 
 func clearAgentEnv(t *testing.T) {
 	t.Helper()
-	for _, key := range agentEnvVars {
-		t.Setenv(key, "")
-		os.Unsetenv(key)
+	cleared := map[string]bool{}
+	for _, pattern := range agentEnvPatterns {
+		if cleared[pattern.envVar] {
+			continue
+		}
+		cleared[pattern.envVar] = true
+		t.Setenv(pattern.envVar, "")
+		os.Unsetenv(pattern.envVar)
 	}
 }

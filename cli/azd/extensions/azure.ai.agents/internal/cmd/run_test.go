@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -236,6 +237,73 @@ func TestWaitForLocalPort(t *testing.T) {
 			t.Fatal("waitForLocalPort should fail for a closed port")
 		}
 	})
+}
+
+func TestReportLocalClientRouteSelected(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		activityProfile activityRunProfile
+		suppressClient  bool
+		reportErr       error
+		wantRoute       string
+	}{
+		{
+			name:      "selects Inspector for non-activity agent",
+			wantRoute: localClientRouteInspector,
+		},
+		{
+			name:            "selects Playground for activity agent",
+			activityProfile: activityRunProfile{IsActivity: true},
+			wantRoute:       localClientRoutePlayground,
+		},
+		{
+			name:           "selects suppressed for non-activity agent",
+			suppressClient: true,
+			wantRoute:      localClientRouteSuppressed,
+		},
+		{
+			name:            "suppression overrides activity route",
+			activityProfile: activityRunProfile{IsActivity: true},
+			suppressClient:  true,
+			wantRoute:       localClientRouteSuppressed,
+		},
+		{
+			name:      "reporting failure is best effort",
+			reportErr: errors.New("telemetry unavailable"),
+			wantRoute: localClientRouteInspector,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			telemetry := &recordingTelemetryClient{err: tt.reportErr}
+			reportLocalClientRouteSelected(
+				t.Context(),
+				telemetry,
+				tt.activityProfile,
+				tt.suppressClient,
+			)
+
+			if telemetry.request == nil {
+				t.Fatal("expected telemetry request")
+			}
+			if telemetry.request.EventName != localClientRouteSelectedEvent {
+				t.Fatalf(
+					"event name = %q, want %q",
+					telemetry.request.EventName,
+					localClientRouteSelectedEvent,
+				)
+			}
+			wantAttributes := map[string]string{localClientRouteAttribute: tt.wantRoute}
+			if !maps.Equal(telemetry.request.Attributes, wantAttributes) {
+				t.Fatalf("attributes = %v, want %v", telemetry.request.Attributes, wantAttributes)
+			}
+		})
+	}
 }
 
 func TestLaunchInspectorUsesWorkflowCommand(t *testing.T) {
@@ -529,6 +597,109 @@ func TestRunRun_PortCollisionDoesNotClearStoredSession(t *testing.T) {
 	}
 }
 
+func TestRunRun_ReturnsAgentProcessExitError(t *testing.T) {
+	err := runRunWithHelperProcess(t, "exit", "17")
+	if err == nil || !strings.Contains(err.Error(), "agent exited: exit status 17") {
+		t.Fatalf("runRun() error = %v, want agent exit status 17", err)
+	}
+}
+
+func TestRunRun_TreatsInterruptExitAsCancellation(t *testing.T) {
+	if err := runRunWithHelperProcess(t, "interrupt", ""); err != nil {
+		t.Fatalf("runRun() error = %v, want nil for interrupt exit", err)
+	}
+}
+
+func runRunWithHelperProcess(t *testing.T, mode string, exitCode string) error {
+	t.Helper()
+
+	projectDir := t.TempDir()
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Name: "test-project",
+			Path: projectDir,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": {
+					Name:         "agent",
+					Host:         AiAgentHost,
+					RelativePath: ".",
+				},
+			},
+		},
+	}
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	azdext.RegisterUserConfigServiceServer(grpcServer, newInvokeUserConfigServer())
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	t.Setenv("AZD_AGENT_RUN_TEST_HELPER_MODE", mode)
+	t.Setenv("AZD_AGENT_RUN_TEST_EXIT_CODE", exitCode)
+
+	agentListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve agent port: %v", err)
+	}
+	agentPort := agentListener.Addr().(*net.TCPAddr).Port
+	if err := agentListener.Close(); err != nil {
+		t.Fatalf("release agent port: %v", err)
+	}
+
+	startCommand := fmt.Sprintf(`"%s" -test.run=^TestRunRunHelperProcess$`, os.Args[0])
+	return runRun(t.Context(), &runFlags{
+		name:         "agent",
+		port:         agentPort,
+		startCommand: startCommand,
+		noClient:     true,
+	}, true)
+}
+
+func TestRunRunHelperProcess(t *testing.T) {
+	mode := os.Getenv("AZD_AGENT_RUN_TEST_HELPER_MODE")
+	if mode == "" {
+		return
+	}
+
+	if mode == "interrupt" {
+		if runtime.GOOS == "windows" {
+			exitCode := uint32(windowsControlCExitCode)
+			os.Exit(int(exitCode)) //nolint:gosec // preserve the Windows exit code bit pattern
+		}
+
+		time.AfterFunc(5*time.Second, func() {
+			os.Exit(99)
+		})
+		proc, err := os.FindProcess(os.Getpid())
+		if err != nil {
+			t.Fatalf("find helper process: %v", err)
+		}
+		if err := proc.Signal(os.Interrupt); err != nil {
+			t.Fatalf("interrupt helper process: %v", err)
+		}
+		select {}
+	}
+
+	exitCodeValue := os.Getenv("AZD_AGENT_RUN_TEST_EXIT_CODE")
+	if exitCodeValue == "" {
+		t.Fatalf("missing helper exit code for mode %q", mode)
+	}
+
+	exitCode, err := strconv.Atoi(exitCodeValue)
+	if err != nil {
+		t.Fatalf("parse helper exit code: %v", err)
+	}
+	os.Exit(exitCode)
+}
+
 func TestWarnInspectorPortIssues(t *testing.T) {
 	t.Parallel()
 
@@ -743,6 +914,11 @@ type recordingWorkflowClient struct {
 	called  chan struct{}
 }
 
+type recordingTelemetryClient struct {
+	request *azdext.ReportUsageRequest
+	err     error
+}
+
 type lockedBuffer struct {
 	mu sync.Mutex
 	bytes.Buffer
@@ -770,6 +946,18 @@ func (c *recordingWorkflowClient) Run(
 		close(c.called)
 	}
 	return &azdext.EmptyResponse{}, c.err
+}
+
+func (c *recordingTelemetryClient) ReportUsage(
+	_ context.Context,
+	request *azdext.ReportUsageRequest,
+	_ ...grpc.CallOption,
+) (*azdext.ReportUsageResponse, error) {
+	c.request = request
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &azdext.ReportUsageResponse{Accepted: true}, nil
 }
 
 // createVenv sets up a minimal .venv directory structure for testing.

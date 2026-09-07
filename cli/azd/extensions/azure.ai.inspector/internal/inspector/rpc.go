@@ -47,9 +47,10 @@ const (
 // rpcSession owns one WebSocket. writeMu enforces gorilla/websocket's
 // single-writer requirement.
 type rpcSession struct {
-	cfg    Config
-	conn   *websocket.Conn
-	logger *log.Logger
+	cfg           Config
+	conn          *websocket.Conn
+	logger        *log.Logger
+	reportUIReady func()
 
 	writeMu sync.Mutex
 
@@ -86,6 +87,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		nextRequestID: 1,
 		rootCtx:       rootCtx,
 		rootCancel:    rootCancel,
+		reportUIReady: s.reportUIReady,
 	}
 	defer sess.cleanup()
 	go sess.pingLoop(wsPingPeriod)
@@ -192,6 +194,12 @@ func (s *rpcSession) route(method string, params json.RawMessage) (any, error) {
 func (s *rpcSession) handleNotification(method string, params json.RawMessage) {
 	switch method {
 	case "setViewReady":
+		// Report after the navigation attempt so telemetry cannot delay UI initialization.
+		defer func() {
+			if s.reportUIReady != nil {
+				s.reportUIReady()
+			}
+		}()
 		// SPA has mounted; tell it which agent port to target.
 		payload := map[string]any{
 			"port":           s.cfg.AgentPort,

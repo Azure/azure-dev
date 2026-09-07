@@ -141,11 +141,10 @@ func (c *Customizations) GetCommandArgs(ctx *CommandContext) []Arg {
 			{Name: "name", Suggestions: hookNameValues},
 		}
 	case "azd extension install":
-		// The argument is either an extension id or a path to a self-contained
-		// bundle (.zip), so offer both id completion and file-path suggestions.
+		// Bundle URLs share the positional argument with extension IDs and .zip paths.
 		return []Arg{
 			{
-				Name:       "extension-id|extension-bundle.zip",
+				Name:       "extension-id|bundle-path-or-url",
 				Generators: []string{FigGenListExtensions, FigGenFilepathsZip},
 			},
 		}

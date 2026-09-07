@@ -17,16 +17,36 @@ const (
 )
 
 type rleState struct {
-	Name               string `json:"name"`
-	ProjectEndpoint    string `json:"projectEndpoint,omitempty"`
-	EnvironmentId      string `json:"environmentId,omitempty"`
-	EnvironmentVersion string `json:"environmentVersion,omitempty"`
+	EnvironmentName     string `json:"environmentName"`
+	ProjectEndpoint     string `json:"projectEndpoint,omitempty"`
+	EnvironmentId       string `json:"environmentId,omitempty"`
+	EnvironmentVersion  string `json:"environmentVersion,omitempty"`
+	runtimeRouteVersion string
 }
 
 func defaultRleState(name string) rleState {
 	return rleState{
-		Name: name,
+		EnvironmentName: name,
 	}
+}
+
+func (s *rleState) UnmarshalJSON(data []byte) error {
+	var persisted struct {
+		EnvironmentName    string `json:"environmentName"`
+		LegacyName         string `json:"name"`
+		ProjectEndpoint    string `json:"projectEndpoint"`
+		EnvironmentId      string `json:"environmentId"`
+		EnvironmentVersion string `json:"environmentVersion"`
+	}
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		return err
+	}
+
+	s.EnvironmentName = firstNonEmpty(persisted.EnvironmentName, persisted.LegacyName)
+	s.ProjectEndpoint = persisted.ProjectEndpoint
+	s.EnvironmentId = persisted.EnvironmentId
+	s.EnvironmentVersion = persisted.EnvironmentVersion
+	return nil
 }
 
 func loadRleState() (rleState, error) {

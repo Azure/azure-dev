@@ -4,10 +4,40 @@
 package extensions
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/azure/azure-dev/cli/azd/internal"
 )
+
+// CurrentAzdVersion returns the version used for extension compatibility checks.
+// It returns nil for development builds and removes prerelease tags.
+func CurrentAzdVersion() *semver.Version {
+	if internal.IsDevVersion() {
+		return nil
+	}
+
+	versionInfo := internal.VersionInfo()
+	version, err := semver.NewVersion(versionInfo.Version.String())
+	if err != nil {
+		return nil
+	}
+	if version.Prerelease() == "" {
+		return version
+	}
+
+	stripped, err := semver.NewVersion(fmt.Sprintf(
+		"%d.%d.%d",
+		version.Major(),
+		version.Minor(),
+		version.Patch(),
+	))
+	if err != nil {
+		return nil
+	}
+	return stripped
+}
 
 // VersionIsCompatible checks if an extension version is compatible with the given azd version.
 // Returns true if:

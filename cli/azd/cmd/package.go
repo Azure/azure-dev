@@ -133,18 +133,16 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	if err := pa.projectManager.Initialize(ctx, pa.projectConfig); err != nil {
-		return nil, err
-	}
-
-	if err := pa.projectManager.EnsureAllTools(ctx, pa.projectConfig, func(svc *project.ServiceConfig) bool {
-		return targetServiceName == "" || svc.Name == targetServiceName
-	}); err != nil {
-		return nil, err
-	}
-
 	serviceTable, err := pa.importManager.ServiceStableFiltered(ctx, pa.projectConfig, targetServiceName, os.Getenv)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := pa.projectManager.InitializeServices(ctx, serviceTable); err != nil {
+		return nil, err
+	}
+
+	if err := pa.projectManager.EnsureAllTools(ctx, serviceTable); err != nil {
 		return nil, err
 	}
 

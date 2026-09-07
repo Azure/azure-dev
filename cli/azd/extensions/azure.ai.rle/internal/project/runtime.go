@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -23,6 +24,8 @@ type callOptions struct {
 	body    string
 }
 
+type AuthorizationProvider func(context.Context) (string, error)
+
 func RunShellWithContext(
 	ctx context.Context,
 	input io.Reader,
@@ -30,9 +33,21 @@ func RunShellWithContext(
 	baseUrl string,
 	timeout int,
 ) error {
+	return RunShellWithContextAndAuthorizationProvider(ctx, input, output, baseUrl, timeout, nil)
+}
+
+// RunShellWithContextAndAuthorizationProvider refreshes authorization for each runtime request.
+func RunShellWithContextAndAuthorizationProvider(
+	ctx context.Context,
+	input io.Reader,
+	output io.Writer,
+	baseUrl string,
+	timeout int,
+	authorizationProvider AuthorizationProvider,
+) error {
 	done := make(chan error, 1)
 	go func() {
-		done <- runShell(input, output, baseUrl, timeout)
+		done <- runShell(ctx, input, output, baseUrl, timeout, authorizationProvider)
 	}()
 	select {
 	case err := <-done:
@@ -58,7 +73,14 @@ func normalizeOperation(operation string) (string, error) {
 	}
 }
 
-func runShell(input io.Reader, output io.Writer, baseUrl string, timeout int) error {
+func runShell(
+	ctx context.Context,
+	input io.Reader,
+	output io.Writer,
+	baseUrl string,
+	timeout int,
+	authorizationProvider AuthorizationProvider,
+) error {
 	fmt.Fprintln(output, "Environment runtime shell. Type help for commands, exit to quit.")
 	scanner := bufio.NewScanner(input)
 	for {
@@ -103,7 +125,7 @@ func runShell(input io.Reader, output io.Writer, baseUrl string, timeout int) er
 			}
 		}
 
-		response, err := call(baseUrl, operation, flags)
+		response, err := call(ctx, baseUrl, operation, flags, authorizationProvider)
 		if err != nil {
 			fmt.Fprintf(output, "error: %v\n", err)
 			continue
@@ -124,32 +146,121 @@ func printShellHelp(output io.Writer) {
 }
 
 func WaitForHealth(baseUrl string, timeout time.Duration) error {
+	return waitForHealth(
+		context.Background(),
+		baseUrl,
+		timeout,
+		nil,
+		"rle_local_container_not_ready",
+		"Check the local container logs, then retry.",
+	)
+}
+
+// WaitForHealthWithAuthorizationProvider refreshes authorization for each health request.
+func WaitForHealthWithAuthorizationProvider(
+	ctx context.Context,
+	baseUrl string,
+	timeout time.Duration,
+	authorizationProvider AuthorizationProvider,
+) error {
+	return waitForHealth(
+		ctx,
+		baseUrl,
+		timeout,
+		authorizationProvider,
+		"rle_remote_runtime_not_ready",
+		"Check the remote RLE instance status and OpenEnv service logs, then retry.",
+	)
+}
+
+func waitForHealth(
+	ctx context.Context,
+	baseUrl string,
+	timeout time.Duration,
+	authorizationProvider AuthorizationProvider,
+	errorCode string,
+	suggestion string,
+) error {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
-	client := &http.Client{Timeout: 2 * time.Second}
+	client := HTTPClient(2)
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(strings.TrimRight(baseUrl, "/") + "/health") //nolint:gosec // Local user-selected endpoint.
+		healthUrl, err := RuntimeOperationURL(baseUrl, "health")
+		if err != nil {
+			return err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthUrl, nil)
+		if err != nil {
+			return err
+		}
+		if err := setAuthorization(req, authorizationProvider); err != nil {
+			return fmt.Errorf("authenticate to environment runtime: %w", err)
+		}
+		resp, err := client.Do(req) //nolint:gosec // Caller validates remote URLs; local run uses a loopback URL.
 		if err == nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
 				return nil
 			}
-			lastErr = fmt.Errorf("health returned HTTP %d", resp.StatusCode)
+			detail := readHealthErrorDetail(resp.Body)
+			_ = resp.Body.Close()
+			lastErr = fmt.Errorf("health returned HTTP %d%s", resp.StatusCode, detail)
 		} else {
 			lastErr = err
 		}
-		time.Sleep(time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
 	}
 	return &azdext.LocalError{
 		Message:    fmt.Sprintf("Environment runtime endpoint did not become healthy at %s: %v", baseUrl, lastErr),
-		Code:       "rle_local_container_not_ready",
+		Code:       errorCode,
 		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: "Check the local container logs or remote sandbox status, then retry.",
+		Suggestion: suggestion,
 	}
 }
 
-func call(baseUrl string, operation string, flags *callOptions) (string, error) {
+func RuntimeOperationURL(baseUrl string, operation string) (string, error) {
+	runtimeUrl, err := url.Parse(baseUrl)
+	if err != nil {
+		return "", fmt.Errorf("parse environment runtime URL: %w", err)
+	}
+	runtimeUrl.Path = strings.TrimRight(runtimeUrl.Path, "/") + "/" + operation
+	runtimeUrl.RawPath = ""
+	return runtimeUrl.String(), nil
+}
+
+func readHealthErrorDetail(body io.Reader) string {
+	const maxErrorDetailBytes = 4096
+
+	data, err := io.ReadAll(io.LimitReader(body, maxErrorDetailBytes+1))
+	if err != nil {
+		return ""
+	}
+	truncated := len(data) > maxErrorDetailBytes
+	if truncated {
+		data = data[:maxErrorDetailBytes]
+	}
+	detail := strings.TrimSpace(string(data))
+	if detail == "" {
+		return ""
+	}
+	if truncated {
+		detail += "..."
+	}
+	return ": " + detail
+}
+
+func call(
+	ctx context.Context,
+	baseUrl string,
+	operation string,
+	flags *callOptions,
+	authorizationProvider AuthorizationProvider,
+) (string, error) {
 	method := http.MethodGet
 	var body io.Reader
 	if operation == "reset" || operation == "step" {
@@ -161,12 +272,18 @@ func call(baseUrl string, operation string, flags *callOptions) (string, error) 
 		body = bytes.NewReader(requestBody)
 	}
 
-	url := strings.TrimRight(baseUrl, "/") + "/" + operation
-	req, err := http.NewRequest(method, url, body)
+	requestUrl, err := RuntimeOperationURL(baseUrl, operation)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, requestUrl, body)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/json")
+	if err := setAuthorization(req, authorizationProvider); err != nil {
+		return "", fmt.Errorf("authenticate to environment runtime: %w", err)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -174,7 +291,7 @@ func call(baseUrl string, operation string, flags *callOptions) (string, error) 
 	client := HTTPClient(flags.timeout)
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("call environment runtime %s %s: %w", method, url, err)
+		return "", fmt.Errorf("call environment runtime %s %s: %w", method, requestUrl, err)
 	}
 	defer resp.Body.Close()
 
@@ -184,7 +301,11 @@ func call(baseUrl string, operation string, flags *callOptions) (string, error) 
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", &azdext.LocalError{
-			Message:  fmt.Sprintf("Environment runtime endpoint returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data))),
+			Message: fmt.Sprintf(
+				"Environment runtime endpoint returned HTTP %d: %s",
+				resp.StatusCode,
+				strings.TrimSpace(string(data)),
+			),
 			Code:     "rle_open_env_call_failed",
 			Category: azdext.LocalErrorCategoryUser,
 		}
@@ -193,11 +314,31 @@ func call(baseUrl string, operation string, flags *callOptions) (string, error) 
 	return prettyJson(data), nil
 }
 
-func HTTPClient(timeoutSeconds int) *http.Client {
-	if timeoutSeconds <= 0 {
-		return &http.Client{}
+func setAuthorization(req *http.Request, authorizationProvider AuthorizationProvider) error {
+	if authorizationProvider == nil {
+		return nil
 	}
-	return &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}
+	authorization, err := authorizationProvider(req.Context())
+	if err != nil {
+		return err
+	}
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
+	}
+	return nil
+}
+
+func HTTPClient(timeoutSeconds int) *http.Client {
+	client := &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	if timeoutSeconds <= 0 {
+		return client
+	}
+	client.Timeout = time.Duration(timeoutSeconds) * time.Second
+	return client
 }
 
 func requestBody(operation string, flags *callOptions) ([]byte, error) {

@@ -15,6 +15,13 @@ var processNamePatterns = []struct {
 	agentType  AgentType
 	exactMatch bool
 }{
+	// Codex - OpenAI's coding agent
+	{
+		patterns:  []string{"codex"},
+		agentType: AgentTypeCodex,
+		// Avoid classifying unrelated executable paths containing "codex".
+		exactMatch: true,
+	},
 	// Claude Code (Anthropic) - installed via npm, homebrew, or direct download
 	{
 		patterns:  []string{"claude", "claude-code"},

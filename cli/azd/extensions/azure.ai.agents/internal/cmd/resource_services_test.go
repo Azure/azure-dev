@@ -8,9 +8,11 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/pkg/servicekey"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -64,9 +66,9 @@ func agentService(t *testing.T, name string, toolConnections ...project.ToolConn
 func TestSanitizeServiceName(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "MyAgent", sanitizeServiceName("  My Agent  "))
-	assert.Equal(t, "gpt4o", sanitizeServiceName("gpt 4 o"))
-	assert.Equal(t, "", sanitizeServiceName("   "))
+	assert.Equal(t, "MyAgent", servicekey.SanitizeServiceName("  My Agent  "))
+	assert.Equal(t, "gpt4o", servicekey.SanitizeServiceName("gpt 4 o"))
+	assert.Equal(t, "", servicekey.SanitizeServiceName("   "))
 }
 
 // TestReserveServiceName verifies distinct service keys are accepted and that
@@ -228,6 +230,92 @@ func TestCollectConnections(t *testing.T) {
 	// Sorted by service key (alpha before zeta) for stable env-var output.
 	assert.Equal(t, "alpha", connections[0].Name)
 	assert.Equal(t, "zeta", connections[1].Name)
+}
+
+func TestCollectConnections_UsesAgentConfigPrecedence(t *testing.T) {
+	t.Parallel()
+
+	inline, err := structpb.NewStruct(map[string]any{
+		"connections": []any{
+			map[string]any{
+				"name":     "inline-connection",
+				"category": "ApiKey",
+				"target":   "https://inline.example",
+			},
+		},
+	})
+	require.NoError(t, err)
+	legacy, err := structpb.NewStruct(map[string]any{
+		"kind": "hostedAgent",
+		"connections": []any{
+			map[string]any{
+				"name":     "legacy-connection",
+				"category": "ApiKey",
+				"target":   "https://legacy.example",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	services := map[string]*azdext.ServiceConfig{
+		"agent": {
+			Name:                 "agent",
+			Host:                 AiAgentHost,
+			AdditionalProperties: inline,
+			Config:               legacy,
+		},
+	}
+
+	connections, err := collectConnections(services, "")
+	require.NoError(t, err)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "legacy-connection", connections[0].Name)
+}
+
+func TestCollectConnections_UsesResolvedInlineConfig(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "agent.yaml"),
+		[]byte(
+			"kind: hostedAgent\n"+
+				"connections:\n"+
+				"  - name: inline-connection\n"+
+				"    category: ApiKey\n"+
+				"    target: https://inline.example\n",
+		),
+		0o600,
+	))
+	inline, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	legacy, err := structpb.NewStruct(map[string]any{
+		"kind": "hostedAgent",
+		"connections": []any{
+			map[string]any{
+				"name":     "legacy-connection",
+				"category": "ApiKey",
+				"target":   "https://legacy.example",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	services := map[string]*azdext.ServiceConfig{
+		"agent": {
+			Name:                 "agent",
+			Host:                 AiAgentHost,
+			AdditionalProperties: inline,
+			Config:               legacy,
+		},
+	}
+
+	connections, err := collectConnections(services, root)
+	require.NoError(t, err)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "inline-connection", connections[0].Name)
 }
 
 // TestCollectToolboxes verifies toolboxes are sourced from azure.ai.toolbox
@@ -426,6 +514,10 @@ type recordingProjectServer struct {
 	// simulate a service that already carries an env section (raw,
 	// on-disk templates).
 	rawEnv                map[string]map[string]any
+	projectPath           string
+	nilProject            bool
+	getProjectErr         error
+	setServiceConfigErr   error
 	unsetPaths            []string
 	setEnvironmentErr     error
 	unsetServiceConfigErr error
@@ -442,8 +534,14 @@ func (s *recordingProjectServer) Get(
 ) (*azdext.GetProjectResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.getProjectErr != nil {
+		return nil, s.getProjectErr
+	}
+	if s.nilProject {
+		return &azdext.GetProjectResponse{}, nil
+	}
 	return &azdext.GetProjectResponse{
-		Project: &azdext.ProjectConfig{Services: s.existing},
+		Project: &azdext.ProjectConfig{Path: s.projectPath, Services: s.existing},
 	}, nil
 }
 
@@ -473,6 +571,19 @@ func (s *recordingProjectServer) GetServiceConfigValue(
 			}, nil
 		}
 	}
+	if req.Path == "uses" {
+		if service := s.existing[req.ServiceName]; service != nil && len(service.GetUses()) > 0 {
+			items := make([]any, len(service.GetUses()))
+			for i, use := range service.GetUses() {
+				items[i] = use
+			}
+			value, err := structpb.NewValue(items)
+			if err != nil {
+				return nil, err
+			}
+			return &azdext.GetServiceConfigValueResponse{Found: true, Value: value}, nil
+		}
+	}
 	return &azdext.GetServiceConfigValueResponse{}, nil
 }
 
@@ -481,6 +592,9 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 ) (*azdext.EmptyResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.setServiceConfigErr != nil {
+		return nil, s.setServiceConfigErr
+	}
 	if s.uses == nil {
 		s.uses = map[string][]string{}
 	}
@@ -496,6 +610,9 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 				}
 			}
 			s.uses[req.ServiceName] = vals
+			if service := s.existing[req.ServiceName]; service != nil {
+				service.Uses = slices.Clone(vals)
+			}
 		}
 	} else if req.Value != nil {
 		if str, ok := req.Value.AsInterface().(string); ok {
@@ -588,7 +705,7 @@ func TestEmitResourceServices_AlwaysEmitsProjectService(t *testing.T) {
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
 
-	err := emitResourceServices(t.Context(), client, "myagent", "", "", nil, nil, nil)
+	_, err := emitResourceServices(t.Context(), client, "myagent", "", "", nil, nil, nil)
 	require.NoError(t, err)
 
 	server.mu.Lock()
@@ -610,7 +727,7 @@ func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 	client := newProjectRecorderClient(t, server)
 
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey"}}
-	err := emitResourceServices(t.Context(), client, "myagent", "", "", nil, conns, nil)
+	_, err := emitResourceServices(t.Context(), client, "myagent", "", "", nil, conns, nil)
 	require.NoError(t, err)
 
 	server.mu.Lock()
@@ -624,6 +741,92 @@ func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myconn"])
 	assert.Equal(t, []string{aiProjectServiceName, "myconn"}, server.uses["myagent"])
+}
+
+func TestEmitResourceServices_WiresToolboxToReferencedConnections(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	connections := []project.Connection{
+		{Name: "search", Category: "CognitiveSearch"},
+		{Name: "unused", Category: "ApiKey"},
+	}
+	toolboxes := []project.Toolbox{{
+		Name: "support-tools",
+		Tools: []map[string]any{
+			{
+				"type": "azure_ai_search",
+				"azure_ai_search": map[string]any{
+					"indexes": []any{
+						map[string]any{"project_connection_id": "search", "index_name": "tickets"},
+					},
+				},
+			},
+		},
+	}}
+
+	_, err := emitResourceServices(
+		t.Context(), client, "support-agent", "", "", nil, connections, toolboxes)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	assert.Equal(t, []string{aiProjectServiceName, "search"}, server.uses["support-tools"])
+	assert.Equal(
+		t,
+		[]string{aiProjectServiceName, "search", "unused", "support-tools"},
+		server.uses["support-agent"],
+	)
+}
+
+func TestToolboxConnectionReferences(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, []string{"a2a", "mcp", "search"}, toolboxConnectionReferences([]map[string]any{
+		{"type": "mcp", "connection": "mcp"},
+		{"type": "a2a_preview", "project_connection_id": "a2a"},
+		{
+			"type": "azure_ai_search",
+			"azure_ai_search": map[string]any{
+				"indexes": []any{
+					map[string]any{"project_connection_id": "search"},
+				},
+			},
+		},
+	}))
+}
+
+func TestEmitResourceServices_CountsEmittedConnections(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid connection returns 1", func(t *testing.T) {
+		server := &recordingProjectServer{}
+		client := newProjectRecorderClient(t, server)
+		conns := []project.Connection{{Name: "myconn", Category: "ApiKey"}}
+
+		got, err := emitResourceServices(
+			t.Context(), client, "myagent", "", "", nil, conns, nil)
+		require.NoError(t, err)
+		assert.Equal(t, 1, got)
+	})
+
+	t.Run("blank name returns 0", func(t *testing.T) {
+		server := &recordingProjectServer{}
+		client := newProjectRecorderClient(t, server)
+		conns := []project.Connection{{Name: "   ", Category: "ApiKey"}}
+
+		got, err := emitResourceServices(
+			t.Context(), client, "myagent", "", "", nil, conns, nil)
+		require.NoError(t, err)
+		assert.Equal(t, 0, got)
+
+		server.mu.Lock()
+		defer server.mu.Unlock()
+		for _, svc := range server.added {
+			assert.NotEqual(t, AiConnectionHost, svc.Host)
+		}
+	})
 }
 
 // TestEmitResourceServices_WritesServiceLevelProps verifies resource services are
@@ -643,7 +846,9 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 		Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
 	}}
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey", Target: "https://example", AuthType: "ApiKey"}}
-	require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", "", deployments, conns, nil))
+	_, err := emitResourceServices(
+		t.Context(), client, "myagent", "", "", deployments, conns, nil)
+	require.NoError(t, err)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
@@ -658,7 +863,7 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 
 	// Init must write a project shape the owning extension can parse.
 	var projectCfg project.ServiceTargetAgentConfig
-	err := project.UnmarshalStruct(
+	err = project.UnmarshalStruct(
 		project.ServiceConfigProps(services["ai-project"]),
 		&projectCfg,
 	)
@@ -686,7 +891,9 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", endpoint, nil, nil, nil))
+		_, err := emitResourceServices(
+			t.Context(), client, "myagent", "", endpoint, nil, nil, nil)
+		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
@@ -702,7 +909,9 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", "", nil, nil, nil))
+		_, err := emitResourceServices(
+			t.Context(), client, "myagent", "", "", nil, nil, nil)
+		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
@@ -726,8 +935,9 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "my-foundry-proj", "", nil, nil, nil))
+		_, err := emitResourceServices(
+			t.Context(), client, "myagent", "my-foundry-proj", "", nil, nil, nil)
+		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
@@ -746,8 +956,9 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 
 		// A different project name is supplied, but the existing key wins so a
 		// repeated init does not create a second project service.
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "a-new-name", "", nil, nil, nil))
+		_, err := emitResourceServices(
+			t.Context(), client, "myagent", "a-new-name", "", nil, nil, nil)
+		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
@@ -759,8 +970,9 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "my agent", "", nil, nil, nil))
+		_, err := emitResourceServices(
+			t.Context(), client, "myagent", "my agent", "", nil, nil, nil)
+		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
@@ -773,8 +985,9 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "", "", nil, nil, nil))
+		_, err := emitResourceServices(
+			t.Context(), client, "myagent", "", "", nil, nil, nil)
+		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()

@@ -896,6 +896,7 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'infra',
+											isOptional: true,
 										},
 									],
 								},
@@ -942,6 +943,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'protocol',
+										},
+									],
+								},
+								{
+									name: ['--registry-connection'],
+									description: 'Name or ID of an existing Foundry project connection used to pull a private pre-built container image. Requires a pre-built image and is incompatible with code deploy.',
+									args: [
+										{
+											name: 'registry-connection',
 										},
 									],
 								},
@@ -1453,7 +1463,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--app-version'],
-									description: 'Version stamped into the Teams app manifest',
+									description: 'Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.',
 									args: [
 										{
 											name: 'app-version',
@@ -1462,7 +1472,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--display-name'],
-									description: 'Display name for the Teams app (defaults to the agent name)',
+									description: 'Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.',
 									args: [
 										{
 											name: 'display-name',
@@ -1495,7 +1505,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--app-version'],
-									description: 'Version stamped into the Teams app manifest',
+									description: 'Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.',
 									args: [
 										{
 											name: 'app-version',
@@ -1504,7 +1514,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--display-name'],
-									description: 'Display name for the Teams app (defaults to the agent name)',
+									description: 'Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.',
 									args: [
 										{
 											name: 'display-name',
@@ -1523,7 +1533,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--scope'],
-									description: 'Publish scope (shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval; alias: org))',
+									description: 'Microsoft 365 publish scope (shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval; alias: org); Digital Workers require tenant)',
 									args: [
 										{
 											name: 'scope',
@@ -1957,6 +1967,16 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env var and config)',
 									args: [
@@ -2012,6 +2032,31 @@ const completionSpec: Fig.Spec = {
 									name: ['--force'],
 									description: 'Skip confirmation prompt',
 									isDangerous: true,
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['deploy'],
+							description: 'Deploy a local connection definition.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
 								},
 								{
 									name: ['--project-endpoint', '-p'],
@@ -2673,6 +2718,18 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json'],
+										},
+									],
+								},
+							],
 						},
 					],
 				},
@@ -3553,6 +3610,49 @@ const completionSpec: Fig.Spec = {
 					name: ['routine'],
 					description: 'Manage Microsoft Foundry Routines from your terminal. (Beta)',
 					subcommands: [
+						{
+							name: ['add'],
+							description: 'Add or update a routine service in azure.yaml.',
+							options: [
+								{
+									name: ['--file'],
+									description: 'Path to a YAML or JSON routine manifest file',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
+							],
+						},
 						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
@@ -4587,6 +4687,109 @@ const completionSpec: Fig.Spec = {
 					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add a reference to a local toolbox definition.',
+							subcommands: [
+								{
+									name: ['connection'],
+									description: 'Add a connection reference to toolbox.yaml.',
+									options: [
+										{
+											name: ['--file'],
+											description: 'Path to the local toolbox definition.',
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--index'],
+											description: 'Search index name used by a CognitiveSearch connection.',
+											args: [
+												{
+													name: 'index',
+												},
+											],
+										},
+										{
+											name: ['--instance-name'],
+											description: 'Custom search configuration used by a GroundingWithCustomSearch connection.',
+											args: [
+												{
+													name: 'instance-name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['skill'],
+									description: 'Add a skill reference to toolbox.yaml.',
+									options: [
+										{
+											name: ['--file'],
+											description: 'Path to the local toolbox definition.',
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['connection'],
 							description: 'Manage the connection-backed tools attached to a toolbox.',
 							subcommands: [
@@ -4796,6 +4999,31 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['deploy'],
+							description: 'Deploy a local toolbox definition.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
 										},
 									],
 								},
@@ -5963,7 +6191,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--version', '-v'],
-							description: 'The version of the extension to install',
+							description: 'The version of the extension to install. Cannot be used with an extension bundle',
 							args: [
 								{
 									name: 'version',
@@ -5972,7 +6200,7 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'extension-id|extension-bundle.zip',
+						name: 'extension-id|bundle-path-or-url',
 						generators: [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })],
 					},
 				},
@@ -6451,7 +6679,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['publish'],
-			description: 'Publish a service to a container registry.',
+			description: 'Publish a service image or reuse an existing passthrough image.',
 			options: [
 				{
 					name: ['--all'],

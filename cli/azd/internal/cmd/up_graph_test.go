@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPhaseTimingBreakdown(t *testing.T) {
@@ -80,6 +82,39 @@ func TestPhaseTimingBreakdown(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("phaseTimingBreakdown() =\n%q\nwant:\n%q", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestUpGraphResolveDAGConcurrency(t *testing.T) {
+	tests := []struct {
+		name        string
+		upValue     *string
+		deployValue *string
+		expected    int
+	}{
+		{name: "unset", expected: 0},
+		{name: "deploy fallback", deployValue: new("4"), expected: 4},
+		{name: "up takes precedence", upValue: new("2"), deployValue: new("4"), expected: 2},
+		{name: "invalid up does not use deploy fallback", upValue: new("invalid"), deployValue: new("4"), expected: 0},
+		{name: "up clamped", upValue: new("100"), expected: 64},
+		{name: "single worker", upValue: new("1"), expected: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ostest.Unsetenvs(t, []string{"AZD_UP_CONCURRENCY", "AZD_DEPLOY_CONCURRENCY"})
+			if tt.upValue != nil {
+				t.Setenv("AZD_UP_CONCURRENCY", *tt.upValue)
+			}
+			if tt.deployValue != nil {
+				t.Setenv("AZD_DEPLOY_CONCURRENCY", *tt.deployValue)
+			}
+
+			action := &UpGraphAction{}
+			concurrency := action.resolveDAGConcurrency()
+			require.Equal(t, tt.expected, concurrency)
+			require.Equal(t, concurrency, action.runOptions(concurrency).MaxConcurrency)
 		})
 	}
 }

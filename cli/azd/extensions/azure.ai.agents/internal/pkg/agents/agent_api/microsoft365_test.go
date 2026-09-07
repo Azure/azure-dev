@@ -21,7 +21,7 @@ func TestDownloadTeamsAppPackage_Success(t *testing.T) {
 		PublishScope:             "Personal",
 		AgentDisplayName:         "my-agent",
 		AppVersion:               "1.0.0",
-		CanRespondWithoutMention: true,
+		CanRespondWithoutMention: new(true),
 	}
 
 	zipBytes, err := client.DownloadTeamsAppPackage(t.Context(), "my-agent", request, Microsoft365APIVersion)
@@ -43,7 +43,6 @@ func TestDownloadTeamsAppPackage_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(bodyBytes, &sent))
 	require.Equal(t, request, sent)
 	require.False(t, sent.PublishAsAutopilot)
-	require.False(t, sent.UseAgenticUserTemplate)
 }
 
 func TestDownloadTeamsAppPackage_ErrorStatus(t *testing.T) {
@@ -78,7 +77,7 @@ func TestPublishTeamsApp_Success(t *testing.T) {
 		PublishScope:             "Shared",
 		AgentDisplayName:         "my-agent",
 		AppVersion:               "1.0.0",
-		CanRespondWithoutMention: true,
+		CanRespondWithoutMention: new(true),
 	}
 
 	result, err := client.PublishTeamsApp(t.Context(), "my-agent", request, Microsoft365APIVersion)
@@ -99,6 +98,69 @@ func TestPublishTeamsApp_Success(t *testing.T) {
 	var sent TeamsAppPackageRequest
 	require.NoError(t, json.Unmarshal(bodyBytes, &sent))
 	require.Equal(t, request, sent)
+}
+
+func TestPublishTeamsApp_DigitalWorkerRequest(t *testing.T) {
+	client, transport := newCaptureClient(
+		http.StatusOK,
+		`{"titleId":"T_123","teamsAppId":"app-456"}`,
+	)
+	boundaries := []string{"read.1on1.developers", "write.group.developers"}
+	request := TeamsAppPackageRequest{
+		PublishAsAutopilot: true,
+		OptionalPermissionScopes: []Microsoft365PermissionScopes{
+			{ResourceAppID: "resource-app", Scopes: []string{"McpServers.Mail.All"}},
+		},
+		AccessBoundaries: &boundaries,
+		PublishScope:     "Tenant",
+		AgentDisplayName: "my-agent",
+		AppVersion:       "1.0.0",
+	}
+
+	_, err := client.PublishTeamsApp(
+		t.Context(), "my-agent", request, Microsoft365DigitalWorkerAPIVersion,
+	)
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 1)
+	got := transport.requests[0]
+	require.Equal(t, Microsoft365DigitalWorkerAPIVersion, got.URL.Query().Get("api-version"))
+	require.Equal(
+		t,
+		microsoft365FeatureHeader+","+DigitalWorkerPreviewFeature,
+		got.Header.Get("Foundry-Features"),
+	)
+
+	bodyBytes, err := io.ReadAll(got.Body)
+	require.NoError(t, err)
+	var sent TeamsAppPackageRequest
+	require.NoError(t, json.Unmarshal(bodyBytes, &sent))
+	require.Equal(t, request, sent)
+	require.Empty(t, sent.BotServiceArmID)
+	require.Equal(t, boundaries, *sent.AccessBoundaries)
+	require.NotContains(t, string(bodyBytes), "useAgenticUserTemplate")
+	require.NotContains(t, string(bodyBytes), "agenticUserTemplate")
+}
+
+func TestTeamsAppPackageRequest_AccessBoundaryTriState(t *testing.T) {
+	omitted, err := json.Marshal(TeamsAppPackageRequest{})
+	require.NoError(t, err)
+	require.NotContains(t, string(omitted), "accessBoundaries")
+
+	empty := []string{}
+	cleared, err := json.Marshal(TeamsAppPackageRequest{AccessBoundaries: &empty})
+	require.NoError(t, err)
+	require.Contains(t, string(cleared), `"accessBoundaries":[]`)
+}
+
+func TestTeamsAppPackageRequest_CanRespondWithoutMentionTriState(t *testing.T) {
+	omitted, err := json.Marshal(TeamsAppPackageRequest{})
+	require.NoError(t, err)
+	require.NotContains(t, string(omitted), "CanRespondWithoutMention")
+
+	disabled := false
+	configured, err := json.Marshal(TeamsAppPackageRequest{CanRespondWithoutMention: &disabled})
+	require.NoError(t, err)
+	require.Contains(t, string(configured), `"CanRespondWithoutMention":false`)
 }
 
 func TestPublishTeamsApp_ErrorStatus(t *testing.T) {

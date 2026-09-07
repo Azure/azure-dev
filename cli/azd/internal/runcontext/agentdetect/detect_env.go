@@ -20,7 +20,8 @@ type envVarPattern struct {
 // knownEnvVarPatterns defines environment variables that indicate known AI agents.
 // These are checked in order, so more specific patterns should come first.
 var knownEnvVarPatterns = []envVarPattern{
-	// GitHub Copilot hosts can expose Copilot CLI markers, so check their host-specific markers first.
+	// AI_AGENT identifies the active host and takes precedence over generic markers inherited
+	// from a parent agent process.
 	{
 		envVar:        "AI_AGENT",
 		expectedValue: "github_copilot_app_agent",
@@ -31,14 +32,37 @@ var knownEnvVarPatterns = []envVarPattern{
 		expectedValue: "github_copilot_vscode_agent",
 		agentType:     AgentTypeGitHubCopilotVSCode,
 	},
+	{
+		envVar:        "AI_AGENT",
+		expectedValue: "github_copilot_cloud_agent",
+		agentType:     AgentTypeGitHubCopilotCloudAgent,
+	},
+	{
+		envVar:        "AI_AGENT",
+		expectedValue: "pi",
+		agentType:     AgentTypePi,
+	},
+
+	// Session-scoped Codex and Cursor markers take precedence over Claude markers
+	// that may be inherited by nested tools.
+	// Codex - OpenAI's coding agent
+	{
+		envVar:        "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+		expectedValue: "Codex Desktop",
+		agentType:     AgentTypeCodexDesktop,
+	},
+	{envVar: "CODEX_CI", expectedValue: "1", agentType: AgentTypeCodex},
+	{envVar: "CODEX_THREAD_ID", agentType: AgentTypeCodex},
+	{envVar: "CODEX_SESSION_ID", agentType: AgentTypeCodex},
+
+	// Cursor - Cursor's coding agent
+	{envVar: "CURSOR_AGENT", expectedValue: "1", agentType: AgentTypeCursor},
+	{envVar: "CURSOR_CONVERSATION_ID", agentType: AgentTypeCursor},
 
 	// Claude Code - Anthropic's coding agent
-	{envVar: "CLAUDE_CODE", agentType: AgentTypeClaudeCode},
-	{envVar: "CLAUDE_CODE_ENTRYPOINT", agentType: AgentTypeClaudeCode},
+	{envVar: "CLAUDECODE", expectedValue: "1", agentType: AgentTypeClaudeCode},
 
 	// GitHub Copilot CLI
-	{envVar: "GITHUB_COPILOT_CLI", agentType: AgentTypeGitHubCopilotCLI},
-	{envVar: "GH_COPILOT", agentType: AgentTypeGitHubCopilotCLI},
 	{envVar: "COPILOT_CLI", agentType: AgentTypeGitHubCopilotCLI},
 
 	// Google Gemini CLI
@@ -53,13 +77,14 @@ var knownEnvVarPatterns = []envVarPattern{
 func detectFromEnvVars() AgentInfo {
 	for _, pattern := range knownEnvVarPatterns {
 		value, exists := os.LookupEnv(pattern.envVar)
-		if !exists || (pattern.expectedValue != "" && value != pattern.expectedValue) {
+		if !exists || value == "" || (pattern.expectedValue != "" && value != pattern.expectedValue) {
 			continue
 		}
 
+		agentType := refineAgentTypeFromEnv(pattern.agentType)
 		return AgentInfo{
-			Type:     pattern.agentType,
-			Name:     pattern.agentType.DisplayName(),
+			Type:     agentType,
+			Name:     agentType.DisplayName(),
 			Source:   DetectionSourceEnvVar,
 			Detected: true,
 			Details:  pattern.envVar,
@@ -67,6 +92,22 @@ func detectFromEnvVars() AgentInfo {
 	}
 
 	return NoAgent()
+}
+
+// refineAgentTypeFromEnv applies bounded host-specific refinements after an agent has been detected.
+func refineAgentTypeFromEnv(agentType AgentType) AgentType {
+	if agentType != AgentTypeClaudeCode {
+		return agentType
+	}
+
+	switch os.Getenv("CLAUDE_CODE_ENTRYPOINT") {
+	case "claude-desktop":
+		return AgentTypeClaudeCodeDesktop
+	case "claude-vscode":
+		return AgentTypeClaudeCodeVSCode
+	default:
+		return agentType
+	}
 }
 
 // userAgentPatterns maps user agent substrings to agent types.

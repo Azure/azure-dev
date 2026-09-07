@@ -8,6 +8,7 @@ import (
 	"maps"
 	"math"
 	"regexp"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -91,10 +92,39 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 func mapRaiConfig(policies []Policy) *agent_api.RaiConfig {
 	for _, policy := range policies {
 		if policy.Type == PolicyTypeRai && policy.RaiPolicyName != "" {
-			return &agent_api.RaiConfig{RaiPolicyName: policy.RaiPolicyName}
+			return &agent_api.RaiConfig{
+				RaiPolicyName:         policy.RaiPolicyName,
+				InvocationsModeration: mapInvocationsModeration(policy.InvocationsModeration),
+			}
 		}
 	}
 	return nil
+}
+
+// mapInvocationsModeration translates the YAML invocations-moderation block into its
+// data-plane representation. It returns nil when the block is absent so agents that do not
+// configure it serialize exactly as before.
+func mapInvocationsModeration(moderation *InvocationsModeration) *agent_api.InvocationsModeration {
+	if moderation == nil {
+		return nil
+	}
+
+	mapped := &agent_api.InvocationsModeration{
+		InputContentType:  agent_api.RaiInvocationContentType(moderation.InputContentType),
+		OutputContentType: agent_api.RaiInvocationContentType(moderation.OutputContentType),
+		ResponseMode:      agent_api.RaiInvocationMode(moderation.ResponseMode),
+		InputPaths:        slices.Clone(moderation.InputPaths),
+		OutputPaths:       slices.Clone(moderation.OutputPaths),
+	}
+
+	for _, selector := range moderation.StreamSelectors {
+		mapped.StreamSelectors = append(mapped.StreamSelectors, agent_api.SseTextSelector{
+			EventType: selector.EventType,
+			TextField: selector.TextField,
+		})
+	}
+
+	return mapped
 }
 
 // MapEndpointAndCard maps YAML-layer endpoint and card fields to API model types
@@ -467,6 +497,10 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 	if imageURL == "" {
 		return nil, fmt.Errorf("image URL is required for hosted agents - use WithImageURL build option or specify in container.image")
 	}
+	registryConnectionID := strings.TrimSpace(hostedAgent.RegistryConnectionID)
+	if hostedAgent.RegistryConnectionID != "" && registryConnectionID == "" {
+		return nil, fmt.Errorf("registryConnectionId cannot be empty or whitespace")
+	}
 
 	imageDef := agent_api.HostedAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
@@ -478,7 +512,8 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		Memory:               memory,
 		EnvironmentVariables: envVars,
 		ContainerConfiguration: &agent_api.ContainerConfigurationAPI{
-			Image: imageURL,
+			Image:                imageURL,
+			RegistryConnectionID: registryConnectionID,
 		},
 		SessionConfiguration: sessionConfig,
 	}
@@ -519,11 +554,11 @@ var knownOpenAIVoices = map[string]struct{}{
 }
 
 // azureNeuralVoicePattern matches the locale prefix that every Azure Neural
-// voice name carries, e.g. "en-US-Ava:DragonHDLatestNeural" or
-// "ja-JP-NanamiNeural". The service contract guarantees this <lang>-<REGION>-
-// shape for Azure voices, which is what distinguishes them from the flat
-// lowercase OpenAI voice tokens.
-var azureNeuralVoicePattern = regexp.MustCompile(`^[a-z]{2,3}-[A-Z]{2,3}-`)
+// voice name carries, e.g. "en-US-Ava:DragonHDLatestNeural",
+// "ja-JP-NanamiNeural", or Azure voices with script/numeric-region locales.
+// The optional script tag and numeric region support keep valid BCP-47 locales
+// from being classified as OpenAI voices.
+var azureNeuralVoicePattern = regexp.MustCompile(`^([a-z]{2,3}(?:-[A-Z][a-z]{3})?-(?:[A-Z]{2,3}|[0-9]{3}))-`)
 
 // isOpenAIVoice reports whether a voice name denotes an OpenAI realtime voice
 // (e.g. "alloy") vs an Azure Neural voice (e.g. "en-US-Ava:DragonHDLatestNeural").
@@ -553,10 +588,156 @@ func buildVoiceConfig(name string) *agent_api.VoiceConfig {
 	return &agent_api.VoiceConfig{Type: "azure_standard", Name: trimmed}
 }
 
+func voiceWireType(voice *agent_api.VoiceConfig) string {
+	if voice == nil {
+		return ""
+	}
+	if voice.Type == "azure_standard" {
+		return "azure-standard"
+	}
+	return voice.Type
+}
+
+func voiceWireLocale(voice *agent_api.VoiceConfig) string {
+	if voice == nil || voice.Name == "" {
+		return ""
+	}
+	if voice.Locale != nil && strings.TrimSpace(*voice.Locale) != "" {
+		return strings.TrimSpace(*voice.Locale)
+	}
+	if isOpenAIVoice(voice.Name) {
+		return ""
+	}
+	match := azureNeuralVoicePattern.FindStringSubmatch(voice.Name)
+	if len(match) < 2 {
+		return ""
+	}
+	return match[1]
+}
+
+func defaultVoiceAudioFormat() *agent_api.VoiceAudioFormat {
+	return &agent_api.VoiceAudioFormat{
+		Type: defaultVoiceAudioType,
+		Rate: new(defaultVoiceAudioRate),
+	}
+}
+
+func mapVoiceAudioFormat(format *VoiceAudioFormat, fallback *agent_api.VoiceAudioFormat) *agent_api.VoiceAudioFormat {
+	out := &agent_api.VoiceAudioFormat{}
+	if fallback != nil {
+		*out = *fallback
+	}
+	if format != nil {
+		if strings.TrimSpace(format.Type) != "" {
+			out.Type = strings.TrimSpace(format.Type)
+		}
+		if format.Rate != nil {
+			out.Rate = format.Rate
+		} else if out.Type == "audio/pcmu" || out.Type == "audio/pcma" {
+			out.Rate = nil
+		}
+	}
+	return out
+}
+
+func mapVoiceTurnDetection(turnDetection *VoiceTurnDetection) *agent_api.VoiceTurnDetection {
+	out := &agent_api.VoiceTurnDetection{Type: defaultVoiceTurnDetectionType}
+	if turnDetection == nil {
+		return out
+	}
+	if strings.TrimSpace(turnDetection.Type) != "" {
+		out.Type = strings.TrimSpace(turnDetection.Type)
+	}
+	out.Threshold = turnDetection.Threshold
+	out.PrefixPaddingMs = turnDetection.PrefixPaddingMs
+	out.SilenceDurationMs = turnDetection.SilenceDurationMs
+	out.CreateResponse = turnDetection.CreateResponse
+	out.Eagerness = turnDetection.Eagerness
+	out.SpeechDurationMs = turnDetection.SpeechDurationMs
+	out.RemoveFillerWords = turnDetection.RemoveFillerWords
+	out.InterruptResponse = turnDetection.InterruptResponse
+	out.Languages = turnDetection.Languages
+	out.AutoTruncate = turnDetection.AutoTruncate
+	return out
+}
+
+func mapVoiceTranscription(transcription *VoiceTranscription) *agent_api.VoiceTranscription {
+	out := &agent_api.VoiceTranscription{Model: defaultVoiceInputTranscriptionModel}
+	if transcription == nil {
+		return out
+	}
+	if strings.TrimSpace(transcription.Model) != "" {
+		out.Model = strings.TrimSpace(transcription.Model)
+	}
+	out.Language = transcription.Language
+	out.Prompt = transcription.Prompt
+	return out
+}
+
+func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceConfig {
+	if voice == nil {
+		return buildVoiceConfig(fallbackName)
+	}
+	name := strings.TrimSpace(voice.Name)
+	if name == "" {
+		name = fallbackName
+	}
+	voiceType := strings.TrimSpace(voice.Type)
+	if voiceType == "" {
+		out := buildVoiceConfig(name)
+		out.Style = voice.Style
+		out.Pitch = voice.Pitch
+		out.Rate = voice.Rate
+		out.Locale = voice.Locale
+		out.Volume = voice.Volume
+		return out
+	}
+	if voiceType == "openai" {
+		name = strings.ToLower(name)
+	}
+	return &agent_api.VoiceConfig{
+		Type:   voiceType,
+		Name:   name,
+		Style:  voice.Style,
+		Pitch:  voice.Pitch,
+		Rate:   voice.Rate,
+		Locale: voice.Locale,
+		Volume: voice.Volume,
+	}
+}
+
+func mapVoiceStructuredInputs(inputs map[string]any) map[string]any {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(inputs))
+	for name, input := range inputs {
+		inputMap, ok := input.(map[string]any)
+		if !ok {
+			out[name] = input
+			continue
+		}
+
+		mapped := maps.Clone(inputMap)
+		if value, ok := mapped["defaultValue"]; ok {
+			if _, hasSnakeCase := mapped["default_value"]; !hasSnakeCase {
+				mapped["default_value"] = value
+			}
+			delete(mapped, "defaultValue")
+		}
+		out[name] = mapped
+	}
+	return out
+}
+
 // CreateVoiceAgentAPIRequest builds a CreateAgentRequest for a declarative
 // voice agent. It translates the authoring kind "prompt-voice" into the
 // data-plane service kind "voice" and defaults the audio pipeline.
 func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
+	return createVoiceAgentAPIRequest(voiceAgent)
+}
+
+func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
 	modelID := ""
 	if voiceAgent.Model != nil {
 		modelID = strings.TrimSpace(voiceAgent.Model.Id)
@@ -574,6 +755,9 @@ func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 			"model_type '%s' is not supported; use '%s' or '%s'",
 			voiceAgent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed)
 	}
+	if errors := validateVoiceAgentAdvancedConfig(voiceAgent); len(errors) > 0 {
+		return nil, fmt.Errorf("invalid prompt-voice configuration: %s", strings.Join(errors, "; "))
+	}
 
 	instructions := defaultVoiceInstructions
 	if voiceAgent.Instructions != nil && *voiceAgent.Instructions != "" {
@@ -585,32 +769,78 @@ func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 		voiceName = *voiceAgent.Voice
 	}
 
-	audioFormat := &agent_api.VoiceAudioFormat{
-		Type: defaultVoiceAudioType,
-		Rate: defaultVoiceAudioRate,
+	inputFormat := defaultVoiceAudioFormat()
+	outputFormat := defaultVoiceAudioFormat()
+	turnDetection := mapVoiceTurnDetection(nil)
+	transcription := mapVoiceTranscription(nil)
+	var noiseReduction *agent_api.VoiceNoiseReduction
+	var echoCancellation map[string]any
+	outputVoice := buildVoiceConfig(voiceName)
+	var outputSpeed *float64
+	if voiceAgent.Audio != nil {
+		if voiceAgent.Audio.Input != nil {
+			inputFormat = mapVoiceAudioFormat(voiceAgent.Audio.Input.Format, inputFormat)
+			if voiceAgent.Audio.Input.NoiseReduction != nil {
+				noiseReduction = &agent_api.VoiceNoiseReduction{
+					Type: strings.TrimSpace(voiceAgent.Audio.Input.NoiseReduction.Type),
+				}
+			}
+			echoCancellation = voiceAgent.Audio.Input.EchoCancellation
+			turnDetection = mapVoiceTurnDetection(voiceAgent.Audio.Input.TurnDetection)
+			transcription = mapVoiceTranscription(voiceAgent.Audio.Input.Transcription)
+		}
+		if voiceAgent.Audio.Output != nil {
+			outputFormat = mapVoiceAudioFormat(voiceAgent.Audio.Output.Format, outputFormat)
+			outputVoice = mapVoiceConfig(voiceAgent.Audio.Output.Voice, voiceName)
+			outputSpeed = voiceAgent.Audio.Output.Speed
+		}
 	}
 
+	outputModalities := []string{"audio"}
+	if voiceAgent.OutputModalities != nil {
+		outputModalities = voiceAgent.OutputModalities
+	}
+
+	input := &agent_api.VoiceInputConfig{
+		Format:           inputFormat,
+		NoiseReduction:   noiseReduction,
+		EchoCancellation: echoCancellation,
+		TurnDetection:    turnDetection,
+		Transcription:    transcription,
+	}
 	voiceDef := agent_api.VoiceAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
 			// Translate authoring kind prompt-voice -> service kind voice.
 			Kind: agent_api.AgentKindVoice,
 		},
-		ModelType:    modelType,
-		Model:        modelID,
-		Instructions: instructions,
+		ModelType:        modelType,
+		Model:            modelID,
+		Instructions:     instructions,
+		StructuredInputs: mapVoiceStructuredInputs(voiceAgent.StructuredInputs),
 		Audio: &agent_api.VoiceAudioConfig{
-			Input: &agent_api.VoiceInputConfig{
-				Format:        audioFormat,
-				TurnDetection: &agent_api.VoiceTurnDetection{Type: defaultVoiceTurnDetectionType},
-				Transcription: &agent_api.VoiceTranscription{Model: defaultVoiceInputTranscriptionModel},
-			},
+			Input: input,
 			Output: &agent_api.VoiceOutputConfig{
-				Format: audioFormat,
-				Voice:  buildVoiceConfig(voiceName),
+				Format:      outputFormat,
+				Voice:       outputVoice.Name,
+				VoiceType:   voiceWireType(outputVoice),
+				VoiceLocale: voiceWireLocale(outputVoice),
+				Style:       outputVoice.Style,
+				Pitch:       outputVoice.Pitch,
+				Rate:        outputVoice.Rate,
+				Volume:      outputVoice.Volume,
+				Speed:       outputSpeed,
 			},
 		},
-		OutputModalities: []string{"audio"},
-		Store:            voiceAgent.Store,
+		OutputModalities:  outputModalities,
+		Store:             voiceAgent.Store,
+		Tools:             voiceAgent.Tools,
+		Avatar:            voiceAgent.Avatar,
+		Greeting:          voiceAgent.Greeting,
+		Handoff:           voiceAgent.Handoff,
+		ToolChoice:        voiceAgent.ToolChoice,
+		ParallelToolCalls: voiceAgent.ParallelToolCalls,
+		MaxOutputTokens:   voiceAgent.MaxOutputTokens,
+		Include:           voiceAgent.Include,
 	}
 
 	return createAgentAPIRequest(voiceAgent.AgentDefinition, voiceDef, nil, nil)

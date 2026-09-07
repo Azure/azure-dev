@@ -42,13 +42,17 @@ type Config struct {
 	// Silent suppresses terminal output that is useful for standalone
 	// inspector runs but noisy when azd ai agent run auto-launches it.
 	Silent bool
+
+	// ReportUsage records extension-owned usage events. If nil, telemetry is disabled.
+	ReportUsage ReportUsageFunc
 }
 
 type Server struct {
-	cfg      Config
-	httpSrv  *http.Server
-	upgrader websocket.Upgrader
-	logger   *log.Logger
+	cfg           Config
+	httpSrv       *http.Server
+	upgrader      websocket.Upgrader
+	logger        *log.Logger
+	reportUIReady func()
 }
 
 func New(cfg Config) *Server {
@@ -57,8 +61,9 @@ func New(cfg Config) *Server {
 		logger = log.New(log.Writer(), "[inspector] ", log.LstdFlags)
 	}
 	return &Server{
-		cfg:    cfg,
-		logger: logger,
+		cfg:           cfg,
+		logger:        logger,
+		reportUIReady: newUIReadyReporter(cfg.ReportUsage),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				origin := r.Header.Get("Origin")

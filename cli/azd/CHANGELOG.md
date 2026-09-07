@@ -1,6 +1,6 @@
 # Release History
 
-## 1.32.0-beta.1 (Unreleased)
+## 1.34.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,59 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.33.0 (2026-09-02)
+
+### Features Added
+
+- [[#8371]](https://github.com/Azure/azure-dev/pull/8371) Add Unix domain socket and Windows named-pipe transports for external authentication hosts using `AZD_AUTH_ENDPOINT`.
+- [[#9541]](https://github.com/Azure/azure-dev/pull/9541) Add an archived-template warning to `azd init --template` so users can cancel before cloning unmaintained repositories.
+
+### Bugs Fixed
+
+- [[#9678]](https://github.com/Azure/azure-dev/pull/9678) Fix disabled services with `condition` values being initialized or checked before command execution.
+- [[#9729]](https://github.com/Azure/azure-dev/pull/9729) Fix quota guidance to avoid showing Foundry-specific recovery steps for unrelated Azure resource providers.
+- [[#9733]](https://github.com/Azure/azure-dev/pull/9733) Fix extension install, update, init, and auto-install paths to select releases compatible with the running azd version.
+- [[#9737]](https://github.com/Azure/azure-dev/pull/9737) Fix Azure Container Registry remote-build failures to surface stable structured diagnostics while preserving build logs.
+- [[#9764]](https://github.com/Azure/azure-dev/pull/9764) Fix AI coding-agent detection to ignore empty markers, prioritize active Codex and Cursor sessions, and avoid classifying the Cursor desktop app as an agent.
+- [[#9775]](https://github.com/Azure/azure-dev/pull/9775) Fix concurrent .NET service publishes sharing intermediate artifacts by isolating publish artifacts on supported .NET SDKs.
+
+## 1.32.0 (2026-08-26)
+
+### Features Added
+
+- [[#9588]](https://github.com/Azure/azure-dev/pull/9588) Add `docker.imagePassthrough` support to deploy an existing container image by reference without local or remote image operations.
+
+### Bugs Fixed
+
+- [[#9714]](https://github.com/Azure/azure-dev/pull/9714) Fix optional extension flag values in generated shell completions and extension telemetry parsing.
+- [[#9715]](https://github.com/Azure/azure-dev/pull/9715) Fix extension multi-select prompts to consistently validate empty submissions in interactive and no-prompt modes.
+- [[#9675]](https://github.com/Azure/azure-dev/pull/9675) Fix AKS kubeconfig directories and files to use owner-only permissions.
+- [[#9645]](https://github.com/Azure/azure-dev/pull/9645) Fix GitHub Copilot model setup offering unsupported reasoning levels by selecting the model first and using its supported options.
+- [[#9636]](https://github.com/Azure/azure-dev/pull/9636) Fix structured extension errors losing details when relayed across nested gRPC calls.
+
+### Other Changes
+
+- [[#9698]](https://github.com/Azure/azure-dev/pull/9698) Recognize Codex and Cursor as AI-agent execution environments for non-interactive behavior and telemetry.
+- [[#9673]](https://github.com/Azure/azure-dev/pull/9673) Update the bundled GitHub CLI to v2.98.0.
+- [[#9690]](https://github.com/Azure/azure-dev/pull/9690) Fix telemetry measurement metadata to match runtime value types.
+- [[#9693]](https://github.com/Azure/azure-dev/pull/9693) Fix telemetry resource field classification and purpose metadata.
+- [[#9644]](https://github.com/Azure/azure-dev/pull/9644) Update the bundled GitHub Copilot CLI to v1.0.80 and the Copilot SDK to v1.0.11.
+
+## 1.31.2 (2026-08-19)
+
+### Bugs Fixed
+
+- [[#9489]](https://github.com/Azure/azure-dev/pull/9489) Fix App Service deployments hanging when deployment status stops changing by completing with a warning after a five-minute inactivity timeout.
+- [[#9490]](https://github.com/Azure/azure-dev/pull/9490) Fix Bicep refresh, down, and provision-state lookup using another project's deployment history by preferring project-tagged deployments.
+- [[#9504]](https://github.com/Azure/azure-dev/pull/9504) Fix GitHub Copilot desktop terminals being incorrectly detected as Copilot CLI agent sessions, which could incorrectly enable no-prompt behavior in interactive terminals. Thanks @gimenete for the contribution!
+- [[#9537]](https://github.com/Azure/azure-dev/pull/9537) Fix extension dependency resolution to fall back to the official `azd` registry when the parent extension source has no compatible version.
+- [[#9613]](https://github.com/Azure/azure-dev/pull/9613) Fix extension-hosted Azure service errors losing HTTP status and provider error details across the gRPC boundary.
+
+### Other Changes
+
+- [[#9474]](https://github.com/Azure/azure-dev/pull/9474) Improve extension auto-install to show the complete requirement set before prompting, explain why each extension is required, and resolve the full install plan before making changes.
+- [[#9598]](https://github.com/Azure/azure-dev/pull/9598) Fix telemetry for AKS skip reasons, container remote builds, and authentication cache-clear failures being emitted without data-classification metadata.
 
 ## 1.31.1 (2026-08-13)
 

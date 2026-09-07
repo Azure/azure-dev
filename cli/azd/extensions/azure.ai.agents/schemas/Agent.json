@@ -139,8 +139,8 @@
               "properties": {
                 "idleTimeoutSeconds": {
                   "type": "integer",
-                  "description": "Idle duration in seconds before a session's sandbox is suspended. Range 300–3600 (inclusive). Defaults to 900 when omitted.",
-                  "minimum": 300,
+                  "description": "Idle duration in seconds before a session's sandbox is suspended. Range 120–3600 (inclusive). Defaults to 900 when omitted.",
+                  "minimum": 120,
                   "maximum": 3600
                 }
               }

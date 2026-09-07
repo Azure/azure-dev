@@ -253,7 +253,8 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	}
 
 	sessionDir := filepath.Join(tempDir, "echo_env")
-	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec // test reads the state file from its own temporary session directory.
+	// The test reads state from its own temporary session directory.
+	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,8 +262,8 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	if err := json.Unmarshal(stateBytes, &state); err != nil {
 		t.Fatal(err)
 	}
-	if state.Name != "echo_env" {
-		t.Fatalf("expected echo_env state name, got %q", state.Name)
+	if state.EnvironmentName != "echo_env" {
+		t.Fatalf("expected echo_env environment name, got %q", state.EnvironmentName)
 	}
 	if _, err := os.Stat(filepath.Join(sessionDir, "server", "Dockerfile")); err != nil {
 		t.Fatalf("expected copied OpenEnv server Dockerfile: %v", err)
@@ -294,7 +295,8 @@ func TestInitUsesPositionalNameForDefaultSample(t *testing.T) {
 	}
 
 	sessionDir := filepath.Join(tempDir, "code_rl")
-	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec // test reads the state file from its own temporary session directory.
+	// The test reads state from its own temporary session directory.
+	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,8 +304,67 @@ func TestInitUsesPositionalNameForDefaultSample(t *testing.T) {
 	if err := json.Unmarshal(stateBytes, &state); err != nil {
 		t.Fatal(err)
 	}
-	if state.Name != "code_rl" {
-		t.Fatalf("expected code_rl state name, got %q", state.Name)
+	if state.EnvironmentName != "code_rl" {
+		t.Fatalf("expected code_rl environment name, got %q", state.EnvironmentName)
+	}
+}
+
+func TestInitNextStepsUseShellAppropriateSyntax(t *testing.T) {
+	tests := []struct {
+		name       string
+		goos       string
+		shell      string
+		expected   string
+		unexpected string
+	}{
+		{
+			name:       "PowerShell on Windows",
+			goos:       "windows",
+			shell:      "pwsh.exe",
+			expected:   `$env:FOUNDRY_PROJECT_ENDPOINT`,
+			unexpected: `export FOUNDRY_PROJECT_ENDPOINT`,
+		},
+		{
+			name:       "PowerShell on Linux",
+			goos:       "linux",
+			shell:      "/usr/bin/pwsh",
+			expected:   `$env:FOUNDRY_PROJECT_ENDPOINT`,
+			unexpected: `export FOUNDRY_PROJECT_ENDPOINT`,
+		},
+		{
+			name:       "Bash on Linux or WSL",
+			goos:       "linux",
+			shell:      "/bin/bash",
+			expected:   `export FOUNDRY_PROJECT_ENDPOINT`,
+			unexpected: `$env:FOUNDRY_PROJECT_ENDPOINT`,
+		},
+		{
+			name:       "Bash on Windows",
+			goos:       "windows",
+			shell:      "C:\\Program Files\\Git\\bin\\bash.exe",
+			expected:   `export FOUNDRY_PROJECT_ENDPOINT`,
+			unexpected: `$env:FOUNDRY_PROJECT_ENDPOINT`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output := initNextSteps("./echo", test.goos, test.shell)
+			for _, expected := range []string{
+				"Run locally:",
+				"azd ai rle run",
+				"Publish to RLE when ready:",
+				"azd ai rle publish",
+				test.expected,
+			} {
+				if !strings.Contains(output, expected) {
+					t.Fatalf("expected output to contain %q, got %s", expected, output)
+				}
+			}
+			if strings.Contains(output, test.unexpected) || strings.Contains(output, "azd ai rle deploy") {
+				t.Fatalf("unexpected shell or obsolete command guidance: %s", output)
+			}
+		})
 	}
 }
 

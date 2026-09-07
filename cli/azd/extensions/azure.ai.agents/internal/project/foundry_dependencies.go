@@ -39,6 +39,65 @@ type foundryDependencyFailure struct {
 	requiresMigration bool
 }
 
+// validateRegistryConnectionDependency ensures a registry connection declared
+// as a sibling azd service is wired through uses. References that do not match a
+// local service are external Foundry connection names or IDs and are left to the
+// service to resolve.
+func validateRegistryConnectionDependency(
+	ctx context.Context,
+	agent *azdext.ServiceConfig,
+	connectionRef string,
+	services map[string]*azdext.ServiceConfig,
+	isEnabled dependencyEnabled,
+) error {
+	connectionRef = strings.TrimSpace(connectionRef)
+	if connectionRef == "" {
+		return nil
+	}
+
+	dependency, exists := services[connectionRef]
+	if !exists {
+		return nil
+	}
+	if dependency.GetHost() != foundryConnectionHost {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf(
+				"registry connection %s resolves to service host %s instead of %s",
+				strconv.Quote(connectionRef),
+				strconv.Quote(dependency.GetHost()),
+				strconv.Quote(foundryConnectionHost),
+			),
+			fmt.Sprintf("change the %s service host to %s or use an external Foundry connection reference",
+				strconv.Quote(connectionRef), strconv.Quote(foundryConnectionHost)),
+		)
+	}
+	if !slices.Contains(agent.GetUses(), connectionRef) {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("registry connection service %s is not declared in %s uses",
+				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+			fmt.Sprintf("add %s to the %s service uses list, run 'azd provision', then retry the agent deployment",
+				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+		)
+	}
+	if isEnabled != nil {
+		enabled, err := isEnabled(ctx, connectionRef)
+		if err != nil {
+			return err
+		}
+		if !enabled {
+			return exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf("registry connection service %s is disabled by its deployment condition",
+					strconv.Quote(connectionRef)),
+				"enable the registry connection dependency or use an external Foundry connection reference",
+			)
+		}
+	}
+	return nil
+}
+
 func validateFoundryDependencies(
 	ctx context.Context,
 	agent *azdext.ServiceConfig,
@@ -291,6 +350,10 @@ func validateFoundryProjectDependency(_ *azdext.ServiceConfig, env map[string]st
 }
 
 func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[string]string) string {
+	connectionProject := strings.TrimSpace(env[envkey.ConnectionProjectEndpoint])
+	if connectionProject != "" && !sameProjectEndpoint(connectionProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
+	}
 	found := false
 	for name := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
 		if strings.TrimSpace(name) == service.GetName() {
@@ -300,13 +363,6 @@ func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[
 	}
 	if !found {
 		return "connection is not listed in AZURE_AI_PROJECT_CONNECTION_NAMES"
-	}
-	// Older project extensions published connection names without a scope marker.
-	if strings.TrimSpace(env[envkey.ConnectionProjectEndpoint]) == "" {
-		return ""
-	}
-	if !sameProjectEndpoint(env[envkey.ConnectionProjectEndpoint], env["FOUNDRY_PROJECT_ENDPOINT"]) {
-		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
 	}
 	return ""
 }

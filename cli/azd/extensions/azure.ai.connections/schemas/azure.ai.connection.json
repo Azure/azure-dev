@@ -6,6 +6,10 @@
   "type": "object",
   "additionalProperties": true,
   "properties": {
+    "name": {
+      "type": "string",
+      "description": "Connection name. Required in a standalone connection definition; the azure.yaml service key supplies it when composed."
+    },
     "category": {
       "type": "string",
       "description": "Connection category (e.g., 'CustomKeys', 'ApiKey', 'AzureOpenAI', 'CognitiveSearch', 'RemoteTool')."
@@ -16,7 +20,7 @@
     },
     "authType": {
       "type": "string",
-      "description": "Authentication type.",
+      "description": "Authentication type. AgenticIdentity is accepted as a legacy alias and normalized to AgenticIdentityToken.",
       "enum": [
         "AAD",
         "AccessKey",
@@ -45,6 +49,31 @@
       "type": "object",
       "description": "Additional metadata as key-value pairs.",
       "additionalProperties": { "type": "string" }
+    },
+    "audience": {
+      "type": "string",
+      "description": "Token audience for UserEntraToken, AgenticIdentityToken, or ProjectManagedIdentity connections. May contain ${VAR}; declare each referenced variable in the service-level env object."
+    },
+    "authorizationUrl": {
+      "type": "string",
+      "description": "OAuth2 authorization endpoint."
+    },
+    "tokenUrl": {
+      "type": "string",
+      "description": "OAuth2 token endpoint."
+    },
+    "refreshUrl": {
+      "type": "string",
+      "description": "Optional OAuth2 token refresh endpoint."
+    },
+    "scopes": {
+      "type": "array",
+      "description": "OAuth2 scopes.",
+      "items": { "type": "string" }
+    },
+    "connectorName": {
+      "type": "string",
+      "description": "Connector name for OAuth2 connections. May contain ${VAR}; declare each referenced variable in the service-level env object."
     }
   }
 }

@@ -45,20 +45,57 @@ integration.
 | `AZD_CONFIG_DIR` | The file path of the user-level configuration directory. |
 | `AZD_DEMO_MODE` | If true, enables demo mode. This hides personal output, such as subscription IDs, from being displayed in output. |
 | `AZD_FORCE_TTY` | If true, forces `azd` to write terminal-style output. |
-| `AZD_NON_INTERACTIVE` | Controls no-prompt mode. Accepts a boolean (`true`, `false`, `1`, `0`); other values are ignored with a warning. Set to `true` (or `1`) to run without interactive prompts (equivalent to `--no-prompt`). `azd` also auto-enables no-prompt mode when it detects a CI/CD or AI-agent environment; set `AZD_NON_INTERACTIVE=false` to opt out of that automatic enablement (the global no-prompt setting stays off in those environments). Note that some commands still avoid interactive prompts in CI/CD by design, independent of this variable. Explicit `--no-prompt`/`--non-interactive` flags take precedence over this variable. |
+| `AZD_NON_INTERACTIVE` | Controls no-prompt mode. Accepts a boolean (`true`, `false`, `1`, `0`); other values are ignored with a warning. Set to `true` (or `1`) to run without interactive prompts (equivalent to `--no-prompt`). `azd` also auto-enables no-prompt mode in CI/CD and for AI-agent invocations without an interactive terminal. Agent markers inherited by an interactive terminal do not disable prompts. Set `AZD_NON_INTERACTIVE=false` to opt out of automatic enablement. Note that some commands still avoid interactive prompts in CI/CD by design, independent of this variable. Explicit `--no-prompt`/`--non-interactive` flags take precedence over this variable. |
 | `AZD_IN_CLOUDSHELL` | If true, `azd` runs with Azure Cloud Shell specific behavior. |
 | `AZD_SKIP_UPDATE_CHECK` | If true, skips the out-of-date update check output that is typically printed at the end of the command. |
 | `AZD_SKIP_FIRST_RUN` | Reserved for the dormant first-run tool setup and background update experience. This variable has no effect while those middleware components are not registered. |
 | `AZD_CONTAINER_RUNTIME` | The container runtime to use (e.g., `docker`, `podman`). |
 | `AZD_ALLOW_NON_EMPTY_FOLDER` | If set, allows `azd init` to run in a non-empty directory without prompting. |
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |
-| `AZD_DEPLOY_CONCURRENCY` | Maximum number of services to deploy in parallel during `azd deploy`. Only takes effect when at least one service declares `uses:` targeting another service; without `uses:` edges, services deploy sequentially in alphabetical order for backward compatibility (see [concurrency model](concurrency-model.md)). Parsed as a positive integer; clamped to a maximum of `64`. When unset, concurrency is unlimited (bounded only by the number of services). |
+| `AZD_DEPLOY_CONCURRENCY` | Maximum number of service graph steps (`package`, `publish`, and `deploy`) that may run in parallel during `azd deploy`. The limit applies even when deploy steps use the no-`uses:` sequential fallback; setting it to `1` serializes source packaging and publishing too, which is the safe workaround for .NET projects that share custom build-output paths. Parsed as a positive integer; clamped to a maximum of `64`. When unset, non-positive, or not an integer, the scheduler uses at most `min(step count, GOMAXPROCS * 2)` workers. See the [concurrency model](concurrency-model.md). |
 | `AZD_DEPLOY_TIMEOUT` | Timeout for deployment operations, parsed as an integer number of seconds (for example, `1200`). Defaults to `1200` seconds (20 minutes). |
-| `AZD_PROVISION_CONCURRENCY` | Maximum number of infrastructure layers to provision in parallel during `azd provision`. Parsed as a positive integer; clamped to a maximum of `64`. When unset, concurrency is unlimited (bounded only by the dependency graph). |
+| `AZD_PROVISION_CONCURRENCY` | Maximum number of infrastructure layers to provision in parallel during `azd provision`. Parsed as a positive integer; clamped to a maximum of `64`. When unset, non-positive, or not an integer, the scheduler uses at most `min(layer count, GOMAXPROCS * 2)` workers. |
 | `AZD_DEPLOYMENT_ID_FILE` | Absolute path of a file where `azd` writes ARM deployment IDs in NDJSON format (one JSON line per layer) during `azd provision` or `azd up`. The file is truncated at the start of each provisioning run, and each infrastructure layer appends one line as its ARM deployment starts. Each line has the shape `{"deploymentId":"/subscriptions/.../deployments/<name>","layer":"<layer-name>"}` — the `layer` field is empty for non-layered (single-module) provisioning. Consumers should tail/watch the file and parse each line independently; unknown fields must be ignored for forward compatibility. The path must be absolute (relative paths are ignored); the containing directory must already exist and be writable. Lines are only appended when an ARM deployment is actually started — runs short-circuited by the deployment-state cache or canceled by provision validation do not produce output. A process-wide mutex serializes writes so each line is always complete. If the file cannot be written (for example, the parent directory does not exist, the path is not writable, or the path points to a directory rather than a file), provisioning continues and the failure is recorded via the standard log; that output is only visible when `--debug` or `AZD_DEBUG_LOG` is enabled. On Windows, consumers should use a file-watcher pattern that does not keep a read handle open, otherwise new appends may fail. Only Bicep deployments are supported. |
-| `AZD_UP_CONCURRENCY` | Maximum number of steps to run in parallel during `azd up`. Parsed as a positive integer; clamped to a maximum of `64`. Falls back to `AZD_DEPLOY_CONCURRENCY` when unset. When both are unset, concurrency is unlimited. |
+| `AZD_UP_CONCURRENCY` | Maximum number of steps to run in parallel during `azd up`. Parsed as a positive integer; clamped to a maximum of `64`. Falls back to `AZD_DEPLOY_CONCURRENCY` only when unset. If the selected variable is non-positive or not an integer, or if both variables are unset, the scheduler uses at most `min(step count, GOMAXPROCS * 2)` workers. |
 | `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | Sets the App Service deployment slot target for a service. Replace `{SERVICE}` with the uppercase service name (hyphens become underscores). Set to `production` to deploy to the main app, or a slot name (e.g., `staging`). When slots exist and this is not set, `--no-prompt` mode fails with an error listing available targets. Applies to `host: appservice` only; Function Apps always deploy to the main site. |
 | `AZD_DEPLOY_{SERVICE}_SKIP_STATUS_CHECK` | If `true`, skips deployment status tracking for the named Linux App Service after the zip deployment request is accepted. By default, azd waits up to five minutes without a deployment status change. Each new status resets the five-minute wait. If the status remains unchanged, azd completes deployment with a warning. Useful when the target web app is intentionally stopped. Parsed as a boolean (`true`/`false`/`1`/`0`). `{SERVICE}` follows the same naming rules as `AZD_DEPLOY_{SERVICE}_SLOT_NAME`. |
+
+## AI Agent Detection
+
+`azd` detects when it is launched by a known AI coding agent and records the agent for telemetry. Unless explicitly overridden, agent detection automatically enables no-prompt mode when stdin and stdout are not attached to an interactive terminal. An inherited agent marker does not disable prompts in an interactive terminal. Detection checks the environment-variable markers below first, followed by known substrings in [`AZURE_DEV_USER_AGENT`](#telemetry--tracing), and then parent-process names.
+
+These markers are normally set by the agents; `azd` only reads them. When several markers are set,
+the first matching row wins. Exact-value markers must match the documented string and do not use the
+general boolean parsing convention. All other markers must contain a non-empty value.
+
+Claude Code sets `CLAUDECODE=1` in all spawned subprocesses and in IDE-integrated terminals. `azd` uses it for agent attribution, while actual terminal capabilities determine whether prompting is available. When `CLAUDE_CODE_ENTRYPOINT` is exactly `claude-desktop` or `claude-vscode`, `azd` records the corresponding fixed Claude host value. Other entrypoint values fall back to `Claude Code` and are never emitted directly. This host refinement is best-effort because Anthropic does not document the environment variable as a compatibility contract.
+
+When the detected agent determines `execution.environment`, `azd` records only the fixed base value
+in the last column; fixed environment modifiers may be appended. Marker values are not added to
+telemetry by the agent-detection path.
+
+| Variable | Match | Detected agent (`execution.environment`) |
+| --- | --- | --- |
+| `AI_AGENT` | Exactly `github_copilot_app_agent` | GitHub Copilot App |
+| `AI_AGENT` | Exactly `github_copilot_vscode_agent` | GitHub Copilot VSCode |
+| `AI_AGENT` | Exactly `github_copilot_cloud_agent` | GitHub Copilot Cloud Agent |
+| `AI_AGENT` | Exactly `pi` | Pi |
+| `CODEX_INTERNAL_ORIGINATOR_OVERRIDE` | Exactly `Codex Desktop` | Codex Desktop |
+| `CODEX_CI` | Exactly `1` | Codex |
+| `CODEX_THREAD_ID` | Non-empty | Codex |
+| `CODEX_SESSION_ID` | Non-empty | Codex |
+| `CURSOR_AGENT` | Exactly `1` | Cursor |
+| `CURSOR_CONVERSATION_ID` | Non-empty | Cursor |
+| `CLAUDECODE` | Exactly `1` | Claude Code |
+| `CLAUDE_CODE_ENTRYPOINT` | Exactly `claude-desktop` or `claude-vscode`, with `CLAUDECODE=1` | Claude Code Desktop or Claude Code VSCode |
+| `COPILOT_CLI` | Non-empty | GitHub Copilot CLI |
+| `GEMINI_CLI` | Non-empty | Gemini |
+| `GEMINI_CLI_NO_RELAUNCH` | Non-empty | Gemini |
+| `OPENCODE` | Non-empty | OpenCode |
+
+As a last resort, parent-process detection recognizes the `codex`, `claude`, `gemini`, `opencode`,
+and GitHub Copilot CLI executable names. It intentionally does not recognize `Cursor.exe`, because
+that name also identifies the regular Cursor desktop application.
 
 ## azd exec
 
@@ -116,9 +153,9 @@ Variables for [External Authentication](./external-authentication.md) integratio
 
 | Variable | Description |
 | --- | --- |
-| `AZD_AUTH_ENDPOINT` | The [External Authentication](./external-authentication.md) endpoint. |
-| `AZD_AUTH_KEY` | The [External Authentication](./external-authentication.md) shared key. |
-| `AZD_AUTH_CERT` | The [External Authentication](./external-authentication.md) client certificate, provided as a base64-encoded DER certificate string. When set, `AZD_AUTH_ENDPOINT` must use HTTPS. |
+| `AZD_AUTH_ENDPOINT` | The [External Authentication](./external-authentication.md) endpoint. Accepts `https://host:port` (loopback HTTPS), `unix:/absolute/path/to/socket` (Linux/macOS Unix domain socket; `AZD_AUTH_CERT` must not be set), or `npipe:<pipe-name>` / `npipe://./pipe/<pipe-name>` / `npipe:////./pipe/<pipe-name>` (Windows-only named pipe; `AZD_AUTH_CERT` must not be set). Named-pipe owners and ACLs are validated; the Windows default read-only Everyone/Anonymous ACEs are accepted, but broader access is refused. |
+| `AZD_AUTH_KEY` | The [External Authentication](./external-authentication.md) shared key. Required for all schemes (`https:`, `unix:`, `npipe:`); sent as `Authorization: Bearer`. |
+| `AZD_AUTH_CERT` | The optional [External Authentication](./external-authentication.md) server certificate, provided as a base64-encoded DER certificate string. When set, `AZD_AUTH_ENDPOINT` must use `https:` and `azd` pins the connection to this certificate. MUST NOT be set when `AZD_AUTH_ENDPOINT` uses `unix:` or `npipe:`. |
 
 ## Tool Configuration
 
@@ -131,6 +168,20 @@ specific version of the tool installed on the machine.
 | `AZD_GH_TOOL_PATH` | The `gh` tool override path. The direct path to `gh` or `gh.exe`. |
 | `AZD_PACK_TOOL_PATH` | The `pack` tool override path. The direct path to `pack` or `pack.exe`. |
 | `AZD_COPILOT_CLI_PATH` | The Copilot CLI tool override path. When set, skips automatic download and uses the specified path. |
+
+### GitHub Repository Access
+
+These GitHub-compatible variables are used when `azd init --template` checks repository metadata before cloning.
+Metadata requests are unauthenticated when no matching token is set.
+
+| Variable | Description |
+| --- | --- |
+| `GH_TOKEN` | Token used to request repository metadata from `github.com` and GitHub Enterprise Cloud `*.ghe.com` hosts. Takes precedence over `GITHUB_TOKEN`. |
+| `GITHUB_TOKEN` | Token used to request repository metadata from `github.com` and `*.ghe.com` when `GH_TOKEN` is not set. |
+| `GH_HOST` | GitHub Enterprise host recognized for repository metadata checks. |
+| `GITHUB_SERVER_URL` | GitHub server URL recognized for repository metadata checks when `GH_HOST` is not set. |
+| `GH_ENTERPRISE_TOKEN` | Token used to request repository metadata from a recognized GitHub Enterprise Server host. Takes precedence over `GITHUB_ENTERPRISE_TOKEN`. |
+| `GITHUB_ENTERPRISE_TOKEN` | Token used for a recognized GitHub Enterprise Server host when `GH_ENTERPRISE_TOKEN` is not set. |
 
 ## Extension Configuration
 
@@ -158,7 +209,8 @@ specific version of the tool installed on the machine.
 | `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
-| `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd agent init` for code-deploy scenarios (where no container image is built). |
+| `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd ai agent init` for code-deploy, pre-built image, and managed voice scenarios. |
+| `AZD_AI_AGENT_MANIFEST_PARAMETER_<NAME>` | Supplies a value for the `<NAME>` agent manifest parameter. When unset, init uses the declared default, the first enum value, or an empty value for optional parameters; unresolved required parameters fail. |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
@@ -182,7 +234,7 @@ specific version of the tool installed on the machine.
 | Variable | Description |
 | --- | --- |
 | `AZURE_DEV_COLLECT_TELEMETRY` | If false, disables telemetry collection. Telemetry is enabled by default. |
-| `AZURE_DEV_USER_AGENT` | Appends a custom string to the `User-Agent` header sent with Azure requests. |
+| `AZURE_DEV_USER_AGENT` | Appends a custom string to the `User-Agent` header sent with Azure requests. It is also inspected for [AI agent detection](#ai-agent-detection) using case-insensitive substring matching. |
 | `TRACEPARENT` | The W3C Trace Context `traceparent` header for distributed tracing. Automatically set by `azd` on extension processes for trace propagation. Not typically set by users. |
 | `TRACESTATE` | The W3C Trace Context `tracestate` header for vendor-specific trace data. Automatically set by `azd` alongside `TRACEPARENT`. Not typically set by users. |
 
@@ -268,6 +320,7 @@ These variables are used by the Terraform provider integration to authenticate w
 | `AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES` | If true, ignores unsupported resources in Aspire app host. |
 | `AZD_DEBUG_SERVER_DEBUG_ENDPOINTS` | If true, enables debug endpoints in server mode. |
 | `AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT` | Overrides the experimentation TAS endpoint URL. |
+| `AZD_DISABLE_AGENT_DETECT` | If set to any non-empty value, disables AI agent detection. Used by tests and tooling that need interactive behavior. |
 | `AZD_SUBSCRIPTIONS_FETCH_MAX_CONCURRENCY` | Limits the maximum concurrency when fetching subscriptions. |
 | `DEPLOYMENT_STACKS_BYPASS_STACK_OUT_OF_SYNC_ERROR` | If true, bypasses Deployment Stacks out-of-sync errors. |
 

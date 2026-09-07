@@ -198,7 +198,7 @@ policies:
 		require.NotNil(t, out.Policies)
 		require.NotNil(t, out.Policies.RaiConfig)
 		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.RaiPolicyName)
-		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.resolvedPolicyName())
+		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.ResolvedPolicyName())
 	})
 
 	// The friendlier `name` alias also resolves, but is not the wire field.
@@ -217,18 +217,18 @@ policies:
 		require.NotNil(t, out.Policies.RaiConfig)
 		assert.Equal(t, "", out.Policies.RaiConfig.RaiPolicyName)
 		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.Name)
-		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.resolvedPolicyName())
+		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.ResolvedPolicyName())
 	})
 
 	// rai_policy_name wins over name when both are set.
 	t.Run("rai_policy_name wins over name alias", func(t *testing.T) {
 		spec := &toolboxRaiConfigSpec{RaiPolicyName: "wire", Name: "alias"}
-		assert.Equal(t, "wire", spec.resolvedPolicyName())
+		assert.Equal(t, "wire", spec.ResolvedPolicyName())
 	})
 
 	// Empty/whitespace-only fields return "" so the create flow can reject.
 	t.Run("empty resolves to empty string", func(t *testing.T) {
 		spec := &toolboxRaiConfigSpec{RaiPolicyName: "  "}
-		assert.Equal(t, "", spec.resolvedPolicyName())
+		assert.Equal(t, "", spec.ResolvedPolicyName())
 	})
 }

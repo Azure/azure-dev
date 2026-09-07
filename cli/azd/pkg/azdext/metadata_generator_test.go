@@ -269,6 +269,7 @@ func TestGenerateExtensionMetadata_FlagTypes(t *testing.T) {
 	boolFlag := findFlag(flags, "bool-flag")
 	require.NotNil(t, boolFlag)
 	assert.Equal(t, "bool", boolFlag.Type)
+	assert.False(t, boolFlag.ValueOptional)
 
 	intFlag := findFlag(flags, "int-flag")
 	require.NotNil(t, intFlag)
@@ -281,6 +282,21 @@ func TestGenerateExtensionMetadata_FlagTypes(t *testing.T) {
 	intSliceFlag := findFlag(flags, "int-slice-flag")
 	require.NotNil(t, intSliceFlag)
 	assert.Equal(t, "intArray", intSliceFlag.Type)
+}
+
+func TestGenerateExtensionMetadata_OptionalFlagValue(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "test-ext"}
+	testCmd := &cobra.Command{Use: "test"}
+	testCmd.Flags().String("infra", "", "Infrastructure provider")
+	testCmd.Flags().Lookup("infra").NoOptDefVal = "bicep"
+	rootCmd.AddCommand(testCmd)
+
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
+
+	require.Len(t, metadata.Commands, 1)
+	infraFlag := findFlag(metadata.Commands[0].Flags, "infra")
+	require.NotNil(t, infraFlag)
+	assert.True(t, infraFlag.ValueOptional)
 }
 
 // Helper function to find a flag by name

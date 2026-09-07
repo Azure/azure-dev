@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -77,6 +78,21 @@ name: voice-agent
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoice_RejectsToolbox(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+toolbox:
+  name: support-tools
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "toolbox is not supported for a prompt-voice agent") {
+		t.Fatalf("expected unsupported toolbox error, got: %v", err)
+	}
+}
+
 func TestValidateAgentDefinition_PromptVoice_BlankModelID(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
@@ -116,5 +132,200 @@ model_type: unsupported
 	err := ValidateAgentDefinition(yamlContent)
 	if err == nil || !strings.Contains(err.Error(), "model_type 'unsupported' is not supported") {
 		t.Fatalf("expected invalid model_type error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoice_RejectsParallelToolCalls(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+parallel_tool_calls: true
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "parallel_tool_calls is not currently supported") {
+		t.Fatalf("expected parallel_tool_calls validation error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoice_RejectsZeroTurnDetectionThreshold(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+audio:
+  input:
+    turn_detection:
+      type: azure_semantic_vad
+      threshold: 0
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "threshold must be greater than 0") {
+		t.Fatalf("expected threshold validation error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoice_InvalidIncludeTranscriptionModel(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+audio:
+  input:
+    transcription:
+      model: whisper-1
+include:
+  - item.input_audio_transcription.phrases
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil {
+		t.Fatal("expected include/transcription validation error")
+	}
+	if !strings.Contains(err.Error(), "azure-speech") || !strings.Contains(err.Error(), "azure-fast-transcription") {
+		t.Fatalf("expected transcription model guidance in error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoice_AdvancedValidationBoundaries(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "unsupported format",
+			yaml: `audio:
+  input:
+    format:
+      type: audio/opus`,
+			want: "audio/pcm",
+		},
+		{
+			name: "invalid rate",
+			yaml: `audio:
+  input:
+    format:
+      type: audio/pcm
+      rate: 0`,
+			want: "rate must be greater than 0",
+		},
+		{
+			name: "negative duration",
+			yaml: `audio:
+  input:
+    turn_detection:
+      type: azure_semantic_vad
+      speech_duration_ms: -1`,
+			want: "speech_duration_ms must be >= 0",
+		},
+		{
+			name: "nan threshold",
+			yaml: `audio:
+  input:
+    turn_detection:
+      type: azure_semantic_vad
+      threshold: .nan`,
+			want: "threshold must be greater than 0",
+		},
+		{
+			name: "blank voice name",
+			yaml: `audio:
+  output:
+    voice:
+      type: azure_standard
+      name: ""`,
+			want: "voice.name must not be blank",
+		},
+		{
+			name: "invalid speed",
+			yaml: `audio:
+  output:
+    speed: 2`,
+			want: "speed must be between 0.25 and 1.5",
+		},
+		{
+			name: "nan speed",
+			yaml: `audio:
+  output:
+    speed: .nan`,
+			want: "speed must be between 0.25 and 1.5",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			yamlContent := []byte("kind: prompt-voice\nname: voice-agent\nmodel:\n  id: gpt-realtime\n" + tt.yaml + "\n")
+			err := ValidateAgentDefinition(yamlContent)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q validation error, got: %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoice_MaxOutputTokensValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		valueYaml string
+		wantErr   bool
+	}{
+		{name: "string inf", valueYaml: "inf", wantErr: false},
+		{name: "padded string inf", valueYaml: `" inf "`, wantErr: true},
+		{name: "unsupported string", valueYaml: "unlimited", wantErr: true},
+		{name: "integer", valueYaml: "4096", wantErr: false},
+		{name: "zero", valueYaml: "0", wantErr: true},
+		{name: "negative", valueYaml: "-1", wantErr: true},
+		{name: "int32 max", valueYaml: "2147483647", wantErr: false},
+		{name: "above int32 max", valueYaml: "2147483648", wantErr: true},
+		{name: "integer valued float", valueYaml: "4096.0", wantErr: false},
+		{name: "empty string", valueYaml: `""`, wantErr: true},
+		{name: "non integer float", valueYaml: "1.5", wantErr: true},
+		{name: "non finite positive infinity", valueYaml: ".inf", wantErr: true},
+		{name: "non finite negative infinity", valueYaml: "-.inf", wantErr: true},
+		{name: "not a number", valueYaml: ".nan", wantErr: true},
+		{name: "bool", valueYaml: "true", wantErr: true},
+		{name: "array", valueYaml: "[1]", wantErr: true},
+		{name: "object", valueYaml: "{ value: 1 }", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			yamlContent := fmt.Appendf(nil, `
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+max_output_tokens: %s
+`, tt.valueYaml)
+			err := ValidateAgentDefinition(yamlContent)
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "max_output_tokens") {
+					t.Fatalf("expected max_output_tokens validation error, got: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected valid max_output_tokens, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoice_ValidIncludeTranscriptionModel(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: gpt-realtime
+audio:
+  input:
+    transcription:
+      model: azure-speech
+include:
+  - item.input_audio_transcription.phrases
+`)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected azure-speech include config to be valid, got: %v", err)
 	}
 }

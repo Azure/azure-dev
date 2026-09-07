@@ -78,6 +78,41 @@ func TestPipeline_DeploymentErrorLine_QuotaNestedInDeployment(t *testing.T) {
 	assert.Equal(t, "Quota insufficient.", result.Message)
 }
 
+func TestSuggestions_InsufficientQuota_CognitiveServicesAccount(t *testing.T) {
+	deployErr := NewAzureDeploymentError(
+		"Deployment Failed",
+		`{"error":{"code":"DeploymentFailed","details":[`+
+			`{"code":"InsufficientQuota","message":"Cannot create/update/move resource 'ai-account'."}]}}`,
+		DeploymentOperationDeploy,
+	)
+	require.NotNil(t, deployErr.Details)
+	require.Len(t, deployErr.Details.Inner, 1)
+	require.Len(t, deployErr.Details.Inner[0].Inner, 1)
+	deployErr.Details.Inner[0].Inner[0].ResourceType = "Microsoft.CognitiveServices/accounts"
+
+	result := errorhandler.NewErrorHandlerPipeline(nil).Process(t.Context(), deployErr)
+
+	require.NotNil(t, result)
+	assert.Contains(t, result.Suggestion, "az cognitiveservices usage list --location <region>")
+	assert.NotContains(t, result.Suggestion, "az vm list-usage")
+}
+
+func TestSuggestions_InsufficientQuota_GenericDoesNotUseVMUsage(t *testing.T) {
+	deployErr := NewAzureDeploymentError(
+		"Deployment Failed",
+		`{"error":{"code":"DeploymentFailed","details":[`+
+			`{"code":"InsufficientQuota","message":"Cannot create/update/move resource 'storage'."}]}}`,
+		DeploymentOperationDeploy,
+	)
+
+	result := errorhandler.NewErrorHandlerPipeline(nil).Process(t.Context(), deployErr)
+
+	require.NotNil(t, result)
+	assert.NotContains(t, result.Suggestion, "az vm list-usage")
+	assert.NotContains(t, result.Suggestion, "az cognitiveservices usage list")
+	assert.Contains(t, result.Suggestion, "affected resource provider")
+}
+
 func TestPipeline_DeploymentErrorLine_ConflictWithKeyword(t *testing.T) {
 	// DeploymentFailed > Conflict with "soft-deleted" in message
 	deployErr := NewAzureDeploymentError(

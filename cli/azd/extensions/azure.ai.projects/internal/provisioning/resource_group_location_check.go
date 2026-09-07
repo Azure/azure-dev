@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/azure"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -93,16 +94,12 @@ func (c *ResourceGroupLocationCheck) Validate(
 		return empty, nil
 	}
 
-	// Skip brownfield (bring-your-own) projects. When the Foundry service sets
-	// `endpoint:`, the microsoft.foundry provider connects to that existing
-	// project and provisions nothing — it creates no resource group and derives
-	// its target from AZURE_AI_PROJECT_ID, ignoring AZURE_RESOURCE_GROUP. Running
-	// this check there would compare AZURE_LOCATION against an unrelated, stale
-	// resource group of the same name and could wrongly block provisioning while
-	// suggesting the deletion of a resource group that has nothing to do with the
-	// deployment.
+	// Existing projects only create a resource group when azd owns an adjunct ACR.
 	if c.isBrownfieldFoundryProject(ctx) {
-		return empty, nil
+		if !c.existingProjectCreatesResourceGroup(ctx) {
+			return empty, nil
+		}
+		usesFoundryLayer = true
 	}
 
 	envClient := c.azdClient.Environment()
@@ -174,6 +171,74 @@ func (c *ResourceGroupLocationCheck) Validate(
 		subscriptionID,
 		resourceGroupKey,
 	), nil
+}
+
+func (c *ResourceGroupLocationCheck) existingProjectCreatesResourceGroup(ctx context.Context) bool {
+	current, err := c.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || current.GetEnvironment().GetName() == "" {
+		return false
+	}
+	envName := current.GetEnvironment().GetName()
+	mode := envValueOrEmpty(ctx, c.azdClient.Environment(), envName, "AZD_FOUNDRY_ACR_MODE")
+	if mode != "" {
+		return strings.EqualFold(mode, "create")
+	}
+	if envValueOrEmpty(ctx, c.azdClient.Environment(), envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT") != "" ||
+		envValueOrEmpty(ctx, c.azdClient.Environment(), envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID") != "" {
+		return false
+	}
+
+	project, err := c.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || project.GetProject().GetPath() == "" {
+		return false
+	}
+	projectPath := project.GetProject().GetPath()
+	rawYAML, _, err := readProjectFile(projectPath)
+	if err != nil {
+		return false
+	}
+	serviceName, err := findFoundryProjectService(rawYAML)
+	if err != nil {
+		return false
+	}
+	environment := readEnvironmentValues(
+		ctx,
+		c.azdClient.Environment(),
+		envName,
+	)
+	result, err := synthesis.SynthesizeExistingProject(synthesis.Input{
+		RawAzureYAML:  rawYAML,
+		ServiceName:   serviceName,
+		AcceptedHosts: FoundryProvisioningServiceHosts,
+		Env:           environment,
+		ProjectRoot:   projectPath,
+	})
+	if err != nil {
+		return false
+	}
+	includeAcr, _ := result.Parameters["includeAcr"].(bool)
+	return includeAcr
+}
+
+func readEnvironmentValues(
+	ctx context.Context,
+	envClient azdext.EnvironmentServiceClient,
+	envName string,
+) map[string]string {
+	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: envName,
+	})
+	if err != nil {
+		return nil
+	}
+
+	values := make(map[string]string, len(resp.GetKeyValues()))
+	for _, keyValue := range resp.GetKeyValues() {
+		if keyValue != nil {
+			values[keyValue.Key] = keyValue.Value
+		}
+	}
+	return values
 }
 
 // armResourceGroupLocation is the production resourceGroupLocationLookup. It

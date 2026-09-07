@@ -6,7 +6,6 @@ package cmd
 import (
 	"io"
 	"os"
-	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -187,22 +186,41 @@ func TestAgentDetectionIntegration(t *testing.T) {
 		name             string
 		args             []string
 		envVars          map[string]string
+		terminal         bool
 		expectedNoPrompt bool
 		description      string
 	}{
 		{
 			name:             "Claude Code agent enables no-prompt automatically",
 			args:             []string{"version"},
-			envVars:          map[string]string{"CLAUDE_CODE": "1"},
+			envVars:          map[string]string{"CLAUDECODE": "1"},
 			expectedNoPrompt: true,
 			description:      "When running under Claude Code, --no-prompt should be auto-enabled",
 		},
 		{
-			name:             "GitHub Copilot CLI enables no-prompt automatically",
+			name: "Inherited Claude Code marker remains interactive in a terminal",
+			args: []string{"version"},
+			envVars: map[string]string{
+				"CLAUDECODE":             "1",
+				"CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+			},
+			terminal:         true,
+			expectedNoPrompt: false,
+			description:      "An inherited Claude Code marker should not disable prompts in a terminal",
+		},
+		{
+			name:             "Codex enables no-prompt automatically",
 			args:             []string{"deploy"},
-			envVars:          map[string]string{"GITHUB_COPILOT_CLI": "true"},
+			envVars:          map[string]string{"CODEX_THREAD_ID": "thread-id"},
 			expectedNoPrompt: true,
-			description:      "When running under GitHub Copilot CLI, --no-prompt should be auto-enabled",
+			description:      "When running under Codex, --no-prompt should be auto-enabled",
+		},
+		{
+			name:             "Cursor enables no-prompt automatically",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"CURSOR_AGENT": "1"},
+			expectedNoPrompt: true,
+			description:      "When running under Cursor, --no-prompt should be auto-enabled",
 		},
 		{
 			name:             "GitHub Copilot CLI via COPILOT_CLI enables no-prompt automatically",
@@ -235,7 +253,7 @@ func TestAgentDetectionIntegration(t *testing.T) {
 		{
 			name:             "User can override agent detection with --no-prompt=false",
 			args:             []string{"--no-prompt=false", "up"},
-			envVars:          map[string]string{"CLAUDE_CODE": "1"},
+			envVars:          map[string]string{"CLAUDECODE": "1"},
 			expectedNoPrompt: false,
 			description:      "Explicit --no-prompt=false should override agent detection",
 		},
@@ -280,7 +298,9 @@ func TestAgentDetectionIntegration(t *testing.T) {
 
 			// Parse global flags as would happen in real execution
 			opts := &internal.GlobalCommandOptions{}
-			err := ParseGlobalFlags(tt.args, opts)
+			err := parseGlobalFlags(tt.args, opts, func(uintptr, uintptr) bool {
+				return tt.terminal
+			})
 			require.NoError(t, err, "ParseGlobalFlags should not error: %s", tt.description)
 
 			assert.Equal(t, tt.expectedNoPrompt, opts.NoPrompt,
@@ -288,7 +308,7 @@ func TestAgentDetectionIntegration(t *testing.T) {
 
 			// Verify agent detection status matches expectation
 			agent := agentdetect.GetCallingAgent()
-			if tt.expectedNoPrompt && len(tt.envVars) > 0 && !containsNoPromptFalse(tt.args) {
+			if len(tt.envVars) > 0 {
 				assert.True(t, agent.Detected,
 					"Agent should be detected when agent env vars are set: %s", tt.description)
 			}
@@ -297,11 +317,6 @@ func TestAgentDetectionIntegration(t *testing.T) {
 			agentdetect.ResetDetection()
 		})
 	}
-}
-
-// containsNoPromptFalse checks if args contain --no-prompt=false
-func containsNoPromptFalse(args []string) bool {
-	return slices.Contains(args, "--no-prompt=false")
 }
 
 // clearAgentEnvVarsForTest clears all environment variables that could trigger agent detection
@@ -313,15 +328,19 @@ func clearAgentEnvVarsForTest(t *testing.T) {
 		// GitHub Copilot hosts
 		"AI_AGENT",
 		// Claude Code
-		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
+		"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
+		// Codex
+		"CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "CODEX_CI", "CODEX_THREAD_ID", "CODEX_SESSION_ID",
+		// Cursor
+		"CURSOR_AGENT", "CURSOR_CONVERSATION_ID",
 		// GitHub Copilot CLI
-		"GITHUB_COPILOT_CLI", "GH_COPILOT", "COPILOT_CLI",
+		"COPILOT_CLI",
 		// Gemini CLI
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		// OpenCode
 		"OPENCODE",
-		// Non-interactive env var
-		"AZD_NON_INTERACTIVE",
+		// Terminal and non-interactive overrides
+		"AZD_FORCE_TTY", "AZD_NON_INTERACTIVE",
 		// User agent
 		internal.AzdUserAgentEnvVar,
 		// CI/CD providers (see internal/tracing/resource/ci.go). Cleared so that a suite running

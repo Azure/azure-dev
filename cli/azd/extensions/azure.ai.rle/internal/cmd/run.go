@@ -85,8 +85,10 @@ func (a *localRunAction) Run() error {
 		return err
 	}
 	defer func() {
-		if err := stopLocalContainer(a.cmd, state.Name); err != nil {
+		if err := stopLocalContainer(a.cmd, state.EnvironmentName); err != nil {
 			_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to stop local container: %v\n", err)
+		} else {
+			_, _ = fmt.Fprintln(a.cmd.ErrOrStderr(), "Local runtime container stopped successfully.")
 		}
 	}()
 
@@ -156,7 +158,7 @@ func ensureLocalContainerEndpoint(cmd *cobra.Command, flags *localRunFlags) (str
 	}
 
 	image := localRuntimeImageForRun(flags, state)
-	container := localContainerName(state.Name)
+	container := localContainerName(state.EnvironmentName)
 	baseUrl := fmt.Sprintf("http://localhost:%d", port)
 
 	if running, exists := project.ContainerStatus(cmd.Context(), container); exists {
@@ -243,7 +245,7 @@ func localPortSuggestion(port int) string {
 
 func stopLocalContainer(cmd *cobra.Command, environmentName string) error {
 	container := localContainerName(environmentName)
-	return project.RunDocker(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), "rm", "-f", container)
+	return project.RunDocker(cmd.Context(), io.Discard, cmd.ErrOrStderr(), "rm", "-f", container)
 }
 
 func loadLocalRunState(flags *localRunFlags, output io.Writer) (rleState, error) {
@@ -254,23 +256,32 @@ func loadLocalRunState(flags *localRunFlags, output io.Writer) (rleState, error)
 			return rleState{}, err
 		}
 		state = defaultRleState(defaultSourceName(flags.source))
-		if _, err := fmt.Fprintf(output, "No %s found; using current folder as the RLE source.\n", rleStateFile); err != nil {
+		if _, err := fmt.Fprintf(
+			output,
+			"No %s found; using current folder as the RLE source.\n",
+			rleStateFile,
+		); err != nil {
 			return rleState{}, err
 		}
 		if err := saveRleState(state); err != nil {
 			return rleState{}, err
 		}
-		if _, err := fmt.Fprintf(output, "Created %s with name %q.\n", rleStateFile, state.Name); err != nil {
+		if _, err := fmt.Fprintf(
+			output,
+			"Created %s with environment name %q.\n",
+			rleStateFile,
+			state.EnvironmentName,
+		); err != nil {
 			return rleState{}, err
 		}
 	}
 
-	state.Name = firstNonEmpty(state.Name, defaultSourceName(flags.source))
+	state.EnvironmentName = firstNonEmpty(state.EnvironmentName, defaultSourceName(flags.source))
 	return state, nil
 }
 
 func localRuntimeImageForRun(flags *localRunFlags, state rleState) string {
-	return project.Slug(firstNonEmpty(state.Name, defaultSourceName(flags.source))) + ":local"
+	return project.Slug(firstNonEmpty(state.EnvironmentName, defaultSourceName(flags.source))) + ":local"
 }
 
 func defaultSourceName(source string) string {

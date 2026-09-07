@@ -72,7 +72,7 @@ Exit codes:
 				Unredacted: flags.unredacted,
 			}
 
-			report, err := runAndRenderDoctorText(ctx, deps, opts, azdClient, os.Stdout, debug)
+			report, err := runAndRenderDoctorText(ctx, deps, opts, os.Stdout, debug)
 			if err != nil {
 				return err
 			}
@@ -109,7 +109,6 @@ func runAndRenderDoctorText(
 	ctx context.Context,
 	deps doctor.Dependencies,
 	opts doctor.Options,
-	azdClient *azdext.AzdClient,
 	w io.Writer,
 	debug bool,
 ) (doctor.Report, error) {
@@ -122,7 +121,6 @@ func runAndRenderDoctorText(
 		ctx,
 		deps,
 		opts,
-		azdClient,
 		func(result doctor.Result) error {
 			return renderer.writeCheck(result)
 		},
@@ -142,9 +140,11 @@ func runDoctorWithObserver(
 	ctx context.Context,
 	deps doctor.Dependencies,
 	opts doctor.Options,
-	azdClient *azdext.AzdClient,
 	observer doctor.ResultObserver,
 ) (doctor.Report, []nextstep.Suggestion, error) {
+	if deps.StateCache == nil {
+		deps.StateCache = doctor.NewStateCache()
+	}
 	// Keep local checks first so remote checks can inspect their prior
 	// results for skip-cascade decisions.
 	checks := append(doctor.NewLocalChecks(deps), doctor.NewRemoteChecks(deps)...)
@@ -160,20 +160,20 @@ func runDoctorWithObserver(
 		return report, nil, nil
 	}
 
-	trailing := resolveDoctorTrailing(ctx, azdClient)
+	trailing := resolveDoctorTrailing(ctx, deps)
 	return report, trailing, nil
 }
 
 // resolveDoctorTrailing returns the doctor's trailing Next block, or nil on
 // error. It chooses deployed-agent suggestions when any service is deployed;
 // otherwise it reuses the post-init guidance.
-func resolveDoctorTrailing(ctx context.Context, azdClient *azdext.AzdClient) []nextstep.Suggestion {
-	if azdClient == nil {
+func resolveDoctorTrailing(ctx context.Context, deps doctor.Dependencies) []nextstep.Suggestion {
+	if deps.AzdClient == nil {
 		return nil
 	}
 
-	state, _ := nextstep.AssembleStateFromSource(ctx, nextstep.NewSource(azdClient))
-	if len(state.Services) == 0 {
+	state, _ := deps.AssembleAgentState(ctx)
+	if state == nil || len(state.Services) == 0 {
 		// Avoid repeating the missing-service guidance already reported by
 		// `local.agent-service-detected`.
 		return nil
@@ -184,12 +184,12 @@ func resolveDoctorTrailing(ctx context.Context, azdClient *azdext.AzdClient) []n
 		// stay copy-paste correct.
 		return nextstep.ResolveAfterDeploy(
 			filterDeployedServices(state),
-			doctorCachedPayload(ctx, azdClient),
-			readmeExistsForProject(ctx, azdClient),
+			doctorCachedPayload(ctx, deps.AzdClient),
+			readmeExistsForProject(ctx, deps.AzdClient),
 		)
 	}
 
-	return nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, azdClient))
+	return nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, deps.AzdClient))
 }
 
 func anyServiceDeployed(services []nextstep.ServiceState) bool {

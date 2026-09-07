@@ -1570,7 +1570,7 @@ func TestEjectInfra_EjectsConnectionServices(t *testing.T) {
 	// Connection metadata and credentials are ejected separately.
 	// Bicep keeps credential values in a secure object parameter.
 	dir := t.TempDir()
-	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+	config := `name: my-project
 services:
   my-foundry:
     host: azure.ai.project
@@ -1592,7 +1592,9 @@ services:
     credentials:
       keys:
         x-api-key: ${MCP_KEY}
-`)
+`
+	config = strings.Replace(config, "  mcp-conn:\n", "  mcp-conn:\n    name: '  Private Registry  '\n", 1)
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), config)
 
 	withCapturedStdout(t, func() {
 		require.NoError(t, ejectInfra(dir, "bicep"))
@@ -1628,15 +1630,19 @@ services:
 	// optional(any) value can preserve mixed connection credential shapes.
 	mcpConn, ok := conns[0].(map[string]any)
 	require.True(t, ok, "connection entry should be an object, got %T", conns[0])
-	assert.Equal(t, "mcp-conn", mcpConn["name"])
+	assert.Equal(t, "Private Registry", mcpConn["name"])
 	assert.NotContains(t, mcpConn, "credentials")
 
 	secureCreds, ok := doc.Parameters["connectionCredentials"].Value.(map[string]any)
 	require.True(t, ok, "connectionCredentials should be an object")
-	searchCreds := secureCreds["search-conn"].(map[string]any)
+	searchCreds, ok := secureCreds["search-conn"].(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, "${SEARCH_API_KEY}", searchCreds["key"])
-	mcpCreds := secureCreds["mcp-conn"].(map[string]any)
-	keys := mcpCreds["keys"].(map[string]any)
+	assert.NotContains(t, secureCreds, "mcp-conn")
+	mcpCreds, ok := secureCreds["Private Registry"].(map[string]any)
+	require.True(t, ok)
+	keys, ok := mcpCreds["keys"].(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
 }
 

@@ -72,12 +72,12 @@ type bicepCompiler interface {
 type onDiskEnvironment struct {
 	project           map[string]string
 	services          map[string]map[string]string
-	scopedConnections map[string]bool
+	scopedConnections map[string]string // Connection resource name -> service key
 }
 
 func (e onDiskEnvironment) connection(name string) map[string]string {
-	if e.scopedConnections[name] {
-		return e.services[name]
+	if serviceKey, scoped := e.scopedConnections[name]; scoped {
+		return e.services[serviceKey]
 	}
 	return e.project
 }

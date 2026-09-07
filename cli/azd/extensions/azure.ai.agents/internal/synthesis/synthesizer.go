@@ -117,9 +117,10 @@ type DeploymentSku struct {
 }
 
 // Connection mirrors the connectionType in modules/connections.bicep: the
-// synthesized shape of a host: azure.ai.connection service, where the service
-// key becomes Name. Credentials, metadata, OAuth settings, and identity audience
-// pass through so every supported authentication type can be expressed.
+// synthesized shape of a host: azure.ai.connection service. Name is the trimmed
+// payload name, falling back to the service key. Credentials, metadata, OAuth
+// settings, and identity audience pass through so every supported authentication
+// type can be expressed.
 type Connection struct {
 	Name             string            `yaml:"name" json:"name"`
 	Category         string            `yaml:"category" json:"category"`
@@ -176,10 +177,11 @@ func JoinConnectionCredentials(
 }
 
 // connectionService is the subset of a host: azure.ai.connection service body
-// the synthesizer reads. The service key (not a body field) is the connection
-// name; see collectConnections.
+// the synthesizer reads. The payload name overrides the service key, matching
+// the owning extension's deploy target.
 type connectionService struct {
 	Host             string            `yaml:"host"`
+	Name             string            `yaml:"name,omitempty"`
 	Category         string            `yaml:"category,omitempty"`
 	Target           string            `yaml:"target,omitempty"`
 	AuthType         string            `yaml:"authType,omitempty"`
@@ -191,6 +193,13 @@ type connectionService struct {
 	RefreshURL       string            `yaml:"refreshUrl,omitempty"`
 	Scopes           []string          `yaml:"scopes,omitempty"`
 	ConnectorName    string            `yaml:"connectorName,omitempty"`
+}
+
+func (s connectionService) connectionName(serviceKey string) string {
+	if name := strings.TrimSpace(s.Name); name != "" {
+		return name
+	}
+	return serviceKey
 }
 
 // aiConnectionHost is the host: value that marks a service as a Foundry
@@ -428,15 +437,15 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 	}, NetworkMode: NetworkModeNone}, nil
 }
 
-// ConnectionEnvironmentScopes returns enabled connection services
-// that declare env. An empty env block still establishes an
-// isolated service scope. Disabled connections are omitted so
-// on-disk Bicep does not treat them as managed inputs.
+// ConnectionEnvironmentScopes maps resource names to the service keys of enabled
+// connections that declare env. On-disk parameters use resource names, whereas
+// core-expanded environments use service keys. Empty env blocks still establish
+// isolated scopes; disabled connections are omitted.
 func ConnectionEnvironmentScopes(
 	raw []byte,
 	projectRoot string,
 	env map[string]string,
-) (map[string]bool, error) {
+) (map[string]string, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
 	}
@@ -446,14 +455,18 @@ func ConnectionEnvironmentScopes(
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
-	scopes := map[string]bool{}
+	scopes := map[string]string{}
 	err := visitEnabledConnectionServices(
 		root.Services,
 		projectRoot,
 		env,
 		func(name string, node yaml.Node) error {
 			if connectionEnvDeclared(node) {
-				scopes[name] = true
+				var svc connectionService
+				if err := node.Decode(&svc); err != nil {
+					return fmt.Errorf("services.%s: decode connection: %w", name, err)
+				}
+				scopes[svc.connectionName(name)] = name
 			}
 			return nil
 		},
@@ -790,9 +803,8 @@ func agentNeedsAcr(a agentBlock) bool {
 }
 
 // collectConnections scans enabled host: azure.ai.connection services
-// (the service key is the connection name) and returns them sorted by
-// name so the synthesized parameter is deterministic regardless of
-// YAML map order. Disabled services are omitted before payload
+// and returns them sorted by resolved resource name so the synthesized
+// parameter is deterministic regardless of YAML map order. Disabled services are omitted before payload
 // expansion so their ${VAR} values cannot fail provision.
 //
 // Provisioning resolves ${VAR} from service env when present.
@@ -882,7 +894,7 @@ func collectConnections(
 				)
 			}
 			connections = append(connections, Connection{
-				Name:             name,
+				Name:             svc.connectionName(name),
 				Category:         svc.Category,
 				Target:           target,
 				AuthType:         normalizeConnectionAuthType(svc.AuthType),

@@ -209,10 +209,10 @@ func TestLoadOnDiskTemplate_ConnectionServiceScopes(t *testing.T) {
 					"KEY":      "second-key",
 				},
 			},
-			scopedConnections: map[string]bool{
-				"first":    true,
-				"second":   true,
-				"isolated": true,
+			scopedConnections: map[string]string{
+				"first":    "first",
+				"second":   "second",
+				"isolated": "isolated",
 			},
 		},
 	)

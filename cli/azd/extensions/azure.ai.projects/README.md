@@ -44,6 +44,12 @@ Split `host: azure.ai.connection` services are reconciled during deploy by the
 template. Ejected or user-owned infrastructure retains its existing Connection
 inputs for compatibility.
 
+For those infrastructure inputs, a Connection's trimmed payload `name` takes
+precedence over its service key, matching the Connections deploy target. When
+`name` is omitted or blank, the service key is used. Credential parameters use
+the same resolved resource name; service-scoped environment values still come
+from the corresponding `azure.yaml` service key.
+
 When provisioning reports insufficient Cognitive Services quota, check usage for the target region with
 `az cognitiveservices usage list --location <region>` or request a quota increase in the Azure portal. If an
 existing Foundry project should be reused instead, configure its endpoint and set `AZURE_AI_PROJECT_ID` to the

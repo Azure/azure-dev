@@ -78,7 +78,7 @@ type FoundryProvisioningProvider struct {
 	virtualEnv                  map[string]string
 	synthResult                 *synthesis.Result // nil when onDiskSource != nil
 	serviceEnvironments         map[string]map[string]string
-	connectionEnvironmentScopes map[string]bool
+	connectionEnvironmentScopes map[string]string // Connection resource name -> service key
 	envName                     string
 	subID                       string
 	location                    string

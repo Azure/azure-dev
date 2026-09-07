@@ -695,9 +695,9 @@ services:
 			nil,
 		)
 		require.NoError(t, err)
-		assert.Equal(t, map[string]bool{
-			"populated": true,
-			"empty":     true,
+		assert.Equal(t, map[string]string{
+			"populated": "populated",
+			"empty":     "empty",
 		}, scopes)
 	})
 

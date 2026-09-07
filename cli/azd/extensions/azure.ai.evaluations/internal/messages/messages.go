@@ -612,6 +612,87 @@ func SelectDataSourcePrompt() string {
 	return "Select a data source:"
 }
 
+// ScaffoldSummaryHeading opens the block the confirmation is asked about.
+func ScaffoldSummaryHeading() string {
+	return "\nEvaluation configuration\n\n"
+}
+
+// ScaffoldSummaryLine is one settled value, in a column a reader can scan.
+func ScaffoldSummaryLine(label, value string) string {
+	return fmt.Sprintf("  %-18s %s\n", label+":", value)
+}
+
+// ScaffoldSummaryEvaluators lists what the eval will grade with.
+func ScaffoldSummaryEvaluators(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("  Evaluators:\n")
+	for _, name := range names {
+		fmt.Fprintf(&b, "    - %s\n", name)
+	}
+	return b.String()
+}
+
+// ScaffoldSummaryFiles states the file changes rather than implying them.
+//
+// The reader is being asked to approve two edits, and one of them is to a file
+// they did not name. Listing both is what makes the answer informed.
+func ScaffoldSummaryFiles(configPath, rootConfig string, addsService bool) string {
+	var b strings.Builder
+	b.WriteString("  Files:\n")
+	fmt.Fprintf(&b, "    %-24s add evaluation\n", configPath)
+	if addsService {
+		fmt.Fprintf(&b, "    %-24s add evaluation service\n", rootConfig)
+	} else {
+		fmt.Fprintf(&b, "    %-24s unchanged (evaluation service already exists)\n", rootConfig)
+	}
+	return b.String()
+}
+
+// TraceWindowSummary says how far back the eval reads, in the words the prompt
+// offered rather than the hours the file records.
+func TraceWindowSummary(lookbackHours int) string {
+	switch {
+	case lookbackHours <= 0:
+		return "service default"
+	case lookbackHours == 24:
+		return "last 24 hours"
+	case lookbackHours%24 == 0:
+		return fmt.Sprintf("last %d days", lookbackHours/24)
+	default:
+		return fmt.Sprintf("last %d hours", lookbackHours)
+	}
+}
+
+// ConfirmScaffoldPrompt asks whether to write what the summary described.
+func ConfirmScaffoldPrompt(configPath string) string {
+	return fmt.Sprintf("Add this evaluation to %s?", configPath)
+}
+
+// ScaffoldAddChoice writes both files.
+func ScaffoldAddChoice() string { return "Add evaluation" }
+
+// ScaffoldChangeChoice runs the questions again.
+func ScaffoldChangeChoice() string { return "Change selections" }
+
+// ScaffoldCancelChoice writes nothing.
+func ScaffoldCancelChoice() string { return "Cancel" }
+
+// ScaffoldCancelled reports a scaffold nobody approved.
+//
+// It says what was not done rather than exiting silently: the command that
+// writes two files has to be distinguishable from the one that wrote neither.
+func ScaffoldCancelled() string {
+	return "\nCancelled. Nothing was written.\n"
+}
+
+// ConfirmingScaffold reports a failed confirmation prompt.
+func ConfirmingScaffold(err error) error {
+	return fmt.Errorf("confirming the evaluation to add: %w", err)
+}
+
 // DataSourceChoice names one source the way the prompt shows it.
 func DataSourceChoice(source string) string {
 	switch source {

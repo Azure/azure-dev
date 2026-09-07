@@ -181,89 +181,58 @@ func (a *initAction) Run() error {
 	tracesWired := sync.OnceValue(func() bool {
 		return tracesConnected(commandContext(a.cmd))
 	})
-	source, err = settleInitSource(a.cmd, initSourceInput{
-		explicit:       source,
-		maxTracesGiven: a.cmd.Flags().Changed("max-traces"),
-		traceDaysGiven: a.cmd.Flags().Changed("trace-days"),
-		usableDatasets: usableDatasetCount(cfg, evalDir),
-		tracesWired:    tracesWired,
-	})
+	ctx := initContext{
+		cfg:         cfg,
+		azdProject:  azdProject,
+		evalDir:     evalDir,
+		configPath:  configPath,
+		tracesWired: tracesWired,
+	}
+
+	answers, err := a.ask(ctx)
 	if err != nil {
 		return err
 	}
-
-	// The target is what the whole scaffold is named and shaped around,
-	// so it is settled before anything derived from it.
-	target := a.flags.target
-	if target == "" {
-		target, err = resolveAgentTarget(a.cmd, azdProject)
-		if err != nil {
-			return err
-		}
-	}
-	judgeModel := a.flags.judgeModel
-	if judgeModel == "" {
-		judgeModel, err = resolveJudgeModel(a.cmd, azdProject)
-		if err != nil {
-			return err
-		}
-	}
-
-	// A name someone typed is theirs, so a collision is refused rather than
-	// worked around. A name init suggested is init's problem: suggesting one
-	// already taken and then refusing it is the command failing on its own
-	// proposal.
-	evalName := a.flags.evalName
-	if evalName == "" {
-		evalName = uniqueEvalName(cfg, defaultEvalName(target, source))
-	} else if cfg.HasEval(evalName) && !a.flags.force {
-		// Checked before the prompts as well as after them, so a name that is
-		// already taken is reported without asking a question first.
-		return messages.EvalAlreadyDeclared(
-			evalName, filepath.ToSlash(configPath))
-	}
-
-	// A dataset-backed eval needs a dataset that already exists, and refusing
-	// outright ends the first command a developer runs on an error where a
-	// question would do.
-	datasetRef := a.flags.dataset
-	if source != initSourceTraces {
-		datasetRef, err = resolveDataset(a.cmd, cfg, datasetRef)
-		if err != nil {
-			return err
-		}
-	}
-
-	evaluationLevel, err := resolveEvaluationLevel(a.cmd, a.flags.evaluationLevel)
+	serviceName := answers.target + "-evals"
+	wiring, err := planRootEvalService(a.cmd.Context(), serviceName, configPath)
 	if err != nil {
 		return err
 	}
-
-	// Asked, not detected: an eval grades on a set, so there is no
-	// "the only one" to settle on, and which criteria define quality
-	// is the substantive decision in the configuration.
-	evaluators := a.flags.evaluators
-	evaluatorsWereChosen := len(evaluators) > 0
-	if len(evaluators) == 0 {
-		var asked bool
-		evaluators, asked, err = resolveEvaluators(a.cmd, cfg)
+	for {
+		decision, err := confirmScaffold(a.cmd, out, scaffoldSummary{
+			answers:    answers,
+			configPath: configPath,
+			wiring:     wiring,
+			maxTraces:  a.flags.maxTraces,
+		})
 		if err != nil {
 			return err
 		}
-		evaluatorsWereChosen = asked
-	}
-
-	// Only meaningful for a trace-backed eval, and only asked for one: a
-	// dataset-backed scaffold that stopped to ask how far back to read would
-	// be asking about rows it is not going to read.
-	lookbackHours := 0
-	if source == initSourceTraces {
-		lookbackHours, err = resolveTraceWindow(
-			a.cmd, a.flags.traceDays, a.cmd.Flags().Changed("trace-days"))
-		if err != nil {
+		if decision == scaffoldCancel {
+			// Nothing has been written yet, which is the whole point of
+			// asking here rather than after: cancelling leaves both files
+			// exactly as they were.
+			fmt.Fprint(out, messages.ScaffoldCancelled())
+			return nil
+		}
+		if decision == scaffoldAdd {
+			break
+		}
+		if answers, err = a.ask(ctx); err != nil {
 			return err
 		}
+		serviceName = answers.target + "-evals"
 	}
+
+	source = answers.source
+	target := answers.target
+	judgeModel := answers.judgeModel
+	evalName := answers.evalName
+	datasetRef := answers.datasetRef
+	evaluationLevel := answers.evaluationLevel
+	evaluators := answers.evaluators
+	evaluatorsWereChosen := answers.evaluatorsChosen
+	lookbackHours := answers.lookbackHours
 
 	// The read-modify-write starts here, and nothing inside it waits on
 	// a person. The configuration is read again because the copy above
@@ -340,7 +309,6 @@ func (a *initAction) Run() error {
 	// Scaffolding a config azd cannot see is half a step: the eval
 	// service has to be referenced from the root config before any of
 	// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
-	serviceName := target + "-evals"
 	rootWiring, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath)
 	if err != nil {
 		return err
@@ -1102,6 +1070,56 @@ func recordEvalPath(ctx context.Context, path string) {
 	})
 }
 
+// planRootEvalService reports the azure.yaml edit init would make, without
+// making it.
+//
+// The confirmation has to state the change before it happens, and the only way
+// to know whether the service is already there is to look. Every refusal
+// ensureRootEvalService can raise is raised here too, so a scaffold that cannot
+// be wired is refused before the reader is asked to approve it.
+func planRootEvalService(ctx context.Context, serviceName, configPath string) (string, error) {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return "", messages.ConnectingToAzd(err)
+	}
+	defer azdClient.Close()
+
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return "", messages.NoAzdProject()
+	}
+	return rootEvalServiceAction(resp.GetProject(), serviceName, configPath)
+}
+
+// rootEvalServiceAction decides what the project file needs, or refuses.
+//
+// A service already pointing at this configuration is left alone: re-adding it
+// would deploy the same evals twice.
+//
+// Pointing at a different one is not the same thing. Matching on name and host
+// alone reported the wiring present after `init --path` moved the
+// configuration, and `azd up` went on deploying the file that was left behind
+// -- the scaffold the reader was looking at was never deployed.
+func rootEvalServiceAction(
+	proj *azdext.ProjectConfig,
+	serviceName, configPath string,
+) (string, error) {
+	wantRef := refTo(proj.GetPath(), configPath)
+	svc, ok := proj.GetServices()[serviceName]
+	if !ok {
+		return wiringAdded, nil
+	}
+	// AddService assigns into the services map by name, so a service this
+	// extension does not own would be replaced rather than added to.
+	if svc.GetHost() != project.EvalHost {
+		return "", messages.ServiceNameTaken(serviceName, svc.GetHost())
+	}
+	if have := serviceConfigRef(svc); have != "" && !sameRefTarget(have, wantRef) {
+		return "", messages.ServiceRefPointsElsewhere(serviceName, have, wantRef)
+	}
+	return wiringPresent, nil
+}
+
 // ensureRootEvalService declares the eval service in azd's project file.
 //
 // azd acts on nothing until the service exists, so the reference is made rather
@@ -1123,28 +1141,19 @@ func ensureRootEvalService(
 		return "", messages.NoAzdProject()
 	}
 
-	// A service already pointing at this configuration is left alone:
-	// re-adding it would deploy the same evals twice.
-	//
-	// Pointing at a different one is not the same thing. Matching on name and
-	// host alone reported the wiring present after `init --path` moved the
-	// configuration, and `azd up` went on deploying the file that was left
-	// behind -- the scaffold the reader was looking at was never deployed.
-	wantRef := refTo(resp.GetProject().GetPath(), configPath)
-	if svc, ok := resp.GetProject().GetServices()[serviceName]; ok {
-		// AddService assigns into the services map by name, so a service this
-		// extension does not own would be replaced rather than added to.
-		if svc.GetHost() != project.EvalHost {
-			return "", messages.ServiceNameTaken(serviceName, svc.GetHost())
-		}
-		if have := serviceConfigRef(svc); have != "" && !sameRefTarget(have, wantRef) {
-			return "", messages.ServiceRefPointsElsewhere(serviceName, have, wantRef)
-		}
+	// Decided again rather than carried over from the confirmation: the
+	// project file is a shared file, and the read that the reader approved
+	// was taken before an unbounded human pause.
+	action, err := rootEvalServiceAction(resp.GetProject(), serviceName, configPath)
+	if err != nil {
+		return "", err
+	}
+	if action == wiringPresent {
 		return wiringPresent, nil
 	}
 
 	props, err := structpb.NewStruct(map[string]any{
-		"$ref": wantRef,
+		"$ref": refTo(resp.GetProject().GetPath(), configPath),
 	})
 	if err != nil {
 		return "", messages.BuildingServiceEntry(err)

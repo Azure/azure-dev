@@ -21,13 +21,6 @@ var (
 	errResponsesStreamDisconnected        = errors.New("Responses stream disconnected before completion")
 )
 
-type responsesStreamProgress struct {
-	ResponseID string
-	Status     string
-	EventType  string
-	Terminal   bool
-}
-
 type responsesEventEnvelope struct {
 	Type     string          `json:"type"`
 	Response json.RawMessage `json:"response"`
@@ -69,7 +62,7 @@ type responsesSSEEvent struct {
 type responsesSSEOptions struct {
 	requireTerminal    bool
 	expectedResponseID string
-	onProgress         func(responsesStreamProgress) error
+	onResponseID       func(string) error
 }
 
 func readResponsesSSE(
@@ -120,6 +113,7 @@ func readResponsesSSE(
 			event.name = envelope.Type
 		}
 
+		previousIdentity := identity
 		var snapshot responsesSnapshot
 		if len(envelope.Response) > 0 {
 			if err := json.Unmarshal(envelope.Response, &snapshot); err != nil {
@@ -134,6 +128,11 @@ func readResponsesSSE(
 			}
 			if responseID != "" {
 				identity = responseID
+			}
+		}
+		if previousIdentity == "" && identity != "" && options.onResponseID != nil {
+			if err := options.onResponseID(identity); err != nil {
+				return err
 			}
 		}
 		if snapshot.Status == "" {
@@ -198,16 +197,6 @@ func readResponsesSSE(
 		}
 		if isTerminalResponseStatus(status) {
 			terminal = true
-		}
-		if options.onProgress != nil {
-			if err := options.onProgress(responsesStreamProgress{
-				ResponseID: identity,
-				Status:     status,
-				EventType:  event.name,
-				Terminal:   terminal,
-			}); err != nil {
-				return err
-			}
 		}
 		if snapshot.Status == "failed" {
 			if snapshot.Error != nil {

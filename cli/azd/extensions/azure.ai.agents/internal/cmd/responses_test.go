@@ -54,22 +54,22 @@ func TestPrintResponseSnapshotTable(t *testing.T) {
 	assert.Contains(t, output.String(), "Session ID   sess_123")
 }
 
-func TestReadResponsesSSEReportsProgress(t *testing.T) {
+func TestReadResponsesSSEReportsIdentityOnce(t *testing.T) {
 	stream := "event: response.created\n" +
 		"data: {\"type\":\"response.created\",\"sequence_number\":0," +
 		"\"response\":{\"id\":\"resp_123\",\"status\":\"queued\"}}\n\n" +
 		"event: response.completed\n" +
 		"data: {\"type\":\"response.completed\",\"sequence_number\":1," +
 		"\"response\":{\"id\":\"resp_123\",\"status\":\"completed\"}}\n\n"
-	var progressCount int
+	var responseIDs []string
 	var output bytes.Buffer
 	err := readResponsesSSE(t.Context(), bytes.NewBufferString(stream), &output, "agent", responsesSSEOptions{
 		requireTerminal: true,
-		onProgress: func(responsesStreamProgress) error {
-			progressCount++
+		onResponseID: func(responseID string) error {
+			responseIDs = append(responseIDs, responseID)
 			return nil
 		},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, 2, progressCount)
+	assert.Equal(t, []string{"resp_123"}, responseIDs)
 }

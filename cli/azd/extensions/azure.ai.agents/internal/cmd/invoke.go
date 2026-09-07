@@ -1602,7 +1602,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), resp.Header.Get("x-adc-response-details"))
 		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", respURL, resp.StatusCode, resp.Status, string(respBody))
 	}
-	tracker := &responseProgressTracker{
+	tracker := &responseIdentityTracker{
 		store:    responseStore,
 		agentKey: agentKey,
 		writer:   os.Stdout,
@@ -1614,14 +1614,14 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		rc.name,
 		responsesSSEOptions{
 			requireTerminal: a.flags.background,
-			onProgress: func(progress responsesStreamProgress) error {
-				if err := tracker.Apply(ctx, progress); err != nil {
+			onResponseID: func(responseID string) error {
+				if err := tracker.Apply(ctx, responseID); err != nil {
 					return err
 				}
 				if a.flags.noWait && tracker.saveErr != nil {
 					return tracker.saveErr
 				}
-				if a.flags.noWait && tracker.responseID != "" {
+				if a.flags.noWait {
 					return errBackgroundNoWait
 				}
 				return nil

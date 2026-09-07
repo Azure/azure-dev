@@ -85,13 +85,13 @@ func TestBuildResponsesRequestBody(t *testing.T) {
 	assert.NotContains(t, background, "agent_session_id")
 }
 
-func TestResponseProgressTrackerPersistsIdentityOnlyOnce(t *testing.T) {
+func TestResponseIdentityTrackerPersistsIdentityOnlyOnce(t *testing.T) {
 	store := &memoryResponseStore{}
 	var output bytes.Buffer
-	tracker := &responseProgressTracker{store: store, agentKey: "agent", writer: &output}
+	tracker := &responseIdentityTracker{store: store, agentKey: "agent", writer: &output}
 
-	require.NoError(t, tracker.Apply(t.Context(), responsesStreamProgress{ResponseID: "resp_123"}))
-	require.NoError(t, tracker.Apply(t.Context(), responsesStreamProgress{ResponseID: "resp_123"}))
+	require.NoError(t, tracker.Apply(t.Context(), "resp_123"))
+	require.NoError(t, tracker.Apply(t.Context(), "resp_123"))
 
 	require.NotNil(t, store.record)
 	assert.Equal(t, "resp_123", store.record.ResponseID)
@@ -99,12 +99,12 @@ func TestResponseProgressTrackerPersistsIdentityOnlyOnce(t *testing.T) {
 	assert.Equal(t, "Response:     resp_123\n", output.String())
 }
 
-func TestResponseProgressTrackerRecordsSaveFailure(t *testing.T) {
+func TestResponseIdentityTrackerRecordsSaveFailure(t *testing.T) {
 	store := &memoryResponseStore{saveErr: errors.New("write failed")}
 	var output bytes.Buffer
-	tracker := &responseProgressTracker{store: store, agentKey: "agent", writer: &output}
+	tracker := &responseIdentityTracker{store: store, agentKey: "agent", writer: &output}
 
-	require.NoError(t, tracker.Apply(t.Context(), responsesStreamProgress{ResponseID: "resp_123"}))
+	require.NoError(t, tracker.Apply(t.Context(), "resp_123"))
 	require.Error(t, tracker.saveErr)
 	assert.Contains(t, output.String(), "resp_123")
 	assert.Contains(t, output.String(), "was not saved")
@@ -113,7 +113,7 @@ func TestResponseProgressTrackerRecordsSaveFailure(t *testing.T) {
 func TestNoWaitSavesIdentityAndStopsBeforeOutput(t *testing.T) {
 	store := &memoryResponseStore{}
 	var output bytes.Buffer
-	tracker := &responseProgressTracker{store: store, agentKey: "agent", writer: &output}
+	tracker := &responseIdentityTracker{store: store, agentKey: "agent", writer: &output}
 	stream := "event: response.created\n" +
 		"data: {\"type\":\"response.created\",\"sequence_number\":0," +
 		"\"response\":{\"id\":\"resp_123\",\"status\":\"queued\"}}\n\n" +
@@ -122,14 +122,11 @@ func TestNoWaitSavesIdentityAndStopsBeforeOutput(t *testing.T) {
 
 	err := readResponsesSSE(t.Context(), bytes.NewBufferString(stream), &output, "agent", responsesSSEOptions{
 		requireTerminal: true,
-		onProgress: func(progress responsesStreamProgress) error {
-			if err := tracker.Apply(t.Context(), progress); err != nil {
+		onResponseID: func(responseID string) error {
+			if err := tracker.Apply(t.Context(), responseID); err != nil {
 				return err
 			}
-			if tracker.responseID != "" {
-				return errBackgroundNoWait
-			}
-			return nil
+			return errBackgroundNoWait
 		},
 	})
 	require.ErrorIs(t, err, errBackgroundNoWait)

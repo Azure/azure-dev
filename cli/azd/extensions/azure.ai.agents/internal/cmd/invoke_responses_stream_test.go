@@ -34,11 +34,11 @@ func readResponsesSSEForTest(
 	writer io.Writer,
 	agentName string,
 	requireTerminal bool,
-	onProgress func(responsesStreamProgress) error,
+	onResponseID func(string) error,
 ) error {
 	return readResponsesSSE(ctx, body, writer, agentName, responsesSSEOptions{
 		requireTerminal: requireTerminal,
-		onProgress:      onProgress,
+		onResponseID:    onResponseID,
 	})
 }
 
@@ -49,12 +49,12 @@ func readResponsesSSEWithExpectedIDForTest(
 	agentName string,
 	requireTerminal bool,
 	expectedResponseID string,
-	onProgress func(responsesStreamProgress) error,
+	onResponseID func(string) error,
 ) error {
 	return readResponsesSSE(ctx, body, writer, agentName, responsesSSEOptions{
 		requireTerminal:    requireTerminal,
 		expectedResponseID: expectedResponseID,
-		onProgress:         onProgress,
+		onResponseID:       onResponseID,
 	})
 }
 
@@ -74,20 +74,16 @@ func TestReadResponsesSSEBackground(t *testing.T) {
 	}, "\n") + "\n"
 
 	var output bytes.Buffer
-	var progress []responsesStreamProgress
+	var responseIDs []string
 	err := readResponsesSSEForTest(t.Context(), strings.NewReader(stream), &output, "agent", true,
-		func(value responsesStreamProgress) error {
-			progress = append(progress, value)
+		func(responseID string) error {
+			responseIDs = append(responseIDs, responseID)
 			return nil
 		})
 
 	require.NoError(t, err)
 	assert.Equal(t, "[agent] hello\n", output.String())
-	require.Len(t, progress, 3)
-	assert.Equal(t, "resp_123", progress[0].ResponseID)
-	assert.Equal(t, "in_progress", progress[1].Status)
-	assert.True(t, progress[2].Terminal)
-	assert.Equal(t, "completed", progress[2].Status)
+	assert.Equal(t, []string{"resp_123"}, responseIDs)
 }
 
 func TestReadResponsesSSEDataOnlyAndMultiline(t *testing.T) {
@@ -152,47 +148,45 @@ func TestReadResponsesSSEBackgroundTerminalRequiresIdentity(t *testing.T) {
 	stream := "event: response.completed\n" +
 		`data: {"response":{"status":"completed"},"sequence_number":1}` + "\n\n"
 
-	var progress []responsesStreamProgress
+	var responseIDs []string
 	err := readResponsesSSEForTest(t.Context(), strings.NewReader(stream), io.Discard, "agent", true,
-		func(value responsesStreamProgress) error {
-			progress = append(progress, value)
+		func(responseID string) error {
+			responseIDs = append(responseIDs, responseID)
 			return nil
 		})
 
 	require.ErrorIs(t, err, errResponsesStreamEndedBeforeIdentity)
-	assert.Empty(t, progress)
+	assert.Empty(t, responseIDs)
 }
 
 func TestReadResponsesSSEDiscardsPartialFrameAtEOF(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		stream       string
-		wantOutput   string
-		wantProgress int
+		name           string
+		stream         string
+		wantOutput     string
+		wantIdentities int
 	}{
 		{
 			name:   "unterminated frame",
 			stream: `data: {"type":"response.output_text.delta","delta":"partial","sequence_number":1}` + "\n",
 		},
 		{
-			name:         "blank-line-delimited text followed by EOF",
-			stream:       `data: {"type":"response.output_text.delta","delta":"complete","sequence_number":1}` + "\n\n",
-			wantOutput:   "[agent] complete\n",
-			wantProgress: 1,
+			name:       "blank-line-delimited text followed by EOF",
+			stream:     `data: {"type":"response.output_text.delta","delta":"complete","sequence_number":1}` + "\n\n",
+			wantOutput: "[agent] complete\n",
 		},
 		{
 			name: "delimited text then unterminated frame",
 			stream: `data: {"type":"response.output_text.delta","delta":"complete","sequence_number":1}` + "\n\n" +
 				`data: {"type":"response.output_text.delta","delta":"partial","sequence_number":2}` + "\n",
-			wantOutput:   "[agent] complete\n",
-			wantProgress: 1,
+			wantOutput: "[agent] complete\n",
 		},
 		{
-			name:         "delimited event without text",
-			stream:       `data: {"type":"response.in_progress","response":{"id":"resp_123"}}` + "\n\n",
-			wantProgress: 1,
+			name:           "delimited event without text",
+			stream:         `data: {"type":"response.in_progress","response":{"id":"resp_123"}}` + "\n\n",
+			wantIdentities: 1,
 		},
 	}
 
@@ -201,16 +195,16 @@ func TestReadResponsesSSEDiscardsPartialFrameAtEOF(t *testing.T) {
 			t.Parallel()
 
 			var output bytes.Buffer
-			var progress []responsesStreamProgress
+			var responseIDs []string
 			err := readResponsesSSEForTest(t.Context(), strings.NewReader(tt.stream), &output, "agent", false,
-				func(value responsesStreamProgress) error {
-					progress = append(progress, value)
+				func(responseID string) error {
+					responseIDs = append(responseIDs, responseID)
 					return nil
 				})
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantOutput, output.String())
-			assert.Len(t, progress, tt.wantProgress)
+			assert.Len(t, responseIDs, tt.wantIdentities)
 		})
 	}
 }
@@ -224,19 +218,16 @@ func TestReadResponsesSSEFailedTerminalDoesNotRenderSnapshot(t *testing.T) {
 		"\n\n"
 
 	var output bytes.Buffer
-	var progress []responsesStreamProgress
+	var responseIDs []string
 	err := readResponsesSSEForTest(t.Context(), strings.NewReader(stream), &output, "agent", true,
-		func(value responsesStreamProgress) error {
-			progress = append(progress, value)
+		func(responseID string) error {
+			responseIDs = append(responseIDs, responseID)
 			return nil
 		})
 
 	require.EqualError(t, err, "agent failed (runtime_error): agent crashed")
 	assert.Empty(t, output.String())
-	require.Len(t, progress, 1)
-	assert.Equal(t, "resp_123", progress[0].ResponseID)
-	assert.Equal(t, "failed", progress[0].Status)
-	assert.True(t, progress[0].Terminal)
+	assert.Equal(t, []string{"resp_123"}, responseIDs)
 }
 
 func TestReadResponsesSSECancelledOutcome(t *testing.T) {
@@ -259,15 +250,15 @@ func TestReadResponsesSSECancelledOutcome(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var output bytes.Buffer
-			var progress []responsesStreamProgress
+			var responseIDs []string
 			err := readResponsesSSEForTest(
 				t.Context(),
 				strings.NewReader(stream),
 				&output,
 				"agent",
 				tt.requireTerminal,
-				func(value responsesStreamProgress) error {
-					progress = append(progress, value)
+				func(responseID string) error {
+					responseIDs = append(responseIDs, responseID)
 					return nil
 				},
 			)
@@ -278,9 +269,7 @@ func TestReadResponsesSSECancelledOutcome(t *testing.T) {
 				require.EqualError(t, err, tt.wantErr)
 			}
 			assert.Equal(t, "[agent] partial\n", output.String())
-			require.Len(t, progress, 2)
-			assert.Equal(t, "cancelled", progress[1].Status)
-			assert.True(t, progress[1].Terminal)
+			assert.Equal(t, []string{"resp_123"}, responseIDs)
 		})
 	}
 }
@@ -301,17 +290,16 @@ func TestReadResponsesSSEReturnsAfterTerminalEvent(t *testing.T) {
 		err: readerErr,
 	}
 
-	var progress []responsesStreamProgress
+	var responseIDs []string
 	var output bytes.Buffer
 	err := readResponsesSSEForTest(t.Context(), reader, &output, "agent", true,
-		func(value responsesStreamProgress) error {
-			progress = append(progress, value)
+		func(responseID string) error {
+			responseIDs = append(responseIDs, responseID)
 			return nil
 		})
 
 	require.NoError(t, err)
-	require.Len(t, progress, 2)
-	assert.True(t, progress[1].Terminal)
+	assert.Equal(t, []string{"resp_123"}, responseIDs)
 	assert.Equal(t, "[agent] done\n", output.String())
 }
 
@@ -321,7 +309,6 @@ func TestReadResponsesSSETerminalUsesExpectedIdentity(t *testing.T) {
 	stream := "event: response.completed\n" +
 		`data: {"response":{"status":"completed"},"sequence_number":2}` + "\n\n"
 
-	var progress []responsesStreamProgress
 	err := readResponsesSSEWithExpectedIDForTest(
 		t.Context(),
 		strings.NewReader(stream),
@@ -329,17 +316,10 @@ func TestReadResponsesSSETerminalUsesExpectedIdentity(t *testing.T) {
 		"agent",
 		true,
 		"resp_123",
-		func(value responsesStreamProgress) error {
-			progress = append(progress, value)
-			return nil
-		},
+		nil,
 	)
 
 	require.NoError(t, err)
-	require.Len(t, progress, 1)
-	assert.Equal(t, "resp_123", progress[0].ResponseID)
-	assert.Equal(t, "completed", progress[0].Status)
-	assert.True(t, progress[0].Terminal)
 }
 
 func TestReadResponsesSSEIgnoresSequenceNumbers(t *testing.T) {
@@ -386,7 +366,6 @@ func TestReadResponsesSSEValidatesExpectedIdentity(t *testing.T) {
 					`data: {"response":{"id":%q,"status":"in_progress"},"sequence_number":1}`,
 					tt.responseID,
 				) + "\n\n"
-			var progress []responsesStreamProgress
 			err := readResponsesSSEWithExpectedIDForTest(
 				t.Context(),
 				strings.NewReader(stream),
@@ -394,21 +373,13 @@ func TestReadResponsesSSEValidatesExpectedIdentity(t *testing.T) {
 				"agent",
 				false,
 				"resp_123",
-				func(value responsesStreamProgress) error {
-					progress = append(progress, value)
-					return nil
-				},
+				nil,
 			)
 
 			if tt.wantErr != "" {
 				require.EqualError(t, err, tt.wantErr)
 			} else {
 				require.NoError(t, err)
-			}
-			if tt.wantErr == "" {
-				assert.Len(t, progress, 1)
-			} else {
-				assert.Empty(t, progress)
 			}
 		})
 	}

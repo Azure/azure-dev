@@ -14,8 +14,8 @@ import (
 
 var errBackgroundNoWait = errors.New("background Response identity saved")
 
-// responseProgressTracker saves only the current Response identity.
-type responseProgressTracker struct {
+// responseIdentityTracker saves only the current Response identity.
+type responseIdentityTracker struct {
 	store      responseStateStore
 	agentKey   string
 	writer     io.Writer
@@ -24,21 +24,21 @@ type responseProgressTracker struct {
 	printedID  bool
 }
 
-func (t *responseProgressTracker) Apply(ctx context.Context, progress responsesStreamProgress) error {
-	if progress.ResponseID == "" || progress.ResponseID == t.responseID {
+func (t *responseIdentityTracker) Apply(ctx context.Context, responseID string) error {
+	if responseID == "" || responseID == t.responseID {
 		return nil
 	}
 	if t.responseID != "" {
-		return fmt.Errorf("Responses stream changed response ID from %q to %q", t.responseID, progress.ResponseID)
+		return fmt.Errorf("Responses stream changed response ID from %q to %q", t.responseID, responseID)
 	}
 
-	t.responseID = progress.ResponseID
+	t.responseID = responseID
 	if t.store != nil && t.agentKey != "" {
-		if err := t.store.Save(ctx, t.agentKey, savedResponse{ResponseID: progress.ResponseID}); err != nil {
+		if err := t.store.Save(ctx, t.agentKey, savedResponse{ResponseID: responseID}); err != nil {
 			_, _ = fmt.Fprintf(
 				t.writer,
 				"Response:     %s\nWARNING: The Response was accepted, but its ID was not saved: %v\n",
-				progress.ResponseID,
+				responseID,
 				err,
 			)
 			t.printedID = true
@@ -47,7 +47,7 @@ func (t *responseProgressTracker) Apply(ctx context.Context, progress responsesS
 		}
 	}
 	if !t.printedID {
-		if _, err := fmt.Fprintf(t.writer, "Response:     %s\n", progress.ResponseID); err != nil {
+		if _, err := fmt.Fprintf(t.writer, "Response:     %s\n", responseID); err != nil {
 			return err
 		}
 		t.printedID = true

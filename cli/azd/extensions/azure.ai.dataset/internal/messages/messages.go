@@ -820,3 +820,14 @@ func NotAFoundryProjectResourceID(resourceID string) error {
 func InvalidSubscriptionID(err error) error {
 	return fmt.Errorf("invalid subscription ID format: %w", err)
 }
+
+// ViewDetailsHint points at the command that opens one row of a listing.
+//
+// One line, and only on a listing that has rows: a `Next:` block after every
+// list guesses at an action nobody stated, and a portal link per row turns a
+// readable table into a wall of URLs. The example is filled in from the first
+// row, so the line runs as printed rather than shipping a placeholder that
+// resolves and then fails.
+func ViewDetailsHint(command string) string {
+	return fmt.Sprintf("\nView details: %s\n", command)
+}

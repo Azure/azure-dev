@@ -107,7 +107,8 @@ func TestRenderDatasetsTable(t *testing.T) {
 	}}, messages.NoDatasets()))
 
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	require.Len(t, lines, 4, "a header, its rule, and one line per dataset")
+	require.Len(t, lines, 6,
+		"a header, its rule, one line per dataset, and the details hint after a blank line")
 	assert.Contains(t, lines[0], "NAME")
 	assert.Contains(t, lines[0], "VERSION")
 	// The API accepts format on upload and never returns it, so a FORMAT column
@@ -118,6 +119,8 @@ func TestRenderDatasetsTable(t *testing.T) {
 	assert.Contains(t, lines[2], "golden")
 	assert.Contains(t, lines[2], "uri_file")
 	assert.Contains(t, lines[3], "smoke")
+	assert.Contains(t, lines[5], "azd ai dataset show golden --version 2.0",
+		"the hint names a row from the table, so it runs as printed")
 }
 
 // An empty project has to say so. A bare header over nothing reads as output

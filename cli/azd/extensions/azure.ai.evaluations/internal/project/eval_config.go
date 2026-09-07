@@ -174,17 +174,6 @@ func (c *EvalConfig) HasEval(name string) bool {
 	return false
 }
 
-// RemoveEval drops the named eval, reporting whether it was there.
-func (c *EvalConfig) RemoveEval(name string) bool {
-	for i := range c.Evals {
-		if c.Evals[i].Name == name {
-			c.Evals = append(c.Evals[:i], c.Evals[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
-
 // DatasetDeclaration returns the catalog entry an eval's `dataset:` names.
 func (c *EvalConfig) DatasetDeclaration(name string) (*DatasetDecl, bool) {
 	for i := range c.Datasets {

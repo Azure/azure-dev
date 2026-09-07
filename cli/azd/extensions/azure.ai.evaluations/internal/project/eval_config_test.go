@@ -125,17 +125,14 @@ func TestEval_UnknownNameNamesWhatIsDeclared(t *testing.T) {
 
 // HasEval never falls back to "the only one", so a collision check cannot match
 // a differently named entry.
-func TestHasEvalAndRemoveEval(t *testing.T) {
+func TestHasEval(t *testing.T) {
 	cfg := loadFromString(t, sampleEvalConfig)
 
 	require.True(t, cfg.HasEval("support-agent-smoke"))
 	require.False(t, cfg.HasEval("nope"))
 	require.False(t, cfg.HasEval(""))
-
-	require.True(t, cfg.RemoveEval("support-agent-smoke"))
-	require.False(t, cfg.HasEval("support-agent-smoke"))
-	require.Equal(t, []string{"support-agent-trace-eval"}, cfg.EvalNames())
-	require.False(t, cfg.RemoveEval("support-agent-smoke"))
+	require.Equal(t,
+		[]string{"support-agent-smoke", "support-agent-trace-eval"}, cfg.EvalNames())
 }
 
 // Only catalog entries carrying a local source are this config's to publish.

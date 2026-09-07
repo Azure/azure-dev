@@ -15,12 +15,10 @@ import (
 
 // ScaffoldWrite is what `init` decided to add to the configuration.
 //
-// Only the new entries, and at most one removal. What the author already wrote
-// is not represented here at all, which is what keeps it from being rewritten.
+// Additions only. What the author already wrote is not represented here at
+// all, which is what keeps it from being rewritten -- and there is no way to
+// express a removal, because `init` adds evals and never replaces one.
 type ScaffoldWrite struct {
-	// RemoveEval is the eval `--force` replaces, dropped before the new one is
-	// appended. Empty when nothing is being replaced.
-	RemoveEval string
 	Datasets   []DatasetDecl
 	Evaluators []EvaluatorDecl
 	Evals      []Eval
@@ -28,7 +26,7 @@ type ScaffoldWrite struct {
 
 // Empty reports whether this would change nothing.
 func (w ScaffoldWrite) Empty() bool {
-	return w.RemoveEval == "" && len(w.Datasets) == 0 && len(w.Evaluators) == 0 && len(w.Evals) == 0
+	return len(w.Datasets) == 0 && len(w.Evaluators) == 0 && len(w.Evals) == 0
 }
 
 // ApplyScaffold writes what `init` decided, editing the file rather than
@@ -58,13 +56,6 @@ func ApplyScaffold(evalDir string, write ScaffoldWrite) error {
 		return err
 	}
 
-	if write.RemoveEval != "" {
-		evals, err := mappingSequence(root, "evals")
-		if err != nil {
-			return err
-		}
-		removeSequenceEntryNamed(evals, write.RemoveEval)
-	}
 	for _, decl := range write.Datasets {
 		seq, err := mappingSequence(root, "datasets")
 		if err != nil {
@@ -118,18 +109,6 @@ func appendEncoded(seq *yaml.Node, entry any) error {
 	}
 	seq.Content = append(seq.Content, doc.Content[0])
 	return nil
-}
-
-// removeSequenceEntryNamed drops the entry whose `name` is name.
-func removeSequenceEntryNamed(seq *yaml.Node, name string) {
-	kept := seq.Content[:0]
-	for _, item := range seq.Content {
-		if mappingHasName(item, name) {
-			continue
-		}
-		kept = append(kept, item)
-	}
-	seq.Content = kept
 }
 
 // readConfigDocument parses the configuration at path, answering an empty

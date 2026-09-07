@@ -179,7 +179,7 @@ func TestInitFlagsMatchTheSpec(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		"--name", "--target", "--source", "--dataset", "--max-traces",
 		"--trace-days", "--evaluation-level",
-		"--evaluator", "--judge-model", "--path", "--force",
+		"--evaluator", "--judge-model", "--path",
 	}, got, "init's flags are a table in the spec; change both together")
 }
 

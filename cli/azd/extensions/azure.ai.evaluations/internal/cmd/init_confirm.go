@@ -88,18 +88,16 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 		writeLocalContext(a.cmd.OutOrStdout(), ctx, answers.target, answers.judgeModel)
 	}
 
-	// A name someone typed is theirs, so a collision is refused rather than
-	// worked around. A name init suggested is init's problem: suggesting one
-	// already taken and then refusing it is the command failing on its own
-	// proposal.
-	answers.evalName = a.flags.evalName
-	if answers.evalName == "" {
-		answers.evalName = uniqueEvalName(ctx.cfg, defaultEvalName(answers.target, source))
-	} else if ctx.cfg.HasEval(answers.evalName) && !a.flags.force {
-		// Refused before the remaining prompts as well as after them, so a
-		// name that is already taken is reported without asking first.
-		return initAnswers{}, messages.EvalAlreadyDeclared(
-			answers.evalName, filepath.ToSlash(ctx.configPath))
+	// A name init suggested is init's problem: suggesting one already taken and
+	// then refusing it is the command failing on its own proposal. A name
+	// someone gave is theirs, and a collision is refused rather than worked
+	// around -- in place, so answering it does not cost the answers already
+	// given.
+	answers.evalName, err = resolveEvalName(
+		a.cmd, ctx.cfg, ctx.configPath, a.flags.evalName,
+		uniqueEvalName(ctx.cfg, defaultEvalName(answers.target, source)))
+	if err != nil {
+		return initAnswers{}, err
 	}
 
 	if source != initSourceTraces {

@@ -50,7 +50,6 @@ type initFlags struct {
 	evaluators      []string
 	judgeModel      string
 	path            string
-	force           bool
 }
 
 // initAction scaffolds the eval configuration.
@@ -104,8 +103,6 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.path, "path", "",
 		"Directory to write the configuration into. Used verbatim, never re-rooted. "+
 			"Defaults to the directory an earlier `init` scaffolded, otherwise ./evals.")
-	cmd.Flags().BoolVar(&flags.force, "force", false,
-		"Replace an eval of the same name instead of failing.")
 	return cmd
 }
 
@@ -250,16 +247,10 @@ func (a *initAction) Run() error {
 		return err
 	}
 	cfg = declaredSoFar(authored)
-	// Recorded rather than applied here: the write below edits the file,
-	// so the replacement has to be expressed as a removal it can make.
-	replacedEval := ""
+	// Re-checked under the lock, because the name was settled against a copy
+	// taken before the prompts and a `generate` may have written since.
 	if cfg.HasEval(evalName) {
-		if !a.flags.force {
-			return messages.EvalAlreadyDeclared(
-				evalName, filepath.ToSlash(configPath))
-		}
-		replacedEval = evalName
-		cfg.RemoveEval(evalName)
+		return messages.EvalAlreadyDeclared(evalName, filepath.ToSlash(configPath))
 	}
 
 	// What the file already declares, so the write can be limited to what
@@ -299,7 +290,6 @@ func (a *initAction) Run() error {
 	}
 
 	if err := project.ApplyScaffold(path, project.ScaffoldWrite{
-		RemoveEval: replacedEval,
 		Datasets:   cfg.Datasets[declaredDatasets:],
 		Evaluators: cfg.Evaluators[declaredEvaluators:],
 		Evals:      cfg.Evals[declaredEvals:],

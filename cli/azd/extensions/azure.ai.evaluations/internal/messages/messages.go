@@ -2316,12 +2316,48 @@ func MaxTracesMustBePositive() error {
 	return errors.New("--max-traces must be positive")
 }
 
-// EvalAlreadyDeclared reports an init that would overwrite a hand-tuned eval.
+// EvalAlreadyDeclared reports a name the configuration already uses.
 func EvalAlreadyDeclared(eval, configPath string) error {
 	return fmt.Errorf(
-		"an eval named %q already exists in %s; choose another name with --name, "+
-			"or pass --force to replace it. `init` only adds: editing an eval is a file edit",
+		"an eval named %q already exists in %s; choose another name with --name. "+
+			"`init` only adds: editing an eval is a file edit",
 		eval, configPath)
+}
+
+// EvalNamePrompt asks what the new eval is called.
+func EvalNamePrompt() string {
+	return "Evaluation name:"
+}
+
+// EvalNameHelp says what the name is for and what it may contain.
+func EvalNameHelp() string {
+	return "Names this eval in the configuration. " +
+		"Letters, digits, hyphens and underscores."
+}
+
+// EvalNameRejected reports a name that cannot be used, before asking again.
+//
+// Printed rather than returned: the reader is about to be asked for another
+// one, and ending the command would throw away every answer they have already
+// given for a question that has a second chance.
+func EvalNameRejected(why error) string {
+	return fmt.Sprintf("\n  %v\n  Enter a new name. Existing evals are not replaced by init.\n", why)
+}
+
+// EvalNameNotAllowed reports a name the service would refuse.
+func EvalNameNotAllowed(name string) error {
+	return fmt.Errorf(
+		"%q is not a usable eval name; use letters, digits, hyphens or underscores", name)
+}
+
+// EvalNameStillUnusable gives up after re-asking got nowhere.
+func EvalNameStillUnusable() error {
+	return errors.New("no usable eval name was given; pass one with --name")
+}
+
+// AskingForEvalName reports a failed name prompt.
+func AskingForEvalName(err error) error {
+	return fmt.Errorf("asking for an eval name: %w", err)
 }
 
 // CreatingDatasetsDir reports the datasets directory failing to be created.

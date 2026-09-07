@@ -578,6 +578,49 @@ func AmbiguousDeclaredDataset(names []string) error {
 		strings.Join(sorted, ", "))
 }
 
+// SelectDatasetPrompt asks which declared dataset the new eval grades.
+func SelectDatasetPrompt() string {
+	return "Select the dataset to evaluate against:"
+}
+
+// EnterDatasetPrompt asks what to grade when the configuration declares nothing.
+func EnterDatasetPrompt() string {
+	return "Dataset to evaluate against:"
+}
+
+// EnterDatasetHelp says what the prompt accepts.
+//
+// Both forms are named because they are not interchangeable: a path is a file
+// this machine has, and a bare name is one the project already registered.
+func EnterDatasetHelp() string {
+	return "A path to a local .jsonl file, or the name of a dataset already " +
+		"registered in the project."
+}
+
+// DatasetIsRequired refuses an empty answer to that prompt.
+func DatasetIsRequired() string {
+	return "A dataset-backed evaluation needs a dataset to grade."
+}
+
+// SelectingDataset reports a failed dataset prompt.
+func SelectingDataset(err error) error {
+	return fmt.Errorf("selecting a dataset to evaluate against: %w", err)
+}
+
+// DatasetFileNotFound reports a --dataset path with no file behind it.
+//
+// The configuration would validate and the deploy would then fail on a source
+// that never existed, which is the same broken reference a generated
+// declaration used to leave behind.
+func DatasetFileNotFound(path string, err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf(
+			"dataset file %s does not exist; pass a path to an existing .jsonl "+
+				"file, or a registered dataset name", filepath.ToSlash(path))
+	}
+	return fmt.Errorf("cannot read dataset file %s: %w", filepath.ToSlash(path), err)
+}
+
 // EvaluatorNotDeclared reports a custom evaluator reference with nothing behind
 // it.
 //

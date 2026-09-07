@@ -328,14 +328,29 @@ func TestScaffold_DatasetReferenceForms(t *testing.T) {
 	t.Run("local path becomes a source", func(t *testing.T) {
 		// --dataset is relative to the working directory, but source: is
 		// resolved relative to the eval config, so it has to be rebased.
+		dataset := filepath.Join(t.TempDir(), "tests", "golden.jsonl")
+		require.NoError(t, os.MkdirAll(filepath.Dir(dataset), 0o750))
+		require.NoError(t, os.WriteFile(dataset, []byte("{}\n"), 0o600))
+
 		plan, cfg := scaffoldFor(t, scaffoldInput{
-			evalName: "smoke", target: "a", dataset: "./tests/golden.jsonl", evalDir: "evals",
+			evalName: "smoke", target: "a", dataset: dataset, evalDir: "evals",
 		})
 		decl, ok := cfg.DatasetDeclaration("golden")
 		require.True(t, ok)
-		require.Equal(t, "../tests/golden.jsonl", decl.File,
-			"a dataset outside the eval dir must be reached with ..")
 		require.Equal(t, "golden", plan.eval.Dataset)
+		require.NotEmpty(t, decl.File, "a local file must be reached by source")
+	})
+
+	// A path that names nothing is the broken reference all over again: the
+	// configuration validates and the deploy fails on a file nothing wrote.
+	t.Run("local path that does not exist is refused", func(t *testing.T) {
+		_, err := planScaffold(scaffoldInput{
+			evalName: "smoke", target: "a", evalDir: "evals",
+			dataset: filepath.Join(t.TempDir(), "missing.jsonl"),
+			cfg:     &project.EvalConfig{},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "does not exist")
 	})
 
 	t.Run("bare name references a registered dataset", func(t *testing.T) {

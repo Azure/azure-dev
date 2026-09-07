@@ -212,6 +212,20 @@ func (a *initAction) Run() error {
 		evaluatorsWereChosen = asked
 	}
 
+	// Asked in the same breath and for the same reason: a dataset-backed eval
+	// needs a dataset that already exists, and refusing outright ends the first
+	// command a developer runs on an error where a question would do.
+	//
+	// Also outside the lock, and also only a proposal -- planScaffold re-reads
+	// the configuration under the lock and validates the answer against it.
+	datasetRef := a.flags.dataset
+	if source != initSourceTraces {
+		datasetRef, err = resolveDataset(a.cmd, cfg, datasetRef)
+		if err != nil {
+			return err
+		}
+	}
+
 	// The read-modify-write starts here, and nothing inside it waits on
 	// a person. The configuration is read again because the copy above
 	// was taken before the prompt, and a `generate` may well have
@@ -259,7 +273,7 @@ func (a *initAction) Run() error {
 		evalName:   evalName,
 		target:     target,
 		source:     source,
-		dataset:    a.flags.dataset,
+		dataset:    datasetRef,
 		maxTraces:  a.flags.maxTraces,
 		evaluators: evaluators,
 		judgeModel: judgeModel,
@@ -500,6 +514,12 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 		switch {
 		case in.dataset != "":
 			if looksLikeLocalDataset(in.dataset) {
+				// A path that names nothing is the same broken reference a
+				// generated declaration used to leave behind: the config passes
+				// validation and the deploy fails on a file that never existed.
+				if _, err := os.Stat(in.dataset); err != nil {
+					return scaffold{}, messages.DatasetFileNotFound(in.dataset, err)
+				}
 				// --dataset is given relative to where the user is standing,
 				// but source: resolves relative to the config, so the path has
 				// to be rebased or the deploy looks for it inside evals/.
